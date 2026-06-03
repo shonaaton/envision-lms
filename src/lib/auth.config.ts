@@ -6,6 +6,9 @@ import type { NextAuthConfig } from "next-auth";
  * The full `auth.ts` extends this with the Credentials provider that hits MongoDB.
  */
 export const authConfig = {
+  // Trust the proxy host (Traefik in front of us) — required since NextAuth v5
+  // refuses to operate behind reverse proxies without this flag.
+  trustHost: true,
   session: { strategy: "jwt" },
   pages: { signIn: "/login" },
   providers: [], // populated in auth.ts (Node runtime)

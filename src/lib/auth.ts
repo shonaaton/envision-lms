@@ -1,22 +1,34 @@
 import NextAuth, { type DefaultSession } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
-import { dbConnect } from "./db";
-import { User } from "@/models/User";
+import { authConfig } from "./auth.config";
 
 declare module "next-auth" {
-  interface Session { user: { id: string; role: "student" | "instructor" | "admin"; name?: string | null; email?: string | null; image?: string | null } & DefaultSession["user"]; }
-  interface User { id: string; role: "student" | "instructor" | "admin"; }
+  interface Session {
+    user: {
+      id: string;
+      role: "student" | "instructor" | "admin";
+      name?: string | null;
+      email?: string | null;
+      image?: string | null;
+    } & DefaultSession["user"];
+  }
+  interface User {
+    id: string;
+    role: "student" | "instructor" | "admin";
+  }
 }
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  session: { strategy: "jwt" },
-  pages: { signIn: "/login" },
+  ...authConfig,
   providers: [
     Credentials({
       credentials: { email: {}, password: {} },
       async authorize(creds) {
         if (!creds?.email || !creds?.password) return null;
+        // Lazy-import to keep this file out of the Edge bundle if anything ever inlines it.
+        const { dbConnect } = await import("./db");
+        const { User } = await import("@/models/User");
         await dbConnect();
         const user = await User.findOne({ email: String(creds.email).toLowerCase() });
         if (!user || !user.isActive) return null;
@@ -26,14 +38,4 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       },
     }),
   ],
-  callbacks: {
-    async jwt({ token, user }) {
-      if (user) { token.id = (user as any).id; token.role = (user as any).role; }
-      return token;
-    },
-    async session({ session, token }) {
-      if (token) { (session.user as any).id = token.id as string; (session.user as any).role = token.role as any; }
-      return session;
-    },
-  },
 });

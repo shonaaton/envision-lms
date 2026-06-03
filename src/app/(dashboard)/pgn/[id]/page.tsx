@@ -3,6 +3,8 @@ import { PGN } from "@/models/PGN";
 import PgnViewer from "@/components/quiz/PgnViewer";
 import { notFound } from "next/navigation";
 
+export const dynamic = "force-dynamic";
+
 export default async function PgnDetail({ params }: { params: { id: string } }) {
   await dbConnect();
   const g: any = await PGN.findById(params.id).lean();

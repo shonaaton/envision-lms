@@ -4,6 +4,8 @@ import { Homework } from "@/models/Homework";
 import { Classroom } from "@/models/Classroom";
 import Link from "next/link";
 
+export const dynamic = "force-dynamic";
+
 export default async function HomeworkListPage() {
   const session = await auth();
   const userId = (session?.user as any).id;

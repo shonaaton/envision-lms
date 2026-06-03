@@ -3,6 +3,8 @@ import { dbConnect } from "@/lib/db";
 import { Classroom } from "@/models/Classroom";
 import PayButton from "@/components/PayButton";
 
+export const dynamic = "force-dynamic";
+
 export default async function FeesPage() {
   const session = await auth();
   const userId = (session?.user as any).id;

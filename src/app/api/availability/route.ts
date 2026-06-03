@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { Availability } from "@/models/Booking";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(req: Request) {
   await dbConnect();
   const url = new URL(req.url);

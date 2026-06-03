@@ -3,6 +3,8 @@ import { dbConnect } from "@/lib/db";
 import { Classroom } from "@/models/Classroom";
 import Link from "next/link";
 
+export const dynamic = "force-dynamic";
+
 export default async function ClassroomsPage() {
   const session = await auth();
   const userId = (session?.user as any).id;

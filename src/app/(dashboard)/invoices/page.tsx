@@ -3,6 +3,8 @@ import { dbConnect } from "@/lib/db";
 import { Payment } from "@/models/Payment";
 import { formatINR } from "@/lib/utils";
 
+export const dynamic = "force-dynamic";
+
 export default async function InvoicesPage() {
   const session = await auth();
   const userId = (session?.user as any).id;

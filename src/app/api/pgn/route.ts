@@ -4,6 +4,8 @@ import { dbConnect } from "@/lib/db";
 import { PGN } from "@/models/PGN";
 import { Chess } from "chess.js";
 
+export const dynamic = "force-dynamic";
+
 function extractHeader(pgn: string, key: string): string | undefined {
   const m = pgn.match(new RegExp(`\\[${key}\\s+"([^"]*)"\\]`));
   return m?.[1];

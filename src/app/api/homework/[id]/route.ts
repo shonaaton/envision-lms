@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { Homework } from "@/models/Homework";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(_: Request, { params }: { params: { id: string } }) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

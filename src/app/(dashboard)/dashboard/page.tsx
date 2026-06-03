@@ -6,6 +6,8 @@ import { Booking } from "@/models/Booking";
 import Link from "next/link";
 import { Calendar, BookOpen, FileText } from "lucide-react";
 
+export const dynamic = "force-dynamic";
+
 export default async function DashboardPage() {
   const session = await auth();
   const userId = (session?.user as any).id;

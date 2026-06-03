@@ -1,6 +1,8 @@
 import { dbConnect } from "@/lib/db";
 import { Submission } from "@/models/Homework";
 
+export const dynamic = "force-dynamic";
+
 export default async function LeaderboardPage() {
   await dbConnect();
   const top = await Submission.aggregate([

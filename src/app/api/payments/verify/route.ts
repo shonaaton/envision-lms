@@ -6,6 +6,8 @@ import { Classroom } from "@/models/Classroom";
 import { Booking } from "@/models/Booking";
 import { verifyCheckoutSignature } from "@/lib/payments/razorpay";
 
+export const dynamic = "force-dynamic";
+
 export async function POST(req: Request) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

@@ -6,6 +6,8 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import PayButton from "@/components/PayButton";
 
+export const dynamic = "force-dynamic";
+
 export default async function ClassroomDetail({ params }: { params: { id: string } }) {
   const session = await auth();
   const userId = (session?.user as any).id;

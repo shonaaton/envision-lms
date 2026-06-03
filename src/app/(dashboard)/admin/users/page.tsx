@@ -3,6 +3,8 @@ import { dbConnect } from "@/lib/db";
 import { User } from "@/models/User";
 import { redirect } from "next/navigation";
 
+export const dynamic = "force-dynamic";
+
 export default async function AdminUsersPage() {
   const session = await auth();
   if ((session?.user as any)?.role !== "admin") redirect("/dashboard");

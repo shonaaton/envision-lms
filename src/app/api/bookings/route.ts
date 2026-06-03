@@ -4,6 +4,8 @@ import { dbConnect } from "@/lib/db";
 import { Availability, Booking } from "@/models/Booking";
 import { bookingSchema } from "@/lib/validation";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

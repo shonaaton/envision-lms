@@ -17,7 +17,8 @@ export async function GET(req: Request) {
   await dbConnect();
   const url = new URL(req.url);
   const q = url.searchParams.get("q");
-  const filter: any = q ? { $text: { $search: q } } : {};
+  const filter: any = { uploadedBy: (session.user as any).id };
+  if (q) filter.$text = { $search: q };
   const list = await PGN.find(filter).sort({ createdAt: -1 }).limit(100).lean();
   return NextResponse.json(list);
 }
@@ -26,7 +27,7 @@ export async function POST(req: Request) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   await dbConnect();
-  const { pgn, title, visibility = "public", classroom } = await req.json();
+  const { pgn, title, visibility = "private", classroom, folder } = await req.json();
   if (!pgn) return NextResponse.json({ error: "pgn required" }, { status: 400 });
   // Validate
   try { new Chess().loadPgn(pgn); } catch { return NextResponse.json({ error: "Invalid PGN" }, { status: 400 }); }
@@ -39,7 +40,8 @@ export async function POST(req: Request) {
     eco: extractHeader(pgn, "ECO"),
     date: extractHeader(pgn, "Date"),
     pgn,
-    visibility,
+    folder,
+    visibility: visibility === "classroom" ? "classroom" : "private",
     classroom,
     uploadedBy: (session.user as any).id,
   });

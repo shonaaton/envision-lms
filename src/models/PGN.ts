@@ -10,9 +10,10 @@ const PGNSchema = new Schema(
     eco: String,
     date: String,
     pgn: { type: String, required: true },
+    folder: { type: String, index: true },
     tags: [String],
     uploadedBy: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
-    visibility: { type: String, enum: ["public", "private", "classroom"], default: "public", index: true },
+    visibility: { type: String, enum: ["private", "classroom"], default: "private", index: true },
     classroom: { type: Schema.Types.ObjectId, ref: "Classroom", index: true },
   },
   { timestamps: true }

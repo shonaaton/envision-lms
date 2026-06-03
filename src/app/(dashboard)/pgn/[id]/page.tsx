@@ -1,4 +1,5 @@
 import { dbConnect } from "@/lib/db";
+import { auth } from "@/lib/auth";
 import { PGN } from "@/models/PGN";
 import PgnViewer from "@/components/quiz/PgnViewer";
 import { notFound } from "next/navigation";
@@ -6,8 +7,10 @@ import { notFound } from "next/navigation";
 export const dynamic = "force-dynamic";
 
 export default async function PgnDetail({ params }: { params: { id: string } }) {
+  const session = await auth();
+  if (!session) notFound();
   await dbConnect();
-  const g: any = await PGN.findById(params.id).lean();
+  const g: any = await PGN.findOne({ _id: params.id, uploadedBy: (session.user as any).id }).lean();
   if (!g) notFound();
   return (
     <div className="space-y-4">

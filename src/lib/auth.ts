@@ -8,14 +8,11 @@ declare module "next-auth" {
     user: {
       id: string;
       role: "student" | "instructor" | "admin";
-      name?: string | null;
-      email?: string | null;
-      image?: string | null;
     } & DefaultSession["user"];
   }
+  // Augment — only add `role`. NextAuth's base User already declares `id`.
   interface User {
-    id: string;
-    role: "student" | "instructor" | "admin";
+    role?: "student" | "instructor" | "admin";
   }
 }
 

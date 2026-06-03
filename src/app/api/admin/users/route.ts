@@ -61,11 +61,12 @@ export async function POST(req: Request) {
       email: body.email.toLowerCase(),
       username,
       passwordHash,
+      tempPassword,
     });
     return NextResponse.json({
       id: u._id.toString(),
       username,
-      tempPassword: body.password ? undefined : tempPassword, // surface auto-generated password once
+      tempPassword,
     });
   } catch (err: any) {
     return NextResponse.json({ error: err.message ?? "Bad request" }, { status: 400 });

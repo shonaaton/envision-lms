@@ -2,12 +2,15 @@
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Box,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Download,
+  Edit3,
   FilePlus2,
   FileUp,
   Folder,
@@ -15,6 +18,7 @@ import {
   MoreVertical,
   Plus,
   Search,
+  Trash2,
   Upload,
   X,
 } from "lucide-react";
@@ -42,7 +46,7 @@ type FolderDoc = {
   personal: boolean;
 };
 
-type ModalName = "folder" | "upload" | "generator" | null;
+type ModalName = "folder" | "upload" | "generator" | "edit-folder" | "edit-pgn" | null;
 type UploadTab = "single" | "multiple";
 type GeneratorStep = 1 | 2 | 3;
 type SetupTab = "general" | "gamified";
@@ -57,13 +61,17 @@ const startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 export default function PgnLibraryPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { data: session } = useSession();
   const [games, setGames] = useState<PgnDoc[]>([]);
   const [folders, setFolders] = useState<FolderDoc[]>(defaultFolders);
   const [currentFolder, setCurrentFolder] = useState<FolderDoc | null>(null);
   const [modal, setModal] = useState<ModalName>(null);
+  const [selectedFolder, setSelectedFolder] = useState<FolderDoc | null>(null);
+  const [selectedGame, setSelectedGame] = useState<PgnDoc | null>(null);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState("None");
   const [reorder, setReorder] = useState(false);
+  const isAdmin = (session?.user as any)?.role === "admin";
 
   async function load() {
     const response = await fetch("/api/pgn");
@@ -101,7 +109,6 @@ export default function PgnLibraryPage() {
 
   const visibleFolders = useMemo(() => {
     const byName = new Map<string, FolderDoc>();
-    defaultFolders.forEach((folder) => byName.set(folder.name, folder));
     folders.forEach((folder) => byName.set(folder.name, folder));
     games.forEach((game) => {
       if (game.folder && !byName.has(game.folder)) {
@@ -137,6 +144,76 @@ export default function PgnLibraryPage() {
     setFolders((current) => [...current, folder]);
     setCurrentFolder(folder);
     setModal(null);
+  }
+
+  async function renameFolder(folder: FolderDoc, name: string) {
+    const nextName = name.trim();
+    if (!nextName || nextName === folder.name) return setModal(null);
+    const response = await fetch("/api/pgn/folders", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ oldName: folder.name, newName: nextName }),
+    });
+    if (!response.ok) return toast.error("Could not rename folder");
+    setFolders((current) => current.map((item) => item.name === folder.name ? { ...item, name: nextName } : item));
+    setGames((current) => current.map((game) => game.folder === folder.name ? { ...game, folder: nextName } : game));
+    if (currentFolder?.name === folder.name) {
+      const nextFolder = { ...folder, name: nextName };
+      setCurrentFolder(nextFolder);
+      router.push(`/pgn?folder=${encodeURIComponent(nextName)}`);
+    }
+    setModal(null);
+    toast.success("Folder renamed");
+  }
+
+  async function deleteFolder(folder: FolderDoc) {
+    if (!window.confirm(`Delete "${folder.name}" and all PGNs inside it?`)) return;
+    const response = await fetch(`/api/pgn/folders?name=${encodeURIComponent(folder.name)}`, { method: "DELETE" });
+    if (!response.ok) return toast.error("Could not delete folder");
+    setFolders((current) => current.filter((item) => item.name !== folder.name));
+    setGames((current) => current.filter((game) => game.folder !== folder.name));
+    if (currentFolder?.name === folder.name) openRoot();
+    toast.success("Folder deleted");
+  }
+
+  async function updateGame(game: PgnDoc, title: string, pgn: string) {
+    const response = await fetch(`/api/pgn/${game._id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, pgn, folder: game.folder || currentFolder?.name }),
+    });
+    if (!response.ok) return toast.error("Could not update PGN");
+    const updated = await response.json();
+    setGames((current) => current.map((item) => item._id === game._id ? updated : item));
+    setModal(null);
+    toast.success("PGN updated");
+  }
+
+  async function deleteGame(game: PgnDoc) {
+    if (!window.confirm(`Delete "${game.title}"?`)) return;
+    const response = await fetch(`/api/pgn/${game._id}`, { method: "DELETE" });
+    if (!response.ok) return toast.error("Could not delete PGN");
+    setGames((current) => current.filter((item) => item._id !== game._id));
+    toast.success("PGN deleted");
+  }
+
+  function downloadText(filename: string, content: string) {
+    const url = URL.createObjectURL(new Blob([content], { type: "application/x-chess-pgn;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function downloadGame(game: PgnDoc) {
+    downloadText(`${safeFileName(game.title)}.pgn`, game.pgn);
+  }
+
+  function downloadFolder(folder: FolderDoc) {
+    const folderGames = games.filter((game) => game.folder === folder.name);
+    if (!folderGames.length) return toast.error("No PGNs in this folder");
+    downloadText(`${safeFileName(folder.name)}.pgn`, folderGames.map((game) => game.pgn).join("\n\n"));
   }
 
   async function uploadGame(title: string, pgn: string, createFolder: boolean) {
@@ -217,9 +294,31 @@ export default function PgnLibraryPage() {
         </div>
 
         {currentFolder ? (
-          visibleGames.length ? <GameGrid games={visibleGames} folder={currentFolder.name} /> : <EmptyFolder />
+          visibleGames.length ? (
+            <GameGrid
+              games={visibleGames}
+              folder={currentFolder.name}
+              isAdmin={isAdmin}
+              onEdit={(game) => {
+                setSelectedGame(game);
+                setModal("edit-pgn");
+              }}
+              onDelete={deleteGame}
+              onDownload={downloadGame}
+            />
+          ) : <EmptyFolder />
         ) : (
-          <FolderGrid folders={visibleFolders} onOpen={openFolder} />
+          <FolderGrid
+            folders={visibleFolders}
+            isAdmin={isAdmin}
+            onOpen={openFolder}
+            onEdit={(folder) => {
+              setSelectedFolder(folder);
+              setModal("edit-folder");
+            }}
+            onDelete={deleteFolder}
+            onDownload={downloadFolder}
+          />
         )}
 
         {!currentFolder && (
@@ -239,46 +338,131 @@ export default function PgnLibraryPage() {
       </section>
 
       {modal === "folder" && <NewFolderModal onClose={() => setModal(null)} onCreate={addFolder} />}
+      {modal === "edit-folder" && selectedFolder && <EditNameModal title="Edit Folder" label="Folder Name" initialName={selectedFolder.name} onClose={() => setModal(null)} onSave={(name) => renameFolder(selectedFolder, name)} />}
+      {modal === "edit-pgn" && selectedGame && <EditPgnModal game={selectedGame} onClose={() => setModal(null)} onSave={(title, pgn) => updateGame(selectedGame, title, pgn)} />}
       {modal === "upload" && <UploadPgnModal onClose={() => setModal(null)} onUpload={uploadGame} />}
       {modal === "generator" && <PgnGeneratorModal onClose={() => setModal(null)} onSave={uploadGame} />}
     </div>
   );
 }
 
-function FolderGrid({ folders, onOpen }: { folders: FolderDoc[]; onOpen: (folder: FolderDoc) => void }) {
+function safeFileName(value: string) {
+  return value.trim().replace(/[^a-z0-9-_]+/gi, "-").replace(/^-+|-+$/g, "") || "pgn";
+}
+
+function FolderGrid({
+  folders,
+  isAdmin,
+  onOpen,
+  onEdit,
+  onDelete,
+  onDownload,
+}: {
+  folders: FolderDoc[];
+  isAdmin: boolean;
+  onOpen: (folder: FolderDoc) => void;
+  onEdit: (folder: FolderDoc) => void;
+  onDelete: (folder: FolderDoc) => void;
+  onDownload: (folder: FolderDoc) => void;
+}) {
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
+
   return (
     <div className="grid gap-4 md:grid-cols-3">
       {folders.map((folder) => (
-        <button
+        <div
           key={folder.id}
-          className="flex h-14 items-center justify-between rounded-md border border-slate-200 bg-white px-4 text-left transition hover:bg-slate-50"
-          onClick={() => onOpen(folder)}
+          className="relative flex h-14 items-center justify-between rounded-md border border-slate-200 bg-white px-4 text-left transition hover:bg-slate-50"
         >
-          <span className="inline-flex items-center gap-3 font-medium">
+          <button className="inline-flex flex-1 items-center gap-3 font-medium" onClick={() => onOpen(folder)}>
             <Folder size={22} className="fill-slate-700 text-slate-700" /> {folder.name}
-          </span>
-          <MoreVertical size={18} className="text-slate-700" />
-        </button>
+          </button>
+          <button
+            className="rounded-md p-2 hover:bg-slate-100"
+            onClick={(event) => {
+              event.stopPropagation();
+              setOpenMenu((current) => current === folder.id ? null : folder.id);
+            }}
+            aria-label={`Open menu for ${folder.name}`}
+          >
+            <MoreVertical size={18} className="text-slate-700" />
+          </button>
+          {openMenu === folder.id && (
+            <ActionMenu>
+              <MenuAction tone="danger" icon={<Trash2 size={13} />} onClick={() => { setOpenMenu(null); onDelete(folder); }}>Delete</MenuAction>
+              <MenuAction icon={<Edit3 size={13} />} onClick={() => { setOpenMenu(null); onEdit(folder); }}>Edit</MenuAction>
+              {isAdmin && <MenuAction icon={<Download size={13} />} onClick={() => { setOpenMenu(null); onDownload(folder); }}>Download</MenuAction>}
+            </ActionMenu>
+          )}
+        </div>
       ))}
     </div>
   );
 }
 
-function GameGrid({ games, folder }: { games: PgnDoc[]; folder?: string }) {
+function GameGrid({
+  games,
+  folder,
+  isAdmin,
+  onEdit,
+  onDelete,
+  onDownload,
+}: {
+  games: PgnDoc[];
+  folder?: string;
+  isAdmin: boolean;
+  onEdit: (game: PgnDoc) => void;
+  onDelete: (game: PgnDoc) => void;
+  onDownload: (game: PgnDoc) => void;
+}) {
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
+
   return (
     <div className="grid gap-4 md:grid-cols-3">
       {games.map((game) => (
-        <Link
-          key={game._id}
-          href={folder ? `/pgn/${game._id}?folder=${encodeURIComponent(folder)}` : `/pgn/${game._id}`}
-          className="rounded-md border border-slate-200 bg-white p-4 shadow-sm hover:bg-slate-50"
-        >
-          <div className="font-semibold">{game.title}</div>
-          <div className="mt-2 text-sm text-slate-500">{game.white || "?"} vs {game.black || "?"} - {game.result || "*"}</div>
-          {game.event && <div className="mt-1 text-xs text-slate-400">{game.event}</div>}
-        </Link>
+        <div key={game._id} className="relative rounded-md border border-slate-200 bg-white p-4 shadow-sm hover:bg-slate-50">
+          <Link href={folder ? `/pgn/${game._id}?folder=${encodeURIComponent(folder)}` : `/pgn/${game._id}`} className="block pr-8">
+            <div className="font-semibold">{game.title}</div>
+            <div className="mt-2 text-sm text-slate-500">{game.white || "?"} vs {game.black || "?"} - {game.result || "*"}</div>
+            {game.event && <div className="mt-1 text-xs text-slate-400">{game.event}</div>}
+          </Link>
+          <button
+            className="absolute right-2 top-2 rounded-md p-2 hover:bg-slate-100"
+            onClick={() => setOpenMenu((current) => current === game._id ? null : game._id)}
+            aria-label={`Open menu for ${game.title}`}
+          >
+            <MoreVertical size={18} className="text-slate-700" />
+          </button>
+          {openMenu === game._id && (
+            <ActionMenu>
+              <MenuAction tone="danger" icon={<Trash2 size={13} />} onClick={() => { setOpenMenu(null); onDelete(game); }}>Delete</MenuAction>
+              <MenuAction icon={<Edit3 size={13} />} onClick={() => { setOpenMenu(null); onEdit(game); }}>Edit</MenuAction>
+              {isAdmin && <MenuAction icon={<Download size={13} />} onClick={() => { setOpenMenu(null); onDownload(game); }}>Download</MenuAction>}
+            </ActionMenu>
+          )}
+        </div>
       ))}
     </div>
+  );
+}
+
+function ActionMenu({ children }: { children: ReactNode }) {
+  return (
+    <div className="absolute right-4 top-12 z-20 w-32 rounded-md bg-white py-2 shadow-xl ring-1 ring-slate-200">
+      {children}
+    </div>
+  );
+}
+
+function MenuAction({ children, icon, tone, onClick }: { children: ReactNode; icon: ReactNode; tone?: "danger"; onClick: () => void }) {
+  return (
+    <button
+      className={`flex w-full items-center justify-between px-4 py-2 text-left text-sm hover:bg-slate-50 ${tone === "danger" ? "text-red-600" : "text-slate-950"}`}
+      onClick={onClick}
+    >
+      <span>{children}</span>
+      {icon}
+    </button>
   );
 }
 
@@ -339,6 +523,37 @@ function NewFolderModal({ onClose, onCreate }: { onClose: () => void; onCreate: 
       <div className="mt-6 flex justify-end gap-2">
         <button className="btn border border-slate-200 bg-white text-slate-950" onClick={onClose}>Cancel</button>
         <button className="btn-primary" disabled={!name.trim()} onClick={() => onCreate(name.trim(), personal)}>Create</button>
+      </div>
+    </ModalFrame>
+  );
+}
+
+function EditNameModal({ title, label, initialName, onClose, onSave }: { title: string; label: string; initialName: string; onClose: () => void; onSave: (name: string) => void }) {
+  const [name, setName] = useState(initialName);
+  return (
+    <ModalFrame title={title} onClose={onClose} width="max-w-[476px]">
+      <label className="mb-2 block text-sm">{label}</label>
+      <input className="input bg-white text-slate-950" value={name} onChange={(event) => setName(event.target.value)} />
+      <div className="mt-6 flex justify-end gap-2">
+        <button className="btn border border-slate-200 bg-white text-slate-950" onClick={onClose}>Cancel</button>
+        <button className="btn-primary" disabled={!name.trim()} onClick={() => onSave(name.trim())}>Save</button>
+      </div>
+    </ModalFrame>
+  );
+}
+
+function EditPgnModal({ game, onClose, onSave }: { game: PgnDoc; onClose: () => void; onSave: (title: string, pgn: string) => void }) {
+  const [title, setTitle] = useState(game.title);
+  const [pgn, setPgn] = useState(game.pgn);
+  return (
+    <ModalFrame title="Edit PGN" onClose={onClose} width="max-w-[560px]">
+      <label className="mb-2 block text-sm">PGN Title</label>
+      <input className="input mb-5 bg-white text-slate-950" value={title} onChange={(event) => setTitle(event.target.value)} />
+      <label className="mb-2 block text-sm">PGN Text</label>
+      <textarea className="input min-h-[220px] resize-y bg-white font-mono text-sm text-slate-950" value={pgn} onChange={(event) => setPgn(event.target.value)} />
+      <div className="mt-6 flex justify-end gap-2">
+        <button className="btn border border-slate-200 bg-white text-slate-950" onClick={onClose}>Cancel</button>
+        <button className="btn-primary" disabled={!title.trim() || !pgn.trim()} onClick={() => onSave(title.trim(), pgn.trim())}>Save</button>
       </div>
     </ModalFrame>
   );

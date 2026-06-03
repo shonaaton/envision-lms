@@ -6,6 +6,7 @@ const UserSchema = new Schema(
     name: { type: String, required: true },
     email: { type: String, required: true, unique: true, lowercase: true, index: true },
     passwordHash: { type: String, required: true },
+    tempPassword: { type: String },
     role: { type: String, enum: ["student", "instructor", "admin"], default: "student", index: true },
     phone: { type: String, index: true },
     avatar: { type: String, default: "" }, // hex color or URL

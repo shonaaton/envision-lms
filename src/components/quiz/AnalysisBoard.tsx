@@ -18,6 +18,7 @@ import {
   Save,
   Settings,
   Sun,
+  Trash2,
   Upload,
   X,
   Zap,
@@ -67,21 +68,6 @@ const boardThemes: Record<BoardTheme, { name: string; light: string; dark: strin
   purple: { name: "Academy", light: "#f0dcf6", dark: "#7b3f98" },
   slate: { name: "Slate", light: "#d8dee9", dark: "#64748b" },
 };
-const pieceSymbols: Record<PieceCode, string> = {
-  p: "♟",
-  n: "♞",
-  b: "♝",
-  r: "♜",
-  q: "♛",
-  k: "♚",
-  P: "♙",
-  N: "♘",
-  B: "♗",
-  R: "♖",
-  Q: "♕",
-  K: "♔",
-};
-
 const initialSetup: Record<string, PieceCode> = {
   a8: "r", b8: "n", c8: "b", d8: "q", e8: "k", f8: "b", g8: "n", h8: "r",
   a7: "p", b7: "p", c7: "p", d7: "p", e7: "p", f7: "p", g7: "p", h7: "p",
@@ -129,7 +115,7 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
   const [boardWidth, setBoardWidth] = useState(520);
   const [boardScale, setBoardScale] = useState(100);
   const [boardTheme, setBoardTheme] = useState<BoardTheme>("walnut");
-  const [pieceTheme, setPieceTheme] = useState<PieceTheme>("classic");
+  const [pieceTheme, setPieceTheme] = useState<PieceTheme>("neo");
   const [engineOn, setEngineOn] = useState(true);
   const [engineRunning, setEngineRunning] = useState(false);
   const [bestMove, setBestMove] = useState("");
@@ -210,6 +196,27 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
     const timer = window.setTimeout(() => analyze(true), 120);
     return () => window.clearTimeout(timer);
   }, [position, engineOn]);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (dialog) return;
+      const target = event.target as HTMLElement | null;
+      if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
+      if (target?.isContentEditable) return;
+
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        goPrevious();
+      }
+      if (event.key === "ArrowRight") {
+        event.preventDefault();
+        goNext();
+      }
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [dialog, selectedPly, position]);
 
   function refreshBoard() {
     setPosition(gameRef.current.fen());
@@ -359,8 +366,12 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
                     onPieceDrop={onDrop}
                     boardOrientation={orientation}
                     boardWidth={boardSize}
-                    customDarkSquareStyle={{ backgroundColor: darkSquare }}
-                    customLightSquareStyle={{ backgroundColor: lightSquare }}
+                    snapToCursor
+                    animationDuration={120}
+                    customDarkSquareStyle={{ backgroundColor: squareTheme.dark }}
+                    customLightSquareStyle={{ backgroundColor: squareTheme.light }}
+                    customDropSquareStyle={{ boxShadow: "inset 0 0 0 5px rgba(90, 19, 114, 0.35)" }}
+                    customPieces={customPieces}
                   />
                   <button className="absolute -right-10 top-2 rounded-full bg-brand p-2 text-white shadow-lg" aria-label="Board information">
                     <Info size={16} />
@@ -435,8 +446,8 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
 
       {dialog === "pgn" && <PgnDialog isDark={isDark} onClose={() => setDialog(null)} onLoad={loadPgn} />}
       {dialog === "fen" && <FenDialog isDark={isDark} currentFen={gameRef.current.fen()} onClose={() => setDialog(null)} onLoad={loadFen} />}
-      {dialog === "setup" && <SetupDialog isDark={isDark} onClose={() => setDialog(null)} onLoad={loadFen} />}
-      {dialog === "settings" && <SettingsDialog isDark={isDark} scale={boardScale} onScale={setBoardScale} onClose={() => setDialog(null)} />}
+      {dialog === "setup" && <SetupDialog isDark={isDark} currentFen={position} boardTheme={boardTheme} pieceTheme={pieceTheme} onClose={() => setDialog(null)} onLoad={loadFen} />}
+      {dialog === "settings" && <SettingsDialog isDark={isDark} scale={boardScale} boardTheme={boardTheme} pieceTheme={pieceTheme} onScale={setBoardScale} onBoardTheme={setBoardTheme} onPieceTheme={setPieceTheme} onClose={() => setDialog(null)} />}
       {dialog === "save" && <SaveDialog isDark={isDark} onClose={() => setDialog(null)} onSave={saveCurrentPgn} />}
     </div>
   );
@@ -458,6 +469,83 @@ function formatPv(fen: string, pv: string) {
     }
   });
   return san.join(" ") || pv;
+}
+
+function pieceCodeToBoardPiece(piece: PieceCode) {
+  return `${piece === piece.toUpperCase() ? "w" : "b"}${piece.toUpperCase()}`;
+}
+
+function boardPieceToPieceCode(piece: string): PieceCode {
+  const color = piece[0];
+  const kind = piece[1] as Uppercase<PieceCode>;
+  return (color === "w" ? kind : kind.toLowerCase()) as PieceCode;
+}
+
+function setupToBoardPosition(setup: Record<string, PieceCode>) {
+  return Object.entries(setup).reduce<Record<string, string>>((position, [square, piece]) => {
+    position[square] = pieceCodeToBoardPiece(piece);
+    return position;
+  }, {});
+}
+
+function parseFenSetup(fen: string) {
+  const [board = "", turn = "w", rights = "-"] = fen.split(/\s+/);
+  const setup: Record<string, PieceCode> = {};
+
+  board.split("/").forEach((row, rankIndex) => {
+    let fileIndex = 0;
+    for (const char of row) {
+      const empty = Number(char);
+      if (Number.isInteger(empty) && empty > 0) {
+        fileIndex += empty;
+        continue;
+      }
+      const file = files[fileIndex];
+      const rank = ranks[rankIndex];
+      if (file && rank) setup[`${file}${rank}`] = char as PieceCode;
+      fileIndex += 1;
+    }
+  });
+
+  return {
+    setup,
+    turn: turn === "b" ? "b" as const : "w" as const,
+    castling: {
+      K: rights.includes("K"),
+      Q: rights.includes("Q"),
+      k: rights.includes("k"),
+      q: rights.includes("q"),
+    },
+  };
+}
+
+function pieceThemeClass(theme: PieceTheme, piece: PieceCode) {
+  if (theme === "alpha") return piece === piece.toUpperCase() ? "text-white [text-shadow:_0_1px_2px_rgb(0_0_0_/_0.75)]" : "text-slate-950";
+  if (theme === "neo") return piece === piece.toUpperCase() ? "text-slate-50 [text-shadow:_0_2px_0_rgb(15_23_42)]" : "text-slate-900";
+  return piece === piece.toUpperCase() ? "text-white [text-shadow:_0_1px_2px_rgb(0_0_0_/_0.9)]" : "text-black";
+}
+
+function renderPieceFace(piece: PieceCode, theme: PieceTheme, sizeClass = "text-3xl") {
+  if (theme === "classic") {
+    return <span className={`${sizeClass} font-serif leading-none ${pieceThemeClass(theme, piece)}`}>{pieceGlyph(piece)}</span>;
+  }
+  if (theme === "alpha") {
+    return <span className={`${sizeClass} font-serif font-bold leading-none ${pieceThemeClass(theme, piece)}`}>{pieceGlyph(piece)}</span>;
+  }
+  return <span className={`${sizeClass} font-sans font-black leading-none ${pieceThemeClass(theme, piece)}`}>{pieceGlyph(piece)}</span>;
+}
+
+function createCustomPieces(theme: PieceTheme) {
+  if (theme === "classic") return undefined;
+  const pieces: PieceCode[] = ["P", "N", "B", "R", "Q", "K", "p", "n", "b", "r", "q", "k"];
+  return pieces.reduce<Record<string, (props: { squareWidth?: number }) => JSX.Element>>((acc, piece) => {
+    acc[pieceCodeToBoardPiece(piece)] = ({ squareWidth }) => (
+      <div className="flex h-full w-full items-center justify-center" style={{ fontSize: Math.max(24, Math.round((squareWidth || 64) * 0.72)) }}>
+        {renderPieceFace(piece, theme, "")}
+      </div>
+    );
+    return acc;
+  }, {});
 }
 
 function controlButton(isDark: boolean) {
@@ -784,36 +872,125 @@ function FenDialog({ isDark, currentFen, onClose, onLoad }: { isDark: boolean; c
   );
 }
 
-function SetupDialog({ isDark, onClose, onLoad }: { isDark: boolean; onClose: () => void; onLoad: (fen: string) => boolean }) {
+function SetupDialog({
+  isDark,
+  currentFen,
+  boardTheme,
+  pieceTheme,
+  onClose,
+  onLoad,
+}: {
+  isDark: boolean;
+  currentFen: string;
+  boardTheme: BoardTheme;
+  pieceTheme: PieceTheme;
+  onClose: () => void;
+  onLoad: (fen: string) => boolean;
+}) {
+  const current = useMemo(() => parseFenSetup(currentFen), [currentFen]);
   const [setupTab, setSetupTab] = useState<SetupTab>("general");
-  const [setup, setSetup] = useState<Record<string, PieceCode>>(initialSetup);
+  const [setup, setSetup] = useState<Record<string, PieceCode>>(current.setup);
   const [selectedPiece, setSelectedPiece] = useState<PieceCode | "delete">("P");
-  const [turn, setTurn] = useState<"w" | "b">("w");
-  const [castling, setCastling] = useState({ K: true, Q: true, k: true, q: true });
+  const [turn, setTurn] = useState<"w" | "b">(current.turn);
+  const [castling, setCastling] = useState(current.castling);
   const [fenInput, setFenInput] = useState("");
 
   const fen = buildFen(setup, turn, castling);
+  const setupPieceTheme = setupTab === "gamified" ? "neo" : pieceTheme;
+  const setupBoardTheme = setupTab === "gamified" ? "purple" : boardTheme;
+  const setupCustomPieces = useMemo(() => createCustomPieces(setupPieceTheme), [setupPieceTheme]);
 
   function place(square: string) {
-    setSetup((current) => {
-      const next = { ...current };
+    setSetup((currentSetup) => {
+      const next = { ...currentSetup };
       if (selectedPiece === "delete") delete next[square];
       else next[square] = selectedPiece;
       return next;
     });
   }
 
+  function moveSetupPiece(sourceSquare: string, targetSquare: string, piece: string) {
+    setSetup((currentSetup) => {
+      const next = { ...currentSetup };
+      delete next[sourceSquare];
+      next[targetSquare] = boardPieceToPieceCode(piece);
+      return next;
+    });
+    return true;
+  }
+
+  function deleteSetupPiece(sourceSquare: string) {
+    setSetup((currentSetup) => {
+      const next = { ...currentSetup };
+      delete next[sourceSquare];
+      return next;
+    });
+  }
+
+  function loadFenIntoSetup(value: string) {
+    try {
+      const parsed = parseFenSetup(new Chess(value).fen());
+      setSetup(parsed.setup);
+      setTurn(parsed.turn);
+      setCastling(parsed.castling);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function resetToStart() {
+    const parsed = parseFenSetup(startFen);
+    setSetup(parsed.setup);
+    setTurn(parsed.turn);
+    setCastling(parsed.castling);
+  }
+
+  function resetToCurrent() {
+    setSetup(current.setup);
+    setTurn(current.turn);
+    setCastling(current.castling);
+  }
+
   return (
-    <ModalFrame isDark={isDark} title="Customize Position" onClose={onClose} width="max-w-[746px]">
-      <div className="grid gap-6 md:grid-cols-[300px_1fr]">
+    <ModalFrame isDark={isDark} title="Customize Position" onClose={onClose} width="max-w-[820px]">
+      <div className="grid gap-6 md:grid-cols-[340px_1fr]">
         <div>
           <div className={`mb-5 inline-flex rounded-lg p-1 ${isDark ? "bg-black" : "bg-slate-100"}`}>
             <button className={setupTabButton(setupTab === "general", isDark)} onClick={() => setSetupTab("general")}>General</button>
             <button className={setupTabButton(setupTab === "gamified", isDark)} onClick={() => setSetupTab("gamified")}>Gamified Board</button>
           </div>
-          <PiecePalette selected={selectedPiece} onPick={setSelectedPiece} dark={setupTab === "general" ? false : true} />
-          <SetupGrid setup={setup} onPlace={place} />
-          <PiecePalette selected={selectedPiece} onPick={setSelectedPiece} dark={false} white />
+          <PiecePalette selected={selectedPiece} onPick={setSelectedPiece} dark={setupTab === "gamified"} pieceTheme={setupPieceTheme} />
+          <div className="touch-none overflow-hidden rounded-md">
+            <Chessboard
+              id="analysis-setup-board"
+              position={setupToBoardPosition(setup)}
+              boardWidth={320}
+              onPieceDrop={moveSetupPiece}
+              onPieceDropOffBoard={deleteSetupPiece}
+              onSquareClick={(square) => place(square)}
+              dropOffBoardAction="trash"
+              snapToCursor
+              animationDuration={120}
+              customDarkSquareStyle={{ backgroundColor: boardThemes[setupBoardTheme].dark }}
+              customLightSquareStyle={{ backgroundColor: boardThemes[setupBoardTheme].light }}
+              customDropSquareStyle={{ boxShadow: "inset 0 0 0 5px rgba(90, 19, 114, 0.35)" }}
+              customPieces={setupCustomPieces}
+            />
+          </div>
+          <PiecePalette selected={selectedPiece} onPick={setSelectedPiece} dark={false} white pieceTheme={setupPieceTheme} />
+          <button
+            className={[
+              "mt-3 flex min-h-12 w-full items-center justify-center gap-2 rounded-md border border-dashed text-sm font-semibold transition",
+              selectedPiece === "delete" ? "border-red-400 bg-red-50 text-red-700" : isDark ? "border-ink-600 text-blue-100 hover:bg-white/5" : "border-slate-300 text-slate-600 hover:bg-slate-50",
+            ].join(" ")}
+            onClick={() => setSelectedPiece("delete")}
+          >
+            <Trash2 size={17} /> Delete pieces
+          </button>
+          <div className={`mt-2 text-xs ${isDark ? "text-blue-200/70" : "text-slate-500"}`}>
+            Drag pieces on the board, drag pieces off the board to remove them, or select delete and tap squares.
+          </div>
         </div>
 
         <div>
@@ -821,30 +998,49 @@ function SetupDialog({ isDark, onClose, onLoad }: { isDark: boolean; onClose: ()
             <>
               <div className="mb-5 flex gap-3">
                 <input className="input" placeholder="Enter FEN position (e.g., 8/8/8/8/8/8/8/8 w - - 0 1)" value={fenInput} onChange={(event) => setFenInput(event.target.value)} />
-                <button className="btn-primary" onClick={() => fenInput.trim() && onLoad(fenInput)}>Load</button>
+                <button className="btn-primary" onClick={() => fenInput.trim() && !loadFenIntoSetup(fenInput) && toast.error("Invalid FEN")}>Load</button>
               </div>
               <MoveSideControl turn={turn} onTurn={setTurn} />
               <CastlingControl castling={castling} onCastling={setCastling} />
             </>
           ) : (
-            <GamifiedOptions />
+            <GamifiedOptions turn={turn} onTurn={setTurn} />
           )}
           <div className="mt-6 flex flex-wrap gap-4">
-            <button className={controlButton(isDark)} onClick={() => setSetup(initialSetup)}><RotateCcw size={15} /> Reset</button>
-            <button className={controlButton(isDark)} onClick={() => setSetup({})}>⊘ Clear board</button>
+            <button className={controlButton(isDark)} onClick={resetToStart}><RotateCcw size={15} /> Start position</button>
+            <button className={controlButton(isDark)} onClick={resetToCurrent}>Current position</button>
+            <button className={controlButton(isDark)} onClick={() => setSetup({})}>Clear board</button>
           </div>
         </div>
       </div>
       <div className="mt-8 flex justify-end">
-        <button className="btn-primary" onClick={() => onLoad(fen)}>Load Fen</button>
+        <button className="btn-primary" onClick={() => onLoad(fen)}>Load Position</button>
       </div>
     </ModalFrame>
   );
 }
 
-function SettingsDialog({ isDark, scale, onScale, onClose }: { isDark: boolean; scale: number; onScale: (value: number) => void; onClose: () => void }) {
+function SettingsDialog({
+  isDark,
+  scale,
+  boardTheme,
+  pieceTheme,
+  onScale,
+  onBoardTheme,
+  onPieceTheme,
+  onClose,
+}: {
+  isDark: boolean;
+  scale: number;
+  boardTheme: BoardTheme;
+  pieceTheme: PieceTheme;
+  onScale: (value: number) => void;
+  onBoardTheme: (value: BoardTheme) => void;
+  onPieceTheme: (value: PieceTheme) => void;
+  onClose: () => void;
+}) {
   return (
-    <ModalFrame isDark={isDark} title="Analysis Board Settings" onClose={onClose} width="max-w-[456px]">
+    <ModalFrame isDark={isDark} title="Analysis Board Settings" onClose={onClose} width="max-w-[560px]">
       <div className="mt-8">
         <div className={isDark ? "mb-4 text-sm font-semibold text-gray-400" : "mb-4 text-sm font-semibold text-slate-500"}>Chessboard Size</div>
         <div className="relative">
@@ -865,6 +1061,52 @@ function SettingsDialog({ isDark, scale, onScale, onClose }: { isDark: boolean; 
           <span>Large (125%)</span>
         </div>
         <p className={`mt-5 text-sm ${isDark ? "text-gray-400" : "text-slate-500"}`}>Adjust the chessboard size to fit your screen perfectly</p>
+
+        <div className="mt-8">
+          <div className={isDark ? "mb-3 text-sm font-semibold text-gray-400" : "mb-3 text-sm font-semibold text-slate-500"}>Piece Style</div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            {(["classic", "alpha", "neo"] as PieceTheme[]).map((theme) => (
+              <button
+                key={theme}
+                className={[
+                  "rounded-lg border p-3 text-left transition",
+                  pieceTheme === theme ? "border-brand bg-brand/10" : isDark ? "border-ink-600 bg-black/20" : "border-slate-200 bg-white",
+                ].join(" ")}
+                onClick={() => onPieceTheme(theme)}
+              >
+                <div className="mb-2 flex items-center gap-2">
+                  {renderPieceFace("K", theme, "text-3xl")}
+                  {renderPieceFace("q", theme, "text-3xl")}
+                </div>
+                <div className="text-sm font-semibold capitalize">{theme}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-8">
+          <div className={isDark ? "mb-3 text-sm font-semibold text-gray-400" : "mb-3 text-sm font-semibold text-slate-500"}>Board Colors</div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {(Object.entries(boardThemes) as Array<[BoardTheme, { name: string; light: string; dark: string }]>).map(([key, theme]) => (
+              <button
+                key={key}
+                className={[
+                  "flex items-center gap-3 rounded-lg border p-3 text-left transition",
+                  boardTheme === key ? "border-brand bg-brand/10" : isDark ? "border-ink-600 bg-black/20" : "border-slate-200 bg-white",
+                ].join(" ")}
+                onClick={() => onBoardTheme(key)}
+              >
+                <span className="grid h-9 w-9 grid-cols-2 overflow-hidden rounded">
+                  <span style={{ backgroundColor: theme.light }} />
+                  <span style={{ backgroundColor: theme.dark }} />
+                  <span style={{ backgroundColor: theme.dark }} />
+                  <span style={{ backgroundColor: theme.light }} />
+                </span>
+                <span className="text-sm font-semibold">{theme.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
     </ModalFrame>
   );
@@ -894,7 +1136,7 @@ function setupTabButton(active: boolean, isDark: boolean) {
   ].join(" ");
 }
 
-function PiecePalette({ selected, onPick, dark, white = false }: { selected: PieceCode | "delete"; onPick: (piece: PieceCode | "delete") => void; dark: boolean; white?: boolean }) {
+function PiecePalette({ selected, onPick, dark, pieceTheme, white = false }: { selected: PieceCode | "delete"; onPick: (piece: PieceCode | "delete") => void; dark: boolean; pieceTheme: PieceTheme; white?: boolean }) {
   const pieces: Array<PieceCode | "delete"> = white ? ["P", "N", "B", "R", "Q", "K", "delete"] : ["p", "n", "b", "r", "q", "k", "delete"];
   return (
     <div className="mb-2 flex gap-1">
@@ -908,14 +1150,15 @@ function PiecePalette({ selected, onPick, dark, white = false }: { selected: Pie
           ].join(" ")}
           onClick={() => onPick(piece)}
         >
-          {piece === "delete" ? "⌫" : pieceSymbols[piece]}
+          {piece === "delete" ? <span className="text-xs font-semibold">Del</span> : renderPieceFace(piece, pieceTheme, "text-2xl")}
         </button>
       ))}
     </div>
   );
 }
 
-function SetupGrid({ setup, onPlace }: { setup: Record<string, PieceCode>; onPlace: (square: string) => void }) {
+function SetupGrid({ setup, onPlace, boardTheme, pieceTheme }: { setup: Record<string, PieceCode>; onPlace: (square: string) => void; boardTheme: BoardTheme; pieceTheme: PieceTheme }) {
+  const theme = boardThemes[boardTheme];
   return (
     <div className="grid h-[300px] w-[300px] grid-cols-8 grid-rows-8">
       {ranks.flatMap((rank, rankIndex) =>
@@ -926,10 +1169,10 @@ function SetupGrid({ setup, onPlace }: { setup: Record<string, PieceCode>; onPla
             <button
               key={square}
               className="flex items-center justify-center text-3xl"
-              style={{ backgroundColor: (rankIndex + fileIndex) % 2 === 0 ? lightSquare : darkSquare, color: piece && piece === piece.toUpperCase() ? "#fff" : "#111" }}
+              style={{ backgroundColor: (rankIndex + fileIndex) % 2 === 0 ? theme.light : theme.dark }}
               onClick={() => onPlace(square)}
             >
-              {piece ? pieceSymbols[piece] : ""}
+              {piece ? renderPieceFace(piece, pieceTheme, "text-3xl") : ""}
             </button>
           );
         }),
@@ -963,10 +1206,10 @@ function CastlingControl({ castling, onCastling }: { castling: { K: boolean; Q: 
   );
 }
 
-function GamifiedOptions() {
+function GamifiedOptions({ turn, onTurn }: { turn: "w" | "b"; onTurn: (turn: "w" | "b") => void }) {
   return (
     <div>
-      <MoveSideControl turn="w" onTurn={() => undefined} />
+      <MoveSideControl turn={turn} onTurn={onTurn} />
       <div className="mb-4 font-semibold">Gamified Icons</div>
       <div className="mb-4 grid grid-cols-5 gap-4 text-center text-sm">
         {["🍔 Food", "🧸 Toys", "🐶 Animals", "🏆 Rewards", "😊 Emoji"].map((item) => <div key={item}>{item}</div>)}

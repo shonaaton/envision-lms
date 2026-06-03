@@ -51,7 +51,7 @@ bash scripts/deploy.sh
 
 `deploy.sh` does:
 - pulls Stockfish.js into `/public/stockfish/`
-- ensures the shared `web` Docker network exists (so Traefik + n8n can see this app)
+- ensures the shared `root_default` Docker network exists (so Traefik + n8n can see this app)
 - runs `docker compose up -d --build`
 - tails 15s of logs so you can confirm the app booted
 
@@ -117,7 +117,7 @@ this codebase again.
 
 | Symptom | Fix |
 | --- | --- |
-| `docker compose` says network `web` not found | `docker network create web` then retry |
+| `docker compose` says network `root_default` not found | `docker network create root_default` then retry |
 | Traefik returns 404 | Check labels in `docker-compose.yml` match your Traefik entrypoint name (`websecure`) and resolver name (`letsencrypt`) — yours may differ |
 | MongoDB `MongoServerSelectionError` | Add the VPS IP to Atlas Network Access allowlist (Atlas → Network Access) |
 | Razorpay checkout shows "key id missing" | `NEXT_PUBLIC_RAZORPAY_KEY_ID` must be set at **build time** — re-run `docker compose up -d --build` after editing `.env` |

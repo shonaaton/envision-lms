@@ -13,15 +13,15 @@ if [ ! -f .env ]; then
 fi
 
 # 2. Pull Stockfish if missing
-if [ ! -f public/stockfish/stockfish.wasm ]; then
+if [ ! -s public/stockfish/stockfish.js ] || [ ! -s public/stockfish/stockfish.wasm ]; then
   echo "==> Stockfish not found, fetching..."
   bash scripts/setup-assets.sh
 fi
 
 # 3. Ensure shared docker network exists (Traefik / n8n network)
-if ! docker network ls --format '{{.Name}}' | grep -qx web; then
-  echo "==> Creating 'web' docker network (shared with n8n + Traefik)"
-  docker network create web
+if ! docker network ls --format '{{.Name}}' | grep -qx root_default; then
+  echo "==> Creating 'root_default' docker network (shared with n8n + Traefik)"
+  docker network create root_default
 fi
 
 # 4. Build & start

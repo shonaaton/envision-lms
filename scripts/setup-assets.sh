@@ -8,11 +8,16 @@ SF_DIR="$PUBLIC_DIR/stockfish"
 mkdir -p "$SF_DIR"
 
 echo "==> Downloading Stockfish.js (lichess-org build) into $SF_DIR"
-# Pin to a known-good build of Stockfish.js (single-threaded WASM)
-SF_BASE="https://raw.githubusercontent.com/lichess-org/stockfish.js/master/example/public"
+# Pin to the portable Stockfish.js WASM build expected by the app workers.
+SF_BASE="https://unpkg.com/stockfish.js@10.0.2"
+SF_ENTRYPOINT="stockfish.wasm.js"
 for f in stockfish.js stockfish.wasm; do
-  if [ ! -f "$SF_DIR/$f" ]; then
-    curl -fsSL -o "$SF_DIR/$f" "$SF_BASE/$f"
+  if [ ! -s "$SF_DIR/$f" ]; then
+    src="$f"
+    if [ "$f" = "stockfish.js" ]; then
+      src="$SF_ENTRYPOINT"
+    fi
+    curl -fsSL -o "$SF_DIR/$f" "$SF_BASE/$src"
     echo "  ✓ $f"
   else
     echo "  • $f already present, skipping"

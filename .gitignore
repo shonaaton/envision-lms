@@ -4,6 +4,8 @@ node_modules/
 .env.local
 .env*.local
 *.log
+*.tgz
+.npm-cache/
 .DS_Store
 .vercel
 .turbo

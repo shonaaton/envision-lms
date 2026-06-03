@@ -1,0 +1,28 @@
+# Docker Compose for Envision Chess Academy
+# Designed to live alongside n8n on the same Hostinger VPS.
+# If you already run a `n8n` stack, add this service into your existing
+# docker-compose.yml under the same network as n8n + Caddy/Traefik, or
+# run this file standalone behind a reverse proxy.
+
+services:
+  envision-lms:
+    container_name: envision-lms
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "3000:3000"
+    networks:
+      - web
+    # Optional: Traefik labels (matches typical n8n + Traefik setup)
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.envision.rule=Host(`platform.envisionchessacademy.com`)"
+      - "traefik.http.routers.envision.entrypoints=websecure"
+      - "traefik.http.routers.envision.tls.certresolver=letsencrypt"
+      - "traefik.http.services.envision.loadbalancer.server.port=3000"
+
+networks:
+  web:
+    external: true   # assumes you already have an external `web` network (used by n8n/Traefik)

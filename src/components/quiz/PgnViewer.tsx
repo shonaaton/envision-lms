@@ -1,57 +1,207 @@
 "use client";
+
 import dynamic from "next/dynamic";
-import { useEffect, useMemo, useState } from "react";
+import { ChevronsLeft, ChevronsRight, ChevronLeft, ChevronRight } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Chess } from "chess.js";
 
 const Chessboard = dynamic(() => import("react-chessboard").then((m) => m.Chessboard), { ssr: false });
 
+const startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+const lightSquare = "#efd6a8";
+const darkSquare = "#bd8d62";
+const movesPerPage = 18;
+
+type PgnMove = {
+  san: string;
+  from: string;
+  to: string;
+  promotion?: string;
+  before?: string;
+};
+
+type MoveRow = {
+  number: number;
+  white?: PgnMove;
+  black?: PgnMove;
+  whitePly?: number;
+  blackPly?: number;
+};
+
+function extractHeader(pgn: string, key: string) {
+  const match = pgn.match(new RegExp(`\\[${key}\\s+"([^"]*)"\\]`));
+  return match?.[1];
+}
+
+function parsePgn(pgn: string) {
+  const game = new Chess();
+  try {
+    game.loadPgn(pgn);
+  } catch {
+    const fen = extractHeader(pgn, "FEN");
+    if (fen) {
+      try {
+        const position = new Chess(fen).fen();
+        return { valid: true, start: position, final: position, moves: [] as PgnMove[] };
+      } catch {
+        return { valid: false, start: startFen, final: startFen, moves: [] as PgnMove[] };
+      }
+    }
+    return { valid: false, start: startFen, final: startFen, moves: [] as PgnMove[] };
+  }
+
+  const moves = game.history({ verbose: true }) as PgnMove[];
+  const headers = game.header();
+  const start = moves[0]?.before || headers.FEN || game.fen() || startFen;
+  return { valid: true, start, final: game.fen(), moves };
+}
+
+function replayPosition(start: string, moves: PgnMove[], ply: number) {
+  const game = new Chess(start);
+  moves.slice(0, ply).forEach((move) => {
+    game.move({ from: move.from, to: move.to, promotion: move.promotion || "q" });
+  });
+  return game.fen();
+}
+
+function buildRows(moves: PgnMove[]) {
+  const rows: MoveRow[] = [];
+  moves.forEach((move, index) => {
+    const rowIndex = Math.floor(index / 2);
+    if (!rows[rowIndex]) rows[rowIndex] = { number: rowIndex + 1 };
+    if (index % 2 === 0) {
+      rows[rowIndex].white = move;
+      rows[rowIndex].whitePly = index + 1;
+    } else {
+      rows[rowIndex].black = move;
+      rows[rowIndex].blackPly = index + 1;
+    }
+  });
+  return rows;
+}
+
 export default function PgnViewer({ pgn }: { pgn: string }) {
-  const game = useMemo(() => {
-    const g = new Chess();
-    try { g.loadPgn(pgn); } catch {}
-    return g;
-  }, [pgn]);
-  const moves = useMemo(() => game.history(), [game]);
-  const [idx, setIdx] = useState(moves.length);
-  const [position, setPosition] = useState<string>("");
+  const boardWrapRef = useRef<HTMLDivElement | null>(null);
+  const parsed = useMemo(() => parsePgn(pgn), [pgn]);
+  const moveRows = useMemo(() => buildRows(parsed.moves), [parsed.moves]);
+  const [ply, setPly] = useState(0);
+  const [movePage, setMovePage] = useState(0);
+  const [boardWidth, setBoardWidth] = useState(480);
+
+  const totalPages = Math.max(1, Math.ceil(parsed.moves.length / movesPerPage));
+  const pageStart = movePage * movesPerPage;
+  const visibleRows = moveRows.filter((row) => {
+    const rowStart = (row.number - 1) * 2;
+    return rowStart >= pageStart && rowStart < pageStart + movesPerPage;
+  });
+  const position = useMemo(() => replayPosition(parsed.start, parsed.moves, ply), [parsed.start, parsed.moves, ply]);
 
   useEffect(() => {
-    const g = new Chess();
-    try { g.loadPgn(pgn); } catch {}
-    // Replay up to idx
-    const all = g.history({ verbose: true });
-    const g2 = new Chess();
-    for (let i = 0; i < idx; i++) g2.move(all[i] as any);
-    setPosition(g2.fen());
-  }, [idx, pgn]);
+    setPly(parsed.moves.length);
+    setMovePage(Math.max(0, Math.ceil(parsed.moves.length / movesPerPage) - 1));
+  }, [parsed.moves.length, pgn]);
+
+  useEffect(() => {
+    const element = boardWrapRef.current;
+    if (!element) return;
+
+    const resize = () => setBoardWidth(Math.max(280, Math.min(480, element.clientWidth)));
+    resize();
+    const observer = new ResizeObserver(resize);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  function goTo(nextPly: number) {
+    const safePly = Math.max(0, Math.min(parsed.moves.length, nextPly));
+    setPly(safePly);
+    if (safePly > 0) setMovePage(Math.floor((safePly - 1) / movesPerPage));
+  }
+
+  const iconButton = "inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300";
+
+  if (!parsed.valid) {
+    return (
+      <div className="rounded-lg border border-red-100 bg-red-50 p-6 text-sm text-red-700">
+        This PGN could not be loaded. Please check that the file contains a valid game or a valid FEN setup tag.
+      </div>
+    );
+  }
 
   return (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_280px]">
-      <div className="card">
-        <Chessboard
-          position={position}
-          arePiecesDraggable={false}
-          boardWidth={480}
-          customDarkSquareStyle={{ backgroundColor: "#5a1372" }}
-          customLightSquareStyle={{ backgroundColor: "#fde75a" }}
-        />
-        <div className="mt-4 flex justify-center gap-2">
-          <button className="btn-outline" onClick={() => setIdx(0)}>«</button>
-          <button className="btn-outline" onClick={() => setIdx((i) => Math.max(0, i - 1))}>‹</button>
-          <button className="btn-outline" onClick={() => setIdx((i) => Math.min(moves.length, i + 1))}>›</button>
-          <button className="btn-outline" onClick={() => setIdx(moves.length)}>»</button>
+    <div className="grid gap-6 xl:grid-cols-[minmax(0,820px)_minmax(280px,1fr)]">
+      <section className="rounded-lg border border-slate-200 bg-white p-6 text-slate-950 shadow-sm">
+        <div ref={boardWrapRef} className="mx-auto max-w-[480px]">
+          <Chessboard
+            position={position}
+            arePiecesDraggable={false}
+            boardWidth={boardWidth}
+            customDarkSquareStyle={{ backgroundColor: darkSquare }}
+            customLightSquareStyle={{ backgroundColor: lightSquare }}
+          />
         </div>
-      </div>
-      <div className="card max-h-[520px] overflow-y-auto">
-        <div className="text-xs uppercase text-gray-400">Moves</div>
-        <div className="mt-2 grid grid-cols-2 gap-x-3 text-sm text-gray-200">
-          {moves.map((m, i) => (
-            <button key={i} onClick={() => setIdx(i + 1)} className={`text-left ${i + 1 === idx ? "text-accent" : ""}`}>
-              {i % 2 === 0 ? `${Math.floor(i / 2) + 1}.` : ""} {m}
-            </button>
-          ))}
+
+        <div className="mt-4 flex items-center justify-center gap-2">
+          <button className={iconButton} onClick={() => goTo(0)} disabled={ply === 0} aria-label="Go to first position"><ChevronsLeft size={16} /></button>
+          <button className={iconButton} onClick={() => goTo(ply - 1)} disabled={ply === 0} aria-label="Previous move"><ChevronLeft size={16} /></button>
+          <button className={iconButton} onClick={() => goTo(ply + 1)} disabled={ply === parsed.moves.length} aria-label="Next move"><ChevronRight size={16} /></button>
+          <button className={iconButton} onClick={() => goTo(parsed.moves.length)} disabled={ply === parsed.moves.length} aria-label="Go to final position"><ChevronsRight size={16} /></button>
         </div>
-      </div>
+
+        <div className="mt-5 rounded-md border border-slate-200 bg-slate-50 p-4">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="text-sm font-semibold text-slate-700">Moves</div>
+            <div className="flex items-center gap-2 text-sm text-slate-500">
+              <button className={iconButton} onClick={() => setMovePage((page) => Math.max(0, page - 1))} disabled={movePage === 0} aria-label="Previous moves page"><ChevronLeft size={16} /></button>
+              <span className="min-w-16 text-center">{movePage + 1} / {totalPages}</span>
+              <button className={iconButton} onClick={() => setMovePage((page) => Math.min(totalPages - 1, page + 1))} disabled={movePage >= totalPages - 1} aria-label="Next moves page"><ChevronRight size={16} /></button>
+            </div>
+          </div>
+
+          <div className="grid gap-y-1 text-sm">
+            {visibleRows.length ? visibleRows.map((row) => (
+              <div key={row.number} className="grid grid-cols-[34px_1fr_1fr] items-center gap-2">
+                <span className="text-slate-400">{row.number}.</span>
+                <MoveButton label={row.white?.san} active={ply === row.whitePly} onClick={() => row.whitePly && goTo(row.whitePly)} />
+                <MoveButton label={row.black?.san} active={ply === row.blackPly} onClick={() => row.blackPly && goTo(row.blackPly)} />
+              </div>
+            )) : (
+              <div className="py-6 text-center text-sm text-slate-500">No moves in this PGN.</div>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <aside className="rounded-lg border border-slate-200 bg-white p-5 text-slate-950 shadow-sm">
+        <div className="mb-4 text-sm font-semibold text-slate-700">Move List</div>
+        <div className="max-h-[520px] overflow-y-auto pr-1">
+          <div className="grid gap-y-1 text-sm">
+            {moveRows.map((row) => (
+              <div key={row.number} className="grid grid-cols-[34px_1fr_1fr] items-center gap-2">
+                <span className="text-slate-400">{row.number}.</span>
+                <MoveButton label={row.white?.san} active={ply === row.whitePly} onClick={() => row.whitePly && goTo(row.whitePly)} />
+                <MoveButton label={row.black?.san} active={ply === row.blackPly} onClick={() => row.blackPly && goTo(row.blackPly)} />
+              </div>
+            ))}
+          </div>
+        </div>
+      </aside>
     </div>
+  );
+}
+
+function MoveButton({ label, active, onClick }: { label?: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      className={[
+        "min-h-8 rounded px-2 text-left font-medium transition",
+        label ? "hover:bg-brand-50" : "cursor-default",
+        active ? "bg-brand text-white hover:bg-brand" : "text-slate-700",
+      ].join(" ")}
+      onClick={onClick}
+      disabled={!label}
+    >
+      {label || ""}
+    </button>
   );
 }

@@ -96,6 +96,19 @@ export default function PgnLibraryPage() {
     });
   }, [games, currentFolder, query]);
 
+  const visibleFolders = useMemo(() => {
+    const byName = new Map<string, FolderDoc>();
+    defaultFolders.forEach((folder) => byName.set(folder.name, folder));
+    folders.forEach((folder) => byName.set(folder.name, folder));
+    games.forEach((game) => {
+      if (game.folder && !byName.has(game.folder)) {
+        byName.set(game.folder, { id: game.folder.toLowerCase().replace(/[^a-z0-9]+/g, "-"), name: game.folder, personal: true });
+      }
+    });
+    const q = query.trim().toLowerCase();
+    return Array.from(byName.values()).filter((folder) => !q || folder.name.toLowerCase().includes(q));
+  }, [folders, games, query]);
+
   function addFolder(name: string, personal: boolean) {
     const folder = { id: `${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}`, name, personal };
     setFolders((current) => [...current, folder]);
@@ -120,7 +133,7 @@ export default function PgnLibraryPage() {
   }
 
   return (
-    <div className="space-y-6 bg-white text-slate-950">
+    <div className="-m-6 min-h-screen space-y-6 bg-slate-50 p-6 text-slate-950">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="font-display text-3xl">PGN Library</h1>
@@ -183,7 +196,7 @@ export default function PgnLibraryPage() {
         {currentFolder ? (
           visibleGames.length ? <GameGrid games={visibleGames} /> : <EmptyFolder />
         ) : (
-          <FolderGrid folders={folders.filter((folder) => !query || folder.name.toLowerCase().includes(query.toLowerCase()))} onOpen={setCurrentFolder} />
+          <FolderGrid folders={visibleFolders} onOpen={setCurrentFolder} />
         )}
 
         {!currentFolder && (

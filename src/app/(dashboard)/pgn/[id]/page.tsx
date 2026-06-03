@@ -10,15 +10,18 @@ export default async function PgnDetail({ params }: { params: { id: string } }) 
   const session = await auth();
   if (!session) notFound();
   await dbConnect();
-  const g: any = await PGN.findOne({ _id: params.id, uploadedBy: (session.user as any).id }).lean();
-  if (!g) notFound();
+  const game: any = await PGN.findOne({ _id: params.id, uploadedBy: (session.user as any).id }).lean();
+  if (!game) notFound();
+
   return (
-    <div className="space-y-4">
+    <div className="-m-6 min-h-screen space-y-6 bg-slate-50 p-6 text-slate-950">
       <div>
-        <h1 className="font-display text-3xl text-accent">{g.title}</h1>
-        <div className="text-sm text-gray-400">{g.white || "?"} vs {g.black || "?"} • {g.result || "*"} {g.event && `• ${g.event}`}</div>
+        <h1 className="font-display text-3xl">{game.title}</h1>
+        <div className="mt-1 text-sm text-slate-500">
+          {game.white || "?"} vs {game.black || "?"} - {game.result || "*"} {game.event && `- ${game.event}`}
+        </div>
       </div>
-      <PgnViewer pgn={g.pgn} />
+      <PgnViewer pgn={game.pgn} />
     </div>
   );
 }

@@ -11,6 +11,18 @@ function extractHeader(pgn: string, key: string): string | undefined {
   return m?.[1];
 }
 
+function splitPgnGames(pgn: string) {
+  const normalized = pgn.replace(/\r\n/g, "\n").trim();
+  if (!normalized) return [];
+
+  const starts = Array.from(normalized.matchAll(/(^|\n)\s*(?=\[Event\s+")/g)).map((match) => match.index + match[1].length);
+  if (starts.length <= 1) return [normalized];
+
+  return starts
+    .map((start, index) => normalized.slice(start, starts[index + 1]).trim())
+    .filter(Boolean);
+}
+
 function isValidPgnOrFenSetup(pgn: string) {
   try {
     new Chess().loadPgn(pgn);
@@ -45,20 +57,28 @@ export async function POST(req: Request) {
   await dbConnect();
   const { pgn, title, visibility = "private", classroom, folder } = await req.json();
   if (!pgn) return NextResponse.json({ error: "pgn required" }, { status: 400 });
-  if (!isValidPgnOrFenSetup(pgn)) return NextResponse.json({ error: "Invalid PGN" }, { status: 400 });
-  const doc = await PGN.create({
-    title: title || extractHeader(pgn, "Event") || "Untitled game",
-    white: extractHeader(pgn, "White"),
-    black: extractHeader(pgn, "Black"),
-    event: extractHeader(pgn, "Event"),
-    result: extractHeader(pgn, "Result"),
-    eco: extractHeader(pgn, "ECO"),
-    date: extractHeader(pgn, "Date"),
-    pgn,
-    folder,
-    visibility: visibility === "classroom" ? "classroom" : "private",
-    classroom,
-    uploadedBy: (session.user as any).id,
-  });
-  return NextResponse.json(doc);
+  const games = splitPgnGames(pgn);
+  if (!games.length || games.some((game) => !isValidPgnOrFenSetup(game))) {
+    return NextResponse.json({ error: "Invalid PGN" }, { status: 400 });
+  }
+
+  const docs = await PGN.insertMany(games.map((game, index) => {
+    const event = extractHeader(game, "Event");
+    return {
+      title: games.length > 1 ? event || `${title || "PGN Game"} ${index + 1}` : title || event || "Untitled game",
+      white: extractHeader(game, "White"),
+      black: extractHeader(game, "Black"),
+      event,
+      result: extractHeader(game, "Result"),
+      eco: extractHeader(game, "ECO"),
+      date: extractHeader(game, "Date"),
+      pgn: game,
+      folder,
+      visibility: visibility === "classroom" ? "classroom" : "private",
+      classroom,
+      uploadedBy: (session.user as any).id,
+    };
+  }));
+
+  return NextResponse.json(games.length === 1 ? docs[0] : docs);
 }

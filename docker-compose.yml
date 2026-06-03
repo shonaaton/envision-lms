@@ -1,28 +1,44 @@
-# Docker Compose for Envision Chess Academy
-# Designed to live alongside n8n on the same Hostinger VPS.
-# If you already run a `n8n` stack, add this service into your existing
-# docker-compose.yml under the same network as n8n + Caddy/Traefik, or
-# run this file standalone behind a reverse proxy.
+# Docker Compose for Envision Chess Academy LMS.
+# Designed to plug into the existing Hostinger root project (n8n + Traefik).
+# It joins the external network `root_default` so the existing Traefik
+# (root-traefik-1) can route to it.
+#
+# Deploy from the VPS terminal:
+#   cd /opt/envision-lms
+#   docker compose up -d --build
+#
+# Requires `.env` with at least: LMS_HOST, MONGODB_URI, AUTH_SECRET,
+# RAZORPAY_* keys, NEXT_PUBLIC_RAZORPAY_KEY_ID.
 
 services:
   envision-lms:
     container_name: envision-lms
     build: .
-    restart: unless-stopped
+    restart: always
     env_file:
       - .env
-    ports:
-      - "3000:3000"
+    expose:
+      - "3000"
     networks:
-      - web
-    # Optional: Traefik labels (matches typical n8n + Traefik setup)
+      - root_default
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.envision.rule=Host(`platform.envisionchessacademy.com`)"
-      - "traefik.http.routers.envision.entrypoints=websecure"
-      - "traefik.http.routers.envision.tls.certresolver=letsencrypt"
+      - "traefik.docker.network=root_default"
+      - "traefik.http.routers.envision.rule=Host(`${LMS_HOST}`)"
+      - "traefik.http.routers.envision.entrypoints=web,websecure"
+      - "traefik.http.routers.envision.tls=true"
+      - "traefik.http.routers.envision.tls.certresolver=mytlschallenge"
       - "traefik.http.services.envision.loadbalancer.server.port=3000"
+      - "traefik.http.middlewares.envision.headers.SSLRedirect=true"
+      - "traefik.http.middlewares.envision.headers.STSSeconds=315360000"
+      - "traefik.http.middlewares.envision.headers.browserXSSFilter=true"
+      - "traefik.http.middlewares.envision.headers.contentTypeNosniff=true"
+      - "traefik.http.middlewares.envision.headers.forceSTSHeader=true"
+      - "traefik.http.middlewares.envision.headers.SSLHost=${LMS_HOST}"
+      - "traefik.http.middlewares.envision.headers.STSIncludeSubdomains=true"
+      - "traefik.http.middlewares.envision.headers.STSPreload=true"
+      - "traefik.http.routers.envision.middlewares=envision@docker"
 
 networks:
-  web:
-    external: true   # assumes you already have an external `web` network (used by n8n/Traefik)
+  root_default:
+    external: true

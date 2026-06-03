@@ -13,6 +13,7 @@ import {
   Info,
   Maximize2,
   Moon,
+  Plus,
   RotateCcw,
   Save,
   Settings,
@@ -24,12 +25,13 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Chess } from "chess.js";
+import { toast } from "sonner";
 
 const Chessboard = dynamic(() => import("react-chessboard").then((m) => m.Chessboard), { ssr: false });
 
 type SideTab = "moves" | "engine" | "pdf";
 type ThemeMode = "dark" | "light";
-type DialogName = "pgn" | "fen" | "setup" | "settings" | null;
+type DialogName = "pgn" | "fen" | "setup" | "settings" | "save" | null;
 type PieceCode = "p" | "n" | "b" | "r" | "q" | "k" | "P" | "N" | "B" | "R" | "Q" | "K";
 type SetupTab = "general" | "gamified";
 
@@ -37,10 +39,25 @@ type MoveRow = {
   number: number;
   white: string;
   black: string;
+  whitePly: number;
+  blackPly?: number;
+};
+
+type EngineLine = {
+  multipv: number;
+  eval: string;
+  variation: string;
+};
+
+type PgnLibraryItem = {
+  _id: string;
+  title: string;
+  folder?: string;
 };
 
 const files = ["a", "b", "c", "d", "e", "f", "g", "h"];
 const ranks = ["8", "7", "6", "5", "4", "3", "2", "1"];
+const startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 const lightSquare = "#efd6a8";
 const darkSquare = "#bd8d62";
 const pieceSymbols: Record<PieceCode, string> = {
@@ -73,20 +90,24 @@ const sampleEngineLines = [
 
 export default function AnalysisBoard({ initialFen, withEngine = true }: { initialFen?: string; withEngine?: boolean }) {
   const gameRef = useRef(new Chess(initialFen || undefined));
+  const baseFenRef = useRef(initialFen || startFen);
   const workerRef = useRef<Worker | null>(null);
+  const analysisFenRef = useRef(initialFen || gameRef.current.fen());
   const boardWrapRef = useRef<HTMLDivElement | null>(null);
   const pdfInputRef = useRef<HTMLInputElement | null>(null);
   const [position, setPosition] = useState(initialFen || gameRef.current.fen());
+  const [selectedPly, setSelectedPly] = useState(0);
   const [orientation, setOrientation] = useState<"white" | "black">("white");
-  const [tab, setTab] = useState<SideTab>("pdf");
-  const [theme, setTheme] = useState<ThemeMode>("dark");
+  const [tab, setTab] = useState<SideTab>("engine");
+  const [theme, setTheme] = useState<ThemeMode>("light");
   const [dialog, setDialog] = useState<DialogName>(null);
   const [boardWidth, setBoardWidth] = useState(520);
   const [boardScale, setBoardScale] = useState(100);
-  const [engineOn, setEngineOn] = useState(false);
+  const [engineOn, setEngineOn] = useState(true);
   const [engineRunning, setEngineRunning] = useState(false);
   const [bestMove, setBestMove] = useState("");
   const [evalCp, setEvalCp] = useState<number | null>(null);
+  const [engineLines, setEngineLines] = useState<EngineLine[]>([]);
   const [pdfName, setPdfName] = useState("");
 
   const isDark = theme === "dark";
@@ -99,9 +120,14 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
     const rows: MoveRow[] = [];
     verbose.forEach((move, index) => {
       const rowIndex = Math.floor(index / 2);
-      if (!rows[rowIndex]) rows[rowIndex] = { number: rowIndex + 1, white: "", black: "" };
-      if (move.color === "w") rows[rowIndex].white = move.san;
-      else rows[rowIndex].black = move.san;
+      if (!rows[rowIndex]) rows[rowIndex] = { number: rowIndex + 1, white: "", black: "", whitePly: rowIndex * 2 + 1 };
+      if (move.color === "w") {
+        rows[rowIndex].white = move.san;
+        rows[rowIndex].whitePly = index + 1;
+      } else {
+        rows[rowIndex].black = move.san;
+        rows[rowIndex].blackPly = index + 1;
+      }
     });
     return rows;
   }, [position]);
@@ -123,10 +149,21 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
       const worker = new Worker("/stockfish/stockfish.js");
       workerRef.current = worker;
       worker.postMessage("uci");
+      worker.postMessage("setoption name MultiPV value 3");
       worker.onmessage = (event) => {
         const line = typeof event.data === "string" ? event.data : "";
         const best = line.match(/^bestmove\s(\S+)/);
+        const info = line.match(/\bmultipv\s+(\d+).*?\bscore\s+(cp|mate)\s+(-?\d+).*?\bpv\s+(.+)$/);
         const cp = line.match(/score cp (-?\d+)/);
+        if (info) {
+          const multipv = Number(info[1]);
+          const evalText = info[2] === "mate" ? `M${info[3]}` : formatEval(Number(info[3]));
+          const variation = formatPv(analysisFenRef.current, info[4]);
+          setEngineLines((current) => {
+            const next = current.filter((item) => item.multipv !== multipv);
+            return [...next, { multipv, eval: evalText, variation }].sort((a, b) => a.multipv - b.multipv).slice(0, 3);
+          });
+        }
         if (best) {
           setBestMove(best[1]);
           setEngineRunning(false);
@@ -139,26 +176,39 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
     return () => workerRef.current?.terminate();
   }, [withEngine]);
 
+  useEffect(() => {
+    if (!engineOn) return;
+    const timer = window.setTimeout(() => analyze(true), 120);
+    return () => window.clearTimeout(timer);
+  }, [position, engineOn]);
+
   function refreshBoard() {
     setPosition(gameRef.current.fen());
   }
 
-  function analyze() {
+  function analyze(force = false) {
     const worker = workerRef.current;
-    if (!worker || !engineOn) return;
+    if (!worker || (!engineOn && !force)) return;
+    analysisFenRef.current = position;
     setEngineRunning(true);
     setBestMove("");
+    setEngineLines([]);
     worker.postMessage("ucinewgame");
-    worker.postMessage(`position fen ${gameRef.current.fen()}`);
+    worker.postMessage(`position fen ${position}`);
     worker.postMessage("go depth 16");
   }
 
   function onDrop(source: string, target: string) {
     try {
+      if (selectedPly < gameRef.current.history().length) {
+        gameRef.current = replayGame(selectedPly);
+      }
       const move = gameRef.current.move({ from: source, to: target, promotion: "q" });
       if (!move) return false;
+      setSelectedPly(gameRef.current.history().length);
       setBestMove("");
       setEvalCp(null);
+      setTab("engine");
       refreshBoard();
       return true;
     } catch {
@@ -168,17 +218,23 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
 
   function reset() {
     gameRef.current = new Chess(initialFen || undefined);
+    baseFenRef.current = initialFen || startFen;
     setBestMove("");
     setEvalCp(null);
-    setPosition(gameRef.current.fen());
+    setEngineLines([]);
+    setSelectedPly(0);
+    refreshBoard();
   }
 
   function loadFen(fen: string) {
     try {
       gameRef.current = new Chess(fen);
+      baseFenRef.current = fen;
       setBestMove("");
       setEvalCp(null);
-      setPosition(gameRef.current.fen());
+      setEngineLines([]);
+      setSelectedPly(0);
+      refreshBoard();
       setDialog(null);
       return true;
     } catch {
@@ -191,13 +247,55 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
       const next = new Chess();
       (next as unknown as { loadPgn: (value: string) => void }).loadPgn(pgn);
       gameRef.current = next;
+      baseFenRef.current = startFen;
+      setSelectedPly(next.history().length);
       setBestMove("");
       setEvalCp(null);
-      setPosition(next.fen());
+      setEngineLines([]);
+      refreshBoard();
       setDialog(null);
       return true;
     } catch {
       return false;
+    }
+  }
+
+  function replayGame(ply: number) {
+    const history = gameRef.current.history({ verbose: true }) as Array<{ from: string; to: string; promotion?: string }>;
+    const next = new Chess(baseFenRef.current);
+    history.slice(0, ply).forEach((move) => {
+      next.move({ from: move.from, to: move.to, promotion: move.promotion || "q" });
+    });
+    return next;
+  }
+
+  function goToPly(ply: number) {
+    const next = replayGame(ply);
+    setSelectedPly(ply);
+    setPosition(next.fen());
+  }
+
+  function goPrevious() {
+    goToPly(Math.max(0, selectedPly - 1));
+  }
+
+  function goNext() {
+    goToPly(Math.min(gameRef.current.history().length, selectedPly + 1));
+  }
+
+  async function saveCurrentPgn(title: string, folder?: string) {
+    const pgn = gameRef.current.pgn() || `[Event "${title}"]\n[FEN "${gameRef.current.fen()}"]\n[SetUp "1"]\n\n*`;
+    try {
+      const response = await fetch("/api/pgn", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, pgn, folder, visibility: "private" }),
+      });
+      if (!response.ok) throw new Error("Could not save this PGN.");
+      toast.success("Saved to PGN library");
+      setDialog(null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not save this PGN.");
     }
   }
 
@@ -260,14 +358,25 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
             <button className={controlButton(isDark)} onClick={() => setDialog("pgn")}><FileText size={15} /> PGN</button>
             <button className={controlButton(isDark)} onClick={() => setDialog("setup")}><Grid3X3 size={15} /> Setup board</button>
             <button className={controlButton(isDark)} onClick={() => setDialog("settings")}><Settings size={15} /> Settings</button>
-            <button className={controlButton(isDark)} onClick={() => { setEngineOn(true); setTab("engine"); window.setTimeout(analyze, 0); }}><Zap size={15} /> Start Engine</button>
-            <button className="btn-primary gap-2"><Save size={15} /> Save</button>
+            <button
+              className={engineOn ? "btn-primary gap-2" : controlButton(isDark)}
+              onClick={() => {
+                const next = !engineOn;
+                setEngineOn(next);
+                setTab("engine");
+                if (next) window.setTimeout(() => analyze(true), 0);
+                else setEngineRunning(false);
+              }}
+            >
+              <Zap size={15} /> {engineOn ? "Stop Engine" : "Start Engine"}
+            </button>
+            <button className="btn-primary gap-2" onClick={() => setDialog("save")}><Save size={15} /> Save</button>
           </div>
         </section>
 
         <aside className={`rounded-lg border p-6 ${panelClass}`}>
           <TabBar active={tab} isDark={isDark} onChange={setTab} />
-          {tab === "moves" && <MovesPanel rows={moveRows} isDark={isDark} />}
+          {tab === "moves" && <MovesPanel rows={moveRows} isDark={isDark} selectedPly={selectedPly} onSelect={goToPly} onPrevious={goPrevious} onNext={goNext} canPrevious={selectedPly > 0} canNext={selectedPly < gameRef.current.history().length} />}
           {tab === "engine" && (
             <EnginePanel
               isDark={isDark}
@@ -275,10 +384,11 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
               running={engineRunning}
               bestMove={bestMove}
               evalCp={evalCp}
+              lines={engineLines}
               onToggle={() => {
                 const next = !engineOn;
                 setEngineOn(next);
-                if (next) window.setTimeout(analyze, 0);
+                if (next) window.setTimeout(() => analyze(true), 0);
                 else setEngineRunning(false);
               }}
             />
@@ -298,8 +408,27 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
       {dialog === "fen" && <FenDialog isDark={isDark} currentFen={gameRef.current.fen()} onClose={() => setDialog(null)} onLoad={loadFen} />}
       {dialog === "setup" && <SetupDialog isDark={isDark} onClose={() => setDialog(null)} onLoad={loadFen} />}
       {dialog === "settings" && <SettingsDialog isDark={isDark} scale={boardScale} onScale={setBoardScale} onClose={() => setDialog(null)} />}
+      {dialog === "save" && <SaveDialog isDark={isDark} onClose={() => setDialog(null)} onSave={saveCurrentPgn} />}
     </div>
   );
+}
+
+function formatEval(cp: number) {
+  return `${cp >= 0 ? "+" : ""}${(cp / 100).toFixed(2)}`;
+}
+
+function formatPv(fen: string, pv: string) {
+  const game = new Chess(fen);
+  const san: string[] = [];
+  pv.split(/\s+/).slice(0, 8).forEach((uci) => {
+    try {
+      const move = game.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] || "q" });
+      if (move) san.push(move.san);
+    } catch {
+      // Ignore unreadable engine continuation moves.
+    }
+  });
+  return san.join(" ") || pv;
 }
 
 function controlButton(isDark: boolean) {
@@ -328,20 +457,38 @@ function TabBar({ active, isDark, onChange }: { active: SideTab; isDark: boolean
   );
 }
 
-function MovesPanel({ rows, isDark }: { rows: MoveRow[]; isDark: boolean }) {
+function MovesPanel({
+  rows,
+  isDark,
+  selectedPly,
+  onSelect,
+  onPrevious,
+  onNext,
+  canPrevious,
+  canNext,
+}: {
+  rows: MoveRow[];
+  isDark: boolean;
+  selectedPly: number;
+  onSelect: (ply: number) => void;
+  onPrevious: () => void;
+  onNext: () => void;
+  canPrevious: boolean;
+  canNext: boolean;
+}) {
   return (
     <div className={`rounded-lg ${isDark ? "bg-transparent" : "bg-slate-50"}`}>
-      <div className={`border-b px-4 py-4 text-lg font-semibold ${isDark ? "border-ink-600 text-white" : "border-slate-100 text-slate-950"}`}>Move History</div>
+      <div className={`flex items-center justify-between border-b px-4 py-4 text-lg font-semibold ${isDark ? "border-ink-600 text-white" : "border-slate-100 text-slate-950"}`}>
+        Move History
+        <Copy size={16} className={isDark ? "text-blue-200/70" : "text-slate-500"} />
+      </div>
       {rows.length ? (
         <div className="max-h-[360px] overflow-y-auto p-4 text-sm">
-          <div className="grid grid-cols-[54px_1fr_1fr] pb-3 font-semibold">
-            <span>#</span><span>White</span><span>Black</span>
-          </div>
           {rows.map((row) => (
-            <div key={row.number} className={`grid grid-cols-[54px_1fr_1fr] border-t py-3 ${isDark ? "border-ink-600" : "border-slate-200"}`}>
-              <span className={isDark ? "text-blue-200/70" : "text-slate-500"}>{row.number}</span>
-              <span>{row.white}</span>
-              <span>{row.black}</span>
+            <div key={row.number} className="grid grid-cols-[28px_1fr_1fr] gap-2 py-1">
+              <span className={isDark ? "pt-2 text-blue-200/70" : "pt-2 text-slate-500"}>{row.number}.</span>
+              <MoveButton label={row.white} active={selectedPly === row.whitePly} isDark={isDark} onClick={() => onSelect(row.whitePly)} />
+              <MoveButton label={row.black} active={selectedPly === row.blackPly} isDark={isDark} onClick={() => row.blackPly && onSelect(row.blackPly)} />
             </div>
           ))}
         </div>
@@ -349,13 +496,28 @@ function MovesPanel({ rows, isDark }: { rows: MoveRow[]; isDark: boolean }) {
         <div className={`flex min-h-[115px] items-center justify-center text-sm ${isDark ? "text-blue-200/70" : "text-slate-500"}`}>No moves recorded yet</div>
       )}
       <div className="flex justify-center gap-2 pb-4">
-        <button className={`rounded-md px-4 py-3 ${isDark ? "bg-ink-700 text-gray-400" : "bg-slate-100 text-slate-300"}`}><ChevronLeft size={18} /></button>
-        <button className={`rounded-md px-4 py-3 ${isDark ? "bg-ink-700 text-gray-400" : "bg-slate-100 text-slate-300"}`}><ChevronRight size={18} /></button>
+        <button className={`rounded-md px-4 py-3 ${canPrevious ? isDark ? "bg-ink-700 text-white" : "bg-slate-100 text-slate-700" : "bg-slate-100 text-slate-300"}`} onClick={onPrevious} disabled={!canPrevious}><ChevronLeft size={18} /></button>
+        <button className={`rounded-md px-4 py-3 ${canNext ? isDark ? "bg-ink-700 text-white" : "bg-slate-100 text-slate-700" : "bg-slate-100 text-slate-300"}`} onClick={onNext} disabled={!canNext}><ChevronRight size={18} /></button>
       </div>
       <div className={`mx-5 border-t py-4 text-sm ${isDark ? "border-ink-600 text-blue-200/70" : "border-slate-100 text-slate-500"}`}>
         <button className="inline-flex items-center gap-2"><BookOpen size={15} /> Add game description</button>
       </div>
     </div>
+  );
+}
+
+function MoveButton({ label, active, isDark, onClick }: { label?: string; active: boolean; isDark: boolean; onClick: () => void }) {
+  if (!label) return <span />;
+  return (
+    <button
+      className={[
+        "rounded px-3 py-2 text-left font-medium transition",
+        active ? "bg-black text-white" : isDark ? "bg-ink-700 text-blue-100 hover:bg-ink-600" : "bg-blue-100 text-blue-700 hover:bg-blue-200",
+      ].join(" ")}
+      onClick={onClick}
+    >
+      {label}
+    </button>
   );
 }
 
@@ -365,6 +527,7 @@ function EnginePanel({
   running,
   bestMove,
   evalCp,
+  lines,
   onToggle,
 }: {
   isDark: boolean;
@@ -372,11 +535,14 @@ function EnginePanel({
   running: boolean;
   bestMove: string;
   evalCp: number | null;
+  lines: EngineLine[];
   onToggle: () => void;
 }) {
-  const lines = bestMove
-    ? [{ eval: evalCp !== null ? `${evalCp >= 0 ? "+" : ""}${(evalCp / 100).toFixed(2)}` : "0.00", moves: bestMove }, ...sampleEngineLines.slice(1)]
-    : sampleEngineLines;
+  const visibleLines = lines.length
+    ? lines.map((line) => ({ eval: line.eval, moves: line.variation }))
+    : bestMove
+      ? [{ eval: evalCp !== null ? formatEval(evalCp) : "0.00", moves: bestMove }, ...sampleEngineLines.slice(1)]
+      : sampleEngineLines;
 
   return (
     <div>
@@ -395,7 +561,7 @@ function EnginePanel({
         <span className="rounded-full bg-brand px-3 py-1 text-xs font-semibold text-white">{running ? "Running" : engineOn ? "Ready" : "Off"}</span>
       </div>
       <div className="space-y-4">
-        {lines.map((line, index) => (
+        {visibleLines.map((line, index) => (
           <div key={index} className={`rounded-lg border p-4 shadow-sm ${isDark ? "border-ink-600 bg-black/20" : "border-slate-100 bg-white"}`}>
             <div className="mb-3 font-semibold">{line.eval}</div>
             <div className={isDark ? "text-blue-200/80" : "text-blue-900/70"}>{line.moves}</div>
@@ -403,6 +569,72 @@ function EnginePanel({
         ))}
       </div>
     </div>
+  );
+}
+
+function SaveDialog({ isDark, onClose, onSave }: { isDark: boolean; onClose: () => void; onSave: (title: string, folder?: string) => Promise<void> }) {
+  const [items, setItems] = useState<PgnLibraryItem[]>([]);
+  const [selectedFolder, setSelectedFolder] = useState("");
+  const [newFolder, setNewFolder] = useState("");
+  const [title, setTitle] = useState("Analysis Game");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/pgn")
+      .then((response) => response.ok ? response.json() : [])
+      .then((data) => setItems(Array.isArray(data) ? data : []))
+      .catch(() => setItems([]));
+  }, []);
+
+  const folders = Array.from(new Set(["Beginners Level", ...items.map((item) => item.folder).filter(Boolean) as string[]]));
+  const folder = newFolder.trim() || selectedFolder || undefined;
+
+  return (
+    <ModalFrame isDark={isDark} title="Chess Games Library" onClose={onClose} width="max-w-[640px]">
+      <div className={`mb-5 flex flex-wrap items-center justify-between gap-3 ${isDark ? "text-blue-100" : "text-slate-700"}`}>
+        <div className="inline-flex items-center gap-2"><BookOpen size={16} /> Games</div>
+        <div className="flex gap-2">
+          <input className="input w-[210px]" placeholder="Search games, folders, ..." />
+          <button className={controlButton(isDark)}><Plus size={15} /> New Folder</button>
+        </div>
+      </div>
+      <label className="mb-2 block text-sm font-semibold">PGN Title</label>
+      <input className="input mb-4" value={title} onChange={(event) => setTitle(event.target.value)} />
+      <div className="grid gap-3 sm:grid-cols-2">
+        {folders.map((folderName) => (
+          <button
+            key={folderName}
+            className={[
+              "flex h-20 items-center gap-4 rounded-lg border px-5 text-left",
+              selectedFolder === folderName ? "border-brand bg-brand/10" : isDark ? "border-ink-600 bg-black/20" : "border-slate-200 bg-white",
+            ].join(" ")}
+            onClick={() => {
+              setSelectedFolder(folderName);
+              setNewFolder("");
+            }}
+          >
+            <BookOpen size={24} className={isDark ? "text-blue-200" : "text-slate-500"} />
+            {folderName}
+          </button>
+        ))}
+      </div>
+      <label className="mb-2 mt-5 block text-sm font-semibold">Or create folder</label>
+      <input className="input" placeholder="New folder name" value={newFolder} onChange={(event) => setNewFolder(event.target.value)} />
+      <p className={`mt-4 text-sm ${isDark ? "text-blue-200/70" : "text-slate-500"}`}>Select the folder or PGN where you want to save the game</p>
+      <div className="mt-6 flex justify-end gap-3">
+        <button className={controlButton(isDark)} onClick={onClose}>Cancel</button>
+        <button
+          className="btn-primary"
+          disabled={saving || !title.trim()}
+          onClick={() => {
+            setSaving(true);
+            onSave(title.trim(), folder).finally(() => setSaving(false));
+          }}
+        >
+          {saving ? "Saving..." : "Save"}
+        </button>
+      </div>
+    </ModalFrame>
   );
 }
 

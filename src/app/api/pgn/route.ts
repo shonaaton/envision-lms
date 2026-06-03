@@ -11,6 +11,22 @@ function extractHeader(pgn: string, key: string): string | undefined {
   return m?.[1];
 }
 
+function isValidPgnOrFenSetup(pgn: string) {
+  try {
+    new Chess().loadPgn(pgn);
+    return true;
+  } catch {
+    const fen = extractHeader(pgn, "FEN");
+    if (!fen) return false;
+    try {
+      new Chess(fen);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
+
 export async function GET(req: Request) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -29,8 +45,7 @@ export async function POST(req: Request) {
   await dbConnect();
   const { pgn, title, visibility = "private", classroom, folder } = await req.json();
   if (!pgn) return NextResponse.json({ error: "pgn required" }, { status: 400 });
-  // Validate
-  try { new Chess().loadPgn(pgn); } catch { return NextResponse.json({ error: "Invalid PGN" }, { status: 400 }); }
+  if (!isValidPgnOrFenSetup(pgn)) return NextResponse.json({ error: "Invalid PGN" }, { status: 400 });
   const doc = await PGN.create({
     title: title || extractHeader(pgn, "Event") || "Untitled game",
     white: extractHeader(pgn, "White"),

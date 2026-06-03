@@ -34,6 +34,8 @@ type ThemeMode = "dark" | "light";
 type DialogName = "pgn" | "fen" | "setup" | "settings" | "save" | null;
 type PieceCode = "p" | "n" | "b" | "r" | "q" | "k" | "P" | "N" | "B" | "R" | "Q" | "K";
 type SetupTab = "general" | "gamified";
+type PieceTheme = "classic" | "alpha" | "neo";
+type BoardTheme = "walnut" | "green" | "blue" | "purple" | "slate";
 
 type MoveRow = {
   number: number;
@@ -58,8 +60,13 @@ type PgnLibraryItem = {
 const files = ["a", "b", "c", "d", "e", "f", "g", "h"];
 const ranks = ["8", "7", "6", "5", "4", "3", "2", "1"];
 const startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-const lightSquare = "#efd6a8";
-const darkSquare = "#bd8d62";
+const boardThemes: Record<BoardTheme, { name: string; light: string; dark: string }> = {
+  walnut: { name: "Walnut", light: "#efd6a8", dark: "#bd8d62" },
+  green: { name: "Tournament", light: "#eeeed2", dark: "#769656" },
+  blue: { name: "Ocean", light: "#d9e9f6", dark: "#5b8db8" },
+  purple: { name: "Academy", light: "#f0dcf6", dark: "#7b3f98" },
+  slate: { name: "Slate", light: "#d8dee9", dark: "#64748b" },
+};
 const pieceSymbols: Record<PieceCode, string> = {
   p: "♟",
   n: "♞",
@@ -88,6 +95,24 @@ const sampleEngineLines = [
   { eval: "+0.27", moves: "d4 d5 c4 e6 Nf3 Nf6 g3 c5" },
 ];
 
+function pieceGlyph(piece: PieceCode) {
+  const glyphs: Record<PieceCode, string> = {
+    p: "\u265F",
+    n: "\u265E",
+    b: "\u265D",
+    r: "\u265C",
+    q: "\u265B",
+    k: "\u265A",
+    P: "\u2659",
+    N: "\u2658",
+    B: "\u2657",
+    R: "\u2656",
+    Q: "\u2655",
+    K: "\u2654",
+  };
+  return glyphs[piece];
+}
+
 export default function AnalysisBoard({ initialFen, withEngine = true }: { initialFen?: string; withEngine?: boolean }) {
   const gameRef = useRef(new Chess(initialFen || undefined));
   const baseFenRef = useRef(initialFen || startFen);
@@ -103,6 +128,8 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
   const [dialog, setDialog] = useState<DialogName>(null);
   const [boardWidth, setBoardWidth] = useState(520);
   const [boardScale, setBoardScale] = useState(100);
+  const [boardTheme, setBoardTheme] = useState<BoardTheme>("walnut");
+  const [pieceTheme, setPieceTheme] = useState<PieceTheme>("classic");
   const [engineOn, setEngineOn] = useState(true);
   const [engineRunning, setEngineRunning] = useState(false);
   const [bestMove, setBestMove] = useState("");
@@ -113,7 +140,9 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
   const isDark = theme === "dark";
   const panelClass = isDark ? "border-ink-600 bg-ink-800 text-white" : "border-slate-200 bg-white text-slate-950";
   const mutedText = isDark ? "text-blue-200/75" : "text-slate-500";
+  const squareTheme = boardThemes[boardTheme];
   const boardSize = Math.round(boardWidth * (boardScale / 100));
+  const customPieces = useMemo(() => createCustomPieces(pieceTheme), [pieceTheme]);
 
   const moveRows = useMemo<MoveRow[]>(() => {
     const verbose = gameRef.current.history({ verbose: true }) as Array<{ san: string; color: "w" | "b" }>;

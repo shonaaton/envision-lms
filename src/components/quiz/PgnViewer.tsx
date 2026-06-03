@@ -147,17 +147,18 @@ export default function PgnViewer({ pgn }: { pgn: string }) {
           <button className={iconButton} onClick={() => goTo(ply + 1)} disabled={ply === parsed.moves.length} aria-label="Next move"><ChevronRight size={16} /></button>
           <button className={iconButton} onClick={() => goTo(parsed.moves.length)} disabled={ply === parsed.moves.length} aria-label="Go to final position"><ChevronsRight size={16} /></button>
         </div>
+      </section>
 
-        <div className="mt-5 rounded-md border border-slate-200 bg-slate-50 p-4">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <div className="text-sm font-semibold text-slate-700">Moves</div>
-            <div className="flex items-center gap-2 text-sm text-slate-500">
-              <button className={iconButton} onClick={() => setMovePage((page) => Math.max(0, page - 1))} disabled={movePage === 0} aria-label="Previous moves page"><ChevronLeft size={16} /></button>
-              <span className="min-w-16 text-center">{movePage + 1} / {totalPages}</span>
-              <button className={iconButton} onClick={() => setMovePage((page) => Math.min(totalPages - 1, page + 1))} disabled={movePage >= totalPages - 1} aria-label="Next moves page"><ChevronRight size={16} /></button>
-            </div>
+      <aside className="rounded-lg border border-slate-200 bg-white p-5 text-slate-950 shadow-sm">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="text-sm font-semibold text-slate-700">Move List</div>
+          <div className="flex items-center gap-2 text-sm text-slate-500">
+            <button className={iconButton} onClick={() => setMovePage((page) => Math.max(0, page - 1))} disabled={movePage === 0} aria-label="Previous moves page"><ChevronLeft size={16} /></button>
+            <span className="min-w-16 text-center">{movePage + 1} / {totalPages}</span>
+            <button className={iconButton} onClick={() => setMovePage((page) => Math.min(totalPages - 1, page + 1))} disabled={movePage >= totalPages - 1} aria-label="Next moves page"><ChevronRight size={16} /></button>
           </div>
-
+        </div>
+        <div className="max-h-[520px] overflow-y-auto pr-1">
           <div className="grid gap-y-1 text-sm">
             {visibleRows.length ? visibleRows.map((row) => (
               <div key={row.number} className="grid grid-cols-[34px_1fr_1fr] items-center gap-2">
@@ -168,21 +169,6 @@ export default function PgnViewer({ pgn }: { pgn: string }) {
             )) : (
               <div className="py-6 text-center text-sm text-slate-500">No moves in this PGN.</div>
             )}
-          </div>
-        </div>
-      </section>
-
-      <aside className="rounded-lg border border-slate-200 bg-white p-5 text-slate-950 shadow-sm">
-        <div className="mb-4 text-sm font-semibold text-slate-700">Move List</div>
-        <div className="max-h-[520px] overflow-y-auto pr-1">
-          <div className="grid gap-y-1 text-sm">
-            {moveRows.map((row) => (
-              <div key={row.number} className="grid grid-cols-[34px_1fr_1fr] items-center gap-2">
-                <span className="text-slate-400">{row.number}.</span>
-                <MoveButton label={row.white?.san} active={ply === row.whitePly} onClick={() => row.whitePly && goTo(row.whitePly)} />
-                <MoveButton label={row.black?.san} active={ply === row.blackPly} onClick={() => row.blackPly && goTo(row.blackPly)} />
-              </div>
-            ))}
           </div>
         </div>
       </aside>

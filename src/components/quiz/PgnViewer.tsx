@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { ChevronsLeft, ChevronsRight, ChevronLeft, ChevronRight } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Chess } from "chess.js";
 
@@ -27,6 +28,11 @@ type MoveRow = {
   whitePly?: number;
   blackPly?: number;
 };
+
+type FileNavItem = {
+  href: string;
+  title: string;
+} | null;
 
 function extractHeader(pgn: string, key: string) {
   const match = pgn.match(new RegExp(`\\[${key}\\s+"([^"]*)"\\]`));
@@ -80,7 +86,17 @@ function buildRows(moves: PgnMove[]) {
   return rows;
 }
 
-export default function PgnViewer({ pgn }: { pgn: string }) {
+export default function PgnViewer({
+  pgn,
+  backHref,
+  previousFile,
+  nextFile,
+}: {
+  pgn: string;
+  backHref: string;
+  previousFile: FileNavItem;
+  nextFile: FileNavItem;
+}) {
   const boardWrapRef = useRef<HTMLDivElement | null>(null);
   const parsed = useMemo(() => parsePgn(pgn), [pgn]);
   const moveRows = useMemo(() => buildRows(parsed.moves), [parsed.moves]);
@@ -97,8 +113,8 @@ export default function PgnViewer({ pgn }: { pgn: string }) {
   const position = useMemo(() => replayPosition(parsed.start, parsed.moves, ply), [parsed.start, parsed.moves, ply]);
 
   useEffect(() => {
-    setPly(parsed.moves.length);
-    setMovePage(Math.max(0, Math.ceil(parsed.moves.length / movesPerPage) - 1));
+    setPly(0);
+    setMovePage(0);
   }, [parsed.moves.length, pgn]);
 
   useEffect(() => {
@@ -115,10 +131,11 @@ export default function PgnViewer({ pgn }: { pgn: string }) {
   function goTo(nextPly: number) {
     const safePly = Math.max(0, Math.min(parsed.moves.length, nextPly));
     setPly(safePly);
-    if (safePly > 0) setMovePage(Math.floor((safePly - 1) / movesPerPage));
+    setMovePage(safePly > 0 ? Math.floor((safePly - 1) / movesPerPage) : 0);
   }
 
   const iconButton = "inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300";
+  const navButton = "inline-flex min-h-9 items-center justify-center rounded-md border px-3 text-sm font-medium transition";
 
   if (!parsed.valid) {
     return (
@@ -146,6 +163,33 @@ export default function PgnViewer({ pgn }: { pgn: string }) {
           <button className={iconButton} onClick={() => goTo(ply - 1)} disabled={ply === 0} aria-label="Previous move"><ChevronLeft size={16} /></button>
           <button className={iconButton} onClick={() => goTo(ply + 1)} disabled={ply === parsed.moves.length} aria-label="Next move"><ChevronRight size={16} /></button>
           <button className={iconButton} onClick={() => goTo(parsed.moves.length)} disabled={ply === parsed.moves.length} aria-label="Go to final position"><ChevronsRight size={16} /></button>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+          <Link href={backHref} className={`${navButton} border-slate-200 bg-white text-slate-700 hover:bg-slate-50`}>
+            Back to folder
+          </Link>
+          <Link
+            href={previousFile?.href || "#"}
+            className={[
+              navButton,
+              previousFile ? "border-slate-200 bg-white text-slate-700 hover:bg-slate-50" : "pointer-events-none border-slate-100 bg-slate-100 text-slate-300",
+            ].join(" ")}
+            aria-disabled={!previousFile}
+            title={previousFile?.title}
+          >
+            Previous file
+          </Link>
+          <Link
+            href={nextFile?.href || "#"}
+            className={[
+              navButton,
+              nextFile ? "border-brand bg-brand text-white hover:bg-brand-600" : "pointer-events-none border-slate-100 bg-slate-100 text-slate-300",
+            ].join(" ")}
+            aria-disabled={!nextFile}
+            title={nextFile?.title}
+          >
+            Next file
+          </Link>
         </div>
       </section>
 

@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Box,
   ChevronDown,
@@ -54,6 +55,8 @@ const darkSquare = "#bd8d62";
 const startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
 export default function PgnLibraryPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [games, setGames] = useState<PgnDoc[]>([]);
   const [folders, setFolders] = useState<FolderDoc[]>(defaultFolders);
   const [currentFolder, setCurrentFolder] = useState<FolderDoc | null>(null);
@@ -109,6 +112,26 @@ export default function PgnLibraryPage() {
     return Array.from(byName.values()).filter((folder) => !q || folder.name.toLowerCase().includes(q));
   }, [folders, games, query]);
 
+  useEffect(() => {
+    const folderName = searchParams.get("folder");
+    if (!folderName) {
+      setCurrentFolder(null);
+      return;
+    }
+    const folder = visibleFolders.find((item) => item.name === folderName);
+    if (folder) setCurrentFolder(folder);
+  }, [searchParams, visibleFolders]);
+
+  function openFolder(folder: FolderDoc) {
+    setCurrentFolder(folder);
+    router.push(`/pgn?folder=${encodeURIComponent(folder.name)}`);
+  }
+
+  function openRoot() {
+    setCurrentFolder(null);
+    router.push("/pgn");
+  }
+
   function addFolder(name: string, personal: boolean) {
     const folder = { id: `${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}`, name, personal };
     setFolders((current) => [...current, folder]);
@@ -157,7 +180,7 @@ export default function PgnLibraryPage() {
               <>
                 <h2 className="mb-4 text-lg font-semibold">{currentFolder.name}</h2>
                 <div className="flex items-center gap-2 text-sm">
-                  <button className="inline-flex items-center gap-1 text-blue-600" onClick={() => setCurrentFolder(null)}><Home size={14} /> Folders</button>
+                  <button className="inline-flex items-center gap-1 text-blue-600" onClick={openRoot}><Home size={14} /> Folders</button>
                   <ChevronRight size={14} className="text-slate-400" />
                   <span className="font-semibold">{currentFolder.name}</span>
                 </div>
@@ -194,9 +217,9 @@ export default function PgnLibraryPage() {
         </div>
 
         {currentFolder ? (
-          visibleGames.length ? <GameGrid games={visibleGames} /> : <EmptyFolder />
+          visibleGames.length ? <GameGrid games={visibleGames} folder={currentFolder.name} /> : <EmptyFolder />
         ) : (
-          <FolderGrid folders={visibleFolders} onOpen={setCurrentFolder} />
+          <FolderGrid folders={visibleFolders} onOpen={openFolder} />
         )}
 
         {!currentFolder && (
@@ -241,11 +264,15 @@ function FolderGrid({ folders, onOpen }: { folders: FolderDoc[]; onOpen: (folder
   );
 }
 
-function GameGrid({ games }: { games: PgnDoc[] }) {
+function GameGrid({ games, folder }: { games: PgnDoc[]; folder?: string }) {
   return (
     <div className="grid gap-4 md:grid-cols-3">
       {games.map((game) => (
-        <Link key={game._id} href={`/pgn/${game._id}`} className="rounded-md border border-slate-200 bg-white p-4 shadow-sm hover:bg-slate-50">
+        <Link
+          key={game._id}
+          href={folder ? `/pgn/${game._id}?folder=${encodeURIComponent(folder)}` : `/pgn/${game._id}`}
+          className="rounded-md border border-slate-200 bg-white p-4 shadow-sm hover:bg-slate-50"
+        >
           <div className="font-semibold">{game.title}</div>
           <div className="mt-2 text-sm text-slate-500">{game.white || "?"} vs {game.black || "?"} - {game.result || "*"}</div>
           {game.event && <div className="mt-1 text-xs text-slate-400">{game.event}</div>}

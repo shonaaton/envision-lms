@@ -37,6 +37,8 @@ type PieceCode = "p" | "n" | "b" | "r" | "q" | "k" | "P" | "N" | "B" | "R" | "Q"
 type SetupTab = "general" | "gamified";
 type PieceTheme = "classic" | "alpha" | "neo";
 type BoardTheme = "walnut" | "green" | "blue" | "purple" | "slate";
+type GamifiedObjectId = "coin" | "star" | "gem" | "target" | "treasure" | "apple" | "burger" | "bear" | "puppy" | "trophy" | "smile" | "barrier" | "wall" | "rock" | "log";
+type SetupSelection = PieceCode | "delete" | GamifiedObjectId;
 
 type MoveRow = {
   number: number;
@@ -58,6 +60,13 @@ type PgnLibraryItem = {
   folder?: string;
 };
 
+type GamifiedObject = {
+  id: GamifiedObjectId;
+  label: string;
+  icon: string;
+  group: "Food" | "Toys" | "Animals" | "Rewards" | "Emoji" | "Blocks";
+};
+
 const files = ["a", "b", "c", "d", "e", "f", "g", "h"];
 const ranks = ["8", "7", "6", "5", "4", "3", "2", "1"];
 const startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
@@ -68,6 +77,23 @@ const boardThemes: Record<BoardTheme, { name: string; light: string; dark: strin
   purple: { name: "Academy", light: "#f0dcf6", dark: "#7b3f98" },
   slate: { name: "Slate", light: "#d8dee9", dark: "#64748b" },
 };
+const gamifiedObjects: GamifiedObject[] = [
+  { id: "burger", label: "Burger", icon: "\uD83C\uDF54", group: "Food" },
+  { id: "apple", label: "Apple", icon: "\uD83C\uDF4E", group: "Food" },
+  { id: "bear", label: "Teddy", icon: "\uD83E\uDDF8", group: "Toys" },
+  { id: "puppy", label: "Puppy", icon: "\uD83D\uDC36", group: "Animals" },
+  { id: "coin", label: "Coin", icon: "\uD83E\uDE99", group: "Rewards" },
+  { id: "star", label: "Star", icon: "\u2B50", group: "Rewards" },
+  { id: "gem", label: "Gem", icon: "\uD83D\uDC8E", group: "Rewards" },
+  { id: "target", label: "Target", icon: "\uD83C\uDFAF", group: "Rewards" },
+  { id: "treasure", label: "Treasure", icon: "\uD83C\uDF81", group: "Rewards" },
+  { id: "trophy", label: "Trophy", icon: "\uD83C\uDFC6", group: "Rewards" },
+  { id: "smile", label: "Smile", icon: "\uD83D\uDE0A", group: "Emoji" },
+  { id: "barrier", label: "Barrier", icon: "\uD83D\uDEA7", group: "Blocks" },
+  { id: "wall", label: "Wall", icon: "\uD83E\uDDF1", group: "Blocks" },
+  { id: "rock", label: "Rock", icon: "\uD83E\uDEA8", group: "Blocks" },
+  { id: "log", label: "Log", icon: "\uD83E\uDEB5", group: "Blocks" },
+];
 const initialSetup: Record<string, PieceCode> = {
   a8: "r", b8: "n", c8: "b", d8: "q", e8: "k", f8: "b", g8: "n", h8: "r",
   a7: "p", b7: "p", c7: "p", d7: "p", e7: "p", f7: "p", g7: "p", h7: "p",
@@ -115,7 +141,7 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
   const [boardWidth, setBoardWidth] = useState(520);
   const [boardScale, setBoardScale] = useState(100);
   const [boardTheme, setBoardTheme] = useState<BoardTheme>("walnut");
-  const [pieceTheme, setPieceTheme] = useState<PieceTheme>("neo");
+  const [pieceTheme, setPieceTheme] = useState<PieceTheme>("classic");
   const [engineOn, setEngineOn] = useState(true);
   const [engineRunning, setEngineRunning] = useState(false);
   const [bestMove, setBestMove] = useState("");
@@ -548,6 +574,18 @@ function createCustomPieces(theme: PieceTheme) {
   }, {});
 }
 
+function isPieceCode(value: SetupSelection): value is PieceCode {
+  return ["p", "n", "b", "r", "q", "k", "P", "N", "B", "R", "Q", "K"].includes(value);
+}
+
+function isGamifiedObjectId(value: SetupSelection): value is GamifiedObjectId {
+  return gamifiedObjects.some((object) => object.id === value);
+}
+
+function getGamifiedObject(id: GamifiedObjectId) {
+  return gamifiedObjects.find((object) => object.id === id)!;
+}
+
 function controlButton(isDark: boolean) {
   return [
     "btn gap-2 border",
@@ -890,21 +928,33 @@ function SetupDialog({
   const current = useMemo(() => parseFenSetup(currentFen), [currentFen]);
   const [setupTab, setSetupTab] = useState<SetupTab>("general");
   const [setup, setSetup] = useState<Record<string, PieceCode>>(current.setup);
-  const [selectedPiece, setSelectedPiece] = useState<PieceCode | "delete">("P");
+  const [gamifiedSetup, setGamifiedSetup] = useState<Record<string, GamifiedObjectId>>({});
+  const [selectedItem, setSelectedItem] = useState<SetupSelection>("P");
+  const [draggedObjectSquare, setDraggedObjectSquare] = useState<string | null>(null);
   const [turn, setTurn] = useState<"w" | "b">(current.turn);
   const [castling, setCastling] = useState(current.castling);
   const [fenInput, setFenInput] = useState("");
 
   const fen = buildFen(setup, turn, castling);
-  const setupPieceTheme = setupTab === "gamified" ? "neo" : pieceTheme;
+  const setupPieceTheme = pieceTheme;
   const setupBoardTheme = setupTab === "gamified" ? "purple" : boardTheme;
   const setupCustomPieces = useMemo(() => createCustomPieces(setupPieceTheme), [setupPieceTheme]);
 
   function place(square: string) {
+    if (setupTab === "gamified") {
+      setGamifiedSetup((currentObjects) => {
+        const next = { ...currentObjects };
+        if (selectedItem === "delete") delete next[square];
+        else if (isGamifiedObjectId(selectedItem)) next[square] = selectedItem;
+        return next;
+      });
+      return;
+    }
+
     setSetup((currentSetup) => {
       const next = { ...currentSetup };
-      if (selectedPiece === "delete") delete next[square];
-      else next[square] = selectedPiece;
+      if (selectedItem === "delete") delete next[square];
+      else if (isPieceCode(selectedItem)) next[square] = selectedItem;
       return next;
     });
   }
@@ -927,6 +977,28 @@ function SetupDialog({
     });
   }
 
+  function moveGamifiedObject(targetSquare: string) {
+    setGamifiedSetup((currentObjects) => {
+      const next = { ...currentObjects };
+      if (draggedObjectSquare && currentObjects[draggedObjectSquare]) {
+        next[targetSquare] = currentObjects[draggedObjectSquare];
+        delete next[draggedObjectSquare];
+      } else if (isGamifiedObjectId(selectedItem)) {
+        next[targetSquare] = selectedItem;
+      }
+      return next;
+    });
+    setDraggedObjectSquare(null);
+  }
+
+  function deleteGamifiedObject(square: string) {
+    setGamifiedSetup((currentObjects) => {
+      const next = { ...currentObjects };
+      delete next[square];
+      return next;
+    });
+  }
+
   function loadFenIntoSetup(value: string) {
     try {
       const parsed = parseFenSetup(new Chess(value).fen());
@@ -944,12 +1016,14 @@ function SetupDialog({
     setSetup(parsed.setup);
     setTurn(parsed.turn);
     setCastling(parsed.castling);
+    setGamifiedSetup({});
   }
 
   function resetToCurrent() {
     setSetup(current.setup);
     setTurn(current.turn);
     setCastling(current.castling);
+    setGamifiedSetup({});
   }
 
   return (
@@ -960,8 +1034,8 @@ function SetupDialog({
             <button className={setupTabButton(setupTab === "general", isDark)} onClick={() => setSetupTab("general")}>General</button>
             <button className={setupTabButton(setupTab === "gamified", isDark)} onClick={() => setSetupTab("gamified")}>Gamified Board</button>
           </div>
-          <PiecePalette selected={selectedPiece} onPick={setSelectedPiece} dark={setupTab === "gamified"} pieceTheme={setupPieceTheme} />
-          <div className="touch-none overflow-hidden rounded-md">
+          <PiecePalette selected={selectedItem} onPick={setSelectedItem} dark={setupTab === "gamified"} pieceTheme={setupPieceTheme} />
+          <div className="relative touch-none overflow-hidden rounded-md">
             <Chessboard
               id="analysis-setup-board"
               position={setupToBoardPosition(setup)}
@@ -977,19 +1051,32 @@ function SetupDialog({
               customDropSquareStyle={{ boxShadow: "inset 0 0 0 5px rgba(90, 19, 114, 0.35)" }}
               customPieces={setupCustomPieces}
             />
+            {setupTab === "gamified" && (
+              <GamifiedObjectLayer
+                objects={gamifiedSetup}
+                selected={selectedItem}
+                boardWidth={320}
+                onPlace={moveGamifiedObject}
+                onDelete={deleteGamifiedObject}
+                onDragStart={setDraggedObjectSquare}
+                onDragEnd={() => setDraggedObjectSquare(null)}
+              />
+            )}
           </div>
-          <PiecePalette selected={selectedPiece} onPick={setSelectedPiece} dark={false} white pieceTheme={setupPieceTheme} />
+          <PiecePalette selected={selectedItem} onPick={setSelectedItem} dark={false} white pieceTheme={setupPieceTheme} />
           <button
             className={[
               "mt-3 flex min-h-12 w-full items-center justify-center gap-2 rounded-md border border-dashed text-sm font-semibold transition",
-              selectedPiece === "delete" ? "border-red-400 bg-red-50 text-red-700" : isDark ? "border-ink-600 text-blue-100 hover:bg-white/5" : "border-slate-300 text-slate-600 hover:bg-slate-50",
+              selectedItem === "delete" ? "border-red-400 bg-red-50 text-red-700" : isDark ? "border-ink-600 text-blue-100 hover:bg-white/5" : "border-slate-300 text-slate-600 hover:bg-slate-50",
             ].join(" ")}
-            onClick={() => setSelectedPiece("delete")}
+            onClick={() => setSelectedItem("delete")}
           >
-            <Trash2 size={17} /> Delete pieces
+            <Trash2 size={17} /> Delete {setupTab === "gamified" ? "objects" : "pieces"}
           </button>
           <div className={`mt-2 text-xs ${isDark ? "text-blue-200/70" : "text-slate-500"}`}>
-            Drag pieces on the board, drag pieces off the board to remove them, or select delete and tap squares.
+            {setupTab === "gamified"
+              ? "Select an object and tap a square, or drag objects between squares. Select delete and tap an object to remove it."
+              : "Drag pieces on the board, drag pieces off the board to remove them, or select delete and tap squares."}
           </div>
         </div>
 
@@ -1004,12 +1091,12 @@ function SetupDialog({
               <CastlingControl castling={castling} onCastling={setCastling} />
             </>
           ) : (
-            <GamifiedOptions turn={turn} onTurn={setTurn} />
+            <GamifiedOptions turn={turn} onTurn={setTurn} selected={selectedItem} onSelect={setSelectedItem} />
           )}
           <div className="mt-6 flex flex-wrap gap-4">
             <button className={controlButton(isDark)} onClick={resetToStart}><RotateCcw size={15} /> Start position</button>
             <button className={controlButton(isDark)} onClick={resetToCurrent}>Current position</button>
-            <button className={controlButton(isDark)} onClick={() => setSetup({})}>Clear board</button>
+            <button className={controlButton(isDark)} onClick={() => { setSetup({}); setGamifiedSetup({}); }}>Clear board</button>
           </div>
         </div>
       </div>
@@ -1136,7 +1223,84 @@ function setupTabButton(active: boolean, isDark: boolean) {
   ].join(" ");
 }
 
-function PiecePalette({ selected, onPick, dark, pieceTheme, white = false }: { selected: PieceCode | "delete"; onPick: (piece: PieceCode | "delete") => void; dark: boolean; pieceTheme: PieceTheme; white?: boolean }) {
+function GamifiedObjectLayer({
+  objects,
+  selected,
+  boardWidth,
+  onPlace,
+  onDelete,
+  onDragStart,
+  onDragEnd,
+}: {
+  objects: Record<string, GamifiedObjectId>;
+  selected: SetupSelection;
+  boardWidth: number;
+  onPlace: (square: string) => void;
+  onDelete: (square: string) => void;
+  onDragStart: (square: string) => void;
+  onDragEnd: () => void;
+}) {
+  const squareSize = boardWidth / 8;
+
+  return (
+    <div className="absolute inset-0 grid grid-cols-8 grid-rows-8">
+      {ranks.flatMap((rank) =>
+        files.map((file) => {
+          const square = `${file}${rank}`;
+          const object = objects[square] ? getGamifiedObject(objects[square]) : null;
+          return (
+            <button
+              key={square}
+              className="relative flex items-center justify-center"
+              onClick={(event) => {
+                event.stopPropagation();
+                if (selected === "delete" && object) {
+                  onDelete(square);
+                  return;
+                }
+                if (isGamifiedObjectId(selected)) onPlace(square);
+              }}
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onPlace(square);
+              }}
+              aria-label={object ? `${object.label} on ${square}` : `Place object on ${square}`}
+            >
+              {object && (
+                <span
+                  draggable
+                  className="flex cursor-grab items-center justify-center rounded-full bg-white/90 shadow-lg ring-2 ring-black/10 active:cursor-grabbing"
+                  style={{ width: squareSize * 0.68, height: squareSize * 0.68, fontSize: squareSize * 0.38 }}
+                  title={object.label}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    if (selected === "delete") onDelete(square);
+                    if (isGamifiedObjectId(selected)) onPlace(square);
+                  }}
+                  onDoubleClick={(event) => {
+                    event.stopPropagation();
+                    onDelete(square);
+                  }}
+                  onDragStart={(event) => {
+                    event.stopPropagation();
+                    onDragStart(square);
+                  }}
+                  onDragEnd={onDragEnd}
+                >
+                  {object.icon}
+                </span>
+              )}
+            </button>
+          );
+        }),
+      )}
+    </div>
+  );
+}
+
+function PiecePalette({ selected, onPick, dark, pieceTheme, white = false }: { selected: SetupSelection; onPick: (piece: SetupSelection) => void; dark: boolean; pieceTheme: PieceTheme; white?: boolean }) {
   const pieces: Array<PieceCode | "delete"> = white ? ["P", "N", "B", "R", "Q", "K", "delete"] : ["p", "n", "b", "r", "q", "k", "delete"];
   return (
     <div className="mb-2 flex gap-1">
@@ -1206,7 +1370,84 @@ function CastlingControl({ castling, onCastling }: { castling: { K: boolean; Q: 
   );
 }
 
-function GamifiedOptions({ turn, onTurn }: { turn: "w" | "b"; onTurn: (turn: "w" | "b") => void }) {
+function GamifiedOptions({
+  turn,
+  onTurn,
+  selected,
+  onSelect,
+}: {
+  turn: "w" | "b";
+  onTurn: (turn: "w" | "b") => void;
+  selected: SetupSelection;
+  onSelect: (selection: SetupSelection) => void;
+}) {
+  const groups: GamifiedObject["group"][] = ["Food", "Toys", "Animals", "Rewards", "Emoji"];
+  const gameObjects = gamifiedObjects.filter((object) => object.group !== "Blocks");
+  const blockObjects = gamifiedObjects.filter((object) => object.group === "Blocks");
+
+  return (
+    <div>
+      <MoveSideControl turn={turn} onTurn={onTurn} />
+      <div className="mb-4 font-semibold">Gamified Icons</div>
+      <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
+        {groups.map((group) => {
+          const groupObject = gamifiedObjects.find((object) => object.group === group)!;
+          return (
+            <button
+              key={group}
+              className="rounded-md px-2 py-2 text-center text-sm transition hover:bg-brand/10"
+              onClick={() => onSelect(groupObject.id)}
+            >
+              <span className="mb-1 block text-2xl">{groupObject.icon}</span>
+              {group}
+            </button>
+          );
+        })}
+      </div>
+      <div className="mb-5 border-t border-slate-300/60 pt-4">
+        <div className="grid grid-cols-3 gap-3 sm:grid-cols-5">
+          {gameObjects.map((object) => (
+            <GamifiedObjectButton
+              key={object.id}
+              object={object}
+              active={selected === object.id}
+              onSelect={() => onSelect(object.id)}
+            />
+          ))}
+        </div>
+      </div>
+      <div className="mb-4 border-t border-slate-300/60 pt-4 font-semibold">Blocks Icons</div>
+      <div className="grid grid-cols-4 gap-3">
+        {blockObjects.map((object) => (
+          <GamifiedObjectButton
+            key={object.id}
+            object={object}
+            active={selected === object.id}
+            onSelect={() => onSelect(object.id)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function GamifiedObjectButton({ object, active, onSelect }: { object: GamifiedObject; active: boolean; onSelect: () => void }) {
+  return (
+    <button
+      className={[
+        "flex min-h-20 flex-col items-center justify-center rounded-lg border px-2 py-3 text-center text-sm transition",
+        active ? "border-brand bg-brand/10 text-brand shadow-sm" : "border-slate-200 hover:border-brand/50 hover:bg-brand/5",
+      ].join(" ")}
+      onClick={onSelect}
+      title={object.label}
+    >
+      <span className="text-3xl leading-none">{object.icon}</span>
+      <span className="mt-2 text-xs font-semibold">{object.label}</span>
+    </button>
+  );
+}
+
+function LegacyGamifiedOptions({ turn, onTurn }: { turn: "w" | "b"; onTurn: (turn: "w" | "b") => void }) {
   return (
     <div>
       <MoveSideControl turn={turn} onTurn={onTurn} />

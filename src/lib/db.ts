@@ -1,18 +1,23 @@
 import mongoose from "mongoose";
 
-const MONGODB_URI = process.env.MONGODB_URI;
-if (!MONGODB_URI) throw new Error("MONGODB_URI is not set");
-
 type Cached = { conn: typeof mongoose | null; promise: Promise<typeof mongoose> | null };
-declare global { var _mongo: Cached | undefined; }
+declare global {
+  var _mongo: Cached | undefined;
+}
 const cached: Cached = global._mongo ?? { conn: null, promise: null };
 if (!global._mongo) global._mongo = cached;
 
+/**
+ * Connect to MongoDB. The env var is checked lazily so the module can be imported
+ * during `next build` (when env_file isn't loaded) without throwing.
+ */
 export async function dbConnect() {
   if (cached.conn) return cached.conn;
+  const MONGODB_URI = process.env.MONGODB_URI;
+  if (!MONGODB_URI) throw new Error("MONGODB_URI is not set");
   if (!cached.promise) {
-    cached.promise = mongoose.connect(MONGODB_URI!, {
-      dbName: process.env.MONGODB_DB ?? "chess_lms",
+    cached.promise = mongoose.connect(MONGODB_URI, {
+      dbName: process.env.MONGODB_DB ?? "envision_chess",
       bufferCommands: false,
     });
   }

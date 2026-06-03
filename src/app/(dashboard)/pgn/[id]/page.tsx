@@ -30,9 +30,9 @@ export default async function PgnDetail({ params, searchParams }: { params: { id
   const nextFile = nextGame ? { href: `/pgn/${nextGame._id.toString()}${folderQuery}`, title: nextGame.title } : null;
 
   return (
-    <div className="-m-6 min-h-screen space-y-6 bg-slate-50 p-6 text-slate-950">
+    <div className="-m-6 min-h-screen space-y-3 bg-slate-50 p-5 text-slate-950">
       <div>
-        <h1 className="font-display text-3xl">{game.title}</h1>
+        <h1 className="font-display text-2xl">{game.title}</h1>
         <div className="mt-1 text-sm text-slate-500">
           {game.white || "?"} vs {game.black || "?"} - {game.result || "*"} {game.event && `- ${game.event}`}
         </div>

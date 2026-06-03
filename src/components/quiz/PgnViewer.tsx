@@ -11,7 +11,7 @@ const Chessboard = dynamic(() => import("react-chessboard").then((m) => m.Chessb
 const startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 const lightSquare = "#efd6a8";
 const darkSquare = "#bd8d62";
-const movesPerPage = 18;
+const movesPerPage = 16;
 
 type PgnMove = {
   san: string;
@@ -102,7 +102,7 @@ export default function PgnViewer({
   const moveRows = useMemo(() => buildRows(parsed.moves), [parsed.moves]);
   const [ply, setPly] = useState(0);
   const [movePage, setMovePage] = useState(0);
-  const [boardWidth, setBoardWidth] = useState(480);
+  const [boardWidth, setBoardWidth] = useState(620);
 
   const totalPages = Math.max(1, Math.ceil(parsed.moves.length / movesPerPage));
   const pageStart = movePage * movesPerPage;
@@ -121,7 +121,7 @@ export default function PgnViewer({
     const element = boardWrapRef.current;
     if (!element) return;
 
-    const resize = () => setBoardWidth(Math.max(280, Math.min(480, element.clientWidth)));
+    const resize = () => setBoardWidth(Math.max(320, Math.min(640, element.clientWidth)));
     resize();
     const observer = new ResizeObserver(resize);
     observer.observe(element);
@@ -146,9 +146,9 @@ export default function PgnViewer({
   }
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[minmax(0,820px)_minmax(280px,1fr)]">
-      <section className="rounded-lg border border-slate-200 bg-white p-6 text-slate-950 shadow-sm">
-        <div ref={boardWrapRef} className="mx-auto max-w-[480px]">
+    <div className="grid gap-4 xl:grid-cols-[minmax(560px,1fr)_320px]">
+      <section className="rounded-lg border border-slate-200 bg-white p-4 text-slate-950 shadow-sm">
+        <div ref={boardWrapRef} className="mx-auto w-full max-w-[640px]">
           <Chessboard
             position={position}
             arePiecesDraggable={false}
@@ -158,7 +158,7 @@ export default function PgnViewer({
           />
         </div>
 
-        <div className="mt-4 flex items-center justify-center gap-2">
+        <div className="mt-3 flex items-center justify-center gap-2">
           <button className={iconButton} onClick={() => goTo(0)} disabled={ply === 0} aria-label="Go to first position"><ChevronsLeft size={16} /></button>
           <button className={iconButton} onClick={() => goTo(ply - 1)} disabled={ply === 0} aria-label="Previous move"><ChevronLeft size={16} /></button>
           <button className={iconButton} onClick={() => goTo(ply + 1)} disabled={ply === parsed.moves.length} aria-label="Next move"><ChevronRight size={16} /></button>
@@ -193,19 +193,19 @@ export default function PgnViewer({
         </div>
       </section>
 
-      <aside className="rounded-lg border border-slate-200 bg-white p-5 text-slate-950 shadow-sm">
-        <div className="mb-4 flex items-center justify-between gap-3">
+      <aside className="rounded-lg border border-slate-200 bg-white p-3 text-slate-950 shadow-sm xl:max-w-[320px]">
+        <div className="mb-3 flex items-center justify-between gap-2">
           <div className="text-sm font-semibold text-slate-700">Move List</div>
-          <div className="flex items-center gap-2 text-sm text-slate-500">
+          <div className="flex items-center gap-1 text-xs text-slate-500">
             <button className={iconButton} onClick={() => setMovePage((page) => Math.max(0, page - 1))} disabled={movePage === 0} aria-label="Previous moves page"><ChevronLeft size={16} /></button>
-            <span className="min-w-16 text-center">{movePage + 1} / {totalPages}</span>
+            <span className="min-w-10 text-center">{movePage + 1}/{totalPages}</span>
             <button className={iconButton} onClick={() => setMovePage((page) => Math.min(totalPages - 1, page + 1))} disabled={movePage >= totalPages - 1} aria-label="Next moves page"><ChevronRight size={16} /></button>
           </div>
         </div>
-        <div className="max-h-[520px] overflow-y-auto pr-1">
-          <div className="grid gap-y-1 text-sm">
+        <div className="max-h-[620px] overflow-y-auto pr-1">
+          <div className="grid gap-y-0.5 text-sm">
             {visibleRows.length ? visibleRows.map((row) => (
-              <div key={row.number} className="grid grid-cols-[34px_1fr_1fr] items-center gap-2">
+              <div key={row.number} className="grid grid-cols-[28px_minmax(0,1fr)_minmax(0,1fr)] items-center gap-1">
                 <span className="text-slate-400">{row.number}.</span>
                 <MoveButton label={row.white?.san} active={ply === row.whitePly} onClick={() => row.whitePly && goTo(row.whitePly)} />
                 <MoveButton label={row.black?.san} active={ply === row.blackPly} onClick={() => row.blackPly && goTo(row.blackPly)} />
@@ -224,7 +224,7 @@ function MoveButton({ label, active, onClick }: { label?: string; active: boolea
   return (
     <button
       className={[
-        "min-h-8 rounded px-2 text-left font-medium transition",
+        "min-h-7 truncate rounded px-2 text-left text-xs font-medium transition",
         label ? "hover:bg-brand-50" : "cursor-default",
         active ? "bg-brand text-white hover:bg-brand" : "text-slate-700",
       ].join(" ")}

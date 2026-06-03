@@ -148,6 +148,7 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
   const [evalCp, setEvalCp] = useState<number | null>(null);
   const [engineLines, setEngineLines] = useState<EngineLine[]>([]);
   const [pdfName, setPdfName] = useState("");
+  const [gamifiedBoardObjects, setGamifiedBoardObjects] = useState<Record<string, GamifiedObjectId>>({});
 
   const isDark = theme === "dark";
   const panelClass = isDark ? "border-ink-600 bg-ink-800 text-white" : "border-slate-200 bg-white text-slate-950";
@@ -271,6 +272,12 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
       setBestMove("");
       setEvalCp(null);
       setTab("engine");
+      setGamifiedBoardObjects((current) => {
+        if (!current[target]) return current;
+        const next = { ...current };
+        delete next[target];
+        return next;
+      });
       refreshBoard();
       return true;
     } catch {
@@ -284,17 +291,19 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
     setBestMove("");
     setEvalCp(null);
     setEngineLines([]);
+    setGamifiedBoardObjects({});
     setSelectedPly(0);
     refreshBoard();
   }
 
-  function loadFen(fen: string) {
+  function loadFen(fen: string, gamifiedObjects?: Record<string, GamifiedObjectId>) {
     try {
       gameRef.current = new Chess(fen);
       baseFenRef.current = fen;
       setBestMove("");
       setEvalCp(null);
       setEngineLines([]);
+      setGamifiedBoardObjects(gamifiedObjects || {});
       setSelectedPly(0);
       refreshBoard();
       setDialog(null);
@@ -314,6 +323,7 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
       setBestMove("");
       setEvalCp(null);
       setEngineLines([]);
+      setGamifiedBoardObjects({});
       refreshBoard();
       setDialog(null);
       return true;
@@ -399,6 +409,7 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
                     customDropSquareStyle={{ boxShadow: "inset 0 0 0 5px rgba(90, 19, 114, 0.35)" }}
                     customPieces={customPieces}
                   />
+                  <GamifiedBoardOverlay objects={gamifiedBoardObjects} boardWidth={boardSize} orientation={orientation} />
                   <button className="absolute -right-10 top-2 rounded-full bg-brand p-2 text-white shadow-lg" aria-label="Board information">
                     <Info size={16} />
                   </button>
@@ -472,7 +483,7 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
 
       {dialog === "pgn" && <PgnDialog isDark={isDark} onClose={() => setDialog(null)} onLoad={loadPgn} />}
       {dialog === "fen" && <FenDialog isDark={isDark} currentFen={gameRef.current.fen()} onClose={() => setDialog(null)} onLoad={loadFen} />}
-      {dialog === "setup" && <SetupDialog isDark={isDark} currentFen={position} boardTheme={boardTheme} pieceTheme={pieceTheme} onClose={() => setDialog(null)} onLoad={loadFen} />}
+      {dialog === "setup" && <SetupDialog isDark={isDark} currentFen={position} boardTheme={boardTheme} pieceTheme={pieceTheme} initialGamifiedObjects={gamifiedBoardObjects} onClose={() => setDialog(null)} onLoad={loadFen} />}
       {dialog === "settings" && <SettingsDialog isDark={isDark} scale={boardScale} boardTheme={boardTheme} pieceTheme={pieceTheme} onScale={setBoardScale} onBoardTheme={setBoardTheme} onPieceTheme={setPieceTheme} onClose={() => setDialog(null)} />}
       {dialog === "save" && <SaveDialog isDark={isDark} onClose={() => setDialog(null)} onSave={saveCurrentPgn} />}
     </div>
@@ -915,6 +926,7 @@ function SetupDialog({
   currentFen,
   boardTheme,
   pieceTheme,
+  initialGamifiedObjects,
   onClose,
   onLoad,
 }: {
@@ -922,13 +934,14 @@ function SetupDialog({
   currentFen: string;
   boardTheme: BoardTheme;
   pieceTheme: PieceTheme;
+  initialGamifiedObjects: Record<string, GamifiedObjectId>;
   onClose: () => void;
-  onLoad: (fen: string) => boolean;
+  onLoad: (fen: string, gamifiedObjects?: Record<string, GamifiedObjectId>) => boolean;
 }) {
   const current = useMemo(() => parseFenSetup(currentFen), [currentFen]);
   const [setupTab, setSetupTab] = useState<SetupTab>("general");
   const [setup, setSetup] = useState<Record<string, PieceCode>>(current.setup);
-  const [gamifiedSetup, setGamifiedSetup] = useState<Record<string, GamifiedObjectId>>({});
+  const [gamifiedSetup, setGamifiedSetup] = useState<Record<string, GamifiedObjectId>>(initialGamifiedObjects);
   const [selectedItem, setSelectedItem] = useState<SetupSelection>("P");
   const [draggedObjectSquare, setDraggedObjectSquare] = useState<string | null>(null);
   const [turn, setTurn] = useState<"w" | "b">(current.turn);
@@ -1101,7 +1114,7 @@ function SetupDialog({
         </div>
       </div>
       <div className="mt-8 flex justify-end">
-        <button className="btn-primary" onClick={() => onLoad(fen)}>Load Position</button>
+        <button className="btn-primary" onClick={() => onLoad(fen, gamifiedSetup)}>Load Position</button>
       </div>
     </ModalFrame>
   );
@@ -1223,6 +1236,46 @@ function setupTabButton(active: boolean, isDark: boolean) {
   ].join(" ");
 }
 
+function GamifiedBoardOverlay({
+  objects,
+  boardWidth,
+  orientation,
+}: {
+  objects: Record<string, GamifiedObjectId>;
+  boardWidth: number;
+  orientation: "white" | "black";
+}) {
+  const squareSize = boardWidth / 8;
+  const visibleRanks = orientation === "white" ? ranks : [...ranks].reverse();
+  const visibleFiles = orientation === "white" ? files : [...files].reverse();
+
+  if (!Object.keys(objects).length) return null;
+
+  return (
+    <div className="pointer-events-none absolute inset-0 grid grid-cols-8 grid-rows-8">
+      {visibleRanks.flatMap((rank) =>
+        visibleFiles.map((file) => {
+          const square = `${file}${rank}`;
+          const object = objects[square] ? getGamifiedObject(objects[square]) : null;
+          return (
+            <div key={square} className="flex items-center justify-center">
+              {object && (
+                <span
+                  className="flex items-center justify-center rounded-full bg-white/95 shadow-lg ring-2 ring-black/10"
+                  style={{ width: squareSize * 0.62, height: squareSize * 0.62, fontSize: squareSize * 0.34 }}
+                  title={object.label}
+                >
+                  {object.icon}
+                </span>
+              )}
+            </div>
+          );
+        }),
+      )}
+    </div>
+  );
+}
+
 function GamifiedObjectLayer({
   objects,
   selected,
@@ -1308,8 +1361,12 @@ function PiecePalette({ selected, onPick, dark, pieceTheme, white = false }: { s
         <button
           key={piece}
           className={[
-            "flex h-9 w-9 items-center justify-center rounded-md text-xl",
-            dark ? "bg-black text-white" : "bg-white text-black",
+            "flex h-9 w-9 items-center justify-center rounded-md border text-xl shadow-sm transition",
+            piece === "delete"
+              ? dark ? "border-slate-700 bg-black text-white hover:bg-slate-900" : "border-slate-200 bg-white text-slate-950 hover:bg-slate-50"
+              : piece === piece.toUpperCase()
+                ? "border-slate-700 bg-slate-900 text-white hover:bg-slate-800"
+                : "border-slate-200 bg-white text-slate-950 hover:bg-slate-50",
             selected === piece ? "ring-2 ring-brand" : "",
           ].join(" ")}
           onClick={() => onPick(piece)}

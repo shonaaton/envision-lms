@@ -9,6 +9,8 @@ import { Homework, Submission } from "@/models/Homework";
 import { Payment } from "@/models/Payment";
 import { PGN } from "@/models/PGN";
 import { User } from "@/models/User";
+import { Invoice } from "@/models/Fee";
+import { Tournament } from "@/models/Tournament";
 import {
   Activity as ActivityIcon,
   BarChart3,
@@ -22,6 +24,7 @@ import {
   Search,
   TrendingUp,
   Users,
+  Trophy,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -34,6 +37,8 @@ type DashboardSearchParams = {
   from?: string;
   to?: string;
   q?: string;
+  date?: string;
+  academicYear?: string;
 };
 
 function startOfDay(date: Date) {
@@ -171,13 +176,22 @@ function ActivityBadge({ type }: { type: string }) {
 
 async function StandardDashboard({ userId, role }: { userId: string; role: string }) {
   const classroomFilter = role === "instructor" ? { instructor: userId } : role === "student" ? { students: userId } : {};
-  const [classrooms, openHomework, upcomingBookings] = await Promise.all([
+  const [classrooms, openHomework, upcomingBookings, tournaments] = await Promise.all([
     Classroom.find(classroomFilter).limit(6).lean(),
     Homework.find({}).limit(5).lean(),
     Booking.find({ $or: [{ student: userId }, { instructor: userId }], startAt: { $gte: new Date() } })
       .sort({ startAt: 1 })
       .limit(5)
       .lean(),
+    Tournament.find({
+      status: { $in: ["upcoming", "live"] },
+      startAt: { $gte: new Date(Date.now() - DAY) },
+      $or: [
+        { "access.users": userId },
+        { participants: userId },
+        { "access.allActiveStudents": true },
+      ],
+    }).sort({ startAt: 1 }).limit(6).lean(),
   ]);
 
   const tiles = [
@@ -203,6 +217,22 @@ async function StandardDashboard({ userId, role }: { userId: string; role: strin
           </Link>
         ))}
       </div>
+      <section className="card">
+        <h2 className="mb-3 text-lg font-semibold text-white">Upcoming Tournaments</h2>
+        {tournaments.length === 0 ? (
+          <p className="text-sm text-gray-400">No upcoming tournaments available for you yet.</p>
+        ) : (
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            {tournaments.map((tournament: any) => (
+              <Link key={tournament._id.toString()} href={`/tournaments/${tournament._id}`} className="rounded-md border border-ink-700 p-3 hover:bg-white/5">
+                <div className="font-semibold text-white">{tournament.name}</div>
+                <div className="mt-1 text-xs text-gray-400">{tournament.type === "arena" ? "Arena" : "Swiss"} - {new Date(tournament.startAt).toLocaleString("en-IN")}</div>
+                <div className="mt-2 inline-flex rounded bg-brand px-2 py-1 text-xs text-white">{tournament.status}</div>
+              </Link>
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   );
 }
@@ -219,6 +249,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
   }
 
   const { preset, from, to } = getRange(searchParams);
+  const focusDate = parseDate(searchParams.date) || new Date();
+  const focusFrom = startOfDay(focusDate);
+  const focusTo = endOfDay(focusDate);
+  const academicYearStart = Number(searchParams.academicYear || (new Date().getMonth() >= 3 ? new Date().getFullYear() : new Date().getFullYear() - 1));
+  const academicFrom = new Date(academicYearStart, 3, 1, 0, 0, 0, 0);
+  const academicTo = new Date(academicYearStart + 1, 2, 31, 23, 59, 59, 999);
   const q = (searchParams.q || "").trim().toLowerCase();
   const userSearch = q
     ? {
@@ -240,6 +276,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
     attendance,
     bookings,
     payments,
+    allPayments,
+    invoices,
     pgns,
     loggedActivities,
   ] = await Promise.all([
@@ -252,6 +290,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
     Attendance.find(dateFilter("sessionDate", from, to)).populate("classroom", "title").lean(),
     Booking.find(dateFilter("startAt", from, to)).populate("student instructor", "name").lean(),
     Payment.find({ status: "paid", $or: [dateFilter("paidAt", from, to), dateFilter("createdAt", from, to)] }).populate("user", "name username").lean(),
+    Payment.find({ status: "paid", $or: [dateFilter("paidAt", academicFrom, academicTo), dateFilter("createdAt", academicFrom, academicTo)] }).lean(),
+    Invoice.find(dateFilter("createdAt", academicFrom, academicTo)).lean(),
     PGN.find(dateFilter("createdAt", from, to)).populate("uploadedBy", "name username").lean(),
     Activity.find(dateFilter("occurredAt", from, to))
       .populate("actor targetUser", "name username role")
@@ -262,9 +302,30 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
 
   const activeStudents = students.filter((student: any) => student.isActive !== false);
   const newStudents = students.filter((student: any) => new Date(student.createdAt) >= from && new Date(student.createdAt) <= to);
+  const studentsAddedToday = students.filter((student: any) => new Date(student.createdAt) >= focusFrom && new Date(student.createdAt) <= focusTo);
+  const genderCounts = {
+    male: students.filter((student: any) => student.gender === "male").length,
+    female: students.filter((student: any) => student.gender === "female").length,
+    other: students.filter((student: any) => student.gender === "other").length,
+    notAvailable: students.filter((student: any) => !student.gender || student.gender === "not_available").length,
+  };
   const activeClassrooms = classrooms.filter((classroom: any) => classroom.isActive !== false);
   const publishedHomework = homework.filter((item: any) => item.isPublished !== false);
   const paidRevenue = payments.reduce((sum: number, payment: any) => sum + (payment.amount || 0), 0);
+  const todayCollection = invoices
+    .filter((invoice: any) => invoice.status === "paid" && new Date(invoice.paidAt || invoice.updatedAt || invoice.createdAt) >= focusFrom && new Date(invoice.paidAt || invoice.updatedAt || invoice.createdAt) <= focusTo)
+    .reduce((sum: number, invoice: any) => sum + (invoice.totalAmount || 0), 0);
+  const todayDue = invoices
+    .filter((invoice: any) => invoice.status !== "paid" && invoice.status !== "cancelled" && new Date(invoice.dueDate) >= focusFrom && new Date(invoice.dueDate) <= focusTo)
+    .reduce((sum: number, invoice: any) => sum + (invoice.totalAmount || 0), 0);
+  const collectedFees = invoices.filter((invoice: any) => invoice.status === "paid").reduce((sum: number, invoice: any) => sum + (invoice.totalAmount || 0), 0);
+  const pastDues = invoices.filter((invoice: any) => invoice.status !== "paid" && invoice.status !== "cancelled" && new Date(invoice.dueDate) < new Date()).reduce((sum: number, invoice: any) => sum + (invoice.totalAmount || 0), 0);
+  const futureDues = invoices.filter((invoice: any) => invoice.status !== "paid" && invoice.status !== "cancelled" && new Date(invoice.dueDate) >= new Date()).reduce((sum: number, invoice: any) => sum + (invoice.totalAmount || 0), 0);
+  const badDebt = invoices.filter((invoice: any) => invoice.status === "overdue" && new Date(invoice.dueDate) < new Date(Date.now() - 60 * DAY)).reduce((sum: number, invoice: any) => sum + (invoice.totalAmount || 0), 0);
+  const transactionModes = ["upi", "cash", "card", "cheque", "other"].map((mode) => ({
+    mode,
+    amount: allPayments.filter((payment: any) => (payment.method || "other") === mode).reduce((sum: number, payment: any) => sum + (payment.amount || 0), 0),
+  }));
 
   const classroomStudents = new Map<string, string[]>();
   classrooms.forEach((classroom: any) => {
@@ -420,6 +481,14 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
         </div>
 
         <form className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white p-2 shadow-sm">
+          <label className="flex flex-col gap-1 text-xs text-slate-500">
+            Academic Year
+            <input name="academicYear" type="number" defaultValue={academicYearStart} className="h-10 w-28 rounded-md border border-slate-200 px-3 text-sm text-slate-700" />
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-slate-500">
+            Date
+            <input name="date" type="date" defaultValue={dateKey(focusDate)} className="h-10 rounded-md border border-slate-200 px-3 text-sm text-slate-700" />
+          </label>
           <select name="preset" defaultValue={preset} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-700">
             <option value="7">Last 7 days</option>
             <option value="30">Last 30 days</option>
@@ -435,6 +504,45 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
           <button className="h-10 rounded-md bg-purple-700 px-4 text-sm font-semibold text-white shadow-sm hover:bg-purple-800">Apply</button>
         </form>
       </div>
+
+      <section className="mb-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <SectionTitle icon={Users} title="Academy Snapshot" subtitle={`Academic year ${academicYearStart}-${String(academicYearStart + 1).slice(-2)} and selected date ${formatDate(focusDate)}`} />
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <StatCard label="Total Student Strength" value={students.length} note="All student profiles" icon={Users} tone="purple" />
+          <StatCard label="Total Active Students" value={activeStudents.length} note="Active student profiles" icon={CheckCircle2} tone="green" />
+          <StatCard label="Students Added Today" value={studentsAddedToday.length} note={formatDate(focusDate)} icon={GraduationCap} tone="blue" />
+          <StatCard label="Today's Fee Collection" value={money(todayCollection)} note="Paid invoices on selected date" icon={CircleDollarSign} tone="green" />
+          <StatCard label="Today's Due Amount" value={money(todayDue)} note="Invoices due on selected date" icon={Calendar} tone="amber" />
+        </div>
+        <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-3">
+          <div className="rounded-md bg-slate-50 p-4">
+            <h3 className="text-sm font-semibold text-slate-950">Gender-wise Student Count</h3>
+            <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+              <div>Male <b className="float-right">{genderCounts.male}</b></div>
+              <div>Female <b className="float-right">{genderCounts.female}</b></div>
+              <div>Others <b className="float-right">{genderCounts.other}</b></div>
+              <div>Not Available <b className="float-right">{genderCounts.notAvailable}</b></div>
+            </div>
+          </div>
+          <div className="rounded-md bg-slate-50 p-4">
+            <h3 className="text-sm font-semibold text-slate-950">Overall Fee Statistics</h3>
+            <div className="mt-3 space-y-2 text-sm">
+              <div>Collected Fees <b className="float-right">{money(collectedFees)}</b></div>
+              <div>Past Dues <b className="float-right text-rose-700">{money(pastDues)}</b></div>
+              <div>Future Dues <b className="float-right text-amber-700">{money(futureDues)}</b></div>
+              <div>Bad Debt <b className="float-right text-slate-700">{money(badDebt)}</b></div>
+            </div>
+          </div>
+          <div className="rounded-md bg-slate-50 p-4">
+            <h3 className="text-sm font-semibold text-slate-950">Mode of Transaction Summary</h3>
+            <div className="mt-3 space-y-2 text-sm">
+              {transactionModes.map((item) => (
+                <div key={item.mode}>{item.mode === "cheque" ? "Cheque / PDC / DD" : item.mode.toUpperCase()} <b className="float-right">{money(item.amount)}</b></div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
         <StatCard label="Total Students" value={activeStudents.length} note={`${newStudents.length} joined in range`} icon={GraduationCap} tone="purple" />

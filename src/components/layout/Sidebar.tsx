@@ -18,6 +18,7 @@ const groups = [
       { href: "/homework", label: "Homework", icon: FileText },
       { href: "/attendance", label: "Attendance", icon: ClipboardList },
       { href: "/booking", label: "Self Booking", icon: CalendarCheck },
+      { href: "/tournaments", label: "Tournaments", icon: Trophy },
       { href: "/leaderboard", label: "Leaderboard", icon: Trophy },
     ],
   },

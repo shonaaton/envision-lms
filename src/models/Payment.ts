@@ -11,6 +11,7 @@ const PaymentSchema = new Schema(
     razorpayPaymentId: String,
     razorpaySignature: String,
     status: { type: String, enum: ["created", "paid", "failed", "refunded"], default: "created", index: true },
+    method: { type: String, enum: ["upi", "cash", "card", "cheque", "other"], default: "other", index: true },
     invoiceNumber: { type: String, index: true },
     paidAt: Date,
   },

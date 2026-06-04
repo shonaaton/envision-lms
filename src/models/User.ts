@@ -9,6 +9,7 @@ const UserSchema = new Schema(
     tempPassword: { type: String },
     role: { type: String, enum: ["student", "instructor", "admin"], default: "student", index: true },
     phone: { type: String, index: true },
+    gender: { type: String, enum: ["male", "female", "other", "not_available"], default: "not_available", index: true },
     avatar: { type: String, default: "" }, // hex color or URL
     fideId: { type: String },
     rating: { type: Number, default: 0 },

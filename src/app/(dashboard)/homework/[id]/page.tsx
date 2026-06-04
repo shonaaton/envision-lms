@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { Chess } from "chess.js";
 import { toast } from "sonner";
-import { BookOpen, CheckCircle2, Clock, FileQuestion, Gamepad2, HelpCircle, RotateCcw, Trophy } from "lucide-react";
+import { BookOpen, CheckCircle2, ChevronLeft, ChevronRight, Clock, FileQuestion, Gamepad2, HelpCircle, RotateCcw, Trophy } from "lucide-react";
 
 const Chessboard = dynamic(() => import("react-chessboard").then((m) => m.Chessboard), { ssr: false });
 
@@ -154,8 +154,17 @@ export default function HomeworkAttemptPage() {
 }
 
 function ActivitySection({ activity, index, locked, quizAnswers, setQuizAnswers, boardResults, setBoardResults }: any) {
+  const [activeItemIndex, setActiveItemIndex] = useState(0);
   const isPgnQuiz = activity.type === "study_pgn" && activity.source?.kind === "pgn_quiz";
   const icon = activity.type === "quiz" ? <FileQuestion size={16} /> : isPgnQuiz ? <BookOpen size={16} /> : activity.type === "play_computer" ? <Gamepad2 size={16} /> : <Trophy size={16} />;
+  const items = activity.items || [];
+  const activeItem = items[Math.min(activeItemIndex, Math.max(0, items.length - 1))];
+  const hasOneByOneItems = (activity.type === "quiz" || isPgnQuiz) && items.length > 0;
+
+  useEffect(() => {
+    setActiveItemIndex(0);
+  }, [activity._id, items.length]);
+
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
@@ -170,24 +179,60 @@ function ActivitySection({ activity, index, locked, quizAnswers, setQuizAnswers,
         </div>
       </div>
 
-      {activity.type === "quiz" && (
-        <div className="space-y-3">
-          {(activity.items || []).map((item: any, itemIndex: number) => (
-            <McqQuestion key={item.id || itemIndex} activityId={activity._id} item={item} index={itemIndex} locked={locked} value={quizAnswers[key(activity._id, item.id)] || ""} onChange={(optionId: string) => setQuizAnswers((current: any) => ({ ...current, [key(activity._id, item.id)]: optionId }))} />
-          ))}
-        </div>
+      {hasOneByOneItems && (
+        <ItemPager
+          current={activeItemIndex}
+          total={items.length}
+          onPrevious={() => setActiveItemIndex((value) => Math.max(0, value - 1))}
+          onNext={() => setActiveItemIndex((value) => Math.min(items.length - 1, value + 1))}
+        />
       )}
 
-      {isPgnQuiz && (
-        <div className="grid gap-4 xl:grid-cols-2">
-          {(activity.items || []).map((item: any, itemIndex: number) => (
-            <PgnBoardTask key={item.id || itemIndex} activityId={activity._id} item={item} index={itemIndex} locked={locked} onResult={(result: BoardResult) => setBoardResults((current: any) => ({ ...current, [key(activity._id, item.id)]: result }))} />
-          ))}
+      {activity.type === "quiz" && activeItem && (
+        <McqQuestion
+          key={activeItem.id || activeItemIndex}
+          activityId={activity._id}
+          item={activeItem}
+          index={activeItemIndex}
+          locked={locked}
+          value={quizAnswers[key(activity._id, activeItem.id)] || ""}
+          onChange={(optionId: string) => setQuizAnswers((current: any) => ({ ...current, [key(activity._id, activeItem.id)]: optionId }))}
+        />
+      )}
+
+      {isPgnQuiz && activeItem && (
+        <div className="max-w-[460px]">
+          <PgnBoardTask
+            key={activeItem.id || activeItemIndex}
+            activityId={activity._id}
+            item={activeItem}
+            index={activeItemIndex}
+            locked={locked}
+            onResult={(result: BoardResult) => setBoardResults((current: any) => ({ ...current, [key(activity._id, activeItem.id)]: result }))}
+          />
         </div>
       )}
 
       {activity.type === "play_computer" && <ComputerPlaceholder activity={activity} />}
     </section>
+  );
+}
+
+function ItemPager({ current, total, onPrevious, onNext }: { current: number; total: number; onPrevious: () => void; onNext: () => void }) {
+  return (
+    <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+      <div className="text-sm font-bold text-slate-700">
+        Item {current + 1} of {total}
+      </div>
+      <div className="flex items-center gap-2">
+        <button type="button" className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 disabled:cursor-not-allowed disabled:text-slate-300" onClick={onPrevious} disabled={current === 0}>
+          <ChevronLeft size={15} /> Previous
+        </button>
+        <button type="button" className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 disabled:cursor-not-allowed disabled:text-slate-300" onClick={onNext} disabled={current >= total - 1}>
+          Next <ChevronRight size={15} />
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -297,8 +342,8 @@ function PgnBoardTask({ activityId, item, index, locked, onResult }: any) {
         position={position}
         onPieceDrop={onDrop}
         boardWidth={360}
-        customDarkSquareStyle={{ backgroundColor: "#5a1372" }}
-        customLightSquareStyle={{ backgroundColor: "#fde75a" }}
+        customDarkSquareStyle={{ backgroundColor: "#b58863" }}
+        customLightSquareStyle={{ backgroundColor: "#f0d9b5" }}
       />
       <div className="mt-3 flex flex-wrap gap-2">
         <button type="button" className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold" onClick={hint}><HelpCircle size={14} className="mr-1 inline" /> Hint</button>

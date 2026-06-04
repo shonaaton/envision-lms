@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { User } from "@/models/User";
+import { recordActivity } from "@/lib/activity";
 
 export const dynamic = "force-dynamic";
 
@@ -13,12 +14,21 @@ function genPassword() {
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   const session = await auth();
   if ((session?.user as any)?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const actorId = (session!.user as any).id;
   await dbConnect();
   const body = await req.json();
   if (body.resetPassword) {
     const tempPassword = body.password || genPassword();
     const passwordHash = await bcrypt.hash(tempPassword, 10);
     const u = await User.findByIdAndUpdate(params.id, { passwordHash, tempPassword }, { new: true, projection: { passwordHash: 0 } });
+    await recordActivity({
+      actor: actorId,
+      targetUser: params.id,
+      type: "user.password_reset",
+      label: `Reset password for ${u?.name ?? "user"}`,
+      entityType: "User",
+      entityId: params.id,
+    });
     return NextResponse.json({ ...u?.toObject?.(), tempPassword });
   }
   // Whitelist allowed fields
@@ -27,14 +37,32 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   for (const k of allowed) if (k in body) update[k] = body[k];
   if (update.email) update.email = String(update.email).toLowerCase();
   const u = await User.findByIdAndUpdate(params.id, update, { new: true, projection: { passwordHash: 0 } });
+  await recordActivity({
+    actor: actorId,
+    targetUser: params.id,
+    type: "user.updated",
+    label: `Updated ${u?.name ?? "user"} profile`,
+    entityType: "User",
+    entityId: params.id,
+    metadata: { fields: Object.keys(update) },
+  });
   return NextResponse.json(u);
 }
 
 export async function DELETE(_: Request, { params }: { params: { id: string } }) {
   const session = await auth();
   if ((session?.user as any)?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const actorId = (session!.user as any).id;
   await dbConnect();
   // Soft-delete: deactivate, don't drop, so historical refs stay valid.
-  await User.findByIdAndUpdate(params.id, { isActive: false });
+  const u = await User.findByIdAndUpdate(params.id, { isActive: false });
+  await recordActivity({
+    actor: actorId,
+    targetUser: params.id,
+    type: "user.deactivated",
+    label: `Deactivated ${u?.name ?? "user"}`,
+    entityType: "User",
+    entityId: params.id,
+  });
   return NextResponse.json({ ok: true });
 }

@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { User, generateUsername } from "@/models/User";
 import { addUserSchema } from "@/lib/validation";
+import { recordActivity } from "@/lib/activity";
 
 export const dynamic = "force-dynamic";
 
@@ -48,6 +49,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const session = await auth();
   if ((session?.user as any)?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const actorId = (session!.user as any).id;
   try {
     const body = addUserSchema.parse(await req.json());
     await dbConnect();
@@ -62,6 +64,15 @@ export async function POST(req: Request) {
       username,
       passwordHash,
       tempPassword,
+    });
+    await recordActivity({
+      actor: actorId,
+      targetUser: u._id.toString(),
+      type: "user.created",
+      label: `Created ${body.role} account for ${u.name}`,
+      entityType: "User",
+      entityId: u._id.toString(),
+      metadata: { role: body.role, username },
     });
     return NextResponse.json({
       id: u._id.toString(),

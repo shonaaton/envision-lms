@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { PGN } from "@/models/PGN";
 import { Chess } from "chess.js";
+import { recordActivity } from "@/lib/activity";
 
 export const dynamic = "force-dynamic";
 
@@ -79,6 +80,15 @@ export async function POST(req: Request) {
       uploadedBy: (session.user as any).id,
     };
   }));
+  await recordActivity({
+    actor: (session.user as any).id,
+    targetUser: (session.user as any).id,
+    type: "pgn.uploaded",
+    label: `Uploaded ${docs.length} PGN ${docs.length === 1 ? "game" : "games"}`,
+    entityType: "PGN",
+    entityId: docs[0]?._id?.toString(),
+    metadata: { count: docs.length, folder, visibility },
+  });
 
   return NextResponse.json(games.length === 1 ? docs[0] : docs);
 }

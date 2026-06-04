@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { Attendance } from "@/models/Attendance";
+import { recordActivity } from "@/lib/activity";
 
 export const dynamic = "force-dynamic";
 
@@ -29,5 +30,13 @@ export async function POST(req: Request) {
     { records, markedBy: (session.user as any).id },
     { upsert: true, new: true }
   );
+  await recordActivity({
+    actor: (session.user as any).id,
+    type: "attendance.marked",
+    label: `Marked attendance for ${records?.length ?? 0} students`,
+    entityType: "Attendance",
+    entityId: doc._id.toString(),
+    metadata: { classroom, sessionDate, records: records?.length ?? 0 },
+  });
   return NextResponse.json(doc);
 }

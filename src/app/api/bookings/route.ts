@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { Availability, Booking } from "@/models/Booking";
 import { bookingSchema } from "@/lib/validation";
+import { recordActivity } from "@/lib/activity";
 
 export const dynamic = "force-dynamic";
 
@@ -39,6 +40,15 @@ export async function POST(req: Request) {
       startAt: new Date(body.startAt),
       endAt: new Date(body.endAt),
       status: av && (av as any).feePerSession > 0 ? "pending" : "confirmed",
+    });
+    await recordActivity({
+      actor: (session.user as any).id,
+      targetUser: (session.user as any).id,
+      type: "booking.created",
+      label: "Booked a coaching session",
+      entityType: "Booking",
+      entityId: created._id.toString(),
+      metadata: { instructor: body.instructor, startAt: body.startAt, status: created.status },
     });
     return NextResponse.json(created);
   } catch (err: any) {

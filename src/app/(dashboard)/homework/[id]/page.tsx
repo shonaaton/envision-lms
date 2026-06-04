@@ -125,8 +125,18 @@ function ActivityCard({
         </div>
       </div>
 
-      {["solve_position", "find_best_move", "find_combination"].includes(activity.type) && activity.fen && (
-        <PuzzleBoard fen={activity.fen} solution={solution} onSolved={onSolved} />
+      {["solve_position", "find_best_move", "find_combination"].includes(activity.type) && (
+        <div className="space-y-4">
+          {(activity.items?.length ? activity.items : [{ title: activity.title, fen: activity.fen, solution }]).map((item: any, itemIndex: number) => (
+            <div key={item.id || itemIndex} className="rounded-xl border border-slate-200 p-3">
+              <div className="mb-2 flex items-center justify-between text-sm">
+                <b className="text-brand">{item.title || `Position ${itemIndex + 1}`}</b>
+                <span className="rounded-full bg-accent/30 px-2 py-1 text-xs font-bold text-brand">{item.points ?? activity.points ?? 1} pts</span>
+              </div>
+              {item.fen && <PuzzleBoard fen={item.fen} solution={Array.isArray(item.solution) ? item.solution : []} onSolved={onSolved} />}
+            </div>
+          ))}
+        </div>
       )}
 
       {activity.type === "quiz" && <QuizActivity activity={activity} quizAnswers={quizAnswers} setQuizAnswers={setQuizAnswers} />}
@@ -138,25 +148,40 @@ function ActivityCard({
 }
 
 function QuizActivity({ activity, quizAnswers, setQuizAnswers }: { activity: any; quizAnswers: string[]; setQuizAnswers: (values: string[]) => void }) {
-  const quiz = activity.quiz || {};
-  const multiple = Boolean(quiz.multipleCorrect);
-  function toggle(id: string) {
+  const items = activity.items?.length ? activity.items : [activity.quiz || {}];
+  function toggle(questionId: string, optionId: string, multiple: boolean) {
+    const id = `${questionId}:${optionId}`;
     if (multiple) setQuizAnswers(quizAnswers.includes(id) ? quizAnswers.filter((item) => item !== id) : [...quizAnswers, id]);
-    else setQuizAnswers([id]);
+    else setQuizAnswers([...quizAnswers.filter((item) => !item.startsWith(`${questionId}:`)), id]);
   }
   return (
     <div className="space-y-3">
-      {quiz.positionFen && <FenBox fen={quiz.positionFen} />}
-      <div className="rounded-xl bg-slate-50 p-4 font-semibold text-slate-900">{quiz.question || "Answer the question."}</div>
-      <div className="grid gap-2">
-        {(quiz.options || []).map((option: any) => (
-          <label key={option.id} className="flex items-center gap-3 rounded-xl border border-slate-200 p-3 text-sm font-semibold">
-            <input type={multiple ? "checkbox" : "radio"} checked={quizAnswers.includes(option.id)} onChange={() => toggle(option.id)} />
-            {option.text}
-          </label>
-        ))}
-      </div>
-      {quiz.explanation && <p className="rounded-xl bg-accent/20 p-3 text-sm text-brand">{quiz.explanation}</p>}
+      {items.map((quiz: any, index: number) => {
+        const questionId = quiz.id || `question-${index}`;
+        const multiple = Boolean(quiz.multipleCorrect);
+        return (
+          <div key={questionId} className="rounded-xl border border-slate-200 p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <b className="text-brand">{quiz.title || `Question ${index + 1}`}</b>
+              <span className="rounded-full bg-accent/30 px-2 py-1 text-xs font-bold text-brand">{quiz.points || 1} pts</span>
+            </div>
+            {quiz.positionFen && <FenBox fen={quiz.positionFen} />}
+            <div className="mt-2 rounded-xl bg-slate-50 p-4 font-semibold text-slate-900">{quiz.question || "Answer the question."}</div>
+            <div className="mt-2 grid gap-2">
+              {(quiz.options || []).map((option: any) => {
+                const answerId = `${questionId}:${option.id}`;
+                return (
+                  <label key={option.id} className="flex items-center gap-3 rounded-xl border border-slate-200 p-3 text-sm font-semibold">
+                    <input type={multiple ? "checkbox" : "radio"} checked={quizAnswers.includes(answerId)} onChange={() => toggle(questionId, option.id, multiple)} />
+                    {option.text}
+                  </label>
+                );
+              })}
+            </div>
+            {quiz.explanation && <p className="mt-2 rounded-xl bg-accent/20 p-3 text-sm text-brand">{quiz.explanation}</p>}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -185,10 +210,15 @@ function ComputerActivity({ activity }: { activity: any }) {
 }
 
 function PgnStudy({ activity }: { activity: any }) {
+  const items = activity.items?.length ? activity.items : [{ pgnTitle: activity.pgnTitle, pgn: activity.pgn, source: activity.source }];
   return (
     <div className="space-y-3">
-      <InfoGrid items={[["PGN", activity.pgnTitle || "Imported PGN"], ["Source", activity.source?.folder || "Library"], ["Task", "Review and study"]]} />
-      <pre className="max-h-56 overflow-auto rounded-xl bg-slate-950 p-4 text-xs leading-relaxed text-white">{activity.pgn || "No PGN text attached."}</pre>
+      {items.map((item: any, index: number) => (
+        <div key={item.id || index} className="rounded-xl border border-slate-200 p-3">
+          <InfoGrid items={[["PGN", item.pgnTitle || item.title || `PGN ${index + 1}`], ["Source", item.source?.folder || "Library"], ["Task", "Review and study"]]} />
+          <pre className="mt-3 max-h-56 overflow-auto rounded-xl bg-slate-950 p-4 text-xs leading-relaxed text-white">{item.pgn || "No PGN text attached."}</pre>
+        </div>
+      ))}
     </div>
   );
 }

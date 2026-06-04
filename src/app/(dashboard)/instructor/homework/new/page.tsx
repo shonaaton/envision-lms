@@ -42,6 +42,22 @@ type LibraryMode = "sets" | "pgn";
 type TargetMode = "all" | "batches" | "students";
 
 type QuizOption = { id: string; text: string; correct: boolean };
+type ActivityItem = {
+  id: string;
+  title: string;
+  question?: string;
+  positionFen?: string;
+  options?: QuizOption[];
+  multipleCorrect?: boolean;
+  explanation?: string;
+  fen?: string;
+  solution?: string;
+  pgn?: string;
+  pgnTitle?: string;
+  pgnSourceId?: string;
+  source?: Record<string, unknown>;
+  points?: number;
+};
 type Activity = {
   id: string;
   type: ActivityType;
@@ -61,6 +77,7 @@ type Activity = {
   pgnTitle?: string;
   pgnSourceId?: string;
   source?: Record<string, unknown>;
+  items?: ActivityItem[];
   quiz?: {
     question: string;
     options: QuizOption[];
@@ -125,6 +142,42 @@ const defaultOptions: QuizOption[] = [
   { id: "d", text: "O-O", correct: false },
 ];
 
+function makeQuizItem(seed: Partial<ActivityItem> = {}): ActivityItem {
+  return {
+    id: `quiz-item-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    title: seed.title || "Question",
+    question: seed.question || "What is the best move?",
+    positionFen: seed.positionFen || "",
+    options: seed.options || defaultOptions.map((option) => ({ ...option })),
+    multipleCorrect: seed.multipleCorrect || false,
+    explanation: seed.explanation || "",
+    points: seed.points ?? 1,
+  };
+}
+
+function makePositionItem(seed: Partial<ActivityItem> = {}): ActivityItem {
+  return {
+    id: `position-item-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    title: seed.title || "Position",
+    fen: seed.fen || startFen,
+    solution: seed.solution || "",
+    points: seed.points ?? 1,
+    source: seed.source,
+  };
+}
+
+function makePgnItem(seed: Partial<ActivityItem> = {}): ActivityItem {
+  return {
+    id: `pgn-item-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    title: seed.title || seed.pgnTitle || "PGN",
+    pgn: seed.pgn || "",
+    pgnTitle: seed.pgnTitle || seed.title || "",
+    pgnSourceId: seed.pgnSourceId || "",
+    points: seed.points ?? 1,
+    source: seed.source,
+  };
+}
+
 function makeActivity(type: ActivityType, seed: Partial<Activity> = {}): Activity {
   const label = activityTypes.find((item) => item.id === type)?.label || "Activity";
   return {
@@ -146,6 +199,15 @@ function makeActivity(type: ActivityType, seed: Partial<Activity> = {}): Activit
     pgnTitle: seed.pgnTitle || "",
     pgnSourceId: seed.pgnSourceId || "",
     source: seed.source,
+    items:
+      seed.items ||
+      (type === "quiz"
+        ? [makeQuizItem(seed.quiz ? { question: seed.quiz.question, options: seed.quiz.options, multipleCorrect: seed.quiz.multipleCorrect, explanation: seed.quiz.explanation, positionFen: seed.quiz.positionFen } : {})]
+        : type === "study_pgn"
+          ? [makePgnItem({ title: "PGN 1" })]
+          : ["solve_position", "find_best_move", "find_combination"].includes(type)
+            ? [makePositionItem({ fen: seed.fen, solution: seed.solution, points: seed.points })]
+            : []),
     quiz:
       seed.quiz ||
       (type === "quiz"
@@ -161,8 +223,8 @@ function makeActivity(type: ActivityType, seed: Partial<Activity> = {}): Activit
       seed.computer ||
       (type === "play_computer" || type === "endgame_practice" || type === "opening_practice"
         ? {
-            strength: "Beginner",
-            rating: 500,
+            strength: "Level 1 - Very Easy",
+            rating: 250,
             side: "white",
             objective: type === "endgame_practice" ? "Convert Winning Position" : type === "opening_practice" ? "Practice Opening" : "Win the Game",
             timeControl: { type: "untimed", minutes: 0, increment: 0 },
@@ -378,35 +440,50 @@ export default function NewHomeworkPage() {
   }
 
   function importEntirePgn(pgn: PgnDoc) {
-    addActivity("study_pgn", {
+    const item = makePgnItem({
       title: pgn.title,
-      instructions: "Review this PGN and answer the coach's follow-up questions.",
       pgn: pgn.pgn,
       pgnTitle: pgn.title,
       pgnSourceId: pgn._id,
       source: { kind: "pgn", pgnId: pgn._id, folder: pgn.folder || "Unfiled" },
       points: 2,
     });
-    toast.success("PGN imported as a study activity");
+    if (activeActivity?.type === "study_pgn") {
+      updateActivity(activeIndex, { items: [...(activeActivity.items || []), item] });
+      toast.success("PGN added inside the selected PGN activity");
+      return;
+    }
+    addActivity("study_pgn", {
+      title: "PGN Study",
+      instructions: "Review the selected games and answer the coach's follow-up questions.",
+      items: [item],
+      pgn: pgn.pgn,
+      pgnTitle: pgn.title,
+      pgnSourceId: pgn._id,
+    });
+    toast.success("PGN study activity created");
   }
 
   function importPgnPositions(pgn: PgnDoc, positions: PgnPosition[]) {
     if (!positions.length) return toast.error("Select at least one position");
-    setActivities((current) => [
-      ...current,
-      ...positions.map((position) =>
-        makeActivity("solve_position", {
-          title: `${pgn.title}: Move ${position.moveNumber}`,
-          instructions: `Find the next idea after ${position.san}.`,
-          fen: position.fen,
-          pgnTitle: pgn.title,
-          pgnSourceId: pgn._id,
-          source: { kind: "pgn_position", pgnId: pgn._id, folder: pgn.folder || "Unfiled", moveNumber: position.moveNumber, san: position.san },
-          points: 1,
-        })
-      ),
-    ]);
-    setActiveIndex(activities.length);
+    const items = positions.map((position) =>
+      makePositionItem({
+        title: `${pgn.title}: Move ${position.moveNumber}`,
+        fen: position.fen,
+        source: { kind: "pgn_position", pgnId: pgn._id, folder: pgn.folder || "Unfiled", moveNumber: position.moveNumber, san: position.san },
+        points: 1,
+      })
+    );
+    if (["solve_position", "find_best_move", "find_combination"].includes(activeActivity?.type || "")) {
+      updateActivity(activeIndex, { items: [...(activeActivity.items || []), ...items] });
+    } else {
+      addActivity("solve_position", {
+        title: `${pgn.title}: Selected Positions`,
+        instructions: "Solve each selected position from this PGN.",
+        items,
+        fen: items[0]?.fen,
+      });
+    }
     setSelectedPgnPositions([]);
     toast.success(`${positions.length} PGN position${positions.length === 1 ? "" : "s"} imported`);
   }
@@ -426,14 +503,12 @@ export default function NewHomeworkPage() {
       assignedStudents: targetMode === "students" ? assignedStudents : [],
       assignedBatches: targetMode === "batches" ? assignedBatches : [],
       activities: activities.map(toPayloadActivity),
-      puzzles: activities
-        .filter((activity) => ["solve_position", "find_best_move", "find_combination"].includes(activity.type) && activity.fen)
-        .map((activity) => ({
-          fen: activity.fen || "",
-          prompt: activity.instructions || activity.title,
-          points: Number(activity.points) || 1,
-          solution: activity.solution.trim().split(/\s+/).filter(Boolean),
-        })),
+      puzzles: activities.flatMap((activity) => positionItems(activity).map((item) => ({
+        fen: item.fen || "",
+        prompt: `${activity.title}: ${item.title}`,
+        points: Number(item.points ?? activity.points) || 1,
+        solution: (item.solution || activity.solution || "").trim().split(/\s+/).filter(Boolean),
+      }))),
     };
     const response = await fetch("/api/homework", {
       method: "POST",
@@ -560,11 +635,11 @@ export default function NewHomeworkPage() {
                   >
                     <div className="flex items-center justify-between gap-2">
                       <div className="text-sm font-bold">{activity.title || `Activity ${index + 1}`}</div>
-                      <span className={`rounded-full px-2 py-0.5 text-xs ${activeIndex === index ? "bg-accent text-brand" : "bg-accent/30 text-brand"}`}>{activity.points || 0} pt</span>
+                      <span className={`rounded-full px-2 py-0.5 text-xs ${activeIndex === index ? "bg-accent text-brand" : "bg-accent/30 text-brand"}`}>{activityItemCount(activity)} item{activityItemCount(activity) === 1 ? "" : "s"}</span>
                     </div>
                     <div className={`mt-1 text-xs font-semibold ${activeIndex === index ? "text-accent" : "text-brand"}`}>{labelFor(activity.type)}</div>
                     <div className={`mt-1 line-clamp-2 text-xs ${activeIndex === index ? "text-white/75" : "text-slate-500"}`}>
-                      {activity.instructions || activity.quiz?.question || activity.fen || "Configure this activity"}
+                      {activity.instructions || firstItemPreview(activity) || "Configure this activity"}
                     </div>
                   </button>
                 ))}
@@ -660,7 +735,8 @@ function ActivityEditor({
   onChange: (patch: Partial<Activity>) => void;
 }) {
   if (!activity) return null;
-  const needsFen = ["solve_position", "find_best_move", "find_combination", "analyze_position", "endgame_practice", "opening_practice", "play_computer"].includes(activity.type);
+  const needsFen = ["analyze_position", "endgame_practice", "opening_practice", "play_computer"].includes(activity.type);
+  const isPositionSet = ["solve_position", "find_best_move", "find_combination"].includes(activity.type);
   return (
     <div className="min-h-0 overflow-y-auto rounded-2xl bg-[#fbf7ff] p-4">
       <div className="mb-3 flex items-start justify-between gap-3">
@@ -722,21 +798,10 @@ function ActivityEditor({
           </label>
         )}
 
-        {["solve_position", "find_best_move", "find_combination"].includes(activity.type) && (
-          <label className="text-xs font-bold text-slate-600">
-            Solution moves
-            <input className="input mt-1 h-11" placeholder="SAN moves, e.g. Nf6 Bxc6+" value={activity.solution} onChange={(event) => onChange({ solution: event.target.value })} />
-          </label>
-        )}
-
-        {activity.type === "quiz" && <QuizEditor activity={activity} onChange={onChange} />}
+        {isPositionSet && <PositionItemsEditor activity={activity} onChange={onChange} />}
+        {activity.type === "quiz" && <QuizItemsEditor activity={activity} onChange={onChange} />}
         {(activity.type === "play_computer" || activity.type === "endgame_practice" || activity.type === "opening_practice") && <ComputerEditor activity={activity} onChange={onChange} />}
-        {activity.type === "study_pgn" && (
-          <label className="text-xs font-bold text-slate-600">
-            PGN Text
-            <textarea className="input mt-1 h-44 resize-none font-mono text-xs" placeholder="Paste or import PGN from the library" value={activity.pgn || ""} onChange={(event) => onChange({ pgn: event.target.value })} />
-          </label>
-        )}
+        {activity.type === "study_pgn" && <PgnItemsEditor activity={activity} onChange={onChange} />}
         {activity.type === "analyze_position" && (
           <label className="text-xs font-bold text-slate-600">
             Expected analysis note
@@ -748,48 +813,124 @@ function ActivityEditor({
   );
 }
 
-function QuizEditor({ activity, onChange }: { activity: Activity; onChange: (patch: Partial<Activity>) => void }) {
-  const quiz = activity.quiz || { question: "", options: defaultOptions, multipleCorrect: false, explanation: "", positionFen: "" };
-  function updateQuiz(patch: Partial<NonNullable<Activity["quiz"]>>) {
-    onChange({ quiz: { ...quiz, ...patch } });
+function QuizItemsEditor({ activity, onChange }: { activity: Activity; onChange: (patch: Partial<Activity>) => void }) {
+  const items = activity.items?.length ? activity.items : [makeQuizItem()];
+  function updateItem(id: string, patch: Partial<ActivityItem>) {
+    onChange({ items: items.map((item) => (item.id === id ? { ...item, ...patch } : item)) });
   }
-  function updateOption(index: number, patch: Partial<QuizOption>) {
-    const next = quiz.options.map((option, idx) => (idx === index ? { ...option, ...patch } : option));
-    updateQuiz({ options: next });
+  function updateOption(item: ActivityItem, index: number, patch: Partial<QuizOption>) {
+    const options = item.options || defaultOptions;
+    updateItem(item.id, { options: options.map((option, idx) => (idx === index ? { ...option, ...patch } : option)) });
   }
   return (
     <div className="rounded-2xl border border-brand/10 bg-white p-3">
-      <div className="mb-3 text-sm font-black text-brand">Quiz Settings</div>
-      <div className="grid gap-3">
-        <label className="text-xs font-bold text-slate-600">
-          Question
-          <input className="input mt-1 h-11" value={quiz.question} onChange={(event) => updateQuiz({ question: event.target.value })} />
-        </label>
-        <label className="text-xs font-bold text-slate-600">
-          Optional Position FEN
-          <input className="input mt-1 h-11 font-mono text-xs" placeholder="Attach a board position to this question" value={quiz.positionFen || ""} onChange={(event) => updateQuiz({ positionFen: event.target.value })} />
-        </label>
-        <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
-          <input type="checkbox" checked={quiz.multipleCorrect} onChange={(event) => updateQuiz({ multipleCorrect: event.target.checked })} />
-          Allow multiple correct answers
-        </label>
-        <div className="space-y-2">
-          {quiz.options.map((option, index) => (
-            <div key={option.id} className="grid grid-cols-[28px_1fr_auto] items-center gap-2">
-              <input type={quiz.multipleCorrect ? "checkbox" : "radio"} checked={option.correct} onChange={(event) => {
-                if (quiz.multipleCorrect) updateOption(index, { correct: event.target.checked });
-                else updateQuiz({ options: quiz.options.map((item, idx) => ({ ...item, correct: idx === index })) });
-              }} />
-              <input className="input h-10" value={option.text} onChange={(event) => updateOption(index, { text: event.target.value })} />
-              <button type="button" className="rounded-lg border border-red-100 p-2 text-red-600" onClick={() => updateQuiz({ options: quiz.options.filter((_, idx) => idx !== index) })}><Trash2 size={14} /></button>
-            </div>
-          ))}
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div>
+          <div className="text-sm font-black text-brand">Quiz Questions</div>
+          <div className="text-xs text-slate-500">Add many MCQs under this one quiz activity.</div>
         </div>
-        <button type="button" className="btn-outline h-9 w-fit" onClick={() => updateQuiz({ options: [...quiz.options, { id: `${Date.now()}`, text: "New option", correct: false }] })}><Plus size={14} /> Add Option</button>
-        <label className="text-xs font-bold text-slate-600">
-          Explanation
-          <textarea className="input mt-1 h-16 resize-none" value={quiz.explanation} onChange={(event) => updateQuiz({ explanation: event.target.value })} />
-        </label>
+        <button type="button" className="btn-accent h-9 px-3" onClick={() => onChange({ items: [...items, makeQuizItem({ title: `Question ${items.length + 1}` })] })}><Plus size={14} /> Question</button>
+      </div>
+      <div className="space-y-3">
+        {items.map((item, itemIndex) => {
+          const options = item.options || defaultOptions;
+          return (
+            <div key={item.id} className="rounded-xl border border-slate-200 bg-[#fbf7ff] p-3">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <b className="text-sm text-brand">Question {itemIndex + 1}</b>
+                {items.length > 1 && <button type="button" className="rounded-lg border border-red-100 p-2 text-red-600" onClick={() => onChange({ items: items.filter((entry) => entry.id !== item.id) })}><Trash2 size={14} /></button>}
+              </div>
+              <div className="grid gap-2">
+                <input className="input h-10" placeholder="Question title" value={item.title} onChange={(event) => updateItem(item.id, { title: event.target.value })} />
+                <input className="input h-10" placeholder="Question text" value={item.question || ""} onChange={(event) => updateItem(item.id, { question: event.target.value })} />
+                <input className="input h-10 font-mono text-xs" placeholder="Optional position FEN" value={item.positionFen || ""} onChange={(event) => updateItem(item.id, { positionFen: event.target.value })} />
+                <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                  <input type="checkbox" checked={Boolean(item.multipleCorrect)} onChange={(event) => updateItem(item.id, { multipleCorrect: event.target.checked })} />
+                  Multiple correct answers
+                </label>
+                {options.map((option, optionIndex) => (
+                  <div key={option.id} className="grid grid-cols-[28px_1fr_auto] items-center gap-2">
+                    <input type={item.multipleCorrect ? "checkbox" : "radio"} checked={option.correct} onChange={(event) => {
+                      if (item.multipleCorrect) updateOption(item, optionIndex, { correct: event.target.checked });
+                      else updateItem(item.id, { options: options.map((entry, idx) => ({ ...entry, correct: idx === optionIndex })) });
+                    }} />
+                    <input className="input h-10" value={option.text} onChange={(event) => updateOption(item, optionIndex, { text: event.target.value })} />
+                    <button type="button" className="rounded-lg border border-red-100 p-2 text-red-600" onClick={() => updateItem(item.id, { options: options.filter((_, idx) => idx !== optionIndex) })}><Trash2 size={14} /></button>
+                  </div>
+                ))}
+                <button type="button" className="btn-outline h-9 w-fit" onClick={() => updateItem(item.id, { options: [...options, { id: `${Date.now()}`, text: "New option", correct: false }] })}><Plus size={14} /> Option</button>
+                <textarea className="input h-14 resize-none" placeholder="Explanation" value={item.explanation || ""} onChange={(event) => updateItem(item.id, { explanation: event.target.value })} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function PositionItemsEditor({ activity, onChange }: { activity: Activity; onChange: (patch: Partial<Activity>) => void }) {
+  const items = activity.items?.length ? activity.items : [makePositionItem({ fen: activity.fen, solution: activity.solution })];
+  function updateItem(id: string, patch: Partial<ActivityItem>) {
+    onChange({ items: items.map((item) => (item.id === id ? { ...item, ...patch } : item)) });
+  }
+  return (
+    <div className="rounded-2xl border border-brand/10 bg-white p-3">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div>
+          <div className="text-sm font-black text-brand">Positions / Questions</div>
+          <div className="text-xs text-slate-500">Add many positions inside this one activity.</div>
+        </div>
+        <button type="button" className="btn-accent h-9 px-3" onClick={() => onChange({ items: [...items, makePositionItem({ title: `Position ${items.length + 1}` })] })}><Plus size={14} /> Position</button>
+      </div>
+      <div className="space-y-3">
+        {items.map((item, index) => (
+          <div key={item.id} className="rounded-xl border border-slate-200 bg-[#fbf7ff] p-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <b className="text-sm text-brand">Position {index + 1}</b>
+              {items.length > 1 && <button type="button" className="rounded-lg border border-red-100 p-2 text-red-600" onClick={() => onChange({ items: items.filter((entry) => entry.id !== item.id) })}><Trash2 size={14} /></button>}
+            </div>
+            <div className="grid gap-2">
+              <input className="input h-10" placeholder="Position title" value={item.title} onChange={(event) => updateItem(item.id, { title: event.target.value })} />
+              <textarea className="input h-20 resize-none font-mono text-xs" placeholder="FEN" value={item.fen || ""} onChange={(event) => updateItem(item.id, { fen: event.target.value })} />
+              <input className="input h-10" placeholder="Solution moves, e.g. Nf6 Bxc6+" value={item.solution || ""} onChange={(event) => updateItem(item.id, { solution: event.target.value })} />
+              <input className="input h-10" type="number" min={0} value={item.points ?? activity.points} onChange={(event) => updateItem(item.id, { points: Number(event.target.value) })} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PgnItemsEditor({ activity, onChange }: { activity: Activity; onChange: (patch: Partial<Activity>) => void }) {
+  const items = activity.items?.length ? activity.items : [makePgnItem({ pgn: activity.pgn, pgnTitle: activity.pgnTitle })];
+  function updateItem(id: string, patch: Partial<ActivityItem>) {
+    onChange({ items: items.map((item) => (item.id === id ? { ...item, ...patch } : item)) });
+  }
+  return (
+    <div className="rounded-2xl border border-brand/10 bg-white p-3">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div>
+          <div className="text-sm font-black text-brand">PGNs / Chapters</div>
+          <div className="text-xs text-slate-500">Add many PGNs inside this one study activity.</div>
+        </div>
+        <button type="button" className="btn-accent h-9 px-3" onClick={() => onChange({ items: [...items, makePgnItem({ title: `PGN ${items.length + 1}` })] })}><Plus size={14} /> PGN</button>
+      </div>
+      <div className="space-y-3">
+        {items.map((item, index) => (
+          <div key={item.id} className="rounded-xl border border-slate-200 bg-[#fbf7ff] p-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <b className="text-sm text-brand">PGN {index + 1}</b>
+              {items.length > 1 && <button type="button" className="rounded-lg border border-red-100 p-2 text-red-600" onClick={() => onChange({ items: items.filter((entry) => entry.id !== item.id) })}><Trash2 size={14} /></button>}
+            </div>
+            <div className="grid gap-2">
+              <input className="input h-10" placeholder="PGN title / chapter" value={item.title} onChange={(event) => updateItem(item.id, { title: event.target.value, pgnTitle: event.target.value })} />
+              <textarea className="input h-36 resize-none font-mono text-xs" placeholder="Paste PGN here or import from the PGN library" value={item.pgn || ""} onChange={(event) => updateItem(item.id, { pgn: event.target.value })} />
+              <input className="input h-10" type="number" min={0} value={item.points ?? activity.points} onChange={(event) => updateItem(item.id, { points: Number(event.target.value) })} />
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -805,16 +946,18 @@ function ComputerEditor({ activity, onChange }: { activity: Activity; onChange: 
       <div className="mb-3 text-sm font-black text-brand">Computer Practice</div>
       <div className="grid gap-3 md:grid-cols-2">
         <label className="text-xs font-bold text-slate-600">
-          Computer Strength
+          Computer Level
           <select className="input mt-1 h-11" value={computer.strength} onChange={(event) => updateComputer({ strength: event.target.value })}>
-            <option>Beginner</option>
-            <option>Intermediate</option>
-            <option>Advanced</option>
-            <option>Rating Based</option>
+            <option>Level 1 - Very Easy</option>
+            <option>Level 2 - Easy</option>
+            <option>Level 3 - Beginner</option>
+            <option>Level 4 - Improver</option>
+            <option>Level 5 - Club</option>
+            <option>Custom Rating</option>
           </select>
         </label>
         <label className="text-xs font-bold text-slate-600">
-          Rating Level
+          Optional Rating
           <input className="input mt-1 h-11" type="number" min={100} max={3000} value={computer.rating} onChange={(event) => updateComputer({ rating: Number(event.target.value) })} />
         </label>
         <label className="text-xs font-bold text-slate-600">
@@ -980,18 +1123,25 @@ function labelFor(type: ActivityType) {
 }
 
 function isActivityReady(activity: Activity) {
-  if (activity.type === "quiz") return Boolean(activity.quiz?.question && activity.quiz.options.some((option) => option.correct));
-  if (activity.type === "study_pgn") return Boolean(activity.pgn);
+  if (activity.type === "quiz") return (activity.items || []).some((item) => item.question && (item.options || []).some((option) => option.correct));
+  if (activity.type === "study_pgn") return (activity.items || []).some((item) => item.pgn);
   if (activity.type === "play_computer") return Boolean(activity.fen && activity.computer?.objective);
   if (activity.type === "analyze_position") return Boolean(activity.fen);
+  if (["solve_position", "find_best_move", "find_combination"].includes(activity.type)) return positionItems(activity).some((item) => item.fen);
   return Boolean(activity.fen && (activity.solution || activity.computer));
 }
 
 function toPayloadActivity(activity: Activity) {
   const solution = activity.solution.trim().split(/\s+/).filter(Boolean);
+  const items = (activity.items || []).map((item) => ({
+    ...item,
+    solution: (item.solution || "").trim().split(/\s+/).filter(Boolean),
+    correctAnswers: (item.options || []).map((option, index) => (option.correct ? index : -1)).filter((index) => index >= 0),
+  }));
   return {
     ...activity,
     solution,
+    items,
     quiz: activity.quiz
       ? {
           ...activity.quiz,
@@ -999,6 +1149,22 @@ function toPayloadActivity(activity: Activity) {
         }
       : undefined,
   };
+}
+
+function positionItems(activity: Activity) {
+  if (!["solve_position", "find_best_move", "find_combination"].includes(activity.type)) return [];
+  return activity.items?.length ? activity.items : [makePositionItem({ fen: activity.fen, solution: activity.solution, points: activity.points })];
+}
+
+function activityItemCount(activity: Activity) {
+  if (activity.type === "play_computer" || activity.type === "endgame_practice" || activity.type === "opening_practice") return 1;
+  return Math.max(1, activity.items?.length || 0);
+}
+
+function firstItemPreview(activity: Activity) {
+  const item = activity.items?.[0];
+  if (!item) return activity.quiz?.question || activity.pgnTitle || activity.fen;
+  return item.question || item.title || item.pgnTitle || item.fen || item.pgn;
 }
 
 function extractPgnPositions(pgn: string): PgnPosition[] {

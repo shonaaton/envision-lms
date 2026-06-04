@@ -79,6 +79,30 @@ const assignmentActivityTypeSchema = z.enum([
   "opening_practice",
 ]);
 
+const assignmentQuizOptionSchema = z.object({
+  id: z.string(),
+  text: z.string(),
+  correct: z.boolean().default(false),
+});
+
+const assignmentActivityItemSchema = z.object({
+  id: z.string(),
+  title: z.string().optional(),
+  question: z.string().optional(),
+  positionFen: z.string().optional(),
+  options: z.array(assignmentQuizOptionSchema).default([]),
+  multipleCorrect: z.boolean().default(false),
+  explanation: z.string().optional(),
+  fen: z.string().optional(),
+  solution: z.array(z.string()).default([]),
+  pgn: z.string().optional(),
+  pgnTitle: z.string().optional(),
+  pgnSourceId: z.string().optional(),
+  source: z.any().optional(),
+  correctAnswers: z.array(z.number().int().min(0)).default([]),
+  points: z.number().int().min(0).default(1),
+});
+
 const assignmentActivitySchema = z.object({
   type: assignmentActivityTypeSchema,
   title: z.string().min(1).default("Untitled activity"),
@@ -97,18 +121,11 @@ const assignmentActivitySchema = z.object({
   pgnTitle: z.string().optional(),
   pgnSourceId: z.string().optional(),
   source: z.any().optional(),
+  items: z.array(assignmentActivityItemSchema).default([]),
   quiz: z
     .object({
       question: z.string().optional(),
-      options: z
-        .array(
-          z.object({
-            id: z.string(),
-            text: z.string(),
-            correct: z.boolean().default(false),
-          })
-        )
-        .default([]),
+      options: z.array(assignmentQuizOptionSchema).default([]),
       correctAnswers: z.array(z.number().int().min(0)).default([]),
       multipleCorrect: z.boolean().default(false),
       explanation: z.string().optional(),

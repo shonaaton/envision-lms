@@ -52,6 +52,31 @@ const ActivitySchema = new Schema(
       variation: String,
       san: String,
     },
+    items: [
+      {
+        id: String,
+        title: String,
+        question: String,
+        positionFen: String,
+        options: [
+          {
+            id: String,
+            text: String,
+            correct: { type: Boolean, default: false },
+          },
+        ],
+        multipleCorrect: { type: Boolean, default: false },
+        explanation: String,
+        fen: String,
+        solution: [String],
+        pgn: String,
+        pgnTitle: String,
+        pgnSourceId: String,
+        source: Schema.Types.Mixed,
+        correctAnswers: [Number],
+        points: { type: Number, default: 1 },
+      },
+    ],
     quiz: {
       question: String,
       options: [

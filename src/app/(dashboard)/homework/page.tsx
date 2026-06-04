@@ -5,6 +5,7 @@ import { Classroom } from "@/models/Classroom";
 import { User } from "@/models/User";
 import Link from "next/link";
 import { BarChart3, CheckCircle2, Clock, FileText } from "lucide-react";
+import HomeworkActions from "@/components/homework/HomeworkActions";
 
 export const dynamic = "force-dynamic";
 
@@ -94,10 +95,10 @@ export default async function HomeworkListPage() {
           <h2 className="mb-3 font-semibold">Homework Tracking</h2>
           <div className="overflow-x-auto">
             <table className="min-w-full text-left text-sm">
-              <thead className="text-xs uppercase text-slate-500"><tr className="border-b"><th className="px-3 py-3">Homework</th><th>Type</th><th>Due</th><th>Submissions</th><th>Completion Rate</th><th>Average Score</th><th>Status</th></tr></thead>
+              <thead className="text-xs uppercase text-slate-500"><tr className="border-b"><th className="px-3 py-3">Homework</th><th>Type</th><th>Due</th><th>Submissions</th><th>Completion Rate</th><th>Average Score</th><th>Status</th><th>Actions</th></tr></thead>
               <tbody>{list.map((h: any) => {
                 const rows = submissions.filter((s: any) => s.homework.toString() === h._id.toString());
-                return <tr key={h._id} className="border-b last:border-0"><td className="px-3 py-3 font-medium">{h.title}</td><td>{h.type}</td><td>{h.dueAt ? new Date(h.dueAt).toLocaleDateString("en-IN") : "-"}</td><td>{rows.length}</td><td>{percent(rows.length, 1)}%</td><td>{rows.length ? Math.round(rows.reduce((s: number, x: any) => s + (x.totalScore || 0), 0) / rows.length) : 0}</td><td>{h.dueAt && new Date(h.dueAt) < new Date() ? "Due passed" : "Active"}</td></tr>;
+                return <tr key={h._id} className="border-b last:border-0"><td className="px-3 py-3 font-medium">{h.title}</td><td>{h.type}</td><td>{h.dueAt ? new Date(h.dueAt).toLocaleDateString("en-IN") : "-"}</td><td>{rows.length}</td><td>{percent(rows.length, 1)}%</td><td>{rows.length ? Math.round(rows.reduce((s: number, x: any) => s + (x.totalScore || 0), 0) / rows.length) : 0}</td><td>{h.dueAt && new Date(h.dueAt) < new Date() ? "Due passed" : "Active"}</td><td><HomeworkActions homework={JSON.parse(JSON.stringify(h))} /></td></tr>;
               })}</tbody>
             </table>
           </div>

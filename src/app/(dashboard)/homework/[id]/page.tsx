@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { Chess } from "chess.js";
 import { toast } from "sonner";
@@ -11,7 +11,7 @@ const Chessboard = dynamic(() => import("react-chessboard").then((m) => m.Chessb
 
 const startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
-type BoardResult = { solved: boolean; mistakes: number; hintsUsed: number; timeTakenSeconds: number };
+type BoardResult = { solved: boolean; mistakes: number; hintsUsed: number; timeTakenSeconds: number; skipped?: boolean };
 
 function key(activityId: string, itemId: string) {
   return `${activityId}:${itemId}`;
@@ -297,6 +297,20 @@ function ActivitySection({ activity, index, locked, quizAnswers, setQuizAnswers,
     setActiveItemIndex(0);
   }, [activity._id, items.length]);
 
+  function goNext() {
+    setActiveItemIndex((value) => Math.min(items.length - 1, value + 1));
+  }
+
+  function skipCurrent() {
+    if (isPgnQuiz && activeItem) {
+      setBoardResults((current: any) => ({
+        ...current,
+        [key(activity._id, activeItem.id)]: { solved: false, skipped: true, mistakes: 0, hintsUsed: 0, timeTakenSeconds: 0 },
+      }));
+    }
+    goNext();
+  }
+
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
@@ -317,7 +331,8 @@ function ActivitySection({ activity, index, locked, quizAnswers, setQuizAnswers,
           total={items.length}
           timeLabel={activity.timeLimitMinutes ? `${activity.timeLimitMinutes} min for this activity` : "No item time limit"}
           onPrevious={() => setActiveItemIndex((value) => Math.max(0, value - 1))}
-          onNext={() => setActiveItemIndex((value) => Math.min(items.length - 1, value + 1))}
+          onNext={goNext}
+          onSkip={skipCurrent}
         />
       )}
 
@@ -329,12 +344,15 @@ function ActivitySection({ activity, index, locked, quizAnswers, setQuizAnswers,
           index={activeItemIndex}
           locked={locked}
           value={quizAnswers[key(activity._id, activeItem.id)] || ""}
-          onChange={(optionId: string) => setQuizAnswers((current: any) => ({ ...current, [key(activity._id, activeItem.id)]: optionId }))}
+          onChange={(optionId: string) => {
+            setQuizAnswers((current: any) => ({ ...current, [key(activity._id, activeItem.id)]: optionId }));
+            window.setTimeout(goNext, 250);
+          }}
         />
       )}
 
       {isPgnQuiz && activeItem && (
-        <div className="max-w-[460px]">
+        <div className="max-w-[520px]">
           <PgnBoardTask
             key={activeItem.id || activeItemIndex}
             activityId={activity._id}
@@ -342,6 +360,7 @@ function ActivitySection({ activity, index, locked, quizAnswers, setQuizAnswers,
             index={activeItemIndex}
             locked={locked}
             onResult={(result: BoardResult) => setBoardResults((current: any) => ({ ...current, [key(activity._id, activeItem.id)]: result }))}
+            onSolved={goNext}
           />
         </div>
       )}
@@ -351,7 +370,7 @@ function ActivitySection({ activity, index, locked, quizAnswers, setQuizAnswers,
   );
 }
 
-function ItemPager({ current, total, timeLabel, onPrevious, onNext }: { current: number; total: number; timeLabel: string; onPrevious: () => void; onNext: () => void }) {
+function ItemPager({ current, total, timeLabel, onPrevious, onNext, onSkip }: { current: number; total: number; timeLabel: string; onPrevious: () => void; onNext: () => void; onSkip: () => void }) {
   return (
     <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
       <div>
@@ -361,6 +380,9 @@ function ItemPager({ current, total, timeLabel, onPrevious, onNext }: { current:
       <div className="flex items-center gap-2">
         <button type="button" className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 disabled:cursor-not-allowed disabled:text-slate-300" onClick={onPrevious} disabled={current === 0}>
           <ChevronLeft size={15} /> Previous
+        </button>
+        <button type="button" className="inline-flex items-center rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-700" onClick={onSkip}>
+          Skip
         </button>
         <button type="button" className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 disabled:cursor-not-allowed disabled:text-slate-300" onClick={onNext} disabled={current >= total - 1}>
           Next <ChevronRight size={15} />
@@ -391,7 +413,7 @@ function McqQuestion({ activityId, item, index, value, onChange, locked }: any) 
   );
 }
 
-function PgnBoardTask({ activityId, item, index, locked, onResult }: any) {
+function PgnBoardTask({ activityId, item, index, locked, onResult, onSolved }: any) {
   const parsed = useMemo(() => parsePgnPuzzle(item.pgn || ""), [item.pgn]);
   const [game, setGame] = useState(() => new Chess(parsed.start));
   const [position, setPosition] = useState(parsed.start);
@@ -400,6 +422,8 @@ function PgnBoardTask({ activityId, item, index, locked, onResult }: any) {
   const [hintsUsed, setHintsUsed] = useState(0);
   const [startedAt] = useState(Date.now());
   const [solved, setSolved] = useState(false);
+  const [feedback, setFeedback] = useState("Make the best move on the board.");
+  const advancedRef = useRef(false);
 
   useEffect(() => {
     const next = new Chess(parsed.start);
@@ -409,11 +433,18 @@ function PgnBoardTask({ activityId, item, index, locked, onResult }: any) {
     setMistakes(0);
     setHintsUsed(0);
     setSolved(parsed.moves.length === 0);
+    setFeedback(parsed.moves.length === 0 ? "No moves found in this PGN." : "Make the best move on the board.");
+    advancedRef.current = false;
   }, [parsed.start, parsed.moves.length]);
 
   useEffect(() => {
     onResult({ solved, mistakes, hintsUsed, timeTakenSeconds: Math.round((Date.now() - startedAt) / 1000) });
-  }, [solved, mistakes, hintsUsed, startedAt, onResult]);
+    if (solved && !advancedRef.current) {
+      advancedRef.current = true;
+      window.setTimeout(onSolved, 650);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [solved, mistakes, hintsUsed, startedAt]);
 
   function applyAutoReply(nextGame: Chess, nextPly: number) {
     if (nextPly >= parsed.moves.length) {
@@ -436,7 +467,7 @@ function PgnBoardTask({ activityId, item, index, locked, onResult }: any) {
     if (!move) return false;
     if (move.san !== expected.san) {
       setMistakes((value) => value + 1);
-      toast.error("Try again");
+      setFeedback("Try again. That move is not the expected continuation.");
       return false;
     }
     let nextPly = ply + 1;
@@ -444,13 +475,14 @@ function PgnBoardTask({ activityId, item, index, locked, onResult }: any) {
     setGame(nextGame);
     setPosition(nextGame.fen());
     setPly(nextPly);
+    setFeedback(nextPly >= parsed.moves.length ? "Solved. Moving to the next item..." : "Correct. Continue from the new position.");
     return true;
   }
 
   function hint() {
     if (locked || solved || ply >= parsed.moves.length) return;
     setHintsUsed((value) => value + 1);
-    toast.info(`Hint: try ${parsed.moves[ply].san}`);
+    setFeedback(`Hint: try ${parsed.moves[ply].san}`);
   }
 
   function reset() {
@@ -461,24 +493,30 @@ function PgnBoardTask({ activityId, item, index, locked, onResult }: any) {
     setMistakes(0);
     setHintsUsed(0);
     setSolved(parsed.moves.length === 0);
+    setFeedback("Make the best move on the board.");
   }
 
   return (
-    <div className="rounded-xl border border-slate-200 p-3">
-      <div className="mb-2 flex items-center justify-between gap-2">
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xl shadow-brand-900/10">
+      <div className="mb-3 flex items-center justify-between gap-2">
         <div>
           <b className="text-brand">{item.title || item.pgnTitle || `PGN ${index + 1}`}</b>
           <div className="text-xs text-slate-500">{parsed.moves.length} moves · mistakes {mistakes} · hints {hintsUsed}</div>
         </div>
         {solved && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-xs font-bold text-emerald-700"><CheckCircle2 size={13} /> Solved</span>}
       </div>
-      <Chessboard
-        position={position}
-        onPieceDrop={onDrop}
-        boardWidth={360}
-        customDarkSquareStyle={{ backgroundColor: "#b58863" }}
-        customLightSquareStyle={{ backgroundColor: "#f0d9b5" }}
-      />
+      <div className="rounded-2xl bg-[#31210f] p-3 shadow-inner">
+        <Chessboard
+          position={position}
+          onPieceDrop={onDrop}
+          boardWidth={440}
+          customDarkSquareStyle={{ backgroundColor: "#b58863" }}
+          customLightSquareStyle={{ backgroundColor: "#f0d9b5" }}
+        />
+      </div>
+      <div className={`mt-3 rounded-xl px-3 py-2 text-sm font-semibold ${feedback.startsWith("Try") ? "bg-red-50 text-red-700" : feedback.startsWith("Hint") ? "bg-amber-50 text-amber-700" : solved ? "bg-emerald-50 text-emerald-700" : "bg-slate-50 text-slate-600"}`}>
+        {feedback}
+      </div>
       <div className="mt-3 flex flex-wrap gap-2">
         <button type="button" className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold" onClick={hint}><HelpCircle size={14} className="mr-1 inline" /> Hint</button>
         <button type="button" className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold" onClick={reset}><RotateCcw size={14} className="mr-1 inline" /> Reset</button>

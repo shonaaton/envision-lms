@@ -11,7 +11,7 @@ export default async function TournamentsPage() {
   const role = (session?.user as any)?.role;
   const userId = (session?.user as any)?.id;
   await dbConnect();
-  const filter = role === "admin" ? {} : {
+  const filter = role === "admin" || role === "instructor" ? {} : {
     $or: [{ "access.users": userId }, { participants: userId }, { "access.allActiveStudents": true }],
   };
   const tournaments = await Tournament.find(filter).sort({ startAt: 1 }).limit(200).lean();

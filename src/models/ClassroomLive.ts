@@ -13,8 +13,18 @@ const ClassroomSessionSchema = new Schema(
     },
     fen: { type: String, default: "start" },
     pgn: { type: String, default: "" },
+    pgnTitle: { type: String, default: "" },
+    pgnMoves: [{ type: String }],
+    pgnMoveIndex: { type: Number, default: 0 },
     moveHistory: [{ type: String }],
     orientation: { type: String, enum: ["white", "black"], default: "white" },
+    showCoordinates: { type: Boolean, default: true },
+    studentMovesEnabled: { type: Boolean, default: false },
+    illegalMovesEnabled: { type: Boolean, default: false },
+    arrowsEnabled: { type: Boolean, default: true },
+    soundEnabled: { type: Boolean, default: true },
+    setupMode: { type: Boolean, default: false },
+    engineEnabled: { type: Boolean, default: true },
     selectedStudents: [{ type: Schema.Types.ObjectId, ref: "User", index: true }],
     boardControlStudents: [{ type: Schema.Types.ObjectId, ref: "User", index: true }],
     challenge: {
@@ -33,6 +43,15 @@ const ClassroomSessionSchema = new Schema(
     locked: { type: Boolean, default: false },
     startedAt: { type: Date, default: Date.now },
     activeQuestion: { type: Schema.Types.ObjectId, ref: "LiveQuestion" },
+  },
+  { timestamps: true }
+);
+
+const ClassroomChatMessageSchema = new Schema(
+  {
+    classroom: { type: Schema.Types.ObjectId, ref: "Classroom", required: true, index: true },
+    sender: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
+    message: { type: String, required: true },
   },
   { timestamps: true }
 );
@@ -113,8 +132,10 @@ export type ClassroomSessionDoc = InferSchemaType<typeof ClassroomSessionSchema>
 export type LiveQuestionDoc = InferSchemaType<typeof LiveQuestionSchema> & { _id: any };
 export type LiveQuestionResponseDoc = InferSchemaType<typeof LiveQuestionResponseSchema> & { _id: any };
 export type StudentRewardDoc = InferSchemaType<typeof StudentRewardSchema> & { _id: any };
+export type ClassroomChatMessageDoc = InferSchemaType<typeof ClassroomChatMessageSchema> & { _id: any };
 
 export const ClassroomSession = models.ClassroomSession || model("ClassroomSession", ClassroomSessionSchema);
 export const LiveQuestion = models.LiveQuestion || model("LiveQuestion", LiveQuestionSchema);
 export const LiveQuestionResponse = models.LiveQuestionResponse || model("LiveQuestionResponse", LiveQuestionResponseSchema);
 export const StudentReward = models.StudentReward || model("StudentReward", StudentRewardSchema);
+export const ClassroomChatMessage = models.ClassroomChatMessage || model("ClassroomChatMessage", ClassroomChatMessageSchema);

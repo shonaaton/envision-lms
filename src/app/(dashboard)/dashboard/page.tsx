@@ -125,7 +125,7 @@ function miniBars(points: { label: string; value: number }[]) {
 function SectionTitle({ icon: Icon, title, subtitle }: { icon: any; title: string; subtitle?: string }) {
   return (
     <div className="mb-4 flex items-center gap-2">
-      <span className="flex h-8 w-8 items-center justify-center rounded-md bg-purple-50 text-purple-700">
+      <span className="flex h-8 w-8 items-center justify-center rounded-md bg-purple-50 text-purple-700 shadow-md shadow-purple-900/10">
         <Icon size={16} />
       </span>
       <div>
@@ -146,7 +146,7 @@ function StatCard({ label, value, note, icon: Icon, tone = "purple" }: { label: 
   };
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_14px_35px_rgba(90,19,114,0.10)] transition hover:-translate-y-0.5 hover:shadow-[0_20px_45px_rgba(90,19,114,0.16)]">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-xs font-medium text-slate-500">{label}</div>
@@ -480,7 +480,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
           <p className="mt-1 text-sm text-slate-500">Live academy performance from {formatDate(from)} to {formatDate(to)}.</p>
         </div>
 
-        <form className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white p-2 shadow-sm">
+        <form className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white p-2 shadow-[0_12px_30px_rgba(90,19,114,0.10)]">
           <label className="flex flex-col gap-1 text-xs text-slate-500">
             Academic Year
             <input name="academicYear" type="number" defaultValue={academicYearStart} className="h-10 w-28 rounded-md border border-slate-200 px-3 text-sm text-slate-700" />
@@ -501,11 +501,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
             <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
             <input name="q" defaultValue={searchParams.q} placeholder="Search students..." className="h-10 w-44 rounded-md border border-slate-200 pl-9 pr-3 text-sm text-slate-700" />
           </label>
-          <button className="h-10 rounded-md bg-purple-700 px-4 text-sm font-semibold text-white shadow-sm hover:bg-purple-800">Apply</button>
+          <button className="h-10 rounded-md bg-purple-700 px-4 text-sm font-semibold text-white shadow-md shadow-purple-900/20 hover:bg-purple-800">Apply</button>
         </form>
       </div>
 
-      <section className="mb-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <section className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_18px_45px_rgba(90,19,114,0.12)]">
         <SectionTitle icon={Users} title="Academy Snapshot" subtitle={`Academic year ${academicYearStart}-${String(academicYearStart + 1).slice(-2)} and selected date ${formatDate(focusDate)}`} />
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
           <StatCard label="Total Student Strength" value={students.length} note="All student profiles" icon={Users} tone="purple" />
@@ -515,7 +515,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
           <StatCard label="Today's Due Amount" value={money(todayDue)} note="Invoices due on selected date" icon={Calendar} tone="amber" />
         </div>
         <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-3">
-          <div className="rounded-md bg-slate-50 p-4">
+          <div className="rounded-xl bg-slate-50 p-4 shadow-inner shadow-slate-200/70">
             <h3 className="text-sm font-semibold text-slate-950">Gender-wise Student Count</h3>
             <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
               <div>Male <b className="float-right">{genderCounts.male}</b></div>
@@ -524,7 +524,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
               <div>Not Available <b className="float-right">{genderCounts.notAvailable}</b></div>
             </div>
           </div>
-          <div className="rounded-md bg-slate-50 p-4">
+          <div className="rounded-xl bg-slate-50 p-4 shadow-inner shadow-slate-200/70">
             <h3 className="text-sm font-semibold text-slate-950">Overall Fee Statistics</h3>
             <div className="mt-3 space-y-2 text-sm">
               <div>Collected Fees <b className="float-right">{money(collectedFees)}</b></div>
@@ -533,7 +533,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
               <div>Bad Debt <b className="float-right text-slate-700">{money(badDebt)}</b></div>
             </div>
           </div>
-          <div className="rounded-md bg-slate-50 p-4">
+          <div className="rounded-xl bg-slate-50 p-4 shadow-inner shadow-slate-200/70">
             <h3 className="text-sm font-semibold text-slate-950">Mode of Transaction Summary</h3>
             <div className="mt-3 space-y-2 text-sm">
               {transactionModes.map((item) => (
@@ -544,16 +544,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
         </div>
       </section>
 
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
-        <StatCard label="Total Students" value={activeStudents.length} note={`${newStudents.length} joined in range`} icon={GraduationCap} tone="purple" />
-        <StatCard label="Active Classes" value={activeClassrooms.length} note={`${batches.length} batches tracked`} icon={BookOpen} tone="blue" />
-        <StatCard label="Attendance" value={`${attendanceRate}%`} note={`${presentRecords.length}/${attendanceRecords.length} attended`} icon={CheckCircle2} tone="green" />
-        <StatCard label="Homework Done" value={`${completionRate}%`} note={`${submissions.length}/${assignedHomeworkTotal} submissions`} icon={ClipboardList} tone="amber" />
-        <StatCard label="Paid Revenue" value={money(paidRevenue)} note={`${payments.length} paid invoices`} icon={CircleDollarSign} tone="rose" />
-      </div>
-
       <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(360px,0.9fr)]">
-        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_18px_45px_rgba(90,19,114,0.12)]">
           <SectionTitle icon={TrendingUp} title="Student Growth Analytics" subtitle="New student registrations inside the selected calendar range" />
           <div className="flex h-44 items-end gap-1 rounded-md bg-slate-50 px-3 py-4">
             {growthPoints.map((point) => (
@@ -583,7 +575,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
           </div>
         </section>
 
-        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_18px_45px_rgba(90,19,114,0.12)]">
           <SectionTitle icon={ActivityIcon} title="Activity Tracking" subtitle="Account, learning, attendance, payment, and PGN activity" />
           <div className="max-h-[342px] space-y-3 overflow-auto pr-1">
             {activities.length === 0 ? (
@@ -605,7 +597,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
       </div>
 
       <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-3">
-        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm xl:col-span-2">
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_18px_45px_rgba(90,19,114,0.12)] xl:col-span-2">
           <SectionTitle icon={BarChart3} title="Classroom & Engagement" subtitle="Attendance, homework submissions, sessions, and platform usage" />
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
             <StatCard label="Sessions Held" value={attendance.length} note="Attendance sheets" icon={Calendar} tone="blue" />
@@ -623,7 +615,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
           </div>
         </section>
 
-        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_18px_45px_rgba(90,19,114,0.12)]">
           <SectionTitle icon={Calendar} title="Upcoming Sessions" subtitle="Filtered sessions still ahead" />
           <div className="space-y-3">
             {upcomingBookings.length === 0 ? (
@@ -640,7 +632,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
         </section>
       </div>
 
-      <section className="mt-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <section className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_18px_45px_rgba(90,19,114,0.12)]">
         <SectionTitle icon={Users} title="Student Progress & Performance" subtitle="Homework, classes, attendance, PGN activity, and latest engagement" />
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
@@ -673,7 +665,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
         </div>
       </section>
 
-      <section className="mt-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <section className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_18px_45px_rgba(90,19,114,0.12)]">
         <SectionTitle icon={GraduationCap} title="Coach Performance" subtitle="Assigned students, active classes, homework, and attendance sessions" />
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">

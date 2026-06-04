@@ -47,7 +47,7 @@ export default async function TournamentDetailPage({ params }: { params: { id: s
   await dbConnect();
   const tournament: any = await Tournament.findById(params.id).populate("participants", "name username").lean();
   if (!tournament) redirect("/tournaments");
-  const allowed = role === "admin" || tournament.access?.allActiveStudents || (tournament.access?.users || []).map((id: any) => id.toString()).includes(userId) || (tournament.participants || []).some((p: any) => p._id?.toString() === userId);
+  const allowed = role === "admin" || role === "instructor" || tournament.access?.allActiveStudents || (tournament.access?.users || []).map((id: any) => id.toString()).includes(userId) || (tournament.participants || []).some((p: any) => p._id?.toString() === userId);
   if (!allowed) return <div className="p-6">You do not have access to this tournament.</div>;
   const joined = (tournament.participants || []).some((p: any) => p._id?.toString() === userId);
   const host = headers().get("host");
@@ -65,7 +65,7 @@ export default async function TournamentDetailPage({ params }: { params: { id: s
               <p className="mt-1 text-sm text-slate-500">{tournament.description || "Tournament details"}</p>
             </div>
           </div>
-          {role !== "admin" && (
+          {role === "student" && (
             <form action={joinTournament}>
               <input type="hidden" name="id" value={params.id} />
               <button disabled={joined} className="h-10 rounded-md bg-purple-700 px-4 text-sm font-semibold text-white disabled:bg-slate-300">{joined ? "Joined" : "Join Tournament"}</button>

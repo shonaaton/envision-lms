@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { Classroom } from "@/models/Classroom";
-import { ClassroomSession, LiveQuestion, LiveQuestionResponse } from "@/models/ClassroomLive";
+import { PGN } from "@/models/PGN";
+import { ClassroomChatMessage, ClassroomSession, LiveQuestion, LiveQuestionResponse } from "@/models/ClassroomLive";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +35,23 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
   const responses = activeQuestion
     ? await LiveQuestionResponse.find({ question: activeQuestion._id }).populate("student", "name username").sort({ submittedAt: -1 }).lean()
     : [];
-  return NextResponse.json({ classroom, live, activeQuestion, responses, serverTime: new Date() });
+  const pgnLibrary = await PGN.find({
+    $or: [
+      { uploadedBy: (session.user as any).id },
+      { visibility: "classroom", classroom: params.id },
+      { visibility: "classroom" },
+    ],
+  })
+    .select("title white black event result date folder pgn")
+    .sort({ folder: 1, createdAt: -1 })
+    .limit(80)
+    .lean();
+  const chatMessages = await ClassroomChatMessage.find({ classroom: params.id })
+    .populate("sender", "name username role")
+    .sort({ createdAt: -1 })
+    .limit(50)
+    .lean();
+  return NextResponse.json({ classroom, live, activeQuestion, responses, pgnLibrary, chatMessages: chatMessages.reverse(), serverTime: new Date() });
 }
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
@@ -48,8 +65,18 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     "mode",
     "fen",
     "pgn",
+    "pgnTitle",
+    "pgnMoves",
+    "pgnMoveIndex",
     "moveHistory",
     "orientation",
+    "showCoordinates",
+    "studentMovesEnabled",
+    "illegalMovesEnabled",
+    "arrowsEnabled",
+    "soundEnabled",
+    "setupMode",
+    "engineEnabled",
     "selectedStudents",
     "boardControlStudents",
     "drawings",

@@ -1,8 +1,7 @@
 import { Types } from "mongoose";
-import { AcademySettings, CreditLedger, FeeAssignment, Invoice } from "@/models/Fee";
+import { AcademySettings, CreditLedger, FeeAssignment, Invoice, Notification } from "@/models/Fee";
 
 const DAY = 24 * 60 * 60 * 1000;
-const LATE_FEE = 50000;
 
 export async function getAcademySettings() {
   const existing = await AcademySettings.findOne().lean();
@@ -27,8 +26,14 @@ export function invoiceBreakup(amount: number, lateFee: number, settings: any) {
 
 export async function nextInvoiceNumber() {
   const settings: any = await getAcademySettings();
-  const count = await Invoice.countDocuments();
-  return `${settings.invoicePrefix || "INV"}-${String(count + 1).padStart(5, "0")}`;
+  const now = new Date();
+  const startYear = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+  const endYear = startYear + 1;
+  const fy = `${String(startYear).slice(-2)}-${String(endYear).slice(-2)}`;
+  const fyStart = new Date(startYear, 3, 1, 0, 0, 0, 0);
+  const fyEnd = new Date(endYear, 2, 31, 23, 59, 59, 999);
+  const count = await Invoice.countDocuments({ createdAt: { $gte: fyStart, $lte: fyEnd } });
+  return `${settings.invoicePrefix || "ENV"}/${fy}/${String(count + 1).padStart(3, "0")}`;
 }
 
 export function monthlyDueDate(startDate: Date, monthOffset = 0) {
@@ -42,12 +47,15 @@ export async function updateLateFees(now = new Date()) {
   const settings = await getAcademySettings();
   const overdue = await Invoice.find({
     status: { $in: ["unpaid", "overdue"] },
-    dueDate: { $lt: new Date(now.getTime() - 10 * DAY) },
-  });
+  }).populate("plan");
 
   for (const invoice of overdue) {
-    const breakup = invoiceBreakup(invoice.amount, LATE_FEE, settings);
-    invoice.lateFee = LATE_FEE;
+    const plan: any = (invoice as any).plan;
+    const lateAfterDays = Number(plan?.lateFeeAfterDays ?? 10);
+    if (invoice.dueDate >= new Date(now.getTime() - lateAfterDays * DAY)) continue;
+    const lateFee = Number(plan?.lateFeeAmount ?? 50000);
+    const breakup = invoiceBreakup(invoice.amount, lateFee, settings);
+    invoice.lateFee = lateFee;
     invoice.status = "overdue";
     invoice.taxableAmount = breakup.taxableAmount;
     invoice.gstPercentage = breakup.gstPercentage;
@@ -94,6 +102,7 @@ export async function ensureMonthlyInvoices(now = new Date()) {
 
     for (let offset = 0; offset <= months; offset += 1) {
       const dueDate = monthlyDueDate(start, offset);
+      dueDate.setDate(dueDate.getDate() + Number(assignment.plan.dueAfterDays || 0));
       const exists = await Invoice.exists({
         assignment: assignment._id,
         type: "monthly",
@@ -173,4 +182,18 @@ export async function consumeAttendanceCredit(studentId: string, attendanceId: s
     sourceId: attendanceId,
     note: "Credit deducted after attendance was marked",
   });
+  const settings: any = await getAcademySettings();
+  if (nextBalance <= Number(settings.lowCreditThreshold ?? 3)) {
+    await Notification.findOneAndUpdate(
+      { user: studentId, type: "low_credits", "metadata.balance": nextBalance },
+      {
+        user: studentId,
+        type: "low_credits",
+        title: "Low credit balance",
+        message: `Your remaining class credits are low (${nextBalance}). Please recharge to continue classes smoothly.`,
+        metadata: { balance: nextBalance, threshold: settings.lowCreditThreshold ?? 3 },
+      },
+      { upsert: true, new: true }
+    );
+  }
 }

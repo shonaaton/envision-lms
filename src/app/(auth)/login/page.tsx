@@ -4,6 +4,7 @@ import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
+import Logo from "@/components/layout/Logo";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -28,6 +29,7 @@ export default function LoginPage() {
   return (
     <main className="flex min-h-screen items-center justify-center px-6">
       <form onSubmit={onSubmit} className="card w-full max-w-sm space-y-4">
+        <Logo className="justify-center" />
         <h1 className="text-2xl font-semibold">Sign in</h1>
         <input className="input" name="email" type="email" placeholder="Email" required />
         <input className="input" name="password" type="password" placeholder="Password" required />

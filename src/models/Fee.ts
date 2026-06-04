@@ -5,12 +5,17 @@ const AcademySettingsSchema = new Schema(
     academyName: { type: String, default: "Envision Chess Academy" },
     registeredAddress: { type: String, default: "" },
     gstNumber: { type: String, default: "" },
+    email: { type: String, default: "" },
     logoUrl: { type: String, default: "" },
+    signatoryUrl: { type: String, default: "" },
+    faviconUrl: { type: String, default: "" },
     phone: { type: String, default: "" },
     authorizedSignatory: { type: String, default: "" },
+    invoiceFooter: { type: String, default: "" },
     invoiceMode: { type: String, enum: ["gst", "non_gst"], default: "non_gst" },
     gstPercentage: { type: Number, default: 18 },
-    invoicePrefix: { type: String, default: "INV" },
+    invoicePrefix: { type: String, default: "ENV" },
+    lowCreditThreshold: { type: Number, default: 3 },
   },
   { timestamps: true }
 );
@@ -22,6 +27,11 @@ const FeePlanSchema = new Schema(
     amount: { type: Number, required: true },
     credits: { type: Number, default: 0 },
     billingDay: { type: Number, min: 1, max: 28, default: 1 },
+    billingCycle: { type: String, enum: ["monthly"], default: "monthly" },
+    dueAfterDays: { type: Number, default: 0 },
+    lateFeeAmount: { type: Number, default: 50000 },
+    lateFeeAfterDays: { type: Number, default: 10 },
+    creditValidityDays: { type: Number, default: 0 },
     isActive: { type: Boolean, default: true, index: true },
   },
   { timestamps: true }
@@ -93,14 +103,28 @@ const CreditLedgerSchema = new Schema(
 
 CreditLedgerSchema.index({ student: 1, sourceType: 1, sourceId: 1, type: 1 }, { unique: true, sparse: true });
 
+const NotificationSchema = new Schema(
+  {
+    user: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
+    type: { type: String, required: true, index: true },
+    title: { type: String, required: true },
+    message: { type: String, required: true },
+    readAt: Date,
+    metadata: { type: Schema.Types.Mixed },
+  },
+  { timestamps: true }
+);
+
 export type AcademySettingsDoc = InferSchemaType<typeof AcademySettingsSchema> & { _id: any };
 export type FeePlanDoc = InferSchemaType<typeof FeePlanSchema> & { _id: any };
 export type FeeAssignmentDoc = InferSchemaType<typeof FeeAssignmentSchema> & { _id: any };
 export type InvoiceDoc = InferSchemaType<typeof InvoiceSchema> & { _id: any };
 export type CreditLedgerDoc = InferSchemaType<typeof CreditLedgerSchema> & { _id: any };
+export type NotificationDoc = InferSchemaType<typeof NotificationSchema> & { _id: any };
 
 export const AcademySettings = models.AcademySettings || model("AcademySettings", AcademySettingsSchema);
 export const FeePlan = models.FeePlan || model("FeePlan", FeePlanSchema);
 export const FeeAssignment = models.FeeAssignment || model("FeeAssignment", FeeAssignmentSchema);
 export const Invoice = models.Invoice || model("Invoice", InvoiceSchema);
 export const CreditLedger = models.CreditLedger || model("CreditLedger", CreditLedgerSchema);
+export const Notification = models.Notification || model("Notification", NotificationSchema);

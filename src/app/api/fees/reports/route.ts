@@ -17,21 +17,52 @@ function workbook(title: string, headers: string[], rows: unknown[][]) {
     .join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${row.map(td).join("")}</tr>`).join("")}</tbody></table></body></html>`;
 }
 
+function csv(headers: string[], rows: unknown[][]) {
+  const escape = (value: unknown) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+  return [headers.map(escape).join(","), ...rows.map((row) => row.map(escape).join(","))].join("\n");
+}
+
+function reportDateFilter(url: URL) {
+  const filter: any = {};
+  const from = url.searchParams.get("from");
+  const to = url.searchParams.get("to");
+  const month = url.searchParams.get("month");
+  const fy = url.searchParams.get("fy");
+  if (month) {
+    const date = new Date(`${month}-01`);
+    filter.createdAt = { $gte: new Date(date.getFullYear(), date.getMonth(), 1), $lte: new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999) };
+  } else if (fy) {
+    const startYear = Number(fy);
+    filter.createdAt = { $gte: new Date(startYear, 3, 1), $lte: new Date(startYear + 1, 2, 31, 23, 59, 59, 999) };
+  } else if (from || to) {
+    filter.createdAt = {};
+    if (from) filter.createdAt.$gte = new Date(from);
+    if (to) filter.createdAt.$lte = new Date(`${to}T23:59:59.999`);
+  }
+  return filter;
+}
+
 export async function GET(req: Request) {
   const session = await auth();
   if ((session?.user as any)?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
-  const type = new URL(req.url).searchParams.get("type") || "fee";
+  const url = new URL(req.url);
+  const type = url.searchParams.get("type") || "fee";
+  const format = url.searchParams.get("format") || "xls";
+  const dateFilter = reportDateFilter(url);
+  const planType = url.searchParams.get("planType");
+  const student = url.searchParams.get("student");
 
   const [invoices, payments, credits] = await Promise.all([
-    Invoice.find({}).populate("student plan").sort({ createdAt: -1 }).lean(),
-    Payment.find({}).populate("user").sort({ createdAt: -1 }).lean(),
-    CreditLedger.find({}).populate("student").sort({ createdAt: -1 }).lean(),
+    Invoice.find({ ...dateFilter, ...(student ? { student } : {}) }).populate("student plan").sort({ createdAt: -1 }).lean(),
+    Payment.find({ ...dateFilter, ...(student ? { user: student } : {}) }).populate("user").sort({ createdAt: -1 }).lean(),
+    CreditLedger.find({ ...dateFilter, ...(student ? { student } : {}) }).populate("student").sort({ createdAt: -1 }).lean(),
   ]);
+  const filteredInvoices = planType ? invoices.filter((i: any) => i.type === planType) : invoices;
 
   let title = "Fee Report";
   let headers = ["Invoice", "Student", "Plan", "Status", "Amount", "Late Fee", "GST", "Total", "Due Date"];
-  let rows = invoices.map((i: any) => [
+  let rows = filteredInvoices.map((i: any) => [
     i.invoiceNumber,
     i.student?.name,
     i.plan?.name || i.type,
@@ -50,11 +81,20 @@ export async function GET(req: Request) {
   } else if (type === "gst") {
     title = "GST Report";
     headers = ["Invoice", "Student", "Taxable", "GST %", "CGST", "SGST", "GST Total", "Status"];
-    rows = invoices.map((i: any) => [i.invoiceNumber, i.student?.name, formatINR(i.taxableAmount || 0), i.gstPercentage, formatINR(i.cgstAmount || 0), formatINR(i.sgstAmount || 0), formatINR(i.gstAmount || 0), i.status]);
+    rows = filteredInvoices.map((i: any) => [i.invoiceNumber, i.student?.name, formatINR(i.taxableAmount || 0), i.gstPercentage, formatINR(i.cgstAmount || 0), formatINR(i.sgstAmount || 0), formatINR(i.gstAmount || 0), i.status]);
   } else if (type === "collection") {
     title = "Collection Report";
     headers = ["Type", "Student", "Credits", "Balance After", "Invoice", "Date", "Note"];
     rows = credits.map((c: any) => [c.type, c.student?.name, c.credits, c.balanceAfter, c.invoice || "", new Date(c.createdAt).toLocaleString("en-IN"), c.note]);
+  }
+
+  if (format === "csv") {
+    return new NextResponse(csv(headers, rows), {
+      headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="${type}-report.csv"`,
+      },
+    });
   }
 
   return new NextResponse(workbook(title, headers, rows), {

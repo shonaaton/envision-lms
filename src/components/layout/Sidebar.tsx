@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Users, BookOpen, FileText, CalendarCheck, ClipboardList,
   Library, Cpu, Trophy, ListChecks, Banknote, Receipt, Settings, Megaphone, Bell,
+  WalletCards, BarChart3,
 } from "lucide-react";
 import Logo from "./Logo";
 import { cn } from "@/lib/utils";
@@ -31,8 +32,12 @@ const groups = [
   {
     title: "Billing",
     items: [
-      { href: "/fees", label: "Fee Collection", icon: Banknote },
-      { href: "/invoices", label: "Invoices", icon: Receipt },
+      { href: "/fees", label: "Fees Dashboard", icon: Banknote },
+      { href: "/fees/fee-plans", label: "Fee Plans", icon: FileText },
+      { href: "/fees/student-fees", label: "Student Fees", icon: Users },
+      { href: "/fees/credit-monitoring", label: "Credit Monitoring", icon: WalletCards },
+      { href: "/fees/invoices", label: "Invoices", icon: Receipt },
+      { href: "/fees/reports", label: "Fee Reports", icon: BarChart3 },
     ],
   },
   {

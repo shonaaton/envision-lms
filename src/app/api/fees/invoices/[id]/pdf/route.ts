@@ -61,6 +61,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     settings.academyName,
     settings.registeredAddress,
     `Phone: ${settings.phone}`,
+    `Email: ${settings.email || ""}`,
     settings.invoiceMode === "gst" ? `GSTIN: ${settings.gstNumber}` : "",
     `Invoice No: ${invoice.invoiceNumber}`,
     `Issue Date: ${new Date(invoice.issueDate).toLocaleDateString("en-IN")}`,
@@ -77,7 +78,9 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     `Status: ${invoice.status}`,
     invoice.credits ? `Credits: ${invoice.credits}` : "",
     invoice.notes ? `Notes: ${invoice.notes}` : "",
+    settings.invoiceFooter ? `Footer: ${settings.invoiceFooter}` : "",
     `Authorized Signatory: ${settings.authorizedSignatory}`,
+    settings.signatoryUrl ? `Signature File: ${settings.signatoryUrl}` : "",
   ].filter(Boolean));
 
   return new NextResponse(pdf, {

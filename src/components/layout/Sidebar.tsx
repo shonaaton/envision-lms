@@ -135,8 +135,8 @@ export default function Sidebar({ role }: { role: Role }) {
   }
 
   return (
-    <aside className="hidden h-screen w-72 flex-shrink-0 border-r border-white/10 bg-[radial-gradient(circle_at_20%_0%,rgba(253,231,90,0.20),transparent_30%),linear-gradient(180deg,#5a1372_0%,#3a0c4a_58%,#1a0622_100%)] px-4 py-5 shadow-2xl shadow-brand-900/30 md:flex md:flex-col">
-      <div className="mb-6 rounded-2xl border border-white/10 bg-white/10 px-3 py-4 shadow-lg shadow-black/10 backdrop-blur">
+    <aside className="hidden h-screen w-64 flex-shrink-0 border-r border-white/10 bg-[radial-gradient(circle_at_20%_0%,rgba(253,231,90,0.20),transparent_30%),linear-gradient(180deg,#5a1372_0%,#3a0c4a_58%,#1a0622_100%)] px-3 py-4 shadow-2xl shadow-brand-900/30 md:flex md:flex-col">
+      <div className="mb-4 rounded-2xl border border-white/10 bg-white/10 px-3 py-3 shadow-lg shadow-black/10 backdrop-blur">
         <Logo />
       </div>
       <nav className="flex-1 space-y-2 overflow-y-auto pr-1">
@@ -149,7 +149,7 @@ export default function Sidebar({ role }: { role: Role }) {
                 type="button"
                 onClick={() => toggleSection(section.id)}
                 className={cn(
-                  "flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-[11px] font-bold uppercase tracking-[0.18em] transition",
+                  "flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-[10px] font-bold uppercase tracking-[0.16em] transition",
                   sectionActive ? "text-accent" : "text-accent/80 hover:bg-white/10 hover:text-accent"
                 )}
               >
@@ -166,11 +166,11 @@ export default function Sidebar({ role }: { role: Role }) {
                         <Link
                           href={item.href}
                           className={cn(
-                            "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition",
+                            "group flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-semibold transition",
                             active ? "bg-white text-brand shadow-lg shadow-black/10" : "text-white/75 hover:bg-white/10 hover:text-white"
                           )}
                         >
-                          <span className={cn("flex h-8 w-8 items-center justify-center rounded-lg transition", active ? "bg-accent text-brand" : "bg-white/10 text-accent group-hover:bg-accent group-hover:text-brand")}>
+                          <span className={cn("flex h-7 w-7 items-center justify-center rounded-lg transition", active ? "bg-accent text-brand" : "bg-white/10 text-accent group-hover:bg-accent group-hover:text-brand")}>
                             <Icon size={16} />
                           </span>
                           <span>{item.label}</span>
@@ -184,7 +184,7 @@ export default function Sidebar({ role }: { role: Role }) {
           );
         })}
       </nav>
-      <div className="mt-5 rounded-2xl border border-white/10 bg-white/10 p-4 text-sm text-white/80">
+      <div className="mt-4 rounded-2xl border border-white/10 bg-white/10 p-3 text-sm text-white/80">
         <div className="font-semibold text-white">Envision Academy</div>
         <div className="mt-1 text-xs leading-relaxed text-white/60">Premium chess tools, classes, PGNs, tournaments, and progress in one place.</div>
       </div>

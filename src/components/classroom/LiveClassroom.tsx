@@ -213,13 +213,19 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
     if (!boardShellRef.current) return;
     const resize = () => {
       const width = boardShellRef.current?.clientWidth || 620;
-      setBoardWidth(Math.max(300, Math.min(560, width - 56)));
+      const heightLimit = typeof window === "undefined" ? 560 : window.innerHeight - (coach ? 330 : 255);
+      const coordinateGutter = data?.live?.showCoordinates === false ? 12 : 56;
+      setBoardWidth(Math.max(300, Math.min(560, width - coordinateGutter, heightLimit)));
     };
     resize();
     const observer = new ResizeObserver(resize);
     observer.observe(boardShellRef.current);
-    return () => observer.disconnect();
-  }, []);
+    window.addEventListener("resize", resize);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", resize);
+    };
+  }, [coach, data?.live?.showCoordinates]);
 
   const live = data?.live;
   const classroom = data?.classroom;
@@ -762,11 +768,11 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
       type="button"
       onClick={onClick || (() => id && setTool(id))}
       title={label}
-      className={`flex min-h-11 items-center gap-2 rounded-md border px-2 py-2 text-left text-xs font-semibold text-slate-700 transition hover:border-purple-300 hover:bg-purple-50 hover:text-purple-800 ${
+      className={`flex min-h-9 items-center gap-2 rounded-md border px-2 py-1.5 text-left text-xs font-semibold text-slate-700 transition hover:border-purple-300 hover:bg-purple-50 hover:text-purple-800 ${
         active || (id && tool === id) ? "border-purple-300 bg-purple-100 text-purple-800" : "border-slate-200 bg-white"
       }`}
     >
-      <span className="grid h-7 w-7 flex-none place-items-center">{icon}</span>
+      <span className="grid h-6 w-6 flex-none place-items-center">{icon}</span>
       <span>{label}</span>
     </button>
   );
@@ -776,11 +782,11 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
       type="button"
       onClick={onClick}
       title={label}
-      className={`flex min-h-11 items-center gap-2 rounded-md border px-2 py-2 text-left text-xs font-semibold transition ${
+      className={`flex min-h-9 items-center gap-2 rounded-md border px-2 py-1.5 text-left text-xs font-semibold transition ${
         active ? "border-purple-300 bg-purple-100 text-purple-800" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
       }`}
     >
-      <span className="grid h-7 w-7 flex-none place-items-center">{icon}</span>
+      <span className="grid h-6 w-6 flex-none place-items-center">{icon}</span>
       <span>{label}</span>
     </button>
   );
@@ -790,20 +796,20 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
   const ranks = coordinateRanks(orientation);
 
   return (
-    <div className="min-h-[calc(100vh-120px)] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-      <div className="flex flex-col border-b border-slate-200 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+    <div className="flex h-[calc(100vh-92px)] min-h-[640px] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg shadow-brand/10">
+      <div className="flex flex-none flex-col border-b border-slate-200 px-4 py-2.5 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h2 className="text-xl font-semibold text-slate-950">{classroomName}</h2>
           <p className="text-sm text-slate-500">
             Instructor: {coachName} - Topic: {live?.topic || "Not set"} - {duration} min
           </p>
         </div>
-        {coach && <div className="mt-3 flex flex-wrap gap-2 lg:mt-0">
+          {coach && <div className="mt-2 flex flex-wrap gap-2 lg:mt-0">
           {["teaching", "student_move", "one_move_challenge"].map((mode) => (
             <button
               key={mode}
               onClick={() => patch({ mode, studentMovesEnabled: mode !== "teaching" })}
-              className={`rounded-md border px-3 py-2 text-xs font-semibold capitalize ${
+                className={`rounded-md border px-3 py-1.5 text-xs font-semibold capitalize ${
                 live?.mode === mode ? "border-purple-700 bg-purple-700 text-white" : "border-slate-200 bg-white text-slate-700"
               }`}
             >
@@ -813,9 +819,9 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
         </div>}
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_390px]">
-        <section className="flex min-w-0 flex-col gap-4 p-4 lg:flex-row">
-          {coach && <div className="grid grid-cols-2 gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 shadow-sm lg:w-44 lg:flex-none lg:grid-cols-1 lg:self-start">
+      <div className="grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-[minmax(0,1fr)_390px]">
+        <section className="flex min-h-0 min-w-0 flex-col gap-3 overflow-hidden p-3 lg:flex-row">
+          {coach && <div className="grid max-h-full grid-cols-2 gap-2 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-2 shadow-sm lg:w-40 lg:flex-none lg:grid-cols-1 lg:self-start">
             <ToolButton id="move" icon={<MousePointer2 size={19} />} label="Move Piece" />
             <ToggleButton active={!!live?.locked} icon={live?.locked ? <Lock size={19} /> : <Unlock size={19} />} label={live?.locked ? "Unlock Board" : "Lock Board"} onClick={() => patch({ locked: !live?.locked })} />
             <ToolButton id="highlight" icon={<Highlighter size={19} />} label="Highlight Square" />
@@ -831,8 +837,8 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
             <ToolButton icon={<RefreshCcw size={19} />} label="Reset Board" onClick={resetGame} />
           </div>}
 
-          <div ref={boardShellRef} className="min-w-0 flex-1">
-            <div className="mx-auto w-full max-w-[760px] rounded-lg border border-slate-200 bg-[#f6f2ea] p-3 shadow-sm">
+          <div ref={boardShellRef} className="min-h-0 min-w-0 flex-1 overflow-auto">
+            <div className="mx-auto w-full max-w-[720px] rounded-lg border border-slate-200 bg-[#f6f2ea] p-2 shadow-sm">
               <div className="mx-auto grid w-fit grid-cols-[22px_auto_22px] grid-rows-[auto_22px] gap-x-2">
                 {live?.showCoordinates !== false && (
                   <div className="col-start-1 row-start-1 grid text-center text-xs font-semibold text-slate-500" style={{ height: boardWidth }}>
@@ -911,27 +917,27 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
               </div>
             )}
 
-            <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-              <button onClick={() => navigateMove(0)} className="grid h-10 w-10 place-items-center rounded-md border border-slate-200 bg-white text-slate-700"><SkipBack size={17} /></button>
-              <button onClick={() => navigateMove(currentMoveIndex - 1)} className="grid h-10 w-10 place-items-center rounded-md border border-slate-200 bg-white text-slate-700"><ChevronLeft size={17} /></button>
-              <span className="rounded-md bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-600">{currentMoveIndex} / {pgnMoves.length || (live?.moveHistory || []).length}</span>
-              <button onClick={() => navigateMove(currentMoveIndex + 1)} className="grid h-10 w-10 place-items-center rounded-md border border-slate-200 bg-white text-slate-700"><ChevronRight size={17} /></button>
-              <button onClick={() => navigateMove(pgnMoves.length)} className="grid h-10 w-10 place-items-center rounded-md border border-slate-200 bg-white text-slate-700"><SkipForward size={17} /></button>
-              <button onClick={() => loadAdjacentPgn(-1)} className="ml-2 rounded-md border border-slate-200 px-3 py-2 text-xs font-semibold">Previous game</button>
-              <button onClick={() => loadAdjacentPgn(1)} className="rounded-md bg-purple-700 px-3 py-2 text-xs font-semibold text-white">Next game</button>
+            <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+              <button onClick={() => navigateMove(0)} className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 bg-white text-slate-700"><SkipBack size={16} /></button>
+              <button onClick={() => navigateMove(currentMoveIndex - 1)} className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 bg-white text-slate-700"><ChevronLeft size={16} /></button>
+              <span className="rounded-md bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600">{currentMoveIndex} / {pgnMoves.length || (live?.moveHistory || []).length}</span>
+              <button onClick={() => navigateMove(currentMoveIndex + 1)} className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 bg-white text-slate-700"><ChevronRight size={16} /></button>
+              <button onClick={() => navigateMove(pgnMoves.length)} className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 bg-white text-slate-700"><SkipForward size={16} /></button>
+              <button onClick={() => loadAdjacentPgn(-1)} className="ml-2 rounded-md border border-slate-200 px-3 py-1.5 text-xs font-semibold">Previous game</button>
+              <button onClick={() => loadAdjacentPgn(1)} className="rounded-md bg-purple-700 px-3 py-1.5 text-xs font-semibold text-white">Next game</button>
             </div>
 
             {coach && (
-              <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_auto]">
+              <div className="mt-3 grid gap-2 lg:grid-cols-[1fr_auto]">
                 <input
-                  className="h-11 rounded-md border border-slate-200 px-3 text-sm"
+                  className="h-10 rounded-md border border-slate-200 px-3 text-sm"
                   placeholder="Current topic, e.g. Queen-side attack"
                   defaultValue={live?.topic || ""}
                   onBlur={(event) => patch({ topic: event.target.value })}
                 />
                 <div className="flex gap-2">
-                  <button onClick={askEveryone} className="inline-flex h-11 items-center gap-2 rounded-md border border-purple-200 bg-purple-50 px-4 text-sm font-semibold text-purple-800"><Send size={16} /> Ask Challenge</button>
-                  <button onClick={createQuiz} className="inline-flex h-11 items-center gap-2 rounded-md bg-purple-700 px-4 text-sm font-semibold text-white"><Sparkles size={16} /> Start Quiz</button>
+                  <button onClick={askEveryone} className="inline-flex h-10 items-center gap-2 rounded-md border border-purple-200 bg-purple-50 px-4 text-sm font-semibold text-purple-800"><Send size={16} /> Ask Challenge</button>
+                  <button onClick={createQuiz} className="inline-flex h-10 items-center gap-2 rounded-md bg-purple-700 px-4 text-sm font-semibold text-white"><Sparkles size={16} /> Start Quiz</button>
                 </div>
               </div>
             )}
@@ -956,7 +962,7 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
           </div>
         </section>
 
-        <aside className="border-t border-slate-200 xl:border-l xl:border-t-0">
+        <aside className="flex min-h-0 flex-col border-t border-slate-200 xl:border-l xl:border-t-0">
           <div className={`grid ${coach ? "grid-cols-5" : "grid-cols-4"} border-b border-slate-200 text-sm`}>
             {[
               ["students", Users, "Students"],
@@ -965,14 +971,14 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
               ["moves", ClipboardList, "Moves"],
               ["leaderboard", Crown, "Leaderboard"],
             ].map(([key, Icon, label]: any) => (
-              <button key={key} onClick={() => setActiveTab(key)} className={`flex h-14 items-center justify-center gap-1 border-b-2 text-xs font-semibold ${activeTab === key ? "border-purple-700 text-purple-800" : "border-transparent text-slate-500"}`} title={label}>
+              <button key={key} onClick={() => setActiveTab(key)} className={`flex h-11 items-center justify-center gap-1 border-b-2 text-xs font-semibold ${activeTab === key ? "border-purple-700 text-purple-800" : "border-transparent text-slate-500"}`} title={label}>
                 <Icon size={17} />
                 <span className="hidden 2xl:inline">{label}</span>
               </button>
             ))}
           </div>
 
-          <div className="h-[calc(100vh-225px)] min-h-[620px] overflow-auto p-4">
+          <div className="min-h-0 flex-1 overflow-auto p-3">
             {activeTab === "students" && (
               <div className="space-y-4">
                 <div className="rounded-lg border border-slate-200 p-4">

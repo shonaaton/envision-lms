@@ -14,8 +14,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
       <Sidebar role={role} />
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar user={{ name: session.user.name, role }} />
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6">
-          <div className="mx-auto max-w-[1680px]">
+        <main className="flex-1 overflow-y-auto p-3 sm:p-4">
+          <div className="mx-auto w-full max-w-[1800px]">
             {children}
           </div>
         </main>

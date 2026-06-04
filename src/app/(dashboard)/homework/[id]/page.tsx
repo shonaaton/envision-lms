@@ -79,6 +79,10 @@ export default function HomeworkAttemptPage() {
 
   if (!hw) return <div className="rounded-2xl border bg-white p-5 text-slate-600 shadow-sm">Loading assignment...</div>;
 
+  if (hw.mySubmission) {
+    return <CompletedReport hw={hw} activities={activities} submission={hw.mySubmission} />;
+  }
+
   async function submit() {
     if (submitting || attemptsLeft <= 0) return;
     setSubmitting(true);
@@ -114,11 +118,9 @@ export default function HomeworkAttemptPage() {
             <h1 className="mt-1 text-3xl font-black">{hw.title}</h1>
             {hw.description && <p className="mt-2 max-w-3xl text-sm text-white/75">{hw.description}</p>}
           </div>
-          <div className="grid grid-cols-2 gap-2 text-center md:grid-cols-4">
+          <div className="grid grid-cols-2 gap-2 text-center">
             <MiniStat label="Timer" value={timeLimit ? formatTime(timeLeft) : formatTime(elapsed)} />
             <MiniStat label="Attempts" value={`${attemptsLeft}/${maxAttempts}`} />
-            <MiniStat label="Score" value={hw.mySubmission?.totalScore ?? "-"} />
-            <MiniStat label="Accuracy" value={hw.mySubmission ? `${hw.mySubmission.accuracy}%` : "-"} />
           </div>
         </div>
       </header>
@@ -153,6 +155,136 @@ export default function HomeworkAttemptPage() {
   );
 }
 
+function CompletedReport({ hw, activities, submission }: { hw: any; activities: any[]; submission: any }) {
+  return (
+    <div className="min-h-screen bg-slate-50 px-4 py-5 text-slate-950 sm:px-6 lg:px-8">
+      <header className="mb-5 rounded-3xl bg-brand p-5 text-white shadow-xl shadow-brand-900/20">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <div className="text-xs font-bold uppercase tracking-[0.18em] text-accent">Completed Assignment</div>
+            <h1 className="mt-1 text-3xl font-black">{hw.title}</h1>
+            <p className="mt-2 text-sm text-white/75">Review your report, answers, correct solutions, and boards.</p>
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-center md:grid-cols-4">
+            <MiniStat label="Score" value={submission.totalScore ?? 0} />
+            <MiniStat label="Accuracy" value={`${submission.accuracy ?? 0}%`} />
+            <MiniStat label="Time" value={formatTime(submission.timeTakenSeconds || 0)} />
+            <MiniStat label="Attempts" value={submission.attemptsUsed || 1} />
+          </div>
+        </div>
+      </header>
+
+      <section className="mb-4 grid gap-3 md:grid-cols-4">
+        <ReportStat label="Mistakes" value={submission.metrics?.mistakes || 0} />
+        <ReportStat label="Hints Used" value={submission.metrics?.hintsUsed || 0} />
+        <ReportStat label="Boards Solved" value={`${submission.metrics?.solvedBoards || 0}/${submission.metrics?.totalBoards || 0}`} />
+        <ReportStat label="MCQ Correct" value={`${submission.metrics?.correctMcq || 0}/${submission.metrics?.totalMcq || 0}`} />
+      </section>
+
+      <div className="space-y-4">
+        {activities.map((activity: any, index: number) => (
+          <ReportActivity key={activity._id || index} activity={activity} index={index} submission={submission} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ReportActivity({ activity, index, submission }: { activity: any; index: number; submission: any }) {
+  const isPgnQuiz = activity.type === "study_pgn" && activity.source?.kind === "pgn_quiz";
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="mb-4">
+        <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Activity {index + 1}</div>
+        <h2 className="text-xl font-black text-brand">{activity.title}</h2>
+      </div>
+      {activity.type === "quiz" && <ReportMcq activity={activity} submission={submission} />}
+      {isPgnQuiz && <ReportPgnBoards activity={activity} submission={submission} />}
+      {activity.type === "play_computer" && <ComputerPlaceholder activity={activity} />}
+    </section>
+  );
+}
+
+function ReportMcq({ activity, submission }: { activity: any; submission: any }) {
+  return (
+    <div className="space-y-3">
+      {(activity.items || []).map((item: any, index: number) => {
+        const selected = submission.quizAnswers?.[key(activity._id, item.id)];
+        const selectedOption = (item.options || []).find((option: any) => option.id === selected);
+        const correctOption = (item.options || []).find((option: any) => option.correct);
+        const correct = selectedOption?.id === correctOption?.id;
+        return (
+          <div key={item.id || index} className="rounded-xl border border-slate-200 p-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <b className="text-brand">Question {index + 1}</b>
+              <span className={`rounded-full px-2 py-1 text-xs font-bold ${correct ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>{correct ? "Correct" : "Review"}</span>
+            </div>
+            {item.positionFen && <FenBox fen={item.positionFen} />}
+            <div className="mt-2 rounded-xl bg-slate-50 p-3 font-semibold">{item.question}</div>
+            <div className="mt-3 grid gap-2 text-sm">
+              <div className="rounded-lg bg-slate-50 px-3 py-2"><b>Your answer:</b> {selectedOption?.text || "Not answered"}</div>
+              <div className="rounded-lg bg-emerald-50 px-3 py-2 text-emerald-800"><b>Correct answer:</b> {correctOption?.text || "-"}</div>
+              {item.explanation && <div className="rounded-lg bg-accent/20 px-3 py-2 text-brand"><b>Explanation:</b> {item.explanation}</div>}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ReportPgnBoards({ activity, submission }: { activity: any; submission: any }) {
+  return (
+    <div className="space-y-4">
+      {(activity.items || []).map((item: any, index: number) => {
+        const result = submission.activityResults?.[key(activity._id, item.id)] || {};
+        return (
+          <div key={item.id || index} className="rounded-xl border border-slate-200 p-3">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <b className="text-brand">{item.title || item.pgnTitle || `PGN ${index + 1}`}</b>
+                <div className="text-xs text-slate-500">Mistakes {result.mistakes || 0} - Hints {result.hintsUsed || 0}</div>
+              </div>
+              <span className={`rounded-full px-2 py-1 text-xs font-bold ${result.solved ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>{result.solved ? "Solved" : "Review"}</span>
+            </div>
+            <ReviewPgnBoard pgn={item.pgn || ""} />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ReviewPgnBoard({ pgn }: { pgn: string }) {
+  const parsed = useMemo(() => parsePgnPuzzle(pgn), [pgn]);
+  const [ply, setPly] = useState(0);
+  const position = useMemo(() => {
+    const game = new Chess(parsed.start);
+    parsed.moves.slice(0, ply).forEach((move) => game.move({ from: move.from, to: move.to, promotion: move.promotion || "q" }));
+    return game.fen();
+  }, [parsed.start, parsed.moves, ply]);
+
+  return (
+    <div>
+      <Chessboard position={position} arePiecesDraggable={false} boardWidth={360} customDarkSquareStyle={{ backgroundColor: "#b58863" }} customLightSquareStyle={{ backgroundColor: "#f0d9b5" }} />
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <button type="button" className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold" onClick={() => setPly((value) => Math.max(0, value - 1))}>Previous</button>
+        <span className="text-sm font-bold text-slate-600">{ply}/{parsed.moves.length}</span>
+        <button type="button" className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold" onClick={() => setPly((value) => Math.min(parsed.moves.length, value + 1))}>Next</button>
+      </div>
+    </div>
+  );
+}
+
+function ReportStat({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="text-2xl font-black text-brand">{value}</div>
+      <div className="text-xs font-bold uppercase tracking-wide text-slate-500">{label}</div>
+    </div>
+  );
+}
+
 function ActivitySection({ activity, index, locked, quizAnswers, setQuizAnswers, boardResults, setBoardResults }: any) {
   const [activeItemIndex, setActiveItemIndex] = useState(0);
   const isPgnQuiz = activity.type === "study_pgn" && activity.source?.kind === "pgn_quiz";
@@ -183,6 +315,7 @@ function ActivitySection({ activity, index, locked, quizAnswers, setQuizAnswers,
         <ItemPager
           current={activeItemIndex}
           total={items.length}
+          timeLabel={activity.timeLimitMinutes ? `${activity.timeLimitMinutes} min for this activity` : "No item time limit"}
           onPrevious={() => setActiveItemIndex((value) => Math.max(0, value - 1))}
           onNext={() => setActiveItemIndex((value) => Math.min(items.length - 1, value + 1))}
         />
@@ -218,11 +351,12 @@ function ActivitySection({ activity, index, locked, quizAnswers, setQuizAnswers,
   );
 }
 
-function ItemPager({ current, total, onPrevious, onNext }: { current: number; total: number; onPrevious: () => void; onNext: () => void }) {
+function ItemPager({ current, total, timeLabel, onPrevious, onNext }: { current: number; total: number; timeLabel: string; onPrevious: () => void; onNext: () => void }) {
   return (
     <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-      <div className="text-sm font-bold text-slate-700">
-        Item {current + 1} of {total}
+      <div>
+        <div className="text-sm font-bold text-slate-700">Item {current + 1} of {total}</div>
+        <div className="text-xs font-semibold text-slate-500">{timeLabel}</div>
       </div>
       <div className="flex items-center gap-2">
         <button type="button" className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 disabled:cursor-not-allowed disabled:text-slate-300" onClick={onPrevious} disabled={current === 0}>

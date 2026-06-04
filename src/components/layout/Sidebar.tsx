@@ -51,8 +51,8 @@ const sections: NavSection[] = [
     id: "chess-tools",
     title: "Chess Tools",
     items: [
-      { href: "/pgn", label: "PGN Library", icon: Library },
-      { href: "/analysis", label: "Analysis Board", icon: ListChecks },
+      { href: "/pgn", label: "PGN Library", icon: Library, roles: ["instructor", "admin"] },
+      { href: "/analysis", label: "Analysis Board", icon: ListChecks, roles: ["instructor", "admin"] },
       { href: "/square-trainer", label: "Square Trainer", icon: Crosshair, roles: ["student", "admin"] },
       { href: "/play/computer", label: "Play vs Computer", icon: Cpu, roles: ["student", "admin"] },
     ],

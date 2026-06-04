@@ -18,7 +18,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
   const classroom: any = await Classroom.findById(params.id).populate("coach instructor students", "name email username").lean();
   if (!classroom) return NextResponse.json({ error: "Not found" }, { status: 404 });
   let live: any = await ClassroomSession.findOne({ classroom: params.id })
-    .populate("selectedStudents boardControlStudents challenge.student", "name username")
+    .populate("selectedStudents boardControlStudents challenge.student participants.user", "name username role")
     .lean();
   if (!live) {
     const created = await ClassroomSession.create({
@@ -27,8 +27,25 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
       fen: "start",
       mode: "teaching",
     });
-    live = await ClassroomSession.findById(created._id).populate("selectedStudents boardControlStudents challenge.student", "name username").lean();
+    live = await ClassroomSession.findById(created._id).populate("selectedStudents boardControlStudents challenge.student participants.user", "name username role").lean();
   }
+  const userId = (session.user as any).id;
+  const existingParticipant = (live.participants || []).find((participant: any) => participant.user?.toString?.() === userId || participant.user?._id?.toString?.() === userId);
+  if (live.status !== "ended") {
+    if (existingParticipant) {
+      await ClassroomSession.updateOne(
+        { _id: live._id, "participants.user": userId },
+        { $set: { "participants.$.lastSeenAt": new Date(), "participants.$.role": (session.user as any).role || "student" } }
+      );
+    } else {
+      await ClassroomSession.updateOne(
+        { _id: live._id },
+        { $push: { participants: { user: userId, role: (session.user as any).role || "student", firstSeenAt: new Date(), lastSeenAt: new Date() } } }
+      );
+    }
+    live = await ClassroomSession.findById(live._id).populate("selectedStudents boardControlStudents challenge.student participants.user", "name username role").lean();
+  }
+
   const activeQuestion: any = live.activeQuestion
     ? await LiveQuestion.findById(live.activeQuestion).lean()
     : await LiveQuestion.findOne({ classroom: params.id, status: "live" }).sort({ createdAt: -1 }).lean();
@@ -77,6 +94,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     "soundEnabled",
     "setupMode",
     "engineEnabled",
+    "endedAt",
+    "status",
     "selectedStudents",
     "boardControlStudents",
     "drawings",

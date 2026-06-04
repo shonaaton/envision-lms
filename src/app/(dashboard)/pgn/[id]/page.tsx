@@ -9,6 +9,7 @@ export const dynamic = "force-dynamic";
 export default async function PgnDetail({ params, searchParams }: { params: { id: string }; searchParams?: { folder?: string } }) {
   const session = await auth();
   if (!session) notFound();
+  if ((session.user as any).role === "student") notFound();
   await dbConnect();
   const game: any = await PGN.findOne({ _id: params.id, uploadedBy: (session.user as any).id }).lean();
   if (!game) notFound();

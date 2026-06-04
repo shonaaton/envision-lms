@@ -71,9 +71,15 @@ export default function PgnLibraryPage() {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState("None");
   const [reorder, setReorder] = useState(false);
+  const role = (session?.user as any)?.role;
   const isAdmin = (session?.user as any)?.role === "admin";
 
+  useEffect(() => {
+    if (role === "student") router.replace("/dashboard");
+  }, [role, router]);
+
   async function load() {
+    if (role === "student") return;
     const response = await fetch("/api/pgn");
     if (!response.ok) return;
     const docs = await response.json();

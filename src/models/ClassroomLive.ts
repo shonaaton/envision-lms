@@ -42,6 +42,16 @@ const ClassroomSessionSchema = new Schema(
     ],
     locked: { type: Boolean, default: false },
     startedAt: { type: Date, default: Date.now },
+    endedAt: Date,
+    status: { type: String, enum: ["live", "ended"], default: "live", index: true },
+    participants: [
+      {
+        user: { type: Schema.Types.ObjectId, ref: "User", required: true },
+        role: { type: String, enum: ["student", "instructor", "admin"], default: "student" },
+        firstSeenAt: { type: Date, default: Date.now },
+        lastSeenAt: { type: Date, default: Date.now },
+      },
+    ],
     activeQuestion: { type: Schema.Types.ObjectId, ref: "LiveQuestion" },
   },
   { timestamps: true }

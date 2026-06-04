@@ -3,8 +3,7 @@ import { dbConnect } from "@/lib/db";
 import { getAcademySettings } from "@/lib/fees";
 import { AcademySettings } from "@/models/Fee";
 import { revalidatePath } from "next/cache";
-import { mkdir, writeFile } from "node:fs/promises";
-import path from "node:path";
+import { redirect } from "next/navigation";
 import { Image as ImageIcon, Save, Settings } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -20,50 +19,51 @@ async function saveUpload(file: File | null, kind: keyof typeof uploadRules) {
   const rule = uploadRules[kind];
   if (!rule.types.includes(file.type)) throw new Error(`${kind} file type is not supported.`);
   if (file.size > rule.max) throw new Error(`${kind} file is too large.`);
-  const extension = file.name.split(".").pop()?.replace(/[^a-z0-9]/gi, "").toLowerCase() || "png";
-  const fileName = `${kind}-${Date.now()}.${extension}`;
-  const dir = path.join(process.cwd(), "public", "uploads", "branding", rule.folder);
-  await mkdir(dir, { recursive: true });
-  await writeFile(path.join(dir, fileName), Buffer.from(await file.arrayBuffer()));
-  return `/uploads/branding/${rule.folder}/${fileName}`;
+  const buffer = Buffer.from(await file.arrayBuffer());
+  return `data:${file.type};base64,${buffer.toString("base64")}`;
 }
 
 async function saveAcademySetup(formData: FormData) {
   "use server";
   const session = await auth();
-  if ((session?.user as any)?.role !== "admin") throw new Error("Forbidden");
-  await dbConnect();
-  const existing: any = await getAcademySettings();
-  const logoUrl = await saveUpload(formData.get("logo") as File | null, "logo");
-  const signatoryUrl = await saveUpload(formData.get("signatory") as File | null, "signatory");
-  const faviconUrl = await saveUpload(formData.get("favicon") as File | null, "favicon");
+  if ((session?.user as any)?.role !== "admin") redirect("/dashboard");
+  try {
+    await dbConnect();
+    const existing: any = await getAcademySettings();
+    const logoUrl = await saveUpload(formData.get("logo") as File | null, "logo");
+    const signatoryUrl = await saveUpload(formData.get("signatory") as File | null, "signatory");
+    const faviconUrl = await saveUpload(formData.get("favicon") as File | null, "favicon");
 
-  await AcademySettings.findOneAndUpdate(
-    {},
-    {
-      academyName: formData.get("academyName"),
-      registeredAddress: formData.get("registeredAddress"),
-      gstNumber: formData.get("gstNumber"),
-      email: formData.get("email"),
-      phone: formData.get("phone"),
-      authorizedSignatory: formData.get("authorizedSignatory"),
-      invoiceFooter: formData.get("invoiceFooter"),
-      invoiceMode: formData.get("invoiceMode"),
-      gstPercentage: Number(formData.get("gstPercentage") || 0),
-      invoicePrefix: formData.get("invoicePrefix") || "ENV",
-      lowCreditThreshold: Number(formData.get("lowCreditThreshold") || 3),
-      logoUrl: logoUrl || existing.logoUrl,
-      signatoryUrl: signatoryUrl || existing.signatoryUrl,
-      faviconUrl: faviconUrl || existing.faviconUrl,
-    },
-    { upsert: true, new: true }
-  );
-  revalidatePath("/admin/settings");
-  revalidatePath("/fees");
-  revalidatePath("/fees/invoices");
+    await AcademySettings.findOneAndUpdate(
+      {},
+      {
+        academyName: String(formData.get("academyName") || "").trim(),
+        registeredAddress: String(formData.get("registeredAddress") || "").trim(),
+        gstNumber: String(formData.get("gstNumber") || "").trim(),
+        email: String(formData.get("email") || "").trim(),
+        phone: String(formData.get("phone") || "").trim(),
+        authorizedSignatory: String(formData.get("authorizedSignatory") || "").trim(),
+        invoiceFooter: String(formData.get("invoiceFooter") || "").trim(),
+        invoiceMode: formData.get("invoiceMode") === "gst" ? "gst" : "non_gst",
+        gstPercentage: Number(formData.get("gstPercentage") || 0),
+        invoicePrefix: String(formData.get("invoicePrefix") || "ENV").trim() || "ENV",
+        lowCreditThreshold: Number(formData.get("lowCreditThreshold") || 3),
+        logoUrl: logoUrl || existing.logoUrl,
+        signatoryUrl: signatoryUrl || existing.signatoryUrl,
+        faviconUrl: faviconUrl || existing.faviconUrl,
+      },
+      { upsert: true, new: true }
+    );
+    revalidatePath("/admin/settings");
+    revalidatePath("/fees");
+    revalidatePath("/fees/invoices");
+  } catch (error: any) {
+    redirect(`/admin/settings?error=${encodeURIComponent(error?.message || "Could not save academy settings")}`);
+  }
+  redirect("/admin/settings?saved=1");
 }
 
-export default async function AcademySettingsPage() {
+export default async function AcademySettingsPage({ searchParams }: { searchParams?: { saved?: string; error?: string } }) {
   const session = await auth();
   if ((session?.user as any)?.role !== "admin") return <div className="p-6">Forbidden</div>;
   await dbConnect();
@@ -78,6 +78,17 @@ export default async function AcademySettingsPage() {
           <p className="text-sm text-slate-500">Branding, invoice identity, GST settings, and document assets.</p>
         </div>
       </div>
+
+      {searchParams?.saved && (
+        <div className="mb-4 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">
+          Academy settings saved successfully.
+        </div>
+      )}
+      {searchParams?.error && (
+        <div className="mb-4 rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
+          {searchParams.error}
+        </div>
+      )}
 
       <form action={saveAcademySetup} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">

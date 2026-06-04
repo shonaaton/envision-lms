@@ -11,6 +11,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ClipboardList,
+  Clock,
   Crown,
   Download,
   Eraser,
@@ -32,7 +33,9 @@ import {
   SkipForward,
   Sparkles,
   Square,
+  Trophy,
   Unlock,
+  UserCheck,
   Users,
   Volume2,
   VolumeX,
@@ -157,6 +160,19 @@ function drawingColor(modifier: ModifierKey) {
   return "#7c1fa2";
 }
 
+function pieceSymbol(piece: string) {
+  const map: Record<string, string> = {
+    wK: "♔", wQ: "♕", wR: "♖", wB: "♗", wN: "♘", wP: "♙",
+    bK: "♚", bQ: "♛", bR: "♜", bB: "♝", bN: "♞", bP: "♟",
+  };
+  return map[piece] || piece;
+}
+
+function minutesBetween(start?: string | Date, end?: string | Date) {
+  if (!start || !end) return 0;
+  return Math.max(0, Math.round((new Date(end).getTime() - new Date(start).getTime()) / 60000));
+}
+
 export default function LiveClassroom({ classroomId, role, userId }: { classroomId: string; role: Role; userId: string }) {
   const [data, setData] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<TabKey>("students");
@@ -169,6 +185,9 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
   const [previewPgn, setPreviewPgn] = useState<any>(null);
   const [challengeTimer, setChallengeTimer] = useState(60);
   const [selectedPiece, setSelectedPiece] = useState("wQ");
+  const [setupOpen, setSetupOpen] = useState(false);
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  const [attendanceDraft, setAttendanceDraft] = useState<Record<string, "present" | "absent" | "late">>({});
   const [highlightDraft, setHighlightDraft] = useState<string | null>(null);
   const [setupPosition, setSetupPosition] = useState<BoardPosition>({});
   const [modifier, setModifier] = useState<ModifierKey>("default");
@@ -210,7 +229,7 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
   const pgnMoves = live?.pgnMoves || [];
   const currentMoveIndex = live?.pgnMoveIndex || 0;
   const boardFen = live?.fen === "start" || !live?.fen ? "start" : live.fen;
-  const boardPosition = live?.setupMode || tool === "setup" ? setupPosition : boardFen;
+  const boardPosition = boardFen;
   const game = useMemo(() => buildGame(live?.fen), [live?.fen]);
   const canMove =
     coach ||
@@ -325,6 +344,33 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
     commitSetup(next);
   }
 
+  function onSetupDrop(source: string, target: string, piece: string) {
+    const next = { ...setupPosition };
+    delete next[source];
+    next[target] = piece;
+    setSetupPosition(next);
+    return true;
+  }
+
+  function onSetupDropOffBoard(source: string) {
+    const next = { ...setupPosition };
+    delete next[source];
+    setSetupPosition(next);
+  }
+
+  function onSetupSquareClick(square: string) {
+    const next = { ...setupPosition };
+    if (selectedPiece === "erase") delete next[square];
+    else next[square] = selectedPiece;
+    setSetupPosition(next);
+  }
+
+  function loadSetupIntoClassroom() {
+    const sideToMove = live?.fen?.split(" ")?.[1] || "w";
+    patch({ fen: positionToFen(setupPosition, sideToMove), setupMode: false, pgn: "", pgnTitle: "Custom Position", pgnMoves: [], pgnMoveIndex: 0, moveHistory: [], drawings: [] });
+    setSetupOpen(false);
+  }
+
   function onSquareClick(square: string) {
     if (!coach) return;
     if (live?.setupMode || tool === "setup") {
@@ -428,6 +474,34 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
       setChatText("");
       await load();
     }
+  }
+
+  async function openEndSummary() {
+    await patch({ endedAt: new Date().toISOString(), status: "ended" });
+    setSummaryOpen(true);
+  }
+
+  async function saveAttendanceAndClose() {
+    const records = students.map((student: any) => ({
+      student: student._id,
+      status: attendanceDraft[student._id] || "absent",
+      note: "Marked from live classroom summary",
+    }));
+    const res = await fetch("/api/attendance", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        classroom: classroomId,
+        sessionDate: live?.startedAt || new Date().toISOString(),
+        records,
+      }),
+    });
+    if (!res.ok) {
+      toast.error("Could not save attendance");
+      return;
+    }
+    toast.success("Class ended and attendance saved");
+    setSummaryOpen(false);
   }
 
   function resetGame() {
@@ -585,6 +659,62 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
       .sort((a: any, b: any) => b.points - a.points);
   }, [students, data?.responses]);
 
+  const classSummary = useMemo(() => {
+    const now = live?.endedAt || new Date().toISOString();
+    const studentParticipants = (live?.participants || []).filter((participant: any) => participant.role === "student");
+    const participantMap = new Map(studentParticipants.map((participant: any) => [participant.user?._id || participant.user, participant]));
+    const responses = data?.responses || [];
+    const responseByStudent = new Map<string, any[]>();
+    for (const response of responses) {
+      const id = response.student?._id;
+      if (!id) continue;
+      responseByStudent.set(id, [...(responseByStudent.get(id) || []), response]);
+    }
+    const rows = students.map((student: any) => {
+      const participant: any = participantMap.get(student._id);
+      const studentResponses = responseByStudent.get(student._id) || [];
+      const correct = studentResponses.filter((response) => response.correct).length;
+      const submissions = studentResponses.length;
+      const points = studentResponses.reduce((sum, response) => sum + Number(response.score || 0), 0);
+      const timeMinutes = participant ? minutesBetween(participant.firstSeenAt, participant.lastSeenAt || now) : 0;
+      const suggestedStatus: "present" | "absent" | "late" = timeMinutes >= 10 || submissions > 0 ? "present" : timeMinutes > 0 ? "late" : "absent";
+      return {
+        student,
+        timeMinutes,
+        submissions,
+        participation: submissions,
+        correct,
+        accuracy: submissions ? Math.round((correct / submissions) * 100) : 0,
+        points,
+        suggestedStatus,
+      };
+    });
+    const present = rows.filter((row: any) => row.suggestedStatus === "present").length;
+    const late = rows.filter((row: any) => row.suggestedStatus === "late").length;
+    const absent = rows.length - present - late;
+    const totalScore = responses.reduce((sum: number, response: any) => sum + Number(response.score || 0), 0);
+    return {
+      startedAt: live?.startedAt,
+      endedAt: now,
+      durationMinutes: minutesBetween(live?.startedAt, now),
+      present,
+      late,
+      absent,
+      rows,
+      quizzes: activeQuestion ? 1 : 0,
+      questions: activeQuestion ? 1 : 0,
+      averageScore: responses.length ? Math.round(totalScore / responses.length) : 0,
+      totalPoints: totalScore,
+    };
+  }, [activeQuestion, data?.responses, live?.endedAt, live?.participants, live?.startedAt, students]);
+
+  useEffect(() => {
+    if (!summaryOpen) return;
+    const draft: Record<string, "present" | "absent" | "late"> = {};
+    for (const row of classSummary.rows) draft[row.student._id] = row.suggestedStatus;
+    setAttendanceDraft(draft);
+  }, [classSummary.rows, summaryOpen]);
+
   if (!data) return <div className="rounded-lg border border-slate-200 bg-white p-5">Loading classroom...</div>;
 
   const ToolButton = ({ id, icon, label, active, onClick }: { id?: ToolKey; icon: React.ReactNode; label: string; active?: boolean; onClick?: () => void }) => (
@@ -654,7 +784,7 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
             <ToggleButton active={!!live?.illegalMovesEnabled} icon={<ShieldAlert size={19} />} label="Allow illegal moves" onClick={() => patch({ illegalMovesEnabled: !live?.illegalMovesEnabled })} />
             <ToggleButton active={!!live?.showCoordinates} icon={<Grid2X2 size={19} />} label="Show coordinates" onClick={() => patch({ showCoordinates: !live?.showCoordinates })} />
             <ToggleButton active={!!live?.arrowsEnabled} icon={<Square size={19} />} label="Enable arrow drawing" onClick={() => patch({ arrowsEnabled: !live?.arrowsEnabled })} />
-            <ToggleButton active={!!live?.setupMode || tool === "setup"} icon={<Settings size={19} />} label="Setup Board" onClick={() => { setTool("setup"); patch({ setupMode: !live?.setupMode }); }} />
+            <ToggleButton active={setupOpen} icon={<Settings size={19} />} label="Setup Board" onClick={() => { setSetupPosition(fenToPosition(live?.fen)); setSetupOpen(true); }} />
             <ToolButton icon={<Eraser size={19} />} label="Clear Drawings" onClick={() => patch({ drawings: [] })} />
             <ToolButton icon={<FlipHorizontal size={19} />} label="Flip board" onClick={() => patch({ orientation: live?.orientation === "white" ? "black" : "white" })} />
             <ToggleButton active={!!live?.soundEnabled} icon={live?.soundEnabled ? <Volume2 size={19} /> : <VolumeX size={19} />} label="Piece sounds" onClick={() => patch({ soundEnabled: !live?.soundEnabled })} />
@@ -680,7 +810,8 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
                     boardOrientation={orientation}
                     onPieceDrop={onDrop}
                     onPieceDropOffBoard={onPieceDropOffBoard as any}
-                    onSquareClick={onSquareClick as any}
+                onSquareClick={onSquareClick as any}
+                onSquareRightClick={onSquareClick as any}
                     onArrowsChange={persistBoardArrows as any}
                     customArrows={live?.arrowsEnabled ? (arrows as any) : []}
                     customSquareStyles={squareStyles as any}
@@ -707,7 +838,7 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
               </div>
             </div>
 
-            {coach && (live?.setupMode || tool === "setup") && (
+            {false && coach && (live?.setupMode || tool === "setup") && (
               <div className="mx-auto mt-3 w-full max-w-[760px] rounded-lg border border-slate-200 bg-white p-3">
                 <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                   <div>
@@ -991,12 +1122,131 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
             {coach && (
               <div className="grid grid-cols-2 gap-2">
                 <button onClick={() => setActiveTab("pgn")} className="h-11 rounded-md bg-purple-700 text-sm font-semibold text-white">Load PGNs</button>
-                <button onClick={() => toast.info("Classroom ended for this coach view")} className="h-11 rounded-md bg-red-500 text-sm font-semibold text-white">End Classroom</button>
+                <button onClick={openEndSummary} className="h-11 rounded-md bg-red-500 text-sm font-semibold text-white">End Classroom</button>
               </div>
             )}
           </div>
         </aside>
       </div>
+
+      {setupOpen && coach && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
+          <div className="max-h-[92vh] w-full max-w-5xl overflow-auto rounded-lg bg-white p-5 shadow-2xl">
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-xl font-semibold text-slate-950">Setup Board</h3>
+                <p className="text-sm text-slate-500">Prepare the position here. The live board changes only when you load it into the classroom.</p>
+              </div>
+              <button onClick={() => setSetupOpen(false)} className="grid h-9 w-9 place-items-center rounded-md border border-slate-200"><X size={16} /></button>
+            </div>
+            <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_290px]">
+              <div className="mx-auto rounded-lg border border-slate-200 bg-[#f6f2ea] p-3">
+                <Chessboard
+                  id={`setup-board-${classroomId}`}
+                  position={setupPosition as any}
+                  boardWidth={Math.min(560, Math.max(320, boardWidth))}
+                  boardOrientation={orientation}
+                  onPieceDrop={onSetupDrop}
+                  onPieceDropOffBoard={onSetupDropOffBoard as any}
+                  onSquareClick={onSetupSquareClick as any}
+                  showBoardNotation
+                  dropOffBoardAction="trash"
+                  arePiecesDraggable
+                  customDarkSquareStyle={{ backgroundColor: "#b9875f" }}
+                  customLightSquareStyle={{ backgroundColor: "#f1d9aa" }}
+                />
+              </div>
+              <div className="space-y-4">
+                <div>
+                  <div className="mb-2 text-sm font-semibold text-slate-950">Piece Palette</div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      ["wK", "White King"], ["wQ", "White Queen"], ["wR", "White Rook"], ["wB", "White Bishop"], ["wN", "White Knight"], ["wP", "White Pawn"],
+                      ["bK", "Black King"], ["bQ", "Black Queen"], ["bR", "Black Rook"], ["bB", "Black Bishop"], ["bN", "Black Knight"], ["bP", "Black Pawn"],
+                    ].map(([piece, label]) => (
+                      <button
+                        key={piece}
+                        onClick={() => setSelectedPiece(piece)}
+                        title={label}
+                        className={`h-14 rounded-md border text-3xl leading-none ${selectedPiece === piece ? "border-purple-700 bg-purple-700 text-white" : "border-slate-200 bg-white text-slate-950"}`}
+                      >
+                        {pieceSymbol(piece)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button onClick={() => setSelectedPiece("erase")} className={`inline-flex h-10 items-center justify-center gap-2 rounded-md border px-3 text-sm font-semibold ${selectedPiece === "erase" ? "border-red-500 bg-red-50 text-red-700" : "border-slate-200 bg-white text-slate-800"}`}><X size={15} /> Remove</button>
+                  <button onClick={() => setSetupPosition({})} className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-200 px-3 text-sm font-semibold"><Eraser size={15} /> Clear</button>
+                  <button onClick={() => setSetupPosition(fenToPosition("start"))} className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-200 px-3 text-sm font-semibold"><RotateCcw size={15} /> Reset</button>
+                  <button onClick={() => navigator.clipboard?.writeText(positionToFen(setupPosition, live?.fen?.split(" ")?.[1] || "w")).then(() => toast.success("FEN copied"))} className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-200 px-3 text-sm font-semibold"><Download size={15} /> Export</button>
+                </div>
+                <button onClick={loadSetupIntoClassroom} className="h-11 w-full rounded-md bg-purple-700 text-sm font-semibold text-white">Load Position into Classroom</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {summaryOpen && coach && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
+          <div className="max-h-[92vh] w-full max-w-6xl overflow-auto rounded-lg bg-white p-5 shadow-2xl">
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-xl font-semibold text-slate-950">Class Summary</h3>
+                <p className="text-sm text-slate-500">Review the session and confirm attendance before finalizing.</p>
+              </div>
+              <button onClick={() => setSummaryOpen(false)} className="grid h-9 w-9 place-items-center rounded-md border border-slate-200"><X size={16} /></button>
+            </div>
+            <div className="grid gap-3 md:grid-cols-4">
+              <SummaryCard label="Duration" value={`${classSummary.durationMinutes} min`} icon={<Clock size={16} />} />
+              <SummaryCard label="Present" value={classSummary.present} icon={<UserCheck size={16} />} />
+              <SummaryCard label="Late" value={classSummary.late} icon={<Clock size={16} />} />
+              <SummaryCard label="Absent" value={classSummary.absent} icon={<Users size={16} />} />
+              <SummaryCard label="Questions" value={classSummary.questions} icon={<FileQuestion size={16} />} />
+              <SummaryCard label="Avg Score" value={classSummary.averageScore} icon={<Trophy size={16} />} />
+              <SummaryCard label="Points Earned" value={classSummary.totalPoints} icon={<Crown size={16} />} />
+              <SummaryCard label="Ended At" value={new Date(classSummary.endedAt).toLocaleTimeString()} icon={<Clock size={16} />} />
+            </div>
+            <div className="mt-5 overflow-hidden rounded-lg border border-slate-200">
+              <div className="grid grid-cols-[1.4fr_90px_100px_100px_90px_150px] bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500">
+                <span>Student</span><span>Time</span><span>Submits</span><span>Accuracy</span><span>Points</span><span>Attendance</span>
+              </div>
+              {classSummary.rows.map((row: any) => (
+                <div key={row.student._id} className="grid grid-cols-[1.4fr_90px_100px_100px_90px_150px] items-center border-t border-slate-100 px-3 py-2 text-sm">
+                  <span className="font-semibold text-slate-950">{row.student.name}</span>
+                  <span>{row.timeMinutes} min</span>
+                  <span>{row.submissions}</span>
+                  <span>{row.accuracy}%</span>
+                  <span>{row.points}</span>
+                  <select
+                    value={attendanceDraft[row.student._id] || row.suggestedStatus}
+                    onChange={(event) => setAttendanceDraft((current) => ({ ...current, [row.student._id]: event.target.value as "present" | "absent" | "late" }))}
+                    className="h-9 rounded-md border border-slate-200 px-2 text-sm"
+                  >
+                    <option value="present">Present</option>
+                    <option value="absent">Absent</option>
+                    <option value="late">Late</option>
+                  </select>
+                </div>
+              ))}
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button onClick={() => setSummaryOpen(false)} className="h-10 rounded-md border border-slate-200 px-4 text-sm font-semibold">Review Later</button>
+              <button onClick={saveAttendanceAndClose} className="h-10 rounded-md bg-purple-700 px-4 text-sm font-semibold text-white">Save Attendance and Finalize</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SummaryCard({ label, value, icon }: { label: string; value: string | number; icon: React.ReactNode }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{icon}{label}</div>
+      <div className="mt-1 text-xl font-bold text-slate-950">{value}</div>
     </div>
   );
 }

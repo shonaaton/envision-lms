@@ -35,6 +35,7 @@ export default function SquareTrainerPage() {
     text: "Press start and click the square shown.",
   });
   const [reward, setReward] = useState<{ xp: number; coins: number } | null>(null);
+  const [lastAttempt, setLastAttempt] = useState<{ square: string; type: "correct" | "wrong" } | null>(null);
   const [saving, setSaving] = useState(false);
   const savedRef = useRef(false);
 
@@ -68,6 +69,7 @@ export default function SquareTrainerPage() {
     setStreak(0);
     setBestStreak(0);
     setReward(null);
+    setLastAttempt(null);
     setFeedback({ type: "info", text: `Find ${nextTarget.toUpperCase()} on the board.` });
   }
 
@@ -124,17 +126,21 @@ export default function SquareTrainerPage() {
     if (square === target) {
       const nextStreak = streak + 1;
       const nextTarget = randomSquare(target);
+      setLastAttempt({ square, type: "correct" });
       setCorrect((value) => value + 1);
       setStreak(nextStreak);
       setBestStreak((value) => Math.max(value, nextStreak));
       setTarget(nextTarget);
       setFeedback({ type: "correct", text: `Correct. Now find ${nextTarget.toUpperCase()}.` });
+      window.setTimeout(() => setLastAttempt(null), 220);
       return;
     }
 
+    setLastAttempt({ square, type: "wrong" });
     setMistakes((value) => value + 1);
     setStreak(0);
     setFeedback({ type: "wrong", text: `${square.toUpperCase()} was clicked. Target is ${target.toUpperCase()}.` });
+    window.setTimeout(() => setLastAttempt(null), 260);
   }
 
   return (
@@ -160,19 +166,19 @@ export default function SquareTrainerPage() {
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
         <section className="rounded-3xl border border-brand/10 bg-white p-4 shadow-2xl shadow-brand/10 sm:p-6">
-          <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3">
-              <div className="rounded-2xl bg-brand px-5 py-3 text-center text-white shadow-lg shadow-brand/25">
-                <div className="text-xs font-semibold uppercase tracking-[0.16em] text-accent">Target</div>
-                <div className="text-4xl font-black tracking-wide">{target.toUpperCase()}</div>
-              </div>
-              <div className={cn("rounded-2xl border px-4 py-3 text-sm font-semibold", feedback.type === "correct" && "border-emerald-200 bg-emerald-50 text-emerald-700", feedback.type === "wrong" && "border-rose-200 bg-rose-50 text-rose-700", feedback.type === "info" && "border-slate-200 bg-slate-50 text-slate-600")}>
+          <div className="mb-5 flex flex-col gap-3">
+            <div className="mx-auto rounded-2xl bg-brand px-8 py-4 text-center text-white shadow-lg shadow-brand/25">
+              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-accent">Find Square</div>
+              <div className="text-6xl font-black tracking-wide">{target.toUpperCase()}</div>
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className={cn("flex-1 rounded-2xl border px-4 py-3 text-center text-sm font-semibold", feedback.type === "correct" && "border-emerald-200 bg-emerald-50 text-emerald-700", feedback.type === "wrong" && "border-rose-200 bg-rose-50 text-rose-700", feedback.type === "info" && "border-slate-200 bg-slate-50 text-slate-600")}>
                 {feedback.text}
               </div>
-            </div>
             <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 font-bold text-brand">
               <Timer size={18} />
               {remaining}s
+            </div>
             </div>
           </div>
 
@@ -183,7 +189,14 @@ export default function SquareTrainerPage() {
                 type="button"
                 onClick={() => handleSquareClick(item.square)}
                 className="relative aspect-square text-left transition hover:brightness-110 focus:outline-none focus:ring-4 focus:ring-brand/40"
-                style={{ backgroundColor: item.isDark ? darkSquare : lightSquare }}
+                style={{
+                  backgroundColor: item.isDark ? darkSquare : lightSquare,
+                  boxShadow: lastAttempt?.square === item.square
+                    ? lastAttempt.type === "correct"
+                      ? "inset 0 0 0 999px rgba(16,185,129,.45)"
+                      : "inset 0 0 0 999px rgba(244,63,94,.45)"
+                    : undefined,
+                }}
                 aria-label={`Square ${item.square}`}
               >
                 {item.colIndex === 0 && <span className="absolute left-1 top-1 text-[10px] font-bold text-black/55">{item.rank}</span>}

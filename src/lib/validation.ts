@@ -67,11 +67,83 @@ export const classroomSchema = z.object({
   batches: z.array(z.string()).default([]),
 });
 
+const assignmentActivityTypeSchema = z.enum([
+  "solve_position",
+  "quiz",
+  "play_computer",
+  "find_best_move",
+  "find_combination",
+  "study_pgn",
+  "analyze_position",
+  "endgame_practice",
+  "opening_practice",
+]);
+
+const assignmentActivitySchema = z.object({
+  type: assignmentActivityTypeSchema,
+  title: z.string().min(1).default("Untitled activity"),
+  instructions: z.string().optional(),
+  difficulty: z.enum(["beginner", "intermediate", "advanced"]).default("beginner"),
+  points: z.number().int().min(0).default(1),
+  timeLimitMinutes: z.number().int().min(0).default(0),
+  topic: z.string().optional(),
+  opening: z.string().optional(),
+  endgame: z.string().optional(),
+  tacticalTheme: z.string().optional(),
+  tags: z.array(z.string()).default([]),
+  fen: z.string().optional(),
+  solution: z.array(z.string()).default([]),
+  pgn: z.string().optional(),
+  pgnTitle: z.string().optional(),
+  pgnSourceId: z.string().optional(),
+  source: z.any().optional(),
+  quiz: z
+    .object({
+      question: z.string().optional(),
+      options: z
+        .array(
+          z.object({
+            id: z.string(),
+            text: z.string(),
+            correct: z.boolean().default(false),
+          })
+        )
+        .default([]),
+      correctAnswers: z.array(z.number().int().min(0)).default([]),
+      multipleCorrect: z.boolean().default(false),
+      explanation: z.string().optional(),
+      positionFen: z.string().optional(),
+    })
+    .optional(),
+  computer: z
+    .object({
+      strength: z.string().default("beginner"),
+      rating: z.number().int().min(0).max(3500).optional(),
+      side: z.enum(["white", "black", "random"]).default("white"),
+      objective: z.string().optional(),
+      timeControl: z
+        .object({
+          type: z.enum(["untimed", "fixed", "increment"]).default("untimed"),
+          minutes: z.number().int().min(0).default(0),
+          increment: z.number().int().min(0).default(0),
+        })
+        .optional(),
+      completion: z.string().optional(),
+      requiredMoves: z.number().int().min(0).optional(),
+    })
+    .optional(),
+});
+
 export const homeworkSchema = z.object({
   classroom: z.string(),
   title: z.string().min(2),
   description: z.string().optional(),
+  instructions: z.string().optional(),
+  assignedStudents: z.array(z.string()).default([]),
+  assignedBatches: z.array(z.string()).default([]),
+  assignAllStudents: z.boolean().default(false),
   dueAt: z.string().datetime().optional(),
+  activities: z.array(assignmentActivitySchema).default([]),
   puzzles: z
     .array(
       z.object({

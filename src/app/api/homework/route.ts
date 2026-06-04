@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { Homework } from "@/models/Homework";
 import { Classroom } from "@/models/Classroom";
+import { User } from "@/models/User";
 import { homeworkSchema } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
@@ -19,8 +20,18 @@ export async function GET(req: Request) {
   let filter: any = {};
   if (classroomId) filter.classroom = classroomId;
   else if (role === "student") {
-    const myClassrooms = await Classroom.find({ students: userId }, { _id: 1 }).lean();
-    filter.classroom = { $in: myClassrooms.map((c) => c._id) };
+    const [myClassrooms, me] = await Promise.all([
+      Classroom.find({ students: userId }, { _id: 1 }).lean(),
+      User.findById(userId, { batches: 1 }).lean(),
+    ]);
+    const classroomIds = myClassrooms.map((c) => c._id);
+    const batchIds = ((me as any)?.batches || []).map((id: any) => id.toString());
+    filter.$or = [
+      { assignedStudents: userId },
+      { assignedBatches: { $in: batchIds } },
+      { classroom: { $in: classroomIds }, assignAllStudents: true },
+      { classroom: { $in: classroomIds }, assignedStudents: { $size: 0 }, assignedBatches: { $size: 0 } },
+    ];
   } else if (role === "instructor") {
     filter.instructor = userId;
   }

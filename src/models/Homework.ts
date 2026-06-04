@@ -10,6 +10,79 @@ const PuzzleSchema = new Schema(
   { _id: true }
 );
 
+const ActivitySchema = new Schema(
+  {
+    type: {
+      type: String,
+      enum: [
+        "solve_position",
+        "quiz",
+        "play_computer",
+        "find_best_move",
+        "find_combination",
+        "study_pgn",
+        "analyze_position",
+        "endgame_practice",
+        "opening_practice",
+      ],
+      required: true,
+      index: true,
+    },
+    title: { type: String, required: true },
+    instructions: String,
+    difficulty: { type: String, enum: ["beginner", "intermediate", "advanced"], default: "beginner" },
+    points: { type: Number, default: 1 },
+    timeLimitMinutes: { type: Number, default: 0 },
+    topic: String,
+    opening: String,
+    endgame: String,
+    tacticalTheme: String,
+    tags: [String],
+    fen: String,
+    solution: [String],
+    pgn: String,
+    pgnTitle: String,
+    pgnSourceId: String,
+    source: {
+      kind: String,
+      pgnId: { type: Schema.Types.ObjectId, ref: "PGN" },
+      folder: String,
+      moveNumber: Number,
+      chapter: String,
+      variation: String,
+      san: String,
+    },
+    quiz: {
+      question: String,
+      options: [
+        {
+          id: String,
+          text: String,
+          correct: { type: Boolean, default: false },
+        },
+      ],
+      correctAnswers: [Number],
+      explanation: String,
+      multipleCorrect: { type: Boolean, default: false },
+      positionFen: String,
+    },
+    computer: {
+      strength: { type: String, default: "beginner" },
+      rating: Number,
+      side: { type: String, enum: ["white", "black", "random"], default: "white" },
+      objective: String,
+      timeControl: {
+        type: { type: String, default: "untimed" },
+        minutes: { type: Number, default: 0 },
+        increment: { type: Number, default: 0 },
+      },
+      completion: String,
+      requiredMoves: Number,
+    },
+  },
+  { _id: true, strict: false }
+);
+
 const HomeworkSchema = new Schema(
   {
     classroom: { type: Schema.Types.ObjectId, ref: "Classroom", required: true, index: true },
@@ -22,6 +95,7 @@ const HomeworkSchema = new Schema(
     assignedBatches: [{ type: Schema.Types.ObjectId, ref: "Batch", index: true }],
     assignAllStudents: { type: Boolean, default: false },
     puzzles: [PuzzleSchema],
+    activities: [ActivitySchema],
     dueAt: Date,
     numberOfAttempts: { type: Number, default: 1 },
     timeLimitMinutes: { type: Number, default: 0 },

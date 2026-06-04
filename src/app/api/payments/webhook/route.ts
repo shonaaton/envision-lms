@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { dbConnect } from "@/lib/db";
 import { Payment } from "@/models/Payment";
 import { verifyWebhookSignature } from "@/lib/payments/razorpay";
+import { markInvoicePaid } from "@/lib/fees";
 
 export const dynamic = "force-dynamic";
 
@@ -16,10 +17,12 @@ export async function POST(req: Request) {
 
   if (event.event === "payment.captured") {
     const payment = event.payload.payment.entity;
-    await Payment.findOneAndUpdate(
+    const pay = await Payment.findOneAndUpdate(
       { razorpayOrderId: payment.order_id },
-      { razorpayPaymentId: payment.id, status: "paid", paidAt: new Date() }
+      { razorpayPaymentId: payment.id, status: "paid", paidAt: new Date() },
+      { new: true }
     );
+    if (pay?.purpose === "invoice" && pay.refId) await markInvoicePaid(pay.refId.toString(), pay._id.toString());
   } else if (event.event === "payment.failed") {
     const payment = event.payload.payment.entity;
     await Payment.findOneAndUpdate({ razorpayOrderId: payment.order_id }, { status: "failed" });

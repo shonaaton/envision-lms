@@ -6,7 +6,7 @@ declare global { interface Window { Razorpay: any; } }
 
 export default function PayButton({
   amount, purpose, refId, label = "Pay now",
-}: { amount: number; purpose: "enrollment" | "booking" | "tournament" | "other"; refId?: string; label?: string }) {
+}: { amount: number; purpose: "enrollment" | "booking" | "tournament" | "invoice" | "other"; refId?: string; label?: string }) {
   const [loading, setLoading] = useState(false);
 
   async function pay() {

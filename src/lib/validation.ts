@@ -91,7 +91,7 @@ export const bookingSchema = z.object({
 });
 
 export const orderSchema = z.object({
-  purpose: z.enum(["enrollment", "booking", "tournament", "other"]),
+  purpose: z.enum(["enrollment", "booking", "tournament", "invoice", "other"]),
   refId: z.string().optional(),
   amount: z.number().int().min(100),
 });

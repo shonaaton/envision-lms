@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { Attendance } from "@/models/Attendance";
 import { recordActivity } from "@/lib/activity";
+import { consumeAttendanceCredit } from "@/lib/fees";
 
 export const dynamic = "force-dynamic";
 
@@ -38,5 +39,10 @@ export async function POST(req: Request) {
     entityId: doc._id.toString(),
     metadata: { classroom, sessionDate, records: records?.length ?? 0 },
   });
+  for (const record of records || []) {
+    if (record?.student && (record.status === "present" || record.status === "late")) {
+      await consumeAttendanceCredit(record.student, doc._id.toString());
+    }
+  }
   return NextResponse.json(doc);
 }

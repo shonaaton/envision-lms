@@ -5,6 +5,7 @@ import { Payment } from "@/models/Payment";
 import { Classroom } from "@/models/Classroom";
 import { Booking } from "@/models/Booking";
 import { verifyCheckoutSignature } from "@/lib/payments/razorpay";
+import { markInvoicePaid } from "@/lib/fees";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,7 @@ export async function POST(req: Request) {
   if (!ok) return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
 
   await dbConnect();
+  const existingPayment: any = await Payment.findOne({ razorpayOrderId: razorpay_order_id }).lean();
   const pay = await Payment.findOneAndUpdate(
     { razorpayOrderId: razorpay_order_id },
     {
@@ -23,7 +25,7 @@ export async function POST(req: Request) {
       razorpaySignature: razorpay_signature,
       status: "paid",
       paidAt: new Date(),
-      invoiceNumber: `INV-${Date.now()}`,
+      invoiceNumber: existingPayment?.invoiceNumber || `INV-${Date.now()}`,
     },
     { new: true }
   );
@@ -32,6 +34,8 @@ export async function POST(req: Request) {
     await Classroom.findByIdAndUpdate(pay.refId, { $addToSet: { students: pay.user } });
   } else if (pay?.purpose === "booking" && pay.refId) {
     await Booking.findByIdAndUpdate(pay.refId, { status: "confirmed", payment: pay._id });
+  } else if (pay?.purpose === "invoice" && pay.refId) {
+    await markInvoicePaid(pay.refId.toString(), pay._id.toString());
   }
   return NextResponse.json({ ok: true, invoiceNumber: pay?.invoiceNumber });
 }

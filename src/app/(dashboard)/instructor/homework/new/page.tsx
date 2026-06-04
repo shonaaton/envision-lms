@@ -208,6 +208,8 @@ export default function NewHomeworkPage() {
         title,
         description,
         dueAt: dueAt ? new Date(dueAt).toISOString() : undefined,
+        numberOfAttempts: Math.max(1, ...activities.map((activity) => activity.kind === "pgn_quiz" ? activity.maxAttempts : 1)),
+        timeLimitMinutes: Math.max(0, ...activities.map((activity) => activity.timeLimitMinutes || 0)),
         assignAllStudents: targetMode === "all",
         assignedStudents: targetMode === "students" ? assignedStudents : [],
         assignedBatches: targetMode === "batches" ? assignedBatches : [],

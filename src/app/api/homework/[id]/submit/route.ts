@@ -6,6 +6,10 @@ import { recordActivity } from "@/lib/activity";
 
 export const dynamic = "force-dynamic";
 
+function answerKey(activityId: string, itemId: string) {
+  return `${activityId}:${itemId}`;
+}
+
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -14,41 +18,116 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const hw: any = await Homework.findById(params.id).lean();
   if (!hw) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const { answers } = (await req.json()) as { answers: { puzzleId: string; moves: string[] }[] };
+  const student = (session.user as any).id;
+  const existing: any = await Submission.findOne({ homework: hw._id, student }).lean();
+  const maxAttempts = Math.max(1, Number(hw.numberOfAttempts || 1));
+  const attemptsUsed = Number(existing?.attemptsUsed || 0);
+  if (attemptsUsed >= maxAttempts) {
+    return NextResponse.json({ error: "No attempts remaining" }, { status: 403 });
+  }
+
+  const payload = await req.json();
+  const quizAnswers = payload.quizAnswers || {};
+  const activityResults = payload.activityResults || {};
+  const clientMetrics = payload.metrics || {};
+
   let totalScore = 0;
   let correctCount = 0;
-  const graded = answers.map((a) => {
-    const p = hw.puzzles.find((x: any) => x._id.toString() === a.puzzleId);
-    if (!p) return { ...a, correct: false, pointsAwarded: 0 };
+  let totalAutoChecked = 0;
+  let totalMcq = 0;
+  let correctMcq = 0;
+  let totalBoards = 0;
+  let solvedBoards = 0;
+  let mistakes = Number(clientMetrics.mistakes || 0);
+  let hintsUsed = Number(clientMetrics.hintsUsed || 0);
+  const graded: any[] = [];
+
+  for (const activity of hw.activities || []) {
+    if (activity.type === "quiz") {
+      const negative = Number(activity.source?.negativePoints || 0);
+      for (const item of activity.items || []) {
+        totalMcq += 1;
+        totalAutoChecked += 1;
+        const selected = quizAnswers[answerKey(activity._id.toString(), item.id)] || "";
+        const correct = (item.options || []).some((option: any) => option.id === selected && option.correct);
+        const points = correct ? Number(item.points ?? activity.points ?? 1) : -negative;
+        if (correct) {
+          correctCount += 1;
+          correctMcq += 1;
+        }
+        totalScore += points;
+        graded.push({ activityId: activity._id, itemId: item.id, kind: "mcq", correct, pointsAwarded: points, selected });
+      }
+    }
+
+    if (activity.type === "study_pgn" && activity.source?.kind === "pgn_quiz") {
+      for (const item of activity.items || []) {
+        totalBoards += 1;
+        totalAutoChecked += 1;
+        const result = activityResults[answerKey(activity._id.toString(), item.id)] || {};
+        const correct = Boolean(result.solved);
+        const itemMistakes = Number(result.mistakes || 0);
+        const itemHints = Number(result.hintsUsed || 0);
+        mistakes += itemMistakes;
+        hintsUsed += itemHints;
+        const base = Number(item.points ?? activity.points ?? 1);
+        const points = correct ? Math.max(0, base - itemMistakes - itemHints * 0.5) : 0;
+        if (correct) {
+          correctCount += 1;
+          solvedBoards += 1;
+        }
+        totalScore += points;
+        graded.push({ activityId: activity._id, itemId: item.id, kind: "pgn_quiz", correct, pointsAwarded: points, mistakes: itemMistakes, hintsUsed: itemHints });
+      }
+    }
+
+    if (activity.type === "play_computer") {
+      graded.push({ activityId: activity._id, kind: "play_computer", correct: false, pointsAwarded: 0, needsReview: true });
+    }
+  }
+
+  for (const a of payload.answers || []) {
+    const p = (hw.puzzles || []).find((x: any) => x._id.toString() === a.puzzleId);
+    if (!p) continue;
+    totalAutoChecked += 1;
     const correct = JSON.stringify(p.solution) === JSON.stringify(a.moves);
-    if (correct) correctCount += 1;
     const pts = correct ? p.points ?? hw.scoring?.correct ?? 1 : -(hw.scoring?.wrongPenalty ?? 0);
+    if (correct) correctCount += 1;
     totalScore += pts;
-    return { ...a, correct, pointsAwarded: pts };
-  });
+    graded.push({ ...a, kind: "legacy_puzzle", correct, pointsAwarded: pts });
+  }
+
   const now = new Date();
   const isLate = hw.dueAt && now > new Date(hw.dueAt);
   if (isLate && hw.scoring?.latePenalty) totalScore -= hw.scoring.latePenalty;
+  const accuracy = totalAutoChecked ? Math.round((correctCount / totalAutoChecked) * 100) : 0;
 
   const sub = await Submission.findOneAndUpdate(
-    { homework: hw._id, student: (session.user as any).id },
+    { homework: hw._id, student },
     {
       answers: graded,
+      quizAnswers,
+      activityResults,
+      metrics: { mistakes, hintsUsed, solvedBoards, totalBoards, correctMcq, totalMcq },
+      attemptsUsed: attemptsUsed + 1,
       totalScore,
-      accuracy: answers.length ? Math.round((correctCount / answers.length) * 100) : 0,
+      accuracy,
+      timeTakenSeconds: Number(payload.timeTakenSeconds || 0),
       status: isLate ? "late" : "completed",
       submittedAt: now,
     },
     { upsert: true, new: true }
   );
+
   await recordActivity({
-    actor: (session.user as any).id,
-    targetUser: (session.user as any).id,
+    actor: student,
+    targetUser: student,
     type: "homework.submitted",
     label: `Submitted homework ${hw.title}`,
     entityType: "Homework",
     entityId: hw._id.toString(),
-    metadata: { totalScore, answers: graded.length },
+    metadata: { totalScore, accuracy, attemptsUsed: attemptsUsed + 1, mistakes, hintsUsed },
   });
+
   return NextResponse.json(sub);
 }

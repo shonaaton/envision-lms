@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
-import { Homework } from "@/models/Homework";
+import { Homework, Submission } from "@/models/Homework";
 import { homeworkSchema } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
@@ -12,7 +12,9 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
   await dbConnect();
   const hw = await Homework.findById(params.id).lean();
   if (!hw) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json(hw);
+  const role = (session.user as any).role;
+  const submission = role === "student" ? await Submission.findOne({ homework: params.id, student: (session.user as any).id }).lean() : null;
+  return NextResponse.json({ ...hw, mySubmission: submission });
 }
 
 export async function PUT(req: Request, { params }: { params: { id: string } }) {
@@ -36,6 +38,8 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     assignedBatches: raw.assignedBatches ?? existing.assignedBatches?.map((id: any) => id.toString()) ?? [],
     assignAllStudents: raw.assignAllStudents ?? existing.assignAllStudents ?? false,
     dueAt: raw.dueAt === null ? undefined : raw.dueAt ?? existing.dueAt?.toISOString(),
+    numberOfAttempts: raw.numberOfAttempts ?? existing.numberOfAttempts ?? 1,
+    timeLimitMinutes: raw.timeLimitMinutes ?? existing.timeLimitMinutes ?? 0,
     activities: raw.activities ?? existing.activities ?? [],
     puzzles: raw.puzzles ?? existing.puzzles ?? [],
   };

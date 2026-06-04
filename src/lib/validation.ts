@@ -160,6 +160,8 @@ export const homeworkSchema = z.object({
   assignedBatches: z.array(z.string()).default([]),
   assignAllStudents: z.boolean().default(false),
   dueAt: z.string().datetime().optional(),
+  numberOfAttempts: z.number().int().min(1).default(1),
+  timeLimitMinutes: z.number().int().min(0).default(0),
   activities: z.array(assignmentActivitySchema).default([]),
   puzzles: z
     .array(

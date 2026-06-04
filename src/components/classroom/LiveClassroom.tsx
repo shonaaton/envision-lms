@@ -181,6 +181,7 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
   const [quizTitle, setQuizTitle] = useState("Best move from current position");
   const [chatText, setChatText] = useState("");
   const [manualLoadText, setManualLoadText] = useState("");
+  const [setupLoadText, setSetupLoadText] = useState("");
   const [selectedPgnIds, setSelectedPgnIds] = useState<string[]>([]);
   const [previewPgn, setPreviewPgn] = useState<any>(null);
   const [challengeTimer, setChallengeTimer] = useState(60);
@@ -212,7 +213,7 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
     if (!boardShellRef.current) return;
     const resize = () => {
       const width = boardShellRef.current?.clientWidth || 620;
-      setBoardWidth(Math.max(300, Math.min(680, width - 64)));
+      setBoardWidth(Math.max(300, Math.min(560, width - 56)));
     };
     resize();
     const observer = new ResizeObserver(resize);
@@ -371,8 +372,35 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
     setSetupOpen(false);
   }
 
+  function loadSetupText() {
+    const value = setupLoadText.trim();
+    if (!value) return;
+    try {
+      const fenGame = new Chess(value);
+      setSetupPosition(fenToPosition(fenGame.fen()));
+      setSetupLoadText("");
+      toast.success("FEN loaded into setup board");
+      return;
+    } catch {
+      // Try PGN next.
+    }
+    try {
+      const pgnGame = new Chess();
+      pgnGame.loadPgn(value);
+      setSetupPosition(fenToPosition(pgnGame.fen()));
+      setSetupLoadText("");
+      toast.success("PGN position loaded into setup board");
+    } catch {
+      toast.error("Paste a valid PGN or FEN");
+    }
+  }
+
   function onSquareClick(square: string) {
     if (!coach) return;
+    if (tool === "move" && (live?.drawings || []).length) {
+      patch({ drawings: [] });
+      return;
+    }
     if (live?.setupMode || tool === "setup") {
       const next = { ...setupPosition };
       if (selectedPiece === "erase") delete next[square];
@@ -396,8 +424,20 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
     }
   }
 
+  function onSquareRightClick(square: string) {
+    if (!coach) return;
+    const drawings = live?.drawings || [];
+    const existing = drawings.find((drawing: any) => drawing.type === "highlight" && drawing.from === square);
+    if (existing) {
+      patch({ drawings: drawings.filter((drawing: any) => !(drawing.type === "highlight" && drawing.from === square)) });
+      return;
+    }
+    patch({ drawings: [...drawings, { type: "highlight", from: square, color: drawingColor(modifier) }] });
+  }
+
   function persistBoardArrows(nextArrows: any[]) {
     if (!coach || !live?.arrowsEnabled) return;
+    if (!nextArrows.length) return;
     const highlights = (live?.drawings || []).filter((drawing: any) => drawing.type === "highlight");
     const arrowDrawings = nextArrows.map((arrow) => ({
       type: "arrow",
@@ -789,9 +829,6 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
             <ToolButton icon={<FlipHorizontal size={19} />} label="Flip board" onClick={() => patch({ orientation: live?.orientation === "white" ? "black" : "white" })} />
             <ToggleButton active={!!live?.soundEnabled} icon={live?.soundEnabled ? <Volume2 size={19} /> : <VolumeX size={19} />} label="Piece sounds" onClick={() => patch({ soundEnabled: !live?.soundEnabled })} />
             <ToolButton icon={<RefreshCcw size={19} />} label="Reset Board" onClick={resetGame} />
-            <ToolButton icon={<Library size={19} />} label="Load PGN" onClick={() => setActiveTab("pgn")} />
-            <ToolButton icon={<ChevronLeft size={19} />} label="Previous PGN" onClick={() => loadAdjacentPgn(-1)} />
-            <ToolButton icon={<ChevronRight size={19} />} label="Next PGN" onClick={() => loadAdjacentPgn(1)} />
           </div>}
 
           <div ref={boardShellRef} className="min-w-0 flex-1">
@@ -811,7 +848,7 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
                     onPieceDrop={onDrop}
                     onPieceDropOffBoard={onPieceDropOffBoard as any}
                 onSquareClick={onSquareClick as any}
-                onSquareRightClick={onSquareClick as any}
+                    onSquareRightClick={onSquareRightClick as any}
                     onArrowsChange={persistBoardArrows as any}
                     customArrows={live?.arrowsEnabled ? (arrows as any) : []}
                     customSquareStyles={squareStyles as any}
@@ -1174,6 +1211,16 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
                       </button>
                     ))}
                   </div>
+                </div>
+                <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                  <label className="text-xs font-semibold text-slate-600">Paste PGN or FEN</label>
+                  <textarea
+                    value={setupLoadText}
+                    onChange={(event) => setSetupLoadText(event.target.value)}
+                    className="mt-2 min-h-24 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                    placeholder="Paste a PGN or FEN to load into this setup board"
+                  />
+                  <button onClick={loadSetupText} className="mt-2 h-10 w-full rounded-md border border-purple-200 bg-purple-50 text-sm font-semibold text-purple-800">Load into Setup Board</button>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <button onClick={() => setSelectedPiece("erase")} className={`inline-flex h-10 items-center justify-center gap-2 rounded-md border px-3 text-sm font-semibold ${selectedPiece === "erase" ? "border-red-500 bg-red-50 text-red-700" : "border-slate-200 bg-white text-slate-800"}`}><X size={15} /> Remove</button>

@@ -56,13 +56,15 @@ export default function Sidebar({ role }: { role: "student" | "instructor" | "ad
   const pathname = usePathname();
   const visibleGroups = groups.filter((g) => g.title !== "Admin" || role === "admin");
   return (
-    <aside className="hidden h-screen w-64 flex-shrink-0 border-r border-ink-700 bg-ink-900 px-4 py-6 md:flex md:flex-col">
-      <Logo className="mb-8" />
-      <nav className="flex-1 space-y-6 overflow-y-auto">
+    <aside className="hidden h-screen w-72 flex-shrink-0 border-r border-white/10 bg-[radial-gradient(circle_at_20%_0%,rgba(253,231,90,0.20),transparent_30%),linear-gradient(180deg,#5a1372_0%,#3a0c4a_58%,#1a0622_100%)] px-4 py-5 shadow-2xl shadow-brand-900/30 md:flex md:flex-col">
+      <div className="mb-6 rounded-2xl border border-white/10 bg-white/10 px-3 py-4 shadow-lg shadow-black/10 backdrop-blur">
+        <Logo />
+      </div>
+      <nav className="flex-1 space-y-5 overflow-y-auto pr-1">
         {visibleGroups.map((g) => (
           <div key={g.title}>
-            <div className="px-3 text-xs font-semibold uppercase tracking-wider text-gray-500">{g.title}</div>
-            <ul className="mt-2 space-y-1">
+            <div className="px-3 text-[11px] font-bold uppercase tracking-[0.18em] text-accent/80">{g.title}</div>
+            <ul className="mt-2 space-y-1.5">
               {g.items.map((it) => {
                 const Icon = it.icon;
                 const active = pathname === it.href || pathname.startsWith(it.href + "/");
@@ -71,11 +73,18 @@ export default function Sidebar({ role }: { role: "student" | "instructor" | "ad
                     <Link
                       href={it.href}
                       className={cn(
-                        "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition",
-                        active ? "bg-brand text-white" : "text-gray-300 hover:bg-white/5 hover:text-white"
+                        "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition",
+                        active
+                          ? "bg-white text-brand shadow-lg shadow-black/10"
+                          : "text-white/75 hover:bg-white/10 hover:text-white"
                       )}
                     >
-                      <Icon size={16} />
+                      <span className={cn(
+                        "flex h-8 w-8 items-center justify-center rounded-lg transition",
+                        active ? "bg-accent text-brand" : "bg-white/10 text-accent group-hover:bg-accent group-hover:text-brand"
+                      )}>
+                        <Icon size={16} />
+                      </span>
                       <span>{it.label}</span>
                     </Link>
                   </li>
@@ -85,6 +94,10 @@ export default function Sidebar({ role }: { role: "student" | "instructor" | "ad
           </div>
         ))}
       </nav>
+      <div className="mt-5 rounded-2xl border border-white/10 bg-white/10 p-4 text-sm text-white/80">
+        <div className="font-semibold text-white">Envision Academy</div>
+        <div className="mt-1 text-xs leading-relaxed text-white/60">Premium chess tools, classes, PGNs, tournaments, and progress in one place.</div>
+      </div>
     </aside>
   );
 }

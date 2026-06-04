@@ -31,6 +31,16 @@ const TournamentSchema = new Schema(
       users: [{ type: Schema.Types.ObjectId, ref: "User", index: true }],
     },
     participants: [{ type: Schema.Types.ObjectId, ref: "User", index: true }],
+    externalInvite: {
+      enabled: { type: Boolean, default: false, index: true },
+      token: { type: String, index: true },
+      password: String,
+      createdAt: Date,
+    },
+    externalParticipants: [{
+      username: { type: String, required: true },
+      joinedAt: { type: Date, default: Date.now },
+    }],
     createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
     parentTournament: { type: Schema.Types.ObjectId, ref: "Tournament", index: true },
   },

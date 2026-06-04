@@ -2,8 +2,10 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { Tournament } from "@/models/Tournament";
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { Trophy } from "lucide-react";
+import { randomBytes } from "crypto";
+import { Link2, RefreshCcw, Trophy } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +19,27 @@ async function joinTournament(formData: FormData) {
   revalidatePath(`/tournaments/${id}`);
 }
 
+function makeInvitePassword() {
+  return randomBytes(4).toString("hex").toUpperCase();
+}
+
+async function createExternalInvite(formData: FormData) {
+  "use server";
+  const session = await auth();
+  if ((session?.user as any)?.role !== "admin") throw new Error("Forbidden");
+  const id = String(formData.get("id"));
+  await dbConnect();
+  await Tournament.findByIdAndUpdate(id, {
+    externalInvite: {
+      enabled: true,
+      token: randomBytes(18).toString("hex"),
+      password: makeInvitePassword(),
+      createdAt: new Date(),
+    },
+  });
+  revalidatePath(`/tournaments/${id}`);
+}
+
 export default async function TournamentDetailPage({ params }: { params: { id: string } }) {
   const session = await auth();
   const role = (session?.user as any)?.role;
@@ -27,6 +50,9 @@ export default async function TournamentDetailPage({ params }: { params: { id: s
   const allowed = role === "admin" || tournament.access?.allActiveStudents || (tournament.access?.users || []).map((id: any) => id.toString()).includes(userId) || (tournament.participants || []).some((p: any) => p._id?.toString() === userId);
   if (!allowed) return <div className="p-6">You do not have access to this tournament.</div>;
   const joined = (tournament.participants || []).some((p: any) => p._id?.toString() === userId);
+  const host = headers().get("host");
+  const protocol = headers().get("x-forwarded-proto") || "https";
+  const externalInviteUrl = tournament.externalInvite?.token ? `${protocol}://${host}/tournament-join/${tournament.externalInvite.token}` : "";
 
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-5 text-slate-950 sm:px-6 lg:px-8">
@@ -45,7 +71,32 @@ export default async function TournamentDetailPage({ params }: { params: { id: s
               <button disabled={joined} className="h-10 rounded-md bg-purple-700 px-4 text-sm font-semibold text-white disabled:bg-slate-300">{joined ? "Joined" : "Join Tournament"}</button>
             </form>
           )}
+          {role === "admin" && (
+            <form action={createExternalInvite}>
+              <input type="hidden" name="id" value={params.id} />
+              <button className="inline-flex h-10 items-center gap-2 rounded-md bg-purple-700 px-4 text-sm font-semibold text-white">
+                {tournament.externalInvite?.enabled ? <RefreshCcw size={15} /> : <Link2 size={15} />}
+                {tournament.externalInvite?.enabled ? "Regenerate External Link" : "Create External Link"}
+              </button>
+            </form>
+          )}
         </div>
+        {role === "admin" && tournament.externalInvite?.enabled && (
+          <div className="mt-5 rounded-md border border-purple-100 bg-purple-50 p-4">
+            <div className="mb-2 text-sm font-semibold text-purple-900">External tournament invite</div>
+            <div className="grid gap-3 md:grid-cols-[1fr_180px]">
+              <label className="text-xs font-medium text-purple-900">
+                Share link
+                <input readOnly className="mt-1 h-10 w-full rounded-md border border-purple-200 bg-white px-3 text-sm text-slate-950" value={externalInviteUrl} />
+              </label>
+              <label className="text-xs font-medium text-purple-900">
+                Password
+                <input readOnly className="mt-1 h-10 w-full rounded-md border border-purple-200 bg-white px-3 text-sm font-semibold text-slate-950" value={tournament.externalInvite.password || ""} />
+              </label>
+            </div>
+            <p className="mt-2 text-xs text-purple-800">Anyone with this link can join using a username and this password. Regenerating creates a new link and password.</p>
+          </div>
+        )}
         <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
           <div className="rounded-md bg-slate-50 p-3"><div className="text-xs text-slate-500">Tournament Type</div><b>{tournament.type === "arena" ? "Arena" : "Swiss"}</b></div>
           <div className="rounded-md bg-slate-50 p-3"><div className="text-xs text-slate-500">Start Date & Time</div><b>{new Date(tournament.startAt).toLocaleString("en-IN")}</b></div>
@@ -54,15 +105,16 @@ export default async function TournamentDetailPage({ params }: { params: { id: s
           {tournament.type === "arena" && <div className="rounded-md bg-slate-50 p-3"><div className="text-xs text-slate-500">Arena Duration</div><b>{tournament.arenaDurationMinutes} minutes</b></div>}
           {tournament.type === "swiss" && <div className="rounded-md bg-slate-50 p-3"><div className="text-xs text-slate-500">Rounds</div><b>{tournament.rounds}</b></div>}
           <div className="rounded-md bg-slate-50 p-3"><div className="text-xs text-slate-500">Starting Position</div><b>{tournament.startingPosition?.type === "custom" ? "Custom Position" : "Normal Starting Position"}</b></div>
-          <div className="rounded-md bg-slate-50 p-3"><div className="text-xs text-slate-500">Participants</div><b>{tournament.participants?.length || 0}</b></div>
+          <div className="rounded-md bg-slate-50 p-3"><div className="text-xs text-slate-500">Participants</div><b>{(tournament.participants?.length || 0) + (tournament.externalParticipants?.length || 0)}</b></div>
         </div>
       </div>
       <section className="mt-4 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="mb-3 font-semibold">Participants</h2>
         <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
           {(tournament.participants || []).map((student: any) => <div key={student._id.toString()} className="rounded-md bg-slate-50 px-3 py-2 text-sm">{student.name}</div>)}
+          {(tournament.externalParticipants || []).map((player: any) => <div key={`external-${player.username}`} className="rounded-md bg-purple-50 px-3 py-2 text-sm">{player.username} <span className="text-xs text-purple-700">(external)</span></div>)}
         </div>
-        {(!tournament.participants || tournament.participants.length === 0) && <p className="text-sm text-slate-500">No participants have joined yet.</p>}
+        {(!tournament.participants || tournament.participants.length === 0) && (!tournament.externalParticipants || tournament.externalParticipants.length === 0) && <p className="text-sm text-slate-500">No participants have joined yet.</p>}
       </section>
     </div>
   );

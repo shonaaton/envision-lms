@@ -35,7 +35,10 @@ export default async function ClassroomsPage() {
                 {c.feePerMonth > 0 && <div className="chip-accent">₹{(c.feePerMonth / 100).toFixed(0)}/mo</div>}
               </div>
               {c.description && <p className="mt-3 line-clamp-3 text-sm text-gray-300">{c.description}</p>}
-              <div className="mt-4 text-xs text-gray-500">{(c.students?.length ?? 0)} students</div>
+              <div className="mt-4 flex items-center justify-between text-xs text-gray-500">
+                <span>{(c.students?.length ?? 0)} students</span>
+                <span className="rounded bg-brand px-2 py-1 text-white">Join Classroom</span>
+              </div>
             </Link>
           ))}
         </div>

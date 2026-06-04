@@ -16,18 +16,29 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 
   const { answers } = (await req.json()) as { answers: { puzzleId: string; moves: string[] }[] };
   let totalScore = 0;
+  let correctCount = 0;
   const graded = answers.map((a) => {
     const p = hw.puzzles.find((x: any) => x._id.toString() === a.puzzleId);
     if (!p) return { ...a, correct: false, pointsAwarded: 0 };
     const correct = JSON.stringify(p.solution) === JSON.stringify(a.moves);
-    const pts = correct ? p.points ?? 1 : 0;
+    if (correct) correctCount += 1;
+    const pts = correct ? p.points ?? hw.scoring?.correct ?? 1 : -(hw.scoring?.wrongPenalty ?? 0);
     totalScore += pts;
     return { ...a, correct, pointsAwarded: pts };
   });
+  const now = new Date();
+  const isLate = hw.dueAt && now > new Date(hw.dueAt);
+  if (isLate && hw.scoring?.latePenalty) totalScore -= hw.scoring.latePenalty;
 
   const sub = await Submission.findOneAndUpdate(
     { homework: hw._id, student: (session.user as any).id },
-    { answers: graded, totalScore, submittedAt: new Date() },
+    {
+      answers: graded,
+      totalScore,
+      accuracy: answers.length ? Math.round((correctCount / answers.length) * 100) : 0,
+      status: isLate ? "late" : "completed",
+      submittedAt: now,
+    },
     { upsert: true, new: true }
   );
   await recordActivity({

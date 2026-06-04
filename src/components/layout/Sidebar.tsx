@@ -11,6 +11,7 @@ import {
   ChevronDown,
   ClipboardList,
   Cpu,
+  Crosshair,
   FileText,
   LayoutDashboard,
   Library,
@@ -52,6 +53,7 @@ const sections: NavSection[] = [
     items: [
       { href: "/pgn", label: "PGN Library", icon: Library },
       { href: "/analysis", label: "Analysis Board", icon: ListChecks },
+      { href: "/square-trainer", label: "Square Trainer", icon: Crosshair, roles: ["student", "admin"] },
       { href: "/play/computer", label: "Play vs Computer", icon: Cpu, roles: ["student", "admin"] },
     ],
   },

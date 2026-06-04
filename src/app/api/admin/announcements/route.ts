@@ -1,0 +1,130 @@
+import { NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
+import { dbConnect } from "@/lib/db";
+import { recordActivity } from "@/lib/activity";
+import { Announcement } from "@/models/Announcement";
+import { Batch } from "@/models/Batch";
+import { Notification } from "@/models/Fee";
+import { User } from "@/models/User";
+
+export const dynamic = "force-dynamic";
+
+const targetLabels: Record<string, string> = {
+  batch: "Batch",
+  all_students: "All students",
+  student: "Student",
+  all_coaches: "All coaches",
+  coach: "Coach",
+};
+
+function uniqueIds(ids: any[]) {
+  return Array.from(new Set(ids.filter(Boolean).map((id) => id.toString())));
+}
+
+async function resolveRecipients(targetType: string, targetId?: string) {
+  if (targetType === "all_students") {
+    const users = await User.find({ role: "student", isActive: { $ne: false } }, { _id: 1 }).lean();
+    return { recipients: uniqueIds(users.map((user: any) => user._id)), targetBatch: undefined, targetUser: undefined };
+  }
+
+  if (targetType === "all_coaches") {
+    const users = await User.find({ role: "instructor", isActive: { $ne: false } }, { _id: 1 }).lean();
+    return { recipients: uniqueIds(users.map((user: any) => user._id)), targetBatch: undefined, targetUser: undefined };
+  }
+
+  if (targetType === "batch") {
+    if (!targetId) throw new Error("Please select a batch.");
+    const batch: any = await Batch.findById(targetId, { students: 1 }).lean();
+    if (!batch) throw new Error("Batch not found.");
+    return { recipients: uniqueIds(batch.students || []), targetBatch: batch._id, targetUser: undefined };
+  }
+
+  if (targetType === "student" || targetType === "coach") {
+    if (!targetId) throw new Error(`Please select a ${targetType}.`);
+    const role = targetType === "student" ? "student" : "instructor";
+    const user: any = await User.findOne({ _id: targetId, role, isActive: { $ne: false } }, { _id: 1 }).lean();
+    if (!user) throw new Error(`${targetLabels[targetType]} not found.`);
+    return { recipients: [user._id.toString()], targetBatch: undefined, targetUser: user._id };
+  }
+
+  throw new Error("Please select a valid audience.");
+}
+
+export async function GET() {
+  const session = await auth();
+  if ((session?.user as any)?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  await dbConnect();
+  const list = await Announcement.find({})
+    .populate("createdBy", "name email")
+    .populate("targetBatch", "name")
+    .populate("targetUser", "name email role")
+    .sort({ sentAt: -1 })
+    .limit(100)
+    .lean();
+  return NextResponse.json(list);
+}
+
+export async function POST(req: Request) {
+  const session = await auth();
+  if ((session?.user as any)?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const actorId = (session!.user as any).id;
+
+  const body = await req.json();
+  const title = String(body.title || "").trim();
+  const message = String(body.message || "").trim();
+  const targetType = String(body.targetType || "");
+  const targetId = body.targetId ? String(body.targetId) : undefined;
+  const priority = body.priority === "high" ? "high" : "normal";
+
+  if (!title) return NextResponse.json({ error: "Title is required." }, { status: 400 });
+  if (!message) return NextResponse.json({ error: "Message is required." }, { status: 400 });
+
+  try {
+    await dbConnect();
+    const resolved = await resolveRecipients(targetType, targetId);
+    if (!resolved.recipients.length) return NextResponse.json({ error: "No active recipients were found for this audience." }, { status: 400 });
+
+    const announcement = await Announcement.create({
+      title,
+      message,
+      priority,
+      targetType,
+      targetBatch: resolved.targetBatch,
+      targetUser: resolved.targetUser,
+      recipients: resolved.recipients,
+      recipientCount: resolved.recipients.length,
+      createdBy: actorId,
+      sentAt: new Date(),
+    });
+
+    await Notification.insertMany(
+      resolved.recipients.map((user) => ({
+        user,
+        type: "announcement",
+        title,
+        message,
+        metadata: { announcement: announcement._id, targetType, priority },
+      }))
+    );
+
+    await recordActivity({
+      actor: actorId,
+      type: "announcement.sent",
+      label: `Sent announcement "${title}" to ${targetLabels[targetType] || "audience"}`,
+      entityType: "Announcement",
+      entityId: announcement._id.toString(),
+      metadata: { targetType, recipientCount: resolved.recipients.length, priority },
+    });
+
+    const populated = await Announcement.findById(announcement._id)
+      .populate("createdBy", "name email")
+      .populate("targetBatch", "name")
+      .populate("targetUser", "name email role")
+      .lean();
+
+    return NextResponse.json(populated);
+  } catch (error: any) {
+    return NextResponse.json({ error: error?.message || "Could not send announcement." }, { status: 400 });
+  }
+}

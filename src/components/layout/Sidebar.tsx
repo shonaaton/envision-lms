@@ -17,6 +17,7 @@ import {
   Library,
   ListChecks,
   Megaphone,
+  MessageSquare,
   Receipt,
   Settings,
   Trophy,
@@ -41,6 +42,7 @@ const sections: NavSection[] = [
     title: "Class Tools",
     items: [
       { href: "/classrooms", label: "Classrooms", icon: BookOpen },
+      { href: "/ask-coach", label: "Ask Coach", icon: MessageSquare },
       { href: "/homework", label: "Homework", icon: FileText },
       { href: "/attendance", label: "Attendance", icon: ClipboardList },
       { href: "/tournaments", label: "Tournaments", icon: Trophy },

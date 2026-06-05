@@ -51,6 +51,7 @@ type TabKey = "students" | "chat" | "moves" | "leaderboard";
 type ToolKey = "move" | "highlight" | "arrow" | "setup";
 type ModifierKey = "default" | "shift" | "ctrl" | "alt";
 type SetupTab = "pieces" | "objects";
+type SetupMovementMode = "white" | "black" | "free";
 type GamifiedObjectId = "star" | "gem" | "coin" | "apple" | "fire" | "trophy" | "gift" | "shield" | "key" | "puzzle" | "rocket" | "monster" | "dragon";
 type SetupSelection = string | "erase" | GamifiedObjectId;
 
@@ -226,6 +227,7 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
   const [gamifiedSetup, setGamifiedSetup] = useState<Record<string, GamifiedObjectId>>({});
   const [selectedObject, setSelectedObject] = useState<GamifiedObjectId | "delete">("star");
   const [draggedObjectSquare, setDraggedObjectSquare] = useState<string | null>(null);
+  const [setupMovementMode, setSetupMovementMode] = useState<SetupMovementMode>("white");
   const [setupOpen, setSetupOpen] = useState(false);
   const [pgnOpen, setPgnOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
@@ -297,7 +299,8 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
     if (setupOpen) return;
     setSetupPosition(boardPieceMap);
     setGamifiedSetup(liveGamifiedObjects);
-  }, [boardPieceMap, live?.setupMode, liveGamifiedObjects, setupOpen]);
+    setSetupMovementMode(live?.illegalMovesEnabled ? "free" : live?.fen?.split(" ")?.[1] === "b" ? "black" : "white");
+  }, [boardPieceMap, live?.fen, live?.illegalMovesEnabled, live?.setupMode, liveGamifiedObjects, setupOpen]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -354,9 +357,12 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
     await load();
   }
 
+  function setupSideToMove() {
+    return setupMovementMode === "black" ? "b" : "w";
+  }
+
   function commitSetup(position = setupPosition, objects = liveGamifiedObjects) {
-    const sideToMove = live?.fen?.split(" ")?.[1] || "w";
-    patch({ fen: positionToFen(position, sideToMove), gamifiedObjects: removeObjectsOnPieceSquares(objects, position), setupMode: true });
+    patch({ fen: positionToFen(position, setupSideToMove()), gamifiedObjects: removeObjectsOnPieceSquares(objects, position), setupMode: true, illegalMovesEnabled: setupMovementMode === "free" });
   }
 
   function onDrop(source: string, target: string, piece: string) {
@@ -455,8 +461,7 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
   }
 
   function loadSetupIntoClassroom() {
-    const sideToMove = live?.fen?.split(" ")?.[1] || "w";
-    patch({ fen: positionToFen(setupPosition, sideToMove), gamifiedObjects: removeObjectsOnPieceSquares(gamifiedSetup, setupPosition), setupMode: false, pgn: "", pgnTitle: "Custom Position", pgnMoves: [], pgnMoveIndex: 0, moveHistory: [], drawings: [] });
+    patch({ fen: positionToFen(setupPosition, setupSideToMove()), gamifiedObjects: removeObjectsOnPieceSquares(gamifiedSetup, setupPosition), setupMode: false, illegalMovesEnabled: setupMovementMode === "free", pgn: "", pgnTitle: "Custom Position", pgnMoves: [], pgnMoveIndex: 0, moveHistory: [], drawings: [] });
     setSetupOpen(false);
   }
 
@@ -949,7 +954,7 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
             <ToggleButton active={!!live?.illegalMovesEnabled} icon={<ShieldAlert size={19} />} label="Allow illegal moves" onClick={() => patch({ illegalMovesEnabled: !live?.illegalMovesEnabled })} />
             <ToggleButton active={!!live?.showCoordinates} icon={<Grid2X2 size={19} />} label="Show coordinates" onClick={() => patch({ showCoordinates: !live?.showCoordinates })} />
             <ToggleButton active={!!live?.arrowsEnabled} icon={<Square size={19} />} label="Enable arrow drawing" onClick={() => patch({ arrowsEnabled: !live?.arrowsEnabled })} />
-            <ToggleButton active={setupOpen} icon={<Settings size={19} />} label="Setup Board" onClick={() => { setSetupPosition(boardPieceMap); setGamifiedSetup(liveGamifiedObjects); setSetupOpen(true); }} />
+            <ToggleButton active={setupOpen} icon={<Settings size={19} />} label="Setup Board" onClick={() => { setSetupPosition(boardPieceMap); setGamifiedSetup(liveGamifiedObjects); setSetupMovementMode(live?.illegalMovesEnabled ? "free" : live?.fen?.split(" ")?.[1] === "b" ? "black" : "white"); setSetupOpen(true); }} />
             <ToolButton icon={<Eraser size={19} />} label="Clear Drawings" onClick={() => patch({ drawings: [] })} />
             <ToolButton icon={<FlipHorizontal size={19} />} label="Flip board" onClick={() => patch({ orientation: live?.orientation === "white" ? "black" : "white" })} />
             <ToggleButton active={!!live?.soundEnabled} icon={live?.soundEnabled ? <Volume2 size={19} /> : <VolumeX size={19} />} label="Piece sounds" onClick={() => patch({ soundEnabled: !live?.soundEnabled })} />
@@ -1405,6 +1410,28 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
               </div>
 
               <div className="min-h-0 space-y-3 overflow-auto pr-1">
+                <div className="rounded-xl border border-slate-200 bg-white p-3">
+                  <div className="text-sm font-semibold text-slate-950">Who can move?</div>
+                  <div className="mt-3 grid grid-cols-3 gap-2">
+                    {[
+                      ["white", "White"],
+                      ["black", "Black"],
+                      ["free", "Free move"],
+                    ].map(([mode, label]) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => setSetupMovementMode(mode as SetupMovementMode)}
+                        className={`h-10 rounded-lg border px-2 text-sm font-semibold transition ${setupMovementMode === mode ? "border-purple-700 bg-purple-700 text-white shadow-md shadow-purple-700/20" : "border-slate-200 bg-slate-50 text-slate-700 hover:border-purple-300"}`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-2 text-xs text-slate-500">
+                    White/Black saves whose turn it is. Free move lets the coach move pieces freely for teaching.
+                  </p>
+                </div>
                 {setupTab === "objects" ? (
                   <div>
                     <div className="mb-3 text-sm font-semibold text-slate-950">Gamified Objects</div>

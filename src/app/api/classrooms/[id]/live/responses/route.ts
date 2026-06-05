@@ -12,9 +12,39 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const body = await req.json();
   const question: any = await LiveQuestion.findById(body.question);
   if (!question) return NextResponse.json({ error: "Question not found" }, { status: 404 });
-  const submittedMove = String(body.submittedMove || "").trim();
-  const correct = question.solution?.length ? question.solution[0] === submittedMove || question.solution.join(" ") === submittedMove : false;
-  const score = correct ? question.scoring?.correct ?? 5 : -(question.scoring?.wrongPenalty ?? 0);
+  let submittedMove = String(body.submittedMove || "").trim();
+  let correct = question.solution?.length ? question.solution[0] === submittedMove || question.solution.join(" ") === submittedMove : false;
+  let score = correct ? question.scoring?.correct ?? 5 : -(question.scoring?.wrongPenalty ?? 0);
+  let itemResults: Record<string, any> = {};
+  let completedItems = 0;
+  let totalItems = 0;
+  let hintsUsed = Number(body.hintsUsed || 0);
+  let attemptsUsed = Number(body.attemptsUsed || 1);
+  let feedback = correct ? "Correct" : "Submitted";
+
+  if (Array.isArray(question.items) && question.items.length) {
+    itemResults = body.itemResults || {};
+    totalItems = question.items.length;
+    score = 0;
+    completedItems = 0;
+    attemptsUsed = 0;
+    hintsUsed = 0;
+    for (const item of question.items) {
+      const result = itemResults[item.id] || {};
+      const solved = Boolean(result.solved);
+      const mistakes = Number(result.mistakes || 0);
+      const itemHints = Number(result.hintsUsed || 0);
+      const base = Number(item.points ?? question.scoring?.correct ?? 5);
+      if (solved) completedItems += 1;
+      score += solved ? Math.max(0, base - mistakes - itemHints * 0.5) : 0;
+      attemptsUsed += Math.max(1, mistakes + 1);
+      hintsUsed += itemHints;
+    }
+    correct = completedItems === totalItems && totalItems > 0;
+    submittedMove = "";
+    feedback = correct ? "Quiz completed" : `${completedItems}/${totalItems} solved`;
+  }
+
   const response = await LiveQuestionResponse.findOneAndUpdate(
     { question: question._id, student: (session.user as any).id },
     {
@@ -23,12 +53,15 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       student: (session.user as any).id,
       submittedMove,
       submittedSequence: submittedMove.split(/\s+/).filter(Boolean),
+      itemResults,
       timeTakenSeconds: Number(body.timeTakenSeconds || 0),
-      hintsUsed: Number(body.hintsUsed || 0),
-      attemptsUsed: Number(body.attemptsUsed || 1),
+      hintsUsed,
+      attemptsUsed,
+      completedItems,
+      totalItems,
       correct,
       score,
-      feedback: correct ? "Correct" : "Submitted",
+      feedback,
       submittedAt: new Date(),
     },
     { upsert: true, new: true }

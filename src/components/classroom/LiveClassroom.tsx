@@ -20,6 +20,7 @@ import {
   FlipHorizontal,
   Folder,
   Grid2X2,
+  HelpCircle,
   Highlighter,
   Home,
   Library,
@@ -80,6 +81,23 @@ function isCoach(role: Role) {
 
 function extractFen(pgn: string) {
   return pgn.match(/\[FEN\s+"([^"]+)"\]/)?.[1];
+}
+
+function parsePgnPuzzle(pgn: string) {
+  try {
+    const game = new Chess();
+    game.loadPgn(pgn);
+    const moves = game.history({ verbose: true }) as any[];
+    const headerFen = extractFen(pgn);
+    return {
+      start: moves[0]?.before || headerFen || "start",
+      moves: moves.map((move) => ({ san: move.san, from: move.from, to: move.to, promotion: move.promotion || "q" })),
+      valid: true,
+    };
+  } catch {
+    const fen = extractFen(pgn);
+    return { start: fen || "start", moves: [], valid: Boolean(fen) };
+  }
 }
 
 function fenToPosition(fen?: string): BoardPosition {
@@ -212,6 +230,8 @@ function minutesBetween(start?: string | Date, end?: string | Date) {
   if (!start || !end) return 0;
   return Math.max(0, Math.round((new Date(end).getTime() - new Date(start).getTime()) / 60000));
 }
+
+type LiveBoardQuizResult = { solved: boolean; mistakes: number; hintsUsed: number; timeTakenSeconds: number; skipped?: boolean };
 
 export default function LiveClassroom({ classroomId, role, userId }: { classroomId: string; role: Role; userId: string }) {
   const [data, setData] = useState<any>(null);
@@ -659,6 +679,27 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
     }
   }
 
+  async function submitBoardQuizResults(itemResults: Record<string, any>, timeTakenSeconds: number) {
+    if (!activeQuestion) return;
+    const attemptsUsed = Object.values(itemResults).reduce((sum: number, result: any) => sum + Math.max(1, Number(result.mistakes || 0) + 1), 0);
+    const hintsUsed = Object.values(itemResults).reduce((sum: number, result: any) => sum + Number(result.hintsUsed || 0), 0);
+    const res = await fetch(`/api/classrooms/${classroomId}/live/responses`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        question: activeQuestion._id,
+        itemResults,
+        timeTakenSeconds,
+        hintsUsed,
+        attemptsUsed,
+      }),
+    });
+    if (res.ok) {
+      toast.success("Quiz submitted");
+      await load();
+    }
+  }
+
   async function sendChat() {
     if (!chatText.trim()) return;
     const res = await fetch(`/api/classrooms/${classroomId}/live/chat`, {
@@ -793,29 +834,52 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
     const selected = pgnLibrary.filter((pgn: any) => selectedPgnIds.includes(pgn._id));
     if (!selected.length) return toast.info("Select at least one PGN");
     const first = selected[0];
-    const chess = new Chess();
     try {
-      chess.loadPgn(first.pgn);
-      const moves = chess.history();
-      const startFen = extractFen(first.pgn) || "start";
+      const firstParsed = parsePgnPuzzle(first.pgn);
+      const firstMoves = firstParsed.moves.map((move: any) => move.san);
       const res = await fetch(`/api/classrooms/${classroomId}/live/question`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          type: "best_move",
-          title: `One Move Challenge: ${first.title}`,
-          instructions: "Find the next move from this PGN position.",
-          fen: startFen,
+          type: "move_sequence",
+          title: selected.length === 1 ? `One Move Challenge: ${first.title}` : `Classroom Quiz: ${selected.length} PGNs`,
+          instructions: selected.length === 1 ? "Find the next move from this PGN position." : "Solve each board on the classroom board. Correct answers move automatically to the next one.",
+          fen: firstParsed.start,
           pgn: first.pgn,
           moveHistory: [],
-          solution: moves[0] ? [moves[0]] : [],
+          solution: firstMoves.length ? [firstMoves[0]] : [],
+          items: selected.map((pgn: any, index: number) => {
+            const parsed = parsePgnPuzzle(pgn.pgn);
+            return {
+              id: pgn._id,
+              title: pgn.title,
+              pgn: pgn.pgn,
+              pgnTitle: pgn.title,
+              fen: parsed.start,
+              solution: parsed.moves.map((move: any) => move.san),
+              points: 5,
+              timerSeconds: challengeTimer,
+            };
+          }),
           timer: { perQuestionSeconds: challengeTimer },
-          scoring: { correct: 5, wrongPenalty: 1, speedBonus: 2 },
-          attempts: "single",
+          scoring: { correct: 5, wrongPenalty: 1, hintPenalty: 1, speedBonus: 2, attemptPenalty: 1 },
+          attempts: "multiple",
+          hintsEnabled: true,
         }),
       });
       if (res.ok) {
-        await patch({ fen: startFen, pgn: first.pgn, pgnTitle: first.title, pgnMoves: moves, pgnMoveIndex: 0, moveHistory: [], mode: "one_move_challenge" });
+        await patch({
+          fen: firstParsed.start,
+          pgn: first.pgn,
+          pgnTitle: first.title,
+          pgnMoves: firstMoves,
+          pgnMoveIndex: 0,
+          moveHistory: [],
+          mode: "one_move_challenge",
+          studentMovesEnabled: true,
+          boardControlStudents: students.map((student: any) => student._id),
+          locked: false,
+        });
         setActiveTab("leaderboard");
         setPgnOpen(false);
         toast.success("Challenge sent to students");
@@ -1103,7 +1167,15 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
                   </div>
                   <span className="rounded-full bg-white px-2 py-1 text-xs font-semibold text-purple-700">{activeQuestion.type?.replaceAll("_", " ")}</span>
                 </div>
-                {!coach && (
+                {!coach && Array.isArray(activeQuestion.items) && activeQuestion.items.length > 0 ? (
+                  <div className="mt-4">
+                    <LiveBoardQuiz
+                      question={activeQuestion}
+                      locked={!canMove && !live?.studentMovesEnabled}
+                      onComplete={submitBoardQuizResults}
+                    />
+                  </div>
+                ) : !coach && (
                   <div className="mt-3 flex gap-2">
                     <input value={moveAnswer} onChange={(event) => setMoveAnswer(event.target.value)} className="h-10 flex-1 rounded-md border px-3 text-sm" placeholder="Enter move, e.g. Nf3" />
                     <button onClick={submitResponse} className="rounded-md bg-purple-700 px-3 text-sm font-semibold text-white">Submit</button>
@@ -1610,6 +1682,197 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function LiveBoardQuiz({
+  question,
+  locked,
+  onComplete,
+}: {
+  question: any;
+  locked: boolean;
+  onComplete: (results: Record<string, LiveBoardQuizResult>, timeTakenSeconds: number) => void;
+}) {
+  const items = question.items || [];
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [results, setResults] = useState<Record<string, LiveBoardQuizResult>>({});
+  const [quizStartedAt] = useState(Date.now());
+  const [itemStartedAt, setItemStartedAt] = useState(Date.now());
+  const [remaining, setRemaining] = useState(Number(question.timer?.perQuestionSeconds || items[0]?.timerSeconds || 0));
+  const submittedRef = useRef(false);
+
+  const activeItem = items[currentIndex];
+  const parsed = useMemo(() => parsePgnPuzzle(activeItem?.pgn || ""), [activeItem?.pgn]);
+  const [game, setGame] = useState(() => new Chess(parsed.start));
+  const [position, setPosition] = useState(parsed.start);
+  const [ply, setPly] = useState(0);
+  const [mistakes, setMistakes] = useState(0);
+  const [hintsUsed, setHintsUsed] = useState(0);
+  const [solved, setSolved] = useState(false);
+  const [feedback, setFeedback] = useState("Make the best move on the board.");
+  const advancedRef = useRef(false);
+
+  useEffect(() => {
+    submittedRef.current = false;
+    setCurrentIndex(0);
+    setResults({});
+  }, [question._id]);
+
+  useEffect(() => {
+    const next = new Chess(parsed.start);
+    setGame(next);
+    setPosition(parsed.start);
+    setPly(0);
+    setMistakes(0);
+    setHintsUsed(0);
+    setSolved(parsed.moves.length === 0);
+    setFeedback(parsed.moves.length === 0 ? "No moves found in this PGN." : "Make the best move on the board.");
+    setItemStartedAt(Date.now());
+    setRemaining(Number(question.timer?.perQuestionSeconds || activeItem?.timerSeconds || 0));
+    advancedRef.current = false;
+  }, [activeItem?.id, parsed.start, parsed.moves.length, question.timer?.perQuestionSeconds, activeItem?.timerSeconds]);
+
+  useEffect(() => {
+    if (!remaining || solved) return;
+    const timer = window.setInterval(() => {
+      setRemaining((value) => {
+        if (value <= 1) {
+          window.clearInterval(timer);
+          if (!submittedRef.current) {
+            queueMicrotask(() => skipCurrent());
+          }
+          return 0;
+        }
+        return value - 1;
+      });
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [remaining, solved]);
+
+  useEffect(() => {
+    if (!solved || advancedRef.current || !activeItem) return;
+    const result = { solved: true, mistakes, hintsUsed, timeTakenSeconds: Math.round((Date.now() - itemStartedAt) / 1000) };
+    const nextResults = { ...results, [activeItem.id]: result };
+    setResults(nextResults);
+    advancedRef.current = true;
+    window.setTimeout(() => moveNext(nextResults), 650);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [solved]);
+
+  function moveNext(nextResults: Record<string, LiveBoardQuizResult>) {
+    if (currentIndex >= items.length - 1) {
+      if (!submittedRef.current) {
+        submittedRef.current = true;
+        onComplete(nextResults, Math.round((Date.now() - quizStartedAt) / 1000));
+      }
+      return;
+    }
+    setCurrentIndex((value) => value + 1);
+  }
+
+  function applyAutoReply(nextGame: Chess, nextPly: number) {
+    if (nextPly >= parsed.moves.length) {
+      setSolved(true);
+      return nextPly;
+    }
+    const reply = parsed.moves[nextPly];
+    const move = nextGame.move({ from: reply.from, to: reply.to, promotion: reply.promotion || "q" });
+    if (!move) return nextPly;
+    const updatedPly = nextPly + 1;
+    if (updatedPly >= parsed.moves.length) setSolved(true);
+    return updatedPly;
+  }
+
+  function onDrop(source: string, target: string) {
+    if (locked || solved || ply >= parsed.moves.length) return false;
+    const expected = parsed.moves[ply];
+    const nextGame = new Chess(game.fen());
+    const move = nextGame.move({ from: source, to: target, promotion: "q" });
+    if (!move) return false;
+    if (move.san !== expected.san) {
+      setMistakes((value) => value + 1);
+      setFeedback("Try again. That move is not the expected continuation.");
+      return false;
+    }
+    let nextPly = ply + 1;
+    nextPly = applyAutoReply(nextGame, nextPly);
+    setGame(nextGame);
+    setPosition(nextGame.fen());
+    setPly(nextPly);
+    setFeedback(nextPly >= parsed.moves.length ? "Solved. Moving to the next item..." : "Correct. Continue from the new position.");
+    return true;
+  }
+
+  function hint() {
+    if (locked || solved || ply >= parsed.moves.length) return;
+    setHintsUsed((value) => value + 1);
+    setFeedback(`Hint: try ${parsed.moves[ply].san}`);
+  }
+
+  function reset() {
+    const next = new Chess(parsed.start);
+    setGame(next);
+    setPosition(parsed.start);
+    setPly(0);
+    setMistakes(0);
+    setHintsUsed(0);
+    setSolved(parsed.moves.length === 0);
+    setFeedback("Make the best move on the board.");
+    setItemStartedAt(Date.now());
+    setRemaining(Number(question.timer?.perQuestionSeconds || activeItem?.timerSeconds || 0));
+  }
+
+  function skipCurrent() {
+    if (!activeItem) return;
+    const result = { solved: false, skipped: true, mistakes, hintsUsed, timeTakenSeconds: Math.round((Date.now() - itemStartedAt) / 1000) };
+    const nextResults = { ...results, [activeItem.id]: result };
+    setResults(nextResults);
+    if (currentIndex >= items.length - 1) {
+      if (!submittedRef.current) {
+        submittedRef.current = true;
+        onComplete(nextResults, Math.round((Date.now() - quizStartedAt) / 1000));
+      }
+      return;
+    }
+    setCurrentIndex((value) => value + 1);
+  }
+
+  if (!activeItem) return null;
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-lg shadow-brand/10">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+        <div>
+          <div className="text-sm font-bold text-slate-700">Quiz {currentIndex + 1} of {items.length}</div>
+          <div className="text-xs font-semibold text-slate-500">{activeItem.title || activeItem.pgnTitle || `Board ${currentIndex + 1}`}</div>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-slate-700">{activeItem.points || 5} pts</span>
+          <span className="rounded-full bg-purple-100 px-3 py-1 text-xs font-bold text-purple-800"><Clock size={12} className="mr-1 inline" /> {remaining ? `${remaining}s` : "No timer"}</span>
+        </div>
+      </div>
+
+      <div className="rounded-2xl bg-[#31210f] p-3 shadow-inner">
+        <Chessboard
+          position={position}
+          onPieceDrop={onDrop}
+          boardWidth={420}
+          customDarkSquareStyle={{ backgroundColor: "#b58863" }}
+          customLightSquareStyle={{ backgroundColor: "#f0d9b5" }}
+        />
+      </div>
+
+      <div className={`mt-3 rounded-xl px-3 py-2 text-sm font-semibold ${feedback.startsWith("Try") ? "bg-red-50 text-red-700" : feedback.startsWith("Hint") ? "bg-amber-50 text-amber-700" : solved ? "bg-emerald-50 text-emerald-700" : "bg-slate-50 text-slate-600"}`}>
+        {feedback}
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        {question.hintsEnabled && <button type="button" className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold" onClick={hint}><HelpCircle size={14} className="mr-1 inline" /> Hint</button>}
+        <button type="button" className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold" onClick={reset}><RotateCcw size={14} className="mr-1 inline" /> Reset</button>
+        <button type="button" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-700" onClick={skipCurrent}>Skip</button>
+      </div>
     </div>
   );
 }

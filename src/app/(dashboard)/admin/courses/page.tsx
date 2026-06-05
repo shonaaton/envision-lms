@@ -25,6 +25,12 @@ const templateRows = [
   ["Beginner Course", "Beginner Level 2", "Check and checkmate basics", "1", "Chess Foundation", "beginner", ""],
 ];
 
+const levelTemplateRows = [
+  ["main_course", "sub_level", "topic", "sessions", "description"],
+  ["Beginner Course", "Beginner Level 2", "Basic checkmates", "2", "New level to merge into an existing course"],
+  ["Beginner Course", "Beginner Level 2", "Mate in one puzzles", "2", ""],
+];
+
 const blankCourse: Course = {
   name: "",
   category: "",
@@ -41,7 +47,8 @@ export default function AdminCoursesPage() {
   const [openLevels, setOpenLevels] = useState<Record<number, boolean>>({ 0: true });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const courseFileInputRef = useRef<HTMLInputElement | null>(null);
+  const levelFileInputRef = useRef<HTMLInputElement | null>(null);
 
   async function load() {
     setLoading(true);
@@ -156,20 +163,58 @@ export default function AdminCoursesPage() {
     URL.revokeObjectURL(url);
   }
 
+  function downloadLevelTemplate() {
+    const csv = levelTemplateRows.map((row) => row.map(csvEscape).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "course-level-import-template.csv";
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
   async function importCsv(file?: File) {
     if (!file) return;
     try {
       const text = await file.text();
       const imported = parseCourseCsv(text);
-      const existingCourse = findCourseByName(courses, imported.name);
-      const nextDraft = existingCourse ? mergeCourses(existingCourse, imported) : imported;
+      const baseCourse =
+        draft._id || normalizeKey(draft.name) === normalizeKey(imported.name)
+          ? draft
+          : findCourseByName(courses, imported.name);
+      const nextDraft = baseCourse ? mergeCourses(baseCourse, imported) : imported;
       setDraft(nextDraft);
       setOpenLevels(Object.fromEntries(nextDraft.levels.map((_, index) => [index, index === 0])));
-      toast.success(existingCourse ? "Imported and merged into the existing course. Review it, then press Save." : "Course imported. Review it, then press Save.");
+      toast.success(baseCourse ? "Imported and merged into the open course. Review it, then press Save." : "Course imported. Review it, then press Save.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not import CSV");
     } finally {
-      if (fileInputRef.current) fileInputRef.current.value = "";
+      if (courseFileInputRef.current) courseFileInputRef.current.value = "";
+    }
+  }
+
+  async function importLevels(file?: File) {
+    if (!file) return;
+    if (!draft.name.trim()) {
+      toast.error("Open a course first, then import levels into it.");
+      if (levelFileInputRef.current) levelFileInputRef.current.value = "";
+      return;
+    }
+    try {
+      const text = await file.text();
+      const imported = parseCourseCsv(text);
+      if (normalizeKey(imported.name) !== normalizeKey(draft.name)) {
+        throw new Error(`This file is for "${imported.name}". Open the matching main course first.`);
+      }
+      const nextDraft = mergeCourses(draft, imported);
+      setDraft(nextDraft);
+      setOpenLevels(Object.fromEntries(nextDraft.levels.map((_, index) => [index, true])));
+      toast.success("Levels imported into the current course. Press Save to keep them.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not import levels");
+    } finally {
+      if (levelFileInputRef.current) levelFileInputRef.current.value = "";
     }
   }
 
@@ -209,13 +254,22 @@ export default function AdminCoursesPage() {
           </button>
           <div className="grid grid-cols-2 gap-2">
             <button onClick={downloadTemplate} className="inline-flex h-9 items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700">
-              <Download size={14} /> Template
+              <Download size={14} /> Course CSV
             </button>
-            <button onClick={() => fileInputRef.current?.click()} className="inline-flex h-9 items-center justify-center gap-1 rounded-lg border border-brand/20 bg-brand/5 text-xs font-bold text-brand">
-              <Upload size={14} /> Import
+            <button onClick={() => courseFileInputRef.current?.click()} className="inline-flex h-9 items-center justify-center gap-1 rounded-lg border border-brand/20 bg-brand/5 text-xs font-bold text-brand">
+              <Upload size={14} /> Import Course
             </button>
           </div>
-          <input ref={fileInputRef} type="file" accept=".csv,text/csv" className="hidden" onChange={(event) => importCsv(event.target.files?.[0])} />
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <button onClick={downloadLevelTemplate} className="inline-flex h-9 items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700">
+              <Download size={14} /> Level CSV
+            </button>
+            <button onClick={() => levelFileInputRef.current?.click()} className="inline-flex h-9 items-center justify-center gap-1 rounded-lg border border-brand/20 bg-brand/5 text-xs font-bold text-brand">
+              <Upload size={14} /> Import Level
+            </button>
+          </div>
+          <input ref={courseFileInputRef} type="file" accept=".csv,text/csv" className="hidden" onChange={(event) => importCsv(event.target.files?.[0])} />
+          <input ref={levelFileInputRef} type="file" accept=".csv,text/csv" className="hidden" onChange={(event) => importLevels(event.target.files?.[0])} />
 
           <div className="mt-3 min-h-0 flex-1 space-y-2 overflow-auto pr-1">
             {loading && <div className="rounded-lg bg-slate-50 p-3 text-sm text-slate-500">Loading courses...</div>}

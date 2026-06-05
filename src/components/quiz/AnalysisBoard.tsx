@@ -12,12 +12,10 @@ import {
   Grid3X3,
   Info,
   Maximize2,
-  Moon,
   Plus,
   RotateCcw,
   Save,
   Settings,
-  Sun,
   Trash2,
   Upload,
   X,
@@ -31,7 +29,6 @@ import { toast } from "sonner";
 const Chessboard = dynamic(() => import("react-chessboard").then((m) => m.Chessboard), { ssr: false });
 
 type SideTab = "moves" | "engine" | "pdf";
-type ThemeMode = "dark" | "light";
 type DialogName = "pgn" | "fen" | "setup" | "settings" | "save" | null;
 type PieceCode = "p" | "n" | "b" | "r" | "q" | "k" | "P" | "N" | "B" | "R" | "Q" | "K";
 type SetupTab = "general" | "gamified";
@@ -144,7 +141,6 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
   const [selectedPly, setSelectedPly] = useState(0);
   const [orientation, setOrientation] = useState<"white" | "black">("white");
   const [tab, setTab] = useState<SideTab>("engine");
-  const [theme, setTheme] = useState<ThemeMode>("light");
   const [dialog, setDialog] = useState<DialogName>(null);
   const [boardWidth, setBoardWidth] = useState(520);
   const [boardScale, setBoardScale] = useState(100);
@@ -158,9 +154,9 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
   const [pdfName, setPdfName] = useState("");
   const [gamifiedBoardObjects, setGamifiedBoardObjects] = useState<Record<string, GamifiedObjectId>>({});
 
-  const isDark = theme === "dark";
-  const panelClass = isDark ? "border-ink-600 bg-ink-800 text-white" : "border-slate-200 bg-white text-slate-950";
-  const mutedText = isDark ? "text-blue-200/75" : "text-slate-500";
+  const isDark = false;
+  const panelClass = "border-slate-200 bg-white text-slate-950";
+  const mutedText = "text-slate-500";
   const squareTheme = boardThemes[boardTheme];
   const boardSize = Math.round(boardWidth * (boardScale / 100));
   const customPieces = useMemo(() => createCustomPieces(pieceTheme), [pieceTheme]);
@@ -394,9 +390,6 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
           <p className={`mt-1 text-sm ${mutedText}`}>Analyze positions, create annotations, save and share your analyses</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button className={controlButton(isDark)} onClick={() => setTheme(isDark ? "light" : "dark")}>
-            {isDark ? <Sun size={16} /> : <Moon size={16} />} {isDark ? "Light" : "Dark"}
-          </button>
           <button className="btn-primary gap-2 px-5" onClick={() => setDialog("pgn")}>
             <ArrowDownToLine size={17} /> Load Game
           </button>

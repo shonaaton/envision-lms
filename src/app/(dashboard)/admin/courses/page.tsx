@@ -19,16 +19,16 @@ type Course = {
 };
 
 const templateRows = [
-  ["main_course", "sub_level", "topic", "sessions", "course_category", "course_level", "description"],
-  ["Beginner Course", "Beginner Level 1", "Board, files, ranks, and coordinates", "1", "Chess Foundation", "beginner", "Actual class/topic name"],
-  ["Beginner Course", "Beginner Level 1", "How pieces move", "2", "Chess Foundation", "beginner", ""],
-  ["Beginner Course", "Beginner Level 2", "Check and checkmate basics", "1", "Chess Foundation", "beginner", ""],
+  ["main_course", "sub_level", "topic", "course_category", "course_level"],
+  ["Beginner Course", "Beginner Level 1", "Board, files, ranks, and coordinates", "Chess Foundation", "beginner"],
+  ["Beginner Course", "Beginner Level 1", "How pieces move", "Chess Foundation", "beginner"],
+  ["Beginner Course", "Beginner Level 2", "Check and checkmate basics", "Chess Foundation", "beginner"],
 ];
 
 const levelTemplateRows = [
-  ["main_course", "sub_level", "topic", "sessions", "description"],
-  ["Beginner Course", "Beginner Level 2", "Basic checkmates", "2", "New level to merge into an existing course"],
-  ["Beginner Course", "Beginner Level 2", "Mate in one puzzles", "2", ""],
+  ["main_course", "sub_level", "topic"],
+  ["Beginner Course", "Beginner Level 2", "Basic checkmates"],
+  ["Beginner Course", "Beginner Level 2", "Mate in one puzzles"],
 ];
 
 const blankCourse: Course = {
@@ -69,7 +69,7 @@ export default function AdminCoursesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const totalSessions = useMemo(() => draft.levels.reduce((sum, level) => sum + Number(level.sessionCount || 0), 0), [draft.levels]);
+  const totalSessions = useMemo(() => draft.levels.reduce((sum, level) => sum + level.topics.length, 0), [draft.levels]);
   const totalTopics = useMemo(() => draft.levels.reduce((sum, level) => sum + (level.topics?.length || 0), 0), [draft.levels]);
 
   function updateDraft(update: Partial<Course>) {
@@ -79,7 +79,7 @@ export default function AdminCoursesPage() {
   function updateLevel(index: number, update: Partial<CourseLevel>) {
     setDraft((current) => ({
       ...current,
-      levels: current.levels.map((level, levelIndex) => (levelIndex === index ? { ...level, ...update } : level)),
+      levels: current.levels.map((level, levelIndex) => (levelIndex === index ? { ...level, ...update, sessionCount: level.topics.length } : level)),
     }));
   }
 
@@ -88,7 +88,7 @@ export default function AdminCoursesPage() {
       ...current,
       levels: current.levels.map((level, index) =>
         index === levelIndex
-          ? { ...level, topics: level.topics.map((topic, tIndex) => (tIndex === topicIndex ? { ...topic, ...update } : topic)) }
+          ? { ...level, topics: level.topics.map((topic, tIndex) => (tIndex === topicIndex ? { ...topic, ...update, sessionCount: 1 } : topic)), sessionCount: level.topics.length }
           : level
       ),
     }));
@@ -97,7 +97,7 @@ export default function AdminCoursesPage() {
   function addLevel() {
     setDraft((current) => ({
       ...current,
-      levels: [...current.levels, { name: `Level ${current.levels.length + 1}`, sessionCount: 1, description: "", topics: [] }],
+      levels: [...current.levels, { name: `Level ${current.levels.length + 1}`, sessionCount: 0, description: "", topics: [] }],
     }));
     setOpenLevels((current) => ({ ...current, [draft.levels.length]: true }));
   }
@@ -110,7 +110,7 @@ export default function AdminCoursesPage() {
     setDraft((current) => ({
       ...current,
       levels: current.levels.map((level, index) =>
-        index === levelIndex ? { ...level, topics: [...level.topics, { name: `Class ${level.topics.length + 1}`, sessionCount: 1 }] } : level
+        index === levelIndex ? { ...level, topics: [...level.topics, { name: `Class ${level.topics.length + 1}`, sessionCount: 1 }], sessionCount: level.topics.length + 1 } : level
       ),
     }));
   }
@@ -119,7 +119,7 @@ export default function AdminCoursesPage() {
     setDraft((current) => ({
       ...current,
       levels: current.levels.map((level, index) =>
-        index === levelIndex ? { ...level, topics: level.topics.filter((_, tIndex) => tIndex !== topicIndex) } : level
+        index === levelIndex ? { ...level, topics: level.topics.filter((_, tIndex) => tIndex !== topicIndex), sessionCount: Math.max(0, level.topics.length - 1) } : level
       ),
     }));
   }
@@ -281,7 +281,7 @@ export default function AdminCoursesPage() {
                 className={cn("w-full rounded-lg border p-3 text-left transition", draft._id === course._id ? "border-brand bg-brand/10" : "border-slate-200 bg-white hover:border-brand/30")}
               >
                 <div className="truncate text-sm font-black text-slate-950">{course.name}</div>
-                <div className="mt-1 text-xs text-slate-500">{course.level} - {course.totalSessions || 0} sessions</div>
+                <div className="mt-1 text-xs text-slate-500">{course.level} - {course.totalSessions || 0} classes</div>
               </button>
             ))}
           </div>
@@ -305,7 +305,6 @@ export default function AdminCoursesPage() {
                 <Trash2 size={15} />
               </button>
             </div>
-            <input className="input h-9" value={draft.description || ""} onChange={(event) => updateDraft({ description: event.target.value })} placeholder="Course description" />
           </div>
 
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -329,40 +328,38 @@ export default function AdminCoursesPage() {
                     >
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-sm font-black text-slate-950">{level.name || `Level ${levelIndex + 1}`}</div>
-                        <div className="text-xs text-slate-500">{level.topics.length} classes - {level.sessionCount} sessions</div>
+                        <div className="text-xs text-slate-500">{level.topics.length} classes</div>
                       </div>
                       <ChevronDown className={cn("text-slate-500 transition", openLevels[levelIndex] ? "rotate-180" : "")} size={17} />
                     </button>
 
                     {openLevels[levelIndex] !== false && (
                       <div className="space-y-2 p-3">
-                        <div className="grid gap-2 lg:grid-cols-[1fr_110px_36px]">
+                        <div className="grid gap-2 lg:grid-cols-[1fr_90px_36px]">
                           <input className="input h-9" value={level.name} onChange={(event) => updateLevel(levelIndex, { name: event.target.value })} placeholder="Sub level name" />
-                          <input className="input h-9" type="number" min={1} value={level.sessionCount} onChange={(event) => updateLevel(levelIndex, { sessionCount: Number(event.target.value || 1) })} />
+                          <div className="flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-sm font-bold text-slate-700">{level.topics.length}</div>
                           <button onClick={() => removeLevel(levelIndex)} className="grid h-9 place-items-center rounded-lg border border-red-100 bg-red-50 text-red-600">
                             <Trash2 size={14} />
                           </button>
                         </div>
-                        <input className="input h-9" value={level.description || ""} onChange={(event) => updateLevel(levelIndex, { description: event.target.value })} placeholder="Sub level description" />
 
-                        <div className="rounded-lg border border-slate-100">
-                          <div className="grid grid-cols-[1fr_90px_36px] gap-2 border-b border-slate-100 bg-slate-50 px-2 py-1.5 text-xs font-bold text-slate-500">
+                        <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-2">
+                          <div className="mb-2 grid grid-cols-[1fr_90px_36px] gap-2 px-1 text-xs font-bold uppercase tracking-wide text-slate-500">
                             <span>Topic / actual class</span>
-                            <span>Sessions</span>
+                            <span>Class</span>
                             <span />
                           </div>
-                          <div className="space-y-1.5 p-2">
+                          <div className="space-y-2">
                             {level.topics.map((topic, topicIndex) => (
-                              <div key={topicIndex} className="grid gap-1.5 lg:grid-cols-[1fr_90px_36px]">
-                                <input className="input h-8" value={topic.name} onChange={(event) => updateTopic(levelIndex, topicIndex, { name: event.target.value })} placeholder="Topic/class name" />
-                                <input className="input h-8" type="number" min={1} value={topic.sessionCount} onChange={(event) => updateTopic(levelIndex, topicIndex, { sessionCount: Number(event.target.value || 1) })} />
-                                <button onClick={() => removeTopic(levelIndex, topicIndex)} className="grid h-8 place-items-center rounded-md border border-red-100 text-red-600">
+                              <div key={topicIndex} className="grid gap-2 rounded-lg border border-white bg-white p-2 shadow-sm lg:grid-cols-[1fr_90px_36px]">
+                                <input className="input h-8 border-0 bg-transparent px-1 shadow-none focus:bg-white" value={topic.name} onChange={(event) => updateTopic(levelIndex, topicIndex, { name: event.target.value })} placeholder="Topic/class name" />
+                                <div className="flex h-8 items-center justify-center rounded-md border border-slate-200 bg-slate-50 text-sm font-bold text-slate-700">1</div>
+                                <button onClick={() => removeTopic(levelIndex, topicIndex)} className="grid h-8 place-items-center rounded-md border border-red-100 bg-red-50 text-red-600">
                                   <Trash2 size={13} />
                                 </button>
-                                <input className="input h-8 lg:col-span-3" value={topic.description || ""} onChange={(event) => updateTopic(levelIndex, topicIndex, { description: event.target.value })} placeholder="Optional teaching note" />
                               </div>
                             ))}
-                            <button onClick={() => addTopic(levelIndex)} className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700">
+                            <button onClick={() => addTopic(levelIndex)} className="inline-flex h-9 items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 shadow-sm">
                               <Plus size={13} /> Add Class
                             </button>
                           </div>
@@ -408,7 +405,7 @@ function mergeCourses(existingCourse: Course, incomingCourse: Course): Course {
   const finalizedLevels = mergedLevels.map((level, index) => ({
     ...level,
     order: index,
-    sessionCount: level.topics.reduce((sum, topic) => sum + Number(topic.sessionCount || 0), 0),
+    sessionCount: level.topics.length,
   }));
 
   return {
@@ -419,7 +416,7 @@ function mergeCourses(existingCourse: Course, incomingCourse: Course): Course {
     level: incomingCourse.level || existingCourse.level,
     isActive: incomingCourse.isActive ?? existingCourse.isActive,
     levels: finalizedLevels,
-    totalSessions: finalizedLevels.reduce((sum, level) => sum + Number(level.sessionCount || 0), 0),
+    totalSessions: finalizedLevels.reduce((sum, level) => sum + level.topics.length, 0),
   };
 }
 
@@ -436,7 +433,7 @@ function mergeLevels(existingLevel: CourseLevel, incomingLevel: CourseLevel): Co
       ...incomingTopic,
       name: incomingTopic.name || mergedTopics[existingTopicIndex].name,
       description: incomingTopic.description || mergedTopics[existingTopicIndex].description,
-      sessionCount: Math.max(Number(incomingTopic.sessionCount || 0), Number(mergedTopics[existingTopicIndex].sessionCount || 0), 1),
+      sessionCount: 1,
       order: existingTopicIndex,
     };
   });
@@ -448,7 +445,7 @@ function mergeLevels(existingLevel: CourseLevel, incomingLevel: CourseLevel): Co
     name: incomingLevel.name || existingLevel.name,
     description: incomingLevel.description || existingLevel.description,
     topics: finalizedTopics,
-    sessionCount: finalizedTopics.reduce((sum, topic) => sum + Number(topic.sessionCount || 0), 0),
+    sessionCount: finalizedTopics.length,
   };
 }
 
@@ -544,12 +541,11 @@ function parseCourseCsv(text: string): Course {
       course.levels.push(level);
     }
     const level = levelMap.get(levelName)!;
-    const sessions = Math.max(1, Number(get(row, "sessions") || 1));
-    level.topics.push({ name: get(row, "topic"), sessionCount: sessions, description: get(row, "description") });
-    level.sessionCount += sessions;
+    level.topics.push({ name: get(row, "topic"), sessionCount: 1, description: "" });
+    level.sessionCount = level.topics.length;
   });
 
-  course.totalSessions = course.levels.reduce((sum, level) => sum + level.sessionCount, 0);
+  course.totalSessions = course.levels.reduce((sum, level) => sum + level.topics.length, 0);
   return course;
 }
 

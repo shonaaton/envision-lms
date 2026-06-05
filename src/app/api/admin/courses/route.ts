@@ -15,19 +15,18 @@ function normalizeCourse(input: any, actorId?: string) {
       .map((topic: any, topicIndex: number) => ({
         name: String(topic.name || "").trim(),
         description: String(topic.description || "").trim(),
-        sessionCount: Math.max(1, Number(topic.sessionCount || 1)),
+        sessionCount: 1,
         order: Number(topic.order ?? topicIndex),
       }));
-    const topicSessions = normalizedTopics.reduce((sum: number, topic: any) => sum + Number(topic.sessionCount || 0), 0);
     return {
       name: String(level.name || `Level ${levelIndex + 1}`).trim(),
       description: String(level.description || "").trim(),
-      sessionCount: Math.max(1, Number(level.sessionCount || topicSessions || 1)),
+      sessionCount: normalizedTopics.length,
       order: Number(level.order ?? levelIndex),
       topics: normalizedTopics,
     };
   });
-  const totalSessions = normalizedLevels.reduce((sum: number, level: any) => sum + Number(level.sessionCount || 0), 0);
+  const totalSessions = normalizedLevels.reduce((sum: number, level: any) => sum + Number(level.topics?.length || 0), 0);
   return {
     name: String(input.name || "").trim(),
     description: String(input.description || "").trim(),
@@ -71,7 +70,7 @@ function mergeCourseData(existingCourse: any, incomingCourse: any) {
         ...incomingTopic,
         name: incomingTopic.name || mergedTopics[topicIndex].name,
         description: incomingTopic.description || mergedTopics[topicIndex].description,
-        sessionCount: Math.max(Number(incomingTopic.sessionCount || 0), Number(mergedTopics[topicIndex].sessionCount || 0), 1),
+        sessionCount: 1,
         order: topicIndex,
       };
     }
@@ -88,7 +87,7 @@ function mergeCourseData(existingCourse: any, incomingCourse: any) {
       ...level,
       order: index,
       topics,
-      sessionCount: topics.reduce((sum: number, topic: any) => sum + Number(topic.sessionCount || 0), 0),
+      sessionCount: topics.length,
     };
   });
 
@@ -101,7 +100,7 @@ function mergeCourseData(existingCourse: any, incomingCourse: any) {
     isActive: incomingCourse.isActive ?? existingCourse.isActive,
     createdBy: existingCourse.createdBy || incomingCourse.createdBy,
     levels: finalizedLevels,
-    totalSessions: finalizedLevels.reduce((sum: number, level: any) => sum + Number(level.sessionCount || 0), 0),
+    totalSessions: finalizedLevels.reduce((sum: number, level: any) => sum + Number(level.topics?.length || 0), 0),
   };
 }
 

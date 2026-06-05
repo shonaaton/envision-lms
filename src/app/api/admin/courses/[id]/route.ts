@@ -15,14 +15,13 @@ function normalizeCourse(input: any) {
       .map((topic: any, topicIndex: number) => ({
         name: String(topic.name || "").trim(),
         description: String(topic.description || "").trim(),
-        sessionCount: Math.max(1, Number(topic.sessionCount || 1)),
+        sessionCount: 1,
         order: Number(topic.order ?? topicIndex),
       }));
-    const topicSessions = normalizedTopics.reduce((sum: number, topic: any) => sum + Number(topic.sessionCount || 0), 0);
     return {
       name: String(level.name || `Level ${levelIndex + 1}`).trim(),
       description: String(level.description || "").trim(),
-      sessionCount: Math.max(1, Number(level.sessionCount || topicSessions || 1)),
+      sessionCount: normalizedTopics.length,
       order: Number(level.order ?? levelIndex),
       topics: normalizedTopics,
     };
@@ -32,7 +31,7 @@ function normalizeCourse(input: any) {
     description: String(input.description || "").trim(),
     category: String(input.category || "General").trim() || "General",
     level: ["beginner", "intermediate", "advanced", "mixed"].includes(input.level) ? input.level : "beginner",
-    totalSessions: normalizedLevels.reduce((sum: number, level: any) => sum + Number(level.sessionCount || 0), 0),
+    totalSessions: normalizedLevels.reduce((sum: number, level: any) => sum + Number(level.topics?.length || 0), 0),
     levels: normalizedLevels,
     isActive: input.isActive !== false,
   };

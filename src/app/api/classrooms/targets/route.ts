@@ -1,0 +1,23 @@
+import { NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
+import { dbConnect } from "@/lib/db";
+import { User } from "@/models/User";
+import { Batch } from "@/models/Batch";
+import { Course } from "@/models/Course";
+
+export const dynamic = "force-dynamic";
+
+export async function GET() {
+  const session = await auth();
+  if ((session?.user as any)?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  await dbConnect();
+
+  const [students, coaches, batches, courses] = await Promise.all([
+    User.find({ role: "student", isActive: true }, { name: 1, email: 1, username: 1, batches: 1 }).sort({ name: 1 }).lean(),
+    User.find({ role: "instructor", isActive: true }, { name: 1, email: 1, username: 1 }).sort({ name: 1 }).lean(),
+    Batch.find({ isActive: true }, { name: 1, students: 1, level: 1 }).populate("students", "name email username isActive").sort({ name: 1 }).lean(),
+    Course.find({ isActive: true }, { name: 1, level: 1, category: 1, levels: 1 }).sort({ name: 1 }).lean(),
+  ]);
+
+  return NextResponse.json({ students, coaches, batches, courses });
+}

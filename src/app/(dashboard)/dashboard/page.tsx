@@ -14,6 +14,7 @@ import { Tournament } from "@/models/Tournament";
 import { AskCoachConversation, AskCoachMessage } from "@/models/AskCoach";
 import { StudentReward } from "@/models/ClassroomLive";
 import { flattenScheduledSessions, formatJoinWindowLabel, isJoinWindowOpen } from "@/lib/classroomSessions";
+import JoinScheduledSessionButton from "@/components/classroom/JoinScheduledSessionButton";
 import {
   Activity as ActivityIcon,
   ArrowRight,
@@ -253,10 +254,6 @@ function formatDateTimeLabel(value?: Date | string | null) {
   return new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }).format(new Date(value));
 }
 
-function joinLink(classroomId: string, sessionId: string) {
-  return `/classrooms/${classroomId}?session=${sessionId}`;
-}
-
 async function StudentDashboard({ userId }: { userId: string }) {
   const now = new Date();
   const [student, classrooms, homework, submissions, tournaments, rewards, attendance, conversations, messages] = await Promise.all([
@@ -361,26 +358,13 @@ async function StudentDashboard({ userId }: { userId: string }) {
           <div className="mt-6 flex flex-wrap gap-3">
             {nextSession ? (
               <>
-                {heroSessionOpen ? (
-                  <Link href={joinLink(objectId(nextSession.classroom._id), String(nextSession.session._id))} className="inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-3 text-sm font-black text-brand shadow-lg shadow-black/20">
-                    <PlayCircle size={16} /> Join Class
-                  </Link>
-                ) : (
-                  <button className="inline-flex items-center gap-2 rounded-xl bg-white/10 px-5 py-3 text-sm font-black text-white/70" disabled>
-                    <PlayCircle size={16} /> Join Class
-                  </button>
-                )}
-                {nextSession.classroom.meetingUrl && (
-                  heroSessionOpen ? (
-                    <a href={nextSession.classroom.meetingUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl border border-white/20 px-5 py-3 text-sm font-bold text-white">
-                      <Calendar size={16} /> Join Google Meet
-                    </a>
-                  ) : (
-                    <button className="inline-flex items-center gap-2 rounded-xl border border-white/15 px-5 py-3 text-sm font-bold text-white/60" disabled>
-                      <Calendar size={16} /> Join Google Meet
-                    </button>
-                  )
-                )}
+                <JoinScheduledSessionButton
+                  classroomId={objectId(nextSession.classroom._id)}
+                  sessionId={String(nextSession.session._id)}
+                  meetingUrl={nextSession.classroom.meetingUrl}
+                  className={heroSessionOpen ? "inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-3 text-sm font-black text-brand shadow-lg shadow-black/20" : "inline-flex items-center gap-2 rounded-xl bg-white/10 px-5 py-3 text-sm font-black text-white"}
+                  label="Join Classroom"
+                />
               </>
             ) : (
               <Link href="/square-trainer" className="inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-3 text-sm font-black text-brand shadow-lg shadow-black/20">
@@ -427,8 +411,13 @@ async function StudentDashboard({ userId }: { userId: string }) {
                     <InfoTile label="Duration" value={formatDuration(session.durationMinutes || classroom.durationMinutes || 60)} />
                   </div>
                   <div className="mt-4 flex flex-wrap gap-2">
-                    {canJoin ? <Link href={joinLink(objectId(classroom._id), String(session._id))} className="btn-primary">Join Classroom</Link> : <button className="btn-outline opacity-60" disabled>Join Classroom</button>}
-                    {classroom.meetingUrl && (canJoin ? <a href={classroom.meetingUrl} target="_blank" rel="noreferrer" className="btn-outline">Join Google Meet</a> : <button className="btn-outline opacity-60" disabled>Join Google Meet</button>)}
+                    <JoinScheduledSessionButton
+                      classroomId={objectId(classroom._id)}
+                      sessionId={String(session._id)}
+                      meetingUrl={classroom.meetingUrl}
+                      className={canJoin ? "btn-primary" : "btn-outline"}
+                      label="Join Classroom"
+                    />
                   </div>
                 </div>
               );
@@ -566,8 +555,13 @@ async function CoachDashboard({ userId }: { userId: string }) {
                     <InfoTile label="Duration" value={formatDuration(session.durationMinutes || classroom.durationMinutes || 60)} />
                   </div>
                   <div className="mt-4 flex flex-wrap gap-2">
-                    {canJoin ? <Link href={joinLink(objectId(classroom._id), String(session._id))} className="btn-primary">Join Classroom</Link> : <button className="btn-outline opacity-60" disabled>Join Classroom</button>}
-                    {classroom.meetingUrl && (canJoin ? <a href={classroom.meetingUrl} target="_blank" rel="noreferrer" className="btn-outline">Join Google Meet</a> : <button className="btn-outline opacity-60" disabled>Join Google Meet</button>)}
+                    <JoinScheduledSessionButton
+                      classroomId={objectId(classroom._id)}
+                      sessionId={String(session._id)}
+                      meetingUrl={classroom.meetingUrl}
+                      className={canJoin ? "btn-primary" : "btn-outline"}
+                      label="Join Classroom"
+                    />
                   </div>
                 </div>
               );

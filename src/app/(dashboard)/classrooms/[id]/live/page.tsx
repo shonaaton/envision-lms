@@ -3,7 +3,6 @@ import { dbConnect } from "@/lib/db";
 import { Classroom } from "@/models/Classroom";
 import { notFound, redirect } from "next/navigation";
 import LiveClassroom from "@/components/classroom/LiveClassroom";
-import { isJoinWindowOpen } from "@/lib/classroomSessions";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +25,7 @@ export default async function ClassroomLivePage({ params, searchParams }: { para
     const sessionId = searchParams.session;
     if (!sessionId) redirect("/classrooms");
     const scheduledSession = (classroom.generatedSessions || []).find((item: any) => String(item._id) === sessionId);
-    if (!scheduledSession || !isJoinWindowOpen(scheduledSession)) redirect("/classrooms");
+    if (!scheduledSession) redirect("/classrooms");
   }
 
   return <LiveClassroom classroomId={params.id} role={role} userId={userId} />;

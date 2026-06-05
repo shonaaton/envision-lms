@@ -21,6 +21,7 @@ import { toast } from "sonner";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { flattenScheduledSessions, formatJoinWindowLabel, isJoinWindowOpen } from "@/lib/classroomSessions";
+import JoinScheduledSessionButton from "@/components/classroom/JoinScheduledSessionButton";
 
 type Role = "student" | "instructor" | "admin";
 
@@ -408,7 +409,7 @@ export default function ClassroomManagementClient({ role }: { role: Role }) {
                       <InfoCard label="Topic" value={item.topicName || "Not set"} />
                       <InfoCard label="Coach" value={(item.coach as any)?.name || "Unassigned"} />
                       <InfoCard label="Students" value={String(item.students?.length || 0)} />
-                      <InfoCard label="Meeting" value={item.meetingUrl ? "Google Meet linked" : "No link"} />
+                      <InfoCard label="Meeting" value={item.meetingUrl ? "Meeting ready" : "Not added"} />
                     </div>
 
                     <div className="mt-4 rounded-xl bg-slate-50 p-3 text-sm text-slate-600">
@@ -554,10 +555,10 @@ export default function ClassroomManagementClient({ role }: { role: Role }) {
                         </div>
                       </>
                     )}
-                    <Field label="Google Meet URL">
+                    <Field label="Meeting URL">
                       <input className="input h-10" value={form.meetingUrl} onChange={(event) => updateForm({ meetingUrl: event.target.value })} placeholder="https://meet.google.com/..." />
                     </Field>
-                    <p className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-500">Students and coaches will see a Join Class button. The raw meeting URL stays hidden.</p>
+                    <p className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-500">Students and coaches will only see a meeting button. The raw URL stays hidden.</p>
                   </div>
                 </div>
               )}
@@ -625,7 +626,7 @@ export default function ClassroomManagementClient({ role }: { role: Role }) {
                       <ReviewRow label="Topic" value={form.useCustomTopic ? form.customTopicName : form.topicName || "Not set"} />
                       <ReviewRow label="Coach" value={targets.coaches.find((coach) => coach._id === form.coach)?.name || "Not assigned"} />
                       <ReviewRow label="Students" value={`${form.students.length} selected`} />
-                      <ReviewRow label="Meeting" value={form.meetingUrl ? "Google Meet attached" : "No link"} />
+                      <ReviewRow label="Meeting" value={form.meetingUrl ? "Meeting ready" : "Not added"} />
                       <ReviewRow label="Duration" value={formatDuration(form.durationMinutes)} />
                       <ReviewRow label="Type" value={form.classroomType === "single" ? "Single Class" : "Learning Series"} />
                     </div>
@@ -882,7 +883,6 @@ function SimpleClassroomList({ items, loading, role }: { items: ClassroomItem[];
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           {upcoming.map(({ classroom, session }) => {
             const joinOpen = isJoinWindowOpen(session, now);
-            const sessionLink = `/classrooms/${classroom._id}?session=${session._id}`;
             return (
               <div key={`${classroom._id}-${session._id}`} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-lg shadow-brand/10">
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -907,18 +907,13 @@ function SimpleClassroomList({ items, loading, role }: { items: ClassroomItem[];
                 </div>
 
                 <div className="mt-4 flex flex-wrap gap-2">
-                  {joinOpen ? (
-                    <Link href={sessionLink} className="btn-primary">Join Classroom</Link>
-                  ) : (
-                    <button className="btn-outline opacity-60" disabled>Join Classroom</button>
-                  )}
-                  {classroom.meetingUrl && (
-                    joinOpen ? (
-                      <a href={classroom.meetingUrl} target="_blank" rel="noreferrer" className="btn-outline">Join Google Meet</a>
-                    ) : (
-                      <button className="btn-outline opacity-60" disabled>Join Google Meet</button>
-                    )
-                  )}
+                  <JoinScheduledSessionButton
+                    classroomId={String(classroom._id)}
+                    sessionId={String(session._id)}
+                    meetingUrl={classroom.meetingUrl}
+                    className={joinOpen ? "btn-primary" : "btn-outline"}
+                    label="Join Classroom"
+                  />
                 </div>
               </div>
             );

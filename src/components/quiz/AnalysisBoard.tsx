@@ -178,11 +178,18 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
     const element = boardWrapRef.current;
     if (!element) return;
 
-    const resize = () => setBoardWidth(Math.max(280, Math.min(560, element.clientWidth)));
+    const resize = () => {
+      const heightLimit = typeof window === "undefined" ? 560 : window.innerHeight - 330;
+      setBoardWidth(Math.max(280, Math.min(540, element.clientWidth, heightLimit)));
+    };
     resize();
     const observer = new ResizeObserver(resize);
     observer.observe(element);
-    return () => observer.disconnect();
+    window.addEventListener("resize", resize);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", resize);
+    };
   }, []);
 
   useEffect(() => {
@@ -372,10 +379,10 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
   }
 
   return (
-    <div className={["rounded-lg p-4 transition-colors", isDark ? "bg-black text-white" : "bg-white text-slate-950"].join(" ")}>
-      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+    <div className={["flex h-[calc(100vh-92px)] min-h-[640px] flex-col overflow-hidden rounded-xl p-3 transition-colors", isDark ? "bg-black text-white" : "bg-white text-slate-950"].join(" ")}>
+      <div className="mb-3 flex flex-none flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="font-display text-3xl">Analysis Board</h1>
+          <h1 className="font-display text-2xl">Analysis Board</h1>
           <p className={`mt-1 text-sm ${mutedText}`}>Analyze positions, create annotations, save and share your analyses</p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -388,15 +395,15 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-1 xl:grid-cols-[minmax(0,1fr)_560px]">
-        <section className={`rounded-lg border p-6 ${panelClass}`}>
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-2 xl:grid-cols-[minmax(0,1fr)_520px]">
+        <section className={`min-h-0 overflow-auto rounded-lg border p-4 ${panelClass}`}>
           <div className="flex justify-center">
             <div className="grid grid-cols-[24px_minmax(0,auto)] gap-2">
               <div className={`grid grid-rows-8 pb-7 pt-1 text-right text-xs font-semibold ${mutedText}`}>
                 {ranks.map((rank) => <span key={rank}>{rank}</span>)}
               </div>
               <div>
-                <div ref={boardWrapRef} className="relative w-full max-w-[560px]">
+                <div ref={boardWrapRef} className="relative w-full max-w-[540px]">
                   <Chessboard
                     position={position}
                     onPieceDrop={onDrop}
@@ -427,8 +434,8 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
             <div><span className={isDark ? "text-white" : "text-slate-950"}>Orientation:</span> {orientation}</div>
           </div>
 
-          <div className={`mt-6 border-t ${isDark ? "border-slate-200/70" : "border-slate-200"}`} />
-          <div className="mt-5 flex flex-wrap justify-center gap-2">
+          <div className={`mt-4 border-t ${isDark ? "border-slate-200/70" : "border-slate-200"}`} />
+          <div className="mt-3 flex flex-wrap justify-center gap-2">
             <button className={controlButton(isDark)} onClick={() => setOrientation(orientation === "white" ? "black" : "white")}><Maximize2 size={15} /> Flip</button>
             <button className={controlButton(isDark)} onClick={reset}><RotateCcw size={15} /> Reset</button>
             <button className={controlButton(isDark)} onClick={() => setDialog("fen")}><Clipboard size={15} /> FEN</button>
@@ -451,7 +458,7 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
           </div>
         </section>
 
-        <aside className={`rounded-lg border p-6 ${panelClass}`}>
+        <aside className={`min-h-0 overflow-auto rounded-lg border p-4 ${panelClass}`}>
           <TabBar active={tab} isDark={isDark} onChange={setTab} />
           {tab === "moves" && <MovesPanel rows={moveRows} isDark={isDark} selectedPly={selectedPly} onSelect={goToPly} onPrevious={goPrevious} onNext={goNext} canPrevious={selectedPly > 0} canNext={selectedPly < gameRef.current.history().length} />}
           {tab === "engine" && (
@@ -1040,8 +1047,8 @@ function SetupDialog({
   }
 
   return (
-    <ModalFrame isDark={isDark} title="Customize Position" onClose={onClose} width="max-w-[820px]">
-      <div className="grid gap-6 md:grid-cols-[340px_1fr]">
+    <ModalFrame isDark={isDark} title="Customize Position" onClose={onClose} width="max-w-[980px]">
+      <div className="grid gap-5 md:grid-cols-[330px_1fr]">
         <div>
           <div className={`mb-5 inline-flex rounded-lg p-1 ${isDark ? "bg-black" : "bg-slate-100"}`}>
             <button className={setupTabButton(setupTab === "general", isDark)} onClick={() => setSetupTab("general")}>General</button>
@@ -1052,7 +1059,7 @@ function SetupDialog({
             <Chessboard
               id="analysis-setup-board"
               position={setupToBoardPosition(setup)}
-              boardWidth={320}
+              boardWidth={300}
               onPieceDrop={moveSetupPiece}
               onPieceDropOffBoard={deleteSetupPiece}
               onSquareClick={(square) => place(square)}
@@ -1068,7 +1075,7 @@ function SetupDialog({
               <GamifiedObjectLayer
                 objects={gamifiedSetup}
                 selected={selectedItem}
-                boardWidth={320}
+                boardWidth={300}
                 onPlace={moveGamifiedObject}
                 onDelete={deleteGamifiedObject}
                 onDragStart={setDraggedObjectSquare}

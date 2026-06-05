@@ -46,7 +46,7 @@ const Chessboard = dynamic(() => import("react-chessboard").then((m) => m.Chessb
 
 type Role = "student" | "instructor" | "admin";
 type BoardPosition = Record<string, string | undefined>;
-type TabKey = "students" | "pgn" | "chat" | "moves" | "leaderboard";
+type TabKey = "students" | "chat" | "moves" | "leaderboard";
 type ToolKey = "move" | "highlight" | "arrow" | "setup";
 type ModifierKey = "default" | "shift" | "ctrl" | "alt";
 
@@ -187,6 +187,7 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
   const [challengeTimer, setChallengeTimer] = useState(60);
   const [selectedPiece, setSelectedPiece] = useState("wQ");
   const [setupOpen, setSetupOpen] = useState(false);
+  const [pgnOpen, setPgnOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [attendanceDraft, setAttendanceDraft] = useState<Record<string, "present" | "absent" | "late">>({});
   const [highlightDraft, setHighlightDraft] = useState<string | null>(null);
@@ -250,10 +251,6 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
   useEffect(() => {
     setSetupPosition(fenToPosition(live?.fen));
   }, [live?.fen, live?.setupMode]);
-
-  useEffect(() => {
-    if (!coach && activeTab === "pgn") setActiveTab("chat");
-  }, [coach, activeTab]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -445,13 +442,16 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
     if (!coach || !live?.arrowsEnabled) return;
     if (!nextArrows.length) return;
     const highlights = (live?.drawings || []).filter((drawing: any) => drawing.type === "highlight");
-    const arrowDrawings = nextArrows.map((arrow) => ({
+    const existingArrows = (live?.drawings || []).filter((drawing: any) => drawing.type === "arrow");
+    const incomingArrows = nextArrows.map((arrow) => ({
       type: "arrow",
       from: arrow[0],
       to: arrow[1],
       color: arrow[2] || drawingColor(modifier),
     }));
-    const merged = [...highlights, ...arrowDrawings];
+    const arrowMap = new Map<string, any>();
+    [...existingArrows, ...incomingArrows].forEach((arrow) => arrowMap.set(`${arrow.from}-${arrow.to}-${arrow.color}`, arrow));
+    const merged = [...highlights, ...Array.from(arrowMap.values())];
     if (JSON.stringify(merged) !== JSON.stringify(live?.drawings || [])) patch({ drawings: merged });
   }
 
@@ -578,6 +578,7 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
         drawings: [],
       });
       setActiveTab("moves");
+      setPgnOpen(false);
       toast.success(`Loaded ${pgn.title}`);
     } catch {
       toast.error("This PGN could not be loaded");
@@ -591,6 +592,7 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
       const fenGame = new Chess(value);
       patch({ fen: fenGame.fen(), pgn: "", pgnTitle: "Custom FEN", pgnMoves: [], pgnMoveIndex: 0, moveHistory: [], setupMode: false, drawings: [] });
       setManualLoadText("");
+      setPgnOpen(false);
       toast.success("FEN loaded into classroom");
       return;
     } catch {
@@ -613,6 +615,7 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
       });
       setManualLoadText("");
       setActiveTab("moves");
+      setPgnOpen(false);
       toast.success("PGN loaded into classroom");
     } catch {
       toast.error("Paste a valid PGN or FEN");
@@ -664,6 +667,7 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
       if (res.ok) {
         await patch({ fen: startFen, pgn: first.pgn, pgnTitle: first.title, pgnMoves: moves, pgnMoveIndex: 0, moveHistory: [], mode: "one_move_challenge" });
         setActiveTab("leaderboard");
+        setPgnOpen(false);
         toast.success("Challenge sent to students");
       }
     } catch {
@@ -928,17 +932,13 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
             </div>
 
             {coach && (
-              <div className="mt-3 grid gap-2 lg:grid-cols-[1fr_auto]">
+              <div className="mt-3">
                 <input
-                  className="h-10 rounded-md border border-slate-200 px-3 text-sm"
+                  className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm"
                   placeholder="Current topic, e.g. Queen-side attack"
                   defaultValue={live?.topic || ""}
                   onBlur={(event) => patch({ topic: event.target.value })}
                 />
-                <div className="flex gap-2">
-                  <button onClick={askEveryone} className="inline-flex h-10 items-center gap-2 rounded-md border border-purple-200 bg-purple-50 px-4 text-sm font-semibold text-purple-800"><Send size={16} /> Ask Challenge</button>
-                  <button onClick={createQuiz} className="inline-flex h-10 items-center gap-2 rounded-md bg-purple-700 px-4 text-sm font-semibold text-white"><Sparkles size={16} /> Start Quiz</button>
-                </div>
               </div>
             )}
 
@@ -963,10 +963,9 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
         </section>
 
         <aside className="flex min-h-0 flex-col border-t border-slate-200 xl:border-l xl:border-t-0">
-          <div className={`grid ${coach ? "grid-cols-5" : "grid-cols-4"} border-b border-slate-200 text-sm`}>
+          <div className="grid grid-cols-4 border-b border-slate-200 text-sm">
             {[
               ["students", Users, "Students"],
-              ...(coach ? [["pgn", Library, "PGN Library"]] : []),
               ["chat", MessageSquare, "Chat"],
               ["moves", ClipboardList, "Moves"],
               ["leaderboard", Crown, "Leaderboard"],
@@ -1015,7 +1014,7 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
               </div>
             )}
 
-            {activeTab === "pgn" && (
+            {false && (
               <div className="space-y-4">
                 <div className="rounded-lg border border-slate-200 p-4">
                   <h3 className="font-semibold text-slate-950">PGN Library</h3>
@@ -1164,13 +1163,70 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
             </div>
             {coach && (
               <div className="grid grid-cols-2 gap-2">
-                <button onClick={() => setActiveTab("pgn")} className="h-11 rounded-md bg-purple-700 text-sm font-semibold text-white">Load PGNs</button>
+                <button onClick={() => setPgnOpen(true)} className="h-11 rounded-md bg-purple-700 text-sm font-semibold text-white">Load PGNs</button>
                 <button onClick={openEndSummary} className="h-11 rounded-md bg-red-500 text-sm font-semibold text-white">End Classroom</button>
               </div>
             )}
           </div>
         </aside>
       </div>
+
+      {pgnOpen && coach && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
+          <div className="flex max-h-[88vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-start justify-between gap-4 border-b border-slate-200 p-5">
+              <div>
+                <h3 className="text-xl font-semibold text-slate-950">Classroom PGN Library</h3>
+                <p className="text-sm text-slate-500">Load a PGN onto the classroom board or turn a selected PGN into a quiz.</p>
+              </div>
+              <button onClick={() => setPgnOpen(false)} className="grid h-9 w-9 place-items-center rounded-md border border-slate-200"><X size={16} /></button>
+            </div>
+            <div className="grid min-h-0 flex-1 gap-4 overflow-auto p-5 lg:grid-cols-[minmax(0,1fr)_300px]">
+              <div className="min-h-0 space-y-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button onClick={() => setSelectedPgnIds(pgnLibrary.map((pgn: any) => pgn._id))} className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 px-3 text-xs font-semibold"><CheckSquare size={14} /> Select All</button>
+                  <button onClick={() => setSelectedPgnIds([])} className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 px-3 text-xs font-semibold"><X size={14} /> Clear Selection</button>
+                  <span className="rounded-full bg-purple-50 px-3 py-1 text-xs font-semibold text-purple-800">{selectedPgnIds.length} selected</span>
+                </div>
+                <div className="grid max-h-[56vh] gap-2 overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-2 md:grid-cols-2">
+                  {pgnLibrary.length ? pgnLibrary.map((pgn: any, index: number) => (
+                    <div key={pgn._id} className={`rounded-lg border bg-white p-3 transition ${selectedPgnIds.includes(pgn._id) ? "border-purple-400 ring-2 ring-purple-100" : "border-slate-200"}`}>
+                      <label className="flex cursor-pointer items-start gap-2">
+                        <input checked={selectedPgnIds.includes(pgn._id)} onChange={() => togglePgnSelection(pgn._id)} type="checkbox" className="mt-1 h-4 w-4" />
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-semibold text-slate-950">{pgn.title}</span>
+                          <span className="block truncate text-xs text-slate-500">{pgn.folder || "Library"} - {pgn.white || "White"} vs {pgn.black || "Black"}</span>
+                        </span>
+                      </label>
+                      <button onClick={() => loadPgn(pgn, index)} className="mt-3 h-9 w-full rounded-md bg-purple-700 text-xs font-semibold text-white">Load this PGN</button>
+                    </div>
+                  )) : <div className="rounded-lg border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 md:col-span-2">No PGNs available yet.</div>}
+                </div>
+              </div>
+              <div className="space-y-4">
+                <div className="rounded-xl border border-purple-100 bg-purple-50 p-3">
+                  <label className="text-xs font-semibold text-slate-600">Challenge Timer</label>
+                  <input value={challengeTimer} onChange={(event) => setChallengeTimer(Number(event.target.value || 0))} type="number" min={10} className="mt-1 h-9 w-full rounded-md border border-slate-200 px-3 text-sm" />
+                  <div className="mt-3 grid gap-2">
+                    <button onClick={loadSelectedPgns} className="h-10 rounded-md bg-purple-700 text-sm font-semibold text-white">Load Selected</button>
+                    <button onClick={askSelectedPgnAsQuiz} className="h-10 rounded-md border border-purple-200 bg-white text-sm font-semibold text-purple-800">Ask Selected as Quiz</button>
+                  </div>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <label className="text-xs font-semibold text-slate-600">Paste PGN or FEN</label>
+                  <textarea
+                    value={manualLoadText}
+                    onChange={(event) => setManualLoadText(event.target.value)}
+                    className="mt-2 min-h-32 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                    placeholder="Paste a PGN or FEN here"
+                  />
+                  <button onClick={loadManualPosition} className="mt-2 h-10 w-full rounded-md bg-slate-950 text-sm font-semibold text-white">Load pasted position</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {setupOpen && coach && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">

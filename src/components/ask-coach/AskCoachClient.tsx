@@ -82,8 +82,8 @@ export default function AskCoachClient({ role }: { role: Role }) {
   }
 
   return (
-    <div className="min-h-[calc(100vh-120px)] rounded-lg border border-slate-200 bg-white shadow-sm">
-      <div className="border-b border-slate-200 p-5">
+    <div className="flex h-[calc(100vh-92px)] min-h-[620px] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg shadow-brand/10">
+      <div className="flex-none border-b border-slate-200 p-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h1 className="text-2xl font-semibold text-slate-950">Ask Coach</h1>
@@ -96,8 +96,8 @@ export default function AskCoachClient({ role }: { role: Role }) {
         </div>
       </div>
 
-      <div className="grid min-h-[720px] grid-cols-1 lg:grid-cols-[310px_minmax(0,1fr)_320px]">
-        <aside className="border-b border-slate-200 p-4 lg:border-b-0 lg:border-r">
+      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)_300px]">
+        <aside className="min-h-0 overflow-auto border-b border-slate-200 p-3 lg:border-b-0 lg:border-r">
           <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-950"><MessageSquare size={16} /> Conversations</div>
           <div className="space-y-2">
             {conversations.length ? conversations.map((conversation: any) => (
@@ -109,12 +109,12 @@ export default function AskCoachClient({ role }: { role: Role }) {
           </div>
         </aside>
 
-        <main className="flex min-h-[620px] flex-col">
-          <div className="border-b border-slate-200 p-4">
+        <main className="flex min-h-0 flex-col">
+          <div className="flex-none border-b border-slate-200 p-3">
             <h2 className="text-lg font-semibold text-slate-950">{activeConversation ? conversationTitle(activeConversation) : "New Message"}</h2>
             <p className="text-xs text-slate-500">{activeConversation?.type === "batch" ? "Batch chat" : "Individual chat"}</p>
           </div>
-          <div className="flex-1 space-y-3 overflow-auto bg-slate-50 p-4">
+          <div className="min-h-0 flex-1 space-y-3 overflow-auto bg-slate-50 p-3">
             {activeMessages.length ? activeMessages.map((item: any) => (
               <div key={item._id} className={`rounded-lg border bg-white p-3 ${item.flagged ? "border-amber-300" : "border-slate-200"}`}>
                 <div className="mb-1 flex items-center justify-between gap-2">
@@ -135,15 +135,15 @@ export default function AskCoachClient({ role }: { role: Role }) {
               </div>
             )) : <div className="rounded-md border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">Select a conversation or send a new message.</div>}
           </div>
-          <div className="border-t border-slate-200 p-4">
-            <textarea value={message} onChange={(event) => setMessage(event.target.value)} className="min-h-24 w-full rounded-md border border-slate-200 px-3 py-2 text-sm" placeholder="Type your message. Contact details and restricted content will be flagged." />
-            <div className="mt-3 flex justify-end">
+          <div className="flex-none border-t border-slate-200 p-3">
+            <textarea value={message} onChange={(event) => setMessage(event.target.value)} className="min-h-16 w-full rounded-md border border-slate-200 px-3 py-2 text-sm" placeholder="Type your message. Contact details and restricted content will be flagged." />
+            <div className="mt-2 flex justify-end">
               <button disabled={loading} onClick={sendMessage} className="inline-flex h-10 items-center gap-2 rounded-md bg-purple-700 px-4 text-sm font-semibold text-white disabled:opacity-60"><Send size={16} /> Send</button>
             </div>
           </div>
         </main>
 
-        <aside className="border-t border-slate-200 p-4 lg:border-l lg:border-t-0">
+        <aside className="min-h-0 overflow-auto border-t border-slate-200 p-3 lg:border-l lg:border-t-0">
           <div className="space-y-4">
             <section className="rounded-lg border border-slate-200 p-4">
               <h3 className="flex items-center gap-2 font-semibold text-slate-950"><Users size={16} /> New Message</h3>

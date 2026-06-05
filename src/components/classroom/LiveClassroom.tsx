@@ -196,6 +196,14 @@ function getGamifiedObject(id: GamifiedObjectId) {
   return gamifiedObjects.find((object) => object.id === id) || gamifiedObjects[0];
 }
 
+function removeObjectsOnPieceSquares(objects: Record<string, GamifiedObjectId> = {}, position: BoardPosition = {}) {
+  const next = { ...objects };
+  Object.keys(position).forEach((square) => {
+    if (position[square]) delete next[square];
+  });
+  return next;
+}
+
 function minutesBetween(start?: string | Date, end?: string | Date) {
   if (!start || !end) return 0;
   return Math.max(0, Math.round((new Date(end).getTime() - new Date(start).getTime()) / 60000));
@@ -270,6 +278,11 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
   const currentMoveIndex = live?.pgnMoveIndex || 0;
   const boardFen = live?.fen === "start" || !live?.fen ? "start" : live.fen;
   const boardPosition = boardFen;
+  const boardPieceMap = useMemo(() => fenToPosition(live?.fen), [live?.fen]);
+  const liveGamifiedObjects = useMemo(
+    () => removeObjectsOnPieceSquares(live?.gamifiedObjects || {}, boardPieceMap),
+    [live?.gamifiedObjects, boardPieceMap]
+  );
   const game = useMemo(() => buildGame(live?.fen), [live?.fen]);
   const canMove =
     coach ||
@@ -282,9 +295,9 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
 
   useEffect(() => {
     if (setupOpen) return;
-    setSetupPosition(fenToPosition(live?.fen));
-    setGamifiedSetup(live?.gamifiedObjects || {});
-  }, [live?.fen, live?.setupMode, live?.gamifiedObjects, setupOpen]);
+    setSetupPosition(boardPieceMap);
+    setGamifiedSetup(liveGamifiedObjects);
+  }, [boardPieceMap, live?.setupMode, liveGamifiedObjects, setupOpen]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -341,9 +354,9 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
     await load();
   }
 
-  function commitSetup(position = setupPosition) {
+  function commitSetup(position = setupPosition, objects = liveGamifiedObjects) {
     const sideToMove = live?.fen?.split(" ")?.[1] || "w";
-    patch({ fen: positionToFen(position, sideToMove), setupMode: true });
+    patch({ fen: positionToFen(position, sideToMove), gamifiedObjects: removeObjectsOnPieceSquares(objects, position), setupMode: true });
   }
 
   function onDrop(source: string, target: string, piece: string) {
@@ -352,16 +365,18 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
       const next = { ...setupPosition };
       delete next[source];
       next[target] = piece;
+      const nextObjects = { ...liveGamifiedObjects };
+      delete nextObjects[target];
       setSetupPosition(next);
-      commitSetup(next);
+      commitSetup(next, nextObjects);
       playMoveSound(live?.soundEnabled);
       return true;
     }
     try {
       const move = game.move({ from: source, to: target, promotion: "q" });
       if (!move) return false;
-      const collectedObjectId = live?.gamifiedObjects?.[target] as GamifiedObjectId | undefined;
-      const nextGamifiedObjects = collectedObjectId ? { ...(live?.gamifiedObjects || {}) } : live?.gamifiedObjects;
+      const collectedObjectId = liveGamifiedObjects[target] as GamifiedObjectId | undefined;
+      const nextGamifiedObjects = collectedObjectId ? { ...liveGamifiedObjects } : liveGamifiedObjects;
       if (collectedObjectId && nextGamifiedObjects) delete nextGamifiedObjects[target];
       patch({
         fen: game.fen(),
@@ -395,6 +410,11 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
     delete next[source];
     next[target] = piece;
     setSetupPosition(next);
+    setGamifiedSetup((current) => {
+      const nextObjects = { ...current };
+      delete nextObjects[target];
+      return nextObjects;
+    });
     return true;
   }
 
@@ -406,6 +426,13 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
 
   function onSetupSquareClick(square: string) {
     if (setupTab === "objects") {
+      if (selectedObject !== "delete") {
+        setSetupPosition((current) => {
+          const next = { ...current };
+          delete next[square];
+          return next;
+        });
+      }
       setGamifiedSetup((current) => {
         const next = { ...current };
         if (selectedObject === "delete") delete next[square];
@@ -418,15 +445,27 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
     if (selectedPiece === "erase") delete next[square];
     else next[square] = selectedPiece;
     setSetupPosition(next);
+    if (selectedPiece !== "erase") {
+      setGamifiedSetup((current) => {
+        const nextObjects = { ...current };
+        delete nextObjects[square];
+        return nextObjects;
+      });
+    }
   }
 
   function loadSetupIntoClassroom() {
     const sideToMove = live?.fen?.split(" ")?.[1] || "w";
-    patch({ fen: positionToFen(setupPosition, sideToMove), gamifiedObjects: gamifiedSetup, setupMode: false, pgn: "", pgnTitle: "Custom Position", pgnMoves: [], pgnMoveIndex: 0, moveHistory: [], drawings: [] });
+    patch({ fen: positionToFen(setupPosition, sideToMove), gamifiedObjects: removeObjectsOnPieceSquares(gamifiedSetup, setupPosition), setupMode: false, pgn: "", pgnTitle: "Custom Position", pgnMoves: [], pgnMoveIndex: 0, moveHistory: [], drawings: [] });
     setSetupOpen(false);
   }
 
   function moveGamifiedObject(targetSquare: string) {
+    setSetupPosition((current) => {
+      const nextPosition = { ...current };
+      delete nextPosition[targetSquare];
+      return nextPosition;
+    });
     setGamifiedSetup((current) => {
       const next = { ...current };
       if (draggedObjectSquare && current[draggedObjectSquare]) {
@@ -910,7 +949,7 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
             <ToggleButton active={!!live?.illegalMovesEnabled} icon={<ShieldAlert size={19} />} label="Allow illegal moves" onClick={() => patch({ illegalMovesEnabled: !live?.illegalMovesEnabled })} />
             <ToggleButton active={!!live?.showCoordinates} icon={<Grid2X2 size={19} />} label="Show coordinates" onClick={() => patch({ showCoordinates: !live?.showCoordinates })} />
             <ToggleButton active={!!live?.arrowsEnabled} icon={<Square size={19} />} label="Enable arrow drawing" onClick={() => patch({ arrowsEnabled: !live?.arrowsEnabled })} />
-            <ToggleButton active={setupOpen} icon={<Settings size={19} />} label="Setup Board" onClick={() => { setSetupPosition(fenToPosition(live?.fen)); setGamifiedSetup(live?.gamifiedObjects || {}); setSetupOpen(true); }} />
+            <ToggleButton active={setupOpen} icon={<Settings size={19} />} label="Setup Board" onClick={() => { setSetupPosition(boardPieceMap); setGamifiedSetup(liveGamifiedObjects); setSetupOpen(true); }} />
             <ToolButton icon={<Eraser size={19} />} label="Clear Drawings" onClick={() => patch({ drawings: [] })} />
             <ToolButton icon={<FlipHorizontal size={19} />} label="Flip board" onClick={() => patch({ orientation: live?.orientation === "white" ? "black" : "white" })} />
             <ToggleButton active={!!live?.soundEnabled} icon={live?.soundEnabled ? <Volume2 size={19} /> : <VolumeX size={19} />} label="Piece sounds" onClick={() => patch({ soundEnabled: !live?.soundEnabled })} />
@@ -947,7 +986,7 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
                     customLightSquareStyle={{ backgroundColor: "#f1d9aa" }}
                     customBoardStyle={{ borderRadius: "4px", overflow: "hidden" }}
                   />
-                  <GamifiedBoardOverlay objects={live?.gamifiedObjects || {}} boardWidth={boardWidth} orientation={orientation} />
+                  <GamifiedBoardOverlay objects={liveGamifiedObjects} boardWidth={boardWidth} orientation={orientation} />
                 </div>
                 {live?.showCoordinates !== false && (
                   <>

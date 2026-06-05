@@ -970,6 +970,13 @@ function SetupDialog({
 
   function place(square: string) {
     if (setupTab === "gamified") {
+      if (isGamifiedObjectId(selectedItem)) {
+        setSetup((currentSetup) => {
+          const nextSetup = { ...currentSetup };
+          delete nextSetup[square];
+          return nextSetup;
+        });
+      }
       setGamifiedSetup((currentObjects) => {
         const next = { ...currentObjects };
         if (selectedItem === "delete") delete next[square];
@@ -985,6 +992,13 @@ function SetupDialog({
       else if (isPieceCode(selectedItem)) next[square] = selectedItem;
       return next;
     });
+    if (isPieceCode(selectedItem)) {
+      setGamifiedSetup((currentObjects) => {
+        const nextObjects = { ...currentObjects };
+        delete nextObjects[square];
+        return nextObjects;
+      });
+    }
   }
 
   function moveSetupPiece(sourceSquare: string, targetSquare: string, piece: string) {
@@ -993,6 +1007,11 @@ function SetupDialog({
       delete next[sourceSquare];
       next[targetSquare] = boardPieceToPieceCode(piece);
       return next;
+    });
+    setGamifiedSetup((currentObjects) => {
+      const nextObjects = { ...currentObjects };
+      delete nextObjects[targetSquare];
+      return nextObjects;
     });
     return true;
   }
@@ -1006,6 +1025,11 @@ function SetupDialog({
   }
 
   function moveGamifiedObject(targetSquare: string) {
+    setSetup((currentSetup) => {
+      const nextSetup = { ...currentSetup };
+      delete nextSetup[targetSquare];
+      return nextSetup;
+    });
     setGamifiedSetup((currentObjects) => {
       const next = { ...currentObjects };
       if (draggedObjectSquare && currentObjects[draggedObjectSquare]) {

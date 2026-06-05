@@ -18,14 +18,17 @@ import {
   Eye,
   FileQuestion,
   FlipHorizontal,
+  Folder,
   Grid2X2,
   Highlighter,
+  Home,
   Library,
   Lock,
   MessageSquare,
   MousePointer2,
   RefreshCcw,
   RotateCcw,
+  Search,
   Send,
   Settings,
   ShieldAlert,
@@ -220,6 +223,8 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
   const [manualLoadText, setManualLoadText] = useState("");
   const [setupLoadText, setSetupLoadText] = useState("");
   const [selectedPgnIds, setSelectedPgnIds] = useState<string[]>([]);
+  const [pgnFolderQuery, setPgnFolderQuery] = useState("");
+  const [activePgnFolder, setActivePgnFolder] = useState<string | null>(null);
   const [previewPgn, setPreviewPgn] = useState<any>(null);
   const [challengeTimer, setChallengeTimer] = useState(60);
   const [selectedPiece, setSelectedPiece] = useState("wQ");
@@ -275,6 +280,32 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
   const activeQuestion = data?.activeQuestion;
   const students = classroom?.students || [];
   const pgnLibrary = data?.pgnLibrary || [];
+  const pgnFolders = useMemo(() => {
+    const counts = new Map<string, number>();
+    pgnLibrary.forEach((pgn: any) => {
+      const folder = String(pgn.folder || "").trim();
+      if (!folder) return;
+      counts.set(folder, (counts.get(folder) || 0) + 1);
+    });
+    const q = pgnFolderQuery.trim().toLowerCase();
+    return Array.from(counts.entries())
+      .map(([name, count]) => ({ name, count }))
+      .filter((folder) => !q || folder.name.toLowerCase().includes(q))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [pgnLibrary, pgnFolderQuery]);
+  const visiblePgnLibrary = useMemo(() => {
+    const q = pgnFolderQuery.trim().toLowerCase();
+    return pgnLibrary.filter((pgn: any) => {
+      const inFolder = activePgnFolder === null
+        ? !String(pgn.folder || "").trim()
+        : activePgnFolder === "__unfiled__"
+          ? !String(pgn.folder || "").trim()
+          : String(pgn.folder || "") === activePgnFolder;
+      if (!inFolder) return false;
+      if (!q) return true;
+      return [pgn.title, pgn.white, pgn.black, pgn.event].filter(Boolean).some((value: any) => String(value).toLowerCase().includes(q));
+    });
+  }, [pgnLibrary, activePgnFolder, pgnFolderQuery]);
   const chatMessages = data?.chatMessages || [];
   const pgnMoves = live?.pgnMoves || [];
   const currentMoveIndex = live?.pgnMoveIndex || 0;
@@ -1305,24 +1336,70 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
             <div className="grid min-h-0 flex-1 gap-4 overflow-auto p-5 lg:grid-cols-[minmax(0,1fr)_300px]">
               <div className="min-h-0 space-y-3">
                 <div className="flex flex-wrap items-center gap-2">
-                  <button onClick={() => setSelectedPgnIds(pgnLibrary.map((pgn: any) => pgn._id))} className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 px-3 text-xs font-semibold"><CheckSquare size={14} /> Select All</button>
+                  <div className="relative min-w-[220px] flex-1 sm:max-w-xs">
+                    <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      value={pgnFolderQuery}
+                      onChange={(event) => setPgnFolderQuery(event.target.value)}
+                      className="h-9 w-full rounded-md border border-slate-200 pl-9 pr-3 text-sm"
+                      placeholder={activePgnFolder ? "Search PGNs in folder" : "Search folders or files"}
+                    />
+                  </div>
+                  <button onClick={() => setSelectedPgnIds(visiblePgnLibrary.map((pgn: any) => pgn._id))} className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 px-3 text-xs font-semibold"><CheckSquare size={14} /> Select All</button>
                   <button onClick={() => setSelectedPgnIds([])} className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 px-3 text-xs font-semibold"><X size={14} /> Clear Selection</button>
                   <span className="rounded-full bg-purple-50 px-3 py-1 text-xs font-semibold text-purple-800">{selectedPgnIds.length} selected</span>
                 </div>
-                <div className="grid max-h-[56vh] gap-2 overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-2 md:grid-cols-2">
-                  {pgnLibrary.length ? pgnLibrary.map((pgn: any, index: number) => (
+                <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                  <button onClick={() => setActivePgnFolder(null)} className={`inline-flex items-center gap-1 ${activePgnFolder ? "text-blue-600" : "font-semibold text-slate-900"}`}><Home size={14} /> Library</button>
+                  {activePgnFolder && (
+                    <>
+                      <ChevronRight size={14} className="text-slate-400" />
+                      <span className="font-semibold text-slate-900">{activePgnFolder}</span>
+                    </>
+                  )}
+                </div>
+                {activePgnFolder === null ? (
+                  <div className="grid max-h-[56vh] gap-2 overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-2 md:grid-cols-2">
+                    {pgnFolders.length ? pgnFolders.map((folder) => (
+                      <button key={folder.name} onClick={() => setActivePgnFolder(folder.name)} className="flex items-center justify-between rounded-lg border border-slate-200 bg-white p-4 text-left transition hover:border-purple-300 hover:shadow-sm">
+                        <span className="flex min-w-0 items-center gap-3">
+                          <span className="grid h-10 w-10 place-items-center rounded-xl bg-purple-50 text-purple-700"><Folder size={18} /></span>
+                          <span className="min-w-0">
+                            <span className="block truncate text-sm font-semibold text-slate-950">{folder.name}</span>
+                            <span className="block text-xs text-slate-500">{folder.count} PGN{folder.count === 1 ? "" : "s"}</span>
+                          </span>
+                        </span>
+                        <ChevronRight size={16} className="text-slate-400" />
+                      </button>
+                    )) : <div className="rounded-lg border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 md:col-span-2">No folders found in the PGN library yet.</div>}
+                    {pgnLibrary.some((pgn: any) => !String(pgn.folder || "").trim()) && (
+                      <button onClick={() => setActivePgnFolder("__unfiled__")} className="flex items-center justify-between rounded-lg border border-slate-200 bg-white p-4 text-left transition hover:border-purple-300 hover:shadow-sm md:col-span-2">
+                        <span className="flex min-w-0 items-center gap-3">
+                          <span className="grid h-10 w-10 place-items-center rounded-xl bg-slate-100 text-slate-700"><Library size={18} /></span>
+                          <span className="min-w-0">
+                            <span className="block truncate text-sm font-semibold text-slate-950">Unfiled PGNs</span>
+                            <span className="block text-xs text-slate-500">{pgnLibrary.filter((pgn: any) => !String(pgn.folder || "").trim()).length} PGNs</span>
+                          </span>
+                        </span>
+                        <ChevronRight size={16} className="text-slate-400" />
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="grid max-h-[56vh] gap-2 overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-2 md:grid-cols-2">
+                  {visiblePgnLibrary.length ? visiblePgnLibrary.map((pgn: any, index: number) => (
                     <div key={pgn._id} className={`rounded-lg border bg-white p-3 transition ${selectedPgnIds.includes(pgn._id) ? "border-purple-400 ring-2 ring-purple-100" : "border-slate-200"}`}>
                       <label className="flex cursor-pointer items-start gap-2">
                         <input checked={selectedPgnIds.includes(pgn._id)} onChange={() => togglePgnSelection(pgn._id)} type="checkbox" className="mt-1 h-4 w-4" />
                         <span className="min-w-0">
                           <span className="block truncate text-sm font-semibold text-slate-950">{pgn.title}</span>
-                          <span className="block truncate text-xs text-slate-500">{pgn.folder || "Library"} - {pgn.white || "White"} vs {pgn.black || "Black"}</span>
+                          <span className="block truncate text-xs text-slate-500">{pgn.white || "White"} vs {pgn.black || "Black"}</span>
                         </span>
                       </label>
                       <button onClick={() => loadPgn(pgn, index)} className="mt-3 h-9 w-full rounded-md bg-purple-700 text-xs font-semibold text-white">Load this PGN</button>
                     </div>
-                  )) : <div className="rounded-lg border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 md:col-span-2">No PGNs available yet.</div>}
-                </div>
+                  )) : <div className="rounded-lg border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 md:col-span-2">No PGNs found in this folder.</div>}
+                </div>)}
               </div>
               <div className="space-y-4">
                 <div className="rounded-xl border border-purple-100 bg-purple-50 p-3">

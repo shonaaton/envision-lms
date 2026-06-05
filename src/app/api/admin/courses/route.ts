@@ -40,6 +40,71 @@ function normalizeCourse(input: any, actorId?: string) {
   };
 }
 
+function normalizeKey(value?: string) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function mergeCourseData(existingCourse: any, incomingCourse: any) {
+  const mergedLevels = Array.isArray(existingCourse.levels) ? [...existingCourse.levels.map((level: any) => ({
+    ...level.toObject?.() || level,
+    topics: (level.topics || []).map((topic: any) => topic.toObject?.() || topic),
+  }))] : [];
+
+  for (const incomingLevel of incomingCourse.levels || []) {
+    const levelIndex = mergedLevels.findIndex((level: any) => normalizeKey(level.name) === normalizeKey(incomingLevel.name));
+    if (levelIndex === -1) {
+      mergedLevels.push({
+        ...incomingLevel,
+        topics: [...(incomingLevel.topics || [])],
+      });
+      continue;
+    }
+    const mergedTopics = Array.isArray(mergedLevels[levelIndex].topics) ? [...mergedLevels[levelIndex].topics] : [];
+    for (const incomingTopic of incomingLevel.topics || []) {
+      const topicIndex = mergedTopics.findIndex((topic: any) => normalizeKey(topic.name) === normalizeKey(incomingTopic.name));
+      if (topicIndex === -1) {
+        mergedTopics.push(incomingTopic);
+        continue;
+      }
+      mergedTopics[topicIndex] = {
+        ...mergedTopics[topicIndex],
+        ...incomingTopic,
+        name: incomingTopic.name || mergedTopics[topicIndex].name,
+        description: incomingTopic.description || mergedTopics[topicIndex].description,
+        sessionCount: Math.max(Number(incomingTopic.sessionCount || 0), Number(mergedTopics[topicIndex].sessionCount || 0), 1),
+        order: topicIndex,
+      };
+    }
+    mergedLevels[levelIndex] = {
+      ...mergedLevels[levelIndex],
+      ...incomingLevel,
+      topics: mergedTopics.map((topic: any, index: number) => ({ ...topic, order: index })),
+    };
+  }
+
+  const finalizedLevels = mergedLevels.map((level: any, index: number) => {
+    const topics = (level.topics || []).map((topic: any, topicIndex: number) => ({ ...topic, order: topicIndex }));
+    return {
+      ...level,
+      order: index,
+      topics,
+      sessionCount: topics.reduce((sum: number, topic: any) => sum + Number(topic.sessionCount || 0), 0),
+    };
+  });
+
+  return {
+    ...incomingCourse,
+    name: incomingCourse.name || existingCourse.name,
+    description: incomingCourse.description || existingCourse.description,
+    category: incomingCourse.category || existingCourse.category,
+    level: incomingCourse.level || existingCourse.level,
+    isActive: incomingCourse.isActive ?? existingCourse.isActive,
+    createdBy: existingCourse.createdBy || incomingCourse.createdBy,
+    levels: finalizedLevels,
+    totalSessions: finalizedLevels.reduce((sum: number, level: any) => sum + Number(level.sessionCount || 0), 0),
+  };
+}
+
 export async function GET(req: Request) {
   const session = await auth();
   if ((session?.user as any)?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -60,6 +125,21 @@ export async function POST(req: Request) {
     const body = normalizeCourse(await req.json(), actorId);
     if (!body.name) return NextResponse.json({ error: "Course name is required" }, { status: 400 });
     await dbConnect();
+    const existingCourse = await Course.findOne({ name: new RegExp(`^${body.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") });
+    if (existingCourse) {
+      const mergedBody = mergeCourseData(existingCourse, body);
+      existingCourse.set(mergedBody);
+      await existingCourse.save();
+      await recordActivity({
+        actor: actorId,
+        type: "course.updated",
+        label: `Merged course ${existingCourse.name}`,
+        entityType: "Course",
+        entityId: existingCourse._id.toString(),
+        metadata: { levels: mergedBody.levels.length, totalSessions: mergedBody.totalSessions },
+      });
+      return NextResponse.json(existingCourse);
+    }
     const course = await Course.create(body);
     await recordActivity({
       actor: actorId,

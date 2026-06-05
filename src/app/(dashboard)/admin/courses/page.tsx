@@ -26,23 +26,12 @@ const templateRows = [
 ];
 
 const blankCourse: Course = {
-  name: "Beginner Course",
-  category: "Chess Foundation",
+  name: "",
+  category: "",
   level: "beginner",
   description: "",
   isActive: true,
-  levels: [
-    {
-      name: "Beginner Level 1",
-      sessionCount: 4,
-      description: "",
-      topics: [
-        { name: "Board, files, ranks, and coordinates", sessionCount: 1 },
-        { name: "How pieces move", sessionCount: 2 },
-        { name: "Check and checkmate basics", sessionCount: 1 },
-      ],
-    },
-  ],
+  levels: [],
 };
 
 export default function AdminCoursesPage() {
@@ -130,18 +119,20 @@ export default function AdminCoursesPage() {
 
   async function saveCourse() {
     if (!draft.name.trim()) return toast.error("Main course name is required");
+    const existingCourse = !draft._id ? findCourseByName(courses, draft.name) : null;
+    const targetCourse = existingCourse ? mergeCourses(existingCourse, draft) : draft;
     setSaving(true);
-    const response = await fetch(draft._id ? `/api/admin/courses/${draft._id}` : "/api/admin/courses", {
-      method: draft._id ? "PATCH" : "POST",
+    const response = await fetch(targetCourse._id ? `/api/admin/courses/${targetCourse._id}` : "/api/admin/courses", {
+      method: targetCourse._id ? "PATCH" : "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(draft),
+      body: JSON.stringify(targetCourse),
     });
     const data = await response.json();
     setSaving(false);
     if (!response.ok) return toast.error(data.error || "Could not save course");
     setDraft(cloneCourse(data));
     setCourses((current) => [data, ...current.filter((course) => course._id !== data._id)]);
-    toast.success("Course saved");
+    toast.success(existingCourse ? "Course updated and merged" : "Course saved");
   }
 
   async function deleteCourse() {
@@ -170,9 +161,11 @@ export default function AdminCoursesPage() {
     try {
       const text = await file.text();
       const imported = parseCourseCsv(text);
-      setDraft(imported);
-      setOpenLevels(Object.fromEntries(imported.levels.map((_, index) => [index, index === 0])));
-      toast.success("Course imported. Review it, then press Save.");
+      const existingCourse = findCourseByName(courses, imported.name);
+      const nextDraft = existingCourse ? mergeCourses(existingCourse, imported) : imported;
+      setDraft(nextDraft);
+      setOpenLevels(Object.fromEntries(nextDraft.levels.map((_, index) => [index, index === 0])));
+      toast.success(existingCourse ? "Imported and merged into the existing course. Review it, then press Save." : "Course imported. Review it, then press Save.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not import CSV");
     } finally {
@@ -335,6 +328,85 @@ export default function AdminCoursesPage() {
 
 function cloneCourse(course: Course): Course {
   return JSON.parse(JSON.stringify(course));
+}
+
+function normalizeKey(value?: string) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function findCourseByName(courses: Course[], name: string) {
+  const key = normalizeKey(name);
+  return courses.find((course) => normalizeKey(course.name) === key) || null;
+}
+
+function mergeCourses(existingCourse: Course, incomingCourse: Course): Course {
+  const mergedLevels = [...existingCourse.levels.map(cloneCourseLevel)];
+
+  incomingCourse.levels.forEach((incomingLevel) => {
+    const existingLevelIndex = mergedLevels.findIndex((level) => normalizeKey(level.name) === normalizeKey(incomingLevel.name));
+    if (existingLevelIndex === -1) {
+      mergedLevels.push(cloneCourseLevel(incomingLevel));
+      return;
+    }
+    mergedLevels[existingLevelIndex] = mergeLevels(mergedLevels[existingLevelIndex], incomingLevel);
+  });
+
+  const finalizedLevels = mergedLevels.map((level, index) => ({
+    ...level,
+    order: index,
+    sessionCount: level.topics.reduce((sum, topic) => sum + Number(topic.sessionCount || 0), 0),
+  }));
+
+  return {
+    ...existingCourse,
+    name: incomingCourse.name || existingCourse.name,
+    description: incomingCourse.description || existingCourse.description,
+    category: incomingCourse.category || existingCourse.category,
+    level: incomingCourse.level || existingCourse.level,
+    isActive: incomingCourse.isActive ?? existingCourse.isActive,
+    levels: finalizedLevels,
+    totalSessions: finalizedLevels.reduce((sum, level) => sum + Number(level.sessionCount || 0), 0),
+  };
+}
+
+function mergeLevels(existingLevel: CourseLevel, incomingLevel: CourseLevel): CourseLevel {
+  const mergedTopics = [...existingLevel.topics.map(cloneTopic)];
+  incomingLevel.topics.forEach((incomingTopic) => {
+    const existingTopicIndex = mergedTopics.findIndex((topic) => normalizeKey(topic.name) === normalizeKey(incomingTopic.name));
+    if (existingTopicIndex === -1) {
+      mergedTopics.push(cloneTopic(incomingTopic));
+      return;
+    }
+    mergedTopics[existingTopicIndex] = {
+      ...mergedTopics[existingTopicIndex],
+      ...incomingTopic,
+      name: incomingTopic.name || mergedTopics[existingTopicIndex].name,
+      description: incomingTopic.description || mergedTopics[existingTopicIndex].description,
+      sessionCount: Math.max(Number(incomingTopic.sessionCount || 0), Number(mergedTopics[existingTopicIndex].sessionCount || 0), 1),
+      order: existingTopicIndex,
+    };
+  });
+
+  const finalizedTopics = mergedTopics.map((topic, index) => ({ ...topic, order: index }));
+
+  return {
+    ...existingLevel,
+    name: incomingLevel.name || existingLevel.name,
+    description: incomingLevel.description || existingLevel.description,
+    topics: finalizedTopics,
+    sessionCount: finalizedTopics.reduce((sum, topic) => sum + Number(topic.sessionCount || 0), 0),
+  };
+}
+
+function cloneCourseLevel(level: CourseLevel): CourseLevel {
+  return {
+    ...level,
+    topics: level.topics.map(cloneTopic),
+  };
+}
+
+function cloneTopic(topic: Topic): Topic {
+  return { ...topic };
 }
 
 function SummaryPill({ label, value }: { label: string; value: number }) {

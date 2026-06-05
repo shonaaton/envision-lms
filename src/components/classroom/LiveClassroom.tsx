@@ -34,6 +34,7 @@ import {
   Sparkles,
   Square,
   Trophy,
+  Trash2,
   Unlock,
   UserCheck,
   Users,
@@ -49,6 +50,25 @@ type BoardPosition = Record<string, string | undefined>;
 type TabKey = "students" | "chat" | "moves" | "leaderboard";
 type ToolKey = "move" | "highlight" | "arrow" | "setup";
 type ModifierKey = "default" | "shift" | "ctrl" | "alt";
+type SetupTab = "pieces" | "objects";
+type GamifiedObjectId = "star" | "gem" | "coin" | "apple" | "fire" | "trophy" | "gift" | "shield" | "key" | "puzzle" | "rocket" | "monster" | "dragon";
+type SetupSelection = string | "erase" | GamifiedObjectId;
+
+const gamifiedObjects: Array<{ id: GamifiedObjectId; label: string; icon: string; points: number }> = [
+  { id: "star", label: "Star", icon: "⭐", points: 10 },
+  { id: "gem", label: "Gem", icon: "💎", points: 15 },
+  { id: "coin", label: "Coin", icon: "🪙", points: 10 },
+  { id: "apple", label: "Apple", icon: "🍎", points: 5 },
+  { id: "fire", label: "Fire", icon: "🔥", points: -5 },
+  { id: "trophy", label: "Trophy", icon: "🏆", points: 25 },
+  { id: "gift", label: "Gift Box", icon: "🎁", points: 20 },
+  { id: "shield", label: "Shield", icon: "🛡", points: 10 },
+  { id: "key", label: "Key", icon: "🗝", points: 10 },
+  { id: "puzzle", label: "Puzzle", icon: "🧩", points: 10 },
+  { id: "rocket", label: "Rocket", icon: "🚀", points: 15 },
+  { id: "monster", label: "Monster", icon: "👾", points: -10 },
+  { id: "dragon", label: "Dragon", icon: "🐉", points: -15 },
+];
 
 function isCoach(role: Role) {
   return role === "admin" || role === "instructor";
@@ -168,6 +188,14 @@ function pieceSymbol(piece: string) {
   return map[piece] || piece;
 }
 
+function isGamifiedObjectId(value: string): value is GamifiedObjectId {
+  return gamifiedObjects.some((object) => object.id === value);
+}
+
+function getGamifiedObject(id: GamifiedObjectId) {
+  return gamifiedObjects.find((object) => object.id === id) || gamifiedObjects[0];
+}
+
 function minutesBetween(start?: string | Date, end?: string | Date) {
   if (!start || !end) return 0;
   return Math.max(0, Math.round((new Date(end).getTime() - new Date(start).getTime()) / 60000));
@@ -186,6 +214,10 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
   const [previewPgn, setPreviewPgn] = useState<any>(null);
   const [challengeTimer, setChallengeTimer] = useState(60);
   const [selectedPiece, setSelectedPiece] = useState("wQ");
+  const [setupTab, setSetupTab] = useState<SetupTab>("pieces");
+  const [gamifiedSetup, setGamifiedSetup] = useState<Record<string, GamifiedObjectId>>({});
+  const [selectedObject, setSelectedObject] = useState<GamifiedObjectId | "delete">("star");
+  const [draggedObjectSquare, setDraggedObjectSquare] = useState<string | null>(null);
   const [setupOpen, setSetupOpen] = useState(false);
   const [pgnOpen, setPgnOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
@@ -250,7 +282,8 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
 
   useEffect(() => {
     setSetupPosition(fenToPosition(live?.fen));
-  }, [live?.fen, live?.setupMode]);
+    setGamifiedSetup(live?.gamifiedObjects || {});
+  }, [live?.fen, live?.setupMode, live?.gamifiedObjects]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -326,13 +359,21 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
     try {
       const move = game.move({ from: source, to: target, promotion: "q" });
       if (!move) return false;
+      const collectedObjectId = live?.gamifiedObjects?.[target] as GamifiedObjectId | undefined;
+      const nextGamifiedObjects = collectedObjectId ? { ...(live?.gamifiedObjects || {}) } : live?.gamifiedObjects;
+      if (collectedObjectId && nextGamifiedObjects) delete nextGamifiedObjects[target];
       patch({
         fen: game.fen(),
+        gamifiedObjects: nextGamifiedObjects,
         moveHistory: [...(live?.moveHistory || []), move.san],
         mode: live?.mode === "one_move_challenge" ? "teaching" : live?.mode,
         boardControlStudents: live?.mode === "one_move_challenge" ? [] : live?.boardControlStudents?.map((s: any) => s._id || s),
         challenge: live?.mode === "one_move_challenge" ? { active: false } : live?.challenge,
       });
+      if (collectedObjectId) {
+        const object = getGamifiedObject(collectedObjectId);
+        toast.success(`${object.icon} ${object.label} collected: ${object.points > 0 ? "+" : ""}${object.points} points`);
+      }
       playMoveSound(live?.soundEnabled);
       return true;
     } catch {
@@ -363,6 +404,15 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
   }
 
   function onSetupSquareClick(square: string) {
+    if (setupTab === "objects") {
+      setGamifiedSetup((current) => {
+        const next = { ...current };
+        if (selectedObject === "delete") delete next[square];
+        else next[square] = selectedObject;
+        return next;
+      });
+      return;
+    }
     const next = { ...setupPosition };
     if (selectedPiece === "erase") delete next[square];
     else next[square] = selectedPiece;
@@ -371,8 +421,32 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
 
   function loadSetupIntoClassroom() {
     const sideToMove = live?.fen?.split(" ")?.[1] || "w";
-    patch({ fen: positionToFen(setupPosition, sideToMove), setupMode: false, pgn: "", pgnTitle: "Custom Position", pgnMoves: [], pgnMoveIndex: 0, moveHistory: [], drawings: [] });
+    patch({ fen: positionToFen(setupPosition, sideToMove), gamifiedObjects: gamifiedSetup, setupMode: false, pgn: "", pgnTitle: "Custom Position", pgnMoves: [], pgnMoveIndex: 0, moveHistory: [], drawings: [] });
     setSetupOpen(false);
+  }
+
+  function moveGamifiedObject(targetSquare: string) {
+    setGamifiedSetup((current) => {
+      const next = { ...current };
+      if (draggedObjectSquare && current[draggedObjectSquare]) {
+        next[targetSquare] = current[draggedObjectSquare];
+        delete next[draggedObjectSquare];
+      } else if (selectedObject !== "delete") {
+        next[targetSquare] = selectedObject;
+      } else {
+        delete next[targetSquare];
+      }
+      return next;
+    });
+    setDraggedObjectSquare(null);
+  }
+
+  function deleteGamifiedObject(square: string) {
+    setGamifiedSetup((current) => {
+      const next = { ...current };
+      delete next[square];
+      return next;
+    });
   }
 
   function loadSetupText() {
@@ -798,6 +872,7 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
   const orientation = (live?.orientation || "white") as "white" | "black";
   const files = coordinateFiles(orientation);
   const ranks = coordinateRanks(orientation);
+  const setupBoardSize = Math.min(420, Math.max(320, boardWidth));
 
   return (
     <div className="flex h-[calc(100vh-92px)] min-h-[640px] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg shadow-brand/10">
@@ -871,6 +946,7 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
                     customLightSquareStyle={{ backgroundColor: "#f1d9aa" }}
                     customBoardStyle={{ borderRadius: "4px", overflow: "hidden" }}
                   />
+                  <GamifiedBoardOverlay objects={live?.gamifiedObjects || {}} boardWidth={boardWidth} orientation={orientation} />
                 </div>
                 {live?.showCoordinates !== false && (
                   <>
@@ -1230,50 +1306,93 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
 
       {setupOpen && coach && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
-          <div className="max-h-[92vh] w-full max-w-5xl overflow-auto rounded-lg bg-white p-5 shadow-2xl">
+          <div className="max-h-[92vh] w-full max-w-6xl overflow-auto rounded-2xl bg-white p-5 shadow-2xl">
             <div className="mb-4 flex items-start justify-between gap-4">
               <div>
-                <h3 className="text-xl font-semibold text-slate-950">Setup Board</h3>
-                <p className="text-sm text-slate-500">Prepare the position here. The live board changes only when you load it into the classroom.</p>
+                <h3 className="text-xl font-semibold text-slate-950">Customize Position</h3>
+                <p className="text-sm text-slate-500">Chess pieces and gamified objects are separate layers. Objects can be collected without changing legal chess movement.</p>
               </div>
               <button onClick={() => setSetupOpen(false)} className="grid h-9 w-9 place-items-center rounded-md border border-slate-200"><X size={16} /></button>
             </div>
-            <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_290px]">
-              <div className="mx-auto rounded-lg border border-slate-200 bg-[#f6f2ea] p-3">
+            <div className="grid gap-6 lg:grid-cols-[440px_minmax(0,1fr)]">
+              <div>
+                <div className="mb-4 inline-flex rounded-xl bg-slate-100 p-1">
+                  <button onClick={() => setSetupTab("pieces")} className={`rounded-lg px-5 py-2 text-sm font-semibold ${setupTab === "pieces" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500"}`}>Chess Pieces</button>
+                  <button onClick={() => setSetupTab("objects")} className={`rounded-lg px-5 py-2 text-sm font-semibold ${setupTab === "objects" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500"}`}>Gamified Objects</button>
+                </div>
+                {setupTab === "pieces" && <div className="mb-3 grid grid-cols-7 gap-2">
+                  {["wP", "wN", "wB", "wR", "wQ", "wK"].map((piece) => (
+                    <button key={piece} onClick={() => setSelectedPiece(piece)} className={`h-11 rounded-md border text-2xl ${selectedPiece === piece ? "border-purple-700 bg-purple-700 text-white" : "border-slate-200 bg-white"}`}>{pieceSymbol(piece)}</button>
+                  ))}
+                  <button onClick={() => setSelectedPiece("erase")} className={`h-11 rounded-md border text-xs font-bold ${selectedPiece === "erase" ? "border-red-500 bg-red-50 text-red-700" : "border-slate-200 bg-white"}`}>Del</button>
+                </div>}
+                <div className="relative mx-auto w-fit overflow-hidden rounded-lg border border-slate-200 bg-[#f6f2ea] p-2">
                 <Chessboard
                   id={`setup-board-${classroomId}`}
                   position={setupPosition as any}
-                  boardWidth={Math.min(560, Math.max(320, boardWidth))}
+                  boardWidth={setupBoardSize}
                   boardOrientation={orientation}
                   onPieceDrop={onSetupDrop}
                   onPieceDropOffBoard={onSetupDropOffBoard as any}
                   onSquareClick={onSetupSquareClick as any}
                   showBoardNotation
                   dropOffBoardAction="trash"
-                  arePiecesDraggable
+                  arePiecesDraggable={setupTab === "pieces"}
                   customDarkSquareStyle={{ backgroundColor: "#b9875f" }}
                   customLightSquareStyle={{ backgroundColor: "#f1d9aa" }}
                 />
-              </div>
-              <div className="space-y-4">
-                <div>
-                  <div className="mb-2 text-sm font-semibold text-slate-950">Piece Palette</div>
-                  <div className="grid grid-cols-3 gap-2">
-                    {[
-                      ["wK", "White King"], ["wQ", "White Queen"], ["wR", "White Rook"], ["wB", "White Bishop"], ["wN", "White Knight"], ["wP", "White Pawn"],
-                      ["bK", "Black King"], ["bQ", "Black Queen"], ["bR", "Black Rook"], ["bB", "Black Bishop"], ["bN", "Black Knight"], ["bP", "Black Pawn"],
-                    ].map(([piece, label]) => (
-                      <button
-                        key={piece}
-                        onClick={() => setSelectedPiece(piece)}
-                        title={label}
-                        className={`h-14 rounded-md border text-3xl leading-none ${selectedPiece === piece ? "border-purple-700 bg-purple-700 text-white" : "border-slate-200 bg-white text-slate-950"}`}
-                      >
-                        {pieceSymbol(piece)}
-                      </button>
-                    ))}
-                  </div>
+                <GamifiedSetupOverlay
+                  objects={gamifiedSetup}
+                  selected={selectedObject}
+                  boardWidth={setupBoardSize}
+                  orientation={orientation}
+                  enabled={setupTab === "objects"}
+                  onPlace={moveGamifiedObject}
+                  onDelete={deleteGamifiedObject}
+                  onDragStart={setDraggedObjectSquare}
+                  onDragEnd={() => setDraggedObjectSquare(null)}
+                />
                 </div>
+                {setupTab === "pieces" && <div className="mt-3 grid grid-cols-7 gap-2">
+                  {["bP", "bN", "bB", "bR", "bQ", "bK"].map((piece) => (
+                    <button key={piece} onClick={() => setSelectedPiece(piece)} className={`h-11 rounded-md border bg-slate-950 text-2xl text-white ${selectedPiece === piece ? "ring-2 ring-purple-500" : "border-slate-800"}`}>{pieceSymbol(piece)}</button>
+                  ))}
+                  <button onClick={() => setSelectedPiece("erase")} className={`h-11 rounded-md border text-xs font-bold ${selectedPiece === "erase" ? "border-red-500 bg-red-50 text-red-700" : "border-slate-200 bg-white"}`}>Del</button>
+                </div>}
+                <button onClick={setupTab === "objects" ? () => setSelectedObject("delete") : () => setSelectedPiece("erase")} className={`mt-3 flex min-h-12 w-full items-center justify-center gap-2 rounded-md border border-dashed text-sm font-semibold ${setupTab === "objects" && selectedObject === "delete" ? "border-red-400 bg-red-50 text-red-700" : "border-slate-300 text-slate-600"}`}>
+                  <Trash2 size={17} /> Delete {setupTab === "objects" ? "objects" : "pieces"}
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                {setupTab === "objects" ? (
+                  <div>
+                    <div className="mb-3 text-sm font-semibold text-slate-950">Gamified Objects</div>
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                      {gamifiedObjects.map((object) => (
+                        <button key={object.id} onClick={() => setSelectedObject(object.id)} className={`flex min-h-24 flex-col items-center justify-center rounded-xl border px-3 py-3 text-center transition ${selectedObject === object.id ? "border-purple-700 bg-purple-50 text-purple-900 ring-2 ring-purple-100" : "border-slate-200 bg-white hover:border-purple-300"}`}>
+                          <span className="text-3xl">{object.icon}</span>
+                          <span className="mt-2 text-sm font-bold">{object.label}</span>
+                          <span className="text-xs text-slate-500">{object.points > 0 ? "+" : ""}{object.points} points</span>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="font-semibold text-slate-950">Object behavior</div>
+                      <div className="mt-2 grid gap-2 text-sm text-slate-600">
+                        <div>Name: {selectedObject === "delete" ? "Delete objects" : getGamifiedObject(selectedObject).label}</div>
+                        <div>Value: {selectedObject === "delete" ? "Removes object" : `${getGamifiedObject(selectedObject).points} points`}</div>
+                        <div>On capture: Disappear</div>
+                        <div>Animation: Points popup</div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="font-semibold text-slate-950">Chess layer</div>
+                    <p className="mt-1 text-sm text-slate-500">Use real chess pieces here. These become FEN and continue to follow normal chess rules.</p>
+                  </div>
+                )}
                 <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
                   <label className="text-xs font-semibold text-slate-600">Paste PGN or FEN</label>
                   <textarea
@@ -1286,8 +1405,8 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <button onClick={() => setSelectedPiece("erase")} className={`inline-flex h-10 items-center justify-center gap-2 rounded-md border px-3 text-sm font-semibold ${selectedPiece === "erase" ? "border-red-500 bg-red-50 text-red-700" : "border-slate-200 bg-white text-slate-800"}`}><X size={15} /> Remove</button>
-                  <button onClick={() => setSetupPosition({})} className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-200 px-3 text-sm font-semibold"><Eraser size={15} /> Clear</button>
-                  <button onClick={() => setSetupPosition(fenToPosition("start"))} className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-200 px-3 text-sm font-semibold"><RotateCcw size={15} /> Reset</button>
+                  <button onClick={() => { setSetupPosition({}); setGamifiedSetup({}); }} className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-200 px-3 text-sm font-semibold"><Eraser size={15} /> Clear</button>
+                  <button onClick={() => { setSetupPosition(fenToPosition("start")); setGamifiedSetup({}); }} className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-200 px-3 text-sm font-semibold"><RotateCcw size={15} /> Reset</button>
                   <button onClick={() => navigator.clipboard?.writeText(positionToFen(setupPosition, live?.fen?.split(" ")?.[1] || "w")).then(() => toast.success("FEN copied"))} className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-200 px-3 text-sm font-semibold"><Download size={15} /> Export</button>
                 </div>
                 <button onClick={loadSetupIntoClassroom} className="h-11 w-full rounded-md bg-purple-700 text-sm font-semibold text-white">Load Position into Classroom</button>
@@ -1356,6 +1475,113 @@ function SummaryCard({ label, value, icon }: { label: string; value: string | nu
     <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
       <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{icon}{label}</div>
       <div className="mt-1 text-xl font-bold text-slate-950">{value}</div>
+    </div>
+  );
+}
+
+function orderedSquares(orientation: "white" | "black") {
+  const fileList = orientation === "white" ? "abcdefgh".split("") : "hgfedcba".split("");
+  const rankList = orientation === "white" ? "87654321".split("") : "12345678".split("");
+  return rankList.flatMap((rank) => fileList.map((file) => `${file}${rank}`));
+}
+
+function GamifiedBoardOverlay({ objects, boardWidth, orientation }: { objects: Record<string, GamifiedObjectId>; boardWidth: number; orientation: "white" | "black" }) {
+  const squareSize = boardWidth / 8;
+  return (
+    <div className="pointer-events-none absolute inset-0 grid grid-cols-8 grid-rows-8">
+      {orderedSquares(orientation).map((square) => {
+        const objectId = objects?.[square];
+        const object = objectId ? getGamifiedObject(objectId) : null;
+        return (
+          <div key={square} className="flex items-center justify-center">
+            {object && (
+              <span
+                className="flex items-center justify-center rounded-full bg-white/95 shadow-lg ring-2 ring-black/10"
+                style={{ width: squareSize * 0.62, height: squareSize * 0.62, fontSize: squareSize * 0.34 }}
+                title={`${object.label}: ${object.points} points`}
+              >
+                {object.icon}
+              </span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function GamifiedSetupOverlay({
+  objects,
+  selected,
+  boardWidth,
+  orientation,
+  enabled,
+  onPlace,
+  onDelete,
+  onDragStart,
+  onDragEnd,
+}: {
+  objects: Record<string, GamifiedObjectId>;
+  selected: GamifiedObjectId | "delete";
+  boardWidth: number;
+  orientation: "white" | "black";
+  enabled: boolean;
+  onPlace: (square: string) => void;
+  onDelete: (square: string) => void;
+  onDragStart: (square: string) => void;
+  onDragEnd: () => void;
+}) {
+  const squareSize = boardWidth / 8;
+  return (
+    <div className={`absolute inset-2 grid grid-cols-8 grid-rows-8 ${enabled ? "" : "pointer-events-none"}`}>
+      {orderedSquares(orientation).map((square) => {
+        const objectId = objects?.[square];
+        const object = objectId ? getGamifiedObject(objectId) : null;
+        return (
+          <button
+            key={square}
+            type="button"
+            className="relative flex items-center justify-center"
+            onClick={(event) => {
+              event.stopPropagation();
+              if (selected === "delete") onDelete(square);
+              else onPlace(square);
+            }}
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onPlace(square);
+            }}
+            aria-label={object ? `${object.label} on ${square}` : `Place object on ${square}`}
+          >
+            {object && (
+              <span
+                draggable
+                className="flex cursor-grab items-center justify-center rounded-full bg-white/95 shadow-lg ring-2 ring-black/10 active:cursor-grabbing"
+                style={{ width: squareSize * 0.68, height: squareSize * 0.68, fontSize: squareSize * 0.38 }}
+                title={`${object.label}: ${object.points} points`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  if (selected === "delete") onDelete(square);
+                  else onPlace(square);
+                }}
+                onDoubleClick={(event) => {
+                  event.stopPropagation();
+                  onDelete(square);
+                }}
+                onDragStart={(event) => {
+                  event.stopPropagation();
+                  onDragStart(square);
+                }}
+                onDragEnd={onDragEnd}
+              >
+                {object.icon}
+              </span>
+            )}
+          </button>
+        );
+      })}
     </div>
   );
 }

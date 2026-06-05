@@ -37,7 +37,7 @@ type PieceCode = "p" | "n" | "b" | "r" | "q" | "k" | "P" | "N" | "B" | "R" | "Q"
 type SetupTab = "general" | "gamified";
 type PieceTheme = "classic" | "alpha" | "neo";
 type BoardTheme = "walnut" | "green" | "blue" | "purple" | "slate";
-type GamifiedObjectId = "coin" | "star" | "gem" | "target" | "treasure" | "apple" | "burger" | "bear" | "puppy" | "trophy" | "smile" | "barrier" | "wall" | "rock" | "log";
+type GamifiedObjectId = "coin" | "star" | "gem" | "target" | "treasure" | "apple" | "burger" | "bear" | "puppy" | "trophy" | "smile" | "fire" | "gift" | "shield" | "key" | "puzzle" | "rocket" | "monster" | "dragon" | "barrier" | "wall" | "rock" | "log";
 type SetupSelection = PieceCode | "delete" | GamifiedObjectId;
 
 type MoveRow = {
@@ -88,6 +88,14 @@ const gamifiedObjects: GamifiedObject[] = [
   { id: "target", label: "Target", icon: "\uD83C\uDFAF", group: "Rewards" },
   { id: "treasure", label: "Treasure", icon: "\uD83C\uDF81", group: "Rewards" },
   { id: "trophy", label: "Trophy", icon: "\uD83C\uDFC6", group: "Rewards" },
+  { id: "fire", label: "Fire", icon: "\uD83D\uDD25", group: "Rewards" },
+  { id: "gift", label: "Gift Box", icon: "\uD83C\uDF81", group: "Rewards" },
+  { id: "shield", label: "Shield", icon: "\uD83D\uDEE1", group: "Rewards" },
+  { id: "key", label: "Key", icon: "\uD83D\uDDDD", group: "Rewards" },
+  { id: "puzzle", label: "Puzzle", icon: "\uD83E\uDDE9", group: "Toys" },
+  { id: "rocket", label: "Rocket", icon: "\uD83D\uDE80", group: "Toys" },
+  { id: "monster", label: "Monster", icon: "\uD83D\uDC7E", group: "Animals" },
+  { id: "dragon", label: "Dragon", icon: "\uD83D\uDC09", group: "Animals" },
   { id: "smile", label: "Smile", icon: "\uD83D\uDE0A", group: "Emoji" },
   { id: "barrier", label: "Barrier", icon: "\uD83D\uDEA7", group: "Blocks" },
   { id: "wall", label: "Wall", icon: "\uD83E\uDDF1", group: "Blocks" },
@@ -957,7 +965,7 @@ function SetupDialog({
 
   const fen = buildFen(setup, turn, castling);
   const setupPieceTheme = pieceTheme;
-  const setupBoardTheme = setupTab === "gamified" ? "purple" : boardTheme;
+  const setupBoardTheme = boardTheme;
   const setupCustomPieces = useMemo(() => createCustomPieces(setupPieceTheme), [setupPieceTheme]);
 
   function place(square: string) {

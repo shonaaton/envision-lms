@@ -40,6 +40,7 @@ const ClassroomSessionSchema = new Schema(
         color: { type: String, default: "#7c1fa2" },
       },
     ],
+    gamifiedObjects: { type: Schema.Types.Mixed, default: {} },
     locked: { type: Boolean, default: false },
     startedAt: { type: Date, default: Date.now },
     endedAt: Date,

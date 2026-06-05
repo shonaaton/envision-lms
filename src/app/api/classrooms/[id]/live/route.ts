@@ -99,6 +99,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     "selectedStudents",
     "boardControlStudents",
     "drawings",
+    "gamifiedObjects",
     "locked",
     "challenge",
   ];

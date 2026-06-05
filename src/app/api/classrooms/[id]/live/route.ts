@@ -54,7 +54,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     : [];
   const role = (session.user as any).role;
   const pgnFilter =
-    role === "admin"
+    canCoach(role)
       ? {}
       : {
           $or: [

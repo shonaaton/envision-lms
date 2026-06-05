@@ -52,13 +52,18 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
   const responses = activeQuestion
     ? await LiveQuestionResponse.find({ question: activeQuestion._id }).populate("student", "name username").sort({ submittedAt: -1 }).lean()
     : [];
-  const pgnLibrary = await PGN.find({
-    $or: [
-      { uploadedBy: (session.user as any).id },
-      { visibility: "classroom", classroom: params.id },
-      { visibility: "classroom" },
-    ],
-  })
+  const role = (session.user as any).role;
+  const pgnFilter =
+    role === "admin"
+      ? {}
+      : {
+          $or: [
+            { uploadedBy: (session.user as any).id },
+            { visibility: "classroom", classroom: params.id },
+            { visibility: "classroom" },
+          ],
+        };
+  const pgnLibrary = await PGN.find(pgnFilter)
     .select("title white black event result date folder pgn")
     .sort({ folder: 1, createdAt: -1 })
     .limit(80)

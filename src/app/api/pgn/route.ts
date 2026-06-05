@@ -46,7 +46,8 @@ export async function GET(req: Request) {
   await dbConnect();
   const url = new URL(req.url);
   const q = url.searchParams.get("q");
-  const filter: any = { uploadedBy: (session.user as any).id };
+  const role = (session.user as any).role;
+  const filter: any = role === "admin" ? {} : { uploadedBy: (session.user as any).id };
   if (q) filter.$text = { $search: q };
   const list = await PGN.find(filter).sort({ createdAt: -1 }).limit(100).lean();
   return NextResponse.json(list);

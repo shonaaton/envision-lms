@@ -281,9 +281,10 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
   const activeStudents = students.filter((student: any) => student?.status !== "inactive");
 
   useEffect(() => {
+    if (setupOpen) return;
     setSetupPosition(fenToPosition(live?.fen));
     setGamifiedSetup(live?.gamifiedObjects || {});
-  }, [live?.fen, live?.setupMode, live?.gamifiedObjects]);
+  }, [live?.fen, live?.setupMode, live?.gamifiedObjects, setupOpen]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -872,7 +873,7 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
   const orientation = (live?.orientation || "white") as "white" | "black";
   const files = coordinateFiles(orientation);
   const ranks = coordinateRanks(orientation);
-  const setupBoardSize = Math.min(420, Math.max(320, boardWidth));
+  const setupBoardSize = Math.min(340, Math.max(300, boardWidth));
 
   return (
     <div className="flex h-[calc(100vh-92px)] min-h-[640px] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg shadow-brand/10">
@@ -909,7 +910,7 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
             <ToggleButton active={!!live?.illegalMovesEnabled} icon={<ShieldAlert size={19} />} label="Allow illegal moves" onClick={() => patch({ illegalMovesEnabled: !live?.illegalMovesEnabled })} />
             <ToggleButton active={!!live?.showCoordinates} icon={<Grid2X2 size={19} />} label="Show coordinates" onClick={() => patch({ showCoordinates: !live?.showCoordinates })} />
             <ToggleButton active={!!live?.arrowsEnabled} icon={<Square size={19} />} label="Enable arrow drawing" onClick={() => patch({ arrowsEnabled: !live?.arrowsEnabled })} />
-            <ToggleButton active={setupOpen} icon={<Settings size={19} />} label="Setup Board" onClick={() => { setSetupPosition(fenToPosition(live?.fen)); setSetupOpen(true); }} />
+            <ToggleButton active={setupOpen} icon={<Settings size={19} />} label="Setup Board" onClick={() => { setSetupPosition(fenToPosition(live?.fen)); setGamifiedSetup(live?.gamifiedObjects || {}); setSetupOpen(true); }} />
             <ToolButton icon={<Eraser size={19} />} label="Clear Drawings" onClick={() => patch({ drawings: [] })} />
             <ToolButton icon={<FlipHorizontal size={19} />} label="Flip board" onClick={() => patch({ orientation: live?.orientation === "white" ? "black" : "white" })} />
             <ToggleButton active={!!live?.soundEnabled} icon={live?.soundEnabled ? <Volume2 size={19} /> : <VolumeX size={19} />} label="Piece sounds" onClick={() => patch({ soundEnabled: !live?.soundEnabled })} />
@@ -1306,25 +1307,25 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
 
       {setupOpen && coach && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
-          <div className="max-h-[92vh] w-full max-w-6xl overflow-auto rounded-2xl bg-white p-5 shadow-2xl">
-            <div className="mb-4 flex items-start justify-between gap-4">
+          <div className="max-h-[88vh] w-full max-w-5xl overflow-hidden rounded-2xl bg-white p-4 shadow-2xl">
+            <div className="mb-3 flex items-start justify-between gap-4">
               <div>
                 <h3 className="text-xl font-semibold text-slate-950">Customize Position</h3>
-                <p className="text-sm text-slate-500">Chess pieces and gamified objects are separate layers. Objects can be collected without changing legal chess movement.</p>
+                <p className="text-sm text-slate-500">Chess pieces and gamified objects are separate layers.</p>
               </div>
               <button onClick={() => setSetupOpen(false)} className="grid h-9 w-9 place-items-center rounded-md border border-slate-200"><X size={16} /></button>
             </div>
-            <div className="grid gap-6 lg:grid-cols-[440px_minmax(0,1fr)]">
+            <div className="grid max-h-[calc(88vh-92px)] gap-4 overflow-hidden lg:grid-cols-[370px_minmax(0,1fr)]">
               <div>
                 <div className="mb-4 inline-flex rounded-xl bg-slate-100 p-1">
                   <button onClick={() => setSetupTab("pieces")} className={`rounded-lg px-5 py-2 text-sm font-semibold ${setupTab === "pieces" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500"}`}>Chess Pieces</button>
                   <button onClick={() => setSetupTab("objects")} className={`rounded-lg px-5 py-2 text-sm font-semibold ${setupTab === "objects" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500"}`}>Gamified Objects</button>
                 </div>
-                {setupTab === "pieces" && <div className="mb-3 grid grid-cols-7 gap-2">
+                {setupTab === "pieces" && <div className="mb-2 grid grid-cols-7 gap-1.5">
                   {["wP", "wN", "wB", "wR", "wQ", "wK"].map((piece) => (
-                    <button key={piece} onClick={() => setSelectedPiece(piece)} className={`h-11 rounded-md border text-2xl ${selectedPiece === piece ? "border-purple-700 bg-purple-700 text-white" : "border-slate-200 bg-white"}`}>{pieceSymbol(piece)}</button>
+                    <button key={piece} onClick={() => setSelectedPiece(piece)} className={`h-9 rounded-md border text-xl ${selectedPiece === piece ? "border-purple-700 bg-purple-700 text-white" : "border-slate-200 bg-white"}`}>{pieceSymbol(piece)}</button>
                   ))}
-                  <button onClick={() => setSelectedPiece("erase")} className={`h-11 rounded-md border text-xs font-bold ${selectedPiece === "erase" ? "border-red-500 bg-red-50 text-red-700" : "border-slate-200 bg-white"}`}>Del</button>
+                  <button onClick={() => setSelectedPiece("erase")} className={`h-9 rounded-md border text-xs font-bold ${selectedPiece === "erase" ? "border-red-500 bg-red-50 text-red-700" : "border-slate-200 bg-white"}`}>Del</button>
                 </div>}
                 <div className="relative mx-auto w-fit overflow-hidden rounded-lg border border-slate-200 bg-[#f6f2ea] p-2">
                 <Chessboard
@@ -1353,31 +1354,31 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
                   onDragEnd={() => setDraggedObjectSquare(null)}
                 />
                 </div>
-                {setupTab === "pieces" && <div className="mt-3 grid grid-cols-7 gap-2">
+                {setupTab === "pieces" && <div className="mt-2 grid grid-cols-7 gap-1.5">
                   {["bP", "bN", "bB", "bR", "bQ", "bK"].map((piece) => (
-                    <button key={piece} onClick={() => setSelectedPiece(piece)} className={`h-11 rounded-md border bg-slate-950 text-2xl text-white ${selectedPiece === piece ? "ring-2 ring-purple-500" : "border-slate-800"}`}>{pieceSymbol(piece)}</button>
+                    <button key={piece} onClick={() => setSelectedPiece(piece)} className={`h-9 rounded-md border bg-slate-950 text-xl text-white ${selectedPiece === piece ? "ring-2 ring-purple-500" : "border-slate-800"}`}>{pieceSymbol(piece)}</button>
                   ))}
-                  <button onClick={() => setSelectedPiece("erase")} className={`h-11 rounded-md border text-xs font-bold ${selectedPiece === "erase" ? "border-red-500 bg-red-50 text-red-700" : "border-slate-200 bg-white"}`}>Del</button>
+                  <button onClick={() => setSelectedPiece("erase")} className={`h-9 rounded-md border text-xs font-bold ${selectedPiece === "erase" ? "border-red-500 bg-red-50 text-red-700" : "border-slate-200 bg-white"}`}>Del</button>
                 </div>}
-                <button onClick={setupTab === "objects" ? () => setSelectedObject("delete") : () => setSelectedPiece("erase")} className={`mt-3 flex min-h-12 w-full items-center justify-center gap-2 rounded-md border border-dashed text-sm font-semibold ${setupTab === "objects" && selectedObject === "delete" ? "border-red-400 bg-red-50 text-red-700" : "border-slate-300 text-slate-600"}`}>
+                <button onClick={setupTab === "objects" ? () => setSelectedObject("delete") : () => setSelectedPiece("erase")} className={`mt-2 flex min-h-10 w-full items-center justify-center gap-2 rounded-md border border-dashed text-sm font-semibold ${setupTab === "objects" && selectedObject === "delete" ? "border-red-400 bg-red-50 text-red-700" : "border-slate-300 text-slate-600"}`}>
                   <Trash2 size={17} /> Delete {setupTab === "objects" ? "objects" : "pieces"}
                 </button>
               </div>
 
-              <div className="space-y-4">
+              <div className="min-h-0 space-y-3 overflow-auto pr-1">
                 {setupTab === "objects" ? (
                   <div>
                     <div className="mb-3 text-sm font-semibold text-slate-950">Gamified Objects</div>
-                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                    <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
                       {gamifiedObjects.map((object) => (
-                        <button key={object.id} onClick={() => setSelectedObject(object.id)} className={`flex min-h-24 flex-col items-center justify-center rounded-xl border px-3 py-3 text-center transition ${selectedObject === object.id ? "border-purple-700 bg-purple-50 text-purple-900 ring-2 ring-purple-100" : "border-slate-200 bg-white hover:border-purple-300"}`}>
-                          <span className="text-3xl">{object.icon}</span>
-                          <span className="mt-2 text-sm font-bold">{object.label}</span>
+                        <button key={object.id} onClick={() => setSelectedObject(object.id)} className={`flex min-h-16 flex-col items-center justify-center rounded-xl border px-2 py-2 text-center transition ${selectedObject === object.id ? "border-purple-700 bg-purple-50 text-purple-900 ring-2 ring-purple-100" : "border-slate-200 bg-white hover:border-purple-300"}`}>
+                          <span className="text-2xl">{object.icon}</span>
+                          <span className="mt-1 text-xs font-bold">{object.label}</span>
                           <span className="text-xs text-slate-500">{object.points > 0 ? "+" : ""}{object.points} points</span>
                         </button>
                       ))}
                     </div>
-                    <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
                       <div className="font-semibold text-slate-950">Object behavior</div>
                       <div className="mt-2 grid gap-2 text-sm text-slate-600">
                         <div>Name: {selectedObject === "delete" ? "Delete objects" : getGamifiedObject(selectedObject).label}</div>
@@ -1393,7 +1394,7 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
                     <p className="mt-1 text-sm text-slate-500">Use real chess pieces here. These become FEN and continue to follow normal chess rules.</p>
                   </div>
                 )}
-                <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                {setupTab === "pieces" && <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
                   <label className="text-xs font-semibold text-slate-600">Paste PGN or FEN</label>
                   <textarea
                     value={setupLoadText}
@@ -1402,7 +1403,7 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
                     placeholder="Paste a PGN or FEN to load into this setup board"
                   />
                   <button onClick={loadSetupText} className="mt-2 h-10 w-full rounded-md border border-purple-200 bg-purple-50 text-sm font-semibold text-purple-800">Load into Setup Board</button>
-                </div>
+                </div>}
                 <div className="grid grid-cols-2 gap-2">
                   <button onClick={() => setSelectedPiece("erase")} className={`inline-flex h-10 items-center justify-center gap-2 rounded-md border px-3 text-sm font-semibold ${selectedPiece === "erase" ? "border-red-500 bg-red-50 text-red-700" : "border-slate-200 bg-white text-slate-800"}`}><X size={15} /> Remove</button>
                   <button onClick={() => { setSetupPosition({}); setGamifiedSetup({}); }} className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-200 px-3 text-sm font-semibold"><Eraser size={15} /> Clear</button>

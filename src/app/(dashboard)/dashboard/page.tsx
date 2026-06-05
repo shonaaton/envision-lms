@@ -11,20 +11,29 @@ import { PGN } from "@/models/PGN";
 import { User } from "@/models/User";
 import { Invoice } from "@/models/Fee";
 import { Tournament } from "@/models/Tournament";
+import { AskCoachConversation, AskCoachMessage } from "@/models/AskCoach";
+import { StudentReward } from "@/models/ClassroomLive";
+import { flattenScheduledSessions, formatJoinWindowLabel, isJoinWindowOpen } from "@/lib/classroomSessions";
 import {
   Activity as ActivityIcon,
+  ArrowRight,
   BarChart3,
+  BellRing,
   BookOpen,
   Calendar,
   CheckCircle2,
   CircleDollarSign,
   ClipboardList,
+  Flame,
   Gamepad2,
   GraduationCap,
+  MessageSquare,
+  PlayCircle,
   Search,
   TrendingUp,
   Users,
   Trophy,
+  Zap,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -81,8 +90,8 @@ function dateFilter(field: string, from: Date, to: Date) {
   return { [field]: { $gte: from, $lte: to } };
 }
 
-function formatDate(date: Date) {
-  return new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", year: "numeric" }).format(date);
+function formatDate(date: Date | string) {
+  return new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(date));
 }
 
 function formatTimeAgo(date: Date) {
@@ -104,6 +113,13 @@ function money(paise: number) {
 
 function compactNumber(value: number) {
   return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 1, notation: value > 9999 ? "compact" : "standard" }).format(value);
+}
+
+function formatDuration(minutes: number) {
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest ? `${hours}h ${rest}m` : `${hours}h`;
 }
 
 function objectId(value: any) {
@@ -161,6 +177,34 @@ function StatCard({ label, value, note, icon: Icon, tone = "purple" }: { label: 
   );
 }
 
+function InfoTile({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+      <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">{label}</div>
+      <div className="mt-1 text-sm font-semibold text-slate-950">{value}</div>
+    </div>
+  );
+}
+
+function QuickLinkCard({ href, title, subtitle, icon: Icon }: { href: string; title: string; subtitle: string; icon: any }) {
+  return (
+    <Link href={href} className="group rounded-2xl border border-slate-200 bg-slate-50 p-4 transition hover:-translate-y-0.5 hover:border-brand/20 hover:bg-white hover:shadow-lg hover:shadow-brand/10">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="font-black text-slate-950">{title}</div>
+          <div className="mt-1 text-sm text-slate-600">{subtitle}</div>
+        </div>
+        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand/10 text-brand">
+          <Icon size={18} />
+        </span>
+      </div>
+      <div className="mt-3 inline-flex items-center gap-2 text-sm font-bold text-brand">
+        Open <ArrowRight size={14} className="transition group-hover:translate-x-0.5" />
+      </div>
+    </Link>
+  );
+}
+
 function ActivityBadge({ type }: { type?: string }) {
   const safeType = String(type || "activity");
   const tone = safeType.includes("homework")
@@ -175,65 +219,386 @@ function ActivityBadge({ type }: { type?: string }) {
   return <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${tone}`}>{safeType.replace(".", " ")}</span>;
 }
 
-async function StandardDashboard({ userId, role }: { userId: string; role: string }) {
-  const classroomFilter = role === "instructor" ? { instructor: userId } : role === "student" ? { students: userId } : {};
-  const [classrooms, openHomework, upcomingBookings, tournaments] = await Promise.all([
-    Classroom.find(classroomFilter).limit(6).lean(),
-    Homework.find({}).limit(5).lean(),
-    Booking.find({ $or: [{ student: userId }, { instructor: userId }], startAt: { $gte: new Date() } })
-      .sort({ startAt: 1 })
-      .limit(5)
-      .lean(),
-    Tournament.find({
-      status: { $in: ["upcoming", "live"] },
-      startAt: { $gte: new Date(Date.now() - DAY) },
-      $or: [
-        { "access.users": userId },
-        { participants: userId },
-        { "access.allActiveStudents": true },
-      ],
-    }).sort({ startAt: 1 }).limit(6).lean(),
+async function computeStudentRank(userId: string) {
+  const [students, submissions, rewards] = await Promise.all([
+    User.find({ role: "student", isActive: { $ne: false } }).select("_id batches").lean(),
+    Submission.find({}).select("student totalScore").lean(),
+    StudentReward.find({}).select("student xp coins").lean(),
   ]);
 
-  const tiles = [
-    { label: "Classrooms", value: classrooms.length, icon: BookOpen, href: "/classrooms" },
-    { label: "Open Homework", value: openHomework.length, icon: ClipboardList, href: "/homework" },
-    { label: "Upcoming Sessions", value: upcomingBookings.length, icon: Calendar, href: "/booking" },
-  ];
+  const rows = students.map((student: any) => {
+    const id = objectId(student._id);
+    const score = submissions.filter((row: any) => objectId(row.student) === id).reduce((sum: number, row: any) => sum + (row.totalScore || 0), 0);
+    const xp = rewards.filter((row: any) => objectId(row.student) === id).reduce((sum: number, row: any) => sum + (row.xp || 0) + (row.coins || 0), 0);
+    return { id, batches: (student.batches || []).map(objectId), total: score + xp };
+  }).sort((a, b) => b.total - a.total);
+
+  const academyRank = rows.findIndex((row) => row.id === userId) + 1;
+  const studentRow = rows.find((row) => row.id === userId);
+  const batchPool = rows.filter((row) => row.batches.some((batch: string) => studentRow?.batches.includes(batch)));
+  const batchRank = batchPool.sort((a, b) => b.total - a.total).findIndex((row) => row.id === userId) + 1;
+
+  return {
+    academyRank: academyRank || "-",
+    batchRank: batchRank || "-",
+  };
+}
+
+function sessionTopic(session: any, classroom: any) {
+  return session?.topicName || classroom?.topicName || classroom?.title || "Class session";
+}
+
+function formatDateTimeLabel(value?: Date | string | null) {
+  if (!value) return "Not scheduled";
+  return new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }).format(new Date(value));
+}
+
+function joinLink(classroomId: string, sessionId: string) {
+  return `/classrooms/${classroomId}?session=${sessionId}`;
+}
+
+async function StudentDashboard({ userId }: { userId: string }) {
+  const now = new Date();
+  const [student, classrooms, homework, submissions, tournaments, rewards, attendance, conversations, messages] = await Promise.all([
+    User.findById(userId).populate("batches", "name level").lean(),
+    Classroom.find({ students: userId, isActive: { $ne: false } })
+      .populate("coach instructor", "name username")
+      .populate("batches", "name")
+      .lean(),
+    Homework.find({ isPublished: true }).sort({ dueAt: 1, createdAt: -1 }).lean(),
+    Submission.find({ student: userId }).lean(),
+    Tournament.find({
+      status: { $in: ["upcoming", "live"] },
+      $or: [
+        { "access.users": userId },
+        { "access.allActiveStudents": true },
+        { participants: userId },
+      ],
+    }).sort({ startAt: 1 }).limit(6).lean(),
+    StudentReward.find({ student: userId }).lean(),
+    Attendance.find({ "records.student": userId }).lean(),
+    AskCoachConversation.find({ $or: [{ student: userId }, { "participants.user": userId }] }).sort({ updatedAt: -1 }).limit(6).lean(),
+    AskCoachMessage.find({ receiver: userId }).sort({ createdAt: -1 }).limit(10).lean(),
+  ]);
+
+  const batchIds = ((student as any)?.batches || []).map((batch: any) => objectId(batch));
+  const classroomIds = classrooms.map((classroom: any) => objectId(classroom._id));
+  const visibleHomework = homework.filter((item: any) =>
+    (item.assignedStudents || []).some((studentId: any) => objectId(studentId) === userId) ||
+    (item.assignedBatches || []).some((batchId: any) => batchIds.includes(objectId(batchId))) ||
+    classroomIds.includes(objectId(item.classroom))
+  );
+  const upcomingSessions = flattenScheduledSessions(classrooms)
+    .filter((row) => row.start && (row.end?.getTime() || 0) >= now.getTime())
+    .sort((a, b) => (a.start?.getTime() || 0) - (b.start?.getTime() || 0));
+  const nextSession = upcomingSessions[0];
+  const activeHomework = visibleHomework.slice(0, 4);
+  const totalXp = rewards.reduce((sum: number, reward: any) => sum + (reward.xp || 0), 0);
+  const totalCoins = rewards.reduce((sum: number, reward: any) => sum + (reward.coins || 0), 0);
+  const totalBadges = rewards.filter((reward: any) => reward.badge).length;
+  const totalHomeworkScore = submissions.reduce((sum: number, submission: any) => sum + (submission.totalScore || 0), 0);
+  const homeworkCompleted = submissions.length;
+  const homeworkCompletion = percent(homeworkCompleted, Math.max(visibleHomework.length, 1));
+  const quizAccuracy = Math.round(submissions.reduce((sum: number, submission: any) => sum + (submission.accuracy || 0), 0) / Math.max(submissions.length, 1));
+  const attendanceRecords = attendance.flatMap((item: any) => item.records || []).filter((record: any) => objectId(record.student) === userId);
+  const attendancePresent = attendanceRecords.filter((record: any) => record.status === "present" || record.status === "late");
+  const attendancePct = percent(attendancePresent.length, Math.max(attendanceRecords.length, 1));
+  const currentStreak = submissions
+    .slice()
+    .sort((a: any, b: any) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime())
+    .reduce((streak: number, item: any, index: number, rows: any[]) => {
+      if (!index) return 1;
+      const diff = Math.round((startOfDay(new Date(rows[index - 1].submittedAt)).getTime() - startOfDay(new Date(item.submittedAt)).getTime()) / DAY);
+      return diff === 1 && streak === index ? streak + 1 : streak;
+    }, submissions.length ? 1 : 0);
+  const unreadCoachReplies = messages.filter((message: any) => !(message.readBy || []).some((entry: any) => objectId(entry.user) === userId)).length;
+  const heroSessionOpen = nextSession ? isJoinWindowOpen(nextSession.session, now) : false;
+  const studentRank = await computeStudentRank(userId);
 
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="font-display text-3xl text-accent">Dashboard</h1>
-        <p className="text-sm text-gray-400">Your snapshot of academy activity.</p>
-      </div>
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        {tiles.map((tile) => (
-          <Link key={tile.label} href={tile.href} className="card-hover flex items-center justify-between">
+    <div className="space-y-5 text-slate-950">
+      <section className="rounded-[28px] border border-brand/10 bg-white px-5 py-5 shadow-[0_24px_60px_rgba(90,19,114,0.12)]">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <div className="text-[11px] font-black uppercase tracking-[0.18em] text-brand/70">Student Workspace</div>
+            <h1 className="mt-1 text-3xl font-black text-brand">Welcome back, {(student as any)?.name || "Student"}</h1>
+            <p className="mt-1 text-sm text-slate-600">
+              Level: <span className="font-semibold text-slate-900">{(student as any)?.batches?.[0]?.level || "Not set"}</span>
+              <span className="mx-2 text-slate-300">•</span>
+              Batch: <span className="font-semibold text-slate-900">{(student as any)?.batches?.[0]?.name || "Not assigned"}</span>
+              <span className="mx-2 text-slate-300">•</span>
+              {formatDate(new Date())}
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <StatCard label="Upcoming Classes" value={upcomingSessions.length} note="Scheduled sessions" icon={Calendar} tone="purple" />
+            <StatCard label="Homework" value={activeHomework.length} note="Active assignments" icon={ClipboardList} tone="amber" />
+            <StatCard label="XP" value={totalXp} note="Learning points" icon={Zap} tone="blue" />
+            <StatCard label="Coins" value={totalCoins} note="Rewards earned" icon={Trophy} tone="green" />
+          </div>
+        </div>
+      </section>
+
+      <section className="grid gap-5 xl:grid-cols-[1.35fr_0.85fr]">
+        <div className="rounded-[28px] border border-brand/10 bg-[linear-gradient(135deg,rgba(90,19,114,1),rgba(124,31,162,0.92))] p-6 text-white shadow-[0_24px_60px_rgba(90,19,114,0.18)]">
+          <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <div className="text-sm text-gray-400">{tile.label}</div>
-              <div className="mt-1 text-3xl font-bold text-white">{tile.value}</div>
+              <div className="inline-flex items-center gap-2 rounded-full bg-white/12 px-3 py-1 text-[11px] font-black uppercase tracking-[0.18em] text-accent">
+                <BellRing size={14} />
+                Featured Activity
+              </div>
+              <h2 className="mt-4 text-3xl font-black">{nextSession ? sessionTopic(nextSession.session, nextSession.classroom) : "Stay sharp today"}</h2>
+              <p className="mt-2 max-w-2xl text-sm text-white/80">
+                {nextSession
+                  ? `${nextSession.classroom.courseName || "General class"} • ${nextSession.classroom.levelName || "Level not set"} • Coach ${(nextSession.classroom.coach as any)?.name || "Assigned coach"}`
+                  : "Your next class, homework, tournaments, and training challenges will show up here."}
+              </p>
             </div>
-            <tile.icon className="text-accent" size={32} />
-          </Link>
-        ))}
-      </div>
-      <section className="card">
-        <h2 className="mb-3 text-lg font-semibold text-white">Upcoming Tournaments</h2>
-        {tournaments.length === 0 ? (
-          <p className="text-sm text-gray-400">No upcoming tournaments available for you yet.</p>
-        ) : (
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            {tournaments.map((tournament: any) => (
-              <Link key={tournament._id.toString()} href={`/tournaments/${tournament._id}`} className="rounded-md border border-ink-700 p-3 hover:bg-white/5">
-                <div className="font-semibold text-white">{tournament.name}</div>
-                <div className="mt-1 text-xs text-gray-400">{tournament.type === "arena" ? "Arena" : "Swiss"} - {new Date(tournament.startAt).toLocaleString("en-IN")}</div>
-                <div className="mt-2 inline-flex rounded bg-brand px-2 py-1 text-xs text-white">{tournament.status}</div>
+            <span className="rounded-full bg-white/12 px-4 py-2 text-sm font-bold text-white/90">
+              {nextSession ? formatJoinWindowLabel(nextSession.session, now) : "No class scheduled"}
+            </span>
+          </div>
+          <div className="mt-6 flex flex-wrap gap-3">
+            {nextSession ? (
+              <>
+                {heroSessionOpen ? (
+                  <Link href={joinLink(objectId(nextSession.classroom._id), String(nextSession.session._id))} className="inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-3 text-sm font-black text-brand shadow-lg shadow-black/20">
+                    <PlayCircle size={16} /> Join Class
+                  </Link>
+                ) : (
+                  <button className="inline-flex items-center gap-2 rounded-xl bg-white/10 px-5 py-3 text-sm font-black text-white/70" disabled>
+                    <PlayCircle size={16} /> Join Class
+                  </button>
+                )}
+                {nextSession.classroom.meetingUrl && (
+                  heroSessionOpen ? (
+                    <a href={nextSession.classroom.meetingUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl border border-white/20 px-5 py-3 text-sm font-bold text-white">
+                      <Calendar size={16} /> Join Google Meet
+                    </a>
+                  ) : (
+                    <button className="inline-flex items-center gap-2 rounded-xl border border-white/15 px-5 py-3 text-sm font-bold text-white/60" disabled>
+                      <Calendar size={16} /> Join Google Meet
+                    </button>
+                  )
+                )}
+              </>
+            ) : (
+              <Link href="/square-trainer" className="inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-3 text-sm font-black text-brand shadow-lg shadow-black/20">
+                <Zap size={16} /> Play Square Trainer
               </Link>
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-[28px] border border-brand/10 bg-white p-5 shadow-[0_20px_50px_rgba(90,19,114,0.10)]">
+          <SectionTitle icon={Trophy} title="Ranking Snapshot" subtitle="Your current academy pulse" />
+          <div className="grid grid-cols-2 gap-3">
+            <InfoTile label="Batch Rank" value={studentRank.batchRank} />
+            <InfoTile label="Academy Rank" value={studentRank.academyRank} />
+            <InfoTile label="Badges" value={totalBadges} />
+            <InfoTile label="Homework Points" value={totalHomeworkScore} />
+          </div>
+          <div className="mt-4 rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
+            Recent performance: <span className="font-semibold text-slate-900">{quizAccuracy}% accuracy</span> with <span className="font-semibold text-slate-900">{currentStreak} day streak</span>.
+          </div>
+        </div>
+      </section>
+
+      <div className="grid gap-5 xl:grid-cols-[1.3fr_0.9fr]">
+        <section className="rounded-[28px] border border-brand/10 bg-white p-5 shadow-[0_20px_50px_rgba(90,19,114,0.10)]">
+          <SectionTitle icon={Calendar} title="Upcoming Classes" subtitle="Join only through your scheduled sessions" />
+          <div className="grid gap-3">
+            {upcomingSessions.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">No upcoming classes yet.</div>
+            ) : upcomingSessions.slice(0, 4).map(({ classroom, session }) => {
+              const canJoin = isJoinWindowOpen(session, now);
+              return (
+                <div key={`${classroom._id}-${session._id}`} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="text-lg font-black text-slate-950">{sessionTopic(session, classroom)}</div>
+                      <div className="mt-1 text-sm text-slate-600">{classroom.courseName || "General"} • {classroom.levelName || "Not set"} • Coach {(classroom.coach as any)?.name || "Assigned coach"}</div>
+                    </div>
+                    <span className={canJoin ? "chip bg-emerald-50 text-emerald-700" : "chip"}>{formatJoinWindowLabel(session, now)}</span>
+                  </div>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                    <InfoTile label="Date" value={formatDate(String(session.scheduledFor || classroom.classDate || classroom.startDate || ""))} />
+                    <InfoTile label="Time" value={session.startTime || classroom.startTime || "--"} />
+                    <InfoTile label="Duration" value={formatDuration(session.durationMinutes || classroom.durationMinutes || 60)} />
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {canJoin ? <Link href={joinLink(objectId(classroom._id), String(session._id))} className="btn-primary">Join Classroom</Link> : <button className="btn-outline opacity-60" disabled>Join Classroom</button>}
+                    {classroom.meetingUrl && (canJoin ? <a href={classroom.meetingUrl} target="_blank" rel="noreferrer" className="btn-outline">Join Google Meet</a> : <button className="btn-outline opacity-60" disabled>Join Google Meet</button>)}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="space-y-5">
+          <div className="rounded-[28px] border border-brand/10 bg-white p-5 shadow-[0_20px_50px_rgba(90,19,114,0.10)]">
+            <SectionTitle icon={ClipboardList} title="Current Homework" subtitle="What needs attention next" />
+            <div className="space-y-3">
+              {activeHomework.length === 0 ? <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">No active homework right now.</div> : activeHomework.map((item: any) => {
+                const submission = submissions.find((row: any) => objectId(row.homework) === objectId(item._id));
+                return (
+                  <div key={objectId(item._id)} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="font-black text-slate-950">{item.title}</div>
+                        <div className="mt-1 text-xs text-slate-500">Due {item.dueAt ? formatDate(new Date(item.dueAt)) : "Any time"}</div>
+                      </div>
+                      <span className="chip">{submission ? "Submitted" : "Active"}</span>
+                    </div>
+                    <div className="mt-3 flex items-center justify-between gap-3">
+                      <div className="text-sm text-slate-600">{(item.activities || []).length || (item.puzzles || []).length} activity items</div>
+                      <Link href={`/homework/${item._id}`} className="btn-outline">{submission ? "View" : "Start"}</Link>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="rounded-[28px] border border-brand/10 bg-white p-5 shadow-[0_20px_50px_rgba(90,19,114,0.10)]">
+            <SectionTitle icon={MessageSquare} title="Ask Coach" subtitle="Quick access to support" />
+            <div className="rounded-2xl bg-slate-50 p-4">
+              <div className="text-sm text-slate-600">Recent conversations: <span className="font-semibold text-slate-900">{conversations.length}</span></div>
+              <div className="mt-2 text-sm text-slate-600">Unread replies: <span className="font-semibold text-slate-900">{unreadCoachReplies}</span></div>
+              <Link href="/ask-coach" className="btn-primary mt-4 inline-flex">Open Ask Coach</Link>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-3">
+        <section className="rounded-[28px] border border-brand/10 bg-white p-5 shadow-[0_20px_50px_rgba(90,19,114,0.10)]">
+          <SectionTitle icon={Gamepad2} title="Training Tools" subtitle="Student practice only" />
+          <div className="grid gap-3">
+            <QuickLinkCard href="/square-trainer" title="Square Trainer" subtitle="Build board vision and earn XP" icon={Zap} />
+            <QuickLinkCard href="/play/computer" title="Play vs Computer" subtitle="Practice with a guided engine opponent" icon={PlayCircle} />
+            <QuickLinkCard href="/leaderboard" title="Leaderboards" subtitle="Track academy and batch rank" icon={Trophy} />
+          </div>
+        </section>
+
+        <section className="rounded-[28px] border border-brand/10 bg-white p-5 shadow-[0_20px_50px_rgba(90,19,114,0.10)]">
+          <SectionTitle icon={Trophy} title="Tournaments" subtitle="Assigned events only" />
+          <div className="space-y-3">
+            {tournaments.length === 0 ? <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">No tournaments available right now.</div> : tournaments.slice(0, 3).map((tournament: any) => (
+              <div key={objectId(tournament._id)} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="font-black text-slate-950">{tournament.name}</div>
+                <div className="mt-1 text-sm text-slate-600">{tournament.type === "arena" ? "Arena" : "Swiss"} • {formatDateTimeLabel(tournament.startAt)}</div>
+                <div className="mt-3"><Link href={`/tournaments/${tournament._id}`} className="btn-outline">View Details</Link></div>
+              </div>
             ))}
           </div>
-        )}
+        </section>
+
+        <section className="rounded-[28px] border border-brand/10 bg-white p-5 shadow-[0_20px_50px_rgba(90,19,114,0.10)]">
+          <SectionTitle icon={Flame} title="Progress Snapshot" subtitle="A quick read on your momentum" />
+          <div className="grid grid-cols-2 gap-3">
+            <InfoTile label="Homework" value={`${homeworkCompletion}%`} />
+            <InfoTile label="Accuracy" value={`${quizAccuracy}%`} />
+            <InfoTile label="Attendance" value={`${attendancePct}%`} />
+            <InfoTile label="Streak" value={`${currentStreak} days`} />
+            <InfoTile label="Classes Attended" value={attendancePresent.length} />
+            <InfoTile label="Badges" value={totalBadges} />
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+async function CoachDashboard({ userId }: { userId: string }) {
+  const now = new Date();
+  const [classrooms, homework, tournaments] = await Promise.all([
+    Classroom.find({ $or: [{ coach: userId }, { instructor: userId }], isActive: { $ne: false } })
+      .populate("students", "name")
+      .populate("batches", "name")
+      .lean(),
+    Homework.find({ instructor: userId }).sort({ dueAt: 1, createdAt: -1 }).limit(6).lean(),
+    Tournament.find({ status: { $in: ["upcoming", "live"] } }).sort({ startAt: 1 }).limit(4).lean(),
+  ]);
+
+  const sessions = flattenScheduledSessions(classrooms)
+    .filter((row) => row.start && (row.end?.getTime() || 0) >= now.getTime())
+    .sort((a, b) => (a.start?.getTime() || 0) - (b.start?.getTime() || 0));
+
+  return (
+    <div className="space-y-5 text-slate-950">
+      <section className="rounded-[28px] border border-brand/10 bg-white px-5 py-5 shadow-[0_24px_60px_rgba(90,19,114,0.12)]">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <div className="text-[11px] font-black uppercase tracking-[0.18em] text-brand/70">Coach Workspace</div>
+            <h1 className="mt-1 text-3xl font-black text-brand">Teaching Dashboard</h1>
+            <p className="mt-1 text-sm text-slate-600">Your scheduled classes, assigned students, and classroom entry points all in one place.</p>
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <StatCard label="Next Sessions" value={sessions.length} note="Upcoming schedule" icon={Calendar} tone="purple" />
+            <StatCard label="Classes" value={classrooms.length} note="Assigned classrooms" icon={BookOpen} tone="blue" />
+            <StatCard label="Homework" value={homework.length} note="Assignments created" icon={ClipboardList} tone="amber" />
+            <StatCard label="Students" value={new Set(classrooms.flatMap((item: any) => (item.students || []).map((student: any) => objectId(student)))).size} note="Learners assigned" icon={Users} tone="green" />
+          </div>
+        </div>
       </section>
+
+      <div className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
+        <section className="rounded-[28px] border border-brand/10 bg-white p-5 shadow-[0_20px_50px_rgba(90,19,114,0.10)]">
+          <SectionTitle icon={Calendar} title="Upcoming Sessions" subtitle="Join the right session at the right time" />
+          <div className="space-y-3">
+            {sessions.length === 0 ? <div className="rounded-2xl bg-slate-50 p-5 text-sm text-slate-500">No upcoming classes scheduled.</div> : sessions.slice(0, 6).map(({ classroom, session }) => {
+              const canJoin = isJoinWindowOpen(session, now);
+              const targetNames = (classroom.batches || []).map((batch: any) => batch.name).join(", ") || `${classroom.students?.length || 0} students`;
+              return (
+                <div key={`${classroom._id}-${session._id}`} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="text-lg font-black text-slate-950">{classroom.title}</div>
+                      <div className="mt-1 text-sm text-slate-600">{sessionTopic(session, classroom)} • {targetNames}</div>
+                    </div>
+                    <span className={canJoin ? "chip bg-emerald-50 text-emerald-700" : "chip"}>{formatJoinWindowLabel(session, now)}</span>
+                  </div>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                    <InfoTile label="Date" value={formatDate(String(session.scheduledFor || classroom.classDate || classroom.startDate || ""))} />
+                    <InfoTile label="Time" value={session.startTime || classroom.startTime || "--"} />
+                    <InfoTile label="Duration" value={formatDuration(session.durationMinutes || classroom.durationMinutes || 60)} />
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {canJoin ? <Link href={joinLink(objectId(classroom._id), String(session._id))} className="btn-primary">Join Classroom</Link> : <button className="btn-outline opacity-60" disabled>Join Classroom</button>}
+                    {classroom.meetingUrl && (canJoin ? <a href={classroom.meetingUrl} target="_blank" rel="noreferrer" className="btn-outline">Join Google Meet</a> : <button className="btn-outline opacity-60" disabled>Join Google Meet</button>)}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="space-y-5">
+          <div className="rounded-[28px] border border-brand/10 bg-white p-5 shadow-[0_20px_50px_rgba(90,19,114,0.10)]">
+            <SectionTitle icon={ClipboardList} title="Homework Queue" subtitle="Published work under your classes" />
+            <div className="space-y-3">
+              {homework.length === 0 ? <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">No homework assigned yet.</div> : homework.slice(0, 4).map((item: any) => (
+                <div key={objectId(item._id)} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="font-black text-slate-950">{item.title}</div>
+                  <div className="mt-1 text-sm text-slate-600">Due {item.dueAt ? formatDate(new Date(item.dueAt)) : "Any time"}</div>
+                  <div className="mt-3"><Link href="/homework" className="btn-outline">Open Homework</Link></div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-[28px] border border-brand/10 bg-white p-5 shadow-[0_20px_50px_rgba(90,19,114,0.10)]">
+            <SectionTitle icon={MessageSquare} title="Coach Tools" subtitle="Quick teaching actions" />
+            <div className="grid gap-3">
+              <QuickLinkCard href="/ask-coach" title="Ask Coach Inbox" subtitle="Reply to students and batches" icon={MessageSquare} />
+              <QuickLinkCard href="/classrooms" title="Teaching Schedule" subtitle="See all scheduled class entries" icon={Calendar} />
+              <QuickLinkCard href="/homework" title="Homework" subtitle="Check assignments and submissions" icon={ClipboardList} />
+            </div>
+          </div>
+        </section>
+      </div>
     </div>
   );
 }
@@ -245,9 +610,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
 
   await dbConnect();
 
-  if (role !== "admin") {
-    return <StandardDashboard userId={userId} role={role ?? "student"} />;
-  }
+  if (role === "student") return <StudentDashboard userId={userId} />;
+  if (role === "instructor") return <CoachDashboard userId={userId} />;
 
   const { preset, from, to } = getRange(searchParams);
   const focusDate = parseDate(searchParams.date) || new Date();

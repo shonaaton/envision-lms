@@ -20,6 +20,7 @@ import {
 import { toast } from "sonner";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { flattenScheduledSessions, formatJoinWindowLabel, isJoinWindowOpen } from "@/lib/classroomSessions";
 
 type Role = "student" | "instructor" | "admin";
 
@@ -338,7 +339,7 @@ export default function ClassroomManagementClient({ role }: { role: Role }) {
   }
 
   if (role !== "admin") {
-    return <SimpleClassroomList items={items} loading={loading} />;
+    return <SimpleClassroomList items={items} loading={loading} role={role} />;
   }
 
   return (
@@ -859,23 +860,69 @@ function CalendarView({ sessions }: { sessions: Array<{ title: string; topicName
   );
 }
 
-function SimpleClassroomList({ items, loading }: { items: ClassroomItem[]; loading: boolean }) {
+function SimpleClassroomList({ items, loading, role }: { items: ClassroomItem[]; loading: boolean; role: Role }) {
   if (loading) return <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500">Loading classrooms...</div>;
+  const now = new Date();
+  const sessions = flattenScheduledSessions(items)
+    .filter((row) => row.start)
+    .sort((a, b) => (a.start?.getTime() || 0) - (b.start?.getTime() || 0));
+  const upcoming = sessions.filter((row) => (row.end?.getTime() || 0) >= now.getTime()).slice(0, 12);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="font-display text-3xl text-accent">Classrooms</h1>
+        <div>
+          <h1 className="font-display text-3xl text-accent">{role === "student" ? "My Classes" : "Teaching Schedule"}</h1>
+          <p className="mt-1 text-sm text-slate-500">{role === "student" ? "Join classes only through your scheduled sessions." : "Your next scheduled teaching sessions."}</p>
+        </div>
       </div>
-      {items.length === 0 ? (
-        <div className="card text-sm text-slate-500">No classrooms yet.</div>
+      {upcoming.length === 0 ? (
+        <div className="card text-sm text-slate-500">No scheduled sessions right now.</div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {items.map((item) => (
-            <Link key={item._id} href={`/classrooms/${item._id}`} className="card-hover block">
-              <div className="text-lg font-semibold text-slate-950">{item.title}</div>
-              <div className="mt-2 text-sm text-slate-500">{item.topicName || "Classroom session"}</div>
-            </Link>
-          ))}
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          {upcoming.map(({ classroom, session }) => {
+            const joinOpen = isJoinWindowOpen(session, now);
+            const sessionLink = `/classrooms/${classroom._id}?session=${session._id}`;
+            return (
+              <div key={`${classroom._id}-${session._id}`} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-lg shadow-brand/10">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="text-lg font-black text-slate-950">{classroom.title}</div>
+                    <div className="mt-1 text-sm text-slate-600">{session.topicName || classroom.topicName || "Scheduled class"}</div>
+                  </div>
+                  <span className={cn("rounded-full px-3 py-1 text-xs font-bold", joinOpen ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600")}>
+                    {formatJoinWindowLabel(session, now)}
+                  </span>
+                </div>
+
+                <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                  <InfoCard label="Course" value={classroom.courseName || "General"} />
+                  <InfoCard label="Level" value={classroom.levelName || "Not set"} />
+                  <InfoCard label={role === "student" ? "Coach" : "Students"} value={role === "student" ? ((classroom.coach as any)?.name || "Coach") : `${classroom.students?.length || 0} assigned`} />
+                  <InfoCard label="Duration" value={formatDuration(session.durationMinutes || classroom.durationMinutes || 60)} />
+                </div>
+
+                <div className="mt-4 rounded-xl bg-slate-50 px-3 py-3 text-sm text-slate-700">
+                  {formatDate(String(session.scheduledFor || classroom.classDate || classroom.startDate || ""))} at {session.startTime || classroom.startTime || "--"}
+                </div>
+
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {joinOpen ? (
+                    <Link href={sessionLink} className="btn-primary">Join Classroom</Link>
+                  ) : (
+                    <button className="btn-outline opacity-60" disabled>Join Classroom</button>
+                  )}
+                  {classroom.meetingUrl && (
+                    joinOpen ? (
+                      <a href={classroom.meetingUrl} target="_blank" rel="noreferrer" className="btn-outline">Join Google Meet</a>
+                    ) : (
+                      <button className="btn-outline opacity-60" disabled>Join Google Meet</button>
+                    )
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

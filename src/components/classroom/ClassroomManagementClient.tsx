@@ -272,11 +272,25 @@ export default function ClassroomManagementClient({ role }: { role: Role }) {
   }
 
   async function submitForm() {
+    const reviewTopicName = form.useCustomTopic ? form.customTopicName : form.topicName;
+    const sessionPlan =
+      form.classroomType === "single"
+        ? [{
+            sessionNumber: 1,
+            topicName: reviewTopicName || form.title || "Session 1",
+            topicOrder: Number(form.topicOrder || 0),
+          }]
+        : (selectedLevel?.topics || []).map((topic, index) => ({
+            sessionNumber: index + 1,
+            topicName: topic.name,
+            topicOrder: Number(topic.order ?? index),
+          }));
+
     const payload = {
       ...form,
-      topicName: form.useCustomTopic ? form.customTopicName : form.topicName,
+      topicName: reviewTopicName,
       meetingProvider: "meet",
-      sessionPlan: (selectedLevel?.topics || []).map((topic, index) => ({ topicName: topic.name, topicOrder: Number(topic.order ?? index) })),
+      sessionPlan,
     };
     const url = editItem ? `/api/classrooms/${editItem._id}` : "/api/classrooms";
     const method = editItem ? "PATCH" : "POST";

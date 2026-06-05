@@ -8,6 +8,7 @@ import {
   BarChart3,
   Bell,
   BookOpen,
+  BookOpenCheck,
   ChevronDown,
   ClipboardList,
   Cpu,
@@ -78,6 +79,7 @@ const sections: NavSection[] = [
     roles: ["admin"],
     items: [
       { href: "/admin/users", label: "Users", icon: Users },
+      { href: "/admin/courses", label: "Courses", icon: BookOpenCheck },
       { href: "/admin/announcements", label: "Announcements", icon: Megaphone },
       { href: "/admin/notifications", label: "Notifications", icon: Bell },
     ],

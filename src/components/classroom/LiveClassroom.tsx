@@ -925,7 +925,7 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
                     {ranks.map((rank) => <span key={`left-${rank}`} className="flex items-center justify-center">{rank}</span>)}
                   </div>
                 )}
-                <div className="col-start-2 row-start-1">
+                <div className="relative col-start-2 row-start-1" style={{ width: boardWidth, height: boardWidth }}>
                   <Chessboard
                     id={`classroom-board-${classroomId}`}
                     position={boardPosition as any}
@@ -933,7 +933,7 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
                     boardOrientation={orientation}
                     onPieceDrop={onDrop}
                     onPieceDropOffBoard={onPieceDropOffBoard as any}
-                onSquareClick={onSquareClick as any}
+                    onSquareClick={onSquareClick as any}
                     onSquareRightClick={onSquareRightClick as any}
                     onArrowsChange={persistBoardArrows as any}
                     customArrows={live?.arrowsEnabled ? (arrows as any) : []}

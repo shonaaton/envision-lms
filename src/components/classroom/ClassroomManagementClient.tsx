@@ -133,7 +133,10 @@ export default function ClassroomManagementClient({ role }: { role: Role }) {
       fetch("/api/classrooms", { cache: "no-store" }),
       role === "admin" ? fetch("/api/classrooms/targets", { cache: "no-store" }) : Promise.resolve(null as any),
     ]);
-    if (classroomsRes.ok) setItems(await classroomsRes.json());
+    if (classroomsRes.ok) {
+      const data = await classroomsRes.json();
+      setItems(Array.isArray(data) ? data.map(normalizeClassroomItem) : []);
+    }
     if (targetsRes?.ok) setTargets(await targetsRes.json());
     setLoading(false);
   }
@@ -887,8 +890,31 @@ function uniqueOptions(values: string[]) {
   return Array.from(new Set(values)).map((value) => ({ value, label: value }));
 }
 
-function titleCase(value: string) {
-  return value.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+function normalizeClassroomItem(item: any): ClassroomItem {
+  return {
+    _id: String(item?._id || ""),
+    title: String(item?.title || "Untitled classroom"),
+    classroomType: item?.classroomType === "series" ? "series" : "single",
+    status: item?.status === "ongoing" || item?.status === "completed" || item?.status === "cancelled" ? item.status : "scheduled",
+    courseName: item?.courseName ? String(item.courseName) : "",
+    levelName: item?.levelName ? String(item.levelName) : "",
+    topicName: item?.topicName ? String(item.topicName) : "",
+    classDate: item?.classDate || undefined,
+    startDate: item?.startDate || undefined,
+    startTime: item?.startTime ? String(item.startTime) : "",
+    durationMinutes: Number(item?.durationMinutes || 60),
+    coach: item?.coach || "",
+    students: Array.isArray(item?.students) ? item.students : [],
+    batches: Array.isArray(item?.batches) ? item.batches : [],
+    generatedSessions: Array.isArray(item?.generatedSessions) ? item.generatedSessions : [],
+    meetingProvider: item?.meetingProvider === "meet" ? "meet" : undefined,
+    meetingUrl: item?.meetingUrl ? String(item.meetingUrl) : "",
+  };
+}
+
+function titleCase(value?: string | null) {
+  if (!value) return "Not set";
+  return String(value).replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 function normalizeDays(item: ClassroomItem) {

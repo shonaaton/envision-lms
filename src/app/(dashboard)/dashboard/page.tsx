@@ -161,17 +161,18 @@ function StatCard({ label, value, note, icon: Icon, tone = "purple" }: { label: 
   );
 }
 
-function ActivityBadge({ type }: { type: string }) {
-  const tone = type.includes("homework")
+function ActivityBadge({ type }: { type?: string }) {
+  const safeType = String(type || "activity");
+  const tone = safeType.includes("homework")
     ? "bg-violet-50 text-violet-700"
-    : type.includes("attendance")
+    : safeType.includes("attendance")
       ? "bg-emerald-50 text-emerald-700"
-      : type.includes("pgn")
+      : safeType.includes("pgn")
         ? "bg-amber-50 text-amber-700"
-        : type.includes("payment")
+        : safeType.includes("payment")
           ? "bg-sky-50 text-sky-700"
           : "bg-slate-100 text-slate-700";
-  return <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${tone}`}>{type.replace(".", " ")}</span>;
+  return <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${tone}`}>{safeType.replace(".", " ")}</span>;
 }
 
 async function StandardDashboard({ userId, role }: { userId: string; role: string }) {

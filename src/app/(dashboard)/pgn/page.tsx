@@ -110,16 +110,18 @@ export default function PgnLibraryPage() {
     window.localStorage.setItem("pgn-folders", JSON.stringify(folders));
   }, [folders]);
 
+  const activeFolderPath = currentFolder?.path || "";
+
   const visibleGames = useMemo(() => {
-    const folderPath = currentFolder?.path;
-    const q = query.trim().toLowerCase();
+    const folderPath = activeFolderPath;
+    const q = folderPath ? "" : query.trim().toLowerCase();
     return games.filter((game) => {
       if (folderPath && game.folder !== folderPath) return false;
       if (!folderPath && String(game.folder || "").includes("/")) return false;
       if (!q) return true;
       return [game.title, game.white, game.black, game.event].filter(Boolean).some((value) => value!.toLowerCase().includes(q));
     });
-  }, [games, currentFolder, query]);
+  }, [games, activeFolderPath, query]);
 
   const visibleFolders = useMemo(() => {
     const byPath = new Map<string, FolderDoc>();
@@ -137,13 +139,13 @@ export default function PgnLibraryPage() {
         parentPath = parentFolderPath(parentPath);
       }
     });
-    const folderPath = currentFolder?.path || "";
-    const q = query.trim().toLowerCase();
+    const folderPath = activeFolderPath;
+    const q = folderPath ? "" : query.trim().toLowerCase();
     return Array.from(byPath.values())
       .filter((folder) => getImmediateChildPath(folderPath, folder.path) === folder.path)
       .filter((folder) => !q || folder.name.toLowerCase().includes(q))
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [folders, games, query]);
+  }, [folders, games, activeFolderPath, query]);
 
   useEffect(() => {
     const folderPath = normalizeFolderPath(searchParams.get("folder"));
@@ -159,19 +161,31 @@ export default function PgnLibraryPage() {
 
   function openFolder(folder: FolderDoc) {
     setCurrentFolder(folder);
+    setQuery("");
     router.push(`/pgn?folder=${encodeURIComponent(folder.path)}`);
   }
 
   function openRoot() {
     setCurrentFolder(null);
+    setQuery("");
     router.push("/pgn");
   }
 
   function addFolder(name: string, personal: boolean) {
-    const path = currentFolder?.path ? `${currentFolder.path}/${name}` : name;
-    const folder = { id: `${path.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}`, name, path, personal };
+    const nextName = name.trim();
+    if (!nextName) {
+      toast.error("Please enter a folder name");
+      return;
+    }
+    const path = activeFolderPath ? `${activeFolderPath}/${nextName}` : nextName;
+    if (folders.some((folder) => folder.path === path)) {
+      toast.error("A folder with this name already exists here");
+      return;
+    }
+    const folder = { id: `${path.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}`, name: nextName, path, personal };
     setFolders((current) => [...current, folder]);
     setCurrentFolder(folder);
+    setQuery("");
     setModal(null);
     router.push(`/pgn?folder=${encodeURIComponent(folder.path)}`);
   }
@@ -367,7 +381,7 @@ export default function PgnLibraryPage() {
               )}
             </div>
           ) : <EmptyFolder />
-        ) : (
+        ) : visibleFolders.length ? (
           <FolderGrid
             folders={visibleFolders}
             isAdmin={isAdmin}
@@ -379,6 +393,8 @@ export default function PgnLibraryPage() {
             onDelete={deleteFolder}
             onDownload={downloadFolder}
           />
+        ) : (
+          <EmptyFolder />
         )}
 
         {!currentFolder && (

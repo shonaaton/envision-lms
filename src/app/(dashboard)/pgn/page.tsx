@@ -38,6 +38,7 @@ type PgnDoc = {
   event?: string;
   pgn: string;
   folder?: string;
+  uploadedBy?: string;
 };
 
 type FolderDoc = {
@@ -74,6 +75,7 @@ export default function PgnLibraryPage() {
   const [reorder, setReorder] = useState(false);
   const role = (session?.user as any)?.role;
   const isAdmin = (session?.user as any)?.role === "admin";
+  const currentUserId = String((session?.user as any)?.id || "");
 
   useEffect(() => {
     if (role === "student") router.replace("/dashboard");
@@ -370,6 +372,7 @@ export default function PgnLibraryPage() {
                     games={visibleGames}
                     folder={currentFolder.path}
                     isAdmin={isAdmin}
+                    currentUserId={currentUserId}
                     onEdit={(game) => {
                       setSelectedGame(game);
                       setModal("edit-pgn");
@@ -518,6 +521,7 @@ function GameGrid({
   games,
   folder,
   isAdmin,
+  currentUserId,
   onEdit,
   onDelete,
   onDownload,
@@ -525,6 +529,7 @@ function GameGrid({
   games: PgnDoc[];
   folder?: string;
   isAdmin: boolean;
+  currentUserId: string;
   onEdit: (game: PgnDoc) => void;
   onDelete: (game: PgnDoc) => void;
   onDownload: (game: PgnDoc) => void;
@@ -535,6 +540,10 @@ function GameGrid({
     <div className="grid gap-4 md:grid-cols-3">
       {games.map((game) => (
         <div key={game._id} className="relative rounded-md border border-slate-200 bg-white p-4 shadow-sm hover:bg-slate-50">
+          {(() => {
+            const canManage = isAdmin || String(game.uploadedBy || "") === currentUserId;
+            return (
+              <>
           <Link href={folder ? `/pgn/${game._id}?folder=${encodeURIComponent(folder)}` : `/pgn/${game._id}`} className="block pr-8">
             <div className="font-semibold">{game.title}</div>
             <div className="mt-2 text-sm text-slate-500">{game.white || "?"} vs {game.black || "?"} - {game.result || "*"}</div>
@@ -549,11 +558,14 @@ function GameGrid({
           </button>
           {openMenu === game._id && (
             <ActionMenu>
-              <MenuAction tone="danger" icon={<Trash2 size={13} />} onClick={() => { setOpenMenu(null); onDelete(game); }}>Delete</MenuAction>
-              <MenuAction icon={<Edit3 size={13} />} onClick={() => { setOpenMenu(null); onEdit(game); }}>Edit</MenuAction>
+              {canManage && <MenuAction tone="danger" icon={<Trash2 size={13} />} onClick={() => { setOpenMenu(null); onDelete(game); }}>Delete</MenuAction>}
+              {canManage && <MenuAction icon={<Edit3 size={13} />} onClick={() => { setOpenMenu(null); onEdit(game); }}>Edit</MenuAction>}
               {isAdmin && <MenuAction icon={<Download size={13} />} onClick={() => { setOpenMenu(null); onDownload(game); }}>Download</MenuAction>}
             </ActionMenu>
           )}
+              </>
+            );
+          })()}
         </div>
       ))}
     </div>

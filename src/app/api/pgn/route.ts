@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { PGN } from "@/models/PGN";
+import { User } from "@/models/User";
 import { Chess } from "chess.js";
 import { recordActivity } from "@/lib/activity";
 
@@ -47,7 +48,20 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const q = url.searchParams.get("q");
   const role = (session.user as any).role;
-  const filter: any = role === "admin" ? {} : { uploadedBy: (session.user as any).id };
+  let filter: any = {};
+  if (role === "instructor") {
+    const adminIds = await User.find({ role: "admin" }, { _id: 1 }).lean();
+    filter = {
+      uploadedBy: {
+        $in: [
+          (session.user as any).id,
+          ...adminIds.map((user: any) => user._id),
+        ],
+      },
+    };
+  } else if (role !== "admin") {
+    filter = { uploadedBy: (session.user as any).id };
+  }
   if (q) filter.$text = { $search: q };
   const list = await PGN.find(filter).sort({ createdAt: -1 }).limit(100).lean();
   return NextResponse.json(list);

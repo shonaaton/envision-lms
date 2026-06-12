@@ -32,6 +32,8 @@ type Activity = {
   selectedPgnIds: string[];
 };
 
+type FolderOption = { value: string; label: string };
+
 const defaultFen = "rn1qkbnr/ppp1pppp/8/3p4/8/5N2/PPPPPPPP/RNBQKB1R w KQkq - 0 2";
 
 function makeOption(index: number): QuizOption {
@@ -72,6 +74,10 @@ function makeActivity(kind: ActivityKind, index: number): Activity {
   };
 }
 
+function normalizeFolderPath(value?: string | null) {
+  return String(value || "").trim().replace(/^\/+|\/+$/g, "").replace(/\/{2,}/g, "/");
+}
+
 export default function NewHomeworkPage() {
   const router = useRouter();
   const [classrooms, setClassrooms] = useState<any[]>([]);
@@ -106,7 +112,10 @@ export default function NewHomeworkPage() {
       .catch(() => toast.error("Could not load assignment data"));
   }, []);
 
-  const folders = useMemo(() => ["all", ...Array.from(new Set(pgns.map((pgn) => pgn.folder || "Unfiled"))).sort()], [pgns]);
+  const folders = useMemo<FolderOption[]>(() => {
+    const unique = Array.from(new Set(pgns.map((pgn) => normalizeFolderPath(pgn.folder) || "Unfiled"))).sort();
+    return [{ value: "all", label: "All folders" }, ...unique.map((folder) => ({ value: folder, label: folder === "Unfiled" ? "Unfiled" : folder.replaceAll("/", " / ") }))];
+  }, [pgns]);
   const selectedClassroomTarget = targets.classrooms.find((item) => item._id === classroom);
   const classroomStudentIds = new Set((selectedClassroomTarget?.students || []).map((student: any) => student._id));
   const classroomBatchIds = new Set((selectedClassroomTarget?.batches || []).map((batchId: any) => batchId.toString()));
@@ -323,12 +332,12 @@ function ActivityCard({ activity, index, open, pgns, folders, onToggle, onRemove
   index: number;
   open: boolean;
   pgns: PgnDoc[];
-  folders: string[];
+  folders: FolderOption[];
   onToggle: () => void;
   onRemove: () => void;
   onChange: (patch: Partial<Activity>) => void;
 }) {
-  const filteredPgns = pgns.filter((pgn) => activity.pgnFolder === "all" || (pgn.folder || "Unfiled") === activity.pgnFolder);
+  const filteredPgns = pgns.filter((pgn) => activity.pgnFolder === "all" || (normalizeFolderPath(pgn.folder) || "Unfiled") === activity.pgnFolder);
   const summary = activity.kind === "mcq"
     ? `${activity.questions.length} question${activity.questions.length === 1 ? "" : "s"}`
     : activity.kind === "play_computer"
@@ -454,7 +463,7 @@ function ComputerActivity({ activity, onChange }: { activity: Activity; onChange
   );
 }
 
-function PgnQuizActivity({ activity, pgns, folders, onChange }: { activity: Activity; pgns: PgnDoc[]; folders: string[]; onChange: (patch: Partial<Activity>) => void }) {
+function PgnQuizActivity({ activity, pgns, folders, onChange }: { activity: Activity; pgns: PgnDoc[]; folders: FolderOption[]; onChange: (patch: Partial<Activity>) => void }) {
   const allSelected = pgns.length > 0 && pgns.every((pgn) => activity.selectedPgnIds.includes(pgn._id));
   return (
     <div className="space-y-4">
@@ -466,7 +475,7 @@ function PgnQuizActivity({ activity, pgns, folders, onChange }: { activity: Acti
         <label className="text-xs font-bold text-slate-600">
           Select folder
           <select className="input mt-1 h-10" value={activity.pgnFolder} onChange={(event) => onChange({ pgnFolder: event.target.value, selectedPgnIds: [] })}>
-            {folders.map((folder) => <option key={folder} value={folder}>{folder === "all" ? "All folders" : folder}</option>)}
+            {folders.map((folder) => <option key={folder.value} value={folder.value}>{folder.label}</option>)}
           </select>
         </label>
         <label className="text-xs font-bold text-slate-600">
@@ -478,7 +487,7 @@ function PgnQuizActivity({ activity, pgns, folders, onChange }: { activity: Acti
         {allSelected ? "Clear selected" : "Select all in folder"}
       </button>
       <div className="grid max-h-72 gap-2 overflow-y-auto md:grid-cols-2">
-        {pgns.map((pgn) => <CheckboxRow key={pgn._id} label={pgn.title} sub={`${pgn.folder || "Unfiled"} · ${pgn.white || "White"} vs ${pgn.black || "Black"}`} checked={activity.selectedPgnIds.includes(pgn._id)} onChange={() => toggleId(pgn._id, activity.selectedPgnIds, (selectedPgnIds) => onChange({ selectedPgnIds }))} />)}
+        {pgns.map((pgn) => <CheckboxRow key={pgn._id} label={pgn.title} sub={`${normalizeFolderPath(pgn.folder) || "Unfiled"} - ${pgn.white || "White"} vs ${pgn.black || "Black"}`} checked={activity.selectedPgnIds.includes(pgn._id)} onChange={() => toggleId(pgn._id, activity.selectedPgnIds, (selectedPgnIds) => onChange({ selectedPgnIds }))} />)}
         {!pgns.length && <div className="rounded-lg border border-dashed border-slate-200 p-4 text-sm text-slate-500">No PGNs found in this folder.</div>}
       </div>
     </div>

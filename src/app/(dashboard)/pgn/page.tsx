@@ -43,6 +43,7 @@ type PgnDoc = {
 type FolderDoc = {
   id: string;
   name: string;
+  path: string;
   personal: boolean;
 };
 
@@ -51,7 +52,7 @@ type UploadTab = "single" | "multiple";
 type GeneratorStep = 1 | 2 | 3;
 type SetupTab = "general" | "gamified";
 
-const defaultFolders: FolderDoc[] = [{ id: "beginners-level", name: "Beginners Level", personal: false }];
+const defaultFolders: FolderDoc[] = [{ id: "beginners-level", name: "Beginners Level", path: "Beginners Level", personal: false }];
 const files = ["a", "b", "c", "d", "e", "f", "g", "h"];
 const ranks = ["8", "7", "6", "5", "4", "3", "2", "1"];
 const lightSquare = "#efd6a8";
@@ -92,7 +93,13 @@ export default function PgnLibraryPage() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved) as FolderDoc[];
-        if (Array.isArray(parsed) && parsed.length) setFolders(parsed);
+        if (Array.isArray(parsed) && parsed.length) {
+          setFolders(parsed.map((folder) => ({
+            ...folder,
+            path: normalizeFolderPath((folder as any).path || folder.name),
+            name: folderLabel((folder as any).path || folder.name),
+          })));
+        }
       } catch {
         // Local folder preferences are optional.
       }
@@ -104,40 +111,55 @@ export default function PgnLibraryPage() {
   }, [folders]);
 
   const visibleGames = useMemo(() => {
-    const folderName = currentFolder?.name;
+    const folderPath = currentFolder?.path;
     const q = query.trim().toLowerCase();
     return games.filter((game) => {
-      if (folderName && game.folder !== folderName) return false;
+      if (folderPath && game.folder !== folderPath) return false;
+      if (!folderPath && String(game.folder || "").includes("/")) return false;
       if (!q) return true;
       return [game.title, game.white, game.black, game.event].filter(Boolean).some((value) => value!.toLowerCase().includes(q));
     });
   }, [games, currentFolder, query]);
 
   const visibleFolders = useMemo(() => {
-    const byName = new Map<string, FolderDoc>();
-    folders.forEach((folder) => byName.set(folder.name, folder));
+    const byPath = new Map<string, FolderDoc>();
+    folders.forEach((folder) => byPath.set(folder.path, folder));
     games.forEach((game) => {
-      if (game.folder && !byName.has(game.folder)) {
-        byName.set(game.folder, { id: game.folder.toLowerCase().replace(/[^a-z0-9]+/g, "-"), name: game.folder, personal: true });
+      const path = normalizeFolderPath(game.folder);
+      if (path && !byPath.has(path)) {
+        byPath.set(path, { id: path.toLowerCase().replace(/[^a-z0-9]+/g, "-"), name: folderLabel(path), path, personal: true });
+      }
+      let parentPath = parentFolderPath(path);
+      while (parentPath) {
+        if (!byPath.has(parentPath)) {
+          byPath.set(parentPath, { id: parentPath.toLowerCase().replace(/[^a-z0-9]+/g, "-"), name: folderLabel(parentPath), path: parentPath, personal: true });
+        }
+        parentPath = parentFolderPath(parentPath);
       }
     });
+    const folderPath = currentFolder?.path || "";
     const q = query.trim().toLowerCase();
-    return Array.from(byName.values()).filter((folder) => !q || folder.name.toLowerCase().includes(q));
+    return Array.from(byPath.values())
+      .filter((folder) => getImmediateChildPath(folderPath, folder.path) === folder.path)
+      .filter((folder) => !q || folder.name.toLowerCase().includes(q))
+      .sort((a, b) => a.name.localeCompare(b.name));
   }, [folders, games, query]);
 
   useEffect(() => {
-    const folderName = searchParams.get("folder");
-    if (!folderName) {
+    const folderPath = normalizeFolderPath(searchParams.get("folder"));
+    if (!folderPath) {
       setCurrentFolder(null);
       return;
     }
-    const folder = visibleFolders.find((item) => item.name === folderName);
-    if (folder) setCurrentFolder(folder);
-  }, [searchParams, visibleFolders]);
+    const folder = folders.find((item) => item.path === folderPath)
+      || visibleFolders.find((item) => item.path === folderPath)
+      || { id: folderPath.toLowerCase().replace(/[^a-z0-9]+/g, "-"), name: folderLabel(folderPath), path: folderPath, personal: true };
+    setCurrentFolder(folder);
+  }, [searchParams, visibleFolders, folders]);
 
   function openFolder(folder: FolderDoc) {
     setCurrentFolder(folder);
-    router.push(`/pgn?folder=${encodeURIComponent(folder.name)}`);
+    router.push(`/pgn?folder=${encodeURIComponent(folder.path)}`);
   }
 
   function openRoot() {
@@ -146,27 +168,30 @@ export default function PgnLibraryPage() {
   }
 
   function addFolder(name: string, personal: boolean) {
-    const folder = { id: `${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}`, name, personal };
+    const path = currentFolder?.path ? `${currentFolder.path}/${name}` : name;
+    const folder = { id: `${path.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}`, name, path, personal };
     setFolders((current) => [...current, folder]);
     setCurrentFolder(folder);
     setModal(null);
+    router.push(`/pgn?folder=${encodeURIComponent(folder.path)}`);
   }
 
   async function renameFolder(folder: FolderDoc, name: string) {
     const nextName = name.trim();
     if (!nextName || nextName === folder.name) return setModal(null);
+    const nextPath = parentFolderPath(folder.path) ? `${parentFolderPath(folder.path)}/${nextName}` : nextName;
     const response = await fetch("/api/pgn/folders", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ oldName: folder.name, newName: nextName }),
+      body: JSON.stringify({ oldName: folder.path, newName: nextPath }),
     });
     if (!response.ok) return toast.error("Could not rename folder");
-    setFolders((current) => current.map((item) => item.name === folder.name ? { ...item, name: nextName } : item));
-    setGames((current) => current.map((game) => game.folder === folder.name ? { ...game, folder: nextName } : game));
-    if (currentFolder?.name === folder.name) {
-      const nextFolder = { ...folder, name: nextName };
+    setFolders((current) => current.map((item) => item.path === folder.path || item.path.startsWith(`${folder.path}/`) ? { ...item, path: `${nextPath}${item.path.slice(folder.path.length)}`, name: folderLabel(`${nextPath}${item.path.slice(folder.path.length)}`) } : item));
+    setGames((current) => current.map((game) => game.folder === folder.path || String(game.folder || "").startsWith(`${folder.path}/`) ? { ...game, folder: `${nextPath}${String(game.folder || "").slice(folder.path.length)}` } : game));
+    if (currentFolder?.path === folder.path) {
+      const nextFolder = { ...folder, name: nextName, path: nextPath };
       setCurrentFolder(nextFolder);
-      router.push(`/pgn?folder=${encodeURIComponent(nextName)}`);
+      router.push(`/pgn?folder=${encodeURIComponent(nextPath)}`);
     }
     setModal(null);
     toast.success("Folder renamed");
@@ -174,11 +199,11 @@ export default function PgnLibraryPage() {
 
   async function deleteFolder(folder: FolderDoc) {
     if (!window.confirm(`Delete "${folder.name}" and all PGNs inside it?`)) return;
-    const response = await fetch(`/api/pgn/folders?name=${encodeURIComponent(folder.name)}`, { method: "DELETE" });
+    const response = await fetch(`/api/pgn/folders?name=${encodeURIComponent(folder.path)}`, { method: "DELETE" });
     if (!response.ok) return toast.error("Could not delete folder");
-    setFolders((current) => current.filter((item) => item.name !== folder.name));
-    setGames((current) => current.filter((game) => game.folder !== folder.name));
-    if (currentFolder?.name === folder.name) openRoot();
+    setFolders((current) => current.filter((item) => item.path !== folder.path && !item.path.startsWith(`${folder.path}/`)));
+    setGames((current) => current.filter((game) => game.folder !== folder.path && !String(game.folder || "").startsWith(`${folder.path}/`)));
+    if (currentFolder?.path === folder.path || currentFolder?.path?.startsWith(`${folder.path}/`)) openRoot();
     toast.success("Folder deleted");
   }
 
@@ -186,7 +211,7 @@ export default function PgnLibraryPage() {
     const response = await fetch(`/api/pgn/${game._id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, pgn, folder: game.folder || currentFolder?.name }),
+      body: JSON.stringify({ title, pgn, folder: game.folder || currentFolder?.path }),
     });
     if (!response.ok) return toast.error("Could not update PGN");
     const updated = await response.json();
@@ -217,21 +242,21 @@ export default function PgnLibraryPage() {
   }
 
   function downloadFolder(folder: FolderDoc) {
-    const folderGames = games.filter((game) => game.folder === folder.name);
+    const folderGames = games.filter((game) => game.folder === folder.path || String(game.folder || "").startsWith(`${folder.path}/`));
     if (!folderGames.length) return toast.error("No PGNs in this folder");
     downloadText(`${safeFileName(folder.name)}.pgn`, folderGames.map((game) => game.pgn).join("\n\n"));
   }
 
   async function uploadGame(title: string, pgn: string, createFolder: boolean) {
-    const folderName = createFolder ? title : currentFolder?.name;
+    const folderName = createFolder ? (currentFolder?.path ? `${currentFolder.path}/${title}` : title) : currentFolder?.path;
     const response = await fetch("/api/pgn", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title, pgn, folder: folderName, visibility: "private" }),
     });
     if (!response.ok) return toast.error("Invalid PGN");
-    if (createFolder && title && !folders.some((folder) => folder.name === title)) {
-      setFolders((current) => [...current, { id: `${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}`, name: title, personal: true }]);
+    if (createFolder && title && !folders.some((folder) => folder.path === folderName)) {
+      setFolders((current) => [...current, { id: `${String(folderName).toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}`, name: title, path: String(folderName), personal: true }]);
     }
     toast.success("PGN uploaded");
     setModal(null);
@@ -264,8 +289,14 @@ export default function PgnLibraryPage() {
                 <h2 className="mb-4 text-lg font-semibold">{currentFolder.name}</h2>
                 <div className="flex items-center gap-2 text-sm">
                   <button className="inline-flex items-center gap-1 text-blue-600" onClick={openRoot}><Home size={14} /> Folders</button>
-                  <ChevronRight size={14} className="text-slate-400" />
-                  <span className="font-semibold">{currentFolder.name}</span>
+                  {folderBreadcrumbs(currentFolder.path).map((item) => (
+                    <span key={item.path} className="contents">
+                      <ChevronRight size={14} className="text-slate-400" />
+                      <button className={`font-semibold ${item.path === currentFolder.path ? "text-slate-950" : "text-blue-600"}`} onClick={() => openFolder(item)}>
+                        {item.name}
+                      </button>
+                    </span>
+                  ))}
                 </div>
               </>
             ) : <div />}
@@ -300,18 +331,41 @@ export default function PgnLibraryPage() {
         </div>
 
         {currentFolder ? (
-          visibleGames.length ? (
-            <GameGrid
-              games={visibleGames}
-              folder={currentFolder.name}
-              isAdmin={isAdmin}
-              onEdit={(game) => {
-                setSelectedGame(game);
-                setModal("edit-pgn");
-              }}
-              onDelete={deleteGame}
-              onDownload={downloadGame}
-            />
+          visibleFolders.length || visibleGames.length ? (
+            <div className="space-y-6">
+              {visibleFolders.length > 0 && (
+                <div>
+                  <div className="mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Subfolders</div>
+                  <FolderGrid
+                    folders={visibleFolders}
+                    isAdmin={isAdmin}
+                    onOpen={openFolder}
+                    onEdit={(folder) => {
+                      setSelectedFolder(folder);
+                      setModal("edit-folder");
+                    }}
+                    onDelete={deleteFolder}
+                    onDownload={downloadFolder}
+                  />
+                </div>
+              )}
+              {visibleGames.length > 0 && (
+                <div>
+                  <div className="mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">PGNs</div>
+                  <GameGrid
+                    games={visibleGames}
+                    folder={currentFolder.path}
+                    isAdmin={isAdmin}
+                    onEdit={(game) => {
+                      setSelectedGame(game);
+                      setModal("edit-pgn");
+                    }}
+                    onDelete={deleteGame}
+                    onDownload={downloadGame}
+                  />
+                </div>
+              )}
+            </div>
           ) : <EmptyFolder />
         ) : (
           <FolderGrid
@@ -343,7 +397,7 @@ export default function PgnLibraryPage() {
         )}
       </section>
 
-      {modal === "folder" && <NewFolderModal onClose={() => setModal(null)} onCreate={addFolder} />}
+      {modal === "folder" && <NewFolderModal currentFolder={currentFolder?.path} onClose={() => setModal(null)} onCreate={addFolder} />}
       {modal === "edit-folder" && selectedFolder && <EditNameModal title="Edit Folder" label="Folder Name" initialName={selectedFolder.name} onClose={() => setModal(null)} onSave={(name) => renameFolder(selectedFolder, name)} />}
       {modal === "edit-pgn" && selectedGame && <EditPgnModal game={selectedGame} onClose={() => setModal(null)} onSave={(title, pgn) => updateGame(selectedGame, title, pgn)} />}
       {modal === "upload" && <UploadPgnModal onClose={() => setModal(null)} onUpload={uploadGame} />}
@@ -354,6 +408,44 @@ export default function PgnLibraryPage() {
 
 function safeFileName(value: string) {
   return value.trim().replace(/[^a-z0-9-_]+/gi, "-").replace(/^-+|-+$/g, "") || "pgn";
+}
+
+function normalizeFolderPath(value?: string | null) {
+  return String(value || "").trim().replace(/^\/+|\/+$/g, "").replace(/\/{2,}/g, "/");
+}
+
+function folderLabel(path: string) {
+  const normalized = normalizeFolderPath(path);
+  return normalized.split("/").filter(Boolean).pop() || normalized;
+}
+
+function parentFolderPath(path?: string | null) {
+  const normalized = normalizeFolderPath(path);
+  if (!normalized.includes("/")) return "";
+  return normalized.split("/").slice(0, -1).join("/");
+}
+
+function getImmediateChildPath(basePath: string, candidatePath: string) {
+  const base = normalizeFolderPath(basePath);
+  const candidate = normalizeFolderPath(candidatePath);
+  if (!candidate) return "";
+  if (!base) {
+    return candidate.includes("/") ? candidate.split("/")[0] : candidate;
+  }
+  if (candidate === base || !candidate.startsWith(`${base}/`)) return "";
+  const rest = candidate.slice(base.length + 1);
+  const first = rest.split("/")[0];
+  return `${base}/${first}`;
+}
+
+function folderBreadcrumbs(path: string) {
+  const parts = normalizeFolderPath(path).split("/").filter(Boolean);
+  return parts.map((part, index) => ({
+    id: parts.slice(0, index + 1).join("/"),
+    name: part,
+    path: parts.slice(0, index + 1).join("/"),
+    personal: true,
+  }));
 }
 
 function FolderGrid({
@@ -508,11 +600,12 @@ function ModalFrame({ title, children, onClose, width = "max-w-[480px]" }: { tit
   );
 }
 
-function NewFolderModal({ onClose, onCreate }: { onClose: () => void; onCreate: (name: string, personal: boolean) => void }) {
+function NewFolderModal({ currentFolder, onClose, onCreate }: { currentFolder?: string; onClose: () => void; onCreate: (name: string, personal: boolean) => void }) {
   const [name, setName] = useState("");
   const [personal, setPersonal] = useState(false);
   return (
     <ModalFrame title="Create New Folder" onClose={onClose} width="max-w-[476px]">
+      {currentFolder && <p className="mb-3 text-xs text-slate-500">Creating inside: <span className="font-semibold text-slate-700">{currentFolder}</span></p>}
       <label className="mb-2 block text-sm">Folder Name</label>
       <input className="input bg-white text-slate-950" placeholder="Enter folder name" value={name} onChange={(event) => setName(event.target.value)} />
       <label className="mt-6 flex items-center gap-3 text-sm">

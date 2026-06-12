@@ -112,6 +112,33 @@ const sampleEngineLines = [
   { eval: "+0.27", moves: "d4 d5 c4 e6 Nf3 Nf6 g3 c5" },
 ];
 
+function normalizeFolderPath(value?: string | null) {
+  return String(value || "").trim().replace(/^\/+|\/+$/g, "").replace(/\/{2,}/g, "/");
+}
+
+function folderLabel(path: string) {
+  const normalized = normalizeFolderPath(path);
+  return normalized.split("/").filter(Boolean).pop() || normalized;
+}
+
+function getImmediateChildPath(basePath: string, candidatePath: string) {
+  const base = normalizeFolderPath(basePath);
+  const candidate = normalizeFolderPath(candidatePath);
+  if (!candidate) return "";
+  if (!base) return candidate.includes("/") ? candidate.split("/")[0] : candidate;
+  if (candidate === base || !candidate.startsWith(`${base}/`)) return "";
+  const rest = candidate.slice(base.length + 1);
+  return `${base}/${rest.split("/")[0]}`;
+}
+
+function folderBreadcrumbs(path: string) {
+  const parts = normalizeFolderPath(path).split("/").filter(Boolean);
+  return parts.map((part, index) => ({
+    path: parts.slice(0, index + 1).join("/"),
+    name: part,
+  }));
+}
+
 function pieceGlyph(piece: PieceCode) {
   const glyphs: Record<PieceCode, string> = {
     p: "\u265F",
@@ -749,8 +776,10 @@ function EnginePanel({
 function SaveDialog({ isDark, onClose, onSave }: { isDark: boolean; onClose: () => void; onSave: (title: string, folder?: string) => Promise<void> }) {
   const [items, setItems] = useState<PgnLibraryItem[]>([]);
   const [selectedFolder, setSelectedFolder] = useState("");
+  const [activeFolder, setActiveFolder] = useState<string | null>(null);
   const [newFolder, setNewFolder] = useState("");
   const [title, setTitle] = useState("Analysis Game");
+  const [query, setQuery] = useState("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -760,40 +789,74 @@ function SaveDialog({ isDark, onClose, onSave }: { isDark: boolean; onClose: () 
       .catch(() => setItems([]));
   }, []);
 
-  const folders = Array.from(new Set(["Beginners Level", ...items.map((item) => item.folder).filter(Boolean) as string[]]));
-  const folder = newFolder.trim() || selectedFolder || undefined;
+  const folders = useMemo(() => {
+    const paths = new Set<string>();
+    items.forEach((item) => {
+      const path = normalizeFolderPath(item.folder);
+      if (!path) return;
+      paths.add(path);
+      let parent = path;
+      while (parent.includes("/")) {
+        parent = parent.split("/").slice(0, -1).join("/");
+        if (parent) paths.add(parent);
+      }
+    });
+    return Array.from(paths).sort((a, b) => a.localeCompare(b));
+  }, [items]);
+  const visibleFolders = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return folders
+      .map((path) => ({ path, name: folderLabel(path) }))
+      .filter((folder) => getImmediateChildPath(activeFolder || "", folder.path) === folder.path)
+      .filter((folder) => !q || folder.name.toLowerCase().includes(q));
+  }, [activeFolder, folders, query]);
+  const folder = newFolder.trim() ? (activeFolder ? `${activeFolder}/${newFolder.trim()}` : newFolder.trim()) : selectedFolder || activeFolder || undefined;
 
   return (
     <ModalFrame isDark={isDark} title="Chess Games Library" onClose={onClose} width="max-w-[640px]">
       <div className={`mb-5 flex flex-wrap items-center justify-between gap-3 ${isDark ? "text-blue-100" : "text-slate-700"}`}>
         <div className="inline-flex items-center gap-2"><BookOpen size={16} /> Games</div>
         <div className="flex gap-2">
-          <input className="input w-[210px]" placeholder="Search games, folders, ..." />
-          <button className={controlButton(isDark)}><Plus size={15} /> New Folder</button>
+          <input className="input w-[210px]" placeholder={activeFolder ? "Search inside folder" : "Search folders"} value={query} onChange={(event) => setQuery(event.target.value)} />
         </div>
+      </div>
+      <div className={`mb-4 flex flex-wrap items-center gap-2 rounded-lg px-3 py-2 ${isDark ? "bg-black/20" : "bg-slate-50"}`}>
+        <button className={`inline-flex items-center gap-1 ${activeFolder ? "text-blue-600" : "font-semibold text-slate-900"}`} onClick={() => { setActiveFolder(null); setSelectedFolder(""); }}>
+          <BookOpen size={14} /> Library
+        </button>
+        {activeFolder && folderBreadcrumbs(activeFolder).map((item) => (
+          <span key={item.path} className="contents">
+            <ChevronRight size={14} className={isDark ? "text-blue-200/40" : "text-slate-400"} />
+            <button className={`${item.path === activeFolder ? "font-semibold text-slate-900" : "text-blue-600"}`} onClick={() => { setActiveFolder(item.path); setSelectedFolder(item.path); }}>
+              {item.name}
+            </button>
+          </span>
+        ))}
       </div>
       <label className="mb-2 block text-sm font-semibold">PGN Title</label>
       <input className="input mb-4" value={title} onChange={(event) => setTitle(event.target.value)} />
       <div className="grid gap-3 sm:grid-cols-2">
-        {folders.map((folderName) => (
+        {visibleFolders.map((folder) => (
           <button
-            key={folderName}
+            key={folder.path}
             className={[
               "flex h-20 items-center gap-4 rounded-lg border px-5 text-left",
-              selectedFolder === folderName ? "border-brand bg-brand/10" : isDark ? "border-ink-600 bg-black/20" : "border-slate-200 bg-white",
+              selectedFolder === folder.path ? "border-brand bg-brand/10" : isDark ? "border-ink-600 bg-black/20" : "border-slate-200 bg-white",
             ].join(" ")}
             onClick={() => {
-              setSelectedFolder(folderName);
+              setSelectedFolder(folder.path);
+              setActiveFolder(folder.path);
               setNewFolder("");
             }}
           >
             <BookOpen size={24} className={isDark ? "text-blue-200" : "text-slate-500"} />
-            {folderName}
+            {folder.name}
           </button>
         ))}
       </div>
+      {!visibleFolders.length && <div className={`rounded-lg border border-dashed p-4 text-sm ${isDark ? "border-ink-600 text-blue-200/70" : "border-slate-200 text-slate-500"}`}>No folders found here.</div>}
       <label className="mb-2 mt-5 block text-sm font-semibold">Or create folder</label>
-      <input className="input" placeholder="New folder name" value={newFolder} onChange={(event) => setNewFolder(event.target.value)} />
+      <input className="input" placeholder={activeFolder ? `New folder inside ${folderLabel(activeFolder)}` : "New folder name"} value={newFolder} onChange={(event) => setNewFolder(event.target.value)} />
       <p className={`mt-4 text-sm ${isDark ? "text-blue-200/70" : "text-slate-500"}`}>Select the folder or PGN where you want to save the game</p>
       <div className="mt-6 flex justify-end gap-3">
         <button className={controlButton(isDark)} onClick={onClose}>Cancel</button>

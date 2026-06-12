@@ -45,7 +45,7 @@ type GameRecord = {
   moves: number;
 };
 
-const levelToElo = [500, 650, 800, 950, 1100, 1250, 1400, 1550, 1700, 1850, 2000, 2200];
+const levelToElo = [300, 400, 500, 650, 800, 950, 1100, 1250, 1400, 1600, 1800, 2000];
 const timeControls = ["No Clock", "5 min", "10 min", "15 min", "30 min"];
 
 const seededHistory: GameRecord[] = [
@@ -58,7 +58,7 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
   const workerRef = useRef<Worker | null>(null);
   const boardWrapRef = useRef<HTMLDivElement | null>(null);
   const [position, setPosition] = useState(gameRef.current.fen());
-  const [boardWidth, setBoardWidth] = useState(536);
+  const [boardWidth, setBoardWidth] = useState(520);
   const [status, setStatus] = useState<GameStatus>("idle");
   const [thinking, setThinking] = useState(false);
   const [result, setResult] = useState("");
@@ -118,11 +118,19 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
     const element = boardWrapRef.current;
     if (!element) return;
 
-    const resize = () => setBoardWidth(Math.max(280, Math.min(536, element.clientWidth)));
+    const resize = () => {
+      const width = element.clientWidth;
+      const heightLimit = window.innerHeight - 250;
+      setBoardWidth(Math.max(280, Math.min(540, width, heightLimit)));
+    };
     resize();
     const observer = new ResizeObserver(resize);
     observer.observe(element);
-    return () => observer.disconnect();
+    window.addEventListener("resize", resize);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", resize);
+    };
   }, []);
 
   function refreshBoard() {
@@ -191,6 +199,10 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
     }
   }
 
+  function restartGame() {
+    setShowSetup(true);
+  }
+
   function resignGame() {
     if (status !== "playing") return;
     setThinking(false);
@@ -215,51 +227,67 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
   }
 
   if (showHistory) {
-    return (
-      <GameHistory
-        records={records}
-        onBack={() => setShowHistory(false)}
-      />
-    );
+    return <GameHistory records={records} onBack={() => setShowHistory(false)} />;
   }
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+    <div className="flex h-[calc(100vh-92px)] min-h-[620px] flex-col overflow-hidden bg-[linear-gradient(180deg,#fffdf8_0%,#fff 48%,#f7f7fb_100%)] p-3 text-slate-950 sm:p-4">
+      <div className="mb-3 flex flex-none flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="font-display text-3xl text-white">Play with Computer</h1>
-          <p className="mt-1 text-sm text-blue-200/80">Challenge yourself against different levels of computer opponents.</p>
+          <div className="inline-flex items-center gap-2 rounded-full bg-amber-100 px-3 py-1 text-xs font-black uppercase tracking-[0.18em] text-amber-700">
+            <Bot size={14} />
+            Play vs Computer
+          </div>
+          <h1 className="mt-2 text-2xl font-black text-slate-950">Play with Computer</h1>
+          <p className="mt-1 text-sm text-slate-600">Keep the board, game controls, and move list together in one smooth practice screen.</p>
         </div>
-        <div className="inline-flex w-fit rounded-lg border border-ink-600 bg-ink-800 p-1">
+
+        <div className="flex flex-wrap gap-2">
           {status === "playing" ? (
-            <button className="btn-outline gap-2 border-red-500/40 text-red-300 hover:bg-red-500/10" onClick={resignGame}>
-              <Flag size={16} /> Resign
-            </button>
+            <>
+              <button className="btn-outline gap-2 border-red-200 bg-white text-red-700 hover:bg-red-50" onClick={resignGame}>
+                <Flag size={16} /> Resign
+              </button>
+              <button className="btn-outline gap-2 bg-white" onClick={restartGame}>
+                <RotateCcw size={16} /> Restart
+              </button>
+            </>
           ) : (
             <button className="btn-primary gap-2" onClick={() => setShowSetup(true)}>
               <Play size={16} /> Start Game
             </button>
           )}
-          <button className="btn-ghost ml-1" onClick={() => setShowHistory(true)}>View History</button>
+          <button className="btn-outline gap-2 bg-white" onClick={() => setShowHistory(true)}>
+            <History size={16} /> View History
+          </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_488px]">
-        <section className="rounded-lg border border-ink-600 bg-ink-800 p-5 md:p-8">
-          <div className="flex min-h-[360px] items-center justify-center md:min-h-[560px]">
-            <div ref={boardWrapRef} className="relative w-full max-w-[536px]">
+      <div className="grid min-h-0 flex-1 gap-3 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <section className="flex min-h-0 flex-col rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-lg shadow-brand/5">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700">
+              Status: <span className="font-black text-slate-950">{status === "playing" ? "In Progress" : status === "ended" ? result : "Not Started"}</span>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700">
+              {timeControl}
+            </div>
+          </div>
+
+          <div ref={boardWrapRef} className="flex min-h-0 flex-1 items-center justify-center">
+            <div className="relative w-full max-w-[540px]">
               <Chessboard
                 position={position}
                 onPieceDrop={onDrop}
                 boardOrientation={playerColor}
                 boardWidth={boardWidth}
-                customDarkSquareStyle={{ backgroundColor: "#8b6748" }}
-                customLightSquareStyle={{ backgroundColor: "#b6a486" }}
+                customDarkSquareStyle={{ backgroundColor: "#b58863" }}
+                customLightSquareStyle={{ backgroundColor: "#f0d9b5" }}
               />
               {status === "idle" && (
-                <div className="absolute inset-0 flex items-center justify-center backdrop-blur-[5px]">
-                  <div className="rounded-xl bg-white/18 px-8 py-7 text-center shadow-xl ring-1 ring-white/15">
-                    <div className="mb-4 text-sm font-semibold text-white">Ready to Play?</div>
+                <div className="absolute inset-0 flex items-center justify-center backdrop-blur-[3px]">
+                  <div className="rounded-2xl border border-white/70 bg-white/70 px-8 py-7 text-center shadow-xl">
+                    <div className="mb-4 text-sm font-semibold text-slate-700">Ready to Play?</div>
                     <button className="btn-primary gap-2 px-5" onClick={() => setShowSetup(true)}>
                       <Play size={16} /> Start New Game
                     </button>
@@ -270,24 +298,22 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
           </div>
         </section>
 
-        <aside className="rounded-lg border border-ink-600 bg-ink-800 p-5">
-          <div className="mb-5 text-right text-sm font-medium text-blue-300">
-            {status === "playing" ? "In Progress" : status === "ended" ? result : "Not Started"}
-          </div>
+        <aside className="flex min-h-0 flex-col rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-lg shadow-brand/5">
           {status === "playing" && (
-            <div className="mb-5 rounded-lg border border-ink-600 p-6 text-center">
-              <div className="flex items-center justify-center gap-4 text-sm font-semibold text-white">
-                <span className="inline-flex items-center gap-2 rounded-full border border-white/20 px-4 py-2">
-                  <User size={15} className="text-brand-300" /> You <span className="h-2 w-2 rounded-full bg-white" />
+            <div className="mb-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-center">
+              <div className="flex items-center justify-center gap-4 text-sm font-semibold text-slate-950">
+                <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2">
+                  <User size={15} className="text-brand" /> You
                 </span>
-                <span className="text-gray-300">vs</span>
-                <span className="inline-flex items-center gap-2 rounded-full bg-black px-4 py-2">
-                  <Bot size={15} /> Computer <span className="h-2 w-2 rounded-full border border-white/60" />
+                <span className="text-slate-400">vs</span>
+                <span className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-4 py-2 text-white">
+                  <Bot size={15} /> Computer
                 </span>
               </div>
-              <div className="mt-4 text-sm text-blue-200/80">{thinking ? "Computer thinking..." : isPlayerTurn ? "Your turn" : "Computer turn"}</div>
+              <div className="mt-3 text-sm text-slate-600">{thinking ? "Computer thinking..." : isPlayerTurn ? "Your turn" : "Computer turn"}</div>
             </div>
           )}
+
           <MoveHistory rows={moveRows} />
         </aside>
       </div>
@@ -310,41 +336,41 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
 
 function MoveHistory({ rows }: { rows: MoveRow[] }) {
   return (
-    <div className="rounded-lg border border-ink-600 p-6">
-      <div className="mb-5 flex items-center gap-3">
-        <History size={18} className="text-brand-400" />
-        <h2 className="text-xl font-semibold text-white">Move History</h2>
+    <div className="flex min-h-0 flex-1 flex-col rounded-2xl border border-slate-200 bg-white">
+      <div className="flex items-center gap-3 border-b border-slate-100 px-4 py-4">
+        <History size={18} className="text-brand" />
+        <h2 className="text-xl font-semibold text-slate-950">Move History</h2>
       </div>
-      <div className="mb-6 flex items-center justify-between text-gray-400">
-        <div className="flex gap-5">
+      <div className="flex items-center justify-between px-4 py-3 text-slate-400">
+        <div className="flex gap-4">
           <ChevronsLeft size={16} />
           <ChevronLeft size={16} />
         </div>
-        <div className="flex gap-5">
+        <div className="flex gap-4">
           <ChevronRight size={16} />
           <ChevronsRight size={16} />
         </div>
       </div>
-      <div className="grid grid-cols-[52px_1fr_1fr] pb-3 text-sm font-semibold text-white">
+      <div className="grid grid-cols-[44px_1fr_1fr] px-4 pb-3 text-sm font-semibold text-slate-950">
         <span>#</span>
         <span>White</span>
         <span>Black</span>
       </div>
       {rows.length > 0 ? (
-        <div className="max-h-[300px] overflow-y-auto text-sm text-gray-200">
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-3 text-sm text-slate-700">
           {rows.map((row) => (
-            <div key={row.number} className="grid grid-cols-[52px_1fr_1fr] border-t border-ink-600/70 py-3">
-              <span className="text-gray-400">{row.number}</span>
+            <div key={row.number} className="grid grid-cols-[44px_1fr_1fr] border-t border-slate-100 py-3">
+              <span className="text-slate-400">{row.number}</span>
               <span>{row.white}</span>
               <span>{row.black}</span>
             </div>
           ))}
         </div>
       ) : (
-        <div className="flex min-h-[270px] flex-col items-center justify-center text-center">
-          <RotateCcw size={30} className="mb-3 text-gray-400" />
-          <div className="font-semibold text-blue-200/80">No moves yet</div>
-          <div className="text-sm text-blue-200/70">Moves will appear here</div>
+        <div className="flex min-h-[220px] flex-1 flex-col items-center justify-center px-4 text-center">
+          <RotateCcw size={30} className="mb-3 text-slate-300" />
+          <div className="font-semibold text-slate-700">No moves yet</div>
+          <div className="text-sm text-slate-500">Moves will appear here</div>
         </div>
       )}
     </div>
@@ -371,28 +397,28 @@ function SetupModal({
   onStart: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-      <div className="w-full max-w-[480px] rounded-lg border border-ink-600 bg-ink-800 p-5 shadow-2xl">
-        <div className="mb-6 flex items-center justify-between">
-          <h2 className="text-xl font-semibold text-white">New Game</h2>
-          <button className="text-gray-200 hover:text-white" onClick={onClose} aria-label="Close">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-4">
+      <div className="w-full max-w-[520px] rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl">
+        <div className="mb-5 flex items-center justify-between">
+          <h2 className="text-xl font-semibold text-slate-950">New Game</h2>
+          <button className="text-slate-500 hover:text-slate-900" onClick={onClose} aria-label="Close">
             <X size={20} />
           </button>
         </div>
 
-        <div className="mb-6 text-center text-sm text-gray-400">
-          Color: <span className="font-semibold text-white capitalize">{selectedColor}</span>
+        <div className="mb-3 text-center text-sm text-slate-500">
+          Color: <span className="font-semibold capitalize text-slate-950">{selectedColor}</span>
         </div>
         <div className="grid grid-cols-3 gap-2">
-          <ColorOption active={selectedColor === "white"} label="White" icon={<span className="text-3xl">♔</span>} onClick={() => onColorChange("white")} />
-          <ColorOption active={selectedColor === "black"} label="Black" icon={<span className="text-3xl">♚</span>} onClick={() => onColorChange("black")} light />
+          <ColorOption active={selectedColor === "white"} label="White" icon={<span className="text-3xl">K</span>} onClick={() => onColorChange("white")} />
+          <ColorOption active={selectedColor === "black"} label="Black" icon={<span className="text-3xl">k</span>} onClick={() => onColorChange("black")} />
           <ColorOption active={selectedColor === "random"} label="Random" icon={<Shuffle size={28} />} onClick={() => onColorChange("random")} />
         </div>
 
-        <div className="mt-7 text-center text-sm text-gray-400">
-          Level: <span className="font-semibold text-white">{levelToElo[level - 1]} ELO</span>
+        <div className="mt-6 text-center text-sm text-slate-500">
+          Level: <span className="font-semibold text-slate-950">{levelToElo[level - 1]} ELO</span>
         </div>
-        <div className="mt-4 grid grid-cols-12 items-start gap-3">
+        <div className="mt-4 grid grid-cols-12 items-start gap-2">
           {levelToElo.map((_, index) => (
             <button
               key={index}
@@ -400,13 +426,13 @@ function SetupModal({
               onClick={() => onLevelChange(index + 1)}
               aria-label={`Level ${index + 1}`}
             >
-              <span className={`h-2.5 w-2.5 rounded-full ${level === index + 1 ? "ring-2 ring-white bg-brand-400" : "bg-white"}`} />
-              <span className="text-xs text-black">{index + 1}</span>
+              <span className={`h-2.5 w-2.5 rounded-full ${level === index + 1 ? "ring-2 ring-brand bg-brand" : "bg-slate-300"}`} />
+              <span className="text-[11px] font-semibold text-slate-600">{index + 1}</span>
             </button>
           ))}
         </div>
 
-        <label className="mt-7 block text-sm font-medium text-gray-400">Time Control</label>
+        <label className="mt-6 block text-sm font-medium text-slate-600">Time Control</label>
         <div className="relative mt-2">
           <select
             className="input appearance-none pr-10"
@@ -415,11 +441,11 @@ function SetupModal({
           >
             {timeControls.map((control) => <option key={control}>{control}</option>)}
           </select>
-          <ChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-500" />
+          <ChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500" />
         </div>
 
-        <div className="mt-7 grid grid-cols-2 gap-3">
-          <button className="btn-ghost border border-ink-600" onClick={onClose}>Cancel</button>
+        <div className="mt-6 grid grid-cols-2 gap-3">
+          <button className="btn-outline" onClick={onClose}>Cancel</button>
           <button className="btn-primary gap-2" onClick={onStart}>
             <Play size={16} /> Start Game
           </button>
@@ -429,13 +455,12 @@ function SetupModal({
   );
 }
 
-function ColorOption({ active, label, icon, light, onClick }: { active: boolean; label: string; icon: ReactNode; light?: boolean; onClick: () => void }) {
+function ColorOption({ active, label, icon, onClick }: { active: boolean; label: string; icon: ReactNode; onClick: () => void }) {
   return (
     <button
       className={[
-        "flex h-[86px] flex-col items-center justify-center gap-2 rounded-lg border text-sm font-semibold transition",
-        active ? "border-brand-400 ring-1 ring-brand-500" : "border-ink-600",
-        light ? "bg-slate-200 text-slate-900" : "bg-ink-800 text-gray-300 hover:bg-white/5",
+        "flex h-[82px] flex-col items-center justify-center gap-2 rounded-xl border text-sm font-semibold transition",
+        active ? "border-brand bg-brand text-white shadow-lg shadow-brand/20" : "border-slate-200 bg-slate-50 text-slate-700 hover:border-brand/40",
       ].join(" ")}
       onClick={onClick}
     >
@@ -457,27 +482,25 @@ function GameHistory({ records, onBack }: { records: GameRecord[]; onBack: () =>
   );
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="font-display text-3xl text-white">Game History</h1>
-        <p className="mt-1 text-sm text-blue-200/80">Review your past games and track your progress</p>
-      </div>
-
-      <div className="flex items-center gap-5">
-        <button className="btn-ghost gap-2 border border-ink-600 px-4" onClick={onBack}>
+    <div className="flex h-[calc(100vh-92px)] min-h-[620px] flex-col overflow-hidden bg-[linear-gradient(180deg,#fffdf8_0%,#fff 48%,#f7f7fb_100%)] p-4 text-slate-950">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-black text-slate-950">Game History</h1>
+          <p className="mt-1 text-sm text-slate-600">Review your past games and track your progress</p>
+        </div>
+        <button className="btn-outline gap-2 bg-white" onClick={onBack}>
           <ChevronLeft size={16} /> Back to Game
         </button>
-        <div className="text-white">Play with Computer <span className="ml-2 text-gray-500">›</span></div>
       </div>
 
-      <div className="grid gap-4 rounded-lg border border-ink-600 bg-ink-800 p-8 md:grid-cols-3">
-        <Stat icon={<Trophy size={16} className="text-emerald-400" />} label="Victories" value={totals.victories} />
-        <Stat icon={<Clock3 size={16} className="text-accent" />} label="Draws" value={totals.draws} />
-        <Stat icon={<Shield size={16} className="text-red-400" />} label="Defeats" value={totals.defeats} />
+      <div className="grid gap-3 rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-lg shadow-brand/5 md:grid-cols-3">
+        <HistoryStat icon={<Trophy size={16} className="text-emerald-500" />} label="Victories" value={totals.victories} />
+        <HistoryStat icon={<Clock3 size={16} className="text-amber-500" />} label="Draws" value={totals.draws} />
+        <HistoryStat icon={<Shield size={16} className="text-rose-500" />} label="Defeats" value={totals.defeats} />
       </div>
 
-      <div className="flex justify-end">
-        <select className="input w-[186px]">
+      <div className="mt-3 flex justify-end">
+        <select className="input w-[186px] bg-white">
           <option>All Results</option>
           <option>Victories</option>
           <option>Draws</option>
@@ -485,49 +508,41 @@ function GameHistory({ records, onBack }: { records: GameRecord[]; onBack: () =>
         </select>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-ink-600 bg-ink-800">
-        <div className="min-w-[980px]">
-        <div className="grid grid-cols-[1.4fr_1.4fr_1fr_1fr_1fr_0.8fr_1fr] border-b border-ink-600 px-4 py-4 text-sm font-medium text-blue-200/80">
-          <span>User</span>
-          <span>Date</span>
-          <span>Color</span>
-          <span>Difficulty</span>
-          <span>Result</span>
-          <span>Moves</span>
-          <span>Actions</span>
-        </div>
-        {records.map((record) => (
-          <div key={record.id} className="grid grid-cols-[1.4fr_1.4fr_1fr_1fr_1fr_0.8fr_1fr] border-b border-ink-600/80 px-4 py-4 text-sm font-semibold text-white last:border-b-0">
-            <span>{record.user}</span>
-            <span>{record.date}</span>
-            <span><span className={`inline-block h-4 w-4 rounded-full border ${record.color === "white" ? "bg-white" : "bg-black"}`} /></span>
-            <span>{record.difficulty}</span>
-            <span className={record.result === "Draw" ? "text-accent" : record.result === "Defeat" ? "text-red-300" : "text-blue-200/80"}>{record.result === "Draw" ? "- Draw" : record.result}</span>
-            <span>{record.moves}</span>
-            <button className="inline-flex items-center gap-2 text-left text-white">
-              <Play size={14} className="text-brand-400" /> View details
-            </button>
+      <div className="mt-3 min-h-0 flex-1 overflow-auto rounded-2xl border border-slate-200 bg-white/95 shadow-lg shadow-brand/5">
+        <div className="min-w-[860px]">
+          <div className="grid grid-cols-[1.4fr_1.4fr_1fr_1fr_1fr_0.8fr_1fr] border-b border-slate-200 px-4 py-4 text-sm font-bold text-slate-500">
+            <span>User</span>
+            <span>Date</span>
+            <span>Color</span>
+            <span>Difficulty</span>
+            <span>Result</span>
+            <span>Moves</span>
+            <span>Actions</span>
           </div>
-        ))}
-        </div>
-      </div>
-
-      <div className="flex justify-end">
-        <div className="inline-flex items-center gap-1">
-          <button className="btn-ghost px-2"><ChevronLeft size={16} /></button>
-          <button className="rounded-md border border-brand-500 bg-brand-900/40 px-3 py-1 text-brand-200">1</button>
-          <button className="btn-ghost px-2"><ChevronRight size={16} /></button>
+          {records.map((record) => (
+            <div key={record.id} className="grid grid-cols-[1.4fr_1.4fr_1fr_1fr_1fr_0.8fr_1fr] border-b border-slate-100 px-4 py-4 text-sm font-semibold text-slate-800 last:border-b-0">
+              <span>{record.user}</span>
+              <span>{record.date}</span>
+              <span><span className={`inline-block h-4 w-4 rounded-full border ${record.color === "white" ? "border-slate-300 bg-white" : "border-slate-900 bg-slate-950"}`} /></span>
+              <span>{record.difficulty}</span>
+              <span className={record.result === "Draw" ? "text-amber-600" : record.result === "Defeat" ? "text-rose-600" : "text-emerald-600"}>{record.result === "Draw" ? "Draw" : record.result}</span>
+              <span>{record.moves}</span>
+              <button className="inline-flex items-center gap-2 text-left text-slate-900">
+                <Play size={14} className="text-brand" /> View details
+              </button>
+            </div>
+          ))}
         </div>
       </div>
     </div>
   );
 }
 
-function Stat({ icon, label, value }: { icon: ReactNode; label: string; value: number }) {
+function HistoryStat({ icon, label, value }: { icon: ReactNode; label: string; value: number }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-2">
-      <div className="flex items-center gap-2 text-blue-200/80">{icon}{label}</div>
-      <div className="text-3xl font-bold text-white">{value}</div>
+    <div className="flex flex-col items-center justify-center gap-2 rounded-xl bg-slate-50 p-4">
+      <div className="flex items-center gap-2 text-slate-600">{icon}{label}</div>
+      <div className="text-3xl font-black text-slate-950">{value}</div>
     </div>
   );
 }

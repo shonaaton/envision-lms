@@ -6,6 +6,8 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { randomBytes } from "crypto";
 import { Link2, RefreshCcw, Trophy } from "lucide-react";
+import { TournamentDetailClient } from "@/components/tournaments/TournamentDetailClient";
+import { TournamentGame } from "@/models/TournamentGame";
 
 export const dynamic = "force-dynamic";
 
@@ -53,6 +55,17 @@ export default async function TournamentDetailPage({ params }: { params: { id: s
   const host = headers().get("host");
   const protocol = headers().get("x-forwarded-proto") || "https";
   const externalInviteUrl = tournament.externalInvite?.token ? `${protocol}://${host}/tournament-join/${tournament.externalInvite.token}` : "";
+  const games = await TournamentGame.find({ tournament: params.id }).sort({ createdAt: -1 }).lean();
+  const activeGame =
+    games.find((game: any) => game.status === "active" && [game.whiteUser?.toString?.(), game.blackUser?.toString?.()].includes(String(userId))) || null;
+  const initialState = {
+    tournament,
+    activeGame,
+    games: games.slice(0, 25),
+    myGames: games.filter((game: any) => [game.whiteUser?.toString?.(), game.blackUser?.toString?.()].includes(String(userId))).slice(0, 10),
+    canManage: role === "admin",
+    canPlay: role === "student" || role === "admin",
+  };
 
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-5 text-slate-950 sm:px-6 lg:px-8">
@@ -107,6 +120,9 @@ export default async function TournamentDetailPage({ params }: { params: { id: s
           <div className="rounded-md bg-slate-50 p-3"><div className="text-xs text-slate-500">Starting Position</div><b>{tournament.startingPosition?.type === "custom" ? "Custom Position" : "Normal Starting Position"}</b></div>
           <div className="rounded-md bg-slate-50 p-3"><div className="text-xs text-slate-500">Participants</div><b>{(tournament.participants?.length || 0) + (tournament.externalParticipants?.length || 0)}</b></div>
         </div>
+      </div>
+      <div className="mt-4">
+        <TournamentDetailClient tournamentId={params.id} role={role || "student"} initialState={initialState} />
       </div>
       <section className="mt-4 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="mb-3 font-semibold">Participants</h2>

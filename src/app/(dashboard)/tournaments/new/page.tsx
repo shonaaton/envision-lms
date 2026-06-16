@@ -9,6 +9,11 @@ import { Chess } from "chess.js";
 
 export const dynamic = "force-dynamic";
 
+type CreateTournamentState = {
+  error?: string;
+  fieldErrors?: Record<string, string>;
+};
+
 function combineDateTime(date: string, time: string) {
   return new Date(`${date}T${time || "00:00"}:00`);
 }
@@ -17,14 +22,14 @@ function datedName(name: string, date: Date) {
   return `${name} - ${date.toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" })} - ${date.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}`;
 }
 
-async function createTournament(formData: FormData) {
+async function createTournament(_: CreateTournamentState, formData: FormData): Promise<CreateTournamentState> {
   "use server";
   const session = await auth();
   if ((session?.user as any)?.role !== "admin") {
-    redirect("/tournaments/new?error=Only administrators can create tournaments.");
+    return { error: "Only administrators can create tournaments." };
   }
   await dbConnect();
-  const redirectWithError = (message: string) => redirect(`/tournaments/new?error=${encodeURIComponent(message)}`);
+  const fail = (error: string, fieldErrors: Record<string, string> = {}) => ({ error, fieldErrors });
 
   const name = String(formData.get("name") || "").trim();
   const type = String(formData.get("type") || "").trim() as "swiss" | "arena";
@@ -38,35 +43,36 @@ async function createTournament(formData: FormData) {
   const startingPositionType = String(formData.get("startingPositionType") || "normal");
   const customFen = String(formData.get("customFen") || "").trim();
 
-  if (!name) redirectWithError("Tournament name is required.");
-  if (type !== "swiss" && type !== "arena") redirectWithError("Please choose either Swiss or Arena format.");
-  if (!startDate || !startTime) redirectWithError("Start date and start time are required.");
-  if (timeControlMinutes < 1) redirectWithError("Time control must be at least 1 minute.");
-  if (type === "arena" && arenaDurationMinutes < 1) redirectWithError("Arena tournaments need a total duration in minutes.");
-  if (type === "swiss" && rounds < 1) redirectWithError("Swiss tournaments need at least 1 round.");
+  if (!name) return fail("Tournament name is required.", { name: "Tournament name is required." });
+  if (type !== "swiss" && type !== "arena") return fail("Please choose either Swiss or Arena format.", { type: "Choose Swiss or Arena." });
+  if (!startDate) return fail("Start date is required.", { startDate: "Start date is required." });
+  if (!startTime) return fail("Start time is required.", { startTime: "Start time is required." });
+  if (timeControlMinutes < 1) return fail("Time control must be at least 1 minute.", { timeControlMinutes: "Time control must be at least 1 minute." });
+  if (type === "arena" && arenaDurationMinutes < 1) return fail("Arena tournaments need a total duration in minutes.", { arenaDurationMinutes: "Arena duration is required." });
+  if (type === "swiss" && rounds < 1) return fail("Swiss tournaments need at least 1 round.", { rounds: "Swiss rounds are required." });
   if (startingPositionType === "custom") {
-    if (!customFen) redirectWithError("Please provide a custom FEN for the starting position.");
+    if (!customFen) return fail("Please provide a custom FEN for the starting position.", { customFen: "Custom FEN is required." });
     try {
       new Chess(customFen);
     } catch {
-      redirectWithError("The custom FEN is not valid.");
+      return fail("The custom FEN is not valid.", { customFen: "The custom FEN is not valid." });
     }
   }
 
   const selectedBatchIds = formData.getAll("batches").map(String).filter(Boolean);
   const [activeStudents, inactiveStudents, coaches, batches] = await Promise.all([
-    formData.get("allActiveStudents") ? User.find({ role: "student", isActive: { $ne: false } }).lean() : [],
-    formData.get("includeInactiveStudents") ? User.find({ role: "student", isActive: false }).lean() : [],
-    formData.get("includeCoaches") ? User.find({ role: "instructor", isActive: { $ne: false } }).lean() : [],
+    formData.get("allActiveStudents") === "yes" ? User.find({ role: "student", isActive: { $ne: false } }).lean() : [],
+    formData.get("includeInactiveStudents") === "yes" ? User.find({ role: "student", isActive: false }).lean() : [],
+    formData.get("includeCoaches") === "yes" ? User.find({ role: "instructor", isActive: { $ne: false } }).lean() : [],
     selectedBatchIds.length ? Batch.find({ _id: { $in: selectedBatchIds } }).lean() : [],
   ]);
-  if (!formData.get("allActiveStudents") && !formData.get("includeInactiveStudents") && !formData.get("includeCoaches") && !selectedBatchIds.length) {
-    redirectWithError("Select at least one access group before creating the tournament.");
+  if (formData.get("allActiveStudents") !== "yes" && formData.get("includeInactiveStudents") !== "yes" && formData.get("includeCoaches") !== "yes" && !selectedBatchIds.length) {
+    return fail("Select at least one access group before creating the tournament.", { access: "Select at least one access group." });
   }
   const batchStudentIds = batches.flatMap((batch: any) => (batch.students || []).map((id: any) => id.toString()));
   const accessUsers = Array.from(new Set([...activeStudents, ...inactiveStudents, ...coaches].map((user: any) => user._id.toString()).concat(batchStudentIds)));
   const baseStart = combineDateTime(startDate, startTime);
-  if (Number.isNaN(baseStart.getTime())) redirectWithError("The tournament start date or time is invalid.");
+  if (Number.isNaN(baseStart.getTime())) return fail("The tournament start date or time is invalid.", { startDate: "Start date or time is invalid." });
   const repeatEnabled = formData.get("repeatEnabled") === "yes";
   const repeatCount = repeatEnabled ? Math.max(1, Number(formData.get("repeatCount") || 1)) : 1;
   const repeatDaily = formData.get("repeatDaily") === "yes";
@@ -82,7 +88,7 @@ async function createTournament(formData: FormData) {
     if (offset === 0 || repeatDaily || repeatDays.includes(date.getDay())) starts.push(date);
   }
   if (!starts.length) {
-    redirectWithError("No valid tournament dates could be generated from the repeat settings.");
+    return fail("No valid tournament dates could be generated from the repeat settings.", { repeatCount: "Repeat settings produced no valid dates." });
   }
 
   let firstId = "";
@@ -111,9 +117,9 @@ async function createTournament(formData: FormData) {
           fen: startingPositionType === "custom" ? customFen : "",
         },
         access: {
-          allActiveStudents: Boolean(formData.get("allActiveStudents")),
-          includeCoaches: Boolean(formData.get("includeCoaches")),
-          includeInactiveStudents: Boolean(formData.get("includeInactiveStudents")),
+          allActiveStudents: formData.get("allActiveStudents") === "yes",
+          includeCoaches: formData.get("includeCoaches") === "yes",
+          includeInactiveStudents: formData.get("includeInactiveStudents") === "yes",
           batches: selectedBatchIds,
           users: accessUsers,
         },
@@ -123,9 +129,9 @@ async function createTournament(formData: FormData) {
     }
   } catch (error) {
     console.error("Tournament creation failed", error);
-    redirectWithError("The tournament could not be created. Please check the setup and try again.");
+    return fail("The tournament could not be created. Please check the setup and try again.");
   }
-  if (!firstId) redirectWithError("The tournament could not be created because no valid session was generated.");
+  if (!firstId) return fail("The tournament could not be created because no valid session was generated.");
   redirect(`/tournaments/${firstId}`);
 }
 

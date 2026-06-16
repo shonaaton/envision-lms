@@ -12,6 +12,7 @@ import {
   Link2,
   Pencil,
   Plus,
+  Search,
   Trash2,
   UserCog,
   Users,
@@ -124,6 +125,7 @@ export default function ClassroomManagementClient({ role }: { role: Role }) {
   const [editItem, setEditItem] = useState<ClassroomItem | null>(null);
   const [step, setStep] = useState(1);
   const [form, setForm] = useState(blankForm());
+  const [studentSearch, setStudentSearch] = useState("");
   const [view, setView] = useState<"list" | "calendar">("list");
   const [filters, setFilters] = useState({ coach: "", batch: "", student: "", course: "", level: "", status: "" });
   const [actionModal, setActionModal] = useState<{ type: string; item: ClassroomItem | null }>({ type: "", item: null });
@@ -179,7 +181,36 @@ export default function ClassroomManagementClient({ role }: { role: Role }) {
     );
   }, [filteredItems]);
 
+  const filteredAssignableStudents = useMemo(() => {
+    const query = studentSearch.trim().toLowerCase();
+    if (!query) return targets.students;
+    return targets.students.filter((student) => {
+      const batchNames = targets.batches
+        .filter((batch) => (batch.students || []).some((item) => item._id === student._id))
+        .map((batch) => batch.name)
+        .join(" ");
+      return [
+        student.name,
+        student.username,
+        student.email,
+        batchNames,
+      ].filter(Boolean).some((value) => String(value).toLowerCase().includes(query));
+    });
+  }, [studentSearch, targets.students, targets.batches]);
+
+  const filteredAssignableBatches = useMemo(() => {
+    const query = studentSearch.trim().toLowerCase();
+    if (!query) return targets.batches;
+    return targets.batches.filter((batch) => {
+      return [
+        batch.name,
+        batch.level,
+      ].filter(Boolean).some((value) => String(value).toLowerCase().includes(query));
+    });
+  }, [studentSearch, targets.batches]);
+
   function resetModal(mode: CreateMode, item?: ClassroomItem | null) {
+    setStudentSearch("");
     if (!item) {
       setForm(blankForm());
       setEditItem(null);
@@ -566,8 +597,17 @@ export default function ClassroomManagementClient({ role }: { role: Role }) {
               {step === 2 && (
                 <div className="grid gap-4 lg:grid-cols-[340px_1fr]">
                   <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="relative">
+                      <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        className="input h-10 pl-9"
+                        value={studentSearch}
+                        onChange={(event) => setStudentSearch(event.target.value)}
+                        placeholder="Search name, student ID, email, or batch"
+                      />
+                    </div>
                     <div className="text-sm font-black text-slate-950">Batch Assignment</div>
-                    {targets.batches.map((batch) => (
+                    {filteredAssignableBatches.map((batch) => (
                       <label key={batch._id} className="flex items-start gap-3 rounded-xl border border-white bg-white p-3 shadow-sm">
                         <input type="checkbox" checked={form.batches.includes(batch._id)} onChange={() => toggleBatch(batch._id)} />
                         <span>
@@ -581,12 +621,12 @@ export default function ClassroomManagementClient({ role }: { role: Role }) {
                     <div className="mb-3 flex items-center justify-between">
                       <div>
                         <div className="text-sm font-black text-slate-950">Students</div>
-                        <div className="text-xs text-slate-500">Batch picks auto-select students. You can still remove individual students.</div>
+                        <div className="text-xs text-slate-500">Batch picks auto-select students. Search works across name, student ID, email, and batch.</div>
                       </div>
                       <div className="rounded-full bg-brand/10 px-3 py-1 text-xs font-bold text-brand">{form.students.length} selected</div>
                     </div>
                     <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-                      {targets.students.map((student) => (
+                      {filteredAssignableStudents.map((student) => (
                         <label key={student._id} className={cn("flex items-start gap-3 rounded-xl border p-3 shadow-sm transition", form.students.includes(student._id) ? "border-brand bg-brand/5" : "border-slate-200 bg-slate-50")}>
                           <input type="checkbox" checked={form.students.includes(student._id)} onChange={() => toggleStudent(student._id)} />
                           <span className="min-w-0">
@@ -870,13 +910,16 @@ function SimpleClassroomList({ items, loading, role }: { items: ClassroomItem[];
   const upcoming = sessions.filter((row) => (row.end?.getTime() || 0) >= now.getTime()).slice(0, 12);
 
   return (
-    <div className="space-y-6">
+    <div className="flex h-[calc(100vh-92px)] min-h-[620px] flex-col overflow-hidden">
+      <div className="flex-none space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-display text-3xl text-accent">{role === "student" ? "My Classes" : "Teaching Schedule"}</h1>
           <p className="mt-1 text-sm text-slate-500">{role === "student" ? "Join classes only through your scheduled sessions." : "Your next scheduled teaching sessions."}</p>
         </div>
       </div>
+      </div>
+      <div className="mt-6 min-h-0 flex-1 overflow-auto pr-1">
       {upcoming.length === 0 ? (
         <div className="card text-sm text-slate-500">No scheduled sessions right now.</div>
       ) : (
@@ -920,6 +963,7 @@ function SimpleClassroomList({ items, loading, role }: { items: ClassroomItem[];
           })}
         </div>
       )}
+      </div>
     </div>
   );
 }

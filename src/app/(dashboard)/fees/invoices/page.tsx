@@ -31,6 +31,8 @@ async function createManualInvoice(formData: FormData) {
     dueDate: new Date(String(formData.get("dueDate"))),
     credits: plan.type === "credits" ? plan.credits : 0,
     notes: String(formData.get("notes") || ""),
+    invoiceMode: String(formData.get("invoiceMode") || plan.gstMode || "non_gst") as any,
+    gstPercentage: Number(formData.get("gstPercentage") || plan.gstPercentage || 0),
   });
   revalidatePath("/fees/invoices");
 }
@@ -96,7 +98,7 @@ export default async function FeeInvoicesPage() {
           <InvoiceCreationForm
             action={createManualInvoice}
             students={students.map((student: any) => ({ id: student._id.toString(), name: student.name }))}
-            plans={plans.map((plan: any) => ({ id: plan._id.toString(), name: plan.name, type: plan.type, amount: plan.amount, credits: plan.credits || 0 }))}
+            plans={plans.map((plan: any) => ({ id: plan._id.toString(), name: plan.name, type: plan.type, amount: plan.amount, credits: plan.credits || 0, gstMode: plan.gstMode || "non_gst", gstPercentage: plan.gstPercentage || 0 }))}
             assignments={assignments.map((assignment: any) => ({ studentId: assignment.student?.toString(), planId: assignment.plan?.toString() }))}
           />
         </section>
@@ -111,7 +113,7 @@ export default async function FeeInvoicesPage() {
         ) : (
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
-            <thead className="text-xs uppercase text-slate-500"><tr className="border-b"><th className="px-3 py-3">Invoice Number</th><th>Invoice Title</th>{role === "admin" && <th>Student Name</th>}<th>Plan Name</th><th>Invoice Type</th><th>Invoice Date</th><th>Due Date</th><th>GST Amount</th><th>Total Amount</th><th>Payment Status</th><th>Actions</th></tr></thead>
+            <thead className="text-xs uppercase text-slate-500"><tr className="border-b"><th className="px-3 py-3">Invoice Number</th><th>Invoice Title</th>{role === "admin" && <th>Student Name</th>}<th>Plan Name</th><th>Invoice Type</th><th>Invoice Date</th><th>Due Date</th><th>Tax Mode</th><th>GST Amount</th><th>Total Amount</th><th>Payment Status</th><th>Actions</th></tr></thead>
             <tbody>
               {invoices.map((invoice: any) => (
                 <tr key={invoice._id} className="border-b last:border-0">
@@ -122,7 +124,8 @@ export default async function FeeInvoicesPage() {
                   <td>{invoice.type === "credits" ? "Credit Plan Invoice" : invoice.type === "monthly" ? "Monthly Plan Invoice" : "Custom Invoice"}</td>
                   <td>{new Date(invoice.issueDate || invoice.createdAt).toLocaleDateString("en-IN")}</td>
                   <td>{new Date(invoice.dueDate).toLocaleDateString("en-IN")}</td>
-                  <td>{formatINR(invoice.gstAmount || 0)}</td>
+                  <td>{invoice.invoiceMode === "included" ? "GST Included" : invoice.invoiceMode === "excluded" ? "GST Excluded" : "Non-GST"}</td>
+                  <td>{invoice.invoiceMode === "non_gst" ? "-" : formatINR(invoice.gstAmount || 0)}</td>
                   <td className="font-semibold">{formatINR(invoice.totalAmount)}</td>
                   <td><span className="rounded-full bg-slate-100 px-2 py-1 text-xs">{invoice.status}</span></td>
                   <td>

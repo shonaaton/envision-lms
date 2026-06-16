@@ -22,13 +22,15 @@ async function assignPlan(formData: FormData) {
   await FeeAssignment.findOneAndUpdate(
     { student },
     {
-      student,
-      plan: plan._id,
-      type: plan.type,
-      billingStartDate: new Date(String(formData.get("billingStartDate"))),
-      creditBalance: existing?.creditBalance ?? 0,
-      totalCreditsPurchased: existing?.totalCreditsPurchased ?? 0,
-      totalCreditsConsumed: existing?.totalCreditsConsumed ?? 0,
+      $set: {
+        student,
+        plan: plan._id,
+        type: plan.type,
+        billingStartDate: new Date(String(formData.get("billingStartDate"))),
+        creditBalance: existing?.creditBalance ?? 0,
+        totalCreditsPurchased: existing?.totalCreditsPurchased ?? 0,
+        totalCreditsConsumed: existing?.totalCreditsConsumed ?? 0,
+      },
       $push: {
         history: {
           plan: plan._id,

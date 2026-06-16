@@ -10,17 +10,36 @@ export async function getAcademySettings() {
   return created.toObject();
 }
 
-export function invoiceBreakup(amount: number, lateFee: number, settings: any) {
-  const taxableAmount = amount + lateFee;
-  const gstPercentage = settings.invoiceMode === "gst" ? Number(settings.gstPercentage || 0) : 0;
-  const gstAmount = Math.round((taxableAmount * gstPercentage) / 100);
+function resolveTaxMode(settings: any, options?: { gstMode?: string; gstPercentage?: number }) {
+  const invoiceMode = options?.gstMode || (settings.invoiceMode === "gst" ? "excluded" : "non_gst");
+  const gstPercentage = Number(options?.gstPercentage ?? settings.gstPercentage ?? 0);
   return {
+    invoiceMode,
+    gstPercentage: invoiceMode === "non_gst" ? 0 : gstPercentage,
+  };
+}
+
+export function invoiceBreakup(amount: number, lateFee: number, settings: any, options?: { gstMode?: string; gstPercentage?: number }) {
+  const grossAmount = amount + lateFee;
+  const { invoiceMode, gstPercentage } = resolveTaxMode(settings, options);
+  const divisor = 100 + gstPercentage;
+  const taxableAmount = invoiceMode === "included" && gstPercentage > 0
+    ? Math.round((grossAmount * 100) / divisor)
+    : grossAmount;
+  const gstAmount = invoiceMode === "non_gst" || gstPercentage <= 0
+    ? 0
+    : invoiceMode === "included"
+      ? Math.max(0, grossAmount - taxableAmount)
+      : Math.round((grossAmount * gstPercentage) / 100);
+  const totalAmount = invoiceMode === "excluded" ? taxableAmount + gstAmount : grossAmount;
+  return {
+    invoiceMode,
     taxableAmount,
     gstPercentage,
     gstAmount,
     cgstAmount: Math.round(gstAmount / 2),
     sgstAmount: gstAmount - Math.round(gstAmount / 2),
-    totalAmount: taxableAmount + gstAmount,
+    totalAmount,
   };
 }
 
@@ -54,9 +73,13 @@ export async function updateLateFees(now = new Date()) {
     const lateAfterDays = Number(plan?.lateFeeAfterDays ?? 10);
     if (invoice.dueDate >= new Date(now.getTime() - lateAfterDays * DAY)) continue;
     const lateFee = Number(plan?.lateFeeAmount ?? 50000);
-    const breakup = invoiceBreakup(invoice.amount, lateFee, settings);
+    const breakup = invoiceBreakup(invoice.amount, lateFee, settings, {
+      gstMode: plan?.gstMode,
+      gstPercentage: plan?.gstPercentage,
+    });
     invoice.lateFee = lateFee;
     invoice.status = "overdue";
+    invoice.invoiceMode = breakup.invoiceMode;
     invoice.taxableAmount = breakup.taxableAmount;
     invoice.gstPercentage = breakup.gstPercentage;
     invoice.gstAmount = breakup.gstAmount;
@@ -77,9 +100,14 @@ export async function createInvoice(input: {
   dueDate: Date;
   credits?: number;
   notes?: string;
+  invoiceMode?: "included" | "excluded" | "non_gst";
+  gstPercentage?: number;
 }) {
   const settings = await getAcademySettings();
-  const breakup = invoiceBreakup(input.amount, 0, settings);
+  const breakup = invoiceBreakup(input.amount, 0, settings, {
+    gstMode: input.invoiceMode,
+    gstPercentage: input.gstPercentage,
+  });
   return Invoice.create({
     invoiceNumber: await nextInvoiceNumber(),
     ...input,
@@ -117,6 +145,8 @@ export async function ensureMonthlyInvoices(now = new Date()) {
           title: `${assignment.plan.name} - ${dueDate.toLocaleString("en-IN", { month: "long", year: "numeric" })}`,
           amount: assignment.plan.amount,
           dueDate,
+          invoiceMode: assignment.plan.gstMode || "non_gst",
+          gstPercentage: assignment.plan.gstPercentage || 0,
         });
       }
     }

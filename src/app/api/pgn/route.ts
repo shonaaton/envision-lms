@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { PGN } from "@/models/PGN";
-import { User } from "@/models/User";
 import { Chess } from "chess.js";
 import { recordActivity } from "@/lib/activity";
+import { buildPgnLibraryFilter, normalizeFolderPath, requestedPgnVisibility } from "@/lib/pgnAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -47,21 +47,7 @@ export async function GET(req: Request) {
   await dbConnect();
   const url = new URL(req.url);
   const q = url.searchParams.get("q");
-  const role = (session.user as any).role;
-  let filter: any = {};
-  if (role === "instructor") {
-    const adminIds = await User.find({ role: "admin" }, { _id: 1 }).lean();
-    filter = {
-      uploadedBy: {
-        $in: [
-          (session.user as any).id,
-          ...adminIds.map((user: any) => user._id),
-        ],
-      },
-    };
-  } else if (role !== "admin") {
-    filter = { uploadedBy: (session.user as any).id };
-  }
+  let filter: any = buildPgnLibraryFilter(session);
   if (q) filter.$text = { $search: q };
   const list = await PGN.find(filter).sort({ createdAt: -1 }).limit(100).lean();
   return NextResponse.json(list);
@@ -78,6 +64,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid PGN" }, { status: 400 });
   }
 
+  const normalizedFolder = normalizeFolderPath(folder);
+  const savedVisibility = requestedPgnVisibility(session, visibility);
+
   const docs = await PGN.insertMany(games.map((game, index) => {
     const event = extractHeader(game, "Event");
     return {
@@ -89,8 +78,8 @@ export async function POST(req: Request) {
       eco: extractHeader(game, "ECO"),
       date: extractHeader(game, "Date"),
       pgn: game,
-      folder,
-      visibility: visibility === "classroom" ? "classroom" : "private",
+      folder: normalizedFolder || undefined,
+      visibility: savedVisibility,
       classroom,
       uploadedBy: (session.user as any).id,
     };
@@ -102,7 +91,7 @@ export async function POST(req: Request) {
     label: `Uploaded ${docs.length} PGN ${docs.length === 1 ? "game" : "games"}`,
     entityType: "PGN",
     entityId: docs[0]?._id?.toString(),
-    metadata: { count: docs.length, folder, visibility },
+    metadata: { count: docs.length, folder: normalizedFolder, visibility: savedVisibility },
   });
 
   return NextResponse.json(games.length === 1 ? docs[0] : docs);

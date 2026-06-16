@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { Classroom } from "@/models/Classroom";
 import { buildGeneratedSessions } from "@/lib/classroomSchedule";
+import { deleteClassroomSessionInstances, syncClassroomSessionInstances } from "@/lib/classroomSessionInstances";
 
 export const dynamic = "force-dynamic";
 
@@ -70,6 +71,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       },
     ];
   } else if (body.action === "delete_series") {
+    await deleteClassroomSessionInstances(params.id);
     await Classroom.findByIdAndDelete(params.id);
     return NextResponse.json({ ok: true });
   } else {
@@ -101,6 +103,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   }
 
   await existing.save();
+  await syncClassroomSessionInstances(params.id);
   const updated = await Classroom.findById(params.id);
   return NextResponse.json(updated);
 }
@@ -109,6 +112,7 @@ export async function DELETE(_: Request, { params }: { params: { id: string } })
   const session = await auth();
   if ((session?.user as any)?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
+  await deleteClassroomSessionInstances(params.id);
   await Classroom.findByIdAndDelete(params.id);
   return NextResponse.json({ ok: true });
 }

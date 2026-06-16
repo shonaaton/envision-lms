@@ -39,21 +39,16 @@ type PgnDoc = {
   pgn: string;
   folder?: string;
   uploadedBy?: string;
+  visibility?: "private" | "shared" | "classroom";
 };
 
-type FolderDoc = {
-  id: string;
-  name: string;
-  path: string;
-  personal: boolean;
-};
+type FolderDoc = { id: string; name: string; path: string; personal: boolean };
 
 type ModalName = "folder" | "upload" | "generator" | "edit-folder" | "edit-pgn" | null;
 type UploadTab = "single" | "multiple";
 type GeneratorStep = 1 | 2 | 3;
 type SetupTab = "general" | "gamified";
 
-const defaultFolders: FolderDoc[] = [{ id: "beginners-level", name: "Beginners Level", path: "Beginners Level", personal: false }];
 const files = ["a", "b", "c", "d", "e", "f", "g", "h"];
 const ranks = ["8", "7", "6", "5", "4", "3", "2", "1"];
 const lightSquare = "#efd6a8";
@@ -65,7 +60,7 @@ export default function PgnLibraryPage() {
   const searchParams = useSearchParams();
   const { data: session } = useSession();
   const [games, setGames] = useState<PgnDoc[]>([]);
-  const [folders, setFolders] = useState<FolderDoc[]>(defaultFolders);
+  const [folders, setFolders] = useState<FolderDoc[]>([]);
   const [currentFolder, setCurrentFolder] = useState<FolderDoc | null>(null);
   const [modal, setModal] = useState<ModalName>(null);
   const [selectedFolder, setSelectedFolder] = useState<FolderDoc | null>(null);
@@ -83,60 +78,59 @@ export default function PgnLibraryPage() {
 
   async function load() {
     if (role === "student") return;
-    const response = await fetch("/api/pgn");
-    if (!response.ok) return;
-    const docs = await response.json();
-    setGames(docs);
+    const [gamesResponse, foldersResponse] = await Promise.all([
+      fetch("/api/pgn", { cache: "no-store" }),
+      fetch("/api/pgn/folders", { cache: "no-store" }),
+    ]);
+    if (gamesResponse.ok) {
+      const docs = await gamesResponse.json();
+      setGames(Array.isArray(docs) ? docs : []);
+    }
+    if (foldersResponse.ok) {
+      const docs = await foldersResponse.json();
+      setFolders(Array.isArray(docs) ? docs.map((folder: any) => ({
+        id: String(folder._id || folder.path),
+        name: folderLabel(folder.path || folder.name),
+        path: normalizeFolderPath(folder.path || folder.name),
+        personal: folder.visibility !== "shared",
+      })) : []);
+    }
   }
 
   useEffect(() => {
     load();
-    const saved = window.localStorage.getItem("pgn-folders");
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved) as FolderDoc[];
-        if (Array.isArray(parsed) && parsed.length) {
-          setFolders(parsed.map((folder) => ({
-            ...folder,
-            path: normalizeFolderPath((folder as any).path || folder.name),
-            name: folderLabel((folder as any).path || folder.name),
-          })));
-        }
-      } catch {
-        // Local folder preferences are optional.
-      }
-    }
   }, []);
 
-  useEffect(() => {
-    window.localStorage.setItem("pgn-folders", JSON.stringify(folders));
-  }, [folders]);
-
   const activeFolderPath = currentFolder?.path || "";
+  const activeScope = currentFolder?.personal === false ? "shared" : "personal";
 
   const visibleGames = useMemo(() => {
     const folderPath = activeFolderPath;
     const q = folderPath ? "" : query.trim().toLowerCase();
     return games.filter((game) => {
       if (folderPath && game.folder !== folderPath) return false;
+      if (folderPath && currentFolder && (game.visibility === "shared") !== !currentFolder.personal) return false;
       if (!folderPath && String(game.folder || "").includes("/")) return false;
       if (!q) return true;
       return [game.title, game.white, game.black, game.event].filter(Boolean).some((value) => value!.toLowerCase().includes(q));
     });
-  }, [games, activeFolderPath, query]);
+  }, [games, activeFolderPath, query, currentFolder]);
 
   const visibleFolders = useMemo(() => {
     const byPath = new Map<string, FolderDoc>();
-    folders.forEach((folder) => byPath.set(folder.path, folder));
+    folders.forEach((folder) => byPath.set(`${folder.personal ? "personal" : "shared"}:${folder.path}`, folder));
     games.forEach((game) => {
       const path = normalizeFolderPath(game.folder);
-      if (path && !byPath.has(path)) {
-        byPath.set(path, { id: path.toLowerCase().replace(/[^a-z0-9]+/g, "-"), name: folderLabel(path), path, personal: true });
+      const personal = game.visibility !== "shared";
+      const folderKey = `${personal ? "personal" : "shared"}:${path}`;
+      if (path && !byPath.has(folderKey)) {
+        byPath.set(folderKey, { id: `${folderKey}-${path.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`, name: folderLabel(path), path, personal });
       }
       let parentPath = parentFolderPath(path);
       while (parentPath) {
-        if (!byPath.has(parentPath)) {
-          byPath.set(parentPath, { id: parentPath.toLowerCase().replace(/[^a-z0-9]+/g, "-"), name: folderLabel(parentPath), path: parentPath, personal: true });
+        const parentKey = `${personal ? "personal" : "shared"}:${parentPath}`;
+        if (!byPath.has(parentKey)) {
+          byPath.set(parentKey, { id: `${parentKey}-${parentPath.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`, name: folderLabel(parentPath), path: parentPath, personal });
         }
         parentPath = parentFolderPath(parentPath);
       }
@@ -145,26 +139,33 @@ export default function PgnLibraryPage() {
     const q = folderPath ? "" : query.trim().toLowerCase();
     return Array.from(byPath.values())
       .filter((folder) => getImmediateChildPath(folderPath, folder.path) === folder.path)
+      .filter((folder) => !folderPath || !currentFolder || folder.personal === currentFolder.personal)
       .filter((folder) => !q || folder.name.toLowerCase().includes(q))
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [folders, games, activeFolderPath, query]);
+  }, [folders, games, activeFolderPath, query, currentFolder]);
+
+  const rootSharedFolders = useMemo(() => visibleFolders.filter((folder) => !folder.personal), [visibleFolders]);
+  const rootPersonalFolders = useMemo(() => visibleFolders.filter((folder) => folder.personal), [visibleFolders]);
+  const rootSharedGames = useMemo(() => visibleGames.filter((game) => game.visibility === "shared"), [visibleGames]);
+  const rootPersonalGames = useMemo(() => visibleGames.filter((game) => game.visibility !== "shared"), [visibleGames]);
 
   useEffect(() => {
     const folderPath = normalizeFolderPath(searchParams.get("folder"));
+    const folderScope = searchParams.get("scope") === "shared" ? "shared" : "personal";
     if (!folderPath) {
       setCurrentFolder(null);
       return;
     }
-    const folder = folders.find((item) => item.path === folderPath)
-      || visibleFolders.find((item) => item.path === folderPath)
-      || { id: folderPath.toLowerCase().replace(/[^a-z0-9]+/g, "-"), name: folderLabel(folderPath), path: folderPath, personal: true };
+    const folder = folders.find((item) => item.path === folderPath && (item.personal ? "personal" : "shared") === folderScope)
+      || visibleFolders.find((item) => item.path === folderPath && (item.personal ? "personal" : "shared") === folderScope)
+      || { id: `${folderScope}-${folderPath.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`, name: folderLabel(folderPath), path: folderPath, personal: folderScope !== "shared" };
     setCurrentFolder(folder);
   }, [searchParams, visibleFolders, folders]);
 
   function openFolder(folder: FolderDoc) {
     setCurrentFolder(folder);
     setQuery("");
-    router.push(`/pgn?folder=${encodeURIComponent(folder.path)}`);
+    router.push(`/pgn?folder=${encodeURIComponent(folder.path)}&scope=${folder.personal ? "personal" : "shared"}`);
   }
 
   function openRoot() {
@@ -173,7 +174,7 @@ export default function PgnLibraryPage() {
     router.push("/pgn");
   }
 
-  function addFolder(name: string, personal: boolean) {
+  async function addFolder(name: string, personal: boolean) {
     const nextName = name.trim();
     if (!nextName) {
       toast.error("Please enter a folder name");
@@ -184,12 +185,23 @@ export default function PgnLibraryPage() {
       toast.error("A folder with this name already exists here");
       return;
     }
-    const folder = { id: `${path.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}`, name: nextName, path, personal };
-    setFolders((current) => [...current, folder]);
+    const response = await fetch("/api/pgn/folders", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: nextName, currentFolder: activeFolderPath, personal }),
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      toast.error(data.error || "Could not create folder");
+      return;
+    }
+    const created = await response.json();
+    const folder = { id: String(created._id || path), name: folderLabel(created.path || path), path: normalizeFolderPath(created.path || path), personal: created.visibility !== "shared" };
+    setFolders((current) => [...current.filter((item) => item.path !== folder.path), folder]);
     setCurrentFolder(folder);
     setQuery("");
     setModal(null);
-    router.push(`/pgn?folder=${encodeURIComponent(folder.path)}`);
+    router.push(`/pgn?folder=${encodeURIComponent(folder.path)}&scope=${folder.personal ? "personal" : "shared"}`);
   }
 
   async function renameFolder(folder: FolderDoc, name: string) {
@@ -205,9 +217,9 @@ export default function PgnLibraryPage() {
     setFolders((current) => current.map((item) => item.path === folder.path || item.path.startsWith(`${folder.path}/`) ? { ...item, path: `${nextPath}${item.path.slice(folder.path.length)}`, name: folderLabel(`${nextPath}${item.path.slice(folder.path.length)}`) } : item));
     setGames((current) => current.map((game) => game.folder === folder.path || String(game.folder || "").startsWith(`${folder.path}/`) ? { ...game, folder: `${nextPath}${String(game.folder || "").slice(folder.path.length)}` } : game));
     if (currentFolder?.path === folder.path) {
-      const nextFolder = { ...folder, name: nextName, path: nextPath };
+      const nextFolder = { ...folder, name: nextName, path: nextPath, personal: folder.personal };
       setCurrentFolder(nextFolder);
-      router.push(`/pgn?folder=${encodeURIComponent(nextPath)}`);
+      router.push(`/pgn?folder=${encodeURIComponent(nextPath)}&scope=${nextFolder.personal ? "personal" : "shared"}`);
     }
     setModal(null);
     toast.success("Folder renamed");
@@ -258,21 +270,22 @@ export default function PgnLibraryPage() {
   }
 
   function downloadFolder(folder: FolderDoc) {
-    const folderGames = games.filter((game) => game.folder === folder.path || String(game.folder || "").startsWith(`${folder.path}/`));
+    const folderGames = games.filter((game) => (game.folder === folder.path || String(game.folder || "").startsWith(`${folder.path}/`)) && ((game.visibility === "shared") !== folder.personal));
     if (!folderGames.length) return toast.error("No PGNs in this folder");
     downloadText(`${safeFileName(folder.name)}.pgn`, folderGames.map((game) => game.pgn).join("\n\n"));
   }
 
   async function uploadGame(title: string, pgn: string, createFolder: boolean) {
     const folderName = createFolder ? (currentFolder?.path ? `${currentFolder.path}/${title}` : title) : currentFolder?.path;
+    const visibility = currentFolder?.personal === false ? "shared" : "private";
     const response = await fetch("/api/pgn", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, pgn, folder: folderName, visibility: "private" }),
+      body: JSON.stringify({ title, pgn, folder: folderName, visibility }),
     });
     if (!response.ok) return toast.error("Invalid PGN");
-    if (createFolder && title && !folders.some((folder) => folder.path === folderName)) {
-      setFolders((current) => [...current, { id: `${String(folderName).toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}`, name: title, path: String(folderName), personal: true }]);
+    if (createFolder && title && folderName && !folders.some((folder) => folder.path === folderName)) {
+      setFolders((current) => [...current, { id: `${String(folderName).toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}`, name: title, path: String(folderName), personal: visibility !== "shared" }]);
     }
     toast.success("PGN uploaded");
     setModal(null);
@@ -305,7 +318,7 @@ export default function PgnLibraryPage() {
                 <h2 className="mb-4 text-lg font-semibold">{currentFolder.name}</h2>
                 <div className="flex items-center gap-2 text-sm">
                   <button className="inline-flex items-center gap-1 text-blue-600" onClick={openRoot}><Home size={14} /> Folders</button>
-                  {folderBreadcrumbs(currentFolder.path).map((item) => (
+                  {folderBreadcrumbs(currentFolder.path, currentFolder.personal).map((item) => (
                     <span key={item.path} className="contents">
                       <ChevronRight size={14} className="text-slate-400" />
                       <button className={`font-semibold ${item.path === currentFolder.path ? "text-slate-950" : "text-blue-600"}`} onClick={() => openFolder(item)}>
@@ -384,18 +397,39 @@ export default function PgnLibraryPage() {
               )}
             </div>
           ) : <EmptyFolder />
-        ) : visibleFolders.length ? (
-          <FolderGrid
-            folders={visibleFolders}
-            isAdmin={isAdmin}
-            onOpen={openFolder}
-            onEdit={(folder) => {
-              setSelectedFolder(folder);
-              setModal("edit-folder");
-            }}
-            onDelete={deleteFolder}
-            onDownload={downloadFolder}
-          />
+        ) : visibleFolders.length || visibleGames.length ? (
+          <div className="space-y-8">
+            <LibrarySection
+              title="Shared Library"
+              description="Shared folders and PGNs available across the academy."
+              folders={rootSharedFolders}
+              games={rootSharedGames}
+              isAdmin={isAdmin}
+              currentUserId={currentUserId}
+              onOpen={openFolder}
+              onEditFolder={(folder) => { setSelectedFolder(folder); setModal("edit-folder"); }}
+              onDeleteFolder={deleteFolder}
+              onDownloadFolder={downloadFolder}
+              onEditGame={(game) => { setSelectedGame(game); setModal("edit-pgn"); }}
+              onDeleteGame={deleteGame}
+              onDownloadGame={downloadGame}
+            />
+            <LibrarySection
+              title="Personal Library"
+              description="Private folders and PGNs visible only to you."
+              folders={rootPersonalFolders}
+              games={rootPersonalGames}
+              isAdmin={isAdmin}
+              currentUserId={currentUserId}
+              onOpen={openFolder}
+              onEditFolder={(folder) => { setSelectedFolder(folder); setModal("edit-folder"); }}
+              onDeleteFolder={deleteFolder}
+              onDownloadFolder={downloadFolder}
+              onEditGame={(game) => { setSelectedGame(game); setModal("edit-pgn"); }}
+              onDeleteGame={deleteGame}
+              onDownloadGame={downloadGame}
+            />
+          </div>
         ) : (
           <EmptyFolder />
         )}
@@ -457,13 +491,13 @@ function getImmediateChildPath(basePath: string, candidatePath: string) {
   return `${base}/${first}`;
 }
 
-function folderBreadcrumbs(path: string) {
+function folderBreadcrumbs(path: string, personal = true) {
   const parts = normalizeFolderPath(path).split("/").filter(Boolean);
   return parts.map((part, index) => ({
     id: parts.slice(0, index + 1).join("/"),
     name: part,
     path: parts.slice(0, index + 1).join("/"),
-    personal: true,
+    personal,
   }));
 }
 
@@ -517,6 +551,67 @@ function FolderGrid({
   );
 }
 
+function LibrarySection({
+  title,
+  description,
+  folders,
+  games,
+  isAdmin,
+  currentUserId,
+  onOpen,
+  onEditFolder,
+  onDeleteFolder,
+  onDownloadFolder,
+  onEditGame,
+  onDeleteGame,
+  onDownloadGame,
+}: {
+  title: string;
+  description: string;
+  folders: FolderDoc[];
+  games: PgnDoc[];
+  isAdmin: boolean;
+  currentUserId: string;
+  onOpen: (folder: FolderDoc) => void;
+  onEditFolder: (folder: FolderDoc) => void;
+  onDeleteFolder: (folder: FolderDoc) => void;
+  onDownloadFolder: (folder: FolderDoc) => void;
+  onEditGame: (game: PgnDoc) => void;
+  onDeleteGame: (game: PgnDoc) => void;
+  onDownloadGame: (game: PgnDoc) => void;
+}) {
+  if (!folders.length && !games.length) return null;
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">{title}</div>
+        <p className="mt-1 text-sm text-slate-500">{description}</p>
+      </div>
+      {folders.length > 0 && (
+        <FolderGrid
+          folders={folders}
+          isAdmin={isAdmin}
+          onOpen={onOpen}
+          onEdit={onEditFolder}
+          onDelete={onDeleteFolder}
+          onDownload={onDownloadFolder}
+        />
+      )}
+      {games.length > 0 && (
+        <GameGrid
+          games={games}
+          isAdmin={isAdmin}
+          currentUserId={currentUserId}
+          onEdit={onEditGame}
+          onDelete={onDeleteGame}
+          onDownload={onDownloadGame}
+        />
+      )}
+    </div>
+  );
+}
+
 function GameGrid({
   games,
   folder,
@@ -544,7 +639,7 @@ function GameGrid({
             const canManage = isAdmin || String(game.uploadedBy || "") === currentUserId;
             return (
               <>
-          <Link href={folder ? `/pgn/${game._id}?folder=${encodeURIComponent(folder)}` : `/pgn/${game._id}`} className="block pr-8">
+          <Link href={folder ? `/pgn/${game._id}?folder=${encodeURIComponent(folder)}&scope=${game.visibility === "shared" ? "shared" : "personal"}` : `/pgn/${game._id}`} className="block pr-8">
             <div className="font-semibold">{game.title}</div>
             <div className="mt-2 text-sm text-slate-500">{game.white || "?"} vs {game.black || "?"} - {game.result || "*"}</div>
             {game.event && <div className="mt-1 text-xs text-slate-400">{game.event}</div>}

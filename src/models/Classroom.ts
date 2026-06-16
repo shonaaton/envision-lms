@@ -107,6 +107,10 @@ const ClassroomSchema = new Schema(
 
     feePerMonth: { type: Number, default: 0 }, // paise
     isActive: { type: Boolean, default: true, index: true },
+    isSessionInstance: { type: Boolean, default: false, index: true },
+    parentClassroom: { type: Schema.Types.ObjectId, ref: "Classroom", index: true },
+    sourceSessionId: { type: String, index: true },
+    sessionDate: { type: Date, index: true },
   },
   { timestamps: true }
 );

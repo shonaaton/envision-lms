@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { PGN } from "@/models/PGN";
 import { Chess } from "chess.js";
+import { normalizeFolderPath } from "@/lib/pgnAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -28,8 +29,7 @@ function isValidPgnOrFenSetup(pgn: string) {
 }
 
 function ownerFilter(session: any, id: string) {
-  const role = (session.user as any).role;
-  return role === "admin" ? { _id: id } : { _id: id, uploadedBy: (session.user as any).id };
+  return { _id: id, uploadedBy: (session.user as any).id };
 }
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
@@ -52,7 +52,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       eco: extractHeader(pgn, "ECO"),
       date: extractHeader(pgn, "Date"),
       pgn,
-      folder: folder || undefined,
+      folder: normalizeFolderPath(folder) || undefined,
     },
     { new: true },
   ).lean();

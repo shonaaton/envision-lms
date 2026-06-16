@@ -4,8 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import { Plus } from "lucide-react";
 
 type InvoiceType = "monthly" | "credits" | "manual";
+type TaxMode = "included" | "excluded" | "non_gst";
 type StudentOption = { id: string; name: string };
-type PlanOption = { id: string; name: string; type: "monthly" | "credits"; amount: number; credits: number };
+type PlanOption = { id: string; name: string; type: "monthly" | "credits"; amount: number; credits: number; gstMode?: TaxMode; gstPercentage?: number };
 type AssignmentOption = { studentId: string; planId: string };
 type ServerAction = (formData: FormData) => Promise<void>;
 
@@ -41,6 +42,7 @@ export function InvoiceCreationForm({
   const [invoiceDate, setInvoiceDate] = useState(today);
   const [title, setTitle] = useState("");
   const [amount, setAmount] = useState("");
+  const [invoiceMode, setInvoiceMode] = useState<TaxMode>("non_gst");
 
   const selectedStudent = students.find((student) => student.id === studentId);
   const availablePlanIds = assignments.filter((assignment) => assignment.studentId === studentId).map((assignment) => assignment.planId);
@@ -60,6 +62,7 @@ export function InvoiceCreationForm({
   useEffect(() => {
     setTitle(defaultTitle);
     setAmount(selectedPlan ? String(selectedPlan.amount / 100) : "");
+    setInvoiceMode((selectedPlan?.gstMode as TaxMode) || "non_gst");
   }, [defaultTitle, selectedPlan]);
 
   return (
@@ -104,6 +107,18 @@ export function InvoiceCreationForm({
           <input name="amount" type="number" min="0" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="Auto-filled from Plan" className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm" />
         </Field>
 
+        <Field label="Invoice Tax Mode" description="Choose whether GST is included, added separately, or not applicable.">
+          <select name="invoiceMode" value={invoiceMode} onChange={(event) => setInvoiceMode(event.target.value as TaxMode)} className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm">
+            <option value="included">GST Included</option>
+            <option value="excluded">GST Excluded</option>
+            <option value="non_gst">Non-GST Invoice</option>
+          </select>
+        </Field>
+
+        <Field label="GST Percentage" description="Used only when the invoice is GST-enabled.">
+          <input name="gstPercentage" type="number" min="0" defaultValue={selectedPlan?.gstPercentage || 18} className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm" />
+        </Field>
+
         <Field label="Invoice Title" description="Auto-generated from Student Name and Plan, but editable if required.">
           <input name="title" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Auto-generated from Student Name and Plan" className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm xl:col-span-2" />
         </Field>
@@ -121,7 +136,7 @@ export function InvoiceCreationForm({
           <div><span className="text-purple-700">Invoice Number:</span> Auto-assigned</div>
           <div><span className="text-purple-700">Invoice Date:</span> {invoiceDate}</div>
           <div><span className="text-purple-700">Amount Before Tax:</span> {selectedPlan ? currency(selectedPlan.amount) : "Auto-filled"}</div>
-          <div><span className="text-purple-700">GST Details:</span> Applied from Academy Setup</div>
+          <div><span className="text-purple-700">GST Details:</span> {invoiceMode === "non_gst" ? "No GST" : `${invoiceMode === "included" ? "Included" : "Added separately"} @ ${selectedPlan?.gstPercentage || 18}%`}</div>
           <div><span className="text-purple-700">Total Amount:</span> {selectedPlan ? currency(selectedPlan.amount) : "Auto-calculated"}</div>
           <div><span className="text-purple-700">Signatory:</span> From Academy Setup</div>
         </div>

@@ -55,25 +55,27 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const settings: any = await getAcademySettings();
+  const isGstInvoice = invoice.invoiceMode === "included" || invoice.invoiceMode === "excluded";
 
   const pdf = makePdf([
-    settings.invoiceMode === "gst" ? "GST Invoice" : "Invoice",
+    isGstInvoice ? "GST Invoice" : "Invoice",
     settings.academyName,
     settings.registeredAddress,
     `Phone: ${settings.phone}`,
     `Email: ${settings.email || ""}`,
-    settings.invoiceMode === "gst" ? `GSTIN: ${settings.gstNumber}` : "",
+    isGstInvoice ? `GSTIN: ${settings.gstNumber}` : "",
     `Invoice No: ${invoice.invoiceNumber}`,
     `Issue Date: ${new Date(invoice.issueDate).toLocaleDateString("en-IN")}`,
     `Due Date: ${new Date(invoice.dueDate).toLocaleDateString("en-IN")}`,
     `Bill To: ${invoice.student?.name}`,
     `Student: ${invoice.student?.email || invoice.student?.username || ""}`,
     `Description: ${invoice.title}`,
+    `Tax Mode: ${invoice.invoiceMode === "included" ? "GST Included" : invoice.invoiceMode === "excluded" ? "GST Excluded" : "Non-GST"}`,
     `Amount: ${formatINR(invoice.amount)}`,
     `Late Fee: ${formatINR(invoice.lateFee || 0)}`,
-    `CGST: ${formatINR(invoice.cgstAmount || 0)}`,
-    `SGST: ${formatINR(invoice.sgstAmount || 0)}`,
-    `GST Total: ${formatINR(invoice.gstAmount || 0)}`,
+    isGstInvoice ? `CGST: ${formatINR(invoice.cgstAmount || 0)}` : "",
+    isGstInvoice ? `SGST: ${formatINR(invoice.sgstAmount || 0)}` : "",
+    isGstInvoice ? `GST Total: ${formatINR(invoice.gstAmount || 0)}` : "",
     `Total Amount: ${formatINR(invoice.totalAmount)}`,
     `Status: ${invoice.status}`,
     invoice.credits ? `Credits: ${invoice.credits}` : "",

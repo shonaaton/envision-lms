@@ -28,5 +28,5 @@ export default async function ClassroomLivePage({ params, searchParams }: { para
     if (!scheduledSession) redirect("/classrooms");
   }
 
-  return <LiveClassroom classroomId={params.id} role={role} userId={userId} />;
+  return <LiveClassroom classroomId={params.id} role={role} userId={userId} sessionId={searchParams.session} />;
 }

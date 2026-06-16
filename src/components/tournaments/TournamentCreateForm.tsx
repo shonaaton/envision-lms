@@ -21,7 +21,7 @@ function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return <input {...props} className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm" />;
 }
 
-export default function TournamentCreateForm({ batches, action }: { batches: BatchOption[]; action: ServerAction }) {
+export default function TournamentCreateForm({ batches, action, error }: { batches: BatchOption[]; action: ServerAction; error?: string }) {
   const [step, setStep] = useState(1);
   const [type, setType] = useState<TournamentType>("arena");
   const [repeat, setRepeat] = useState(false);
@@ -29,6 +29,7 @@ export default function TournamentCreateForm({ batches, action }: { batches: Bat
 
   return (
     <form action={action} className="space-y-5">
+      {error ? <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{error}</div> : null}
       <input type="hidden" name="type" value={type} />
       <input type="hidden" name="repeatEnabled" value={repeat ? "yes" : "no"} />
       <input type="hidden" name="startingPositionType" value={position} />

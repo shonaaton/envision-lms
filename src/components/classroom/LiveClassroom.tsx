@@ -337,6 +337,8 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const activeQuestion = data?.activeQuestion;
   const students = classroom?.students || [];
   const pgnLibrary = data?.pgnLibrary || [];
+  const studentQuizMode = Boolean(activeQuestion) && !coach && ((Array.isArray(activeQuestion?.items) && activeQuestion.items.length > 0) || activeQuestion?.solution?.length);
+  const coachQuizMode = Boolean(activeQuestion) && coach;
   const pgnFolders = useMemo(() => {
     const counts = new Map<string, number>();
     pgnLibrary.forEach((pgn: any) => {
@@ -448,10 +450,27 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       body: JSON.stringify(update),
     });
     if (!res.ok) {
-      toast.error("Could not update classroom");
+      const payload = await res.json().catch(() => null);
+      toast.error(payload?.error || "Could not update classroom");
       return;
     }
     await load();
+  }
+
+  async function submitStudentMove(source: string, target: string, promotion = "q") {
+    const res = await fetch(liveUrl("/move"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ from: source, to: target, promotion }),
+    });
+    if (!res.ok) {
+      const payload = await res.json().catch(() => null);
+      toast.error(payload?.error || "Move not registered");
+      return false;
+    }
+    playMoveSound(live?.soundEnabled);
+    await load();
+    return true;
   }
 
   function setupSideToMove() {
@@ -473,6 +492,10 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       setSetupPosition(next);
       commitSetup(next, nextObjects);
       playMoveSound(live?.soundEnabled);
+      return true;
+    }
+    if (!coach) {
+      submitStudentMove(source, target).catch(() => undefined);
       return true;
     }
     try {
@@ -761,6 +784,22 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       toast.success("Quiz submitted");
       await load();
     }
+  }
+
+  async function endLiveQuiz() {
+    if (!activeQuestion) return;
+    const res = await fetch(liveUrl("/question"), {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ questionId: activeQuestion._id, status: "closed" }),
+    });
+    if (res.ok) {
+      toast.success("Quiz ended. Returning everyone to the live board.");
+      await load();
+      return;
+    }
+    const payload = await res.json().catch(() => null);
+    toast.error(payload?.error || "Quiz could not be closed");
   }
 
   async function sendChat() {
@@ -1126,51 +1165,68 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
           </div>}
 
           <div ref={boardShellRef} className="min-h-0 min-w-0 flex-1 overflow-auto">
-            <div className="mx-auto w-full max-w-[720px] rounded-lg border border-slate-200 bg-[#f6f2ea] p-2 shadow-sm">
-              <div className="mx-auto grid w-fit grid-cols-[22px_auto_22px] grid-rows-[auto_22px] gap-x-2">
-                {live?.showCoordinates !== false && (
-                  <div className="col-start-1 row-start-1 grid text-center text-xs font-semibold text-slate-500" style={{ height: boardWidth }}>
-                    {ranks.map((rank) => <span key={`left-${rank}`} className="flex items-center justify-center">{rank}</span>)}
-                  </div>
-                )}
-                <div className="relative col-start-2 row-start-1" style={{ width: boardWidth, height: boardWidth }}>
-                  <Chessboard
-                    id={`classroom-board-${classroomId}`}
-                    position={boardPosition as any}
-                    boardWidth={boardWidth}
-                    boardOrientation={orientation}
-                    onPieceDrop={onDrop}
-                    onPieceDropOffBoard={onPieceDropOffBoard as any}
-                    onSquareClick={onSquareClick as any}
-                    onSquareRightClick={onSquareRightClick as any}
-                    onArrowsChange={persistBoardArrows as any}
-                    customArrows={live?.arrowsEnabled ? (arrows as any) : []}
-                    customSquareStyles={squareStyles as any}
-                    areArrowsAllowed={!!live?.arrowsEnabled && coach}
-                    arePiecesDraggable={!live?.locked && (coach || canMove)}
-                    arePremovesAllowed={!!live?.illegalMovesEnabled}
-                    dropOffBoardAction={live?.setupMode || tool === "setup" ? "trash" : "snapback"}
-                    showBoardNotation={false}
-                    customDarkSquareStyle={{ backgroundColor: "#b9875f" }}
-                    customLightSquareStyle={{ backgroundColor: "#f1d9aa" }}
-                    customBoardStyle={{ borderRadius: "4px", overflow: "hidden" }}
-                  />
-                  <GamifiedBoardOverlay objects={liveGamifiedObjects} boardWidth={boardWidth} orientation={orientation} />
-                </div>
-                {live?.showCoordinates !== false && (
-                  <>
-                    <div className="col-start-3 row-start-1 grid text-center text-xs font-semibold text-slate-500" style={{ height: boardWidth }}>
-                      {ranks.map((rank) => <span key={`right-${rank}`} className="flex items-center justify-center">{rank}</span>)}
-                    </div>
-                    <div className="col-start-2 row-start-2 grid text-center text-xs font-semibold text-slate-500" style={{ gridTemplateColumns: `repeat(8, ${boardWidth / 8}px)` }}>
-                      {files.map((file) => <span key={file}>{file}</span>)}
-                    </div>
-                  </>
-                )}
+            {studentQuizMode ? (
+              <div className="mx-auto w-full max-w-[560px]">
+                <LiveBoardQuiz
+                  question={activeQuestion}
+                  locked={Boolean(live?.locked)}
+                  onComplete={submitBoardQuizResults}
+                />
               </div>
-            </div>
+            ) : coachQuizMode ? (
+              <CoachQuizMonitor
+                question={activeQuestion}
+                responses={data?.responses || []}
+                students={students}
+                onEndQuiz={endLiveQuiz}
+              />
+            ) : (
+              <>
+                <div className="mx-auto w-full max-w-[720px] rounded-lg border border-slate-200 bg-[#f6f2ea] p-2 shadow-sm">
+                  <div className="mx-auto grid w-fit grid-cols-[22px_auto_22px] grid-rows-[auto_22px] gap-x-2">
+                    {live?.showCoordinates !== false && (
+                      <div className="col-start-1 row-start-1 grid text-center text-xs font-semibold text-slate-500" style={{ height: boardWidth }}>
+                        {ranks.map((rank) => <span key={`left-${rank}`} className="flex items-center justify-center">{rank}</span>)}
+                      </div>
+                    )}
+                    <div className="relative col-start-2 row-start-1" style={{ width: boardWidth, height: boardWidth }}>
+                      <Chessboard
+                        id={`classroom-board-${classroomId}`}
+                        position={boardPosition as any}
+                        boardWidth={boardWidth}
+                        boardOrientation={orientation}
+                        onPieceDrop={onDrop}
+                        onPieceDropOffBoard={onPieceDropOffBoard as any}
+                        onSquareClick={onSquareClick as any}
+                        onSquareRightClick={onSquareRightClick as any}
+                        onArrowsChange={persistBoardArrows as any}
+                        customArrows={live?.arrowsEnabled ? (arrows as any) : []}
+                        customSquareStyles={squareStyles as any}
+                        areArrowsAllowed={!!live?.arrowsEnabled && coach}
+                        arePiecesDraggable={!live?.locked && (coach || canMove)}
+                        arePremovesAllowed={!!live?.illegalMovesEnabled}
+                        dropOffBoardAction={live?.setupMode || tool === "setup" ? "trash" : "snapback"}
+                        showBoardNotation={false}
+                        customDarkSquareStyle={{ backgroundColor: "#b9875f" }}
+                        customLightSquareStyle={{ backgroundColor: "#f1d9aa" }}
+                        customBoardStyle={{ borderRadius: "4px", overflow: "hidden" }}
+                      />
+                      <GamifiedBoardOverlay objects={liveGamifiedObjects} boardWidth={boardWidth} orientation={orientation} />
+                    </div>
+                    {live?.showCoordinates !== false && (
+                      <>
+                        <div className="col-start-3 row-start-1 grid text-center text-xs font-semibold text-slate-500" style={{ height: boardWidth }}>
+                          {ranks.map((rank) => <span key={`right-${rank}`} className="flex items-center justify-center">{rank}</span>)}
+                        </div>
+                        <div className="col-start-2 row-start-2 grid text-center text-xs font-semibold text-slate-500" style={{ gridTemplateColumns: `repeat(8, ${boardWidth / 8}px)` }}>
+                          {files.map((file) => <span key={file}>{file}</span>)}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
 
-            {false && coach && (live?.setupMode || tool === "setup") && (
+                {false && coach && (live?.setupMode || tool === "setup") && (
               <div className="mx-auto mt-3 w-full max-w-[760px] rounded-lg border border-slate-200 bg-white p-3">
                 <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                   <div>
@@ -1204,27 +1260,29 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                   <button onClick={() => commitSetup()} className="inline-flex h-10 items-center gap-2 rounded-md bg-purple-700 px-3 text-sm font-semibold text-white"><CheckSquare size={15} /> Save Position</button>
                 </div>
               </div>
-            )}
+                )}
 
-            <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
-              <button onClick={() => navigateMove(0)} className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 bg-white text-slate-700"><SkipBack size={16} /></button>
-              <button onClick={() => navigateMove(currentMoveIndex - 1)} className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 bg-white text-slate-700"><ChevronLeft size={16} /></button>
-              <span className="rounded-md bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600">{currentMoveIndex} / {pgnMoves.length || (live?.moveHistory || []).length}</span>
-              <button onClick={() => navigateMove(currentMoveIndex + 1)} className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 bg-white text-slate-700"><ChevronRight size={16} /></button>
-              <button onClick={() => navigateMove(pgnMoves.length)} className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 bg-white text-slate-700"><SkipForward size={16} /></button>
-              <button onClick={() => loadAdjacentPgn(-1)} className="ml-2 rounded-md border border-slate-200 px-3 py-1.5 text-xs font-semibold">Previous game</button>
-              <button onClick={() => loadAdjacentPgn(1)} className="rounded-md bg-purple-700 px-3 py-1.5 text-xs font-semibold text-white">Next game</button>
-            </div>
+                <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+                  <button onClick={() => navigateMove(0)} className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 bg-white text-slate-700"><SkipBack size={16} /></button>
+                  <button onClick={() => navigateMove(currentMoveIndex - 1)} className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 bg-white text-slate-700"><ChevronLeft size={16} /></button>
+                  <span className="rounded-md bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600">{currentMoveIndex} / {pgnMoves.length || (live?.moveHistory || []).length}</span>
+                  <button onClick={() => navigateMove(currentMoveIndex + 1)} className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 bg-white text-slate-700"><ChevronRight size={16} /></button>
+                  <button onClick={() => navigateMove(pgnMoves.length)} className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 bg-white text-slate-700"><SkipForward size={16} /></button>
+                  <button onClick={() => loadAdjacentPgn(-1)} className="ml-2 rounded-md border border-slate-200 px-3 py-1.5 text-xs font-semibold">Previous game</button>
+                  <button onClick={() => loadAdjacentPgn(1)} className="rounded-md bg-purple-700 px-3 py-1.5 text-xs font-semibold text-white">Next game</button>
+                </div>
 
-            {coach && (
-              <div className="mt-3">
-                <input
-                  className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm"
-                  placeholder="Current topic, e.g. Queen-side attack"
-                  defaultValue={live?.topic || ""}
-                  onBlur={(event) => patch({ topic: event.target.value })}
-                />
-              </div>
+                {coach && (
+                  <div className="mt-3">
+                    <input
+                      className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm"
+                      placeholder="Current topic, e.g. Queen-side attack"
+                      defaultValue={live?.topic || ""}
+                      onBlur={(event) => patch({ topic: event.target.value })}
+                    />
+                  </div>
+                )}
+              </>
             )}
 
             {activeQuestion && (
@@ -1234,9 +1292,12 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                     <h3 className="font-semibold text-purple-950">{activeQuestion.title}</h3>
                     <p className="mt-1 text-sm text-purple-800">{activeQuestion.instructions}</p>
                   </div>
-                  <span className="rounded-full bg-white px-2 py-1 text-xs font-semibold text-purple-700">{activeQuestion.type?.replaceAll("_", " ")}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full bg-white px-2 py-1 text-xs font-semibold text-purple-700">{activeQuestion.type?.replaceAll("_", " ")}</span>
+                    {coach ? <button onClick={endLiveQuiz} className="rounded-md bg-purple-700 px-3 py-1.5 text-xs font-semibold text-white">End Quiz</button> : null}
+                  </div>
                 </div>
-                {!coach && ((Array.isArray(activeQuestion.items) && activeQuestion.items.length > 0) || activeQuestion.solution?.length) ? (
+                {!studentQuizMode && !coach && ((Array.isArray(activeQuestion.items) && activeQuestion.items.length > 0) || activeQuestion.solution?.length) ? (
                   <div className="mt-4">
                     <LiveBoardQuiz
                       question={activeQuestion}
@@ -1244,7 +1305,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                       onComplete={submitBoardQuizResults}
                     />
                   </div>
-                ) : !coach && (
+                ) : !coach && !studentQuizMode && (
                   <div className="mt-3 flex gap-2">
                     <input value={moveAnswer} onChange={(event) => setMoveAnswer(event.target.value)} className="h-10 flex-1 rounded-md border px-3 text-sm" placeholder="Enter move, e.g. Nf3" />
                     <button onClick={submitResponse} className="rounded-md bg-purple-700 px-3 text-sm font-semibold text-white">Submit</button>
@@ -1915,7 +1976,7 @@ function LiveBoardQuiz({
   }
 
   function reset() {
-    const next = new Chess(parsed.start);
+    const next = parsed.start === "start" ? new Chess() : new Chess(parsed.start);
     setGame(next);
     setPosition(parsed.start);
     setPly(0);
@@ -1976,6 +2037,139 @@ function LiveBoardQuiz({
         <button type="button" className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold" onClick={reset}><RotateCcw size={14} className="mr-1 inline" /> Reset</button>
         <button type="button" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-700" onClick={skipCurrent}>Skip</button>
       </div>
+    </div>
+  );
+}
+
+function CoachQuizMonitor({
+  question,
+  responses,
+  students,
+  onEndQuiz,
+}: {
+  question: any;
+  responses: any[];
+  students: any[];
+  onEndQuiz: () => void;
+}) {
+  const items = Array.isArray(question?.items) && question.items.length
+    ? question.items
+    : [{
+        id: `${question?._id || "quiz"}-single`,
+        title: question?.title || "Live quiz",
+        fen: question?.fen || "start",
+        points: question?.scoring?.correct ?? 5,
+      }];
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const activeItem = items[Math.min(currentIndex, items.length - 1)];
+  const position = activeItem?.fen && activeItem.fen !== "start" ? activeItem.fen : question?.fen || "start";
+  const responseMap = new Map((responses || []).map((response: any) => [response.student?._id || response.student, response]));
+  const submitted = responses.length;
+  const totalStudents = students.length;
+
+  return (
+    <div className="mx-auto w-full max-w-[840px] space-y-4">
+      <div className="rounded-2xl border border-purple-200 bg-purple-50 p-4 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="text-xs font-black uppercase tracking-[0.16em] text-purple-700">Live Quiz</div>
+            <h3 className="mt-1 text-xl font-black text-purple-950">{question?.title || "Classroom Quiz"}</h3>
+            <p className="mt-1 text-sm text-purple-800">{question?.instructions || "Students are solving directly on their boards."}</p>
+          </div>
+          <button onClick={onEndQuiz} className="rounded-xl bg-purple-700 px-4 py-2 text-sm font-bold text-white shadow-lg shadow-purple-900/20">End Quiz</button>
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          <SummaryCard label="Students Submitted" value={`${submitted}/${totalStudents}`} icon={<Users size={16} />} />
+          <SummaryCard label="Items in Quiz" value={items.length} icon={<FileQuestion size={16} />} />
+          <SummaryCard label="Timer" value={question?.timer?.perQuestionSeconds ? `${question.timer.perQuestionSeconds}s` : "Flexible"} icon={<Clock size={16} />} />
+        </div>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(300px,420px)_1fr]">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-lg shadow-brand/10">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="text-sm font-bold text-slate-700">Current quiz position</div>
+            {items.length > 1 ? (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCurrentIndex((value) => Math.max(0, value - 1))}
+                  className="grid h-8 w-8 place-items-center rounded-lg border border-slate-200 bg-white text-slate-700"
+                >
+                  <ChevronLeft size={14} />
+                </button>
+                <span className="text-xs font-bold text-slate-500">{currentIndex + 1}/{items.length}</span>
+                <button
+                  type="button"
+                  onClick={() => setCurrentIndex((value) => Math.min(items.length - 1, value + 1))}
+                  className="grid h-8 w-8 place-items-center rounded-lg border border-slate-200 bg-white text-slate-700"
+                >
+                  <ChevronRight size={14} />
+                </button>
+              </div>
+            ) : null}
+          </div>
+          <Chessboard
+            position={position}
+            boardWidth={380}
+            arePiecesDraggable={false}
+            showBoardNotation={false}
+            customDarkSquareStyle={{ backgroundColor: "#b58863" }}
+            customLightSquareStyle={{ backgroundColor: "#f0d9b5" }}
+          />
+          <div className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-600">
+            {activeItem?.title || "Current position"} • {activeItem?.points || question?.scoring?.correct || 5} pts
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-lg shadow-brand/10">
+          <div className="mb-3 text-sm font-bold text-slate-700">Student submissions</div>
+          <div className="space-y-3">
+            {students.map((student: any) => {
+              const response: any = responseMap.get(student._id);
+              return (
+                <div key={student._id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div className="font-semibold text-slate-950">{student.name}</div>
+                      <div className="text-xs text-slate-500">{student.username || student.email}</div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 text-xs font-bold">
+                      <span className={`rounded-full px-2.5 py-1 ${response ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"}`}>
+                        {response ? "Submitted" : "Waiting"}
+                      </span>
+                      {response ? (
+                        <>
+                          <span className={`rounded-full px-2.5 py-1 ${response.correct ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+                            {response.correct ? "Correct" : response.feedback || "Recorded"}
+                          </span>
+                          <span className="rounded-full bg-purple-100 px-2.5 py-1 text-purple-700">{Number(response.score || 0)} pts</span>
+                        </>
+                      ) : null}
+                    </div>
+                  </div>
+                  {response ? (
+                    <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                      <InfoTile label="Time" value={`${Number(response.timeTakenSeconds || 0)} sec`} />
+                      <InfoTile label="Attempts" value={Number(response.attemptsUsed || 0)} />
+                      <InfoTile label="Hints" value={Number(response.hintsUsed || 0)} />
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function InfoTile({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+      <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">{label}</div>
+      <div className="mt-1 text-sm font-semibold text-slate-950">{value}</div>
     </div>
   );
 }

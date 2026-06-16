@@ -5,7 +5,11 @@ import { Homework, Submission } from "@/models/Homework";
 import { Tournament } from "@/models/Tournament";
 import { Attendance } from "@/models/Attendance";
 import { User } from "@/models/User";
-import { flattenScheduledSessions } from "@/lib/classroomSessions";
+import {
+  deriveScheduledSessionStatus,
+  flattenScheduledSessions,
+  isSessionUpcomingLike,
+} from "@/lib/classroomSessions";
 import CalendarWorkspace, { type CalendarEvent } from "@/components/calendar/CalendarWorkspace";
 
 export const dynamic = "force-dynamic";
@@ -33,28 +37,6 @@ function joinNames(items: any[] = [], fallback = "") {
   return names.length ? names.join(", ") : fallback;
 }
 
-function sessionStatusForStudent(session: any, attendanceStatus?: string, now = new Date()) {
-  const raw = String(session?.status || "scheduled").toLowerCase();
-  if (raw === "cancelled") return "cancelled";
-  if (raw === "rescheduled") return "rescheduled";
-  if (attendanceStatus === "absent") return "missed";
-  if (attendanceStatus === "late") return "late";
-  if (attendanceStatus === "present") return "completed";
-  const start = session?.scheduledFor ? new Date(session.scheduledFor) : null;
-  if (start && start.getTime() < now.getTime()) return raw === "completed" ? "completed" : "pending";
-  return "upcoming";
-}
-
-function sessionStatusForCoach(session: any, now = new Date()) {
-  const raw = String(session?.status || "scheduled").toLowerCase();
-  if (raw === "cancelled") return "cancelled";
-  if (raw === "rescheduled") return "rescheduled";
-  if (raw === "ongoing") return "live";
-  const start = session?.scheduledFor ? new Date(session.scheduledFor) : null;
-  if (start && start.getTime() < now.getTime()) return raw === "completed" ? "completed" : "pending";
-  return "upcoming";
-}
-
 function buildClassEvent({
   classroom,
   session,
@@ -72,6 +54,7 @@ function buildClassEvent({
   const batchLabel = joinNames(classroom?.batches, classroom?.batches?.length ? "" : `${classroom?.students?.length || 0} students`);
   const studentLabel = joinNames(classroom?.students, classroom?.students?.length ? "" : "No students assigned");
   const topic = session?.topicName || classroom?.topicName || classroom?.title || "Class session";
+  const joinable = isSessionUpcomingLike(status as any);
 
   return {
     id: `class-${classroomId}-${sessionId}`,
@@ -87,9 +70,9 @@ function buildClassEvent({
     batchLabel,
     studentLabel,
     durationLabel: formatDuration(Number(session.durationMinutes || classroom?.durationMinutes || 60)),
-    href: `/classrooms/${classroomId}?session=${sessionId}`,
-    hrefLabel: "Join Class",
-    meetingUrl: classroom?.meetingUrl || undefined,
+    href: joinable ? `/classrooms/${classroomId}?session=${sessionId}` : undefined,
+    hrefLabel: joinable ? "Join Class" : undefined,
+    meetingUrl: joinable ? classroom?.meetingUrl || undefined : undefined,
   };
 }
 
@@ -223,7 +206,9 @@ async function getStudentEvents(userId: string) {
 
   const submissionByHomework = new Map(submissions.map((item: any) => [objectId(item.homework), item]));
   const classEvents = flattenScheduledSessions(classrooms).map(({ classroom, session }: any) => {
-    const status = sessionStatusForStudent(session, attendanceBySession.get(`${objectId(classroom._id)}-${dateKey(session.scheduledFor)}`));
+    const status = deriveScheduledSessionStatus(session, new Date(), {
+      attendanceStatus: attendanceBySession.get(`${objectId(classroom._id)}-${dateKey(session.scheduledFor)}`),
+    });
     return buildClassEvent({ classroom, session, role: "student", status });
   });
 
@@ -265,14 +250,14 @@ async function getCoachEvents(userId: string) {
       classroom,
       session,
       role: "instructor",
-      status: sessionStatusForCoach(session),
+      status: deriveScheduledSessionStatus(session),
     })
   );
 
   const attendanceEvents = sessions
     .filter(({ session }: any) => {
-      const start = new Date(session.scheduledFor);
-      return start.getTime() < Date.now() && !["cancelled", "rescheduled"].includes(String(session.status || "").toLowerCase());
+      const status = deriveScheduledSessionStatus(session);
+      return ["completed", "missed"].includes(status);
     })
     .filter(({ classroom, session }: any) => !attendanceKeys.has(`${objectId(classroom._id)}-${dateKey(session.scheduledFor)}`))
     .map((row: any) => buildAttendanceEvent(row));
@@ -308,14 +293,14 @@ async function getAdminEvents() {
       classroom,
       session,
       role: "admin",
-      status: sessionStatusForCoach(session),
+      status: deriveScheduledSessionStatus(session),
     })
   );
 
   const attendanceEvents = sessions
     .filter(({ session }: any) => {
-      const start = new Date(session.scheduledFor);
-      return start.getTime() < Date.now() && !["cancelled", "rescheduled"].includes(String(session.status || "").toLowerCase());
+      const status = deriveScheduledSessionStatus(session);
+      return ["completed", "missed"].includes(status);
     })
     .filter(({ classroom, session }: any) => !attendanceKeys.has(`${objectId(classroom._id)}-${dateKey(session.scheduledFor)}`))
     .map((row: any) => buildAttendanceEvent(row));

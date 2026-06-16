@@ -335,6 +335,10 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const classroom = data?.classroom;
   const scheduledSession = data?.scheduledSession;
   const activeQuestion = data?.activeQuestion;
+  const myLiveResponse = useMemo(
+    () => (data?.responses || []).find((response: any) => response.student?._id === userId || response.student === userId) || null,
+    [data?.responses, userId]
+  );
   const students = classroom?.students || [];
   const pgnLibrary = data?.pgnLibrary || [];
   const studentQuizMode = Boolean(activeQuestion) && !coach && ((Array.isArray(activeQuestion?.items) && activeQuestion.items.length > 0) || activeQuestion?.solution?.length);
@@ -744,6 +748,8 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
         scoring: { correct: 5, wrongPenalty: 1, hintPenalty: 1, speedBonus: 2 },
         attempts: "multiple",
         hintsEnabled: true,
+        progressionMode: "auto",
+        currentItemIndex: 0,
       }),
     });
     if (res.ok) toast.success("Live quiz launched");
@@ -784,6 +790,38 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       toast.success("Quiz submitted");
       await load();
     }
+  }
+
+  async function submitBoardQuizProgress(itemResults: Record<string, any>, timeTakenSeconds: number) {
+    if (!activeQuestion) return;
+    const attemptsUsed = Object.values(itemResults).reduce((sum: number, result: any) => sum + Math.max(1, Number(result.mistakes || 0) + 1), 0);
+    const hintsUsed = Object.values(itemResults).reduce((sum: number, result: any) => sum + Number(result.hintsUsed || 0), 0);
+    await fetch(liveUrl("/responses"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        question: activeQuestion._id,
+        itemResults,
+        timeTakenSeconds,
+        hintsUsed,
+        attemptsUsed,
+      }),
+    });
+  }
+
+  async function updateQuizProgression(update: { currentItemIndex?: number; progressionMode?: "auto" | "manual" }) {
+    if (!activeQuestion) return;
+    const res = await fetch(liveUrl("/question"), {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ questionId: activeQuestion._id, ...update }),
+    });
+    if (!res.ok) {
+      const payload = await res.json().catch(() => null);
+      toast.error(payload?.error || "Quiz progression could not be updated");
+      return;
+    }
+    await load();
   }
 
   async function endLiveQuiz() {
@@ -1170,6 +1208,10 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                 <LiveBoardQuiz
                   question={activeQuestion}
                   locked={Boolean(live?.locked)}
+                  existingItemResults={myLiveResponse?.itemResults || {}}
+                  progressionMode={activeQuestion?.progressionMode || "auto"}
+                  serverIndex={Number(activeQuestion?.currentItemIndex || 0)}
+                  onProgress={submitBoardQuizProgress}
                   onComplete={submitBoardQuizResults}
                 />
               </div>
@@ -1178,6 +1220,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                 question={activeQuestion}
                 responses={data?.responses || []}
                 students={students}
+                onUpdateProgression={updateQuizProgression}
                 onEndQuiz={endLiveQuiz}
               />
             ) : (
@@ -1302,6 +1345,10 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                     <LiveBoardQuiz
                       question={activeQuestion}
                       locked={Boolean(live?.locked)}
+                      existingItemResults={myLiveResponse?.itemResults || {}}
+                      progressionMode={activeQuestion?.progressionMode || "auto"}
+                      serverIndex={Number(activeQuestion?.currentItemIndex || 0)}
+                      onProgress={submitBoardQuizProgress}
                       onComplete={submitBoardQuizResults}
                     />
                   </div>
@@ -1831,10 +1878,18 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
 function LiveBoardQuiz({
   question,
   locked,
+  existingItemResults,
+  progressionMode,
+  serverIndex,
+  onProgress,
   onComplete,
 }: {
   question: any;
   locked: boolean;
+  existingItemResults?: Record<string, LiveBoardQuizResult>;
+  progressionMode?: "auto" | "manual";
+  serverIndex?: number;
+  onProgress?: (results: Record<string, LiveBoardQuizResult>, timeTakenSeconds: number) => void;
   onComplete: (results: Record<string, LiveBoardQuizResult>, timeTakenSeconds: number) => void;
 }) {
   const items = Array.isArray(question.items) && question.items.length
@@ -1848,8 +1903,8 @@ function LiveBoardQuiz({
         points: question.scoring?.correct ?? 5,
         timerSeconds: question.timer?.perQuestionSeconds || question.timer?.overallSeconds || 0,
       }];
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [results, setResults] = useState<Record<string, LiveBoardQuizResult>>({});
+  const [currentIndex, setCurrentIndex] = useState(Math.max(0, Number(serverIndex || 0)));
+  const [results, setResults] = useState<Record<string, LiveBoardQuizResult>>(existingItemResults || {});
   const [quizStartedAt] = useState(Date.now());
   const [itemStartedAt, setItemStartedAt] = useState(Date.now());
   const [remaining, setRemaining] = useState(Number(question.timer?.perQuestionSeconds || items[0]?.timerSeconds || 0));
@@ -1878,9 +1933,17 @@ function LiveBoardQuiz({
 
   useEffect(() => {
     submittedRef.current = false;
-    setCurrentIndex(0);
-    setResults({});
-  }, [question._id]);
+    setCurrentIndex(Math.max(0, Number(serverIndex || 0)));
+    setResults(existingItemResults || {});
+  }, [question._id, serverIndex, existingItemResults]);
+
+  useEffect(() => {
+    if (progressionMode !== "manual") return;
+    setCurrentIndex((value) => {
+      const nextValue = Math.max(0, Math.min(items.length - 1, Number(serverIndex || 0)));
+      return value === nextValue ? value : nextValue;
+    });
+  }, [items.length, progressionMode, serverIndex]);
 
   useEffect(() => {
     const next = parsed.start === "start" ? new Chess() : new Chess(parsed.start);
@@ -1919,6 +1982,11 @@ function LiveBoardQuiz({
     const nextResults = { ...results, [activeItem.id]: result };
     setResults(nextResults);
     advancedRef.current = true;
+    onProgress?.(nextResults, Math.round((Date.now() - quizStartedAt) / 1000));
+    if (progressionMode === "manual") {
+      setFeedback("Solved. Waiting for the coach to open the next quiz position.");
+      return;
+    }
     window.setTimeout(() => moveNext(nextResults), 650);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [solved]);
@@ -1993,6 +2061,11 @@ function LiveBoardQuiz({
     const result = { solved: false, skipped: true, mistakes, hintsUsed, timeTakenSeconds: Math.round((Date.now() - itemStartedAt) / 1000) };
     const nextResults = { ...results, [activeItem.id]: result };
     setResults(nextResults);
+    onProgress?.(nextResults, Math.round((Date.now() - quizStartedAt) / 1000));
+    if (progressionMode === "manual") {
+      setFeedback("Skipped. Waiting for the coach to open the next quiz position.");
+      return;
+    }
     if (currentIndex >= items.length - 1) {
       if (!submittedRef.current) {
         submittedRef.current = true;
@@ -2015,6 +2088,7 @@ function LiveBoardQuiz({
         <div className="flex items-center gap-2">
           <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-slate-700">{activeItem.points || 5} pts</span>
           <span className="rounded-full bg-purple-100 px-3 py-1 text-xs font-bold text-purple-800"><Clock size={12} className="mr-1 inline" /> {remaining ? `${remaining}s` : "No timer"}</span>
+          <span className="rounded-full bg-slate-200 px-3 py-1 text-xs font-bold text-slate-700">{progressionMode === "manual" ? "Manual progression" : "Auto progression"}</span>
         </div>
       </div>
 
@@ -2045,11 +2119,13 @@ function CoachQuizMonitor({
   question,
   responses,
   students,
+  onUpdateProgression,
   onEndQuiz,
 }: {
   question: any;
   responses: any[];
   students: any[];
+  onUpdateProgression: (update: { currentItemIndex?: number; progressionMode?: "auto" | "manual" }) => void;
   onEndQuiz: () => void;
 }) {
   const items = Array.isArray(question?.items) && question.items.length
@@ -2060,12 +2136,19 @@ function CoachQuizMonitor({
         fen: question?.fen || "start",
         points: question?.scoring?.correct ?? 5,
       }];
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [currentIndex, setCurrentIndex] = useState(Math.max(0, Number(question?.currentItemIndex || 0)));
   const activeItem = items[Math.min(currentIndex, items.length - 1)];
   const position = activeItem?.fen && activeItem.fen !== "start" ? activeItem.fen : question?.fen || "start";
   const responseMap = new Map((responses || []).map((response: any) => [response.student?._id || response.student, response]));
   const submitted = responses.length;
   const totalStudents = students.length;
+  const manualProgression = question?.progressionMode === "manual";
+
+  useEffect(() => {
+    if (manualProgression) {
+      setCurrentIndex(Math.max(0, Number(question?.currentItemIndex || 0)));
+    }
+  }, [manualProgression, question?.currentItemIndex]);
 
   return (
     <div className="mx-auto w-full max-w-[840px] space-y-4">
@@ -2076,7 +2159,15 @@ function CoachQuizMonitor({
             <h3 className="mt-1 text-xl font-black text-purple-950">{question?.title || "Classroom Quiz"}</h3>
             <p className="mt-1 text-sm text-purple-800">{question?.instructions || "Students are solving directly on their boards."}</p>
           </div>
-          <button onClick={onEndQuiz} className="rounded-xl bg-purple-700 px-4 py-2 text-sm font-bold text-white shadow-lg shadow-purple-900/20">End Quiz</button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => onUpdateProgression({ progressionMode: manualProgression ? "auto" : "manual", currentItemIndex: currentIndex })}
+              className={`rounded-xl px-4 py-2 text-sm font-bold ${manualProgression ? "bg-slate-900 text-white" : "bg-white text-purple-800 border border-purple-200"}`}
+            >
+              {manualProgression ? "Manual progression on" : "Switch to manual"}
+            </button>
+            <button onClick={onEndQuiz} className="rounded-xl bg-purple-700 px-4 py-2 text-sm font-bold text-white shadow-lg shadow-purple-900/20">End Quiz</button>
+          </div>
         </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
           <SummaryCard label="Students Submitted" value={`${submitted}/${totalStudents}`} icon={<Users size={16} />} />
@@ -2093,7 +2184,11 @@ function CoachQuizMonitor({
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setCurrentIndex((value) => Math.max(0, value - 1))}
+                  onClick={() => {
+                    const nextIndex = Math.max(0, currentIndex - 1);
+                    if (manualProgression) onUpdateProgression({ currentItemIndex: nextIndex });
+                    else setCurrentIndex(nextIndex);
+                  }}
                   className="grid h-8 w-8 place-items-center rounded-lg border border-slate-200 bg-white text-slate-700"
                 >
                   <ChevronLeft size={14} />
@@ -2101,7 +2196,11 @@ function CoachQuizMonitor({
                 <span className="text-xs font-bold text-slate-500">{currentIndex + 1}/{items.length}</span>
                 <button
                   type="button"
-                  onClick={() => setCurrentIndex((value) => Math.min(items.length - 1, value + 1))}
+                  onClick={() => {
+                    const nextIndex = Math.min(items.length - 1, currentIndex + 1);
+                    if (manualProgression) onUpdateProgression({ currentItemIndex: nextIndex });
+                    else setCurrentIndex(nextIndex);
+                  }}
                   className="grid h-8 w-8 place-items-center rounded-lg border border-slate-200 bg-white text-slate-700"
                 >
                   <ChevronRight size={14} />
@@ -2140,8 +2239,22 @@ function CoachQuizMonitor({
                       </span>
                       {response ? (
                         <>
-                          <span className={`rounded-full px-2.5 py-1 ${response.correct ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
-                            {response.correct ? "Correct" : response.feedback || "Recorded"}
+                          <span className={`rounded-full px-2.5 py-1 ${
+                            response.itemResults?.[activeItem?.id]?.solved
+                              ? "bg-emerald-100 text-emerald-700"
+                              : response.itemResults?.[activeItem?.id]?.skipped
+                                ? "bg-amber-100 text-amber-700"
+                                : response.correct
+                                  ? "bg-emerald-100 text-emerald-700"
+                                  : "bg-slate-200 text-slate-700"
+                          }`}>
+                            {response.itemResults?.[activeItem?.id]?.solved
+                              ? "Solved this item"
+                              : response.itemResults?.[activeItem?.id]?.skipped
+                                ? "Skipped this item"
+                                : response.correct
+                                  ? "Completed quiz"
+                                  : response.feedback || "Recorded"}
                           </span>
                           <span className="rounded-full bg-purple-100 px-2.5 py-1 text-purple-700">{Number(response.score || 0)} pts</span>
                         </>
@@ -2153,6 +2266,11 @@ function CoachQuizMonitor({
                       <InfoTile label="Time" value={`${Number(response.timeTakenSeconds || 0)} sec`} />
                       <InfoTile label="Attempts" value={Number(response.attemptsUsed || 0)} />
                       <InfoTile label="Hints" value={Number(response.hintsUsed || 0)} />
+                    </div>
+                  ) : null}
+                  {response ? (
+                    <div className="mt-2 text-xs text-slate-500">
+                      Progress: {Number(response.completedItems || 0)}/{Number(response.totalItems || items.length)} items completed
                     </div>
                   ) : null}
                 </div>

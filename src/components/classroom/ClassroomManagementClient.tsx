@@ -21,7 +21,13 @@ import {
 import { toast } from "sonner";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
-import { flattenScheduledSessions, formatJoinWindowLabel, isJoinWindowOpen } from "@/lib/classroomSessions";
+import {
+  deriveScheduledSessionStatus,
+  flattenScheduledSessions,
+  formatJoinWindowLabel,
+  isJoinWindowOpen,
+  isSessionUpcomingLike,
+} from "@/lib/classroomSessions";
 import JoinScheduledSessionButton from "@/components/classroom/JoinScheduledSessionButton";
 import PageLoadingOverlay from "@/components/feedback/PageLoadingOverlay";
 
@@ -452,7 +458,7 @@ export default function ClassroomManagementClient({ role }: { role: Role }) {
                         </div>
                       </div>
                       <div className="flex gap-1">
-                        <Link href={`/classrooms/${item._id}`} className="grid h-9 w-9 place-items-center rounded-lg border border-slate-200 text-slate-700"><Eye size={15} /></Link>
+                        <Link href={`/classrooms/${item._id}/summary`} className="grid h-9 w-9 place-items-center rounded-lg border border-slate-200 text-slate-700"><Eye size={15} /></Link>
                         <button onClick={() => resetModal(item.classroomType, item)} className="grid h-9 w-9 place-items-center rounded-lg border border-slate-200 text-slate-700"><Pencil size={15} /></button>
                         <button onClick={() => deleteItem(item)} className="grid h-9 w-9 place-items-center rounded-lg border border-red-200 bg-red-50 text-red-600"><Trash2 size={15} /></button>
                       </div>
@@ -930,7 +936,7 @@ function SimpleClassroomList({ items, loading, role }: { items: ClassroomItem[];
   const sessions = flattenScheduledSessions(items)
     .filter((row) => row.start)
     .sort((a, b) => (a.start?.getTime() || 0) - (b.start?.getTime() || 0));
-  const upcoming = sessions.filter((row) => (row.end?.getTime() || 0) >= now.getTime()).slice(0, 12);
+  const upcoming = sessions.filter((row) => isSessionUpcomingLike(deriveScheduledSessionStatus(row.session, now))).slice(0, 12);
 
   return (
     <div className="space-y-6">
@@ -979,6 +985,7 @@ function SimpleClassroomList({ items, loading, role }: { items: ClassroomItem[];
                     meetingUrl={classroom.meetingUrl}
                     className={joinOpen ? "btn-primary" : "btn-outline"}
                     label="Join Classroom"
+                    disabled={!joinOpen}
                   />
                 </div>
               </div>

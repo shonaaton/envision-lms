@@ -8,6 +8,15 @@ export type ScheduledSessionLike = {
   status?: string;
 };
 
+export type ScheduledSessionStatus =
+  | "upcoming"
+  | "join_available"
+  | "ongoing"
+  | "completed"
+  | "cancelled"
+  | "rescheduled"
+  | "missed";
+
 export function getSessionStart(session: ScheduledSessionLike) {
   const base = session.scheduledFor || session.classDate;
   if (!base) return null;
@@ -35,6 +44,35 @@ export function isJoinWindowOpen(session: ScheduledSessionLike, now = new Date()
   return now >= opensAt && now <= closesAt;
 }
 
+export function deriveScheduledSessionStatus(
+  session: ScheduledSessionLike,
+  now = new Date(),
+  options?: { attendanceStatus?: string | null }
+): ScheduledSessionStatus {
+  const raw = String(session?.status || "scheduled").toLowerCase();
+  const attendanceStatus = String(options?.attendanceStatus || "").toLowerCase();
+  if (raw === "cancelled") return "cancelled";
+  if (raw === "rescheduled") return "rescheduled";
+  if (raw === "completed") return attendanceStatus === "absent" ? "missed" : "completed";
+  if (raw === "ongoing" || raw === "live") return "ongoing";
+  if (attendanceStatus === "absent") return "missed";
+  if (attendanceStatus === "present" || attendanceStatus === "late") return "completed";
+
+  const start = getSessionStart(session);
+  const end = getSessionEnd(session);
+  if (!start || !end) return "upcoming";
+
+  const opensAt = new Date(start.getTime() - 15 * 60000);
+  if (now < opensAt) return "upcoming";
+  if (now >= opensAt && now < start) return "join_available";
+  if (now >= start && now <= end) return "ongoing";
+  return "completed";
+}
+
+export function isSessionUpcomingLike(status: ScheduledSessionStatus) {
+  return ["upcoming", "join_available", "ongoing"].includes(status);
+}
+
 export function flattenScheduledSessions(classrooms: any[]) {
   return classrooms.flatMap((classroom: any) => {
     const sessions = Array.isArray(classroom?.generatedSessions) && classroom.generatedSessions.length
@@ -56,6 +94,7 @@ export function flattenScheduledSessions(classrooms: any[]) {
       session,
       start: getSessionStart(session),
       end: getSessionEnd(session),
+      derivedStatus: deriveScheduledSessionStatus(session),
     }));
   });
 }
@@ -63,7 +102,13 @@ export function flattenScheduledSessions(classrooms: any[]) {
 export function formatJoinWindowLabel(session: ScheduledSessionLike, now = new Date()) {
   const start = getSessionStart(session);
   if (!start) return "Schedule pending";
-  if (isJoinWindowOpen(session, now)) return "Join now";
+  const status = deriveScheduledSessionStatus(session, now);
+  if (status === "join_available") return "Join available";
+  if (status === "ongoing") return "Ongoing";
+  if (status === "completed") return "Completed";
+  if (status === "cancelled") return "Cancelled";
+  if (status === "rescheduled") return "Rescheduled";
+  if (status === "missed") return "Missed";
   if (now < start) return `Opens ${new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }).format(start)}`;
   return "Session closed";
 }

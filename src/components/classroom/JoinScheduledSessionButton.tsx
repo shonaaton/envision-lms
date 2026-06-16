@@ -8,6 +8,7 @@ type Props = {
   meetingUrl?: string;
   className?: string;
   label?: string;
+  disabled?: boolean;
 };
 
 export default function JoinScheduledSessionButton({
@@ -16,10 +17,12 @@ export default function JoinScheduledSessionButton({
   meetingUrl,
   className = "btn-primary",
   label = "Join Classroom",
+  disabled = false,
 }: Props) {
   const router = useRouter();
 
   function handleClick() {
+    if (disabled) return;
     if (meetingUrl && typeof window !== "undefined") {
       window.open(meetingUrl, "_blank", "noopener,noreferrer");
     }
@@ -27,7 +30,7 @@ export default function JoinScheduledSessionButton({
   }
 
   return (
-    <button type="button" onClick={handleClick} className={className}>
+    <button type="button" onClick={handleClick} disabled={disabled} className={className}>
       {label}
     </button>
   );

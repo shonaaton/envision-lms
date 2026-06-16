@@ -32,6 +32,9 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     sideToMove: body.sideToMove,
     solution: body.solution || [],
     options: body.options || [],
+    items: body.items || [],
+    progressionMode: body.progressionMode === "manual" ? "manual" : "auto",
+    currentItemIndex: Math.max(0, Number(body.currentItemIndex || 0)),
     timer: body.timer || {},
     scoring: body.scoring || {},
     attempts: body.attempts || "single",
@@ -60,10 +63,17 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const questionId = String(body.questionId || live.activeQuestion || "").trim();
   if (!questionId) return NextResponse.json({ error: "No live quiz is active" }, { status: 404 });
 
-  const question = await LiveQuestion.findByIdAndUpdate(questionId, { status: body.status || "closed" }, { new: true });
-  await ClassroomSession.findByIdAndUpdate(live._id, {
-    $unset: { activeQuestion: 1 },
-    $set: { mode: "teaching", studentMovesEnabled: false, boardControlStudents: [] },
-  });
+  const update: Record<string, any> = {};
+  if (body.status) update.status = body.status;
+  if (body.progressionMode) update.progressionMode = body.progressionMode === "manual" ? "manual" : "auto";
+  if (typeof body.currentItemIndex === "number") update.currentItemIndex = Math.max(0, Number(body.currentItemIndex || 0));
+  const question = await LiveQuestion.findByIdAndUpdate(questionId, { $set: update }, { new: true });
+  if (body.status && body.status !== "live") {
+    await ClassroomSession.findByIdAndUpdate(live._id, {
+      $unset: { activeQuestion: 1 },
+      $set: { mode: "teaching", studentMovesEnabled: false, boardControlStudents: [] },
+    });
+    return NextResponse.json({ ok: true, question });
+  }
   return NextResponse.json({ ok: true, question });
 }

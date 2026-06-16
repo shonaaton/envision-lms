@@ -15,6 +15,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const body = await req.json();
   const question: any = await LiveQuestion.findById(body.question);
   if (!question) return NextResponse.json({ error: "Question not found" }, { status: 404 });
+  const existing: any = await LiveQuestionResponse.findOne({ question: question._id, student: (session.user as any).id });
   let submittedMove = String(body.submittedMove || "").trim();
   let correct = question.solution?.length ? question.solution[0] === submittedMove || question.solution.join(" ") === submittedMove : false;
   let score = correct ? question.scoring?.correct ?? 5 : -(question.scoring?.wrongPenalty ?? 0);
@@ -26,7 +27,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   let feedback = correct ? "Correct" : "Submitted";
 
   if (Array.isArray(question.items) && question.items.length) {
-    itemResults = body.itemResults || {};
+    itemResults = { ...(existing?.itemResults || {}), ...(body.itemResults || {}) };
     totalItems = question.items.length;
     score = 0;
     completedItems = 0;

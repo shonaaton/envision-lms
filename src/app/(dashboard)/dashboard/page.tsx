@@ -13,7 +13,13 @@ import { Invoice } from "@/models/Fee";
 import { Tournament } from "@/models/Tournament";
 import { AskCoachConversation, AskCoachMessage } from "@/models/AskCoach";
 import { StudentReward } from "@/models/ClassroomLive";
-import { flattenScheduledSessions, formatJoinWindowLabel, isJoinWindowOpen } from "@/lib/classroomSessions";
+import {
+  deriveScheduledSessionStatus,
+  flattenScheduledSessions,
+  formatJoinWindowLabel,
+  isJoinWindowOpen,
+  isSessionUpcomingLike,
+} from "@/lib/classroomSessions";
 import { summarizeCoachSessions } from "@/lib/teachingStats";
 import JoinScheduledSessionButton from "@/components/classroom/JoinScheduledSessionButton";
 import {
@@ -273,7 +279,7 @@ async function StudentDashboard({ userId }: { userId: string }) {
     classroomIds.includes(objectId(item.classroom))
   );
   const upcomingSessions = flattenScheduledSessions(classrooms)
-    .filter((row) => row.start && (row.end?.getTime() || 0) >= now.getTime())
+    .filter((row) => row.start && isSessionUpcomingLike(deriveScheduledSessionStatus(row.session, now)))
     .sort((a, b) => (a.start?.getTime() || 0) - (b.start?.getTime() || 0));
   const nextSession = upcomingSessions[0];
   const activeHomework = visibleHomework.slice(0, 4);
@@ -351,6 +357,7 @@ async function StudentDashboard({ userId }: { userId: string }) {
                   meetingUrl={nextSession.classroom.meetingUrl}
                   className={heroSessionOpen ? "inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-3 text-sm font-black text-brand shadow-lg shadow-black/20" : "inline-flex items-center gap-2 rounded-xl bg-white/10 px-5 py-3 text-sm font-black text-white"}
                   label="Join Classroom"
+                  disabled={!heroSessionOpen}
                 />
               </>
             ) : (
@@ -404,6 +411,7 @@ async function StudentDashboard({ userId }: { userId: string }) {
                       meetingUrl={classroom.meetingUrl}
                       className={canJoin ? "btn-primary" : "btn-outline"}
                       label="Join Classroom"
+                      disabled={!canJoin}
                     />
                   </div>
                 </div>
@@ -500,7 +508,7 @@ async function CoachDashboard({ userId, searchParams }: { userId: string; search
   ]);
 
   const sessions = flattenScheduledSessions(classrooms)
-    .filter((row) => row.start && (row.end?.getTime() || 0) >= now.getTime())
+    .filter((row) => row.start && isSessionUpcomingLike(deriveScheduledSessionStatus(row.session, now)))
     .sort((a, b) => (a.start?.getTime() || 0) - (b.start?.getTime() || 0));
   const teaching = summarizeCoachSessions(classrooms, { from, to });
 
@@ -592,6 +600,7 @@ async function CoachDashboard({ userId, searchParams }: { userId: string; search
                       meetingUrl={classroom.meetingUrl}
                       className={canJoin ? "btn-primary" : "btn-outline"}
                       label="Join Classroom"
+                      disabled={!canJoin}
                     />
                   </div>
                 </div>

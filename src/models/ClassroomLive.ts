@@ -104,6 +104,8 @@ const LiveQuestionSchema = new Schema(
         timerSeconds: Number,
       },
     ],
+    progressionMode: { type: String, enum: ["auto", "manual"], default: "auto" },
+    currentItemIndex: { type: Number, default: 0 },
     timer: {
       overallSeconds: Number,
       perQuestionSeconds: Number,

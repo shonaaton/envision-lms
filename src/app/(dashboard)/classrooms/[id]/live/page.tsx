@@ -1,5 +1,6 @@
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
+import { deriveScheduledSessionStatus, isJoinWindowOpen } from "@/lib/classroomSessions";
 import { Classroom } from "@/models/Classroom";
 import { notFound, redirect } from "next/navigation";
 import LiveClassroom from "@/components/classroom/LiveClassroom";
@@ -26,6 +27,9 @@ export default async function ClassroomLivePage({ params, searchParams }: { para
     if (!sessionId) redirect("/classrooms");
     const scheduledSession = (classroom.generatedSessions || []).find((item: any) => String(item._id) === sessionId);
     if (!scheduledSession) redirect("/classrooms");
+    const sessionStatus = deriveScheduledSessionStatus(scheduledSession);
+    if (["completed", "cancelled", "rescheduled", "missed"].includes(sessionStatus)) redirect("/classrooms");
+    if (!isJoinWindowOpen(scheduledSession)) redirect("/classrooms");
   }
 
   return <LiveClassroom classroomId={params.id} role={role} userId={userId} sessionId={searchParams.session} />;

@@ -1,5 +1,6 @@
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
+import { deriveScheduledSessionStatus, isJoinWindowOpen } from "@/lib/classroomSessions";
 import { Classroom } from "@/models/Classroom";
 import { ClassroomSession } from "@/models/ClassroomLive";
 import { notFound, redirect } from "next/navigation";
@@ -27,7 +28,9 @@ export default async function ClassroomDetail({ params, searchParams }: { params
     if (!sessionId) redirect("/classrooms");
     const scheduledSession: any = (classroom.generatedSessions || []).find((item: any) => String(item._id) === sessionId);
     if (!scheduledSession) redirect("/classrooms");
-    if (["completed", "cancelled"].includes(String(scheduledSession.status || "").toLowerCase())) redirect("/classrooms");
+    const sessionStatus = deriveScheduledSessionStatus(scheduledSession);
+    if (["completed", "cancelled", "rescheduled", "missed"].includes(sessionStatus)) redirect("/classrooms");
+    if (!isJoinWindowOpen(scheduledSession)) redirect("/classrooms");
     const liveSession: any = await ClassroomSession.findOne({ classroom: params.id, scheduledSessionId: sessionId }).lean();
     if (liveSession?.status === "ended") redirect("/classrooms");
   }

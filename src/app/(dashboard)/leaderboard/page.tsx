@@ -20,7 +20,7 @@ function objectId(value: any) {
 export default async function LeaderboardPage({
   searchParams,
 }: {
-  searchParams: { scope?: string; rankBy?: string; batch?: string; course?: string };
+  searchParams: { scope?: string; rankBy?: string; batch?: string; course?: string; level?: string; classroom?: string };
 }) {
   await dbConnect();
   const [students, submissions, attendance, liveResponses, rewards, batches, classrooms] = await Promise.all([
@@ -37,7 +37,10 @@ export default async function LeaderboardPage({
   const rankBy = searchParams.rankBy || "totalPoints";
   const selectedBatch = searchParams.batch || "";
   const selectedCourse = searchParams.course || "";
+  const selectedLevel = searchParams.level || "";
+  const selectedClassroom = searchParams.classroom || "";
   const availableCourses = Array.from(new Set(classrooms.map((item: any) => String(item.courseName || "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+  const availableLevels = Array.from(new Set(classrooms.map((item: any) => String(item.levelName || "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
 
   const courseStudentIds = new Set(
     selectedCourse
@@ -45,6 +48,30 @@ export default async function LeaderboardPage({
           .filter((item: any) => String(item.courseName || "") === selectedCourse)
           .flatMap((item: any) => (item.students || []).map((student: any) => objectId(student)))
       : []
+  );
+  const levelStudentIds = new Set(
+    selectedLevel
+      ? classrooms
+          .filter((item: any) => String(item.levelName || "") === selectedLevel)
+          .flatMap((item: any) => (item.students || []).map((student: any) => objectId(student)))
+      : []
+  );
+  const classroomStudentIds = new Set(
+    selectedClassroom
+      ? classrooms
+          .filter((item: any) => objectId(item._id) === selectedClassroom)
+          .flatMap((item: any) => (item.students || []).map((student: any) => objectId(student)))
+      : []
+  );
+  const scopedClassroomIds = new Set(
+    classrooms
+      .filter((item: any) => {
+        if (scope === "class" && selectedClassroom) return objectId(item._id) === selectedClassroom;
+        if (scope === "course" && selectedCourse) return String(item.courseName || "") === selectedCourse;
+        if (scope === "level" && selectedLevel) return String(item.levelName || "") === selectedLevel;
+        return true;
+      })
+      .map((item: any) => objectId(item._id))
   );
 
   const filteredStudents = students.filter((student: any) => {
@@ -54,13 +81,25 @@ export default async function LeaderboardPage({
     if (scope === "course" && selectedCourse) {
       return courseStudentIds.has(objectId(student._id));
     }
+    if (scope === "level" && selectedLevel) {
+      return levelStudentIds.has(objectId(student._id));
+    }
+    if (scope === "class" && selectedClassroom) {
+      return classroomStudentIds.has(objectId(student._id));
+    }
     return true;
   });
 
   const rows = filteredStudents.map((student: any) => {
     const id = objectId(student._id);
     const hw = submissions.filter((submission: any) => objectId(submission.student) === id);
-    const live = liveResponses.filter((response: any) => objectId(response.student) === id);
+    const live = liveResponses.filter((response: any) => {
+      if (objectId(response.student) !== id) return false;
+      if (scope === "class" || scope === "course" || scope === "level") {
+        return scopedClassroomIds.has(objectId(response.classroom));
+      }
+      return true;
+    });
     const rewardRows = rewards.filter((reward: any) => objectId(reward.student) === id);
     const attendanceRecords = attendance.flatMap((a: any) => a.records || []).filter((record: any) => objectId(record.student) === id);
     const present = attendanceRecords.filter((record: any) => record.status === "present" || record.status === "late");
@@ -87,7 +126,16 @@ export default async function LeaderboardPage({
   });
 
   rows.sort((a: any, b: any) => (Number(b[rankBy as keyof typeof b] || 0) - Number(a[rankBy as keyof typeof a] || 0)));
-  const title = scope === "batch" ? "Batch Leaderboard" : scope === "course" ? "Course Leaderboard" : "Academy Leaderboard";
+  const title =
+    scope === "batch"
+      ? "Batch Leaderboard"
+      : scope === "course"
+        ? "Course Leaderboard"
+        : scope === "level"
+          ? "Level Leaderboard"
+          : scope === "class"
+            ? "Class Leaderboard"
+            : "Academy Leaderboard";
 
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-5 text-slate-950 sm:px-6 lg:px-8">
@@ -101,6 +149,8 @@ export default async function LeaderboardPage({
             <option value="academy">Academy Leaderboard</option>
             <option value="batch">Batch Leaderboard</option>
             <option value="course">Course Leaderboard</option>
+            <option value="level">Level Leaderboard</option>
+            <option value="class">Class Leaderboard</option>
             <option value="quiz">Quiz Leaderboard</option>
             <option value="homework">Homework Leaderboard</option>
           </select>
@@ -111,6 +161,14 @@ export default async function LeaderboardPage({
           <select name="course" defaultValue={selectedCourse} className="h-10 rounded-md border px-3 text-sm">
             <option value="">All courses</option>
             {availableCourses.map((course) => <option key={course} value={course}>{course}</option>)}
+          </select>
+          <select name="level" defaultValue={selectedLevel} className="h-10 rounded-md border px-3 text-sm">
+            <option value="">All levels</option>
+            {availableLevels.map((level) => <option key={level} value={level}>{level}</option>)}
+          </select>
+          <select name="classroom" defaultValue={selectedClassroom} className="h-10 rounded-md border px-3 text-sm">
+            <option value="">All classes</option>
+            {classrooms.map((classroom: any) => <option key={objectId(classroom._id)} value={objectId(classroom._id)}>{classroom.title}</option>)}
           </select>
           <select name="rankBy" defaultValue={rankBy} className="h-10 rounded-md border px-3 text-sm">
             <option value="totalPoints">Total Points</option>

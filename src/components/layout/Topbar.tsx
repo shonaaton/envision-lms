@@ -10,6 +10,7 @@ type NotificationItem = {
   message: string;
   readAt?: string;
   createdAt: string;
+  metadata?: { href?: string };
 };
 
 export default function Topbar({ user }: { user: { name?: string | null; role: string } }) {
@@ -72,7 +73,7 @@ export default function Topbar({ user }: { user: { name?: string | null; role: s
                 <div className="max-h-96 space-y-2 overflow-y-auto pr-1">
                   {notifications.length === 0 && <div className="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">No notifications yet.</div>}
                   {notifications.map((item) => (
-                    <div key={item._id} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+                    <a key={item._id} href={item.metadata?.href || "#"} className="block rounded-xl border border-slate-200 bg-white p-3 shadow-sm hover:border-brand/20 hover:bg-slate-50">
                       <div className="flex items-start justify-between gap-2">
                         <div className="font-bold text-slate-950">{item.title}</div>
                         {!item.readAt && <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-brand" />}
@@ -81,7 +82,7 @@ export default function Topbar({ user }: { user: { name?: string | null; role: s
                       <div className="mt-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
                         {new Date(item.createdAt).toLocaleString()}
                       </div>
-                    </div>
+                    </a>
                   ))}
                 </div>
               </div>

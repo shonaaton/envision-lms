@@ -1,8 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { CalendarClock, Pencil, Trash2 } from "lucide-react";
+import { CalendarClock, Eye, Pencil, Trash2 } from "lucide-react";
 
 export default function HomeworkActions({ homework }: { homework: any }) {
   const router = useRouter();
@@ -44,6 +45,9 @@ export default function HomeworkActions({ homework }: { homework: any }) {
 
   return (
     <div className="flex flex-wrap gap-2">
+      <Link href={`/homework/${homework._id}/review`} className="rounded-md border border-slate-200 p-2 text-slate-700 hover:bg-slate-50" title="Review submissions">
+        <Eye size={14} />
+      </Link>
       <button type="button" className="rounded-md border border-slate-200 p-2 text-slate-700 hover:bg-slate-50" onClick={editTitle} title="Edit title and description">
         <Pencil size={14} />
       </button>

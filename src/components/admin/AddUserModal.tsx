@@ -40,9 +40,9 @@ export default function AddUserModal({
     const data = await res.json();
     if (!res.ok) return toast.error(data.error || "Failed");
     if (data.tempPassword) {
-      toast.success(`${data.username} created. Temp password: ${data.tempPassword}`, { duration: 12000 });
+      toast.success(`${data.username} created. Temp password: ${data.tempPassword}`, { duration: 6000 });
     } else {
-      toast.success(`${data.username} created`);
+      toast.success(`${data.username} created`, { duration: 3500 });
     }
     onCreated();
     onClose();

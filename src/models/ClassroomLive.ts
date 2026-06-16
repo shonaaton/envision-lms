@@ -2,7 +2,9 @@ import { Schema, model, models, type InferSchemaType } from "mongoose";
 
 const ClassroomSessionSchema = new Schema(
   {
-    classroom: { type: Schema.Types.ObjectId, ref: "Classroom", required: true, unique: true, index: true },
+    classroom: { type: Schema.Types.ObjectId, ref: "Classroom", required: true, index: true },
+    scheduledSessionId: { type: String, required: true, index: true },
+    sessionKey: { type: String, required: true, unique: true, index: true },
     coach: { type: Schema.Types.ObjectId, ref: "User", index: true },
     topic: { type: String, default: "" },
     mode: {
@@ -61,6 +63,7 @@ const ClassroomSessionSchema = new Schema(
 const ClassroomChatMessageSchema = new Schema(
   {
     classroom: { type: Schema.Types.ObjectId, ref: "Classroom", required: true, index: true },
+    scheduledSessionId: { type: String, required: true, index: true },
     sender: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
     message: { type: String, required: true },
   },
@@ -70,6 +73,7 @@ const ClassroomChatMessageSchema = new Schema(
 const LiveQuestionSchema = new Schema(
   {
     classroom: { type: Schema.Types.ObjectId, ref: "Classroom", required: true, index: true },
+    scheduledSessionId: { type: String, required: true, index: true },
     session: { type: Schema.Types.ObjectId, ref: "ClassroomSession", required: true, index: true },
     createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
     type: {
@@ -123,6 +127,7 @@ const LiveQuestionResponseSchema = new Schema(
   {
     question: { type: Schema.Types.ObjectId, ref: "LiveQuestion", required: true, index: true },
     classroom: { type: Schema.Types.ObjectId, ref: "Classroom", required: true, index: true },
+    scheduledSessionId: { type: String, required: true, index: true },
     student: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
     submittedMove: String,
     submittedSequence: [String],
@@ -140,6 +145,7 @@ const LiveQuestionResponseSchema = new Schema(
   { timestamps: true }
 );
 LiveQuestionResponseSchema.index({ question: 1, student: 1 }, { unique: true });
+ClassroomSessionSchema.index({ classroom: 1, scheduledSessionId: 1 }, { unique: true });
 
 const StudentRewardSchema = new Schema(
   {

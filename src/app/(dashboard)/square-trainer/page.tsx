@@ -281,10 +281,7 @@ export default function SquareTrainerPage() {
                         : undefined,
                     }}
                     aria-label={`Square ${item.square}`}
-                  >
-                    <span className="absolute left-1.5 top-1 text-[11px] font-bold text-black/55">{item.rank}</span>
-                    <span className="absolute bottom-1 right-1.5 text-[11px] font-bold text-black/55">{item.file}</span>
-                  </button>
+                  />
                 ))}
               </div>
             </div>

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { ClassroomSession, LiveQuestion } from "@/models/ClassroomLive";
+import { getRequestedSessionId } from "@/lib/classroomLiveSession";
 
 export const dynamic = "force-dynamic";
 
@@ -10,11 +11,14 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const role = (session?.user as any)?.role;
   if (!session || (role !== "admin" && role !== "instructor")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
-  const live: any = await ClassroomSession.findOne({ classroom: params.id });
+  const scheduledSessionId = getRequestedSessionId(req);
+  if (!scheduledSessionId) return NextResponse.json({ error: "Scheduled session required" }, { status: 400 });
+  const live: any = await ClassroomSession.findOne({ classroom: params.id, scheduledSessionId });
   if (!live) return NextResponse.json({ error: "Live session missing" }, { status: 404 });
   const body = await req.json();
   const question = await LiveQuestion.create({
     classroom: params.id,
+    scheduledSessionId,
     session: live._id,
     createdBy: (session.user as any).id,
     type: body.type || "ask_everyone",

@@ -42,6 +42,17 @@ const ScheduledSessionSchema = new Schema(
     notes: String,
     originalDate: Date,
     substituteCoach: { type: Schema.Types.ObjectId, ref: "User" },
+    actualStartedAt: Date,
+    actualEndedAt: Date,
+    conductedBy: { type: Schema.Types.ObjectId, ref: "User" },
+    coachAttendanceStatus: {
+      type: String,
+      enum: ["pending", "present", "missed", "rescheduled", "cancelled"],
+      default: "pending",
+    },
+    teachingMinutes: { type: Number, default: 0 },
+    attendanceMarkedAt: Date,
+    summary: { type: Schema.Types.Mixed, default: {} },
   },
   { _id: true }
 );

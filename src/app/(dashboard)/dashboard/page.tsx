@@ -14,6 +14,7 @@ import { Tournament } from "@/models/Tournament";
 import { AskCoachConversation, AskCoachMessage } from "@/models/AskCoach";
 import { StudentReward } from "@/models/ClassroomLive";
 import { flattenScheduledSessions, formatJoinWindowLabel, isJoinWindowOpen } from "@/lib/classroomSessions";
+import { summarizeCoachSessions } from "@/lib/teachingStats";
 import JoinScheduledSessionButton from "@/components/classroom/JoinScheduledSessionButton";
 import {
   Activity as ActivityIcon,
@@ -500,8 +501,9 @@ async function StudentDashboard({ userId }: { userId: string }) {
   );
 }
 
-async function CoachDashboard({ userId }: { userId: string }) {
+async function CoachDashboard({ userId, searchParams }: { userId: string; searchParams: DashboardSearchParams }) {
   const now = new Date();
+  const { from, to } = getRange(searchParams);
   const [classrooms, homework, tournaments] = await Promise.all([
     Classroom.find({ $or: [{ coach: userId }, { instructor: userId }], isActive: { $ne: false } })
       .populate("students", "name")
@@ -514,6 +516,7 @@ async function CoachDashboard({ userId }: { userId: string }) {
   const sessions = flattenScheduledSessions(classrooms)
     .filter((row) => row.start && (row.end?.getTime() || 0) >= now.getTime())
     .sort((a, b) => (a.start?.getTime() || 0) - (b.start?.getTime() || 0));
+  const teaching = summarizeCoachSessions(classrooms, { from, to });
 
   return (
     <div className="space-y-5 text-slate-950">
@@ -522,13 +525,55 @@ async function CoachDashboard({ userId }: { userId: string }) {
           <div>
             <div className="text-[11px] font-black uppercase tracking-[0.18em] text-brand/70">Coach Workspace</div>
             <h1 className="mt-1 text-3xl font-black text-brand">Teaching Dashboard</h1>
-            <p className="mt-1 text-sm text-slate-600">Your scheduled classes, assigned students, and classroom entry points all in one place.</p>
+            <p className="mt-1 text-sm text-slate-600">Your scheduled classes, assigned students, classroom entry points, and teaching hours in one place.</p>
           </div>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <StatCard label="Next Sessions" value={sessions.length} note="Upcoming schedule" icon={Calendar} tone="purple" />
-            <StatCard label="Classes" value={classrooms.length} note="Assigned classrooms" icon={BookOpen} tone="blue" />
-            <StatCard label="Homework" value={homework.length} note="Assignments created" icon={ClipboardList} tone="amber" />
-            <StatCard label="Students" value={new Set(classrooms.flatMap((item: any) => (item.students || []).map((student: any) => objectId(student)))).size} note="Learners assigned" icon={Users} tone="green" />
+            <StatCard label="Teaching Hours" value={teaching.totalHoursConducted} note={`${formatDate(from)} to ${formatDate(to)}`} icon={BookOpen} tone="blue" />
+            <StatCard label="Classes Conducted" value={teaching.classesConducted} note={`${teaching.classesCancelled} cancelled`} icon={ClipboardList} tone="amber" />
+            <StatCard label="Students" value={teaching.totalStudentsTaught || new Set(classrooms.flatMap((item: any) => (item.students || []).map((student: any) => objectId(student)))).size} note={`${teaching.attendancePercentage}% completion`} icon={Users} tone="green" />
+          </div>
+        </div>
+      </section>
+
+      <section className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
+        <div className="rounded-[28px] border border-brand/10 bg-white p-5 shadow-[0_20px_50px_rgba(90,19,114,0.10)]">
+          <SectionTitle icon={BarChart3} title="Teaching Summary" subtitle="Automatic coaching-hour tracking from completed sessions" />
+          <div className="grid grid-cols-2 gap-3">
+            <InfoTile label="Total Hours" value={teaching.totalHoursConducted} />
+            <InfoTile label="Avg Duration" value={formatDuration(teaching.averageClassDuration || 0)} />
+            <InfoTile label="Rescheduled" value={teaching.classesRescheduled} />
+            <InfoTile label="Attendance %" value={`${teaching.attendancePercentage}%`} />
+          </div>
+        </div>
+
+        <div className="rounded-[28px] border border-brand/10 bg-white p-5 shadow-[0_20px_50px_rgba(90,19,114,0.10)]">
+          <SectionTitle icon={Users} title="Batch-Wise Teaching Hours" subtitle="Workload split by assigned batch" />
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-sm">
+              <thead className="text-xs uppercase text-slate-500">
+                <tr className="border-b border-slate-100">
+                  <th className="px-3 py-3 font-medium">Batch</th>
+                  <th className="px-3 py-3 font-medium">Classes</th>
+                  <th className="px-3 py-3 font-medium">Hours</th>
+                  <th className="px-3 py-3 font-medium">Students</th>
+                </tr>
+              </thead>
+              <tbody>
+                {teaching.batchRows.length ? teaching.batchRows.map((row) => (
+                  <tr key={row.batchName} className="border-b border-slate-100 last:border-0">
+                    <td className="px-3 py-3 font-medium text-slate-950">{row.batchName}</td>
+                    <td className="px-3 py-3">{row.classesConducted}</td>
+                    <td className="px-3 py-3">{row.hoursConducted.toFixed(1)}</td>
+                    <td className="px-3 py-3">{row.students}</td>
+                  </tr>
+                )) : (
+                  <tr>
+                    <td colSpan={4} className="px-3 py-6 text-center text-sm text-slate-500">Teaching hours will appear here once scheduled classes are completed.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       </section>
@@ -605,7 +650,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
   await dbConnect();
 
   if (role === "student") return <StudentDashboard userId={userId} />;
-  if (role === "instructor") return <CoachDashboard userId={userId} />;
+  if (role === "instructor") return <CoachDashboard userId={userId} searchParams={searchParams} />;
 
   const { preset, from, to } = getRange(searchParams);
   const focusDate = parseDate(searchParams.date) || new Date();
@@ -764,6 +809,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
     const studentIds = new Set(coachClasses.flatMap((classroom: any) => (classroom.students || []).map(objectId)));
     const coachHomework = homework.filter((item: any) => objectId(item.instructor) === cid);
     const coachAttendance = attendance.filter((item: any) => coachClasses.some((classroom: any) => objectId(classroom._id) === objectId(item.classroom?._id ?? item.classroom)));
+    const teaching = summarizeCoachSessions(coachClasses, { from, to });
     return {
       id: cid,
       name: coach.name,
@@ -771,8 +817,32 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
       classes: coachClasses.length,
       homework: coachHomework.length,
       sessions: coachAttendance.length,
+      hours: teaching.totalHoursConducted,
+      attendancePercentage: teaching.attendancePercentage,
+      activeBatches: new Set(coachClasses.flatMap((classroom: any) => (classroom.batches || []).map((batch: any) => batch.name || objectId(batch)))).size,
     };
   });
+  const topCoach = coachRows.slice().sort((a, b) => b.hours - a.hours)[0];
+  const batchTeachingRows = Array.from(
+    classrooms.reduce((map, classroom: any) => {
+      const completedSessions = (classroom.generatedSessions || []).filter((session: any) => session.status === "completed" && new Date(session.actualEndedAt || session.scheduledFor) >= from && new Date(session.actualEndedAt || session.scheduledFor) <= to);
+      const sessionHours = completedSessions.reduce((sum: number, session: any) => sum + Number(session.teachingMinutes || session.durationMinutes || 0) / 60, 0);
+      (classroom.batches || []).forEach((batchId: any) => {
+        const batch = batches.find((item: any) => objectId(item._id) === objectId(batchId));
+        const key = batch?.name || "Unassigned";
+        const current = map.get(key) || { batchName: key, coachName: "", classesConducted: 0, hoursConducted: 0, students: 0 };
+        current.coachName = coachRows.find((row) => row.id === objectId(classroom.coach || classroom.instructor))?.name || current.coachName;
+        current.classesConducted += completedSessions.length;
+        current.hoursConducted += sessionHours;
+        current.students = Math.max(current.students, (batch?.students || classroom.students || []).length || 0);
+        map.set(key, current);
+      });
+      return map;
+    }, new Map<string, { batchName: string; coachName: string; classesConducted: number; hoursConducted: number; students: number }>())
+  ).map(([, value]) => value).sort((a, b) => b.hoursConducted - a.hoursConducted);
+  const topBatch = batchTeachingRows[0];
+  const totalTeachingHours = coachRows.reduce((sum, row) => sum + row.hours, 0);
+  const averageTeachingHours = coachRows.length ? (totalTeachingHours / coachRows.length) : 0;
 
   const activities: any[] = [
     ...loggedActivities.map((item: any) => ({
@@ -872,6 +942,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
           <StatCard label="Students Added Today" value={studentsAddedToday.length} note={formatDate(focusDate)} icon={GraduationCap} tone="blue" />
           <StatCard label="Today's Fee Collection" value={money(todayCollection)} note="Paid invoices on selected date" icon={CircleDollarSign} tone="green" />
           <StatCard label="Today's Due Amount" value={money(todayDue)} note="Invoices due on selected date" icon={Calendar} tone="amber" />
+        </div>
+        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <StatCard label="Teaching Hours" value={totalTeachingHours.toFixed(1)} note="Selected date range" icon={BookOpen} tone="blue" />
+          <StatCard label="Top Coach" value={topCoach?.name || "-"} note={`${topCoach?.hours?.toFixed?.(1) || 0} hours`} icon={GraduationCap} tone="purple" />
+          <StatCard label="Top Batch" value={topBatch?.batchName || "-"} note={`${topBatch?.hoursConducted?.toFixed?.(1) || 0} hours`} icon={Users} tone="green" />
+          <StatCard label="Avg / Coach" value={averageTeachingHours.toFixed(1)} note="Average teaching hours" icon={BarChart3} tone="amber" />
         </div>
         <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-3">
           <div className="rounded-xl bg-slate-50 p-4 shadow-inner shadow-slate-200/70">
@@ -1033,6 +1109,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
                 <th className="px-3 py-3 font-medium">Coach</th>
                 <th className="px-3 py-3 font-medium">Students</th>
                 <th className="px-3 py-3 font-medium">Classes</th>
+                <th className="px-3 py-3 font-medium">Hours</th>
+                <th className="px-3 py-3 font-medium">Batches</th>
+                <th className="px-3 py-3 font-medium">Attendance %</th>
                 <th className="px-3 py-3 font-medium">Homework</th>
                 <th className="px-3 py-3 font-medium">Sessions</th>
               </tr>
@@ -1043,10 +1122,45 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
                   <td className="px-3 py-3 font-medium text-slate-950">{row.name}</td>
                   <td className="px-3 py-3">{compactNumber(row.students)}</td>
                   <td className="px-3 py-3">{compactNumber(row.classes)}</td>
+                  <td className="px-3 py-3">{row.hours.toFixed(1)}</td>
+                  <td className="px-3 py-3">{compactNumber(row.activeBatches)}</td>
+                  <td className="px-3 py-3">{row.attendancePercentage}%</td>
                   <td className="px-3 py-3">{compactNumber(row.homework)}</td>
                   <td className="px-3 py-3">{compactNumber(row.sessions)}</td>
                 </tr>
               ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_18px_45px_rgba(90,19,114,0.12)]">
+        <SectionTitle icon={Users} title="Batch-Wise Teaching Hours" subtitle="Completed teaching workload per batch" />
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-left text-sm">
+            <thead className="text-xs uppercase text-slate-500">
+              <tr className="border-b border-slate-100">
+                <th className="px-3 py-3 font-medium">Batch</th>
+                <th className="px-3 py-3 font-medium">Coach</th>
+                <th className="px-3 py-3 font-medium">Classes</th>
+                <th className="px-3 py-3 font-medium">Hours</th>
+                <th className="px-3 py-3 font-medium">Students</th>
+              </tr>
+            </thead>
+            <tbody>
+              {batchTeachingRows.length ? batchTeachingRows.map((row) => (
+                <tr key={row.batchName} className="border-b border-slate-100 last:border-0">
+                  <td className="px-3 py-3 font-medium text-slate-950">{row.batchName}</td>
+                  <td className="px-3 py-3">{row.coachName || "-"}</td>
+                  <td className="px-3 py-3">{row.classesConducted}</td>
+                  <td className="px-3 py-3">{row.hoursConducted.toFixed(1)}</td>
+                  <td className="px-3 py-3">{row.students}</td>
+                </tr>
+              )) : (
+                <tr>
+                  <td colSpan={5} className="px-3 py-6 text-center text-sm text-slate-500">No completed scheduled classes in this range yet.</td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

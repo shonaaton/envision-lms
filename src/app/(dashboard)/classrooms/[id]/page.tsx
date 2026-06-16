@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { Classroom } from "@/models/Classroom";
+import { ClassroomSession } from "@/models/ClassroomLive";
 import { notFound, redirect } from "next/navigation";
 import LiveClassroom from "@/components/classroom/LiveClassroom";
 
@@ -24,13 +25,16 @@ export default async function ClassroomDetail({ params, searchParams }: { params
   if (role !== "admin") {
     const sessionId = searchParams.session;
     if (!sessionId) redirect("/classrooms");
-    const scheduledSession = (classroom.generatedSessions || []).find((item: any) => String(item._id) === sessionId);
+    const scheduledSession: any = (classroom.generatedSessions || []).find((item: any) => String(item._id) === sessionId);
     if (!scheduledSession) redirect("/classrooms");
+    if (["completed", "cancelled"].includes(String(scheduledSession.status || "").toLowerCase())) redirect("/classrooms");
+    const liveSession: any = await ClassroomSession.findOne({ classroom: params.id, scheduledSessionId: sessionId }).lean();
+    if (liveSession?.status === "ended") redirect("/classrooms");
   }
 
   return (
     <div className="min-h-[calc(100vh-120px)] text-slate-950">
-      <LiveClassroom classroomId={params.id} role={role} userId={userId} />
+      <LiveClassroom classroomId={params.id} role={role} userId={userId} sessionId={searchParams.session} />
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { dbConnect } from "@/lib/db";
 import { Attendance } from "@/models/Attendance";
 import { recordActivity } from "@/lib/activity";
 import { consumeAttendanceCredit } from "@/lib/fees";
+import { Classroom } from "@/models/Classroom";
 
 export const dynamic = "force-dynamic";
 
@@ -13,8 +14,12 @@ export async function GET(req: Request) {
   await dbConnect();
   const url = new URL(req.url);
   const classroom = url.searchParams.get("classroom");
+  const sessionDate = url.searchParams.get("sessionDate");
+  const sessionId = url.searchParams.get("sessionId");
   const filter: any = {};
   if (classroom) filter.classroom = classroom;
+  if (sessionId) filter.scheduledSessionId = sessionId;
+  if (sessionDate) filter.sessionDate = new Date(sessionDate);
   const list = await Attendance.find(filter).sort({ sessionDate: -1 }).limit(100).lean();
   return NextResponse.json(list);
 }
@@ -23,12 +28,22 @@ export async function POST(req: Request) {
   const session = await auth();
   const role = (session?.user as any)?.role;
   if (!session || (role !== "instructor" && role !== "admin")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  const { classroom, sessionDate, records } = await req.json();
+  const { classroom, sessionDate, sessionId, records, coach, coachStatus, teachingMinutes, metadata } = await req.json();
   if (!classroom || !sessionDate) return NextResponse.json({ error: "missing fields" }, { status: 400 });
   await dbConnect();
+  await Attendance.collection.dropIndex("classroom_1_sessionDate_1").catch(() => undefined);
+  const normalizedDate = new Date(sessionDate);
   const doc = await Attendance.findOneAndUpdate(
-    { classroom, sessionDate: new Date(sessionDate) },
-    { records, markedBy: (session.user as any).id },
+    { classroom, scheduledSessionId: sessionId || "", sessionDate: normalizedDate },
+    {
+      records,
+      markedBy: (session.user as any).id,
+      scheduledSessionId: sessionId || "",
+      coach,
+      coachStatus: coachStatus || "pending",
+      teachingMinutes: Math.max(0, Number(teachingMinutes || 0)),
+      metadata: metadata || {},
+    },
     { upsert: true, new: true }
   );
   await recordActivity({
@@ -37,11 +52,22 @@ export async function POST(req: Request) {
     label: `Marked attendance for ${records?.length ?? 0} students`,
     entityType: "Attendance",
     entityId: doc._id.toString(),
-    metadata: { classroom, sessionDate, records: records?.length ?? 0 },
+    metadata: { classroom, sessionDate, sessionId, records: records?.length ?? 0 },
   });
   for (const record of records || []) {
     if (record?.student && (record.status === "present" || record.status === "late")) {
       await consumeAttendanceCredit(record.student, doc._id.toString());
+    }
+  }
+  if (sessionId) {
+    const classroomDoc: any = await Classroom.findById(classroom);
+    const target = classroomDoc?.generatedSessions?.id?.(sessionId);
+    if (target) {
+      target.attendanceMarkedAt = new Date();
+      target.coachAttendanceStatus = coachStatus || target.coachAttendanceStatus || "present";
+      target.teachingMinutes = Math.max(0, Number(teachingMinutes || target.teachingMinutes || 0));
+      target.summary = metadata?.summary || target.summary || {};
+      await classroomDoc.save();
     }
   }
   return NextResponse.json(doc);

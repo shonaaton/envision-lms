@@ -88,8 +88,25 @@ export async function POST(req: Request) {
   let conversation: any;
   let receiver: string | undefined;
   let batchId: string | undefined;
+  const requestedConversationId = body.conversationId ? String(body.conversationId) : "";
 
-  if (body.batch) {
+  if (requestedConversationId) {
+    conversation = await AskCoachConversation.findById(requestedConversationId)
+      .populate("student coach participants", "name username email role")
+      .populate("batch", "name students coach")
+      .lean();
+    if (!conversation) return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
+    const isParticipant =
+      role === "admin" ||
+      (conversation.participants || []).some((participant: any) => (participant._id?.toString?.() || participant.toString?.()) === sender);
+    if (!isParticipant) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (conversation.type === "batch") {
+      batchId = conversation.batch?._id?.toString?.() || conversation.batch?.toString?.() || undefined;
+    } else {
+      const participantIds = (conversation.participants || []).map((participant: any) => participant._id?.toString?.() || participant.toString?.());
+      receiver = participantIds.find((id: string) => id && id !== sender);
+    }
+  } else if (body.batch) {
     batchId = String(body.batch);
     const batch: any = await Batch.findById(batchId).lean();
     if (!batch) return NextResponse.json({ error: "Batch not found" }, { status: 404 });
@@ -129,10 +146,28 @@ export async function POST(req: Request) {
   }
 
   const created = await createAskCoachMessage({ conversation, sender, receiver, batch: batchId, body: messageText });
-  if (receiver) await notifyUser(receiver, "New Ask Coach message", "You have received a new message.", { conversation: conversation._id, message: created._id });
+  const href = `/ask-coach?conversation=${conversation._id.toString()}`;
+  if (receiver) {
+    const receiverUser: any = await User.findById(receiver).select("email name").lean();
+    await notifyUser(receiver, "New Ask Coach message", "You have received a new message.", {
+      conversation: conversation._id,
+      message: created._id,
+      href,
+      email: receiverUser?.email,
+      recipientName: receiverUser?.name,
+    });
+  }
   if (batchId) {
-    const batch: any = await Batch.findById(batchId).select("students").lean();
-    await Promise.all((batch?.students || []).map((student: any) => notifyUser(student, "New batch message", "Your coach sent a new batch message.", { conversation: conversation._id, message: created._id })));
+    const batch: any = await Batch.findById(batchId).populate("students", "email name").select("students").lean();
+    await Promise.all((batch?.students || [])
+      .filter((student: any) => student._id?.toString() !== sender)
+      .map((student: any) => notifyUser(student._id, "New batch message", "Your coach sent a new batch message.", {
+        conversation: conversation._id,
+        message: created._id,
+        href,
+        email: student?.email,
+        recipientName: student?.name,
+      })));
   }
   return NextResponse.json(created);
 }

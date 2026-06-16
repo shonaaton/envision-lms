@@ -22,7 +22,7 @@ export default function LoginPage() {
       password: fd.get("password"),
     });
     setLoading(false);
-    if (res?.error) return toast.error("Invalid email or password");
+    if (res?.error) return toast.error("Invalid email, user ID, or password");
     toast.success("Welcome back");
     router.push("/dashboard");
     router.refresh();

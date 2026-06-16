@@ -11,7 +11,16 @@ const Chessboard = dynamic(() => import("react-chessboard").then((m) => m.Chessb
 
 const startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
-type BoardResult = { solved: boolean; mistakes: number; hintsUsed: number; timeTakenSeconds: number; skipped?: boolean };
+type MoveTrace = {
+  moveNumber: number;
+  by: "student" | "auto" | "hint" | "reset" | "skip";
+  san?: string;
+  from?: string;
+  to?: string;
+  note?: string;
+};
+
+type BoardResult = { solved: boolean; mistakes: number; hintsUsed: number; timeTakenSeconds: number; skipped?: boolean; moveHistory?: MoveTrace[] };
 
 function key(activityId: string, itemId: string) {
   return `${activityId}:${itemId}`;
@@ -248,6 +257,7 @@ function ReportPgnBoards({ activity, submission }: { activity: any; submission: 
               <span className={`rounded-full px-2 py-1 text-xs font-bold ${result.solved ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>{result.solved ? "Solved" : "Review"}</span>
             </div>
             <ReviewPgnBoard pgn={item.pgn || ""} />
+            <MoveHistoryTrace history={result.moveHistory || []} />
           </div>
         );
       })}
@@ -305,7 +315,7 @@ function ActivitySection({ activity, index, locked, quizAnswers, setQuizAnswers,
     if (isPgnQuiz && activeItem) {
       setBoardResults((current: any) => ({
         ...current,
-        [key(activity._id, activeItem.id)]: { solved: false, skipped: true, mistakes: 0, hintsUsed: 0, timeTakenSeconds: 0 },
+        [key(activity._id, activeItem.id)]: { solved: false, skipped: true, mistakes: 0, hintsUsed: 0, timeTakenSeconds: 0, moveHistory: [{ moveNumber: 1, by: "skip", note: "Skipped by student" }] },
       }));
     }
     goNext();
@@ -423,6 +433,7 @@ function PgnBoardTask({ activityId, item, index, locked, onResult, onSolved }: a
   const [startedAt] = useState(Date.now());
   const [solved, setSolved] = useState(false);
   const [feedback, setFeedback] = useState("Make the best move on the board.");
+  const [moveHistory, setMoveHistory] = useState<MoveTrace[]>([]);
   const advancedRef = useRef(false);
 
   useEffect(() => {
@@ -432,19 +443,20 @@ function PgnBoardTask({ activityId, item, index, locked, onResult, onSolved }: a
     setPly(0);
     setMistakes(0);
     setHintsUsed(0);
+    setMoveHistory([]);
     setSolved(parsed.moves.length === 0);
     setFeedback(parsed.moves.length === 0 ? "No moves found in this PGN." : "Make the best move on the board.");
     advancedRef.current = false;
   }, [parsed.start, parsed.moves.length]);
 
   useEffect(() => {
-    onResult({ solved, mistakes, hintsUsed, timeTakenSeconds: Math.round((Date.now() - startedAt) / 1000) });
+    onResult({ solved, mistakes, hintsUsed, timeTakenSeconds: Math.round((Date.now() - startedAt) / 1000), moveHistory });
     if (solved && !advancedRef.current) {
       advancedRef.current = true;
       window.setTimeout(onSolved, 650);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [solved, mistakes, hintsUsed, startedAt]);
+  }, [solved, mistakes, hintsUsed, startedAt, moveHistory]);
 
   function applyAutoReply(nextGame: Chess, nextPly: number) {
     if (nextPly >= parsed.moves.length) {
@@ -454,6 +466,7 @@ function PgnBoardTask({ activityId, item, index, locked, onResult, onSolved }: a
     const reply = parsed.moves[nextPly];
     const move = nextGame.move({ from: reply.from, to: reply.to, promotion: reply.promotion || "q" });
     if (!move) return nextPly;
+    setMoveHistory((current) => [...current, { moveNumber: current.length + 1, by: "auto", san: move.san, from: reply.from, to: reply.to, note: "Automatic reply" }]);
     const updatedPly = nextPly + 1;
     if (updatedPly >= parsed.moves.length) setSolved(true);
     return updatedPly;
@@ -467,9 +480,11 @@ function PgnBoardTask({ activityId, item, index, locked, onResult, onSolved }: a
     if (!move) return false;
     if (move.san !== expected.san) {
       setMistakes((value) => value + 1);
+      setMoveHistory((current) => [...current, { moveNumber: current.length + 1, by: "student", san: move.san, from: source, to: target, note: "Incorrect attempt" }]);
       setFeedback("Try again. That move is not the expected continuation.");
       return false;
     }
+    setMoveHistory((current) => [...current, { moveNumber: current.length + 1, by: "student", san: move.san, from: source, to: target, note: "Correct move" }]);
     let nextPly = ply + 1;
     nextPly = applyAutoReply(nextGame, nextPly);
     setGame(nextGame);
@@ -482,6 +497,7 @@ function PgnBoardTask({ activityId, item, index, locked, onResult, onSolved }: a
   function hint() {
     if (locked || solved || ply >= parsed.moves.length) return;
     setHintsUsed((value) => value + 1);
+    setMoveHistory((current) => [...current, { moveNumber: current.length + 1, by: "hint", san: parsed.moves[ply].san, note: "Hint used" }]);
     setFeedback(`Hint: try ${parsed.moves[ply].san}`);
   }
 
@@ -492,6 +508,7 @@ function PgnBoardTask({ activityId, item, index, locked, onResult, onSolved }: a
     setPly(0);
     setMistakes(0);
     setHintsUsed(0);
+    setMoveHistory((current) => [...current, { moveNumber: current.length + 1, by: "reset", note: "Board reset" }]);
     setSolved(parsed.moves.length === 0);
     setFeedback("Make the best move on the board.");
   }
@@ -531,6 +548,26 @@ function ComputerPlaceholder({ activity }: { activity: any }) {
     <div className="rounded-xl border border-dashed border-brand/25 bg-brand/5 p-4 text-sm text-slate-700">
       <Gamepad2 className="mb-2 text-brand" size={18} />
       Play vs Computer is recorded for coach review. Settings: {computer.strength || "Level 1-3"}, color {computer.side || "random"}.
+    </div>
+  );
+}
+
+function MoveHistoryTrace({ history }: { history: MoveTrace[] }) {
+  if (!history.length) return null;
+  return (
+    <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+      <div className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">Move History</div>
+      <div className="space-y-2 text-sm">
+        {history.map((entry, index) => (
+          <div key={`${entry.by}-${index}`} className="flex flex-wrap items-center gap-2 rounded-lg bg-white px-3 py-2">
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-600">{entry.moveNumber}</span>
+            <span className="font-semibold text-slate-900">{entry.san || entry.note || "Action"}</span>
+            <span className="text-xs uppercase tracking-wide text-slate-400">{entry.by}</span>
+            {entry.from && entry.to && <span className="text-xs text-slate-500">{entry.from} to {entry.to}</span>}
+            {entry.note && entry.san && <span className="text-xs text-slate-500">{entry.note}</span>}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

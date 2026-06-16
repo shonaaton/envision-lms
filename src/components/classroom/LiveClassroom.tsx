@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Chess } from "chess.js";
 import { toast } from "sonner";
 import {
@@ -260,7 +261,8 @@ function minutesBetween(start?: string | Date, end?: string | Date) {
 
 type LiveBoardQuizResult = { solved: boolean; mistakes: number; hintsUsed: number; timeTakenSeconds: number; skipped?: boolean };
 
-export default function LiveClassroom({ classroomId, role, userId }: { classroomId: string; role: Role; userId: string }) {
+export default function LiveClassroom({ classroomId, role, userId, sessionId }: { classroomId: string; role: Role; userId: string; sessionId?: string }) {
+  const router = useRouter();
   const [data, setData] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<TabKey>("students");
   const [tool, setTool] = useState<ToolKey>("move");
@@ -293,8 +295,15 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
   const engineRef = useRef<Worker | null>(null);
   const coach = isCoach(role);
 
+  function liveUrl(path = "") {
+    const params = new URLSearchParams();
+    if (sessionId) params.set("sessionId", sessionId);
+    const query = params.toString();
+    return `/api/classrooms/${classroomId}/live${path}${query ? `${path.includes("?") ? "&" : "?"}${query}` : ""}`;
+  }
+
   async function load() {
-    const res = await fetch(`/api/classrooms/${classroomId}/live`, { cache: "no-store" });
+    const res = await fetch(liveUrl(), { cache: "no-store" });
     if (res.ok) setData(await res.json());
   }
 
@@ -302,7 +311,7 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
     load();
     const timer = setInterval(load, 650);
     return () => clearInterval(timer);
-  }, [classroomId]);
+  }, [classroomId, sessionId]);
 
   useEffect(() => {
     if (!boardShellRef.current) return;
@@ -324,6 +333,7 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
 
   const live = data?.live;
   const classroom = data?.classroom;
+  const scheduledSession = data?.scheduledSession;
   const activeQuestion = data?.activeQuestion;
   const students = classroom?.students || [];
   const pgnLibrary = data?.pgnLibrary || [];
@@ -376,6 +386,13 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
   const activeStudents = students.filter((student: any) => student?.status !== "inactive");
 
   useEffect(() => {
+    if (live?.status === "ended") {
+      toast.info("This classroom session has already ended");
+      router.push("/classrooms");
+    }
+  }, [live?.status, router]);
+
+  useEffect(() => {
     if (setupOpen) return;
     setSetupPosition(boardPieceMap);
     setGamifiedSetup(liveGamifiedObjects);
@@ -425,7 +442,7 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
   }, [activeTab, live?.engineEnabled, live?.fen]);
 
   async function patch(update: any) {
-    const res = await fetch(`/api/classrooms/${classroomId}/live`, {
+    const res = await fetch(liveUrl(), {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(update),
@@ -655,7 +672,7 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
   }
 
   async function askEveryone() {
-    const res = await fetch(`/api/classrooms/${classroomId}/live/question`, {
+    const res = await fetch(liveUrl("/question"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -673,7 +690,12 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
   }
 
   async function createQuiz() {
-    const res = await fetch(`/api/classrooms/${classroomId}/live/question`, {
+    const expectedMove = pgnMoves[currentMoveIndex];
+    if (!expectedMove) {
+      toast.error("Load a PGN position first so the next move can be checked on the board");
+      return;
+    }
+    const res = await fetch(liveUrl("/question"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -685,8 +707,20 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
         fen: live?.fen || "start",
         pgn: live?.pgn,
         moveHistory: live?.moveHistory || [],
+        solution: [expectedMove],
+        items: [{
+          id: `${live?._id || classroomId}-current`,
+          title: quizTitle,
+          fen: live?.fen || "start",
+          pgn: live?.pgn,
+          solution: pgnMoves.slice(currentMoveIndex),
+          points: 5,
+          timerSeconds: challengeTimer,
+        }],
+        timer: { perQuestionSeconds: challengeTimer },
         scoring: { correct: 5, wrongPenalty: 1, hintPenalty: 1, speedBonus: 2 },
-        attempts: "single",
+        attempts: "multiple",
+        hintsEnabled: true,
       }),
     });
     if (res.ok) toast.success("Live quiz launched");
@@ -696,7 +730,7 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
 
   async function submitResponse() {
     if (!activeQuestion) return;
-    const res = await fetch(`/api/classrooms/${classroomId}/live/responses`, {
+    const res = await fetch(liveUrl("/responses"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ question: activeQuestion._id, submittedMove: moveAnswer }),
@@ -712,7 +746,7 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
     if (!activeQuestion) return;
     const attemptsUsed = Object.values(itemResults).reduce((sum: number, result: any) => sum + Math.max(1, Number(result.mistakes || 0) + 1), 0);
     const hintsUsed = Object.values(itemResults).reduce((sum: number, result: any) => sum + Number(result.hintsUsed || 0), 0);
-    const res = await fetch(`/api/classrooms/${classroomId}/live/responses`, {
+    const res = await fetch(liveUrl("/responses"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -731,7 +765,7 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
 
   async function sendChat() {
     if (!chatText.trim()) return;
-    const res = await fetch(`/api/classrooms/${classroomId}/live/chat`, {
+    const res = await fetch(liveUrl("/chat"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message: chatText }),
@@ -743,7 +777,6 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
   }
 
   async function openEndSummary() {
-    await patch({ endedAt: new Date().toISOString(), status: "ended" });
     setSummaryOpen(true);
   }
 
@@ -758,16 +791,23 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         classroom: classroomId,
-        sessionDate: live?.startedAt || new Date().toISOString(),
+        sessionId,
+        sessionDate: scheduledSession?.scheduledFor || live?.startedAt || new Date().toISOString(),
         records,
+        coach: classroom?.coach?._id || classroom?.instructor?._id,
+        coachStatus: "present",
+        teachingMinutes: classSummary.durationMinutes || minutesBetween(live?.startedAt, new Date().toISOString()),
+        metadata: { summary: classSummary, liveSessionId: live?._id },
       }),
     });
     if (!res.ok) {
       toast.error("Could not save attendance");
       return;
     }
+    await patch({ endedAt: new Date().toISOString(), status: "ended", summary: classSummary, participants: [], boardControlStudents: [], selectedStudents: [], challenge: { active: false } });
     toast.success("Class ended and attendance saved");
     setSummaryOpen(false);
+    router.push("/classrooms");
   }
 
   function resetGame() {
@@ -866,7 +906,7 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
     try {
       const firstParsed = parsePgnPuzzle(first.pgn);
       const firstMoves = firstParsed.moves.map((move: any) => move.san);
-      const res = await fetch(`/api/classrooms/${classroomId}/live/question`, {
+      const res = await fetch(liveUrl("/question"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1196,11 +1236,11 @@ export default function LiveClassroom({ classroomId, role, userId }: { classroom
                   </div>
                   <span className="rounded-full bg-white px-2 py-1 text-xs font-semibold text-purple-700">{activeQuestion.type?.replaceAll("_", " ")}</span>
                 </div>
-                {!coach && Array.isArray(activeQuestion.items) && activeQuestion.items.length > 0 ? (
+                {!coach && ((Array.isArray(activeQuestion.items) && activeQuestion.items.length > 0) || activeQuestion.solution?.length) ? (
                   <div className="mt-4">
                     <LiveBoardQuiz
                       question={activeQuestion}
-                      locked={!canMove && !live?.studentMovesEnabled}
+                      locked={Boolean(live?.locked)}
                       onComplete={submitBoardQuizResults}
                     />
                   </div>
@@ -1736,7 +1776,17 @@ function LiveBoardQuiz({
   locked: boolean;
   onComplete: (results: Record<string, LiveBoardQuizResult>, timeTakenSeconds: number) => void;
 }) {
-  const items = question.items || [];
+  const items = Array.isArray(question.items) && question.items.length
+    ? question.items
+    : [{
+        id: `${question._id}-single`,
+        title: question.title,
+        fen: question.fen,
+        pgn: question.pgn,
+        solution: question.solution || [],
+        points: question.scoring?.correct ?? 5,
+        timerSeconds: question.timer?.perQuestionSeconds || question.timer?.overallSeconds || 0,
+      }];
   const [currentIndex, setCurrentIndex] = useState(0);
   const [results, setResults] = useState<Record<string, LiveBoardQuizResult>>({});
   const [quizStartedAt] = useState(Date.now());
@@ -1745,8 +1795,18 @@ function LiveBoardQuiz({
   const submittedRef = useRef(false);
 
   const activeItem = items[currentIndex];
-  const parsed = useMemo(() => parsePgnPuzzle(activeItem?.pgn || ""), [activeItem?.pgn]);
-  const [game, setGame] = useState(() => new Chess(parsed.start));
+  const parsed = useMemo(() => {
+    if (activeItem?.pgn) {
+      return parsePgnPuzzle(activeItem.pgn);
+    }
+    const solution = Array.isArray(activeItem?.solution) ? activeItem.solution : [];
+    return {
+      start: activeItem?.fen || question.fen || "start",
+      moves: solution.map((san: string) => ({ san, from: "", to: "", promotion: "q" })),
+      valid: true,
+    };
+  }, [activeItem?.fen, activeItem?.pgn, activeItem?.solution, question.fen]);
+  const [game, setGame] = useState(() => (parsed.start === "start" ? new Chess() : new Chess(parsed.start)));
   const [position, setPosition] = useState(parsed.start);
   const [ply, setPly] = useState(0);
   const [mistakes, setMistakes] = useState(0);
@@ -1762,7 +1822,7 @@ function LiveBoardQuiz({
   }, [question._id]);
 
   useEffect(() => {
-    const next = new Chess(parsed.start);
+    const next = parsed.start === "start" ? new Chess() : new Chess(parsed.start);
     setGame(next);
     setPosition(parsed.start);
     setPly(0);
@@ -1819,7 +1879,9 @@ function LiveBoardQuiz({
       return nextPly;
     }
     const reply = parsed.moves[nextPly];
-    const move = nextGame.move({ from: reply.from, to: reply.to, promotion: reply.promotion || "q" });
+    const move = reply.from && reply.to
+      ? nextGame.move({ from: reply.from, to: reply.to, promotion: reply.promotion || "q" })
+      : nextGame.move(reply.san);
     if (!move) return nextPly;
     const updatedPly = nextPly + 1;
     if (updatedPly >= parsed.moves.length) setSolved(true);

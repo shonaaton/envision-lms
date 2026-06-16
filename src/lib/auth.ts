@@ -27,7 +27,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const { dbConnect } = await import("./db");
         const { User } = await import("@/models/User");
         await dbConnect();
-        const user = await User.findOne({ email: String(creds.email).toLowerCase() });
+        const loginValue = String(creds.email).trim();
+        const normalized = loginValue.toLowerCase();
+        const user = await User.findOne({
+          $or: [
+            { email: normalized },
+            { username: loginValue },
+            { username: normalized },
+          ],
+        });
         if (!user || !user.isActive) return null;
         const ok = await bcrypt.compare(String(creds.password), user.passwordHash);
         if (!ok) return null;

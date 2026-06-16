@@ -1,5 +1,6 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Check, EyeOff, MessageSquare, Search, Send, Shield, Trash2, Users } from "lucide-react";
 import { toast } from "sonner";
@@ -7,6 +8,7 @@ import { toast } from "sonner";
 type Role = "student" | "instructor" | "admin";
 
 export default function AskCoachClient({ role }: { role: Role }) {
+  const searchParams = useSearchParams();
   const [data, setData] = useState<any>({ conversations: [], messages: [], targets: {} });
   const [activeId, setActiveId] = useState("");
   const [message, setMessage] = useState("");
@@ -17,11 +19,15 @@ export default function AskCoachClient({ role }: { role: Role }) {
 
   async function load() {
     const res = await fetch(`/api/ask-coach${query ? `?q=${encodeURIComponent(query)}` : ""}`, { cache: "no-store" });
-    if (res.ok) {
-      const next = await res.json();
-      setData(next);
-      if (!activeId && next.conversations?.[0]?._id) setActiveId(next.conversations[0]._id);
+    if (!res.ok) return;
+    const next = await res.json();
+    setData(next);
+    const requestedConversation = searchParams.get("conversation");
+    if (requestedConversation && next.conversations?.some((conversation: any) => conversation._id === requestedConversation)) {
+      setActiveId(requestedConversation);
+      return;
     }
+    if (!activeId && next.conversations?.[0]?._id) setActiveId(next.conversations[0]._id);
   }
 
   useEffect(() => {
@@ -42,7 +48,7 @@ export default function AskCoachClient({ role }: { role: Role }) {
   async function sendMessage() {
     if (!message.trim()) return;
     setLoading(true);
-    const payload: any = { message };
+    const payload: any = { message, conversationId: activeConversation?._id || undefined };
     if (batch) payload.batch = batch;
     else if (receiver) payload.receiver = receiver;
     const res = await fetch("/api/ask-coach", {

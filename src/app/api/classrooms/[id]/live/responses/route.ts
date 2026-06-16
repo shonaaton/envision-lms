@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { LiveQuestion, LiveQuestionResponse, StudentReward } from "@/models/ClassroomLive";
+import { getRequestedSessionId } from "@/lib/classroomLiveSession";
 
 export const dynamic = "force-dynamic";
 
@@ -9,6 +10,8 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   await dbConnect();
+  const scheduledSessionId = getRequestedSessionId(req);
+  if (!scheduledSessionId) return NextResponse.json({ error: "Scheduled session required" }, { status: 400 });
   const body = await req.json();
   const question: any = await LiveQuestion.findById(body.question);
   if (!question) return NextResponse.json({ error: "Question not found" }, { status: 404 });
@@ -50,6 +53,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     {
       question: question._id,
       classroom: params.id,
+      scheduledSessionId,
       student: (session.user as any).id,
       submittedMove,
       submittedSequence: submittedMove.split(/\s+/).filter(Boolean),

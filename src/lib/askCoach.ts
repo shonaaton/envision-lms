@@ -2,6 +2,7 @@ import { Types } from "mongoose";
 import { Batch } from "@/models/Batch";
 import { AskCoachConversation, AskCoachMessage } from "@/models/AskCoach";
 import { Notification } from "@/models/Fee";
+import { sendEmailAutomation } from "@/lib/emailAutomation";
 
 const badWords = ["abuse", "idiot", "stupid", "shut up", "bloody", "damn"];
 
@@ -17,7 +18,15 @@ export function checkMessageSafety(text: string) {
 
 export async function notifyUser(user: any, title: string, message: string, metadata: any = {}) {
   if (!user) return;
-  await Notification.create({ user, type: "ask_coach", title, message, metadata });
+  const notification = await Notification.create({ user, type: "ask_coach", title, message, metadata });
+  if (metadata?.email) {
+    await sendEmailAutomation({
+      to: String(metadata.email),
+      subject: title,
+      message,
+      metadata: { ...metadata, notificationId: notification._id.toString() },
+    });
+  }
 }
 
 export async function notifyAdmins(title: string, message: string, metadata: any = {}) {
@@ -66,11 +75,12 @@ export async function createAskCoachMessage(input: {
   receiver?: string;
   batch?: string;
   body: string;
+  messageType?: "direct" | "batch";
 }) {
   const safety = checkMessageSafety(input.body);
   const message = await AskCoachMessage.create({
     conversation: input.conversation._id,
-    type: input.conversation.type,
+    type: input.messageType || input.conversation.type,
     sender: input.sender,
     receiver: input.receiver,
     batch: input.batch,
@@ -94,6 +104,7 @@ export async function createAskCoachMessage(input: {
     await notifyUser(input.sender, "Message flagged for review", "Your message was sent for admin review because it may contain restricted content.", {
       message: message._id,
       reasons: safety.reasons,
+      href: "/ask-coach",
     });
   }
   return message;

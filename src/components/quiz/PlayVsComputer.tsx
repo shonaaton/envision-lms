@@ -27,7 +27,7 @@ const Chessboard = dynamic(() => import("react-chessboard").then((m) => m.Chessb
 
 type PlayerColor = "white" | "black" | "random";
 type GameStatus = "idle" | "playing" | "ended";
-type GameResult = "Victory" | "Draw" | "Defeat" | "Abandoned";
+type GameResult = "Victory" | "Draw" | "Defeat" | "Abandoned" | "Resigned";
 
 type MoveRow = {
   number: number;
@@ -45,11 +45,12 @@ type GameRecord = {
   moves: number;
 };
 
-const levelToElo = [300, 400, 500, 650, 800, 950, 1100, 1250, 1400, 1600, 1800, 2000];
+const levelToElo = [100, 150, 250, 350, 500, 700, 900, 1100, 1300, 1500, 1700, 1900];
+const levelToDepth = [1, 1, 1, 2, 2, 3, 4, 5, 6, 7, 8, 10];
 const timeControls = ["No Clock", "5 min", "10 min", "15 min", "30 min"];
 
 const seededHistory: GameRecord[] = [
-  { id: 1, user: "Sayantan Chandra", date: "Jun 4, 2026 2:27 AM", color: "white", difficulty: "Beginner", result: "Abandoned", moves: 0 },
+  { id: 1, user: "Sayantan Chandra", date: "Jun 4, 2026 2:27 AM", color: "white", difficulty: "Beginner", result: "Resigned", moves: 0 },
   { id: 2, user: "Diya Yashika Janga", date: "Jun 3, 2026 5:00 PM", color: "white", difficulty: "Beginner", result: "Draw", moves: 13 },
 ];
 
@@ -69,6 +70,7 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
   const [level, setLevel] = useState(1);
   const [timeControl, setTimeControl] = useState("No Clock");
   const [records, setRecords] = useState<GameRecord[]>(seededHistory);
+  const [selectedRecord, setSelectedRecord] = useState<GameRecord | null>(null);
 
   const moveRows = useMemo<MoveRow[]>(() => {
     const verbose = gameRef.current.history({ verbose: true }) as Array<{ san: string; color: "w" | "b" }>;
@@ -82,7 +84,7 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
     return rows;
   }, [position]);
 
-  const currentDepth = Math.max(1, Math.min(16, Math.round(depth + (level - 1) / 2)));
+  const currentDepth = Math.max(1, Math.min(12, levelToDepth[level - 1] || depth));
   const difficultyLabel = level <= 4 ? "Beginner" : level <= 8 ? "Intermediate" : "Advanced";
   const isPlayerTurn = gameRef.current.turn() === (playerColor === "white" ? "w" : "b");
 
@@ -91,6 +93,7 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
       const worker = new Worker("/stockfish/stockfish.js");
       workerRef.current = worker;
       worker.postMessage("uci");
+      worker.postMessage("setoption name UCI_LimitStrength value true");
       worker.onmessage = (event) => {
         const line = typeof event.data === "string" ? event.data : "";
         const bestMove = line.match(/^bestmove\s(\S+)/);
@@ -141,6 +144,7 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
     const worker = workerRef.current;
     if (!worker || gameRef.current.isGameOver()) return;
     setThinking(true);
+    worker.postMessage(`setoption name UCI_Elo value ${levelToElo[level - 1]}`);
     worker.postMessage(`position fen ${gameRef.current.fen()}`);
     worker.postMessage(`go depth ${currentDepth}`);
   }
@@ -208,7 +212,7 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
     setThinking(false);
     setResult("You resigned");
     setStatus("ended");
-    addRecord("Abandoned");
+    addRecord("Resigned");
   }
 
   function onDrop(source: string, target: string) {
@@ -227,7 +231,12 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
   }
 
   if (showHistory) {
-    return <GameHistory records={records} onBack={() => setShowHistory(false)} />;
+    return (
+      <>
+        <GameHistory records={records} onBack={() => setShowHistory(false)} onSelectRecord={setSelectedRecord} />
+        {selectedRecord && <HistoryDetailsModal record={selectedRecord} onClose={() => setSelectedRecord(null)} />}
+      </>
+    );
   }
 
   return (
@@ -470,12 +479,12 @@ function ColorOption({ active, label, icon, onClick }: { active: boolean; label:
   );
 }
 
-function GameHistory({ records, onBack }: { records: GameRecord[]; onBack: () => void }) {
+function GameHistory({ records, onBack, onSelectRecord }: { records: GameRecord[]; onBack: () => void; onSelectRecord: (record: GameRecord) => void }) {
   const totals = records.reduce(
     (summary, record) => {
       if (record.result === "Victory") summary.victories += 1;
       if (record.result === "Draw") summary.draws += 1;
-      if (record.result === "Defeat") summary.defeats += 1;
+      if (record.result === "Defeat" || record.result === "Resigned") summary.defeats += 1;
       return summary;
     },
     { victories: 0, draws: 0, defeats: 0 },
@@ -525,15 +534,47 @@ function GameHistory({ records, onBack }: { records: GameRecord[]; onBack: () =>
               <span>{record.date}</span>
               <span><span className={`inline-block h-4 w-4 rounded-full border ${record.color === "white" ? "border-slate-300 bg-white" : "border-slate-900 bg-slate-950"}`} /></span>
               <span>{record.difficulty}</span>
-              <span className={record.result === "Draw" ? "text-amber-600" : record.result === "Defeat" ? "text-rose-600" : "text-emerald-600"}>{record.result === "Draw" ? "Draw" : record.result}</span>
+              <span className={record.result === "Draw" ? "text-amber-600" : record.result === "Defeat" || record.result === "Resigned" ? "text-rose-600" : "text-emerald-600"}>{record.result === "Draw" ? "Draw" : record.result}</span>
               <span>{record.moves}</span>
-              <button className="inline-flex items-center gap-2 text-left text-slate-900">
+              <button className="inline-flex items-center gap-2 text-left text-slate-900" onClick={() => onSelectRecord(record)}>
                 <Play size={14} className="text-brand" /> View details
               </button>
             </div>
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+function HistoryDetailsModal({ record, onClose }: { record: GameRecord; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-4">
+      <div className="w-full max-w-[440px] rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl">
+        <div className="mb-5 flex items-center justify-between">
+          <h2 className="text-xl font-semibold text-slate-950">Game Details</h2>
+          <button className="text-slate-500 hover:text-slate-900" onClick={onClose} aria-label="Close">
+            <X size={20} />
+          </button>
+        </div>
+        <div className="grid gap-3">
+          <DetailRow label="Player" value={record.user} />
+          <DetailRow label="Date" value={record.date} />
+          <DetailRow label="Color" value={record.color} />
+          <DetailRow label="Difficulty" value={record.difficulty} />
+          <DetailRow label="Result" value={record.result} />
+          <DetailRow label="Moves" value={String(record.moves)} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+      <div className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}</div>
+      <div className="mt-1 text-sm font-semibold text-slate-950 capitalize">{value}</div>
     </div>
   );
 }

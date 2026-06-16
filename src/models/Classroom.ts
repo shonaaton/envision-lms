@@ -47,7 +47,7 @@ const ScheduledSessionSchema = new Schema(
     conductedBy: { type: Schema.Types.ObjectId, ref: "User" },
     coachAttendanceStatus: {
       type: String,
-      enum: ["pending", "present", "missed", "rescheduled", "cancelled"],
+      enum: ["pending", "present", "absent", "late", "rescheduled", "cancelled"],
       default: "pending",
     },
     teachingMinutes: { type: Number, default: 0 },

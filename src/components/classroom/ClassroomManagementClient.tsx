@@ -23,6 +23,7 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { flattenScheduledSessions, formatJoinWindowLabel, isJoinWindowOpen } from "@/lib/classroomSessions";
 import JoinScheduledSessionButton from "@/components/classroom/JoinScheduledSessionButton";
+import PageLoadingOverlay from "@/components/feedback/PageLoadingOverlay";
 
 type Role = "student" | "instructor" | "admin";
 
@@ -121,6 +122,7 @@ export default function ClassroomManagementClient({ role }: { role: Role }) {
   const [items, setItems] = useState<ClassroomItem[]>([]);
   const [targets, setTargets] = useState<TargetsPayload>({ students: [], coaches: [], batches: [], courses: [] });
   const [loading, setLoading] = useState(true);
+  const [busyMessage, setBusyMessage] = useState("");
   const [open, setOpen] = useState(false);
   const [editItem, setEditItem] = useState<ClassroomItem | null>(null);
   const [step, setStep] = useState(1);
@@ -131,18 +133,30 @@ export default function ClassroomManagementClient({ role }: { role: Role }) {
   const [actionModal, setActionModal] = useState<{ type: string; item: ClassroomItem | null }>({ type: "", item: null });
   const [actionDraft, setActionDraft] = useState<any>({});
 
+  async function withBusy<T>(message: string, task: () => Promise<T>) {
+    setBusyMessage(message);
+    try {
+      return await task();
+    } finally {
+      setBusyMessage("");
+    }
+  }
+
   async function load() {
     setLoading(true);
-    const [classroomsRes, targetsRes] = await Promise.all([
-      fetch("/api/classrooms", { cache: "no-store" }),
-      role === "admin" ? fetch("/api/classrooms/targets", { cache: "no-store" }) : Promise.resolve(null as any),
-    ]);
-    if (classroomsRes.ok) {
-      const data = await classroomsRes.json();
-      setItems(Array.isArray(data) ? data.map(normalizeClassroomItem) : []);
+    try {
+      const [classroomsRes, targetsRes] = await Promise.all([
+        fetch("/api/classrooms", { cache: "no-store" }),
+        role === "admin" ? fetch("/api/classrooms/targets", { cache: "no-store" }) : Promise.resolve(null as any),
+      ]);
+      if (classroomsRes.ok) {
+        const data = await classroomsRes.json();
+        setItems(Array.isArray(data) ? data.map(normalizeClassroomItem) : []);
+      }
+      if (targetsRes?.ok) setTargets(await targetsRes.json());
+    } finally {
+      setLoading(false);
     }
-    if (targetsRes?.ok) setTargets(await targetsRes.json());
-    setLoading(false);
   }
 
   useEffect(() => {
@@ -305,69 +319,75 @@ export default function ClassroomManagementClient({ role }: { role: Role }) {
   }
 
   async function submitForm() {
-    const reviewTopicName = form.useCustomTopic ? form.customTopicName : form.topicName;
-    const sessionPlan =
-      form.classroomType === "single"
-        ? [{
-            sessionNumber: 1,
-            topicName: reviewTopicName || form.title || "Session 1",
-            topicOrder: Number(form.topicOrder || 0),
-          }]
-        : (selectedLevel?.topics || []).map((topic, index) => ({
-            sessionNumber: index + 1,
-            topicName: topic.name,
-            topicOrder: Number(topic.order ?? index),
-          }));
+    await withBusy(editItem ? "Updating classroom..." : "Creating classroom...", async () => {
+      const reviewTopicName = form.useCustomTopic ? form.customTopicName : form.topicName;
+      const sessionPlan =
+        form.classroomType === "single"
+          ? [{
+              sessionNumber: 1,
+              topicName: reviewTopicName || form.title || "Session 1",
+              topicOrder: Number(form.topicOrder || 0),
+            }]
+          : (selectedLevel?.topics || []).map((topic, index) => ({
+              sessionNumber: index + 1,
+              topicName: topic.name,
+              topicOrder: Number(topic.order ?? index),
+            }));
 
-    const payload = {
-      ...form,
-      topicName: reviewTopicName,
-      meetingProvider: "meet",
-      sessionPlan,
-    };
-    const url = editItem ? `/api/classrooms/${editItem._id}` : "/api/classrooms";
-    const method = editItem ? "PATCH" : "POST";
-    const response = await fetch(url, {
-      method,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      const payload = {
+        ...form,
+        topicName: reviewTopicName,
+        meetingProvider: "meet",
+        sessionPlan,
+      };
+      const url = editItem ? `/api/classrooms/${editItem._id}` : "/api/classrooms";
+      const method = editItem ? "PATCH" : "POST";
+      const response = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        toast.error(data.error || "Could not save classroom");
+        return;
+      }
+      toast.success(editItem ? "Classroom updated" : "Classroom created");
+      setOpen(false);
+      setEditItem(null);
+      setForm(blankForm());
+      await load();
     });
-    const data = await response.json();
-    if (!response.ok) {
-      toast.error(data.error || "Could not save classroom");
-      return;
-    }
-    toast.success(editItem ? "Classroom updated" : "Classroom created");
-    setOpen(false);
-    setEditItem(null);
-    setForm(blankForm());
-    load();
   }
 
   async function runAction() {
     if (!actionModal.item) return;
-    const response = await fetch(`/api/classrooms/${actionModal.item._id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: actionModal.type, ...actionDraft }),
+    await withBusy("Updating classroom...", async () => {
+      const response = await fetch(`/api/classrooms/${actionModal.item!._id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: actionModal.type, ...actionDraft }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        toast.error(data.error || "Could not update class");
+        return;
+      }
+      toast.success("Class updated");
+      setActionModal({ type: "", item: null });
+      setActionDraft({});
+      await load();
     });
-    const data = await response.json();
-    if (!response.ok) {
-      toast.error(data.error || "Could not update class");
-      return;
-    }
-    toast.success("Class updated");
-    setActionModal({ type: "", item: null });
-    setActionDraft({});
-    load();
   }
 
   async function deleteItem(item: ClassroomItem) {
     if (!window.confirm(`Delete ${item.title}?`)) return;
-    const response = await fetch(`/api/classrooms/${item._id}`, { method: "DELETE" });
-    if (!response.ok) return toast.error("Could not delete class");
-    toast.success("Class deleted");
-    load();
+    await withBusy("Deleting classroom...", async () => {
+      const response = await fetch(`/api/classrooms/${item._id}`, { method: "DELETE" });
+      if (!response.ok) return toast.error("Could not delete class");
+      toast.success("Class deleted");
+      await load();
+    });
   }
 
   if (role !== "admin") {
@@ -375,7 +395,9 @@ export default function ClassroomManagementClient({ role }: { role: Role }) {
   }
 
   return (
-    <div className="flex h-[calc(100vh-92px)] min-h-[620px] flex-col overflow-hidden text-slate-950">
+    <>
+    <PageLoadingOverlay visible={!!busyMessage} message={busyMessage} />
+    <div className="min-h-full space-y-3 text-slate-950">
       <div className="mb-3 flex flex-none flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <div className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-brand">
@@ -409,9 +431,9 @@ export default function ClassroomManagementClient({ role }: { role: Role }) {
         <button className={cn("rounded-lg px-3 py-2 text-sm font-semibold", view === "calendar" ? "bg-brand text-white" : "bg-white text-slate-700 border border-slate-200")} onClick={() => setView("calendar")}>Calendar</button>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-hidden rounded-2xl border border-brand/10 bg-white shadow-xl shadow-brand/5">
+      <div className="rounded-2xl border border-brand/10 bg-white shadow-xl shadow-brand/5">
         {view === "list" ? (
-          <div className="min-h-0 overflow-auto p-4">
+          <div className="p-4">
             {loading ? (
               <div className="rounded-xl bg-slate-50 p-6 text-sm text-slate-500">Loading classes...</div>
             ) : filteredItems.length === 0 ? (
@@ -762,6 +784,7 @@ export default function ClassroomManagementClient({ role }: { role: Role }) {
         </div>
       )}
     </div>
+    </>
   );
 }
 
@@ -910,8 +933,8 @@ function SimpleClassroomList({ items, loading, role }: { items: ClassroomItem[];
   const upcoming = sessions.filter((row) => (row.end?.getTime() || 0) >= now.getTime()).slice(0, 12);
 
   return (
-    <div className="flex h-[calc(100vh-92px)] min-h-[620px] flex-col overflow-hidden">
-      <div className="flex-none space-y-6">
+    <div className="space-y-6">
+      <div>
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-display text-3xl text-accent">{role === "student" ? "My Classes" : "Teaching Schedule"}</h1>
@@ -919,7 +942,7 @@ function SimpleClassroomList({ items, loading, role }: { items: ClassroomItem[];
         </div>
       </div>
       </div>
-      <div className="mt-6 min-h-0 flex-1 overflow-auto pr-1">
+      <div className="mt-6">
       {upcoming.length === 0 ? (
         <div className="card text-sm text-slate-500">No scheduled sessions right now.</div>
       ) : (

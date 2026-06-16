@@ -207,20 +207,6 @@ function QuickLinkCard({ href, title, subtitle, icon: Icon }: { href: string; ti
   );
 }
 
-function ActivityBadge({ type }: { type?: string }) {
-  const safeType = String(type || "activity");
-  const tone = safeType.includes("homework")
-    ? "bg-violet-50 text-violet-700"
-    : safeType.includes("attendance")
-      ? "bg-emerald-50 text-emerald-700"
-      : safeType.includes("pgn")
-        ? "bg-amber-50 text-amber-700"
-        : safeType.includes("payment")
-          ? "bg-sky-50 text-sky-700"
-          : "bg-slate-100 text-slate-700";
-  return <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${tone}`}>{safeType.replace(".", " ")}</span>;
-}
-
 async function computeStudentRank(userId: string) {
   const [students, submissions, rewards] = await Promise.all([
     User.find({ role: "student", isActive: { $ne: false } }).select("_id batches").lean(),
@@ -1011,22 +997,19 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
         </section>
 
         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_18px_45px_rgba(90,19,114,0.12)]">
-          <SectionTitle icon={ActivityIcon} title="Activity Tracking" subtitle="Account, learning, attendance, payment, and PGN activity" />
-          <div className="max-h-[342px] space-y-3 overflow-auto pr-1">
-            {activities.length === 0 ? (
-              <div className="rounded-md bg-slate-50 p-4 text-sm text-slate-500">No activity found for this date range.</div>
-            ) : (
-              activities.map((item) => (
-                <div key={item.id} className="rounded-md border border-slate-100 p-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <ActivityBadge type={item.type} />
-                    <span className="shrink-0 text-xs text-slate-400">{formatTimeAgo(item.when)}</span>
-                  </div>
-                  <div className="mt-2 text-sm font-medium text-slate-950">{item.label}</div>
-                  <div className="mt-1 text-xs text-slate-500">{item.actor}</div>
-                </div>
-              ))
-            )}
+          <SectionTitle icon={ActivityIcon} title="Activity Tracker" subtitle="Open the full monitoring center for account, learning, attendance, payment, and PGN activity" />
+          <div className="grid gap-3">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <div className="text-sm font-semibold text-slate-950">Recent activity in range</div>
+              <div className="mt-1 text-3xl font-black text-brand">{activities.length}</div>
+              <div className="mt-1 text-xs text-slate-500">Showing the latest academy activity across the selected filters.</div>
+            </div>
+            <QuickLinkCard
+              href="/admin/activity-tracker"
+              title="Open Activity Tracker"
+              subtitle="Review logins, classroom actions, homework, payments, PGNs, and admin changes in one place."
+              icon={ActivityIcon}
+            />
           </div>
         </section>
       </div>

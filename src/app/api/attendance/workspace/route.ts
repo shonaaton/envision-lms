@@ -1,0 +1,233 @@
+import { NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
+import { dbConnect } from "@/lib/db";
+import { Attendance } from "@/models/Attendance";
+import { Classroom } from "@/models/Classroom";
+import { getSessionEnd, getSessionStart } from "@/lib/classroomSessions";
+
+export const dynamic = "force-dynamic";
+
+function sameDay(value: Date, target: Date) {
+  return value.getFullYear() === target.getFullYear() && value.getMonth() === target.getMonth() && value.getDate() === target.getDate();
+}
+
+function startOfDay(value: Date) {
+  const date = new Date(value);
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function endOfDay(value: Date) {
+  const date = new Date(value);
+  date.setHours(23, 59, 59, 999);
+  return date;
+}
+
+function objectId(value: any) {
+  return value?.toString?.() || String(value || "");
+}
+
+function flattenClassroomSessions(classrooms: any[]) {
+  return classrooms.flatMap((classroom: any) => {
+    const sessions = Array.isArray(classroom.generatedSessions) && classroom.generatedSessions.length
+      ? classroom.generatedSessions
+      : classroom.classDate
+        ? [{
+            _id: `${classroom._id}-single`,
+            sessionNumber: 1,
+            topicName: classroom.topicName || classroom.title,
+            scheduledFor: classroom.classDate,
+            startTime: classroom.startTime,
+            durationMinutes: classroom.durationMinutes || 60,
+            status: classroom.status || "scheduled",
+            coachAttendanceStatus: classroom.status === "completed" ? "present" : "pending",
+          }]
+        : [];
+    return sessions.map((session: any) => ({ classroom, session }));
+  });
+}
+
+function deriveAttendanceState(session: any, attendance: any, now: Date) {
+  if (attendance) return "marked";
+  const end = getSessionEnd(session);
+  if (!end) return "pending";
+  if (end < now) return "missed";
+  return "pending";
+}
+
+export async function GET(req: Request) {
+  const session = await auth();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  await dbConnect();
+
+  const role = (session.user as any).role as "student" | "instructor" | "admin";
+  const userId = (session.user as any).id;
+  const url = new URL(req.url);
+  const selectedDate = url.searchParams.get("date") ? new Date(String(url.searchParams.get("date"))) : new Date();
+  const from = startOfDay(selectedDate);
+  const to = endOfDay(selectedDate);
+  const now = new Date();
+
+  if (role === "student") {
+    const attendanceDocs: any[] = await Attendance.find({ "records.student": userId })
+      .populate("classroom", "title courseName levelName topicName coach instructor meetingUrl durationMinutes generatedSessions classDate startTime")
+      .populate("coach", "name")
+      .sort({ sessionDate: -1 })
+      .lean();
+
+    const sessionRows = attendanceDocs.flatMap((doc: any) => {
+      const record = (doc.records || []).find((row: any) => objectId(row.student) === userId);
+      if (!record) return [];
+      const classroom = doc.classroom || {};
+      const scheduledSession = (classroom.generatedSessions || []).find((item: any) => String(item._id) === String(doc.scheduledSessionId)) || null;
+      const summaryRow = doc.metadata?.summary?.rows?.find((row: any) => objectId(row.student?._id || row.student) === userId) || null;
+      const duration = Number(doc.teachingMinutes || scheduledSession?.teachingMinutes || scheduledSession?.durationMinutes || classroom.durationMinutes || 0);
+      return [{
+        id: objectId(doc._id),
+        classroomId: objectId(classroom._id),
+        title: classroom.title || "Class Session",
+        courseName: classroom.courseName || "General",
+        levelName: classroom.levelName || "Not set",
+        topicName: scheduledSession?.topicName || classroom.topicName || classroom.title || "Session",
+        coachName: doc.coach?.name || classroom.coach?.name || classroom.instructor?.name || "Coach",
+        sessionDate: doc.sessionDate,
+        startTime: scheduledSession?.startTime || classroom.startTime || "",
+        durationMinutes: duration,
+        status: record.status,
+        joinedAt: doc.metadata?.summary?.startedAt || null,
+        leftAt: doc.metadata?.summary?.endedAt || null,
+        totalTimePresentMinutes: summaryRow?.timeMinutes || 0,
+      }];
+    });
+
+    const attended = sessionRows.filter((row) => row.status === "present");
+    const late = sessionRows.filter((row) => row.status === "late");
+    const missed = sessionRows.filter((row) => row.status === "absent");
+    const attendedMinutes = sessionRows
+      .filter((row) => row.status === "present" || row.status === "late")
+      .reduce((sum, row) => sum + Number(row.durationMinutes || 0), 0);
+    const overall = {
+      attendancePercentage: sessionRows.length ? Math.round(((attended.length + late.length) / sessionRows.length) * 100) : 0,
+      classesAttended: attended.length,
+      classesMissed: missed.length,
+      lateEntries: late.length,
+      totalTeachingHoursAttended: Number((attendedMinutes / 60).toFixed(1)),
+    };
+
+    const courseRows = Array.from(
+      sessionRows.reduce((map, row) => {
+        const current = map.get(row.courseName) || { courseName: row.courseName, attended: 0, missed: 0, total: 0 };
+        current.total += 1;
+        if (row.status === "present" || row.status === "late") current.attended += 1;
+        if (row.status === "absent") current.missed += 1;
+        map.set(row.courseName, current);
+        return map;
+      }, new Map<string, { courseName: string; attended: number; missed: number; total: number }>())
+    ).map(([, row]) => ({
+      ...row,
+      attendancePercentage: row.total ? Math.round((row.attended / row.total) * 100) : 0,
+    }));
+
+    return NextResponse.json({
+      role,
+      overall,
+      courseRows,
+      topicRows: sessionRows.map((row) => ({ topicName: row.topicName, dateAttended: row.sessionDate, status: row.status })),
+      sessionRows,
+    });
+  }
+
+  const classroomFilter = role === "admin"
+    ? { isSessionInstance: { $ne: true } }
+    : { instructor: userId, isSessionInstance: { $ne: true } };
+
+  const classrooms: any[] = await Classroom.find(classroomFilter)
+    .populate("coach instructor", "name username")
+    .populate("students", "name username email")
+    .populate("batches", "name")
+    .sort({ createdAt: -1 })
+    .lean();
+
+  const attendanceDocs: any[] = await Attendance.find({ sessionDate: { $gte: new Date(from.getTime() - 120 * 24 * 60 * 60 * 1000), $lte: to } }).lean();
+  const attendanceMap = new Map(attendanceDocs.map((doc: any) => [`${objectId(doc.classroom)}:${String(doc.scheduledSessionId || "")}:${new Date(doc.sessionDate).toISOString()}`, doc]));
+
+  const sessionRows = flattenClassroomSessions(classrooms)
+    .filter(({ session }) => {
+      const start = getSessionStart(session);
+      return start ? sameDay(start, selectedDate) : false;
+    })
+    .map(({ classroom, session }) => {
+      const attendanceKey = `${objectId(classroom._id)}:${String(session._id || "")}:${new Date(session.scheduledFor || classroom.classDate).toISOString()}`;
+      const attendance = attendanceMap.get(attendanceKey) || null;
+      return {
+        id: `${objectId(classroom._id)}:${String(session._id)}`,
+        classroomId: objectId(classroom._id),
+        sessionId: String(session._id || ""),
+        title: classroom.title,
+        topicName: session.topicName || classroom.topicName || classroom.title,
+        courseName: classroom.courseName || "General",
+        levelName: classroom.levelName || "Not set",
+        batchNames: (classroom.batches || []).map((batch: any) => batch.name).filter(Boolean),
+        coachName: classroom.coach?.name || classroom.instructor?.name || "Coach",
+        scheduledFor: session.scheduledFor || classroom.classDate,
+        startTime: session.startTime || classroom.startTime || "",
+        durationMinutes: Number(session.durationMinutes || classroom.durationMinutes || 60),
+        status: session.status || classroom.status || "scheduled",
+        attendanceState: deriveAttendanceState(session, attendance, now),
+        coachStatus: attendance?.coachStatus || session.coachAttendanceStatus || "pending",
+        teachingMinutes: Number(attendance?.teachingMinutes || session.teachingMinutes || session.durationMinutes || classroom.durationMinutes || 0),
+        students: (classroom.students || []).map((student: any) => {
+          const saved = (attendance?.records || []).find((row: any) => objectId(row.student) === objectId(student._id));
+          return {
+            _id: objectId(student._id),
+            name: student.name,
+            username: student.username,
+            email: student.email,
+            status: saved?.status || "present",
+            note: saved?.note || "",
+          };
+        }),
+        savedAttendance: attendance,
+      };
+    })
+    .sort((a, b) => new Date(a.scheduledFor).getTime() - new Date(b.scheduledFor).getTime());
+
+  const allPastSessions = flattenClassroomSessions(classrooms)
+    .filter(({ session }) => {
+      const end = getSessionEnd(session);
+      return end ? end < now : false;
+    })
+    .map(({ classroom, session }) => {
+      const attendance = attendanceDocs.find((doc: any) => objectId(doc.classroom) === objectId(classroom._id) && String(doc.scheduledSessionId || "") === String(session._id || ""));
+      return { classroom, session, attendance };
+    });
+
+  const counts = {
+    completedClasses: allPastSessions.length,
+    missedAttendanceClasses: allPastSessions.filter((row) => !row.attendance).length,
+    attendancePendingClasses: sessionRows.filter((row) => row.attendanceState !== "marked").length,
+    previouslyMarkedClasses: allPastSessions.filter((row) => !!row.attendance).length,
+  };
+
+  const analytics = {
+    studentAttendancePercentage: (() => {
+      const rows = attendanceDocs.flatMap((doc: any) => doc.records || []);
+      const total = rows.length;
+      const present = rows.filter((row: any) => row.status === "present" || row.status === "late").length;
+      return total ? Math.round((present / total) * 100) : 0;
+    })(),
+    coachAttendancePercentage: (() => {
+      const valid = attendanceDocs.filter((doc: any) => ["present", "late", "absent"].includes(doc.coachStatus));
+      const present = valid.filter((doc: any) => doc.coachStatus === "present" || doc.coachStatus === "late").length;
+      return valid.length ? Math.round((present / valid.length) * 100) : 0;
+    })(),
+  };
+
+  return NextResponse.json({
+    role,
+    selectedDate,
+    counts,
+    analytics,
+    sessions: sessionRows,
+  });
+}

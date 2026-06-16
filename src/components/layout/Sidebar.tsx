@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
+  ActivitySquare,
   Banknote,
   BarChart3,
   Bell,
@@ -82,6 +83,7 @@ const sections: NavSection[] = [
     items: [
       { href: "/admin/users", label: "Users", icon: Users },
       { href: "/admin/courses", label: "Courses", icon: BookOpenCheck },
+      { href: "/admin/activity-tracker", label: "Activity Tracker", icon: ActivitySquare },
       { href: "/admin/announcements", label: "Announcements", icon: Megaphone },
       { href: "/admin/notifications", label: "Notifications", icon: Bell },
     ],

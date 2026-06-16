@@ -116,7 +116,7 @@ export default function PgnLibraryPage() {
     });
   }, [games, activeFolderPath, query, currentFolder]);
 
-  const visibleFolders = useMemo(() => {
+  const allKnownFolders = useMemo(() => {
     const byPath = new Map<string, FolderDoc>();
     folders.forEach((folder) => byPath.set(`${folder.personal ? "personal" : "shared"}:${folder.path}`, folder));
     games.forEach((game) => {
@@ -135,14 +135,18 @@ export default function PgnLibraryPage() {
         parentPath = parentFolderPath(parentPath);
       }
     });
+    return Array.from(byPath.values()).sort((a, b) => a.path.localeCompare(b.path));
+  }, [folders, games]);
+
+  const visibleFolders = useMemo(() => {
     const folderPath = activeFolderPath;
     const q = folderPath ? "" : query.trim().toLowerCase();
-    return Array.from(byPath.values())
+    return allKnownFolders
       .filter((folder) => getImmediateChildPath(folderPath, folder.path) === folder.path)
       .filter((folder) => !folderPath || !currentFolder || folder.personal === currentFolder.personal)
       .filter((folder) => !q || folder.name.toLowerCase().includes(q))
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [folders, games, activeFolderPath, query, currentFolder]);
+  }, [allKnownFolders, activeFolderPath, query, currentFolder]);
 
   const rootSharedFolders = useMemo(() => visibleFolders.filter((folder) => !folder.personal), [visibleFolders]);
   const rootPersonalFolders = useMemo(() => visibleFolders.filter((folder) => folder.personal), [visibleFolders]);
@@ -156,11 +160,10 @@ export default function PgnLibraryPage() {
       setCurrentFolder(null);
       return;
     }
-    const folder = folders.find((item) => item.path === folderPath && (item.personal ? "personal" : "shared") === folderScope)
-      || visibleFolders.find((item) => item.path === folderPath && (item.personal ? "personal" : "shared") === folderScope)
+    const folder = allKnownFolders.find((item) => item.path === folderPath && (item.personal ? "personal" : "shared") === folderScope)
       || { id: `${folderScope}-${folderPath.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`, name: folderLabel(folderPath), path: folderPath, personal: folderScope !== "shared" };
     setCurrentFolder(folder);
-  }, [searchParams, visibleFolders, folders]);
+  }, [searchParams, allKnownFolders]);
 
   function openFolder(folder: FolderDoc) {
     setCurrentFolder(folder);

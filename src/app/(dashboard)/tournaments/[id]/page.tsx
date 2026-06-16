@@ -25,6 +25,10 @@ function makeInvitePassword() {
   return randomBytes(4).toString("hex").toUpperCase();
 }
 
+function toPlain<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value));
+}
+
 async function createExternalInvite(formData: FormData) {
   "use server";
   const session = await auth();
@@ -59,10 +63,10 @@ export default async function TournamentDetailPage({ params }: { params: { id: s
   const activeGame =
     games.find((game: any) => game.status === "active" && [game.whiteUser?.toString?.(), game.blackUser?.toString?.()].includes(String(userId))) || null;
   const initialState = {
-    tournament,
-    activeGame,
-    games: games.slice(0, 25),
-    myGames: games.filter((game: any) => [game.whiteUser?.toString?.(), game.blackUser?.toString?.()].includes(String(userId))).slice(0, 10),
+    tournament: toPlain(tournament),
+    activeGame: activeGame ? toPlain(activeGame) : null,
+    games: toPlain(games.slice(0, 25)),
+    myGames: toPlain(games.filter((game: any) => [game.whiteUser?.toString?.(), game.blackUser?.toString?.()].includes(String(userId))).slice(0, 10)),
     canManage: role === "admin",
     canPlay: role === "student" || role === "admin",
   };

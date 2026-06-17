@@ -3,6 +3,7 @@ import { dbConnect } from "@/lib/db";
 import { User } from "@/models/User";
 import { createPasswordResetToken, PASSWORD_RESET_WINDOW_MINUTES } from "@/lib/passwordReset";
 import { sendEmailAutomation } from "@/lib/emailAutomation";
+import { resolvePublicAppUrl } from "@/lib/appUrl";
 
 export const dynamic = "force-dynamic";
 
@@ -39,8 +40,8 @@ export async function POST(req: Request) {
     }
   );
 
-  const origin = new URL(req.url).origin;
-  const resetUrl = `${origin}/reset-password?token=${encodeURIComponent(token)}`;
+  const appUrl = resolvePublicAppUrl(req);
+  const resetUrl = `${appUrl}/reset-password?token=${encodeURIComponent(token)}`;
   const delivery = await sendEmailAutomation({
     to: user.email,
     subject: "Reset your Envision Chess Academy password",

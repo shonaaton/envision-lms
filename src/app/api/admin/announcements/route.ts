@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { recordActivity } from "@/lib/activity";
+import { sendEmailAutomation } from "@/lib/emailAutomation";
 import { Announcement } from "@/models/Announcement";
 import { Batch } from "@/models/Batch";
 import { Notification } from "@/models/Fee";
@@ -23,28 +24,33 @@ function uniqueIds(ids: any[]) {
 
 async function resolveRecipients(targetType: string, targetId?: string) {
   if (targetType === "all_students") {
-    const users = await User.find({ role: "student", isActive: { $ne: false } }, { _id: 1 }).lean();
-    return { recipients: uniqueIds(users.map((user: any) => user._id)), targetBatch: undefined, targetUser: undefined };
+    const users = await User.find({ role: "student", isActive: { $ne: false } }, { _id: 1, email: 1, name: 1 }).lean();
+    return { recipients: uniqueIds(users.map((user: any) => user._id)), recipientUsers: users, targetBatch: undefined, targetUser: undefined };
   }
 
   if (targetType === "all_coaches") {
-    const users = await User.find({ role: "instructor", isActive: { $ne: false } }, { _id: 1 }).lean();
-    return { recipients: uniqueIds(users.map((user: any) => user._id)), targetBatch: undefined, targetUser: undefined };
+    const users = await User.find({ role: "instructor", isActive: { $ne: false } }, { _id: 1, email: 1, name: 1 }).lean();
+    return { recipients: uniqueIds(users.map((user: any) => user._id)), recipientUsers: users, targetBatch: undefined, targetUser: undefined };
   }
 
   if (targetType === "batch") {
     if (!targetId) throw new Error("Please select a batch.");
-    const batch: any = await Batch.findById(targetId, { students: 1 }).lean();
+    const batch: any = await Batch.findById(targetId).populate("students", "email name").lean();
     if (!batch) throw new Error("Batch not found.");
-    return { recipients: uniqueIds(batch.students || []), targetBatch: batch._id, targetUser: undefined };
+    return {
+      recipients: uniqueIds((batch.students || []).map((student: any) => student._id)),
+      recipientUsers: (batch.students || []).map((student: any) => ({ _id: student._id, email: student.email, name: student.name })),
+      targetBatch: batch._id,
+      targetUser: undefined,
+    };
   }
 
   if (targetType === "student" || targetType === "coach") {
     if (!targetId) throw new Error(`Please select a ${targetType}.`);
     const role = targetType === "student" ? "student" : "instructor";
-    const user: any = await User.findOne({ _id: targetId, role, isActive: { $ne: false } }, { _id: 1 }).lean();
+    const user: any = await User.findOne({ _id: targetId, role, isActive: { $ne: false } }, { _id: 1, email: 1, name: 1 }).lean();
     if (!user) throw new Error(`${targetLabels[targetType]} not found.`);
-    return { recipients: [user._id.toString()], targetBatch: undefined, targetUser: user._id };
+    return { recipients: [user._id.toString()], recipientUsers: [user], targetBatch: undefined, targetUser: user._id };
   }
 
   throw new Error("Please select a valid audience.");
@@ -106,6 +112,24 @@ export async function POST(req: Request) {
         message,
         metadata: { announcement: announcement._id, targetType, priority },
       }))
+    );
+
+    await Promise.all(
+      (resolved.recipientUsers || [])
+        .filter((user: any) => user?.email)
+        .map((user: any) =>
+          sendEmailAutomation({
+            to: String(user.email),
+            subject: title,
+            message,
+            metadata: {
+              kind: "announcement",
+              priority,
+              recipientName: user.name,
+              announcementId: announcement._id.toString(),
+            },
+          })
+        )
     );
 
     await recordActivity({

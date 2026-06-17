@@ -2,6 +2,7 @@ import { Types } from "mongoose";
 import { Batch } from "@/models/Batch";
 import { AskCoachConversation, AskCoachMessage } from "@/models/AskCoach";
 import { Notification } from "@/models/Fee";
+import { User } from "@/models/User";
 import { sendEmailAutomation } from "@/lib/emailAutomation";
 
 const badWords = ["abuse", "idiot", "stupid", "shut up", "bloody", "damn"];
@@ -19,12 +20,19 @@ export function checkMessageSafety(text: string) {
 export async function notifyUser(user: any, title: string, message: string, metadata: any = {}) {
   if (!user) return;
   const notification = await Notification.create({ user, type: "ask_coach", title, message, metadata });
-  if (metadata?.email) {
+  const recipient: { email?: string; name?: string } | null = metadata?.email
+    ? { email: String(metadata.email), name: String(metadata.recipientName || "") }
+    : await User.findById(user).select("email name").lean<{ email?: string; name?: string } | null>();
+  if (recipient?.email) {
     await sendEmailAutomation({
-      to: String(metadata.email),
+      to: String(recipient.email),
       subject: title,
       message,
-      metadata: { ...metadata, notificationId: notification._id.toString() },
+      metadata: {
+        ...metadata,
+        recipientName: metadata?.recipientName || recipient?.name,
+        notificationId: notification._id.toString(),
+      },
     });
   }
 }

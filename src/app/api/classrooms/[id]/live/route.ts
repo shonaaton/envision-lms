@@ -136,6 +136,15 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   ];
   const update: any = {};
   for (const key of allowed) if (key in body) update[key] = body[key];
+  if ("studentMovesEnabled" in update && !update.studentMovesEnabled) {
+    update.boardControlStudents = [];
+    if (update.mode === "student_move" || update.mode === "one_move_challenge") update.mode = "teaching";
+  }
+  if (update.mode === "teaching") {
+    update.studentMovesEnabled = false;
+    update.boardControlStudents = [];
+    update.challenge = { active: false };
+  }
   const live = await ClassroomSession.findOneAndUpdate(
     { classroom: params.id, scheduledSessionId },
     {

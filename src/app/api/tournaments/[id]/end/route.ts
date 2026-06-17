@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { Tournament } from "@/models/Tournament";
 import { TournamentGame } from "@/models/TournamentGame";
-import { recalculateTournamentStandings } from "@/lib/tournamentEngine";
+import { recalculateTournamentStandings, syncSwissRoundState } from "@/lib/tournamentEngine";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +19,18 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
     { tournament: params.id, status: "active" },
     { $set: { status: "aborted", termination: "manual", endedAt: new Date(), result: "*" } }
   );
+  if (tournament.type === "swiss") {
+    await syncSwissRoundState(tournament);
+    tournament.roundsData = (tournament.roundsData || []).map((round: any) => ({
+      ...round,
+      status: "completed",
+      endedAt: round.endedAt || new Date(),
+      pairings: (round.pairings || []).map((pairing: any) => ({
+        ...pairing,
+        status: pairing.result && pairing.result !== "*" ? "completed" : "aborted",
+      })),
+    }));
+  }
   tournament.status = "completed";
   tournament.endedAt = new Date();
   await recalculateTournamentStandings(tournament);

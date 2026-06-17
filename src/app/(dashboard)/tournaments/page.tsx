@@ -15,6 +15,7 @@ export default async function TournamentsPage() {
     $or: [{ "access.users": userId }, { participants: userId }, { "access.allActiveStudents": true }],
   };
   const tournaments = await Tournament.find(filter).sort({ startAt: 1 }).limit(200).lean();
+  const safeTournaments = (tournaments || []).filter((item: any) => item && item._id);
 
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-5 text-slate-950 sm:px-6 lg:px-8">
@@ -27,7 +28,7 @@ export default async function TournamentsPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {tournaments.map((tournament: any) => (
+        {safeTournaments.map((tournament: any) => (
           <Link key={tournament._id.toString()} href={`/tournaments/${tournament._id}`} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm hover:border-purple-200">
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -44,7 +45,7 @@ export default async function TournamentsPage() {
           </Link>
         ))}
       </div>
-      {tournaments.length === 0 && <div className="rounded-lg border border-dashed bg-white p-6 text-sm text-slate-500">No tournaments available yet.</div>}
+      {safeTournaments.length === 0 && <div className="rounded-lg border border-dashed bg-white p-6 text-sm text-slate-500">No tournaments available yet.</div>}
     </div>
   );
 }

@@ -6,5 +6,5 @@ export default async function PlayComputerPage() {
   const session = await auth();
   const role = (session?.user as any)?.role;
   if (role === "instructor") redirect("/dashboard");
-  return <PlayVsComputer depth={8} />;
+  return <PlayVsComputer depth={4} />;
 }

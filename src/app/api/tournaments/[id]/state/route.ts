@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { Tournament } from "@/models/Tournament";
 import { TournamentGame } from "@/models/TournamentGame";
-import { recalculateTournamentStandings, syncArenaPairings } from "@/lib/tournamentEngine";
+import { finalizeTournamentIfComplete, recalculateTournamentStandings, syncArenaPairings, syncSwissRoundState } from "@/lib/tournamentEngine";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +34,9 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     await syncArenaPairings(mutable);
   }
   if (mutable) {
+    if (mutable.type === "swiss") await syncSwissRoundState(mutable);
     await recalculateTournamentStandings(mutable);
+    await finalizeTournamentIfComplete(mutable);
     await mutable.save();
   }
 

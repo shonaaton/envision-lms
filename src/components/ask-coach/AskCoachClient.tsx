@@ -48,7 +48,9 @@ export default function AskCoachClient({ role }: { role: Role }) {
   async function sendMessage() {
     if (!message.trim()) return;
     setLoading(true);
-    const payload: any = { message, conversationId: activeConversation?._id || undefined };
+    const startNewThread = Boolean(batch || receiver);
+    const payload: any = { message };
+    if (!startNewThread && activeConversation?._id) payload.conversationId = activeConversation._id;
     if (batch) payload.batch = batch;
     else if (receiver) payload.receiver = receiver;
     const res = await fetch("/api/ask-coach", {

@@ -42,6 +42,36 @@ function initials(name?: string) {
   return (name || "Student").split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase();
 }
 
+function aggregateStudentResponses(studentResponses: any[]) {
+  return studentResponses.reduce(
+    (acc, response: any) => {
+      acc.score += Number(response?.score || 0);
+      acc.completedItems += Number(response?.completedItems || 0);
+      acc.totalItems += Number(response?.totalItems || 0);
+      acc.hintsUsed += Number(response?.hintsUsed || 0);
+      acc.attemptsUsed += Number(response?.attemptsUsed || 0);
+      acc.timeTakenSeconds += Number(response?.timeTakenSeconds || 0);
+      if (response?.submittedAt && (!acc.submittedAt || new Date(response.submittedAt).getTime() > new Date(acc.submittedAt).getTime())) {
+        acc.submittedAt = response.submittedAt;
+      }
+      if (response?.feedback) acc.feedback = response.feedback;
+      if (response?.correct) acc.correctResponses += 1;
+      return acc;
+    },
+    {
+      score: 0,
+      completedItems: 0,
+      totalItems: 0,
+      hintsUsed: 0,
+      attemptsUsed: 0,
+      timeTakenSeconds: 0,
+      submittedAt: null as string | Date | null,
+      feedback: "",
+      correctResponses: 0,
+    }
+  );
+}
+
 export default async function ClassroomSummaryPage({
   params,
   searchParams,
@@ -94,16 +124,17 @@ export default async function ClassroomSummaryPage({
   const presentCount = attendanceRecords.filter((record: any) => record.status === "present").length;
   const absentCount = attendanceRecords.filter((record: any) => record.status === "absent").length;
   const lateCount = attendanceRecords.filter((record: any) => record.status === "late").length;
-  const responseByStudent = new Map<string, any>();
+  const responseByStudent = new Map<string, any[]>();
   responses.forEach((response: any) => {
     const key = objectId(response.student);
-    if (!responseByStudent.has(key)) responseByStudent.set(key, response);
+    responseByStudent.set(key, [...(responseByStudent.get(key) || []), response]);
   });
 
   const studentRows = (classroom.students || []).map((student: any) => {
     const studentId = objectId(student);
     const attendanceRecord = attendanceRecords.find((record: any) => objectId(record.student) === studentId);
-    const response = responseByStudent.get(studentId);
+    const studentResponses = responseByStudent.get(studentId) || [];
+    const responseSummary = aggregateStudentResponses(studentResponses);
     const timePresentMinutes = liveSession?.participants?.find((participant: any) => objectId(participant.user) === studentId)
       ? Math.max(
           0,
@@ -118,7 +149,11 @@ export default async function ClassroomSummaryPage({
           )
         )
       : 0;
-    const accuracy = Number(response?.totalItems || 0) > 0 ? Math.round((Number(response?.completedItems || 0) / Number(response?.totalItems || 1)) * 100) : response?.correct ? 100 : 0;
+    const accuracy = responseSummary.totalItems > 0
+      ? Math.round((responseSummary.completedItems / Math.max(1, responseSummary.totalItems)) * 100)
+      : studentResponses.length
+        ? Math.round((responseSummary.correctResponses / Math.max(1, studentResponses.length)) * 100)
+        : 0;
     return {
       id: studentId,
       name: student.name,
@@ -126,15 +161,15 @@ export default async function ClassroomSummaryPage({
       attendance: attendanceRecord?.status || "pending",
       note: attendanceRecord?.note || "",
       timePresentMinutes,
-      score: Number(response?.score || 0),
-      completedItems: Number(response?.completedItems || 0),
-      totalItems: Number(response?.totalItems || 0),
-      hintsUsed: Number(response?.hintsUsed || 0),
-      attemptsUsed: Number(response?.attemptsUsed || 0),
-      timeTakenSeconds: Number(response?.timeTakenSeconds || 0),
+      score: responseSummary.score,
+      completedItems: responseSummary.completedItems,
+      totalItems: responseSummary.totalItems,
+      hintsUsed: responseSummary.hintsUsed,
+      attemptsUsed: responseSummary.attemptsUsed,
+      timeTakenSeconds: responseSummary.timeTakenSeconds,
       accuracy,
-      submittedAt: response?.submittedAt || null,
-      feedback: response?.feedback || "",
+      submittedAt: responseSummary.submittedAt,
+      feedback: responseSummary.feedback,
     };
   });
 

@@ -75,6 +75,15 @@ type TargetsPayload = {
 type CreateMode = "single" | "series";
 type EndCondition = "on_date" | "after_n_sessions" | "course_complete" | "never";
 
+function latestSummarySessionId(item: ClassroomItem) {
+  const sessions = Array.isArray(item.generatedSessions) ? item.generatedSessions : [];
+  if (!sessions.length) return "";
+  const preferred = sessions
+    .slice()
+    .sort((a: any, b: any) => new Date(b.actualEndedAt || b.scheduledFor || 0).getTime() - new Date(a.actualEndedAt || a.scheduledFor || 0).getTime())[0];
+  return String(preferred?._id || "");
+}
+
 const durationOptions = [
   { value: 15, label: "15 Minutes" },
   { value: 30, label: "30 Minutes" },
@@ -446,7 +455,10 @@ export default function ClassroomManagementClient({ role }: { role: Role }) {
               <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">No classes match the current filters.</div>
             ) : (
               <div className="grid gap-3 xl:grid-cols-2">
-                {filteredItems.map((item) => (
+                {filteredItems.map((item) => {
+                  const summarySessionId = latestSummarySessionId(item);
+                  const summaryHref = summarySessionId ? `/classrooms/${item._id}/summary?session=${summarySessionId}` : `/classrooms/${item._id}/summary`;
+                  return (
                   <div key={item._id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-lg shadow-slate-200/60">
                     <div className="flex items-start justify-between gap-3">
                       <div>
@@ -458,7 +470,7 @@ export default function ClassroomManagementClient({ role }: { role: Role }) {
                         </div>
                       </div>
                       <div className="flex gap-1">
-                        <Link href={`/classrooms/${item._id}/summary`} className="grid h-9 w-9 place-items-center rounded-lg border border-slate-200 text-slate-700"><Eye size={15} /></Link>
+                        <Link href={summaryHref} className="grid h-9 w-9 place-items-center rounded-lg border border-slate-200 text-slate-700"><Eye size={15} /></Link>
                         <button onClick={() => resetModal(item.classroomType, item)} className="grid h-9 w-9 place-items-center rounded-lg border border-slate-200 text-slate-700"><Pencil size={15} /></button>
                         <button onClick={() => deleteItem(item)} className="grid h-9 w-9 place-items-center rounded-lg border border-red-200 bg-red-50 text-red-600"><Trash2 size={15} /></button>
                       </div>
@@ -484,7 +496,7 @@ export default function ClassroomManagementClient({ role }: { role: Role }) {
                       {item.classroomType === "series" && <ActionButton icon={<CopyPlus size={14} />} label="Add Extra Class" onClick={() => { setActionModal({ type: "add_extra_class", item }); setActionDraft({ topicName: "", classDate: "", startTime: item.startTime || "16:00", durationMinutes: item.durationMinutes || 60 }); }} />}
                     </div>
                   </div>
-                ))}
+                )})}
               </div>
             )}
           </div>

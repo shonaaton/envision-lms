@@ -186,6 +186,10 @@ function initials(name?: string) {
     .toUpperCase();
 }
 
+function entityId(value: any) {
+  return value?._id?.toString?.() || value?.toString?.() || "";
+}
+
 function coordinateFiles(orientation: "white" | "black") {
   const files = "abcdefgh".split("");
   return orientation === "white" ? files : files.reverse();
@@ -260,6 +264,34 @@ function minutesBetween(start?: string | Date, end?: string | Date) {
 }
 
 type LiveBoardQuizResult = { solved: boolean; mistakes: number; hintsUsed: number; timeTakenSeconds: number; skipped?: boolean };
+
+function aggregateLiveResponses(responses: any[]) {
+  return responses.reduce(
+    (acc, response: any) => {
+      acc.score += Number(response?.score || 0);
+      acc.attemptsUsed += Number(response?.attemptsUsed || 0);
+      acc.hintsUsed += Number(response?.hintsUsed || 0);
+      acc.timeTakenSeconds += Number(response?.timeTakenSeconds || 0);
+      acc.completedItems += Number(response?.completedItems || 0);
+      acc.totalItems += Number(response?.totalItems || 0);
+      if (response?.submittedMove) acc.moves.push(response.submittedMove);
+      if (response?.correct) acc.correctResponses += 1;
+      if (response?.feedback) acc.feedback = response.feedback;
+      return acc;
+    },
+    {
+      score: 0,
+      attemptsUsed: 0,
+      hintsUsed: 0,
+      timeTakenSeconds: 0,
+      completedItems: 0,
+      totalItems: 0,
+      correctResponses: 0,
+      moves: [] as string[],
+      feedback: "",
+    }
+  );
+}
 
 export default function LiveClassroom({ classroomId, role, userId, sessionId }: { classroomId: string; role: Role; userId: string; sessionId?: string }) {
   const router = useRouter();
@@ -385,7 +417,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const canMove =
     coach ||
     (live?.studentMovesEnabled &&
-      (live?.boardControlStudents || []).some((student: any) => student._id?.toString?.() === userId || student.toString?.() === userId));
+      (live?.boardControlStudents || []).some((student: any) => entityId(student) === userId));
   const duration = live?.startedAt ? Math.max(0, Math.floor((Date.now() - new Date(live.startedAt).getTime()) / 60000)) : 0;
   const classroomName = classroom?.title || "Live Classroom";
   const coachName = classroom?.coach?.name || classroom?.instructor?.name || "Coach";
@@ -1055,15 +1087,22 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   }, [live?.drawings]);
 
   const leaderboardRows = useMemo(() => {
-    const responseMap = new Map((data?.responses || []).map((r: any) => [r.student?._id, r]));
+    const responseMap = new Map<string, any[]>();
+    for (const response of data?.responses || []) {
+      const studentId = response.student?._id || response.student;
+      if (!studentId) continue;
+      responseMap.set(studentId, [...(responseMap.get(studentId) || []), response]);
+    }
     return students
       .map((student: any) => {
-        const response: any = responseMap.get(student._id);
+        const summary = aggregateLiveResponses(responseMap.get(student._id) || []);
         return {
           ...student,
-          points: response?.score || 0,
-          completed: Boolean(response),
-          move: response?.submittedMove,
+          points: summary.score,
+          completed: summary.completedItems > 0 || summary.correctResponses > 0 || summary.moves.length > 0,
+          move: summary.moves.at(-1),
+          attempts: summary.attemptsUsed,
+          completedItems: summary.completedItems,
         };
       })
       .sort((a: any, b: any) => b.points - a.points);
@@ -1387,7 +1426,8 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                 </div>
                 <div className="space-y-2">
                   {students.map((student: any) => {
-                    const hasControl = (live?.boardControlStudents || []).some((s: any) => s._id === student._id || s === student._id);
+                    const studentKey = entityId(student);
+                    const hasControl = (live?.boardControlStudents || []).some((s: any) => entityId(s) === studentKey);
                     return (
                       <div key={student._id} className="flex items-center justify-between rounded-lg border border-slate-200 p-3">
                         <div className="flex items-center gap-3">
@@ -1400,8 +1440,12 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                         {coach && (
                           <button
                             onClick={() => {
-                              const current = (live?.boardControlStudents || []).map((s: any) => s._id || s);
-                              patch({ boardControlStudents: hasControl ? current.filter((id: any) => id !== student._id) : [...current, student._id], studentMovesEnabled: true, mode: "student_move" });
+                              const current = Array.from(new Set((live?.boardControlStudents || []).map((s: any) => entityId(s)).filter(Boolean)));
+                              patch({
+                                boardControlStudents: hasControl ? current.filter((id: any) => id !== studentKey) : [...current, studentKey],
+                                studentMovesEnabled: true,
+                                mode: "student_move",
+                              });
                             }}
                             className={`rounded-md px-3 py-2 text-xs font-semibold ${hasControl ? "bg-purple-700 text-white" : "bg-slate-100 text-slate-700"}`}
                           >
@@ -1935,7 +1979,22 @@ function LiveBoardQuiz({
     submittedRef.current = false;
     setCurrentIndex(Math.max(0, Number(serverIndex || 0)));
     setResults(existingItemResults || {});
-  }, [question._id, serverIndex, existingItemResults]);
+  }, [question._id]);
+
+  useEffect(() => {
+    setResults(existingItemResults || {});
+  }, [existingItemResults]);
+
+  useEffect(() => {
+    if (progressionMode === "manual") return;
+    if (!existingItemResults) return;
+    const solvedCount = items.filter((item: any) => existingItemResults[item.id]?.solved || existingItemResults[item.id]?.skipped).length;
+    if (!solvedCount) return;
+    setCurrentIndex((value) => {
+      const nextValue = Math.max(value, Math.min(items.length - 1, solvedCount));
+      return nextValue;
+    });
+  }, [existingItemResults, items, progressionMode]);
 
   useEffect(() => {
     if (progressionMode !== "manual") return;
@@ -2136,19 +2195,45 @@ function CoachQuizMonitor({
         fen: question?.fen || "start",
         points: question?.scoring?.correct ?? 5,
       }];
-  const [currentIndex, setCurrentIndex] = useState(Math.max(0, Number(question?.currentItemIndex || 0)));
-  const activeItem = items[Math.min(currentIndex, items.length - 1)];
-  const position = activeItem?.fen && activeItem.fen !== "start" ? activeItem.fen : question?.fen || "start";
-  const responseMap = new Map((responses || []).map((response: any) => [response.student?._id || response.student, response]));
-  const submitted = responses.length;
-  const totalStudents = students.length;
   const manualProgression = question?.progressionMode === "manual";
+  const responseGroups = new Map<string, any[]>();
+  for (const response of responses || []) {
+    const studentId = response.student?._id || response.student;
+    if (!studentId) continue;
+    responseGroups.set(studentId, [...(responseGroups.get(studentId) || []), response]);
+  }
+
+  const autoSuggestedIndex = (() => {
+    if (!items.length) return 0;
+    const frequencies = new Map<number, number>();
+    for (const student of students || []) {
+      const studentResponses = responseGroups.get(student._id) || [];
+      const solvedCount = studentResponses.reduce((sum, response) => {
+        const itemResults = Object.values(response?.itemResults || {}) as any[];
+        return sum + itemResults.filter((result: any) => result?.solved || result?.skipped).length;
+      }, 0);
+      const index = Math.min(items.length - 1, Math.max(0, solvedCount));
+      frequencies.set(index, (frequencies.get(index) || 0) + 1);
+    }
+    if (!frequencies.size) return Math.max(0, Number(question?.currentItemIndex || 0));
+    return Array.from(frequencies.entries()).sort((a, b) => {
+      if (b[1] !== a[1]) return b[1] - a[1];
+      return b[0] - a[0];
+    })[0][0];
+  })();
+
+  const [currentIndex, setCurrentIndex] = useState(
+    Math.max(0, manualProgression ? Number(question?.currentItemIndex || 0) : autoSuggestedIndex)
+  );
+  const effectiveIndex = manualProgression ? Math.max(0, Number(question?.currentItemIndex || 0)) : autoSuggestedIndex;
+  const activeItem = items[Math.min(effectiveIndex, items.length - 1)];
+  const position = activeItem?.fen && activeItem.fen !== "start" ? activeItem.fen : question?.fen || "start";
+  const submitted = Array.from(responseGroups.values()).filter((studentResponses) => studentResponses.length > 0).length;
+  const totalStudents = students.length;
 
   useEffect(() => {
-    if (manualProgression) {
-      setCurrentIndex(Math.max(0, Number(question?.currentItemIndex || 0)));
-    }
-  }, [manualProgression, question?.currentItemIndex]);
+    setCurrentIndex(Math.max(0, manualProgression ? Number(question?.currentItemIndex || 0) : autoSuggestedIndex));
+  }, [autoSuggestedIndex, manualProgression, question?.currentItemIndex]);
 
   return (
     <div className="mx-auto w-full max-w-[840px] space-y-4">
@@ -2161,7 +2246,7 @@ function CoachQuizMonitor({
           </div>
           <div className="flex flex-wrap gap-2">
             <button
-              onClick={() => onUpdateProgression({ progressionMode: manualProgression ? "auto" : "manual", currentItemIndex: currentIndex })}
+              onClick={() => onUpdateProgression({ progressionMode: manualProgression ? "auto" : "manual", currentItemIndex: effectiveIndex })}
               className={`rounded-xl px-4 py-2 text-sm font-bold ${manualProgression ? "bg-slate-900 text-white" : "bg-white text-purple-800 border border-purple-200"}`}
             >
               {manualProgression ? "Manual progression on" : "Switch to manual"}
@@ -2184,24 +2269,24 @@ function CoachQuizMonitor({
               <div className="flex items-center gap-2">
                 <button
                   type="button"
+                  disabled={!manualProgression}
                   onClick={() => {
-                    const nextIndex = Math.max(0, currentIndex - 1);
+                    const nextIndex = Math.max(0, effectiveIndex - 1);
                     if (manualProgression) onUpdateProgression({ currentItemIndex: nextIndex });
-                    else setCurrentIndex(nextIndex);
                   }}
-                  className="grid h-8 w-8 place-items-center rounded-lg border border-slate-200 bg-white text-slate-700"
+                  className={`grid h-8 w-8 place-items-center rounded-lg border ${manualProgression ? "border-slate-200 bg-white text-slate-700" : "border-slate-100 bg-slate-50 text-slate-300"}`}
                 >
                   <ChevronLeft size={14} />
                 </button>
-                <span className="text-xs font-bold text-slate-500">{currentIndex + 1}/{items.length}</span>
+                <span className="text-xs font-bold text-slate-500">{effectiveIndex + 1}/{items.length}</span>
                 <button
                   type="button"
+                  disabled={!manualProgression}
                   onClick={() => {
-                    const nextIndex = Math.min(items.length - 1, currentIndex + 1);
+                    const nextIndex = Math.min(items.length - 1, effectiveIndex + 1);
                     if (manualProgression) onUpdateProgression({ currentItemIndex: nextIndex });
-                    else setCurrentIndex(nextIndex);
                   }}
-                  className="grid h-8 w-8 place-items-center rounded-lg border border-slate-200 bg-white text-slate-700"
+                  className={`grid h-8 w-8 place-items-center rounded-lg border ${manualProgression ? "border-slate-200 bg-white text-slate-700" : "border-slate-100 bg-slate-50 text-slate-300"}`}
                 >
                   <ChevronRight size={14} />
                 </button>
@@ -2225,7 +2310,12 @@ function CoachQuizMonitor({
           <div className="mb-3 text-sm font-bold text-slate-700">Student submissions</div>
           <div className="space-y-3">
             {students.map((student: any) => {
-              const response: any = responseMap.get(student._id);
+              const studentResponses = responseGroups.get(student._id) || [];
+              const response = studentResponses.at(0);
+              const summary = aggregateLiveResponses(studentResponses);
+              const activeItemResult = studentResponses
+                .map((entry: any) => entry?.itemResults?.[activeItem?.id])
+                .find(Boolean);
               return (
                 <div key={student._id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                   <div className="flex flex-wrap items-center justify-between gap-3">
@@ -2240,37 +2330,37 @@ function CoachQuizMonitor({
                       {response ? (
                         <>
                           <span className={`rounded-full px-2.5 py-1 ${
-                            response.itemResults?.[activeItem?.id]?.solved
+                            activeItemResult?.solved
                               ? "bg-emerald-100 text-emerald-700"
-                              : response.itemResults?.[activeItem?.id]?.skipped
+                              : activeItemResult?.skipped
                                 ? "bg-amber-100 text-amber-700"
-                                : response.correct
+                                : summary.correctResponses > 0
                                   ? "bg-emerald-100 text-emerald-700"
                                   : "bg-slate-200 text-slate-700"
                           }`}>
-                            {response.itemResults?.[activeItem?.id]?.solved
+                            {activeItemResult?.solved
                               ? "Solved this item"
-                              : response.itemResults?.[activeItem?.id]?.skipped
+                              : activeItemResult?.skipped
                                 ? "Skipped this item"
-                                : response.correct
+                                : summary.correctResponses > 0
                                   ? "Completed quiz"
-                                  : response.feedback || "Recorded"}
+                                  : summary.feedback || "Recorded"}
                           </span>
-                          <span className="rounded-full bg-purple-100 px-2.5 py-1 text-purple-700">{Number(response.score || 0)} pts</span>
+                          <span className="rounded-full bg-purple-100 px-2.5 py-1 text-purple-700">{Number(summary.score || 0)} pts</span>
                         </>
                       ) : null}
                     </div>
                   </div>
                   {response ? (
                     <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                      <InfoTile label="Time" value={`${Number(response.timeTakenSeconds || 0)} sec`} />
-                      <InfoTile label="Attempts" value={Number(response.attemptsUsed || 0)} />
-                      <InfoTile label="Hints" value={Number(response.hintsUsed || 0)} />
+                      <InfoTile label="Time" value={`${Number(summary.timeTakenSeconds || 0)} sec`} />
+                      <InfoTile label="Attempts" value={Number(summary.attemptsUsed || 0)} />
+                      <InfoTile label="Hints" value={Number(summary.hintsUsed || 0)} />
                     </div>
                   ) : null}
                   {response ? (
                     <div className="mt-2 text-xs text-slate-500">
-                      Progress: {Number(response.completedItems || 0)}/{Number(response.totalItems || items.length)} items completed
+                      Progress: {Number(summary.completedItems || 0)}/{Number(summary.totalItems || items.length)} items completed
                     </div>
                   ) : null}
                 </div>

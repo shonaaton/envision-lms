@@ -3,7 +3,7 @@ import { Chess } from "chess.js";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { ClassroomSession } from "@/models/ClassroomLive";
-import { getRequestedSessionId } from "@/lib/classroomLiveSession";
+import { getRequestedSessionId, markScheduledSessionStarted } from "@/lib/classroomLiveSession";
 
 export const dynamic = "force-dynamic";
 
@@ -55,12 +55,25 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   live.fen = chess.fen();
   live.gamifiedObjects = nextGamifiedObjects;
   live.moveHistory = [...(live.moveHistory || []), move.san];
+  live.startedAt = live.startedAt || new Date();
+  live.status = live.status === "ended" ? "ended" : "live";
+  const hadParticipant = (live.participants || []).some((participant: any) => objectId(participant.user) === userId);
+  live.participants = (live.participants || []).map((participant: any) =>
+    objectId(participant.user) === userId
+      ? { ...participant.toObject?.(), role: "student", lastSeenAt: new Date(), firstSeenAt: participant.firstSeenAt || new Date() }
+      : participant
+  );
+  if (!hadParticipant) {
+    live.participants = [...(live.participants || []), { user: userId, role: "student", firstSeenAt: new Date(), lastSeenAt: new Date() }];
+  }
   if (live.mode === "one_move_challenge") {
     live.mode = "teaching";
     live.boardControlStudents = [];
+    live.studentMovesEnabled = false;
     live.challenge = { ...(live.challenge?.toObject?.() || live.challenge || {}), active: false };
   }
   await live.save();
+  await markScheduledSessionStarted({ classroomId: params.id, scheduledSessionId, actorId: userId });
 
   return NextResponse.json({
     ok: true,

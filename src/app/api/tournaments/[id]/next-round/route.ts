@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { Tournament } from "@/models/Tournament";
 import { TournamentGame } from "@/models/TournamentGame";
-import { finalizeTournamentIfComplete, generateSwissRound, recalculateTournamentStandings } from "@/lib/tournamentEngine";
+import { finalizeTournamentIfComplete, generateSwissRound, recalculateTournamentStandings, syncSwissRoundState } from "@/lib/tournamentEngine";
 
 export const dynamic = "force-dynamic";
 
@@ -15,8 +15,18 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
   const tournament: any = await Tournament.findById(params.id);
   if (!tournament) return NextResponse.json({ error: "Tournament not found" }, { status: 404 });
   if (tournament.type !== "swiss") return NextResponse.json({ error: "Next round is only available for Swiss tournaments." }, { status: 400 });
+  if (tournament.status !== "live") return NextResponse.json({ error: "Swiss rounds can only be advanced while the tournament is live." }, { status: 400 });
+
+  await syncSwissRoundState(tournament);
 
   const currentRound = Number(tournament.currentRound || 0);
+  if (Number(tournament.rounds || 0) > 0 && currentRound >= Number(tournament.rounds || 0)) {
+    await recalculateTournamentStandings(tournament);
+    await finalizeTournamentIfComplete(tournament);
+    await tournament.save();
+    return NextResponse.json({ ok: true, completed: tournament.status === "completed" });
+  }
+
   if (currentRound) {
     const unfinished = await TournamentGame.exists({ tournament: params.id, roundNumber: currentRound, status: "active" });
     if (unfinished) return NextResponse.json({ error: "Some games in the current round are still active." }, { status: 400 });

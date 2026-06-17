@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { TournamentGame } from "@/models/TournamentGame";
 import { Tournament } from "@/models/Tournament";
-import { completeGame, finalizeTournamentIfComplete, recalculateTournamentStandings, syncArenaPairings } from "@/lib/tournamentEngine";
+import { completeGame, finalizeTournamentIfComplete, recalculateTournamentStandings, syncArenaPairings, syncSwissRoundState } from "@/lib/tournamentEngine";
 import { StudentReward } from "@/models/ClassroomLive";
 
 export const dynamic = "force-dynamic";
@@ -50,12 +50,14 @@ export async function POST(req: Request, { params }: { params: { gameId: string 
   const role = (session.user as any).role;
   const userId = String((session.user as any).id);
   const body = await req.json();
+  const isPlayer = [String(game.whiteUser || ""), String(game.blackUser || "")].includes(userId);
 
-  if (role !== "admin" && ![String(game.whiteUser || ""), String(game.blackUser || "")].includes(userId)) {
+  if (role !== "admin" && !isPlayer) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   if (body.action === "resign") {
+    if (!isPlayer) return NextResponse.json({ error: "Only an assigned player can resign this game." }, { status: 400 });
     const userIsWhite = String(game.whiteUser || "") === userId;
     await completeGame(game, {
       result: userIsWhite ? "0-1" : "1-0",
@@ -63,6 +65,7 @@ export async function POST(req: Request, { params }: { params: { gameId: string 
       winnerKey: userIsWhite ? game.blackKey : game.whiteKey,
     });
   } else if (body.action === "draw") {
+    if (!isPlayer) return NextResponse.json({ error: "Only assigned players can agree a draw." }, { status: 400 });
     await completeGame(game, {
       result: "1/2-1/2",
       termination: "draw_agreement",
@@ -88,6 +91,9 @@ export async function POST(req: Request, { params }: { params: { gameId: string 
       currentRound.status = "completed";
       currentRound.endedAt = new Date();
     }
+  }
+  if (tournament.type === "swiss") {
+    await syncSwissRoundState(tournament);
   }
   await recalculateTournamentStandings(tournament);
   if (tournament.type === "arena") await syncArenaPairings(tournament);

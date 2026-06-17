@@ -41,15 +41,16 @@ export function playerKeyForExternal(username: string) {
 }
 
 export function getTournamentPlayers(tournament: TournamentLike): TournamentPlayer[] {
+  const standingMap = new Map<string, any>((tournament.standings || []).map((entry: any) => [entry.playerKey, entry]));
   const internal = (tournament.participants || []).map((item: any) => ({
     key: playerKeyForUser(objectId(item)),
     userId: objectId(item),
-    name: item.name || item.username || "Student",
+    name: item?.name || item?.username || standingMap.get(playerKeyForUser(objectId(item)))?.displayName || "Student",
   }));
   const external = (tournament.externalParticipants || []).map((item: any) => ({
     key: playerKeyForExternal(item.username),
     externalUsername: item.username,
-    name: item.username,
+    name: item.username || standingMap.get(playerKeyForExternal(item.username))?.displayName || "Guest",
   }));
   return [...internal, ...external];
 }
@@ -339,6 +340,36 @@ export async function syncArenaPairings(tournament: TournamentLike) {
     await createGame(tournament, { source: "arena", roundNumber: 0, tableNumber, white: colors.white, black: colors.black });
     tableNumber += 1;
   }
+  return tournament;
+}
+
+export async function syncSwissRoundState(tournament: TournamentLike) {
+  if (tournament.type !== "swiss") return tournament;
+  const rounds = Array.isArray(tournament.roundsData) ? tournament.roundsData : [];
+  if (!rounds.length) return tournament;
+
+  const games = await TournamentGame.find({ tournament: tournament._id }).lean();
+  tournament.roundsData = rounds.map((round: any) => {
+    const pairings = (round.pairings || []).map((pairing: any) => {
+      const game = games.find((item: any) => String(item._id) === String(pairing.gameId));
+      if (!game) return pairing;
+      return {
+        ...pairing,
+        status: game.status === "completed" ? "completed" : game.status === "active" ? "live" : pairing.status,
+        result: game.result || pairing.result || "*",
+      };
+    });
+    const allDone = pairings.length > 0 && pairings.every((pairing: any) => pairing.status === "completed");
+    return {
+      ...round,
+      pairings,
+      status: allDone ? "completed" : round.status || "live",
+      endedAt: allDone ? round.endedAt || new Date() : round.endedAt,
+    };
+  });
+
+  const completedRoundCount = tournament.roundsData.filter((round: any) => round.status === "completed").length;
+  tournament.currentRound = Math.max(Number(tournament.currentRound || 0), completedRoundCount);
   return tournament;
 }
 

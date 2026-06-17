@@ -15,6 +15,18 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
   const tournament: any = await Tournament.findById(params.id);
   if (!tournament) return NextResponse.json({ error: "Tournament not found" }, { status: 404 });
   if (tournament.status === "completed") return NextResponse.json({ error: "Tournament already completed" }, { status: 400 });
+  if (tournament.status === "live") return NextResponse.json({ error: "Tournament is already live." }, { status: 400 });
+
+  const participantCount = Number((tournament.participants || []).length) + Number((tournament.externalParticipants || []).length);
+  if (participantCount < 2) {
+    return NextResponse.json({ error: "At least two participants are required to start a tournament." }, { status: 400 });
+  }
+  if (tournament.type === "swiss" && Number(tournament.rounds || 0) < 1) {
+    return NextResponse.json({ error: "Swiss tournaments need at least one round." }, { status: 400 });
+  }
+  if (tournament.type === "arena" && Number(tournament.arenaDurationMinutes || 0) < 1) {
+    return NextResponse.json({ error: "Arena tournaments need a valid duration." }, { status: 400 });
+  }
 
   await startTournament(tournament);
   await recordActivity({

@@ -48,11 +48,18 @@ function flattenClassroomSessions(classrooms: any[]) {
 }
 
 function deriveAttendanceState(session: any, attendance: any, now: Date) {
+  const rawStatus = String(session?.status || "").toLowerCase();
+  if (rawStatus === "cancelled" || rawStatus === "rescheduled") return "pending";
   if (attendance) return "marked";
   const end = getSessionEnd(session);
   if (!end) return "pending";
   if (end < now) return "missed";
   return "pending";
+}
+
+function isTrackableAttendanceSession(session: any) {
+  const rawStatus = String(session?.status || "").toLowerCase();
+  return rawStatus !== "cancelled" && rawStatus !== "rescheduled";
 }
 
 export async function GET(req: Request) {
@@ -197,6 +204,7 @@ export async function GET(req: Request) {
 
   const allPastSessions = flattenClassroomSessions(classrooms)
     .filter(({ session }) => {
+      if (!isTrackableAttendanceSession(session)) return false;
       const end = getSessionEnd(session);
       return end ? end < now : false;
     })
@@ -205,10 +213,16 @@ export async function GET(req: Request) {
       return { classroom, session, attendance };
     });
 
+  const pastSelectedDaySessions = sessionRows.filter((row) => {
+    if (!isTrackableAttendanceSession({ status: row.status })) return false;
+    const end = getSessionEnd(row);
+    return end ? end < now : false;
+  });
+
   const counts = {
     completedClasses: allPastSessions.length,
     missedAttendanceClasses: allPastSessions.filter((row) => !row.attendance).length,
-    attendancePendingClasses: sessionRows.filter((row) => row.attendanceState !== "marked").length,
+    attendancePendingClasses: pastSelectedDaySessions.filter((row) => row.attendanceState !== "marked").length,
     previouslyMarkedClasses: allPastSessions.filter((row) => !!row.attendance).length,
   };
 

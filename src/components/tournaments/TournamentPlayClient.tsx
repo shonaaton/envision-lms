@@ -67,6 +67,7 @@ export function TournamentPlayClient({ tournamentId }: { tournamentId: string })
   }, []);
 
   const activeGame = state?.activeGame || null;
+  const tournamentStatus = String(state?.tournament?.status || "");
   const chess = useMemo(() => {
     try {
       return new Chess(activeGame?.fen && activeGame.fen !== "start" ? activeGame.fen : undefined);
@@ -145,9 +146,15 @@ export function TournamentPlayClient({ tournamentId }: { tournamentId: string })
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           {!activeGame ? (
             <div className="flex min-h-[520px] flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-6 text-center">
-              <div className="text-lg font-semibold text-slate-900">No live board assigned yet</div>
+              <div className="text-lg font-semibold text-slate-900">
+                {tournamentStatus === "completed" ? "Tournament finished" : "No live board assigned yet"}
+              </div>
               <p className="mt-2 max-w-md text-sm text-slate-500">
-                If the tournament is running, your next pairing will appear automatically here. For Swiss events, the next round opens when the admin pairs it.
+                {tournamentStatus === "completed"
+                  ? "This event has already ended. You can still review the standings and your game history here."
+                  : tournamentStatus === "live"
+                    ? "If the tournament is running, your next pairing will appear automatically here. For Swiss events, the next round opens when the admin pairs it."
+                    : "The event has not started yet. Once the admin starts the tournament, your pairing and board will appear here."}
               </p>
               <button onClick={refresh} className="mt-4 inline-flex h-10 items-center gap-2 rounded-xl bg-purple-700 px-4 text-sm font-semibold text-white">
                 <RefreshCcw size={15} /> Refresh seat

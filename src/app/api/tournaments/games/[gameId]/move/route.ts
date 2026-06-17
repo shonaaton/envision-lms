@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { TournamentGame } from "@/models/TournamentGame";
 import { Tournament } from "@/models/Tournament";
-import { applyGameMove, finalizeTournamentIfComplete, recalculateTournamentStandings, syncArenaPairings } from "@/lib/tournamentEngine";
+import { applyGameMove, finalizeTournamentIfComplete, recalculateTournamentStandings, syncArenaPairings, syncSwissRoundState } from "@/lib/tournamentEngine";
 import { StudentReward } from "@/models/ClassroomLive";
 
 export const dynamic = "force-dynamic";
@@ -77,6 +77,9 @@ export async function POST(req: Request, { params }: { params: { gameId: string 
       }
     }
     await awardForGame(game);
+  }
+  if (tournament.type === "swiss") {
+    await syncSwissRoundState(tournament);
   }
   await recalculateTournamentStandings(tournament);
   if (tournament.type === "arena") await syncArenaPairings(tournament);

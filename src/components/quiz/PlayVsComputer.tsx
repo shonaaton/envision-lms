@@ -45,8 +45,8 @@ type GameRecord = {
   moves: number;
 };
 
-const levelToElo = [100, 150, 250, 350, 500, 700, 900, 1100, 1300, 1500, 1700, 1900];
-const levelToDepth = [1, 1, 1, 2, 2, 3, 4, 5, 6, 7, 8, 10];
+const levelToElo = [50, 80, 120, 180, 260, 420, 650, 900, 1150, 1400, 1650, 1900];
+const levelToDepth = [1, 1, 1, 1, 2, 2, 3, 4, 5, 6, 7, 9];
 const timeControls = ["No Clock", "5 min", "10 min", "15 min", "30 min"];
 
 const seededHistory: GameRecord[] = [

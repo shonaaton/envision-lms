@@ -60,9 +60,9 @@ export function TournamentDetailClient({
     });
   }
 
-  const tournament = state.tournament;
-  const standings = tournament?.standings || [];
-  const rounds = tournament?.roundsData || [];
+  const tournament = state?.tournament || {};
+  const standings = Array.isArray(tournament?.standings) ? tournament.standings : [];
+  const rounds = Array.isArray(tournament?.roundsData) ? tournament.roundsData : [];
   const activeRound = rounds.find((round: any) => round.status !== "completed");
 
   return (

@@ -6,6 +6,8 @@ export type ScheduledSessionLike = {
   durationMinutes?: number;
   topicName?: string;
   status?: string;
+  actualStartedAt?: string | Date | null;
+  actualEndedAt?: string | Date | null;
 };
 
 export type ScheduledSessionStatus =
@@ -53,6 +55,8 @@ export function deriveScheduledSessionStatus(
   const attendanceStatus = String(options?.attendanceStatus || "").toLowerCase();
   if (raw === "cancelled") return "cancelled";
   if (raw === "rescheduled") return "rescheduled";
+  if (session?.actualEndedAt) return attendanceStatus === "absent" ? "missed" : "completed";
+  if (session?.actualStartedAt && !session?.actualEndedAt) return "ongoing";
   if (raw === "completed") return attendanceStatus === "absent" ? "missed" : "completed";
   if (raw === "ongoing" || raw === "live") return "ongoing";
   if (attendanceStatus === "absent") return "missed";

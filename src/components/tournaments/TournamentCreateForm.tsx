@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useFormState } from "react-dom";
 import { ArrowLeft, ArrowRight, Trophy } from "lucide-react";
 
 type TournamentType = "swiss" | "arena";
@@ -116,8 +117,13 @@ export default function TournamentCreateForm({
     batches: [],
   });
   const [localErrors, setLocalErrors] = useState<Record<string, string>>({});
-  const [state, formAction, pending] = useActionState(action, { error });
+  const [pending, setPending] = useState(false);
+  const [state, formAction] = useFormState(action, { error });
   const mergedErrors = useMemo(() => ({ ...state.fieldErrors, ...localErrors }), [state.fieldErrors, localErrors]);
+
+  useEffect(() => {
+    if (pending) setPending(false);
+  }, [state, pending]);
 
   function update<K extends keyof Draft>(key: K, value: Draft[K]) {
     setDraft((current) => ({ ...current, [key]: value }));
@@ -157,6 +163,7 @@ export default function TournamentCreateForm({
       setStep(Object.keys(nextErrors).some((key) => ["name", "type"].includes(key)) ? 1 : Object.keys(nextErrors).some((key) => ["arenaDurationMinutes", "rounds", "timeControlMinutes", "startDate", "startTime", "customFen"].includes(key)) ? 2 : 3);
       return;
     }
+    setPending(true);
     formRef.current?.requestSubmit();
   }
 

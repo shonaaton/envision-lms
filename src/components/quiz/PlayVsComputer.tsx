@@ -45,9 +45,22 @@ type GameRecord = {
   moves: number;
 };
 
+type BotPreset = {
+  id: string;
+  name: string;
+  subtitle: string;
+  elo: number;
+  depth: number;
+  blunderChance: number;
+};
+
 const levelToElo = [50, 80, 120, 180, 260, 420, 650, 900, 1150, 1400, 1650, 1900];
 const levelToDepth = [1, 1, 1, 1, 2, 2, 3, 4, 5, 6, 7, 9];
 const timeControls = ["No Clock", "5 min", "10 min", "15 min", "30 min"];
+const customBots: BotPreset[] = [
+  { id: "sprout", name: "Sprout", subtitle: "Extra gentle opening practice", elo: 40, depth: 1, blunderChance: 0.7 },
+  { id: "poppy", name: "Poppy", subtitle: "Soft, steady, and beginner friendly", elo: 80, depth: 1, blunderChance: 0.5 },
+];
 
 const seededHistory: GameRecord[] = [
   { id: 1, user: "Sayantan Chandra", date: "Jun 4, 2026 2:27 AM", color: "white", difficulty: "Beginner", result: "Resigned", moves: 0 },
@@ -67,8 +80,12 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
   const [showHistory, setShowHistory] = useState(false);
   const [selectedColor, setSelectedColor] = useState<PlayerColor>("white");
   const [playerColor, setPlayerColor] = useState<"white" | "black">("white");
+  const [botId, setBotId] = useState<string>(customBots[0].id);
   const [level, setLevel] = useState(1);
   const [timeControl, setTimeControl] = useState("No Clock");
+  const [whiteClockMs, setWhiteClockMs] = useState<number | null>(null);
+  const [blackClockMs, setBlackClockMs] = useState<number | null>(null);
+  const [activeTurnStartedAt, setActiveTurnStartedAt] = useState<number | null>(null);
   const [records, setRecords] = useState<GameRecord[]>(seededHistory);
   const [selectedRecord, setSelectedRecord] = useState<GameRecord | null>(null);
 
@@ -84,9 +101,11 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
     return rows;
   }, [position]);
 
-  const currentDepth = Math.max(1, Math.min(12, levelToDepth[level - 1] || depth));
-  const difficultyLabel = level <= 4 ? "Beginner" : level <= 8 ? "Intermediate" : "Advanced";
+  const selectedBot = useMemo(() => customBots.find((bot) => bot.id === botId) || customBots[0], [botId]);
+  const currentDepth = Math.max(1, Math.min(12, (selectedBot?.depth || 1) + Math.max(0, (levelToDepth[level - 1] || depth) - 1)));
+  const difficultyLabel = selectedBot?.name || (level <= 4 ? "Beginner" : level <= 8 ? "Intermediate" : "Advanced");
   const isPlayerTurn = gameRef.current.turn() === (playerColor === "white" ? "w" : "b");
+  const usesClock = timeControl !== "No Clock";
 
   useEffect(() => {
     try {
@@ -107,6 +126,7 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
           // Ignore invalid engine output; the board state remains authoritative.
         }
         setThinking(false);
+        beginNextTurn();
         refreshBoard();
         checkGameOver();
       };
@@ -116,6 +136,29 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
 
     return () => workerRef.current?.terminate();
   }, [status]);
+
+  useEffect(() => {
+    if (!usesClock || status !== "playing" || activeTurnStartedAt === null) return;
+    const interval = window.setInterval(() => {
+      const elapsed = Date.now() - activeTurnStartedAt;
+      if (gameRef.current.turn() === "w" && whiteClockMs !== null && whiteClockMs - elapsed <= 0) {
+        setWhiteClockMs(0);
+        setThinking(false);
+        setActiveTurnStartedAt(null);
+        setResult(playerColor === "white" ? "You lost on time" : `${selectedBot.name} lost on time`);
+        setStatus("ended");
+        addRecord(playerColor === "white" ? "Defeat" : "Victory");
+      } else if (gameRef.current.turn() === "b" && blackClockMs !== null && blackClockMs - elapsed <= 0) {
+        setBlackClockMs(0);
+        setThinking(false);
+        setActiveTurnStartedAt(null);
+        setResult(playerColor === "black" ? "You lost on time" : `${selectedBot.name} lost on time`);
+        setStatus("ended");
+        addRecord(playerColor === "black" ? "Defeat" : "Victory");
+      }
+    }, 250);
+    return () => window.clearInterval(interval);
+  }, [usesClock, status, activeTurnStartedAt, whiteClockMs, blackClockMs, playerColor, selectedBot.name]);
 
   useEffect(() => {
     const element = boardWrapRef.current;
@@ -140,11 +183,65 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
     setPosition(gameRef.current.fen());
   }
 
+  function formatClock(ms: number | null) {
+    if (ms === null) return "No clock";
+    const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }
+
+  function minutesFromTimeControl(value: string) {
+    const match = value.match(/(\d+)/);
+    return match ? Number(match[1]) : 0;
+  }
+
+  function commitTurnClock() {
+    if (!usesClock || activeTurnStartedAt === null) return;
+    const elapsed = Date.now() - activeTurnStartedAt;
+    if (gameRef.current.turn() === "w") {
+      setWhiteClockMs((current) => (current === null ? null : Math.max(0, current - elapsed)));
+    } else {
+      setBlackClockMs((current) => (current === null ? null : Math.max(0, current - elapsed)));
+    }
+  }
+
+  function beginNextTurn() {
+    setActiveTurnStartedAt(usesClock ? Date.now() : null);
+  }
+
+  const displayedWhiteClock =
+    usesClock && whiteClockMs !== null && status === "playing" && gameRef.current.turn() === "w" && activeTurnStartedAt !== null
+      ? Math.max(0, whiteClockMs - (Date.now() - activeTurnStartedAt))
+      : whiteClockMs;
+
+  const displayedBlackClock =
+    usesClock && blackClockMs !== null && status === "playing" && gameRef.current.turn() === "b" && activeTurnStartedAt !== null
+      ? Math.max(0, blackClockMs - (Date.now() - activeTurnStartedAt))
+      : blackClockMs;
+
   function requestEngineMove() {
     const worker = workerRef.current;
     if (!worker || gameRef.current.isGameOver()) return;
     setThinking(true);
-    worker.postMessage(`setoption name UCI_Elo value ${levelToElo[level - 1]}`);
+    const legalMoves = gameRef.current.moves({ verbose: true }) as Array<{ from: string; to: string; promotion?: string }>;
+    if (selectedBot.blunderChance > 0 && legalMoves.length && Math.random() < selectedBot.blunderChance) {
+      const chosenMove = legalMoves[Math.floor(Math.random() * legalMoves.length)];
+      window.setTimeout(() => {
+        commitTurnClock();
+        try {
+          gameRef.current.move({ from: chosenMove.from, to: chosenMove.to, promotion: chosenMove.promotion || "q" });
+        } catch {
+          // Ignore and let the board stay as-is.
+        }
+        setThinking(false);
+        beginNextTurn();
+        refreshBoard();
+        checkGameOver();
+      }, 350);
+      return;
+    }
+    worker.postMessage(`setoption name UCI_Elo value ${(selectedBot.elo || 0) + Math.max(0, (levelToElo[level - 1] || 0) - levelToElo[0])}`);
     worker.postMessage(`position fen ${gameRef.current.fen()}`);
     worker.postMessage(`go depth ${currentDepth}`);
   }
@@ -164,6 +261,7 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
 
     setResult(finalResult);
     setStatus("ended");
+    setActiveTurnStartedAt(null);
     addRecord(recordResult);
   }
 
@@ -190,6 +288,8 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
 
   function startGame() {
     const color = selectedColor === "random" ? (Math.random() > 0.5 ? "white" : "black") : selectedColor;
+    const clockMinutes = minutesFromTimeControl(timeControl);
+    const openingClock = clockMinutes > 0 ? clockMinutes * 60 * 1000 : null;
     gameRef.current.reset();
     setPlayerColor(color);
     setPosition(gameRef.current.fen());
@@ -197,6 +297,9 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
     setThinking(false);
     setStatus("playing");
     setShowSetup(false);
+    setWhiteClockMs(openingClock);
+    setBlackClockMs(openingClock);
+    setActiveTurnStartedAt(openingClock === null ? null : Date.now());
 
     if (color === "black") {
       window.setTimeout(requestEngineMove, 150);
@@ -212,6 +315,7 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
     setThinking(false);
     setResult("You resigned");
     setStatus("ended");
+    setActiveTurnStartedAt(null);
     addRecord("Resigned");
   }
 
@@ -219,8 +323,10 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
     if (status !== "playing" || thinking || !isPlayerTurn) return false;
 
     try {
+      commitTurnClock();
       const move = gameRef.current.move({ from: source, to: target, promotion: "q" });
       if (!move) return false;
+      beginNextTurn();
       refreshBoard();
       checkGameOver();
       if (!gameRef.current.isGameOver()) window.setTimeout(requestEngineMove, 150);
@@ -279,9 +385,28 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
               Status: <span className="font-black text-slate-950">{status === "playing" ? "In Progress" : status === "ended" ? result : "Not Started"}</span>
             </div>
             <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700">
-              {timeControl}
+              {selectedBot.name} • {timeControl}
             </div>
           </div>
+
+          {status !== "idle" && (
+            <div className="mb-3 grid gap-3 sm:grid-cols-2">
+              <PlayerClockCard
+                name={playerColor === "white" ? "You" : selectedBot.name}
+                side="White"
+                clock={formatClock(displayedWhiteClock)}
+                active={status === "playing" && gameRef.current.turn() === "w"}
+                tone={playerColor === "white" ? "player" : "bot"}
+              />
+              <PlayerClockCard
+                name={playerColor === "black" ? "You" : selectedBot.name}
+                side="Black"
+                clock={formatClock(displayedBlackClock)}
+                active={status === "playing" && gameRef.current.turn() === "b"}
+                tone={playerColor === "black" ? "player" : "bot"}
+              />
+            </div>
+          )}
 
           <div ref={boardWrapRef} className="flex min-h-0 flex-1 items-center justify-center">
             <div className="relative w-full max-w-[540px]">
@@ -316,7 +441,7 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
                 </span>
                 <span className="text-slate-400">vs</span>
                 <span className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-4 py-2 text-white">
-                  <Bot size={15} /> Computer
+                  <Bot size={15} /> {selectedBot.name}
                 </span>
               </div>
               <div className="mt-3 text-sm text-slate-600">{thinking ? "Computer thinking..." : isPlayerTurn ? "Your turn" : "Computer turn"}</div>
@@ -330,9 +455,11 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
       {showSetup && (
         <SetupModal
           selectedColor={selectedColor}
+          botId={botId}
           level={level}
           timeControl={timeControl}
           onColorChange={setSelectedColor}
+          onBotChange={setBotId}
           onLevelChange={setLevel}
           onTimeControlChange={setTimeControl}
           onClose={() => setShowSetup(false)}
@@ -388,18 +515,22 @@ function MoveHistory({ rows }: { rows: MoveRow[] }) {
 
 function SetupModal({
   selectedColor,
+  botId,
   level,
   timeControl,
   onColorChange,
+  onBotChange,
   onLevelChange,
   onTimeControlChange,
   onClose,
   onStart,
 }: {
   selectedColor: PlayerColor;
+  botId: string;
   level: number;
   timeControl: string;
   onColorChange: (color: PlayerColor) => void;
+  onBotChange: (botId: string) => void;
   onLevelChange: (level: number) => void;
   onTimeControlChange: (value: string) => void;
   onClose: () => void;
@@ -422,6 +553,25 @@ function SetupModal({
           <ColorOption active={selectedColor === "white"} label="White" icon={<span className="text-3xl">K</span>} onClick={() => onColorChange("white")} />
           <ColorOption active={selectedColor === "black"} label="Black" icon={<span className="text-3xl">k</span>} onClick={() => onColorChange("black")} />
           <ColorOption active={selectedColor === "random"} label="Random" icon={<Shuffle size={28} />} onClick={() => onColorChange("random")} />
+        </div>
+
+        <div className="mt-6">
+          <div className="mb-2 text-sm font-medium text-slate-600">Choose a bot</div>
+          <div className="grid gap-2">
+            {customBots.map((bot) => (
+              <button
+                key={bot.id}
+                onClick={() => onBotChange(bot.id)}
+                className={[
+                  "rounded-xl border px-4 py-3 text-left transition",
+                  botId === bot.id ? "border-brand bg-brand/5 shadow-sm" : "border-slate-200 bg-slate-50 hover:border-brand/40",
+                ].join(" ")}
+              >
+                <div className="font-semibold text-slate-950">{bot.name}</div>
+                <div className="text-sm text-slate-500">{bot.subtitle}</div>
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="mt-6 text-center text-sm text-slate-500">
@@ -584,6 +734,38 @@ function HistoryStat({ icon, label, value }: { icon: ReactNode; label: string; v
     <div className="flex flex-col items-center justify-center gap-2 rounded-xl bg-slate-50 p-4">
       <div className="flex items-center gap-2 text-slate-600">{icon}{label}</div>
       <div className="text-3xl font-black text-slate-950">{value}</div>
+    </div>
+  );
+}
+
+function PlayerClockCard({
+  name,
+  side,
+  clock,
+  active,
+  tone,
+}: {
+  name: string;
+  side: "White" | "Black";
+  clock: string;
+  active: boolean;
+  tone: "player" | "bot";
+}) {
+  return (
+    <div className={[
+      "rounded-2xl border px-4 py-3 shadow-sm transition",
+      active ? "border-brand bg-brand/5 shadow-brand/10" : "border-slate-200 bg-slate-50",
+    ].join(" ")}>
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">{side}</div>
+          <div className="mt-1 flex items-center gap-2 text-sm font-semibold text-slate-900">
+            {tone === "player" ? <User size={14} className="text-brand" /> : <Bot size={14} className="text-slate-700" />}
+            {name}
+          </div>
+        </div>
+        <div className="text-2xl font-black text-slate-950">{clock}</div>
+      </div>
     </div>
   );
 }

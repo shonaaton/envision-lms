@@ -6,6 +6,7 @@ import { CreditLedger, FeeAssignment, Invoice } from "@/models/Fee";
 import { User } from "@/models/User";
 import Link from "next/link";
 import { AlertTriangle, Banknote, FileText, Receipt, Users, WalletCards } from "lucide-react";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +37,7 @@ export default async function FeesDashboardPage() {
   const session = await auth();
   const role = (session?.user as any)?.role;
   const userId = (session?.user as any)?.id;
+  if (role === "instructor") redirect("/dashboard");
   await dbConnect();
   await ensureMonthlyInvoices();
 

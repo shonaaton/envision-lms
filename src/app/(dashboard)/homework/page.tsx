@@ -33,6 +33,27 @@ function HomeworkCard({ item, submission }: { item: any; submission?: any }) {
   );
 }
 
+function assignedStudentCount(homework: any) {
+  const recipients = new Set<string>();
+  (homework.assignedStudents || []).forEach((student: any) => {
+    const id = String(student?._id || student || "");
+    if (id) recipients.add(id);
+  });
+  (homework.assignedBatches || []).forEach((batch: any) => {
+    (batch?.students || []).forEach((student: any) => {
+      const id = String(student?._id || student || "");
+      if (id) recipients.add(id);
+    });
+  });
+  if (homework.assignAllStudents || (!recipients.size && (!homework.assignedBatches || !homework.assignedBatches.length))) {
+    (homework.classroom?.students || []).forEach((student: any) => {
+      const id = String(student?._id || student || "");
+      if (id) recipients.add(id);
+    });
+  }
+  return recipients.size;
+}
+
 export default async function HomeworkListPage() {
   const session = await auth();
   const userId = (session?.user as any).id;
@@ -57,7 +78,13 @@ export default async function HomeworkListPage() {
     filter.instructor = userId;
   }
   const [list, submissions] = await Promise.all([
-    Homework.find(filter).populate("instructor", "name").sort({ createdAt: -1 }).lean(),
+    Homework.find(filter)
+      .populate("instructor", "name")
+      .populate("classroom", "students")
+      .populate("assignedStudents", "_id")
+      .populate("assignedBatches", "students")
+      .sort({ createdAt: -1 })
+      .lean(),
     Submission.find(role === "student" ? { student: userId } : {}).populate("student", "name").lean(),
   ]);
   const byHomework = new Map(submissions.map((submission: any) => [submission.homework.toString(), submission]));
@@ -98,7 +125,8 @@ export default async function HomeworkListPage() {
               <thead className="text-xs uppercase text-slate-500"><tr className="border-b"><th className="px-3 py-3">Homework</th><th>Type</th><th>Due</th><th>Submissions</th><th>Completion Rate</th><th>Average Score</th><th>Status</th><th>Actions</th></tr></thead>
               <tbody>{list.map((h: any) => {
                 const rows = submissions.filter((s: any) => s.homework.toString() === h._id.toString());
-                return <tr key={h._id} className="border-b last:border-0"><td className="px-3 py-3 font-medium">{h.title}</td><td>{h.type}</td><td>{h.dueAt ? new Date(h.dueAt).toLocaleDateString("en-IN") : "-"}</td><td>{rows.length}</td><td>{percent(rows.length, 1)}%</td><td>{rows.length ? Math.round(rows.reduce((s: number, x: any) => s + (x.totalScore || 0), 0) / rows.length) : 0}</td><td>{h.dueAt && new Date(h.dueAt) < new Date() ? "Due passed" : "Active"}</td><td><HomeworkActions homework={JSON.parse(JSON.stringify(h))} /></td></tr>;
+                const recipientCount = assignedStudentCount(h);
+                return <tr key={h._id} className="border-b last:border-0"><td className="px-3 py-3 font-medium">{h.title}</td><td>{h.type}</td><td>{h.dueAt ? new Date(h.dueAt).toLocaleDateString("en-IN") : "-"}</td><td>{rows.length}</td><td>{percent(rows.length, recipientCount)}%</td><td>{rows.length ? Math.round(rows.reduce((s: number, x: any) => s + (x.totalScore || 0), 0) / rows.length) : 0}</td><td>{h.dueAt && new Date(h.dueAt) < new Date() ? "Due passed" : "Active"}</td><td><HomeworkActions homework={JSON.parse(JSON.stringify(h))} /></td></tr>;
               })}</tbody>
             </table>
           </div>

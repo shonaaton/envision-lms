@@ -31,14 +31,20 @@ export const authConfig = {
       const isLoggedIn = !!auth?.user;
       const role = (auth?.user as any)?.role as "student" | "instructor" | "admin" | undefined;
 
-      const isAuthRoute = ["/login", "/register"].some((p) => nextUrl.pathname.startsWith(p));
+      const isAuthRoute = ["/login", "/register", "/forgot-password", "/reset-password"].some((p) => nextUrl.pathname.startsWith(p));
       const isPublic =
         nextUrl.pathname === "/" ||
         nextUrl.pathname.startsWith("/api/auth") ||
         nextUrl.pathname.startsWith("/api/register") ||
+        nextUrl.pathname.startsWith("/api/password") ||
         nextUrl.pathname.startsWith("/tournament-join");
       const isAdminRoute = nextUrl.pathname.startsWith("/admin");
       const isInstructorRoute = nextUrl.pathname.startsWith("/instructor");
+      const isPgnRoute = nextUrl.pathname.startsWith("/pgn");
+      const isAnalysisRoute = nextUrl.pathname.startsWith("/analysis");
+      const isPlayVsComputerRoute = nextUrl.pathname.startsWith("/play/computer");
+      const isFeesRoute = nextUrl.pathname.startsWith("/fees") || nextUrl.pathname.startsWith("/invoices");
+      const isTournamentCreateRoute = nextUrl.pathname.startsWith("/tournaments/new");
 
       if (isPublic) return true;
       if (isAuthRoute) {
@@ -49,6 +55,11 @@ export const authConfig = {
       if (isAdminRoute && role !== "admin") return Response.redirect(new URL("/dashboard", nextUrl));
       if (isInstructorRoute && role !== "instructor" && role !== "admin")
         return Response.redirect(new URL("/dashboard", nextUrl));
+      if (isPgnRoute && role === "student") return Response.redirect(new URL("/dashboard", nextUrl));
+      if (isAnalysisRoute && role === "student") return Response.redirect(new URL("/dashboard", nextUrl));
+      if (isPlayVsComputerRoute && role === "instructor") return Response.redirect(new URL("/dashboard", nextUrl));
+      if (isFeesRoute && role === "instructor") return Response.redirect(new URL("/dashboard", nextUrl));
+      if (isTournamentCreateRoute && role !== "admin") return Response.redirect(new URL("/tournaments", nextUrl));
       return true;
     },
   },

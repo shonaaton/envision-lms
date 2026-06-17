@@ -17,7 +17,7 @@ export async function GET() {
   const filter = role === "admin"
     ? { isSessionInstance: { $ne: true } }
     : role === "instructor"
-      ? { instructor: userId, isSessionInstance: { $ne: true } }
+      ? { $or: [{ instructor: userId }, { coach: userId }], isSessionInstance: { $ne: true } }
       : { students: userId, isSessionInstance: { $ne: true } };
   const list = await Classroom.find(filter)
     .populate("coach instructor", "name email username")

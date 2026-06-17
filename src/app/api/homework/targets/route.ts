@@ -16,7 +16,7 @@ export async function GET() {
 
   await dbConnect();
   const userId = (session.user as any).id;
-  const classroomFilter = role === "admin" ? {} : { instructor: userId };
+  const classroomFilter = role === "admin" ? {} : { $or: [{ instructor: userId }, { coach: userId }] };
   const classrooms: any[] = await Classroom.find(classroomFilter, {
     title: 1,
     students: 1,

@@ -1,0 +1,126 @@
+{
+  "name": "Envision LMS - Email Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lms-email-automation",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "8ccf4e69-32d3-4e72-bf32-4577ce1b0cb3",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        280,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json || {};\nconst metadata = body.metadata || {};\nconst to = String(body.to || '').trim();\nconst subject = String(body.subject || '').trim();\nconst message = String(body.message || '').trim();\n\nif (!to) throw new Error('Missing \"to\" email address');\nif (!subject) throw new Error('Missing \"subject\"');\nif (!message) throw new Error('Missing \"message\"');\n\nconst fromEmail = String(body.fromEmail || 'Envision Chess Academy <noreply@yourdomain.com>').trim();\nconst replyTo = String(body.replyTo || 'support@yourdomain.com').trim();\nconst preview = String(metadata.previewText || subject).trim();\nconst resetUrl = metadata.resetUrl ? String(metadata.resetUrl) : '';\nconst kind = String(metadata.kind || '').trim();\n\nconst escapeHtml = (value) => String(value || '')\n  .replace(/&/g, '&amp;')\n  .replace(/</g, '&lt;')\n  .replace(/>/g, '&gt;')\n  .replace(/\\\"/g, '&quot;')\n  .replace(/'/g, '&#39;');\n\nconst paragraphs = message\n  .split(/\\n+/)\n  .map((line) => line.trim())\n  .filter(Boolean)\n  .map((line) => `<p style=\"margin:0 0 14px;font-size:15px;line-height:1.7;color:#334155;\">${escapeHtml(line)}</p>`)\n  .join('');\n\nconst button = resetUrl\n  ? `<div style=\"margin:26px 0 22px;\"><a href=\"${escapeHtml(resetUrl)}\" style=\"display:inline-block;background:#5a1372;color:#ffffff;text-decoration:none;padding:14px 24px;border-radius:12px;font-weight:700;font-size:15px;\">Reset Password</a></div><p style=\"margin:0 0 14px;font-size:13px;line-height:1.6;color:#64748b;\">If the button does not open, copy this link into your browser:</p><p style=\"margin:0 0 18px;font-size:13px;line-height:1.6;color:#5a1372;word-break:break-all;\">${escapeHtml(resetUrl)}</p>`\n  : '';\n\nconst headerLabel = kind === 'password_reset' ? 'Password Reset' : 'Academy Notification';\nconst htmlBody = `<!doctype html><html><body style=\"margin:0;padding:24px;background:#f8fafc;font-family:Arial,sans-serif;\"><div style=\"max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:22px;overflow:hidden;box-shadow:0 14px 40px rgba(15,23,42,0.08);\"><div style=\"padding:22px 28px;background:linear-gradient(135deg,#5a1372 0%,#7d22a3 100%);color:#ffffff;\"><div style=\"font-size:12px;font-weight:700;letter-spacing:0.16em;text-transform:uppercase;color:#fde75a;\">${escapeHtml(headerLabel)}</div><h1 style=\"margin:10px 0 0;font-size:28px;line-height:1.2;font-weight:800;\">${escapeHtml(subject)}</h1><p style=\"margin:10px 0 0;font-size:13px;line-height:1.6;color:#f5e9ff;\">${escapeHtml(preview)}</p></div><div style=\"padding:28px;\">${paragraphs}${button}<div style=\"margin-top:28px;padding-top:18px;border-top:1px solid #e2e8f0;font-size:12px;line-height:1.6;color:#64748b;\">Envision Chess Academy<br/>This is an automated message from your academy platform.</div></div></div></body></html>`;\n\nreturn [{ json: { to, subject, message, htmlBody, fromEmail, replyTo, metadata } }];"
+      },
+      "id": "2110c36e-1a91-43dd-9d9b-0d5e85d61ab2",
+      "name": "Prepare Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $json.fromEmail }}",
+        "toEmail": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "emailFormat": "html",
+        "html": "={{ $json.htmlBody }}",
+        "options": {
+          "replyTo": "={{ $json.replyTo }}"
+        }
+      },
+      "id": "e4042f3d-42af-4932-9338-427e87e81be7",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.sendEmail",
+      "typeVersion": 2.1,
+      "position": [
+        840,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"ok\":true,\"delivered\":true,\"to\":\"{{$json.to}}\",\"subject\":\"{{$json.subject}}\"}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "8748495a-9f7d-4ed0-91b8-eb6960ce25d1",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1110,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Prepare Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Email": {
+      "main": [
+        [
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Email": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "active": false,
+  "versionId": "0e65a8fb-8779-4e41-953d-6d9e89518bfe",
+  "id": "envision-lms-email-automation",
+  "tags": []
+}

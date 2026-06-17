@@ -139,7 +139,10 @@ export async function GET(req: Request) {
 
   const classroomFilter = role === "admin"
     ? { isSessionInstance: { $ne: true } }
-    : { instructor: userId, isSessionInstance: { $ne: true } };
+    : {
+        $or: [{ instructor: userId }, { coach: userId }],
+        isSessionInstance: { $ne: true },
+      };
 
   const classrooms: any[] = await Classroom.find(classroomFilter)
     .populate("coach instructor", "name username")

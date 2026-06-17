@@ -18,6 +18,8 @@ const UserSchema = new Schema(
     classrooms: [{ type: Schema.Types.ObjectId, ref: "Classroom" }],
     notes: { type: String },
     isActive: { type: Boolean, default: true, index: true },
+    passwordResetTokenHash: { type: String, index: true },
+    passwordResetExpiresAt: { type: Date },
   },
   { timestamps: true }
 );

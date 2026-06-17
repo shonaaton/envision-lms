@@ -7,6 +7,11 @@ import { normalizeFolderPath } from "@/lib/pgnAccess";
 
 export const dynamic = "force-dynamic";
 
+function hasPgnAccess(session: any) {
+  const role = (session?.user as any)?.role;
+  return role === "instructor" || role === "admin";
+}
+
 function extractHeader(pgn: string, key: string): string | undefined {
   const m = pgn.match(new RegExp(`\\[${key}\\s+"([^"]*)"\\]`));
   return m?.[1];
@@ -35,6 +40,7 @@ function ownerFilter(session: any, id: string) {
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!hasPgnAccess(session)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
 
   const { title, pgn, folder } = await req.json();
@@ -64,6 +70,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!hasPgnAccess(session)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
 
   const deleted = await PGN.findOneAndDelete(ownerFilter(session, params.id)).lean();

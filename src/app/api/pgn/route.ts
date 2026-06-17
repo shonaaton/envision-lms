@@ -8,6 +8,11 @@ import { buildPgnLibraryFilter, normalizeFolderPath, requestedPgnVisibility } fr
 
 export const dynamic = "force-dynamic";
 
+function hasPgnAccess(session: any) {
+  const role = (session?.user as any)?.role;
+  return role === "instructor" || role === "admin";
+}
+
 function extractHeader(pgn: string, key: string): string | undefined {
   const m = pgn.match(new RegExp(`\\[${key}\\s+"([^"]*)"\\]`));
   return m?.[1];
@@ -44,6 +49,7 @@ function isValidPgnOrFenSetup(pgn: string) {
 export async function GET(req: Request) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!hasPgnAccess(session)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
   const url = new URL(req.url);
   const q = url.searchParams.get("q");
@@ -56,6 +62,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!hasPgnAccess(session)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
   const { pgn, title, visibility = "private", classroom, folder } = await req.json();
   if (!pgn) return NextResponse.json({ error: "pgn required" }, { status: 400 });

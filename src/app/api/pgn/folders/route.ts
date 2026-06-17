@@ -7,6 +7,11 @@ import { buildOwnedFolderFilter, buildPgnFolderFilter, canManageSharedFolder, no
 
 export const dynamic = "force-dynamic";
 
+function hasPgnAccess(session: any) {
+  const role = (session?.user as any)?.role;
+  return role === "instructor" || role === "admin";
+}
+
 function escapeRegex(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -23,6 +28,7 @@ function folderVisibility(session: any, personal?: boolean) {
 export async function GET() {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!hasPgnAccess(session)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
 
   const folders = await PgnFolder.find(buildPgnFolderFilter(session)).sort({ path: 1 }).lean();
@@ -32,6 +38,7 @@ export async function GET() {
 export async function POST(req: Request) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!hasPgnAccess(session)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
 
   const { name, currentFolder, personal = false } = await req.json();
@@ -59,6 +66,7 @@ export async function POST(req: Request) {
 export async function PATCH(req: Request) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!hasPgnAccess(session)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
 
   const { oldName, newName } = await req.json();
@@ -103,6 +111,7 @@ export async function PATCH(req: Request) {
 export async function DELETE(req: Request) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!hasPgnAccess(session)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
 
   const url = new URL(req.url);

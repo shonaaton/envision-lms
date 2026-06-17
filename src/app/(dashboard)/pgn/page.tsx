@@ -158,12 +158,17 @@ export default function PgnLibraryPage() {
     const folderScope = searchParams.get("scope") === "shared" ? "shared" : "personal";
     if (!folderPath) {
       setCurrentFolder(null);
+      setQuery("");
       return;
     }
-    const folder = allKnownFolders.find((item) => item.path === folderPath && (item.personal ? "personal" : "shared") === folderScope)
-      || { id: `${folderScope}-${folderPath.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`, name: folderLabel(folderPath), path: folderPath, personal: folderScope !== "shared" };
+    const folder = allKnownFolders.find((item) => item.path === folderPath && (item.personal ? "personal" : "shared") === folderScope);
+    if (!folder) {
+      setCurrentFolder(null);
+      router.replace("/pgn");
+      return;
+    }
     setCurrentFolder(folder);
-  }, [searchParams, allKnownFolders]);
+  }, [searchParams, allKnownFolders, router]);
 
   function openFolder(folder: FolderDoc) {
     setCurrentFolder(folder);
@@ -183,15 +188,16 @@ export default function PgnLibraryPage() {
       toast.error("Please enter a folder name");
       return;
     }
+    const nextPersonal = currentFolder ? currentFolder.personal : personal;
     const path = activeFolderPath ? `${activeFolderPath}/${nextName}` : nextName;
-    if (folders.some((folder) => folder.path === path)) {
+    if (folders.some((folder) => folder.path === path && folder.personal === nextPersonal)) {
       toast.error("A folder with this name already exists here");
       return;
     }
     const response = await fetch("/api/pgn/folders", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: nextName, currentFolder: activeFolderPath, personal }),
+      body: JSON.stringify({ name: nextName, currentFolder: activeFolderPath, personal: nextPersonal }),
     });
     if (!response.ok) {
       const data = await response.json().catch(() => ({}));
@@ -200,8 +206,7 @@ export default function PgnLibraryPage() {
     }
     const created = await response.json();
     const folder = { id: String(created._id || path), name: folderLabel(created.path || path), path: normalizeFolderPath(created.path || path), personal: created.visibility !== "shared" };
-    setFolders((current) => [...current.filter((item) => item.path !== folder.path), folder]);
-    setCurrentFolder(folder);
+    await load();
     setQuery("");
     setModal(null);
     router.push(`/pgn?folder=${encodeURIComponent(folder.path)}&scope=${folder.personal ? "personal" : "shared"}`);
@@ -217,8 +222,7 @@ export default function PgnLibraryPage() {
       body: JSON.stringify({ oldName: folder.path, newName: nextPath }),
     });
     if (!response.ok) return toast.error("Could not rename folder");
-    setFolders((current) => current.map((item) => item.path === folder.path || item.path.startsWith(`${folder.path}/`) ? { ...item, path: `${nextPath}${item.path.slice(folder.path.length)}`, name: folderLabel(`${nextPath}${item.path.slice(folder.path.length)}`) } : item));
-    setGames((current) => current.map((game) => game.folder === folder.path || String(game.folder || "").startsWith(`${folder.path}/`) ? { ...game, folder: `${nextPath}${String(game.folder || "").slice(folder.path.length)}` } : game));
+    await load();
     if (currentFolder?.path === folder.path) {
       const nextFolder = { ...folder, name: nextName, path: nextPath, personal: folder.personal };
       setCurrentFolder(nextFolder);
@@ -232,8 +236,7 @@ export default function PgnLibraryPage() {
     if (!window.confirm(`Delete "${folder.name}" and all PGNs inside it?`)) return;
     const response = await fetch(`/api/pgn/folders?name=${encodeURIComponent(folder.path)}`, { method: "DELETE" });
     if (!response.ok) return toast.error("Could not delete folder");
-    setFolders((current) => current.filter((item) => item.path !== folder.path && !item.path.startsWith(`${folder.path}/`)));
-    setGames((current) => current.filter((game) => game.folder !== folder.path && !String(game.folder || "").startsWith(`${folder.path}/`)));
+    await load();
     if (currentFolder?.path === folder.path || currentFolder?.path?.startsWith(`${folder.path}/`)) openRoot();
     toast.success("Folder deleted");
   }
@@ -245,8 +248,8 @@ export default function PgnLibraryPage() {
       body: JSON.stringify({ title, pgn, folder: game.folder || currentFolder?.path }),
     });
     if (!response.ok) return toast.error("Could not update PGN");
-    const updated = await response.json();
-    setGames((current) => current.map((item) => item._id === game._id ? updated : item));
+    await response.json();
+    await load();
     setModal(null);
     toast.success("PGN updated");
   }
@@ -255,7 +258,7 @@ export default function PgnLibraryPage() {
     if (!window.confirm(`Delete "${game.title}"?`)) return;
     const response = await fetch(`/api/pgn/${game._id}`, { method: "DELETE" });
     if (!response.ok) return toast.error("Could not delete PGN");
-    setGames((current) => current.filter((item) => item._id !== game._id));
+    await load();
     toast.success("PGN deleted");
   }
 
@@ -287,12 +290,9 @@ export default function PgnLibraryPage() {
       body: JSON.stringify({ title, pgn, folder: folderName, visibility }),
     });
     if (!response.ok) return toast.error("Invalid PGN");
-    if (createFolder && title && folderName && !folders.some((folder) => folder.path === folderName)) {
-      setFolders((current) => [...current, { id: `${String(folderName).toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}`, name: title, path: String(folderName), personal: visibility !== "shared" }]);
-    }
+    await load();
     toast.success("PGN uploaded");
     setModal(null);
-    load();
   }
 
   return (
@@ -453,7 +453,7 @@ export default function PgnLibraryPage() {
         )}
       </section>
 
-      {modal === "folder" && <NewFolderModal currentFolder={currentFolder?.path} onClose={() => setModal(null)} onCreate={addFolder} />}
+      {modal === "folder" && <NewFolderModal currentFolder={currentFolder?.path} currentFolderPersonal={currentFolder?.personal} onClose={() => setModal(null)} onCreate={addFolder} />}
       {modal === "edit-folder" && selectedFolder && <EditNameModal title="Edit Folder" label="Folder Name" initialName={selectedFolder.name} onClose={() => setModal(null)} onSave={(name) => renameFolder(selectedFolder, name)} />}
       {modal === "edit-pgn" && selectedGame && <EditPgnModal game={selectedGame} onClose={() => setModal(null)} onSave={(title, pgn) => updateGame(selectedGame, title, pgn)} />}
       {modal === "upload" && <UploadPgnModal onClose={() => setModal(null)} onUpload={uploadGame} />}
@@ -726,9 +726,10 @@ function ModalFrame({ title, children, onClose, width = "max-w-[480px]" }: { tit
   );
 }
 
-function NewFolderModal({ currentFolder, onClose, onCreate }: { currentFolder?: string; onClose: () => void; onCreate: (name: string, personal: boolean) => void }) {
+function NewFolderModal({ currentFolder, currentFolderPersonal, onClose, onCreate }: { currentFolder?: string; currentFolderPersonal?: boolean; onClose: () => void; onCreate: (name: string, personal: boolean) => void }) {
   const [name, setName] = useState("");
-  const [personal, setPersonal] = useState(false);
+  const [personal, setPersonal] = useState(currentFolder ? !!currentFolderPersonal : false);
+  const lockedScope = typeof currentFolderPersonal === "boolean";
   return (
     <ModalFrame title="Create New Folder" onClose={onClose} width="max-w-[476px]">
       {currentFolder && <p className="mb-3 text-xs text-slate-500">Creating inside: <span className="font-semibold text-slate-700">{currentFolder}</span></p>}
@@ -736,15 +737,22 @@ function NewFolderModal({ currentFolder, onClose, onCreate }: { currentFolder?: 
       <input className="input bg-white text-slate-950" placeholder="Enter folder name" value={name} onChange={(event) => setName(event.target.value)} />
       <label className="mt-6 flex items-center gap-3 text-sm">
         <button
-          className={`relative h-5 w-10 rounded-full ${personal ? "bg-brand" : "bg-slate-200"}`}
-          onClick={() => setPersonal((value) => !value)}
+          className={`relative h-5 w-10 rounded-full ${personal ? "bg-brand" : "bg-slate-200"} ${lockedScope ? "cursor-not-allowed opacity-70" : ""}`}
+          onClick={() => {
+            if (!lockedScope) setPersonal((value) => !value);
+          }}
+          disabled={lockedScope}
           aria-label="Toggle personal folder"
         >
           <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition ${personal ? "left-5" : "left-0.5"}`} />
         </button>
-        Personal Folder
+        {lockedScope ? (personal ? "Personal Folder" : "Shared Folder") : "Personal Folder"}
       </label>
-      <p className="ml-12 mt-2 text-xs text-slate-500">This folder will be private and only accessible to you.</p>
+      <p className="ml-12 mt-2 text-xs text-slate-500">
+        {lockedScope
+          ? "Nested folders stay inside the same library as their parent folder."
+          : "This folder will be private and only accessible to you."}
+      </p>
       <div className="mt-6 flex justify-end gap-2">
         <button className="btn border border-slate-200 bg-white text-slate-950" onClick={onClose}>Cancel</button>
         <button className="btn-primary" disabled={!name.trim()} onClick={() => onCreate(name.trim(), personal)}>Create</button>

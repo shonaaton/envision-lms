@@ -8,6 +8,7 @@ import { randomBytes } from "crypto";
 import { Link2, RefreshCcw, Trophy } from "lucide-react";
 import { TournamentDetailClient } from "@/components/tournaments/TournamentDetailClient";
 import { TournamentGame } from "@/models/TournamentGame";
+import { playerKeyForUser } from "@/lib/tournamentEngine";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +28,67 @@ function makeInvitePassword() {
 
 function toPlain<T>(value: T): T {
   return JSON.parse(JSON.stringify(value));
+}
+
+function buildCurrentSeat({
+  userId,
+  joined,
+  tournament,
+  activeGame,
+  myGames,
+}: {
+  userId: string;
+  joined: boolean;
+  tournament: any;
+  activeGame: any;
+  myGames: any[];
+}) {
+  const myPlayerKey = playerKeyForUser(String(userId));
+  const liveRound = (tournament.roundsData || []).find((round: any) => round.status !== "completed") || null;
+  const seatFromRound = liveRound?.pairings?.find((pairing: any) => pairing.whiteKey === myPlayerKey || pairing.blackKey === myPlayerKey) || null;
+  const fallbackGame = myGames[0] || null;
+
+  if (activeGame) {
+    return {
+      roundNumber: Number(activeGame.roundNumber || tournament.currentRound || 0),
+      boardNumber: Number(activeGame.tableNumber || 0),
+      color: String(activeGame.whiteUser || "") === String(userId) ? "white" : "black",
+      opponentName: String(activeGame.whiteUser || "") === String(userId) ? (activeGame.blackName || "Bye") : activeGame.whiteName,
+      status: "active",
+      result: activeGame.result || "*",
+    };
+  }
+
+  if (seatFromRound) {
+    return {
+      roundNumber: Number(liveRound?.roundNumber || tournament.currentRound || 0),
+      boardNumber: Number(seatFromRound.tableNumber || 0),
+      color: seatFromRound.whiteKey === myPlayerKey ? "white" : "black",
+      opponentName: seatFromRound.whiteKey === myPlayerKey ? (seatFromRound.blackName || "Bye") : seatFromRound.whiteName,
+      status: seatFromRound.status === "completed" ? "completed" : "assigned",
+      result: seatFromRound.result || "*",
+    };
+  }
+
+  if (fallbackGame) {
+    return {
+      roundNumber: Number(fallbackGame.roundNumber || 0),
+      boardNumber: Number(fallbackGame.tableNumber || 0),
+      color: String(fallbackGame.whiteUser || "") === String(userId) ? "white" : "black",
+      opponentName: String(fallbackGame.whiteUser || "") === String(userId) ? (fallbackGame.blackName || "Bye") : fallbackGame.whiteName,
+      status: fallbackGame.status || "completed",
+      result: fallbackGame.result || "*",
+    };
+  }
+
+  return {
+    roundNumber: Number(tournament.currentRound || 0),
+    boardNumber: 0,
+    color: "",
+    opponentName: "",
+    status: joined ? (tournament.status === "live" ? "waiting" : "joined") : "not_joined",
+    result: "*",
+  };
 }
 
 async function createExternalInvite(formData: FormData) {
@@ -62,11 +124,14 @@ export default async function TournamentDetailPage({ params }: { params: { id: s
   const games = await TournamentGame.find({ tournament: params.id }).sort({ createdAt: -1 }).lean();
   const activeGame =
     games.find((game: any) => game.status === "active" && [game.whiteUser?.toString?.(), game.blackUser?.toString?.()].includes(String(userId))) || null;
+  const myGames = games.filter((game: any) => [game.whiteUser?.toString?.(), game.blackUser?.toString?.()].includes(String(userId))).slice(0, 10);
   const initialState = {
     tournament: toPlain(tournament),
     activeGame: activeGame ? toPlain(activeGame) : null,
     games: toPlain(games.slice(0, 25)),
-    myGames: toPlain(games.filter((game: any) => [game.whiteUser?.toString?.(), game.blackUser?.toString?.()].includes(String(userId))).slice(0, 10)),
+    myGames: toPlain(myGames),
+    joined,
+    currentSeat: toPlain(buildCurrentSeat({ userId: String(userId || ""), joined, tournament, activeGame, myGames })),
     canManage: role === "admin",
     canPlay: role === "student" || role === "admin",
   };

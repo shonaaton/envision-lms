@@ -84,6 +84,7 @@ const sections: NavSection[] = [
       { href: "/admin/users", label: "Users", icon: Users },
       { href: "/admin/courses", label: "Courses", icon: BookOpenCheck },
       { href: "/admin/activity-tracker", label: "Activity Tracker", icon: ActivitySquare },
+      { href: "/admin/reports", label: "Reports Center", icon: BarChart3 },
       { href: "/admin/announcements", label: "Announcements", icon: Megaphone },
       { href: "/admin/notifications", label: "Notifications", icon: Bell },
     ],

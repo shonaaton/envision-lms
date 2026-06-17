@@ -3,13 +3,15 @@
 import Link from "next/link";
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Clock3, Crown, Play, RefreshCcw, Shield, Swords, Trophy } from "lucide-react";
+import { Clock3, Crown, Download, Play, RefreshCcw, Shield, Swords, Trophy } from "lucide-react";
 
 type DetailState = {
   tournament: any;
   activeGame: any;
   games: any[];
   myGames: any[];
+  joined: boolean;
+  currentSeat: any;
   canManage: boolean;
   canPlay: boolean;
 };
@@ -18,6 +20,37 @@ function statusChip(status: string) {
   if (status === "live") return "bg-emerald-50 text-emerald-700";
   if (status === "completed") return "bg-slate-100 text-slate-700";
   return "bg-amber-50 text-amber-700";
+}
+
+function exportCsv(filename: string, headers: string[], rows: Array<Array<string | number | null | undefined>>) {
+  const csv = [headers, ...rows]
+    .map((row) => row.map((cell) => `"${String(cell ?? "").replace(/"/g, '""')}"`).join(","))
+    .join("\n");
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
+function resultLabel(game: any) {
+  if (!game) return "-";
+  if (game.status === "active") return "In progress";
+  if (game.termination === "bye") return "Bye";
+  if (game.termination === "resign") return "Resigned";
+  if (game.result === "1/2-1/2") return "Draw";
+  return game.result || "-";
+}
+
+function seatStatusLabel(seat: any, tournamentStatus: string) {
+  if (!seat) return "Waiting";
+  if (seat.status === "not_joined") return "Join required";
+  if (seat.status === "active") return "Board live";
+  if (seat.status === "assigned") return "Assigned";
+  if (seat.status === "completed") return tournamentStatus === "completed" ? "Tournament finished" : "Round finished";
+  if (seat.status === "waiting") return "Waiting";
+  if (seat.status === "joined") return "Ready";
+  return "Waiting";
 }
 
 export function TournamentDetailClient({
@@ -64,6 +97,28 @@ export function TournamentDetailClient({
   const standings = Array.isArray(tournament?.standings) ? tournament.standings : [];
   const rounds = Array.isArray(tournament?.roundsData) ? tournament.roundsData : [];
   const activeRound = rounds.find((round: any) => round.status !== "completed");
+  const completedGames = (state.games || []).filter((game: any) => game.status === "completed");
+  const totalGames = (state.games || []).length;
+  const currentSeat = state.currentSeat || null;
+  const standingsRows = standings.map((entry: any, index: number) => [
+    index + 1,
+    entry.displayName,
+    entry.points,
+    entry.wins,
+    entry.draws,
+    entry.losses,
+    entry.buchholz,
+    entry.gamesPlayed,
+  ]);
+  const gamesRows = (state.games || []).map((game: any) => [
+    game.roundNumber || (tournament.type === "arena" ? "Arena" : "-"),
+    game.tableNumber || "-",
+    game.whiteName,
+    game.blackName || "Bye",
+    resultLabel(game),
+    game.termination || "",
+    game.moveHistorySAN?.length || 0,
+  ]);
 
   return (
     <div className="space-y-4">
@@ -86,6 +141,32 @@ export function TournamentDetailClient({
               <p className="mt-1 text-sm text-slate-500">Start the event, create rounds, and send players into live games.</p>
             </div>
             <div className="flex flex-wrap gap-2">
+              {state.canManage && standings.length ? (
+                <button
+                  type="button"
+                  onClick={() => exportCsv(
+                    `${String(tournament.name || "tournament").replace(/\s+/g, "-").toLowerCase()}-standings.csv`,
+                    ["Rank", "Player", "Points", "Wins", "Draws", "Losses", "Buchholz", "Games Played"],
+                    standingsRows
+                  )}
+                  className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700"
+                >
+                  <Download size={15} /> Export Standings
+                </button>
+              ) : null}
+              {state.canManage && state.games?.length ? (
+                <button
+                  type="button"
+                  onClick={() => exportCsv(
+                    `${String(tournament.name || "tournament").replace(/\s+/g, "-").toLowerCase()}-games.csv`,
+                    ["Round", "Board", "White", "Black", "Result", "Termination", "Moves"],
+                    gamesRows
+                  )}
+                  className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700"
+                >
+                  <Download size={15} /> Export Games
+                </button>
+              ) : null}
               {state.canManage && tournament.status !== "live" && tournament.status !== "completed" ? (
                 <button
                   disabled={pending}
@@ -129,13 +210,20 @@ export function TournamentDetailClient({
             <StatCard icon={<Clock3 size={16} />} label="Time Control" value={`${tournament.timeControlMinutes}+${tournament.incrementSeconds}`} />
             <StatCard icon={<Crown size={16} />} label="Live Games" value={String((state.games || []).filter((game: any) => game.status === "active").length)} />
             <StatCard icon={<RefreshCcw size={16} />} label={tournament.type === "swiss" ? "Rounds" : "Arena Ends"} value={tournament.type === "swiss" ? `${tournament.currentRound || 0}/${tournament.rounds || 0}` : tournament.arenaEndsAt ? new Date(tournament.arenaEndsAt).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" }) : "-"} />
+            <StatCard icon={<Trophy size={16} />} label="Completed Games" value={String(completedGames.length)} />
+            <StatCard icon={<Clock3 size={16} />} label="Recorded Games" value={String(totalGames)} />
           </div>
         </section>
 
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <h3 className="text-base font-semibold text-slate-950">My tournament seat</h3>
-          <div className="mt-3 space-y-3">
-            {state.activeGame ? (
+            <div className="mt-3 space-y-3">
+            {!state.joined && role === "student" ? (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                <div className="text-sm font-semibold text-amber-900">Join this tournament to receive your board assignment.</div>
+                <div className="mt-1 text-sm text-amber-800">Once you join, your opponent, color, board number, and round status will appear here automatically.</div>
+              </div>
+            ) : state.activeGame ? (
               <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
                 <div className="text-sm font-semibold text-emerald-800">You have a live board ready.</div>
                 <div className="mt-1 text-sm text-emerald-700">
@@ -144,6 +232,30 @@ export function TournamentDetailClient({
                 <Link href={`/tournaments/${tournamentId}/play`} className="mt-3 inline-flex h-10 items-center gap-2 rounded-xl bg-emerald-600 px-4 text-sm font-semibold text-white">
                   <Play size={15} /> Open Game Room
                 </Link>
+              </div>
+            ) : currentSeat ? (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-sm font-semibold text-slate-900">My current assignment</div>
+                  <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-slate-700">
+                    {seatStatusLabel(currentSeat, tournament.status)}
+                  </span>
+                </div>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <SeatTile label="Round" value={currentSeat.roundNumber || "-"} />
+                  <SeatTile label="Board" value={currentSeat.boardNumber || "-"} />
+                  <SeatTile label="Color" value={currentSeat.color ? `${String(currentSeat.color).charAt(0).toUpperCase()}${String(currentSeat.color).slice(1)}` : "-"} />
+                  <SeatTile label="Opponent" value={currentSeat.opponentName || "-"} />
+                </div>
+                <div className="mt-3 text-sm text-slate-600">
+                  {currentSeat.status === "completed"
+                    ? "Your current round is already finished. Stand by for the next pairing or review your game history below."
+                    : currentSeat.status === "waiting"
+                      ? "You are in the tournament and waiting for your next opponent assignment."
+                      : currentSeat.status === "joined"
+                        ? "You are registered and ready. Your board will appear here when the tournament starts."
+                        : "Your seat is ready. Open the play room once the board goes live."}
+                </div>
               </div>
             ) : tournament.status === "live" ? (
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
@@ -160,7 +272,7 @@ export function TournamentDetailClient({
                 {(state.myGames || []).slice(0, 4).map((game: any) => (
                   <div key={String(game._id)} className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-sm">
                     <span>{game.whiteName} vs {game.blackName}</span>
-                    <span className="font-semibold text-slate-700">{game.result === "*" ? "In progress" : game.result}</span>
+                    <span className="font-semibold text-slate-700">{resultLabel(game)}</span>
                   </div>
                 ))}
                 {!state.myGames?.length ? <div className="text-sm text-slate-500">No game history yet.</div> : null}
@@ -187,6 +299,7 @@ export function TournamentDetailClient({
                   <th className="px-2 py-3">D</th>
                   <th className="px-2 py-3">L</th>
                   <th className="px-2 py-3">BH</th>
+                  <th className="px-2 py-3">Games</th>
                 </tr>
               </thead>
               <tbody>
@@ -199,11 +312,12 @@ export function TournamentDetailClient({
                     <td className="px-2 py-3">{entry.draws}</td>
                     <td className="px-2 py-3">{entry.losses}</td>
                     <td className="px-2 py-3">{entry.buchholz}</td>
+                    <td className="px-2 py-3">{entry.gamesPlayed}</td>
                   </tr>
                 ))}
                 {!standings.length ? (
                   <tr>
-                    <td colSpan={7} className="px-2 py-8 text-center text-sm text-slate-500">Standings appear once the field is ready.</td>
+                    <td colSpan={8} className="px-2 py-8 text-center text-sm text-slate-500">Standings appear once the field is ready.</td>
                   </tr>
                 ) : null}
               </tbody>
@@ -225,7 +339,7 @@ export function TournamentDetailClient({
                     <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusChip(item.status === "live" ? "live" : item.status === "completed" ? "completed" : "upcoming")}`}>{item.status}</span>
                   </div>
                   <div className="mt-3 space-y-2 text-sm text-slate-600">
-                    {(item.pairings || []).slice(0, 4).map((pairing: any) => (
+                    {(item.pairings || []).slice(0, 6).map((pairing: any) => (
                       <div key={String(pairing.gameId || `${pairing.whiteKey}-${pairing.blackKey}`)} className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
                         <span>{pairing.whiteName} vs {pairing.blackName || "Bye"}</span>
                         <span className="font-semibold text-slate-700">{pairing.result === "*" ? "Live" : pairing.result}</span>
@@ -257,6 +371,15 @@ function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string
     <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
       <div className="flex items-center gap-2 text-slate-500">{icon}<span className="text-xs font-semibold uppercase tracking-wide">{label}</span></div>
       <div className="mt-2 text-xl font-semibold text-slate-950">{value}</div>
+    </div>
+  );
+}
+
+function SeatTile({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+      <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">{label}</div>
+      <div className="mt-1 text-sm font-semibold text-slate-950">{value}</div>
     </div>
   );
 }

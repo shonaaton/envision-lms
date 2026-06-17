@@ -101,12 +101,19 @@ export default async function LeaderboardPage({
       return true;
     });
     const rewardRows = rewards.filter((reward: any) => objectId(reward.student) === id);
+    const liveQuestionRewards = rewardRows.filter((reward: any) => reward.sourceType === "live_question");
+    const tournamentRewards = rewardRows.filter((reward: any) => reward.sourceType === "tournament_game");
+    const bonusRewards = rewardRows.filter((reward: any) => !["live_question", "tournament_game"].includes(String(reward.sourceType || "")));
     const attendanceRecords = attendance.flatMap((a: any) => a.records || []).filter((record: any) => objectId(record.student) === id);
     const present = attendanceRecords.filter((record: any) => record.status === "present" || record.status === "late");
     const homeworkPoints = hw.reduce((sum: number, item: any) => sum + (item.totalScore || 0), 0);
     const quizPoints = live.reduce((sum: number, item: any) => sum + (item.score || 0), 0);
-    const bonusXp = rewardRows.reduce((sum: number, item: any) => sum + (item.xp || 0), 0);
-    const xp = bonusXp + homeworkPoints + quizPoints;
+    const tournamentPoints = tournamentRewards.reduce((sum: number, item: any) => sum + Number(item.xp || 0), 0);
+    const bonusXp = bonusRewards.reduce((sum: number, item: any) => sum + Number(item.xp || 0), 0);
+    const liveRewardXp = liveQuestionRewards.reduce((sum: number, item: any) => sum + Number(item.xp || 0), 0);
+    const scopedTournamentPoints = scope === "course" || scope === "level" || scope === "class" ? 0 : tournamentPoints;
+    const totalPoints = homeworkPoints + quizPoints + scopedTournamentPoints + bonusXp;
+    const xp = totalPoints;
     const coins = rewardRows.reduce((sum: number, item: any) => sum + (item.coins || 0), 0);
     const accuracyValues = [...hw.map((h: any) => h.accuracy || 0), ...live.map((r: any) => (r.correct ? 100 : 0))];
     const accuracy = accuracyValues.length ? Math.round(accuracyValues.reduce((a, b) => a + b, 0) / accuracyValues.length) : 0;
@@ -114,14 +121,17 @@ export default async function LeaderboardPage({
       id,
       name: student.name,
       batchNames: (student.batches || []).map((batch: any) => batch.name).join(", "),
-      totalPoints: homeworkPoints + quizPoints + bonusXp,
+      totalPoints,
       homeworkCompleted: hw.length,
       quizScore: quizPoints,
+      tournamentPoints: scopedTournamentPoints,
       accuracy,
       attendance: pct(present.length, attendanceRecords.length),
       xp,
       coins,
       badges: rewardRows.filter((r: any) => r.badge).length,
+      bonusXp,
+      liveRewardXp,
     };
   });
 
@@ -151,8 +161,6 @@ export default async function LeaderboardPage({
             <option value="course">Course Leaderboard</option>
             <option value="level">Level Leaderboard</option>
             <option value="class">Class Leaderboard</option>
-            <option value="quiz">Quiz Leaderboard</option>
-            <option value="homework">Homework Leaderboard</option>
           </select>
           <select name="batch" defaultValue={selectedBatch} className="h-10 rounded-md border px-3 text-sm">
             <option value="">All batches</option>
@@ -174,6 +182,8 @@ export default async function LeaderboardPage({
             <option value="totalPoints">Total Points</option>
             <option value="accuracy">Highest Accuracy</option>
             <option value="homeworkCompleted">Most Homework Completed</option>
+            <option value="quizScore">Classroom Quiz Score</option>
+            <option value="tournamentPoints">Tournament Points</option>
             <option value="attendance">Attendance Percentage</option>
             <option value="xp">XP</option>
             <option value="coins">Coins</option>
@@ -192,7 +202,7 @@ export default async function LeaderboardPage({
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
-            <thead className="text-xs uppercase text-slate-500"><tr className="border-b"><th className="px-3 py-3">Rank</th><th>Student</th><th>Batch</th><th>Total Points</th><th>Quiz Score</th><th>Homework Completed</th><th>Accuracy</th><th>Attendance</th><th>XP</th><th>Coins</th><th>Badges</th></tr></thead>
+            <thead className="text-xs uppercase text-slate-500"><tr className="border-b"><th className="px-3 py-3">Rank</th><th>Student</th><th>Batch</th><th>Total Points</th><th>Quiz Score</th><th>Tournament</th><th>Homework Completed</th><th>Accuracy</th><th>Attendance</th><th>XP</th><th>Coins</th><th>Badges</th></tr></thead>
             <tbody>
               {rows.map((row, index) => (
                 <tr key={row.id} className="border-b last:border-0">
@@ -201,6 +211,7 @@ export default async function LeaderboardPage({
                   <td className="text-slate-500">{row.batchNames || "-"}</td>
                   <td>{row.totalPoints}</td>
                   <td>{row.quizScore}</td>
+                  <td>{row.tournamentPoints}</td>
                   <td>{row.homeworkCompleted}</td>
                   <td>{row.accuracy}%</td>
                   <td>{row.attendance}%</td>
@@ -211,7 +222,7 @@ export default async function LeaderboardPage({
               ))}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={11} className="px-3 py-10 text-center text-sm text-slate-500">No students match the selected leaderboard scope yet.</td>
+                  <td colSpan={12} className="px-3 py-10 text-center text-sm text-slate-500">No students match the selected leaderboard scope yet.</td>
                 </tr>
               )}
             </tbody>

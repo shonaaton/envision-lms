@@ -293,6 +293,13 @@ function aggregateLiveResponses(responses: any[]) {
   );
 }
 
+function submissionLabel(result: any, summary: ReturnType<typeof aggregateLiveResponses>) {
+  if (result?.solved) return "Solved this item";
+  if (result?.skipped) return "Skipped this item";
+  if (summary.completedItems > 0 && summary.completedItems >= Math.max(1, summary.totalItems || 1)) return "Completed quiz";
+  return summary.feedback || "Recorded";
+}
+
 export default function LiveClassroom({ classroomId, role, userId, sessionId }: { classroomId: string; role: Role; userId: string; sessionId?: string }) {
   const router = useRouter();
   const [data, setData] = useState<any>(null);
@@ -2230,6 +2237,32 @@ function CoachQuizMonitor({
   const position = activeItem?.fen && activeItem.fen !== "start" ? activeItem.fen : question?.fen || "start";
   const submitted = Array.from(responseGroups.values()).filter((studentResponses) => studentResponses.length > 0).length;
   const totalStudents = students.length;
+  const submissionRows = students.map((student: any) => {
+    const studentResponses = responseGroups.get(student._id) || [];
+    const response = studentResponses.at(0);
+    const summary = aggregateLiveResponses(studentResponses);
+    const activeItemResult = studentResponses
+      .map((entry: any) => entry?.itemResults?.[activeItem?.id])
+      .find(Boolean);
+    const accuracy = summary.totalItems
+      ? Math.round((summary.completedItems / Math.max(1, summary.totalItems)) * 100)
+      : summary.correctResponses > 0
+        ? 100
+        : 0;
+    return {
+      student,
+      response,
+      summary,
+      activeItemResult,
+      accuracy,
+      statusLabel: submissionLabel(activeItemResult, summary),
+      submittedAt: response?.submittedAt || null,
+      lastMove: summary.moves.at(-1) || "",
+    };
+  });
+  const solvedCount = submissionRows.filter((row) => row.activeItemResult?.solved).length;
+  const skippedCount = submissionRows.filter((row) => row.activeItemResult?.skipped).length;
+  const waitingCount = Math.max(0, totalStudents - solvedCount - skippedCount);
 
   useEffect(() => {
     setCurrentIndex(Math.max(0, manualProgression ? Number(question?.currentItemIndex || 0) : autoSuggestedIndex));
@@ -2258,6 +2291,11 @@ function CoachQuizMonitor({
           <SummaryCard label="Students Submitted" value={`${submitted}/${totalStudents}`} icon={<Users size={16} />} />
           <SummaryCard label="Items in Quiz" value={items.length} icon={<FileQuestion size={16} />} />
           <SummaryCard label="Timer" value={question?.timer?.perQuestionSeconds ? `${question.timer.perQuestionSeconds}s` : "Flexible"} icon={<Clock size={16} />} />
+        </div>
+        <div className="mt-3 grid gap-3 sm:grid-cols-3">
+          <SummaryCard label="Solved This Item" value={solvedCount} icon={<CheckSquare size={16} />} />
+          <SummaryCard label="Skipped This Item" value={skippedCount} icon={<SkipForward size={16} />} />
+          <SummaryCard label="Waiting / In Progress" value={waitingCount} icon={<HourglassIcon />} />
         </div>
       </div>
 
@@ -2304,18 +2342,16 @@ function CoachQuizMonitor({
           <div className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-600">
             {activeItem?.title || "Current position"} • {activeItem?.points || question?.scoring?.correct || 5} pts
           </div>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <InfoTile label="Mode" value={manualProgression ? "Coach-controlled" : "Auto progression"} />
+            <InfoTile label="Question" value={`${effectiveIndex + 1} of ${items.length}`} />
+          </div>
         </div>
 
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-lg shadow-brand/10">
           <div className="mb-3 text-sm font-bold text-slate-700">Student submissions</div>
           <div className="space-y-3">
-            {students.map((student: any) => {
-              const studentResponses = responseGroups.get(student._id) || [];
-              const response = studentResponses.at(0);
-              const summary = aggregateLiveResponses(studentResponses);
-              const activeItemResult = studentResponses
-                .map((entry: any) => entry?.itemResults?.[activeItem?.id])
-                .find(Boolean);
+            {submissionRows.map(({ student, response, summary, activeItemResult, accuracy, statusLabel, submittedAt, lastMove }) => {
               return (
                 <div key={student._id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                   <div className="flex flex-wrap items-center justify-between gap-3">
@@ -2338,13 +2374,7 @@ function CoachQuizMonitor({
                                   ? "bg-emerald-100 text-emerald-700"
                                   : "bg-slate-200 text-slate-700"
                           }`}>
-                            {activeItemResult?.solved
-                              ? "Solved this item"
-                              : activeItemResult?.skipped
-                                ? "Skipped this item"
-                                : summary.correctResponses > 0
-                                  ? "Completed quiz"
-                                  : summary.feedback || "Recorded"}
+                            {statusLabel}
                           </span>
                           <span className="rounded-full bg-purple-100 px-2.5 py-1 text-purple-700">{Number(summary.score || 0)} pts</span>
                         </>
@@ -2352,15 +2382,18 @@ function CoachQuizMonitor({
                     </div>
                   </div>
                   {response ? (
-                    <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                    <div className="mt-3 grid gap-2 sm:grid-cols-4">
                       <InfoTile label="Time" value={`${Number(summary.timeTakenSeconds || 0)} sec`} />
                       <InfoTile label="Attempts" value={Number(summary.attemptsUsed || 0)} />
                       <InfoTile label="Hints" value={Number(summary.hintsUsed || 0)} />
+                      <InfoTile label="Accuracy" value={`${accuracy}%`} />
                     </div>
                   ) : null}
                   {response ? (
-                    <div className="mt-2 text-xs text-slate-500">
-                      Progress: {Number(summary.completedItems || 0)}/{Number(summary.totalItems || items.length)} items completed
+                    <div className="mt-2 grid gap-2 text-xs text-slate-500 sm:grid-cols-2">
+                      <div>Progress: {Number(summary.completedItems || 0)}/{Number(summary.totalItems || items.length)} items completed</div>
+                      <div>Last move: {lastMove || "-"}</div>
+                      <div>Submitted: {submittedAt ? new Date(submittedAt).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", second: "2-digit" }) : "-"}</div>
                     </div>
                   ) : null}
                 </div>
@@ -2371,6 +2404,10 @@ function CoachQuizMonitor({
       </div>
     </div>
   );
+}
+
+function HourglassIcon() {
+  return <span className="inline-block text-base leading-none">...</span>;
 }
 
 function InfoTile({ label, value }: { label: string; value: string | number }) {

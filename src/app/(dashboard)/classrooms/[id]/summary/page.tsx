@@ -6,6 +6,7 @@ import { resolveScheduledSession } from "@/lib/classroomLiveSession";
 import { Attendance } from "@/models/Attendance";
 import { Classroom } from "@/models/Classroom";
 import { ClassroomSession, LiveQuestion, LiveQuestionResponse } from "@/models/ClassroomLive";
+import CsvDownloadButton from "@/components/common/CsvDownloadButton";
 
 export const dynamic = "force-dynamic";
 
@@ -175,6 +176,32 @@ export default async function ClassroomSummaryPage({
 
   const totalQuizPoints = responses.reduce((sum: number, response: any) => sum + Number(response.score || 0), 0);
   const summary = selectedSession.summary || attendance?.metadata?.summary || {};
+  const totalQuestionItems = questions.reduce((sum: number, question: any) => sum + Math.max(1, question.items?.length || 1), 0);
+  const averageAccuracy = studentRows.length ? Math.round(studentRows.reduce((sum: number, row: any) => sum + Number(row.accuracy || 0), 0) / Math.max(1, studentRows.length)) : 0;
+  const topScorer = studentRows.slice().sort((a: any, b: any) => b.score - a.score)[0] || null;
+  const studentExportRows = studentRows.map((row: any) => [
+    row.name,
+    row.username || "",
+    row.attendance,
+    row.timePresentMinutes,
+    row.score,
+    `${row.accuracy}%`,
+    row.attemptsUsed,
+    row.hintsUsed,
+    `${row.completedItems}/${row.totalItems || totalQuestionItems}`,
+    row.submittedAt ? formatDateTime(row.submittedAt) : "Not submitted",
+    row.feedback || "",
+  ]);
+  const responseExportRows = responses.map((response: any) => [
+    response.student?.name || "Student",
+    response.question?.title || "Classroom quiz",
+    Number(response.score || 0),
+    response.correct ? "Yes" : "No",
+    Number(response.timeTakenSeconds || 0),
+    Number(response.attemptsUsed || 0),
+    Number(response.hintsUsed || 0),
+    response.submittedAt ? formatDateTime(response.submittedAt) : "",
+  ]);
 
   return (
     <div className="space-y-5 text-slate-950">
@@ -189,6 +216,24 @@ export default async function ClassroomSummaryPage({
           </div>
           <div className="flex flex-wrap gap-2">
             <Link href="/classrooms" className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700">Back to Classes</Link>
+            {role === "admin" ? (
+              <>
+                <CsvDownloadButton
+                  filename={`class-summary-${params.id}-${scheduledSessionId}.csv`}
+                  headers={["Student", "Username / Email", "Attendance", "Time Present (min)", "Quiz Score", "Accuracy", "Attempts", "Hints", "Completed Items", "Submitted At", "Feedback"]}
+                  rows={studentExportRows}
+                  label="Export Student Report"
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700"
+                />
+                <CsvDownloadButton
+                  filename={`class-quiz-records-${params.id}-${scheduledSessionId}.csv`}
+                  headers={["Student", "Quiz", "Score", "Correct", "Time (sec)", "Attempts", "Hints", "Submitted At"]}
+                  rows={responseExportRows}
+                  label="Export Quiz Records"
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700"
+                />
+              </>
+            ) : null}
             {role === "admin" && selectedSession.status !== "completed" && selectedSession.status !== "cancelled" ? (
               <Link href={`/classrooms/${params.id}?session=${scheduledSessionId}`} className="rounded-xl bg-purple-700 px-4 py-2 text-sm font-bold text-white">Open Live Classroom</Link>
             ) : null}
@@ -217,6 +262,9 @@ export default async function ClassroomSummaryPage({
             <InfoTile label="Students Absent" value={String(absentCount)} />
             <InfoTile label="Students Late" value={String(lateCount)} />
             <InfoTile label="Quiz Points Earned" value={String(totalQuizPoints)} />
+            <InfoTile label="Question Items" value={String(totalQuestionItems)} />
+            <InfoTile label="Average Accuracy" value={`${averageAccuracy}%`} />
+            <InfoTile label="Top Scorer" value={topScorer ? `${topScorer.name} (${topScorer.score})` : "No submissions"} />
           </div>
           <div className="mt-4 rounded-2xl bg-slate-50 p-4 text-sm text-slate-700">
             <div className="font-bold text-slate-900">Session Summary</div>
@@ -281,7 +329,7 @@ export default async function ClassroomSummaryPage({
                   <td className="px-3 py-3">{row.accuracy}%</td>
                   <td className="px-3 py-3">{row.attemptsUsed}</td>
                   <td className="px-3 py-3">{row.hintsUsed}</td>
-                  <td className="px-3 py-3">{row.completedItems}/{row.totalItems || questions.reduce((sum: number, question: any) => sum + Math.max(1, question.items?.length || 1), 0)}</td>
+                  <td className="px-3 py-3">{row.completedItems}/{row.totalItems || totalQuestionItems}</td>
                   <td className="px-3 py-3">{row.submittedAt ? formatDateTime(row.submittedAt) : "Not submitted"}</td>
                 </tr>
               ))}

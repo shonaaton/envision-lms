@@ -1,8 +1,10 @@
 import { dbConnect } from "@/lib/db";
 import { Tournament } from "@/models/Tournament";
 import { revalidatePath } from "next/cache";
-import { notFound } from "next/navigation";
-import { Trophy } from "lucide-react";
+import { notFound, redirect } from "next/navigation";
+import { Trophy, ArrowRight } from "lucide-react";
+import { cookies } from "next/headers";
+import { getTournamentGuestUsername, setTournamentGuestUsername } from "@/lib/tournamentGuests";
 
 export const dynamic = "force-dynamic";
 
@@ -17,18 +19,23 @@ async function joinExternalTournament(formData: FormData) {
   const tournament: any = await Tournament.findOne({ "externalInvite.enabled": true, "externalInvite.token": token });
   if (!tournament || tournament.externalInvite?.password !== password) return;
 
+  const cookieStore = await cookies();
   const alreadyJoined = (tournament.externalParticipants || []).some((player: any) => player.username.toLowerCase() === username.toLowerCase());
   if (!alreadyJoined) {
     tournament.externalParticipants.push({ username, joinedAt: new Date() });
     await tournament.save();
   }
+  setTournamentGuestUsername(cookieStore, token, username);
   revalidatePath(`/tournament-join/${token}`);
+  redirect(`/tournament-join/${token}/play`);
 }
 
 export default async function ExternalTournamentJoinPage({ params }: { params: { token: string } }) {
   await dbConnect();
   const tournament: any = await Tournament.findOne({ "externalInvite.enabled": true, "externalInvite.token": params.token }).lean();
   if (!tournament) notFound();
+  const cookieStore = await cookies();
+  const joinedGuest = getTournamentGuestUsername(cookieStore, params.token);
 
   return (
     <div className="min-h-screen bg-slate-950 px-4 py-10 text-white">
@@ -52,7 +59,7 @@ export default async function ExternalTournamentJoinPage({ params }: { params: {
           <input type="hidden" name="token" value={params.token} />
           <label className="block text-sm font-medium">
             Username
-            <input name="username" required className="mt-1 h-10 w-full rounded-md border border-slate-200 px-3 text-sm" placeholder="Enter your tournament name" />
+            <input name="username" required defaultValue={joinedGuest} className="mt-1 h-10 w-full rounded-md border border-slate-200 px-3 text-sm" placeholder="Enter your tournament name" />
           </label>
           <label className="block text-sm font-medium">
             Password
@@ -60,6 +67,16 @@ export default async function ExternalTournamentJoinPage({ params }: { params: {
           </label>
           <button className="h-10 w-full rounded-md bg-purple-700 px-4 text-sm font-semibold text-white">Join Tournament</button>
         </form>
+
+        {joinedGuest ? (
+          <div className="mt-4 rounded-md border border-purple-200 bg-purple-50 p-4">
+            <div className="text-sm font-semibold text-purple-900">Joined as {joinedGuest}</div>
+            <p className="mt-1 text-sm text-purple-700">You are already registered on this device. Enter the tournament room to receive your board as soon as the event pairs you.</p>
+            <a href={`/tournament-join/${params.token}/play`} className="mt-3 inline-flex h-10 items-center gap-2 rounded-md bg-purple-700 px-4 text-sm font-semibold text-white">
+              Enter Tournament Room <ArrowRight size={15} />
+            </a>
+          </div>
+        ) : null}
 
         {(tournament.externalParticipants || []).length > 0 && (
           <div className="mt-6">

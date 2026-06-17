@@ -5,6 +5,8 @@ import { TournamentGame } from "@/models/TournamentGame";
 import { Tournament } from "@/models/Tournament";
 import { applyGameMove, finalizeTournamentIfComplete, recalculateTournamentStandings, syncArenaPairings, syncSwissRoundState } from "@/lib/tournamentEngine";
 import { StudentReward } from "@/models/ClassroomLive";
+import { cookies } from "next/headers";
+import { getTournamentGuestUsername } from "@/lib/tournamentGuests";
 
 export const dynamic = "force-dynamic";
 
@@ -40,20 +42,32 @@ async function awardForGame(game: any) {
 
 export async function POST(req: Request, { params }: { params: { gameId: string } }) {
   const session = await auth();
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   await dbConnect();
   const game: any = await TournamentGame.findById(params.gameId);
   if (!game) return NextResponse.json({ error: "Game not found" }, { status: 404 });
   if (game.status !== "active") return NextResponse.json({ error: "This game is no longer active." }, { status: 400 });
 
-  const userId = String((session.user as any).id);
+  const tournament: any = await Tournament.findById(game.tournament);
+  if (!tournament) return NextResponse.json({ error: "Tournament not found" }, { status: 404 });
+
+  const cookieStore = await cookies();
+  const guestUsername = tournament.externalInvite?.token ? getTournamentGuestUsername(cookieStore, tournament.externalInvite.token) : "";
+  const normalizedGuest = guestUsername.toLowerCase();
+  const isGuestWhite = normalizedGuest && String(game.whiteExternalUsername || "").toLowerCase() === normalizedGuest;
+  const isGuestBlack = normalizedGuest && String(game.blackExternalUsername || "").toLowerCase() === normalizedGuest;
+  if (!session && !isGuestWhite && !isGuestBlack) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const userId = session ? String((session.user as any).id) : "";
   const isWhite = String(game.whiteUser || "") === userId;
   const isBlack = String(game.blackUser || "") === userId;
-  if (!isWhite && !isBlack && (session.user as any).role !== "admin") {
+  const isAdmin = session ? (session.user as any).role === "admin" : false;
+  if (!isWhite && !isBlack && !isGuestWhite && !isGuestBlack && !isAdmin) {
     return NextResponse.json({ error: "You are not assigned to this game." }, { status: 403 });
   }
-  if ((game.turn === "w" && !isWhite) || (game.turn === "b" && !isBlack)) {
+  if ((game.turn === "w" && !isWhite && !isGuestWhite) || (game.turn === "b" && !isBlack && !isGuestBlack)) {
     return NextResponse.json({ error: "It is not your turn." }, { status: 400 });
   }
 
@@ -64,7 +78,6 @@ export async function POST(req: Request, { params }: { params: { gameId: string 
     return NextResponse.json({ error: error?.message || "Could not register move" }, { status: 400 });
   }
 
-  const tournament: any = await Tournament.findById(game.tournament);
   if (game.status === "completed") {
     const currentRound = (tournament.roundsData || []).find((round: any) => Number(round.roundNumber) === Number(game.roundNumber));
     if (currentRound) {

@@ -17,6 +17,7 @@ type PlayState = {
   currentSeat: any;
   canManage: boolean;
   canPlay: boolean;
+  guestUsername?: string;
 };
 
 function formatClock(ms: number) {
@@ -45,7 +46,19 @@ function seatSummary(seat: any, tournamentStatus: string) {
   return "Waiting for next board";
 }
 
-export function TournamentPlayClient({ tournamentId }: { tournamentId: string }) {
+export function TournamentPlayClient({
+  tournamentId,
+  backHref,
+  backLabel,
+  guestLabel,
+  publicRoom = false,
+}: {
+  tournamentId: string;
+  backHref?: string;
+  backLabel?: string;
+  guestLabel?: string;
+  publicRoom?: boolean;
+}) {
   const boardWrapRef = useRef<HTMLDivElement | null>(null);
   const [boardWidth, setBoardWidth] = useState(520);
   const [state, setState] = useState<PlayState | null>(null);
@@ -55,7 +68,12 @@ export function TournamentPlayClient({ tournamentId }: { tournamentId: string })
 
   async function refresh() {
     const response = await fetch(`/api/tournaments/${tournamentId}/state`, { cache: "no-store" });
-    if (!response.ok) return;
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      setError(payload?.error || "Could not load the tournament room.");
+      return;
+    }
+    setError("");
     setState(await response.json());
   }
 
@@ -168,11 +186,12 @@ export function TournamentPlayClient({ tournamentId }: { tournamentId: string })
               <span className="rounded-full bg-purple-50 px-3 py-1 text-purple-700">{seatSummary(currentSeat, tournamentStatus)}</span>
               {currentSeat.color ? <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-700">You are {currentSeat.color}</span> : null}
               {currentSeat.opponentName ? <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-700">Opponent: {currentSeat.opponentName}</span> : null}
+              {guestLabel || state?.guestUsername ? <span className="rounded-full bg-amber-50 px-3 py-1 text-amber-700">Guest: {guestLabel || state?.guestUsername}</span> : null}
             </div>
           ) : null}
         </div>
-        <Link href={`/tournaments/${tournamentId}`} className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm">
-          <ArrowLeft size={15} /> Back to overview
+        <Link href={backHref || `/tournaments/${tournamentId}`} className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm">
+          <ArrowLeft size={15} /> {backLabel || "Back to overview"}
         </Link>
       </div>
 
@@ -182,12 +201,14 @@ export function TournamentPlayClient({ tournamentId }: { tournamentId: string })
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           {!activeGame ? (
             <div className="flex min-h-[520px] flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-6 text-center">
-              <div className="text-lg font-semibold text-slate-900">
-                {!state?.joined ? "Join this tournament first" : tournamentStatus === "completed" ? "Tournament finished" : "No live board assigned yet"}
-              </div>
-              <p className="mt-2 max-w-md text-sm text-slate-500">
-                {!state?.joined
-                  ? "You can view the event, but you will only receive opponent assignments after joining the tournament from the overview page."
+                <div className="text-lg font-semibold text-slate-900">
+                  {!state?.joined ? "Join this tournament first" : tournamentStatus === "completed" ? "Tournament finished" : "No live board assigned yet"}
+                </div>
+                <p className="mt-2 max-w-md text-sm text-slate-500">
+                  {!state?.joined
+                  ? publicRoom
+                    ? "Finish the guest join step first. Once you are registered on this device, your pairing will appear here automatically."
+                    : "You can view the event, but you will only receive opponent assignments after joining the tournament from the overview page."
                   : tournamentStatus === "completed"
                   ? "This event has already ended. You can still review the standings and your game history here."
                   : currentSeat?.status === "completed"

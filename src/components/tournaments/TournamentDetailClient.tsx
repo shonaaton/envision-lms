@@ -75,7 +75,7 @@ export function TournamentDetailClient({
 
   useEffect(() => {
     refresh();
-    const timer = window.setInterval(refresh, 5000);
+    const timer = window.setInterval(refresh, 2500);
     return () => window.clearInterval(timer);
   }, [tournamentId]);
 
@@ -119,6 +119,8 @@ export function TournamentDetailClient({
     game.termination || "",
     game.moveHistorySAN?.length || 0,
   ]);
+  const activeBoards = (state.games || []).filter((game: any) => game.status === "active").length;
+  const registrationLocked = tournament.status === "live" || tournament.status === "completed";
 
   return (
     <div className="space-y-4">
@@ -205,13 +207,15 @@ export function TournamentDetailClient({
             </div>
           </div>
 
-          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <StatCard icon={<Trophy size={16} />} label="Participants" value={String((tournament.participants?.length || 0) + (tournament.externalParticipants?.length || 0))} />
             <StatCard icon={<Clock3 size={16} />} label="Time Control" value={`${tournament.timeControlMinutes}+${tournament.incrementSeconds}`} />
             <StatCard icon={<Crown size={16} />} label="Live Games" value={String((state.games || []).filter((game: any) => game.status === "active").length)} />
             <StatCard icon={<RefreshCcw size={16} />} label={tournament.type === "swiss" ? "Rounds" : "Arena Ends"} value={tournament.type === "swiss" ? `${tournament.currentRound || 0}/${tournament.rounds || 0}` : tournament.arenaEndsAt ? new Date(tournament.arenaEndsAt).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" }) : "-"} />
             <StatCard icon={<Trophy size={16} />} label="Completed Games" value={String(completedGames.length)} />
             <StatCard icon={<Clock3 size={16} />} label="Recorded Games" value={String(totalGames)} />
+            <StatCard icon={<Shield size={16} />} label="Registration" value={registrationLocked ? "Locked" : "Open"} />
+            <StatCard icon={<Play size={16} />} label="Boards Ready" value={String(activeBoards)} />
           </div>
         </section>
 
@@ -256,6 +260,14 @@ export function TournamentDetailClient({
                         ? "You are registered and ready. Your board will appear here when the tournament starts."
                         : "Your seat is ready. Open the play room once the board goes live."}
                 </div>
+                {state.canPlay && tournament.status === "live" ? (
+                  <Link
+                    href={`/tournaments/${tournamentId}/play`}
+                    className="mt-3 inline-flex h-10 items-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white"
+                  >
+                    <Play size={15} /> {state.activeGame ? "Resume board" : currentSeat.status === "assigned" ? "Open play room" : "Check pairing room"}
+                  </Link>
+                ) : null}
               </div>
             ) : tournament.status === "live" ? (
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">

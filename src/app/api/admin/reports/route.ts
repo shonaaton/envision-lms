@@ -79,6 +79,13 @@ function formatDuration(minutes?: number | null) {
   return rest ? `${hours}h ${rest}m` : `${hours}h`;
 }
 
+function tournamentAccessState(status: string) {
+  const value = String(status || "").toLowerCase();
+  if (value === "live") return "Joinable";
+  if (value === "upcoming") return "Scheduled";
+  return "Closed";
+}
+
 function plainSessionRows(classrooms: any[], range: RangeLike) {
   return classrooms.flatMap((classroom: any) => {
     const sessions = Array.isArray(classroom.generatedSessions) && classroom.generatedSessions.length
@@ -198,7 +205,7 @@ export async function GET(req: Request) {
     });
 
     title = "Tournament Report";
-    headers = ["Tournament", "Type", "Status", "Start", "Participants", "Current Round", "Configured Rounds", "Live Games", "Completed Games", "Leader", "Top Score"];
+    headers = ["Tournament", "Type", "Lifecycle", "Play Access", "Start", "Participants", "Current Round", "Configured Rounds", "Live Games", "Completed Games", "Leader", "Top Score"];
     rows = filteredTournaments.map((tournament: any) => {
       const tournamentGames = gameMap.get(String(tournament._id)) || [];
       const liveGames = tournamentGames.filter((game: any) => game.status === "active").length;
@@ -208,6 +215,7 @@ export async function GET(req: Request) {
         tournament.name,
         tournament.type === "arena" ? "Arena" : "Swiss",
         tournament.status,
+        tournamentAccessState(tournament.status),
         formatDateTime(tournament.startAt),
         Number((tournament.participants || []).length) + Number((tournament.externalParticipants || []).length),
         Number(tournament.currentRound || 0),

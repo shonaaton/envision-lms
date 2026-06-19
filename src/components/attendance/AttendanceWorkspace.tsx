@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { CalendarDays, CheckCircle2, Clock3, History, UserCheck, Users } from "lucide-react";
 import { toast } from "sonner";
@@ -272,7 +273,14 @@ export default function AttendanceWorkspace({ role }: { role: Role }) {
                     {selectedSession.topicName} • {selectedSession.courseName} • {selectedSession.levelName}
                   </p>
                 </div>
-                <button className="btn-primary" onClick={saveAttendance}>Save Attendance</button>
+                <div className="flex flex-wrap gap-2">
+                  {["completed", "missed", "cancelled", "rescheduled"].includes(selectedSession.status) ? (
+                    <Link href={`/classrooms/${selectedSession.classroomId}/summary?session=${selectedSession.sessionId}`} className="btn-outline">
+                      View Details
+                    </Link>
+                  ) : null}
+                  <button className="btn-primary" onClick={saveAttendance}>Save Attendance</button>
+                </div>
               </div>
 
               <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">

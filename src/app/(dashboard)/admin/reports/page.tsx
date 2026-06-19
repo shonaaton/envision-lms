@@ -15,13 +15,13 @@ const reportCards = [
   {
     type: "classrooms",
     title: "Classroom Sessions",
-    description: "Export scheduled sessions, status, topic, coach, student counts, and meeting readiness.",
+    description: "Export session lifecycle, join access, topic, coach, student counts, and meeting readiness.",
     icon: GraduationCap,
   },
   {
     type: "tournaments",
     title: "Tournament Overview",
-    description: "Export tournament status, participant counts, live/completed boards, leaders, and round progress.",
+    description: "Export tournament lifecycle, player access state, participant counts, live boards, leaders, and round progress.",
     icon: Trophy,
   },
   {

@@ -79,7 +79,7 @@ export function TournamentPlayClient({
 
   useEffect(() => {
     refresh();
-    const poll = window.setInterval(refresh, 2500);
+    const poll = window.setInterval(refresh, 1200);
     const clock = window.setInterval(() => forceClockTick((value) => value + 1), 1000);
     return () => {
       window.clearInterval(poll);
@@ -222,6 +222,14 @@ export function TournamentPlayClient({
               <button onClick={refresh} className="mt-4 inline-flex h-10 items-center gap-2 rounded-xl bg-purple-700 px-4 text-sm font-semibold text-white">
                 <RefreshCcw size={15} /> Refresh seat
               </button>
+              {currentSeat ? (
+                <div className="mt-4 grid w-full max-w-xl gap-3 sm:grid-cols-4">
+                  <SnapshotCard label="Round" value={currentSeat.roundNumber || "-"} />
+                  <SnapshotCard label="Board" value={currentSeat.boardNumber || "-"} />
+                  <SnapshotCard label="Color" value={currentSeat.color ? `${String(currentSeat.color).charAt(0).toUpperCase()}${String(currentSeat.color).slice(1)}` : "-"} />
+                  <SnapshotCard label="Opponent" value={currentSeat.opponentName || "-"} />
+                </div>
+              ) : null}
             </div>
           ) : (
             <>

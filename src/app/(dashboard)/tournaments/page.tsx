@@ -6,6 +6,17 @@ import { Plus, Trophy } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
+function prettyStatus(value: string) {
+  return String(value || "draft").replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function accessState(status: string) {
+  const value = String(status || "").toLowerCase();
+  if (value === "live") return "Joinable";
+  if (value === "upcoming") return "Scheduled";
+  return "Closed";
+}
+
 export default async function TournamentsPage() {
   const session = await auth();
   const role = (session?.user as any)?.role;
@@ -40,7 +51,8 @@ export default async function TournamentsPage() {
             <div className="mt-4 grid grid-cols-2 gap-2 text-sm text-slate-600">
               <div>Start</div><b>{new Date(tournament.startAt).toLocaleString("en-IN")}</b>
               <div>Time Control</div><b>{tournament.timeControlMinutes}+{tournament.incrementSeconds}</b>
-              <div>Status</div><b>{tournament.status}</b>
+              <div>Lifecycle</div><b>{prettyStatus(tournament.status)}</b>
+              <div>Play Access</div><b>{accessState(tournament.status)}</b>
             </div>
           </Link>
         ))}

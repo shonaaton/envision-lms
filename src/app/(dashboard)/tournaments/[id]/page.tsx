@@ -13,6 +13,17 @@ import { playerKeyForUser } from "@/lib/tournamentEngine";
 
 export const dynamic = "force-dynamic";
 
+function prettyStatus(value: string) {
+  return String(value || "draft").replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function accessState(status: string) {
+  const value = String(status || "").toLowerCase();
+  if (value === "live") return "Joinable";
+  if (value === "upcoming") return "Scheduled";
+  return "Closed";
+}
+
 async function joinTournament(formData: FormData) {
   "use server";
   const session = await auth();
@@ -20,6 +31,23 @@ async function joinTournament(formData: FormData) {
   const id = String(formData.get("id"));
   await dbConnect();
   await Tournament.findByIdAndUpdate(id, { $addToSet: { participants: (session.user as any).id } });
+  revalidatePath(`/tournaments/${id}`);
+}
+
+async function leaveTournament(formData: FormData) {
+  "use server";
+  const session = await auth();
+  if (!session) return;
+  const id = String(formData.get("id"));
+  await dbConnect();
+  const tournament: any = await Tournament.findById(id);
+  if (!tournament) return;
+  if (String(tournament.status || "") === "live" || String(tournament.status || "") === "completed") {
+    revalidatePath(`/tournaments/${id}`);
+    return;
+  }
+  tournament.participants = (tournament.participants || []).filter((participant: any) => participant?.toString?.() !== String((session.user as any).id));
+  await tournament.save();
   revalidatePath(`/tournaments/${id}`);
 }
 
@@ -136,6 +164,7 @@ export default async function TournamentDetailPage({ params }: { params: { id: s
     canManage: role === "admin",
     canPlay: role === "student" || role === "admin",
   };
+  const registrationLocked = tournament.status === "live" || tournament.status === "completed";
 
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-5 text-slate-950 sm:px-6 lg:px-8">
@@ -149,10 +178,24 @@ export default async function TournamentDetailPage({ params }: { params: { id: s
             </div>
           </div>
           {role === "student" && (
-            <form action={joinTournament}>
-              <input type="hidden" name="id" value={params.id} />
-              <button disabled={joined} className="h-10 rounded-md bg-purple-700 px-4 text-sm font-semibold text-white disabled:bg-slate-300">{joined ? "Joined" : "Join Tournament"}</button>
-            </form>
+            <div className="flex flex-wrap gap-2">
+              {!joined ? (
+                <form action={joinTournament}>
+                  <input type="hidden" name="id" value={params.id} />
+                  <button disabled={registrationLocked} className="h-10 rounded-md bg-purple-700 px-4 text-sm font-semibold text-white disabled:bg-slate-300">{registrationLocked ? "Registration Locked" : "Join Tournament"}</button>
+                </form>
+              ) : (
+                <>
+                  <div className="inline-flex h-10 items-center rounded-md bg-emerald-50 px-4 text-sm font-semibold text-emerald-700">Registered</div>
+                  {!registrationLocked ? (
+                    <form action={leaveTournament}>
+                      <input type="hidden" name="id" value={params.id} />
+                      <button className="h-10 rounded-md border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700">Leave Tournament</button>
+                    </form>
+                  ) : null}
+                </>
+              )}
+            </div>
           )}
           {role === "admin" && (
             <form action={createExternalInvite}>
@@ -184,7 +227,8 @@ export default async function TournamentDetailPage({ params }: { params: { id: s
           <div className="rounded-md bg-slate-50 p-3"><div className="text-xs text-slate-500">Tournament Type</div><b>{tournament.type === "arena" ? "Arena" : "Swiss"}</b></div>
           <div className="rounded-md bg-slate-50 p-3"><div className="text-xs text-slate-500">Start Date & Time</div><b>{new Date(tournament.startAt).toLocaleString("en-IN")}</b></div>
           <div className="rounded-md bg-slate-50 p-3"><div className="text-xs text-slate-500">Time Control</div><b>{tournament.timeControlMinutes}+{tournament.incrementSeconds}</b></div>
-          <div className="rounded-md bg-slate-50 p-3"><div className="text-xs text-slate-500">Status</div><b>{tournament.status}</b></div>
+          <div className="rounded-md bg-slate-50 p-3"><div className="text-xs text-slate-500">Lifecycle</div><b>{prettyStatus(tournament.status)}</b></div>
+          <div className="rounded-md bg-slate-50 p-3"><div className="text-xs text-slate-500">Play Access</div><b>{accessState(tournament.status)}</b></div>
           {tournament.type === "arena" && <div className="rounded-md bg-slate-50 p-3"><div className="text-xs text-slate-500">Arena Duration</div><b>{tournament.arenaDurationMinutes} minutes</b></div>}
           {tournament.type === "swiss" && <div className="rounded-md bg-slate-50 p-3"><div className="text-xs text-slate-500">Rounds</div><b>{tournament.rounds}</b></div>}
           <div className="rounded-md bg-slate-50 p-3"><div className="text-xs text-slate-500">Starting Position</div><b>{tournament.startingPosition?.type === "custom" ? "Custom Position" : "Normal Starting Position"}</b></div>

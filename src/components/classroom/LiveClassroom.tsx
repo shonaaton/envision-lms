@@ -333,6 +333,10 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const [boardWidth, setBoardWidth] = useState(620);
   const boardShellRef = useRef<HTMLDivElement | null>(null);
   const engineRef = useRef<Worker | null>(null);
+  const loadInFlightRef = useRef(false);
+  const refreshQueuedRef = useRef(false);
+  const refreshTimerRef = useRef<number | null>(null);
+  const dataRef = useRef<any>(null);
   const coach = isCoach(role);
 
   function focusBoard() {
@@ -346,16 +350,63 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     return `/api/classrooms/${classroomId}/live${path}${query ? `${path.includes("?") ? "&" : "?"}${query}` : ""}`;
   }
 
-  async function load() {
-    const res = await fetch(liveUrl(), { cache: "no-store" });
-    if (res.ok) setData(await res.json());
+  async function load(force = false) {
+    if (loadInFlightRef.current && !force) {
+      refreshQueuedRef.current = true;
+      return;
+    }
+    loadInFlightRef.current = true;
+    try {
+      const res = await fetch(liveUrl(), { cache: "no-store" });
+      if (res.ok) setData(await res.json());
+    } finally {
+      loadInFlightRef.current = false;
+      if (refreshQueuedRef.current) {
+        refreshQueuedRef.current = false;
+        void load(true);
+      }
+    }
+  }
+
+  function queueRefresh(delay = 120) {
+    if (typeof window === "undefined") return;
+    if (refreshTimerRef.current) window.clearTimeout(refreshTimerRef.current);
+    refreshTimerRef.current = window.setTimeout(() => {
+      refreshTimerRef.current = null;
+      void load(true);
+    }, delay);
+  }
+
+  function applyOptimisticLive(update: any) {
+    setData((current: any) => {
+      if (!current?.live) return current;
+      const next = {
+        ...current,
+        live: {
+          ...current.live,
+          ...update,
+          updatedAt: new Date().toISOString(),
+        },
+      };
+      dataRef.current = next;
+      return next;
+    });
   }
 
   useEffect(() => {
-    load();
-    const timer = setInterval(load, 650);
-    return () => clearInterval(timer);
+    void load(true);
+    const timer = window.setInterval(() => {
+      void load();
+    }, 450);
+    return () => {
+      window.clearInterval(timer);
+      if (refreshTimerRef.current) window.clearTimeout(refreshTimerRef.current);
+    };
   }, [classroomId, sessionId]);
+
+  useEffect(() => {
+    dataRef.current = data;
+  }, [data]);
 
   useEffect(() => {
     if (!boardShellRef.current) return;
@@ -491,7 +542,8 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     }
   }, [activeTab, live?.engineEnabled, live?.fen]);
 
-  async function patch(update: any) {
+  async function patch(update: any, options?: { optimistic?: boolean }) {
+    if (options?.optimistic !== false) applyOptimisticLive(update);
     const res = await fetch(liveUrl(), {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -500,9 +552,20 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     if (!res.ok) {
       const payload = await res.json().catch(() => null);
       toast.error(payload?.error || "Could not update classroom");
+      queueRefresh(0);
       return;
     }
-    await load();
+    queueRefresh(80);
+  }
+
+  function currentLive() {
+    return dataRef.current?.live || live || {};
+  }
+
+  function updateDrawings(mutator: (drawings: any[]) => any[]) {
+    const snapshot = currentLive();
+    const nextDrawings = mutator([...(snapshot.drawings || [])]);
+    patch({ drawings: nextDrawings });
   }
 
   async function submitStudentMove(source: string, target: string, promotion = "q") {
@@ -516,8 +579,23 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       toast.error(payload?.error || "Move not registered");
       return false;
     }
+    const payload = await res.json().catch(() => null);
     playMoveSound(live?.soundEnabled);
-    await load();
+    setData((current: any) => {
+      if (!current?.live || !payload?.ok) return current;
+      return {
+        ...current,
+        live: {
+          ...current.live,
+          fen: payload.fen,
+          gamifiedObjects: payload.gamifiedObjects || current.live.gamifiedObjects,
+          moveHistory: payload.moveHistory || current.live.moveHistory,
+          status: "live",
+          updatedAt: new Date().toISOString(),
+        },
+      };
+    });
+    queueRefresh(60);
     return true;
   }
 
@@ -700,8 +778,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       return;
     }
     if (tool === "highlight") {
-      const drawings = live?.drawings || [];
-      patch({ drawings: [...drawings, { type: "highlight", from: square, color: drawingColor(modifier) }] });
+      updateDrawings((drawings) => [...drawings, { type: "highlight", from: square, color: drawingColor(modifier) }]);
       return;
     }
     if (tool === "arrow") {
@@ -709,27 +786,28 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
         setHighlightDraft(square);
         return;
       }
-      patch({ drawings: [...(live?.drawings || []), { type: "arrow", from: highlightDraft, to: square, color: drawingColor(modifier) }] });
+      updateDrawings((drawings) => [...drawings, { type: "arrow", from: highlightDraft, to: square, color: drawingColor(modifier) }]);
       setHighlightDraft(null);
     }
   }
 
   function onSquareRightClick(square: string) {
     if (!coach) return;
-    const drawings = live?.drawings || [];
-    const existing = drawings.find((drawing: any) => drawing.type === "highlight" && drawing.from === square);
-    if (existing) {
-      patch({ drawings: drawings.filter((drawing: any) => !(drawing.type === "highlight" && drawing.from === square)) });
-      return;
-    }
-    patch({ drawings: [...drawings, { type: "highlight", from: square, color: drawingColor(modifier) }] });
+    updateDrawings((drawings) => {
+      const existing = drawings.find((drawing: any) => drawing.type === "highlight" && drawing.from === square);
+      if (existing) {
+        return drawings.filter((drawing: any) => !(drawing.type === "highlight" && drawing.from === square));
+      }
+      return [...drawings, { type: "highlight", from: square, color: drawingColor(modifier) }];
+    });
   }
 
   function persistBoardArrows(nextArrows: any[]) {
     if (!coach || !live?.arrowsEnabled) return;
     if (!nextArrows.length) return;
-    const highlights = (live?.drawings || []).filter((drawing: any) => drawing.type === "highlight");
-    const existingArrows = (live?.drawings || []).filter((drawing: any) => drawing.type === "arrow");
+    const snapshot = currentLive();
+    const highlights = (snapshot.drawings || []).filter((drawing: any) => drawing.type === "highlight");
+    const existingArrows = (snapshot.drawings || []).filter((drawing: any) => drawing.type === "arrow");
     const incomingArrows = nextArrows.map((arrow) => ({
       type: "arrow",
       from: arrow[0],
@@ -739,7 +817,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     const arrowMap = new Map<string, any>();
     [...existingArrows, ...incomingArrows].forEach((arrow) => arrowMap.set(`${arrow.from}-${arrow.to}-${arrow.color}`, arrow));
     const merged = [...highlights, ...Array.from(arrowMap.values())];
-    if (JSON.stringify(merged) !== JSON.stringify(live?.drawings || [])) patch({ drawings: merged });
+    if (JSON.stringify(merged) !== JSON.stringify(snapshot.drawings || [])) patch({ drawings: merged });
   }
 
   async function askEveryone() {
@@ -757,7 +835,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     });
     if (res.ok) toast.success("Question sent to everyone");
     setActiveTab("leaderboard");
-    await load();
+    queueRefresh(60);
   }
 
   async function createQuiz() {
@@ -798,7 +876,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     });
     if (res.ok) toast.success("Live quiz launched");
     setActiveTab("leaderboard");
-    await load();
+    queueRefresh(60);
   }
 
   async function submitResponse() {
@@ -811,7 +889,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     if (res.ok) {
       toast.success("Response submitted");
       setMoveAnswer("");
-      await load();
+      queueRefresh(60);
     }
   }
 
@@ -832,7 +910,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     });
     if (res.ok) {
       toast.success("Quiz submitted");
-      await load();
+      queueRefresh(60);
     }
   }
 
@@ -865,7 +943,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       toast.error(payload?.error || "Quiz progression could not be updated");
       return;
     }
-    await load();
+    queueRefresh(40);
   }
 
   async function endLiveQuiz() {
@@ -877,7 +955,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     });
     if (res.ok) {
       toast.success("Quiz ended. Returning everyone to the live board.");
-      await load();
+      queueRefresh(40);
       return;
     }
     const payload = await res.json().catch(() => null);
@@ -893,7 +971,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     });
     if (res.ok) {
       setChatText("");
-      await load();
+      queueRefresh(40);
     }
   }
 
@@ -1682,7 +1760,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                 <h3 className="text-lg font-semibold text-slate-950">{classroomName}</h3>
                 <p className="text-sm text-slate-500">Instructor: {coachName}</p>
               </div>
-              <button onClick={load} className="grid h-10 w-10 place-items-center rounded-md border border-slate-200 text-slate-700 transition hover:border-purple-300 hover:bg-purple-50 hover:text-purple-800" title="Refresh classroom panel">
+              <button onClick={() => void load(true)} className="grid h-10 w-10 place-items-center rounded-md border border-slate-200 text-slate-700 transition hover:border-purple-300 hover:bg-purple-50 hover:text-purple-800" title="Refresh classroom panel">
                 <RefreshCcw size={17} />
               </button>
             </div>

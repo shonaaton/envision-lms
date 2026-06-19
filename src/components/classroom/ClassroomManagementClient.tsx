@@ -94,6 +94,27 @@ function latestSummarySessionId(item: ClassroomItem) {
   return String(preferred?._id || "");
 }
 
+function sessionStatusTone(status: string) {
+  if (status === "completed") return "bg-emerald-50 text-emerald-700";
+  if (status === "missed") return "bg-amber-50 text-amber-700";
+  if (status === "cancelled") return "bg-rose-50 text-rose-700";
+  if (status === "rescheduled") return "bg-sky-50 text-sky-700";
+  if (status === "ongoing") return "bg-brand/10 text-brand";
+  if (status === "join_available") return "bg-violet-50 text-violet-700";
+  return "bg-slate-100 text-slate-600";
+}
+
+function classroomLifecycleRollup(item: ClassroomItem) {
+  const now = new Date();
+  const rows = flattenScheduledSessions([item]);
+  const counts = rows.reduce((map, row) => {
+    const status = deriveScheduledSessionStatus(row.session, now);
+    map.set(status, (map.get(status) || 0) + 1);
+    return map;
+  }, new Map<string, number>());
+  return Array.from(counts.entries() as Iterable<[string, number]>).sort((a, b) => b[1] - a[1]);
+}
+
 const durationOptions = [
   { value: 15, label: "15 Minutes" },
   { value: 30, label: "30 Minutes" },
@@ -484,6 +505,7 @@ export default function ClassroomManagementClient({ role }: { role: Role }) {
                 {filteredItems.map((item) => {
                   const summarySessionId = latestSummarySessionId(item);
                   const summaryHref = summarySessionId ? `/classrooms/${item._id}/summary?session=${summarySessionId}` : `/classrooms/${item._id}/summary`;
+                  const lifecycleRollup = classroomLifecycleRollup(item);
                   return (
                   <div key={item._id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-lg shadow-slate-200/60">
                     <div className="flex items-start justify-between gap-3">
@@ -508,6 +530,19 @@ export default function ClassroomManagementClient({ role }: { role: Role }) {
                       <InfoCard label="Students" value={String(item.students?.length || 0)} />
                       <InfoCard label="Meeting" value={item.meetingUrl ? "Meeting ready" : "Not added"} />
                     </div>
+
+                    {lifecycleRollup.length > 0 ? (
+                      <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <div className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Session Lifecycle</div>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {lifecycleRollup.map(([status, count]) => (
+                            <span key={`${item._id}-${status}`} className={`rounded-full px-2.5 py-1 text-xs font-bold ${sessionStatusTone(status)}`}>
+                              {count} {titleCase(status)}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
 
                     <div className="mt-4 rounded-xl bg-slate-50 p-3 text-sm text-slate-600">
                       {item.classroomType === "single"

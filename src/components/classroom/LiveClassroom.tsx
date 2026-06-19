@@ -303,8 +303,9 @@ function submissionLabel(result: any, summary: ReturnType<typeof aggregateLiveRe
 export default function LiveClassroom({ classroomId, role, userId, sessionId }: { classroomId: string; role: Role; userId: string; sessionId?: string }) {
   const router = useRouter();
   const [data, setData] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<TabKey>("students");
+  const [activeTab, setActiveTab] = useState<TabKey>(role === "student" ? "chat" : "students");
   const [tool, setTool] = useState<ToolKey>("move");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [moveAnswer, setMoveAnswer] = useState("");
   const [quizTitle, setQuizTitle] = useState("Best move from current position");
   const [chatText, setChatText] = useState("");
@@ -333,6 +334,10 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const boardShellRef = useRef<HTMLDivElement | null>(null);
   const engineRef = useRef<Worker | null>(null);
   const coach = isCoach(role);
+
+  function focusBoard() {
+    boardShellRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+  }
 
   function liveUrl(path = "") {
     const params = new URLSearchParams();
@@ -1173,38 +1178,74 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
 
   if (!data) return <div className="rounded-lg border border-slate-200 bg-white p-5">Loading classroom...</div>;
 
-  const ToolButton = ({ id, icon, label, active, onClick }: { id?: ToolKey; icon: React.ReactNode; label: string; active?: boolean; onClick?: () => void }) => (
+  const SidebarButton = ({
+    id,
+    icon,
+    label,
+    active,
+    onClick,
+    disabled = false,
+    disabledLabel,
+    emphasis = "default",
+  }: {
+    id?: ToolKey;
+    icon: React.ReactNode;
+    label: string;
+    active?: boolean;
+    onClick?: () => void;
+    disabled?: boolean;
+    disabledLabel?: string;
+    emphasis?: "default" | "danger";
+  }) => (
     <button
       type="button"
-      onClick={onClick || (() => id && setTool(id))}
-      title={label}
-      className={`flex min-h-9 items-center gap-2 rounded-md border px-2 py-1.5 text-left text-xs font-semibold text-slate-700 transition hover:border-purple-300 hover:bg-purple-50 hover:text-purple-800 ${
-        active || (id && tool === id) ? "border-purple-300 bg-purple-100 text-purple-800" : "border-slate-200 bg-white"
+      onClick={disabled ? undefined : onClick || (() => id && setTool(id))}
+      title={disabled ? disabledLabel || label : label}
+      disabled={disabled}
+      className={`flex min-h-10 items-center rounded-xl border px-2.5 py-2 text-left text-xs font-semibold transition ${
+        sidebarCollapsed ? "justify-center" : "gap-2"
+      } ${
+        active || (id && tool === id)
+          ? "border-purple-300 bg-purple-100 text-purple-800"
+          : emphasis === "danger"
+            ? "border-red-200 bg-white text-red-600 hover:border-red-300 hover:bg-red-50"
+            : "border-slate-200 bg-white text-slate-700 hover:border-purple-300 hover:bg-purple-50 hover:text-purple-800"
+      } ${
+        disabled ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400 hover:border-slate-200 hover:bg-slate-100 hover:text-slate-400" : ""
       }`}
     >
       <span className="grid h-6 w-6 flex-none place-items-center">{icon}</span>
-      <span>{label}</span>
+      {!sidebarCollapsed && <span className="truncate">{label}</span>}
     </button>
   );
 
-  const ToggleButton = ({ active, label, icon, onClick }: { active: boolean; label: string; icon: React.ReactNode; onClick: () => void }) => (
-    <button
-      type="button"
-      onClick={onClick}
-      title={label}
-      className={`flex min-h-9 items-center gap-2 rounded-md border px-2 py-1.5 text-left text-xs font-semibold transition ${
-        active ? "border-purple-300 bg-purple-100 text-purple-800" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-      }`}
-    >
-      <span className="grid h-6 w-6 flex-none place-items-center">{icon}</span>
-      <span>{label}</span>
-    </button>
+  const ToolButton = ({ id, icon, label, active, onClick, disabled, disabledLabel, emphasis }: { id?: ToolKey; icon: React.ReactNode; label: string; active?: boolean; onClick?: () => void; disabled?: boolean; disabledLabel?: string; emphasis?: "default" | "danger" }) => (
+    <SidebarButton id={id} icon={icon} label={label} active={active} onClick={onClick} disabled={disabled} disabledLabel={disabledLabel} emphasis={emphasis} />
+  );
+
+  const ToggleButton = ({ active, label, icon, onClick, disabled, disabledLabel, emphasis }: { active: boolean; label: string; icon: React.ReactNode; onClick: () => void; disabled?: boolean; disabledLabel?: string; emphasis?: "default" | "danger" }) => (
+    <SidebarButton active={active} icon={icon} label={label} onClick={onClick} disabled={disabled} disabledLabel={disabledLabel} emphasis={emphasis} />
   );
 
   const orientation = (live?.orientation || "white") as "white" | "black";
   const files = coordinateFiles(orientation);
   const ranks = coordinateRanks(orientation);
   const setupBoardSize = Math.min(340, Math.max(300, boardWidth));
+  const canLaunchBoardQuiz = Boolean(pgnMoves[currentMoveIndex]);
+  const canLoadPgnLibrary = coach && pgnLibrary.length > 0;
+  const coachSidebarTabs = [
+    { key: "students" as TabKey, icon: <Users size={19} />, label: "Students" },
+    { key: "chat" as TabKey, icon: <MessageSquare size={19} />, label: "Chat" },
+    { key: "moves" as TabKey, icon: <ClipboardList size={19} />, label: "Moves / Notation" },
+    { key: "leaderboard" as TabKey, icon: <Crown size={19} />, label: "Leaderboard" },
+  ];
+  const studentSidebarTabs = [
+    { icon: <Home size={19} />, label: "Live Board", onClick: focusBoard, active: false },
+    { key: "chat" as TabKey, icon: <MessageSquare size={19} />, label: "Chat" },
+    { key: "moves" as TabKey, icon: <ClipboardList size={19} />, label: "Quiz / Results" },
+    { key: "leaderboard" as TabKey, icon: <Crown size={19} />, label: "Leaderboard" },
+  ];
+  const classroomTabs = coach ? coachSidebarTabs : coachSidebarTabs.filter((item) => item.key !== "students");
 
   return (
     <div className="flex h-[calc(100vh-92px)] min-h-[640px] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg shadow-brand/10">
@@ -1232,21 +1273,58 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
 
       <div className="grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-[minmax(0,1fr)_390px]">
         <section className="flex min-h-0 min-w-0 flex-col gap-3 overflow-hidden p-3 lg:flex-row">
-          {coach && <div className="grid max-h-full grid-cols-2 gap-2 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-2 shadow-sm lg:w-40 lg:flex-none lg:grid-cols-1 lg:self-start">
-            <ToolButton id="move" icon={<MousePointer2 size={19} />} label="Move Piece" />
-            <ToggleButton active={!!live?.locked} icon={live?.locked ? <Lock size={19} /> : <Unlock size={19} />} label={live?.locked ? "Unlock Board" : "Lock Board"} onClick={() => patch({ locked: !live?.locked })} />
-            <ToolButton id="highlight" icon={<Highlighter size={19} />} label="Highlight Square" />
-            <ToolButton id="arrow" icon={<Send size={19} />} label="Draw Arrow" />
-            <ToggleButton active={!!live?.studentMovesEnabled} icon={<Users size={19} />} label="Student Moves" onClick={() => patch({ studentMovesEnabled: !live?.studentMovesEnabled, mode: !live?.studentMovesEnabled ? "student_move" : "teaching" })} />
-            <ToggleButton active={!!live?.illegalMovesEnabled} icon={<ShieldAlert size={19} />} label="Allow illegal moves" onClick={() => patch({ illegalMovesEnabled: !live?.illegalMovesEnabled })} />
-            <ToggleButton active={!!live?.showCoordinates} icon={<Grid2X2 size={19} />} label="Show coordinates" onClick={() => patch({ showCoordinates: !live?.showCoordinates })} />
-            <ToggleButton active={!!live?.arrowsEnabled} icon={<Square size={19} />} label="Enable arrow drawing" onClick={() => patch({ arrowsEnabled: !live?.arrowsEnabled })} />
-            <ToggleButton active={setupOpen} icon={<Settings size={19} />} label="Setup Board" onClick={() => { setSetupPosition(boardPieceMap); setGamifiedSetup(liveGamifiedObjects); setSetupMovementMode(live?.illegalMovesEnabled ? "free" : live?.fen?.split(" ")?.[1] === "b" ? "black" : "white"); setSetupOpen(true); }} />
-            <ToolButton icon={<Eraser size={19} />} label="Clear Drawings" onClick={() => patch({ drawings: [] })} />
-            <ToolButton icon={<FlipHorizontal size={19} />} label="Flip board" onClick={() => patch({ orientation: live?.orientation === "white" ? "black" : "white" })} />
-            <ToggleButton active={!!live?.soundEnabled} icon={live?.soundEnabled ? <Volume2 size={19} /> : <VolumeX size={19} />} label="Piece sounds" onClick={() => patch({ soundEnabled: !live?.soundEnabled })} />
-            <ToolButton icon={<RefreshCcw size={19} />} label="Reset Board" onClick={resetGame} />
-          </div>}
+          <aside className={`flex max-h-full flex-none flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 shadow-sm transition-all duration-200 ${sidebarCollapsed ? "lg:w-[74px]" : "lg:w-[230px]"}`}>
+            <div className={`flex items-center border-b border-slate-200 p-2 ${sidebarCollapsed ? "justify-center" : "justify-between"}`}>
+              {!sidebarCollapsed && <div className="px-2 text-xs font-black uppercase tracking-[0.18em] text-slate-500">{coach ? "Classroom Tools" : "Classroom"}</div>}
+              <button
+                type="button"
+                title={sidebarCollapsed ? "Expand classroom sidebar" : "Collapse classroom sidebar"}
+                onClick={() => setSidebarCollapsed((value) => !value)}
+                className="grid h-10 w-10 place-items-center rounded-xl border border-slate-200 bg-white text-slate-700 transition hover:border-purple-300 hover:bg-purple-50 hover:text-purple-800"
+              >
+                {sidebarCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+              </button>
+            </div>
+            <div className="flex-1 space-y-3 overflow-y-auto p-2">
+              <div className="space-y-2">
+                {(coach ? coachSidebarTabs : studentSidebarTabs).map((item: any) => (
+                  <SidebarButton
+                    key={item.label}
+                    icon={item.icon}
+                    label={item.label}
+                    active={item.key ? activeTab === item.key : item.active}
+                    onClick={item.key ? () => setActiveTab(item.key) : item.onClick}
+                  />
+                ))}
+              </div>
+              {coach && (
+                <>
+                  <div className="border-t border-slate-200" />
+                  <div className="space-y-2">
+                    <ToolButton id="move" icon={<MousePointer2 size={19} />} label="Live Board" onClick={focusBoard} />
+                    <ToggleButton active={!!live?.locked} icon={live?.locked ? <Lock size={19} /> : <Unlock size={19} />} label={live?.locked ? "Unlock Board" : "Lock Board"} onClick={() => patch({ locked: !live?.locked })} />
+                    <ToolButton id="highlight" icon={<Highlighter size={19} />} label="Highlight Square" />
+                    <ToolButton id="arrow" icon={<Send size={19} />} label="Draw Arrow" disabled={!live?.arrowsEnabled} disabledLabel="Enable arrow drawing first" />
+                    <ToggleButton active={!!live?.studentMovesEnabled} icon={<Users size={19} />} label={live?.studentMovesEnabled ? "Student Control On" : "Give Student Control"} onClick={() => patch({ studentMovesEnabled: !live?.studentMovesEnabled, mode: !live?.studentMovesEnabled ? "student_move" : "teaching" })} disabled={!students.length} disabledLabel="No students are in this classroom yet" />
+                    <ToggleButton active={!!live?.illegalMovesEnabled} icon={<ShieldAlert size={19} />} label="Free Movement" onClick={() => patch({ illegalMovesEnabled: !live?.illegalMovesEnabled })} />
+                    <ToggleButton active={!!live?.showCoordinates} icon={<Grid2X2 size={19} />} label="Board Coordinates" onClick={() => patch({ showCoordinates: !live?.showCoordinates })} />
+                    <ToggleButton active={!!live?.arrowsEnabled} icon={<Square size={19} />} label="Enable Arrow Drawing" onClick={() => patch({ arrowsEnabled: !live?.arrowsEnabled })} />
+                    <ToggleButton active={setupOpen} icon={<Settings size={19} />} label="Setup Board" onClick={() => { setSetupPosition(boardPieceMap); setGamifiedSetup(liveGamifiedObjects); setSetupMovementMode(live?.illegalMovesEnabled ? "free" : live?.fen?.split(" ")?.[1] === "b" ? "black" : "white"); setSetupOpen(true); }} />
+                    <ToolButton icon={<Library size={19} />} label="Load PGN" onClick={() => setPgnOpen(true)} disabled={!canLoadPgnLibrary} disabledLabel="No PGNs are available in the library yet" />
+                    <ToolButton icon={<FileQuestion size={19} />} label="Ask Challenge" onClick={askEveryone} />
+                    <ToolButton icon={<Sparkles size={19} />} label="Start Quiz" onClick={createQuiz} disabled={!canLaunchBoardQuiz} disabledLabel="Load a PGN position first so the next move can be checked on the board" />
+                    <ToolButton icon={<Eraser size={19} />} label="Clear Drawings" onClick={() => patch({ drawings: [] })} />
+                    <ToolButton icon={<FlipHorizontal size={19} />} label="Flip Board" onClick={() => patch({ orientation: live?.orientation === "white" ? "black" : "white" })} />
+                    <ToggleButton active={!!live?.soundEnabled} icon={live?.soundEnabled ? <Volume2 size={19} /> : <VolumeX size={19} />} label="Piece Sounds" onClick={() => patch({ soundEnabled: !live?.soundEnabled })} />
+                    <ToolButton icon={<RefreshCcw size={19} />} label="Reset Board" onClick={resetGame} />
+                    <ToolButton icon={<ClipboardList size={19} />} label="Open Moves / Notation" onClick={() => setActiveTab("moves")} />
+                    <ToolButton icon={<Crown size={19} />} label="Open Leaderboard" onClick={() => setActiveTab("leaderboard")} />
+                    <ToolButton icon={<X size={19} />} label="End Class" onClick={openEndSummary} emphasis="danger" />
+                  </div>
+                </>
+              )}
+            </div>
+          </aside>
 
           <div ref={boardShellRef} className="min-h-0 min-w-0 flex-1 overflow-auto">
             {studentQuizMode ? (
@@ -1410,15 +1488,10 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
         </section>
 
         <aside className="flex min-h-0 flex-col border-t border-slate-200 xl:border-l xl:border-t-0">
-          <div className="grid grid-cols-4 border-b border-slate-200 text-sm">
-            {[
-              ["students", Users, "Students"],
-              ["chat", MessageSquare, "Chat"],
-              ["moves", ClipboardList, "Moves"],
-              ["leaderboard", Crown, "Leaderboard"],
-            ].map(([key, Icon, label]: any) => (
+          <div className={`grid border-b border-slate-200 text-sm ${coach ? "grid-cols-4" : "grid-cols-3"}`}>
+            {classroomTabs.map(({ key, icon, label }: any) => (
               <button key={key} onClick={() => setActiveTab(key)} className={`flex h-11 items-center justify-center gap-1 border-b-2 text-xs font-semibold ${activeTab === key ? "border-purple-700 text-purple-800" : "border-transparent text-slate-500"}`} title={label}>
-                <Icon size={17} />
+                {icon}
                 <span className="hidden 2xl:inline">{label}</span>
               </button>
             ))}
@@ -1609,8 +1682,8 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                 <h3 className="text-lg font-semibold text-slate-950">{classroomName}</h3>
                 <p className="text-sm text-slate-500">Instructor: {coachName}</p>
               </div>
-              <button className="grid h-10 w-10 place-items-center rounded-md border border-slate-200 text-slate-700" title="Save classroom notes as PDF">
-                <BookOpen size={17} />
+              <button onClick={load} className="grid h-10 w-10 place-items-center rounded-md border border-slate-200 text-slate-700 transition hover:border-purple-300 hover:bg-purple-50 hover:text-purple-800" title="Refresh classroom panel">
+                <RefreshCcw size={17} />
               </button>
             </div>
             {coach && (

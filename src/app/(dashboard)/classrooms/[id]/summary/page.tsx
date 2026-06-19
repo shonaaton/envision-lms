@@ -234,8 +234,8 @@ export default async function ClassroomSummaryPage({
                 />
               </>
             ) : null}
-            {role === "admin" && selectedSession.status !== "completed" && selectedSession.status !== "cancelled" ? (
-              <Link href={`/classrooms/${params.id}?session=${scheduledSessionId}`} className="rounded-xl bg-purple-700 px-4 py-2 text-sm font-bold text-white">Open Live Classroom</Link>
+            {["admin", "instructor"].includes(role) && !["completed", "cancelled", "rescheduled", "missed"].includes(String(selectedSession.status || "").toLowerCase()) ? (
+              <Link href={`/classrooms/${params.id}/live?session=${scheduledSessionId}`} className="rounded-xl bg-purple-700 px-4 py-2 text-sm font-bold text-white">Open Scheduled Classroom</Link>
             ) : null}
           </div>
         </div>

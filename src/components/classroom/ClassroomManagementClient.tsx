@@ -65,6 +65,16 @@ type ClassroomItem = {
   meetingUrl?: string;
 };
 
+type SessionFilterStatus =
+  | ""
+  | "upcoming"
+  | "join_available"
+  | "ongoing"
+  | "completed"
+  | "missed"
+  | "cancelled"
+  | "rescheduled";
+
 type TargetsPayload = {
   students: StudentOption[];
   coaches: CoachOption[];
@@ -144,7 +154,14 @@ export default function ClassroomManagementClient({ role }: { role: Role }) {
   const [form, setForm] = useState(blankForm());
   const [studentSearch, setStudentSearch] = useState("");
   const [view, setView] = useState<"list" | "calendar">("list");
-  const [filters, setFilters] = useState({ coach: "", batch: "", student: "", course: "", level: "", status: "" });
+  const [filters, setFilters] = useState<{ coach: string; batch: string; student: string; course: string; level: string; status: SessionFilterStatus }>({
+    coach: "",
+    batch: "",
+    student: "",
+    course: "",
+    level: "",
+    status: "",
+  });
   const [actionModal, setActionModal] = useState<{ type: string; item: ClassroomItem | null }>({ type: "", item: null });
   const [actionDraft, setActionDraft] = useState<any>({});
 
@@ -189,7 +206,11 @@ export default function ClassroomManagementClient({ role }: { role: Role }) {
       if (filters.coach && String((item.coach as any)?._id || item.coach || "") !== filters.coach) return false;
       if (filters.course && item.courseName !== filters.course) return false;
       if (filters.level && item.levelName !== filters.level) return false;
-      if (filters.status && item.status !== filters.status) return false;
+      if (filters.status) {
+        const itemSessions = flattenScheduledSessions([item]);
+        const hasMatchingSession = itemSessions.some((row) => deriveScheduledSessionStatus(row.session, new Date()) === filters.status);
+        if (!hasMatchingSession) return false;
+      }
       if (filters.student && !(item.students || []).some((student) => student._id === filters.student)) return false;
       if (filters.batch && !(item.batches || []).some((batch: any) => (batch._id || batch) === filters.batch)) return false;
       return true;
@@ -438,7 +459,12 @@ export default function ClassroomManagementClient({ role }: { role: Role }) {
         <FilterSelect label="Student" value={filters.student} onChange={(value) => setFilters((current) => ({ ...current, student: value }))} options={targets.students.map((student) => ({ value: student._id, label: student.name }))} />
         <FilterSelect label="Course" value={filters.course} onChange={(value) => setFilters((current) => ({ ...current, course: value }))} options={uniqueOptions(items.map((item) => item.courseName).filter(Boolean) as string[])} />
         <FilterSelect label="Level" value={filters.level} onChange={(value) => setFilters((current) => ({ ...current, level: value }))} options={uniqueOptions(items.map((item) => item.levelName).filter(Boolean) as string[])} />
-        <FilterSelect label="Status" value={filters.status} onChange={(value) => setFilters((current) => ({ ...current, status: value }))} options={["scheduled", "ongoing", "completed", "cancelled"].map((value) => ({ value, label: titleCase(value) }))} />
+        <FilterSelect
+          label="Status"
+          value={filters.status}
+          onChange={(value) => setFilters((current) => ({ ...current, status: value as SessionFilterStatus }))}
+          options={["upcoming", "join_available", "ongoing", "completed", "missed", "cancelled", "rescheduled"].map((value) => ({ value, label: titleCase(value) }))}
+        />
       </div>
 
       <div className="mb-3 flex flex-none gap-2">
@@ -949,6 +975,21 @@ function SimpleClassroomList({ items, loading, role }: { items: ClassroomItem[];
     .filter((row) => row.start)
     .sort((a, b) => (a.start?.getTime() || 0) - (b.start?.getTime() || 0));
   const upcoming = sessions.filter((row) => isSessionUpcomingLike(deriveScheduledSessionStatus(row.session, now))).slice(0, 12);
+  const history = sessions
+    .filter((row) => {
+      const status = deriveScheduledSessionStatus(row.session, now);
+      return ["completed", "missed", "cancelled", "rescheduled"].includes(status);
+    })
+    .sort((a, b) => (b.start?.getTime() || 0) - (a.start?.getTime() || 0))
+    .slice(0, 12);
+  const currentRoleLabel = role === "student" ? "Coach" : "Batch / Students";
+  const statusTone = (status: string) => {
+    if (status === "completed") return "bg-emerald-50 text-emerald-700";
+    if (status === "missed") return "bg-amber-50 text-amber-700";
+    if (status === "cancelled") return "bg-rose-50 text-rose-700";
+    if (status === "rescheduled") return "bg-sky-50 text-sky-700";
+    return "bg-slate-100 text-slate-600";
+  };
 
   return (
     <div className="space-y-6">
@@ -982,7 +1023,8 @@ function SimpleClassroomList({ items, loading, role }: { items: ClassroomItem[];
                 <div className="mt-4 grid gap-2 sm:grid-cols-2">
                   <InfoCard label="Course" value={classroom.courseName || "General"} />
                   <InfoCard label="Level" value={classroom.levelName || "Not set"} />
-                  <InfoCard label={role === "student" ? "Coach" : "Students"} value={role === "student" ? ((classroom.coach as any)?.name || "Coach") : `${classroom.students?.length || 0} assigned`} />
+                  <InfoCard label="Topic" value={session.topicName || classroom.topicName || "Not set"} />
+                  <InfoCard label={currentRoleLabel} value={role === "student" ? ((classroom.coach as any)?.name || "Coach") : ((classroom.batches || []).map((batch: any) => batch.name).join(", ") || `${classroom.students?.length || 0} assigned`)} />
                   <InfoCard label="Duration" value={formatDuration(session.durationMinutes || classroom.durationMinutes || 60)} />
                 </div>
 
@@ -999,12 +1041,76 @@ function SimpleClassroomList({ items, loading, role }: { items: ClassroomItem[];
                     label="Join Classroom"
                     disabled={!joinOpen}
                   />
+                  {classroom.meetingUrl ? (
+                    <a
+                      href={classroom.meetingUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="btn-outline"
+                    >
+                      Join Google Meet
+                    </a>
+                  ) : null}
+                  <Link href={`/classrooms/${classroom._id}/summary?session=${String(session._id)}`} className="btn-outline">
+                    View Details
+                  </Link>
                 </div>
               </div>
             );
           })}
         </div>
       )}
+      </div>
+
+      <div className="space-y-4">
+        <div>
+          <h2 className="text-2xl font-black text-slate-950">{role === "student" ? "Class History" : "Completed Sessions"}</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            {role === "student"
+              ? "Review closed classes, attendance, and your session summaries."
+              : "Open finished class summaries, attendance, and teaching records."}
+          </p>
+        </div>
+        {history.length === 0 ? (
+          <div className="card text-sm text-slate-500">Completed sessions will appear here after class ends.</div>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            {history.map(({ classroom, session }) => {
+              const status = deriveScheduledSessionStatus(session, now);
+              return (
+                <div key={`history-${classroom._id}-${session._id}`} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-lg shadow-brand/10">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="text-lg font-black text-slate-950">{classroom.title}</div>
+                      <div className="mt-1 text-sm text-slate-600">{session.topicName || classroom.topicName || "Scheduled class"}</div>
+                    </div>
+                    <span className={cn("rounded-full px-3 py-1 text-xs font-bold", statusTone(status))}>
+                      {formatJoinWindowLabel(session, now)}
+                    </span>
+                  </div>
+
+                  <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                    <InfoCard label="Course" value={classroom.courseName || "General"} />
+                    <InfoCard label="Level" value={classroom.levelName || "Not set"} />
+                    <InfoCard label="Topic" value={session.topicName || classroom.topicName || "Not set"} />
+                    <InfoCard label={currentRoleLabel} value={role === "student" ? ((classroom.coach as any)?.name || "Coach") : ((classroom.batches || []).map((batch: any) => batch.name).join(", ") || `${classroom.students?.length || 0} assigned`)} />
+                    <InfoCard label="Duration" value={formatDuration(session.durationMinutes || classroom.durationMinutes || 60)} />
+                  </div>
+
+                  <div className="mt-4 rounded-xl bg-slate-50 px-3 py-3 text-sm text-slate-700">
+                    {formatDate(String(session.scheduledFor || classroom.classDate || classroom.startDate || ""))} at {session.startTime || classroom.startTime || "--"}
+                  </div>
+
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <Link href={`/classrooms/${classroom._id}/summary?session=${String(session._id)}`} className="btn-primary">
+                      View Details
+                    </Link>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

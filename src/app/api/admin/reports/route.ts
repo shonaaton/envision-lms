@@ -5,6 +5,7 @@ import { Attendance } from "@/models/Attendance";
 import { Classroom } from "@/models/Classroom";
 import { Tournament } from "@/models/Tournament";
 import { TournamentGame } from "@/models/TournamentGame";
+import { deriveScheduledSessionStatus, isSessionUpcomingLike } from "@/lib/classroomSessions";
 import { summarizeCoachSessions } from "@/lib/teachingStats";
 
 export const dynamic = "force-dynamic";
@@ -96,23 +97,27 @@ function plainSessionRows(classrooms: any[], range: RangeLike) {
 
     return sessions
       .filter((session: any) => inRange(session.actualStartedAt || session.scheduledFor, range))
-      .map((session: any) => ({
-        classroomId: String(classroom._id),
-        sessionId: String(session._id || ""),
-        title: classroom.title || "Classroom",
-        courseName: classroom.courseName || "",
-        levelName: classroom.levelName || "",
-        topicName: session.topicName || classroom.topicName || "",
-        coachName: classroom.coach?.name || classroom.instructor?.name || "Not assigned",
-        batchNames: (classroom.batches || []).map((batch: any) => batch.name).join(", "),
-        scheduledFor: session.actualStartedAt || session.scheduledFor,
-        startTime: session.startTime || classroom.startTime || "",
-        durationMinutes: Number(session.durationMinutes || classroom.durationMinutes || 0),
-        teachingMinutes: Number(session.teachingMinutes || session.durationMinutes || classroom.durationMinutes || 0),
-        status: String(session.status || classroom.status || "scheduled"),
-        studentCount: Number((classroom.students || []).length),
-        meetingConfigured: classroom.meetingUrl ? "Yes" : "No",
-      }));
+      .map((session: any) => {
+        const derivedStatus = deriveScheduledSessionStatus(session, new Date());
+        return {
+          classroomId: String(classroom._id),
+          sessionId: String(session._id || ""),
+          title: classroom.title || "Classroom",
+          courseName: classroom.courseName || "",
+          levelName: classroom.levelName || "",
+          topicName: session.topicName || classroom.topicName || "",
+          coachName: classroom.coach?.name || classroom.instructor?.name || "Not assigned",
+          batchNames: (classroom.batches || []).map((batch: any) => batch.name).join(", "),
+          scheduledFor: session.actualStartedAt || session.scheduledFor,
+          startTime: session.startTime || classroom.startTime || "",
+          durationMinutes: Number(session.durationMinutes || classroom.durationMinutes || 0),
+          teachingMinutes: Number(session.teachingMinutes || session.durationMinutes || classroom.durationMinutes || 0),
+          status: derivedStatus,
+          joinAccess: isSessionUpcomingLike(derivedStatus) ? "Joinable" : "Closed",
+          studentCount: Number((classroom.students || []).length),
+          meetingConfigured: classroom.meetingUrl ? "Yes" : "No",
+        };
+      });
   });
 }
 
@@ -141,7 +146,7 @@ export async function GET(req: Request) {
     const sessionRows = plainSessionRows(classrooms, range);
 
     title = "Classroom Sessions Report";
-    headers = ["Classroom", "Course", "Level", "Topic", "Coach", "Batches", "Date", "Start Time", "Status", "Planned Duration", "Teaching Time", "Students", "Meeting"];
+    headers = ["Classroom", "Course", "Level", "Topic", "Coach", "Batches", "Date", "Start Time", "Lifecycle", "Join Access", "Planned Duration", "Teaching Time", "Students", "Meeting"];
     rows = sessionRows.map((row) => [
       row.title,
       row.courseName,
@@ -152,6 +157,7 @@ export async function GET(req: Request) {
       formatDate(row.scheduledFor),
       row.startTime || "-",
       row.status,
+      row.joinAccess,
       formatDuration(row.durationMinutes),
       formatDuration(row.teachingMinutes),
       row.studentCount,

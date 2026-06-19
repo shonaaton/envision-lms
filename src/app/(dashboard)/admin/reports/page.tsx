@@ -6,6 +6,7 @@ import { Attendance } from "@/models/Attendance";
 import { Classroom } from "@/models/Classroom";
 import { Tournament } from "@/models/Tournament";
 import { User } from "@/models/User";
+import { deriveScheduledSessionStatus, flattenScheduledSessions, isSessionUpcomingLike } from "@/lib/classroomSessions";
 import { BarChart3, CalendarDays, ClipboardList, Download, ExternalLink, GraduationCap, Trophy } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -58,6 +59,12 @@ export default async function AdminReportsPage() {
     Attendance.countDocuments({}),
     User.countDocuments({ role: "instructor", isActive: { $ne: false } }),
   ]);
+  const classroomDocs = await Classroom.find({})
+    .populate("coach instructor students batches", "name")
+    .lean();
+  const sessionRows = flattenScheduledSessions(classroomDocs);
+  const upcomingSessions = sessionRows.filter((row) => isSessionUpcomingLike(deriveScheduledSessionStatus(row.session, new Date()))).length;
+  const completedSessions = sessionRows.filter((row) => ["completed", "missed", "cancelled", "rescheduled"].includes(deriveScheduledSessionStatus(row.session, new Date()))).length;
 
   return (
     <div className="space-y-6 text-slate-950">
@@ -82,6 +89,10 @@ export default async function AdminReportsPage() {
           <StatCard label="Tournaments" value={tournamentCount} />
           <StatCard label="Attendance Logs" value={attendanceCount} />
           <StatCard label="Active Coaches" value={coachCount} />
+        </div>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <StatCard label="Upcoming Sessions" value={upcomingSessions} />
+          <StatCard label="Completed / Closed Sessions" value={completedSessions} />
         </div>
       </section>
 

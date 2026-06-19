@@ -55,6 +55,7 @@ function buildClassEvent({
   const studentLabel = joinNames(classroom?.students, classroom?.students?.length ? "" : "No students assigned");
   const topic = session?.topicName || classroom?.topicName || classroom?.title || "Class session";
   const joinable = isSessionUpcomingLike(status as any);
+  const summaryHref = `/classrooms/${classroomId}/summary?session=${sessionId}`;
 
   return {
     id: `class-${classroomId}-${sessionId}`,
@@ -70,8 +71,8 @@ function buildClassEvent({
     batchLabel,
     studentLabel,
     durationLabel: formatDuration(Number(session.durationMinutes || classroom?.durationMinutes || 60)),
-    href: joinable ? `/classrooms/${classroomId}?session=${sessionId}` : undefined,
-    hrefLabel: joinable ? "Join Class" : undefined,
+    href: joinable ? `/classrooms/${classroomId}?session=${sessionId}` : summaryHref,
+    hrefLabel: joinable ? "Join Class" : "View Details",
     meetingUrl: joinable ? classroom?.meetingUrl || undefined : undefined,
   };
 }
@@ -250,13 +251,13 @@ async function getCoachEvents(userId: string) {
       classroom,
       session,
       role: "instructor",
-      status: deriveScheduledSessionStatus(session),
+      status: deriveScheduledSessionStatus(session, new Date()),
     })
   );
 
   const attendanceEvents = sessions
     .filter(({ session }: any) => {
-      const status = deriveScheduledSessionStatus(session);
+      const status = deriveScheduledSessionStatus(session, new Date());
       return ["completed", "missed"].includes(status);
     })
     .filter(({ classroom, session }: any) => !attendanceKeys.has(`${objectId(classroom._id)}-${dateKey(session.scheduledFor)}`))
@@ -293,13 +294,13 @@ async function getAdminEvents() {
       classroom,
       session,
       role: "admin",
-      status: deriveScheduledSessionStatus(session),
+      status: deriveScheduledSessionStatus(session, new Date()),
     })
   );
 
   const attendanceEvents = sessions
     .filter(({ session }: any) => {
-      const status = deriveScheduledSessionStatus(session);
+      const status = deriveScheduledSessionStatus(session, new Date());
       return ["completed", "missed"].includes(status);
     })
     .filter(({ classroom, session }: any) => !attendanceKeys.has(`${objectId(classroom._id)}-${dateKey(session.scheduledFor)}`))

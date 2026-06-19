@@ -40,6 +40,20 @@ function formatDuration(minutes: number) {
   return rest ? `${hours}h ${rest}m` : `${hours}h`;
 }
 
+function prettyStatus(value: string) {
+  return String(value || "pending").replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function lifecycleTone(value: string) {
+  if (value === "completed") return "bg-emerald-50 text-emerald-700";
+  if (value === "missed") return "bg-amber-50 text-amber-700";
+  if (value === "cancelled") return "bg-rose-50 text-rose-700";
+  if (value === "rescheduled") return "bg-sky-50 text-sky-700";
+  if (value === "ongoing") return "bg-brand/10 text-brand";
+  if (value === "join_available") return "bg-brand/10 text-brand";
+  return "bg-slate-100 text-slate-600";
+}
+
 export default function AttendanceWorkspace({ role }: { role: Role }) {
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [data, setData] = useState<any>(null);
@@ -166,12 +180,12 @@ export default function AttendanceWorkspace({ role }: { role: Role }) {
                     <div className="font-black text-slate-950">{row.title}</div>
                     <div className="mt-1 text-sm text-slate-600">{row.topicName} • {row.courseName} • {row.coachName}</div>
                   </div>
-                  <span className="rounded-full bg-brand/10 px-3 py-1 text-xs font-bold text-brand capitalize">{row.status}</span>
+                  <span className={`rounded-full px-3 py-1 text-xs font-bold ${lifecycleTone(row.status)}`}>{prettyStatus(row.status)}</span>
                 </div>
                 <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
                   <InfoTile label="Date" value={formatDate(row.sessionDate)} />
                   <InfoTile label="Duration" value={formatDuration(row.durationMinutes || 0)} />
-                  <InfoTile label="Attendance" value={String(row.status).toUpperCase()} />
+                  <InfoTile label="Attendance" value={prettyStatus(row.status)} />
                   <InfoTile label="Time Present" value={formatDuration(row.totalTimePresentMinutes || 0)} />
                   <InfoTile label="Joined" value={row.joinedAt ? new Date(row.joinedAt).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" }) : "-"} />
                   <InfoTile label="Left" value={row.leftAt ? new Date(row.leftAt).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" }) : "-"} />
@@ -233,6 +247,9 @@ export default function AttendanceWorkspace({ role }: { role: Role }) {
                     <div className="mt-1 text-sm text-slate-600">{session.topicName}</div>
                   </div>
                   <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold uppercase ${session.attendanceState === "marked" ? "bg-emerald-50 text-emerald-700" : session.attendanceState === "missed" ? "bg-rose-50 text-rose-700" : "bg-amber-50 text-amber-700"}`}>{session.attendanceState}</span>
+                </div>
+                <div className="mt-2">
+                  <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${lifecycleTone(session.status)}`}>{prettyStatus(session.status)}</span>
                 </div>
                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
                   <InfoTile label="Course" value={session.courseName} />

@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { Attendance } from "@/models/Attendance";
 import { Classroom } from "@/models/Classroom";
-import { getSessionEnd, getSessionStart } from "@/lib/classroomSessions";
+import { deriveScheduledSessionStatus, getSessionEnd, getSessionStart } from "@/lib/classroomSessions";
 
 export const dynamic = "force-dynamic";
 
@@ -48,18 +48,16 @@ function flattenClassroomSessions(classrooms: any[]) {
 }
 
 function deriveAttendanceState(session: any, attendance: any, now: Date) {
-  const rawStatus = String(session?.status || "").toLowerCase();
-  if (rawStatus === "cancelled" || rawStatus === "rescheduled") return "pending";
+  const lifecycle = deriveScheduledSessionStatus(session, now);
+  if (lifecycle === "cancelled" || lifecycle === "rescheduled") return "pending";
   if (attendance) return "marked";
-  const end = getSessionEnd(session);
-  if (!end) return "pending";
-  if (end < now) return "missed";
+  if (lifecycle === "completed" || lifecycle === "missed") return "missed";
   return "pending";
 }
 
 function isTrackableAttendanceSession(session: any) {
-  const rawStatus = String(session?.status || "").toLowerCase();
-  return rawStatus !== "cancelled" && rawStatus !== "rescheduled";
+  const lifecycle = deriveScheduledSessionStatus(session, new Date());
+  return lifecycle !== "cancelled" && lifecycle !== "rescheduled";
 }
 
 export async function GET(req: Request) {
@@ -182,7 +180,7 @@ export async function GET(req: Request) {
         scheduledFor: session.scheduledFor || classroom.classDate,
         startTime: session.startTime || classroom.startTime || "",
         durationMinutes: Number(session.durationMinutes || classroom.durationMinutes || 60),
-        status: session.status || classroom.status || "scheduled",
+        status: deriveScheduledSessionStatus(session, now),
         attendanceState: deriveAttendanceState(session, attendance, now),
         coachStatus: attendance?.coachStatus || session.coachAttendanceStatus || "pending",
         teachingMinutes: Number(attendance?.teachingMinutes || session.teachingMinutes || session.durationMinutes || classroom.durationMinutes || 0),
@@ -205,8 +203,8 @@ export async function GET(req: Request) {
   const allPastSessions = flattenClassroomSessions(classrooms)
     .filter(({ session }) => {
       if (!isTrackableAttendanceSession(session)) return false;
-      const end = getSessionEnd(session);
-      return end ? end < now : false;
+      const lifecycle = deriveScheduledSessionStatus(session, now);
+      return lifecycle === "completed" || lifecycle === "missed";
     })
     .map(({ classroom, session }) => {
       const attendance = attendanceDocs.find((doc: any) => objectId(doc.classroom) === objectId(classroom._id) && String(doc.scheduledSessionId || "") === String(session._id || ""));
@@ -214,9 +212,7 @@ export async function GET(req: Request) {
     });
 
   const pastSelectedDaySessions = sessionRows.filter((row) => {
-    if (!isTrackableAttendanceSession({ status: row.status })) return false;
-    const end = getSessionEnd(row);
-    return end ? end < now : false;
+    return row.status === "completed" || row.status === "missed";
   });
 
   const counts = {

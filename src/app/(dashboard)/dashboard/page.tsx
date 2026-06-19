@@ -259,6 +259,20 @@ function sessionTopic(session: any, classroom: any) {
   return session?.topicName || classroom?.topicName || classroom?.title || "Class session";
 }
 
+function isHistoricalSessionStatus(status: string) {
+  return ["completed", "missed", "cancelled", "rescheduled"].includes(status);
+}
+
+function statusChipClass(status: string) {
+  if (status === "completed") return "chip bg-emerald-50 text-emerald-700";
+  if (status === "missed") return "chip bg-amber-50 text-amber-700";
+  if (status === "cancelled") return "chip bg-rose-50 text-rose-700";
+  if (status === "rescheduled") return "chip bg-sky-50 text-sky-700";
+  if (status === "ongoing") return "chip bg-emerald-50 text-emerald-700";
+  if (status === "join_available") return "chip bg-brand/10 text-brand";
+  return "chip";
+}
+
 function formatDateTimeLabel(value?: Date | string | null) {
   if (!value) return "Not scheduled";
   return new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }).format(new Date(value));
@@ -344,6 +358,9 @@ async function StudentDashboard({ userId }: { userId: string }) {
   const upcomingSessions = flattenScheduledSessions(classrooms)
     .filter((row) => row.start && isSessionUpcomingLike(deriveScheduledSessionStatus(row.session, now)))
     .sort((a, b) => (a.start?.getTime() || 0) - (b.start?.getTime() || 0));
+  const completedSessions = flattenScheduledSessions(classrooms)
+    .filter((row) => row.start && isHistoricalSessionStatus(deriveScheduledSessionStatus(row.session, now)))
+    .sort((a, b) => (b.start?.getTime() || 0) - (a.start?.getTime() || 0));
   const nextSession = upcomingSessions[0];
   const activeHomework = visibleHomework.slice(0, 4);
   const totalXp = rewards.reduce((sum: number, reward: any) => sum + (reward.xp || 0), 0);
@@ -422,6 +439,16 @@ async function StudentDashboard({ userId }: { userId: string }) {
                   label="Join Classroom"
                   disabled={!heroSessionOpen}
                 />
+                {nextSession.classroom.meetingUrl ? (
+                  <a
+                    href={nextSession.classroom.meetingUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-5 py-3 text-sm font-black text-white"
+                  >
+                    Join Google Meet
+                  </a>
+                ) : null}
               </>
             ) : (
               <Link href="/square-trainer" className="inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-3 text-sm font-black text-brand shadow-lg shadow-black/20">
@@ -476,6 +503,14 @@ async function StudentDashboard({ userId }: { userId: string }) {
                       label="Join Classroom"
                       disabled={!canJoin}
                     />
+                    {classroom.meetingUrl ? (
+                      <a href={classroom.meetingUrl} target="_blank" rel="noreferrer" className="btn-outline">
+                        Join Google Meet
+                      </a>
+                    ) : null}
+                    <Link href={`/classrooms/${objectId(classroom._id)}/summary?session=${String(session._id)}`} className="btn-outline">
+                      View Details
+                    </Link>
                   </div>
                 </div>
               );
@@ -520,6 +555,42 @@ async function StudentDashboard({ userId }: { userId: string }) {
       </div>
 
       <div className="grid gap-5 xl:grid-cols-3">
+        <section className="rounded-[28px] border border-brand/10 bg-white p-5 shadow-[0_20px_50px_rgba(90,19,114,0.10)] xl:col-span-2">
+          <SectionTitle icon={CheckCircle2} title="Completed Sessions" subtitle="Open past class summaries, attendance, and quiz records" />
+          <div className="grid gap-3 lg:grid-cols-2">
+            {completedSessions.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 lg:col-span-2">
+                Completed classes will appear here once a session is closed.
+              </div>
+            ) : completedSessions.slice(0, 4).map(({ classroom, session }) => {
+              const status = deriveScheduledSessionStatus(session, now);
+              return (
+                <div key={`completed-${classroom._id}-${session._id}`} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="text-lg font-black text-slate-950">{sessionTopic(session, classroom)}</div>
+                      <div className="mt-1 text-sm text-slate-600">
+                        {classroom.courseName || "General"} • {classroom.levelName || "Not set"} • Coach {(classroom.coach as any)?.name || "Assigned coach"}
+                      </div>
+                    </div>
+                    <span className={statusChipClass(status)}>{formatJoinWindowLabel(session, now)}</span>
+                  </div>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                    <InfoTile label="Date" value={formatDate(String(session.scheduledFor || classroom.classDate || classroom.startDate || ""))} />
+                    <InfoTile label="Time" value={session.startTime || classroom.startTime || "--"} />
+                    <InfoTile label="Duration" value={formatDuration(session.durationMinutes || classroom.durationMinutes || 60)} />
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <Link href={`/classrooms/${objectId(classroom._id)}/summary?session=${String(session._id)}`} className="btn-primary">
+                      View Details
+                    </Link>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
         <section className="rounded-[28px] border border-brand/10 bg-white p-5 shadow-[0_20px_50px_rgba(90,19,114,0.10)]">
           <SectionTitle icon={Gamepad2} title="Training Tools" subtitle="Student practice only" />
           <div className="grid gap-3">
@@ -575,6 +646,9 @@ async function CoachDashboard({ userId, searchParams }: { userId: string; search
   ]);
 
   const sessions = buildCoachUpcomingSessions(classrooms, now);
+  const completedSessions = flattenScheduledSessions(classrooms)
+    .filter((row) => row.start && isHistoricalSessionStatus(deriveScheduledSessionStatus(row.session, now)))
+    .sort((a, b) => (b.start?.getTime() || 0) - (a.start?.getTime() || 0));
   const teaching = summarizeCoachSessions(classrooms, { from: summaryRange.from, to: summaryRange.to });
   const sessionsByDay = sessions.reduce((groups, row) => {
     const label = coachSessionDayLabel(row.start as Date, now);
@@ -714,6 +788,14 @@ async function CoachDashboard({ userId, searchParams }: { userId: string; search
                             label="Join Classroom"
                             disabled={!canJoin}
                           />
+                          {classroom.meetingUrl ? (
+                            <a href={classroom.meetingUrl} target="_blank" rel="noreferrer" className="btn-outline">
+                              Join Google Meet
+                            </a>
+                          ) : null}
+                          <Link href={`/classrooms/${objectId(classroom._id)}/summary?session=${String(session._id)}`} className="btn-outline">
+                            View Details
+                          </Link>
                         </div>
                       </div>
                     );
@@ -748,6 +830,41 @@ async function CoachDashboard({ userId, searchParams }: { userId: string; search
           </div>
         </section>
       </div>
+
+      <section className="rounded-[28px] border border-brand/10 bg-white p-5 shadow-[0_20px_50px_rgba(90,19,114,0.10)]">
+        <SectionTitle icon={CheckCircle2} title="Completed Sessions" subtitle="Review finished classes, attendance, and teaching records" />
+        <div className="grid gap-3 lg:grid-cols-2">
+          {completedSessions.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 lg:col-span-2">
+              Completed teaching sessions will appear here after class ends.
+            </div>
+          ) : completedSessions.slice(0, 6).map(({ classroom, session }) => {
+            const status = deriveScheduledSessionStatus(session, now);
+            const targetNames = (classroom.batches || []).map((batch: any) => batch.name).join(", ") || `${classroom.students?.length || 0} students`;
+            return (
+              <div key={`coach-completed-${classroom._id}-${session._id}`} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="text-lg font-black text-slate-950">{classroom.title}</div>
+                    <div className="mt-1 text-sm text-slate-600">{sessionTopic(session, classroom)} • {targetNames}</div>
+                  </div>
+                  <span className={statusChipClass(status)}>{formatJoinWindowLabel(session, now)}</span>
+                </div>
+                <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                  <InfoTile label="Date" value={formatDate(String(session.scheduledFor || classroom.classDate || classroom.startDate || ""))} />
+                  <InfoTile label="Time" value={session.startTime || classroom.startTime || "--"} />
+                  <InfoTile label="Duration" value={formatDuration(session.durationMinutes || classroom.durationMinutes || 60)} />
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Link href={`/classrooms/${objectId(classroom._id)}/summary?session=${String(session._id)}`} className="btn-primary">
+                    View Details
+                  </Link>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
     </div>
   );
 }

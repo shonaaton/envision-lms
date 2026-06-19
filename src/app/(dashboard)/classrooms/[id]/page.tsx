@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
-import { deriveScheduledSessionStatus, isJoinWindowOpen } from "@/lib/classroomSessions";
+import { deriveScheduledSessionStatus } from "@/lib/classroomSessions";
 import { resolveScheduledSession } from "@/lib/classroomLiveSession";
 import { Classroom } from "@/models/Classroom";
 import { ClassroomSession } from "@/models/ClassroomLive";
@@ -15,6 +15,25 @@ function participantHasAccess(classroom: any, role: string, userId: string) {
   return [classroom.coach, classroom.instructor].some((coach: any) => String(coach) === userId || String(coach?._id || "") === userId);
 }
 
+function pickScheduledSession(classroom: any, requestedSessionId?: string) {
+  const sessions = Array.isArray(classroom?.generatedSessions) ? classroom.generatedSessions : [];
+  if (requestedSessionId) {
+    const exact = resolveScheduledSession(classroom, requestedSessionId);
+    if (exact) return exact;
+  }
+  const now = new Date();
+  const active = sessions.find((session: any) => {
+    const status = deriveScheduledSessionStatus(session, now);
+    return status === "join_available" || status === "ongoing";
+  });
+  if (active) return active;
+  const upcoming = sessions
+    .filter((session: any) => deriveScheduledSessionStatus(session, now) === "upcoming")
+    .sort((a: any, b: any) => new Date(a.scheduledFor || 0).getTime() - new Date(b.scheduledFor || 0).getTime())[0];
+  if (upcoming) return upcoming;
+  return resolveScheduledSession(classroom, requestedSessionId);
+}
+
 export default async function ClassroomDetail({ params, searchParams }: { params: { id: string }; searchParams: { session?: string } }) {
   const session = await auth();
   const userId = (session?.user as any).id;
@@ -25,15 +44,17 @@ export default async function ClassroomDetail({ params, searchParams }: { params
   if (!participantHasAccess(classroom, role, userId)) redirect("/dashboard");
 
   if (role !== "admin") {
-    const sessionId = searchParams.session;
-    if (!sessionId) redirect("/classrooms");
-    const scheduledSession: any = resolveScheduledSession(classroom, sessionId);
+    const scheduledSession: any = pickScheduledSession(classroom, searchParams.session);
     if (!scheduledSession) redirect("/classrooms");
     const sessionStatus = deriveScheduledSessionStatus(scheduledSession);
     if (["completed", "cancelled", "rescheduled", "missed"].includes(sessionStatus)) redirect("/classrooms");
-    if (!isJoinWindowOpen(scheduledSession)) redirect("/classrooms");
-    const liveSession: any = await ClassroomSession.findOne({ classroom: params.id, scheduledSessionId: sessionId }).lean();
+    const liveSession: any = await ClassroomSession.findOne({ classroom: params.id, scheduledSessionId: String(scheduledSession._id) }).lean();
     if (liveSession?.status === "ended") redirect("/classrooms");
+    return (
+      <div className="min-h-[calc(100vh-120px)] text-slate-950">
+        <LiveClassroom classroomId={params.id} role={role} userId={userId} sessionId={String(scheduledSession._id)} />
+      </div>
+    );
   }
 
   return (

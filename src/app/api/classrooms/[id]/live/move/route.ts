@@ -11,6 +11,51 @@ function objectId(value: any) {
   return value?.toString?.() || String(value || "");
 }
 
+type BoardPosition = Record<string, string | undefined>;
+
+function fenToPosition(fen?: string): BoardPosition {
+  const chess = new Chess();
+  if (fen && fen !== "start") chess.load(fen, { skipValidation: true });
+  const position: BoardPosition = {};
+  chess.board().forEach((rank, rankIndex) => {
+    rank.forEach((piece, fileIndex) => {
+      if (!piece) return;
+      const square = `${"abcdefgh"[fileIndex]}${8 - rankIndex}`;
+      position[square] = `${piece.color}${piece.type.toUpperCase()}`;
+    });
+  });
+  return position;
+}
+
+function positionToFen(position: BoardPosition, sideToMove = "w") {
+  const ranks = [];
+  for (let rank = 8; rank >= 1; rank--) {
+    let empty = 0;
+    let row = "";
+    for (const file of "abcdefgh") {
+      const piece = position[`${file}${rank}`];
+      if (!piece) {
+        empty++;
+        continue;
+      }
+      if (empty) {
+        row += empty;
+        empty = 0;
+      }
+      const letter = piece[1];
+      row += piece[0] === "w" ? letter : letter.toLowerCase();
+    }
+    if (empty) row += empty;
+    ranks.push(row);
+  }
+  return `${ranks.join("/")} ${sideToMove} - - 0 1`;
+}
+
+function freeMoveLabel(piece: string, from: string, to: string) {
+  const pieceName = piece?.[1] || "";
+  return `${pieceName}${from}-${to}`;
+}
+
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -38,6 +83,50 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const allowedStudents = (live.boardControlStudents || []).map(objectId);
   if (!allowedStudents.includes(userId)) {
     return NextResponse.json({ error: "You do not currently have board control" }, { status: 403 });
+  }
+
+  if (live.illegalMovesEnabled) {
+    const position = fenToPosition(live.fen);
+    const piece = position[from];
+    if (!piece) return NextResponse.json({ error: "No piece found on the source square" }, { status: 400 });
+    delete position[from];
+    position[to] = piece;
+
+    const nextGamifiedObjects = { ...(live.gamifiedObjects || {}) };
+    if (nextGamifiedObjects[to]) delete nextGamifiedObjects[to];
+    const sideToMove = String(live.fen || "").split(" ")[1] === "b" ? "b" : "w";
+    const moveLabel = freeMoveLabel(piece, from, to);
+
+    live.fen = positionToFen(position, sideToMove);
+    live.gamifiedObjects = nextGamifiedObjects;
+    live.moveHistory = [...(live.moveHistory || []), moveLabel];
+    live.startedAt = live.startedAt || new Date();
+    live.status = live.status === "ended" ? "ended" : "live";
+    const hadParticipant = (live.participants || []).some((participant: any) => objectId(participant.user) === userId);
+    live.participants = (live.participants || []).map((participant: any) =>
+      objectId(participant.user) === userId
+        ? { ...participant.toObject?.(), role: "student", lastSeenAt: new Date(), firstSeenAt: participant.firstSeenAt || new Date() }
+        : participant
+    );
+    if (!hadParticipant) {
+      live.participants = [...(live.participants || []), { user: userId, role: "student", firstSeenAt: new Date(), lastSeenAt: new Date() }];
+    }
+    if (live.mode === "one_move_challenge") {
+      live.mode = "teaching";
+      live.boardControlStudents = [];
+      live.studentMovesEnabled = false;
+      live.challenge = { ...(live.challenge?.toObject?.() || live.challenge || {}), active: false };
+    }
+    await live.save();
+    await markScheduledSessionStarted({ classroomId: params.id, scheduledSessionId, actorId: userId });
+
+    return NextResponse.json({
+      ok: true,
+      fen: live.fen,
+      move: moveLabel,
+      gamifiedObjects: live.gamifiedObjects,
+      moveHistory: live.moveHistory,
+    });
   }
 
   const chess = live.fen && live.fen !== "start" ? new Chess(live.fen) : new Chess();

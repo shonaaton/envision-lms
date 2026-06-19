@@ -201,10 +201,10 @@ function coordinateRanks(orientation: "white" | "black") {
 }
 
 function drawingColor(modifier: ModifierKey) {
-  if (modifier === "shift") return "#2563eb";
-  if (modifier === "ctrl") return "#dc2626";
-  if (modifier === "alt") return "#16a34a";
-  return "#7c1fa2";
+  if (modifier === "shift") return "#dc2626";
+  if (modifier === "ctrl") return "#16a34a";
+  if (modifier === "alt") return "#7c1fa2";
+  return "#2563eb";
 }
 
 function pieceSymbol(piece: string) {
@@ -263,7 +263,7 @@ function minutesBetween(start?: string | Date, end?: string | Date) {
   return Math.max(0, Math.round((new Date(end).getTime() - new Date(start).getTime()) / 60000));
 }
 
-type LiveBoardQuizResult = { solved: boolean; mistakes: number; hintsUsed: number; timeTakenSeconds: number; skipped?: boolean };
+type LiveBoardQuizResult = { solved: boolean; mistakes: number; hintsUsed: number; timeTakenSeconds: number; skipped?: boolean; submittedMove?: string };
 
 function aggregateLiveResponses(responses: any[]) {
   return responses.reduce(
@@ -275,6 +275,9 @@ function aggregateLiveResponses(responses: any[]) {
       acc.completedItems += Number(response?.completedItems || 0);
       acc.totalItems += Number(response?.totalItems || 0);
       if (response?.submittedMove) acc.moves.push(response.submittedMove);
+      for (const result of Object.values(response?.itemResults || {}) as any[]) {
+        if (result?.submittedMove) acc.moves.push(result.submittedMove);
+      }
       if (response?.correct) acc.correctResponses += 1;
       if (response?.feedback) acc.feedback = response.feedback;
       return acc;
@@ -577,6 +580,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     if (!res.ok) {
       const payload = await res.json().catch(() => null);
       toast.error(payload?.error || "Move not registered");
+      queueRefresh(0);
       return false;
     }
     const payload = await res.json().catch(() => null);
@@ -607,9 +611,19 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     patch({ fen: positionToFen(position, setupSideToMove()), gamifiedObjects: removeObjectsOnPieceSquares(objects, position), setupMode: true, illegalMovesEnabled: setupMovementMode === "free" });
   }
 
+  function commitFreeMove(position: BoardPosition, objects = liveGamifiedObjects) {
+    const sideToMove = live?.fen?.split(" ")?.[1] === "b" ? "b" : "w";
+    patch({
+      fen: positionToFen(position, sideToMove),
+      gamifiedObjects: removeObjectsOnPieceSquares(objects, position),
+      setupMode: Boolean(live?.setupMode || tool === "setup"),
+      illegalMovesEnabled: true,
+    });
+  }
+
   function onDrop(source: string, target: string, piece: string) {
     if (live?.locked || (!canMove && !coach)) return false;
-    if (live?.setupMode || tool === "setup" || live?.illegalMovesEnabled) {
+    if (live?.setupMode || tool === "setup") {
       const next = { ...setupPosition };
       delete next[source];
       next[target] = piece;
@@ -617,6 +631,28 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       delete nextObjects[target];
       setSetupPosition(next);
       commitSetup(next, nextObjects);
+      playMoveSound(live?.soundEnabled);
+      return true;
+    }
+    if (live?.illegalMovesEnabled) {
+      const next = { ...boardPieceMap };
+      delete next[source];
+      next[target] = piece;
+      const nextObjects = { ...liveGamifiedObjects };
+      delete nextObjects[target];
+      setSetupPosition(next);
+      if (!coach) {
+        const sideToMove = live?.fen?.split(" ")?.[1] === "b" ? "b" : "w";
+        applyOptimisticLive({
+          fen: positionToFen(next, sideToMove),
+          gamifiedObjects: removeObjectsOnPieceSquares(nextObjects, next),
+          illegalMovesEnabled: true,
+          status: "live",
+        });
+        submitStudentMove(source, target).catch(() => undefined);
+      } else {
+        commitFreeMove(next, nextObjects);
+      }
       playMoveSound(live?.soundEnabled);
       return true;
     }
@@ -765,10 +801,6 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
 
   function onSquareClick(square: string) {
     if (!coach) return;
-    if (tool === "move" && (live?.drawings || []).length) {
-      patch({ drawings: [] });
-      return;
-    }
     if (live?.setupMode || tool === "setup") {
       const next = { ...setupPosition };
       if (selectedPiece === "erase") delete next[square];
@@ -777,8 +809,17 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       commitSetup(next);
       return;
     }
+    const snapshot = currentLive();
+    const hasHighlight = (snapshot.drawings || []).some((drawing: any) => drawing.type === "highlight" && drawing.from === square);
+    if (hasHighlight) {
+      updateDrawings((drawings) => drawings.filter((drawing: any) => !(drawing.type === "highlight" && drawing.from === square)));
+      return;
+    }
     if (tool === "highlight") {
-      updateDrawings((drawings) => [...drawings, { type: "highlight", from: square, color: drawingColor(modifier) }]);
+      updateDrawings((drawings) => [
+        ...drawings.filter((drawing: any) => !(drawing.type === "highlight" && drawing.from === square)),
+        { type: "highlight", from: square, color: drawingColor(modifier) },
+      ]);
       return;
     }
     if (tool === "arrow") {
@@ -794,11 +835,10 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   function onSquareRightClick(square: string) {
     if (!coach) return;
     updateDrawings((drawings) => {
-      const existing = drawings.find((drawing: any) => drawing.type === "highlight" && drawing.from === square);
-      if (existing) {
-        return drawings.filter((drawing: any) => !(drawing.type === "highlight" && drawing.from === square));
-      }
-      return [...drawings, { type: "highlight", from: square, color: drawingColor(modifier) }];
+      return [
+        ...drawings.filter((drawing: any) => !(drawing.type === "highlight" && drawing.from === square)),
+        { type: "highlight", from: square, color: drawingColor(modifier) },
+      ];
     });
   }
 
@@ -2131,6 +2171,7 @@ function LiveBoardQuiz({
   const [hintsUsed, setHintsUsed] = useState(0);
   const [solved, setSolved] = useState(false);
   const [feedback, setFeedback] = useState("Make the best move on the board.");
+  const [lastStudentMove, setLastStudentMove] = useState("");
   const advancedRef = useRef(false);
 
   useEffect(() => {
@@ -2171,6 +2212,7 @@ function LiveBoardQuiz({
     setHintsUsed(0);
     setSolved(parsed.moves.length === 0);
     setFeedback(parsed.moves.length === 0 ? "No moves found in this PGN." : "Make the best move on the board.");
+    setLastStudentMove("");
     setItemStartedAt(Date.now());
     setRemaining(Number(question.timer?.perQuestionSeconds || activeItem?.timerSeconds || 0));
     advancedRef.current = false;
@@ -2195,7 +2237,7 @@ function LiveBoardQuiz({
 
   useEffect(() => {
     if (!solved || advancedRef.current || !activeItem) return;
-    const result = { solved: true, mistakes, hintsUsed, timeTakenSeconds: Math.round((Date.now() - itemStartedAt) / 1000) };
+    const result = { solved: true, mistakes, hintsUsed, timeTakenSeconds: Math.round((Date.now() - itemStartedAt) / 1000), submittedMove: lastStudentMove || parsed.moves[0]?.san || "" };
     const nextResults = { ...results, [activeItem.id]: result };
     setResults(nextResults);
     advancedRef.current = true;
@@ -2240,11 +2282,17 @@ function LiveBoardQuiz({
     const nextGame = new Chess(game.fen());
     const move = nextGame.move({ from: source, to: target, promotion: "q" });
     if (!move) return false;
-    if (move.san !== expected.san) {
+    const expectedPromotion = expected.promotion && expected.promotion !== "q" ? expected.promotion : move.promotion || "q";
+    const matchesExpectedSquares = expected.from && expected.to
+      ? expected.from === source && expected.to === target && (!expected.promotion || expectedPromotion === (move.promotion || "q"))
+      : false;
+    const matchesExpectedSan = move.san === expected.san;
+    if (!matchesExpectedSquares && !matchesExpectedSan) {
       setMistakes((value) => value + 1);
       setFeedback("Try again. That move is not the expected continuation.");
       return false;
     }
+    setLastStudentMove(move.san);
     let nextPly = ply + 1;
     nextPly = applyAutoReply(nextGame, nextPly);
     setGame(nextGame);
@@ -2269,13 +2317,14 @@ function LiveBoardQuiz({
     setHintsUsed(0);
     setSolved(parsed.moves.length === 0);
     setFeedback("Make the best move on the board.");
+    setLastStudentMove("");
     setItemStartedAt(Date.now());
     setRemaining(Number(question.timer?.perQuestionSeconds || activeItem?.timerSeconds || 0));
   }
 
   function skipCurrent() {
     if (!activeItem) return;
-    const result = { solved: false, skipped: true, mistakes, hintsUsed, timeTakenSeconds: Math.round((Date.now() - itemStartedAt) / 1000) };
+    const result = { solved: false, skipped: true, mistakes, hintsUsed, timeTakenSeconds: Math.round((Date.now() - itemStartedAt) / 1000), submittedMove: lastStudentMove };
     const nextResults = { ...results, [activeItem.id]: result };
     setResults(nextResults);
     onProgress?.(nextResults, Math.round((Date.now() - quizStartedAt) / 1000));
@@ -2304,7 +2353,7 @@ function LiveBoardQuiz({
         </div>
         <div className="flex items-center gap-2">
           <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-slate-700">{activeItem.points || 5} pts</span>
-          <span className="rounded-full bg-purple-100 px-3 py-1 text-xs font-bold text-purple-800"><Clock size={12} className="mr-1 inline" /> {remaining ? `${remaining}s` : "No timer"}</span>
+          <span className="rounded-full bg-purple-100 px-3 py-1 text-xs font-bold text-purple-800"><Clock size={12} className="mr-1 inline" /> {remaining ? `${remaining}s left` : "No timer"}</span>
           <span className="rounded-full bg-slate-200 px-3 py-1 text-xs font-bold text-slate-700">{progressionMode === "manual" ? "Manual progression" : "Auto progression"}</span>
         </div>
       </div>
@@ -2386,7 +2435,6 @@ function CoachQuizMonitor({
   const effectiveIndex = manualProgression ? Math.max(0, Number(question?.currentItemIndex || 0)) : autoSuggestedIndex;
   const activeItem = items[Math.min(effectiveIndex, items.length - 1)];
   const position = activeItem?.fen && activeItem.fen !== "start" ? activeItem.fen : question?.fen || "start";
-  const submitted = Array.from(responseGroups.values()).filter((studentResponses) => studentResponses.length > 0).length;
   const totalStudents = students.length;
   const submissionRows = students.map((student: any) => {
     const studentResponses = responseGroups.get(student._id) || [];
@@ -2411,9 +2459,12 @@ function CoachQuizMonitor({
       lastMove: summary.moves.at(-1) || "",
     };
   });
+  const submitted = submissionRows.filter((row) => row.activeItemResult).length;
   const solvedCount = submissionRows.filter((row) => row.activeItemResult?.solved).length;
   const skippedCount = submissionRows.filter((row) => row.activeItemResult?.skipped).length;
   const waitingCount = Math.max(0, totalStudents - solvedCount - skippedCount);
+  const timerSeconds = Number(question?.timer?.perQuestionSeconds || activeItem?.timerSeconds || 0);
+  const timerResetKey = `${question?._id || "quiz"}-${effectiveIndex}-${question?.updatedAt || question?.launchedAt || ""}`;
 
   useEffect(() => {
     setCurrentIndex(Math.max(0, manualProgression ? Number(question?.currentItemIndex || 0) : autoSuggestedIndex));
@@ -2441,7 +2492,7 @@ function CoachQuizMonitor({
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
           <SummaryCard label="Students Submitted" value={`${submitted}/${totalStudents}`} icon={<Users size={16} />} />
           <SummaryCard label="Items in Quiz" value={items.length} icon={<FileQuestion size={16} />} />
-          <SummaryCard label="Timer" value={question?.timer?.perQuestionSeconds ? `${question.timer.perQuestionSeconds}s` : "Flexible"} icon={<Clock size={16} />} />
+          <SummaryCard label="Time Remaining" value={<CountdownValue seconds={timerSeconds} resetKey={timerResetKey} />} icon={<Clock size={16} />} />
         </div>
         <div className="mt-3 grid gap-3 sm:grid-cols-3">
           <SummaryCard label="Solved This Item" value={solvedCount} icon={<CheckSquare size={16} />} />
@@ -2570,7 +2621,26 @@ function InfoTile({ label, value }: { label: string; value: string | number }) {
   );
 }
 
-function SummaryCard({ label, value, icon }: { label: string; value: string | number; icon: React.ReactNode }) {
+function CountdownValue({ seconds, resetKey }: { seconds: number; resetKey: string }) {
+  const [remaining, setRemaining] = useState(Math.max(0, Number(seconds || 0)));
+
+  useEffect(() => {
+    setRemaining(Math.max(0, Number(seconds || 0)));
+  }, [seconds, resetKey]);
+
+  useEffect(() => {
+    if (!remaining) return;
+    const timer = window.setInterval(() => {
+      setRemaining((value) => Math.max(0, value - 1));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [remaining]);
+
+  if (!seconds) return <>Flexible</>;
+  return <>{remaining}s</>;
+}
+
+function SummaryCard({ label, value, icon }: { label: string; value: React.ReactNode; icon: React.ReactNode }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
       <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{icon}{label}</div>

@@ -11,6 +11,7 @@ import {
   Clock3,
   Flag,
   History,
+  Medal,
   Play,
   RotateCcw,
   Shield,
@@ -41,8 +42,13 @@ type GameRecord = {
   date: string;
   color: "white" | "black";
   difficulty: string;
+  botName: string;
+  timeControl: string;
   result: GameResult;
   moves: number;
+  durationSeconds: number;
+  xp: number;
+  coins: number;
 };
 
 type BotPreset = {
@@ -63,21 +69,23 @@ const customBots: BotPreset[] = [
 ];
 
 const seededHistory: GameRecord[] = [
-  { id: 1, user: "Sayantan Chandra", date: "Jun 4, 2026 2:27 AM", color: "white", difficulty: "Beginner", result: "Resigned", moves: 0 },
-  { id: 2, user: "Diya Yashika Janga", date: "Jun 3, 2026 5:00 PM", color: "white", difficulty: "Beginner", result: "Draw", moves: 13 },
+  { id: 1, user: "Sayantan Chandra", date: "Jun 4, 2026 2:27 AM", color: "white", difficulty: "Beginner", botName: "Sprout", timeControl: "No Clock", result: "Resigned", moves: 0, durationSeconds: 0, xp: 0, coins: 0 },
+  { id: 2, user: "Diya Yashika Janga", date: "Jun 3, 2026 5:00 PM", color: "white", difficulty: "Beginner", botName: "Poppy", timeControl: "5 min", result: "Draw", moves: 13, durationSeconds: 402, xp: 0, coins: 0 },
 ];
 
 export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
   const gameRef = useRef(new Chess());
   const workerRef = useRef<Worker | null>(null);
   const boardWrapRef = useRef<HTMLDivElement | null>(null);
+  const savedRewardGameIdRef = useRef<number | null>(null);
   const [position, setPosition] = useState(gameRef.current.fen());
-  const [boardWidth, setBoardWidth] = useState(520);
+  const [boardWidth, setBoardWidth] = useState(460);
   const [status, setStatus] = useState<GameStatus>("idle");
   const [thinking, setThinking] = useState(false);
   const [result, setResult] = useState("");
   const [showSetup, setShowSetup] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [showResultModal, setShowResultModal] = useState(false);
   const [selectedColor, setSelectedColor] = useState<PlayerColor>("white");
   const [playerColor, setPlayerColor] = useState<"white" | "black">("white");
   const [botId, setBotId] = useState<string>(customBots[0].id);
@@ -86,6 +94,10 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
   const [whiteClockMs, setWhiteClockMs] = useState<number | null>(null);
   const [blackClockMs, setBlackClockMs] = useState<number | null>(null);
   const [activeTurnStartedAt, setActiveTurnStartedAt] = useState<number | null>(null);
+  const [liveTick, setLiveTick] = useState(0);
+  const [gameInstanceId, setGameInstanceId] = useState<number | null>(null);
+  const [gameStartedAt, setGameStartedAt] = useState<number | null>(null);
+  const [rewardSummary, setRewardSummary] = useState<{ xp: number; coins: number; badge?: string } | null>(null);
   const [records, setRecords] = useState<GameRecord[]>(seededHistory);
   const [selectedRecord, setSelectedRecord] = useState<GameRecord | null>(null);
 
@@ -106,6 +118,7 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
   const difficultyLabel = selectedBot?.name || (level <= 4 ? "Beginner" : level <= 8 ? "Intermediate" : "Advanced");
   const isPlayerTurn = gameRef.current.turn() === (playerColor === "white" ? "w" : "b");
   const usesClock = timeControl !== "No Clock";
+  const totalDurationSeconds = gameStartedAt ? Math.max(0, Math.floor((Date.now() - gameStartedAt) / 1000)) : 0;
 
   useEffect(() => {
     try {
@@ -140,25 +153,26 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
   useEffect(() => {
     if (!usesClock || status !== "playing" || activeTurnStartedAt === null) return;
     const interval = window.setInterval(() => {
+      setLiveTick((value) => value + 1);
       const elapsed = Date.now() - activeTurnStartedAt;
       if (gameRef.current.turn() === "w" && whiteClockMs !== null && whiteClockMs - elapsed <= 0) {
         setWhiteClockMs(0);
         setThinking(false);
-        setActiveTurnStartedAt(null);
-        setResult(playerColor === "white" ? "You lost on time" : `${selectedBot.name} lost on time`);
-        setStatus("ended");
-        addRecord(playerColor === "white" ? "Defeat" : "Victory");
+        finishGame(playerColor === "white" ? "Defeat" : "Victory", playerColor === "white" ? "You lost on time" : `${selectedBot.name} lost on time`);
       } else if (gameRef.current.turn() === "b" && blackClockMs !== null && blackClockMs - elapsed <= 0) {
         setBlackClockMs(0);
         setThinking(false);
-        setActiveTurnStartedAt(null);
-        setResult(playerColor === "black" ? "You lost on time" : `${selectedBot.name} lost on time`);
-        setStatus("ended");
-        addRecord(playerColor === "black" ? "Defeat" : "Victory");
+        finishGame(playerColor === "black" ? "Defeat" : "Victory", playerColor === "black" ? "You lost on time" : `${selectedBot.name} lost on time`);
       }
     }, 250);
     return () => window.clearInterval(interval);
   }, [usesClock, status, activeTurnStartedAt, whiteClockMs, blackClockMs, playerColor, selectedBot.name]);
+
+  useEffect(() => {
+    if (status !== "playing") return;
+    const interval = window.setInterval(() => setLiveTick((value) => value + 1), 1000);
+    return () => window.clearInterval(interval);
+  }, [status]);
 
   useEffect(() => {
     const element = boardWrapRef.current;
@@ -166,8 +180,8 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
 
     const resize = () => {
       const width = element.clientWidth;
-      const heightLimit = window.innerHeight - 250;
-      setBoardWidth(Math.max(280, Math.min(540, width, heightLimit)));
+      const heightLimit = window.innerHeight - 360;
+      setBoardWidth(Math.max(260, Math.min(460, width, heightLimit)));
     };
     resize();
     const observer = new ResizeObserver(resize);
@@ -196,6 +210,12 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
     return match ? Number(match[1]) : 0;
   }
 
+  function formatDuration(totalSeconds: number) {
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }
+
   function commitTurnClock() {
     if (!usesClock || activeTurnStartedAt === null) return;
     const elapsed = Date.now() - activeTurnStartedAt;
@@ -210,14 +230,67 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
     setActiveTurnStartedAt(usesClock ? Date.now() : null);
   }
 
+  async function saveReward(recordResult: GameResult, moves: number, durationSeconds: number, gameId: number) {
+    if (savedRewardGameIdRef.current === gameId) return;
+    savedRewardGameIdRef.current = gameId;
+
+    const outcome =
+      recordResult === "Victory"
+        ? "victory"
+        : recordResult === "Draw"
+          ? "draw"
+          : recordResult === "Resigned"
+            ? "resigned"
+            : "defeat";
+
+    try {
+      const response = await fetch("/api/play/computer/reward", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          outcome,
+          botName: selectedBot.name,
+          moveCount: moves,
+          durationSeconds,
+          level,
+        }),
+      });
+      if (!response.ok) return;
+      const payload = await response.json();
+      setRewardSummary({ xp: payload.xp || 0, coins: payload.coins || 0, badge: payload.badge || "" });
+      setRecords((current) =>
+        current.map((record) =>
+          record.id === gameId
+            ? { ...record, xp: payload.xp || 0, coins: payload.coins || 0 }
+            : record
+        )
+      );
+    } catch {
+      // If reward saving fails, the game result still stands.
+    }
+  }
+
+  function finishGame(recordResult: GameResult, finalMessage: string) {
+    const moves = gameRef.current.history().length;
+    const durationSeconds = gameStartedAt ? Math.max(0, Math.floor((Date.now() - gameStartedAt) / 1000)) : 0;
+    setResult(finalMessage);
+    setStatus("ended");
+    setActiveTurnStartedAt(null);
+    setShowResultModal(true);
+    addRecord(recordResult, moves, durationSeconds);
+    if (gameInstanceId !== null) {
+      void saveReward(recordResult, moves, durationSeconds, gameInstanceId);
+    }
+  }
+
   const displayedWhiteClock =
     usesClock && whiteClockMs !== null && status === "playing" && gameRef.current.turn() === "w" && activeTurnStartedAt !== null
-      ? Math.max(0, whiteClockMs - (Date.now() - activeTurnStartedAt))
+      ? Math.max(0, whiteClockMs - (Date.now() - activeTurnStartedAt) + liveTick * 0)
       : whiteClockMs;
 
   const displayedBlackClock =
     usesClock && blackClockMs !== null && status === "playing" && gameRef.current.turn() === "b" && activeTurnStartedAt !== null
-      ? Math.max(0, blackClockMs - (Date.now() - activeTurnStartedAt))
+      ? Math.max(0, blackClockMs - (Date.now() - activeTurnStartedAt) + liveTick * 0)
       : blackClockMs;
 
   function requestEngineMove() {
@@ -258,17 +331,13 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
       recordResult = playerWon ? "Victory" : "Defeat";
       finalResult = playerWon ? "You won" : "Computer won";
     }
-
-    setResult(finalResult);
-    setStatus("ended");
-    setActiveTurnStartedAt(null);
-    addRecord(recordResult);
+    finishGame(recordResult, finalResult);
   }
 
-  function addRecord(recordResult: GameResult) {
+  function addRecord(recordResult: GameResult, moves = gameRef.current.history().length, durationSeconds = totalDurationSeconds) {
     setRecords((current) => [
       {
-        id: Date.now(),
+        id: gameInstanceId ?? Date.now(),
         user: "You",
         date: new Intl.DateTimeFormat("en-US", {
           month: "short",
@@ -279,8 +348,13 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
         }).format(new Date()),
         color: playerColor,
         difficulty: difficultyLabel,
+        botName: selectedBot.name,
+        timeControl,
         result: recordResult,
-        moves: gameRef.current.history().length,
+        moves,
+        durationSeconds,
+        xp: rewardSummary?.xp || 0,
+        coins: rewardSummary?.coins || 0,
       },
       ...current,
     ]);
@@ -290,6 +364,7 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
     const color = selectedColor === "random" ? (Math.random() > 0.5 ? "white" : "black") : selectedColor;
     const clockMinutes = minutesFromTimeControl(timeControl);
     const openingClock = clockMinutes > 0 ? clockMinutes * 60 * 1000 : null;
+    const freshGameId = Date.now();
     gameRef.current.reset();
     setPlayerColor(color);
     setPosition(gameRef.current.fen());
@@ -297,9 +372,14 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
     setThinking(false);
     setStatus("playing");
     setShowSetup(false);
+    setShowResultModal(false);
+    setRewardSummary(null);
     setWhiteClockMs(openingClock);
     setBlackClockMs(openingClock);
     setActiveTurnStartedAt(openingClock === null ? null : Date.now());
+    setGameStartedAt(Date.now());
+    setGameInstanceId(freshGameId);
+    savedRewardGameIdRef.current = null;
 
     if (color === "black") {
       window.setTimeout(requestEngineMove, 150);
@@ -313,10 +393,7 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
   function resignGame() {
     if (status !== "playing") return;
     setThinking(false);
-    setResult("You resigned");
-    setStatus("ended");
-    setActiveTurnStartedAt(null);
-    addRecord("Resigned");
+    finishGame("Resigned", "You resigned");
   }
 
   function onDrop(source: string, target: string) {
@@ -378,38 +455,30 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
         </div>
       </div>
 
-      <div className="grid min-h-0 flex-1 gap-3 xl:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="grid min-h-0 flex-1 gap-3 xl:grid-cols-[minmax(0,1fr)_320px]">
         <section className="flex min-h-0 flex-col rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-lg shadow-brand/5">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700">
               Status: <span className="font-black text-slate-950">{status === "playing" ? "In Progress" : status === "ended" ? result : "Not Started"}</span>
             </div>
             <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700">
-              {selectedBot.name} • {timeControl}
+              {selectedBot.name} / {timeControl}
             </div>
           </div>
 
-          {status !== "idle" && (
-            <div className="mb-3 grid gap-3 sm:grid-cols-2">
-              <PlayerClockCard
-                name={playerColor === "white" ? "You" : selectedBot.name}
-                side="White"
-                clock={formatClock(displayedWhiteClock)}
-                active={status === "playing" && gameRef.current.turn() === "w"}
-                tone={playerColor === "white" ? "player" : "bot"}
-              />
-              <PlayerClockCard
-                name={playerColor === "black" ? "You" : selectedBot.name}
-                side="Black"
-                clock={formatClock(displayedBlackClock)}
-                active={status === "playing" && gameRef.current.turn() === "b"}
-                tone={playerColor === "black" ? "player" : "bot"}
-              />
-            </div>
-          )}
-
           <div ref={boardWrapRef} className="flex min-h-0 flex-1 items-center justify-center">
-            <div className="relative w-full max-w-[540px]">
+            <div className="relative w-full max-w-[460px]">
+              {status !== "idle" && (
+                <div className="mb-3">
+                  <PlayerClockCard
+                    name={playerColor === "black" ? "You" : selectedBot.name}
+                    side="Black"
+                    clock={formatClock(displayedBlackClock)}
+                    active={status === "playing" && gameRef.current.turn() === "b"}
+                    tone={playerColor === "black" ? "player" : "bot"}
+                  />
+                </div>
+              )}
               <Chessboard
                 position={position}
                 onPieceDrop={onDrop}
@@ -426,6 +495,17 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
                       <Play size={16} /> Start New Game
                     </button>
                   </div>
+                </div>
+              )}
+              {status !== "idle" && (
+                <div className="mt-3">
+                  <PlayerClockCard
+                    name={playerColor === "white" ? "You" : selectedBot.name}
+                    side="White"
+                    clock={formatClock(displayedWhiteClock)}
+                    active={status === "playing" && gameRef.current.turn() === "w"}
+                    tone={playerColor === "white" ? "player" : "bot"}
+                  />
                 </div>
               )}
             </div>
@@ -464,6 +544,24 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
           onTimeControlChange={setTimeControl}
           onClose={() => setShowSetup(false)}
           onStart={startGame}
+        />
+      )}
+
+      {showResultModal && (
+        <ResultModal
+          botName={selectedBot.name}
+          result={result}
+          record={records[0] || null}
+          reward={rewardSummary}
+          onClose={() => setShowResultModal(false)}
+          onRematch={() => {
+            setShowResultModal(false);
+            startGame();
+          }}
+          onOpenSetup={() => {
+            setShowResultModal(false);
+            setShowSetup(true);
+          }}
         />
       )}
     </div>
@@ -766,6 +864,77 @@ function PlayerClockCard({
         </div>
         <div className="text-2xl font-black text-slate-950">{clock}</div>
       </div>
+    </div>
+  );
+}
+
+function ResultModal({
+  botName,
+  result,
+  record,
+  reward,
+  onClose,
+  onRematch,
+  onOpenSetup,
+}: {
+  botName: string;
+  result: string;
+  record: GameRecord | null;
+  reward: { xp: number; coins: number; badge?: string } | null;
+  onClose: () => void;
+  onRematch: () => void;
+  onOpenSetup: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
+      <div className="w-full max-w-[560px] rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full bg-purple-50 px-3 py-1 text-xs font-black uppercase tracking-[0.18em] text-purple-700">
+              <Medal size={14} />
+              Match Complete
+            </div>
+            <h2 className="mt-3 text-3xl font-black text-slate-950">{result}</h2>
+            <p className="mt-1 text-sm text-slate-600">Your game against {botName} has been saved. You can replay right away or jump into a different level.</p>
+          </div>
+          <button className="text-slate-500 hover:text-slate-900" onClick={onClose} aria-label="Close">
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="mt-5 grid gap-3 sm:grid-cols-2">
+          <ResultStat label="Bot" value={record?.botName || botName} />
+          <ResultStat label="Time Control" value={record?.timeControl || "No Clock"} />
+          <ResultStat label="Moves" value={String(record?.moves || 0)} />
+          <ResultStat label="Duration" value={record ? `${Math.floor(record.durationSeconds / 60)}m ${String(record.durationSeconds % 60).padStart(2, "0")}s` : "0m 00s"} />
+          <ResultStat label="XP Earned" value={String(reward?.xp ?? record?.xp ?? 0)} />
+          <ResultStat label="Coins Earned" value={String(reward?.coins ?? record?.coins ?? 0)} />
+        </div>
+
+        {reward?.badge ? (
+          <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
+            Badge unlocked: {reward.badge}
+          </div>
+        ) : null}
+
+        <div className="mt-6 grid gap-3 sm:grid-cols-2">
+          <button className="btn-outline bg-white" onClick={onOpenSetup}>
+            Choose Another Level
+          </button>
+          <button className="btn-primary gap-2" onClick={onRematch}>
+            <Play size={16} /> Play Again
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ResultStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+      <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">{label}</div>
+      <div className="mt-1 text-lg font-black text-slate-950">{value}</div>
     </div>
   );
 }

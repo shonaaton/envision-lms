@@ -1,7 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-
 type Props = {
   classroomId: string;
   sessionId: string;
@@ -19,14 +17,15 @@ export default function JoinScheduledSessionButton({
   label = "Join Classroom",
   disabled = false,
 }: Props) {
-  const router = useRouter();
-
   function handleClick() {
     if (disabled) return;
+    const destination = `/classrooms/${classroomId}/live?session=${encodeURIComponent(sessionId)}`;
     if (meetingUrl && typeof window !== "undefined") {
       window.open(meetingUrl, "_blank", "noopener,noreferrer");
     }
-    router.push(`/classrooms/${classroomId}?session=${sessionId}`);
+    if (typeof window !== "undefined") {
+      window.location.assign(destination);
+    }
   }
 
   return (

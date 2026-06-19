@@ -1,7 +1,9 @@
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { deriveScheduledSessionStatus, isJoinWindowOpen } from "@/lib/classroomSessions";
+import { resolveScheduledSession } from "@/lib/classroomLiveSession";
 import { Classroom } from "@/models/Classroom";
+import { ClassroomSession } from "@/models/ClassroomLive";
 import { notFound, redirect } from "next/navigation";
 import LiveClassroom from "@/components/classroom/LiveClassroom";
 
@@ -25,11 +27,13 @@ export default async function ClassroomLivePage({ params, searchParams }: { para
   if (role !== "admin") {
     const sessionId = searchParams.session;
     if (!sessionId) redirect("/classrooms");
-    const scheduledSession = (classroom.generatedSessions || []).find((item: any) => String(item._id) === sessionId);
+    const scheduledSession: any = resolveScheduledSession(classroom, sessionId);
     if (!scheduledSession) redirect("/classrooms");
     const sessionStatus = deriveScheduledSessionStatus(scheduledSession);
     if (["completed", "cancelled", "rescheduled", "missed"].includes(sessionStatus)) redirect("/classrooms");
     if (!isJoinWindowOpen(scheduledSession)) redirect("/classrooms");
+    const liveSession: any = await ClassroomSession.findOne({ classroom: params.id, scheduledSessionId: String(scheduledSession._id) }).lean();
+    if (liveSession?.status === "ended") redirect("/classrooms");
   }
 
   return <LiveClassroom classroomId={params.id} role={role} userId={userId} sessionId={searchParams.session} />;

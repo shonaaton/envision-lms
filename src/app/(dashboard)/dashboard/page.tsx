@@ -56,6 +56,7 @@ type DashboardSearchParams = {
   q?: string;
   date?: string;
   academicYear?: string;
+  summaryMonth?: string;
 };
 
 function startOfDay(date: Date) {
@@ -66,6 +67,18 @@ function startOfDay(date: Date) {
 
 function endOfDay(date: Date) {
   const copy = new Date(date);
+  copy.setHours(23, 59, 59, 999);
+  return copy;
+}
+
+function startOfMonth(date: Date) {
+  const copy = new Date(date.getFullYear(), date.getMonth(), 1);
+  copy.setHours(0, 0, 0, 0);
+  return copy;
+}
+
+function endOfMonth(date: Date) {
+  const copy = new Date(date.getFullYear(), date.getMonth() + 1, 0);
   copy.setHours(23, 59, 59, 999);
   return copy;
 }
@@ -100,6 +113,10 @@ function dateFilter(field: string, from: Date, to: Date) {
 
 function formatDate(date: Date | string) {
   return new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(date));
+}
+
+function formatMonthLabel(date: Date) {
+  return new Intl.DateTimeFormat("en-IN", { month: "long", year: "numeric" }).format(date);
 }
 
 function formatTimeAgo(date: Date) {
@@ -245,6 +262,52 @@ function sessionTopic(session: any, classroom: any) {
 function formatDateTimeLabel(value?: Date | string | null) {
   if (!value) return "Not scheduled";
   return new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }).format(new Date(value));
+}
+
+function getTeachingSummaryRange(searchParams: DashboardSearchParams) {
+  const now = new Date();
+  const mode = searchParams.summaryMonth === "last" ? "last" : "current";
+  if (mode === "last") {
+    const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    return {
+      mode,
+      from: startOfMonth(lastMonthDate),
+      to: endOfMonth(lastMonthDate),
+      label: formatMonthLabel(lastMonthDate),
+    };
+  }
+  return {
+    mode,
+    from: startOfMonth(now),
+    to: endOfMonth(now),
+    label: formatMonthLabel(now),
+  };
+}
+
+function buildCoachUpcomingSessions(classrooms: any[], now: Date) {
+  const seen = new Set<string>();
+  return flattenScheduledSessions(classrooms)
+    .filter((row) => row.start && isSessionUpcomingLike(deriveScheduledSessionStatus(row.session, now)))
+    .filter(({ classroom, session, start }) => {
+      const sourceId = String(classroom?.sourceSessionId || "");
+      const sessionId = objectId(session?._id);
+      const classroomId = objectId(classroom?._id);
+      const dedupeKey = sourceId || sessionId || `${classroomId}-${start?.toISOString?.() || ""}-${session?.startTime || ""}`;
+      if (seen.has(dedupeKey)) return false;
+      seen.add(dedupeKey);
+      return true;
+    })
+    .sort((a, b) => (a.start?.getTime() || 0) - (b.start?.getTime() || 0));
+}
+
+function coachSessionDayLabel(date: Date, now: Date) {
+  const today = startOfDay(now).getTime();
+  const target = startOfDay(date).getTime();
+  const diff = Math.round((target - today) / DAY);
+  if (diff === 0) return "Today";
+  if (diff === 1) return "Tomorrow";
+  if (diff === -1) return "Yesterday";
+  return new Intl.DateTimeFormat("en-IN", { weekday: "long", day: "numeric", month: "short" }).format(date);
 }
 
 async function StudentDashboard({ userId }: { userId: string }) {
@@ -497,9 +560,13 @@ async function StudentDashboard({ userId }: { userId: string }) {
 
 async function CoachDashboard({ userId, searchParams }: { userId: string; searchParams: DashboardSearchParams }) {
   const now = new Date();
-  const { from, to } = getRange(searchParams);
+  const summaryRange = getTeachingSummaryRange(searchParams);
   const [classrooms, homework, tournaments] = await Promise.all([
-    Classroom.find({ $or: [{ coach: userId }, { instructor: userId }], isActive: { $ne: false } })
+    Classroom.find({
+      $or: [{ coach: userId }, { instructor: userId }],
+      isActive: { $ne: false },
+      isSessionInstance: { $ne: true },
+    })
       .populate("students", "name")
       .populate("batches", "name")
       .lean(),
@@ -507,10 +574,20 @@ async function CoachDashboard({ userId, searchParams }: { userId: string; search
     Tournament.find({ status: { $in: ["upcoming", "live"] } }).sort({ startAt: 1 }).limit(4).lean(),
   ]);
 
-  const sessions = flattenScheduledSessions(classrooms)
-    .filter((row) => row.start && isSessionUpcomingLike(deriveScheduledSessionStatus(row.session, now)))
-    .sort((a, b) => (a.start?.getTime() || 0) - (b.start?.getTime() || 0));
-  const teaching = summarizeCoachSessions(classrooms, { from, to });
+  const sessions = buildCoachUpcomingSessions(classrooms, now);
+  const teaching = summarizeCoachSessions(classrooms, { from: summaryRange.from, to: summaryRange.to });
+  const sessionsByDay = sessions.reduce((groups, row) => {
+    const label = coachSessionDayLabel(row.start as Date, now);
+    const bucket = groups.get(label) || [];
+    bucket.push(row);
+    groups.set(label, bucket);
+    return groups;
+  }, new Map<string, any[]>());
+  const sessionGroups = Array.from(sessionsByDay.entries()) as [string, any[]][];
+  const summaryLinks = [
+    { mode: "current", label: "Current Month" },
+    { mode: "last", label: "Last Month" },
+  ];
 
   return (
     <div className="space-y-5 text-slate-950">
@@ -522,8 +599,8 @@ async function CoachDashboard({ userId, searchParams }: { userId: string; search
             <p className="mt-1 text-sm text-slate-600">Your scheduled classes, assigned students, classroom entry points, and teaching hours in one place.</p>
           </div>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <StatCard label="Next Sessions" value={sessions.length} note="Upcoming schedule" icon={Calendar} tone="purple" />
-            <StatCard label="Teaching Hours" value={teaching.totalHoursConducted} note={`${formatDate(from)} to ${formatDate(to)}`} icon={BookOpen} tone="blue" />
+            <StatCard label="Next Sessions" value={sessions.length} note="Today, tomorrow, and upcoming" icon={Calendar} tone="purple" />
+            <StatCard label="Teaching Hours" value={teaching.totalHoursConducted} note={summaryRange.label} icon={BookOpen} tone="blue" />
             <StatCard label="Classes Conducted" value={teaching.classesConducted} note={`${teaching.classesCancelled} cancelled`} icon={ClipboardList} tone="amber" />
             <StatCard label="Students" value={teaching.totalStudentsTaught || new Set(classrooms.flatMap((item: any) => (item.students || []).map((student: any) => objectId(student)))).size} note={`${teaching.attendancePercentage}% completion`} icon={Users} tone="green" />
           </div>
@@ -532,7 +609,32 @@ async function CoachDashboard({ userId, searchParams }: { userId: string; search
 
       <section className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
         <div className="rounded-[28px] border border-brand/10 bg-white p-5 shadow-[0_20px_50px_rgba(90,19,114,0.10)]">
-          <SectionTitle icon={BarChart3} title="Teaching Summary" subtitle="Automatic coaching-hour tracking from completed sessions" />
+          <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div className="flex items-center gap-2">
+              <span className="flex h-8 w-8 items-center justify-center rounded-md bg-purple-50 text-purple-700 shadow-md shadow-purple-900/10">
+                <BarChart3 size={16} />
+              </span>
+              <div>
+                <h2 className="text-base font-semibold text-slate-950">Teaching Summary</h2>
+                <p className="text-xs text-slate-500">Automatic coaching-hour tracking from completed sessions</p>
+                <p className="mt-1 text-xs font-semibold text-brand/70">{summaryRange.label}</p>
+              </div>
+            </div>
+            <div className="inline-flex rounded-2xl border border-slate-200 bg-slate-50 p-1">
+              {summaryLinks.map((link) => {
+                const active = summaryRange.mode === link.mode;
+                return (
+                  <Link
+                    key={link.mode}
+                    href={`/dashboard?summaryMonth=${link.mode}`}
+                    className={active ? "rounded-xl bg-brand px-3 py-2 text-xs font-bold text-white shadow-sm" : "rounded-xl px-3 py-2 text-xs font-bold text-slate-600 transition hover:bg-white hover:text-brand"}
+                  >
+                    {link.label}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <InfoTile label="Total Hours" value={teaching.totalHoursConducted} />
             <InfoTile label="Avg Duration" value={formatDuration(teaching.averageClassDuration || 0)} />
@@ -576,36 +678,49 @@ async function CoachDashboard({ userId, searchParams }: { userId: string; search
         <section className="rounded-[28px] border border-brand/10 bg-white p-5 shadow-[0_20px_50px_rgba(90,19,114,0.10)]">
           <SectionTitle icon={Calendar} title="Upcoming Sessions" subtitle="Join the right session at the right time" />
           <div className="space-y-3">
-            {sessions.length === 0 ? <div className="rounded-2xl bg-slate-50 p-5 text-sm text-slate-500">No upcoming classes scheduled.</div> : sessions.slice(0, 6).map(({ classroom, session }) => {
-              const canJoin = isJoinWindowOpen(session, now);
-              const targetNames = (classroom.batches || []).map((batch: any) => batch.name).join(", ") || `${classroom.students?.length || 0} students`;
-              return (
-                <div key={`${classroom._id}-${session._id}`} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <div className="text-lg font-black text-slate-950">{classroom.title}</div>
-                      <div className="mt-1 text-sm text-slate-600">{sessionTopic(session, classroom)} • {targetNames}</div>
-                    </div>
-                    <span className={canJoin ? "chip bg-emerald-50 text-emerald-700" : "chip"}>{formatJoinWindowLabel(session, now)}</span>
+            {sessions.length === 0 ? <div className="rounded-2xl bg-slate-50 p-5 text-sm text-slate-500">No upcoming classes scheduled.</div> : sessionGroups.slice(0, 4).map(([dayLabel, rows]) => (
+              <div key={dayLabel} className="rounded-[24px] border border-slate-200 bg-slate-50/70 p-3">
+                <div className="mb-3 flex items-center justify-between rounded-2xl bg-white px-4 py-3 shadow-sm shadow-brand/5">
+                  <div>
+                    <div className="text-sm font-black text-slate-950">{dayLabel}</div>
+                    <div className="text-xs text-slate-500">{rows.length} session{rows.length === 1 ? "" : "s"}</div>
                   </div>
-                  <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                    <InfoTile label="Date" value={formatDate(String(session.scheduledFor || classroom.classDate || classroom.startDate || ""))} />
-                    <InfoTile label="Time" value={session.startTime || classroom.startTime || "--"} />
-                    <InfoTile label="Duration" value={formatDuration(session.durationMinutes || classroom.durationMinutes || 60)} />
-                  </div>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    <JoinScheduledSessionButton
-                      classroomId={objectId(classroom._id)}
-                      sessionId={String(session._id)}
-                      meetingUrl={classroom.meetingUrl}
-                      className={canJoin ? "btn-primary" : "btn-outline"}
-                      label="Join Classroom"
-                      disabled={!canJoin}
-                    />
-                  </div>
+                  <span className="chip bg-brand/10 text-brand">{dayLabel === "Today" ? "Priority" : "Scheduled"}</span>
                 </div>
-              );
-            })}
+                <div className="space-y-3">
+                  {rows.slice(0, 3).map(({ classroom, session }) => {
+                    const canJoin = isJoinWindowOpen(session, now);
+                    const targetNames = (classroom.batches || []).map((batch: any) => batch.name).join(", ") || `${classroom.students?.length || 0} students`;
+                    return (
+                      <div key={`${classroom._id}-${session._id}`} className="rounded-2xl border border-slate-200 bg-white p-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <div className="text-lg font-black text-slate-950">{classroom.title}</div>
+                            <div className="mt-1 text-sm text-slate-600">{sessionTopic(session, classroom)} • {targetNames}</div>
+                          </div>
+                          <span className={canJoin ? "chip bg-emerald-50 text-emerald-700" : "chip"}>{formatJoinWindowLabel(session, now)}</span>
+                        </div>
+                        <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                          <InfoTile label="Date" value={formatDate(String(session.scheduledFor || classroom.classDate || classroom.startDate || ""))} />
+                          <InfoTile label="Time" value={session.startTime || classroom.startTime || "--"} />
+                          <InfoTile label="Duration" value={formatDuration(session.durationMinutes || classroom.durationMinutes || 60)} />
+                        </div>
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          <JoinScheduledSessionButton
+                            classroomId={objectId(classroom._id)}
+                            sessionId={String(session._id)}
+                            meetingUrl={classroom.meetingUrl}
+                            className={canJoin ? "btn-primary" : "btn-outline"}
+                            label="Join Classroom"
+                            disabled={!canJoin}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
         </section>
 

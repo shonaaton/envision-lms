@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { deriveScheduledSessionStatus, isJoinWindowOpen } from "@/lib/classroomSessions";
+import { resolveScheduledSession } from "@/lib/classroomLiveSession";
 import { Classroom } from "@/models/Classroom";
 import { ClassroomSession } from "@/models/ClassroomLive";
 import { notFound, redirect } from "next/navigation";
@@ -26,7 +27,7 @@ export default async function ClassroomDetail({ params, searchParams }: { params
   if (role !== "admin") {
     const sessionId = searchParams.session;
     if (!sessionId) redirect("/classrooms");
-    const scheduledSession: any = (classroom.generatedSessions || []).find((item: any) => String(item._id) === sessionId);
+    const scheduledSession: any = resolveScheduledSession(classroom, sessionId);
     if (!scheduledSession) redirect("/classrooms");
     const sessionStatus = deriveScheduledSessionStatus(scheduledSession);
     if (["completed", "cancelled", "rescheduled", "missed"].includes(sessionStatus)) redirect("/classrooms");

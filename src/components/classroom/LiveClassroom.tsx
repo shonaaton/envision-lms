@@ -329,7 +329,6 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const [pgnOpen, setPgnOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [attendanceDraft, setAttendanceDraft] = useState<Record<string, "present" | "absent" | "late">>({});
-  const [highlightDraft, setHighlightDraft] = useState<string | null>(null);
   const [setupPosition, setSetupPosition] = useState<BoardPosition>({});
   const [modifier, setModifier] = useState<ModifierKey>("default");
   const [engineText, setEngineText] = useState("Engine ready");
@@ -371,7 +370,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     }
   }
 
-  function queueRefresh(delay = 120) {
+  function queueRefresh(delay = 60) {
     if (typeof window === "undefined") return;
     if (refreshTimerRef.current) window.clearTimeout(refreshTimerRef.current);
     refreshTimerRef.current = window.setTimeout(() => {
@@ -400,7 +399,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     void load(true);
     const timer = window.setInterval(() => {
       void load();
-    }, 450);
+    }, 250);
     return () => {
       window.clearInterval(timer);
       if (refreshTimerRef.current) window.clearTimeout(refreshTimerRef.current);
@@ -441,6 +440,14 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const pgnLibrary = data?.pgnLibrary || [];
   const studentQuizMode = Boolean(activeQuestion) && !coach && ((Array.isArray(activeQuestion?.items) && activeQuestion.items.length > 0) || activeQuestion?.solution?.length);
   const coachQuizMode = Boolean(activeQuestion) && coach;
+  const studentPanelTabs = [
+    { key: "chat" as TabKey, icon: <MessageSquare size={19} />, label: "Chat" },
+    { key: "leaderboard" as TabKey, icon: <Crown size={19} />, label: "Leaderboard" },
+  ];
+
+  useEffect(() => {
+    if (!coach && activeTab === "moves") setActiveTab("chat");
+  }, [activeTab, coach]);
   const pgnFolders = useMemo(() => {
     const counts = new Map<string, number>();
     pgnLibrary.forEach((pgn: any) => {
@@ -599,7 +606,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
         },
       };
     });
-    queueRefresh(60);
+    queueRefresh(0);
     return true;
   }
 
@@ -810,25 +817,32 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       return;
     }
     const snapshot = currentLive();
+    if (tool === "arrow") {
+      updateDrawings((drawings) => {
+        const arrowEntries = drawings
+          .map((drawing: any, index: number) => ({ drawing, index }))
+          .filter((entry) => entry.drawing.type === "arrow");
+        const matching = [...arrowEntries].reverse().find((entry) => entry.drawing.from === square || entry.drawing.to === square);
+        const targetIndex = matching?.index ?? [...arrowEntries].reverse()[0]?.index;
+        if (targetIndex === undefined) return drawings;
+        return drawings.filter((_, index) => index !== targetIndex);
+      });
+      return;
+    }
     const hasHighlight = (snapshot.drawings || []).some((drawing: any) => drawing.type === "highlight" && drawing.from === square);
     if (hasHighlight) {
       updateDrawings((drawings) => drawings.filter((drawing: any) => !(drawing.type === "highlight" && drawing.from === square)));
       return;
     }
     if (tool === "highlight") {
-      updateDrawings((drawings) => [
-        ...drawings.filter((drawing: any) => !(drawing.type === "highlight" && drawing.from === square)),
-        { type: "highlight", from: square, color: drawingColor(modifier) },
-      ]);
-      return;
-    }
-    if (tool === "arrow") {
-      if (!highlightDraft) {
-        setHighlightDraft(square);
-        return;
-      }
-      updateDrawings((drawings) => [...drawings, { type: "arrow", from: highlightDraft, to: square, color: drawingColor(modifier) }]);
-      setHighlightDraft(null);
+      updateDrawings((drawings) => {
+        const highlightEntries = drawings
+          .map((drawing: any, index: number) => ({ drawing, index }))
+          .filter((entry) => entry.drawing.type === "highlight");
+        const targetIndex = [...highlightEntries].reverse()[0]?.index;
+        if (targetIndex === undefined) return drawings;
+        return drawings.filter((_, index) => index !== targetIndex);
+      });
     }
   }
 
@@ -844,19 +858,15 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
 
   function persistBoardArrows(nextArrows: any[]) {
     if (!coach || !live?.arrowsEnabled) return;
-    if (!nextArrows.length) return;
     const snapshot = currentLive();
     const highlights = (snapshot.drawings || []).filter((drawing: any) => drawing.type === "highlight");
-    const existingArrows = (snapshot.drawings || []).filter((drawing: any) => drawing.type === "arrow");
     const incomingArrows = nextArrows.map((arrow) => ({
       type: "arrow",
       from: arrow[0],
       to: arrow[1],
       color: arrow[2] || drawingColor(modifier),
     }));
-    const arrowMap = new Map<string, any>();
-    [...existingArrows, ...incomingArrows].forEach((arrow) => arrowMap.set(`${arrow.from}-${arrow.to}-${arrow.color}`, arrow));
-    const merged = [...highlights, ...Array.from(arrowMap.values())];
+    const merged = [...highlights, ...incomingArrows];
     if (JSON.stringify(merged) !== JSON.stringify(snapshot.drawings || [])) patch({ drawings: merged });
   }
 
@@ -1206,9 +1216,8 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
         };
       }
     }
-    if (highlightDraft) styles[highlightDraft] = { boxShadow: "inset 0 0 0 5px rgba(124,31,162,.55)" };
     return styles;
-  }, [live?.drawings, highlightDraft]);
+  }, [live?.drawings]);
 
   const arrows = useMemo(() => {
     return (live?.drawings || [])
@@ -1360,10 +1369,9 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const studentSidebarTabs = [
     { icon: <Home size={19} />, label: "Live Board", onClick: focusBoard, active: false },
     { key: "chat" as TabKey, icon: <MessageSquare size={19} />, label: "Chat" },
-    { key: "moves" as TabKey, icon: <ClipboardList size={19} />, label: "Quiz / Results" },
     { key: "leaderboard" as TabKey, icon: <Crown size={19} />, label: "Leaderboard" },
   ];
-  const classroomTabs = coach ? coachSidebarTabs : coachSidebarTabs.filter((item) => item.key !== "students");
+  const classroomTabs = coach ? coachSidebarTabs : studentPanelTabs;
 
   return (
     <div className="flex h-[calc(100vh-92px)] min-h-[640px] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg shadow-brand/10">
@@ -1547,7 +1555,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
               </div>
                 )}
 
-                <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+                {coach && <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
                   <button onClick={() => navigateMove(0)} className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 bg-white text-slate-700"><SkipBack size={16} /></button>
                   <button onClick={() => navigateMove(currentMoveIndex - 1)} className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 bg-white text-slate-700"><ChevronLeft size={16} /></button>
                   <span className="rounded-md bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600">{currentMoveIndex} / {pgnMoves.length || (live?.moveHistory || []).length}</span>
@@ -1555,7 +1563,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                   <button onClick={() => navigateMove(pgnMoves.length)} className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 bg-white text-slate-700"><SkipForward size={16} /></button>
                   <button onClick={() => loadAdjacentPgn(-1)} className="ml-2 rounded-md border border-slate-200 px-3 py-1.5 text-xs font-semibold">Previous game</button>
                   <button onClick={() => loadAdjacentPgn(1)} className="rounded-md bg-purple-700 px-3 py-1.5 text-xs font-semibold text-white">Next game</button>
-                </div>
+                </div>}
 
                 {coach && (
                   <div className="mt-3">
@@ -1570,7 +1578,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
               </>
             )}
 
-            {activeQuestion && (
+            {activeQuestion && !studentQuizMode && !coachQuizMode && (
               <div className="mt-4 rounded-lg border border-purple-200 bg-purple-50 p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -1606,7 +1614,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
         </section>
 
         <aside className="flex min-h-0 flex-col border-t border-slate-200 xl:border-l xl:border-t-0">
-          <div className={`grid border-b border-slate-200 text-sm ${coach ? "grid-cols-4" : "grid-cols-3"}`}>
+          <div className={`grid border-b border-slate-200 text-sm ${coach ? "grid-cols-4" : "grid-cols-2"}`}>
             {classroomTabs.map(({ key, icon, label }: any) => (
               <button key={key} onClick={() => setActiveTab(key)} className={`flex h-11 items-center justify-center gap-1 border-b-2 text-xs font-semibold ${activeTab === key ? "border-purple-700 text-purple-800" : "border-transparent text-slate-500"}`} title={label}>
                 {icon}
@@ -1724,7 +1732,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
               </div>
             )}
 
-            {activeTab === "moves" && (
+            {coach && activeTab === "moves" && (
               <div className="space-y-4">
                 <div className="rounded-lg border border-slate-200 p-4">
                   <div className="flex items-center justify-between">
@@ -2170,14 +2178,33 @@ function LiveBoardQuiz({
   const [mistakes, setMistakes] = useState(0);
   const [hintsUsed, setHintsUsed] = useState(0);
   const [solved, setSolved] = useState(false);
+  const [quizFinished, setQuizFinished] = useState(false);
+  const [quizSubmitted, setQuizSubmitted] = useState(false);
   const [feedback, setFeedback] = useState("Make the best move on the board.");
   const [lastStudentMove, setLastStudentMove] = useState("");
   const advancedRef = useRef(false);
+  const summary = useMemo(() => {
+    const solvedCount = items.filter((item: any) => results[item.id]?.solved).length;
+    const skippedCount = items.filter((item: any) => results[item.id]?.skipped).length;
+    const completedCount = solvedCount + skippedCount;
+    const remainingCount = Math.max(0, items.length - completedCount);
+    const pointsEarned = items.reduce((sum: number, item: any) => {
+      const result = results[item.id];
+      if (!result?.solved) return sum;
+      const base = Number(item.points ?? question.scoring?.correct ?? 5);
+      return sum + Math.max(0, base - Number(result.mistakes || 0) - Number(result.hintsUsed || 0) * 0.5);
+    }, 0);
+    const accuracy = items.length ? Math.round((solvedCount / items.length) * 100) : 0;
+    const timeTakenSeconds = Math.round((Date.now() - quizStartedAt) / 1000);
+    return { solvedCount, skippedCount, completedCount, remainingCount, pointsEarned, accuracy, timeTakenSeconds };
+  }, [items, question.scoring?.correct, quizStartedAt, results]);
 
   useEffect(() => {
     submittedRef.current = false;
     setCurrentIndex(Math.max(0, Number(serverIndex || 0)));
     setResults(existingItemResults || {});
+    setQuizFinished(false);
+    setQuizSubmitted(false);
   }, [question._id]);
 
   useEffect(() => {
@@ -2211,6 +2238,7 @@ function LiveBoardQuiz({
     setMistakes(0);
     setHintsUsed(0);
     setSolved(parsed.moves.length === 0);
+    setQuizFinished(false);
     setFeedback(parsed.moves.length === 0 ? "No moves found in this PGN." : "Make the best move on the board.");
     setLastStudentMove("");
     setItemStartedAt(Date.now());
@@ -2242,6 +2270,11 @@ function LiveBoardQuiz({
     setResults(nextResults);
     advancedRef.current = true;
     onProgress?.(nextResults, Math.round((Date.now() - quizStartedAt) / 1000));
+    if (currentIndex >= items.length - 1) {
+      setQuizFinished(true);
+      setFeedback("Quiz completed. Review your result and submit.");
+      return;
+    }
     if (progressionMode === "manual") {
       setFeedback("Solved. Waiting for the coach to open the next quiz position.");
       return;
@@ -2252,10 +2285,8 @@ function LiveBoardQuiz({
 
   function moveNext(nextResults: Record<string, LiveBoardQuizResult>) {
     if (currentIndex >= items.length - 1) {
-      if (!submittedRef.current) {
-        submittedRef.current = true;
-        onComplete(nextResults, Math.round((Date.now() - quizStartedAt) / 1000));
-      }
+      setQuizFinished(true);
+      setFeedback("Quiz completed. Review your result and submit.");
       return;
     }
     setCurrentIndex((value) => value + 1);
@@ -2277,7 +2308,7 @@ function LiveBoardQuiz({
   }
 
   function onDrop(source: string, target: string) {
-    if (locked || solved || ply >= parsed.moves.length) return false;
+    if (locked || solved || quizFinished || quizSubmitted || ply >= parsed.moves.length) return false;
     const expected = parsed.moves[ply];
     const nextGame = new Chess(game.fen());
     const move = nextGame.move({ from: source, to: target, promotion: "q" });
@@ -2316,6 +2347,7 @@ function LiveBoardQuiz({
     setMistakes(0);
     setHintsUsed(0);
     setSolved(parsed.moves.length === 0);
+    setQuizFinished(false);
     setFeedback("Make the best move on the board.");
     setLastStudentMove("");
     setItemStartedAt(Date.now());
@@ -2328,6 +2360,11 @@ function LiveBoardQuiz({
     const nextResults = { ...results, [activeItem.id]: result };
     setResults(nextResults);
     onProgress?.(nextResults, Math.round((Date.now() - quizStartedAt) / 1000));
+    if (currentIndex >= items.length - 1) {
+      setQuizFinished(true);
+      setFeedback("Quiz completed. Review your result and submit.");
+      return;
+    }
     if (progressionMode === "manual") {
       setFeedback("Skipped. Waiting for the coach to open the next quiz position.");
       return;
@@ -2342,13 +2379,39 @@ function LiveBoardQuiz({
     setCurrentIndex((value) => value + 1);
   }
 
+  function submitQuiz() {
+    if (submittedRef.current) return;
+    submittedRef.current = true;
+    setQuizSubmitted(true);
+    setFeedback("Quiz submitted successfully.");
+    onComplete(results, Math.round((Date.now() - quizStartedAt) / 1000));
+  }
+
   if (!activeItem) return null;
+
+  if (quizSubmitted) {
+    return (
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-lg shadow-brand/10">
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+          <div className="text-xs font-black uppercase tracking-[0.16em] text-emerald-700">Quiz Submitted</div>
+          <h3 className="mt-1 text-2xl font-black text-emerald-950">Results locked</h3>
+          <p className="mt-2 text-sm text-emerald-800">Your classroom quiz response has been saved.</p>
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <SummaryCard label="Positions Solved" value={`${summary.solvedCount}/${items.length}`} icon={<CheckSquare size={16} />} />
+          <SummaryCard label="Accuracy" value={`${summary.accuracy}%`} icon={<Trophy size={16} />} />
+          <SummaryCard label="Points Earned" value={Number(summary.pointsEarned.toFixed(1))} icon={<Sparkles size={16} />} />
+          <SummaryCard label="Time Taken" value={`${summary.timeTakenSeconds}s`} icon={<Clock size={16} />} />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-lg shadow-brand/10">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
         <div>
-          <div className="text-sm font-bold text-slate-700">Quiz {currentIndex + 1} of {items.length}</div>
+          <div className="text-sm font-bold text-slate-700">Position {Math.min(currentIndex + 1, items.length)} of {items.length}</div>
           <div className="text-xs font-semibold text-slate-500">{activeItem.title || activeItem.pgnTitle || `Board ${currentIndex + 1}`}</div>
         </div>
         <div className="flex items-center gap-2">
@@ -2356,6 +2419,12 @@ function LiveBoardQuiz({
           <span className="rounded-full bg-purple-100 px-3 py-1 text-xs font-bold text-purple-800"><Clock size={12} className="mr-1 inline" /> {remaining ? `${remaining}s left` : "No timer"}</span>
           <span className="rounded-full bg-slate-200 px-3 py-1 text-xs font-bold text-slate-700">{progressionMode === "manual" ? "Manual progression" : "Auto progression"}</span>
         </div>
+      </div>
+
+      <div className="mb-4 grid gap-3 sm:grid-cols-3">
+        <SummaryCard label="Questions Completed" value={`${summary.completedCount}/${items.length}`} icon={<CheckSquare size={16} />} />
+        <SummaryCard label="Questions Remaining" value={summary.remainingCount} icon={<HourglassIcon />} />
+        <SummaryCard label="Current Status" value={quizFinished ? "Ready to submit" : solved ? "Solved" : "In progress"} icon={<ClipboardList size={16} />} />
       </div>
 
       <div className="rounded-2xl bg-[#31210f] p-3 shadow-inner">
@@ -2372,11 +2441,25 @@ function LiveBoardQuiz({
         {feedback}
       </div>
 
+      {quizFinished ? (
+        <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <div className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Quiz Completed</div>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <InfoTile label="Positions Solved" value={`${summary.solvedCount}/${items.length}`} />
+            <InfoTile label="Accuracy" value={`${summary.accuracy}%`} />
+            <InfoTile label="Points Earned" value={Number(summary.pointsEarned.toFixed(1))} />
+            <InfoTile label="Time Taken" value={`${summary.timeTakenSeconds}s`} />
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button type="button" className="rounded-lg bg-purple-700 px-4 py-2 text-sm font-bold text-white" onClick={submitQuiz}>Submit Quiz</button>
+          </div>
+        </div>
+      ) : (
       <div className="mt-3 flex flex-wrap gap-2">
         {question.hintsEnabled && <button type="button" className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold" onClick={hint}><HelpCircle size={14} className="mr-1 inline" /> Hint</button>}
         <button type="button" className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold" onClick={reset}><RotateCcw size={14} className="mr-1 inline" /> Reset</button>
         <button type="button" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-700" onClick={skipCurrent}>Skip</button>
-      </div>
+      </div>)}
     </div>
   );
 }

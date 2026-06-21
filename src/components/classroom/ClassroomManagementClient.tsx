@@ -501,63 +501,66 @@ export default function ClassroomManagementClient({ role }: { role: Role }) {
             ) : filteredItems.length === 0 ? (
               <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">No classes match the current filters.</div>
             ) : (
-              <div className="grid gap-3 xl:grid-cols-2">
+              <div className="space-y-3">
                 {filteredItems.map((item) => {
                   const summarySessionId = latestSummarySessionId(item);
                   const summaryHref = summarySessionId ? `/classrooms/${item._id}/summary?session=${summarySessionId}` : `/classrooms/${item._id}/summary`;
                   const lifecycleRollup = classroomLifecycleRollup(item);
+                  const timingLabel = item.classroomType === "single"
+                    ? `${formatDate(item.classDate)} at ${item.startTime || "--"} for ${formatDuration(item.durationMinutes || 60)}`
+                    : `${item.generatedSessions?.length || 0} scheduled sessions ? starts ${formatDate(item.startDate)}`;
                   return (
-                  <div key={item._id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-lg shadow-slate-200/60">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="text-lg font-black text-slate-950">{item.title}</div>
-                        <div className="mt-1 flex flex-wrap gap-2 text-xs">
-                          <span className="rounded-full bg-brand/10 px-2.5 py-1 font-bold text-brand">{item.classroomType === "single" ? "Single Class" : "Learning Series"}</span>
-                          <span className="rounded-full bg-slate-100 px-2.5 py-1 font-semibold text-slate-600">{titleCase(item.status)}</span>
-                          {item.courseName && <span className="rounded-full bg-amber-50 px-2.5 py-1 font-semibold text-amber-700">{item.courseName}</span>}
+                    <div key={item._id} className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-lg shadow-slate-200/60">
+                      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                        <div className="min-w-0 flex-1 space-y-3">
+                          <div className="min-w-0">
+                            <div className="text-lg font-black text-slate-950">{item.title}</div>
+                            <div className="mt-1 flex flex-wrap gap-2 text-xs">
+                              <span className="rounded-full bg-brand/10 px-2.5 py-1 font-bold text-brand">{item.classroomType === "single" ? "Single Class" : "Learning Series"}</span>
+                              <span className="rounded-full bg-slate-100 px-2.5 py-1 font-semibold text-slate-600">{titleCase(item.status)}</span>
+                              {item.courseName && <span className="rounded-full bg-amber-50 px-2.5 py-1 font-semibold text-amber-700">{item.courseName}</span>}
+                              {item.levelName && <span className="rounded-full bg-sky-50 px-2.5 py-1 font-semibold text-sky-700">{item.levelName}</span>}
+                            </div>
+                          </div>
+
+                          <div className="grid gap-2 lg:grid-cols-[minmax(240px,1.2fr)_repeat(4,minmax(110px,auto))]">
+                            <CompactInfo label="Topic" value={item.topicName || "Not set"} />
+                            <CompactInfo label="Coach" value={(item.coach as any)?.name || "Unassigned"} />
+                            <CompactInfo label="Students" value={String(item.students?.length || 0)} />
+                            <CompactInfo label="Meeting" value={item.meetingUrl ? "Ready" : "Not added"} />
+                            <CompactInfo label="Schedule" value={timingLabel} />
+                          </div>
+
+                          {lifecycleRollup.length > 0 ? (
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Session Lifecycle</span>
+                              {lifecycleRollup.map(([status, count]) => (
+                                <span key={`${item._id}-${status}`} className={`rounded-full px-2.5 py-1 text-xs font-bold ${sessionStatusTone(status)}`}>
+                                  {count} {titleCase(status)}
+                                </span>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+
+                        <div className="flex flex-none flex-col gap-3 xl:min-w-[220px] xl:items-end">
+                          <div className="flex justify-end gap-1">
+                            <Link href={summaryHref} className="grid h-9 w-9 place-items-center rounded-lg border border-slate-200 text-slate-700"><Eye size={15} /></Link>
+                            <button onClick={() => resetModal(item.classroomType, item)} className="grid h-9 w-9 place-items-center rounded-lg border border-slate-200 text-slate-700"><Pencil size={15} /></button>
+                            <button onClick={() => deleteItem(item)} className="grid h-9 w-9 place-items-center rounded-lg border border-red-200 bg-red-50 text-red-600"><Trash2 size={15} /></button>
+                          </div>
+
+                          <div className="flex flex-wrap justify-end gap-2">
+                            <ActionButton icon={<Clock3 size={14} />} label="Reschedule" onClick={() => { setActionModal({ type: "reschedule_class", item }); setActionDraft({ classDate: item.classDate ? formatDateInput(item.classDate) : "", startTime: item.startTime || "", durationMinutes: item.durationMinutes || 60 }); }} />
+                            <ActionButton icon={<X size={14} />} label="Cancel" onClick={() => { setActionModal({ type: "cancel_class", item }); setActionDraft({}); }} />
+                            <ActionButton icon={<UserCog size={14} />} label="Substitute Coach" onClick={() => { setActionModal({ type: "substitute_coach", item }); setActionDraft({ scope: item.classroomType === "series" ? "future" : "entire", coach: "" }); }} />
+                            {item.classroomType === "series" && <ActionButton icon={<CopyPlus size={14} />} label="Add Extra Class" onClick={() => { setActionModal({ type: "add_extra_class", item }); setActionDraft({ topicName: "", classDate: "", startTime: item.startTime || "16:00", durationMinutes: item.durationMinutes || 60 }); }} />}
+                          </div>
                         </div>
                       </div>
-                      <div className="flex gap-1">
-                        <Link href={summaryHref} className="grid h-9 w-9 place-items-center rounded-lg border border-slate-200 text-slate-700"><Eye size={15} /></Link>
-                        <button onClick={() => resetModal(item.classroomType, item)} className="grid h-9 w-9 place-items-center rounded-lg border border-slate-200 text-slate-700"><Pencil size={15} /></button>
-                        <button onClick={() => deleteItem(item)} className="grid h-9 w-9 place-items-center rounded-lg border border-red-200 bg-red-50 text-red-600"><Trash2 size={15} /></button>
-                      </div>
                     </div>
-
-                    <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                      <InfoCard label="Topic" value={item.topicName || "Not set"} />
-                      <InfoCard label="Coach" value={(item.coach as any)?.name || "Unassigned"} />
-                      <InfoCard label="Students" value={String(item.students?.length || 0)} />
-                      <InfoCard label="Meeting" value={item.meetingUrl ? "Meeting ready" : "Not added"} />
-                    </div>
-
-                    {lifecycleRollup.length > 0 ? (
-                      <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                        <div className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Session Lifecycle</div>
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          {lifecycleRollup.map(([status, count]) => (
-                            <span key={`${item._id}-${status}`} className={`rounded-full px-2.5 py-1 text-xs font-bold ${sessionStatusTone(status)}`}>
-                              {count} {titleCase(status)}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-
-                    <div className="mt-4 rounded-xl bg-slate-50 p-3 text-sm text-slate-600">
-                      {item.classroomType === "single"
-                        ? `${formatDate(item.classDate)} at ${item.startTime || "--"} for ${formatDuration(item.durationMinutes || 60)}`
-                        : `${item.generatedSessions?.length || 0} scheduled sessions • starts ${formatDate(item.startDate)}`}
-                    </div>
-
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      <ActionButton icon={<Clock3 size={14} />} label="Reschedule" onClick={() => { setActionModal({ type: "reschedule_class", item }); setActionDraft({ classDate: item.classDate ? formatDateInput(item.classDate) : "", startTime: item.startTime || "", durationMinutes: item.durationMinutes || 60 }); }} />
-                      <ActionButton icon={<X size={14} />} label="Cancel" onClick={() => { setActionModal({ type: "cancel_class", item }); setActionDraft({}); }} />
-                      <ActionButton icon={<UserCog size={14} />} label="Substitute Coach" onClick={() => { setActionModal({ type: "substitute_coach", item }); setActionDraft({ scope: item.classroomType === "series" ? "future" : "entire", coach: "" }); }} />
-                      {item.classroomType === "series" && <ActionButton icon={<CopyPlus size={14} />} label="Add Extra Class" onClick={() => { setActionModal({ type: "add_extra_class", item }); setActionDraft({ topicName: "", classDate: "", startTime: item.startTime || "16:00", durationMinutes: item.durationMinutes || 60 }); }} />}
-                    </div>
-                  </div>
-                )})}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -890,6 +893,15 @@ function InfoCard({ label, value }: { label: string; value: string }) {
     <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
       <div className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}</div>
       <div className="mt-1 text-sm font-semibold text-slate-900">{value}</div>
+    </div>
+  );
+}
+
+function CompactInfo({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+      <div className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">{label}</div>
+      <div className="mt-1 truncate text-sm font-semibold text-slate-900" title={value}>{value}</div>
     </div>
   );
 }

@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { Chess } from "chess.js";
 import { toast } from "sonner";
 import { BookOpen, CheckCircle2, ChevronLeft, ChevronRight, Clock, FileQuestion, Gamepad2, HelpCircle, RotateCcw, Trophy } from "lucide-react";
+import { buildMoveHintStyles, legalTargetsFromGame } from "@/lib/chessboardUi";
 
 const Chessboard = dynamic(() => import("react-chessboard").then((m) => m.Chessboard), { ssr: false });
 
@@ -434,6 +435,7 @@ function PgnBoardTask({ activityId, item, index, locked, onResult, onSolved }: a
   const [solved, setSolved] = useState(false);
   const [feedback, setFeedback] = useState("Make the best move on the board.");
   const [moveHistory, setMoveHistory] = useState<MoveTrace[]>([]);
+  const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
   const advancedRef = useRef(false);
 
   useEffect(() => {
@@ -446,6 +448,7 @@ function PgnBoardTask({ activityId, item, index, locked, onResult, onSolved }: a
     setMoveHistory([]);
     setSolved(parsed.moves.length === 0);
     setFeedback(parsed.moves.length === 0 ? "No moves found in this PGN." : "Make the best move on the board.");
+    setSelectedSquare(null);
     advancedRef.current = false;
   }, [parsed.start, parsed.moves.length]);
 
@@ -490,6 +493,7 @@ function PgnBoardTask({ activityId, item, index, locked, onResult, onSolved }: a
     setGame(nextGame);
     setPosition(nextGame.fen());
     setPly(nextPly);
+    setSelectedSquare(null);
     setFeedback(nextPly >= parsed.moves.length ? "Solved. Moving to the next item..." : "Correct. Continue from the new position.");
     return true;
   }
@@ -511,6 +515,31 @@ function PgnBoardTask({ activityId, item, index, locked, onResult, onSolved }: a
     setMoveHistory((current) => [...current, { moveNumber: current.length + 1, by: "reset", note: "Board reset" }]);
     setSolved(parsed.moves.length === 0);
     setFeedback("Make the best move on the board.");
+    setSelectedSquare(null);
+  }
+
+  const moveTargets = useMemo(() => {
+    if (!selectedSquare || locked || solved || ply >= parsed.moves.length) return [];
+    return legalTargetsFromGame(game, selectedSquare);
+  }, [selectedSquare, locked, solved, ply, parsed.moves.length, game]);
+  const moveHintStyles = useMemo(() => buildMoveHintStyles(moveTargets, selectedSquare), [moveTargets, selectedSquare]);
+
+  function onSquareClick(square: string) {
+    if (locked || solved || ply >= parsed.moves.length) return;
+    const clickedPiece = game.get(square as any);
+    if (selectedSquare && selectedSquare !== square) {
+      const moved = onDrop(selectedSquare, square);
+      if (moved) return;
+    }
+    if (selectedSquare === square) {
+      setSelectedSquare(null);
+      return;
+    }
+    if (clickedPiece && clickedPiece.color === game.turn()) {
+      setSelectedSquare(square);
+      return;
+    }
+    setSelectedSquare(null);
   }
 
   return (
@@ -526,7 +555,9 @@ function PgnBoardTask({ activityId, item, index, locked, onResult, onSolved }: a
         <Chessboard
           position={position}
           onPieceDrop={onDrop}
+          onSquareClick={onSquareClick as any}
           boardWidth={440}
+          customSquareStyles={moveHintStyles as any}
           customDarkSquareStyle={{ backgroundColor: "#b58863" }}
           customLightSquareStyle={{ backgroundColor: "#f0d9b5" }}
         />

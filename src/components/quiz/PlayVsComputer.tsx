@@ -23,6 +23,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Chess } from "chess.js";
+import { buildMoveHintStyles, legalTargetsFromGame } from "@/lib/chessboardUi";
 
 const Chessboard = dynamic(() => import("react-chessboard").then((m) => m.Chessboard), { ssr: false });
 
@@ -100,6 +101,7 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
   const [rewardSummary, setRewardSummary] = useState<{ xp: number; coins: number; badge?: string } | null>(null);
   const [records, setRecords] = useState<GameRecord[]>(seededHistory);
   const [selectedRecord, setSelectedRecord] = useState<GameRecord | null>(null);
+  const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
 
   const moveRows = useMemo<MoveRow[]>(() => {
     const verbose = gameRef.current.history({ verbose: true }) as Array<{ san: string; color: "w" | "b" }>;
@@ -403,6 +405,7 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
       commitTurnClock();
       const move = gameRef.current.move({ from: source, to: target, promotion: "q" });
       if (!move) return false;
+      setSelectedSquare(null);
       beginNextTurn();
       refreshBoard();
       checkGameOver();
@@ -411,6 +414,30 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
     } catch {
       return false;
     }
+  }
+
+  const moveTargets = useMemo(() => {
+    if (!selectedSquare || status !== "playing" || thinking || !isPlayerTurn) return [];
+    return legalTargetsFromGame(gameRef.current, selectedSquare);
+  }, [selectedSquare, status, thinking, isPlayerTurn, position]);
+  const moveHintStyles = useMemo(() => buildMoveHintStyles(moveTargets, selectedSquare), [moveTargets, selectedSquare]);
+
+  function onSquareClick(square: string) {
+    if (status !== "playing" || thinking || !isPlayerTurn) return;
+    const clickedPiece = gameRef.current.get(square as any);
+    if (selectedSquare && selectedSquare !== square) {
+      const moved = onDrop(selectedSquare, square);
+      if (moved) return;
+    }
+    if (selectedSquare === square) {
+      setSelectedSquare(null);
+      return;
+    }
+    if (clickedPiece && clickedPiece.color === gameRef.current.turn()) {
+      setSelectedSquare(square);
+      return;
+    }
+    setSelectedSquare(null);
   }
 
   if (showHistory) {
@@ -482,8 +509,10 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
               <Chessboard
                 position={position}
                 onPieceDrop={onDrop}
+                onSquareClick={onSquareClick as any}
                 boardOrientation={playerColor}
                 boardWidth={boardWidth}
+                customSquareStyles={moveHintStyles as any}
                 customDarkSquareStyle={{ backgroundColor: "#b58863" }}
                 customLightSquareStyle={{ backgroundColor: "#f0d9b5" }}
               />

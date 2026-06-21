@@ -557,7 +557,7 @@ async function StudentDashboard({ userId }: { userId: string }) {
       <div className="grid gap-5 xl:grid-cols-3">
         <section className="rounded-[28px] border border-brand/10 bg-white p-5 shadow-[0_20px_50px_rgba(90,19,114,0.10)] xl:col-span-2">
           <SectionTitle icon={CheckCircle2} title="Completed Sessions" subtitle="Open past class summaries, attendance, and quiz records" />
-          <div className="grid gap-3 lg:grid-cols-2">
+          <div className="space-y-3">
             {completedSessions.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 lg:col-span-2">
                 Completed classes will appear here once a session is closed.
@@ -833,7 +833,7 @@ async function CoachDashboard({ userId, searchParams }: { userId: string; search
 
       <section className="rounded-[28px] border border-brand/10 bg-white p-5 shadow-[0_20px_50px_rgba(90,19,114,0.10)]">
         <SectionTitle icon={CheckCircle2} title="Completed Sessions" subtitle="Review finished classes, attendance, and teaching records" />
-        <div className="grid gap-3 lg:grid-cols-2">
+        <div className="space-y-3">
           {completedSessions.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 lg:col-span-2">
               Completed teaching sessions will appear here after class ends.

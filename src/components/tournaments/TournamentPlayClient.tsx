@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { Chess } from "chess.js";
+import { buildMoveHintStyles, legalTargetsFromGame } from "@/lib/chessboardUi";
 import { ArrowLeft, Crown, Flag, Handshake, RefreshCcw, Trophy } from "lucide-react";
 
 const Chessboard = dynamic(() => import("react-chessboard").then((m) => m.Chessboard), { ssr: false });
@@ -63,6 +64,7 @@ export function TournamentPlayClient({
   const [boardWidth, setBoardWidth] = useState(520);
   const [state, setState] = useState<PlayState | null>(null);
   const [error, setError] = useState("");
+  const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [, forceClockTick] = useState(0);
 
@@ -145,6 +147,7 @@ export function TournamentPlayClient({
       return false;
     }
     await refresh();
+    setSelectedSquare(null);
     return true;
   }
 
@@ -154,6 +157,30 @@ export function TournamentPlayClient({
       await postMove(source, target);
     });
     return true;
+  }
+
+  const moveTargets = useMemo(() => {
+    if (!selectedSquare || !activeGame || pending || activeGame.status !== "active") return [];
+    return legalTargetsFromGame(chess, selectedSquare);
+  }, [selectedSquare, activeGame, pending, chess]);
+  const moveHintStyles = useMemo(() => buildMoveHintStyles(moveTargets, selectedSquare), [moveTargets, selectedSquare]);
+
+  function onSquareClick(square: string) {
+    if (!activeGame || pending || activeGame.status !== "active") return;
+    const clickedPiece = chess.get(square as any);
+    if (selectedSquare && selectedSquare !== square) {
+      void postMove(selectedSquare, square);
+      return;
+    }
+    if (selectedSquare === square) {
+      setSelectedSquare(null);
+      return;
+    }
+    if (clickedPiece && clickedPiece.color === chess.turn()) {
+      setSelectedSquare(square);
+      return;
+    }
+    setSelectedSquare(null);
   }
 
   async function submitResult(action: "resign" | "draw") {
@@ -251,7 +278,9 @@ export function TournamentPlayClient({
                   position={activeGame.fen === "start" ? new Chess().fen() : activeGame.fen}
                   boardWidth={boardWidth}
                   onPieceDrop={onDrop}
+                  onSquareClick={onSquareClick as any}
                   arePiecesDraggable={activeGame.status === "active"}
+                  customSquareStyles={moveHintStyles as any}
                   customDarkSquareStyle={{ backgroundColor: "#b58863" }}
                   customLightSquareStyle={{ backgroundColor: "#f0d9b5" }}
                 />

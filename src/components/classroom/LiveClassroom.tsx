@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Chess } from "chess.js";
 import { toast } from "sonner";
+import { buildMoveHintStyles, canSelectPieceForTurn, legalTargetsFromGame, mergeSquareStyles } from "@/lib/chessboardUi";
 import {
   BookOpen,
   Bot,
@@ -334,11 +335,15 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const [modifier, setModifier] = useState<ModifierKey>("default");
   const [engineText, setEngineText] = useState("Engine ready");
   const [boardWidth, setBoardWidth] = useState(620);
+  const [selectedMoveSquare, setSelectedMoveSquare] = useState<string | null>(null);
+  const [coachDrawings, setCoachDrawings] = useState<any[]>([]);
+  const [drawingsDirty, setDrawingsDirty] = useState(false);
   const boardShellRef = useRef<HTMLDivElement | null>(null);
   const engineRef = useRef<Worker | null>(null);
   const loadInFlightRef = useRef(false);
   const refreshQueuedRef = useRef(false);
   const refreshTimerRef = useRef<number | null>(null);
+  const drawingsPersistTimerRef = useRef<number | null>(null);
   const dataRef = useRef<any>(null);
   const coach = isCoach(role);
 
@@ -410,6 +415,17 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   useEffect(() => {
     dataRef.current = data;
   }, [data]);
+
+  useEffect(() => {
+    setCoachDrawings(data?.live?.drawings || []);
+    setDrawingsDirty(false);
+  }, [data?.live?.drawings]);
+
+  useEffect(() => {
+    return () => {
+      if (drawingsPersistTimerRef.current) window.clearTimeout(drawingsPersistTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (!boardShellRef.current) return;
@@ -520,6 +536,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     setSetupPosition(boardPieceMap);
     setGamifiedSetup(liveGamifiedObjects);
     setSetupMovementMode(live?.illegalMovesEnabled ? "free" : live?.fen?.split(" ")?.[1] === "b" ? "black" : "white");
+    setSelectedMoveSquare(null);
   }, [boardPieceMap, live?.fen, live?.illegalMovesEnabled, live?.setupMode, liveGamifiedObjects, setupOpen]);
 
   useEffect(() => {
@@ -590,6 +607,25 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     patch({ drawings: nextDrawings });
   }
 
+  function scheduleDrawings(nextDrawings: any[]) {
+    setCoachDrawings(nextDrawings);
+    setDrawingsDirty(true);
+    if (drawingsPersistTimerRef.current) window.clearTimeout(drawingsPersistTimerRef.current);
+    drawingsPersistTimerRef.current = window.setTimeout(() => {
+      drawingsPersistTimerRef.current = null;
+      const snapshot = currentLive();
+      if (JSON.stringify(snapshot.drawings || []) !== JSON.stringify(nextDrawings)) {
+        patch({ drawings: nextDrawings });
+      }
+    }, 70);
+  }
+
+  function updateCoachDrawings(mutator: (drawings: any[]) => any[]) {
+    const base = drawingsDirty ? coachDrawings : (live?.drawings || []);
+    const nextDrawings = mutator([...(base || [])]);
+    scheduleDrawings(nextDrawings);
+  }
+
   async function submitStudentMove(source: string, target: string, promotion = "q") {
     const res = await fetch(liveUrl("/move"), {
       method: "POST",
@@ -641,6 +677,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   }
 
   function onDrop(source: string, target: string, piece: string) {
+    setSelectedMoveSquare(null);
     if (live?.locked || (!canMove && !coach)) return false;
     if (live?.setupMode || tool === "setup") {
       const next = { ...setupPosition };
@@ -819,8 +856,9 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   }
 
   function onSquareClick(square: string) {
-    if (!coach) return;
+    const clickedPiece = boardPieceMap[square];
     if (live?.setupMode || tool === "setup") {
+      if (!coach) return;
       const next = { ...setupPosition };
       if (selectedPiece === "erase") delete next[square];
       else next[square] = selectedPiece;
@@ -828,17 +866,41 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       commitSetup(next);
       return;
     }
-    const snapshot = currentLive();
-    if ((snapshot.drawings || []).length) {
-      patch({ drawings: [] });
+    if (coach) {
+      const currentDrawings = drawingsDirty ? coachDrawings : (live?.drawings || []);
+      const highlighted = currentDrawings.find((drawing: any) => drawing.type === "highlight" && drawing.from === square);
+      if (highlighted) {
+        scheduleDrawings(currentDrawings.filter((drawing: any) => !(drawing.type === "highlight" && drawing.from === square)));
+        return;
+      }
+    }
+    if (!coach && !canMove) return;
+    if (selectedMoveSquare && selectedMoveSquare !== square) {
+      const selectedPieceCode = boardPieceMap[selectedMoveSquare];
+      if (selectedPieceCode) {
+        const moved = onDrop(selectedMoveSquare, square, selectedPieceCode);
+        if (moved) return;
+      }
+    }
+    if (!clickedPiece) {
+      setSelectedMoveSquare(null);
       return;
     }
+    if (live?.illegalMovesEnabled) {
+      setSelectedMoveSquare((current) => (current === square ? null : square));
+      return;
+    }
+    if (canSelectPieceForTurn(clickedPiece, game.turn())) {
+      setSelectedMoveSquare((current) => (current === square ? null : square));
+      return;
+    }
+    setSelectedMoveSquare(null);
   }
 
   function onSquareRightClick(square: string) {
     if (!coach) return;
     const color = drawingColor(modifier);
-    updateDrawings((drawings) => {
+    updateCoachDrawings((drawings) => {
       const sameHighlight = drawings.some((drawing: any) => drawing.type === "highlight" && drawing.from === square && drawing.color === color);
       if (sameHighlight) {
         return drawings.filter((drawing: any) => !(drawing.type === "highlight" && drawing.from === square && drawing.color === color));
@@ -848,9 +910,9 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   }
 
   function persistBoardArrows(nextArrows: any[]) {
-    if (!coach || !live?.arrowsEnabled) return;
-    const snapshot = currentLive();
-    const highlights = (snapshot.drawings || []).filter((drawing: any) => drawing.type === "highlight");
+    if (!coach) return;
+    const baseDrawings = drawingsDirty ? coachDrawings : (live?.drawings || []);
+    const highlights = baseDrawings.filter((drawing: any) => drawing.type === "highlight");
     const dedupedArrows = new Map<string, any>();
     nextArrows.forEach((arrow) => {
       const color = arrow[2] || drawingColor(modifier);
@@ -868,7 +930,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       color: arrow.color,
     }));
     const merged = [...highlights, ...incomingArrows];
-    if (JSON.stringify(merged) !== JSON.stringify(snapshot.drawings || [])) patch({ drawings: merged });
+    if (JSON.stringify(merged) !== JSON.stringify(baseDrawings || [])) scheduleDrawings(merged);
   }
 
   async function askEveryone() {
@@ -1208,23 +1270,30 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     }
   }
 
+  const displayedDrawings = coach && drawingsDirty ? coachDrawings : (live?.drawings || []);
+  const moveTargets = useMemo(() => {
+    if (!selectedMoveSquare || live?.illegalMovesEnabled || live?.locked || (!coach && !canMove)) return [];
+    return legalTargetsFromGame(game, selectedMoveSquare);
+  }, [selectedMoveSquare, live?.illegalMovesEnabled, live?.locked, coach, canMove, game]);
+  const moveHintStyles = useMemo(() => buildMoveHintStyles(moveTargets, selectedMoveSquare), [moveTargets, selectedMoveSquare]);
+
   const squareStyles = useMemo(() => {
     const styles: Record<string, Record<string, string | number>> = {};
-    for (const drawing of live?.drawings || []) {
+    for (const drawing of displayedDrawings || []) {
       if (drawing.type === "highlight" && drawing.from) {
         styles[drawing.from] = {
           boxShadow: `inset 0 0 0 999px ${drawing.color || "#facc15"}55`,
         };
       }
     }
-    return styles;
-  }, [live?.drawings]);
+    return mergeSquareStyles(styles as any, moveHintStyles as any) as any;
+  }, [displayedDrawings, moveHintStyles]);
 
   const arrows = useMemo(() => {
-    return (live?.drawings || [])
+    return (displayedDrawings || [])
       .filter((drawing: any) => drawing.type === "arrow" && drawing.from && drawing.to)
       .map((drawing: any) => [drawing.from, drawing.to, drawing.color || "#7c1fa2"]);
-  }, [live?.drawings]);
+  }, [displayedDrawings]);
 
   const leaderboardRows = useMemo(() => {
     const responseMap = new Map<string, any[]>();
@@ -1429,37 +1498,20 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                   <div className="border-t border-slate-200" />
                   <div className="space-y-3">
                     <div className="space-y-2">
-                      {!sidebarCollapsed && <div className="px-2 text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">Board Tools</div>}
-                      <ToolButton id="move" icon={<MousePointer2 size={19} />} label="Live Board" onClick={focusBoard} />
-                      <ToggleButton active={!!live?.locked} icon={live?.locked ? <Lock size={19} /> : <Unlock size={19} />} label={live?.locked ? "Unlock Board" : "Lock Board"} onClick={() => patch({ locked: !live?.locked })} />
-                      <ToggleButton active={!!live?.studentMovesEnabled} icon={<Users size={19} />} label={live?.studentMovesEnabled ? "Student Control On" : "Give Student Control"} onClick={() => patch({ studentMovesEnabled: !live?.studentMovesEnabled, mode: !live?.studentMovesEnabled ? "student_move" : "teaching" })} disabled={!students.length} disabledLabel="No students are in this classroom yet" />
-                      <ToggleButton active={!!live?.illegalMovesEnabled} icon={<ShieldAlert size={19} />} label="Free Movement" onClick={() => patch({ illegalMovesEnabled: !live?.illegalMovesEnabled })} />
-                      <ToggleButton active={!!live?.showCoordinates} icon={<Grid2X2 size={19} />} label="Board Coordinates" onClick={() => patch({ showCoordinates: !live?.showCoordinates })} />
-                      <ToolButton icon={<FlipHorizontal size={19} />} label="Flip Board" onClick={() => patch({ orientation: live?.orientation === "white" ? "black" : "white" })} />
-                      <ToolButton icon={<RefreshCcw size={19} />} label="Reset Board" onClick={resetGame} />
-                    </div>
-
-                    <div className="space-y-2">
-                      {!sidebarCollapsed && <div className="px-2 text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">Drawing Tools</div>}
-                      <ToolButton id="highlight" icon={<Highlighter size={19} />} label="Highlight Square" />
-                      <ToolButton id="arrow" icon={<Send size={19} />} label="Draw Arrow" disabled={!live?.arrowsEnabled} disabledLabel="Enable arrow drawing first" />
-                      <ToggleButton active={!!live?.arrowsEnabled} icon={<Square size={19} />} label="Enable Arrow Drawing" onClick={() => patch({ arrowsEnabled: !live?.arrowsEnabled })} />
-                      <ToolButton icon={<Eraser size={19} />} label="Clear Drawings" onClick={() => patch({ drawings: [] })} />
-                    </div>
-
-                    <div className="space-y-2">
-                      {!sidebarCollapsed && <div className="px-2 text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">Quiz Tools</div>}
-                      <ToggleButton active={setupOpen} icon={<Settings size={19} />} label="Setup Board" onClick={() => { setSetupPosition(boardPieceMap); setGamifiedSetup(liveGamifiedObjects); setSetupMovementMode(live?.illegalMovesEnabled ? "free" : live?.fen?.split(" ")?.[1] === "b" ? "black" : "white"); setSetupOpen(true); }} />
+                      {!sidebarCollapsed && <div className="px-2 text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">Teaching Tools</div>}
                       <ToolButton icon={<Library size={19} />} label="Load PGN" onClick={() => setPgnOpen(true)} disabled={!canLoadPgnLibrary} disabledLabel="No PGNs are available in the library yet" />
+                      <ToggleButton active={setupOpen} icon={<Settings size={19} />} label="Setup Board" onClick={() => { setSetupPosition(boardPieceMap); setGamifiedSetup(liveGamifiedObjects); setSetupMovementMode(live?.illegalMovesEnabled ? "free" : live?.fen?.split(" ")?.[1] === "b" ? "black" : "white"); setSetupOpen(true); }} />
+                      <ToggleButton active={!!live?.illegalMovesEnabled} icon={<ShieldAlert size={19} />} label="Free Movement" onClick={() => patch({ illegalMovesEnabled: !live?.illegalMovesEnabled })} />
+                      <ToolButton id="highlight" icon={<Highlighter size={19} />} label="Highlight Square" />
+                      <ToolButton id="arrow" icon={<Send size={19} />} label="Draw Arrow" />
+                      <ToolButton icon={<Eraser size={19} />} label="Clear Drawings" onClick={() => patch({ drawings: [] })} />
                       <ToolButton icon={<FileQuestion size={19} />} label="Ask Challenge" onClick={askEveryone} />
                       <ToolButton icon={<Sparkles size={19} />} label="Start Quiz" onClick={createQuiz} disabled={!canLaunchBoardQuiz} disabledLabel="Load a PGN position first so the next move can be checked on the board" />
-                      <ToolButton icon={<ClipboardList size={19} />} label="Open Moves / Notation" onClick={() => setActiveTab("moves")} />
-                      <ToolButton icon={<Crown size={19} />} label="Open Leaderboard" onClick={() => setActiveTab("leaderboard")} />
                     </div>
 
                     <div className="space-y-2">
-                      {!sidebarCollapsed && <div className="px-2 text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">Class Tools</div>}
-                      <ToggleButton active={!!live?.soundEnabled} icon={live?.soundEnabled ? <Volume2 size={19} /> : <VolumeX size={19} />} label="Piece Sounds" onClick={() => patch({ soundEnabled: !live?.soundEnabled })} />
+                      {!sidebarCollapsed && <div className="px-2 text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">Session</div>}
+                      <ToggleButton active={!!live?.studentMovesEnabled} icon={<Users size={19} />} label={live?.studentMovesEnabled ? "Student Control On" : "Give Student Control"} onClick={() => patch({ studentMovesEnabled: !live?.studentMovesEnabled, mode: !live?.studentMovesEnabled ? "student_move" : "teaching" })} disabled={!students.length} disabledLabel="No students are in this classroom yet" />
                       <ToolButton icon={<X size={19} />} label="End Class" onClick={openEndSummary} emphasis="danger" />
                     </div>
                   </div>
@@ -1510,9 +1562,9 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                         onSquareClick={onSquareClick as any}
                         onSquareRightClick={onSquareRightClick as any}
                         onArrowsChange={persistBoardArrows as any}
-                        customArrows={live?.arrowsEnabled ? (arrows as any) : []}
+                        customArrows={arrows as any}
                         customSquareStyles={squareStyles as any}
-                        areArrowsAllowed={!!live?.arrowsEnabled && coach}
+                        areArrowsAllowed={coach}
                         arePiecesDraggable={!live?.locked && (coach || canMove)}
                         arePremovesAllowed={!!live?.illegalMovesEnabled}
                         dropOffBoardAction={live?.setupMode || tool === "setup" ? "trash" : "snapback"}
@@ -1573,6 +1625,30 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                 )}
 
                 {coach && <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+                  <button onClick={() => patch({ locked: !live?.locked })} className={`rounded-md border px-3 py-1.5 text-xs font-semibold ${live?.locked ? "border-purple-200 bg-purple-50 text-purple-800" : "border-slate-200 bg-white text-slate-700"}`}>
+                    {live?.locked ? "Unlock board" : "Lock board"}
+                  </button>
+                  <button onClick={() => patch({ showCoordinates: !live?.showCoordinates })} className={`rounded-md border px-3 py-1.5 text-xs font-semibold ${live?.showCoordinates !== false ? "border-purple-200 bg-purple-50 text-purple-800" : "border-slate-200 bg-white text-slate-700"}`}>
+                    Coordinates
+                  </button>
+                  <button onClick={() => patch({ orientation: live?.orientation === "white" ? "black" : "white" })} className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700">
+                    Flip
+                  </button>
+                  <button onClick={resetGame} className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700">
+                    Reset
+                  </button>
+                  <button onClick={() => patch({ soundEnabled: !live?.soundEnabled })} className={`rounded-md border px-3 py-1.5 text-xs font-semibold ${live?.soundEnabled ? "border-purple-200 bg-purple-50 text-purple-800" : "border-slate-200 bg-white text-slate-700"}`}>
+                    Sound
+                  </button>
+                  <button onClick={() => setActiveTab("moves")} className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700">
+                    Moves
+                  </button>
+                  <button onClick={() => setActiveTab("leaderboard")} className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700">
+                    Leaderboard
+                  </button>
+                </div>}
+
+                {coach && <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
                   <button onClick={() => navigateMove(0)} className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 bg-white text-slate-700"><SkipBack size={16} /></button>
                   <button onClick={() => navigateMove(currentMoveIndex - 1)} className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 bg-white text-slate-700"><ChevronLeft size={16} /></button>
                   <span className="rounded-md bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600">{currentMoveIndex} / {pgnMoves.length || (live?.moveHistory || []).length}</span>
@@ -2193,6 +2269,7 @@ function LiveBoardQuiz({
   const [quizSubmitted, setQuizSubmitted] = useState(false);
   const [feedback, setFeedback] = useState("Make the best move on the board.");
   const [lastStudentMove, setLastStudentMove] = useState("");
+  const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
   const advancedRef = useRef(false);
   const summary = useMemo(() => {
     const solvedCount = items.filter((item: any) => results[item.id]?.solved).length;
@@ -2271,6 +2348,7 @@ function LiveBoardQuiz({
     setLastStudentMove("");
     setItemStartedAt(Date.now());
     setRemaining(Number(question.timer?.perQuestionSeconds || activeItem?.timerSeconds || 0));
+    setSelectedSquare(null);
     advancedRef.current = false;
   }, [activeItem?.id, parsed.start, parsed.moves.length, question.timer?.perQuestionSeconds, activeItem?.timerSeconds, quizFinished]);
 
@@ -2356,8 +2434,33 @@ function LiveBoardQuiz({
     setGame(nextGame);
     setPosition(nextGame.fen());
     setPly(nextPly);
+    setSelectedSquare(null);
     setFeedback(nextPly >= parsed.moves.length ? "Answer recorded for this position." : "Move recorded. Continue from the new position.");
     return true;
+  }
+
+  const moveTargets = useMemo(() => {
+    if (!selectedSquare || locked || quizSubmitted) return [];
+    return legalTargetsFromGame(game, selectedSquare);
+  }, [selectedSquare, locked, quizSubmitted, game]);
+  const moveHintStyles = useMemo(() => buildMoveHintStyles(moveTargets, selectedSquare), [moveTargets, selectedSquare]);
+
+  function onSquareClick(square: string) {
+    if (locked || quizSubmitted) return;
+    const clickedPiece = game.get(square as any);
+    if (selectedSquare && selectedSquare !== square) {
+      const moved = onDrop(selectedSquare, square);
+      if (moved) return;
+    }
+    if (selectedSquare === square) {
+      setSelectedSquare(null);
+      return;
+    }
+    if (clickedPiece && clickedPiece.color === game.turn()) {
+      setSelectedSquare(square);
+      return;
+    }
+    setSelectedSquare(null);
   }
 
   function hint() {
@@ -2478,7 +2581,9 @@ function LiveBoardQuiz({
         <Chessboard
           position={position}
           onPieceDrop={onDrop}
+          onSquareClick={onSquareClick as any}
           boardWidth={420}
+          customSquareStyles={moveHintStyles as any}
           customDarkSquareStyle={{ backgroundColor: "#b58863" }}
           customLightSquareStyle={{ backgroundColor: "#f0d9b5" }}
         />

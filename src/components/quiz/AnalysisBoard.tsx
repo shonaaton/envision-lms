@@ -25,6 +25,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Chess } from "chess.js";
 import { toast } from "sonner";
+import { buildMoveHintStyles, legalTargetsFromGame } from "@/lib/chessboardUi";
 
 const Chessboard = dynamic(() => import("react-chessboard").then((m) => m.Chessboard), { ssr: false });
 
@@ -180,6 +181,7 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
   const [engineLines, setEngineLines] = useState<EngineLine[]>([]);
   const [pdfName, setPdfName] = useState("");
   const [gamifiedBoardObjects, setGamifiedBoardObjects] = useState<Record<string, GamifiedObjectId>>({});
+  const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
 
   const isDark = false;
   const panelClass = "border-slate-200 bg-white text-slate-950";
@@ -306,6 +308,7 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
       }
       const move = gameRef.current.move({ from: source, to: target, promotion: "q" });
       if (!move) return false;
+      setSelectedSquare(null);
       setSelectedPly(gameRef.current.history().length);
       setBestMove("");
       setEvalCp(null);
@@ -323,6 +326,29 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
     }
   }
 
+  const moveTargets = useMemo(() => {
+    if (!selectedSquare) return [];
+    return legalTargetsFromGame(gameRef.current, selectedSquare);
+  }, [selectedSquare, position]);
+  const moveHintStyles = useMemo(() => buildMoveHintStyles(moveTargets, selectedSquare), [moveTargets, selectedSquare]);
+
+  function onSquareClick(square: string) {
+    const clickedPiece = gameRef.current.get(square as any);
+    if (selectedSquare && selectedSquare !== square) {
+      const moved = onDrop(selectedSquare, square);
+      if (moved) return;
+    }
+    if (selectedSquare === square) {
+      setSelectedSquare(null);
+      return;
+    }
+    if (clickedPiece && clickedPiece.color === gameRef.current.turn()) {
+      setSelectedSquare(square);
+      return;
+    }
+    setSelectedSquare(null);
+  }
+
   function reset() {
     gameRef.current = new Chess(initialFen || undefined);
     baseFenRef.current = initialFen || startFen;
@@ -331,6 +357,7 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
     setEngineLines([]);
     setGamifiedBoardObjects({});
     setSelectedPly(0);
+    setSelectedSquare(null);
     refreshBoard();
   }
 
@@ -343,6 +370,7 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
       setEngineLines([]);
       setGamifiedBoardObjects(gamifiedObjects || {});
       setSelectedPly(0);
+      setSelectedSquare(null);
       refreshBoard();
       setDialog(null);
       return true;
@@ -435,10 +463,12 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
                   <Chessboard
                     position={position}
                     onPieceDrop={onDrop}
+                    onSquareClick={onSquareClick as any}
                     boardOrientation={orientation}
                     boardWidth={boardSize}
                     snapToCursor
                     animationDuration={120}
+                    customSquareStyles={moveHintStyles as any}
                     customDarkSquareStyle={{ backgroundColor: squareTheme.dark }}
                     customLightSquareStyle={{ backgroundColor: squareTheme.light }}
                     customDropSquareStyle={{ boxShadow: "inset 0 0 0 5px rgba(90, 19, 114, 0.35)" }}

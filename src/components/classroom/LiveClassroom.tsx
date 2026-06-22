@@ -359,6 +359,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const [selectedObject, setSelectedObject] = useState<GamifiedObjectId | "delete">("star");
   const [draggedObjectSquare, setDraggedObjectSquare] = useState<string | null>(null);
   const [setupMovementMode, setSetupMovementMode] = useState<SetupMovementMode>("white");
+  const [setupPieceColor, setSetupPieceColor] = useState<"white" | "black">("white");
   const [setupOpen, setSetupOpen] = useState(false);
   const [pgnOpen, setPgnOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
@@ -599,8 +600,9 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     if (setupOpen) return;
     setSetupPosition(boardPieceMap);
     setGamifiedSetup(liveGamifiedObjects);
-    setSetupMovementMode(live?.illegalMovesEnabled ? "free" : live?.fen?.split(" ")?.[1] === "b" ? "black" : "white");
-    setSelectedMoveSquare(null);
+    const nextSetupMode = live?.illegalMovesEnabled ? "free" : live?.fen?.split(" ")?.[1] === "b" ? "black" : "white";
+    setSetupMovementMode(nextSetupMode);
+    if (nextSetupMode === "white" || nextSetupMode === "black") setSetupPieceColor(nextSetupMode);
   }, [boardPieceMap, live?.fen, live?.illegalMovesEnabled, live?.setupMode, liveGamifiedObjects, setupOpen]);
 
   useEffect(() => {
@@ -1487,8 +1489,14 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
         };
       }
     }
+    if (annotationDrag?.from && (!annotationDrag.to || annotationDrag.to === annotationDrag.from)) {
+      styles[annotationDrag.from] = {
+        ...(styles[annotationDrag.from] || {}),
+        boxShadow: "inset 0 0 0 999px rgba(220,38,38,0.28)",
+      };
+    }
     return mergeSquareStyles(styles as any, moveHintStyles as any) as any;
-  }, [displayedDrawings, moveHintStyles]);
+  }, [annotationDrag, displayedDrawings, moveHintStyles]);
 
   const arrows = useMemo(() => {
     return (displayedDrawings || [])
@@ -1783,13 +1791,13 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                       <svg className="pointer-events-none absolute inset-0 z-20" width={boardWidth} height={boardWidth} viewBox={`0 0 ${boardWidth} ${boardWidth}`}>
                         <defs>
                           {arrows.map((arrow: any, index: number) => (
-                            <marker key={`marker-${index}`} id={`classroom-arrow-head-${index}`} markerWidth="12" markerHeight="12" refX="9" refY="6" orient="auto" markerUnits="strokeWidth">
-                              <path d="M 0 0 L 12 6 L 0 12 z" fill={arrow[2] || "#dc2626"} />
+                            <marker key={`marker-${index}`} id={`classroom-arrow-head-${index}`} markerWidth="8" markerHeight="8" refX="6.3" refY="4" orient="auto" markerUnits="strokeWidth">
+                              <path d="M 0 0 L 8 4 L 0 8 z" fill={arrow[2] || "#dc2626"} />
                             </marker>
                           ))}
                           {annotationDrag && annotationDrag.to && annotationDrag.to !== annotationDrag.from && (
-                            <marker id="classroom-preview-arrow-head" markerWidth="12" markerHeight="12" refX="9" refY="6" orient="auto" markerUnits="strokeWidth">
-                              <path d="M 0 0 L 12 6 L 0 12 z" fill="#dc2626" />
+                            <marker id="classroom-preview-arrow-head" markerWidth="8" markerHeight="8" refX="6.3" refY="4" orient="auto" markerUnits="strokeWidth">
+                              <path d="M 0 0 L 8 4 L 0 8 z" fill="#dc2626" />
                             </marker>
                           )}
                         </defs>
@@ -1799,7 +1807,8 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                           const dx = to.x - from.x;
                           const dy = to.y - from.y;
                           const length = Math.max(1, Math.sqrt(dx * dx + dy * dy));
-                          const endOffset = Math.min(boardWidth / 22, length * 0.28);
+                          const strokeWidth = Math.max(4, boardWidth / 120);
+                          const endOffset = Math.min(boardWidth / 28, length * 0.24);
                           const end = { x: to.x - (dx / length) * endOffset, y: to.y - (dy / length) * endOffset };
                           return (
                             <line
@@ -1809,10 +1818,10 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                               x2={end.x}
                               y2={end.y}
                               stroke={arrow[2] || "#dc2626"}
-                              strokeWidth={Math.max(7, boardWidth / 72)}
+                              strokeWidth={strokeWidth}
                               strokeLinecap="round"
                               markerEnd={`url(#classroom-arrow-head-${index})`}
-                              opacity="0.82"
+                              opacity="0.78"
                             />
                           );
                         })}
@@ -1825,10 +1834,10 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                               x2={annotationDrag.x}
                               y2={annotationDrag.y}
                               stroke="#dc2626"
-                              strokeWidth={Math.max(7, boardWidth / 72)}
+                              strokeWidth={Math.max(4, boardWidth / 120)}
                               strokeLinecap="round"
                               markerEnd="url(#classroom-preview-arrow-head)"
-                              opacity="0.66"
+                              opacity="0.62"
                             />
                           );
                         })()}
@@ -2314,12 +2323,41 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                   <button onClick={() => setSetupTab("pieces")} className={`rounded-lg px-5 py-2 text-sm font-semibold ${setupTab === "pieces" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500"}`}>Chess Pieces</button>
                   <button onClick={() => setSetupTab("objects")} className={`rounded-lg px-5 py-2 text-sm font-semibold ${setupTab === "objects" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500"}`}>Gamified Objects</button>
                 </div>
-                {setupTab === "pieces" && <div className="mb-2 grid grid-cols-7 gap-1.5">
-                  {["wP", "wN", "wB", "wR", "wQ", "wK"].map((piece) => (
-                    <button key={piece} onClick={() => setSelectedPiece(piece)} className={`h-9 rounded-md border text-xl ${selectedPiece === piece ? "border-purple-700 bg-purple-700 text-white" : "border-slate-200 bg-white"}`}>{pieceSymbol(piece)}</button>
-                  ))}
-                  <button onClick={() => setSelectedPiece("erase")} className={`h-9 rounded-md border text-xs font-bold ${selectedPiece === "erase" ? "border-red-500 bg-red-50 text-red-700" : "border-slate-200 bg-white"}`}>Del</button>
-                </div>}
+                {setupTab === "pieces" && (
+                  <div className="mb-2 space-y-2">
+                    <div className="grid grid-cols-2 gap-1.5 rounded-lg bg-slate-100 p-1">
+                      {(["white", "black"] as const).map((color) => (
+                        <button
+                          key={color}
+                          type="button"
+                          onClick={() => {
+                            setSetupPieceColor(color);
+                            setSelectedPiece(`${color === "white" ? "w" : "b"}Q`);
+                            setSetupMovementMode(color);
+                          }}
+                          className={`h-8 rounded-md text-xs font-bold capitalize ${setupPieceColor === color ? "bg-white text-purple-800 shadow-sm" : "text-slate-500"}`}
+                        >
+                          {color} pieces
+                        </button>
+                      ))}
+                    </div>
+                    <div className="grid grid-cols-7 gap-1.5">
+                      {["P", "N", "B", "R", "Q", "K"].map((piece) => {
+                        const pieceCode = `${setupPieceColor === "white" ? "w" : "b"}${piece}`;
+                        return (
+                          <button
+                            key={pieceCode}
+                            onClick={() => setSelectedPiece(pieceCode)}
+                            className={`h-9 rounded-md border text-xl ${selectedPiece === pieceCode ? "border-purple-700 bg-purple-700 text-white" : setupPieceColor === "black" ? "border-slate-800 bg-slate-950 text-white" : "border-slate-200 bg-white"}`}
+                          >
+                            {pieceSymbol(pieceCode)}
+                          </button>
+                        );
+                      })}
+                      <button onClick={() => setSelectedPiece("erase")} className={`h-9 rounded-md border text-xs font-bold ${selectedPiece === "erase" ? "border-red-500 bg-red-50 text-red-700" : "border-slate-200 bg-white"}`}>Del</button>
+                    </div>
+                  </div>
+                )}
                 <div className="relative mx-auto w-fit overflow-hidden rounded-lg border border-slate-200 bg-[#f6f2ea] p-2">
                 <Chessboard
                   id={`setup-board-${classroomId}`}
@@ -2347,12 +2385,6 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                   onDragEnd={() => setDraggedObjectSquare(null)}
                 />
                 </div>
-                {setupTab === "pieces" && <div className="mt-2 grid grid-cols-7 gap-1.5">
-                  {["bP", "bN", "bB", "bR", "bQ", "bK"].map((piece) => (
-                    <button key={piece} onClick={() => setSelectedPiece(piece)} className={`h-9 rounded-md border bg-slate-950 text-xl text-white ${selectedPiece === piece ? "ring-2 ring-purple-500" : "border-slate-800"}`}>{pieceSymbol(piece)}</button>
-                  ))}
-                  <button onClick={() => setSelectedPiece("erase")} className={`h-9 rounded-md border text-xs font-bold ${selectedPiece === "erase" ? "border-red-500 bg-red-50 text-red-700" : "border-slate-200 bg-white"}`}>Del</button>
-                </div>}
                 <button onClick={setupTab === "objects" ? () => setSelectedObject("delete") : () => setSelectedPiece("erase")} className={`mt-2 flex min-h-10 w-full items-center justify-center gap-2 rounded-md border border-dashed text-sm font-semibold ${setupTab === "objects" && selectedObject === "delete" ? "border-red-400 bg-red-50 text-red-700" : "border-slate-300 text-slate-600"}`}>
                   <Trash2 size={17} /> Delete {setupTab === "objects" ? "objects" : "pieces"}
                 </button>
@@ -2370,7 +2402,13 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                       <button
                         key={mode}
                         type="button"
-                        onClick={() => setSetupMovementMode(mode as SetupMovementMode)}
+                        onClick={() => {
+                          setSetupMovementMode(mode as SetupMovementMode);
+                          if (mode === "white" || mode === "black") {
+                            setSetupPieceColor(mode as "white" | "black");
+                            setSelectedPiece(`${mode === "white" ? "w" : "b"}Q`);
+                          }
+                        }}
                         className={`h-10 rounded-lg border px-2 text-sm font-semibold transition ${setupMovementMode === mode ? "border-purple-700 bg-purple-700 text-white shadow-md shadow-purple-700/20" : "border-slate-200 bg-slate-50 text-slate-700 hover:border-purple-300"}`}
                       >
                         {label}

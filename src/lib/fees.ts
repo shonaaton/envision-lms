@@ -55,6 +55,27 @@ export async function nextInvoiceNumber() {
   return `${settings.invoicePrefix || "ENV"}/${fy}/${String(count + 1).padStart(3, "0")}`;
 }
 
+async function nextAvailableInvoiceNumber() {
+  const settings: any = await getAcademySettings();
+  const now = new Date();
+  const startYear = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+  const endYear = startYear + 1;
+  const fy = `${String(startYear).slice(-2)}-${String(endYear).slice(-2)}`;
+  const fyStart = new Date(startYear, 3, 1, 0, 0, 0, 0);
+  const fyEnd = new Date(endYear, 2, 31, 23, 59, 59, 999);
+  const prefix = settings.invoicePrefix || "ENV";
+  let sequence = await Invoice.countDocuments({ createdAt: { $gte: fyStart, $lte: fyEnd } }) + 1;
+
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const invoiceNumber = `${prefix}/${fy}/${String(sequence).padStart(3, "0")}`;
+    const exists = await Invoice.exists({ invoiceNumber });
+    if (!exists) return invoiceNumber;
+    sequence += 1;
+  }
+
+  return `${prefix}/${fy}/${Date.now()}`;
+}
+
 export function monthlyDueDate(startDate: Date, monthOffset = 0) {
   const due = new Date(startDate);
   due.setMonth(due.getMonth() + monthOffset);
@@ -108,13 +129,28 @@ export async function createInvoice(input: {
     gstMode: input.invoiceMode,
     gstPercentage: input.gstPercentage,
   });
-  return Invoice.create({
-    invoiceNumber: await nextInvoiceNumber(),
+  const payload = {
     ...input,
     issueDate: new Date(),
     lateFee: 0,
     ...breakup,
     status: "unpaid",
+  };
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await Invoice.create({
+        invoiceNumber: await nextAvailableInvoiceNumber(),
+        ...payload,
+      });
+    } catch (error: any) {
+      if (error?.code !== 11000 || !error?.keyPattern?.invoiceNumber) throw error;
+    }
+  }
+
+  return Invoice.create({
+    invoiceNumber: `${(settings as any).invoicePrefix || "ENV"}/${Date.now()}`,
+    ...payload,
   });
 }
 

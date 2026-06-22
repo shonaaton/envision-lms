@@ -8,6 +8,7 @@ import { revalidatePath } from "next/cache";
 import { History, Users } from "lucide-react";
 import { StudentFeeAssignmentForm } from "@/components/fees/StudentFeeForms";
 import { Types } from "mongoose";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -16,80 +17,96 @@ async function assignPlan(formData: FormData) {
   const session = await auth();
   if ((session?.user as any)?.role !== "admin") throw new Error("Forbidden");
   await dbConnect();
-  const student = String(formData.get("student"));
-  const planId = String(formData.get("plan"));
-  const rawStartDate = String(formData.get("billingStartDate") || "");
-  if (!Types.ObjectId.isValid(student) || !Types.ObjectId.isValid(planId)) return;
-  const billingStartDate = rawStartDate ? new Date(rawStartDate) : new Date();
-  if (Number.isNaN(billingStartDate.getTime())) return;
-  const [plan, studentDoc]: any[] = await Promise.all([
-    FeePlan.findById(planId),
-    User.findOne({ _id: student, role: "student" }).lean(),
-  ]);
-  if (!plan || !studentDoc) return;
-  const existing: any = await FeeAssignment.findOne({ student });
-  const assignment: any = await FeeAssignment.findOneAndUpdate(
-    { student },
-    {
-      $set: {
-        student,
-        plan: plan._id,
-        type: plan.type,
-        billingStartDate,
-        creditBalance: existing?.creditBalance ?? 0,
-        totalCreditsPurchased: existing?.totalCreditsPurchased ?? 0,
-        totalCreditsConsumed: existing?.totalCreditsConsumed ?? 0,
-      },
-      $push: {
-        history: {
+  try {
+    const student = String(formData.get("student") || "");
+    const planId = String(formData.get("plan") || "");
+    const rawStartDate = String(formData.get("billingStartDate") || "");
+    if (!Types.ObjectId.isValid(student) || !Types.ObjectId.isValid(planId)) {
+      redirect("/fees/student-fees?error=invalid-selection");
+    }
+    const billingStartDate = rawStartDate ? new Date(rawStartDate) : new Date();
+    if (Number.isNaN(billingStartDate.getTime())) {
+      redirect("/fees/student-fees?error=invalid-date");
+    }
+    const [plan, studentDoc]: any[] = await Promise.all([
+      FeePlan.findById(planId),
+      User.findOne({ _id: student, role: "student" }).lean(),
+    ]);
+    if (!plan || !studentDoc) {
+      redirect("/fees/student-fees?error=missing-record");
+    }
+
+    const note = String(formData.get("note") || "Plan assigned");
+    const historyEntry = `${new Date().toISOString()} | ${plan.name} | ${plan.type} | ${note}`;
+
+    const existing: any = await FeeAssignment.findOne({ student });
+    const assignment: any = await FeeAssignment.findOneAndUpdate(
+      { student },
+      {
+        $set: {
+          student: new Types.ObjectId(student),
           plan: plan._id,
           type: plan.type,
-          changedBy: (session!.user as any).id,
-          note: formData.get("note") || "Plan assigned",
+          billingStartDate,
+          creditBalance: existing?.creditBalance ?? 0,
+          totalCreditsPurchased: existing?.totalCreditsPurchased ?? 0,
+          totalCreditsConsumed: existing?.totalCreditsConsumed ?? 0,
+        },
+        $push: {
+          history: historyEntry,
         },
       },
-    },
-    { upsert: true, new: true }
-  );
-  if (plan.type === "credits") {
-    const existingCreditInvoice = await Invoice.exists({
-      student,
-      plan: plan._id,
-      assignment: assignment._id,
-      type: "credits",
-      status: { $ne: "cancelled" },
-    });
-    if (!existingCreditInvoice) {
-      await createInvoice({
-        student,
-        plan: plan._id.toString(),
-        assignment: assignment._id.toString(),
+      { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
+    );
+    if (plan.type === "credits") {
+      const existingCreditInvoice = await Invoice.exists({
+        student: new Types.ObjectId(student),
+        plan: plan._id,
+        assignment: assignment._id,
         type: "credits",
-        title: `${plan.name} credit recharge`,
-        amount: plan.amount,
-        dueDate: billingStartDate,
-        credits: Number(plan.credits || 0),
-        notes: "Generated when credit plan was assigned",
-        invoiceMode: plan.gstMode || "non_gst",
-        gstPercentage: plan.gstPercentage || 0,
+        status: { $ne: "cancelled" },
       });
+      if (!existingCreditInvoice) {
+        await createInvoice({
+          student,
+          plan: plan._id.toString(),
+          assignment: assignment._id.toString(),
+          type: "credits",
+          title: `${plan.name} credit recharge`,
+          amount: Number(plan.amount || 0),
+          dueDate: billingStartDate,
+          credits: Number(plan.credits || 0),
+          notes: "Generated when credit plan was assigned",
+          invoiceMode: plan.gstMode || "non_gst",
+          gstPercentage: Number(plan.gstPercentage || 0),
+        });
+      }
+    } else {
+      await ensureMonthlyInvoices();
     }
+    revalidatePath("/fees/student-fees");
+    revalidatePath("/fees");
+    revalidatePath("/fees/invoices");
+  } catch (error: any) {
+    if (String(error?.digest || "").startsWith("NEXT_REDIRECT")) throw error;
+    console.error("Fee plan assignment failed", error);
+    redirect("/fees/student-fees?error=assignment-failed");
   }
-  await ensureMonthlyInvoices();
-  revalidatePath("/fees/student-fees");
-  revalidatePath("/fees");
-  revalidatePath("/fees/invoices");
+  redirect("/fees/student-fees?success=assigned");
 }
 
-export default async function StudentFeesPage() {
+export default async function StudentFeesPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
   const session = await auth();
   if ((session?.user as any)?.role !== "admin") return <div className="p-6">Forbidden</div>;
   await dbConnect();
   await ensureMonthlyInvoices();
+  const params = searchParams ? await searchParams : {};
+  const error = typeof params.error === "string" ? params.error : "";
+  const success = typeof params.success === "string" ? params.success : "";
   const [students, plans, assignments, invoices, credits] = await Promise.all([
     User.find({ role: "student" }, { passwordHash: 0 }).sort({ name: 1 }).lean(),
     FeePlan.find({ isActive: true }).sort({ name: 1 }).lean(),
-    FeeAssignment.find({}).populate("student plan history.plan").sort({ updatedAt: -1 }).lean(),
+    FeeAssignment.find({}).populate("student plan").sort({ updatedAt: -1 }).lean(),
     Invoice.find({}).populate("student plan").sort({ createdAt: -1 }).limit(200).lean(),
     CreditLedger.find({}).populate("student").sort({ createdAt: -1 }).limit(100).lean(),
   ]);
@@ -103,6 +120,22 @@ export default async function StudentFeesPage() {
 
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="mb-4 font-semibold">Assign / Change Fee Structure</h2>
+        {success === "assigned" ? (
+          <div className="mb-4 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
+            Fee plan assigned successfully.
+          </div>
+        ) : null}
+        {error ? (
+          <div className="mb-4 rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-800">
+            {error === "invalid-selection"
+              ? "Please select a valid student and fee plan."
+              : error === "invalid-date"
+                ? "Please choose a valid effective date."
+                : error === "missing-record"
+                  ? "The selected student or fee plan no longer exists."
+                  : "Fee plan could not be assigned. Please check the selected plan and try again."}
+          </div>
+        ) : null}
         <StudentFeeAssignmentForm
           action={assignPlan}
           students={students.map((student: any) => ({

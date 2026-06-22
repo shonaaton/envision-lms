@@ -48,15 +48,7 @@ const FeeAssignmentSchema = new Schema(
     creditBalance: { type: Number, default: 0 },
     totalCreditsPurchased: { type: Number, default: 0 },
     totalCreditsConsumed: { type: Number, default: 0 },
-    history: [
-      {
-        plan: { type: Schema.Types.ObjectId, ref: "FeePlan" },
-        type: String,
-        changedAt: { type: Date, default: Date.now },
-        changedBy: { type: Schema.Types.ObjectId, ref: "User" },
-        note: String,
-      },
-    ],
+    history: [{ type: Schema.Types.Mixed }],
   },
   { timestamps: true }
 );

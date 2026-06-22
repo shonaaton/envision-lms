@@ -1,12 +1,13 @@
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
-import { ensureMonthlyInvoices } from "@/lib/fees";
+import { createInvoice, ensureMonthlyInvoices } from "@/lib/fees";
 import { formatINR } from "@/lib/utils";
 import { CreditLedger, FeeAssignment, FeePlan, Invoice } from "@/models/Fee";
 import { User } from "@/models/User";
 import { revalidatePath } from "next/cache";
 import { History, Users } from "lucide-react";
 import { StudentFeeAssignmentForm } from "@/components/fees/StudentFeeForms";
+import { Types } from "mongoose";
 
 export const dynamic = "force-dynamic";
 
@@ -15,18 +16,26 @@ async function assignPlan(formData: FormData) {
   const session = await auth();
   if ((session?.user as any)?.role !== "admin") throw new Error("Forbidden");
   await dbConnect();
-  const plan: any = await FeePlan.findById(formData.get("plan"));
-  if (!plan) return;
   const student = String(formData.get("student"));
+  const planId = String(formData.get("plan"));
+  const rawStartDate = String(formData.get("billingStartDate") || "");
+  if (!Types.ObjectId.isValid(student) || !Types.ObjectId.isValid(planId)) return;
+  const billingStartDate = rawStartDate ? new Date(rawStartDate) : new Date();
+  if (Number.isNaN(billingStartDate.getTime())) return;
+  const [plan, studentDoc]: any[] = await Promise.all([
+    FeePlan.findById(planId),
+    User.findOne({ _id: student, role: "student" }).lean(),
+  ]);
+  if (!plan || !studentDoc) return;
   const existing: any = await FeeAssignment.findOne({ student });
-  await FeeAssignment.findOneAndUpdate(
+  const assignment: any = await FeeAssignment.findOneAndUpdate(
     { student },
     {
       $set: {
         student,
         plan: plan._id,
         type: plan.type,
-        billingStartDate: new Date(String(formData.get("billingStartDate"))),
+        billingStartDate,
         creditBalance: existing?.creditBalance ?? 0,
         totalCreditsPurchased: existing?.totalCreditsPurchased ?? 0,
         totalCreditsConsumed: existing?.totalCreditsConsumed ?? 0,
@@ -42,9 +51,34 @@ async function assignPlan(formData: FormData) {
     },
     { upsert: true, new: true }
   );
+  if (plan.type === "credits") {
+    const existingCreditInvoice = await Invoice.exists({
+      student,
+      plan: plan._id,
+      assignment: assignment._id,
+      type: "credits",
+      status: { $ne: "cancelled" },
+    });
+    if (!existingCreditInvoice) {
+      await createInvoice({
+        student,
+        plan: plan._id.toString(),
+        assignment: assignment._id.toString(),
+        type: "credits",
+        title: `${plan.name} credit recharge`,
+        amount: plan.amount,
+        dueDate: billingStartDate,
+        credits: Number(plan.credits || 0),
+        notes: "Generated when credit plan was assigned",
+        invoiceMode: plan.gstMode || "non_gst",
+        gstPercentage: plan.gstPercentage || 0,
+      });
+    }
+  }
   await ensureMonthlyInvoices();
   revalidatePath("/fees/student-fees");
   revalidatePath("/fees");
+  revalidatePath("/fees/invoices");
 }
 
 export default async function StudentFeesPage() {

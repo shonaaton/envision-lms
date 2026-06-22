@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
-import { createInvoice, ensureMonthlyInvoices } from "@/lib/fees";
+import { createInvoice, ensureMonthlyInvoices, markInvoicePaid as applyInvoicePayment } from "@/lib/fees";
 import { formatINR } from "@/lib/utils";
 import { FeeAssignment, FeePlan, Invoice, Notification } from "@/models/Fee";
 import { User } from "@/models/User";
@@ -43,8 +43,10 @@ async function markInvoicePaid(formData: FormData) {
   const session = await auth();
   if ((session?.user as any)?.role !== "admin") throw new Error("Forbidden");
   await dbConnect();
-  await Invoice.findByIdAndUpdate(formData.get("invoice"), { status: "paid", paidAt: new Date() });
+  await applyInvoicePayment(String(formData.get("invoice") || ""));
   revalidatePath("/fees/invoices");
+  revalidatePath("/fees/student-fees");
+  revalidatePath("/fees");
 }
 
 async function cancelInvoice(formData: FormData) {

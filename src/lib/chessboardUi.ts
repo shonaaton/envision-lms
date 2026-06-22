@@ -32,7 +32,9 @@ export function buildMoveHintStyles(targets: string[], selectedSquare?: string |
   targets.forEach((square) => {
     styles[square] = {
       ...(styles[square] || {}),
-      backgroundImage: "radial-gradient(circle, rgba(90,19,114,0.30) 18%, transparent 20%)",
+      backgroundImage: "radial-gradient(circle, rgba(31, 99, 52, 0.46) 0 18%, transparent 19%)",
+      backgroundSize: "100% 100%",
+      backgroundRepeat: "no-repeat",
     };
   });
   return styles;

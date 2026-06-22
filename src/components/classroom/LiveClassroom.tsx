@@ -208,6 +208,39 @@ function drawingColor(modifier: ModifierKey) {
   return "#2563eb";
 }
 
+function formatEval(cp: number) {
+  return `${cp >= 0 ? "+" : ""}${(cp / 100).toFixed(2)}`;
+}
+
+function normalizeEngineFen(fen?: string) {
+  return !fen || fen === "start" ? new Chess().fen() : fen;
+}
+
+function formatEnginePv(fen: string, pv: string) {
+  const game = new Chess(normalizeEngineFen(fen));
+  const san: string[] = [];
+  pv.split(/\s+/).slice(0, 10).forEach((uci) => {
+    try {
+      const move = game.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] || "q" });
+      if (move) san.push(move.san);
+    } catch {
+      // Stockfish can occasionally emit a continuation that no longer matches the current board.
+    }
+  });
+  return san.join(" ") || pv;
+}
+
+function serializeDrawings(drawings: any[] = []) {
+  return JSON.stringify(
+    drawings.map((drawing) => ({
+      type: drawing?.type || "",
+      from: drawing?.from || "",
+      to: drawing?.to || "",
+      color: drawing?.color || "",
+    }))
+  );
+}
+
 function pieceSymbol(piece: string) {
   const map: Record<string, string> = {
     wK: "♔", wQ: "♕", wR: "♖", wB: "♗", wN: "♘", wP: "♙",
@@ -334,16 +367,24 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const [setupPosition, setSetupPosition] = useState<BoardPosition>({});
   const [modifier, setModifier] = useState<ModifierKey>("default");
   const [engineText, setEngineText] = useState("Engine ready");
+  const [engineLines, setEngineLines] = useState<Array<{ multipv: number; eval: string; variation: string }>>([]);
   const [boardWidth, setBoardWidth] = useState(620);
   const [selectedMoveSquare, setSelectedMoveSquare] = useState<string | null>(null);
   const [coachDrawings, setCoachDrawings] = useState<any[]>([]);
   const [drawingsDirty, setDrawingsDirty] = useState(false);
+  const [annotationDrag, setAnnotationDrag] = useState<{ from: string; to?: string; x: number; y: number } | null>(null);
   const boardShellRef = useRef<HTMLDivElement | null>(null);
+  const boardAreaRef = useRef<HTMLDivElement | null>(null);
   const engineRef = useRef<Worker | null>(null);
+  const engineFenRef = useRef("");
   const loadInFlightRef = useRef(false);
   const refreshQueuedRef = useRef(false);
   const refreshTimerRef = useRef<number | null>(null);
   const drawingsPersistTimerRef = useRef<number | null>(null);
+  const pendingOptimisticLiveRef = useRef<any | null>(null);
+  const pendingOptimisticUntilRef = useRef(0);
+  const pendingOptimisticClearTimerRef = useRef<number | null>(null);
+  const pendingDrawingsHashRef = useRef("");
   const dataRef = useRef<any>(null);
   const coach = isCoach(role);
 
@@ -366,7 +407,14 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     loadInFlightRef.current = true;
     try {
       const res = await fetch(liveUrl(), { cache: "no-store" });
-      if (res.ok) setData(await res.json());
+      if (res.ok) {
+        const nextData = await res.json();
+        const pending = pendingOptimisticLiveRef.current;
+        if (pending && Date.now() < pendingOptimisticUntilRef.current && nextData?.live) {
+          nextData.live = { ...nextData.live, ...pending };
+        }
+        setData(nextData);
+      }
     } finally {
       loadInFlightRef.current = false;
       if (refreshQueuedRef.current) {
@@ -417,13 +465,29 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   }, [data]);
 
   useEffect(() => {
-    setCoachDrawings(data?.live?.drawings || []);
-    setDrawingsDirty(false);
-  }, [data?.live?.drawings]);
+    const incomingDrawings = data?.live?.drawings || [];
+    if (!coach) {
+      setCoachDrawings(incomingDrawings);
+      setDrawingsDirty(false);
+      pendingDrawingsHashRef.current = "";
+      return;
+    }
+    const incomingHash = serializeDrawings(incomingDrawings);
+    if (drawingsDirty) {
+      if (incomingHash === pendingDrawingsHashRef.current) {
+        setCoachDrawings(incomingDrawings);
+        setDrawingsDirty(false);
+        pendingDrawingsHashRef.current = "";
+      }
+      return;
+    }
+    setCoachDrawings(incomingDrawings);
+  }, [coach, data?.live?.drawings, drawingsDirty]);
 
   useEffect(() => {
     return () => {
       if (drawingsPersistTimerRef.current) window.clearTimeout(drawingsPersistTimerRef.current);
+      if (pendingOptimisticClearTimerRef.current) window.clearTimeout(pendingOptimisticClearTimerRef.current);
     };
   }, []);
 
@@ -564,17 +628,40 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   }, [currentMoveIndex, pgnMoves.length, live?.pgn]);
 
   useEffect(() => {
-    if (!live?.engineEnabled || !live?.fen || activeTab !== "moves") return;
+    if (!live?.engineEnabled || !live?.fen || activeTab !== "moves") {
+      setEngineLines([]);
+      if (!live?.engineEnabled) setEngineText("Engine disabled");
+      return;
+    }
     try {
       if (!engineRef.current) {
         engineRef.current = new Worker("/stockfish/stockfish.js");
         engineRef.current.onmessage = (event) => {
           const line = String(event.data || "");
-          if (line.includes("score") || line.startsWith("bestmove")) setEngineText(line);
+          const best = line.match(/^bestmove\s+(\S+)/);
+          const scoreInfo = line.match(/\bscore\s+(cp|mate)\s+(-?\d+).*?\bpv\s+(.+)$/);
+          if (scoreInfo) {
+            const multipvMatch = line.match(/\bmultipv\s+(\d+)/);
+            const multipv = multipvMatch ? Number(multipvMatch[1]) : 1;
+            const evalText = scoreInfo[1] === "mate" ? `M${scoreInfo[2]}` : formatEval(Number(scoreInfo[2]));
+            const variation = formatEnginePv(engineFenRef.current, scoreInfo[3]);
+            setEngineLines((current) => {
+              const next = current.filter((item) => item.multipv !== multipv);
+              return [...next, { multipv, eval: evalText, variation }].sort((a, b) => a.multipv - b.multipv).slice(0, 3);
+            });
+          }
+          if (best) {
+            setEngineText(`Best line: ${formatEnginePv(engineFenRef.current, best[1])}`);
+          }
         };
         engineRef.current.postMessage("uci");
+        engineRef.current.postMessage("setoption name MultiPV value 3");
       }
-      engineRef.current.postMessage(`position fen ${live.fen === "start" ? new Chess().fen() : live.fen}`);
+      const analysisFen = normalizeEngineFen(live.fen);
+      engineFenRef.current = analysisFen;
+      setEngineText("Analyzing...");
+      setEngineLines([]);
+      engineRef.current.postMessage(`position fen ${analysisFen}`);
       engineRef.current.postMessage("go depth 8");
     } catch {
       setEngineText("Engine unavailable in this browser session");
@@ -582,7 +669,12 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   }, [activeTab, live?.engineEnabled, live?.fen]);
 
   async function patch(update: any, options?: { optimistic?: boolean }) {
-    if (options?.optimistic !== false) applyOptimisticLive(update);
+    if (options?.optimistic !== false) {
+      pendingOptimisticLiveRef.current = { ...(pendingOptimisticLiveRef.current || {}), ...update };
+      pendingOptimisticUntilRef.current = Date.now() + 1500;
+      if (pendingOptimisticClearTimerRef.current) window.clearTimeout(pendingOptimisticClearTimerRef.current);
+      applyOptimisticLive(update);
+    }
     const res = await fetch(liveUrl(), {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -594,7 +686,13 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       queueRefresh(0);
       return;
     }
-    queueRefresh(80);
+    if (pendingOptimisticClearTimerRef.current) window.clearTimeout(pendingOptimisticClearTimerRef.current);
+    pendingOptimisticClearTimerRef.current = window.setTimeout(() => {
+      pendingOptimisticLiveRef.current = null;
+      pendingOptimisticUntilRef.current = 0;
+      pendingOptimisticClearTimerRef.current = null;
+    }, 350);
+    queueRefresh(40);
   }
 
   function currentLive() {
@@ -608,13 +706,15 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   }
 
   function scheduleDrawings(nextDrawings: any[]) {
+    pendingDrawingsHashRef.current = serializeDrawings(nextDrawings);
     setCoachDrawings(nextDrawings);
     setDrawingsDirty(true);
+    applyOptimisticLive({ drawings: nextDrawings });
     if (drawingsPersistTimerRef.current) window.clearTimeout(drawingsPersistTimerRef.current);
     drawingsPersistTimerRef.current = window.setTimeout(() => {
       drawingsPersistTimerRef.current = null;
       const snapshot = currentLive();
-      if (JSON.stringify(snapshot.drawings || []) !== JSON.stringify(nextDrawings)) {
+      if (serializeDrawings(snapshot.drawings || []) !== pendingDrawingsHashRef.current) {
         patch({ drawings: nextDrawings });
       }
     }, 70);
@@ -855,6 +955,107 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     }
   }
 
+  function squareFromPointer(clientX: number, clientY: number) {
+    const rect = boardAreaRef.current?.getBoundingClientRect();
+    if (!rect) return "";
+    const x = Math.max(0, Math.min(rect.width - 1, clientX - rect.left));
+    const y = Math.max(0, Math.min(rect.height - 1, clientY - rect.top));
+    const fileIndex = Math.floor((x / rect.width) * 8);
+    const rankIndex = Math.floor((y / rect.height) * 8);
+    return `${files[fileIndex]}${ranks[rankIndex]}`;
+  }
+
+  function pointerInBoard(clientX: number, clientY: number) {
+    const rect = boardAreaRef.current?.getBoundingClientRect();
+    return Boolean(rect && clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom);
+  }
+
+  function squareCenter(square: string) {
+    const fileIndex = files.indexOf(square[0]);
+    const rankIndex = ranks.indexOf(square[1]);
+    const size = boardWidth / 8;
+    return {
+      x: fileIndex * size + size / 2,
+      y: rankIndex * size + size / 2,
+    };
+  }
+
+  function toggleDrawing(nextDrawing: any) {
+    updateCoachDrawings((drawings) => {
+      const same = drawings.some((drawing: any) =>
+        drawing.type === nextDrawing.type &&
+        drawing.from === nextDrawing.from &&
+        drawing.to === nextDrawing.to &&
+        drawing.color === nextDrawing.color
+      );
+      if (same) {
+        return drawings.filter((drawing: any) => !(
+          drawing.type === nextDrawing.type &&
+          drawing.from === nextDrawing.from &&
+          drawing.to === nextDrawing.to &&
+          drawing.color === nextDrawing.color
+        ));
+      }
+      return [...drawings, nextDrawing];
+    });
+  }
+
+  function clearCoachDrawings() {
+    if (!coach || !(displayedDrawings || []).length) return;
+    scheduleDrawings([]);
+  }
+
+  function onBoardMouseDown(event: React.MouseEvent<HTMLDivElement>) {
+    if (!coach || event.button !== 2) return;
+    const from = squareFromPointer(event.clientX, event.clientY);
+    if (!from) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const rect = boardAreaRef.current?.getBoundingClientRect();
+    setAnnotationDrag({
+      from,
+      to: from,
+      x: event.clientX - (rect?.left || 0),
+      y: event.clientY - (rect?.top || 0),
+    });
+  }
+
+  function onBoardMouseMove(event: React.MouseEvent<HTMLDivElement>) {
+    if (!annotationDrag || !coach) return;
+    const rect = boardAreaRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    event.preventDefault();
+    const to = pointerInBoard(event.clientX, event.clientY) ? squareFromPointer(event.clientX, event.clientY) : annotationDrag.to;
+    setAnnotationDrag({
+      ...annotationDrag,
+      to,
+      x: Math.max(0, Math.min(rect.width, event.clientX - rect.left)),
+      y: Math.max(0, Math.min(rect.height, event.clientY - rect.top)),
+    });
+  }
+
+  function onBoardMouseUp(event: React.MouseEvent<HTMLDivElement>) {
+    if (!annotationDrag || !coach || event.button !== 2) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const to = pointerInBoard(event.clientX, event.clientY) ? squareFromPointer(event.clientX, event.clientY) : annotationDrag.to || annotationDrag.from;
+    if (!to || to === annotationDrag.from) {
+      toggleDrawing({ type: "highlight", from: annotationDrag.from, color: "#dc2626" });
+    } else {
+      toggleDrawing({ type: "arrow", from: annotationDrag.from, to, color: "#dc2626" });
+    }
+    setAnnotationDrag(null);
+  }
+
+  function onBoardContextMenu(event: React.MouseEvent<HTMLDivElement>) {
+    if (!coach) return;
+    event.preventDefault();
+  }
+
+  function onBoardClick() {
+    if (coach) clearCoachDrawings();
+  }
+
   function onSquareClick(square: string) {
     const clickedPiece = boardPieceMap[square];
     if (live?.setupMode || tool === "setup") {
@@ -899,7 +1100,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
 
   function onSquareRightClick(square: string) {
     if (!coach) return;
-    const color = drawingColor(modifier);
+    const color = "#dc2626";
     updateCoachDrawings((drawings) => {
       const sameHighlight = drawings.some((drawing: any) => drawing.type === "highlight" && drawing.from === square && drawing.color === color);
       if (sameHighlight) {
@@ -1469,7 +1670,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
 
       <div className="grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-[minmax(0,1fr)_350px]">
         <section className="flex min-h-0 min-w-0 flex-col gap-3 overflow-hidden p-3 lg:flex-row">
-          <aside className={`flex max-h-full flex-none flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 shadow-sm transition-all duration-200 ${sidebarCollapsed ? "lg:w-[74px]" : "lg:w-[230px]"}`}>
+          <aside style={{ display: "none" }} className={`flex max-h-full flex-none flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 shadow-sm transition-all duration-200 ${sidebarCollapsed ? "lg:w-[74px]" : "lg:w-[230px]"}`}>
             <div className={`flex items-center border-b border-slate-200 p-2 ${sidebarCollapsed ? "justify-center" : "justify-between"}`}>
               {!sidebarCollapsed && <div className="px-2 text-xs font-black uppercase tracking-[0.18em] text-slate-500">{coach ? "Classroom Tools" : "Classroom"}</div>}
               <button
@@ -1551,7 +1752,16 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                         {ranks.map((rank) => <span key={`left-${rank}`} className="flex items-center justify-center">{rank}</span>)}
                       </div>
                     )}
-                    <div className="relative col-start-2 row-start-1" style={{ width: boardWidth, height: boardWidth }}>
+                    <div
+                      ref={boardAreaRef}
+                      className="relative col-start-2 row-start-1"
+                      style={{ width: boardWidth, height: boardWidth }}
+                      onMouseDown={onBoardMouseDown}
+                      onMouseMove={onBoardMouseMove}
+                      onMouseUp={onBoardMouseUp}
+                      onContextMenu={onBoardContextMenu}
+                      onClick={onBoardClick}
+                    >
                       <Chessboard
                         id={`classroom-board-${classroomId}`}
                         position={boardPosition as any}
@@ -1560,11 +1770,8 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                         onPieceDrop={onDrop}
                         onPieceDropOffBoard={onPieceDropOffBoard as any}
                         onSquareClick={onSquareClick as any}
-                        onSquareRightClick={onSquareRightClick as any}
-                        onArrowsChange={persistBoardArrows as any}
-                        customArrows={arrows as any}
                         customSquareStyles={squareStyles as any}
-                        areArrowsAllowed={coach}
+                        areArrowsAllowed={false}
                         arePiecesDraggable={!live?.locked && (coach || canMove)}
                         arePremovesAllowed={!!live?.illegalMovesEnabled}
                         dropOffBoardAction={live?.setupMode || tool === "setup" ? "trash" : "snapback"}
@@ -1573,6 +1780,59 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                         customLightSquareStyle={{ backgroundColor: "#f1d9aa" }}
                         customBoardStyle={{ borderRadius: "4px", overflow: "hidden" }}
                       />
+                      <svg className="pointer-events-none absolute inset-0 z-20" width={boardWidth} height={boardWidth} viewBox={`0 0 ${boardWidth} ${boardWidth}`}>
+                        <defs>
+                          {arrows.map((arrow: any, index: number) => (
+                            <marker key={`marker-${index}`} id={`classroom-arrow-head-${index}`} markerWidth="12" markerHeight="12" refX="9" refY="6" orient="auto" markerUnits="strokeWidth">
+                              <path d="M 0 0 L 12 6 L 0 12 z" fill={arrow[2] || "#dc2626"} />
+                            </marker>
+                          ))}
+                          {annotationDrag && annotationDrag.to && annotationDrag.to !== annotationDrag.from && (
+                            <marker id="classroom-preview-arrow-head" markerWidth="12" markerHeight="12" refX="9" refY="6" orient="auto" markerUnits="strokeWidth">
+                              <path d="M 0 0 L 12 6 L 0 12 z" fill="#dc2626" />
+                            </marker>
+                          )}
+                        </defs>
+                        {arrows.map((arrow: any, index: number) => {
+                          const from = squareCenter(arrow[0]);
+                          const to = squareCenter(arrow[1]);
+                          const dx = to.x - from.x;
+                          const dy = to.y - from.y;
+                          const length = Math.max(1, Math.sqrt(dx * dx + dy * dy));
+                          const endOffset = Math.min(boardWidth / 22, length * 0.28);
+                          const end = { x: to.x - (dx / length) * endOffset, y: to.y - (dy / length) * endOffset };
+                          return (
+                            <line
+                              key={`${arrow[0]}-${arrow[1]}-${arrow[2]}-${index}`}
+                              x1={from.x}
+                              y1={from.y}
+                              x2={end.x}
+                              y2={end.y}
+                              stroke={arrow[2] || "#dc2626"}
+                              strokeWidth={Math.max(7, boardWidth / 72)}
+                              strokeLinecap="round"
+                              markerEnd={`url(#classroom-arrow-head-${index})`}
+                              opacity="0.82"
+                            />
+                          );
+                        })}
+                        {annotationDrag && annotationDrag.to && annotationDrag.to !== annotationDrag.from && (() => {
+                          const from = squareCenter(annotationDrag.from);
+                          return (
+                            <line
+                              x1={from.x}
+                              y1={from.y}
+                              x2={annotationDrag.x}
+                              y2={annotationDrag.y}
+                              stroke="#dc2626"
+                              strokeWidth={Math.max(7, boardWidth / 72)}
+                              strokeLinecap="round"
+                              markerEnd="url(#classroom-preview-arrow-head)"
+                              opacity="0.66"
+                            />
+                          );
+                        })()}
+                      </svg>
                       <GamifiedBoardOverlay objects={liveGamifiedObjects} boardWidth={boardWidth} orientation={orientation} />
                     </div>
                     {live?.showCoordinates !== false && (
@@ -1624,39 +1884,44 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
               </div>
                 )}
 
-                {coach && <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
-                  <button onClick={() => patch({ locked: !live?.locked })} className={`rounded-md border px-3 py-1.5 text-xs font-semibold ${live?.locked ? "border-purple-200 bg-purple-50 text-purple-800" : "border-slate-200 bg-white text-slate-700"}`}>
-                    {live?.locked ? "Unlock board" : "Lock board"}
-                  </button>
-                  <button onClick={() => patch({ showCoordinates: !live?.showCoordinates })} className={`rounded-md border px-3 py-1.5 text-xs font-semibold ${live?.showCoordinates !== false ? "border-purple-200 bg-purple-50 text-purple-800" : "border-slate-200 bg-white text-slate-700"}`}>
-                    Coordinates
-                  </button>
-                  <button onClick={() => patch({ orientation: live?.orientation === "white" ? "black" : "white" })} className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700">
-                    Flip
-                  </button>
-                  <button onClick={resetGame} className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700">
-                    Reset
-                  </button>
-                  <button onClick={() => patch({ soundEnabled: !live?.soundEnabled })} className={`rounded-md border px-3 py-1.5 text-xs font-semibold ${live?.soundEnabled ? "border-purple-200 bg-purple-50 text-purple-800" : "border-slate-200 bg-white text-slate-700"}`}>
-                    Sound
-                  </button>
-                  <button onClick={() => setActiveTab("moves")} className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700">
-                    Moves
-                  </button>
-                  <button onClick={() => setActiveTab("leaderboard")} className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700">
-                    Leaderboard
-                  </button>
-                </div>}
+                {coach && (
+                  <div className="mx-auto mt-3 flex w-full max-w-[720px] flex-col gap-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-2 py-2">
+                      <div className="min-w-0 px-1 text-xs font-semibold text-slate-500">
+                        <span className="text-slate-900">{live?.pgnTitle || "Classroom board"}</span>
+                        <span className="ml-2 rounded-md bg-slate-100 px-2 py-1 text-slate-600">{currentMoveIndex} / {pgnMoves.length || (live?.moveHistory || []).length}</span>
+                      </div>
+                      <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
+                        <button disabled={!pgnMoves.length} onClick={() => navigateMove(0)} className="grid h-8 w-8 place-items-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><SkipBack size={15} /></button>
+                        <button disabled={!pgnMoves.length} onClick={() => navigateMove(currentMoveIndex - 1)} className="grid h-8 w-8 place-items-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><ChevronLeft size={15} /></button>
+                        <button disabled={!pgnMoves.length} onClick={() => navigateMove(currentMoveIndex + 1)} className="grid h-8 w-8 place-items-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><ChevronRight size={15} /></button>
+                        <button disabled={!pgnMoves.length} onClick={() => navigateMove(pgnMoves.length)} className="grid h-8 w-8 place-items-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><SkipForward size={15} /></button>
+                        <button disabled={!pgnLibrary.length} onClick={() => loadAdjacentPgn(-1)} className="rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 disabled:opacity-40">Previous game</button>
+                        <button disabled={!pgnLibrary.length} onClick={() => loadAdjacentPgn(1)} className="rounded-md bg-purple-700 px-2.5 py-1.5 text-xs font-semibold text-white disabled:opacity-40">Next game</button>
+                      </div>
+                    </div>
 
-                {coach && <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
-                  <button onClick={() => navigateMove(0)} className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 bg-white text-slate-700"><SkipBack size={16} /></button>
-                  <button onClick={() => navigateMove(currentMoveIndex - 1)} className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 bg-white text-slate-700"><ChevronLeft size={16} /></button>
-                  <span className="rounded-md bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600">{currentMoveIndex} / {pgnMoves.length || (live?.moveHistory || []).length}</span>
-                  <button onClick={() => navigateMove(currentMoveIndex + 1)} className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 bg-white text-slate-700"><ChevronRight size={16} /></button>
-                  <button onClick={() => navigateMove(pgnMoves.length)} className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 bg-white text-slate-700"><SkipForward size={16} /></button>
-                  <button onClick={() => loadAdjacentPgn(-1)} className="ml-2 rounded-md border border-slate-200 px-3 py-1.5 text-xs font-semibold">Previous game</button>
-                  <button onClick={() => loadAdjacentPgn(1)} className="rounded-md bg-purple-700 px-3 py-1.5 text-xs font-semibold text-white">Next game</button>
-                </div>}
+                    <div className="flex flex-wrap items-center justify-end gap-1.5">
+                      <button onClick={() => setPgnOpen(true)} disabled={!canLoadPgnLibrary} className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 disabled:opacity-40">Load PGN</button>
+                      <button onClick={() => { setSetupPosition(boardPieceMap); setGamifiedSetup(liveGamifiedObjects); setSetupMovementMode(live?.illegalMovesEnabled ? "free" : live?.fen?.split(" ")?.[1] === "b" ? "black" : "white"); setSetupOpen(true); }} className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700">Setup</button>
+                      <button onClick={() => patch({ illegalMovesEnabled: !live?.illegalMovesEnabled })} className={`rounded-md border px-2.5 py-1.5 text-xs font-semibold ${live?.illegalMovesEnabled ? "border-purple-200 bg-purple-50 text-purple-800" : "border-slate-200 bg-white text-slate-700"}`}>Free move</button>
+                      <button onClick={() => setTool("highlight")} className={`rounded-md border px-2.5 py-1.5 text-xs font-semibold ${tool === "highlight" ? "border-purple-200 bg-purple-50 text-purple-800" : "border-slate-200 bg-white text-slate-700"}`}>Highlight</button>
+                      <button onClick={() => setTool("arrow")} className={`rounded-md border px-2.5 py-1.5 text-xs font-semibold ${tool === "arrow" ? "border-purple-200 bg-purple-50 text-purple-800" : "border-slate-200 bg-white text-slate-700"}`}>Draw</button>
+                      <button onClick={() => patch({ drawings: [] })} className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700">Clear</button>
+                      <button onClick={() => patch({ locked: !live?.locked })} className={`rounded-md border px-2.5 py-1.5 text-xs font-semibold ${live?.locked ? "border-purple-200 bg-purple-50 text-purple-800" : "border-slate-200 bg-white text-slate-700"}`}>{live?.locked ? "Unlock" : "Lock"}</button>
+                      <button onClick={() => patch({ showCoordinates: !live?.showCoordinates })} className={`rounded-md border px-2.5 py-1.5 text-xs font-semibold ${live?.showCoordinates !== false ? "border-purple-200 bg-purple-50 text-purple-800" : "border-slate-200 bg-white text-slate-700"}`}>Coordinates</button>
+                      <button onClick={() => patch({ orientation: live?.orientation === "white" ? "black" : "white" })} className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700">Flip</button>
+                      <button onClick={resetGame} className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700">Reset</button>
+                      <button onClick={() => patch({ soundEnabled: !live?.soundEnabled })} className={`rounded-md border px-2.5 py-1.5 text-xs font-semibold ${live?.soundEnabled ? "border-purple-200 bg-purple-50 text-purple-800" : "border-slate-200 bg-white text-slate-700"}`}>Sound</button>
+                      <button onClick={askEveryone} className="rounded-md border border-purple-200 bg-purple-50 px-2.5 py-1.5 text-xs font-semibold text-purple-800">Challenge</button>
+                      <button onClick={createQuiz} disabled={!canLaunchBoardQuiz} className="rounded-md bg-purple-700 px-2.5 py-1.5 text-xs font-semibold text-white disabled:opacity-40">Quiz</button>
+                      <button onClick={() => patch({ studentMovesEnabled: !live?.studentMovesEnabled, mode: !live?.studentMovesEnabled ? "student_move" : "teaching" })} disabled={!students.length} className={`rounded-md border px-2.5 py-1.5 text-xs font-semibold disabled:opacity-40 ${live?.studentMovesEnabled ? "border-purple-200 bg-purple-50 text-purple-800" : "border-slate-200 bg-white text-slate-700"}`}>Student control</button>
+                      <button onClick={() => setActiveTab("moves")} className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700">Moves</button>
+                      <button onClick={() => setActiveTab("leaderboard")} className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700">Leaderboard</button>
+                      <button onClick={openEndSummary} className="rounded-md border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs font-semibold text-red-700">End class</button>
+                    </div>
+                  </div>
+                )}
 
                 {coach && (
                   <div className="mt-3">
@@ -1859,7 +2124,18 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                 </div>
                 {coach && <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                   <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-slate-950"><Bot size={16} /> Engine</div>
-                  <p className="break-words text-xs text-slate-600">{live?.engineEnabled ? engineText : "Engine disabled"}</p>
+                  {live?.engineEnabled && engineLines.length ? (
+                    <div className="space-y-2">
+                      {engineLines.map((line) => (
+                        <div key={line.multipv} className="rounded-md bg-white px-3 py-2 text-xs text-slate-700">
+                          <span className="mr-2 font-bold text-slate-950">{line.eval}</span>
+                          <span>{line.variation}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="break-words text-xs text-slate-600">{live?.engineEnabled ? engineText : "Engine disabled"}</p>
+                  )}
                 </div>}
               </div>
             )}

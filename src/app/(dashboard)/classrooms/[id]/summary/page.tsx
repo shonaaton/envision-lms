@@ -255,7 +255,10 @@ export default async function ClassroomSummaryPage({
             <InfoTile label="Course" value={classroom.courseName || "General"} />
             <InfoTile label="Level" value={classroom.levelName || "Not set"} />
             <InfoTile label="Topic" value={selectedSession.topicName || classroom.topicName || "Not set"} />
-            <InfoTile label="Duration" value={formatDuration(selectedSession.teachingMinutes || attendance?.teachingMinutes || selectedSession.durationMinutes || classroom.durationMinutes)} />
+            <InfoTile label="Scheduled Duration" value={formatDuration(selectedSession.durationMinutes || classroom.durationMinutes)} />
+            <InfoTile label="Paid Teaching Hours" value={formatDuration(selectedSession.teachingMinutes || attendance?.teachingMinutes || selectedSession.durationMinutes || classroom.durationMinutes)} />
+            <InfoTile label="Actual Class Time" value={formatDuration(selectedSession.actualTeachingMinutes || attendance?.actualTeachingMinutes || summary?.actualTeachingMinutes || 0)} />
+            <InfoTile label="Coach Punctuality" value={selectedSession.punctualityScore || attendance?.punctualityScore || summary?.punctualityScore ? `${selectedSession.punctualityScore || attendance?.punctualityScore || summary?.punctualityScore}%` : "Pending"} />
             <InfoTile label="Meeting Link" value={classroom.meetingUrl ? "Configured" : "Not added"} />
             <InfoTile label="Meeting Status" value={liveSession?.status || "No live record"} />
             <InfoTile label="Students Present" value={String(presentCount)} />

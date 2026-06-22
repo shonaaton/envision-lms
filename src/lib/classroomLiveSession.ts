@@ -1,5 +1,6 @@
 import { Classroom } from "@/models/Classroom";
 import { ClassroomSession } from "@/models/ClassroomLive";
+import { actualSessionMinutes, punctualityBreakdown, scheduledPaymentMinutes } from "@/lib/teachingStats";
 
 export function getRequestedSessionId(req: Request) {
   const url = new URL(req.url);
@@ -87,12 +88,17 @@ export async function markScheduledSessionFinished({
   target.actualEndedAt = finish;
   target.conductedBy = actorId || target.conductedBy;
   target.coachAttendanceStatus = "present";
-  target.teachingMinutes = Math.max(
-    0,
-    Math.round((new Date(target.actualEndedAt).getTime() - new Date(target.actualStartedAt).getTime()) / 60000)
-  );
+  target.teachingMinutes = scheduledPaymentMinutes(target, classroom);
+  target.actualTeachingMinutes = actualSessionMinutes(target);
+  target.punctualityScore = punctualityBreakdown(target, classroom).punctualityScore;
   target.attendanceMarkedAt = new Date();
-  target.summary = summary || target.summary || {};
+  target.summary = {
+    ...(target.summary || {}),
+    ...(summary || {}),
+    scheduledTeachingMinutes: target.teachingMinutes,
+    actualTeachingMinutes: target.actualTeachingMinutes,
+    punctualityScore: target.punctualityScore,
+  };
   const allDone = (classroom.generatedSessions || []).every((session: any) =>
     ["completed", "cancelled"].includes(String(session.status || "").toLowerCase())
   );

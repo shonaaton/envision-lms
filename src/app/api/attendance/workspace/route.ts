@@ -47,6 +47,25 @@ function flattenClassroomSessions(classrooms: any[]) {
   });
 }
 
+function findAttendanceSession(classroom: any, attendance: any) {
+  const sessionId = String(attendance?.scheduledSessionId || "");
+  const generated = Array.isArray(classroom?.generatedSessions) ? classroom.generatedSessions : [];
+  const matched = generated.find((item: any) => String(item?._id || "") === sessionId);
+  if (matched) return matched;
+  if (classroom?.classDate && sessionId === `${objectId(classroom._id)}-single`) {
+    return {
+      _id: `${classroom._id}-single`,
+      sessionNumber: 1,
+      topicName: classroom.topicName || classroom.title,
+      scheduledFor: classroom.classDate,
+      startTime: classroom.startTime,
+      durationMinutes: classroom.durationMinutes || 60,
+      status: classroom.status || "scheduled",
+    };
+  }
+  return null;
+}
+
 function deriveAttendanceState(session: any, attendance: any, now: Date) {
   const lifecycle = deriveScheduledSessionStatus(session, now);
   if (lifecycle === "cancelled" || lifecycle === "rescheduled") return "pending";
@@ -83,10 +102,13 @@ export async function GET(req: Request) {
     const sessionRows = attendanceDocs.flatMap((doc: any) => {
       const record = (doc.records || []).find((row: any) => objectId(row.student) === userId);
       if (!record) return [];
-      const classroom = doc.classroom || {};
-      const scheduledSession = (classroom.generatedSessions || []).find((item: any) => String(item._id) === String(doc.scheduledSessionId)) || null;
+      const classroom = doc.classroom;
+      if (!classroom?._id) return [];
+      const scheduledSession = findAttendanceSession(classroom, doc);
+      if (doc.scheduledSessionId && !scheduledSession) return [];
       const summaryRow = doc.metadata?.summary?.rows?.find((row: any) => objectId(row.student?._id || row.student) === userId) || null;
-      const duration = Number(doc.teachingMinutes || scheduledSession?.teachingMinutes || scheduledSession?.durationMinutes || classroom.durationMinutes || 0);
+      const duration = Number(doc.teachingMinutes || scheduledSession?.durationMinutes || classroom.durationMinutes || 0);
+      const actualDuration = Number(doc.actualTeachingMinutes || scheduledSession?.actualTeachingMinutes || 0);
       return [{
         id: objectId(doc._id),
         classroomId: objectId(classroom._id),
@@ -98,6 +120,8 @@ export async function GET(req: Request) {
         sessionDate: doc.sessionDate,
         startTime: scheduledSession?.startTime || classroom.startTime || "",
         durationMinutes: duration,
+        actualTeachingMinutes: actualDuration,
+        punctualityScore: Number(doc.punctualityScore || scheduledSession?.punctualityScore || 0),
         status: record.status,
         joinedAt: doc.metadata?.summary?.startedAt || null,
         leftAt: doc.metadata?.summary?.endedAt || null,
@@ -183,7 +207,9 @@ export async function GET(req: Request) {
         status: deriveScheduledSessionStatus(session, now),
         attendanceState: deriveAttendanceState(session, attendance, now),
         coachStatus: attendance?.coachStatus || session.coachAttendanceStatus || "pending",
-        teachingMinutes: Number(attendance?.teachingMinutes || session.teachingMinutes || session.durationMinutes || classroom.durationMinutes || 0),
+        teachingMinutes: Number(attendance?.teachingMinutes || session.durationMinutes || classroom.durationMinutes || 0),
+        actualTeachingMinutes: Number(attendance?.actualTeachingMinutes || session.actualTeachingMinutes || 0),
+        punctualityScore: Number(attendance?.punctualityScore || session.punctualityScore || 0),
         students: (classroom.students || []).map((student: any) => {
           const saved = (attendance?.records || []).find((row: any) => objectId(row.student) === objectId(student._id));
           return {

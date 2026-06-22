@@ -373,7 +373,8 @@ async function StudentDashboard({ userId }: { userId: string }) {
   const homeworkCompleted = submissions.length;
   const homeworkCompletion = percent(homeworkCompleted, Math.max(visibleHomework.length, 1));
   const quizAccuracy = Math.round(submissions.reduce((sum: number, submission: any) => sum + (submission.accuracy || 0), 0) / Math.max(submissions.length, 1));
-  const attendanceRecords = attendance.flatMap((item: any) => item.records || []).filter((record: any) => objectId(record.student) === userId);
+  const validAttendance = attendance.filter((item: any) => classroomIds.includes(objectId(item.classroom)));
+  const attendanceRecords = validAttendance.flatMap((item: any) => item.records || []).filter((record: any) => objectId(record.student) === userId);
   const attendancePresent = attendanceRecords.filter((record: any) => record.status === "present" || record.status === "late");
   const attendancePct = percent(attendancePresent.length, Math.max(attendanceRecords.length, 1));
   const currentStreak = submissions
@@ -747,7 +748,10 @@ async function CoachDashboard({ userId, searchParams }: { userId: string; search
           </div>
           <div className="grid grid-cols-2 gap-3">
             <InfoTile label="Total Hours" value={teaching.totalHoursConducted} />
-            <InfoTile label="Avg Duration" value={formatDuration(teaching.averageClassDuration || 0)} />
+            <InfoTile label="Actual Time" value={`${teaching.actualHoursConducted || 0}h`} />
+            <InfoTile label="Avg Paid Duration" value={formatDuration(teaching.averageClassDuration || 0)} />
+            <InfoTile label="Avg Actual Duration" value={formatDuration(teaching.averageActualDuration || 0)} />
+            <InfoTile label="Punctuality" value={`${teaching.punctualityScore || 0}%`} />
             <InfoTile label="Rescheduled" value={teaching.classesRescheduled} />
             <InfoTile label="Attendance %" value={`${teaching.attendancePercentage}%`} />
           </div>
@@ -761,7 +765,8 @@ async function CoachDashboard({ userId, searchParams }: { userId: string; search
                 <tr className="border-b border-slate-100">
                   <th className="px-3 py-3 font-medium">Batch</th>
                   <th className="px-3 py-3 font-medium">Classes</th>
-                  <th className="px-3 py-3 font-medium">Hours</th>
+                  <th className="px-3 py-3 font-medium">Paid Hours</th>
+                  <th className="px-3 py-3 font-medium">Actual</th>
                   <th className="px-3 py-3 font-medium">Students</th>
                 </tr>
               </thead>
@@ -771,11 +776,12 @@ async function CoachDashboard({ userId, searchParams }: { userId: string; search
                     <td className="px-3 py-3 font-medium text-slate-950">{row.batchName}</td>
                     <td className="px-3 py-3">{row.classesConducted}</td>
                     <td className="px-3 py-3">{row.hoursConducted.toFixed(1)}</td>
+                    <td className="px-3 py-3">{(row.actualHours || 0).toFixed(1)}</td>
                     <td className="px-3 py-3">{row.students}</td>
                   </tr>
                 )) : (
                   <tr>
-                    <td colSpan={4} className="px-3 py-6 text-center text-sm text-slate-500">Teaching hours will appear here once scheduled classes are completed.</td>
+                    <td colSpan={5} className="px-3 py-6 text-center text-sm text-slate-500">Teaching hours will appear here once scheduled classes are completed.</td>
                   </tr>
                 )}
               </tbody>
@@ -1081,6 +1087,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
       homework: coachHomework.length,
       sessions: coachAttendance.length,
       hours: teaching.totalHoursConducted,
+      actualHours: teaching.actualHoursConducted,
+      punctualityScore: teaching.punctualityScore,
       attendancePercentage: teaching.attendancePercentage,
       activeBatches: new Set(coachClasses.flatMap((classroom: any) => (classroom.batches || []).map((batch: any) => batch.name || objectId(batch)))).size,
     };
@@ -1089,7 +1097,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
   const batchTeachingRows = Array.from(
     classrooms.reduce((map, classroom: any) => {
       const completedSessions = (classroom.generatedSessions || []).filter((session: any) => session.status === "completed" && new Date(session.actualEndedAt || session.scheduledFor) >= from && new Date(session.actualEndedAt || session.scheduledFor) <= to);
-      const sessionHours = completedSessions.reduce((sum: number, session: any) => sum + Number(session.teachingMinutes || session.durationMinutes || 0) / 60, 0);
+      const sessionHours = completedSessions.reduce((sum: number, session: any) => sum + Number(session.durationMinutes || classroom.durationMinutes || 0) / 60, 0);
       (classroom.batches || []).forEach((batchId: any) => {
         const batch = batches.find((item: any) => objectId(item._id) === objectId(batchId));
         const key = batch?.name || "Unassigned";
@@ -1369,7 +1377,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
                 <th className="px-3 py-3 font-medium">Coach</th>
                 <th className="px-3 py-3 font-medium">Students</th>
                 <th className="px-3 py-3 font-medium">Classes</th>
-                <th className="px-3 py-3 font-medium">Hours</th>
+                <th className="px-3 py-3 font-medium">Paid Hours</th>
+                <th className="px-3 py-3 font-medium">Actual</th>
+                <th className="px-3 py-3 font-medium">Punctuality</th>
                 <th className="px-3 py-3 font-medium">Batches</th>
                 <th className="px-3 py-3 font-medium">Attendance %</th>
                 <th className="px-3 py-3 font-medium">Homework</th>
@@ -1383,6 +1393,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
                   <td className="px-3 py-3">{compactNumber(row.students)}</td>
                   <td className="px-3 py-3">{compactNumber(row.classes)}</td>
                   <td className="px-3 py-3">{row.hours.toFixed(1)}</td>
+                  <td className="px-3 py-3">{row.actualHours.toFixed(1)}</td>
+                  <td className="px-3 py-3">{row.punctualityScore}%</td>
                   <td className="px-3 py-3">{compactNumber(row.activeBatches)}</td>
                   <td className="px-3 py-3">{row.attendancePercentage}%</td>
                   <td className="px-3 py-3">{compactNumber(row.homework)}</td>

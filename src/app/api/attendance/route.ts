@@ -5,6 +5,7 @@ import { Attendance } from "@/models/Attendance";
 import { recordActivity } from "@/lib/activity";
 import { consumeAttendanceCredit } from "@/lib/fees";
 import { Classroom } from "@/models/Classroom";
+import { actualSessionMinutes, punctualityBreakdown, scheduledPaymentMinutes } from "@/lib/teachingStats";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +34,13 @@ export async function POST(req: Request) {
   await dbConnect();
   await Attendance.collection.dropIndex("classroom_1_sessionDate_1").catch(() => undefined);
   const normalizedDate = new Date(sessionDate);
+  const classroomDoc: any = await Classroom.findById(classroom);
+  const target = sessionId ? classroomDoc?.generatedSessions?.id?.(sessionId) : null;
+  const scheduledMinutes = target ? scheduledPaymentMinutes(target, classroomDoc) : Math.max(0, Number(classroomDoc?.durationMinutes || teachingMinutes || 0));
+  const actualMinutes = target
+    ? Number(target.actualTeachingMinutes || actualSessionMinutes(target))
+    : Math.max(0, Number(metadata?.summary?.actualTeachingMinutes || 0));
+  const punctualityScore = target ? Number(target.punctualityScore || punctualityBreakdown(target, classroomDoc).punctualityScore) : 0;
   const doc = await Attendance.findOneAndUpdate(
     { classroom, scheduledSessionId: sessionId || "", sessionDate: normalizedDate },
     {
@@ -41,8 +49,15 @@ export async function POST(req: Request) {
       scheduledSessionId: sessionId || "",
       coach,
       coachStatus: coachStatus || "pending",
-      teachingMinutes: Math.max(0, Number(teachingMinutes || 0)),
-      metadata: metadata || {},
+      teachingMinutes: scheduledMinutes,
+      actualTeachingMinutes: actualMinutes,
+      punctualityScore,
+      metadata: {
+        ...(metadata || {}),
+        scheduledTeachingMinutes: scheduledMinutes,
+        actualTeachingMinutes: actualMinutes,
+        punctualityScore,
+      },
     },
     { upsert: true, new: true }
   );
@@ -60,13 +75,19 @@ export async function POST(req: Request) {
     }
   }
   if (sessionId) {
-    const classroomDoc: any = await Classroom.findById(classroom);
-    const target = classroomDoc?.generatedSessions?.id?.(sessionId);
     if (target) {
       target.attendanceMarkedAt = new Date();
       target.coachAttendanceStatus = coachStatus || target.coachAttendanceStatus || "present";
-      target.teachingMinutes = Math.max(0, Number(teachingMinutes || target.teachingMinutes || 0));
-      target.summary = metadata?.summary || target.summary || {};
+      target.teachingMinutes = scheduledMinutes;
+      target.actualTeachingMinutes = actualMinutes;
+      target.punctualityScore = punctualityScore;
+      target.summary = {
+        ...(target.summary || {}),
+        ...(metadata?.summary || {}),
+        scheduledTeachingMinutes: scheduledMinutes,
+        actualTeachingMinutes: actualMinutes,
+        punctualityScore,
+      };
       await classroomDoc.save();
     }
   }

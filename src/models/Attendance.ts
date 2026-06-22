@@ -8,6 +8,8 @@ const AttendanceSchema = new Schema(
     coach: { type: Schema.Types.ObjectId, ref: "User", index: true },
     coachStatus: { type: String, enum: ["present", "absent", "late", "rescheduled", "cancelled", "pending"], default: "pending" },
     teachingMinutes: { type: Number, default: 0 },
+    actualTeachingMinutes: { type: Number, default: 0 },
+    punctualityScore: { type: Number, default: 0 },
     records: [
       {
         student: { type: Schema.Types.ObjectId, ref: "User", required: true },

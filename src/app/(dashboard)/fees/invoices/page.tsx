@@ -6,6 +6,7 @@ import { FeeAssignment, FeePlan, Invoice, Notification } from "@/models/Fee";
 import { User } from "@/models/User";
 import PayButton from "@/components/PayButton";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { Download, Printer, Receipt, Send } from "lucide-react";
 import { InvoiceCreationForm } from "@/components/fees/InvoiceCreationForm";
 
@@ -76,6 +77,7 @@ export default async function FeeInvoicesPage() {
   const session = await auth();
   const role = (session?.user as any)?.role;
   const userId = (session?.user as any)?.id;
+  if (role === "instructor") redirect("/dashboard");
   await dbConnect();
   await ensureMonthlyInvoices();
   const [invoices, students, plans, assignments] = await Promise.all([

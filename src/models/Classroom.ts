@@ -51,6 +51,8 @@ const ScheduledSessionSchema = new Schema(
       default: "pending",
     },
     teachingMinutes: { type: Number, default: 0 },
+    actualTeachingMinutes: { type: Number, default: 0 },
+    punctualityScore: { type: Number, default: 0 },
     attendanceMarkedAt: Date,
     summary: { type: Schema.Types.Mixed, default: {} },
   },

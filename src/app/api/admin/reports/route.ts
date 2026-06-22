@@ -118,7 +118,7 @@ function plainSessionRows(classrooms: any[], range: RangeLike) {
           scheduledFor: session.actualStartedAt || session.scheduledFor,
           startTime: session.startTime || classroom.startTime || "",
           durationMinutes: Number(session.durationMinutes || classroom.durationMinutes || 0),
-          teachingMinutes: Number(session.teachingMinutes || session.durationMinutes || classroom.durationMinutes || 0),
+          teachingMinutes: Number(session.durationMinutes || classroom.durationMinutes || session.teachingMinutes || 0),
           status: derivedStatus,
           joinAccess: isSessionUpcomingLike(derivedStatus) ? "Joinable" : "Closed",
           studentCount: Number((classroom.students || []).length),
@@ -243,7 +243,20 @@ export async function GET(req: Request) {
     });
 
     title = "Coaching Hours Report";
-    headers = ["Coach", "Batch", "Classes Conducted", "Hours Conducted", "Average Class Duration", "Attendance %", "Students Taught", "Cancelled", "Rescheduled"];
+    headers = [
+      "Coach",
+      "Batch",
+      "Classes Conducted",
+      "Paid Scheduled Hours",
+      "Actual Classroom Hours",
+      "Average Paid Duration",
+      "Average Actual Duration",
+      "Punctuality Score",
+      "Attendance %",
+      "Students Taught",
+      "Cancelled",
+      "Rescheduled",
+    ];
     rows = Array.from(coachGroups.values()).flatMap((group) => {
       const summary = summarizeCoachSessions(group.classrooms, {
         from: range.from || new Date("2000-01-01"),
@@ -255,7 +268,10 @@ export async function GET(req: Request) {
           "Unassigned",
           summary.classesConducted,
           summary.totalHoursConducted,
+          summary.actualHoursConducted,
           summary.averageClassDuration,
+          summary.averageActualDuration,
+          `${summary.punctualityScore}%`,
           summary.attendancePercentage,
           summary.totalStudentsTaught,
           summary.classesCancelled,
@@ -267,7 +283,10 @@ export async function GET(req: Request) {
         batchRow.batchName,
         batchRow.classesConducted,
         Number(batchRow.hoursConducted.toFixed(1)),
+        Number((batchRow.actualHours || 0).toFixed(1)),
         summary.averageClassDuration,
+        summary.averageActualDuration,
+        `${summary.punctualityScore}%`,
         summary.attendancePercentage,
         summary.totalStudentsTaught,
         summary.classesCancelled,

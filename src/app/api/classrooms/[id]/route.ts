@@ -2,10 +2,24 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { Classroom } from "@/models/Classroom";
+import { Attendance } from "@/models/Attendance";
+import { ClassroomChatMessage, ClassroomSession, LiveQuestion, LiveQuestionResponse } from "@/models/ClassroomLive";
 import { buildGeneratedSessions } from "@/lib/classroomSchedule";
 import { deleteClassroomSessionInstances, syncClassroomSessionInstances } from "@/lib/classroomSessionInstances";
 
 export const dynamic = "force-dynamic";
+
+async function deleteClassroomRecords(classroomId: string) {
+  const questions = await LiveQuestion.find({ classroom: classroomId }).select("_id").lean();
+  const questionIds = questions.map((question: any) => question._id);
+  await Promise.all([
+    Attendance.deleteMany({ classroom: classroomId }),
+    ClassroomSession.deleteMany({ classroom: classroomId }),
+    ClassroomChatMessage.deleteMany({ classroom: classroomId }),
+    questionIds.length ? LiveQuestionResponse.deleteMany({ question: { $in: questionIds } }) : Promise.resolve(),
+    LiveQuestion.deleteMany({ classroom: classroomId }),
+  ]);
+}
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
   const session = await auth();
@@ -71,6 +85,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       },
     ];
   } else if (body.action === "delete_series") {
+    await deleteClassroomRecords(params.id);
     await deleteClassroomSessionInstances(params.id);
     await Classroom.findByIdAndDelete(params.id);
     return NextResponse.json({ ok: true });
@@ -112,6 +127,7 @@ export async function DELETE(_: Request, { params }: { params: { id: string } })
   const session = await auth();
   if ((session?.user as any)?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
+  await deleteClassroomRecords(params.id);
   await deleteClassroomSessionInstances(params.id);
   await Classroom.findByIdAndDelete(params.id);
   return NextResponse.json({ ok: true });

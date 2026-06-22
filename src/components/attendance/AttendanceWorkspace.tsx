@@ -25,6 +25,8 @@ type SessionRow = {
   attendanceState: "marked" | "pending" | "missed";
   coachStatus: "present" | "absent" | "late" | "pending" | "cancelled" | "rescheduled";
   teachingMinutes: number;
+  actualTeachingMinutes?: number;
+  punctualityScore?: number;
   students: StudentRow[];
 };
 
@@ -287,7 +289,10 @@ export default function AttendanceWorkspace({ role }: { role: Role }) {
                 <InfoTile label="Batch" value={selectedSession.batchNames.join(", ") || "Unassigned"} />
                 <InfoTile label="Coach" value={selectedSession.coachName} />
                 <InfoTile label="Time" value={selectedSession.startTime || "--"} />
-                <InfoTile label="Duration" value={formatDuration(selectedSession.durationMinutes)} />
+                <InfoTile label="Scheduled Duration" value={formatDuration(selectedSession.durationMinutes)} />
+                <InfoTile label="Paid Hours" value={formatDuration(selectedSession.teachingMinutes || selectedSession.durationMinutes)} />
+                <InfoTile label="Actual Class Time" value={formatDuration(selectedSession.actualTeachingMinutes || 0)} />
+                <InfoTile label="Punctuality Score" value={selectedSession.punctualityScore ? `${selectedSession.punctualityScore}%` : "Pending"} />
               </div>
 
               <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">

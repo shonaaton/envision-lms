@@ -59,7 +59,7 @@ const sections: NavSection[] = [
     items: [
       { href: "/pgn", label: "PGN Library", icon: Library, roles: ["instructor", "admin"] },
       { href: "/analysis", label: "Analysis Board", icon: ListChecks, roles: ["instructor", "admin"] },
-      { href: "/square-trainer", label: "Square Trainer", icon: Crosshair, roles: ["student", "admin"] },
+      { href: "/play/square-trainer", label: "Square Trainer", icon: Crosshair, roles: ["student", "admin"] },
       { href: "/play/computer", label: "Play vs Computer", icon: Cpu, roles: ["student", "admin"] },
     ],
   },
@@ -74,6 +74,15 @@ const sections: NavSection[] = [
       { href: "/fees/credit-monitoring", label: "Credit Monitoring", icon: WalletCards },
       { href: "/fees/invoices", label: "Invoices", icon: Receipt },
       { href: "/fees/reports", label: "Fee Reports", icon: BarChart3 },
+    ],
+  },
+  {
+    id: "student-billing",
+    title: "Billing",
+    roles: ["student"],
+    items: [
+      { href: "/fees", label: "Credits & Payments", icon: WalletCards },
+      { href: "/fees/invoices", label: "My Invoices", icon: Receipt },
     ],
   },
   {

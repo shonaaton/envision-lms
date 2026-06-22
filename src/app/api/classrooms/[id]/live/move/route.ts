@@ -56,6 +56,41 @@ function freeMoveLabel(piece: string, from: string, to: string) {
   return `${pieceName}${from}-${to}`;
 }
 
+function applyFreeBoardMove(live: any, userId: string, from: string, to: string) {
+  const position = fenToPosition(live.fen);
+  const piece = position[from];
+  if (!piece) return null;
+  delete position[from];
+  position[to] = piece;
+
+  const nextGamifiedObjects = { ...(live.gamifiedObjects || {}) };
+  if (nextGamifiedObjects[to]) delete nextGamifiedObjects[to];
+  const sideToMove = String(live.fen || "").split(" ")[1] === "b" ? "b" : "w";
+  const moveLabel = freeMoveLabel(piece, from, to);
+
+  live.fen = positionToFen(position, sideToMove);
+  live.gamifiedObjects = nextGamifiedObjects;
+  live.moveHistory = [...(live.moveHistory || []), moveLabel];
+  live.startedAt = live.startedAt || new Date();
+  live.status = live.status === "ended" ? "ended" : "live";
+  const hadParticipant = (live.participants || []).some((participant: any) => objectId(participant.user) === userId);
+  live.participants = (live.participants || []).map((participant: any) =>
+    objectId(participant.user) === userId
+      ? { ...participant.toObject?.(), role: "student", lastSeenAt: new Date(), firstSeenAt: participant.firstSeenAt || new Date() }
+      : participant
+  );
+  if (!hadParticipant) {
+    live.participants = [...(live.participants || []), { user: userId, role: "student", firstSeenAt: new Date(), lastSeenAt: new Date() }];
+  }
+  if (live.mode === "one_move_challenge") {
+    live.mode = "teaching";
+    live.boardControlStudents = [];
+    live.studentMovesEnabled = false;
+    live.challenge = { ...(live.challenge?.toObject?.() || live.challenge || {}), active: false };
+  }
+  return moveLabel;
+}
+
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -86,37 +121,8 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   }
 
   if (live.illegalMovesEnabled) {
-    const position = fenToPosition(live.fen);
-    const piece = position[from];
-    if (!piece) return NextResponse.json({ error: "No piece found on the source square" }, { status: 400 });
-    delete position[from];
-    position[to] = piece;
-
-    const nextGamifiedObjects = { ...(live.gamifiedObjects || {}) };
-    if (nextGamifiedObjects[to]) delete nextGamifiedObjects[to];
-    const sideToMove = String(live.fen || "").split(" ")[1] === "b" ? "b" : "w";
-    const moveLabel = freeMoveLabel(piece, from, to);
-
-    live.fen = positionToFen(position, sideToMove);
-    live.gamifiedObjects = nextGamifiedObjects;
-    live.moveHistory = [...(live.moveHistory || []), moveLabel];
-    live.startedAt = live.startedAt || new Date();
-    live.status = live.status === "ended" ? "ended" : "live";
-    const hadParticipant = (live.participants || []).some((participant: any) => objectId(participant.user) === userId);
-    live.participants = (live.participants || []).map((participant: any) =>
-      objectId(participant.user) === userId
-        ? { ...participant.toObject?.(), role: "student", lastSeenAt: new Date(), firstSeenAt: participant.firstSeenAt || new Date() }
-        : participant
-    );
-    if (!hadParticipant) {
-      live.participants = [...(live.participants || []), { user: userId, role: "student", firstSeenAt: new Date(), lastSeenAt: new Date() }];
-    }
-    if (live.mode === "one_move_challenge") {
-      live.mode = "teaching";
-      live.boardControlStudents = [];
-      live.studentMovesEnabled = false;
-      live.challenge = { ...(live.challenge?.toObject?.() || live.challenge || {}), active: false };
-    }
+    const moveLabel = applyFreeBoardMove(live, userId, from, to);
+    if (!moveLabel) return NextResponse.json({ error: "No piece found on the source square" }, { status: 400 });
     await live.save();
     await markScheduledSessionStarted({ classroomId: params.id, scheduledSessionId, actorId: userId });
 
@@ -136,7 +142,21 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   } catch {
     move = null;
   }
-  if (!move) return NextResponse.json({ error: "That move is not legal in the current position" }, { status: 400 });
+  if (!move) {
+    const targetObject = (live.gamifiedObjects || {})[to];
+    if (!targetObject) return NextResponse.json({ error: "That move is not legal in the current position" }, { status: 400 });
+    const moveLabel = applyFreeBoardMove(live, userId, from, to);
+    if (!moveLabel) return NextResponse.json({ error: "No piece found on the source square" }, { status: 400 });
+    await live.save();
+    await markScheduledSessionStarted({ classroomId: params.id, scheduledSessionId, actorId: userId });
+    return NextResponse.json({
+      ok: true,
+      fen: live.fen,
+      move: moveLabel,
+      gamifiedObjects: live.gamifiedObjects,
+      moveHistory: live.moveHistory,
+    });
+  }
 
   const nextGamifiedObjects = { ...(live.gamifiedObjects || {}) };
   if (nextGamifiedObjects[to]) delete nextGamifiedObjects[to];

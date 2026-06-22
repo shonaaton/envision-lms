@@ -778,6 +778,74 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     });
   }
 
+  function currentPgnFen() {
+    if (!pgnMoves.length) return live?.fen || "start";
+    const startFen = extractFen(live?.pgn || "") || "start";
+    return applyMoves(startFen, pgnMoves, currentMoveIndex);
+  }
+
+  function restoreLoadedPgnPosition() {
+    setSelectedMoveSquare(null);
+    patch({
+      fen: currentPgnFen(),
+      moveHistory: pgnMoves.slice(0, currentMoveIndex),
+      illegalMovesEnabled: false,
+      setupMode: false,
+      drawings: [],
+    });
+  }
+
+  function toggleFreeMove() {
+    if (live?.illegalMovesEnabled) {
+      restoreLoadedPgnPosition();
+      return;
+    }
+    setSelectedMoveSquare(null);
+    patch({ illegalMovesEnabled: true, setupMode: false });
+  }
+
+  function clearClassroomLoad() {
+    setSelectedMoveSquare(null);
+    patch({
+      fen: "start",
+      pgn: "",
+      pgnTitle: "",
+      pgnMoves: [],
+      pgnMoveIndex: 0,
+      moveHistory: [],
+      gamifiedObjects: {},
+      drawings: [],
+      setupMode: false,
+      illegalMovesEnabled: false,
+      topic: "",
+    });
+  }
+
+  function collectGamifiedWithPiece(source: string, target: string, piece: string) {
+    const objectId = liveGamifiedObjects[target] as GamifiedObjectId | undefined;
+    if (!objectId) return false;
+    const nextPosition = { ...boardPieceMap };
+    delete nextPosition[source];
+    nextPosition[target] = piece;
+    const nextObjects = { ...liveGamifiedObjects };
+    delete nextObjects[target];
+    const sideToMove = live?.fen?.split(" ")?.[1] === "b" ? "b" : "w";
+    const object = getGamifiedObject(objectId);
+    patch({
+      fen: positionToFen(nextPosition, sideToMove),
+      gamifiedObjects: nextObjects,
+      moveHistory: [...(live?.moveHistory || []), `${piece[1]}${source}x${target}`],
+      setupMode: false,
+      illegalMovesEnabled: Boolean(live?.illegalMovesEnabled),
+      mode: live?.mode === "one_move_challenge" ? "teaching" : live?.mode,
+      boardControlStudents: live?.mode === "one_move_challenge" ? [] : live?.boardControlStudents?.map((s: any) => s._id || s),
+      challenge: live?.mode === "one_move_challenge" ? { active: false } : live?.challenge,
+    });
+    toast.success(`${object.icon} ${object.label} collected: ${object.points > 0 ? "+" : ""}${object.points} points`);
+    playMoveSound(live?.soundEnabled);
+    return true;
+  }
+
   function onDrop(source: string, target: string, piece: string) {
     setSelectedMoveSquare(null);
     if (live?.locked || (!canMove && !coach)) return false;
@@ -820,7 +888,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     }
     try {
       const move = game.move({ from: source, to: target, promotion: "q" });
-      if (!move) return false;
+      if (!move) return collectGamifiedWithPiece(source, target, piece);
       const collectedObjectId = liveGamifiedObjects[target] as GamifiedObjectId | undefined;
       const nextGamifiedObjects = collectedObjectId ? { ...liveGamifiedObjects } : liveGamifiedObjects;
       if (collectedObjectId && nextGamifiedObjects) delete nextGamifiedObjects[target];
@@ -839,6 +907,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       playMoveSound(live?.soundEnabled);
       return true;
     } catch {
+      if (collectGamifiedWithPiece(source, target, piece)) return true;
       return false;
     }
   }
@@ -1326,7 +1395,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   }
 
   function resetGame() {
-    patch({ fen: "start", pgnMoveIndex: 0, moveHistory: [], drawings: [], setupMode: false });
+    patch({ fen: "start", pgnMoveIndex: 0, moveHistory: [], drawings: [], gamifiedObjects: {}, setupMode: false, illegalMovesEnabled: false });
   }
 
   function navigateMove(nextIndex: number) {
@@ -1661,19 +1730,21 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
             Instructor: {coachName} - Topic: {live?.topic || "Not set"} - {duration} min
           </p>
         </div>
-          {coach && <div className="mt-2 flex flex-wrap gap-2 lg:mt-0">
-          {["teaching", "student_move", "one_move_challenge"].map((mode) => (
-            <button
-              key={mode}
-              onClick={() => patch({ mode, studentMovesEnabled: mode !== "teaching" })}
-                className={`rounded-md border px-3 py-1.5 text-xs font-semibold capitalize ${
-                live?.mode === mode ? "border-purple-700 bg-purple-700 text-white" : "border-slate-200 bg-white text-slate-700"
-              }`}
-            >
-              {mode.replaceAll("_", " ")}
-            </button>
-          ))}
-        </div>}
+        {coach && (
+          <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2 lg:mt-0 lg:max-w-[54%] lg:justify-end">
+            <div className="flex min-w-[220px] max-w-full items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-left shadow-sm">
+              <div className="min-w-0">
+                <div className="truncate text-sm font-semibold text-blue-800">{live?.pgnTitle || live?.topic || "Classroom board"}</div>
+                <div className="truncate text-xs text-slate-500">{pgnMoves.length ? `${currentMoveIndex} / ${pgnMoves.length} moves loaded` : "No PGN loaded"}</div>
+              </div>
+              {(live?.pgn || live?.pgnTitle || live?.gamifiedObjects && Object.keys(live.gamifiedObjects).length) && (
+                <button type="button" onClick={clearClassroomLoad} className="grid h-7 w-7 flex-none place-items-center rounded-md text-slate-500 transition hover:bg-white hover:text-red-600" title="Clear classroom loading">
+                  <X size={16} />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-[minmax(0,1fr)_350px]">
@@ -1912,8 +1983,8 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
 
                     <div className="flex flex-wrap items-center justify-end gap-1.5">
                       <button onClick={() => setPgnOpen(true)} disabled={!canLoadPgnLibrary} className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 disabled:opacity-40">Load PGN</button>
-                      <button onClick={() => { setSetupPosition(boardPieceMap); setGamifiedSetup(liveGamifiedObjects); setSetupMovementMode(live?.illegalMovesEnabled ? "free" : live?.fen?.split(" ")?.[1] === "b" ? "black" : "white"); setSetupOpen(true); }} className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700">Setup</button>
-                      <button onClick={() => patch({ illegalMovesEnabled: !live?.illegalMovesEnabled })} className={`rounded-md border px-2.5 py-1.5 text-xs font-semibold ${live?.illegalMovesEnabled ? "border-purple-200 bg-purple-50 text-purple-800" : "border-slate-200 bg-white text-slate-700"}`}>Free move</button>
+                      <button onClick={() => { const nextMode = live?.illegalMovesEnabled ? "free" : live?.fen?.split(" ")?.[1] === "b" ? "black" : "white"; setSetupPosition(boardPieceMap); setGamifiedSetup(liveGamifiedObjects); setSetupMovementMode(nextMode); if (nextMode === "white" || nextMode === "black") setSetupPieceColor(nextMode); setSetupOpen(true); }} className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700">Setup</button>
+                      <button onClick={toggleFreeMove} className={`rounded-md border px-2.5 py-1.5 text-xs font-semibold ${live?.illegalMovesEnabled ? "border-purple-200 bg-purple-50 text-purple-800" : "border-slate-200 bg-white text-slate-700"}`}>{live?.illegalMovesEnabled ? "Back to PGN" : "Free move"}</button>
                       <button onClick={() => setTool("highlight")} className={`rounded-md border px-2.5 py-1.5 text-xs font-semibold ${tool === "highlight" ? "border-purple-200 bg-purple-50 text-purple-800" : "border-slate-200 bg-white text-slate-700"}`}>Highlight</button>
                       <button onClick={() => setTool("arrow")} className={`rounded-md border px-2.5 py-1.5 text-xs font-semibold ${tool === "arrow" ? "border-purple-200 bg-purple-50 text-purple-800" : "border-slate-200 bg-white text-slate-700"}`}>Draw</button>
                       <button onClick={() => patch({ drawings: [] })} className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700">Clear</button>

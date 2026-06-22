@@ -314,6 +314,11 @@ function buildCoachUpcomingSessions(classrooms: any[], now: Date) {
     .sort((a, b) => (a.start?.getTime() || 0) - (b.start?.getTime() || 0));
 }
 
+function canJoinScheduledSession(session: any, now = new Date()) {
+  const status = deriveScheduledSessionStatus(session, now);
+  return status === "join_available" || status === "ongoing" || isJoinWindowOpen(session, now);
+}
+
 function coachSessionDayLabel(date: Date, now: Date) {
   const today = startOfDay(now).getTime();
   const target = startOfDay(date).getTime();
@@ -355,9 +360,7 @@ async function StudentDashboard({ userId }: { userId: string }) {
     (item.assignedBatches || []).some((batchId: any) => batchIds.includes(objectId(batchId))) ||
     classroomIds.includes(objectId(item.classroom))
   );
-  const upcomingSessions = flattenScheduledSessions(classrooms)
-    .filter((row) => row.start && isSessionUpcomingLike(deriveScheduledSessionStatus(row.session, now)))
-    .sort((a, b) => (a.start?.getTime() || 0) - (b.start?.getTime() || 0));
+  const upcomingSessions = buildCoachUpcomingSessions(classrooms, now);
   const completedSessions = flattenScheduledSessions(classrooms)
     .filter((row) => row.start && isHistoricalSessionStatus(deriveScheduledSessionStatus(row.session, now)))
     .sort((a, b) => (b.start?.getTime() || 0) - (a.start?.getTime() || 0));
@@ -382,7 +385,7 @@ async function StudentDashboard({ userId }: { userId: string }) {
       return diff === 1 && streak === index ? streak + 1 : streak;
     }, submissions.length ? 1 : 0);
   const unreadCoachReplies = messages.filter((message: any) => !(message.readBy || []).some((entry: any) => objectId(entry.user) === userId)).length;
-  const heroSessionOpen = nextSession ? isJoinWindowOpen(nextSession.session, now) : false;
+  const heroSessionOpen = nextSession ? canJoinScheduledSession(nextSession.session, now) : false;
   const studentRank = await computeStudentRank(userId);
 
   return (
@@ -451,7 +454,7 @@ async function StudentDashboard({ userId }: { userId: string }) {
                 ) : null}
               </>
             ) : (
-              <Link href="/square-trainer" className="inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-3 text-sm font-black text-brand shadow-lg shadow-black/20">
+              <Link href="/play/square-trainer" className="inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-3 text-sm font-black text-brand shadow-lg shadow-black/20">
                 <Zap size={16} /> Play Square Trainer
               </Link>
             )}
@@ -479,7 +482,7 @@ async function StudentDashboard({ userId }: { userId: string }) {
             {upcomingSessions.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">No upcoming classes yet.</div>
             ) : upcomingSessions.slice(0, 4).map(({ classroom, session }) => {
-              const canJoin = isJoinWindowOpen(session, now);
+              const canJoin = canJoinScheduledSession(session, now);
               return (
                 <div key={`${classroom._id}-${session._id}`} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
@@ -544,17 +547,50 @@ async function StudentDashboard({ userId }: { userId: string }) {
           </div>
 
           <div className="rounded-[28px] border border-brand/10 bg-white p-5 shadow-[0_20px_50px_rgba(90,19,114,0.10)]">
-            <SectionTitle icon={MessageSquare} title="Ask Coach" subtitle="Quick access to support" />
-            <div className="rounded-2xl bg-slate-50 p-4">
-              <div className="text-sm text-slate-600">Recent conversations: <span className="font-semibold text-slate-900">{conversations.length}</span></div>
-              <div className="mt-2 text-sm text-slate-600">Unread replies: <span className="font-semibold text-slate-900">{unreadCoachReplies}</span></div>
-              <Link href="/ask-coach" className="btn-primary mt-4 inline-flex">Open Ask Coach</Link>
+            <SectionTitle icon={Gamepad2} title="Activity Center" subtitle="Classes, practice, messages, and events" />
+            <div className="grid gap-3">
+              <Link href="/play/computer" className="group rounded-2xl border border-brand/10 bg-gradient-to-br from-brand to-purple-800 p-4 text-white shadow-lg shadow-brand/20 transition hover:-translate-y-0.5">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-black">Play vs Computer</div>
+                    <div className="mt-1 text-xs text-white/75">Practice with beginner-friendly bots</div>
+                  </div>
+                  <PlayCircle size={20} className="text-accent" />
+                </div>
+              </Link>
+              <Link href="/play/square-trainer" className="group rounded-2xl border border-slate-200 bg-slate-50 p-4 transition hover:-translate-y-0.5 hover:border-brand/20 hover:bg-white">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-black text-slate-950">Square Trainer</div>
+                    <div className="mt-1 text-xs text-slate-500">Board vision drills for XP</div>
+                  </div>
+                  <Zap size={20} className="text-brand" />
+                </div>
+              </Link>
+              <Link href="/tournaments" className="group rounded-2xl border border-slate-200 bg-slate-50 p-4 transition hover:-translate-y-0.5 hover:border-brand/20 hover:bg-white">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-black text-slate-950">Tournaments</div>
+                    <div className="mt-1 text-xs text-slate-500">{tournaments.length ? `${tournaments.length} event${tournaments.length === 1 ? "" : "s"} available` : "No open events right now"}</div>
+                  </div>
+                  <Trophy size={20} className="text-brand" />
+                </div>
+              </Link>
+              <Link href="/ask-coach" className="group rounded-2xl border border-slate-200 bg-slate-50 p-4 transition hover:-translate-y-0.5 hover:border-brand/20 hover:bg-white">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-black text-slate-950">Ask Coach</div>
+                    <div className="mt-1 text-xs text-slate-500">{unreadCoachReplies} unread replies</div>
+                  </div>
+                  <MessageSquare size={20} className="text-brand" />
+                </div>
+              </Link>
             </div>
           </div>
         </section>
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-3">
+      <div className="grid gap-5 xl:grid-cols-[1.4fr_0.8fr]">
         <section className="rounded-[28px] border border-brand/10 bg-white p-5 shadow-[0_20px_50px_rgba(90,19,114,0.10)] xl:col-span-2">
           <SectionTitle icon={CheckCircle2} title="Completed Sessions" subtitle="Open past class summaries, attendance, and quiz records" />
           <div className="space-y-3">
@@ -594,7 +630,7 @@ async function StudentDashboard({ userId }: { userId: string }) {
         <section className="rounded-[28px] border border-brand/10 bg-white p-5 shadow-[0_20px_50px_rgba(90,19,114,0.10)]">
           <SectionTitle icon={Gamepad2} title="Training Tools" subtitle="Student practice only" />
           <div className="grid gap-3">
-            <QuickLinkCard href="/square-trainer" title="Square Trainer" subtitle="Build board vision and earn XP" icon={Zap} />
+            <QuickLinkCard href="/play/square-trainer" title="Square Trainer" subtitle="Build board vision and earn XP" icon={Zap} />
             <QuickLinkCard href="/play/computer" title="Play vs Computer" subtitle="Practice with a guided engine opponent" icon={PlayCircle} />
             <QuickLinkCard href="/leaderboard" title="Leaderboards" subtitle="Track academy and batch rank" icon={Trophy} />
           </div>
@@ -763,7 +799,7 @@ async function CoachDashboard({ userId, searchParams }: { userId: string; search
                 </div>
                 <div className="space-y-3">
                   {rows.slice(0, 3).map(({ classroom, session }) => {
-                    const canJoin = isJoinWindowOpen(session, now);
+                    const canJoin = canJoinScheduledSession(session, now);
                     const targetNames = (classroom.batches || []).map((batch: any) => batch.name).join(", ") || `${classroom.students?.length || 0} students`;
                     return (
                       <div key={`${classroom._id}-${session._id}`} className="rounded-2xl border border-slate-200 bg-white p-4">

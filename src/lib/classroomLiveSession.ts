@@ -7,25 +7,29 @@ export function getRequestedSessionId(req: Request) {
 }
 
 export function resolveScheduledSession(classroom: any, requestedSessionId?: string | null) {
+  const singleSession =
+    classroom?.classDate
+      ? {
+          _id: `${classroom._id}-single`,
+          sessionNumber: 1,
+          topicName: classroom.topicName || classroom.title,
+          scheduledFor: classroom.classDate,
+          startTime: classroom.startTime,
+          durationMinutes: classroom.durationMinutes || 60,
+          status: classroom.status || "scheduled",
+        }
+      : null;
+
   if (requestedSessionId) {
-    return (classroom?.generatedSessions || []).find((item: any) => String(item._id) === requestedSessionId) || null;
+    return (classroom?.generatedSessions || []).find((item: any) => String(item._id) === requestedSessionId) ||
+      (singleSession && String(singleSession._id) === requestedSessionId ? singleSession : null);
   }
 
   if (Array.isArray(classroom?.generatedSessions) && classroom.generatedSessions.length) {
     return classroom.generatedSessions[0];
   }
 
-  if (classroom?.classDate) {
-    return {
-      _id: `${classroom._id}-single`,
-      sessionNumber: 1,
-      topicName: classroom.topicName || classroom.title,
-      scheduledFor: classroom.classDate,
-      startTime: classroom.startTime,
-      durationMinutes: classroom.durationMinutes || 60,
-      status: classroom.status || "scheduled",
-    };
-  }
+  if (singleSession) return singleSession;
 
   return null;
 }

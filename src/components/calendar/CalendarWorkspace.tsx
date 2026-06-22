@@ -432,7 +432,7 @@ export default function CalendarWorkspace({
   subtitle: string;
   events: CalendarEvent[];
 }) {
-  const [view, setView] = useState<CalendarView>("monthly");
+  const [view, setView] = useState<CalendarView>("daily");
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [typeFilter, setTypeFilter] = useState<CalendarType | "all">("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -480,15 +480,15 @@ export default function CalendarWorkspace({
   const completedEvents = filteredEvents.filter((event) => statusBucket(event) === "completed").length;
 
   return (
-    <div className="space-y-5 text-slate-950">
-      <section className="rounded-[28px] border border-brand/10 bg-white p-5 shadow-[0_24px_60px_rgba(90,19,114,0.10)]">
-        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+    <div className="space-y-3 text-slate-950">
+      <section className="rounded-2xl border border-brand/10 bg-white p-4 shadow-[0_16px_38px_rgba(90,19,114,0.08)]">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div>
-            <div className="text-[11px] font-black uppercase tracking-[0.18em] text-brand/70">{role === "student" ? "Student Calendar" : role === "instructor" ? "Coach Calendar" : "Academy Calendar"}</div>
-            <h1 className="mt-1 text-3xl font-black text-brand">{title}</h1>
-            <p className="mt-1 max-w-3xl text-sm text-slate-600">{subtitle}</p>
+            <div className="text-[10px] font-black uppercase tracking-[0.18em] text-brand/70">{role === "student" ? "Student Calendar" : role === "instructor" ? "Coach Calendar" : "Academy Calendar"}</div>
+            <h1 className="mt-1 text-2xl font-black text-brand">{title}</h1>
+            <p className="mt-1 max-w-3xl text-xs text-slate-600">{subtitle}</p>
           </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="grid grid-cols-3 gap-2">
             <SummaryCard label="Today" value={todayEvents} icon={CalendarDays} />
             <SummaryCard label="Upcoming" value={upcomingEvents} icon={Clock3} />
             <SummaryCard label="Completed" value={completedEvents} icon={CheckCircle2} />
@@ -496,26 +496,26 @@ export default function CalendarWorkspace({
         </div>
       </section>
 
-      <section className="rounded-[28px] border border-brand/10 bg-white p-4 shadow-[0_20px_50px_rgba(90,19,114,0.08)]">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+      <section className="rounded-2xl border border-brand/10 bg-white p-3 shadow-[0_14px_34px_rgba(90,19,114,0.07)]">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex flex-wrap items-center gap-2">
-            <button type="button" onClick={() => setCurrentDate(new Date())} className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-900 shadow-sm">Today</button>
-            <button type="button" onClick={() => setCurrentDate((current) => navigateDate(view, current, -1))} className="rounded-2xl border border-slate-200 bg-white p-2 text-slate-700 shadow-sm"><ChevronLeft size={16} /></button>
-            <button type="button" onClick={() => setCurrentDate((current) => navigateDate(view, current, 1))} className="rounded-2xl border border-slate-200 bg-white p-2 text-slate-700 shadow-sm"><ChevronRight size={16} /></button>
-            <div className="ml-1 inline-flex items-center gap-2 rounded-2xl bg-slate-50 px-4 py-2 text-sm font-bold text-slate-900">
+            <button type="button" onClick={() => setCurrentDate(new Date())} className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-900 shadow-sm">Today</button>
+            <button type="button" onClick={() => setCurrentDate((current) => navigateDate(view, current, -1))} className="rounded-xl border border-slate-200 bg-white p-1.5 text-slate-700 shadow-sm"><ChevronLeft size={15} /></button>
+            <button type="button" onClick={() => setCurrentDate((current) => navigateDate(view, current, 1))} className="rounded-xl border border-slate-200 bg-white p-1.5 text-slate-700 shadow-sm"><ChevronRight size={15} /></button>
+            <div className="ml-1 inline-flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-900">
               <CalendarDays size={15} className="text-brand" />
               {formatRangeLabel(view, currentDate)}
             </div>
           </div>
 
-          <div className="inline-flex flex-wrap gap-2 rounded-3xl bg-slate-50 p-1">
+          <div className="inline-flex flex-wrap gap-1 rounded-2xl bg-slate-50 p-1">
             {viewOptions.map((item) => (
               <button
                 key={item.id}
                 type="button"
                 onClick={() => setView(item.id)}
                 className={cn(
-                  "rounded-2xl px-4 py-2 text-sm font-bold transition",
+                  "rounded-xl px-3 py-1.5 text-xs font-bold transition",
                   view === item.id ? "bg-white text-slate-950 shadow-md" : "text-slate-500 hover:text-slate-900"
                 )}
               >
@@ -525,7 +525,7 @@ export default function CalendarWorkspace({
           </div>
         </div>
 
-        <div className="mt-4 space-y-3">
+        <div className="mt-3 space-y-2">
           <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
               <Filter size={12} />
@@ -537,7 +537,7 @@ export default function CalendarWorkspace({
                 type="button"
                 onClick={() => setTypeFilter(item.id)}
                 className={cn(
-                  "rounded-full border px-3 py-1.5 text-sm font-semibold transition",
+                  "rounded-full border px-3 py-1 text-xs font-semibold transition",
                   typeFilter === item.id ? "border-brand bg-brand/10 text-brand" : "border-slate-200 bg-white text-slate-600 hover:border-brand/20 hover:text-slate-900"
                 )}
               >
@@ -553,7 +553,7 @@ export default function CalendarWorkspace({
                 type="button"
                 onClick={() => setStatusFilter(item.id)}
                 className={cn(
-                  "rounded-full border px-3 py-1.5 text-sm font-semibold transition",
+                  "rounded-full border px-3 py-1 text-xs font-semibold transition",
                   statusFilter === item.id ? "border-brand bg-brand text-white" : "border-slate-200 bg-white text-slate-600 hover:border-brand/20 hover:text-slate-900"
                 )}
               >
@@ -564,8 +564,8 @@ export default function CalendarWorkspace({
         </div>
       </section>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="min-w-0 space-y-5">
+      <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="min-w-0 space-y-3">
           {view === "monthly" && <CalendarMonth currentDate={currentDate} events={visibleEvents} selectedId={selectedId} onSelect={(event) => setSelectedId(event.id)} />}
 
           {view === "weekly" && (
@@ -590,7 +590,7 @@ export default function CalendarWorkspace({
           {!visibleEvents.length && <EmptyState label="No events match your current filters." />}
         </div>
 
-        <div className="space-y-5">
+        <div className="space-y-3">
           <EventDetails event={selectedEvent} role={role} />
 
           <div className="rounded-[28px] border border-brand/10 bg-white p-5 shadow-[0_20px_50px_rgba(90,19,114,0.08)]">

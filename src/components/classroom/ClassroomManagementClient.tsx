@@ -115,6 +115,24 @@ function classroomLifecycleRollup(item: ClassroomItem) {
   return Array.from(counts.entries() as Iterable<[string, number]>).sort((a, b) => b[1] - a[1]);
 }
 
+function canJoinScheduledSession(session: any, now = new Date()) {
+  const status = deriveScheduledSessionStatus(session, now);
+  return status === "join_available" || status === "ongoing" || isJoinWindowOpen(session, now);
+}
+
+function dedupeSessionRows(rows: ReturnType<typeof flattenScheduledSessions>) {
+  const seen = new Set<string>();
+  return rows.filter(({ classroom, session, start }: any) => {
+    const sourceId = String(classroom?.sourceSessionId || "");
+    const sessionId = String(session?._id || "");
+    const classroomId = String(classroom?._id || "");
+    const key = sourceId || sessionId || `${classroomId}-${start?.toISOString?.() || ""}-${session?.startTime || ""}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 const durationOptions = [
   { value: 15, label: "15 Minutes" },
   { value: 30, label: "30 Minutes" },
@@ -1018,9 +1036,9 @@ function CalendarView({ sessions }: { sessions: Array<{ title: string; topicName
 function SimpleClassroomList({ items, loading, role }: { items: ClassroomItem[]; loading: boolean; role: Role }) {
   if (loading) return <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500">Loading classrooms...</div>;
   const now = new Date();
-  const sessions = flattenScheduledSessions(items)
+  const sessions = dedupeSessionRows(flattenScheduledSessions(items)
     .filter((row) => row.start)
-    .sort((a, b) => (a.start?.getTime() || 0) - (b.start?.getTime() || 0));
+    .sort((a, b) => (a.start?.getTime() || 0) - (b.start?.getTime() || 0)));
   const upcoming = sessions.filter((row) => isSessionUpcomingLike(deriveScheduledSessionStatus(row.session, now))).slice(0, 12);
   const history = sessions
     .filter((row) => {
@@ -1030,6 +1048,8 @@ function SimpleClassroomList({ items, loading, role }: { items: ClassroomItem[];
     .sort((a, b) => (b.start?.getTime() || 0) - (a.start?.getTime() || 0))
     .slice(0, 12);
   const currentRoleLabel = role === "student" ? "Coach" : "Batch / Students";
+  const pageTitle = role === "student" ? "My Classes" : "Teaching Schedule";
+  const pageSubtitle = role === "student" ? "Join classes only through your scheduled sessions." : "Upcoming sessions, completed class records, and classroom entry points.";
   const statusTone = (status: string) => {
     if (status === "completed") return "bg-emerald-50 text-emerald-700";
     if (status === "missed") return "bg-amber-50 text-amber-700";
@@ -1039,68 +1059,68 @@ function SimpleClassroomList({ items, loading, role }: { items: ClassroomItem[];
   };
 
   return (
-    <div className="space-y-6">
-      <div>
-      <div className="flex items-center justify-between">
+    <div className="space-y-4 text-slate-950">
+      <div className="rounded-[26px] border border-brand/10 bg-white px-5 py-4 shadow-[0_18px_45px_rgba(90,19,114,0.10)]">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h1 className="font-display text-3xl text-accent">{role === "student" ? "My Classes" : "Teaching Schedule"}</h1>
-          <p className="mt-1 text-sm text-slate-500">{role === "student" ? "Join classes only through your scheduled sessions." : "Your next scheduled teaching sessions."}</p>
+          <div className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-brand">
+            <GraduationCap size={14} />
+            {role === "student" ? "Classroom" : "Classroom Management"}
+          </div>
+          <h1 className="mt-1 text-2xl font-black text-brand">{pageTitle}</h1>
+          <p className="text-sm text-slate-600">{pageSubtitle}</p>
+        </div>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          <MiniMetric label="Upcoming" value={upcoming.length} />
+          <MiniMetric label="Completed" value={history.filter((row) => deriveScheduledSessionStatus(row.session, now) === "completed").length} />
+          <MiniMetric label="Closed" value={history.length} />
         </div>
       </div>
       </div>
-      <div className="mt-6">
+
+      <div className="rounded-[26px] border border-brand/10 bg-white p-4 shadow-[0_18px_45px_rgba(90,19,114,0.08)]">
+      <div className="mb-3 flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-black text-slate-950">{role === "student" ? "Upcoming Classes" : "Upcoming Teaching Sessions"}</h2>
+          <p className="text-xs text-slate-500">Only live, joinable, and future sessions appear here.</p>
+        </div>
+      </div>
       {upcoming.length === 0 ? (
         <div className="card text-sm text-slate-500">No scheduled sessions right now.</div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <div className="space-y-2">
           {upcoming.map(({ classroom, session }) => {
-            const joinOpen = isJoinWindowOpen(session, now);
+            const status = deriveScheduledSessionStatus(session, now);
+            const joinOpen = canJoinScheduledSession(session, now);
+            const summaryHref = `/classrooms/${classroom._id}/summary?session=${String(session._id)}`;
             return (
-              <div key={`${classroom._id}-${session._id}`} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-lg shadow-brand/10">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <div className="text-lg font-black text-slate-950">{classroom.title}</div>
-                    <div className="mt-1 text-sm text-slate-600">{session.topicName || classroom.topicName || "Scheduled class"}</div>
+              <div key={`${classroom._id}-${session._id}`} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-md shadow-brand/5">
+                <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="truncate text-base font-black text-slate-950">{classroom.title}</h3>
+                      <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-bold", sessionStatusTone(status))}>{formatJoinWindowLabel(session, now)}</span>
+                      {classroom.courseName && <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-700">{classroom.courseName}</span>}
+                    </div>
+                    <div className="mt-2 grid gap-2 md:grid-cols-[1.4fr_1fr_1fr_1fr]">
+                      <CompactInfo label="Topic" value={session.topicName || classroom.topicName || "Not set"} />
+                      <CompactInfo label={currentRoleLabel} value={role === "student" ? ((classroom.coach as any)?.name || "Coach") : ((classroom.batches || []).map((batch: any) => batch.name).join(", ") || `${classroom.students?.length || 0} assigned`)} />
+                      <CompactInfo label="When" value={`${formatDate(String(session.scheduledFor || classroom.classDate || classroom.startDate || ""))} at ${session.startTime || classroom.startTime || "--"}`} />
+                      <CompactInfo label="Duration" value={formatDuration(session.durationMinutes || classroom.durationMinutes || 60)} />
+                    </div>
                   </div>
-                  <span className={cn("rounded-full px-3 py-1 text-xs font-bold", joinOpen ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600")}>
-                    {formatJoinWindowLabel(session, now)}
-                  </span>
-                </div>
-
-                <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                  <InfoCard label="Course" value={classroom.courseName || "General"} />
-                  <InfoCard label="Level" value={classroom.levelName || "Not set"} />
-                  <InfoCard label="Topic" value={session.topicName || classroom.topicName || "Not set"} />
-                  <InfoCard label={currentRoleLabel} value={role === "student" ? ((classroom.coach as any)?.name || "Coach") : ((classroom.batches || []).map((batch: any) => batch.name).join(", ") || `${classroom.students?.length || 0} assigned`)} />
-                  <InfoCard label="Duration" value={formatDuration(session.durationMinutes || classroom.durationMinutes || 60)} />
-                </div>
-
-                <div className="mt-4 rounded-xl bg-slate-50 px-3 py-3 text-sm text-slate-700">
-                  {formatDate(String(session.scheduledFor || classroom.classDate || classroom.startDate || ""))} at {session.startTime || classroom.startTime || "--"}
-                </div>
-
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <JoinScheduledSessionButton
-                    classroomId={String(classroom._id)}
-                    sessionId={String(session._id)}
-                    meetingUrl={classroom.meetingUrl}
-                    className={joinOpen ? "btn-primary" : "btn-outline"}
-                    label="Join Classroom"
-                    disabled={!joinOpen}
-                  />
-                  {classroom.meetingUrl ? (
-                    <a
-                      href={classroom.meetingUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="btn-outline"
-                    >
-                      Join Google Meet
-                    </a>
-                  ) : null}
-                  <Link href={`/classrooms/${classroom._id}/summary?session=${String(session._id)}`} className="btn-outline">
-                    View Details
-                  </Link>
+                  <div className="flex flex-wrap gap-2 xl:justify-end">
+                    <JoinScheduledSessionButton
+                      classroomId={String(classroom._id)}
+                      sessionId={String(session._id)}
+                      meetingUrl={classroom.meetingUrl}
+                      className={joinOpen ? "btn-primary" : "btn-outline"}
+                      label="Join Classroom"
+                      disabled={!joinOpen}
+                    />
+                    {classroom.meetingUrl ? <a href={classroom.meetingUrl} target="_blank" rel="noreferrer" className="btn-outline">Join Google Meet</a> : null}
+                    <Link href={summaryHref} className="btn-outline">View Details</Link>
+                  </div>
                 </div>
               </div>
             );
@@ -1109,8 +1129,8 @@ function SimpleClassroomList({ items, loading, role }: { items: ClassroomItem[];
       )}
       </div>
 
-      <div className="space-y-4">
-        <div>
+      <div className="rounded-[26px] border border-brand/10 bg-white p-4 shadow-[0_18px_45px_rgba(90,19,114,0.08)]">
+        <div className="mb-3">
           <h2 className="text-2xl font-black text-slate-950">{role === "student" ? "Class History" : "Completed Sessions"}</h2>
           <p className="mt-1 text-sm text-slate-500">
             {role === "student"
@@ -1121,37 +1141,28 @@ function SimpleClassroomList({ items, loading, role }: { items: ClassroomItem[];
         {history.length === 0 ? (
           <div className="card text-sm text-slate-500">Completed sessions will appear here after class ends.</div>
         ) : (
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <div className="space-y-2">
             {history.map(({ classroom, session }) => {
               const status = deriveScheduledSessionStatus(session, now);
+              const summaryHref = `/classrooms/${classroom._id}/summary?session=${String(session._id)}`;
               return (
-                <div key={`history-${classroom._id}-${session._id}`} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-lg shadow-brand/10">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <div className="text-lg font-black text-slate-950">{classroom.title}</div>
-                      <div className="mt-1 text-sm text-slate-600">{session.topicName || classroom.topicName || "Scheduled class"}</div>
+                <div key={`history-${classroom._id}-${session._id}`} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-md shadow-brand/5">
+                  <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="truncate text-base font-black text-slate-950">{classroom.title}</h3>
+                        <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-bold", statusTone(status))}>{formatJoinWindowLabel(session, now)}</span>
+                      </div>
+                      <div className="mt-2 grid gap-2 md:grid-cols-[1.4fr_1fr_1fr_1fr]">
+                        <CompactInfo label="Topic" value={session.topicName || classroom.topicName || "Not set"} />
+                        <CompactInfo label={currentRoleLabel} value={role === "student" ? ((classroom.coach as any)?.name || "Coach") : ((classroom.batches || []).map((batch: any) => batch.name).join(", ") || `${classroom.students?.length || 0} assigned`)} />
+                        <CompactInfo label="When" value={`${formatDate(String(session.scheduledFor || classroom.classDate || classroom.startDate || ""))} at ${session.startTime || classroom.startTime || "--"}`} />
+                        <CompactInfo label="Duration" value={formatDuration(session.durationMinutes || classroom.durationMinutes || 60)} />
+                      </div>
                     </div>
-                    <span className={cn("rounded-full px-3 py-1 text-xs font-bold", statusTone(status))}>
-                      {formatJoinWindowLabel(session, now)}
-                    </span>
-                  </div>
-
-                  <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                    <InfoCard label="Course" value={classroom.courseName || "General"} />
-                    <InfoCard label="Level" value={classroom.levelName || "Not set"} />
-                    <InfoCard label="Topic" value={session.topicName || classroom.topicName || "Not set"} />
-                    <InfoCard label={currentRoleLabel} value={role === "student" ? ((classroom.coach as any)?.name || "Coach") : ((classroom.batches || []).map((batch: any) => batch.name).join(", ") || `${classroom.students?.length || 0} assigned`)} />
-                    <InfoCard label="Duration" value={formatDuration(session.durationMinutes || classroom.durationMinutes || 60)} />
-                  </div>
-
-                  <div className="mt-4 rounded-xl bg-slate-50 px-3 py-3 text-sm text-slate-700">
-                    {formatDate(String(session.scheduledFor || classroom.classDate || classroom.startDate || ""))} at {session.startTime || classroom.startTime || "--"}
-                  </div>
-
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    <Link href={`/classrooms/${classroom._id}/summary?session=${String(session._id)}`} className="btn-primary">
-                      View Details
-                    </Link>
+                    <div className="flex flex-wrap gap-2 xl:justify-end">
+                      <Link href={summaryHref} className="btn-primary">View Details</Link>
+                    </div>
                   </div>
                 </div>
               );
@@ -1159,6 +1170,15 @@ function SimpleClassroomList({ items, loading, role }: { items: ClassroomItem[];
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function MiniMetric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-2xl border border-brand/10 bg-slate-50 px-4 py-3 text-right">
+      <div className="text-[11px] font-black uppercase tracking-[0.15em] text-slate-500">{label}</div>
+      <div className="mt-1 text-2xl font-black text-brand">{value}</div>
     </div>
   );
 }

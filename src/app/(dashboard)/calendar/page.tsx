@@ -71,7 +71,7 @@ function buildClassEvent({
     batchLabel,
     studentLabel,
     durationLabel: formatDuration(Number(session.durationMinutes || classroom?.durationMinutes || 60)),
-    href: joinable ? `/classrooms/${classroomId}?session=${sessionId}` : summaryHref,
+    href: joinable ? `/classrooms/${classroomId}/live?session=${sessionId}` : summaryHref,
     hrefLabel: joinable ? "Join Class" : "View Details",
     meetingUrl: joinable ? classroom?.meetingUrl || undefined : undefined,
   };

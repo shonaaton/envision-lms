@@ -1,33 +1,38 @@
-type EmailAutomationPayload = {
-  to: string;
+export async function sendAutomationEmail(input: {
+  to?: string;
   subject: string;
   message: string;
-  fromEmail?: string;
+  htmlBody?: string;
   replyTo?: string;
   metadata?: Record<string, unknown>;
-};
-
-export async function sendEmailAutomation(payload: EmailAutomationPayload) {
-  const webhook =
-    process.env.EMAIL_AUTOMATION_WEBHOOK_URL ||
-    process.env.ASK_COACH_EMAIL_WEBHOOK_URL ||
-    process.env.N8N_WEBHOOK_BASE;
-  if (!webhook || !payload.to) return { delivered: false, skipped: true };
+}) {
+  const webhook = process.env.EMAIL_AUTOMATION_WEBHOOK_URL || process.env.ASK_COACH_EMAIL_WEBHOOK_URL;
+  if (!webhook || !input.to) return { ok: false, delivered: false, skipped: true };
+  const htmlBody = input.htmlBody || input.message
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => `<p>${line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>`)
+    .join("");
 
   try {
     const response = await fetch(webhook, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        to: input.to,
+        subject: input.subject,
+        message: input.message,
+        htmlBody,
+        replyTo: input.replyTo || process.env.EMAIL_REPLY_TO || "support@envisionchessacademy.com",
+        metadata: input.metadata || {},
+      }),
     });
-    const responseText = await response.text().catch(() => "");
-    return {
-      delivered: response.ok,
-      skipped: false,
-      status: response.status,
-      responseText,
-    };
-  } catch {
-    return { delivered: false, skipped: false, status: 0, responseText: "" };
+    return { ok: response.ok, delivered: response.ok, status: response.status, skipped: false };
+  } catch (error) {
+    console.error("Email automation failed", error);
+    return { ok: false, delivered: false, skipped: false, error: "webhook_failed" };
   }
 }
+
+export const sendEmailAutomation = sendAutomationEmail;

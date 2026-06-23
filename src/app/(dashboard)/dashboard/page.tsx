@@ -388,6 +388,9 @@ async function StudentDashboard({ userId }: { userId: string }) {
   const unreadCoachReplies = messages.filter((message: any) => !(message.readBy || []).some((entry: any) => objectId(entry.user) === userId)).length;
   const heroSessionOpen = nextSession ? canJoinScheduledSession(nextSession.session, now) : false;
   const studentRank = await computeStudentRank(userId);
+  const isDemoAccount = (student as any)?.accountStatus === "demo";
+  const demoUsage = (student as any)?.demoUsage || {};
+  const demoLimits = (student as any)?.demoLimits || {};
 
   return (
     <div className="space-y-5 text-slate-950">
@@ -412,6 +415,30 @@ async function StudentDashboard({ userId }: { userId: string }) {
           </div>
         </div>
       </section>
+
+      {isDemoAccount ? (
+        <section className="rounded-[24px] border border-amber-200 bg-amber-50 p-5 shadow-[0_18px_45px_rgba(253,231,90,0.18)]">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <div className="text-[11px] font-black uppercase tracking-[0.18em] text-brand">Demo Account</div>
+              <h2 className="mt-1 text-xl font-black text-slate-950">Your academy trial is active</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-700">
+                You can explore selected practice tools and request a demo class. Full classroom, homework, PGN, and analysis access unlocks after the academy converts your account.
+              </p>
+            </div>
+            <div className="grid gap-2 text-xs font-bold text-slate-700 sm:grid-cols-3">
+              <span className="rounded-2xl bg-white px-4 py-3 shadow-sm">Computer: {demoUsage.playComputer || 0}/{demoLimits.playComputer || 0}</span>
+              <span className="rounded-2xl bg-white px-4 py-3 shadow-sm">Square Trainer: {demoUsage.squareTrainer || 0}/{demoLimits.squareTrainer || 0}</span>
+              <span className="rounded-2xl bg-white px-4 py-3 shadow-sm">Analysis: {demoUsage.analysisBoard || 0}/{demoLimits.analysisBoard || 0}</span>
+            </div>
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Link href="/booking" className="btn-primary">Book Demo Class</Link>
+            <Link href="/play/computer" className="btn-outline bg-white">Try Computer Practice</Link>
+            <Link href="/play/square-trainer" className="btn-outline bg-white">Try Square Trainer</Link>
+          </div>
+        </section>
+      ) : null}
 
       <section className="grid gap-5 xl:grid-cols-[1.35fr_0.85fr]">
         <div className="rounded-[28px] border border-brand/10 bg-[linear-gradient(135deg,rgba(90,19,114,1),rgba(124,31,162,0.92))] p-6 text-white shadow-[0_24px_60px_rgba(90,19,114,0.18)]">

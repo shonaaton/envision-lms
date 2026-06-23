@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { recordActivity } from "@/lib/activity";
+import { consumeDemoUsage } from "@/lib/demoAccess";
 import { StudentReward } from "@/models/ClassroomLive";
 
 export const dynamic = "force-dynamic";
@@ -43,6 +44,10 @@ export async function POST(req: Request) {
         : 1;
 
   await dbConnect();
+  const demoState = await consumeDemoUsage((session.user as any).id, "playComputer");
+  if (!demoState.allowed) {
+    return NextResponse.json({ error: "Your demo Play vs Computer limit is finished. Please book a demo class or contact the academy." }, { status: 403 });
+  }
 
   const reward = await StudentReward.create({
     student: (session.user as any).id,
@@ -63,5 +68,5 @@ export async function POST(req: Request) {
     metadata: { outcome, botName, moveCount, durationSeconds, difficultyLevel, xp, coins },
   });
 
-  return NextResponse.json({ ok: true, xp, coins, badge: reward.badge || "" });
+  return NextResponse.json({ ok: true, xp, coins, badge: reward.badge || "", demo: demoState });
 }

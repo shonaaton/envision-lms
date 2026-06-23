@@ -1,6 +1,6 @@
 "use client";
-import { useState } from "react";
-import { signIn } from "next-auth/react";
+import { useEffect, useRef, useState } from "react";
+import { signIn, signOut, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -9,11 +9,22 @@ import { AtSign, Eye, EyeOff, LockKeyhole, Sparkles } from "lucide-react";
 
 export default function LoginPage() {
   const router = useRouter();
+  const { status } = useSession();
+  const submittedRef = useRef(false);
+  const clearedExistingSessionRef = useRef(false);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
+  useEffect(() => {
+    if (status === "authenticated" && !submittedRef.current && !clearedExistingSessionRef.current) {
+      clearedExistingSessionRef.current = true;
+      signOut({ redirect: false });
+    }
+  }, [status]);
+
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    submittedRef.current = true;
     setLoading(true);
     const fd = new FormData(e.currentTarget);
     const res = await signIn("credentials", {

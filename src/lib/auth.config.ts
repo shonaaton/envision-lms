@@ -17,6 +17,7 @@ export const authConfig = {
       if (user) {
         token.id = (user as any).id;
         token.role = (user as any).role;
+        token.accountStatus = (user as any).accountStatus;
       }
       return token;
     },
@@ -24,16 +25,21 @@ export const authConfig = {
       if (token) {
         (session.user as any).id = token.id as string;
         (session.user as any).role = token.role as any;
+        (session.user as any).accountStatus = token.accountStatus as any;
       }
       return session;
     },
     authorized({ auth, request: { nextUrl } }) {
       const isLoggedIn = !!auth?.user;
       const role = (auth?.user as any)?.role as "student" | "instructor" | "admin" | undefined;
+      const accountStatus = (auth?.user as any)?.accountStatus as string | undefined;
 
       const isAuthRoute = ["/login", "/register", "/forgot-password", "/reset-password"].some((p) => nextUrl.pathname.startsWith(p));
       const isPublic =
         nextUrl.pathname === "/" ||
+        nextUrl.pathname === "/privacy" ||
+        nextUrl.pathname === "/terms" ||
+        nextUrl.pathname === "/refund-policy" ||
         nextUrl.pathname.startsWith("/api/auth") ||
         nextUrl.pathname.startsWith("/api/register") ||
         nextUrl.pathname.startsWith("/api/password") ||
@@ -43,15 +49,24 @@ export const authConfig = {
       const isPgnRoute = nextUrl.pathname.startsWith("/pgn");
       const isAnalysisRoute = nextUrl.pathname.startsWith("/analysis");
       const isPlayVsComputerRoute = nextUrl.pathname.startsWith("/play/computer");
+      const isSquareTrainerRoute = nextUrl.pathname.startsWith("/play/square-trainer") || nextUrl.pathname.startsWith("/square-trainer");
+      const isBookingRoute = nextUrl.pathname.startsWith("/booking") || nextUrl.pathname.startsWith("/demo-booking");
       const isFeesRoute = nextUrl.pathname.startsWith("/fees") || nextUrl.pathname.startsWith("/invoices");
       const isTournamentCreateRoute = nextUrl.pathname.startsWith("/tournaments/new");
+      const demoAllowed =
+        nextUrl.pathname.startsWith("/dashboard") ||
+        isBookingRoute ||
+        isPlayVsComputerRoute ||
+        isSquareTrainerRoute ||
+        nextUrl.pathname.startsWith("/api/bookings") ||
+        nextUrl.pathname.startsWith("/api/availability") ||
+        nextUrl.pathname.startsWith("/api/play/computer/reward") ||
+        nextUrl.pathname.startsWith("/api/square-trainer");
 
       if (isPublic) return true;
-      if (isAuthRoute) {
-        if (isLoggedIn) return Response.redirect(new URL("/dashboard", nextUrl));
-        return true;
-      }
+      if (isAuthRoute) return true;
       if (!isLoggedIn) return false; // triggers redirect to signIn
+      if (accountStatus === "demo" && !demoAllowed) return Response.redirect(new URL("/dashboard", nextUrl));
       if (isAdminRoute && role !== "admin") return Response.redirect(new URL("/dashboard", nextUrl));
       if (isInstructorRoute && role !== "instructor" && role !== "admin")
         return Response.redirect(new URL("/dashboard", nextUrl));

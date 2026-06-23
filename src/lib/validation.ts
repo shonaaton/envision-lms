@@ -2,10 +2,25 @@ import { z } from "zod";
 
 export const registerSchema = z.object({
   name: z.string().min(2).max(80),
+  parentName: z.string().max(80).optional(),
   email: z.string().email(),
   password: z.string().min(8).max(72),
   role: z.enum(["student", "instructor"]).default("student"),
+  countryCode: z.string().max(8).optional(),
   phone: z.string().optional(),
+  city: z.string().max(80).optional(),
+  country: z.string().max(80).optional(),
+  level: z.enum(["absolute_beginner", "beginner", "intermediate", "advanced", "federated"]).optional(),
+  acceptedPrivacy: z.boolean().default(false),
+  acceptedTerms: z.boolean().default(false),
+  acceptedRefund: z.boolean().default(false),
+  coachExperience: z.string().max(3000).optional(),
+  playingLevel: z.string().max(120).optional(),
+  fideId: z.string().max(80).optional(),
+  rating: z.number().int().min(0).max(3500).default(0),
+  preferredStudents: z.string().max(1000).optional(),
+  availabilityNote: z.string().max(1000).optional(),
+  message: z.string().max(3000).optional(),
 });
 
 export const loginSchema = z.object({
@@ -179,6 +194,8 @@ export const bookingSchema = z.object({
   instructor: z.string(),
   startAt: z.string().datetime(),
   endAt: z.string().datetime(),
+  bookingType: z.enum(["demo", "credit_class", "regular"]).default("regular"),
+  notes: z.string().max(1000).optional(),
 });
 
 export const orderSchema = z.object({

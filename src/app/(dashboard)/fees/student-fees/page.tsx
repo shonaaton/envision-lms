@@ -95,6 +95,30 @@ async function assignPlan(formData: FormData) {
   redirect("/fees/student-fees?success=assigned");
 }
 
+async function deleteFeeAssignment(formData: FormData) {
+  "use server";
+  const session = await auth();
+  if ((session?.user as any)?.role !== "admin") throw new Error("Forbidden");
+  await dbConnect();
+  const assignmentId = String(formData.get("assignment") || "");
+  if (!Types.ObjectId.isValid(assignmentId)) redirect("/fees/student-fees?error=invalid-selection");
+
+  const assignment: any = await FeeAssignment.findById(assignmentId).lean();
+  if (!assignment) redirect("/fees/student-fees?error=missing-record");
+
+  await Promise.all([
+    CreditLedger.deleteMany({ assignment: assignment._id }),
+    Invoice.deleteMany({ assignment: assignment._id }),
+    FeeAssignment.findByIdAndDelete(assignment._id),
+  ]);
+
+  revalidatePath("/fees/student-fees");
+  revalidatePath("/fees/invoices");
+  revalidatePath("/fees/credit-monitoring");
+  revalidatePath("/fees");
+  redirect("/fees/student-fees?success=deleted");
+}
+
 export default async function StudentFeesPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
   const session = await auth();
   if ((session?.user as any)?.role !== "admin") return <div className="p-6">Forbidden</div>;
@@ -120,9 +144,9 @@ export default async function StudentFeesPage({ searchParams }: { searchParams?:
 
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="mb-4 font-semibold">Assign / Change Fee Structure</h2>
-        {success === "assigned" ? (
+        {success === "assigned" || success === "deleted" ? (
           <div className="mb-4 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
-            Fee plan assigned successfully.
+            {success === "deleted" ? "Fee record deleted successfully." : "Fee plan assigned successfully."}
           </div>
         ) : null}
         {error ? (
@@ -164,7 +188,7 @@ export default async function StudentFeesPage({ searchParams }: { searchParams?:
         ) : (
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
-            <thead className="text-xs uppercase text-slate-500"><tr className="border-b"><th className="px-3 py-3">Student Name</th><th>Assigned Plan</th><th>Plan Type</th><th>Outstanding Amount</th><th>Late Fees Due</th><th>Remaining Credits</th><th>Payment Status</th><th>Last Payment Date</th><th>Actions</th><th>History</th></tr></thead>
+            <thead className="text-xs uppercase text-slate-500"><tr className="border-b"><th className="px-3 py-3">Student Name</th><th>Student ID</th><th>Assigned Plan</th><th>Plan Type</th><th>Outstanding Amount</th><th>Late Fees Due</th><th>Remaining Credits</th><th>Payment Status</th><th>Last Payment Date</th><th>Actions</th><th>History</th></tr></thead>
             <tbody>
               {assignments.map((a: any) => {
                 const studentInvoices = invoices.filter((i: any) => i.student?._id?.toString() === a.student?._id?.toString());
@@ -174,6 +198,7 @@ export default async function StudentFeesPage({ searchParams }: { searchParams?:
                 return (
                   <tr key={a._id} className="border-b last:border-0">
                     <td className="px-3 py-3 font-medium">{a.student?.name}</td>
+                    <td>{a.student?.username || a.student?._id?.toString?.() || "-"}</td>
                     <td>{a.plan?.name}</td>
                     <td>{a.type === "credits" ? "Credit-Based" : "Monthly"}</td>
                     <td>{formatINR(outstanding)}</td>
@@ -181,7 +206,15 @@ export default async function StudentFeesPage({ searchParams }: { searchParams?:
                     <td>{a.type === "credits" ? `${a.creditBalance} left (${a.totalCreditsConsumed} used)` : "-"}</td>
                     <td>{outstanding > 0 ? "Outstanding" : "Clear"}</td>
                     <td>{lastPaid ? new Date(lastPaid.paidAt).toLocaleDateString("en-IN") : "-"}</td>
-                    <td><a className="text-purple-700 underline" href={`/fees/invoices?student=${a.student?._id}`}>View Invoices</a></td>
+                    <td>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <a className="rounded-md border border-purple-200 px-3 py-1.5 text-xs font-semibold text-purple-700" href={`/fees/invoices?student=${a.student?._id}`}>View Invoices</a>
+                        <form action={deleteFeeAssignment}>
+                          <input type="hidden" name="assignment" value={a._id.toString()} />
+                          <button className="rounded-md border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-700">Delete Record</button>
+                        </form>
+                      </div>
+                    </td>
                     <td><span className="inline-flex items-center gap-1 text-xs text-slate-500"><History size={13} /> {a.history?.length || 0} changes</span></td>
                   </tr>
                 );

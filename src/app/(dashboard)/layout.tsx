@@ -9,9 +9,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const session = await auth();
   if (!session?.user) redirect("/login");
   const role = (session.user as any).role as "student" | "instructor" | "admin";
+  const accountStatus = (session.user as any).accountStatus;
   return (
     <div className="flex min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(253,231,90,0.18),transparent_28%),linear-gradient(135deg,#fff_0%,#fbf7ff_48%,#fff8c9_140%)]">
-      <Sidebar role={role} />
+      <Sidebar role={role} accountStatus={accountStatus} />
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar user={{ name: session.user.name, role }} />
         <main className="flex-1 overflow-y-auto p-3 sm:p-4">

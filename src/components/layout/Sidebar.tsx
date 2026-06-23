@@ -26,12 +26,14 @@ import {
   Trophy,
   Users,
   WalletCards,
+  UserPlus,
 } from "lucide-react";
 import Logo from "./Logo";
 import { cn } from "@/lib/utils";
 
 type Role = "student" | "instructor" | "admin";
-type NavItem = { href: string; label: string; icon: any; roles?: Role[] };
+type AccountStatus = "demo" | "enrolled" | "coach_applicant" | "approved" | "rejected";
+type NavItem = { href: string; label: string; icon: any; roles?: Role[]; demoOnly?: boolean; hideForDemo?: boolean };
 type NavSection = { id: string; title: string; items: NavItem[]; roles?: Role[] };
 
 const sections: NavSection[] = [
@@ -45,6 +47,8 @@ const sections: NavSection[] = [
     title: "Class Tools",
     items: [
       { href: "/classrooms", label: "Classrooms", icon: BookOpen },
+      { href: "/availability", label: "Available Times", icon: CalendarDays, roles: ["instructor", "admin"] },
+      { href: "/booking", label: "Book Demo / Class", icon: CalendarDays, roles: ["student"] },
       { href: "/ask-coach", label: "Ask Coach", icon: MessageSquare },
       { href: "/homework", label: "Homework", icon: FileText },
       { href: "/attendance", label: "Attendance", icon: ClipboardList },
@@ -91,6 +95,7 @@ const sections: NavSection[] = [
     roles: ["admin"],
     items: [
       { href: "/admin/users", label: "Users", icon: Users },
+      { href: "/admin/onboarding", label: "Onboarding", icon: UserPlus },
       { href: "/admin/courses", label: "Courses", icon: BookOpenCheck },
       { href: "/admin/activity-tracker", label: "Activity Tracker", icon: ActivitySquare },
       { href: "/admin/reports", label: "Reports Center", icon: BarChart3 },
@@ -105,23 +110,30 @@ const sections: NavSection[] = [
   },
 ];
 
-function canSee(role: Role, roles?: Role[]) {
-  return !roles || roles.includes(role);
+function canSee(role: Role, accountStatus: AccountStatus | undefined, item: { roles?: Role[]; demoOnly?: boolean; hideForDemo?: boolean }) {
+  const isDemo = accountStatus === "demo";
+  if (item.demoOnly && !isDemo) return false;
+  if (item.hideForDemo && isDemo) return false;
+  if (isDemo) {
+    const demoAllowed = ["/dashboard", "/booking", "/play/square-trainer", "/play/computer"];
+    if ("href" in item && typeof (item as any).href === "string" && !demoAllowed.includes((item as any).href)) return false;
+  }
+  return !item.roles || item.roles.includes(role);
 }
 
 function isActive(pathname: string, item: NavItem) {
   return pathname === item.href || pathname.startsWith(`${item.href}/`);
 }
 
-export default function Sidebar({ role }: { role: Role }) {
+export default function Sidebar({ role, accountStatus }: { role: Role; accountStatus?: AccountStatus }) {
   const pathname = usePathname();
   const visibleSections = useMemo(
     () =>
       sections
-        .filter((section) => canSee(role, section.roles))
-        .map((section) => ({ ...section, items: section.items.filter((item) => canSee(role, item.roles)) }))
+        .filter((section) => canSee(role, accountStatus, section))
+        .map((section) => ({ ...section, items: section.items.filter((item) => canSee(role, accountStatus, item)) }))
         .filter((section) => section.items.length > 0),
-    [role]
+    [role, accountStatus]
   );
   const activeSection = visibleSections.find((section) => section.items.some((item) => isActive(pathname, item)))?.id || "academy";
   const [openSections, setOpenSections] = useState<string[]>([activeSection]);

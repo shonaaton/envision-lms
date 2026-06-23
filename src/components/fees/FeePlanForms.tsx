@@ -140,15 +140,21 @@ export function CreateFeePlanForm({ action }: { action: ServerAction }) {
 }
 
 export function FeePlanEditor({ plan, updateAction, archiveAction }: { plan: FeePlanView; updateAction: ServerAction; archiveAction: ServerAction }) {
-  const [type, setType] = useState<PlanType>(plan.type);
   const [gstMode, setGstMode] = useState<GstMode>(plan.gstMode);
 
   return (
-    <div className="rounded-lg border border-slate-200 p-4">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
         <div>
           <div className="font-semibold text-slate-950">{plan.name}</div>
-          <div className="text-xs text-slate-500">{plan.type === "monthly" ? "Monthly plan" : "Credit-based plan"}</div>
+          <div className="mt-1 flex flex-wrap gap-2 text-xs">
+            <span className="rounded-full bg-purple-50 px-2 py-1 font-semibold text-purple-700">
+              {plan.type === "monthly" ? "Monthly plan" : "Credit-based plan"}
+            </span>
+            <span className="rounded-full bg-slate-100 px-2 py-1 text-slate-600">
+              {plan.gstMode === "included" ? "GST included" : plan.gstMode === "excluded" ? "GST excluded" : "Non-GST"}
+            </span>
+          </div>
         </div>
         <span className={`rounded-full px-2 py-1 text-xs ${plan.isActive ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
           {plan.isActive ? "Active" : "Archived"}
@@ -157,19 +163,17 @@ export function FeePlanEditor({ plan, updateAction, archiveAction }: { plan: Fee
 
       <form action={updateAction} className="space-y-3">
         <input type="hidden" name="id" value={plan.id} />
-        <input type="hidden" name="type" value={type} />
+        <input type="hidden" name="type" value={plan.type} />
         <input type="hidden" name="gstMode" value={gstMode} />
         <input type="hidden" name="billingDay" value="1" />
         <input type="hidden" name="dueAfterDays" value="0" />
         <input type="hidden" name="creditValidityDays" value="0" />
-        <TypeControl value={type} onChange={setType} />
         <GstControl value={gstMode} onChange={setGstMode} />
 
-        {type === "monthly" ? (
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+        {plan.type === "monthly" ? (
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
             <Field label="Plan Name"><Input name="name" defaultValue={plan.name} /></Field>
             <Field label="Monthly Fee"><Input name="amount" type="number" defaultValue={plan.amount / 100} /></Field>
-            <Field label="Billing Cycle"><Input value="30 days" readOnly className="bg-slate-50 text-slate-500" /></Field>
             <Field label="Late Fee After"><Input name="lateFeeAfterDays" type="number" defaultValue={plan.lateFeeAfterDays || 10} /></Field>
             <Field label="Late Fee Amount"><Input name="lateFeeAmount" type="number" defaultValue={(plan.lateFeeAmount || 50000) / 100} /></Field>
             <Field label="GST Percentage"><Input name="gstPercentage" type="number" defaultValue={plan.gstPercentage || 18} disabled={gstMode === "non_gst"} /></Field>
@@ -180,7 +184,6 @@ export function FeePlanEditor({ plan, updateAction, archiveAction }: { plan: Fee
             <Field label="Plan Name"><Input name="name" defaultValue={plan.name} /></Field>
             <Field label="Credits"><Input name="credits" type="number" defaultValue={plan.credits || 0} /></Field>
             <Field label="Fee Amount"><Input name="amount" type="number" defaultValue={plan.amount / 100} /></Field>
-            <Field label="Validity"><Input value="Unlimited until credits are used" readOnly className="bg-slate-50 text-slate-500" /></Field>
             <Field label="GST Percentage"><Input name="gstPercentage" type="number" defaultValue={plan.gstPercentage || 18} disabled={gstMode === "non_gst"} /></Field>
             <input type="hidden" name="lateFeeAfterDays" value="0" />
             <input type="hidden" name="lateFeeAmount" value="0" />

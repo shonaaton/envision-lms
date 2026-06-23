@@ -56,15 +56,16 @@ export async function GET(req: Request) {
   const [invoices, payments, credits] = await Promise.all([
     Invoice.find({ ...dateFilter, ...(student ? { student } : {}) }).populate("student plan").sort({ createdAt: -1 }).lean(),
     Payment.find({ ...dateFilter, ...(student ? { user: student } : {}) }).populate("user").sort({ createdAt: -1 }).lean(),
-    CreditLedger.find({ ...dateFilter, ...(student ? { student } : {}) }).populate("student").sort({ createdAt: -1 }).lean(),
+    CreditLedger.find({ ...dateFilter, ...(student ? { student } : {}) }).populate("student invoice").sort({ createdAt: -1 }).lean(),
   ]);
   const filteredInvoices = planType ? invoices.filter((i: any) => i.type === planType) : invoices;
 
   let title = "Fee Report";
-  let headers = ["Invoice", "Student", "Plan", "Status", "Amount", "Late Fee", "GST", "Total", "Due Date"];
+  let headers = ["Invoice", "Student", "Student ID", "Plan", "Status", "Amount", "Late Fee", "GST", "Total", "Due Date"];
   let rows = filteredInvoices.map((i: any) => [
     i.invoiceNumber,
     i.student?.name,
+    i.student?.username || i.student?._id?.toString?.() || "-",
     i.plan?.name || i.type,
     i.status,
     formatINR(i.amount),
@@ -76,16 +77,16 @@ export async function GET(req: Request) {
 
   if (type === "transaction" || type === "payment") {
     title = type === "payment" ? "Payment Report" : "Transaction Report";
-    headers = ["Payment ID", "User", "Purpose", "Amount", "Status", "Paid At", "Invoice"];
-    rows = payments.map((p: any) => [p._id, p.user?.name, p.purpose, formatINR(p.amount), p.status, p.paidAt ? new Date(p.paidAt).toLocaleString("en-IN") : "", p.invoiceNumber]);
+    headers = ["Payment ID", "User", "User ID", "Purpose", "Amount", "Status", "Paid At", "Invoice"];
+    rows = payments.map((p: any) => [p._id, p.user?.name, p.user?.username || p.user?._id?.toString?.() || "-", p.purpose, formatINR(p.amount), p.status, p.paidAt ? new Date(p.paidAt).toLocaleString("en-IN") : "", p.invoiceNumber]);
   } else if (type === "gst") {
     title = "GST Report";
-    headers = ["Invoice", "Student", "Taxable", "GST %", "CGST", "SGST", "GST Total", "Status"];
-    rows = filteredInvoices.map((i: any) => [i.invoiceNumber, i.student?.name, formatINR(i.taxableAmount || 0), i.gstPercentage, formatINR(i.cgstAmount || 0), formatINR(i.sgstAmount || 0), formatINR(i.gstAmount || 0), i.status]);
+    headers = ["Invoice", "Student", "Student ID", "Taxable", "GST %", "CGST", "SGST", "GST Total", "Status"];
+    rows = filteredInvoices.map((i: any) => [i.invoiceNumber, i.student?.name, i.student?.username || i.student?._id?.toString?.() || "-", formatINR(i.taxableAmount || 0), i.gstPercentage, formatINR(i.cgstAmount || 0), formatINR(i.sgstAmount || 0), formatINR(i.gstAmount || 0), i.status]);
   } else if (type === "collection") {
     title = "Collection Report";
-    headers = ["Type", "Student", "Credits", "Balance After", "Invoice", "Date", "Note"];
-    rows = credits.map((c: any) => [c.type, c.student?.name, c.credits, c.balanceAfter, c.invoice || "", new Date(c.createdAt).toLocaleString("en-IN"), c.note]);
+    headers = ["Type", "Student", "Student ID", "Credits", "Balance After", "Invoice", "Date", "Note"];
+    rows = credits.map((c: any) => [c.type, c.student?.name, c.student?.username || c.student?._id?.toString?.() || "-", c.credits, c.balanceAfter, c.invoice?.invoiceNumber || c.invoice || "", new Date(c.createdAt).toLocaleString("en-IN"), c.note]);
   }
 
   if (format === "csv") {

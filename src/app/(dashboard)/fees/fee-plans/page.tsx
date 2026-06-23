@@ -73,6 +73,30 @@ export default async function FeePlansPage() {
   if ((session?.user as any)?.role !== "admin") return <div className="p-6">Forbidden</div>;
   await dbConnect();
   const plans = await FeePlan.find({}).sort({ isActive: -1, createdAt: -1 }).lean();
+  const monthlyPlans = plans.filter((plan: any) => plan.type === "monthly");
+  const creditPlans = plans.filter((plan: any) => plan.type === "credits");
+
+  function renderPlan(plan: any) {
+    return (
+      <FeePlanEditor
+        key={plan._id.toString()}
+        plan={{
+          id: plan._id.toString(),
+          name: plan.name,
+          type: plan.type,
+          amount: plan.amount,
+          gstMode: plan.gstMode || "non_gst",
+          gstPercentage: plan.gstPercentage || 0,
+          credits: plan.credits || 0,
+          lateFeeAmount: plan.lateFeeAmount || 50000,
+          lateFeeAfterDays: plan.lateFeeAfterDays || 10,
+          isActive: plan.isActive !== false,
+        }}
+        updateAction={updatePlan}
+        archiveAction={archivePlan}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-5 text-slate-950 sm:px-6 lg:px-8">
@@ -89,29 +113,23 @@ export default async function FeePlansPage() {
         <CreateFeePlanForm action={createPlan} />
       </section>
 
-      <section className="mt-4 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="mb-4 font-semibold">Existing Plans</h2>
-        <div className="space-y-3">
-          {plans.map((plan: any) => (
-            <FeePlanEditor
-              key={plan._id.toString()}
-              plan={{
-                id: plan._id.toString(),
-                name: plan.name,
-                type: plan.type,
-                amount: plan.amount,
-                gstMode: plan.gstMode || "non_gst",
-                gstPercentage: plan.gstPercentage || 0,
-                credits: plan.credits || 0,
-                lateFeeAmount: plan.lateFeeAmount || 50000,
-                lateFeeAfterDays: plan.lateFeeAfterDays || 10,
-                isActive: plan.isActive !== false,
-              }}
-              updateAction={updatePlan}
-              archiveAction={archivePlan}
-            />
-          ))}
-          {plans.length === 0 && <p className="text-sm text-slate-500">No plans created yet.</p>}
+      <section className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 className="mb-1 font-semibold">Monthly Plans</h2>
+          <p className="mb-4 text-sm text-slate-500">Recurring fee plans. Type is locked after creation.</p>
+          <div className="space-y-3">
+            {monthlyPlans.map(renderPlan)}
+            {monthlyPlans.length === 0 && <p className="rounded-md bg-slate-50 p-4 text-sm text-slate-500">No monthly plans created yet.</p>}
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 className="mb-1 font-semibold">Credit Plans</h2>
+          <p className="mb-4 text-sm text-slate-500">Recharge packs. Type is locked after creation.</p>
+          <div className="space-y-3">
+            {creditPlans.map(renderPlan)}
+            {creditPlans.length === 0 && <p className="rounded-md bg-slate-50 p-4 text-sm text-slate-500">No credit plans created yet.</p>}
+          </div>
         </div>
       </section>
     </div>

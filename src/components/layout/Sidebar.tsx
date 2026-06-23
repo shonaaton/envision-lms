@@ -27,6 +27,7 @@ import {
   Users,
   WalletCards,
   UserPlus,
+  Target,
 } from "lucide-react";
 import Logo from "./Logo";
 import { cn } from "@/lib/utils";
@@ -63,6 +64,7 @@ const sections: NavSection[] = [
     items: [
       { href: "/pgn", label: "PGN Library", icon: Library, roles: ["instructor", "admin"] },
       { href: "/analysis", label: "Analysis Board", icon: ListChecks, roles: ["instructor", "admin"] },
+      { href: "/play/tactics-trainer", label: "Tactics Trainer", icon: Target, roles: ["student", "admin"] },
       { href: "/play/square-trainer", label: "Square Trainer", icon: Crosshair, roles: ["student", "admin"] },
       { href: "/play/computer", label: "Play vs Computer", icon: Cpu, roles: ["student", "admin"] },
     ],
@@ -115,7 +117,7 @@ function canSee(role: Role, accountStatus: AccountStatus | undefined, item: { ro
   if (item.demoOnly && !isDemo) return false;
   if (item.hideForDemo && isDemo) return false;
   if (isDemo) {
-    const demoAllowed = ["/dashboard", "/booking", "/play/square-trainer", "/play/computer"];
+    const demoAllowed = ["/dashboard", "/booking", "/play/square-trainer", "/play/tactics-trainer", "/play/computer"];
     if ("href" in item && typeof (item as any).href === "string" && !demoAllowed.includes((item as any).href)) return false;
   }
   return !item.roles || item.roles.includes(role);

@@ -5,6 +5,8 @@ node_modules/
 .env*.local
 *.log
 *.tgz
+lichess_db_puzzle*.csv
+lichess_db_puzzle*.zst
 .npm-cache/
 .DS_Store
 .vercel

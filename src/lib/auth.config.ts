@@ -50,6 +50,7 @@ export const authConfig = {
       const isAnalysisRoute = nextUrl.pathname.startsWith("/analysis");
       const isPlayVsComputerRoute = nextUrl.pathname.startsWith("/play/computer");
       const isSquareTrainerRoute = nextUrl.pathname.startsWith("/play/square-trainer") || nextUrl.pathname.startsWith("/square-trainer");
+      const isTacticsTrainerRoute = nextUrl.pathname.startsWith("/play/tactics-trainer") || nextUrl.pathname.startsWith("/tactics-trainer");
       const isBookingRoute = nextUrl.pathname.startsWith("/booking") || nextUrl.pathname.startsWith("/demo-booking");
       const isFeesRoute = nextUrl.pathname.startsWith("/fees") || nextUrl.pathname.startsWith("/invoices");
       const isTournamentCreateRoute = nextUrl.pathname.startsWith("/tournaments/new");
@@ -58,10 +59,12 @@ export const authConfig = {
         isBookingRoute ||
         isPlayVsComputerRoute ||
         isSquareTrainerRoute ||
+        isTacticsTrainerRoute ||
         nextUrl.pathname.startsWith("/api/bookings") ||
         nextUrl.pathname.startsWith("/api/availability") ||
         nextUrl.pathname.startsWith("/api/play/computer/reward") ||
-        nextUrl.pathname.startsWith("/api/square-trainer");
+        nextUrl.pathname.startsWith("/api/square-trainer") ||
+        nextUrl.pathname.startsWith("/api/tactics-trainer");
 
       if (isPublic) return true;
       if (isAuthRoute) return true;

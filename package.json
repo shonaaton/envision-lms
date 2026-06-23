@@ -8,7 +8,9 @@
     "start": "next start -p 3000",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "seed": "tsx scripts/seed.ts"
+    "seed": "tsx scripts/seed.ts",
+    "import:puzzles": "tsx scripts/import-lichess-puzzles.ts",
+    "import:puzzles:prod": "node scripts/import-lichess-puzzles.cjs"
   },
   "dependencies": {
     "@auth/mongodb-adapter": "3.5.2",

@@ -163,9 +163,9 @@ export default function RegisterPage() {
             <IconInput icon={<ShieldCheck size={19} />} name="password" type="password" placeholder="Password (min 8)" required minLength={8} />
 
             <div className="space-y-2 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm">
-              <PolicyCheck name="acceptedPrivacy" label="I accept the Privacy Policy" href="/privacy" />
-              <PolicyCheck name="acceptedTerms" label="I accept the Terms and Conditions" href="/terms" />
-              <PolicyCheck name="acceptedRefund" label="I accept the Refund Policy" href="/refund-policy" />
+              <PolicyCheck name="acceptedPrivacy" label="I accept the Privacy Policy" href="https://www.envisionchessacademy.com/privacy-policy" />
+              <PolicyCheck name="acceptedTerms" label="I accept the Terms and Conditions" href="https://www.envisionchessacademy.com/terms-and-conditions" />
+              <PolicyCheck name="acceptedRefund" label="I accept the Refund Policy" href="https://www.envisionchessacademy.com/refund-policy" />
             </div>
           </div>
 

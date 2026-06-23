@@ -17,11 +17,13 @@ const UserSchema = new Schema(
     demoLimits: {
       playComputer: { type: Number, default: 3 },
       squareTrainer: { type: Number, default: 3 },
+      tacticsTrainer: { type: Number, default: 3 },
       analysisBoard: { type: Number, default: 3 },
     },
     demoUsage: {
       playComputer: { type: Number, default: 0 },
       squareTrainer: { type: Number, default: 0 },
+      tacticsTrainer: { type: Number, default: 0 },
       analysisBoard: { type: Number, default: 0 },
     },
     parentName: { type: String },

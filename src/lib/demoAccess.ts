@@ -1,6 +1,6 @@
 import { User } from "@/models/User";
 
-export type DemoFeature = "playComputer" | "squareTrainer" | "analysisBoard";
+export type DemoFeature = "playComputer" | "squareTrainer" | "tacticsTrainer" | "analysisBoard";
 
 export async function demoUsageState(userId: string, feature: DemoFeature) {
   const user: any = await User.findById(userId).select("accountStatus demoLimits demoUsage").lean();

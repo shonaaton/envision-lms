@@ -38,6 +38,7 @@ import {
   MessageSquare,
   PlayCircle,
   Search,
+  Target,
   TrendingUp,
   Users,
   Trophy,
@@ -429,12 +430,14 @@ async function StudentDashboard({ userId }: { userId: string }) {
             <div className="grid gap-2 text-xs font-bold text-slate-700 sm:grid-cols-3">
               <span className="rounded-2xl bg-white px-4 py-3 shadow-sm">Computer: {demoUsage.playComputer || 0}/{demoLimits.playComputer || 0}</span>
               <span className="rounded-2xl bg-white px-4 py-3 shadow-sm">Square Trainer: {demoUsage.squareTrainer || 0}/{demoLimits.squareTrainer || 0}</span>
+              <span className="rounded-2xl bg-white px-4 py-3 shadow-sm">Tactics: {demoUsage.tacticsTrainer || 0}/{demoLimits.tacticsTrainer || 0}</span>
               <span className="rounded-2xl bg-white px-4 py-3 shadow-sm">Analysis: {demoUsage.analysisBoard || 0}/{demoLimits.analysisBoard || 0}</span>
             </div>
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
             <Link href="/booking" className="btn-primary">Book Demo Class</Link>
             <Link href="/play/computer" className="btn-outline bg-white">Try Computer Practice</Link>
+            <Link href="/play/tactics-trainer" className="btn-outline bg-white">Try Tactics Trainer</Link>
             <Link href="/play/square-trainer" className="btn-outline bg-white">Try Square Trainer</Link>
           </div>
         </section>
@@ -595,6 +598,15 @@ async function StudentDashboard({ userId }: { userId: string }) {
                   <Zap size={20} className="text-brand" />
                 </div>
               </Link>
+              <Link href="/play/tactics-trainer" className="group rounded-2xl border border-slate-200 bg-slate-50 p-4 transition hover:-translate-y-0.5 hover:border-brand/20 hover:bg-white">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-black text-slate-950">Tactics Trainer</div>
+                    <div className="mt-1 text-xs text-slate-500">Solve puzzles and earn leaderboard XP</div>
+                  </div>
+                  <Target size={20} className="text-brand" />
+                </div>
+              </Link>
               <Link href="/tournaments" className="group rounded-2xl border border-slate-200 bg-slate-50 p-4 transition hover:-translate-y-0.5 hover:border-brand/20 hover:bg-white">
                 <div className="flex items-center justify-between gap-3">
                   <div>
@@ -659,6 +671,7 @@ async function StudentDashboard({ userId }: { userId: string }) {
           <SectionTitle icon={Gamepad2} title="Training Tools" subtitle="Student practice only" />
           <div className="grid gap-3">
             <QuickLinkCard href="/play/square-trainer" title="Square Trainer" subtitle="Build board vision and earn XP" icon={Zap} />
+            <QuickLinkCard href="/play/tactics-trainer" title="Tactics Trainer" subtitle="Solve puzzles for leaderboard points" icon={Target} />
             <QuickLinkCard href="/play/computer" title="Play vs Computer" subtitle="Practice with a guided engine opponent" icon={PlayCircle} />
             <QuickLinkCard href="/leaderboard" title="Leaderboards" subtitle="Track academy and batch rank" icon={Trophy} />
           </div>

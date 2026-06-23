@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Chess } from "chess.js";
-import { CheckCircle2, Coins, Crosshair, Lightbulb, Loader2, RotateCcw, Sparkles, Target, Trophy, Zap } from "lucide-react";
+import { CheckCircle2, ChevronDown, Coins, Crosshair, Lightbulb, Loader2, RotateCcw, Sparkles, Tags, Target, Trophy, Zap } from "lucide-react";
 import { toast } from "sonner";
 
 const Chessboard = dynamic(() => import("react-chessboard").then((m) => m.Chessboard), { ssr: false });
@@ -11,7 +11,6 @@ const Chessboard = dynamic(() => import("react-chessboard").then((m) => m.Chessb
 type Puzzle = {
   id: string;
   externalId?: string;
-  source?: string;
   fen: string;
   moves: string[];
   rating: number;
@@ -78,12 +77,16 @@ export default function TacticsTrainerPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
+  const [showTopics, setShowTopics] = useState(false);
   const [message, setMessage] = useState("Load a puzzle and find the best move.");
   const boardWrapRef = useRef<HTMLDivElement | null>(null);
   const [boardSize, setBoardSize] = useState(560);
 
   const game = useMemo(() => makeGame(fen), [fen]);
   const sideToMove = game.turn() === "w" ? "White" : "Black";
+  const boardOrientation = game.turn() === "w" ? "white" : "black";
+  const files = boardOrientation === "white" ? ["a", "b", "c", "d", "e", "f", "g", "h"] : ["h", "g", "f", "e", "d", "c", "b", "a"];
+  const ranks = boardOrientation === "white" ? ["8", "7", "6", "5", "4", "3", "2", "1"] : ["1", "2", "3", "4", "5", "6", "7", "8"];
   const progress = puzzle ? Math.max(0, Math.floor((ply - 1) / 2)) : 0;
   const totalPlayerMoves = puzzle ? Math.floor(puzzle.moves.length / 2) : 0;
 
@@ -260,7 +263,7 @@ export default function TacticsTrainerPage() {
             <Crosshair size={14} /> Tactics Trainer
           </div>
           <h1 className="mt-2 text-2xl font-black text-brand">Solve Chess Tactics</h1>
-          <p className="mt-1 text-sm text-slate-600">Imported Lichess-style puzzles, automatic replies, XP, coins, and leaderboard points.</p>
+          <p className="mt-1 text-sm text-slate-600">Solve sharp chess positions, earn XP, collect coins, and climb the leaderboard.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <MiniHeader label="Puzzle" value={puzzle ? `${progress}/${totalPlayerMoves}` : "-"} icon={<Target size={14} />} />
@@ -281,7 +284,6 @@ export default function TacticsTrainerPage() {
             <InfoTile label="Rating" value={puzzle?.rating || "-"} />
             <InfoTile label="Hints" value={hintsUsed} />
             <InfoTile label="Moves" value={`${progress}/${totalPlayerMoves}`} />
-            <InfoTile label="Source" value={puzzle?.source === "lichess" ? "Lichess" : "Starter"} />
           </div>
 
           <div className="mt-4 flex flex-wrap gap-2">
@@ -309,38 +311,62 @@ export default function TacticsTrainerPage() {
           {loading ? (
             <div className="flex items-center gap-2 text-sm font-bold text-slate-500"><Loader2 className="animate-spin" size={18} /> Loading puzzle...</div>
           ) : (
-            <div style={{ width: boardSize, height: boardSize }} className="rounded-xl border-[6px] border-[#8a4f25] shadow-xl shadow-black/15">
-              <Chessboard
-                position={fen}
-                boardWidth={boardSize}
-                arePiecesDraggable={!result}
-                onPieceDrop={(source, target, piece) => attemptMove(source, target, piece?.[1]?.toLowerCase() === "p" ? "q" : "q")}
-                onSquareClick={onSquareClick}
-                customSquareStyles={customSquareStyles}
-                customLightSquareStyle={{ backgroundColor: "#f0d9b5" }}
-                customDarkSquareStyle={{ backgroundColor: "#b58863" }}
-              />
+            <div className="grid gap-1" style={{ gridTemplateColumns: "22px auto 22px" }}>
+              <div className="grid py-[6px]" style={{ height: boardSize, gridTemplateRows: "repeat(8, 1fr)" }}>
+                {ranks.map((rank) => (
+                  <div key={`left-${rank}`} className="flex items-center justify-end pr-1 text-xs font-black text-slate-500">{rank}</div>
+                ))}
+              </div>
+              <div>
+                <div style={{ width: boardSize, height: boardSize }} className="rounded-xl border-[6px] border-[#8a4f25] shadow-xl shadow-black/15">
+                  <Chessboard
+                    position={fen}
+                    boardWidth={boardSize}
+                    boardOrientation={boardOrientation}
+                    showBoardNotation={false}
+                    arePiecesDraggable={!result}
+                    onPieceDrop={(source, target, piece) => attemptMove(source, target, piece?.[1]?.toLowerCase() === "p" ? "q" : "q")}
+                    onSquareClick={onSquareClick}
+                    customSquareStyles={customSquareStyles}
+                    customLightSquareStyle={{ backgroundColor: "#f0d9b5" }}
+                    customDarkSquareStyle={{ backgroundColor: "#b58863" }}
+                  />
+                </div>
+                <div className="grid px-[6px]" style={{ width: boardSize, gridTemplateColumns: "repeat(8, 1fr)" }}>
+                  {files.map((file) => (
+                    <div key={`bottom-${file}`} className="pt-1 text-center text-xs font-black text-slate-500">{file}</div>
+                  ))}
+                </div>
+              </div>
+              <div className="grid py-[6px]" style={{ height: boardSize, gridTemplateRows: "repeat(8, 1fr)" }}>
+                {ranks.map((rank) => (
+                  <div key={`right-${rank}`} className="flex items-center justify-start pl-1 text-xs font-black text-slate-500">{rank}</div>
+                ))}
+              </div>
             </div>
           )}
         </section>
 
         <aside className="flex min-h-0 flex-col rounded-2xl border border-slate-200 bg-white p-4 shadow-lg shadow-brand/5">
-          <h2 className="text-lg font-black text-slate-950">Puzzle Details</h2>
-          <p className="mt-2 text-sm leading-6 text-slate-600">
-            Lichess puzzles store the position before the opponent move. The trainer plays that first move, then you solve the forced continuation.
-          </p>
-          <div className="mt-4 flex flex-wrap gap-2">
-            {(puzzle?.themes || []).slice(0, 8).map((theme) => (
-              <span key={theme} className="rounded-full bg-purple-50 px-3 py-1 text-xs font-bold text-brand">{themeLabel(theme)}</span>
-            ))}
-          </div>
+          <button
+            type="button"
+            onClick={() => setShowTopics((value) => !value)}
+            className="flex w-full items-center justify-between rounded-2xl border border-purple-100 bg-purple-50 px-4 py-3 text-left text-sm font-black text-brand transition hover:bg-purple-100"
+          >
+            <span className="inline-flex items-center gap-2"><Tags size={16} /> Topics</span>
+            <ChevronDown size={18} className={showTopics ? "rotate-180 transition" : "transition"} />
+          </button>
+          {showTopics ? (
+            <div className="mt-3 flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-white p-3">
+              {(puzzle?.themes?.length ? puzzle.themes : ["Tactics"]).slice(0, 10).map((theme) => (
+                <span key={theme} className="rounded-full bg-purple-50 px-3 py-1 text-xs font-bold text-brand">{themeLabel(theme)}</span>
+              ))}
+            </div>
+          ) : null}
+
           <div className="mt-4 rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
             <div className="font-black text-slate-950">Leaderboard scoring</div>
             <p className="mt-2 leading-6">Solved puzzles give XP and coins. Higher rating and faster solving give better rewards; mistakes and hints reduce the final XP.</p>
-          </div>
-          <div className="mt-4 rounded-2xl bg-amber-50 p-4 text-sm text-amber-900">
-            <div className="font-black">Full puzzle library</div>
-            <p className="mt-2 leading-6">The page is ready for imported Lichess puzzle CSV data. Until then, starter puzzles keep the trainer available.</p>
           </div>
         </aside>
       </main>

@@ -9,7 +9,7 @@ import { Image as ImageIcon, Save, Settings } from "lucide-react";
 export const dynamic = "force-dynamic";
 
 const uploadRules = {
-  logo: { max: 500 * 1024, types: ["image/png", "image/svg+xml"], folder: "logo" },
+  logo: { max: 500 * 1024, types: ["image/png", "image/jpeg", "image/jpg", "image/svg+xml"], folder: "logo" },
   signatory: { max: 300 * 1024, types: ["image/png"], folder: "signatory" },
   favicon: { max: 100 * 1024, types: ["image/png", "image/x-icon", "image/vnd.microsoft.icon"], folder: "favicon" },
 };
@@ -110,7 +110,7 @@ export default async function AcademySettingsPage({ searchParams }: { searchPara
 
         <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-3">
           {[
-            ["logo", "Academy Logo", "PNG/SVG, max 500 KB. Recommended 400x400 or 600x200.", settings.logoUrl],
+            ["logo", "Academy Logo", "PNG/JPG/SVG, max 500 KB. Recommended 600x220.", settings.logoUrl],
             ["signatory", "Authorized Signatory Upload", "PNG, max 300 KB. Recommended 400x150.", settings.signatoryUrl],
             ["favicon", "Favicon Upload", "PNG/ICO, max 100 KB. Recommended 512x512.", settings.faviconUrl],
           ].map(([name, label, help, current]) => (

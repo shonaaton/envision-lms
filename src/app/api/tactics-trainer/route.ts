@@ -58,9 +58,9 @@ function publicPuzzle(puzzle: any) {
   };
 }
 
-function pickStarter(ratingMax: number) {
-  const pool = starterPuzzles.filter((puzzle) => puzzle.rating <= ratingMax);
-  return pool[Math.floor(Math.random() * (pool.length || starterPuzzles.length))] || starterPuzzles[0];
+function pickStarter(ratingMin: number, ratingMax: number) {
+  const pool = starterPuzzles.filter((puzzle) => puzzle.rating >= ratingMin && puzzle.rating <= ratingMax);
+  return pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
 }
 
 function cleanMoves(value: unknown) {
@@ -93,7 +93,16 @@ export async function GET(req: Request) {
   const filter: any = { isActive: { $ne: false }, rating: { $gte: ratingMin, $lte: ratingMax } };
   if (theme) filter.themes = theme;
   const count = await TacticPuzzle.countDocuments(filter);
-  if (!count) return NextResponse.json({ puzzle: publicPuzzle(pickStarter(ratingMax)), source: "starter" });
+  if (!count) {
+    const starter = pickStarter(ratingMin, ratingMax);
+    if (!starter) {
+      return NextResponse.json(
+        { error: "No puzzles are available in this difficulty yet. Please choose another level." },
+        { status: 404 }
+      );
+    }
+    return NextResponse.json({ puzzle: publicPuzzle(starter), source: "starter" });
+  }
   const skip = Math.floor(Math.random() * count);
   const puzzle = await TacticPuzzle.findOne(filter).skip(skip).lean();
   return NextResponse.json({ puzzle: publicPuzzle(puzzle), source: "database" });

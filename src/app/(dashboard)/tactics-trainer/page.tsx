@@ -21,6 +21,16 @@ type Puzzle = {
 
 type Result = { solved: boolean; xp: number; coins: number; badge?: string; demo?: { isDemo: boolean; remaining: number; limit: number; used: number } };
 
+const difficultyLevels = {
+  absolute_beginner: { label: "Absolute Beginner", rangeLabel: "Puzzle rating 1-300", min: 1, max: 300 },
+  beginner: { label: "Beginner", rangeLabel: "Puzzle rating 300-500", min: 300, max: 500 },
+  intermediate: { label: "Intermediate", rangeLabel: "Puzzle rating 500-800", min: 500, max: 800 },
+  advanced: { label: "Advanced", rangeLabel: "Puzzle rating 800-1000", min: 800, max: 1000 },
+  professional: { label: "Professional", rangeLabel: "Puzzle rating 1000+", min: 1000, max: 4000 },
+} as const;
+
+type DifficultyKey = keyof typeof difficultyLevels;
+
 function uciToMove(uci: string) {
   return { from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci.slice(4, 5) || "q" };
 }
@@ -76,23 +86,29 @@ export default function TacticsTrainerPage() {
   const [seconds, setSeconds] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [replying, setReplying] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
   const [showTopics, setShowTopics] = useState(false);
+  const [difficulty, setDifficulty] = useState<DifficultyKey | null>(null);
+  const [boardOrientation, setBoardOrientation] = useState<"white" | "black">("white");
   const [message, setMessage] = useState("Load a puzzle and find the best move.");
   const boardWrapRef = useRef<HTMLDivElement | null>(null);
   const [boardSize, setBoardSize] = useState(560);
 
   const game = useMemo(() => makeGame(fen), [fen]);
-  const sideToMove = game.turn() === "w" ? "White" : "Black";
-  const boardOrientation = game.turn() === "w" ? "white" : "black";
+  const sideToMove = boardOrientation === "white" ? "White" : "Black";
   const files = boardOrientation === "white" ? ["a", "b", "c", "d", "e", "f", "g", "h"] : ["h", "g", "f", "e", "d", "c", "b", "a"];
   const ranks = boardOrientation === "white" ? ["8", "7", "6", "5", "4", "3", "2", "1"] : ["1", "2", "3", "4", "5", "6", "7", "8"];
   const progress = puzzle ? Math.max(0, Math.floor((ply - 1) / 2)) : 0;
   const totalPlayerMoves = puzzle ? Math.floor(puzzle.moves.length / 2) : 0;
 
-  const loadPuzzle = useCallback(async () => {
+  const loadPuzzle = useCallback(async (requestedDifficulty?: DifficultyKey) => {
+    const levelKey = requestedDifficulty || difficulty;
+    if (!levelKey) return;
+    const level = difficultyLevels[levelKey];
     setLoading(true);
     setResult(null);
+    setReplying(false);
     setSelected("");
     setPossibleSquares([]);
     setSubmittedMoves([]);
@@ -101,13 +117,15 @@ export default function TacticsTrainerPage() {
     setSeconds(0);
     setStartedAt(Date.now());
     try {
-      const response = await fetch("/api/tactics-trainer?max=1200");
+      const response = await fetch(`/api/tactics-trainer?min=${level.min}&max=${level.max}`, { cache: "no-store" });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload?.error || "Could not load puzzle");
       const nextPuzzle: Puzzle = payload.puzzle;
       const nextGame = initialPuzzleGame(nextPuzzle);
+      setDifficulty(levelKey);
       setPuzzle(nextPuzzle);
       setFen(nextGame.fen());
+      setBoardOrientation(nextGame.turn() === "w" ? "white" : "black");
       setPly(1);
       setMessage("Find the best move.");
     } catch (error: any) {
@@ -116,11 +134,7 @@ export default function TacticsTrainerPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
-
-  useEffect(() => {
-    loadPuzzle();
-  }, [loadPuzzle]);
+  }, [difficulty]);
 
   useEffect(() => {
     if (!puzzle || result) return;
@@ -173,7 +187,7 @@ export default function TacticsTrainerPage() {
   }
 
   function attemptMove(sourceSquare: string, targetSquare: string, promotion = "q") {
-    if (!puzzle || result || loading) return false;
+    if (!puzzle || result || loading || replying) return false;
     const expected = puzzle.moves[ply];
     const played = moveToUci({ from: sourceSquare, to: targetSquare, promotion });
     const currentGame = makeGame(fen);
@@ -196,11 +210,13 @@ export default function TacticsTrainerPage() {
     let nextPly = ply + 1;
     const reply = puzzle.moves[nextPly];
     if (reply) {
+      setReplying(true);
       window.setTimeout(() => {
         const replyGame = makeGame(currentGame.fen());
         applyMove(replyGame, reply);
         setFen(replyGame.fen());
         setPly(nextPly + 1);
+        setReplying(false);
         setMessage("Good. Continue the tactic.");
       }, 260);
       setFen(currentGame.fen());
@@ -218,7 +234,7 @@ export default function TacticsTrainerPage() {
   }
 
   function onSquareClick(square: string) {
-    if (!puzzle || result) return;
+    if (!puzzle || result || loading || replying) return;
     if (selected && possibleSquares.includes(square)) {
       attemptMove(selected, square);
       return;
@@ -234,7 +250,7 @@ export default function TacticsTrainerPage() {
   }
 
   function showHint() {
-    if (!puzzle || result) return;
+    if (!puzzle || result || replying) return;
     const expected = puzzle.moves[ply];
     if (!expected) return;
     setHintsUsed((value) => value + 1);
@@ -254,6 +270,36 @@ export default function TacticsTrainerPage() {
     });
     return styles;
   }, [selected, possibleSquares]);
+
+  if (!difficulty) {
+    return (
+      <div className="flex min-h-[calc(100vh-92px)] items-center justify-center bg-[linear-gradient(180deg,#fffdf6_0%,#fff_45%,#faf8fc_100%)] p-5 text-slate-950">
+        <section className="w-full max-w-5xl rounded-2xl border border-slate-200 bg-white p-6 shadow-xl shadow-brand/10">
+          <div className="mx-auto max-w-2xl text-center">
+            <div className="inline-flex items-center gap-2 rounded-full bg-amber-100 px-3 py-1 text-[11px] font-black uppercase tracking-[0.18em] text-amber-700">
+              <Crosshair size={14} /> Tactics Trainer
+            </div>
+            <h1 className="mt-4 text-3xl font-black text-brand">Choose Your Puzzle Level</h1>
+            <p className="mt-2 text-sm text-slate-600">Pick a comfortable starting point. You can change the level whenever you request a new puzzle.</p>
+          </div>
+          <div className="mt-7 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            {(Object.entries(difficultyLevels) as [DifficultyKey, (typeof difficultyLevels)[DifficultyKey]][]).map(([key, level], index) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => loadPuzzle(key)}
+                className="group min-h-36 rounded-2xl border border-purple-100 bg-purple-50 p-4 text-left transition hover:-translate-y-1 hover:border-brand hover:bg-white hover:shadow-lg"
+              >
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brand text-sm font-black text-white">{index + 1}</span>
+                <span className="mt-4 block text-base font-black text-slate-950">{level.label}</span>
+                <span className="mt-1 block text-xs font-semibold text-slate-500">{level.rangeLabel}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-[calc(100vh-92px)] min-h-[640px] flex-col overflow-hidden bg-[linear-gradient(180deg,#fffdf6_0%,#fff_45%,#faf8fc_100%)] p-4 text-slate-950">
@@ -281,14 +327,26 @@ export default function TacticsTrainerPage() {
           </div>
 
           <div className="mt-3 grid grid-cols-2 gap-2">
-            <InfoTile label="Rating" value={puzzle?.rating || "-"} />
+            <InfoTile label="Difficulty" value={difficultyLevels[difficulty].label} />
             <InfoTile label="Hints" value={hintsUsed} />
             <InfoTile label="Moves" value={`${progress}/${totalPlayerMoves}`} />
           </div>
 
           <div className="mt-4 flex flex-wrap gap-2">
-            <button onClick={loadPuzzle} className="btn-primary" disabled={loading}>
+            <button onClick={() => loadPuzzle()} className="btn-primary" disabled={loading || saving}>
               {loading ? <Loader2 size={16} className="animate-spin" /> : <RotateCcw size={16} />} New Puzzle
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setPuzzle(null);
+                setResult(null);
+                setDifficulty(null);
+              }}
+              className="btn-outline"
+              disabled={loading || saving}
+            >
+              Change Level
             </button>
             <button onClick={showHint} className="btn-outline" disabled={!puzzle || !!result}>
               <Lightbulb size={16} /> Hint
@@ -320,11 +378,12 @@ export default function TacticsTrainerPage() {
               <div>
                 <div style={{ width: boardSize, height: boardSize }} className="rounded-xl border-[6px] border-[#8a4f25] shadow-xl shadow-black/15">
                   <Chessboard
+                    key={`${puzzle?.id || "puzzle"}-${startedAt}`}
                     position={fen}
                     boardWidth={boardSize}
                     boardOrientation={boardOrientation}
                     showBoardNotation={false}
-                    arePiecesDraggable={!result}
+                    arePiecesDraggable={!result && !loading && !replying}
                     onPieceDrop={(source, target, piece) => attemptMove(source, target, piece?.[1]?.toLowerCase() === "p" ? "q" : "q")}
                     onSquareClick={onSquareClick}
                     customSquareStyles={customSquareStyles}
@@ -366,7 +425,7 @@ export default function TacticsTrainerPage() {
 
           <div className="mt-4 rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
             <div className="font-black text-slate-950">Leaderboard scoring</div>
-            <p className="mt-2 leading-6">Solved puzzles give XP and coins. Higher rating and faster solving give better rewards; mistakes and hints reduce the final XP.</p>
+            <p className="mt-2 leading-6">Solved puzzles give XP and coins. Higher difficulty and faster solving give better rewards; mistakes and hints reduce the final XP.</p>
           </div>
         </aside>
       </main>

@@ -247,7 +247,9 @@ export default async function AdminOnboardingPage() {
             <div key={student._id} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
               <div className="font-black">{student.name}</div>
               <div className="mt-1 text-sm text-slate-500">{student.email} · {student.username}</div>
-              <div className="mt-2 text-xs text-slate-500">Computer {student.demoUsage?.playComputer || 0}/{student.demoLimits?.playComputer || 0} · Square {student.demoUsage?.squareTrainer || 0}/{student.demoLimits?.squareTrainer || 0}</div>
+              <div className="mt-2 text-xs text-slate-500">
+                Computer {student.demoUsage?.playComputer || 0}/{student.demoLimits?.playComputer || 0} · Square {student.demoUsage?.squareTrainer || 0}/{student.demoLimits?.squareTrainer || 0} · King Hunt {student.demoUsage?.kingHunt || 0}/{student.demoLimits?.kingHunt || 3}
+              </div>
               <form action={convertDemoStudent} className="mt-3">
                 <input type="hidden" name="student" value={student._id.toString()} />
                 <button className="btn-outline bg-white">Convert to Enrolled Student</button>

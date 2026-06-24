@@ -51,6 +51,7 @@ export const authConfig = {
       const isPlayVsComputerRoute = nextUrl.pathname.startsWith("/play/computer");
       const isSquareTrainerRoute = nextUrl.pathname.startsWith("/play/square-trainer") || nextUrl.pathname.startsWith("/square-trainer");
       const isTacticsTrainerRoute = nextUrl.pathname.startsWith("/play/tactics-trainer") || nextUrl.pathname.startsWith("/tactics-trainer");
+      const isKingHuntRoute = nextUrl.pathname.startsWith("/play/king-hunt") || nextUrl.pathname.startsWith("/king-hunt");
       const isBookingRoute = nextUrl.pathname.startsWith("/booking") || nextUrl.pathname.startsWith("/demo-booking");
       const isFeesRoute = nextUrl.pathname.startsWith("/fees") || nextUrl.pathname.startsWith("/invoices");
       const isTournamentCreateRoute = nextUrl.pathname.startsWith("/tournaments/new");
@@ -60,6 +61,7 @@ export const authConfig = {
         isPlayVsComputerRoute ||
         isSquareTrainerRoute ||
         isTacticsTrainerRoute ||
+        isKingHuntRoute ||
         nextUrl.pathname.startsWith("/api/bookings") ||
         nextUrl.pathname.startsWith("/api/availability") ||
         nextUrl.pathname.startsWith("/api/play/computer/reward") ||

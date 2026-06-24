@@ -26,6 +26,8 @@ const TacticAttemptSchema = new Schema(
     student: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
     puzzle: { type: Schema.Types.ObjectId, ref: "TacticPuzzle", index: true },
     puzzleExternalId: String,
+    trainerType: { type: String, enum: ["tactics", "king_hunt"], default: "tactics", index: true },
+    mateIn: { type: Number, min: 1, max: 5 },
     solved: { type: Boolean, default: false, index: true },
     submittedMoves: [String],
     mistakes: { type: Number, default: 0 },

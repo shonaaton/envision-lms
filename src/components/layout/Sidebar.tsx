@@ -15,6 +15,7 @@ import {
   ClipboardList,
   Cpu,
   Crosshair,
+  Crown,
   FileText,
   LayoutDashboard,
   Library,
@@ -65,6 +66,7 @@ const sections: NavSection[] = [
       { href: "/pgn", label: "PGN Library", icon: Library, roles: ["instructor", "admin"] },
       { href: "/analysis", label: "Analysis Board", icon: ListChecks, roles: ["instructor", "admin"] },
       { href: "/play/tactics-trainer", label: "Tactics Trainer", icon: Target, roles: ["student", "admin"] },
+      { href: "/play/king-hunt", label: "King Hunt", icon: Crown, roles: ["student", "admin"] },
       { href: "/play/square-trainer", label: "Square Trainer", icon: Crosshair, roles: ["student", "admin"] },
       { href: "/play/computer", label: "Play vs Computer", icon: Cpu, roles: ["student", "admin"] },
     ],
@@ -117,7 +119,7 @@ function canSee(role: Role, accountStatus: AccountStatus | undefined, item: { ro
   if (item.demoOnly && !isDemo) return false;
   if (item.hideForDemo && isDemo) return false;
   if (isDemo) {
-    const demoAllowed = ["/dashboard", "/booking", "/play/square-trainer", "/play/tactics-trainer", "/play/computer"];
+    const demoAllowed = ["/dashboard", "/booking", "/play/square-trainer", "/play/tactics-trainer", "/play/king-hunt", "/play/computer"];
     if ("href" in item && typeof (item as any).href === "string" && !demoAllowed.includes((item as any).href)) return false;
   }
   return !item.roles || item.roles.includes(role);

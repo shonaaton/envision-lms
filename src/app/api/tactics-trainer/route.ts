@@ -58,8 +58,13 @@ function publicPuzzle(puzzle: any) {
   };
 }
 
-function pickStarter(ratingMin: number, ratingMax: number) {
-  const pool = starterPuzzles.filter((puzzle) => puzzle.rating >= ratingMin && puzzle.rating <= ratingMax);
+function pickStarter(ratingMin: number, ratingMax: number, requiredTheme?: string) {
+  const pool = starterPuzzles.filter(
+    (puzzle) =>
+      puzzle.rating >= ratingMin &&
+      puzzle.rating <= ratingMax &&
+      (!requiredTheme || puzzle.themes.includes(requiredTheme))
+  );
   return pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
 }
 
@@ -90,14 +95,23 @@ export async function GET(req: Request) {
   const ratingMin = Math.max(0, Number(url.searchParams.get("min") || 0));
   const ratingMax = Math.max(ratingMin, Number(url.searchParams.get("max") || 1200));
   const theme = String(url.searchParams.get("theme") || "").trim();
+  const trainer = String(url.searchParams.get("trainer") || "tactics");
+  const mateIn = Math.max(0, Math.min(5, Number(url.searchParams.get("mate") || 0)));
+  const isKingHunt = trainer === "king_hunt";
+  if (isKingHunt && !mateIn) return NextResponse.json({ error: "Choose Mate in 1, 2, 3, 4, or 5." }, { status: 400 });
+  const requiredTheme = isKingHunt ? `mateIn${mateIn}` : theme;
   const filter: any = { isActive: { $ne: false }, rating: { $gte: ratingMin, $lte: ratingMax } };
-  if (theme) filter.themes = theme;
+  if (requiredTheme) filter.themes = requiredTheme;
   const count = await TacticPuzzle.countDocuments(filter);
   if (!count) {
-    const starter = pickStarter(ratingMin, ratingMax);
+    const starter = pickStarter(ratingMin, ratingMax, requiredTheme);
     if (!starter) {
       return NextResponse.json(
-        { error: "No puzzles are available in this difficulty yet. Please choose another level." },
+        {
+          error: isKingHunt
+            ? `No Mate in ${mateIn} puzzles are available at this difficulty yet. Please choose another difficulty.`
+            : "No puzzles are available in this difficulty yet. Please choose another level.",
+        },
         { status: 404 }
       );
     }
@@ -116,6 +130,9 @@ export async function POST(req: Request) {
 
   await dbConnect();
   const body = await req.json();
+  const trainer = String(body.trainer || "tactics");
+  const isKingHunt = trainer === "king_hunt";
+  const mateIn = Math.max(0, Math.min(5, Number(body.mateIn || 0)));
   const puzzleId = String(body.puzzleId || "");
   const submittedMoves = cleanMoves(body.submittedMoves);
   const mistakes = Math.max(0, Number(body.mistakes || 0));
@@ -132,15 +149,20 @@ export async function POST(req: Request) {
   const solved = playerMoves.length > 0 && playerMoves.every((move, index) => submittedMoves[index] === move);
   const reward = calculateReward({ solved, rating: Number(puzzle.rating || 1000), mistakes, hintsUsed, timeSeconds });
 
-  const demoState = await consumeDemoUsage((session.user as any).id, "tacticsTrainer");
+  const demoState = await consumeDemoUsage((session.user as any).id, isKingHunt ? "kingHunt" : "tacticsTrainer");
   if (!demoState.allowed) {
-    return NextResponse.json({ error: "Your demo Tactics Trainer limit is finished. Please book a demo class or contact the academy." }, { status: 403 });
+    return NextResponse.json(
+      { error: `Your demo ${isKingHunt ? "King Hunt" : "Tactics Trainer"} limit is finished. Please book a demo class or contact the academy.` },
+      { status: 403 }
+    );
   }
 
   const attempt = await TacticAttempt.create({
     student: (session.user as any).id,
     puzzle: String(puzzle._id || "").startsWith("starter-") ? undefined : puzzle._id,
     puzzleExternalId: puzzle.externalId || puzzle._id,
+    trainerType: isKingHunt ? "king_hunt" : "tactics",
+    mateIn: isKingHunt ? mateIn : undefined,
     solved,
     submittedMoves,
     mistakes,
@@ -153,19 +175,21 @@ export async function POST(req: Request) {
 
   const studentReward = await StudentReward.create({
     student: (session.user as any).id,
-    sourceType: "tactics_trainer",
+    sourceType: isKingHunt ? "king_hunt" : "tactics_trainer",
     sourceId: attempt._id,
     xp: reward.xp,
     coins: reward.coins,
-    badge: solved && mistakes === 0 && Number(puzzle.rating || 0) >= 1000 ? "Clean Tactician" : undefined,
-    reason: `Tactics Trainer: ${solved ? "solved" : "attempted"} ${puzzle.externalId || puzzle._id} (${reward.xp} XP)`,
+    badge: solved && mistakes === 0 && Number(puzzle.rating || 0) >= 1000
+      ? isKingHunt ? "King Hunter" : "Clean Tactician"
+      : undefined,
+    reason: `${isKingHunt ? "King Hunt" : "Tactics Trainer"}: ${solved ? "solved" : "attempted"} ${puzzle.externalId || puzzle._id} (${reward.xp} XP)`,
   });
 
   await recordActivity({
     actor: (session.user as any).id,
     targetUser: (session.user as any).id,
-    type: "tactics_trainer.completed",
-    label: `${solved ? "Solved" : "Attempted"} tactics puzzle ${puzzle.externalId || puzzle._id}`,
+    type: isKingHunt ? "king_hunt.completed" : "tactics_trainer.completed",
+    label: `${solved ? "Solved" : "Attempted"} ${isKingHunt ? "King Hunt" : "tactics"} puzzle ${puzzle.externalId || puzzle._id}`,
     entityType: "TacticAttempt",
     entityId: attempt._id.toString(),
     metadata: { puzzleId, solved, submittedMoves, mistakes, hintsUsed, timeSeconds, ...reward, rewardId: studentReward._id.toString() },

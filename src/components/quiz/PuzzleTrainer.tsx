@@ -20,6 +20,7 @@ type Puzzle = {
 };
 
 type Result = { solved: boolean; xp: number; coins: number; badge?: string; demo?: { isDemo: boolean; remaining: number; limit: number; used: number } };
+type LeaderboardRow = { rank: number; studentId: string; name: string; xp: number; coins: number };
 
 const difficultyLevels = {
   absolute_beginner: { label: "Absolute Beginner", rangeLabel: "Puzzle rating 1-300", min: 1, max: 300 },
@@ -98,6 +99,8 @@ export default function PuzzleTrainer({ mode = "tactics" }: PuzzleTrainerProps) 
   const [replying, setReplying] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
   const [showTopics, setShowTopics] = useState(false);
+  const [leaderboard, setLeaderboard] = useState<{ top: LeaderboardRow[]; current: LeaderboardRow | null }>({ top: [], current: null });
+  const [leaderboardLoading, setLeaderboardLoading] = useState(true);
   const [difficulty, setDifficulty] = useState<DifficultyKey | null>(null);
   const [mateIn, setMateIn] = useState<number | null>(null);
   const [boardOrientation, setBoardOrientation] = useState<"white" | "black">("white");
@@ -111,6 +114,19 @@ export default function PuzzleTrainer({ mode = "tactics" }: PuzzleTrainerProps) 
   const ranks = boardOrientation === "white" ? ["8", "7", "6", "5", "4", "3", "2", "1"] : ["1", "2", "3", "4", "5", "6", "7", "8"];
   const progress = puzzle ? Math.max(0, Math.floor((ply - 1) / 2)) : 0;
   const totalPlayerMoves = puzzle ? Math.floor(puzzle.moves.length / 2) : 0;
+
+  const loadLeaderboard = useCallback(async () => {
+    try {
+      const response = await fetch("/api/tactics-trainer?view=leaderboard", { cache: "no-store" });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload?.error || "Could not load leaderboard");
+      setLeaderboard({ top: payload.top || [], current: payload.current || null });
+    } catch {
+      // The trainer remains usable if the motivational leaderboard is temporarily unavailable.
+    } finally {
+      setLeaderboardLoading(false);
+    }
+  }, []);
 
   const loadPuzzle = useCallback(async (requestedDifficulty?: DifficultyKey, requestedMateIn?: number) => {
     const levelKey = requestedDifficulty || difficulty;
@@ -161,6 +177,12 @@ export default function PuzzleTrainer({ mode = "tactics" }: PuzzleTrainerProps) 
   }, [puzzle, result, startedAt]);
 
   useEffect(() => {
+    loadLeaderboard();
+    const timer = window.setInterval(loadLeaderboard, 20_000);
+    return () => window.clearInterval(timer);
+  }, [loadLeaderboard]);
+
+  useEffect(() => {
     const element = boardWrapRef.current;
     if (!element) return;
     const resize = () => {
@@ -198,6 +220,7 @@ export default function PuzzleTrainer({ mode = "tactics" }: PuzzleTrainerProps) 
       if (!response.ok) throw new Error(payload?.error || "Could not save puzzle result");
       setResult(payload);
       setMessage(payload.solved ? "Solved. XP added to leaderboard." : "Attempt saved.");
+      loadLeaderboard();
     } catch (error: any) {
       toast.error(error?.message || "Could not save result");
       setMessage(error?.message || "Could not save result.");
@@ -430,13 +453,16 @@ export default function PuzzleTrainer({ mode = "tactics" }: PuzzleTrainerProps) 
             <div className="flex items-center gap-2 text-sm font-bold text-slate-500"><Loader2 className="animate-spin" size={18} /> Loading puzzle...</div>
           ) : (
             <div className="grid gap-1" style={{ gridTemplateColumns: "22px auto 22px" }}>
-              <div className="grid py-[6px]" style={{ height: boardSize, gridTemplateRows: "repeat(8, 1fr)" }}>
+              <div className="grid py-[6px]" style={{ height: boardSize + 12, gridTemplateRows: "repeat(8, 1fr)" }}>
                 {ranks.map((rank) => (
                   <div key={`left-${rank}`} className="flex items-center justify-end pr-1 text-xs font-black text-slate-500">{rank}</div>
                 ))}
               </div>
               <div>
-                <div style={{ width: boardSize, height: boardSize }} className="rounded-xl border-[6px] border-[#8a4f25] shadow-xl shadow-black/15">
+                <div
+                  style={{ width: boardSize, height: boardSize, boxSizing: "content-box" }}
+                  className="overflow-hidden rounded-lg border-[6px] border-[#8a4f25] bg-[#8a4f25] shadow-xl shadow-black/15"
+                >
                   <Chessboard
                     key={`${puzzle?.id || "puzzle"}-${startedAt}`}
                     position={fen}
@@ -451,13 +477,13 @@ export default function PuzzleTrainer({ mode = "tactics" }: PuzzleTrainerProps) 
                     customDarkSquareStyle={{ backgroundColor: "#b58863" }}
                   />
                 </div>
-                <div className="grid px-[6px]" style={{ width: boardSize, gridTemplateColumns: "repeat(8, 1fr)" }}>
+                <div className="grid px-[6px]" style={{ width: boardSize + 12, gridTemplateColumns: "repeat(8, 1fr)" }}>
                   {files.map((file) => (
                     <div key={`bottom-${file}`} className="pt-1 text-center text-xs font-black text-slate-500">{file}</div>
                   ))}
                 </div>
               </div>
-              <div className="grid py-[6px]" style={{ height: boardSize, gridTemplateRows: "repeat(8, 1fr)" }}>
+              <div className="grid py-[6px]" style={{ height: boardSize + 12, gridTemplateRows: "repeat(8, 1fr)" }}>
                 {ranks.map((rank) => (
                   <div key={`right-${rank}`} className="flex items-center justify-start pl-1 text-xs font-black text-slate-500">{rank}</div>
                 ))}
@@ -483,12 +509,52 @@ export default function PuzzleTrainer({ mode = "tactics" }: PuzzleTrainerProps) 
             </div>
           ) : null}
 
+          <div className="mt-4 min-h-0 rounded-2xl border border-purple-100 bg-white p-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="inline-flex items-center gap-2 text-sm font-black text-slate-950">
+                <Trophy size={16} className="text-amber-500" /> Live XP Leaderboard
+              </div>
+              <span className="text-[10px] font-black uppercase tracking-wide text-slate-400">Top 5</span>
+            </div>
+            <div className="mt-3 space-y-1.5">
+              {leaderboardLoading ? (
+                <div className="flex items-center justify-center gap-2 py-5 text-xs font-bold text-slate-400">
+                  <Loader2 size={14} className="animate-spin" /> Updating ranks
+                </div>
+              ) : leaderboard.top.length ? (
+                leaderboard.top.map((row) => (
+                  <LeaderboardItem key={row.studentId} row={row} current={leaderboard.current?.studentId === row.studentId} />
+                ))
+              ) : (
+                <div className="rounded-xl bg-slate-50 px-3 py-4 text-center text-xs text-slate-500">Solve a puzzle to open the leaderboard.</div>
+              )}
+            </div>
+            {leaderboard.current && !leaderboard.top.some((row) => row.studentId === leaderboard.current?.studentId) ? (
+              <div className="mt-2 border-t border-dashed border-purple-100 pt-2">
+                <div className="mb-1 text-[10px] font-black uppercase tracking-wide text-brand">Your position</div>
+                <LeaderboardItem row={leaderboard.current} current />
+              </div>
+            ) : null}
+          </div>
+
           <div className="mt-4 rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
             <div className="font-black text-slate-950">Leaderboard scoring</div>
             <p className="mt-2 leading-6">Solved puzzles give XP and coins. Higher difficulty and faster solving give better rewards; mistakes and hints reduce the final XP.</p>
           </div>
         </aside>
       </main>
+    </div>
+  );
+}
+
+function LeaderboardItem({ row, current }: { row: LeaderboardRow; current?: boolean }) {
+  return (
+    <div className={`grid grid-cols-[28px_minmax(0,1fr)_auto] items-center gap-2 rounded-xl px-2.5 py-2 text-xs ${
+      current ? "bg-brand text-white shadow-md shadow-brand/15" : "bg-slate-50 text-slate-700"
+    }`}>
+      <span className={`font-black ${current ? "text-accent" : row.rank <= 3 ? "text-amber-600" : "text-slate-400"}`}>#{row.rank}</span>
+      <span className="truncate font-bold">{current ? `${row.name} (You)` : row.name}</span>
+      <span className={`font-black ${current ? "text-white" : "text-brand"}`}>{row.xp} XP</span>
     </div>
   );
 }

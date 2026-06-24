@@ -5,6 +5,7 @@ import { recordActivity } from "@/lib/activity";
 import { consumeDemoUsage } from "@/lib/demoAccess";
 import { StudentReward } from "@/models/ClassroomLive";
 import { TacticAttempt, TacticPuzzle } from "@/models/TacticPuzzle";
+import { User } from "@/models/User";
 
 export const dynamic = "force-dynamic";
 
@@ -92,6 +93,31 @@ export async function GET(req: Request) {
 
   await dbConnect();
   const url = new URL(req.url);
+  if (url.searchParams.get("view") === "leaderboard") {
+    const rows = await StudentReward.aggregate([
+      { $group: { _id: "$student", xp: { $sum: "$xp" }, coins: { $sum: "$coins" } } },
+      { $sort: { xp: -1, coins: -1, _id: 1 } },
+    ]);
+    const userIds = rows.map((row: any) => row._id);
+    const users = await User.find({ _id: { $in: userIds }, role: "student", isActive: { $ne: false } })
+      .select("name")
+      .lean();
+    const names = new Map(users.map((user: any) => [user._id.toString(), user.name]));
+    const ranked = rows
+      .filter((row: any) => names.has(row._id.toString()))
+      .map((row: any, index: number) => ({
+        rank: index + 1,
+        studentId: row._id.toString(),
+        name: names.get(row._id.toString()) || "Student",
+        xp: Number(row.xp || 0),
+        coins: Number(row.coins || 0),
+      }));
+    const currentUserId = String((session.user as any).id || "");
+    return NextResponse.json({
+      top: ranked.slice(0, 5),
+      current: ranked.find((row: any) => row.studentId === currentUserId) || null,
+    });
+  }
   const ratingMin = Math.max(0, Number(url.searchParams.get("min") || 0));
   const ratingMax = Math.max(ratingMin, Number(url.searchParams.get("max") || 1200));
   const theme = String(url.searchParams.get("theme") || "").trim();

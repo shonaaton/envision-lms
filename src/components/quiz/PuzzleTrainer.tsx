@@ -106,7 +106,7 @@ export default function PuzzleTrainer({ mode = "tactics" }: PuzzleTrainerProps) 
   const [boardOrientation, setBoardOrientation] = useState<"white" | "black">("white");
   const [message, setMessage] = useState("Load a puzzle and find the best move.");
   const boardWrapRef = useRef<HTMLDivElement | null>(null);
-  const [boardSize, setBoardSize] = useState(560);
+  const [boardSize, setBoardSize] = useState(420);
 
   const game = useMemo(() => makeGame(fen), [fen]);
   const sideToMove = boardOrientation === "white" ? "White" : "Black";
@@ -183,11 +183,13 @@ export default function PuzzleTrainer({ mode = "tactics" }: PuzzleTrainerProps) 
   }, [loadLeaderboard]);
 
   useEffect(() => {
+    if (!difficulty || (isKingHunt && !mateIn)) return;
     const element = boardWrapRef.current;
     if (!element) return;
     const resize = () => {
-      const availableHeight = window.innerHeight - 240;
-      setBoardSize(Math.max(310, Math.min(620, element.clientWidth, availableHeight)));
+      const availableWidth = element.clientWidth - 96;
+      const availableHeight = element.clientHeight - 70;
+      setBoardSize(Math.max(280, Math.min(560, availableWidth, availableHeight)));
     };
     resize();
     const observer = new ResizeObserver(resize);
@@ -197,7 +199,7 @@ export default function PuzzleTrainer({ mode = "tactics" }: PuzzleTrainerProps) 
       observer.disconnect();
       window.removeEventListener("resize", resize);
     };
-  }, []);
+  }, [difficulty, isKingHunt, mateIn]);
 
   async function saveResult(solvedMoves: string[]) {
     if (!puzzle || saving || result) return;
@@ -399,7 +401,7 @@ export default function PuzzleTrainer({ mode = "tactics" }: PuzzleTrainerProps) 
         </div>
       </header>
 
-      <main className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[320px_minmax(0,1fr)_330px]">
+      <main className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[300px_minmax(0,1fr)_310px]">
         <aside className="flex min-h-0 flex-col rounded-2xl border border-slate-200 bg-white p-4 shadow-lg shadow-brand/5">
           <div className="rounded-2xl bg-brand p-4 text-white">
             <div className="text-[11px] font-black uppercase tracking-[0.16em] text-accent">Current Task</div>
@@ -448,11 +450,11 @@ export default function PuzzleTrainer({ mode = "tactics" }: PuzzleTrainerProps) 
           ) : null}
         </aside>
 
-        <section ref={boardWrapRef} className="flex min-h-0 items-center justify-center rounded-2xl border border-slate-200 bg-white p-4 shadow-lg shadow-brand/5">
+        <section ref={boardWrapRef} className="flex min-h-0 min-w-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-lg shadow-brand/5">
           {loading ? (
             <div className="flex items-center gap-2 text-sm font-bold text-slate-500"><Loader2 className="animate-spin" size={18} /> Loading puzzle...</div>
           ) : (
-            <div className="grid gap-1" style={{ gridTemplateColumns: "22px auto 22px" }}>
+            <div className="grid max-h-full max-w-full gap-1" style={{ gridTemplateColumns: "22px minmax(0,auto) 22px" }}>
               <div className="grid py-[6px]" style={{ height: boardSize + 12, gridTemplateRows: "repeat(8, 1fr)" }}>
                 {ranks.map((rank) => (
                   <div key={`left-${rank}`} className="flex items-center justify-end pr-1 text-xs font-black text-slate-500">{rank}</div>

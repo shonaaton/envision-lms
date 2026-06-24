@@ -43,7 +43,7 @@ export async function GET(req: Request) {
     .sort(sortObj)
     .limit(500)
     .lean();
-  return NextResponse.json(list);
+  return NextResponse.json(list, { headers: { "Cache-Control": "no-store, max-age=0" } });
 }
 
 export async function POST(req: Request) {
@@ -64,6 +64,8 @@ export async function POST(req: Request) {
       username,
       passwordHash,
       tempPassword,
+      passwordChangedAt: new Date(),
+      passwordChangeSource: "registration",
     });
     await recordActivity({
       actor: actorId,

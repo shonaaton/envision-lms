@@ -7,6 +7,8 @@ const UserSchema = new Schema(
     email: { type: String, required: true, unique: true, lowercase: true, index: true },
     passwordHash: { type: String, required: true },
     tempPassword: { type: String },
+    passwordChangedAt: { type: Date },
+    passwordChangeSource: { type: String, enum: ["registration", "admin_reset", "self_reset"], default: "registration" },
     role: { type: String, enum: ["student", "instructor", "admin"], default: "student", index: true },
     accountStatus: {
       type: String,

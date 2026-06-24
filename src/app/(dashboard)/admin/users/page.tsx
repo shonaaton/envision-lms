@@ -32,6 +32,8 @@ type AdminUser = {
   _id: string;
   username?: string;
   tempPassword?: string;
+  passwordChangedAt?: string;
+  passwordChangeSource?: "registration" | "admin_reset" | "self_reset";
   name: string;
   email: string;
   phone?: string;
@@ -89,7 +91,7 @@ export default function AdminUsersPage() {
     if (q) params.set("q", q);
     if (status) params.set("status", status);
     if (tag) params.set("tag", tag);
-    const response = await fetch("/api/admin/users?" + params);
+    const response = await fetch("/api/admin/users?" + params, { cache: "no-store" });
     setUsers(await response.json());
   }
 
@@ -111,6 +113,16 @@ export default function AdminUsersPage() {
     loadUsers();
     loadBatches();
     loadDirectory();
+  }, [tab, q, status, tag, sort]);
+
+  useEffect(() => {
+    const refresh = () => loadUsers();
+    window.addEventListener("focus", refresh);
+    const timer = window.setInterval(refresh, 20_000);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      window.clearInterval(timer);
+    };
   }, [tab, q, status, tag, sort]);
 
   const counts = useMemo(() => {
@@ -176,7 +188,7 @@ export default function AdminUsersPage() {
   function exportCsv() {
     const rows = tab === "batches"
       ? [["Name", "Coach", "Students", "Level"], ...currentBatches.map((b) => [b.name, b.coach?.name || "", String(b.students?.length || 0), b.level || ""])]
-      : [["Username", "Password", "Name", "Email", "Phone", "Status"], ...users.map((u) => [u.username || "", u.tempPassword || "", u.name, u.email, u.phone || "", u.isActive ? "Active" : "Inactive"])];
+      : [["Username", "Password Status", "Name", "Email", "Phone", "Status"], ...users.map((u) => [u.username || "", passwordStatus(u), u.name, u.email, u.phone || "", u.isActive ? "Active" : "Inactive"])];
     const csv = rows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
     const link = document.createElement("a");
     link.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
@@ -186,8 +198,11 @@ export default function AdminUsersPage() {
   }
 
   function copyCredentials(user: AdminUser) {
-    const password = user.tempPassword || "Reset password first";
-    navigator.clipboard?.writeText(`Username: ${user.username || ""}\nPassword: ${password}`);
+    if (!user.tempPassword) {
+      toast.info("The current password is securely encrypted and cannot be copied. Use Reset Password to create a new temporary password.");
+      return;
+    }
+    navigator.clipboard?.writeText(`Username: ${user.username || ""}\nTemporary Password: ${user.tempPassword}`);
     toast.success("Credentials copied");
   }
 
@@ -255,7 +270,7 @@ export default function AdminUsersPage() {
                   <tr className="border-b border-slate-200">
                     <th className="py-3 text-left">S.No</th>
                     <th className="py-3 text-left">Username</th>
-                    <th className="py-3 text-left">Password</th>
+                    <th className="py-3 text-left">Password Status</th>
                     <th className="py-3 text-left">Name</th>
                     <th className="py-3 text-left">Email</th>
                     <th className="py-3 text-left">Contact No.</th>
@@ -269,9 +284,15 @@ export default function AdminUsersPage() {
                       <td className="py-3 text-slate-500">{i + 1}</td>
                       <td className="py-3 font-semibold">{u.username}</td>
                       <td className="py-3">
-                        <button className="inline-flex items-center gap-1 rounded bg-slate-100 px-2 py-1 text-xs" onClick={() => copyCredentials(u)}>
-                          {u.tempPassword || "Reset first"} <Copy size={12} />
-                        </button>
+                        {u.tempPassword ? (
+                          <button className="inline-flex items-center gap-1 rounded bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-800" onClick={() => copyCredentials(u)}>
+                            Temporary password <Copy size={12} />
+                          </button>
+                        ) : (
+                          <span className="inline-flex rounded bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">
+                            {passwordStatus(u)}
+                          </span>
+                        )}
                       </td>
                       <td className="py-3">
                         <button className="flex items-center gap-2 text-left" onClick={() => setDetailUser(u)}>
@@ -401,10 +422,10 @@ function UserDetailsModal({ user, batches, onClose, onCopy }: { user: AdminUser;
           <div><span className="text-2xl font-semibold">{user.name}</span> <span className="ml-2 rounded bg-brand-100 px-2 py-1 text-xs text-brand">{user.role}</span></div>
           <InfoRow label="Email" value={user.email} />
           <InfoRow label="Username" value={user.username || "-"} />
-          <InfoRow label="Password" value={user.tempPassword || "Not stored. Use Reset Password."} />
+          <InfoRow label="Password" value={user.tempPassword ? "Temporary password available to admin" : passwordStatus(user)} />
           <InfoRow label="Contact No." value={user.phone || "-"} />
           <InfoRow label="Status" value={user.isActive ? "Active" : "Inactive"} />
-          <button className="btn-primary gap-2" onClick={onCopy}><Copy size={15} /> Copy login credentials</button>
+          {user.tempPassword ? <button className="btn-primary gap-2" onClick={onCopy}><Copy size={15} /> Copy temporary credentials</button> : null}
         </div>
       </div>
       <div className="mt-6 rounded-lg border border-slate-200 p-4">
@@ -417,6 +438,19 @@ function UserDetailsModal({ user, batches, onClose, onCopy }: { user: AdminUser;
 
 function InfoRow({ label, value }: { label: string; value: string }) {
   return <div className="grid grid-cols-[120px_1fr] text-sm"><span className="text-slate-500">{label}</span><span className="font-medium">{value}</span></div>;
+}
+
+function passwordStatus(user: AdminUser) {
+  if (user.tempPassword) return "Temporary password active";
+  if (!user.passwordChangedAt) return "Password securely set";
+  const changed = new Intl.DateTimeFormat("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(user.passwordChangedAt));
+  return `${user.passwordChangeSource === "self_reset" ? "Updated by user" : "Updated"} ${changed}`;
 }
 
 function EditUserModal({ user, onClose, onSave }: { user: AdminUser; onClose: () => void; onSave: (payload: Partial<AdminUser>) => void }) {

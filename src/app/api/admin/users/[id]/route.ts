@@ -20,7 +20,19 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (body.resetPassword) {
     const tempPassword = body.password || genPassword();
     const passwordHash = await bcrypt.hash(tempPassword, 10);
-    const u = await User.findByIdAndUpdate(params.id, { passwordHash, tempPassword }, { new: true, projection: { passwordHash: 0 } });
+    const u = await User.findByIdAndUpdate(
+      params.id,
+      {
+        $set: {
+          passwordHash,
+          tempPassword,
+          passwordChangedAt: new Date(),
+          passwordChangeSource: "admin_reset",
+        },
+        $unset: { passwordResetTokenHash: 1, passwordResetExpiresAt: 1 },
+      },
+      { new: true, projection: { passwordHash: 0 } }
+    );
     await recordActivity({
       actor: actorId,
       targetUser: params.id,

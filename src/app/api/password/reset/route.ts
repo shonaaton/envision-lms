@@ -41,8 +41,16 @@ export async function POST(req: Request) {
         isActive: { $ne: false },
       },
       {
-        $set: { passwordHash, tempPassword: "" },
-        $unset: { passwordResetTokenHash: 1, passwordResetExpiresAt: 1 },
+        $set: {
+          passwordHash,
+          passwordChangedAt: new Date(),
+          passwordChangeSource: "self_reset",
+        },
+        $unset: {
+          tempPassword: 1,
+          passwordResetTokenHash: 1,
+          passwordResetExpiresAt: 1,
+        },
       },
       { new: true }
     ).select("_id");

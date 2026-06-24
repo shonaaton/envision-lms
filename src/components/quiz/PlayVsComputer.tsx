@@ -24,6 +24,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Chess } from "chess.js";
 import { buildMoveHintStyles, legalTargetsFromGame } from "@/lib/chessboardUi";
+import { isPromotionMove, promotionFromBoardPiece, type PendingPromotion, type PromotionPiece } from "@/lib/chessPromotion";
 
 const Chessboard = dynamic(() => import("react-chessboard").then((m) => m.Chessboard), { ssr: false });
 
@@ -102,18 +103,31 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
   const [records, setRecords] = useState<GameRecord[]>(seededHistory);
   const [selectedRecord, setSelectedRecord] = useState<GameRecord | null>(null);
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
+  const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion | null>(null);
+  const [viewPly, setViewPly] = useState<number | null>(null);
 
+  const verboseHistory = useMemo(
+    () => gameRef.current.history({ verbose: true }) as Array<{ san: string; color: "w" | "b"; from: string; to: string; promotion?: string }>,
+    [position]
+  );
   const moveRows = useMemo<MoveRow[]>(() => {
-    const verbose = gameRef.current.history({ verbose: true }) as Array<{ san: string; color: "w" | "b" }>;
     const rows: MoveRow[] = [];
-    verbose.forEach((move, index) => {
+    verboseHistory.forEach((move, index) => {
       const rowIndex = Math.floor(index / 2);
       if (!rows[rowIndex]) rows[rowIndex] = { number: rowIndex + 1, white: "", black: "" };
       if (move.color === "w") rows[rowIndex].white = move.san;
       else rows[rowIndex].black = move.san;
     });
     return rows;
-  }, [position]);
+  }, [verboseHistory]);
+  const displayedPosition = useMemo(() => {
+    if (viewPly === null) return position;
+    const replay = new Chess();
+    verboseHistory.slice(0, viewPly).forEach((move) => {
+      replay.move({ from: move.from, to: move.to, promotion: move.promotion || "q" });
+    });
+    return replay.fen();
+  }, [position, verboseHistory, viewPly]);
 
   const selectedBot = useMemo(() => customBots.find((bot) => bot.id === botId) || customBots[0], [botId]);
   const currentDepth = Math.max(1, Math.min(12, (selectedBot?.depth || 1) + Math.max(0, (levelToDepth[level - 1] || depth) - 1)));
@@ -182,8 +196,9 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
 
     const resize = () => {
       const width = element.clientWidth;
-      const heightLimit = window.innerHeight - 360;
-      setBoardWidth(Math.max(260, Math.min(460, width, heightLimit)));
+      const heightLimit = window.innerHeight - 245;
+      const clockRail = width >= 520 ? 150 : 0;
+      setBoardWidth(Math.max(240, Math.min(560, width - clockRail, heightLimit)));
     };
     resize();
     const observer = new ResizeObserver(resize);
@@ -197,6 +212,7 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
 
   function refreshBoard() {
     setPosition(gameRef.current.fen());
+    setViewPly(null);
   }
 
   function formatClock(ms: number | null) {
@@ -381,6 +397,8 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
     setActiveTurnStartedAt(openingClock === null ? null : Date.now());
     setGameStartedAt(Date.now());
     setGameInstanceId(freshGameId);
+    setPendingPromotion(null);
+    setViewPly(null);
     savedRewardGameIdRef.current = null;
 
     if (color === "black") {
@@ -398,12 +416,12 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
     finishGame("Resigned", "You resigned");
   }
 
-  function onDrop(source: string, target: string) {
-    if (status !== "playing" || thinking || !isPlayerTurn) return false;
+  function commitMove(source: string, target: string, promotion: PromotionPiece = "q") {
+    if (status !== "playing" || thinking || !isPlayerTurn || viewPly !== null) return false;
 
     try {
       commitTurnClock();
-      const move = gameRef.current.move({ from: source, to: target, promotion: "q" });
+      const move = gameRef.current.move({ from: source, to: target, promotion });
       if (!move) return false;
       setSelectedSquare(null);
       beginNextTurn();
@@ -416,16 +434,32 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
     }
   }
 
+  function onDrop(source: string, target: string) {
+    return commitMove(source, target);
+  }
+
+  function onPromotionPieceSelect(piece?: string, from?: string, to?: string) {
+    const promotion = promotionFromBoardPiece(piece);
+    const move = from && to ? { from, to } : pendingPromotion;
+    setPendingPromotion(null);
+    if (!promotion || !move) return false;
+    return commitMove(move.from, move.to, promotion);
+  }
+
   const moveTargets = useMemo(() => {
-    if (!selectedSquare || status !== "playing" || thinking || !isPlayerTurn) return [];
+    if (!selectedSquare || status !== "playing" || thinking || !isPlayerTurn || viewPly !== null) return [];
     return legalTargetsFromGame(gameRef.current, selectedSquare);
-  }, [selectedSquare, status, thinking, isPlayerTurn, position]);
+  }, [selectedSquare, status, thinking, isPlayerTurn, position, viewPly]);
   const moveHintStyles = useMemo(() => buildMoveHintStyles(moveTargets, selectedSquare), [moveTargets, selectedSquare]);
 
   function onSquareClick(square: string) {
-    if (status !== "playing" || thinking || !isPlayerTurn) return;
+    if (status !== "playing" || thinking || !isPlayerTurn || viewPly !== null) return;
     const clickedPiece = gameRef.current.get(square as any);
     if (selectedSquare && selectedSquare !== square) {
+      if (isPromotionMove(gameRef.current, selectedSquare, square)) {
+        setPendingPromotion({ from: selectedSquare, to: square });
+        return;
+      }
       const moved = onDrop(selectedSquare, square);
       if (moved) return;
     }
@@ -458,7 +492,6 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
             Play vs Computer
           </div>
           <h1 className="mt-2 text-2xl font-black text-slate-950">Play with Computer</h1>
-          <p className="mt-1 text-sm text-slate-600">Keep the board, game controls, and move list together in one smooth practice screen.</p>
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -494,28 +527,23 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
           </div>
 
           <div ref={boardWrapRef} className="flex min-h-0 flex-1 items-center justify-center">
-            <div className="relative w-full max-w-[460px]">
-              {status !== "idle" && (
-                <div className="mb-3">
-                  <PlayerClockCard
-                    name={playerColor === "black" ? "You" : selectedBot.name}
-                    side="Black"
-                    clock={formatClock(displayedBlackClock)}
-                    active={status === "playing" && gameRef.current.turn() === "b"}
-                    tone={playerColor === "black" ? "player" : "bot"}
-                  />
-                </div>
-              )}
-              <Chessboard
-                position={position}
-                onPieceDrop={onDrop}
-                onSquareClick={onSquareClick as any}
-                boardOrientation={playerColor}
-                boardWidth={boardWidth}
-                customSquareStyles={moveHintStyles as any}
-                customDarkSquareStyle={{ backgroundColor: "#b58863" }}
-                customLightSquareStyle={{ backgroundColor: "#f0d9b5" }}
-              />
+            <div className="grid w-full max-w-[720px] grid-cols-1 items-center gap-3 sm:grid-cols-[minmax(0,1fr)_132px]">
+              <div className="relative">
+                <Chessboard
+                  position={displayedPosition}
+                  onPieceDrop={onDrop}
+                  onSquareClick={onSquareClick as any}
+                  onPromotionPieceSelect={onPromotionPieceSelect as any}
+                  showPromotionDialog={!!pendingPromotion}
+                  promotionToSquare={pendingPromotion?.to as any}
+                  promotionDialogVariant="modal"
+                  arePiecesDraggable={status === "playing" && viewPly === null}
+                  boardOrientation={playerColor}
+                  boardWidth={boardWidth}
+                  customSquareStyles={moveHintStyles as any}
+                  customDarkSquareStyle={{ backgroundColor: "#b58863" }}
+                  customLightSquareStyle={{ backgroundColor: "#f0d9b5" }}
+                />
               {status === "idle" && (
                 <div className="absolute inset-0 flex items-center justify-center backdrop-blur-[3px]">
                   <div className="rounded-2xl border border-white/70 bg-white/70 px-8 py-7 text-center shadow-xl">
@@ -526,17 +554,28 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
                   </div>
                 </div>
               )}
-              {status !== "idle" && (
-                <div className="mt-3">
-                  <PlayerClockCard
-                    name={playerColor === "white" ? "You" : selectedBot.name}
-                    side="White"
-                    clock={formatClock(displayedWhiteClock)}
-                    active={status === "playing" && gameRef.current.turn() === "w"}
-                    tone={playerColor === "white" ? "player" : "bot"}
-                  />
-                </div>
-              )}
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-1 sm:gap-3">
+                <PlayerClockCard
+                  name={playerColor === "black" ? "You" : selectedBot.name}
+                  side="Black"
+                  clock={formatClock(displayedBlackClock)}
+                  active={status === "playing" && gameRef.current.turn() === "b"}
+                  tone={playerColor === "black" ? "player" : "bot"}
+                />
+                <PlayerClockCard
+                  name={playerColor === "white" ? "You" : selectedBot.name}
+                  side="White"
+                  clock={formatClock(displayedWhiteClock)}
+                  active={status === "playing" && gameRef.current.turn() === "w"}
+                  tone={playerColor === "white" ? "player" : "bot"}
+                />
+                {viewPly !== null ? (
+                  <button type="button" className="btn-outline col-span-2 px-2 text-xs sm:col-span-1" onClick={() => setViewPly(null)}>
+                    Return live
+                  </button>
+                ) : null}
+              </div>
             </div>
           </div>
         </section>
@@ -557,7 +596,12 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
             </div>
           )}
 
-          <MoveHistory rows={moveRows} />
+          <MoveHistory
+            rows={moveRows}
+            currentPly={viewPly ?? verboseHistory.length}
+            totalPly={verboseHistory.length}
+            onNavigate={setViewPly}
+          />
         </aside>
       </div>
 
@@ -597,21 +641,33 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
   );
 }
 
-function MoveHistory({ rows }: { rows: MoveRow[] }) {
+function MoveHistory({
+  rows,
+  currentPly,
+  totalPly,
+  onNavigate,
+}: {
+  rows: MoveRow[];
+  currentPly: number;
+  totalPly: number;
+  onNavigate: (ply: number | null) => void;
+}) {
+  const go = (ply: number) => onNavigate(ply >= totalPly ? null : Math.max(0, ply));
   return (
     <div className="flex min-h-0 flex-1 flex-col rounded-2xl border border-slate-200 bg-white">
       <div className="flex items-center gap-3 border-b border-slate-100 px-4 py-4">
         <History size={18} className="text-brand" />
         <h2 className="text-xl font-semibold text-slate-950">Move History</h2>
       </div>
-      <div className="flex items-center justify-between px-4 py-3 text-slate-400">
+      <div className="flex items-center justify-between px-4 py-3 text-slate-500">
         <div className="flex gap-4">
-          <ChevronsLeft size={16} />
-          <ChevronLeft size={16} />
+          <button type="button" onClick={() => go(0)} disabled={currentPly === 0} aria-label="First position"><ChevronsLeft size={16} /></button>
+          <button type="button" onClick={() => go(currentPly - 1)} disabled={currentPly === 0} aria-label="Previous move"><ChevronLeft size={16} /></button>
         </div>
+        <span className="text-xs font-bold">{currentPly}/{totalPly}</span>
         <div className="flex gap-4">
-          <ChevronRight size={16} />
-          <ChevronsRight size={16} />
+          <button type="button" onClick={() => go(currentPly + 1)} disabled={currentPly >= totalPly} aria-label="Next move"><ChevronRight size={16} /></button>
+          <button type="button" onClick={() => go(totalPly)} disabled={currentPly >= totalPly} aria-label="Latest position"><ChevronsRight size={16} /></button>
         </div>
       </div>
       <div className="grid grid-cols-[44px_1fr_1fr] px-4 pb-3 text-sm font-semibold text-slate-950">
@@ -624,8 +680,8 @@ function MoveHistory({ rows }: { rows: MoveRow[] }) {
           {rows.map((row) => (
             <div key={row.number} className="grid grid-cols-[44px_1fr_1fr] border-t border-slate-100 py-3">
               <span className="text-slate-400">{row.number}</span>
-              <span>{row.white}</span>
-              <span>{row.black}</span>
+              <button type="button" className="text-left hover:font-bold hover:text-brand" onClick={() => go((row.number - 1) * 2 + 1)}>{row.white}</button>
+              <button type="button" className="text-left hover:font-bold hover:text-brand" onClick={() => row.black && go(row.number * 2)}>{row.black}</button>
             </div>
           ))}
         </div>
@@ -880,18 +936,18 @@ function PlayerClockCard({
 }) {
   return (
     <div className={[
-      "rounded-2xl border px-4 py-3 shadow-sm transition",
+      "rounded-xl border px-3 py-2 shadow-sm transition",
       active ? "border-brand bg-brand/5 shadow-brand/10" : "border-slate-200 bg-slate-50",
     ].join(" ")}>
-      <div className="flex items-center justify-between gap-3">
+      <div className="grid gap-1">
         <div>
           <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">{side}</div>
-          <div className="mt-1 flex items-center gap-2 text-sm font-semibold text-slate-900">
+          <div className="mt-1 flex items-center gap-1.5 truncate text-xs font-semibold text-slate-900">
             {tone === "player" ? <User size={14} className="text-brand" /> : <Bot size={14} className="text-slate-700" />}
             {name}
           </div>
         </div>
-        <div className="text-2xl font-black text-slate-950">{clock}</div>
+        <div className="text-xl font-black tabular-nums text-slate-950">{clock}</div>
       </div>
     </div>
   );

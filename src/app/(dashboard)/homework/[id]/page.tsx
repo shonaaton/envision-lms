@@ -7,6 +7,7 @@ import { Chess } from "chess.js";
 import { toast } from "sonner";
 import { BookOpen, CheckCircle2, ChevronLeft, ChevronRight, Clock, FileQuestion, Gamepad2, HelpCircle, RotateCcw, Trophy } from "lucide-react";
 import { buildMoveHintStyles, legalTargetsFromGame } from "@/lib/chessboardUi";
+import { isPromotionMove, promotionFromBoardPiece, type PendingPromotion, type PromotionPiece } from "@/lib/chessPromotion";
 
 const Chessboard = dynamic(() => import("react-chessboard").then((m) => m.Chessboard), { ssr: false });
 
@@ -436,6 +437,7 @@ function PgnBoardTask({ activityId, item, index, locked, onResult, onSolved }: a
   const [feedback, setFeedback] = useState("Make the best move on the board.");
   const [moveHistory, setMoveHistory] = useState<MoveTrace[]>([]);
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
+  const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion | null>(null);
   const advancedRef = useRef(false);
 
   useEffect(() => {
@@ -475,11 +477,11 @@ function PgnBoardTask({ activityId, item, index, locked, onResult, onSolved }: a
     return updatedPly;
   }
 
-  function onDrop(source: string, target: string) {
+  function commitMove(source: string, target: string, promotion: PromotionPiece = "q") {
     if (locked || solved || ply >= parsed.moves.length) return false;
     const expected = parsed.moves[ply];
     const nextGame = new Chess(game.fen());
-    const move = nextGame.move({ from: source, to: target, promotion: "q" });
+    const move = nextGame.move({ from: source, to: target, promotion });
     if (!move) return false;
     if (move.san !== expected.san) {
       setMistakes((value) => value + 1);
@@ -496,6 +498,18 @@ function PgnBoardTask({ activityId, item, index, locked, onResult, onSolved }: a
     setSelectedSquare(null);
     setFeedback(nextPly >= parsed.moves.length ? "Solved. Moving to the next item..." : "Correct. Continue from the new position.");
     return true;
+  }
+
+  function onDrop(source: string, target: string) {
+    return commitMove(source, target);
+  }
+
+  function onPromotionPieceSelect(piece?: string, from?: string, to?: string) {
+    const promotion = promotionFromBoardPiece(piece);
+    const move = from && to ? { from, to } : pendingPromotion;
+    setPendingPromotion(null);
+    if (!promotion || !move) return false;
+    return commitMove(move.from, move.to, promotion);
   }
 
   function hint() {
@@ -528,6 +542,10 @@ function PgnBoardTask({ activityId, item, index, locked, onResult, onSolved }: a
     if (locked || solved || ply >= parsed.moves.length) return;
     const clickedPiece = game.get(square as any);
     if (selectedSquare && selectedSquare !== square) {
+      if (isPromotionMove(game, selectedSquare, square)) {
+        setPendingPromotion({ from: selectedSquare, to: square });
+        return;
+      }
       const moved = onDrop(selectedSquare, square);
       if (moved) return;
     }
@@ -556,6 +574,10 @@ function PgnBoardTask({ activityId, item, index, locked, onResult, onSolved }: a
           position={position}
           onPieceDrop={onDrop}
           onSquareClick={onSquareClick as any}
+          onPromotionPieceSelect={onPromotionPieceSelect as any}
+          showPromotionDialog={!!pendingPromotion}
+          promotionToSquare={pendingPromotion?.to as any}
+          promotionDialogVariant="modal"
           boardWidth={440}
           customSquareStyles={moveHintStyles as any}
           customDarkSquareStyle={{ backgroundColor: "#b58863" }}

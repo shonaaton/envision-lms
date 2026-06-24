@@ -3,6 +3,7 @@ import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
 import { Chess } from "chess.js";
 import { buildMoveHintStyles, legalTargetsFromGame } from "@/lib/chessboardUi";
+import { isPromotionMove, promotionFromBoardPiece, type PendingPromotion, type PromotionPiece } from "@/lib/chessPromotion";
 
 const Chessboard = dynamic(() => import("react-chessboard").then((m) => m.Chessboard), { ssr: false });
 
@@ -20,11 +21,12 @@ export default function PuzzleBoard({
   const [moves, setMoves] = useState<string[]>([]);
   const [status, setStatus] = useState<"playing" | "wrong" | "solved">("playing");
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
+  const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion | null>(null);
 
-  function onDrop(source: string, target: string) {
+  function commitMove(source: string, target: string, promotion: PromotionPiece = "q") {
     if (status !== "playing") return false;
     try {
-      const move = game.move({ from: source, to: target, promotion: "q" });
+      const move = game.move({ from: source, to: target, promotion });
       if (!move) return false;
       const next = [...moves, move.san];
       const expected = solution[moves.length];
@@ -46,6 +48,18 @@ export default function PuzzleBoard({
     }
   }
 
+  function onDrop(source: string, target: string) {
+    return commitMove(source, target);
+  }
+
+  function onPromotionPieceSelect(piece?: string, from?: string, to?: string) {
+    const promotion = promotionFromBoardPiece(piece);
+    const move = from && to ? { from, to } : pendingPromotion;
+    setPendingPromotion(null);
+    if (!promotion || !move) return false;
+    return commitMove(move.from, move.to, promotion);
+  }
+
   function reset() {
     game.load(fen);
     setPosition(fen);
@@ -64,6 +78,10 @@ export default function PuzzleBoard({
     if (status !== "playing") return;
     const clickedPiece = game.get(square as any);
     if (selectedSquare && selectedSquare !== square) {
+      if (isPromotionMove(game, selectedSquare, square)) {
+        setPendingPromotion({ from: selectedSquare, to: square });
+        return;
+      }
       const moved = onDrop(selectedSquare, square);
       if (moved) return;
     }
@@ -82,6 +100,10 @@ export default function PuzzleBoard({
     <div className="flex flex-col items-center gap-3">
       <div className="w-full max-w-md">
         <Chessboard position={position} onPieceDrop={onDrop} onSquareClick={onSquareClick as any} boardWidth={400}
+          onPromotionPieceSelect={onPromotionPieceSelect as any}
+          showPromotionDialog={!!pendingPromotion}
+          promotionToSquare={pendingPromotion?.to as any}
+          promotionDialogVariant="modal"
           customSquareStyles={moveHintStyles as any}
           customDarkSquareStyle={{ backgroundColor: "#5a1372" }}
           customLightSquareStyle={{ backgroundColor: "#fde75a" }} />

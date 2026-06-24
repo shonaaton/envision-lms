@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Chess } from "chess.js";
 import { toast } from "sonner";
 import { buildMoveHintStyles, canSelectPieceForTurn, legalTargetsFromGame, mergeSquareStyles } from "@/lib/chessboardUi";
+import { isPromotionMove, promotionFromBoardPiece, type PendingPromotion, type PromotionPiece } from "@/lib/chessPromotion";
 import {
   BookOpen,
   Bot,
@@ -371,6 +372,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const [engineLines, setEngineLines] = useState<Array<{ multipv: number; eval: string; variation: string }>>([]);
   const [boardWidth, setBoardWidth] = useState(620);
   const [selectedMoveSquare, setSelectedMoveSquare] = useState<string | null>(null);
+  const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion | null>(null);
   const [coachDrawings, setCoachDrawings] = useState<any[]>([]);
   const [drawingsDirty, setDrawingsDirty] = useState(false);
   const [annotationDrag, setAnnotationDrag] = useState<{ from: string; to?: string; x: number; y: number } | null>(null);
@@ -846,7 +848,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     return true;
   }
 
-  function onDrop(source: string, target: string, piece: string) {
+  function onDrop(source: string, target: string, piece: string, promotion: PromotionPiece = "q") {
     setSelectedMoveSquare(null);
     if (live?.locked || (!canMove && !coach)) return false;
     if (live?.setupMode || tool === "setup") {
@@ -887,7 +889,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       return true;
     }
     try {
-      const move = game.move({ from: source, to: target, promotion: "q" });
+      const move = game.move({ from: source, to: target, promotion });
       if (!move) return collectGamifiedWithPiece(source, target, piece);
       const collectedObjectId = liveGamifiedObjects[target] as GamifiedObjectId | undefined;
       const nextGamifiedObjects = collectedObjectId ? { ...liveGamifiedObjects } : liveGamifiedObjects;
@@ -910,6 +912,16 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       if (collectGamifiedWithPiece(source, target, piece)) return true;
       return false;
     }
+  }
+
+  function onPromotionPieceSelect(piece?: string, from?: string, to?: string) {
+    const promotion = promotionFromBoardPiece(piece);
+    const move = from && to ? { from, to } : pendingPromotion;
+    setPendingPromotion(null);
+    if (!promotion || !move) return false;
+    const movingPiece = boardPieceMap[move.from];
+    if (!movingPiece) return false;
+    return onDrop(move.from, move.to, movingPiece, promotion);
   }
 
   function onPieceDropOffBoard(source: string) {
@@ -1150,6 +1162,10 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     if (selectedMoveSquare && selectedMoveSquare !== square) {
       const selectedPieceCode = boardPieceMap[selectedMoveSquare];
       if (selectedPieceCode) {
+        if (!live?.illegalMovesEnabled && isPromotionMove(game, selectedMoveSquare, square)) {
+          setPendingPromotion({ from: selectedMoveSquare, to: square });
+          return;
+        }
         const moved = onDrop(selectedMoveSquare, square, selectedPieceCode);
         if (moved) return;
       }
@@ -1847,6 +1863,10 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                         boardWidth={boardWidth}
                         boardOrientation={orientation}
                         onPieceDrop={onDrop}
+                        onPromotionPieceSelect={onPromotionPieceSelect as any}
+                        showPromotionDialog={!!pendingPromotion}
+                        promotionToSquare={pendingPromotion?.to as any}
+                        promotionDialogVariant="modal"
                         onPieceDropOffBoard={onPieceDropOffBoard as any}
                         onSquareClick={onSquareClick as any}
                         customSquareStyles={squareStyles as any}
@@ -2655,6 +2675,7 @@ function LiveBoardQuiz({
   const [feedback, setFeedback] = useState("Make the best move on the board.");
   const [lastStudentMove, setLastStudentMove] = useState("");
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
+  const [quizPendingPromotion, setQuizPendingPromotion] = useState<PendingPromotion | null>(null);
   const advancedRef = useRef(false);
   const summary = useMemo(() => {
     const solvedCount = items.filter((item: any) => results[item.id]?.solved).length;
@@ -2797,11 +2818,11 @@ function LiveBoardQuiz({
     return updatedPly;
   }
 
-  function onDrop(source: string, target: string) {
+  function commitQuizMove(source: string, target: string, promotion: PromotionPiece = "q") {
     if (locked || quizSubmitted || ply >= parsed.moves.length) return false;
     const expected = parsed.moves[ply];
     const nextGame = new Chess(game.fen());
-    const move = nextGame.move({ from: source, to: target, promotion: "q" });
+    const move = nextGame.move({ from: source, to: target, promotion });
     if (!move) return false;
     const expectedPromotion = expected.promotion && expected.promotion !== "q" ? expected.promotion : move.promotion || "q";
     const matchesExpectedSquares = expected.from && expected.to
@@ -2824,6 +2845,18 @@ function LiveBoardQuiz({
     return true;
   }
 
+  function onDrop(source: string, target: string) {
+    return commitQuizMove(source, target);
+  }
+
+  function onQuizPromotionPieceSelect(piece?: string, from?: string, to?: string) {
+    const promotion = promotionFromBoardPiece(piece);
+    const move = from && to ? { from, to } : quizPendingPromotion;
+    setQuizPendingPromotion(null);
+    if (!promotion || !move) return false;
+    return commitQuizMove(move.from, move.to, promotion);
+  }
+
   const moveTargets = useMemo(() => {
     if (!selectedSquare || locked || quizSubmitted) return [];
     return legalTargetsFromGame(game, selectedSquare);
@@ -2834,6 +2867,10 @@ function LiveBoardQuiz({
     if (locked || quizSubmitted) return;
     const clickedPiece = game.get(square as any);
     if (selectedSquare && selectedSquare !== square) {
+      if (isPromotionMove(game, selectedSquare, square)) {
+        setQuizPendingPromotion({ from: selectedSquare, to: square });
+        return;
+      }
       const moved = onDrop(selectedSquare, square);
       if (moved) return;
     }
@@ -2967,6 +3004,10 @@ function LiveBoardQuiz({
           position={position}
           onPieceDrop={onDrop}
           onSquareClick={onSquareClick as any}
+          onPromotionPieceSelect={onQuizPromotionPieceSelect as any}
+          showPromotionDialog={!!quizPendingPromotion}
+          promotionToSquare={quizPendingPromotion?.to as any}
+          promotionDialogVariant="modal"
           boardWidth={420}
           customSquareStyles={moveHintStyles as any}
           customDarkSquareStyle={{ backgroundColor: "#b58863" }}

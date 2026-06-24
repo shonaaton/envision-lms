@@ -37,6 +37,7 @@ export default function SquareTrainerPage() {
   const [reward, setReward] = useState<{ xp: number; coins: number } | null>(null);
   const [lastAttempt, setLastAttempt] = useState<{ square: string; type: "correct" | "wrong" } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [showResult, setShowResult] = useState(false);
   const [boardSize, setBoardSize] = useState(540);
   const boardWrapRef = useRef<HTMLDivElement | null>(null);
   const savedRef = useRef(false);
@@ -89,6 +90,7 @@ export default function SquareTrainerPage() {
     setStreak(0);
     setBestStreak(0);
     setReward(null);
+    setShowResult(false);
     setLastAttempt(null);
     setFeedback({ type: "info", text: `Find ${nextTarget.toUpperCase()} on the board.` });
   }
@@ -97,6 +99,7 @@ export default function SquareTrainerPage() {
     if (savedRef.current) return;
     savedRef.current = true;
     setStatus("finished");
+    setShowResult(true);
     setSaving(true);
     try {
       const response = await fetch("/api/square-trainer", {
@@ -230,15 +233,6 @@ export default function SquareTrainerPage() {
               <MiniStat label="Best streak" value={bestStreak} />
             </div>
 
-            {status === "finished" && (
-              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
-                <div className="font-bold text-slate-950">Round Complete</div>
-                <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
-                  <div className="flex items-center gap-2"><Zap size={15} className="text-brand" /> XP: {reward?.xp ?? (saving ? "Saving..." : 0)}</div>
-                  <div className="flex items-center gap-2"><Coins size={15} className="text-amber-600" /> Coins: {reward?.coins ?? (saving ? "Saving..." : 0)}</div>
-                </div>
-              </div>
-            )}
           </div>
 
           <div className="mt-4 grid flex-none grid-cols-2 gap-2">
@@ -300,6 +294,33 @@ export default function SquareTrainerPage() {
           </div>
         </aside>
       </div>
+      {showResult ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-4">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
+                <Trophy size={22} />
+              </div>
+              <div>
+                <h2 className="text-2xl font-black text-slate-950">Round Complete</h2>
+                <p className="text-sm text-slate-500">{duration} second coordinate round</p>
+              </div>
+            </div>
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <MiniStat label="Correct" value={correct} />
+              <MiniStat label="Accuracy" value={`${accuracy}%`} />
+              <MiniStat label="Best streak" value={bestStreak} />
+              <MiniStat label="Mistakes" value={mistakes} />
+              <MiniStat label="XP earned" value={reward?.xp ?? (saving ? "..." : 0)} />
+              <MiniStat label="Coins" value={reward?.coins ?? (saving ? "..." : 0)} />
+            </div>
+            <div className="mt-5 flex gap-2">
+              <button type="button" className="btn-outline flex-1" onClick={() => setShowResult(false)}>Close</button>
+              <button type="button" className="btn-primary flex-1" onClick={startSession}><Play size={16} /> Play Again</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

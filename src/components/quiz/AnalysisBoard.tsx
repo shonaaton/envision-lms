@@ -26,6 +26,7 @@ import type { ReactNode } from "react";
 import { Chess } from "chess.js";
 import { toast } from "sonner";
 import { buildMoveHintStyles, legalTargetsFromGame } from "@/lib/chessboardUi";
+import { isPromotionMove, promotionFromBoardPiece, type PendingPromotion, type PromotionPiece } from "@/lib/chessPromotion";
 
 const Chessboard = dynamic(() => import("react-chessboard").then((m) => m.Chessboard), { ssr: false });
 
@@ -182,6 +183,7 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
   const [pdfName, setPdfName] = useState("");
   const [gamifiedBoardObjects, setGamifiedBoardObjects] = useState<Record<string, GamifiedObjectId>>({});
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
+  const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion | null>(null);
 
   const isDark = false;
   const panelClass = "border-slate-200 bg-white text-slate-950";
@@ -301,12 +303,12 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
     worker.postMessage("go depth 16");
   }
 
-  function onDrop(source: string, target: string) {
+  function commitMove(source: string, target: string, promotion: PromotionPiece = "q") {
     try {
       if (selectedPly < gameRef.current.history().length) {
         gameRef.current = replayGame(selectedPly);
       }
-      const move = gameRef.current.move({ from: source, to: target, promotion: "q" });
+      const move = gameRef.current.move({ from: source, to: target, promotion });
       if (!move) return false;
       setSelectedSquare(null);
       setSelectedPly(gameRef.current.history().length);
@@ -326,6 +328,18 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
     }
   }
 
+  function onDrop(source: string, target: string) {
+    return commitMove(source, target);
+  }
+
+  function onPromotionPieceSelect(piece?: string, from?: string, to?: string) {
+    const promotion = promotionFromBoardPiece(piece);
+    const move = from && to ? { from, to } : pendingPromotion;
+    setPendingPromotion(null);
+    if (!promotion || !move) return false;
+    return commitMove(move.from, move.to, promotion);
+  }
+
   const moveTargets = useMemo(() => {
     if (!selectedSquare) return [];
     return legalTargetsFromGame(gameRef.current, selectedSquare);
@@ -335,6 +349,10 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
   function onSquareClick(square: string) {
     const clickedPiece = gameRef.current.get(square as any);
     if (selectedSquare && selectedSquare !== square) {
+      if (isPromotionMove(gameRef.current, selectedSquare, square)) {
+        setPendingPromotion({ from: selectedSquare, to: square });
+        return;
+      }
       const moved = onDrop(selectedSquare, square);
       if (moved) return;
     }
@@ -464,6 +482,10 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
                     position={position}
                     onPieceDrop={onDrop}
                     onSquareClick={onSquareClick as any}
+                    onPromotionPieceSelect={onPromotionPieceSelect as any}
+                    showPromotionDialog={!!pendingPromotion}
+                    promotionToSquare={pendingPromotion?.to as any}
+                    promotionDialogVariant="modal"
                     boardOrientation={orientation}
                     boardWidth={boardSize}
                     snapToCursor

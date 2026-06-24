@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { Chess } from "chess.js";
 import { buildMoveHintStyles, legalTargetsFromGame } from "@/lib/chessboardUi";
+import { isPromotionMove, promotionFromBoardPiece, type PendingPromotion, type PromotionPiece } from "@/lib/chessPromotion";
 import { ArrowLeft, Crown, Flag, Handshake, RefreshCcw, Trophy } from "lucide-react";
 
 const Chessboard = dynamic(() => import("react-chessboard").then((m) => m.Chessboard), { ssr: false });
@@ -65,6 +66,7 @@ export function TournamentPlayClient({
   const [state, setState] = useState<PlayState | null>(null);
   const [error, setError] = useState("");
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
+  const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion | null>(null);
   const [pending, startTransition] = useTransition();
   const [, forceClockTick] = useState(0);
 
@@ -133,13 +135,13 @@ export function TournamentPlayClient({
     return { white: activeGame.whiteClockMs, black: Math.max(0, activeGame.blackClockMs - elapsed) };
   }, [activeGame, activeGame?.lastMoveAt, activeGame?.turn]);
 
-  async function postMove(from: string, to: string) {
+  async function postMove(from: string, to: string, promotion: PromotionPiece = "q") {
     if (!activeGame) return false;
     setError("");
     const response = await fetch(`/api/tournaments/games/${activeGame._id}/move`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ from, to, promotion: "q" }),
+      body: JSON.stringify({ from, to, promotion }),
     });
     if (!response.ok) {
       const payload = await response.json().catch(() => null);
@@ -159,6 +161,17 @@ export function TournamentPlayClient({
     return true;
   }
 
+  function onPromotionPieceSelect(piece?: string, from?: string, to?: string) {
+    const promotion = promotionFromBoardPiece(piece);
+    const move = from && to ? { from, to } : pendingPromotion;
+    setPendingPromotion(null);
+    if (!promotion || !move) return false;
+    startTransition(async () => {
+      await postMove(move.from, move.to, promotion);
+    });
+    return true;
+  }
+
   const moveTargets = useMemo(() => {
     if (!selectedSquare || !activeGame || pending || activeGame.status !== "active") return [];
     return legalTargetsFromGame(chess, selectedSquare);
@@ -169,6 +182,10 @@ export function TournamentPlayClient({
     if (!activeGame || pending || activeGame.status !== "active") return;
     const clickedPiece = chess.get(square as any);
     if (selectedSquare && selectedSquare !== square) {
+      if (isPromotionMove(chess, selectedSquare, square)) {
+        setPendingPromotion({ from: selectedSquare, to: square });
+        return;
+      }
       void postMove(selectedSquare, square);
       return;
     }
@@ -279,6 +296,10 @@ export function TournamentPlayClient({
                   boardWidth={boardWidth}
                   onPieceDrop={onDrop}
                   onSquareClick={onSquareClick as any}
+                  onPromotionPieceSelect={onPromotionPieceSelect as any}
+                  showPromotionDialog={!!pendingPromotion}
+                  promotionToSquare={pendingPromotion?.to as any}
+                  promotionDialogVariant="modal"
                   arePiecesDraggable={activeGame.status === "active"}
                   customSquareStyles={moveHintStyles as any}
                   customDarkSquareStyle={{ backgroundColor: "#b58863" }}

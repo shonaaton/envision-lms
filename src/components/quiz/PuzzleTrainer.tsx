@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Chess } from "chess.js";
 import { CheckCircle2, ChevronDown, Coins, Crosshair, Lightbulb, Loader2, RotateCcw, Sparkles, Tags, Target, Trophy, Zap } from "lucide-react";
 import { toast } from "sonner";
+import { isPromotionMove, promotionFromBoardPiece, type PendingPromotion, type PromotionPiece } from "@/lib/chessPromotion";
 
 const Chessboard = dynamic(() => import("react-chessboard").then((m) => m.Chessboard), { ssr: false });
 
@@ -37,7 +38,7 @@ function uciToMove(uci: string) {
 }
 
 function moveToUci(move: { from: string; to: string; promotion?: string }) {
-  return `${move.from}${move.to}${move.promotion && move.promotion !== "q" ? move.promotion : ""}`.toLowerCase();
+  return `${move.from}${move.to}${move.promotion || ""}`.toLowerCase();
 }
 
 function makeGame(fen: string) {
@@ -104,6 +105,7 @@ export default function PuzzleTrainer({ mode = "tactics" }: PuzzleTrainerProps) 
   const [difficulty, setDifficulty] = useState<DifficultyKey | null>(null);
   const [mateIn, setMateIn] = useState<number | null>(null);
   const [boardOrientation, setBoardOrientation] = useState<"white" | "black">("white");
+  const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion | null>(null);
   const [message, setMessage] = useState("Load a puzzle and find the best move.");
   const boardWrapRef = useRef<HTMLDivElement | null>(null);
   const [boardSize, setBoardSize] = useState(420);
@@ -138,6 +140,7 @@ export default function PuzzleTrainer({ mode = "tactics" }: PuzzleTrainerProps) 
     setReplying(false);
     setSelected("");
     setPossibleSquares([]);
+    setPendingPromotion(null);
     setSubmittedMoves([]);
     setMistakes(0);
     setHintsUsed(0);
@@ -175,6 +178,14 @@ export default function PuzzleTrainer({ mode = "tactics" }: PuzzleTrainerProps) 
     const timer = window.setInterval(() => setSeconds(Math.floor((Date.now() - startedAt) / 1000)), 1000);
     return () => window.clearInterval(timer);
   }, [puzzle, result, startedAt]);
+
+  useEffect(() => {
+    if (!result?.solved) return;
+    const timer = window.setTimeout(() => {
+      void loadPuzzle();
+    }, 1800);
+    return () => window.clearTimeout(timer);
+  }, [result?.solved, loadPuzzle]);
 
   useEffect(() => {
     loadLeaderboard();
@@ -231,11 +242,15 @@ export default function PuzzleTrainer({ mode = "tactics" }: PuzzleTrainerProps) 
     }
   }
 
-  function attemptMove(sourceSquare: string, targetSquare: string, promotion = "q") {
+  function attemptMove(sourceSquare: string, targetSquare: string, promotion: PromotionPiece = "q") {
     if (!puzzle || result || loading || replying) return false;
-    const expected = puzzle.moves[ply];
-    const played = moveToUci({ from: sourceSquare, to: targetSquare, promotion });
     const currentGame = makeGame(fen);
+    const expected = puzzle.moves[ply];
+    const played = moveToUci({
+      from: sourceSquare,
+      to: targetSquare,
+      promotion: isPromotionMove(currentGame, sourceSquare, targetSquare) ? promotion : undefined,
+    });
 
     if (played !== expected) {
       setMistakes((value) => value + 1);
@@ -281,6 +296,10 @@ export default function PuzzleTrainer({ mode = "tactics" }: PuzzleTrainerProps) 
   function onSquareClick(square: string) {
     if (!puzzle || result || loading || replying) return;
     if (selected && possibleSquares.includes(square)) {
+      if (isPromotionMove(game, selected, square)) {
+        setPendingPromotion({ from: selected, to: square });
+        return;
+      }
       attemptMove(selected, square);
       return;
     }
@@ -292,6 +311,14 @@ export default function PuzzleTrainer({ mode = "tactics" }: PuzzleTrainerProps) 
     }
     setSelected(square);
     setPossibleSquares(legalDestinations(game, square));
+  }
+
+  function onPromotionPieceSelect(piece?: string, from?: string, to?: string) {
+    const promotion = promotionFromBoardPiece(piece);
+    const move = from && to ? { from, to } : pendingPromotion;
+    setPendingPromotion(null);
+    if (!promotion || !move) return false;
+    return attemptMove(move.from, move.to, promotion);
   }
 
   function showHint() {
@@ -438,16 +465,6 @@ export default function PuzzleTrainer({ mode = "tactics" }: PuzzleTrainerProps) 
             </button>
           </div>
 
-          {result ? (
-            <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900">
-              <div className="flex items-center gap-2 font-black"><CheckCircle2 size={18} /> {result.solved ? (isKingHunt ? "King Hunted" : "Puzzle Solved") : "Attempt Saved"}</div>
-              <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-                <div className="rounded-xl bg-white p-3"><Zap size={15} className="text-brand" /> <b>{result.xp}</b> XP</div>
-                <div className="rounded-xl bg-white p-3"><Coins size={15} className="text-amber-600" /> <b>{result.coins}</b> coins</div>
-              </div>
-              {result.demo?.isDemo ? <p className="mt-3 text-xs">Demo {isKingHunt ? "King Hunt" : "tactics"} remaining: {result.demo.remaining}/{result.demo.limit}</p> : null}
-            </div>
-          ) : null}
         </aside>
 
         <section ref={boardWrapRef} className="flex min-h-0 min-w-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-lg shadow-brand/5">
@@ -472,7 +489,11 @@ export default function PuzzleTrainer({ mode = "tactics" }: PuzzleTrainerProps) 
                     boardOrientation={boardOrientation}
                     showBoardNotation={false}
                     arePiecesDraggable={!result && !loading && !replying}
-                    onPieceDrop={(source, target, piece) => attemptMove(source, target, piece?.[1]?.toLowerCase() === "p" ? "q" : "q")}
+                    onPieceDrop={(source, target) => attemptMove(source, target)}
+                    onPromotionPieceSelect={onPromotionPieceSelect as any}
+                    showPromotionDialog={!!pendingPromotion}
+                    promotionToSquare={pendingPromotion?.to as any}
+                    promotionDialogVariant="modal"
                     onSquareClick={onSquareClick}
                     customSquareStyles={customSquareStyles}
                     customLightSquareStyle={{ backgroundColor: "#f0d9b5" }}
@@ -545,6 +566,21 @@ export default function PuzzleTrainer({ mode = "tactics" }: PuzzleTrainerProps) 
           </div>
         </aside>
       </main>
+      {result ? (
+        <div className="pointer-events-none fixed inset-x-0 top-24 z-50 flex justify-center px-4">
+          <div className="pointer-events-auto w-full max-w-sm rounded-2xl border border-emerald-200 bg-white p-4 text-emerald-950 shadow-2xl">
+            <div className="flex items-center gap-2 text-lg font-black">
+              <CheckCircle2 size={20} />
+              {result.solved ? (isKingHunt ? "King Hunted" : "Puzzle Solved") : "Attempt Saved"}
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+              <div className="rounded-xl bg-emerald-50 p-3"><Zap size={15} className="text-brand" /> <b>{result.xp}</b> XP</div>
+              <div className="rounded-xl bg-amber-50 p-3"><Coins size={15} className="text-amber-600" /> <b>{result.coins}</b> coins</div>
+            </div>
+            <p className="mt-3 text-xs text-slate-500">Loading the next puzzle...</p>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

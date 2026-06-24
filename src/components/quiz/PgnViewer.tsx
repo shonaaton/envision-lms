@@ -5,6 +5,8 @@ import { ChevronsLeft, ChevronsRight, ChevronLeft, ChevronRight } from "lucide-r
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Chess } from "chess.js";
+import { useRouter } from "next/navigation";
+import PageLoadingOverlay from "@/components/feedback/PageLoadingOverlay";
 
 const Chessboard = dynamic(() => import("react-chessboard").then((m) => m.Chessboard), { ssr: false });
 
@@ -98,11 +100,13 @@ export default function PgnViewer({
   nextFile: FileNavItem;
 }) {
   const boardWrapRef = useRef<HTMLDivElement | null>(null);
+  const router = useRouter();
   const parsed = useMemo(() => parsePgn(pgn), [pgn]);
   const moveRows = useMemo(() => buildRows(parsed.moves), [parsed.moves]);
   const [ply, setPly] = useState(0);
   const [movePage, setMovePage] = useState(0);
   const [boardWidth, setBoardWidth] = useState(620);
+  const [navigating, setNavigating] = useState(false);
 
   const totalPages = Math.max(1, Math.ceil(parsed.moves.length / movesPerPage));
   const pageStart = movePage * movesPerPage;
@@ -121,12 +125,25 @@ export default function PgnViewer({
     const element = boardWrapRef.current;
     if (!element) return;
 
-    const resize = () => setBoardWidth(Math.max(320, Math.min(640, element.clientWidth)));
+    const resize = () => {
+      const heightLimit = Math.max(300, window.innerHeight - 255);
+      setBoardWidth(Math.max(300, Math.min(560, element.clientWidth, heightLimit)));
+    };
     resize();
     const observer = new ResizeObserver(resize);
     observer.observe(element);
-    return () => observer.disconnect();
+    window.addEventListener("resize", resize);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", resize);
+    };
   }, []);
+
+  function openFile(item: FileNavItem) {
+    if (!item) return;
+    setNavigating(true);
+    router.push(item.href);
+  }
 
   function goTo(nextPly: number) {
     const safePly = Math.max(0, Math.min(parsed.moves.length, nextPly));
@@ -146,9 +163,10 @@ export default function PgnViewer({
   }
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[minmax(560px,1fr)_320px]">
-      <section className="rounded-lg border border-slate-200 bg-white p-4 text-slate-950 shadow-sm">
-        <div ref={boardWrapRef} className="mx-auto w-full max-w-[640px]">
+    <div className="grid h-full min-h-0 gap-3 lg:grid-cols-[minmax(0,1fr)_300px]">
+      <PageLoadingOverlay visible={navigating} message="Opening PGN..." />
+      <section className="flex min-h-0 flex-col rounded-lg border border-slate-200 bg-white p-3 text-slate-950 shadow-sm">
+        <div ref={boardWrapRef} className="mx-auto min-h-0 w-full max-w-[560px] flex-1">
           <Chessboard
             position={position}
             arePiecesDraggable={false}
@@ -168,32 +186,34 @@ export default function PgnViewer({
           <Link href={backHref} className={`${navButton} border-slate-200 bg-white text-slate-700 hover:bg-slate-50`}>
             Back to folder
           </Link>
-          <Link
-            href={previousFile?.href || "#"}
+          <button
+            type="button"
+            onClick={() => openFile(previousFile)}
             className={[
               navButton,
               previousFile ? "border-slate-200 bg-white text-slate-700 hover:bg-slate-50" : "pointer-events-none border-slate-100 bg-slate-100 text-slate-300",
             ].join(" ")}
-            aria-disabled={!previousFile}
+            disabled={!previousFile}
             title={previousFile?.title}
           >
             Previous file
-          </Link>
-          <Link
-            href={nextFile?.href || "#"}
+          </button>
+          <button
+            type="button"
+            onClick={() => openFile(nextFile)}
             className={[
               navButton,
               nextFile ? "border-brand bg-brand text-white hover:bg-brand-600" : "pointer-events-none border-slate-100 bg-slate-100 text-slate-300",
             ].join(" ")}
-            aria-disabled={!nextFile}
+            disabled={!nextFile}
             title={nextFile?.title}
           >
             Next file
-          </Link>
+          </button>
         </div>
       </section>
 
-      <aside className="rounded-lg border border-slate-200 bg-white p-3 text-slate-950 shadow-sm xl:max-w-[320px]">
+      <aside className="min-h-0 overflow-hidden rounded-lg border border-slate-200 bg-white p-3 text-slate-950 shadow-sm">
         <div className="mb-3 flex items-center justify-between gap-2">
           <div className="text-sm font-semibold text-slate-700">Move List</div>
           <div className="flex items-center gap-1 text-xs text-slate-500">
@@ -202,7 +222,7 @@ export default function PgnViewer({
             <button className={iconButton} onClick={() => setMovePage((page) => Math.min(totalPages - 1, page + 1))} disabled={movePage >= totalPages - 1} aria-label="Next moves page"><ChevronRight size={16} /></button>
           </div>
         </div>
-        <div className="max-h-[620px] overflow-y-auto pr-1">
+        <div className="max-h-[calc(100vh-210px)] overflow-y-auto pr-1">
           <div className="grid gap-y-0.5 text-sm">
             {visibleRows.length ? visibleRows.map((row) => (
               <div key={row.number} className="grid grid-cols-[28px_minmax(0,1fr)_minmax(0,1fr)] items-center gap-1">

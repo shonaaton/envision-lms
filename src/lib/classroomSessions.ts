@@ -22,12 +22,8 @@ export type ScheduledSessionStatus =
 export function getSessionStart(session: ScheduledSessionLike) {
   const base = session.scheduledFor || session.classDate;
   if (!base) return null;
-  const date = new Date(base);
+  const date = session.startTime ? academyDateTime(base, String(session.startTime)) : new Date(base);
   if (Number.isNaN(date.getTime())) return null;
-  if (session.startTime) {
-    const [hours, minutes] = String(session.startTime).split(":").map((part) => Number(part || 0));
-    date.setHours(hours, minutes, 0, 0);
-  }
   return date;
 }
 
@@ -37,7 +33,7 @@ export function getSessionEnd(session: ScheduledSessionLike) {
   return new Date(start.getTime() + Math.max(15, Number(session.durationMinutes || 60)) * 60000);
 }
 
-export function isJoinWindowOpen(session: ScheduledSessionLike, now = new Date(), earlyMinutes = 15, graceMinutes = 120) {
+export function isJoinWindowOpen(session: ScheduledSessionLike, now = new Date(), earlyMinutes = 0, graceMinutes = 120) {
   const start = getSessionStart(session);
   const end = getSessionEnd(session);
   if (!start || !end) return false;
@@ -66,9 +62,8 @@ export function deriveScheduledSessionStatus(
   const end = getSessionEnd(session);
   if (!start || !end) return "upcoming";
 
-  const opensAt = new Date(start.getTime() - 15 * 60000);
+  const opensAt = start;
   if (now < opensAt) return "upcoming";
-  if (now >= opensAt && now < start) return "join_available";
   if (now >= start && now <= end) return "ongoing";
   return "completed";
 }
@@ -113,6 +108,7 @@ export function formatJoinWindowLabel(session: ScheduledSessionLike, now = new D
   if (status === "cancelled") return "Cancelled";
   if (status === "rescheduled") return "Rescheduled";
   if (status === "missed") return "Missed";
-  if (now < start) return `Opens ${new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }).format(start)}`;
+  if (now < start) return `Opens ${formatAcademyDateTime(start, { year: undefined })}`;
   return "Session closed";
 }
+import { academyDateTime, formatAcademyDateTime } from "@/lib/academyTime";

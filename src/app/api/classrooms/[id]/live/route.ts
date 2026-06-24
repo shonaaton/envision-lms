@@ -4,6 +4,7 @@ import { dbConnect } from "@/lib/db";
 import { Classroom } from "@/models/Classroom";
 import { PGN } from "@/models/PGN";
 import { ClassroomChatMessage, ClassroomSession, LiveQuestion, LiveQuestionResponse } from "@/models/ClassroomLive";
+import { getLiveClassroomForUser, type AppRole } from "@/lib/liveClassroomAccess";
 import {
   buildLiveSessionKey,
   ensureLiveSessionIndexes,
@@ -25,9 +26,14 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
   await dbConnect();
   await ensureLiveSessionIndexes();
   const requestedSessionId = getRequestedSessionId(_);
-  const classroom: any = await Classroom.findById(params.id).populate("coach instructor students", "name email username").lean();
+  const role = (session.user as { role?: AppRole }).role;
+  const userId = (session.user as { id?: string }).id || "";
+  if (!role || !userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const { classroom, allowed } = await getLiveClassroomForUser(params.id, role, userId);
   if (!classroom) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const scheduledSession: any = resolveScheduledSession(classroom, requestedSessionId);
+  const classroomDoc: any = classroom;
+  if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const scheduledSession: any = resolveScheduledSession(classroomDoc, requestedSessionId);
   if (!scheduledSession) return NextResponse.json({ error: "Scheduled session not found" }, { status: 404 });
   const scheduledSessionId = String(scheduledSession._id);
   let live: any = await ClassroomSession.findOne({ classroom: params.id, scheduledSessionId })
@@ -38,28 +44,27 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
       classroom: params.id,
       scheduledSessionId,
       sessionKey: buildLiveSessionKey(params.id, scheduledSessionId),
-      coach: classroom.coach || classroom.instructor,
-      topic: scheduledSession.topicName || classroom.topicName || classroom.title,
+      coach: classroomDoc.coach || classroomDoc.instructor,
+      topic: scheduledSession.topicName || classroomDoc.topicName || classroomDoc.title,
       fen: "start",
       mode: "teaching",
     });
     live = await ClassroomSession.findById(created._id).populate("selectedStudents boardControlStudents challenge.student participants.user", "name username role").lean();
   }
-  const userId = (session.user as any).id;
   const existingParticipant = (live.participants || []).find((participant: any) => participant.user?.toString?.() === userId || participant.user?._id?.toString?.() === userId);
   if (live.status !== "ended") {
-    if (canCoach((session.user as any).role)) {
+    if (canCoach(role)) {
       await markScheduledSessionStarted({ classroomId: params.id, scheduledSessionId, actorId: userId });
     }
     if (existingParticipant) {
       await ClassroomSession.updateOne(
         { _id: live._id, "participants.user": userId },
-        { $set: { "participants.$.lastSeenAt": new Date(), "participants.$.role": (session.user as any).role || "student" } }
+        { $set: { "participants.$.lastSeenAt": new Date(), "participants.$.role": role || "student" } }
       );
     } else {
       await ClassroomSession.updateOne(
         { _id: live._id },
-        { $push: { participants: { user: userId, role: (session.user as any).role || "student", firstSeenAt: new Date(), lastSeenAt: new Date() } } }
+        { $push: { participants: { user: userId, role: role || "student", firstSeenAt: new Date(), lastSeenAt: new Date() } } }
       );
     }
     live = await ClassroomSession.findById(live._id).populate("selectedStudents boardControlStudents challenge.student participants.user", "name username role").lean();
@@ -71,13 +76,12 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
   const responses = activeQuestion
     ? await LiveQuestionResponse.find({ question: activeQuestion._id }).populate("student", "name username").sort({ submittedAt: -1 }).lean()
     : [];
-  const role = (session.user as any).role;
   const pgnFilter =
     canCoach(role)
       ? {}
       : {
           $or: [
-            { uploadedBy: (session.user as any).id },
+            { uploadedBy: userId },
             { visibility: "classroom", classroom: params.id },
             { visibility: "classroom" },
           ],
@@ -92,23 +96,40 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     .sort({ createdAt: -1 })
     .limit(50)
     .lean();
-  return NextResponse.json({ classroom, scheduledSession, live, activeQuestion, responses, pgnLibrary, chatMessages: chatMessages.reverse(), serverTime: new Date() });
+  return NextResponse.json({ classroom: classroomDoc, scheduledSession, live, activeQuestion, responses, pgnLibrary, chatMessages: chatMessages.reverse(), serverTime: new Date() });
 }
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   const session = await auth();
-  const role = (session?.user as any)?.role;
+  const role = (session?.user as { role?: AppRole })?.role;
   if (!session || !canCoach(role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
   await ensureLiveSessionIndexes();
-  const body = await req.json();
-  const requestedSessionId = getRequestedSessionId(req);
-  const classroom: any = await Classroom.findById(params.id);
+  const userId = (session.user as { id?: string }).id || "";
+  const { classroom, allowed } = await getLiveClassroomForUser(params.id, role, userId);
   if (!classroom) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const scheduledSession: any = resolveScheduledSession(classroom, requestedSessionId);
+  const classroomDoc: any = classroom;
+  if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const body = await req.json();
+  if (body.action === "clear_classroom_load") {
+    Object.assign(body, {
+      fen: "start",
+      pgn: "",
+      pgnTitle: "",
+      pgnMoves: [],
+      pgnMoveIndex: 0,
+      moveHistory: [],
+      gamifiedObjects: {},
+      drawings: [],
+      setupMode: false,
+      illegalMovesEnabled: false,
+    });
+  }
+  const requestedSessionId = getRequestedSessionId(req);
+  const scheduledSession: any = resolveScheduledSession(classroomDoc, requestedSessionId);
   if (!scheduledSession) return NextResponse.json({ error: "Scheduled session not found" }, { status: 404 });
   const scheduledSessionId = String(scheduledSession._id);
-  const allowed = [
+  const allowedFields = [
     "topic",
     "mode",
     "fen",
@@ -131,11 +152,12 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     "boardControlStudents",
     "drawings",
     "gamifiedObjects",
+    "usedResources",
     "locked",
     "challenge",
   ];
   const update: any = {};
-  for (const key of allowed) if (key in body) update[key] = body[key];
+  for (const key of allowedFields) if (key in body) update[key] = body[key];
   if ("studentMovesEnabled" in update && !update.studentMovesEnabled) {
     update.boardControlStudents = [];
     if (update.mode === "student_move" || update.mode === "one_move_challenge") update.mode = "teaching";
@@ -153,8 +175,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
         classroom: params.id,
         scheduledSessionId,
         sessionKey: buildLiveSessionKey(params.id, scheduledSessionId),
-        coach: (session.user as any).id,
-        topic: scheduledSession.topicName || classroom.topicName || classroom.title,
+        coach: userId,
+        topic: scheduledSession.topicName || classroomDoc.topicName || classroomDoc.title,
       },
     },
     { upsert: true, new: true }
@@ -163,12 +185,12 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     await markScheduledSessionFinished({
       classroomId: params.id,
       scheduledSessionId,
-      actorId: (session.user as any).id,
+      actorId: userId,
       endedAt: update.endedAt ? new Date(update.endedAt) : new Date(),
       summary: body.summary,
     });
   } else if (update.status === "live" || update.startedAt) {
-    await markScheduledSessionStarted({ classroomId: params.id, scheduledSessionId, actorId: (session.user as any).id });
+    await markScheduledSessionStarted({ classroomId: params.id, scheduledSessionId, actorId: userId });
   }
   return NextResponse.json(live);
 }

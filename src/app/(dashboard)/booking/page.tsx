@@ -3,27 +3,28 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { CalendarDays, CheckCircle2, Clock3, Sparkles, UserRound } from "lucide-react";
+import { nextOccurrenceForWeeklySlot } from "@/lib/bookingAvailability";
 
 const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
-function nextDateForDay(dayOfWeek: number) {
-  const now = new Date();
-  const date = new Date(now);
-  const diff = (dayOfWeek - date.getDay() + 7) % 7;
-  date.setDate(date.getDate() + diff);
-  return date;
-}
+type CoachAvailabilityEntry = {
+  coach?: { _id?: string; name?: string };
+  availability?: {
+    timezone?: string;
+    slots?: Array<{ dayOfWeek: number; startTime: string; endTime?: string; slotMinutes?: number }>;
+  };
+};
 
-function buildDateTime(dayOfWeek: number, startTime: string) {
-  const date = nextDateForDay(dayOfWeek);
-  const [hours, minutes] = startTime.split(":").map(Number);
-  date.setHours(hours || 0, minutes || 0, 0, 0);
-  if (date.getTime() < Date.now()) date.setDate(date.getDate() + 7);
-  return date;
-}
+type SlotOption = {
+  id: string;
+  label: string;
+  coachLabel: string;
+  start: Date;
+  end: Date;
+};
 
 export default function BookingPage() {
-  const [coaches, setCoaches] = useState<any[]>([]);
+  const [coaches, setCoaches] = useState<CoachAvailabilityEntry[]>([]);
   const [bookings, setBookings] = useState<any[]>([]);
   const [selectedCoach, setSelectedCoach] = useState("");
   const [selectedSlot, setSelectedSlot] = useState("");
@@ -35,23 +36,42 @@ export default function BookingPage() {
     fetch("/api/bookings").then((r) => r.json()).then((payload) => setBookings(Array.isArray(payload) ? payload : []));
   }, []);
 
-  const slotOptions = useMemo(() => {
+  const slotOptions = useMemo<SlotOption[]>(() => {
     const coachEntry = coaches.find((entry) => entry.coach?._id === selectedCoach);
-    return (coachEntry?.availability?.slots || []).map((slot: any, index: number) => {
-      const start = buildDateTime(slot.dayOfWeek, slot.startTime);
-      const minutes = Number(slot.slotMinutes || 60);
-      const end = new Date(start.getTime() + minutes * 60000);
-      return {
-        id: `${index}:${start.toISOString()}:${end.toISOString()}`,
-        label: `${dayNames[slot.dayOfWeek]} • ${slot.startTime} • ${minutes} min`,
-        start,
-        end,
-      };
-    });
+    const coachTimeZone = String(coachEntry?.availability?.timezone || "Asia/Kolkata");
+    return (coachEntry?.availability?.slots || [])
+      .map((slot, index) => {
+        const start = nextOccurrenceForWeeklySlot(
+          {
+            dayOfWeek: Number(slot.dayOfWeek),
+            startTime: String(slot.startTime || ""),
+            endTime: String(slot.endTime || ""),
+            slotMinutes: Number(slot.slotMinutes || 60),
+          },
+          coachTimeZone
+        );
+        if (!start) return null;
+        const minutes = Number(slot.slotMinutes || 60);
+        const end = new Date(start.getTime() + minutes * 60000);
+        return {
+          id: `${index}:${start.toISOString()}:${end.toISOString()}`,
+          label: `${new Intl.DateTimeFormat(undefined, {
+            weekday: "long",
+            month: "short",
+            day: "numeric",
+            hour: "numeric",
+            minute: "2-digit",
+          }).format(start)} • ${minutes} min`,
+          coachLabel: `${dayNames[slot.dayOfWeek]} • ${slot.startTime} (${coachTimeZone})`,
+          start,
+          end,
+        };
+      })
+      .filter((slot): slot is SlotOption => Boolean(slot));
   }, [coaches, selectedCoach]);
 
   async function book() {
-    const slot = slotOptions.find((item: any) => item.id === selectedSlot);
+    const slot = slotOptions.find((item) => item.id === selectedSlot);
     if (!selectedCoach || !slot) return toast.error("Please choose a coach and available time.");
     setLoading(true);
     const res = await fetch("/api/bookings", {
@@ -68,7 +88,7 @@ export default function BookingPage() {
     const payload = await res.json().catch(() => ({}));
     setLoading(false);
     if (!res.ok) return toast.error(payload.error || "Could not book this time.");
-    toast.success(payload.approvalStatus === "pending_admin" ? "Request sent for admin approval" : "Class booked");
+    toast.success(payload.approvalStatus === "pending_admin" ? "Request sent for admin approval" : payload.status === "confirmed" ? "Class booked" : "Request sent to your coach");
     setSelectedSlot("");
     setNotes("");
     fetch("/api/bookings").then((r) => r.json()).then((next) => setBookings(Array.isArray(next) ? next : []));
@@ -101,7 +121,7 @@ export default function BookingPage() {
               <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Available Time</span>
               <select value={selectedSlot} onChange={(event) => setSelectedSlot(event.target.value)} className="h-12 w-full rounded-xl border border-slate-200 px-3 text-sm" disabled={!selectedCoach}>
                 <option value="">Select time</option>
-                {slotOptions.map((slot: any) => <option key={slot.id} value={slot.id}>{slot.label}</option>)}
+                {slotOptions.map((slot) => <option key={slot.id} value={slot.id}>{slot.label} — {slot.coachLabel}</option>)}
               </select>
             </label>
           </div>
@@ -118,7 +138,7 @@ export default function BookingPage() {
           <h3 className="font-black text-brand">How this works</h3>
           <div className="mt-4 space-y-3 text-sm text-slate-700">
             <Info icon={<UserRound size={16} />} title="Demo users" text="Your demo request is sent to admin first. Admin can confirm the coach and time before the demo classroom opens." />
-            <Info icon={<CheckCircle2 size={16} />} title="Credit students" text="If you have a credit plan with credits left, available time can become a scheduled class. Credit is deducted after attendance." />
+            <Info icon={<CheckCircle2 size={16} />} title="Credit students" text="Your selected coach reviews the request first. A classroom is created only after approval, and credit is deducted after attendance." />
             <Info icon={<Clock3 size={16} />} title="Monthly students" text="Monthly-plan classes remain fixed. Reschedule/cancel requests should still go through admin approval." />
           </div>
         </aside>
@@ -130,8 +150,11 @@ export default function BookingPage() {
           {bookings.map((booking) => (
             <div key={booking._id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
               <div>
-                <div className="font-bold text-slate-950">{booking.bookingType === "demo" ? "Demo Class" : "Booked Class"} with {booking.instructor?.name || "Coach"}</div>
-                <div className="text-sm text-slate-500">{new Date(booking.startAt).toLocaleString("en-IN")}</div>
+                <div className="font-bold text-slate-950">{booking.bookingType === "demo" ? "Demo Request" : "Class Request"} with {booking.instructor?.name || "Coach"}</div>
+                <div className="text-sm text-slate-500">{new Date(booking.startAt).toLocaleString()}</div>
+                {booking.approvalStatus === "reschedule_proposed" && booking.proposedStartAt ? (
+                  <div className="mt-1 text-sm font-semibold text-amber-700">Coach suggested {new Date(booking.proposedStartAt).toLocaleString()}</div>
+                ) : null}
               </div>
               <span className="rounded-full bg-white px-3 py-1 text-xs font-bold capitalize text-brand">{booking.approvalStatus || booking.status}</span>
             </div>

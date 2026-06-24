@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
-import { CalendarDays, Clock3, Plus, Save, Trash2 } from "lucide-react";
+import { CalendarDays, Check, Clock3, Plus, Save, Trash2, X } from "lucide-react";
 
 const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -26,6 +26,15 @@ export default function AvailabilityPage() {
   const [timezone, setTimezone] = useState("Asia/Kolkata");
   const [feePerSession, setFeePerSession] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [requests, setRequests] = useState<any[]>([]);
+  const [suggestedTimes, setSuggestedTimes] = useState<Record<string, string>>({});
+
+  async function loadRequests() {
+    const response = await fetch("/api/bookings", { cache: "no-store" });
+    if (!response.ok) return;
+    const payload = await response.json();
+    setRequests(Array.isArray(payload) ? payload : []);
+  }
 
   useEffect(() => {
     if (!userId) return;
@@ -37,6 +46,7 @@ export default function AvailabilityPage() {
         setFeePerSession(Number(payload.feePerSession || 0));
       })
       .catch(() => toast.error("Could not load your available times."));
+    loadRequests();
   }, [userId]);
 
   const grouped = useMemo(() => {
@@ -71,6 +81,32 @@ export default function AvailabilityPage() {
     toast.success("Available times saved");
   }
 
+  async function handleRequest(bookingId: string, action: "approve" | "cancel" | "suggest_time") {
+    const suggested = suggestedTimes[bookingId];
+    const proposedStartAt = suggested ? new Date(suggested) : null;
+    const request = requests.find((item) => item._id === bookingId);
+    const minutes = request ? Math.max(15, Math.round((new Date(request.endAt).getTime() - new Date(request.startAt).getTime()) / 60000)) : 60;
+    if (action === "suggest_time" && (!proposedStartAt || Number.isNaN(proposedStartAt.getTime()))) {
+      return toast.error("Choose the new time first.");
+    }
+    setLoading(true);
+    const response = await fetch("/api/bookings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        bookingId,
+        action,
+        proposedStartAt: proposedStartAt?.toISOString(),
+        proposedEndAt: proposedStartAt ? new Date(proposedStartAt.getTime() + minutes * 60000).toISOString() : undefined,
+      }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    setLoading(false);
+    if (!response.ok) return toast.error(payload.error || "Could not update this request.");
+    toast.success(action === "approve" ? "Class approved and created" : action === "cancel" ? "Request cancelled" : "New time sent");
+    await loadRequests();
+  }
+
   if (role !== "instructor" && role !== "admin") {
     return (
       <div className="rounded-3xl border border-slate-200 bg-white p-8 text-slate-700 shadow-sm">
@@ -95,6 +131,46 @@ export default function AvailabilityPage() {
           <Save size={16} /> {loading ? "Saving..." : "Save Times"}
         </button>
       </header>
+
+      <section className="rounded-[24px] border border-brand/10 bg-white p-5 shadow-sm">
+        <div>
+          <h2 className="text-lg font-black">Class requests</h2>
+          <p className="text-sm text-slate-500">A classroom is created only after you approve a student request.</p>
+        </div>
+        <div className="mt-4 space-y-3">
+          {requests.filter((request) => request.status === "pending" && ["pending_coach", "reschedule_proposed"].includes(request.approvalStatus)).map((request) => (
+            <div key={request._id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                <div>
+                  <div className="font-black text-slate-950">{request.student?.name || "Student"}</div>
+                  <div className="mt-1 text-sm text-slate-600">{new Date(request.startAt).toLocaleString("en-IN", { timeZone: timezone })}</div>
+                  {request.notes ? <div className="mt-1 text-xs text-slate-500">{request.notes}</div> : null}
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button disabled={loading} onClick={() => handleRequest(request._id, "approve")} className="btn-primary">
+                    <Check size={15} /> Approve
+                  </button>
+                  <button disabled={loading} onClick={() => handleRequest(request._id, "cancel")} className="btn-outline text-red-600">
+                    <X size={15} /> Cancel
+                  </button>
+                  <input
+                    type="datetime-local"
+                    value={suggestedTimes[request._id] || ""}
+                    onChange={(event) => setSuggestedTimes((current) => ({ ...current, [request._id]: event.target.value }))}
+                    className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm"
+                  />
+                  <button disabled={loading} onClick={() => handleRequest(request._id, "suggest_time")} className="btn-outline">
+                    Suggest time
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+          {!requests.some((request) => request.status === "pending" && ["pending_coach", "reschedule_proposed"].includes(request.approvalStatus)) ? (
+            <div className="rounded-2xl border border-dashed border-slate-300 p-5 text-sm text-slate-500">No class requests are waiting for you.</div>
+          ) : null}
+        </div>
+      </section>
 
       <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
@@ -148,7 +224,7 @@ export default function AvailabilityPage() {
             <h3 className="flex items-center gap-2 font-black text-brand"><Clock3 size={18} /> Booking Rules</h3>
             <div className="mt-4 space-y-3 text-sm leading-6 text-slate-600">
               <p>Demo students can request these times, but admin must approve before the demo classroom is created.</p>
-              <p>Credit-plan students can book from these times when credits are available. Credits are deducted only after attendance is completed.</p>
+              <p>Credit-plan students can request these times when credits are available. The class is created only after coach approval.</p>
               <p>Monthly-plan classes remain on their fixed schedules.</p>
             </div>
           </div>

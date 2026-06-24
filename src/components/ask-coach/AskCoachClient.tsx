@@ -1,15 +1,49 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Check, EyeOff, MessageSquare, Search, Send, Shield, Trash2, Users } from "lucide-react";
 import { toast } from "sonner";
 
 type Role = "student" | "instructor" | "admin";
+type ConversationRecord = {
+  _id: string;
+  type?: "direct" | "batch";
+  title?: string;
+  lastMessagePreview?: string;
+  coach?: { name?: string } | null;
+  student?: { name?: string } | null;
+  batch?: { name?: string } | null;
+};
+type MessageRecord = {
+  _id: string;
+  conversation?: string | { _id?: string };
+  sender?: { name?: string } | null;
+  body?: string;
+  createdAt?: string;
+  flagged?: boolean;
+  moderationStatus?: string;
+  status?: string;
+  flagReasons?: string[];
+};
+type TargetRecord = { _id: string; name?: string };
+type AskCoachResponse = {
+  conversations: ConversationRecord[];
+  messages: MessageRecord[];
+  targets: {
+    students?: TargetRecord[];
+    coaches?: TargetRecord[];
+    batches?: TargetRecord[];
+  };
+};
+
+function conversationIdOf(message: MessageRecord) {
+  return typeof message.conversation === "string" ? message.conversation : message.conversation?._id || "";
+}
 
 export default function AskCoachClient({ role }: { role: Role }) {
   const searchParams = useSearchParams();
-  const [data, setData] = useState<any>({ conversations: [], messages: [], targets: {} });
+  const [data, setData] = useState<AskCoachResponse>({ conversations: [], messages: [], targets: {} });
   const [activeId, setActiveId] = useState("");
   const [message, setMessage] = useState("");
   const [receiver, setReceiver] = useState("");
@@ -17,39 +51,55 @@ export default function AskCoachClient({ role }: { role: Role }) {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
 
-  async function load() {
-    const res = await fetch(`/api/ask-coach${query ? `?q=${encodeURIComponent(query)}` : ""}`, { cache: "no-store" });
+  const load = useCallback(async (nextConversationId?: string) => {
+    const params = new URLSearchParams();
+    const requestedConversation = nextConversationId || activeId || searchParams.get("conversation") || "";
+    if (query) params.set("q", query);
+    if (requestedConversation) params.set("conversation", requestedConversation);
+    const res = await fetch(`/api/ask-coach${params.toString() ? `?${params.toString()}` : ""}`, { cache: "no-store" });
     if (!res.ok) return;
-    const next = await res.json();
+    const next: AskCoachResponse = await res.json();
     setData(next);
-    const requestedConversation = searchParams.get("conversation");
-    if (requestedConversation && next.conversations?.some((conversation: any) => conversation._id === requestedConversation)) {
-      setActiveId(requestedConversation);
+    const requestedFromUrl = searchParams.get("conversation");
+    if (requestedFromUrl && next.conversations.some((conversation) => conversation._id === requestedFromUrl)) {
+      setActiveId(requestedFromUrl);
       return;
     }
-    if (!activeId && next.conversations?.[0]?._id) setActiveId(next.conversations[0]._id);
-  }
+    if (!activeId && next.conversations[0]?._id) setActiveId(next.conversations[0]._id);
+  }, [activeId, query, searchParams]);
 
   useEffect(() => {
-    load();
-    const timer = setInterval(load, 4000);
+    void load();
+    const timer = setInterval(() => void load(), 4000);
     return () => clearInterval(timer);
-  }, []);
+  }, [load]);
 
-  const conversations = data.conversations || [];
-  const activeConversation = conversations.find((conversation: any) => conversation._id === activeId) || conversations[0];
+  useEffect(() => {
+    if (!activeId) return;
+    void load(activeId);
+  }, [activeId, load]);
+
+  const conversations = data.conversations;
+  const activeConversation = conversations.find((conversation) => conversation._id === activeId) || conversations[0];
   const activeMessages = useMemo(
-    () => (data.messages || []).filter((item: any) => item.conversation === activeConversation?._id || item.conversation?._id === activeConversation?._id),
+    () => data.messages.filter((item) => conversationIdOf(item) === activeConversation?._id),
     [data.messages, activeConversation?._id]
   );
-  const flaggedMessages = (data.messages || []).filter((item: any) => item.flagged || item.moderationStatus === "pending");
+
+  useEffect(() => {
+    const requestedMessage = searchParams.get("message");
+    if (!requestedMessage || !activeMessages.length) return;
+    document.getElementById(`ask-coach-message-${requestedMessage}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [activeMessages, searchParams]);
+
+  const flaggedMessages = data.messages.filter((item) => item.flagged || item.moderationStatus === "pending");
   const canSendBatch = role === "admin" || role === "instructor";
 
   async function sendMessage() {
     if (!message.trim()) return;
     setLoading(true);
     const startNewThread = Boolean(batch || receiver);
-    const payload: any = { message };
+    const payload: Record<string, string> = { message };
     if (!startNewThread && activeConversation?._id) payload.conversationId = activeConversation._id;
     if (batch) payload.batch = batch;
     else if (receiver) payload.receiver = receiver;
@@ -68,7 +118,7 @@ export default function AskCoachClient({ role }: { role: Role }) {
     setBatch("");
     setReceiver("");
     toast.success("Message sent");
-    await load();
+    await load(activeConversation?._id);
   }
 
   async function moderate(messageId: string, action: string) {
@@ -79,10 +129,10 @@ export default function AskCoachClient({ role }: { role: Role }) {
     });
     if (!res.ok) return toast.error("Moderation action failed");
     toast.success("Moderation updated");
-    await load();
+    await load(activeConversation?._id);
   }
 
-  function conversationTitle(conversation: any) {
+  function conversationTitle(conversation: ConversationRecord) {
     if (conversation.type === "batch") return conversation.batch?.name || conversation.title || "Batch Chat";
     if (role === "student") return conversation.coach?.name || "Coach";
     if (role === "instructor") return conversation.student?.name || "Student";
@@ -103,7 +153,7 @@ export default function AskCoachClient({ role }: { role: Role }) {
           </div>
           <div className="relative w-full max-w-sm">
             <Search className="absolute left-3 top-3 text-slate-400" size={16} />
-            <input value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => event.key === "Enter" && load()} className="h-10 w-full rounded-xl border border-brand/10 bg-white pl-9 pr-3 text-sm shadow-sm outline-none transition focus:border-brand/40 focus:ring-4 focus:ring-brand/10" placeholder="Search messages" />
+            <input value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => event.key === "Enter" && void load()} className="h-10 w-full rounded-xl border border-brand/10 bg-white pl-9 pr-3 text-sm shadow-sm outline-none transition focus:border-brand/40 focus:ring-4 focus:ring-brand/10" placeholder="Search messages" />
           </div>
         </div>
       </div>
@@ -112,7 +162,7 @@ export default function AskCoachClient({ role }: { role: Role }) {
         <aside className="min-h-0 overflow-auto border-b border-brand/10 bg-slate-50/70 p-3 lg:border-b-0 lg:border-r">
           <div className="mb-3 flex items-center gap-2 text-sm font-black text-slate-950"><MessageSquare size={16} className="text-brand" /> Conversations</div>
           <div className="space-y-2">
-            {conversations.length ? conversations.map((conversation: any) => (
+            {conversations.length ? conversations.map((conversation) => (
               <button key={conversation._id} onClick={() => setActiveId(conversation._id)} className={`w-full rounded-2xl border p-3 text-left shadow-sm transition hover:-translate-y-0.5 ${activeConversation?._id === conversation._id ? "border-brand/30 bg-white shadow-brand/10" : "border-slate-200 bg-white/80 hover:bg-white"}`}>
                 <div className="text-sm font-black text-slate-950">{conversationTitle(conversation)}</div>
                 <div className="mt-1 truncate text-xs text-slate-500">{conversation.lastMessagePreview || (conversation.type === "batch" ? "Batch conversation" : "Direct conversation")}</div>
@@ -127,13 +177,15 @@ export default function AskCoachClient({ role }: { role: Role }) {
             <p className="text-xs text-slate-500">{activeConversation?.type === "batch" ? "Batch chat" : "Individual chat"}</p>
           </div>
           <div className="min-h-0 flex-1 space-y-3 overflow-auto bg-[radial-gradient(circle_at_top,rgba(90,19,114,0.07),transparent_34%),#f8fafc] p-4">
-            {activeMessages.length ? activeMessages.map((item: any) => (
-              <div key={item._id} className={`rounded-2xl border bg-white p-3 shadow-sm ${item.flagged ? "border-amber-300" : "border-slate-200"}`}>
+            {activeMessages.length ? activeMessages.map((item) => (
+              <div id={`ask-coach-message-${item._id}`} key={item._id} className={`rounded-2xl border bg-white p-3 shadow-sm ${item.flagged ? "border-amber-300 ring-2 ring-amber-100" : "border-slate-200"}`}>
                 <div className="mb-1 flex items-center justify-between gap-2">
-                  <div className="text-xs font-semibold text-slate-500">{item.sender?.name || "User"} · {new Date(item.createdAt).toLocaleString()}</div>
+                  <div className="text-xs font-semibold text-slate-500">{item.sender?.name || "User"} • {new Date(item.createdAt || "").toLocaleString()}</div>
                   {item.flagged && <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700"><AlertTriangle size={13} /> Flagged</span>}
                 </div>
-                <div className={`text-sm text-slate-800 ${item.status === "hidden" ? "italic text-slate-400" : ""}`}>{item.status === "hidden" ? "Hidden by admin" : item.body}</div>
+                <div className={`text-sm text-slate-800 ${item.status === "hidden" && role !== "admin" ? "italic text-slate-400" : ""}`}>
+                  {item.status === "hidden" && role !== "admin" ? "Hidden pending admin review" : item.body}
+                </div>
                 {item.flagReasons?.length ? <div className="mt-2 text-xs text-amber-700">Reasons: {item.flagReasons.join(", ")}</div> : null}
                 {role === "admin" && (item.flagged || item.moderationStatus !== "none") && (
                   <div className="mt-3 flex flex-wrap gap-2">
@@ -164,8 +216,8 @@ export default function AskCoachClient({ role }: { role: Role }) {
                   <label className="block text-xs font-semibold text-slate-500">Student / Coach</label>
                   <select value={receiver} onChange={(event) => { setReceiver(event.target.value); setBatch(""); }} className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm">
                     <option value="">Select person</option>
-                    {(data.targets?.students || []).map((student: any) => <option key={student._id} value={student._id}>{student.name} · Student</option>)}
-                    {role === "admin" && (data.targets?.coaches || []).map((coach: any) => <option key={coach._id} value={coach._id}>{coach.name} · Coach</option>)}
+                    {(data.targets.students || []).map((student) => <option key={student._id} value={student._id}>{student.name} • Student</option>)}
+                    {role === "admin" && (data.targets.coaches || []).map((coach) => <option key={coach._id} value={coach._id}>{coach.name} • Coach</option>)}
                   </select>
                 </div>
               )}
@@ -174,7 +226,7 @@ export default function AskCoachClient({ role }: { role: Role }) {
                   <label className="block text-xs font-semibold text-slate-500">Batch Message</label>
                   <select value={batch} onChange={(event) => { setBatch(event.target.value); setReceiver(""); }} className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm">
                     <option value="">Select batch</option>
-                    {(data.targets?.batches || []).map((batchItem: any) => <option key={batchItem._id} value={batchItem._id}>{batchItem.name}</option>)}
+                    {(data.targets.batches || []).map((batchItem) => <option key={batchItem._id} value={batchItem._id}>{batchItem.name}</option>)}
                   </select>
                 </div>
               )}
@@ -185,8 +237,8 @@ export default function AskCoachClient({ role }: { role: Role }) {
               <section className="rounded-lg border border-amber-200 bg-amber-50 p-4">
                 <h3 className="flex items-center gap-2 font-semibold text-amber-900"><AlertTriangle size={16} /> Flagged Messages</h3>
                 <div className="mt-3 space-y-2">
-                  {flaggedMessages.length ? flaggedMessages.slice(0, 8).map((item: any) => (
-                    <button key={item._id} onClick={() => setActiveId(item.conversation?._id || item.conversation)} className="w-full rounded-md bg-white p-2 text-left text-xs text-amber-900">
+                  {flaggedMessages.length ? flaggedMessages.slice(0, 8).map((item) => (
+                    <button key={item._id} onClick={() => setActiveId(conversationIdOf(item))} className="w-full rounded-md bg-white p-2 text-left text-xs text-amber-900">
                       <div className="font-semibold">{item.sender?.name}</div>
                       <div className="truncate">{item.body}</div>
                     </button>

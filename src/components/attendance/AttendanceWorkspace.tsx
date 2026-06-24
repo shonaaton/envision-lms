@@ -58,6 +58,7 @@ function lifecycleTone(value: string) {
 }
 
 export default function AttendanceWorkspace({ role }: { role: Role }) {
+  const canEditAttendance = role === "admin";
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [data, setData] = useState<any>(null);
   const [selectedSessionId, setSelectedSessionId] = useState("");
@@ -281,7 +282,7 @@ export default function AttendanceWorkspace({ role }: { role: Role }) {
                       View Details
                     </Link>
                   ) : null}
-                  <button className="btn-primary" onClick={saveAttendance}>Save Attendance</button>
+                  {canEditAttendance ? <button className="btn-primary" onClick={saveAttendance}>Save Attendance</button> : null}
                 </div>
               </div>
 
@@ -295,14 +296,15 @@ export default function AttendanceWorkspace({ role }: { role: Role }) {
                 <InfoTile label="Punctuality Score" value={selectedSession.punctualityScore ? `${selectedSession.punctualityScore}%` : "Pending"} />
               </div>
 
-              <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
                 <div className="mb-3 text-sm font-black text-slate-950">Coach Attendance</div>
                 <div className="flex flex-wrap gap-2">
                   {(["present", "absent", "late"] as const).map((value) => (
                     <button
                       key={value}
                       type="button"
-                      onClick={() => setCoachStatus(value)}
+                      onClick={() => canEditAttendance && setCoachStatus(value)}
+                      disabled={!canEditAttendance}
                       className={`rounded-xl border px-4 py-2 text-sm font-semibold ${coachStatus === value ? "border-brand bg-brand/10 text-brand" : "border-slate-200 bg-white text-slate-700"}`}
                     >
                       {value[0].toUpperCase() + value.slice(1)}
@@ -313,7 +315,7 @@ export default function AttendanceWorkspace({ role }: { role: Role }) {
 
               <div className="mt-5 space-y-3">
                 {selectedSession.students.map((student) => (
-                  <div key={student._id} className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 lg:flex-row lg:items-center lg:justify-between">
+                  <div key={student._id} className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 lg:flex-row lg:items-center lg:justify-between">
                     <div>
                       <div className="font-semibold text-slate-950">{student.name}</div>
                       <div className="text-xs text-slate-500">{student.username || student.email}</div>
@@ -323,7 +325,8 @@ export default function AttendanceWorkspace({ role }: { role: Role }) {
                         <button
                           key={value}
                           type="button"
-                          onClick={() => setDraft((current) => ({ ...current, [student._id]: value }))}
+                          onClick={() => canEditAttendance && setDraft((current) => ({ ...current, [student._id]: value }))}
+                          disabled={!canEditAttendance}
                           className={`min-w-[104px] rounded-xl border px-4 py-2 text-sm font-semibold ${draft[student._id] === value ? "border-brand bg-brand/10 text-brand" : "border-slate-200 bg-white text-slate-700"}`}
                         >
                           {value[0].toUpperCase() + value.slice(1)}

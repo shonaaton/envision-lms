@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { ClassroomSession } from "@/models/ClassroomLive";
 import { getRequestedSessionId, markScheduledSessionStarted } from "@/lib/classroomLiveSession";
+import { getLiveClassroomForUser } from "@/lib/liveClassroomAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -102,6 +103,9 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 
   const scheduledSessionId = getRequestedSessionId(req);
   if (!scheduledSessionId) return NextResponse.json({ error: "Scheduled session required" }, { status: 400 });
+  const { classroom, allowed } = await getLiveClassroomForUser(params.id, "student", userId);
+  if (!classroom) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const body = await req.json();
   const from = String(body.from || "").trim();

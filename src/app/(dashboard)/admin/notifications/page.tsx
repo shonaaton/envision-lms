@@ -3,6 +3,7 @@ import { dbConnect } from "@/lib/db";
 import { Notification } from "@/models/Fee";
 import { Bell, CheckCircle2, MailOpen, Megaphone } from "lucide-react";
 import { redirect } from "next/navigation";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
@@ -49,8 +50,12 @@ export default async function AdminNotificationsPage() {
         {notifications.length === 0 ? (
           <div className="p-10 text-center text-sm text-slate-500">No notifications have been created yet.</div>
         ) : (
-          notifications.map((item) => (
-            <div key={item._id.toString()} className="grid grid-cols-[1.1fr_1.2fr_1.6fr_120px_160px] items-center border-b border-slate-100 px-4 py-3 text-sm last:border-b-0">
+          notifications.map((item) => {
+            const href = item.metadata?.href || (item.metadata?.conversation
+              ? `/ask-coach?conversation=${item.metadata.conversation}${item.metadata?.message ? `&message=${item.metadata.message}` : ""}`
+              : "");
+            const content = (
+              <>
               <div className="min-w-0">
                 <div className="truncate font-bold text-slate-950">{item.user?.name || "Unknown user"}</div>
                 <div className="truncate text-xs text-slate-500">{item.user?.email || item.user?.username || item.user?.role || "-"}</div>
@@ -67,8 +72,18 @@ export default async function AdminNotificationsPage() {
                 </span>
               </div>
               <div className="text-xs text-slate-500">{new Date(item.createdAt).toLocaleString()}</div>
-            </div>
-          ))
+              </>
+            );
+            return href ? (
+              <Link key={item._id.toString()} href={href} className="grid grid-cols-[1.1fr_1.2fr_1.6fr_120px_160px] items-center border-b border-slate-100 px-4 py-3 text-sm transition last:border-b-0 hover:bg-brand/[0.03]">
+                {content}
+              </Link>
+            ) : (
+              <div key={item._id.toString()} className="grid grid-cols-[1.1fr_1.2fr_1.6fr_120px_160px] items-center border-b border-slate-100 px-4 py-3 text-sm last:border-b-0">
+                {content}
+              </div>
+            );
+          })
         )}
       </section>
     </div>

@@ -3,14 +3,19 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { ClassroomSession, LiveQuestion } from "@/models/ClassroomLive";
 import { getRequestedSessionId } from "@/lib/classroomLiveSession";
+import { getLiveClassroomForUser, type AppRole } from "@/lib/liveClassroomAccess";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   const session = await auth();
-  const role = (session?.user as any)?.role;
+  const role = (session?.user as { role?: AppRole })?.role;
   if (!session || (role !== "admin" && role !== "instructor")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
+  const userId = (session.user as { id?: string }).id || "";
+  const { classroom, allowed } = await getLiveClassroomForUser(params.id, role, userId);
+  if (!classroom) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const scheduledSessionId = getRequestedSessionId(req);
   if (!scheduledSessionId) return NextResponse.json({ error: "Scheduled session required" }, { status: 400 });
   const live: any = await ClassroomSession.findOne({ classroom: params.id, scheduledSessionId });
@@ -20,7 +25,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     classroom: params.id,
     scheduledSessionId,
     session: live._id,
-    createdBy: (session.user as any).id,
+    createdBy: userId,
     type: body.type || "ask_everyone",
     title: body.title || "Ask Everyone",
     topic: body.topic,
@@ -50,9 +55,13 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   const session = await auth();
-  const role = (session?.user as any)?.role;
+  const role = (session?.user as { role?: AppRole })?.role;
   if (!session || (role !== "admin" && role !== "instructor")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
+  const userId = (session.user as { id?: string }).id || "";
+  const { classroom, allowed } = await getLiveClassroomForUser(params.id, role, userId);
+  if (!classroom) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const scheduledSessionId = getRequestedSessionId(req);
   if (!scheduledSessionId) return NextResponse.json({ error: "Scheduled session required" }, { status: 400 });
 

@@ -21,7 +21,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Chess } from "chess.js";
 import { toast } from "sonner";
@@ -260,38 +260,11 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
     return () => workerRef.current?.terminate();
   }, [withEngine]);
 
-  useEffect(() => {
-    if (!engineOn) return;
-    const timer = window.setTimeout(() => analyze(true), 120);
-    return () => window.clearTimeout(timer);
-  }, [position, engineOn]);
-
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (dialog) return;
-      const target = event.target as HTMLElement | null;
-      if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
-      if (target?.isContentEditable) return;
-
-      if (event.key === "ArrowLeft") {
-        event.preventDefault();
-        goPrevious();
-      }
-      if (event.key === "ArrowRight") {
-        event.preventDefault();
-        goNext();
-      }
-    }
-
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [dialog, selectedPly, position]);
-
   function refreshBoard() {
     setPosition(gameRef.current.fen());
   }
 
-  function analyze(force = false) {
+  const analyze = useCallback((force = false) => {
     const worker = workerRef.current;
     if (!worker || (!engineOn && !force)) return;
     analysisFenRef.current = position;
@@ -301,7 +274,7 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
     worker.postMessage("ucinewgame");
     worker.postMessage(`position fen ${position}`);
     worker.postMessage("go depth 16");
-  }
+  }, [engineOn, position]);
 
   function commitMove(source: string, target: string, promotion: PromotionPiece = "q") {
     try {
@@ -343,7 +316,7 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
   const moveTargets = useMemo(() => {
     if (!selectedSquare) return [];
     return legalTargetsFromGame(gameRef.current, selectedSquare);
-  }, [selectedSquare, position]);
+  }, [selectedSquare]);
   const moveHintStyles = useMemo(() => buildMoveHintStyles(moveTargets, selectedSquare), [moveTargets, selectedSquare]);
 
   function onSquareClick(square: string) {
@@ -438,6 +411,41 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
   function goNext() {
     goToPly(Math.min(gameRef.current.history().length, selectedPly + 1));
   }
+
+  const goPreviousMemo = useCallback(() => {
+    goToPly(Math.max(0, selectedPly - 1));
+  }, [selectedPly]);
+
+  const goNextMemo = useCallback(() => {
+    goToPly(Math.min(gameRef.current.history().length, selectedPly + 1));
+  }, [selectedPly]);
+
+  useEffect(() => {
+    if (!engineOn) return;
+    const timer = window.setTimeout(() => analyze(true), 120);
+    return () => window.clearTimeout(timer);
+  }, [analyze, engineOn]);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (dialog) return;
+      const target = event.target as HTMLElement | null;
+      if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
+      if (target?.isContentEditable) return;
+
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        goPreviousMemo();
+      }
+      if (event.key === "ArrowRight") {
+        event.preventDefault();
+        goNextMemo();
+      }
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [dialog, goNextMemo, goPreviousMemo]);
 
   async function saveCurrentPgn(title: string, folder?: string) {
     const pgn = gameRef.current.pgn() || `[Event "${title}"]\n[FEN "${gameRef.current.fen()}"]\n[SetUp "1"]\n\n*`;
@@ -1187,12 +1195,12 @@ function SetupDialog({
   }
 
   return (
-    <ModalFrame isDark={isDark} title="Customize Position" onClose={onClose} width="max-w-[980px]">
-      <div className="grid gap-5 md:grid-cols-[330px_1fr]">
+    <ModalFrame isDark={isDark} title="Customize Position" onClose={onClose} width="max-w-[900px]">
+      <div className="grid gap-4 md:grid-cols-[320px_1fr]">
         <div>
           <div className={`mb-5 inline-flex rounded-lg p-1 ${isDark ? "bg-black" : "bg-slate-100"}`}>
-            <button className={setupTabButton(setupTab === "general", isDark)} onClick={() => setSetupTab("general")}>General</button>
-            <button className={setupTabButton(setupTab === "gamified", isDark)} onClick={() => setSetupTab("gamified")}>Gamified Board</button>
+            <button className={setupTabButton(setupTab === "general", isDark)} onClick={() => setSetupTab("general")}>Chess Pieces</button>
+            <button className={setupTabButton(setupTab === "gamified", isDark)} onClick={() => setSetupTab("gamified")}>Gamified Objects</button>
           </div>
           <PiecePalette selected={selectedItem} onPick={setSelectedItem} dark={setupTab === "gamified"} pieceTheme={setupPieceTheme} />
           <div className="relative touch-none overflow-hidden rounded-md">
@@ -1362,8 +1370,8 @@ function SettingsDialog({
 function ModalFrame({ isDark, title, subtitle, onClose, width, children }: { isDark: boolean; title: string; subtitle?: string; onClose: () => void; width: string; children: ReactNode }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-      <div className={`max-h-[92vh] w-full overflow-y-auto rounded-lg p-5 shadow-2xl ${width} ${isDark ? "bg-ink-800 text-white" : "bg-white text-slate-950"}`}>
-        <div className="mb-5 flex items-start justify-between gap-4">
+      <div className={`max-h-[90vh] w-full overflow-y-auto rounded-xl p-4 shadow-2xl ${width} ${isDark ? "bg-ink-800 text-white" : "bg-white text-slate-950"}`}>
+        <div className="mb-4 flex items-start justify-between gap-4">
           <div>
             <h2 className="text-xl font-semibold">{title}</h2>
             {subtitle && <p className={`mt-2 text-sm ${isDark ? "text-blue-200/75" : "text-slate-500"}`}>{subtitle}</p>}

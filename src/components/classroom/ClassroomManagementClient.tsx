@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   CalendarDays,
   ChevronLeft,
@@ -192,6 +192,7 @@ export default function ClassroomManagementClient({ role }: { role: Role }) {
   const [step, setStep] = useState(1);
   const [form, setForm] = useState(blankForm());
   const [studentSearch, setStudentSearch] = useState("");
+  const [coachSearch, setCoachSearch] = useState("");
   const [view, setView] = useState<"list" | "calendar">("list");
   const [filters, setFilters] = useState<{ coach: string; batch: string; student: string; course: string; level: string; status: SessionFilterStatus }>({
     coach: "",
@@ -213,7 +214,7 @@ export default function ClassroomManagementClient({ role }: { role: Role }) {
     }
   }
 
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
       const [classroomsRes, targetsRes] = await Promise.all([
@@ -228,11 +229,21 @@ export default function ClassroomManagementClient({ role }: { role: Role }) {
     } finally {
       setLoading(false);
     }
-  }
+  }, [role]);
 
   useEffect(() => {
     load();
-  }, [role]);
+  }, [load]);
+
+  useEffect(() => {
+    const refresh = () => load();
+    const timer = window.setInterval(refresh, 30000);
+    window.addEventListener("focus", refresh);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+    };
+  }, [load]);
 
   const selectedCourse = useMemo(() => targets.courses.find((course) => course._id === form.course), [targets.courses, form.course]);
   const selectedLevel = useMemo(
@@ -298,8 +309,19 @@ export default function ClassroomManagementClient({ role }: { role: Role }) {
     });
   }, [studentSearch, targets.batches]);
 
+  const filteredCoaches = useMemo(() => {
+    const query = coachSearch.trim().toLowerCase();
+    if (!query) return targets.coaches;
+    return targets.coaches.filter((coach) =>
+      [coach.name, coach.username, coach.email]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(query))
+    );
+  }, [coachSearch, targets.coaches]);
+
   function resetModal(mode: CreateMode, item?: ClassroomItem | null) {
     setStudentSearch("");
+    setCoachSearch("");
     if (!item) {
       setForm(blankForm());
       setEditItem(null);
@@ -766,8 +788,17 @@ export default function ClassroomManagementClient({ role }: { role: Role }) {
                 <div className="max-w-3xl space-y-3">
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                     <div className="mb-3 text-sm font-black text-slate-950">Coach Assignment</div>
+                    <div className="relative mb-3">
+                      <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        className="input h-10 pl-9"
+                        value={coachSearch}
+                        onChange={(event) => setCoachSearch(event.target.value)}
+                        placeholder="Search coach by name, ID, or email"
+                      />
+                    </div>
                     <div className="grid gap-2 md:grid-cols-2">
-                      {targets.coaches.map((coach) => (
+                      {filteredCoaches.map((coach) => (
                         <button key={coach._id} type="button" onClick={() => updateForm({ coach: coach._id })} className={cn("rounded-xl border p-4 text-left shadow-sm transition", form.coach === coach._id ? "border-brand bg-brand/10" : "border-slate-200 bg-white")}>
                           <div className="font-semibold text-slate-950">{coach.name}</div>
                           <div className="text-xs text-slate-500">{coach.username || coach.email}</div>
@@ -1118,7 +1149,6 @@ function SimpleClassroomList({ items, loading, role }: { items: ClassroomItem[];
                       label="Join Classroom"
                       disabled={!joinOpen}
                     />
-                    {classroom.meetingUrl ? <a href={classroom.meetingUrl} target="_blank" rel="noreferrer" className="btn-outline">Join Google Meet</a> : null}
                     <Link href={summaryHref} className="btn-outline">View Details</Link>
                   </div>
                 </div>

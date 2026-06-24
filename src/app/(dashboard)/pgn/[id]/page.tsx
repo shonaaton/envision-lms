@@ -30,9 +30,9 @@ export default async function PgnDetail({ params, searchParams }: { params: { id
   const nextFile = nextGame ? { href: `/pgn/${nextGame._id.toString()}${folderQuery}`, title: nextGame.title } : null;
 
   return (
-    <div className="-m-6 min-h-screen space-y-3 bg-slate-50 p-5 text-slate-950">
-      <div>
-        <h1 className="font-display text-2xl">{game.title}</h1>
+    <div className="flex h-[calc(100vh-92px)] min-h-0 flex-col gap-3 overflow-hidden bg-slate-50 p-3 text-slate-950">
+      <div className="flex-none">
+        <h1 className="truncate font-display text-xl">{game.title}</h1>
         <div className="mt-1 text-sm text-slate-500">
           {game.white || "?"} vs {game.black || "?"} - {game.result || "*"} {game.event && `- ${game.event}`}
         </div>
@@ -42,7 +42,9 @@ export default async function PgnDetail({ params, searchParams }: { params: { id
           </div>
         )}
       </div>
-      <PgnViewer pgn={game.pgn} backHref={backHref} previousFile={previousFile} nextFile={nextFile} />
+      <div className="min-h-0 flex-1">
+        <PgnViewer pgn={game.pgn} backHref={backHref} previousFile={previousFile} nextFile={nextFile} />
+      </div>
     </div>
   );
 }

@@ -40,7 +40,7 @@ export function buildLiveSessionKey(classroomId: string, scheduledSessionId: str
 }
 
 export async function ensureLiveSessionIndexes() {
-  await ClassroomSession.collection.dropIndex("classroom_1").catch(() => undefined);
+  return Promise.resolve();
 }
 
 export async function markScheduledSessionStarted({

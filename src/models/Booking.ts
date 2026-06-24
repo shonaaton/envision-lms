@@ -25,7 +25,12 @@ const BookingSchema = new Schema(
     endAt: { type: Date, required: true },
     status: { type: String, enum: ["pending", "confirmed", "cancelled", "completed"], default: "pending" },
     bookingType: { type: String, enum: ["demo", "credit_class", "regular"], default: "regular", index: true },
-    approvalStatus: { type: String, enum: ["not_required", "pending_admin", "approved", "rejected"], default: "not_required", index: true },
+    approvalStatus: {
+      type: String,
+      enum: ["not_required", "pending_admin", "pending_coach", "coach_approved", "coach_cancelled", "reschedule_proposed", "approved", "rejected"],
+      default: "not_required",
+      index: true,
+    },
     meetingUrl: String,
     classroom: { type: Schema.Types.ObjectId, ref: "Classroom" },
     requestedByDemo: { type: Boolean, default: false },
@@ -35,6 +40,9 @@ const BookingSchema = new Schema(
     level: String,
     payment: { type: Schema.Types.ObjectId, ref: "Payment" },
     notes: String,
+    coachNote: String,
+    proposedStartAt: Date,
+    proposedEndAt: Date,
   },
   { timestamps: true }
 );

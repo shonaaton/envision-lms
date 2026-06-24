@@ -43,6 +43,7 @@ const ClassroomSessionSchema = new Schema(
       },
     ],
     gamifiedObjects: { type: Schema.Types.Mixed, default: {} },
+    usedResources: { type: Schema.Types.Mixed, default: [] },
     locked: { type: Boolean, default: false },
     startedAt: { type: Date, default: Date.now },
     endedAt: Date,

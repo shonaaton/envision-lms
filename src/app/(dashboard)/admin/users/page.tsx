@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ChevronRight,
   Copy,
@@ -84,7 +84,7 @@ export default function AdminUsersPage() {
   const [detailBatch, setDetailBatch] = useState<BatchItem | null>(null);
   const [editBatch, setEditBatch] = useState<BatchItem | null>(null);
 
-  async function loadUsers() {
+  const loadUsers = useCallback(async () => {
     if (tab !== "students" && tab !== "coaches") return;
     const role = tab === "students" ? "student" : "instructor";
     const params = new URLSearchParams({ role, sort });
@@ -93,27 +93,27 @@ export default function AdminUsersPage() {
     if (tag) params.set("tag", tag);
     const response = await fetch("/api/admin/users?" + params, { cache: "no-store" });
     setUsers(await response.json());
-  }
+  }, [q, sort, status, tab, tag]);
 
-  async function loadBatches() {
+  const loadBatches = useCallback(async () => {
     const response = await fetch("/api/admin/batches");
     setBatches(await response.json());
-  }
+  }, []);
 
-  async function loadDirectory() {
+  const loadDirectory = useCallback(async () => {
     const [studentsResponse, coachesResponse] = await Promise.all([
       fetch("/api/admin/users?role=student"),
       fetch("/api/admin/users?role=instructor"),
     ]);
     setAllStudents(await studentsResponse.json());
     setAllCoaches(await coachesResponse.json());
-  }
+  }, []);
 
   useEffect(() => {
     loadUsers();
     loadBatches();
     loadDirectory();
-  }, [tab, q, status, tag, sort]);
+  }, [loadBatches, loadDirectory, loadUsers]);
 
   useEffect(() => {
     const refresh = () => loadUsers();
@@ -123,7 +123,7 @@ export default function AdminUsersPage() {
       window.removeEventListener("focus", refresh);
       window.clearInterval(timer);
     };
-  }, [tab, q, status, tag, sort]);
+  }, [loadUsers]);
 
   const counts = useMemo(() => {
     const active = users.filter((u) => u.isActive).length;
@@ -511,7 +511,7 @@ function AssignStudentsModal({ coach, students, batches, onClose, onSave }: { co
   useEffect(() => {
     const next = batches.find((batch) => batch._id === batchId);
     setSelected(next?.students?.map((s) => s._id) || []);
-  }, [batchId]);
+  }, [batchId, batches]);
   return (
     <ModalShell title={`Assign Students to ${coach.name}`} onClose={onClose}>
       <select className="input mb-4 bg-white text-slate-950" value={batchId} onChange={(e) => setBatchId(e.target.value)}>

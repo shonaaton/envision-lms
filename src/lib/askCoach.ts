@@ -4,8 +4,17 @@ import { AskCoachConversation, AskCoachMessage } from "@/models/AskCoach";
 import { Notification } from "@/models/Fee";
 import { User } from "@/models/User";
 import { sendEmailAutomation } from "@/lib/emailAutomation";
+import { resolvePublicAppUrl } from "@/lib/appUrl";
 
 const badWords = ["abuse", "idiot", "stupid", "shut up", "bloody", "damn"];
+
+function escapeHtml(value: unknown) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
 
 export function checkMessageSafety(text: string) {
   const reasons: string[] = [];
@@ -39,8 +48,27 @@ export async function notifyUser(user: any, title: string, message: string, meta
 
 export async function notifyAdmins(title: string, message: string, metadata: any = {}) {
   const { User } = await import("@/models/User");
-  const admins = await User.find({ role: "admin", isActive: true }).select("_id").lean();
-  await Notification.insertMany(admins.map((admin: any) => ({ user: admin._id, type: "ask_coach_admin", title, message, metadata })));
+  const admins = await User.find({ role: "admin", isActive: true }).select("_id email name").lean();
+  const notifications = await Notification.insertMany(
+    admins.map((admin: any) => ({ user: admin._id, type: "ask_coach_admin", title, message, metadata }))
+  );
+  await Promise.all(
+    admins.map((admin: any, index: number) =>
+      admin.email
+        ? sendEmailAutomation({
+          to: String(admin.email),
+          subject: title,
+          message,
+          htmlBody: typeof metadata?.htmlBody === "string" ? metadata.htmlBody : undefined,
+            metadata: {
+              ...metadata,
+              recipientName: admin.name,
+              notificationId: notifications[index]?._id?.toString?.(),
+            },
+          })
+        : Promise.resolve()
+    )
+  );
 }
 
 export async function canAccessConversation(user: any, conversation: any) {
@@ -95,24 +123,47 @@ export async function createAskCoachMessage(input: {
     body: input.body,
     flagged: safety.flagged,
     flagReasons: safety.reasons,
-    status: safety.flagged ? "flagged" : "sent",
+    status: safety.flagged ? "hidden" : "sent",
     moderationStatus: safety.flagged ? "pending" : "none",
     readBy: [{ user: input.sender, readAt: new Date() }],
   });
   await AskCoachConversation.findByIdAndUpdate(input.conversation._id, {
     lastMessageAt: new Date(),
-    lastMessagePreview: input.body.slice(0, 120),
+    lastMessagePreview: safety.flagged ? "Message pending admin review" : input.body.slice(0, 120),
   });
   if (safety.flagged) {
-    await notifyAdmins("Ask Coach message flagged", "A message needs moderation review.", {
+    const sender: any = await User.findById(input.sender).select("name username email role").lean();
+    const coachId = input.conversation.coach || (sender?.role === "instructor" ? input.sender : input.receiver);
+    const coach: any = coachId
+      ? await User.findById(coachId).select("name username email").lean()
+      : null;
+    const href = `/ask-coach?conversation=${input.conversation._id.toString()}&message=${message._id.toString()}`;
+    const reviewUrl = `${resolvePublicAppUrl()}${href}`;
+    const context = input.batch
+      ? `Batch conversation: ${input.conversation.title || input.batch}`
+      : `Conversation: ${input.conversation.title || "Direct message"}`;
+    await notifyAdmins("Ask Coach message flagged", `${sender?.name || "A user"} sent a message that requires moderation.`, {
       conversation: input.conversation._id,
       message: message._id,
       reasons: safety.reasons,
+      href,
+      flaggedBy: sender?.name || sender?.username || "Unknown user",
+      flaggedByEmail: sender?.email || "",
+      coachName: coach?.name || coach?.username || "Not assigned",
+      coachEmail: coach?.email || "",
+      flaggedContent: input.body,
+      classroomDetails: context,
+      htmlBody: `<p><strong>User:</strong> ${escapeHtml(sender?.name || sender?.username || "Unknown user")}</p>
+        <p><strong>Coach:</strong> ${escapeHtml(coach?.name || coach?.username || "Not assigned")}</p>
+        <p><strong>Context:</strong> ${escapeHtml(context)}</p>
+        <p><strong>Reasons:</strong> ${escapeHtml(safety.reasons.join(", "))}</p>
+        <p><strong>Flagged message:</strong></p><blockquote>${escapeHtml(input.body)}</blockquote>
+        <p><a href="${reviewUrl}">Review the flagged message</a></p>`,
     });
-    await notifyUser(input.sender, "Message flagged for review", "Your message was sent for admin review because it may contain restricted content.", {
+    await notifyUser(input.sender, "Message flagged for review", "Your message was hidden and sent for admin review because it may contain restricted content.", {
       message: message._id,
       reasons: safety.reasons,
-      href: "/ask-coach",
+      href: `/ask-coach?conversation=${input.conversation._id.toString()}`,
     });
   }
   return message;

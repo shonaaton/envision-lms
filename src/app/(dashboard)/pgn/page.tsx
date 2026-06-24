@@ -22,7 +22,7 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Chess } from "chess.js";
 import { toast } from "sonner";
@@ -76,7 +76,7 @@ export default function PgnLibraryPage() {
     if (role === "student") router.replace("/dashboard");
   }, [role, router]);
 
-  async function load() {
+  const load = useCallback(async () => {
     if (role === "student") return;
     const [gamesResponse, foldersResponse] = await Promise.all([
       fetch("/api/pgn", { cache: "no-store" }),
@@ -95,11 +95,11 @@ export default function PgnLibraryPage() {
         personal: folder.visibility !== "shared",
       })) : []);
     }
-  }
+  }, [role]);
 
   useEffect(() => {
-    load();
-  }, []);
+    void load();
+  }, [load]);
 
   const activeFolderPath = currentFolder?.path || "";
   const activeScope = currentFolder?.personal === false ? "shared" : "personal";
@@ -704,9 +704,9 @@ function EmptyFolder() {
         <div className="absolute left-28 top-8 h-16 w-10 rounded-full bg-slate-800" />
         <div className="absolute right-26 top-20 h-28 w-10 rounded-full bg-slate-700" />
         <div className="absolute right-20 top-10 h-12 w-16 rounded-full bg-slate-800" />
-        <div className="absolute left-[152px] top-24 text-5xl">♟</div>
-        <div className="absolute left-[190px] top-50 text-5xl text-slate-700">♞</div>
-        <div className="absolute left-[212px] top-88 rounded-lg border-4 border-slate-500 bg-white px-5 py-3 text-3xl">♟</div>
+        <div className="absolute left-[152px] top-24 text-5xl">&#9823;</div>
+        <div className="absolute left-[190px] top-50 text-5xl text-slate-700">&#9822;</div>
+        <div className="absolute left-[212px] top-88 rounded-lg border-4 border-slate-500 bg-white px-5 py-3 text-3xl">&#9823;</div>
       </div>
     </div>
   );

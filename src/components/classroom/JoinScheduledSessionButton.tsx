@@ -20,9 +20,6 @@ export default function JoinScheduledSessionButton({
   function handleClick() {
     if (disabled) return;
     const destination = `/classrooms/${classroomId}/live?session=${encodeURIComponent(sessionId)}`;
-    if (meetingUrl && typeof window !== "undefined") {
-      window.open(meetingUrl, "_blank", "noopener,noreferrer");
-    }
     if (typeof window !== "undefined") {
       window.location.assign(destination);
     }

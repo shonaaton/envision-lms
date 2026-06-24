@@ -18,6 +18,7 @@ import {
   Crown,
   Download,
   Eraser,
+  ExternalLink,
   Eye,
   FileQuestion,
   FlipHorizontal,
@@ -49,6 +50,7 @@ import {
   VolumeX,
   X,
 } from "lucide-react";
+import PageLoadingOverlay from "@/components/feedback/PageLoadingOverlay";
 
 const Chessboard = dynamic(() => import("react-chessboard").then((m) => m.Chessboard), { ssr: false });
 
@@ -346,6 +348,9 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [moveAnswer, setMoveAnswer] = useState("");
   const [quizTitle, setQuizTitle] = useState("Best move from current position");
+  const [quizComposerOpen, setQuizComposerOpen] = useState(false);
+  const [quizSolution, setQuizSolution] = useState<string[]>([]);
+  const [quizPoints, setQuizPoints] = useState(5);
   const [chatText, setChatText] = useState("");
   const [manualLoadText, setManualLoadText] = useState("");
   const [setupLoadText, setSetupLoadText] = useState("");
@@ -364,6 +369,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const [setupOpen, setSetupOpen] = useState(false);
   const [pgnOpen, setPgnOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
+  const [endingClass, setEndingClass] = useState(false);
   const [hiddenStudentQuizId, setHiddenStudentQuizId] = useState<string | null>(null);
   const [attendanceDraft, setAttendanceDraft] = useState<Record<string, "present" | "absent" | "late">>({});
   const [setupPosition, setSetupPosition] = useState<BoardPosition>({});
@@ -703,6 +709,13 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     return dataRef.current?.live || live || {};
   }
 
+  function resourceHistory(resource: any) {
+    const current = Array.isArray(currentLive()?.usedResources) ? currentLive().usedResources : [];
+    const key = `${resource.type}:${resource.title}:${resource.fen || ""}`;
+    const withoutDuplicate = current.filter((item: any) => `${item.type}:${item.title}:${item.fen || ""}` !== key);
+    return [...withoutDuplicate, { ...resource, loadedAt: new Date().toISOString() }].slice(-30);
+  }
+
   function updateDrawings(mutator: (drawings: any[]) => any[]) {
     const snapshot = currentLive();
     const nextDrawings = mutator([...(snapshot.drawings || [])]);
@@ -806,21 +819,9 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     patch({ illegalMovesEnabled: true, setupMode: false });
   }
 
-  function clearClassroomLoad() {
+  async function clearClassroomLoad() {
     setSelectedMoveSquare(null);
-    patch({
-      fen: "start",
-      pgn: "",
-      pgnTitle: "",
-      pgnMoves: [],
-      pgnMoveIndex: 0,
-      moveHistory: [],
-      gamifiedObjects: {},
-      drawings: [],
-      setupMode: false,
-      illegalMovesEnabled: false,
-      topic: "",
-    });
+    await patch({ action: "clear_classroom_load" }, { optimistic: false });
   }
 
   function collectGamifiedWithPiece(source: string, target: string, piece: string) {
@@ -982,7 +983,8 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   }
 
   function loadSetupIntoClassroom() {
-    patch({ fen: positionToFen(setupPosition, setupSideToMove()), gamifiedObjects: removeObjectsOnPieceSquares(gamifiedSetup, setupPosition), setupMode: false, illegalMovesEnabled: setupMovementMode === "free", pgn: "", pgnTitle: "Custom Position", pgnMoves: [], pgnMoveIndex: 0, moveHistory: [], drawings: [] });
+    const fen = positionToFen(setupPosition, setupSideToMove());
+    patch({ fen, gamifiedObjects: removeObjectsOnPieceSquares(gamifiedSetup, setupPosition), setupMode: false, illegalMovesEnabled: setupMovementMode === "free", pgn: "", pgnTitle: "Custom Position", pgnMoves: [], pgnMoveIndex: 0, moveHistory: [], drawings: [], usedResources: resourceHistory({ type: "position", title: "Custom Position", fen }) });
     setSetupOpen(false);
   }
 
@@ -1240,9 +1242,13 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   }
 
   async function createQuiz() {
-    const expectedMove = pgnMoves[currentMoveIndex];
-    if (!expectedMove) {
-      toast.error("Load a PGN position first so the next move can be checked on the board");
+    setQuizSolution([]);
+    setQuizComposerOpen(true);
+  }
+
+  async function launchComposedQuiz() {
+    if (!quizSolution.length) {
+      toast.error("Play the correct answer on the board first");
       return;
     }
     const res = await fetch(liveUrl("/question"), {
@@ -1257,25 +1263,31 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
         fen: live?.fen || "start",
         pgn: live?.pgn,
         moveHistory: live?.moveHistory || [],
-        solution: [expectedMove],
+        solution: quizSolution,
         items: [{
           id: `${live?._id || classroomId}-current`,
           title: quizTitle,
           fen: live?.fen || "start",
           pgn: live?.pgn,
-          solution: pgnMoves.slice(currentMoveIndex),
-          points: 5,
+          solution: quizSolution,
+          points: quizPoints,
           timerSeconds: challengeTimer,
         }],
         timer: { perQuestionSeconds: challengeTimer },
-        scoring: { correct: 5, wrongPenalty: 1, hintPenalty: 1, speedBonus: 2 },
+        scoring: { correct: quizPoints, wrongPenalty: 1, hintPenalty: 1, speedBonus: 2 },
         attempts: "multiple",
         hintsEnabled: true,
         progressionMode: "auto",
         currentItemIndex: 0,
       }),
     });
-    if (res.ok) toast.success("Live quiz launched");
+    if (!res.ok) {
+      const payload = await res.json().catch(() => ({}));
+      toast.error(payload.error || "Could not launch quiz");
+      return;
+    }
+    toast.success("Live quiz launched");
+    setQuizComposerOpen(false);
     setActiveTab("leaderboard");
     queueRefresh(60);
   }
@@ -1381,6 +1393,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   }
 
   async function saveAttendanceAndClose() {
+    setEndingClass(true);
     const records = students.map((student: any) => ({
       student: student._id,
       status: attendanceDraft[student._id] || "absent",
@@ -1401,13 +1414,14 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       }),
     });
     if (!res.ok) {
+      setEndingClass(false);
       toast.error("Could not save attendance");
       return;
     }
     await patch({ endedAt: new Date().toISOString(), status: "ended", summary: classSummary, participants: [], boardControlStudents: [], selectedStudents: [], challenge: { active: false } });
     toast.success("Class ended and attendance saved");
     setSummaryOpen(false);
-    router.push("/classrooms");
+    window.location.assign(`/classrooms?updated=${Date.now()}`);
   }
 
   function resetGame() {
@@ -1436,6 +1450,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
         moveHistory: [],
         setupMode: false,
         drawings: [],
+        usedResources: resourceHistory({ type: "pgn", title: pgn.title, pgn: pgn.pgn, fen: startFen }),
       });
       setActiveTab("moves");
       setPgnOpen(false);
@@ -1450,7 +1465,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     if (!value) return;
     try {
       const fenGame = new Chess(value);
-      patch({ fen: fenGame.fen(), pgn: "", pgnTitle: "Custom FEN", pgnMoves: [], pgnMoveIndex: 0, moveHistory: [], setupMode: false, drawings: [] });
+      patch({ fen: fenGame.fen(), pgn: "", pgnTitle: "Custom FEN", pgnMoves: [], pgnMoveIndex: 0, moveHistory: [], setupMode: false, drawings: [], usedResources: resourceHistory({ type: "position", title: "Custom FEN", fen: fenGame.fen() }) });
       setManualLoadText("");
       setPgnOpen(false);
       toast.success("FEN loaded into classroom");
@@ -1472,6 +1487,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
         moveHistory: [],
         setupMode: false,
         drawings: [],
+        usedResources: resourceHistory({ type: "pgn", title: "Pasted PGN", pgn: value, fen: startFen }),
       });
       setManualLoadText("");
       setActiveTab("moves");
@@ -1722,7 +1738,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const files = coordinateFiles(orientation);
   const ranks = coordinateRanks(orientation);
   const setupBoardSize = Math.min(340, Math.max(300, boardWidth));
-  const canLaunchBoardQuiz = Boolean(pgnMoves[currentMoveIndex]);
+  const canLaunchBoardQuiz = Boolean(live?.fen);
   const canLoadPgnLibrary = coach && pgnLibrary.length > 0;
   const coachSidebarTabs = [
     { key: "students" as TabKey, icon: <Users size={19} />, label: "Students" },
@@ -1746,8 +1762,18 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
             Instructor: {coachName} - Topic: {live?.topic || "Not set"} - {duration} min
           </p>
         </div>
+        <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2 lg:mt-0 lg:max-w-[58%] lg:justify-end">
+          {classroom?.meetingUrl ? (
+            <a
+              href={classroom.meetingUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex h-10 items-center gap-2 rounded-lg border border-brand/15 bg-white px-3 text-sm font-bold text-brand shadow-sm transition hover:bg-brand/5"
+            >
+              <ExternalLink size={15} /> Open Google Meet
+            </a>
+          ) : null}
         {coach && (
-          <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2 lg:mt-0 lg:max-w-[54%] lg:justify-end">
             <div className="flex min-w-[220px] max-w-full items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-left shadow-sm">
               <div className="min-w-0">
                 <div className="truncate text-sm font-semibold text-blue-800">{live?.pgnTitle || live?.topic || "Classroom board"}</div>
@@ -1759,8 +1785,8 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                 </button>
               )}
             </div>
-          </div>
         )}
+        </div>
       </div>
 
       <div className="grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-[minmax(0,1fr)_350px]">
@@ -2400,15 +2426,15 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
 
       {setupOpen && coach && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
-          <div className="max-h-[88vh] w-full max-w-5xl overflow-hidden rounded-2xl bg-white p-4 shadow-2xl">
-            <div className="mb-3 flex items-start justify-between gap-4">
+          <div className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="flex flex-none items-start justify-between gap-4 border-b border-slate-200 p-4">
               <div>
                 <h3 className="text-xl font-semibold text-slate-950">Customize Position</h3>
                 <p className="text-sm text-slate-500">Chess pieces and gamified objects are separate layers.</p>
               </div>
               <button onClick={() => setSetupOpen(false)} className="grid h-9 w-9 place-items-center rounded-md border border-slate-200"><X size={16} /></button>
             </div>
-            <div className="grid max-h-[calc(88vh-92px)] gap-4 overflow-hidden lg:grid-cols-[370px_minmax(0,1fr)]">
+            <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto p-4 lg:grid-cols-[340px_minmax(0,1fr)]">
               <div>
                 <div className="mb-4 inline-flex rounded-xl bg-slate-100 p-1">
                   <button onClick={() => setSetupTab("pieces")} className={`rounded-lg px-5 py-2 text-sm font-semibold ${setupTab === "pieces" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500"}`}>Chess Pieces</button>
@@ -2481,7 +2507,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                 </button>
               </div>
 
-              <div className="min-h-0 space-y-3 overflow-auto pr-1">
+              <div className="min-h-0 space-y-3">
                 <div className="rounded-xl border border-slate-200 bg-white p-3">
                   <div className="text-sm font-semibold text-slate-950">Who can move?</div>
                   <div className="mt-3 grid grid-cols-3 gap-2">
@@ -2561,6 +2587,46 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
         </div>
       )}
 
+      {quizComposerOpen && coach && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4">
+          <div className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="flex flex-none items-start justify-between gap-4 border-b border-slate-200 p-4">
+              <div>
+                <h3 className="text-xl font-black text-slate-950">Create Position Quiz</h3>
+                <p className="mt-1 text-sm text-slate-500">Play the correct answer directly on the board, then set the timer and marks.</p>
+              </div>
+              <button onClick={() => setQuizComposerOpen(false)} className="grid h-9 w-9 place-items-center rounded-md border border-slate-200"><X size={16} /></button>
+            </div>
+            <div className="grid min-h-0 flex-1 gap-5 overflow-y-auto p-4 lg:grid-cols-[minmax(300px,420px)_1fr]">
+              <QuizAnswerComposer startFen={live?.fen || "start"} onChange={setQuizSolution} />
+              <div className="space-y-4">
+                <label className="block">
+                  <span className="text-xs font-black uppercase tracking-wide text-slate-500">Quiz title</span>
+                  <input value={quizTitle} onChange={(event) => setQuizTitle(event.target.value)} className="input mt-1 h-11" />
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <label>
+                    <span className="text-xs font-black uppercase tracking-wide text-slate-500">Time per position</span>
+                    <input type="number" min={10} value={challengeTimer} onChange={(event) => setChallengeTimer(Number(event.target.value || 10))} className="input mt-1 h-11" />
+                  </label>
+                  <label>
+                    <span className="text-xs font-black uppercase tracking-wide text-slate-500">Marks</span>
+                    <input type="number" min={1} value={quizPoints} onChange={(event) => setQuizPoints(Number(event.target.value || 1))} className="input mt-1 h-11" />
+                  </label>
+                </div>
+                <div className="rounded-2xl border border-brand/10 bg-brand/5 p-4">
+                  <div className="text-sm font-black text-brand">Recorded answer</div>
+                  <div className="mt-2 min-h-10 text-sm text-slate-700">{quizSolution.length ? quizSolution.join(" ") : "Play the answer line on the board."}</div>
+                </div>
+                <button onClick={launchComposedQuiz} disabled={!quizSolution.length} className="btn-primary w-full justify-center disabled:opacity-40">
+                  <Sparkles size={16} /> Launch Quiz
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {summaryOpen && coach && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
           <div className="max-h-[92vh] w-full max-w-6xl overflow-auto rounded-lg bg-white p-5 shadow-2xl">
@@ -2605,12 +2671,77 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
               ))}
             </div>
             <div className="mt-5 flex justify-end gap-2">
-              <button onClick={() => setSummaryOpen(false)} className="h-10 rounded-md border border-slate-200 px-4 text-sm font-semibold">Review Later</button>
               <button onClick={saveAttendanceAndClose} className="h-10 rounded-md bg-purple-700 px-4 text-sm font-semibold text-white">Save Attendance and Finalize</button>
             </div>
           </div>
         </div>
       )}
+      <PageLoadingOverlay visible={endingClass} message="Saving attendance and closing the classroom..." />
+    </div>
+  );
+}
+
+function QuizAnswerComposer({ startFen, onChange }: { startFen: string; onChange: (moves: string[]) => void }) {
+  const makeGame = () => startFen && startFen !== "start" ? new Chess(startFen) : new Chess();
+  const [fen, setFen] = useState(() => makeGame().fen());
+  const [moves, setMoves] = useState<string[]>([]);
+  const [selected, setSelected] = useState<string | null>(null);
+
+  useEffect(() => {
+    const game = makeGame();
+    setFen(game.fen());
+    setMoves([]);
+    setSelected(null);
+    onChange([]);
+  }, [startFen]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function play(from: string, to: string) {
+    try {
+      const game = new Chess(fen);
+      const move = game.move({ from, to, promotion: "q" });
+      if (!move) return false;
+      const next = [...moves, move.san];
+      setFen(game.fen());
+      setMoves(next);
+      setSelected(null);
+      onChange(next);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function reset() {
+    const game = makeGame();
+    setFen(game.fen());
+    setMoves([]);
+    setSelected(null);
+    onChange([]);
+  }
+
+  return (
+    <div>
+      <div className="mx-auto w-full max-w-[420px] overflow-hidden rounded-lg border-4 border-[#8f4f20]">
+        <Chessboard
+          id="quiz-answer-composer"
+          position={fen}
+          onPieceDrop={play}
+          onSquareClick={(square) => {
+            if (selected) {
+              if (!play(selected, square)) setSelected(square);
+            } else {
+              setSelected(square);
+            }
+          }}
+          customDarkSquareStyle={{ backgroundColor: "#b9875f" }}
+          customLightSquareStyle={{ backgroundColor: "#f1d9aa" }}
+          customSquareStyles={selected ? { [selected]: { boxShadow: "inset 0 0 0 4px rgba(90,19,114,.55)" } } : {}}
+        />
+      </div>
+      <div className="mt-3 flex items-center justify-between gap-3">
+        <div className="text-sm text-slate-600">{moves.length ? `${moves.length} move${moves.length === 1 ? "" : "s"} recorded` : "Play the correct line"}</div>
+        <button type="button" onClick={reset} className="btn-outline"><RotateCcw size={15} /> Reset answer</button>
+      </div>
     </div>
   );
 }
@@ -2674,6 +2805,7 @@ function LiveBoardQuiz({
   const [quizSubmitted, setQuizSubmitted] = useState(false);
   const [feedback, setFeedback] = useState("Make the best move on the board.");
   const [lastStudentMove, setLastStudentMove] = useState("");
+  const [attemptMoves, setAttemptMoves] = useState<string[]>([]);
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
   const [quizPendingPromotion, setQuizPendingPromotion] = useState<PendingPromotion | null>(null);
   const advancedRef = useRef(false);
@@ -2752,6 +2884,7 @@ function LiveBoardQuiz({
     setSolved(false);
     setFeedback(parsed.moves.length === 0 ? "No moves found in this PGN." : quizFinished ? "Review this position and update your answer if needed." : "Make your move on the board.");
     setLastStudentMove("");
+    setAttemptMoves([]);
     setItemStartedAt(Date.now());
     setRemaining(Number(question.timer?.perQuestionSeconds || activeItem?.timerSeconds || 0));
     setSelectedSquare(null);
@@ -2777,7 +2910,7 @@ function LiveBoardQuiz({
 
   useEffect(() => {
     if (!solved || advancedRef.current || !activeItem) return;
-    const result = { solved: true, mistakes, hintsUsed, timeTakenSeconds: Math.round((Date.now() - itemStartedAt) / 1000), submittedMove: lastStudentMove || parsed.moves[0]?.san || "" };
+    const result = { solved: true, mistakes, hintsUsed, timeTakenSeconds: Math.round((Date.now() - itemStartedAt) / 1000), submittedMove: lastStudentMove || parsed.moves[0]?.san || "", attempts: attemptMoves };
     const nextResults = { ...results, [activeItem.id]: result };
     setResults(nextResults);
     advancedRef.current = true;
@@ -2830,10 +2963,28 @@ function LiveBoardQuiz({
       : false;
     const matchesExpectedSan = move.san === expected.san;
     if (!matchesExpectedSquares && !matchesExpectedSan) {
-      setMistakes((value) => value + 1);
+      const nextMistakes = mistakes + 1;
+      const nextAttempts = [...attemptMoves, move.san];
+      setMistakes(nextMistakes);
+      setAttemptMoves(nextAttempts);
+      const nextResults = {
+        ...results,
+        [activeItem.id]: {
+          solved: false,
+          pending: true,
+          mistakes: nextMistakes,
+          hintsUsed,
+          timeTakenSeconds: Math.round((Date.now() - itemStartedAt) / 1000),
+          submittedMove: move.san,
+          attempts: nextAttempts,
+        },
+      };
+      setResults(nextResults);
+      onProgress?.(nextResults, Math.round((Date.now() - quizStartedAt) / 1000));
       setFeedback("Move not accepted. Try another continuation.");
       return false;
     }
+    setAttemptMoves((current) => [...current, move.san]);
     setLastStudentMove(move.san);
     let nextPly = ply + 1;
     nextPly = applyAutoReply(nextGame, nextPly);
@@ -2901,13 +3052,14 @@ function LiveBoardQuiz({
     setSolved(false);
     setFeedback("Make your move on the board.");
     setLastStudentMove("");
+    setAttemptMoves([]);
     setItemStartedAt(Date.now());
     setRemaining(Number(question.timer?.perQuestionSeconds || activeItem?.timerSeconds || 0));
   }
 
   function skipCurrent() {
     if (!activeItem) return;
-    const result = { solved: false, skipped: true, mistakes, hintsUsed, timeTakenSeconds: Math.round((Date.now() - itemStartedAt) / 1000), submittedMove: lastStudentMove };
+    const result = { solved: false, skipped: true, mistakes, hintsUsed, timeTakenSeconds: Math.round((Date.now() - itemStartedAt) / 1000), submittedMove: lastStudentMove, attempts: attemptMoves };
     const nextResults = { ...results, [activeItem.id]: result };
     setResults(nextResults);
     onProgress?.(nextResults, Math.round((Date.now() - quizStartedAt) / 1000));
@@ -3256,6 +3408,7 @@ function CoachQuizMonitor({
                       <div>Progress: {Number(summary.completedItems || 0)}/{Number(summary.totalItems || items.length)} items completed</div>
                       <div>Last move: {lastMove || "-"}</div>
                       <div>Submitted: {submittedAt ? new Date(submittedAt).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", second: "2-digit" }) : "-"}</div>
+                      <div className="sm:col-span-2">Moves tried: {activeItemResult?.attempts?.length ? activeItemResult.attempts.join(", ") : lastMove || "-"}</div>
                     </div>
                   ) : null}
                 </div>

@@ -68,7 +68,7 @@ export default function AddUserModal({
           <input className="input" name="password" placeholder="Password (optional, auto-generated if empty)" />
           <textarea className="input min-h-[60px]" name="notes" placeholder="Internal notes (optional)" />
           <p className="text-xs text-gray-400">
-            A username (like Name@ENV) and temporary password are auto-generated. You'll see the password in the success toast.
+            A username (like Name@ENV) and temporary password are auto-generated. You&apos;ll see the password in the success toast.
           </p>
           <div className="flex justify-end gap-2">
             <button type="button" className="btn-outline" onClick={onClose}>Cancel</button>

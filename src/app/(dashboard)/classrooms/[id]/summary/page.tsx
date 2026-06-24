@@ -7,6 +7,9 @@ import { Attendance } from "@/models/Attendance";
 import { Classroom } from "@/models/Classroom";
 import { ClassroomSession, LiveQuestion, LiveQuestionResponse } from "@/models/ClassroomLive";
 import CsvDownloadButton from "@/components/common/CsvDownloadButton";
+import SessionResourceReview from "@/components/classroom/SessionResourceReview";
+import { formatAcademyDateTime } from "@/lib/academyTime";
+import { getSessionStart } from "@/lib/classroomSessions";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +30,7 @@ function formatDate(value?: string | Date | null) {
 
 function formatDateTime(value?: string | Date | null) {
   if (!value) return "Not set";
-  return new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(value));
+  return formatAcademyDateTime(value);
 }
 
 function formatDuration(minutes?: number | null) {
@@ -243,8 +246,23 @@ export default async function ClassroomSummaryPage({
           <StatCard label="Status" value={String(selectedSession.status || classroom.status || "scheduled")} />
           <StatCard label="Coach" value={classroom.coach?.name || classroom.instructor?.name || "Not assigned"} />
           <StatCard label="Students Assigned" value={String((classroom.students || []).length)} />
-          <StatCard label="Start" value={formatDateTime(selectedSession.actualStartedAt || selectedSession.scheduledFor)} />
+          <StatCard label="Scheduled" value={formatDateTime(getSessionStart(selectedSession))} />
+          <StatCard label="Actual Start" value={formatDateTime(selectedSession.actualStartedAt || liveSession?.startedAt)} />
           <StatCard label="End" value={formatDateTime(selectedSession.actualEndedAt || liveSession?.endedAt)} />
+        </div>
+      </section>
+
+      <section className="rounded-[28px] border border-brand/10 bg-white p-5 shadow-[0_20px_50px_rgba(90,19,114,0.10)]">
+        <h2 className="text-lg font-black text-slate-950">PGNs and Boards Used</h2>
+        <p className="mt-1 text-sm text-slate-500">Review the positions and material that were loaded during this class.</p>
+        <div className="mt-4">
+          <SessionResourceReview
+            resources={Array.isArray(liveSession?.usedResources) && liveSession.usedResources.length
+              ? liveSession.usedResources
+              : liveSession?.pgn || liveSession?.fen
+                ? [{ type: liveSession?.pgn ? "pgn" : "position", title: liveSession?.pgnTitle || "Classroom board", pgn: liveSession?.pgn, fen: liveSession?.fen }]
+                : []}
+          />
         </div>
       </section>
 

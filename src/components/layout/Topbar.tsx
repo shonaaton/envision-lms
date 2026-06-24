@@ -10,8 +10,17 @@ type NotificationItem = {
   message: string;
   readAt?: string;
   createdAt: string;
-  metadata?: { href?: string };
+  metadata?: { href?: string; conversation?: string; message?: string };
 };
+
+function notificationHref(item: NotificationItem) {
+  if (item.metadata?.href) return item.metadata.href;
+  if (item.metadata?.conversation) {
+    const message = item.metadata.message ? `&message=${encodeURIComponent(String(item.metadata.message))}` : "";
+    return `/ask-coach?conversation=${encodeURIComponent(String(item.metadata.conversation))}${message}`;
+  }
+  return "/admin/notifications";
+}
 
 export default function Topbar({ user }: { user: { name?: string | null; role: string } }) {
   const [openNotifications, setOpenNotifications] = useState(false);
@@ -73,7 +82,7 @@ export default function Topbar({ user }: { user: { name?: string | null; role: s
                 <div className="max-h-96 space-y-2 overflow-y-auto pr-1">
                   {notifications.length === 0 && <div className="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">No notifications yet.</div>}
                   {notifications.map((item) => (
-                    <a key={item._id} href={item.metadata?.href || "#"} className="block rounded-xl border border-slate-200 bg-white p-3 shadow-sm hover:border-brand/20 hover:bg-slate-50">
+                    <a key={item._id} href={notificationHref(item)} className="block rounded-xl border border-slate-200 bg-white p-3 shadow-sm hover:border-brand/20 hover:bg-slate-50">
                       <div className="flex items-start justify-between gap-2">
                         <div className="font-bold text-slate-950">{item.title}</div>
                         {!item.readAt && <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-brand" />}

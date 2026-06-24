@@ -475,16 +475,6 @@ async function StudentDashboard({ userId }: { userId: string }) {
                   label="Join Classroom"
                   disabled={!heroSessionOpen}
                 />
-                {nextSession.classroom.meetingUrl ? (
-                  <a
-                    href={nextSession.classroom.meetingUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-5 py-3 text-sm font-black text-white"
-                  >
-                    Join Google Meet
-                  </a>
-                ) : null}
               </>
             ) : (
               <Link href="/play/square-trainer" className="inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-3 text-sm font-black text-brand shadow-lg shadow-black/20">
@@ -539,11 +529,6 @@ async function StudentDashboard({ userId }: { userId: string }) {
                       label="Join Classroom"
                       disabled={!canJoin}
                     />
-                    {classroom.meetingUrl ? (
-                      <a href={classroom.meetingUrl} target="_blank" rel="noreferrer" className="btn-outline">
-                        Join Google Meet
-                      </a>
-                    ) : null}
                     <Link href={`/classrooms/${objectId(classroom._id)}/summary?session=${String(session._id)}`} className="btn-outline">
                       View Details
                     </Link>
@@ -882,11 +867,6 @@ async function CoachDashboard({ userId, searchParams }: { userId: string; search
                             label="Join Classroom"
                             disabled={!canJoin}
                           />
-                          {classroom.meetingUrl ? (
-                            <a href={classroom.meetingUrl} target="_blank" rel="noreferrer" className="btn-outline">
-                              Join Google Meet
-                            </a>
-                          ) : null}
                           <Link href={`/classrooms/${objectId(classroom._id)}/summary?session=${String(session._id)}`} className="btn-outline">
                             View Details
                           </Link>

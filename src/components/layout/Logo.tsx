@@ -1,4 +1,5 @@
 "use client";
+import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
@@ -14,7 +15,7 @@ export default function Logo({ className = "" }: { className?: string }) {
 
   return (
     <Link href="/" className={`inline-flex items-center ${className}`} aria-label={branding.academyName}>
-      <img src={branding.logoUrl} alt={branding.academyName} className="h-12 w-auto object-contain" />
+      <Image src={branding.logoUrl} alt={branding.academyName} width={192} height={48} className="h-12 w-auto object-contain" unoptimized />
     </Link>
   );
 }

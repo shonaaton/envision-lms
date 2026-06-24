@@ -8,8 +8,79 @@ import { Classroom } from "@/models/Classroom";
 import { FeeAssignment, Notification } from "@/models/Fee";
 import { User } from "@/models/User";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
+import { ACADEMY_TIME_ZONE } from "@/lib/academyTime";
+import { isBookingWithinAvailability, type AvailabilitySlot } from "@/lib/bookingAvailability";
 
 export const dynamic = "force-dynamic";
+
+type BookingDecision = {
+  bookingType: "demo" | "credit_class" | "regular";
+  status: "pending" | "confirmed";
+  approvalStatus: "not_required" | "pending_admin" | "pending_coach";
+};
+
+function formatBookingTime(value: string | Date) {
+  return new Intl.DateTimeFormat("en-IN", {
+    timeZone: ACADEMY_TIME_ZONE,
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+function classroomStartTime(value: string | Date) {
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: ACADEMY_TIME_ZONE,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(value));
+}
+
+async function notifyBookingUsers({
+  booking,
+  student,
+  coach,
+  admins,
+  title,
+  message,
+}: {
+  booking: any;
+  student: any;
+  coach: any;
+  admins: any[];
+  title: string;
+  message: string;
+}) {
+  const recipients = [
+    student?._id ? { user: student._id, email: student.email, name: student.name, href: "/booking" } : null,
+    coach?._id ? { user: coach._id, email: coach.email, name: coach.name, href: "/availability" } : null,
+    ...admins.map((admin: any) => ({ user: admin._id, email: admin.email, name: admin.name, href: "/admin/demo-bookings" })),
+  ].filter(Boolean) as any[];
+  await Notification.insertMany(
+    recipients.map((recipient) => ({
+      user: recipient.user,
+      type: "booking.updated",
+      title,
+      message,
+      metadata: { booking: booking._id, href: recipient.href },
+    }))
+  );
+  await Promise.all(
+    recipients
+      .filter((recipient) => recipient.email)
+      .map((recipient) =>
+        sendAutomationEmail({
+          to: recipient.email,
+          subject: title,
+          message: `Hello ${recipient.name || ""},\n\n${message}`,
+          metadata: { bookingId: booking._id.toString(), href: recipient.href },
+        })
+      )
+  );
+}
 
 export async function GET() {
   const session = await auth();
@@ -33,76 +104,93 @@ export async function POST(req: Request) {
     await dbConnect();
     const student: any = await User.findById((session.user as any).id).select("name email phone parentName city country studentLevel accountStatus").lean();
     if (!student || (session.user as any).role !== "student") return NextResponse.json({ error: "Only students can book sessions." }, { status: 403 });
+    const instructor: any = await User.findOne({ _id: body.instructor, role: "instructor", isActive: true }).select("name email").lean();
+    if (!instructor) return NextResponse.json({ error: "That coach is no longer available for booking." }, { status: 404 });
+
+    const startAt = new Date(body.startAt);
+    const endAt = new Date(body.endAt);
+    if (Number.isNaN(startAt.getTime()) || Number.isNaN(endAt.getTime()) || endAt <= startAt) {
+      return NextResponse.json({ error: "Please choose a valid booking time." }, { status: 400 });
+    }
 
     const overlap = await Booking.findOne({
       instructor: body.instructor,
-      startAt: { $lt: new Date(body.endAt) },
-      endAt: { $gt: new Date(body.startAt) },
+      startAt: { $lt: endAt },
+      endAt: { $gt: startAt },
       status: { $in: ["pending", "confirmed"] },
     });
     if (overlap) return NextResponse.json({ error: "Slot already booked" }, { status: 409 });
 
-    const av = await Availability.findOne({ instructor: body.instructor }).lean();
+    const studentOverlap = await Booking.findOne({
+      student: (session.user as any).id,
+      startAt: { $lt: endAt },
+      endAt: { $gt: startAt },
+      status: { $in: ["pending", "confirmed"] },
+    });
+    if (studentOverlap) return NextResponse.json({ error: "You already have another booking at that time." }, { status: 409 });
+
+    const av: any = await Availability.findOne({ instructor: body.instructor }).lean();
+    const slotValidation = isBookingWithinAvailability({
+      startAt,
+      endAt,
+      timeZone: String(av?.timezone || ACADEMY_TIME_ZONE),
+      slots: Array.isArray(av?.slots) ? (av.slots as AvailabilitySlot[]) : [],
+    });
+    if (!slotValidation.ok) return NextResponse.json({ error: slotValidation.reason }, { status: 400 });
+
     const isDemo = student.accountStatus === "demo" || body.bookingType === "demo";
     const requestedType = isDemo ? "demo" : body.bookingType === "credit_class" ? "credit_class" : "regular";
-    let status: "pending" | "confirmed" = "pending";
-    let approvalStatus: "pending_admin" | "not_required" = "pending_admin";
-    let classroom: any = null;
+    const decision: BookingDecision = isDemo
+      ? { bookingType: "demo", status: "pending", approvalStatus: "pending_admin" }
+      : requestedType === "credit_class"
+        ? { bookingType: "credit_class", status: "pending", approvalStatus: "pending_coach" }
+        : Number(av?.feePerSession || 0) > 0
+          ? { bookingType: "regular", status: "pending", approvalStatus: "pending_coach" }
+          : { bookingType: "regular", status: "confirmed", approvalStatus: "not_required" };
 
-    if (!isDemo && requestedType === "credit_class") {
+    if (decision.bookingType === "credit_class") {
       const assignment: any = await FeeAssignment.findOne({ student: student._id, type: "credits" }).lean();
       if (!assignment || Number(assignment.creditBalance || 0) <= 0) {
         return NextResponse.json({ error: "You need an active credit plan with credits available to book a class." }, { status: 400 });
       }
-      status = "confirmed";
-      approvalStatus = "not_required";
-      const start = new Date(body.startAt);
-      classroom = await Classroom.create({
-        title: `Credit Class - ${student.name}`,
-        description: body.notes || "Booked from available coach time.",
-        classroomType: "single",
-        status: "scheduled",
-        level: "beginner",
-        levelName: student.studentLevel || "Credit class",
-        topicName: "Booked practice class",
-        meetingProvider: "meet",
-        coach: body.instructor,
-        instructor: body.instructor,
-        students: [student._id],
-        classDate: start,
-        startTime: start.toTimeString().slice(0, 5),
-        durationMinutes: Math.max(15, Math.round((new Date(body.endAt).getTime() - start.getTime()) / 60000)),
-        isActive: true,
-      });
     }
 
     const created = await Booking.create({
       ...body,
       student: (session.user as any).id,
-      startAt: new Date(body.startAt),
-      endAt: new Date(body.endAt),
-      status: isDemo ? "pending" : status || (av && (av as any).feePerSession > 0 ? "pending" : "confirmed"),
-      approvalStatus,
-      bookingType: requestedType,
+      startAt,
+      endAt,
+      status: decision.status,
+      approvalStatus: decision.approvalStatus,
+      bookingType: decision.bookingType,
       requestedByDemo: isDemo,
-      classroom: classroom?._id,
       parentName: student.parentName,
       city: student.city,
       country: student.country,
       level: student.studentLevel,
       notes: body.notes,
     });
-    const coach: any = await User.findById(body.instructor).select("name email").lean();
+    const coach = instructor;
     const admins = await User.find({ role: "admin", isActive: true }).select("_id email name").lean();
+    const adminTitle = isDemo
+      ? "Demo booking needs approval"
+      : decision.bookingType === "credit_class"
+        ? "Credit class request raised"
+        : "Booking request created";
+    const adminMessage = isDemo
+      ? `${student.name} requested a demo with ${coach?.name || "coach"}.`
+      : decision.bookingType === "credit_class"
+        ? `${student.name} requested a credit class with ${coach?.name || "coach"}.`
+        : `${student.name} requested a class with ${coach?.name || "coach"}.`;
     await Notification.insertMany([
-      { user: student._id, type: "booking.created", title: isDemo ? "Demo request received" : "Class booked", message: isDemo ? "Your demo request is waiting for academy approval." : "Your class has been booked from available coach time.", metadata: { booking: created._id } },
-      ...(coach?._id ? [{ user: coach._id, type: "booking.created", title: isDemo ? "Demo request pending" : "New class booked", message: `${student.name} requested ${isDemo ? "a demo" : "a class"} for ${new Date(body.startAt).toLocaleString("en-IN")}.`, metadata: { booking: created._id } }] : []),
-      ...admins.map((admin: any) => ({ user: admin._id, type: "booking.created", title: isDemo ? "Demo booking needs approval" : "Credit class booked", message: `${student.name} booked ${isDemo ? "a demo" : "a credit class"} with ${coach?.name || "coach"}.`, metadata: { booking: created._id } })),
+      { user: student._id, type: "booking.created", title: isDemo ? "Demo request received" : decision.status === "confirmed" ? "Class booked" : "Class request sent", message: isDemo ? "Your demo request is waiting for academy approval." : decision.status === "confirmed" ? "Your class has been confirmed." : "Your coach will review this class request before a classroom is created.", metadata: { booking: created._id, href: "/booking" } },
+      ...(coach?._id ? [{ user: coach._id, type: "booking.created", title: isDemo ? "Demo request pending" : decision.status === "confirmed" ? "Class booked" : "New class request", message: `${student.name} requested ${isDemo ? "a demo" : "a class"} for ${formatBookingTime(startAt)}.`, metadata: { booking: created._id, href: "/availability" } }] : []),
+      ...admins.map((admin: any) => ({ user: admin._id, type: "booking.created", title: adminTitle, message: adminMessage, metadata: { booking: created._id, href: "/admin/demo-bookings" } })),
     ]);
     await Promise.all([
-      student.email && sendAutomationEmail({ to: student.email, subject: isDemo ? "Demo booking request received" : "Your class is booked", message: `Hello ${student.name},\n\n${isDemo ? "Your demo booking request has been received and is waiting for academy approval." : "Your class has been booked successfully."}\n\nTime: ${new Date(body.startAt).toLocaleString("en-IN")}` }),
-      coach?.email && sendAutomationEmail({ to: coach.email, subject: isDemo ? "Demo request pending approval" : "New class booked from your available time", message: `${student.name} requested ${isDemo ? "a demo class" : "a class"}.\n\nTime: ${new Date(body.startAt).toLocaleString("en-IN")}` }),
-      ...admins.filter((admin: any) => admin.email).map((admin: any) => sendAutomationEmail({ to: admin.email, subject: isDemo ? "Demo booking needs approval" : "Credit class booked", message: `${student.name} booked ${isDemo ? "a demo" : "a credit class"} with ${coach?.name || "coach"}.\n\nTime: ${new Date(body.startAt).toLocaleString("en-IN")}` })),
+      student.email && sendAutomationEmail({ to: student.email, subject: isDemo ? "Demo booking request received" : decision.status === "confirmed" ? "Class booked" : "Class request sent", message: `Hello ${student.name},\n\n${isDemo ? "Your demo booking request has been received and is waiting for academy approval." : decision.status === "confirmed" ? "Your class has been confirmed." : "Your class request has been sent to the coach for approval."}\n\nTime: ${formatBookingTime(startAt)}` }),
+      coach?.email && sendAutomationEmail({ to: coach.email, subject: isDemo ? "Demo request pending approval" : decision.status === "confirmed" ? "Class booked" : "New class request awaiting your response", message: `${student.name} requested ${isDemo ? "a demo class" : "a class"}.\n\nTime: ${formatBookingTime(startAt)}` }),
+      ...admins.filter((admin: any) => admin.email).map((admin: any) => sendAutomationEmail({ to: admin.email, subject: adminTitle, message: `${adminMessage}\n\nTime: ${formatBookingTime(startAt)}` })),
     ]);
     await recordActivity({
       actor: (session.user as any).id,
@@ -111,10 +199,108 @@ export async function POST(req: Request) {
       label: "Booked a coaching session",
       entityType: "Booking",
       entityId: created._id.toString(),
-      metadata: { instructor: body.instructor, startAt: body.startAt, status: created.status, bookingType: created.bookingType, approvalStatus: created.approvalStatus },
+      metadata: { instructor: body.instructor, startAt: startAt.toISOString(), status: created.status, bookingType: created.bookingType, approvalStatus: created.approvalStatus },
     });
     return NextResponse.json(created);
   } catch (err: any) {
     return NextResponse.json({ error: err.message ?? "Bad request" }, { status: 400 });
   }
+}
+
+export async function PATCH(req: Request) {
+  const session = await auth();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  await dbConnect();
+  const actorId = (session.user as any).id;
+  const role = (session.user as any).role;
+  const body = await req.json();
+  const booking: any = await Booking.findById(body.bookingId).populate("student instructor", "name email studentLevel");
+  if (!booking) return NextResponse.json({ error: "Request not found" }, { status: 404 });
+  const isAssignedCoach = booking.instructor?._id?.toString() === actorId;
+  if (role !== "admin" && !isAssignedCoach) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (booking.status !== "pending") return NextResponse.json({ error: "This request has already been handled." }, { status: 409 });
+
+  const admins = await User.find({ role: "admin", isActive: true }).select("_id email name").lean();
+  const student = booking.student;
+  const coach = booking.instructor;
+  const action = String(body.action || "");
+
+  if (action === "approve") {
+    if (booking.bookingType === "credit_class") {
+      const assignment: any = await FeeAssignment.findOne({ student: student._id, type: "credits" }).lean();
+      if (!assignment || Number(assignment.creditBalance || 0) <= 0) {
+        return NextResponse.json({ error: "The student no longer has available class credits." }, { status: 400 });
+      }
+    }
+    const start = new Date(booking.proposedStartAt || booking.startAt);
+    const end = new Date(booking.proposedEndAt || booking.endAt);
+    const classroom = await Classroom.create({
+      title: `${booking.bookingType === "demo" ? "Demo" : "Credit Class"} - ${student.name}`,
+      description: booking.notes || "Approved from coach availability.",
+      classroomType: "single",
+      status: "scheduled",
+      level: "beginner",
+      levelName: booking.level || student.studentLevel || "Class request",
+      topicName: booking.bookingType === "demo" ? "Demo class" : "Booked practice class",
+      meetingProvider: "meet",
+      coach: coach._id,
+      instructor: coach._id,
+      students: [student._id],
+      classDate: start,
+      startTime: classroomStartTime(start),
+      durationMinutes: Math.max(15, Math.round((end.getTime() - start.getTime()) / 60000)),
+      isActive: true,
+    });
+    booking.status = "confirmed";
+    booking.approvalStatus = "coach_approved";
+    booking.classroom = classroom._id;
+    booking.startAt = start;
+    booking.endAt = end;
+    booking.coachNote = String(body.note || "");
+    await booking.save();
+    await notifyBookingUsers({
+      booking,
+      student,
+      coach,
+      admins,
+      title: "Class request approved",
+      message: `${coach.name} approved ${student.name}'s class for ${formatBookingTime(booking.startAt)}. The classroom is now scheduled.`,
+    });
+  } else if (action === "cancel") {
+    booking.status = "cancelled";
+    booking.approvalStatus = "coach_cancelled";
+    booking.coachNote = String(body.note || "");
+    await booking.save();
+    await notifyBookingUsers({
+      booking,
+      student,
+      coach,
+      admins,
+      title: "Class request cancelled",
+      message: `${coach.name} could not accept the class requested for ${formatBookingTime(booking.startAt)}.`,
+    });
+  } else if (action === "suggest_time") {
+    const proposedStart = new Date(body.proposedStartAt);
+    const proposedEnd = new Date(body.proposedEndAt);
+    if (Number.isNaN(proposedStart.getTime()) || Number.isNaN(proposedEnd.getTime()) || proposedEnd <= proposedStart) {
+      return NextResponse.json({ error: "Please provide a valid suggested start and end time." }, { status: 400 });
+    }
+    booking.approvalStatus = "reschedule_proposed";
+    booking.proposedStartAt = proposedStart;
+    booking.proposedEndAt = proposedEnd;
+    booking.coachNote = String(body.note || "");
+    await booking.save();
+    await notifyBookingUsers({
+      booking,
+      student,
+      coach,
+      admins,
+      title: "Coach suggested a new class time",
+      message: `${coach.name} suggested ${formatBookingTime(proposedStart)} for ${student.name}'s class request.`,
+    });
+  } else {
+    return NextResponse.json({ error: "Unknown request action." }, { status: 400 });
+  }
+
+  return NextResponse.json(booking);
 }

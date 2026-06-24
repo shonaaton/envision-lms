@@ -14,9 +14,12 @@ function normalizeBaseUrl(value?: string | null) {
 }
 
 export function resolvePublicAppUrl(req?: Request) {
-  const forwardedHost = req?.headers.get("x-forwarded-host");
-  const host = req?.headers.get("host");
-  const forwardedProto = req?.headers.get("x-forwarded-proto");
+  const origin = normalizeBaseUrl(req?.headers.get("origin"));
+  if (origin) return origin;
+
+  const forwardedHost = req?.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const host = req?.headers.get("host")?.split(",")[0]?.trim();
+  const forwardedProto = req?.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
 
   const fromForwardedHeaders =
     forwardedHost && normalizeBaseUrl(`${forwardedProto || "https"}://${forwardedHost}`);
@@ -36,5 +39,5 @@ export function resolvePublicAppUrl(req?: Request) {
     if (normalized) return normalized;
   }
 
-  return "http://localhost:3000";
+  return process.env.NODE_ENV === "production" ? "" : "http://localhost:3000";
 }

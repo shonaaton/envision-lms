@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -12,7 +12,37 @@ export default function ResetPasswordPage() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [tokenState, setTokenState] = useState<"checking" | "valid" | "invalid">("checking");
+  const [tokenError, setTokenError] = useState("");
   const token = searchParams.get("token") || "";
+
+  useEffect(() => {
+    if (!token) {
+      setTokenState("invalid");
+      setTokenError("This reset link is incomplete.");
+      return;
+    }
+    let active = true;
+    fetch(`/api/password/reset?token=${encodeURIComponent(token)}`, { cache: "no-store" })
+      .then(async (response) => {
+        const data = await response.json().catch(() => ({}));
+        if (!active) return;
+        if (!response.ok) {
+          setTokenState("invalid");
+          setTokenError(data.error || "This reset link is invalid or expired.");
+          return;
+        }
+        setTokenState("valid");
+      })
+      .catch(() => {
+        if (!active) return;
+        setTokenState("invalid");
+        setTokenError("Could not verify this reset link. Please request a new one.");
+      });
+    return () => {
+      active = false;
+    };
+  }, [token]);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -48,6 +78,16 @@ export default function ResetPasswordPage() {
             <p className="mt-4 text-lg text-slate-500">Set a fresh password for your academy account.</p>
           </div>
 
+          {tokenState === "checking" ? (
+            <div className="rounded-2xl bg-purple-50 p-5 text-center font-semibold text-purple-800">Checking your secure reset link...</div>
+          ) : tokenState === "invalid" ? (
+            <div className="rounded-2xl border border-rose-200 bg-rose-50 p-5 text-center">
+              <p className="font-semibold text-rose-800">{tokenError}</p>
+              <Link href="/forgot-password" className="mt-4 inline-flex rounded-xl bg-purple-700 px-5 py-3 font-semibold text-white">
+                Request a New Link
+              </Link>
+            </div>
+          ) : (
           <form onSubmit={onSubmit} className="space-y-6">
             <PasswordField
               name="password"
@@ -71,6 +111,7 @@ export default function ResetPasswordPage() {
               {loading ? "Updating..." : "Reset Password"}
             </button>
           </form>
+          )}
 
           <div className="mt-7 border-t border-slate-200 pt-6">
             <Link href="/login" className="inline-flex items-center gap-2 text-sm font-semibold text-purple-700 hover:text-purple-900">

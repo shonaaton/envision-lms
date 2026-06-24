@@ -6,33 +6,54 @@ import { hashPasswordResetToken } from "@/lib/passwordReset";
 
 export const dynamic = "force-dynamic";
 
-export async function POST(req: Request) {
+export async function GET(req: Request) {
   await dbConnect();
+  const token = new URL(req.url).searchParams.get("token")?.trim() || "";
+  if (!token) return NextResponse.json({ valid: false, error: "Reset token is missing." }, { status: 400 });
 
-  const body = await req.json().catch(() => ({}));
-  const token = String(body.token || "").trim();
-  const password = String(body.password || "");
-  const confirmPassword = String(body.confirmPassword || "");
-
-  if (!token) return NextResponse.json({ error: "Reset token is missing." }, { status: 400 });
-  if (password.length < 8) return NextResponse.json({ error: "Password must be at least 8 characters long." }, { status: 400 });
-  if (password !== confirmPassword) return NextResponse.json({ error: "Passwords do not match." }, { status: 400 });
-
-  const tokenHash = hashPasswordResetToken(token);
-  const user: any = await User.findOne({
-    passwordResetTokenHash: tokenHash,
+  const user = await User.exists({
+    passwordResetTokenHash: hashPasswordResetToken(token),
     passwordResetExpiresAt: { $gt: new Date() },
+    isActive: { $ne: false },
   });
+  if (!user) return NextResponse.json({ valid: false, error: "This reset link is invalid, expired, or already used." }, { status: 400 });
+  return NextResponse.json({ valid: true });
+}
 
-  if (!user) {
-    return NextResponse.json({ error: "This reset link is invalid or has expired." }, { status: 400 });
+export async function POST(req: Request) {
+  try {
+    await dbConnect();
+
+    const body = await req.json().catch(() => ({}));
+    const token = String(body.token || "").trim();
+    const password = String(body.password || "");
+    const confirmPassword = String(body.confirmPassword || "");
+
+    if (!token) return NextResponse.json({ error: "Reset token is missing." }, { status: 400 });
+    if (password.length < 8) return NextResponse.json({ error: "Password must be at least 8 characters long." }, { status: 400 });
+    if (password !== confirmPassword) return NextResponse.json({ error: "Passwords do not match." }, { status: 400 });
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    const user = await User.findOneAndUpdate(
+      {
+        passwordResetTokenHash: hashPasswordResetToken(token),
+        passwordResetExpiresAt: { $gt: new Date() },
+        isActive: { $ne: false },
+      },
+      {
+        $set: { passwordHash, tempPassword: "" },
+        $unset: { passwordResetTokenHash: 1, passwordResetExpiresAt: 1 },
+      },
+      { new: true }
+    ).select("_id");
+
+    if (!user) {
+      return NextResponse.json({ error: "This reset link is invalid, expired, or already used." }, { status: 400 });
+    }
+
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    console.error("Password reset failed", error);
+    return NextResponse.json({ error: "Could not reset the password. Please try again." }, { status: 500 });
   }
-
-  user.passwordHash = await bcrypt.hash(password, 10);
-  user.tempPassword = "";
-  user.passwordResetTokenHash = undefined;
-  user.passwordResetExpiresAt = undefined;
-  await user.save();
-
-  return NextResponse.json({ ok: true });
 }

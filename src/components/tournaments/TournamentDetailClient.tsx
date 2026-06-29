@@ -123,14 +123,14 @@ export function TournamentDetailClient({
   const registrationLocked = tournament.status === "live" || tournament.status === "completed";
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3 sm:space-y-4">
       {error ? <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
 
-      <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="grid gap-3 xl:grid-cols-[1.2fr_0.8fr] xl:gap-4">
+        <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-5">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <div className="mb-2 flex flex-wrap items-center gap-2">
+              <div className="mb-2 flex flex-wrap items-center gap-1.5 sm:gap-2">
                 <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusChip(tournament.status)}`}>{tournament.status}</span>
                 <span className="rounded-full bg-purple-50 px-3 py-1 text-xs font-semibold text-purple-700">{tournament.type === "arena" ? "Arena" : "Swiss"}</span>
                 {tournament.currentRound ? (
@@ -139,10 +139,10 @@ export function TournamentDetailClient({
                   </span>
                 ) : null}
               </div>
-              <h2 className="text-xl font-semibold text-slate-950">Tournament control room</h2>
-              <p className="mt-1 text-sm text-slate-500">Start the event, create rounds, and send players into live games.</p>
+              <h2 className="text-lg font-semibold text-slate-950 sm:text-xl">Tournament control room</h2>
+              <p className="mt-1 text-xs text-slate-500 sm:text-sm">Start the event, create rounds, and send players into live games.</p>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-1.5 sm:gap-2">
               {state.canManage && standings.length ? (
                 <button
                   type="button"
@@ -151,7 +151,7 @@ export function TournamentDetailClient({
                     ["Rank", "Player", "Points", "Wins", "Draws", "Losses", "Buchholz", "Games Played"],
                     standingsRows
                   )}
-                  className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700"
+                  className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 sm:h-10 sm:px-4 sm:text-sm"
                 >
                   <Download size={15} /> Export Standings
                 </button>
@@ -164,7 +164,7 @@ export function TournamentDetailClient({
                     ["Round", "Board", "White", "Black", "Result", "Termination", "Moves"],
                     gamesRows
                   )}
-                  className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700"
+                  className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 sm:h-10 sm:px-4 sm:text-sm"
                 >
                   <Download size={15} /> Export Games
                 </button>
@@ -173,7 +173,7 @@ export function TournamentDetailClient({
                 <button
                   disabled={pending}
                   onClick={() => runAction(`/api/tournaments/${tournamentId}/start`)}
-                  className="inline-flex h-10 items-center gap-2 rounded-xl bg-purple-700 px-4 text-sm font-semibold text-white shadow-sm"
+                  className="inline-flex h-9 items-center gap-2 rounded-xl bg-purple-700 px-3 text-xs font-semibold text-white shadow-sm sm:h-10 sm:px-4 sm:text-sm"
                 >
                   <Play size={15} /> Start Tournament
                 </button>
@@ -182,7 +182,7 @@ export function TournamentDetailClient({
                 <button
                   disabled={pending}
                   onClick={() => runAction(`/api/tournaments/${tournamentId}/next-round`)}
-                  className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700"
+                  className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 sm:h-10 sm:px-4 sm:text-sm"
                 >
                   <RefreshCcw size={15} /> Next Round
                 </button>
@@ -191,7 +191,7 @@ export function TournamentDetailClient({
                 <button
                   disabled={pending}
                   onClick={() => runAction(`/api/tournaments/${tournamentId}/end`)}
-                  className="inline-flex h-10 items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 text-sm font-semibold text-red-700"
+                  className="inline-flex h-9 items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 text-xs font-semibold text-red-700 sm:h-10 sm:px-4 sm:text-sm"
                 >
                   <Shield size={15} /> End Tournament
                 </button>
@@ -199,7 +199,7 @@ export function TournamentDetailClient({
               {(role === "student" || role === "admin") && (state.activeGame || tournament.status === "live") ? (
                 <Link
                   href={`/tournaments/${tournamentId}/play`}
-                  className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-slate-950 px-4 text-sm font-semibold text-white"
+                  className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-slate-950 px-3 text-xs font-semibold text-white sm:h-10 sm:px-4 sm:text-sm"
                 >
                   <Swords size={15} /> {state.activeGame ? "Resume Game" : "Enter Play Room"}
                 </Link>
@@ -207,7 +207,7 @@ export function TournamentDetailClient({
             </div>
           </div>
 
-              <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="mt-4 grid grid-cols-2 gap-2 sm:mt-5 sm:gap-3 xl:grid-cols-4">
             <StatCard icon={<Trophy size={16} />} label="Participants" value={String((tournament.participants?.length || 0) + (tournament.externalParticipants?.length || 0))} />
             <StatCard icon={<Clock3 size={16} />} label="Time Control" value={`${tournament.timeControlMinutes}+${tournament.incrementSeconds}`} />
             <StatCard icon={<Crown size={16} />} label="Live Games" value={String((state.games || []).filter((game: any) => game.status === "active").length)} />
@@ -219,7 +219,7 @@ export function TournamentDetailClient({
           </div>
         </section>
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-5">
           <h3 className="text-base font-semibold text-slate-950">My tournament seat</h3>
             <div className="mt-3 space-y-3">
             {!state.joined && role === "student" ? (
@@ -245,7 +245,7 @@ export function TournamentDetailClient({
                     {seatStatusLabel(currentSeat, tournament.status)}
                   </span>
                 </div>
-                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                <div className="mt-3 grid grid-cols-2 gap-2">
                   <SeatTile label="Round" value={currentSeat.roundNumber || "-"} />
                   <SeatTile label="Board" value={currentSeat.boardNumber || "-"} />
                   <SeatTile label="Color" value={currentSeat.color ? `${String(currentSeat.color).charAt(0).toUpperCase()}${String(currentSeat.color).slice(1)}` : "-"} />
@@ -294,8 +294,8 @@ export function TournamentDetailClient({
         </section>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="grid gap-3 xl:grid-cols-[1.1fr_0.9fr] xl:gap-4">
+        <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-5">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-base font-semibold text-slate-950">Standings</h3>
             <span className="text-xs text-slate-500">Updates automatically as games finish</span>
@@ -337,7 +337,7 @@ export function TournamentDetailClient({
           </div>
         </section>
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-5">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-base font-semibold text-slate-950">{tournament.type === "swiss" ? "Round overview" : "Active pairings"}</h3>
             {activeRound ? <span className="text-xs text-slate-500">Round {activeRound.roundNumber}</span> : null}
@@ -380,18 +380,18 @@ export function TournamentDetailClient({
 
 function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-      <div className="flex items-center gap-2 text-slate-500">{icon}<span className="text-xs font-semibold uppercase tracking-wide">{label}</span></div>
-      <div className="mt-2 text-xl font-semibold text-slate-950">{value}</div>
+    <div className="rounded-xl border border-slate-200 bg-slate-50 p-2.5 sm:p-4">
+      <div className="flex items-center gap-1.5 text-slate-500 sm:gap-2">{icon}<span className="text-[10px] font-semibold uppercase tracking-wide sm:text-xs">{label}</span></div>
+      <div className="mt-1 truncate text-base font-semibold text-slate-950 sm:mt-2 sm:text-xl">{value}</div>
     </div>
   );
 }
 
 function SeatTile({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
-      <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">{label}</div>
-      <div className="mt-1 text-sm font-semibold text-slate-950">{value}</div>
+    <div className="rounded-xl border border-slate-200 bg-white px-2.5 py-2 sm:px-3">
+      <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500 sm:text-[11px] sm:tracking-[0.14em]">{label}</div>
+      <div className="mt-0.5 truncate text-sm font-semibold text-slate-950 sm:mt-1">{value}</div>
     </div>
   );
 }

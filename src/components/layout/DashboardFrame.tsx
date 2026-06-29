@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
+import LiveDataRefresher from "@/components/layout/LiveDataRefresher";
 import Sidebar from "@/components/layout/Sidebar";
 import Topbar from "@/components/layout/Topbar";
 
@@ -37,6 +38,7 @@ export default function DashboardFrame({
           <div className="mx-auto w-full max-w-[1800px]">{children}</div>
         </main>
       </div>
+      <LiveDataRefresher />
     </div>
   );
 }

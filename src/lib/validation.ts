@@ -1,26 +1,28 @@
 import { z } from "zod";
 
+const optionalText = (max: number) => z.preprocess((value) => (value == null || value === "" ? undefined : value), z.string().max(max).optional());
+
 export const registerSchema = z.object({
   name: z.string().min(2).max(80),
-  parentName: z.string().max(80).optional(),
+  parentName: optionalText(80),
   email: z.string().email(),
   password: z.string().min(8).max(72),
   role: z.enum(["student", "instructor"]).default("student"),
-  countryCode: z.string().max(8).optional(),
-  phone: z.string().optional(),
-  city: z.string().max(80).optional(),
-  country: z.string().max(80).optional(),
-  level: z.enum(["absolute_beginner", "beginner", "intermediate", "advanced", "federated"]).optional(),
+  countryCode: optionalText(8),
+  phone: optionalText(40),
+  city: optionalText(80),
+  country: optionalText(80),
+  level: z.preprocess((value) => (value == null || value === "" ? undefined : value), z.enum(["absolute_beginner", "beginner", "intermediate", "advanced", "federated"]).optional()),
   acceptedPrivacy: z.boolean().default(false),
   acceptedTerms: z.boolean().default(false),
   acceptedRefund: z.boolean().default(false),
-  coachExperience: z.string().max(3000).optional(),
-  playingLevel: z.string().max(120).optional(),
-  fideId: z.string().max(80).optional(),
+  coachExperience: optionalText(3000),
+  playingLevel: optionalText(120),
+  fideId: optionalText(80),
   rating: z.number().int().min(0).max(3500).default(0),
-  preferredStudents: z.string().max(1000).optional(),
-  availabilityNote: z.string().max(1000).optional(),
-  message: z.string().max(3000).optional(),
+  preferredStudents: optionalText(1000),
+  availabilityNote: optionalText(1000),
+  message: optionalText(3000),
 });
 
 export const loginSchema = z.object({

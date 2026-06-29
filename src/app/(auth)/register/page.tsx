@@ -30,28 +30,29 @@ export default function RegisterPage() {
     e.preventDefault();
     setLoading(true);
     const fd = new FormData(e.currentTarget);
+    const text = (name: string) => String(fd.get(name) || "").trim();
     const countryCode = String(fd.get("countryCode") || "+91");
     const payload = {
-      name: fd.get("name"),
-      parentName: fd.get("parentName"),
-      email: fd.get("email"),
-      password: fd.get("password"),
+      name: text("name"),
+      parentName: text("parentName"),
+      email: text("email"),
+      password: text("password"),
       role,
       countryCode,
-      phone: fd.get("phone"),
-      city: fd.get("city"),
-      country: fd.get("country"),
-      level: fd.get("level"),
+      phone: text("phone"),
+      city: text("city"),
+      country: text("country"),
+      level: text("level"),
       acceptedPrivacy: fd.get("acceptedPrivacy") === "on",
       acceptedTerms: fd.get("acceptedTerms") === "on",
       acceptedRefund: fd.get("acceptedRefund") === "on",
-      coachExperience: fd.get("coachExperience"),
-      playingLevel: fd.get("playingLevel"),
-      fideId: fd.get("fideId"),
+      coachExperience: text("coachExperience"),
+      playingLevel: text("playingLevel"),
+      fideId: text("fideId"),
       rating: Number(fd.get("rating") || 0),
-      preferredStudents: fd.get("preferredStudents"),
-      availabilityNote: fd.get("availabilityNote"),
-      message: fd.get("message"),
+      preferredStudents: text("preferredStudents"),
+      availabilityNote: text("availabilityNote"),
+      message: text("message"),
     };
     const res = await fetch("/api/register", {
       method: "POST",

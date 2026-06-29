@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
+import { ZodError } from "zod";
 import { dbConnect } from "@/lib/db";
 import { User, generateUsername } from "@/models/User";
 import { CoachApplication } from "@/models/Onboarding";
@@ -64,6 +65,10 @@ export async function POST(req: Request) {
     });
     return NextResponse.json({ id: user._id.toString(), type: "demo_student" });
   } catch (err: any) {
+    if (err instanceof ZodError) {
+      const firstIssue = err.issues[0];
+      return NextResponse.json({ error: firstIssue?.message || "Please check the registration form and try again." }, { status: 400 });
+    }
     return NextResponse.json({ error: err.message ?? "Bad request" }, { status: 400 });
   }
 }

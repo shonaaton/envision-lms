@@ -291,10 +291,11 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
     if (!element) return;
 
     const resize = () => {
+      const isMobile = window.innerWidth < 768;
       const width = element.clientWidth;
-      const heightLimit = window.innerHeight - 245;
-      const clockRail = width >= 520 ? 150 : 0;
-      setBoardWidth(Math.max(240, Math.min(560, width - clockRail, heightLimit)));
+      const heightLimit = isMobile ? window.innerHeight - 310 : window.innerHeight - 245;
+      const clockRail = !isMobile && width >= 520 ? 150 : 0;
+      setBoardWidth(Math.max(isMobile ? 245 : 240, Math.min(isMobile ? window.innerWidth - 50 : 560, width - clockRail, heightLimit)));
     };
     resize();
     const observer = new ResizeObserver(resize);
@@ -482,17 +483,17 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
   }
 
   return (
-    <div className="flex h-[calc(100vh-92px)] min-h-[620px] flex-col overflow-hidden bg-[linear-gradient(180deg,#fffdf8_0%,#fff 48%,#f7f7fb_100%)] p-3 text-slate-950 sm:p-4">
-      <div className="mb-3 flex flex-none flex-wrap items-end justify-between gap-3">
+    <div className="flex min-h-[calc(100dvh-76px)] flex-col overflow-y-auto bg-[linear-gradient(180deg,#fffdf8_0%,#fff 48%,#f7f7fb_100%)] p-2 text-slate-950 sm:p-4 md:h-[calc(100vh-92px)] md:min-h-[620px] md:overflow-hidden">
+      <div className="mb-2 flex flex-none flex-wrap items-end justify-between gap-2 md:mb-3 md:gap-3">
         <div>
           <div className="inline-flex items-center gap-2 rounded-full bg-amber-100 px-3 py-1 text-xs font-black uppercase tracking-[0.18em] text-amber-700">
             <Bot size={14} />
             Play vs Computer
           </div>
-          <h1 className="mt-2 text-2xl font-black text-slate-950">Play with Computer</h1>
+          <h1 className="mt-1.5 text-xl font-black text-slate-950 sm:text-2xl">Play with Computer</h1>
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-1.5 sm:gap-2">
           {status === "playing" ? (
             <>
               <button className="btn-outline gap-2 border-red-200 bg-white text-red-700 hover:bg-red-50" onClick={resignGame}>
@@ -513,19 +514,19 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
         </div>
       </div>
 
-      <div className="grid min-h-0 flex-1 gap-3 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <section className="flex min-h-0 flex-col rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-lg shadow-brand/5">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700">
+      <div className="grid flex-1 gap-2 md:min-h-0 md:gap-3 xl:grid-cols-[minmax(0,1fr)_300px]">
+        <section className="order-1 flex min-h-[430px] flex-col rounded-2xl border border-slate-200 bg-white/95 p-2 shadow-lg shadow-brand/5 sm:p-4 md:min-h-0 xl:order-1">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2 md:mb-3">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 sm:px-4 sm:py-2 sm:text-sm">
               Status: <span className="font-black text-slate-950">{status === "playing" ? "In Progress" : status === "ended" ? result : "Not Started"}</span>
             </div>
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 sm:px-4 sm:py-2 sm:text-sm">
               {selectedBot.name} / {timeControl}
             </div>
           </div>
 
           <div ref={boardWrapRef} className="flex min-h-0 flex-1 items-center justify-center">
-            <div className="grid w-full max-w-[720px] grid-cols-1 items-center gap-3 sm:grid-cols-[minmax(0,1fr)_132px]">
+            <div className="grid w-full max-w-[720px] grid-cols-1 items-center gap-2 sm:grid-cols-[minmax(0,1fr)_118px] sm:gap-3">
               <div className="relative">
                 <Chessboard
                   position={displayedPosition}
@@ -553,7 +554,7 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
                 </div>
               )}
               </div>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-1 sm:gap-3">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-1 sm:gap-2">
                 <PlayerClockCard
                   name={playerColor === "black" ? "You" : selectedBot.name}
                   side="Black"
@@ -578,9 +579,9 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
           </div>
         </section>
 
-        <aside className="flex min-h-0 flex-col rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-lg shadow-brand/5">
+        <aside className="order-2 flex min-h-[300px] flex-col rounded-2xl border border-slate-200 bg-white/95 p-2 shadow-lg shadow-brand/5 sm:p-4 md:min-h-0 xl:order-2">
           {status === "playing" && (
-            <div className="mb-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-center">
+            <div className="mb-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-center sm:mb-3 sm:p-4">
               <div className="flex items-center justify-center gap-4 text-sm font-semibold text-slate-950">
                 <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2">
                   <User size={15} className="text-brand" /> You
@@ -653,11 +654,11 @@ function MoveHistory({
   const go = (ply: number) => onNavigate(ply >= totalPly ? null : Math.max(0, ply));
   return (
     <div className="flex min-h-0 flex-1 flex-col rounded-2xl border border-slate-200 bg-white">
-      <div className="flex items-center gap-3 border-b border-slate-100 px-4 py-4">
+      <div className="flex items-center gap-2 border-b border-slate-100 px-3 py-3 sm:gap-3 sm:px-4 sm:py-4">
         <History size={18} className="text-brand" />
-        <h2 className="text-xl font-semibold text-slate-950">Move History</h2>
+        <h2 className="text-lg font-semibold text-slate-950 sm:text-xl">Move History</h2>
       </div>
-      <div className="flex items-center justify-between px-4 py-3 text-slate-500">
+      <div className="flex items-center justify-between px-3 py-2 text-slate-500 sm:px-4 sm:py-3">
         <div className="flex gap-4">
           <button type="button" onClick={() => go(0)} disabled={currentPly === 0} aria-label="First position"><ChevronsLeft size={16} /></button>
           <button type="button" onClick={() => go(currentPly - 1)} disabled={currentPly === 0} aria-label="Previous move"><ChevronLeft size={16} /></button>
@@ -668,15 +669,15 @@ function MoveHistory({
           <button type="button" onClick={() => go(totalPly)} disabled={currentPly >= totalPly} aria-label="Latest position"><ChevronsRight size={16} /></button>
         </div>
       </div>
-      <div className="grid grid-cols-[44px_1fr_1fr] px-4 pb-3 text-sm font-semibold text-slate-950">
+      <div className="grid grid-cols-[34px_1fr_1fr] px-3 pb-2 text-xs font-semibold text-slate-950 sm:grid-cols-[44px_1fr_1fr] sm:px-4 sm:pb-3 sm:text-sm">
         <span>#</span>
         <span>White</span>
         <span>Black</span>
       </div>
       {rows.length > 0 ? (
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-3 text-sm text-slate-700">
+        <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3 text-xs text-slate-700 sm:px-4 sm:text-sm">
           {rows.map((row) => (
-            <div key={row.number} className="grid grid-cols-[44px_1fr_1fr] border-t border-slate-100 py-3">
+            <div key={row.number} className="grid grid-cols-[34px_1fr_1fr] border-t border-slate-100 py-2 sm:grid-cols-[44px_1fr_1fr] sm:py-3">
               <span className="text-slate-400">{row.number}</span>
               <button type="button" className="text-left hover:font-bold hover:text-brand" onClick={() => go((row.number - 1) * 2 + 1)}>{row.white}</button>
               <button type="button" className="text-left hover:font-bold hover:text-brand" onClick={() => row.black && go(row.number * 2)}>{row.black}</button>
@@ -934,18 +935,18 @@ function PlayerClockCard({
 }) {
   return (
     <div className={[
-      "rounded-xl border px-3 py-2 shadow-sm transition",
+      "rounded-xl border px-2.5 py-1.5 shadow-sm transition sm:px-3 sm:py-2",
       active ? "border-brand bg-brand/5 shadow-brand/10" : "border-slate-200 bg-slate-50",
     ].join(" ")}>
       <div className="grid gap-1">
         <div>
-          <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">{side}</div>
+          <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500 sm:text-[11px] sm:tracking-[0.16em]">{side}</div>
           <div className="mt-1 flex items-center gap-1.5 truncate text-xs font-semibold text-slate-900">
             {tone === "player" ? <User size={14} className="text-brand" /> : <Bot size={14} className="text-slate-700" />}
             {name}
           </div>
         </div>
-        <div className="text-xl font-black tabular-nums text-slate-950">{clock}</div>
+        <div className="text-lg font-black tabular-nums text-slate-950 sm:text-xl">{clock}</div>
       </div>
     </div>
   );

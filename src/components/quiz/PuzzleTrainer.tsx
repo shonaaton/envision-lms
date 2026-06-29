@@ -198,9 +198,10 @@ export default function PuzzleTrainer({ mode = "tactics" }: PuzzleTrainerProps) 
     const element = boardWrapRef.current;
     if (!element) return;
     const resize = () => {
-      const availableWidth = element.clientWidth - 96;
-      const availableHeight = element.clientHeight - 70;
-      setBoardSize(Math.max(280, Math.min(560, availableWidth, availableHeight)));
+      const isMobile = window.innerWidth < 768;
+      const availableWidth = element.clientWidth - (isMobile ? 42 : 96);
+      const availableHeight = isMobile ? window.innerHeight - 260 : element.clientHeight - 70;
+      setBoardSize(Math.max(isMobile ? 245 : 280, Math.min(isMobile ? window.innerWidth - 54 : 560, availableWidth, availableHeight)));
     };
     resize();
     const observer = new ResizeObserver(resize);
@@ -408,14 +409,14 @@ export default function PuzzleTrainer({ mode = "tactics" }: PuzzleTrainerProps) 
   }
 
   return (
-    <div className="flex h-[calc(100vh-92px)] min-h-[640px] flex-col overflow-hidden bg-[linear-gradient(180deg,#fffdf6_0%,#fff_45%,#faf8fc_100%)] p-4 text-slate-950">
-      <header className="mb-3 flex flex-none flex-wrap items-end justify-between gap-3">
+    <div className="flex min-h-[calc(100dvh-76px)] flex-col overflow-y-auto bg-[linear-gradient(180deg,#fffdf6_0%,#fff_45%,#faf8fc_100%)] p-2 text-slate-950 sm:p-4 md:h-[calc(100vh-92px)] md:min-h-[640px] md:overflow-hidden">
+      <header className="mb-2 flex flex-none flex-wrap items-end justify-between gap-2 md:mb-3 md:gap-3">
         <div>
           <div className="inline-flex items-center gap-2 rounded-full bg-amber-100 px-3 py-1 text-[11px] font-black uppercase tracking-[0.18em] text-amber-700">
             {isKingHunt ? <Target size={14} /> : <Crosshair size={14} />} {isKingHunt ? "King Hunt" : "Tactics Trainer"}
           </div>
-          <h1 className="mt-2 text-2xl font-black text-brand">{isKingHunt ? `Checkmate in ${mateIn}` : "Solve Chess Tactics"}</h1>
-          <p className="mt-1 text-sm text-slate-600">
+          <h1 className="mt-1.5 text-xl font-black text-brand sm:text-2xl">{isKingHunt ? `Checkmate in ${mateIn}` : "Solve Chess Tactics"}</h1>
+          <p className="mt-0.5 text-xs text-slate-600 sm:text-sm">
             {isKingHunt
               ? "Practice checkmates in 1-5 moves, earn XP, collect coins, and climb the leaderboard."
               : "Solve sharp chess positions, earn XP, collect coins, and climb the leaderboard."}
@@ -428,12 +429,12 @@ export default function PuzzleTrainer({ mode = "tactics" }: PuzzleTrainerProps) 
         </div>
       </header>
 
-      <main className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[300px_minmax(0,1fr)_310px]">
-        <aside className="flex min-h-0 flex-col rounded-2xl border border-slate-200 bg-white p-4 shadow-lg shadow-brand/5">
-          <div className="rounded-2xl bg-brand p-4 text-white">
+      <main className="grid flex-1 gap-2 md:min-h-0 md:gap-4 xl:grid-cols-[280px_minmax(0,1fr)_290px]">
+        <aside className="order-2 flex min-h-0 flex-col rounded-2xl border border-slate-200 bg-white p-3 shadow-lg shadow-brand/5 sm:p-4 xl:order-1">
+          <div className="rounded-2xl bg-brand p-3 text-white sm:p-4">
             <div className="text-[11px] font-black uppercase tracking-[0.16em] text-accent">Current Task</div>
-            <div className="mt-2 text-2xl font-black">{sideToMove} to move</div>
-            <p className="mt-2 text-sm text-white/80">{message}</p>
+            <div className="mt-1.5 text-xl font-black sm:text-2xl">{sideToMove} to move</div>
+            <p className="mt-1.5 text-xs text-white/80 sm:text-sm">{message}</p>
           </div>
 
           <div className="mt-3 grid grid-cols-2 gap-2">
@@ -467,11 +468,11 @@ export default function PuzzleTrainer({ mode = "tactics" }: PuzzleTrainerProps) 
 
         </aside>
 
-        <section ref={boardWrapRef} className="flex min-h-0 min-w-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-lg shadow-brand/5">
+        <section ref={boardWrapRef} className="order-1 flex min-h-[330px] min-w-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 shadow-lg shadow-brand/5 sm:p-4 md:min-h-0 xl:order-2">
           {loading ? (
             <div className="flex items-center gap-2 text-sm font-bold text-slate-500"><Loader2 className="animate-spin" size={18} /> Loading puzzle...</div>
           ) : (
-            <div className="grid max-h-full max-w-full gap-1" style={{ gridTemplateColumns: "22px minmax(0,auto) 22px" }}>
+            <div className="grid max-h-full max-w-full gap-1" style={{ gridTemplateColumns: "18px minmax(0,auto) 18px" }}>
               <div className="grid py-[6px]" style={{ height: boardSize + 12, gridTemplateRows: "repeat(8, 1fr)" }}>
                 {ranks.map((rank) => (
                   <div key={`left-${rank}`} className="flex items-center justify-end pr-1 text-xs font-black text-slate-500">{rank}</div>
@@ -515,7 +516,7 @@ export default function PuzzleTrainer({ mode = "tactics" }: PuzzleTrainerProps) 
           )}
         </section>
 
-        <aside className="flex min-h-0 flex-col rounded-2xl border border-slate-200 bg-white p-4 shadow-lg shadow-brand/5">
+        <aside className="order-3 flex min-h-0 flex-col rounded-2xl border border-slate-200 bg-white p-3 shadow-lg shadow-brand/5 sm:p-4 xl:order-3">
           <button
             type="button"
             onClick={() => setShowTopics((value) => !value)}
@@ -599,18 +600,18 @@ function LeaderboardItem({ row, current }: { row: LeaderboardRow; current?: bool
 
 function MiniHeader({ label, value, icon }: { label: string; value: string | number; icon: React.ReactNode }) {
   return (
-    <div className="min-w-24 rounded-xl border border-slate-200 bg-white px-3 py-2 text-center shadow-lg shadow-brand/5">
-      <div className="flex items-center justify-center gap-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">{icon}{label}</div>
-      <div className="mt-1 text-lg font-black text-brand">{value}</div>
+    <div className="min-w-16 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-center shadow-lg shadow-brand/5 sm:min-w-24 sm:px-3 sm:py-2">
+      <div className="flex items-center justify-center gap-1 text-[10px] font-bold uppercase tracking-wide text-slate-500 sm:text-[11px]">{icon}{label}</div>
+      <div className="mt-0.5 text-base font-black text-brand sm:mt-1 sm:text-lg">{value}</div>
     </div>
   );
 }
 
 function InfoTile({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-      <div className="text-[11px] font-black uppercase tracking-wide text-slate-500">{label}</div>
-      <div className="mt-1 text-lg font-black text-slate-950">{value}</div>
+    <div className="rounded-xl border border-slate-200 bg-slate-50 p-2.5 sm:p-3">
+      <div className="text-[10px] font-black uppercase tracking-wide text-slate-500 sm:text-[11px]">{label}</div>
+      <div className="mt-0.5 text-base font-black text-slate-950 sm:mt-1 sm:text-lg">{value}</div>
     </div>
   );
 }

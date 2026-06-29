@@ -214,8 +214,9 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
     if (!element) return;
 
     const resize = () => {
-      const heightLimit = typeof window === "undefined" ? 560 : window.innerHeight - 330;
-      setBoardWidth(Math.max(280, Math.min(540, element.clientWidth, heightLimit)));
+      const isMobile = window.innerWidth < 768;
+      const heightLimit = typeof window === "undefined" ? 560 : window.innerHeight - (isMobile ? 270 : 330);
+      setBoardWidth(Math.max(isMobile ? 245 : 280, Math.min(isMobile ? window.innerWidth - 58 : 540, element.clientWidth, heightLimit)));
     };
     resize();
     const observer = new ResizeObserver(resize);
@@ -464,11 +465,11 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
   }
 
   return (
-    <div className={["flex h-[calc(100vh-92px)] min-h-[640px] flex-col overflow-hidden rounded-xl p-3 transition-colors", isDark ? "bg-black text-white" : "bg-white text-slate-950"].join(" ")}>
-      <div className="mb-3 flex flex-none flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+    <div className={["flex min-h-[calc(100dvh-76px)] flex-col overflow-y-auto rounded-xl p-2 transition-colors sm:p-3 md:h-[calc(100vh-92px)] md:min-h-[640px] md:overflow-hidden", isDark ? "bg-black text-white" : "bg-white text-slate-950"].join(" ")}>
+      <div className="mb-2 flex flex-none flex-col gap-2 sm:flex-row sm:items-start sm:justify-between md:mb-3 md:gap-3">
         <div>
-          <h1 className="font-display text-2xl">Analysis Board</h1>
-          <p className={`mt-1 text-sm ${mutedText}`}>Analyze positions, create annotations, save and share your analyses</p>
+          <h1 className="font-display text-xl sm:text-2xl">Analysis Board</h1>
+          <p className={`mt-0.5 text-xs sm:mt-1 sm:text-sm ${mutedText}`}>Analyze positions, create annotations, save and share your analyses</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button className="btn-primary gap-2 px-5" onClick={() => setDialog("pgn")}>
@@ -477,11 +478,11 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
         </div>
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-2 xl:grid-cols-[minmax(0,1fr)_520px]">
-        <section className={`min-h-0 overflow-auto rounded-lg border p-4 ${panelClass}`}>
+      <div className="grid flex-1 grid-cols-1 gap-2 md:min-h-0 xl:grid-cols-[minmax(0,1fr)_460px]">
+        <section className={`order-1 min-h-[430px] overflow-auto rounded-lg border p-2 sm:p-4 md:min-h-0 xl:order-1 ${panelClass}`}>
           <div className="flex justify-center">
-            <div className="grid grid-cols-[24px_minmax(0,auto)] gap-2">
-              <div className={`grid grid-rows-8 pb-7 pt-1 text-right text-xs font-semibold ${mutedText}`}>
+            <div className="grid grid-cols-[18px_minmax(0,auto)] gap-1 sm:grid-cols-[24px_minmax(0,auto)] sm:gap-2">
+              <div className={`grid grid-rows-8 pb-7 pt-1 text-right text-[11px] font-semibold sm:text-xs ${mutedText}`}>
                 {ranks.map((rank) => <span key={rank}>{rank}</span>)}
               </div>
               <div>
@@ -505,25 +506,25 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
                     customPieces={customPieces}
                   />
                   <GamifiedBoardOverlay objects={gamifiedBoardObjects} boardWidth={boardSize} orientation={orientation} />
-                  <button className="absolute -right-10 top-2 rounded-full bg-brand p-2 text-white shadow-lg" aria-label="Board information">
+                  <button className="absolute right-2 top-2 rounded-full bg-brand p-2 text-white shadow-lg sm:-right-10" aria-label="Board information">
                     <Info size={16} />
                   </button>
                 </div>
-                <div className={`mt-2 grid grid-cols-8 text-center text-xs font-semibold ${mutedText}`} style={{ width: boardSize }}>
+                <div className={`mt-1.5 grid grid-cols-8 text-center text-[11px] font-semibold sm:mt-2 sm:text-xs ${mutedText}`} style={{ width: boardSize }}>
                   {files.map((file) => <span key={file}>{file.toUpperCase()}</span>)}
                 </div>
               </div>
             </div>
           </div>
 
-          <div className={`mx-auto mt-4 grid max-w-[560px] grid-cols-1 gap-3 text-sm sm:grid-cols-3 ${mutedText}`}>
+          <div className={`mx-auto mt-3 grid max-w-[560px] grid-cols-3 gap-2 text-xs sm:mt-4 sm:gap-3 sm:text-sm ${mutedText}`}>
             <div><span className={isDark ? "text-white" : "text-slate-950"}>Turn:</span> {gameRef.current.turn() === "w" ? "White" : "Black"}</div>
             <div><span className={isDark ? "text-white" : "text-slate-950"}>Status:</span> {gameRef.current.isGameOver() ? "Complete" : "In Progress"}</div>
             <div><span className={isDark ? "text-white" : "text-slate-950"}>Orientation:</span> {orientation}</div>
           </div>
 
           <div className={`mt-4 border-t ${isDark ? "border-slate-200/70" : "border-slate-200"}`} />
-          <div className="mt-3 flex flex-wrap justify-center gap-2">
+          <div className="mt-3 flex flex-wrap justify-center gap-1.5 sm:gap-2">
             <button className={controlButton(isDark)} onClick={() => setOrientation(orientation === "white" ? "black" : "white")}><Maximize2 size={15} /> Flip</button>
             <button className={controlButton(isDark)} onClick={reset}><RotateCcw size={15} /> Reset</button>
             <button className={controlButton(isDark)} onClick={() => setDialog("fen")}><Clipboard size={15} /> FEN</button>
@@ -546,7 +547,7 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
           </div>
         </section>
 
-        <aside className={`min-h-0 overflow-auto rounded-lg border p-4 ${panelClass}`}>
+        <aside className={`order-2 min-h-[320px] overflow-auto rounded-lg border p-3 sm:p-4 md:min-h-0 xl:order-2 ${panelClass}`}>
           <TabBar active={tab} isDark={isDark} onChange={setTab} />
           {tab === "moves" && <MovesPanel rows={moveRows} isDark={isDark} selectedPly={selectedPly} onSelect={goToPly} onPrevious={goPrevious} onNext={goNext} canPrevious={selectedPly > 0} canNext={selectedPly < gameRef.current.history().length} />}
           {tab === "engine" && (

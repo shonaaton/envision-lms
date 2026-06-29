@@ -65,9 +65,10 @@ export default function SquareTrainerPage() {
     const element = boardWrapRef.current;
     if (!element) return;
     const resize = () => {
+      const isMobile = window.innerWidth < 768;
       const width = element.clientWidth;
-      const heightLimit = window.innerHeight - 250;
-      setBoardSize(Math.max(280, Math.min(620, width, heightLimit)));
+      const heightLimit = isMobile ? window.innerHeight - 265 : window.innerHeight - 250;
+      setBoardSize(Math.max(isMobile ? 245 : 280, Math.min(isMobile ? window.innerWidth - 44 : 620, width, heightLimit)));
     };
     resize();
     const observer = new ResizeObserver(resize);
@@ -167,15 +168,15 @@ export default function SquareTrainerPage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-92px)] min-h-[620px] flex-col overflow-hidden bg-[linear-gradient(180deg,#fffdf6_0%,#fff 52%,#faf8fc_100%)] p-3 text-slate-950 sm:p-4">
-      <div className="mb-3 flex flex-none flex-wrap items-end justify-between gap-3">
+    <div className="flex min-h-[calc(100dvh-76px)] flex-col overflow-y-auto bg-[linear-gradient(180deg,#fffdf6_0%,#fff 52%,#faf8fc_100%)] p-2 text-slate-950 sm:p-4 md:h-[calc(100vh-92px)] md:min-h-[620px] md:overflow-hidden">
+      <div className="mb-2 flex flex-none flex-wrap items-end justify-between gap-2 md:mb-3 md:gap-3">
         <div>
           <div className="inline-flex items-center gap-2 rounded-full bg-amber-100 px-3 py-1 text-xs font-black uppercase tracking-[0.18em] text-amber-700">
             <Crosshair size={14} />
             Square Trainer
           </div>
-          <h1 className="mt-2 text-2xl font-black text-slate-950">Board Vision Practice</h1>
-          <p className="mt-1 text-sm text-slate-600">Click the named square quickly and keep the board fully in focus.</p>
+          <h1 className="mt-1.5 text-xl font-black text-slate-950 sm:text-2xl">Board Vision Practice</h1>
+          <p className="mt-0.5 text-xs text-slate-600 sm:text-sm">Click the named square quickly and keep the board fully in focus.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <CompactStat label="Score" value={correct} icon={<Trophy size={14} />} />
@@ -184,11 +185,11 @@ export default function SquareTrainerPage() {
         </div>
       </div>
 
-      <div className="grid min-h-0 flex-1 gap-3 xl:grid-cols-[320px_minmax(0,1fr)_280px]">
-        <aside className="flex min-h-0 flex-col rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-lg shadow-brand/5">
-          <div className="rounded-2xl bg-slate-950 px-4 py-4 text-white">
+      <div className="grid flex-1 gap-2 md:min-h-0 md:gap-3 xl:grid-cols-[280px_minmax(0,1fr)_260px]">
+        <aside className="order-2 flex min-h-0 flex-col rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-lg shadow-brand/5 sm:p-4 xl:order-1">
+          <div className="rounded-2xl bg-slate-950 px-3 py-3 text-white sm:px-4 sm:py-4">
             <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-amber-300">Target Square</div>
-            <div className="mt-2 text-5xl font-black tracking-wide">{target.toUpperCase()}</div>
+            <div className="mt-1.5 text-4xl font-black tracking-wide sm:text-5xl">{target.toUpperCase()}</div>
           </div>
 
           <div className="mt-3 flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
@@ -203,7 +204,7 @@ export default function SquareTrainerPage() {
             {feedback.text}
           </div>
 
-          <div className="mt-4 space-y-4 overflow-auto pr-1">
+          <div className="mt-3 space-y-3 overflow-auto pr-1 sm:mt-4 sm:space-y-4">
             <div>
               <label className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Round Length</label>
               <div className="mt-2 grid grid-cols-3 gap-2">
@@ -253,7 +254,7 @@ export default function SquareTrainerPage() {
           </div>
         </aside>
 
-        <section className="flex min-h-0 flex-col rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-lg shadow-brand/5">
+        <section className="order-1 flex min-h-[330px] flex-col rounded-2xl border border-slate-200 bg-white/95 p-2 shadow-lg shadow-brand/5 sm:p-4 md:min-h-0 xl:order-2">
           <div ref={boardWrapRef} className="flex min-h-0 flex-1 items-center justify-center">
             <div className="w-full max-w-[620px]">
               <div
@@ -282,12 +283,12 @@ export default function SquareTrainerPage() {
           </div>
         </section>
 
-        <aside className="flex min-h-0 flex-col rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-lg shadow-brand/5">
-          <div className="text-lg font-black text-slate-950">How it works</div>
-          <p className="mt-2 text-sm leading-6 text-slate-600">
+        <aside className="order-3 flex min-h-0 flex-col rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-lg shadow-brand/5 sm:p-4 xl:order-3">
+          <div className="text-base font-black text-slate-950 sm:text-lg">How it works</div>
+          <p className="mt-2 text-xs leading-5 text-slate-600 sm:text-sm sm:leading-6">
             A target square appears next to the board. Click that exact square as quickly as you can. Each correct click gives you the next target immediately.
           </p>
-          <div className="mt-4 space-y-3 text-sm text-slate-700">
+          <div className="mt-3 space-y-2 text-xs text-slate-700 sm:mt-4 sm:space-y-3 sm:text-sm">
             <Instruction title="Visible at all times" text="Target, timer, score, and controls stay close to the board." />
             <Instruction title="No hidden corners" text="The board resizes to the screen instead of spilling below the fold." />
             <Instruction title="Clean practice loop" text="Start, click, correct, repeat. Results save when the round ends." />
@@ -327,25 +328,25 @@ export default function SquareTrainerPage() {
 
 function CompactStat({ label, value, icon }: { label: string; value: string | number; icon: React.ReactNode }) {
   return (
-    <div className="min-w-20 rounded-xl border border-slate-200 bg-white px-3 py-2 text-center shadow-lg shadow-brand/5">
-      <div className="flex items-center justify-center gap-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">{icon}{label}</div>
-      <div className="mt-1 text-lg font-black text-brand">{value}</div>
+    <div className="min-w-16 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-center shadow-lg shadow-brand/5 sm:min-w-20 sm:px-3 sm:py-2">
+      <div className="flex items-center justify-center gap-1 text-[10px] font-bold uppercase tracking-wide text-slate-500 sm:text-[11px]">{icon}{label}</div>
+      <div className="mt-0.5 text-base font-black text-brand sm:mt-1 sm:text-lg">{value}</div>
     </div>
   );
 }
 
 function MiniStat({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-      <div className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}</div>
-      <div className="mt-1 text-xl font-black text-slate-950">{value}</div>
+    <div className="rounded-xl border border-slate-200 bg-slate-50 p-2.5 sm:p-3">
+      <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500 sm:text-[11px]">{label}</div>
+      <div className="mt-0.5 text-lg font-black text-slate-950 sm:mt-1 sm:text-xl">{value}</div>
     </div>
   );
 }
 
 function Instruction({ title, text }: { title: string; text: string }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+    <div className="rounded-xl border border-slate-200 bg-slate-50 p-2.5 sm:p-3">
       <div className="font-bold text-slate-950">{title}</div>
       <div className="mt-1 text-slate-600">{text}</div>
     </div>

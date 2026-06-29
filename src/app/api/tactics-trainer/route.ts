@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { recordActivity } from "@/lib/activity";
-import { consumeDemoUsage } from "@/lib/demoAccess";
+import { consumeDemoUsage, demoUsageState } from "@/lib/demoAccess";
 import { StudentReward } from "@/models/ClassroomLive";
 import { TacticAttempt, TacticPuzzle } from "@/models/TacticPuzzle";
 import { User } from "@/models/User";
@@ -118,12 +118,22 @@ export async function GET(req: Request) {
       current: ranked.find((row: any) => row.studentId === currentUserId) || null,
     });
   }
+  const trainer = String(url.searchParams.get("trainer") || "tactics");
+  const isKingHunt = trainer === "king_hunt";
+  const demoState = await demoUsageState((session.user as any).id, isKingHunt ? "kingHunt" : "tacticsTrainer");
+  if (!demoState.allowed) {
+    return NextResponse.json(
+      {
+        error: `Your demo ${isKingHunt ? "King Hunt" : "Tactics Trainer"} limit is finished. Please book a demo class or contact the academy.`,
+        demo: demoState,
+      },
+      { status: 403 }
+    );
+  }
   const ratingMin = Math.max(0, Number(url.searchParams.get("min") || 0));
   const ratingMax = Math.max(ratingMin, Number(url.searchParams.get("max") || 1200));
   const theme = String(url.searchParams.get("theme") || "").trim();
-  const trainer = String(url.searchParams.get("trainer") || "tactics");
   const mateIn = Math.max(0, Math.min(5, Number(url.searchParams.get("mate") || 0)));
-  const isKingHunt = trainer === "king_hunt";
   if (isKingHunt && !mateIn) return NextResponse.json({ error: "Choose Mate in 1, 2, 3, 4, or 5." }, { status: 400 });
   const requiredTheme = isKingHunt ? `mateIn${mateIn}` : theme;
   const filter: any = { isActive: { $ne: false }, rating: { $gte: ratingMin, $lte: ratingMax } };

@@ -37,6 +37,8 @@ export default function SquareTrainerPage() {
   const [reward, setReward] = useState<{ xp: number; coins: number } | null>(null);
   const [lastAttempt, setLastAttempt] = useState<{ square: string; type: "correct" | "wrong" } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [checkingLimit, setCheckingLimit] = useState(false);
+  const [limitBlocked, setLimitBlocked] = useState("");
   const [showResult, setShowResult] = useState(false);
   const [boardSize, setBoardSize] = useState(540);
   const boardWrapRef = useRef<HTMLDivElement | null>(null);
@@ -62,6 +64,20 @@ export default function SquareTrainerPage() {
   );
 
   useEffect(() => {
+    let active = true;
+    fetch("/api/square-trainer", { cache: "no-store" })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => ({}));
+        if (!active) return;
+        if (!response.ok) setLimitBlocked(payload?.error || "Your demo Square Trainer limit is finished.");
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
     const element = boardWrapRef.current;
     if (!element) return;
     const resize = () => {
@@ -80,7 +96,20 @@ export default function SquareTrainerPage() {
     };
   }, []);
 
-  function startSession() {
+  async function startSession() {
+    if (checkingLimit) return;
+    setCheckingLimit(true);
+    try {
+      const response = await fetch("/api/square-trainer", { cache: "no-store" });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload?.error || "Your demo Square Trainer limit is finished.");
+    } catch (error: any) {
+      setLimitBlocked(error?.message || "Your demo Square Trainer limit is finished.");
+      setFeedback({ type: "wrong", text: error?.message || "Could not start a new round." });
+      setCheckingLimit(false);
+      return;
+    }
+    setCheckingLimit(false);
     const nextTarget = randomSquare();
     savedRef.current = false;
     setStatus("running");
@@ -117,7 +146,13 @@ export default function SquareTrainerPage() {
       const result = await response.json();
       if (!response.ok) throw new Error(result?.error || "Unable to save result");
       setReward({ xp: result.xp || 0, coins: result.coins || 0 });
-      setFeedback({ type: "correct", text: "Round saved. XP has been added to the leaderboard." });
+      if (result.demo?.isDemo && result.demo.remaining <= 0) setLimitBlocked("Your demo Square Trainer attempts are now finished.");
+      setFeedback({
+        type: result.demo?.isDemo && result.demo.remaining <= 0 ? "info" : "correct",
+        text: result.demo?.isDemo && result.demo.remaining <= 0
+          ? "Round saved. Your demo Square Trainer attempts are now finished."
+          : "Round saved. XP has been added to the leaderboard.",
+      });
     } catch (error: any) {
       setFeedback({ type: "wrong", text: error?.message || "Round finished, but could not save XP." });
     } finally {
@@ -168,6 +203,13 @@ export default function SquareTrainerPage() {
   }
 
   return (
+    limitBlocked ? (
+      <div className="rounded-3xl border border-amber-200 bg-white p-8 text-center shadow-xl">
+        <h1 className="text-2xl font-black text-slate-950">Demo Square Trainer completed</h1>
+        <p className="mx-auto mt-2 max-w-xl text-slate-600">{limitBlocked}</p>
+        <a href="/booking" className="btn-primary mt-5 inline-flex">Book Demo Class</a>
+      </div>
+    ) : (
     <div className="flex min-h-[calc(100dvh-76px)] flex-col overflow-y-auto bg-[linear-gradient(180deg,#fffdf6_0%,#fff 52%,#faf8fc_100%)] p-2 text-slate-950 sm:p-4 md:h-[calc(100vh-92px)] md:min-h-[620px] md:overflow-hidden">
       <div className="mb-2 flex flex-none flex-wrap items-end justify-between gap-2 md:mb-3 md:gap-3">
         <div>
@@ -237,11 +279,11 @@ export default function SquareTrainerPage() {
           </div>
 
           <div className="mt-4 grid flex-none grid-cols-2 gap-2">
-            <button type="button" onClick={startSession} className="flex items-center justify-center gap-2 rounded-xl bg-brand px-4 py-3 text-sm font-bold text-white shadow-lg shadow-brand/20 transition hover:bg-brand/90">
+            <button type="button" onClick={startSession} disabled={checkingLimit} className="flex items-center justify-center gap-2 rounded-xl bg-brand px-4 py-3 text-sm font-bold text-white shadow-lg shadow-brand/20 transition hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-60">
               <Play size={16} />
-              {status === "running" ? "Restart" : "Start"}
+              {checkingLimit ? "Checking..." : status === "running" ? "Restart" : "Start"}
             </button>
-            <button type="button" onClick={startSession} className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 transition hover:border-brand/40 hover:text-brand">
+            <button type="button" onClick={startSession} disabled={checkingLimit} className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 transition hover:border-brand/40 hover:text-brand disabled:cursor-not-allowed disabled:opacity-60">
               <RotateCcw size={16} />
               Reset
             </button>
@@ -317,12 +359,13 @@ export default function SquareTrainerPage() {
             </div>
             <div className="mt-5 flex gap-2">
               <button type="button" className="btn-outline flex-1" onClick={() => setShowResult(false)}>Close</button>
-              <button type="button" className="btn-primary flex-1" onClick={startSession}><Play size={16} /> Play Again</button>
+              <button type="button" className="btn-primary flex-1" onClick={startSession} disabled={checkingLimit}><Play size={16} /> {checkingLimit ? "Checking..." : "Play Again"}</button>
             </div>
           </div>
         </div>
       ) : null}
     </div>
+    )
   );
 }
 

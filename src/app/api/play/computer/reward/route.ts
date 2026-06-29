@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { recordActivity } from "@/lib/activity";
-import { consumeDemoUsage } from "@/lib/demoAccess";
+import { consumeDemoUsage, demoUsageState } from "@/lib/demoAccess";
 import { StudentReward } from "@/models/ClassroomLive";
 
 export const dynamic = "force-dynamic";
@@ -10,6 +10,23 @@ export const dynamic = "force-dynamic";
 function clampNumber(value: unknown, fallback = 0) {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
+}
+
+export async function GET() {
+  const session = await auth();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const role = (session.user as any).role;
+  if (role !== "student" && role !== "admin") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  await dbConnect();
+  const demo = await demoUsageState((session.user as any).id, "playComputer");
+  if (!demo.allowed) {
+    return NextResponse.json({ error: "Your demo Play vs Computer limit is finished. Please book a demo class or contact the academy.", demo }, { status: 403 });
+  }
+  return NextResponse.json({ ok: true, demo });
 }
 
 export async function POST(req: Request) {

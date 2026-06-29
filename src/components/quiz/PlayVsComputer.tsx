@@ -23,6 +23,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Chess } from "chess.js";
+import { toast } from "sonner";
 import { buildMoveHintStyles, legalTargetsFromGame } from "@/lib/chessboardUi";
 import { isPromotionMove, promotionFromBoardPiece, type PendingPromotion, type PromotionPiece } from "@/lib/chessPromotion";
 
@@ -88,6 +89,7 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
   const [showSetup, setShowSetup] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [showResultModal, setShowResultModal] = useState(false);
+  const [checkingDemoLimit, setCheckingDemoLimit] = useState(false);
   const [selectedColor, setSelectedColor] = useState<PlayerColor>("white");
   const [playerColor, setPlayerColor] = useState<"white" | "black">("white");
   const [botId, setBotId] = useState<string>(customBots[0].id);
@@ -377,7 +379,19 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
     worker.postMessage(`go depth ${currentDepth}`);
   }
 
-  function startGame() {
+  async function startGame() {
+    if (checkingDemoLimit) return;
+    setCheckingDemoLimit(true);
+    try {
+      const response = await fetch("/api/play/computer/reward", { cache: "no-store" });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload?.error || "Your demo Play vs Computer limit is finished.");
+    } catch (error: any) {
+      toast.error(error?.message || "Could not start a new game.");
+      setCheckingDemoLimit(false);
+      return;
+    }
+    setCheckingDemoLimit(false);
     const color = selectedColor === "random" ? (Math.random() > 0.5 ? "white" : "black") : selectedColor;
     const clockMinutes = minutesFromTimeControl(timeControl);
     const openingClock = clockMinutes > 0 ? clockMinutes * 60 * 1000 : null;
@@ -616,6 +630,7 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
           onTimeControlChange={setTimeControl}
           onClose={() => setShowSetup(false)}
           onStart={startGame}
+          starting={checkingDemoLimit}
         />
       )}
 
@@ -706,6 +721,7 @@ function SetupModal({
   onTimeControlChange,
   onClose,
   onStart,
+  starting,
 }: {
   selectedColor: PlayerColor;
   botId: string;
@@ -717,6 +733,7 @@ function SetupModal({
   onTimeControlChange: (value: string) => void;
   onClose: () => void;
   onStart: () => void;
+  starting?: boolean;
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-4">
@@ -787,8 +804,8 @@ function SetupModal({
 
         <div className="mt-6 grid grid-cols-2 gap-3">
           <button className="btn-outline" onClick={onClose}>Cancel</button>
-          <button className="btn-primary gap-2" onClick={onStart}>
-            <Play size={16} /> Start Game
+          <button className="btn-primary gap-2 disabled:cursor-not-allowed disabled:opacity-60" onClick={onStart} disabled={starting}>
+            <Play size={16} /> {starting ? "Checking..." : "Start Game"}
           </button>
         </div>
       </div>

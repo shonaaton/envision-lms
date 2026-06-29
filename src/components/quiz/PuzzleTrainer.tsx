@@ -181,11 +181,12 @@ export default function PuzzleTrainer({ mode = "tactics" }: PuzzleTrainerProps) 
 
   useEffect(() => {
     if (!result?.solved) return;
+    if (result.demo?.isDemo && result.demo.remaining <= 0) return;
     const timer = window.setTimeout(() => {
       void loadPuzzle();
     }, 1800);
     return () => window.clearTimeout(timer);
-  }, [result?.solved, loadPuzzle]);
+  }, [result?.demo?.isDemo, result?.demo?.remaining, result?.solved, loadPuzzle]);
 
   useEffect(() => {
     loadLeaderboard();
@@ -233,7 +234,13 @@ export default function PuzzleTrainer({ mode = "tactics" }: PuzzleTrainerProps) 
       const payload = await response.json();
       if (!response.ok) throw new Error(payload?.error || "Could not save puzzle result");
       setResult(payload);
-      setMessage(payload.solved ? "Solved. XP added to leaderboard." : "Attempt saved.");
+      setMessage(
+        payload.demo?.isDemo && payload.demo.remaining <= 0
+          ? `Saved. Your demo ${isKingHunt ? "King Hunt" : "Tactics Trainer"} attempts are now finished.`
+          : payload.solved
+            ? "Solved. XP added to leaderboard."
+            : "Attempt saved."
+      );
       loadLeaderboard();
     } catch (error: any) {
       toast.error(error?.message || "Could not save result");

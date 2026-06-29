@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { Chess } from "chess.js";
 import { buildMoveHintStyles, legalTargetsFromGame } from "@/lib/chessboardUi";
 import { isPromotionMove, promotionFromBoardPiece, type PendingPromotion, type PromotionPiece } from "@/lib/chessPromotion";
@@ -70,7 +70,7 @@ export function TournamentPlayClient({
   const [pending, startTransition] = useTransition();
   const [, forceClockTick] = useState(0);
 
-  async function refresh() {
+  const refresh = useCallback(async () => {
     const response = await fetch(`/api/tournaments/${tournamentId}/state`, { cache: "no-store" });
     if (!response.ok) {
       const payload = await response.json().catch(() => null);
@@ -79,7 +79,7 @@ export function TournamentPlayClient({
     }
     setError("");
     setState(await response.json());
-  }
+  }, [tournamentId]);
 
   useEffect(() => {
     refresh();
@@ -89,7 +89,7 @@ export function TournamentPlayClient({
       window.clearInterval(poll);
       window.clearInterval(clock);
     };
-  }, [tournamentId]);
+  }, [refresh]);
 
   useEffect(() => {
     const element = boardWrapRef.current;
@@ -133,7 +133,7 @@ export function TournamentPlayClient({
     const elapsed = Math.max(0, Date.now() - new Date(activeGame.lastMoveAt || activeGame.startedAt || Date.now()).getTime());
     if (activeGame.turn === "w") return { white: Math.max(0, activeGame.whiteClockMs - elapsed), black: activeGame.blackClockMs };
     return { white: activeGame.whiteClockMs, black: Math.max(0, activeGame.blackClockMs - elapsed) };
-  }, [activeGame, activeGame?.lastMoveAt, activeGame?.turn]);
+  }, [activeGame]);
 
   async function postMove(from: string, to: string, promotion: PromotionPiece = "q") {
     if (!activeGame) return false;

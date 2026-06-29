@@ -29,6 +29,7 @@ import {
   WalletCards,
   UserPlus,
   Target,
+  X,
 } from "lucide-react";
 import Logo from "./Logo";
 import { cn } from "@/lib/utils";
@@ -129,7 +130,17 @@ function isActive(pathname: string, item: NavItem) {
   return pathname === item.href || pathname.startsWith(`${item.href}/`);
 }
 
-export default function Sidebar({ role, accountStatus }: { role: Role; accountStatus?: AccountStatus }) {
+export default function Sidebar({
+  role,
+  accountStatus,
+  mobileOpen = false,
+  onCloseMobile,
+}: {
+  role: Role;
+  accountStatus?: AccountStatus;
+  mobileOpen?: boolean;
+  onCloseMobile?: () => void;
+}) {
   const pathname = usePathname();
   const visibleSections = useMemo(
     () =>
@@ -167,9 +178,29 @@ export default function Sidebar({ role, accountStatus }: { role: Role; accountSt
   }
 
   return (
-    <aside className="hidden h-screen w-64 flex-shrink-0 border-r border-white/10 bg-[radial-gradient(circle_at_20%_0%,rgba(253,231,90,0.20),transparent_30%),linear-gradient(180deg,#5a1372_0%,#3a0c4a_58%,#1a0622_100%)] px-3 py-4 shadow-2xl shadow-brand-900/30 md:flex md:flex-col">
-      <div className="mb-4 rounded-2xl border border-white/10 bg-white/10 px-3 py-3 shadow-lg shadow-black/10 backdrop-blur">
-        <Logo />
+    <>
+      <button
+        type="button"
+        aria-label="Close navigation"
+        onClick={onCloseMobile}
+        className={cn("fixed inset-0 z-40 bg-slate-950/55 backdrop-blur-sm transition-opacity md:hidden", mobileOpen ? "opacity-100" : "pointer-events-none opacity-0")}
+      />
+      <aside
+        className={cn(
+          "fixed inset-y-0 left-0 z-50 flex h-dvh w-[min(82vw,19rem)] flex-shrink-0 flex-col border-r border-white/10 bg-[radial-gradient(circle_at_20%_0%,rgba(253,231,90,0.20),transparent_30%),linear-gradient(180deg,#5a1372_0%,#3a0c4a_58%,#1a0622_100%)] px-3 py-4 shadow-2xl shadow-brand-900/30 transition-transform duration-200 md:sticky md:top-0 md:z-20 md:h-screen md:w-64 md:translate-x-0",
+          mobileOpen ? "translate-x-0" : "-translate-x-full"
+        )}
+      >
+      <div className="mb-4 flex items-center gap-2 rounded-2xl border border-white/10 bg-white/10 px-3 py-3 shadow-lg shadow-black/10 backdrop-blur">
+        <div className="min-w-0 flex-1"><Logo /></div>
+        <button
+          type="button"
+          onClick={onCloseMobile}
+          className="grid h-9 w-9 flex-none place-items-center rounded-xl bg-white/10 text-white md:hidden"
+          aria-label="Close navigation"
+        >
+          <X size={18} />
+        </button>
       </div>
       <nav className="flex-1 space-y-2 overflow-y-auto pr-1">
         {visibleSections.map((section) => {
@@ -197,6 +228,7 @@ export default function Sidebar({ role, accountStatus }: { role: Role; accountSt
                       <li key={item.href}>
                         <Link
                           href={item.href}
+                          onClick={onCloseMobile}
                           className={cn(
                             "group flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-semibold transition",
                             active ? "bg-white text-brand shadow-lg shadow-black/10" : "text-white/75 hover:bg-white/10 hover:text-white"
@@ -221,5 +253,6 @@ export default function Sidebar({ role, accountStatus }: { role: Role; accountSt
         <div className="mt-1 text-xs leading-relaxed text-white/60">Premium chess tools, classes, PGNs, tournaments, and progress in one place.</div>
       </div>
     </aside>
+    </>
   );
 }

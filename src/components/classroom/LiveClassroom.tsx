@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Chess } from "chess.js";
 import { toast } from "sonner";
@@ -63,6 +63,37 @@ type SetupTab = "pieces" | "objects";
 type SetupMovementMode = "white" | "black" | "free";
 type GamifiedObjectId = "star" | "gem" | "coin" | "apple" | "fire" | "trophy" | "gift" | "shield" | "key" | "puzzle" | "rocket" | "monster" | "dragon";
 type SetupSelection = string | "erase" | GamifiedObjectId;
+
+const gamifiedObjectDisplayIcons: Record<GamifiedObjectId, string> = {
+  star: "⭐",
+  gem: "💎",
+  coin: "🪙",
+  apple: "🍎",
+  fire: "🔥",
+  trophy: "🏆",
+  gift: "🎁",
+  shield: "🛡",
+  key: "🗝",
+  puzzle: "🧩",
+  rocket: "🚀",
+  monster: "👾",
+  dragon: "🐉",
+};
+
+const pieceDisplaySymbols: Record<string, string> = {
+  wK: "♔",
+  wQ: "♕",
+  wR: "♖",
+  wB: "♗",
+  wN: "♘",
+  wP: "♙",
+  bK: "♚",
+  bQ: "♛",
+  bR: "♜",
+  bB: "♝",
+  bN: "♞",
+  bP: "♟",
+};
 
 const gamifiedObjects: Array<{ id: GamifiedObjectId; label: string; icon: string; points: number }> = [
   { id: "star", label: "Star", icon: "⭐", points: 10 },
@@ -260,6 +291,10 @@ function getGamifiedObject(id: GamifiedObjectId) {
   return gamifiedObjects.find((object) => object.id === id) || gamifiedObjects[0];
 }
 
+function gamifiedObjectIcon(id: GamifiedObjectId, fallback?: string) {
+  return gamifiedObjectDisplayIcons[id] || fallback || "";
+}
+
 function normalizeFolderPath(value?: string | null) {
   return String(value || "").trim().replace(/^\/+|\/+$/g, "").replace(/\/{2,}/g, "/");
 }
@@ -401,14 +436,14 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     boardShellRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
   }
 
-  function liveUrl(path = "") {
+  const liveUrl = useCallback((path = "") => {
     const params = new URLSearchParams();
     if (sessionId) params.set("sessionId", sessionId);
     const query = params.toString();
     return `/api/classrooms/${classroomId}/live${path}${query ? `${path.includes("?") ? "&" : "?"}${query}` : ""}`;
-  }
+  }, [classroomId, sessionId]);
 
-  async function load(force = false) {
+  const load = useCallback(async (force = false) => {
     if (loadInFlightRef.current && !force) {
       refreshQueuedRef.current = true;
       return;
@@ -431,16 +466,16 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
         void load(true);
       }
     }
-  }
+  }, [liveUrl]);
 
-  function queueRefresh(delay = 60) {
+  const queueRefresh = useCallback((delay = 60) => {
     if (typeof window === "undefined") return;
     if (refreshTimerRef.current) window.clearTimeout(refreshTimerRef.current);
     refreshTimerRef.current = window.setTimeout(() => {
       refreshTimerRef.current = null;
       void load(true);
     }, delay);
-  }
+  }, [load]);
 
   function applyOptimisticLive(update: any) {
     setData((current: any) => {
@@ -467,7 +502,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       window.clearInterval(timer);
       if (refreshTimerRef.current) window.clearTimeout(refreshTimerRef.current);
     };
-  }, [classroomId, sessionId]);
+  }, [load]);
 
   useEffect(() => {
     dataRef.current = data;
@@ -504,9 +539,14 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     if (!boardShellRef.current) return;
     const resize = () => {
       const width = boardShellRef.current?.clientWidth || 620;
-      const heightLimit = typeof window === "undefined" ? 560 : window.innerHeight - (coach ? 330 : 255);
-      const coordinateGutter = data?.live?.showCoordinates === false ? 12 : 56;
-      setBoardWidth(Math.max(300, Math.min(620, width - coordinateGutter, heightLimit)));
+      const viewportWidth = typeof window === "undefined" ? width : window.innerWidth;
+      const viewportHeight = typeof window === "undefined" ? 720 : window.innerHeight;
+      const isMobile = viewportWidth < 768;
+      const heightLimit = isMobile ? viewportHeight - 260 : viewportHeight - (coach ? 330 : 255);
+      const coordinateGutter = data?.live?.showCoordinates === false ? 12 : isMobile ? 40 : 56;
+      const maxBoard = isMobile ? Math.min(520, viewportWidth - 42) : 620;
+      const minBoard = isMobile ? 248 : 300;
+      setBoardWidth(Math.max(minBoard, Math.min(maxBoard, width - coordinateGutter, heightLimit)));
     };
     resize();
     const observer = new ResizeObserver(resize);
@@ -526,8 +566,8 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     () => (data?.responses || []).find((response: any) => response.student?._id === userId || response.student === userId) || null,
     [data?.responses, userId]
   );
-  const students = classroom?.students || [];
-  const pgnLibrary = data?.pgnLibrary || [];
+  const students = useMemo(() => classroom?.students || [], [classroom?.students]);
+  const pgnLibrary = useMemo(() => data?.pgnLibrary || [], [data?.pgnLibrary]);
   const questionUsesBoardFlow = Boolean((Array.isArray(activeQuestion?.items) && activeQuestion.items.length > 0) || activeQuestion?.solution?.length);
   const studentQuizMode = Boolean(activeQuestion) && !coach && hiddenStudentQuizId !== String(activeQuestion?._id || "") && ((Array.isArray(activeQuestion?.items) && activeQuestion.items.length > 0) || activeQuestion?.solution?.length);
   const coachQuizMode = Boolean(activeQuestion) && coach;
@@ -578,7 +618,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     });
   }, [pgnLibrary, activePgnFolder, pgnFolderQuery]);
   const chatMessages = data?.chatMessages || [];
-  const pgnMoves = live?.pgnMoves || [];
+  const pgnMoves = useMemo(() => live?.pgnMoves || [], [live?.pgnMoves]);
   const currentMoveIndex = live?.pgnMoveIndex || 0;
   const boardFen = live?.fen === "start" || !live?.fen ? "start" : live.fen;
   const boardPosition = boardFen;
@@ -612,30 +652,6 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     setSetupMovementMode(nextSetupMode);
     if (nextSetupMode === "white" || nextSetupMode === "black") setSetupPieceColor(nextSetupMode);
   }, [boardPieceMap, live?.fen, live?.illegalMovesEnabled, live?.setupMode, liveGamifiedObjects, setupOpen]);
-
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
-      if (event.shiftKey) setModifier("shift");
-      else if (event.ctrlKey || event.metaKey) setModifier("ctrl");
-      else if (event.altKey) setModifier("alt");
-      else setModifier("default");
-      if (event.key === "ArrowLeft") navigateMove(currentMoveIndex - 1);
-      if (event.key === "ArrowRight") navigateMove(currentMoveIndex + 1);
-    }
-    function onKeyUp(event: KeyboardEvent) {
-      if (event.shiftKey) setModifier("shift");
-      else if (event.ctrlKey || event.metaKey) setModifier("ctrl");
-      else if (event.altKey) setModifier("alt");
-      else setModifier("default");
-    }
-    window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("keyup", onKeyUp);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("keyup", onKeyUp);
-    };
-  }, [currentMoveIndex, pgnMoves.length, live?.pgn]);
 
   useEffect(() => {
     if (!live?.engineEnabled || !live?.fen || activeTab !== "moves") {
@@ -678,7 +694,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     }
   }, [activeTab, live?.engineEnabled, live?.fen]);
 
-  async function patch(update: any, options?: { optimistic?: boolean }) {
+  const patch = useCallback(async (update: any, options?: { optimistic?: boolean }) => {
     if (options?.optimistic !== false) {
       pendingOptimisticLiveRef.current = { ...(pendingOptimisticLiveRef.current || {}), ...update };
       pendingOptimisticUntilRef.current = Date.now() + 1500;
@@ -703,7 +719,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       pendingOptimisticClearTimerRef.current = null;
     }, 350);
     queueRefresh(40);
-  }
+  }, [liveUrl, queueRefresh]);
 
   function currentLive() {
     return dataRef.current?.live || live || {};
@@ -844,7 +860,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       boardControlStudents: live?.mode === "one_move_challenge" ? [] : live?.boardControlStudents?.map((s: any) => s._id || s),
       challenge: live?.mode === "one_move_challenge" ? { active: false } : live?.challenge,
     });
-    toast.success(`${object.icon} ${object.label} collected: ${object.points > 0 ? "+" : ""}${object.points} points`);
+    toast.success(`${gamifiedObjectIcon(object.id, object.icon)} ${object.label} collected: ${object.points > 0 ? "+" : ""}${object.points} points`);
     playMoveSound(live?.soundEnabled);
     return true;
   }
@@ -905,7 +921,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       });
       if (collectedObjectId) {
         const object = getGamifiedObject(collectedObjectId);
-        toast.success(`${object.icon} ${object.label} collected: ${object.points > 0 ? "+" : ""}${object.points} points`);
+        toast.success(`${gamifiedObjectIcon(object.id, object.icon)} ${object.label} collected: ${object.points > 0 ? "+" : ""}${object.points} points`);
       }
       playMoveSound(live?.soundEnabled);
       return true;
@@ -1428,12 +1444,36 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     patch({ fen: "start", pgnMoveIndex: 0, moveHistory: [], drawings: [], gamifiedObjects: {}, setupMode: false, illegalMovesEnabled: false });
   }
 
-  function navigateMove(nextIndex: number) {
+  const navigateMove = useCallback((nextIndex: number) => {
     if (!pgnMoves.length) return;
     const boundedIndex = Math.max(0, Math.min(pgnMoves.length, nextIndex));
     const startFen = extractFen(live?.pgn || "") || "start";
     patch({ fen: applyMoves(startFen, pgnMoves, boundedIndex), pgnMoveIndex: boundedIndex, moveHistory: pgnMoves.slice(0, boundedIndex) });
-  }
+  }, [live?.pgn, patch, pgnMoves]);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
+      if (event.shiftKey) setModifier("shift");
+      else if (event.ctrlKey || event.metaKey) setModifier("ctrl");
+      else if (event.altKey) setModifier("alt");
+      else setModifier("default");
+      if (event.key === "ArrowLeft") navigateMove(currentMoveIndex - 1);
+      if (event.key === "ArrowRight") navigateMove(currentMoveIndex + 1);
+    }
+    function onKeyUp(event: KeyboardEvent) {
+      if (event.shiftKey) setModifier("shift");
+      else if (event.ctrlKey || event.metaKey) setModifier("ctrl");
+      else if (event.altKey) setModifier("alt");
+      else setModifier("default");
+    }
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+    };
+  }, [currentMoveIndex, navigateMove]);
 
   function loadPgn(pgn: any, index: number) {
     const chess = new Chess();
@@ -1574,7 +1614,10 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     }
   }
 
-  const displayedDrawings = coach && drawingsDirty ? coachDrawings : (live?.drawings || []);
+  const displayedDrawings = useMemo(
+    () => (coach && drawingsDirty ? coachDrawings : (live?.drawings || [])),
+    [coach, drawingsDirty, coachDrawings, live?.drawings]
+  );
   const moveTargets = useMemo(() => {
     if (!selectedMoveSquare || live?.illegalMovesEnabled || live?.locked || (!coach && !canMove)) return [];
     return legalTargetsFromGame(game, selectedMoveSquare);
@@ -1754,11 +1797,11 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const classroomTabs = coach ? coachSidebarTabs : studentPanelTabs;
 
   return (
-    <div className="flex h-[calc(100vh-92px)] min-h-[640px] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg shadow-brand/10">
-      <div className="flex flex-none flex-col border-b border-slate-200 px-4 py-2.5 lg:flex-row lg:items-center lg:justify-between">
+    <div className="flex min-h-[calc(100dvh-76px)] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg shadow-brand/10 md:h-[calc(100vh-92px)] md:min-h-[640px]">
+      <div className="flex flex-none flex-col border-b border-slate-200 px-3 py-2 lg:flex-row lg:items-center lg:justify-between lg:px-4 lg:py-2.5">
         <div>
-          <h2 className="text-xl font-semibold text-slate-950">{classroomName}</h2>
-          <p className="text-sm text-slate-500">
+          <h2 className="text-base font-semibold text-slate-950 sm:text-xl">{classroomName}</h2>
+          <p className="text-xs text-slate-500 sm:text-sm">
             Instructor: {coachName} - Topic: {live?.topic || "Not set"} - {duration} min
           </p>
         </div>
@@ -1768,13 +1811,13 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
               href={classroom.meetingUrl}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex h-10 items-center gap-2 rounded-lg border border-brand/15 bg-white px-3 text-sm font-bold text-brand shadow-sm transition hover:bg-brand/5"
+              className="inline-flex h-9 items-center gap-2 rounded-lg border border-brand/15 bg-white px-3 text-xs font-bold text-brand shadow-sm transition hover:bg-brand/5 sm:h-10 sm:text-sm"
             >
               <ExternalLink size={15} /> Open Google Meet
             </a>
           ) : null}
         {coach && (
-            <div className="flex min-w-[220px] max-w-full items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-left shadow-sm">
+            <div className="flex min-w-0 max-w-full items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-left shadow-sm sm:min-w-[220px]">
               <div className="min-w-0">
                 <div className="truncate text-sm font-semibold text-blue-800">{live?.pgnTitle || live?.topic || "Classroom board"}</div>
                 <div className="truncate text-xs text-slate-500">{pgnMoves.length ? `${currentMoveIndex} / ${pgnMoves.length} moves loaded` : "No PGN loaded"}</div>
@@ -1789,8 +1832,8 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
         </div>
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-[minmax(0,1fr)_350px]">
-        <section className="flex min-h-0 min-w-0 flex-col gap-3 overflow-hidden p-3 lg:flex-row">
+      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto md:overflow-hidden xl:grid-cols-[minmax(0,1fr)_350px]">
+        <section className="flex min-h-0 min-w-0 flex-col gap-2 overflow-visible p-2 md:overflow-hidden md:p-3 lg:flex-row">
           <aside style={{ display: "none" }} className={`flex max-h-full flex-none flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 shadow-sm transition-all duration-200 ${sidebarCollapsed ? "lg:w-[74px]" : "lg:w-[230px]"}`}>
             <div className={`flex items-center border-b border-slate-200 p-2 ${sidebarCollapsed ? "justify-center" : "justify-between"}`}>
               {!sidebarCollapsed && <div className="px-2 text-xs font-black uppercase tracking-[0.18em] text-slate-500">{coach ? "Classroom Tools" : "Classroom"}</div>}
@@ -1842,7 +1885,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
             </div>
           </aside>
 
-          <div ref={boardShellRef} className="min-h-0 min-w-0 flex-1 overflow-auto">
+          <div ref={boardShellRef} className="min-h-0 min-w-0 flex-1 overflow-visible md:overflow-auto">
             {studentQuizMode ? (
               <div className="mx-auto w-full max-w-[560px]">
                 <LiveBoardQuiz
@@ -1866,8 +1909,8 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
               />
             ) : (
               <>
-                <div className="mx-auto w-full max-w-[720px] rounded-lg border border-slate-200 bg-[#f6f2ea] p-2 shadow-sm">
-                  <div className="mx-auto grid w-fit grid-cols-[22px_auto_22px] grid-rows-[auto_22px] gap-x-2">
+                <div className="mx-auto w-full max-w-[720px] rounded-lg border border-slate-200 bg-[#f6f2ea] p-1.5 shadow-sm sm:p-2">
+                  <div className="mx-auto grid w-fit grid-cols-[16px_auto_16px] grid-rows-[auto_18px] gap-x-1.5 sm:grid-cols-[22px_auto_22px] sm:grid-rows-[auto_22px] sm:gap-x-2">
                     {live?.showCoordinates !== false && (
                       <div className="col-start-1 row-start-1 grid text-center text-xs font-semibold text-slate-500" style={{ height: boardWidth }}>
                         {ranks.map((rank) => <span key={`left-${rank}`} className="flex items-center justify-center">{rank}</span>)}
@@ -2089,17 +2132,17 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
           </div>
         </section>
 
-        <aside className="flex min-h-0 flex-col border-t border-slate-200 xl:border-l xl:border-t-0">
-          <div className={`grid border-b border-slate-200 text-sm ${coach ? "grid-cols-4" : "grid-cols-2"}`}>
+        <aside className="flex min-h-[280px] flex-col border-t border-slate-200 md:min-h-0 xl:border-l xl:border-t-0">
+          <div className={`grid overflow-x-auto border-b border-slate-200 text-sm ${coach ? "grid-cols-4" : "grid-cols-2"}`}>
             {classroomTabs.map(({ key, icon, label }: any) => (
-              <button key={key} onClick={() => setActiveTab(key)} className={`flex h-11 items-center justify-center gap-1 border-b-2 text-xs font-semibold ${activeTab === key ? "border-purple-700 text-purple-800" : "border-transparent text-slate-500"}`} title={label}>
+              <button key={key} onClick={() => setActiveTab(key)} className={`flex h-10 min-w-fit items-center justify-center gap-1 border-b-2 px-2 text-xs font-semibold sm:h-11 ${activeTab === key ? "border-purple-700 text-purple-800" : "border-transparent text-slate-500"}`} title={label}>
                 {icon}
-                <span className="hidden 2xl:inline">{label}</span>
+                <span className="hidden sm:inline 2xl:inline">{label}</span>
               </button>
             ))}
           </div>
 
-          <div className="min-h-0 flex-1 overflow-auto p-3">
+          <div className="min-h-0 flex-1 overflow-auto p-2 sm:p-3">
             {activeTab === "students" && (
               <div className="space-y-4">
                 <div className="rounded-lg border border-slate-200 p-4">
@@ -2467,7 +2510,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                             onClick={() => setSelectedPiece(pieceCode)}
                             className={`h-9 rounded-md border text-xl ${selectedPiece === pieceCode ? "border-purple-700 bg-purple-700 text-white" : setupPieceColor === "black" ? "border-slate-800 bg-slate-950 text-white" : "border-slate-200 bg-white"}`}
                           >
-                            {pieceSymbol(pieceCode)}
+                            {pieceDisplaySymbols[pieceCode] || pieceCode}
                           </button>
                         );
                       })}
@@ -2542,7 +2585,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                     <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
                       {gamifiedObjects.map((object) => (
                         <button key={object.id} onClick={() => setSelectedObject(object.id)} className={`flex min-h-16 flex-col items-center justify-center rounded-xl border px-2 py-2 text-center transition ${selectedObject === object.id ? "border-purple-700 bg-purple-50 text-purple-900 ring-2 ring-purple-100" : "border-slate-200 bg-white hover:border-purple-300"}`}>
-                          <span className="text-2xl">{object.icon}</span>
+                          <span className="text-2xl">{gamifiedObjectIcon(object.id, object.icon)}</span>
                           <span className="mt-1 text-xs font-bold">{object.label}</span>
                           <span className="text-xs text-slate-500">{object.points > 0 ? "+" : ""}{object.points} points</span>
                         </button>
@@ -2765,17 +2808,20 @@ function LiveBoardQuiz({
   onComplete: (results: Record<string, LiveBoardQuizResult>, timeTakenSeconds: number) => void;
   onSubmitted?: () => void;
 }) {
-  const items = Array.isArray(question.items) && question.items.length
-    ? question.items
-    : [{
-        id: `${question._id}-single`,
-        title: question.title,
-        fen: question.fen,
-        pgn: question.pgn,
-        solution: question.solution || [],
-        points: question.scoring?.correct ?? 5,
-        timerSeconds: question.timer?.perQuestionSeconds || question.timer?.overallSeconds || 0,
-      }];
+  const items = useMemo(
+    () => (Array.isArray(question.items) && question.items.length
+      ? question.items
+      : [{
+          id: `${question._id}-single`,
+          title: question.title,
+          fen: question.fen,
+          pgn: question.pgn,
+          solution: question.solution || [],
+          points: question.scoring?.correct ?? 5,
+          timerSeconds: question.timer?.perQuestionSeconds || question.timer?.overallSeconds || 0,
+        }]),
+    [question]
+  );
   const [currentIndex, setCurrentIndex] = useState(Math.max(0, Number(serverIndex || 0)));
   const [results, setResults] = useState<Record<string, LiveBoardQuizResult>>(existingItemResults || {});
   const [quizStartedAt] = useState(Date.now());
@@ -2825,11 +2871,11 @@ function LiveBoardQuiz({
     return { solvedCount, skippedCount, completedCount, remainingCount, pointsEarned, accuracy, timeTakenSeconds };
   }, [items, question.scoring?.correct, quizStartedAt, results]);
 
-  function answeredCount(nextResults: Record<string, LiveBoardQuizResult>) {
+  const answeredCount = useCallback((nextResults: Record<string, LiveBoardQuizResult>) => {
     return items.filter((item: any) => Boolean(nextResults[item.id])).length;
-  }
+  }, [items]);
 
-  function nextReviewIndex(nextResults: Record<string, LiveBoardQuizResult>, fromIndex: number) {
+  const nextReviewIndex = useCallback((nextResults: Record<string, LiveBoardQuizResult>, fromIndex: number) => {
     for (let index = fromIndex + 1; index < items.length; index++) {
       if (!nextResults[items[index].id]) return index;
     }
@@ -2837,7 +2883,29 @@ function LiveBoardQuiz({
       if (!nextResults[items[index].id]) return index;
     }
     return Math.min(items.length - 1, fromIndex);
-  }
+  }, [items]);
+
+  const skipCurrent = useCallback(() => {
+    if (!activeItem) return;
+    const result = { solved: false, skipped: true, mistakes, hintsUsed, timeTakenSeconds: Math.round((Date.now() - itemStartedAt) / 1000), submittedMove: lastStudentMove, attempts: attemptMoves };
+    const nextResults = { ...results, [activeItem.id]: result };
+    setResults(nextResults);
+    onProgress?.(nextResults, Math.round((Date.now() - quizStartedAt) / 1000));
+    if (answeredCount(nextResults) >= items.length) {
+      setQuizFinished(true);
+      setFeedback("All positions answered. Review your board choices and submit when ready.");
+      return;
+    }
+    if (quizFinished) {
+      setFeedback("Position marked for review. You can still revisit it before submitting.");
+      return;
+    }
+    if (progressionMode === "manual") {
+      setFeedback("Position skipped. Waiting for the coach to open the next position.");
+      return;
+    }
+    setCurrentIndex(nextReviewIndex(nextResults, currentIndex));
+  }, [activeItem, answeredCount, attemptMoves, currentIndex, hintsUsed, itemStartedAt, lastStudentMove, mistakes, nextReviewIndex, onProgress, progressionMode, quizFinished, quizStartedAt, results, items.length]);
 
   useEffect(() => {
     submittedRef.current = false;
@@ -2845,7 +2913,7 @@ function LiveBoardQuiz({
     setResults(existingItemResults || {});
     setQuizFinished(false);
     setQuizSubmitted(false);
-  }, [question._id]);
+  }, [question._id, existingItemResults, serverIndex]);
 
   useEffect(() => {
     setResults(existingItemResults || {});
@@ -2906,7 +2974,7 @@ function LiveBoardQuiz({
       });
     }, 1000);
     return () => window.clearInterval(timer);
-  }, [remaining, solved]);
+  }, [remaining, skipCurrent, solved]);
 
   useEffect(() => {
     if (!solved || advancedRef.current || !activeItem) return;
@@ -3057,28 +3125,6 @@ function LiveBoardQuiz({
     setRemaining(Number(question.timer?.perQuestionSeconds || activeItem?.timerSeconds || 0));
   }
 
-  function skipCurrent() {
-    if (!activeItem) return;
-    const result = { solved: false, skipped: true, mistakes, hintsUsed, timeTakenSeconds: Math.round((Date.now() - itemStartedAt) / 1000), submittedMove: lastStudentMove, attempts: attemptMoves };
-    const nextResults = { ...results, [activeItem.id]: result };
-    setResults(nextResults);
-    onProgress?.(nextResults, Math.round((Date.now() - quizStartedAt) / 1000));
-    if (answeredCount(nextResults) >= items.length) {
-      setQuizFinished(true);
-      setFeedback("All positions answered. Review your board choices and submit when ready.");
-      return;
-    }
-    if (quizFinished) {
-      setFeedback("Position marked for review. You can still revisit it before submitting.");
-      return;
-    }
-    if (progressionMode === "manual") {
-      setFeedback("Position skipped. Waiting for the coach to open the next position.");
-      return;
-    }
-    setCurrentIndex(nextReviewIndex(nextResults, currentIndex));
-  }
-
   function submitQuiz() {
     if (submittedRef.current) return;
     submittedRef.current = true;
@@ -3206,14 +3252,17 @@ function CoachQuizMonitor({
   onUpdateProgression: (update: { currentItemIndex?: number; progressionMode?: "auto" | "manual" }) => void;
   onEndQuiz: () => void;
 }) {
-  const items = Array.isArray(question?.items) && question.items.length
-    ? question.items
-    : [{
-        id: `${question?._id || "quiz"}-single`,
-        title: question?.title || "Live quiz",
-        fen: question?.fen || "start",
-        points: question?.scoring?.correct ?? 5,
-      }];
+  const items = useMemo(
+    () => (Array.isArray(question?.items) && question.items.length
+      ? question.items
+      : [{
+          id: `${question?._id || "quiz"}-single`,
+          title: question?.title || "Live quiz",
+          fen: question?.fen || "start",
+          points: question?.scoring?.correct ?? 5,
+        }]),
+    [question]
+  );
   const manualProgression = question?.progressionMode === "manual";
   const responseGroups = new Map<string, any[]>();
   for (const response of responses || []) {
@@ -3483,7 +3532,7 @@ function GamifiedBoardOverlay({ objects, boardWidth, orientation }: { objects: R
                 style={{ width: squareSize * 0.62, height: squareSize * 0.62, fontSize: squareSize * 0.34 }}
                 title={`${object.label}: ${object.points} points`}
               >
-                {object.icon}
+                {gamifiedObjectIcon(object.id, object.icon)}
               </span>
             )}
           </div>
@@ -3559,7 +3608,7 @@ function GamifiedSetupOverlay({
                 }}
                 onDragEnd={onDragEnd}
               >
-                {object.icon}
+                {gamifiedObjectIcon(object.id, object.icon)}
               </span>
             )}
           </button>

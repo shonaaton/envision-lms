@@ -16,6 +16,35 @@ import {
 
 export const dynamic = "force-dynamic";
 
+type SessionUser = {
+  id?: string;
+  role?: AppRole;
+};
+
+type LiveParticipant = {
+  user?: { _id?: { toString(): string }; toString?: () => string } | string;
+  role?: AppRole;
+};
+
+type LiveSessionRecord = {
+  _id: { toString(): string };
+  participants?: LiveParticipant[];
+  status?: "live" | "ended";
+  activeQuestion?: string | { toString(): string };
+  drawings?: unknown[];
+};
+
+type LiveQuestionRecord = {
+  _id: { toString(): string };
+};
+
+function participantUserId(participant: LiveParticipant) {
+  const user = participant.user;
+  if (!user) return "";
+  if (typeof user === "string") return user;
+  return user._id?.toString?.() || user.toString?.() || "";
+}
+
 function canCoach(role: string | undefined) {
   return role === "admin" || role === "instructor";
 }
@@ -31,14 +60,14 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
   if (!role || !userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { classroom, allowed } = await getLiveClassroomForUser(params.id, role, userId);
   if (!classroom) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const classroomDoc: any = classroom;
+  const classroomDoc = classroom as Record<string, any>;
   if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  const scheduledSession: any = resolveScheduledSession(classroomDoc, requestedSessionId);
+  const scheduledSession = resolveScheduledSession(classroomDoc, requestedSessionId);
   if (!scheduledSession) return NextResponse.json({ error: "Scheduled session not found" }, { status: 404 });
   const scheduledSessionId = String(scheduledSession._id);
-  let live: any = await ClassroomSession.findOne({ classroom: params.id, scheduledSessionId })
+  let live = await ClassroomSession.findOne({ classroom: params.id, scheduledSessionId })
     .populate("selectedStudents boardControlStudents challenge.student participants.user", "name username role")
-    .lean();
+    .lean<LiveSessionRecord | null>();
   if (!live) {
     const created = await ClassroomSession.create({
       classroom: params.id,
@@ -49,30 +78,30 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
       fen: "start",
       mode: "teaching",
     });
-    live = await ClassroomSession.findById(created._id).populate("selectedStudents boardControlStudents challenge.student participants.user", "name username role").lean();
+    live = await ClassroomSession.findById(created._id).populate("selectedStudents boardControlStudents challenge.student participants.user", "name username role").lean<LiveSessionRecord | null>();
   }
-  const existingParticipant = (live.participants || []).find((participant: any) => participant.user?.toString?.() === userId || participant.user?._id?.toString?.() === userId);
-  if (live.status !== "ended") {
+  const existingParticipant = (live?.participants || []).find((participant) => participantUserId(participant) === userId);
+  if (live?.status !== "ended") {
     if (canCoach(role)) {
       await markScheduledSessionStarted({ classroomId: params.id, scheduledSessionId, actorId: userId });
     }
     if (existingParticipant) {
       await ClassroomSession.updateOne(
-        { _id: live._id, "participants.user": userId },
+        { _id: live?._id, "participants.user": userId },
         { $set: { "participants.$.lastSeenAt": new Date(), "participants.$.role": role || "student" } }
       );
     } else {
       await ClassroomSession.updateOne(
-        { _id: live._id },
+        { _id: live?._id },
         { $push: { participants: { user: userId, role: role || "student", firstSeenAt: new Date(), lastSeenAt: new Date() } } }
       );
     }
-    live = await ClassroomSession.findById(live._id).populate("selectedStudents boardControlStudents challenge.student participants.user", "name username role").lean();
+    live = await ClassroomSession.findById(live?._id).populate("selectedStudents boardControlStudents challenge.student participants.user", "name username role").lean<LiveSessionRecord | null>();
   }
 
-  const activeQuestion: any = live.activeQuestion
-    ? await LiveQuestion.findById(live.activeQuestion).lean()
-    : await LiveQuestion.findOne({ classroom: params.id, scheduledSessionId, status: "live" }).sort({ createdAt: -1 }).lean();
+  const activeQuestion = live?.activeQuestion
+    ? await LiveQuestion.findById(live.activeQuestion).lean<LiveQuestionRecord | null>()
+    : await LiveQuestion.findOne({ classroom: params.id, scheduledSessionId, status: "live" }).sort({ createdAt: -1 }).lean<LiveQuestionRecord | null>();
   const responses = activeQuestion
     ? await LiveQuestionResponse.find({ question: activeQuestion._id }).populate("student", "name username").sort({ submittedAt: -1 }).lean()
     : [];
@@ -108,7 +137,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const userId = (session.user as { id?: string }).id || "";
   const { classroom, allowed } = await getLiveClassroomForUser(params.id, role, userId);
   if (!classroom) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const classroomDoc: any = classroom;
+  const classroomDoc = classroom as Record<string, any>;
   if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const body = await req.json();
   if (body.action === "clear_classroom_load") {
@@ -126,7 +155,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     });
   }
   const requestedSessionId = getRequestedSessionId(req);
-  const scheduledSession: any = resolveScheduledSession(classroomDoc, requestedSessionId);
+  const scheduledSession = resolveScheduledSession(classroomDoc, requestedSessionId);
   if (!scheduledSession) return NextResponse.json({ error: "Scheduled session not found" }, { status: 404 });
   const scheduledSessionId = String(scheduledSession._id);
   const allowedFields = [
@@ -156,7 +185,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     "locked",
     "challenge",
   ];
-  const update: any = {};
+  const update: Record<string, unknown> = {};
   for (const key of allowedFields) if (key in body) update[key] = body[key];
   if ("studentMovesEnabled" in update && !update.studentMovesEnabled) {
     update.boardControlStudents = [];
@@ -186,7 +215,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       classroomId: params.id,
       scheduledSessionId,
       actorId: userId,
-      endedAt: update.endedAt ? new Date(update.endedAt) : new Date(),
+      endedAt: update.endedAt ? new Date(String(update.endedAt)) : new Date(),
       summary: body.summary,
     });
   } else if (update.status === "live" || update.startedAt) {

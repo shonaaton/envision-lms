@@ -9,6 +9,36 @@ import { actualSessionMinutes, punctualityBreakdown, scheduledPaymentMinutes } f
 
 export const dynamic = "force-dynamic";
 
+type SessionUser = {
+  id: string;
+  role: "student" | "instructor" | "admin";
+};
+
+type AuthSession = {
+  user: SessionUser;
+};
+
+type AttendanceRecordInput = {
+  student?: string;
+  status?: "present" | "absent" | "late";
+  note?: string;
+};
+
+type AttendancePayload = {
+  classroom?: string;
+  sessionDate?: string;
+  sessionId?: string;
+  records?: AttendanceRecordInput[];
+  coach?: string;
+  coachStatus?: string;
+  teachingMinutes?: number;
+  metadata?: {
+    summary?: {
+      actualTeachingMinutes?: number;
+    };
+  };
+};
+
 export async function GET(req: Request) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -17,7 +47,7 @@ export async function GET(req: Request) {
   const classroom = url.searchParams.get("classroom");
   const sessionDate = url.searchParams.get("sessionDate");
   const sessionId = url.searchParams.get("sessionId");
-  const filter: any = {};
+  const filter: Record<string, unknown> = {};
   if (classroom) filter.classroom = classroom;
   if (sessionId) filter.scheduledSessionId = sessionId;
   if (sessionDate) filter.sessionDate = new Date(sessionDate);
@@ -27,14 +57,14 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   const session = await auth();
-  const role = (session?.user as any)?.role;
+  const role = (session?.user as SessionUser | undefined)?.role;
   if (!session || (role !== "instructor" && role !== "admin")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  const { classroom, sessionDate, sessionId, records, coach, coachStatus, teachingMinutes, metadata } = await req.json();
+  const { classroom, sessionDate, sessionId, records, coach, coachStatus, teachingMinutes, metadata } = await req.json() as AttendancePayload;
   if (!classroom || !sessionDate) return NextResponse.json({ error: "missing fields" }, { status: 400 });
   await dbConnect();
   await Attendance.collection.dropIndex("classroom_1_sessionDate_1").catch(() => undefined);
   const normalizedDate = new Date(sessionDate);
-  const classroomDoc: any = await Classroom.findById(classroom);
+  const classroomDoc = await Classroom.findById(classroom);
   const target = sessionId ? classroomDoc?.generatedSessions?.id?.(sessionId) : null;
   const scheduledMinutes = target ? scheduledPaymentMinutes(target, classroomDoc) : Math.max(0, Number(classroomDoc?.durationMinutes || teachingMinutes || 0));
   const actualMinutes = target
@@ -45,7 +75,7 @@ export async function POST(req: Request) {
     { classroom, scheduledSessionId: sessionId || "", sessionDate: normalizedDate },
     {
       records,
-      markedBy: (session.user as any).id,
+      markedBy: (session.user as SessionUser).id,
       scheduledSessionId: sessionId || "",
       coach,
       coachStatus: coachStatus || "pending",
@@ -62,7 +92,7 @@ export async function POST(req: Request) {
     { upsert: true, new: true }
   );
   await recordActivity({
-    actor: (session.user as any).id,
+    actor: (session.user as SessionUser).id,
     type: "attendance.marked",
     label: `Marked attendance for ${records?.length ?? 0} students`,
     entityType: "Attendance",

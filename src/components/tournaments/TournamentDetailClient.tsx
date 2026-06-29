@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Clock3, Crown, Download, Play, RefreshCcw, Shield, Swords, Trophy } from "lucide-react";
 
@@ -67,17 +67,17 @@ export function TournamentDetailClient({
   const [error, setError] = useState("");
   const [pending, startTransition] = useTransition();
 
-  async function refresh() {
+  const refresh = useCallback(async () => {
     const response = await fetch(`/api/tournaments/${tournamentId}/state`, { cache: "no-store" });
     if (!response.ok) return;
     setState(await response.json());
-  }
+  }, [tournamentId]);
 
   useEffect(() => {
     refresh();
     const timer = window.setInterval(refresh, 2500);
     return () => window.clearInterval(timer);
-  }, [tournamentId]);
+  }, [refresh]);
 
   async function runAction(path: string) {
     setError("");

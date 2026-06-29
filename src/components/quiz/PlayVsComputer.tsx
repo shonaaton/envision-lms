@@ -20,7 +20,7 @@ import {
   User,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Chess } from "chess.js";
 import { buildMoveHintStyles, legalTargetsFromGame } from "@/lib/chessboardUi";
@@ -106,10 +106,8 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
   const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion | null>(null);
   const [viewPly, setViewPly] = useState<number | null>(null);
 
-  const verboseHistory = useMemo(
-    () => gameRef.current.history({ verbose: true }) as Array<{ san: string; color: "w" | "b"; from: string; to: string; promotion?: string }>,
-    [position]
-  );
+  const verboseHistory =
+    gameRef.current.history({ verbose: true }) as Array<{ san: string; color: "w" | "b"; from: string; to: string; promotion?: string }>;
   const moveRows = useMemo<MoveRow[]>(() => {
     const rows: MoveRow[] = [];
     verboseHistory.forEach((move, index) => {
@@ -135,6 +133,104 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
   const isPlayerTurn = gameRef.current.turn() === (playerColor === "white" ? "w" : "b");
   const usesClock = timeControl !== "No Clock";
   const totalDurationSeconds = gameStartedAt ? Math.max(0, Math.floor((Date.now() - gameStartedAt) / 1000)) : 0;
+
+  const beginNextTurn = useCallback(() => {
+    setActiveTurnStartedAt(usesClock ? Date.now() : null);
+  }, [usesClock]);
+
+  const addRecord = useCallback((recordResult: GameResult, moves = gameRef.current.history().length, durationSeconds = totalDurationSeconds) => {
+    setRecords((current) => [
+      {
+        id: gameInstanceId ?? Date.now(),
+        user: "You",
+        date: new Intl.DateTimeFormat("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+        }).format(new Date()),
+        color: playerColor,
+        difficulty: difficultyLabel,
+        botName: selectedBot.name,
+        timeControl,
+        result: recordResult,
+        moves,
+        durationSeconds,
+        xp: rewardSummary?.xp || 0,
+        coins: rewardSummary?.coins || 0,
+      },
+      ...current,
+    ]);
+  }, [difficultyLabel, gameInstanceId, playerColor, rewardSummary?.coins, rewardSummary?.xp, selectedBot.name, timeControl, totalDurationSeconds]);
+
+  const saveReward = useCallback(async (recordResult: GameResult, moves: number, durationSeconds: number, gameId: number) => {
+    if (savedRewardGameIdRef.current === gameId) return;
+    savedRewardGameIdRef.current = gameId;
+
+    const outcome =
+      recordResult === "Victory"
+        ? "victory"
+        : recordResult === "Draw"
+          ? "draw"
+          : recordResult === "Resigned"
+            ? "resigned"
+            : "defeat";
+
+    try {
+      const response = await fetch("/api/play/computer/reward", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          outcome,
+          botName: selectedBot.name,
+          moveCount: moves,
+          durationSeconds,
+          level,
+        }),
+      });
+      if (!response.ok) return;
+      const payload = await response.json();
+      setRewardSummary({ xp: payload.xp || 0, coins: payload.coins || 0, badge: payload.badge || "" });
+      setRecords((current) =>
+        current.map((record) =>
+          record.id === gameId
+            ? { ...record, xp: payload.xp || 0, coins: payload.coins || 0 }
+            : record
+        )
+      );
+    } catch {
+      // If reward saving fails, the game result still stands.
+    }
+  }, [level, selectedBot.name]);
+
+  const finishGame = useCallback((recordResult: GameResult, finalMessage: string) => {
+    const moves = gameRef.current.history().length;
+    const durationSeconds = gameStartedAt ? Math.max(0, Math.floor((Date.now() - gameStartedAt) / 1000)) : 0;
+    setResult(finalMessage);
+    setStatus("ended");
+    setActiveTurnStartedAt(null);
+    setShowResultModal(true);
+    addRecord(recordResult, moves, durationSeconds);
+    if (gameInstanceId !== null) {
+      void saveReward(recordResult, moves, durationSeconds, gameInstanceId);
+    }
+  }, [addRecord, gameInstanceId, gameStartedAt, saveReward]);
+
+  const checkGameOver = useCallback(() => {
+    const game = gameRef.current;
+    if (!game.isGameOver()) return;
+
+    let finalResult = "Draw";
+    let recordResult: GameResult = "Draw";
+    if (game.isCheckmate()) {
+      const winner = game.turn() === "w" ? "black" : "white";
+      const playerWon = winner === playerColor;
+      recordResult = playerWon ? "Victory" : "Defeat";
+      finalResult = playerWon ? "You won" : "Computer won";
+    }
+    finishGame(recordResult, finalResult);
+  }, [finishGame, playerColor]);
 
   useEffect(() => {
     try {
@@ -164,7 +260,7 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
     }
 
     return () => workerRef.current?.terminate();
-  }, [status]);
+  }, [beginNextTurn, checkGameOver, status]);
 
   useEffect(() => {
     if (!usesClock || status !== "playing" || activeTurnStartedAt === null) return;
@@ -182,7 +278,7 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
       }
     }, 250);
     return () => window.clearInterval(interval);
-  }, [usesClock, status, activeTurnStartedAt, whiteClockMs, blackClockMs, playerColor, selectedBot.name]);
+  }, [usesClock, status, activeTurnStartedAt, whiteClockMs, blackClockMs, playerColor, selectedBot.name, finishGame]);
 
   useEffect(() => {
     if (status !== "playing") return;
@@ -244,63 +340,6 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
     }
   }
 
-  function beginNextTurn() {
-    setActiveTurnStartedAt(usesClock ? Date.now() : null);
-  }
-
-  async function saveReward(recordResult: GameResult, moves: number, durationSeconds: number, gameId: number) {
-    if (savedRewardGameIdRef.current === gameId) return;
-    savedRewardGameIdRef.current = gameId;
-
-    const outcome =
-      recordResult === "Victory"
-        ? "victory"
-        : recordResult === "Draw"
-          ? "draw"
-          : recordResult === "Resigned"
-            ? "resigned"
-            : "defeat";
-
-    try {
-      const response = await fetch("/api/play/computer/reward", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          outcome,
-          botName: selectedBot.name,
-          moveCount: moves,
-          durationSeconds,
-          level,
-        }),
-      });
-      if (!response.ok) return;
-      const payload = await response.json();
-      setRewardSummary({ xp: payload.xp || 0, coins: payload.coins || 0, badge: payload.badge || "" });
-      setRecords((current) =>
-        current.map((record) =>
-          record.id === gameId
-            ? { ...record, xp: payload.xp || 0, coins: payload.coins || 0 }
-            : record
-        )
-      );
-    } catch {
-      // If reward saving fails, the game result still stands.
-    }
-  }
-
-  function finishGame(recordResult: GameResult, finalMessage: string) {
-    const moves = gameRef.current.history().length;
-    const durationSeconds = gameStartedAt ? Math.max(0, Math.floor((Date.now() - gameStartedAt) / 1000)) : 0;
-    setResult(finalMessage);
-    setStatus("ended");
-    setActiveTurnStartedAt(null);
-    setShowResultModal(true);
-    addRecord(recordResult, moves, durationSeconds);
-    if (gameInstanceId !== null) {
-      void saveReward(recordResult, moves, durationSeconds, gameInstanceId);
-    }
-  }
-
   const displayedWhiteClock =
     usesClock && whiteClockMs !== null && status === "playing" && gameRef.current.turn() === "w" && activeTurnStartedAt !== null
       ? Math.max(0, whiteClockMs - (Date.now() - activeTurnStartedAt) + liveTick * 0)
@@ -335,47 +374,6 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
     worker.postMessage(`setoption name UCI_Elo value ${(selectedBot.elo || 0) + Math.max(0, (levelToElo[level - 1] || 0) - levelToElo[0])}`);
     worker.postMessage(`position fen ${gameRef.current.fen()}`);
     worker.postMessage(`go depth ${currentDepth}`);
-  }
-
-  function checkGameOver() {
-    const game = gameRef.current;
-    if (!game.isGameOver()) return;
-
-    let finalResult = "Draw";
-    let recordResult: GameResult = "Draw";
-    if (game.isCheckmate()) {
-      const winner = game.turn() === "w" ? "black" : "white";
-      const playerWon = winner === playerColor;
-      recordResult = playerWon ? "Victory" : "Defeat";
-      finalResult = playerWon ? "You won" : "Computer won";
-    }
-    finishGame(recordResult, finalResult);
-  }
-
-  function addRecord(recordResult: GameResult, moves = gameRef.current.history().length, durationSeconds = totalDurationSeconds) {
-    setRecords((current) => [
-      {
-        id: gameInstanceId ?? Date.now(),
-        user: "You",
-        date: new Intl.DateTimeFormat("en-US", {
-          month: "short",
-          day: "numeric",
-          year: "numeric",
-          hour: "numeric",
-          minute: "2-digit",
-        }).format(new Date()),
-        color: playerColor,
-        difficulty: difficultyLabel,
-        botName: selectedBot.name,
-        timeControl,
-        result: recordResult,
-        moves,
-        durationSeconds,
-        xp: rewardSummary?.xp || 0,
-        coins: rewardSummary?.coins || 0,
-      },
-      ...current,
-    ]);
   }
 
   function startGame() {
@@ -449,7 +447,7 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
   const moveTargets = useMemo(() => {
     if (!selectedSquare || status !== "playing" || thinking || !isPlayerTurn || viewPly !== null) return [];
     return legalTargetsFromGame(gameRef.current, selectedSquare);
-  }, [selectedSquare, status, thinking, isPlayerTurn, position, viewPly]);
+  }, [selectedSquare, status, thinking, isPlayerTurn, viewPly]);
   const moveHintStyles = useMemo(() => buildMoveHintStyles(moveTargets, selectedSquare), [moveTargets, selectedSquare]);
 
   function onSquareClick(square: string) {

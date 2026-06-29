@@ -192,7 +192,7 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
   const boardSize = Math.round(boardWidth * (boardScale / 100));
   const customPieces = useMemo(() => createCustomPieces(pieceTheme), [pieceTheme]);
 
-  const moveRows = useMemo<MoveRow[]>(() => {
+  const moveRows: MoveRow[] = (() => {
     const verbose = gameRef.current.history({ verbose: true }) as Array<{ san: string; color: "w" | "b" }>;
     const rows: MoveRow[] = [];
     verbose.forEach((move, index) => {
@@ -207,7 +207,7 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
       }
     });
     return rows;
-  }, [position]);
+  })();
 
   useEffect(() => {
     const element = boardWrapRef.current;
@@ -398,11 +398,11 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
     return next;
   }
 
-  function goToPly(ply: number) {
+  const goToPly = useCallback((ply: number) => {
     const next = replayGame(ply);
     setSelectedPly(ply);
     setPosition(next.fen());
-  }
+  }, []);
 
   function goPrevious() {
     goToPly(Math.max(0, selectedPly - 1));
@@ -414,11 +414,11 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
 
   const goPreviousMemo = useCallback(() => {
     goToPly(Math.max(0, selectedPly - 1));
-  }, [selectedPly]);
+  }, [goToPly, selectedPly]);
 
   const goNextMemo = useCallback(() => {
     goToPly(Math.min(gameRef.current.history().length, selectedPly + 1));
-  }, [selectedPly]);
+  }, [goToPly, selectedPly]);
 
   useEffect(() => {
     if (!engineOn) return;

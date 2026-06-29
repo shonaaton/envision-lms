@@ -71,7 +71,7 @@ export default function PuzzleBoard({
   const moveTargets = useMemo(() => {
     if (!selectedSquare || status !== "playing") return [];
     return legalTargetsFromGame(game, selectedSquare);
-  }, [selectedSquare, status, position, game]);
+  }, [selectedSquare, status, game]);
   const moveHintStyles = useMemo(() => buildMoveHintStyles(moveTargets, selectedSquare), [moveTargets, selectedSquare]);
 
   function onSquareClick(square: string) {

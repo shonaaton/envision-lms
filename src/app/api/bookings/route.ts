@@ -13,11 +13,49 @@ import { isBookingWithinAvailability, type AvailabilitySlot } from "@/lib/bookin
 
 export const dynamic = "force-dynamic";
 
+type SessionUser = {
+  id: string;
+  role: "student" | "instructor" | "admin";
+};
+
+type AuthSession = {
+  user: SessionUser;
+};
+
 type BookingDecision = {
   bookingType: "demo" | "credit_class" | "regular";
   status: "pending" | "confirmed";
   approvalStatus: "not_required" | "pending_admin" | "pending_coach";
 };
+
+type BasicUser = {
+  _id: { toString(): string };
+  name?: string;
+  email?: string;
+  phone?: string;
+  parentName?: string;
+  city?: string;
+  country?: string;
+  studentLevel?: string;
+  accountStatus?: string;
+  role?: "student" | "instructor" | "admin";
+};
+
+type AdminUser = BasicUser & { name?: string; email?: string };
+
+type AvailabilityRecord = {
+  feePerSession?: number;
+  timezone?: string;
+  slots?: AvailabilitySlot[];
+};
+
+type CreditAssignment = {
+  creditBalance?: number;
+};
+
+function sessionUser(session: AuthSession) {
+  return session.user;
+}
 
 function formatBookingTime(value: string | Date) {
   return new Intl.DateTimeFormat("en-IN", {
@@ -85,8 +123,7 @@ async function notifyBookingUsers({
 export async function GET() {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const userId = (session.user as any).id;
-  const role = (session.user as any).role;
+  const { id: userId, role } = sessionUser(session as AuthSession);
   await dbConnect();
   const filter = role === "admin" ? {} : { $or: [{ student: userId }, { instructor: userId }] };
   const list = await Booking.find(filter)
@@ -102,9 +139,10 @@ export async function POST(req: Request) {
   try {
     const body = bookingSchema.parse(await req.json());
     await dbConnect();
-    const student: any = await User.findById((session.user as any).id).select("name email phone parentName city country studentLevel accountStatus").lean();
-    if (!student || (session.user as any).role !== "student") return NextResponse.json({ error: "Only students can book sessions." }, { status: 403 });
-    const instructor: any = await User.findOne({ _id: body.instructor, role: "instructor", isActive: true }).select("name email").lean();
+    const { id: studentUserId, role } = sessionUser(session as AuthSession);
+    const student = await User.findById(studentUserId).select("name email phone parentName city country studentLevel accountStatus").lean<BasicUser | null>();
+    if (!student || role !== "student") return NextResponse.json({ error: "Only students can book sessions." }, { status: 403 });
+    const instructor = await User.findOne({ _id: body.instructor, role: "instructor", isActive: true }).select("name email").lean<BasicUser | null>();
     if (!instructor) return NextResponse.json({ error: "That coach is no longer available for booking." }, { status: 404 });
 
     const startAt = new Date(body.startAt);
@@ -122,14 +160,14 @@ export async function POST(req: Request) {
     if (overlap) return NextResponse.json({ error: "Slot already booked" }, { status: 409 });
 
     const studentOverlap = await Booking.findOne({
-      student: (session.user as any).id,
+      student: studentUserId,
       startAt: { $lt: endAt },
       endAt: { $gt: startAt },
       status: { $in: ["pending", "confirmed"] },
     });
     if (studentOverlap) return NextResponse.json({ error: "You already have another booking at that time." }, { status: 409 });
 
-    const av: any = await Availability.findOne({ instructor: body.instructor }).lean();
+    const av = await Availability.findOne({ instructor: body.instructor }).lean<AvailabilityRecord | null>();
     const slotValidation = isBookingWithinAvailability({
       startAt,
       endAt,
@@ -149,7 +187,7 @@ export async function POST(req: Request) {
           : { bookingType: "regular", status: "confirmed", approvalStatus: "not_required" };
 
     if (decision.bookingType === "credit_class") {
-      const assignment: any = await FeeAssignment.findOne({ student: student._id, type: "credits" }).lean();
+      const assignment = await FeeAssignment.findOne({ student: student._id, type: "credits" }).lean<CreditAssignment | null>();
       if (!assignment || Number(assignment.creditBalance || 0) <= 0) {
         return NextResponse.json({ error: "You need an active credit plan with credits available to book a class." }, { status: 400 });
       }
@@ -157,7 +195,7 @@ export async function POST(req: Request) {
 
     const created = await Booking.create({
       ...body,
-      student: (session.user as any).id,
+      student: studentUserId,
       startAt,
       endAt,
       status: decision.status,
@@ -171,7 +209,7 @@ export async function POST(req: Request) {
       notes: body.notes,
     });
     const coach = instructor;
-    const admins = await User.find({ role: "admin", isActive: true }).select("_id email name").lean();
+    const admins = await User.find({ role: "admin", isActive: true }).select("_id email name").lean<AdminUser[]>();
     const adminTitle = isDemo
       ? "Demo booking needs approval"
       : decision.bookingType === "credit_class"
@@ -185,16 +223,16 @@ export async function POST(req: Request) {
     await Notification.insertMany([
       { user: student._id, type: "booking.created", title: isDemo ? "Demo request received" : decision.status === "confirmed" ? "Class booked" : "Class request sent", message: isDemo ? "Your demo request is waiting for academy approval." : decision.status === "confirmed" ? "Your class has been confirmed." : "Your coach will review this class request before a classroom is created.", metadata: { booking: created._id, href: "/booking" } },
       ...(coach?._id ? [{ user: coach._id, type: "booking.created", title: isDemo ? "Demo request pending" : decision.status === "confirmed" ? "Class booked" : "New class request", message: `${student.name} requested ${isDemo ? "a demo" : "a class"} for ${formatBookingTime(startAt)}.`, metadata: { booking: created._id, href: "/availability" } }] : []),
-      ...admins.map((admin: any) => ({ user: admin._id, type: "booking.created", title: adminTitle, message: adminMessage, metadata: { booking: created._id, href: "/admin/demo-bookings" } })),
+      ...admins.map((admin) => ({ user: admin._id, type: "booking.created", title: adminTitle, message: adminMessage, metadata: { booking: created._id, href: "/admin/demo-bookings" } })),
     ]);
     await Promise.all([
       student.email && sendAutomationEmail({ to: student.email, subject: isDemo ? "Demo booking request received" : decision.status === "confirmed" ? "Class booked" : "Class request sent", message: `Hello ${student.name},\n\n${isDemo ? "Your demo booking request has been received and is waiting for academy approval." : decision.status === "confirmed" ? "Your class has been confirmed." : "Your class request has been sent to the coach for approval."}\n\nTime: ${formatBookingTime(startAt)}` }),
       coach?.email && sendAutomationEmail({ to: coach.email, subject: isDemo ? "Demo request pending approval" : decision.status === "confirmed" ? "Class booked" : "New class request awaiting your response", message: `${student.name} requested ${isDemo ? "a demo class" : "a class"}.\n\nTime: ${formatBookingTime(startAt)}` }),
-      ...admins.filter((admin: any) => admin.email).map((admin: any) => sendAutomationEmail({ to: admin.email, subject: adminTitle, message: `${adminMessage}\n\nTime: ${formatBookingTime(startAt)}` })),
+      ...admins.filter((admin) => admin.email).map((admin) => sendAutomationEmail({ to: String(admin.email), subject: adminTitle, message: `${adminMessage}\n\nTime: ${formatBookingTime(startAt)}` })),
     ]);
     await recordActivity({
-      actor: (session.user as any).id,
-      targetUser: (session.user as any).id,
+      actor: studentUserId,
+      targetUser: studentUserId,
       type: "booking.created",
       label: "Booked a coaching session",
       entityType: "Booking",
@@ -202,8 +240,9 @@ export async function POST(req: Request) {
       metadata: { instructor: body.instructor, startAt: startAt.toISOString(), status: created.status, bookingType: created.bookingType, approvalStatus: created.approvalStatus },
     });
     return NextResponse.json(created);
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message ?? "Bad request" }, { status: 400 });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Bad request";
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 }
 
@@ -211,23 +250,22 @@ export async function PATCH(req: Request) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   await dbConnect();
-  const actorId = (session.user as any).id;
-  const role = (session.user as any).role;
+  const { id: actorId, role } = sessionUser(session as AuthSession);
   const body = await req.json();
-  const booking: any = await Booking.findById(body.bookingId).populate("student instructor", "name email studentLevel");
+  const booking = await Booking.findById(body.bookingId).populate("student instructor", "name email studentLevel");
   if (!booking) return NextResponse.json({ error: "Request not found" }, { status: 404 });
   const isAssignedCoach = booking.instructor?._id?.toString() === actorId;
   if (role !== "admin" && !isAssignedCoach) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   if (booking.status !== "pending") return NextResponse.json({ error: "This request has already been handled." }, { status: 409 });
 
-  const admins = await User.find({ role: "admin", isActive: true }).select("_id email name").lean();
+  const admins = await User.find({ role: "admin", isActive: true }).select("_id email name").lean<AdminUser[]>();
   const student = booking.student;
   const coach = booking.instructor;
   const action = String(body.action || "");
 
   if (action === "approve") {
     if (booking.bookingType === "credit_class") {
-      const assignment: any = await FeeAssignment.findOne({ student: student._id, type: "credits" }).lean();
+      const assignment = await FeeAssignment.findOne({ student: student._id, type: "credits" }).lean<CreditAssignment | null>();
       if (!assignment || Number(assignment.creditBalance || 0) <= 0) {
         return NextResponse.json({ error: "The student no longer has available class credits." }, { status: 400 });
       }

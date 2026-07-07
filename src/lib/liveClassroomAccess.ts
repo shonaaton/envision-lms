@@ -11,10 +11,17 @@ type ClassroomAccessShape = {
 };
 
 function objectId(value: unknown) {
-  if (value && typeof value === "object" && "_id" in (value as Record<string, unknown>)) {
-    return objectId((value as { _id?: unknown })._id);
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "object") {
+    const objectValue = value as Record<string, unknown> & { toHexString?: () => string; toString?: () => string };
+    if (typeof objectValue.toHexString === "function") return objectValue.toHexString();
+    if ("_id" in objectValue && objectValue._id && objectValue._id !== value) {
+      return objectId(objectValue._id);
+    }
+    if (typeof objectValue.toString === "function") return objectValue.toString();
   }
-  return value?.toString?.() || String(value || "");
+  return String(value);
 }
 
 export function canAccessLiveClassroom(classroom: ClassroomAccessShape | null | undefined, role: AppRole, userId: string) {

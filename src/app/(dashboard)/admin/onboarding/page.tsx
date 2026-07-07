@@ -175,7 +175,7 @@ export default async function AdminOnboardingPage() {
         <div className="inline-flex items-center gap-2 rounded-full bg-amber-100 px-3 py-1 text-xs font-black uppercase tracking-[0.18em] text-amber-700">
           <UserPlus size={14} /> Onboarding
         </div>
-        <h1 className="mt-2 text-3xl font-black text-brand">Demo & Coach Applications</h1>
+        <h1 className="mt-2 text-3xl font-black text-brand">Demo Bookings & Coach Applications</h1>
         <p className="mt-1 text-sm text-slate-600">Approve demo classrooms, review coach applications, and convert demo students after enrollment.</p>
       </header>
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
+import type { KeyboardEvent } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Check, EyeOff, MessageSquare, Search, Send, Shield, Trash2, Users } from "lucide-react";
 import { toast } from "sonner";
@@ -121,6 +122,12 @@ export default function AskCoachClient({ role }: { role: Role }) {
     await load(activeConversation?._id);
   }
 
+  function handleMessageKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
+    event.preventDefault();
+    void sendMessage();
+  }
+
   async function moderate(messageId: string, action: string) {
     const res = await fetch("/api/ask-coach/moderation", {
       method: "PATCH",
@@ -140,26 +147,26 @@ export default function AskCoachClient({ role }: { role: Role }) {
   }
 
   return (
-    <div className="flex h-[calc(100vh-92px)] min-h-[620px] flex-col overflow-hidden rounded-[28px] border border-brand/10 bg-white shadow-[0_24px_70px_rgba(90,19,114,0.14)]">
-      <div className="flex-none border-b border-brand/10 bg-gradient-to-r from-white via-purple-50/60 to-white p-4">
+    <div className="flex min-h-[calc(100dvh-88px)] flex-col overflow-hidden rounded-[22px] border border-brand/10 bg-white shadow-[0_24px_70px_rgba(90,19,114,0.14)] lg:h-[calc(100vh-92px)] lg:min-h-[620px] lg:rounded-[28px]">
+      <div className="flex-none border-b border-brand/10 bg-gradient-to-r from-white via-purple-50/60 to-white p-4 sm:p-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <div className="inline-flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.18em] text-brand/70">
               <Shield size={14} />
               Safe Academy Messaging
             </div>
-            <h1 className="mt-1 text-2xl font-black text-brand">Ask Coach</h1>
-            <p className="mt-1 text-sm text-slate-600">Focused student-coach conversations with moderation and alerts built in.</p>
+            <h1 className="mt-1 text-2xl font-black text-brand sm:text-3xl lg:text-2xl">Ask Coach</h1>
+            <p className="mt-1 max-w-2xl text-sm text-slate-600">Focused student-coach conversations with moderation and alerts built in.</p>
           </div>
-          <div className="relative w-full max-w-sm">
+          <div className="relative w-full lg:max-w-sm">
             <Search className="absolute left-3 top-3 text-slate-400" size={16} />
             <input value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => event.key === "Enter" && void load()} className="h-10 w-full rounded-xl border border-brand/10 bg-white pl-9 pr-3 text-sm shadow-sm outline-none transition focus:border-brand/40 focus:ring-4 focus:ring-brand/10" placeholder="Search messages" />
           </div>
         </div>
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)_300px]">
-        <aside className="min-h-0 overflow-auto border-b border-brand/10 bg-slate-50/70 p-3 lg:border-b-0 lg:border-r">
+      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[280px_minmax(0,1fr)_300px] lg:overflow-hidden">
+        <aside className="order-1 max-h-[260px] min-h-0 overflow-auto border-b border-brand/10 bg-slate-50/70 p-3 lg:max-h-none lg:border-b-0 lg:border-r">
           <div className="mb-3 flex items-center gap-2 text-sm font-black text-slate-950"><MessageSquare size={16} className="text-brand" /> Conversations</div>
           <div className="space-y-2">
             {conversations.length ? conversations.map((conversation) => (
@@ -171,19 +178,19 @@ export default function AskCoachClient({ role }: { role: Role }) {
           </div>
         </aside>
 
-        <main className="flex min-h-0 flex-col">
-          <div className="flex-none border-b border-brand/10 bg-white p-3">
+        <main className="order-3 flex min-h-[520px] flex-col border-t border-brand/10 lg:order-2 lg:min-h-0 lg:border-t-0">
+          <div className="flex-none border-b border-brand/10 bg-white p-3 sm:p-4">
             <h2 className="text-lg font-black text-slate-950">{activeConversation ? conversationTitle(activeConversation) : "New Message"}</h2>
             <p className="text-xs text-slate-500">{activeConversation?.type === "batch" ? "Batch chat" : "Individual chat"}</p>
           </div>
-          <div className="min-h-0 flex-1 space-y-3 overflow-auto bg-[radial-gradient(circle_at_top,rgba(90,19,114,0.07),transparent_34%),#f8fafc] p-4">
+          <div className="min-h-0 flex-1 space-y-3 overflow-auto bg-[radial-gradient(circle_at_top,rgba(90,19,114,0.07),transparent_34%),#f8fafc] p-3 sm:p-4">
             {activeMessages.length ? activeMessages.map((item) => (
               <div id={`ask-coach-message-${item._id}`} key={item._id} className={`rounded-2xl border bg-white p-3 shadow-sm ${item.flagged ? "border-amber-300 ring-2 ring-amber-100" : "border-slate-200"}`}>
-                <div className="mb-1 flex items-center justify-between gap-2">
-                  <div className="text-xs font-semibold text-slate-500">{item.sender?.name || "User"} • {new Date(item.createdAt || "").toLocaleString()}</div>
+                <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+                  <div className="min-w-0 text-xs font-semibold text-slate-500">{item.sender?.name || "User"} - {new Date(item.createdAt || "").toLocaleString()}</div>
                   {item.flagged && <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700"><AlertTriangle size={13} /> Flagged</span>}
                 </div>
-                <div className={`text-sm text-slate-800 ${item.status === "hidden" && role !== "admin" ? "italic text-slate-400" : ""}`}>
+                <div className={`break-words text-sm leading-relaxed text-slate-800 ${item.status === "hidden" && role !== "admin" ? "italic text-slate-400" : ""}`}>
                   {item.status === "hidden" && role !== "admin" ? "Hidden pending admin review" : item.body}
                 </div>
                 {item.flagReasons?.length ? <div className="mt-2 text-xs text-amber-700">Reasons: {item.flagReasons.join(", ")}</div> : null}
@@ -199,30 +206,37 @@ export default function AskCoachClient({ role }: { role: Role }) {
               </div>
             )) : <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">Select a conversation or send a new message.</div>}
           </div>
-          <div className="flex-none border-t border-brand/10 bg-white p-3">
-            <textarea value={message} onChange={(event) => setMessage(event.target.value)} className="min-h-16 w-full rounded-2xl border border-brand/10 px-3 py-2 text-sm outline-none transition focus:border-brand/40 focus:ring-4 focus:ring-brand/10" placeholder="Type your message. Contact details and restricted content will be flagged." />
-            <div className="mt-2 flex justify-end">
-              <button disabled={loading} onClick={sendMessage} className="inline-flex h-10 items-center gap-2 rounded-xl bg-brand px-5 text-sm font-black text-white shadow-lg shadow-brand/20 disabled:opacity-60"><Send size={16} /> Send</button>
+          <div className="sticky bottom-0 z-10 flex-none border-t border-brand/10 bg-white/95 p-3 backdrop-blur lg:static">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+              <textarea
+                value={message}
+                onChange={(event) => setMessage(event.target.value)}
+                onKeyDown={handleMessageKeyDown}
+                className="min-h-14 flex-1 resize-none rounded-2xl border border-brand/10 px-3 py-2 text-sm outline-none transition focus:border-brand/40 focus:ring-4 focus:ring-brand/10"
+                placeholder="Type your message. Press Enter to send, Shift+Enter for a new line."
+                rows={2}
+              />
+              <button disabled={loading || !message.trim()} onClick={sendMessage} className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-brand px-5 text-sm font-black text-white shadow-lg shadow-brand/20 disabled:opacity-60"><Send size={16} /> Send</button>
             </div>
           </div>
         </main>
 
-        <aside className="min-h-0 overflow-auto border-t border-brand/10 bg-white p-3 lg:border-l lg:border-t-0">
+        <aside className="order-2 min-h-0 overflow-auto border-b border-brand/10 bg-white p-3 lg:order-3 lg:border-b-0 lg:border-l">
           <div className="space-y-4">
-            <section className="rounded-2xl border border-brand/10 bg-slate-50 p-4 shadow-sm">
+            <section className="rounded-2xl border border-brand/10 bg-slate-50 p-3 shadow-sm sm:p-4">
               <h3 className="flex items-center gap-2 font-black text-slate-950"><Users size={16} className="text-brand" /> New Message</h3>
               {role !== "student" && (
-                <div className="mt-3 space-y-3">
+                <div className="mt-3 space-y-2">
                   <label className="block text-xs font-semibold text-slate-500">Student / Coach</label>
                   <select value={receiver} onChange={(event) => { setReceiver(event.target.value); setBatch(""); }} className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm">
                     <option value="">Select person</option>
-                    {(data.targets.students || []).map((student) => <option key={student._id} value={student._id}>{student.name} • Student</option>)}
-                    {role === "admin" && (data.targets.coaches || []).map((coach) => <option key={coach._id} value={coach._id}>{coach.name} • Coach</option>)}
+                    {(data.targets.students || []).map((student) => <option key={student._id} value={student._id}>{student.name} - Student</option>)}
+                    {role === "admin" && (data.targets.coaches || []).map((coach) => <option key={coach._id} value={coach._id}>{coach.name} - Coach</option>)}
                   </select>
                 </div>
               )}
               {canSendBatch && (
-                <div className="mt-3 space-y-3">
+                <div className="mt-3 space-y-2">
                   <label className="block text-xs font-semibold text-slate-500">Batch Message</label>
                   <select value={batch} onChange={(event) => { setBatch(event.target.value); setReceiver(""); }} className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm">
                     <option value="">Select batch</option>

@@ -124,7 +124,7 @@ export async function GET(req: Request) {
   if (!demoState.allowed) {
     return NextResponse.json(
       {
-        error: `Your demo ${isKingHunt ? "King Hunt" : "Tactics Trainer"} limit is finished. Please book a demo class or contact the academy.`,
+        error: `Your demo ${isKingHunt ? "King Hunt" : "Tactics Trainer"} limit is finished. Please create a demo booking or contact the academy.`,
         demo: demoState,
       },
       { status: 403 }
@@ -188,7 +188,7 @@ export async function POST(req: Request) {
   const demoState = await consumeDemoUsage((session.user as any).id, isKingHunt ? "kingHunt" : "tacticsTrainer");
   if (!demoState.allowed) {
     return NextResponse.json(
-      { error: `Your demo ${isKingHunt ? "King Hunt" : "Tactics Trainer"} limit is finished. Please book a demo class or contact the academy.` },
+      { error: `Your demo ${isKingHunt ? "King Hunt" : "Tactics Trainer"} limit is finished. Please create a demo booking or contact the academy.` },
       { status: 403 }
     );
   }

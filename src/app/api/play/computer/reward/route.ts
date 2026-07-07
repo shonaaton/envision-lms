@@ -24,7 +24,7 @@ export async function GET() {
   await dbConnect();
   const demo = await demoUsageState((session.user as any).id, "playComputer");
   if (!demo.allowed) {
-    return NextResponse.json({ error: "Your demo Play vs Computer limit is finished. Please book a demo class or contact the academy.", demo }, { status: 403 });
+    return NextResponse.json({ error: "Your demo Play vs Computer limit is finished. Please create a demo booking or contact the academy.", demo }, { status: 403 });
   }
   return NextResponse.json({ ok: true, demo });
 }
@@ -63,7 +63,7 @@ export async function POST(req: Request) {
   await dbConnect();
   const demoState = await consumeDemoUsage((session.user as any).id, "playComputer");
   if (!demoState.allowed) {
-    return NextResponse.json({ error: "Your demo Play vs Computer limit is finished. Please book a demo class or contact the academy." }, { status: 403 });
+    return NextResponse.json({ error: "Your demo Play vs Computer limit is finished. Please create a demo booking or contact the academy." }, { status: 403 });
   }
 
   const reward = await StudentReward.create({

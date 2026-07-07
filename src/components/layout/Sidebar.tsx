@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import Logo from "./Logo";
 import { cn } from "@/lib/utils";
+import { bookingFeatureNameForAccount } from "@/lib/bookingLabels";
 
 type Role = "student" | "instructor" | "admin";
 type AccountStatus = "demo" | "enrolled" | "coach_applicant" | "approved" | "rejected";
@@ -51,7 +52,7 @@ const sections: NavSection[] = [
     items: [
       { href: "/classrooms", label: "Classrooms", icon: BookOpen },
       { href: "/availability", label: "Available Times", icon: CalendarDays, roles: ["instructor", "admin"] },
-      { href: "/booking", label: "Book Demo / Class", icon: CalendarDays, roles: ["student"] },
+      { href: "/booking", label: "Booking", icon: CalendarDays, roles: ["student"] },
       { href: "/ask-coach", label: "Ask Coach", icon: MessageSquare },
       { href: "/homework", label: "Homework", icon: FileText },
       { href: "/attendance", label: "Attendance", icon: ClipboardList },
@@ -91,6 +92,7 @@ const sections: NavSection[] = [
     roles: ["student"],
     items: [
       { href: "/fees", label: "Credits & Payments", icon: WalletCards },
+      { href: "/fees/credit-history", label: "Credit History", icon: WalletCards },
       { href: "/fees/invoices", label: "My Invoices", icon: Receipt },
     ],
   },
@@ -237,7 +239,7 @@ export default function Sidebar({
                           <span className={cn("flex h-7 w-7 items-center justify-center rounded-lg transition", active ? "bg-accent text-brand" : "bg-white/10 text-accent group-hover:bg-accent group-hover:text-brand")}>
                             <Icon size={16} />
                           </span>
-                          <span>{item.label}</span>
+                          <span>{item.href === "/booking" ? bookingFeatureNameForAccount(accountStatus) : item.label}</span>
                         </Link>
                       </li>
                     );

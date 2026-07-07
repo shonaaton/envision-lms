@@ -117,14 +117,17 @@ export default async function FeesDashboardPage() {
                 <h2 className="text-lg font-black text-slate-950">Credit Usage History</h2>
                 <p className="text-sm text-slate-500">Credits are deducted automatically when attendance is marked present or late.</p>
               </div>
-              <span className="rounded-full bg-brand/10 px-3 py-1 text-xs font-bold text-brand">{recentCredits.length} entries</span>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full bg-brand/10 px-3 py-1 text-xs font-bold text-brand">{recentCredits.length} recent</span>
+                <Link href="/fees/credit-history" className="rounded-full border border-brand/15 px-3 py-1 text-xs font-bold text-brand hover:bg-brand hover:text-white">View all</Link>
+              </div>
             </div>
             <div className="space-y-2">
               {recentCredits.length ? recentCredits.map((item: any) => (
                 <div key={item._id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm">
                   <div>
                     <div className="font-bold text-slate-950">{item.type === "purchase" ? "Credits added" : item.type === "attendance_consumption" ? "Class credit used" : "Credit adjustment"}</div>
-                    <div className="text-xs text-slate-500">{item.note || "Credit ledger entry"} â€¢ {new Date(item.createdAt).toLocaleString("en-IN")}</div>
+                    <div className="text-xs text-slate-500">{item.note || "Credit ledger entry"} - {new Date(item.createdAt).toLocaleString("en-IN")}</div>
                   </div>
                   <div className="text-right">
                     <div className={item.credits > 0 ? "font-black text-emerald-700" : "font-black text-rose-700"}>{item.credits > 0 ? "+" : ""}{item.credits}</div>
@@ -246,3 +249,4 @@ export default async function FeesDashboardPage() {
     </div>
   );
 }
+

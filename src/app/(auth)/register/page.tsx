@@ -107,7 +107,7 @@ export default function RegisterPage() {
           <div className="mb-6 text-center">
             <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-accent text-brand"><ShieldCheck size={23} /></div>
             <h1 className="text-3xl font-bold">{role === "student" ? "Create Demo Student Account" : "Coach Application"}</h1>
-            <p className="mt-2 text-sm text-slate-500">{role === "student" ? "Demo users get limited practice access and can book a demo class." : "Coach applications are reviewed by admin before account activation."}</p>
+            <p className="mt-2 text-sm text-slate-500">{role === "student" ? "Demo users get limited practice access and can create a demo booking." : "Coach applications are reviewed by admin before account activation."}</p>
           </div>
 
           <div className="mb-5 grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1">

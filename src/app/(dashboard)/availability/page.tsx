@@ -124,7 +124,7 @@ export default function AvailabilityPage() {
           </div>
           <h1 className="mt-2 text-3xl font-black text-brand">Available Times</h1>
           <p className="mt-1 max-w-3xl text-sm text-slate-600">
-            Add the regular times you are open for demo classes and credit-plan class requests. Demo requests still wait for admin approval.
+            Add the regular times you are open for demo bookings and credit-plan class bookings. Demo bookings still wait for admin approval.
           </p>
         </div>
         <button onClick={save} disabled={loading} className="btn-primary">
@@ -134,8 +134,8 @@ export default function AvailabilityPage() {
 
       <section className="rounded-[24px] border border-brand/10 bg-white p-5 shadow-sm">
         <div>
-          <h2 className="text-lg font-black">Class requests</h2>
-          <p className="text-sm text-slate-500">A classroom is created only after you approve a student request.</p>
+          <h2 className="text-lg font-black">Class bookings</h2>
+          <p className="text-sm text-slate-500">A classroom is created only after you approve a student class booking.</p>
         </div>
         <div className="mt-4 space-y-3">
           {requests.filter((request) => request.status === "pending" && ["pending_coach", "reschedule_proposed"].includes(request.approvalStatus)).map((request) => (
@@ -167,7 +167,7 @@ export default function AvailabilityPage() {
             </div>
           ))}
           {!requests.some((request) => request.status === "pending" && ["pending_coach", "reschedule_proposed"].includes(request.approvalStatus)) ? (
-            <div className="rounded-2xl border border-dashed border-slate-300 p-5 text-sm text-slate-500">No class requests are waiting for you.</div>
+            <div className="rounded-2xl border border-dashed border-slate-300 p-5 text-sm text-slate-500">No class bookings are waiting for you.</div>
           ) : null}
         </div>
       </section>
@@ -223,8 +223,8 @@ export default function AvailabilityPage() {
           <div className="rounded-[24px] border border-brand/10 bg-white p-5 shadow-sm">
             <h3 className="flex items-center gap-2 font-black text-brand"><Clock3 size={18} /> Booking Rules</h3>
             <div className="mt-4 space-y-3 text-sm leading-6 text-slate-600">
-              <p>Demo students can request these times, but admin must approve before the demo classroom is created.</p>
-              <p>Credit-plan students can request these times when credits are available. The class is created only after coach approval.</p>
+              <p>Demo students can submit demo bookings for these times, but admin must approve before the demo classroom is created.</p>
+              <p>Credit-plan students can submit class bookings for these times when credits are available. The class is created only after coach approval.</p>
               <p>Monthly-plan classes remain on their fixed schedules.</p>
             </div>
           </div>

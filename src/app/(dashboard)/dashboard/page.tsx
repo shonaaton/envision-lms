@@ -22,6 +22,8 @@ import {
 } from "@/lib/classroomSessions";
 import { summarizeCoachSessions } from "@/lib/teachingStats";
 import JoinScheduledSessionButton from "@/components/classroom/JoinScheduledSessionButton";
+import { bookingFeatureNameForAccount } from "@/lib/bookingLabels";
+import { demoStudentExperience } from "@/lib/demoStudentExperience";
 import {
   Activity as ActivityIcon,
   ArrowRight,
@@ -42,6 +44,7 @@ import {
   TrendingUp,
   Users,
   Trophy,
+  WalletCards,
   Zap,
 } from "lucide-react";
 import Link from "next/link";
@@ -160,7 +163,7 @@ function miniBars(points: { label: string; value: number }[]) {
   const max = Math.max(1, ...points.map((p) => p.value));
   return points.map((point) => ({
     ...point,
-    height: Math.max(8, Math.round((point.value / max) * 130)),
+    height: Math.max(8, Math.round((point.value / max) * 100)),
   }));
 }
 
@@ -203,6 +206,31 @@ function StatCard({ label, value, note, icon: Icon, tone = "purple" }: { label: 
   );
 }
 
+function MiniBarChart({ points, barClassName }: { points: Array<{ label: string; value: number; height: number }>; barClassName: string }) {
+  return (
+    <div className="mt-4 overflow-hidden rounded-xl bg-slate-50 px-3 py-3 shadow-inner shadow-slate-200/60">
+      <div className="flex h-24 max-h-24 items-end gap-1 overflow-hidden sm:h-28 sm:max-h-28">
+        {points.map((point) => (
+          <div key={point.label} className="flex min-w-0 flex-1 flex-col items-center justify-end">
+            <div
+              className={`w-full max-w-4 rounded-t ${barClassName}`}
+              style={{ height: `${point.height}%`, maxHeight: "100%" }}
+              title={`${point.label}: ${point.value}`}
+            />
+          </div>
+        ))}
+      </div>
+      <div className="mt-2 hidden min-w-0 grid-cols-[repeat(auto-fit,minmax(16px,1fr))] gap-1 sm:grid">
+        {points.map((point) => (
+          <span key={point.label} className="truncate text-center text-[10px] text-slate-500" title={point.label}>
+            {point.label}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function InfoTile({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
@@ -228,6 +256,270 @@ function QuickLinkCard({ href, title, subtitle, icon: Icon }: { href: string; ti
         Open <ArrowRight size={14} className="transition group-hover:translate-x-0.5" />
       </div>
     </Link>
+  );
+}
+
+function DemoPreviewBadge() {
+  return <span className="rounded-full bg-amber-100 px-3 py-1 text-[11px] font-black uppercase tracking-[0.14em] text-amber-700">Demo Preview</span>;
+}
+
+function DemoPreviewPanel({
+  title,
+  subtitle,
+  icon: Icon,
+  children,
+}: {
+  title: string;
+  subtitle: string;
+  icon: any;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-[28px] border border-brand/10 bg-white p-5 shadow-[0_20px_50px_rgba(90,19,114,0.10)]">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-brand/10 text-brand">
+            <Icon size={18} />
+          </span>
+          <div>
+            <div className="font-black text-slate-950">{title}</div>
+            <div className="mt-1 text-sm text-slate-500">{subtitle}</div>
+          </div>
+        </div>
+        <DemoPreviewBadge />
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function DemoStudentDashboard({
+  studentName,
+  bookingFeatureName,
+  demoUsage,
+  demoLimits,
+}: {
+  studentName?: string;
+  bookingFeatureName: string;
+  demoUsage: Record<string, number>;
+  demoLimits: Record<string, number>;
+}) {
+  return (
+    <div className="space-y-5 text-slate-950">
+      <section className="rounded-[28px] border border-amber-200 bg-[linear-gradient(135deg,#fff8d8_0%,#fff4c1_45%,#ffffff_100%)] px-5 py-5 shadow-[0_24px_60px_rgba(196,151,0,0.16)]">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+          <div className="max-w-3xl">
+            <div className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-[11px] font-black uppercase tracking-[0.18em] text-brand shadow-sm">
+              <GraduationCap size={14} /> Demo Student Experience
+            </div>
+            <h1 className="mt-3 text-3xl font-black text-slate-950">Explore how the LMS works after enrollment</h1>
+            <p className="mt-2 text-sm leading-6 text-slate-700">
+              Welcome{studentName ? `, ${studentName}` : ""}. This account shows a guided walkthrough of the full student journey using clearly marked sample data. Nothing in these preview sections affects live classes, homework, attendance, reports, or academy records.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Link href="/booking" className="btn-primary">Open {bookingFeatureName}</Link>
+              <Link href="/play/computer" className="btn-outline bg-white">Try Computer Practice</Link>
+              <Link href="/play/tactics-trainer" className="btn-outline bg-white">Try Tactics Trainer</Link>
+              <Link href="/play/king-hunt" className="btn-outline bg-white">Try King Hunt</Link>
+              <Link href="/play/square-trainer" className="btn-outline bg-white">Try Square Trainer</Link>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:w-[520px]">
+            <StatCard label="Upcoming Classes" value={demoStudentExperience.stats.upcomingClasses} note="Sample schedule" icon={Calendar} tone="purple" />
+            <StatCard label="Homework" value={demoStudentExperience.stats.homework} note="Sample assignments" icon={ClipboardList} tone="amber" />
+            <StatCard label="Attendance" value={demoStudentExperience.stats.attendance} note="Demo report" icon={CheckCircle2} tone="green" />
+            <StatCard label="Credits" value={demoStudentExperience.stats.credits} note="Sample balance" icon={WalletCards} tone="blue" />
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-[28px] border border-brand/10 bg-white p-5 shadow-[0_20px_50px_rgba(90,19,114,0.10)]">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <SectionTitle icon={BellRing} title="Guided Walkthrough" subtitle="A simple tour of what enrolled students and parents will experience" />
+          <DemoPreviewBadge />
+        </div>
+        <div className="grid gap-3 lg:grid-cols-3">
+          {demoStudentExperience.steps.map((step, index) => (
+            <div key={step.title} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-brand text-sm font-black text-white">{index + 1}</div>
+              <div className="mt-3 font-black text-slate-950">{step.title}</div>
+              <p className="mt-1 text-sm leading-6 text-slate-600">{step.description}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="rounded-[28px] border border-brand/10 bg-white p-5 shadow-[0_20px_50px_rgba(90,19,114,0.10)]">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <SectionTitle icon={Gamepad2} title="Practice Access" subtitle="These live tools are available in the demo account right now" />
+          <DemoPreviewBadge />
+        </div>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="font-black text-slate-950">Play vs Computer</div>
+            <div className="mt-1 text-xs text-slate-500">Hands-on practice with the guided engine</div>
+            <div className="mt-3 text-sm font-semibold text-slate-800">{demoUsage.playComputer || 0}/{demoLimits.playComputer || 0} used</div>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="font-black text-slate-950">Square Trainer</div>
+            <div className="mt-1 text-xs text-slate-500">Board vision drills with XP</div>
+            <div className="mt-3 text-sm font-semibold text-slate-800">{demoUsage.squareTrainer || 0}/{demoLimits.squareTrainer || 0} used</div>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="font-black text-slate-950">Tactics Trainer</div>
+            <div className="mt-1 text-xs text-slate-500">Puzzle solving flow and rewards</div>
+            <div className="mt-3 text-sm font-semibold text-slate-800">{demoUsage.tacticsTrainer || 0}/{demoLimits.tacticsTrainer || 0} used</div>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="font-black text-slate-950">King Hunt</div>
+            <div className="mt-1 text-xs text-slate-500">Checkmate practice challenges</div>
+            <div className="mt-3 text-sm font-semibold text-slate-800">{demoUsage.kingHunt || 0}/{demoLimits.kingHunt || 3} used</div>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="font-black text-slate-950">Demo Booking</div>
+            <div className="mt-1 text-xs text-slate-500">Request a live trial class with the academy</div>
+            <div className="mt-3 text-sm font-semibold text-slate-800">Ready any time</div>
+          </div>
+        </div>
+      </section>
+
+      <div className="grid gap-5 xl:grid-cols-2">
+        <DemoPreviewPanel title="Upcoming Classes" subtitle="How a student's live schedule appears after enrollment" icon={Calendar}>
+          <div className="space-y-3">
+            {demoStudentExperience.upcomingClasses.map((item) => (
+              <div key={item.title} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="font-black text-slate-950">{item.title}</div>
+                    <div className="mt-1 text-sm text-slate-600">{item.coach} • {item.format}</div>
+                  </div>
+                  <span className="chip bg-brand/10 text-brand">{item.status}</span>
+                </div>
+                <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                  <InfoTile label="Date" value={item.dateLabel} />
+                  <InfoTile label="Time" value={item.timeLabel} />
+                  <InfoTile label="Format" value="Join Classroom" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </DemoPreviewPanel>
+
+        <DemoPreviewPanel title="Homework" subtitle="Assigned work, due dates, and coach follow-up" icon={ClipboardList}>
+          <div className="space-y-3">
+            {demoStudentExperience.homework.map((item) => (
+              <div key={item.title} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="font-black text-slate-950">{item.title}</div>
+                    <div className="mt-1 text-sm text-slate-600">{item.dueLabel}</div>
+                  </div>
+                  <span className="chip">{item.status}</span>
+                </div>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <InfoTile label="Activity Items" value={item.items} />
+                  <InfoTile label="Sample Outcome" value={item.score} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </DemoPreviewPanel>
+
+        <DemoPreviewPanel title="Attendance" subtitle="Parents and students can track consistency and punctuality" icon={CheckCircle2}>
+          <div className="grid gap-3 sm:grid-cols-3">
+            {demoStudentExperience.attendance.map((item) => (
+              <InfoTile key={item.label} label={item.label} value={item.value} />
+            ))}
+          </div>
+        </DemoPreviewPanel>
+
+        <DemoPreviewPanel title="Calendar" subtitle="Classes, homework, and tournament reminders in one view" icon={Calendar}>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {demoStudentExperience.calendar.map((item) => (
+              <div key={`${item.day}-${item.title}`} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <div className="text-xs font-black uppercase tracking-[0.16em] text-brand">{item.day}</div>
+                <div className="mt-1 font-semibold text-slate-950">{item.title}</div>
+              </div>
+            ))}
+          </div>
+        </DemoPreviewPanel>
+
+        <DemoPreviewPanel title="Progress Reports" subtitle="The kind of summary parents receive after steady learning" icon={BarChart3}>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {demoStudentExperience.progress.map((item) => (
+              <InfoTile key={item.label} label={item.label} value={item.value} />
+            ))}
+          </div>
+        </DemoPreviewPanel>
+
+        <DemoPreviewPanel title="Leaderboards" subtitle="Friendly competition through XP, coins, and badges" icon={Trophy}>
+          <div className="space-y-3">
+            {demoStudentExperience.leaderboard.map((item) => (
+              <div key={`${item.rank}-${item.name}`} className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <div>
+                  <div className="font-black text-slate-950">{item.name}</div>
+                  <div className="text-sm text-slate-500">{item.detail}</div>
+                </div>
+                <span className="chip bg-amber-50 text-amber-700">{item.rank}</span>
+              </div>
+            ))}
+          </div>
+        </DemoPreviewPanel>
+
+        <DemoPreviewPanel title="Tournaments" subtitle="Students can discover upcoming academy events and formats" icon={Trophy}>
+          <div className="space-y-3">
+            {demoStudentExperience.tournaments.map((item) => (
+              <div key={item.title} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="font-black text-slate-950">{item.title}</div>
+                <div className="mt-1 text-sm text-slate-600">{item.detail}</div>
+                <div className="mt-3 text-xs font-bold uppercase tracking-[0.14em] text-brand">{item.status}</div>
+              </div>
+            ))}
+          </div>
+        </DemoPreviewPanel>
+
+        <DemoPreviewPanel title="Credits & Payments" subtitle="A preview of how students track credits, plans, and invoices" icon={WalletCards}>
+          <div className="grid gap-3 sm:grid-cols-3">
+            {demoStudentExperience.credits.map((item) => (
+              <InfoTile key={item.label} label={item.label} value={item.value} />
+            ))}
+          </div>
+        </DemoPreviewPanel>
+
+        <DemoPreviewPanel title="Ask Coach" subtitle="Private guidance threads remain visible in the full student experience" icon={MessageSquare}>
+          <div className="space-y-3">
+            {demoStudentExperience.askCoach.map((item) => (
+              <div key={item.title} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="font-black text-slate-950">{item.title}</div>
+                <div className="mt-1 text-sm text-slate-600">{item.reply}</div>
+              </div>
+            ))}
+          </div>
+        </DemoPreviewPanel>
+
+        <DemoPreviewPanel title="Class History" subtitle="Completed sessions, summaries, and follow-up records" icon={BookOpen}>
+          <div className="space-y-3">
+            {demoStudentExperience.classHistory.map((item) => (
+              <div key={item.title} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="font-black text-slate-950">{item.title}</div>
+                <div className="mt-1 text-sm text-slate-600">{item.detail}</div>
+              </div>
+            ))}
+          </div>
+        </DemoPreviewPanel>
+
+        <DemoPreviewPanel title="Certificates" subtitle="Milestones and achievement badges students may unlock" icon={GraduationCap}>
+          <div className="space-y-3">
+            {demoStudentExperience.certificates.map((item) => (
+              <div key={item.title} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="font-black text-slate-950">{item.title}</div>
+                <div className="mt-1 text-sm text-slate-600">{item.detail}</div>
+              </div>
+            ))}
+          </div>
+        </DemoPreviewPanel>
+      </div>
+    </div>
   );
 }
 
@@ -390,8 +682,20 @@ async function StudentDashboard({ userId }: { userId: string }) {
   const heroSessionOpen = nextSession ? canJoinScheduledSession(nextSession.session, now) : false;
   const studentRank = await computeStudentRank(userId);
   const isDemoAccount = (student as any)?.accountStatus === "demo";
+  const bookingFeatureName = bookingFeatureNameForAccount((student as any)?.accountStatus);
   const demoUsage = (student as any)?.demoUsage || {};
   const demoLimits = (student as any)?.demoLimits || {};
+
+  if (isDemoAccount) {
+    return (
+      <DemoStudentDashboard
+        studentName={(student as any)?.name || "Student"}
+        bookingFeatureName={bookingFeatureName}
+        demoUsage={demoUsage}
+        demoLimits={demoLimits}
+      />
+    );
+  }
 
   return (
     <div className="space-y-5 text-slate-950">
@@ -416,34 +720,6 @@ async function StudentDashboard({ userId }: { userId: string }) {
           </div>
         </div>
       </section>
-
-      {isDemoAccount ? (
-        <section className="rounded-[24px] border border-amber-200 bg-amber-50 p-5 shadow-[0_18px_45px_rgba(253,231,90,0.18)]">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <div className="text-[11px] font-black uppercase tracking-[0.18em] text-brand">Demo Account</div>
-              <h2 className="mt-1 text-xl font-black text-slate-950">Your academy trial is active</h2>
-              <p className="mt-1 max-w-3xl text-sm text-slate-700">
-                You can explore selected practice tools and request a demo class. Full classroom, homework, PGN, and analysis access unlocks after the academy converts your account.
-              </p>
-            </div>
-            <div className="grid gap-2 text-xs font-bold text-slate-700 sm:grid-cols-3">
-              <span className="rounded-2xl bg-white px-4 py-3 shadow-sm">Computer: {demoUsage.playComputer || 0}/{demoLimits.playComputer || 0}</span>
-              <span className="rounded-2xl bg-white px-4 py-3 shadow-sm">Square Trainer: {demoUsage.squareTrainer || 0}/{demoLimits.squareTrainer || 0}</span>
-              <span className="rounded-2xl bg-white px-4 py-3 shadow-sm">Tactics: {demoUsage.tacticsTrainer || 0}/{demoLimits.tacticsTrainer || 0}</span>
-              <span className="rounded-2xl bg-white px-4 py-3 shadow-sm">King Hunt: {demoUsage.kingHunt || 0}/{demoLimits.kingHunt || 3}</span>
-              <span className="rounded-2xl bg-white px-4 py-3 shadow-sm">Analysis: {demoUsage.analysisBoard || 0}/{demoLimits.analysisBoard || 0}</span>
-            </div>
-          </div>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Link href="/booking" className="btn-primary">Book Demo Class</Link>
-            <Link href="/play/computer" className="btn-outline bg-white">Try Computer Practice</Link>
-            <Link href="/play/tactics-trainer" className="btn-outline bg-white">Try Tactics Trainer</Link>
-            <Link href="/play/king-hunt" className="btn-outline bg-white">Try King Hunt</Link>
-            <Link href="/play/square-trainer" className="btn-outline bg-white">Try Square Trainer</Link>
-          </div>
-        </section>
-      ) : null}
 
       <section className="grid gap-5 xl:grid-cols-[1.35fr_0.85fr]">
         <div className="rounded-[28px] border border-brand/10 bg-[linear-gradient(135deg,rgba(90,19,114,1),rgba(124,31,162,0.92))] p-6 text-white shadow-[0_24px_60px_rgba(90,19,114,0.18)]">
@@ -1285,14 +1561,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
       <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(360px,0.9fr)]">
         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_18px_45px_rgba(90,19,114,0.12)]">
           <SectionTitle icon={TrendingUp} title="Student Growth Analytics" subtitle="New student registrations inside the selected calendar range" />
-          <div className="flex h-44 items-end gap-1 rounded-md bg-slate-50 px-3 py-4">
-            {growthPoints.map((point) => (
-              <div key={point.label} className="flex min-w-0 flex-1 flex-col items-center gap-2">
-                <div className="w-full rounded-t bg-purple-600" style={{ height: `${point.height}px` }} title={`${point.label}: ${point.value}`} />
-                <span className="w-full truncate text-center text-[10px] text-slate-500">{point.label}</span>
-              </div>
-            ))}
-          </div>
+          <MiniBarChart points={growthPoints} barClassName="bg-purple-600" />
           <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-4">
             <div className="rounded-md bg-slate-50 p-3">
               <div className="text-xs text-slate-500">Growth</div>
@@ -1340,14 +1609,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
             <StatCard label="Gameplay Activity" value={pgns.length} note="PGNs uploaded/reviewed" icon={Gamepad2} tone="amber" />
             <StatCard label="Assessments" value={submissions.length} note={`${scoreRate}% score rate`} icon={CheckCircle2} tone="green" />
           </div>
-          <div className="mt-4 flex h-32 items-end gap-1 rounded-md bg-slate-50 px-3 py-4">
-            {homeworkByDay.map((point) => (
-              <div key={point.label} className="flex min-w-0 flex-1 flex-col items-center gap-2">
-                <div className="w-full rounded-t bg-emerald-500" style={{ height: `${point.height}px` }} title={`${point.label}: ${point.value}`} />
-                <span className="w-full truncate text-center text-[10px] text-slate-500">{point.label}</span>
-              </div>
-            ))}
-          </div>
+          <MiniBarChart points={homeworkByDay} barClassName="bg-emerald-500" />
         </section>
 
         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_18px_45px_rgba(90,19,114,0.12)]">

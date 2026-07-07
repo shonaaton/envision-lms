@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 import { CalendarDays, CheckCircle2, Clock3, Sparkles, UserRound } from "lucide-react";
 import { nextOccurrenceForWeeklySlot } from "@/lib/bookingAvailability";
+import { bookingFeatureNameForAccount, bookingFeatureNameForType, isDemoBookingAccount } from "@/lib/bookingLabels";
 
 const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -24,6 +26,10 @@ type SlotOption = {
 };
 
 export default function BookingPage() {
+  const { data: session } = useSession();
+  const accountStatus = (session?.user as any)?.accountStatus as string | undefined;
+  const isDemoStudent = isDemoBookingAccount(accountStatus);
+  const featureName = bookingFeatureNameForAccount(accountStatus);
   const [coaches, setCoaches] = useState<CoachAvailabilityEntry[]>([]);
   const [bookings, setBookings] = useState<any[]>([]);
   const [selectedCoach, setSelectedCoach] = useState("");
@@ -88,7 +94,13 @@ export default function BookingPage() {
     const payload = await res.json().catch(() => ({}));
     setLoading(false);
     if (!res.ok) return toast.error(payload.error || "Could not book this time.");
-    toast.success(payload.approvalStatus === "pending_admin" ? "Request sent for admin approval" : payload.status === "confirmed" ? "Class booked" : "Request sent to your coach");
+    toast.success(
+      payload.approvalStatus === "pending_admin"
+        ? "Demo booking sent for admin approval"
+        : payload.status === "confirmed"
+          ? "Class booking confirmed"
+          : "Class booking sent to your coach"
+    );
     setSelectedSlot("");
     setNotes("");
     fetch("/api/bookings").then((r) => r.json()).then((next) => setBookings(Array.isArray(next) ? next : []));
@@ -101,8 +113,12 @@ export default function BookingPage() {
           <div className="inline-flex items-center gap-2 rounded-full bg-amber-100 px-3 py-1 text-xs font-black uppercase tracking-[0.18em] text-amber-700">
             <Sparkles size={14} /> Academy Time Finder
           </div>
-          <h1 className="mt-2 text-3xl font-black text-brand">Book Demo / Available Class</h1>
-          <p className="mt-1 max-w-2xl text-sm text-slate-600">Demo requests wait for admin approval. Credit-plan students can use available coach time to request extra classes.</p>
+          <h1 className="mt-2 text-3xl font-black text-brand">{featureName}</h1>
+          <p className="mt-1 max-w-2xl text-sm text-slate-600">
+            {isDemoStudent
+              ? "Choose a coach and send your demo booking for academy approval."
+              : "Choose a coach and send your class booking request using available academy time."}
+          </p>
         </div>
       </header>
 
@@ -130,27 +146,27 @@ export default function BookingPage() {
             <textarea value={notes} onChange={(event) => setNotes(event.target.value)} className="min-h-24 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm outline-none focus:border-brand" placeholder="Mention preferred topic, goal, or anything the coach should know." />
           </label>
           <button onClick={book} disabled={loading} className="btn-primary mt-4">
-            <CalendarDays size={16} /> {loading ? "Booking..." : "Request Booking"}
+            <CalendarDays size={16} /> {loading ? `Sending ${featureName}...` : `Request ${featureName}`}
           </button>
         </div>
 
         <aside className="rounded-2xl border border-purple-100 bg-purple-50/80 p-5">
           <h3 className="font-black text-brand">How this works</h3>
           <div className="mt-4 space-y-3 text-sm text-slate-700">
-            <Info icon={<UserRound size={16} />} title="Demo users" text="Your demo request is sent to admin first. Admin can confirm the coach and time before the demo classroom opens." />
-            <Info icon={<CheckCircle2 size={16} />} title="Credit students" text="Your selected coach reviews the request first. A classroom is created only after approval, and credit is deducted after attendance." />
+            <Info icon={<UserRound size={16} />} title="Demo students" text="Your Demo Booking is sent to admin first. Admin can confirm the coach and time before the demo classroom opens." />
+            <Info icon={<CheckCircle2 size={16} />} title="Credit students" text="Your selected coach reviews the Class Booking first. A classroom is created only after approval, and credit is deducted after attendance." />
             <Info icon={<Clock3 size={16} />} title="Monthly students" text="Monthly-plan classes remain fixed. Reschedule/cancel requests should still go through admin approval." />
           </div>
         </aside>
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="text-lg font-black text-slate-950">Your Requests</h2>
+        <h2 className="text-lg font-black text-slate-950">Your Bookings</h2>
         <div className="mt-4 grid gap-3">
           {bookings.map((booking) => (
             <div key={booking._id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
               <div>
-                <div className="font-bold text-slate-950">{booking.bookingType === "demo" ? "Demo Request" : "Class Request"} with {booking.instructor?.name || "Coach"}</div>
+                <div className="font-bold text-slate-950">{bookingFeatureNameForType(booking.bookingType)} with {booking.instructor?.name || "Coach"}</div>
                 <div className="text-sm text-slate-500">{new Date(booking.startAt).toLocaleString()}</div>
                 {booking.approvalStatus === "reschedule_proposed" && booking.proposedStartAt ? (
                   <div className="mt-1 text-sm font-semibold text-amber-700">Coach suggested {new Date(booking.proposedStartAt).toLocaleString()}</div>
@@ -159,7 +175,7 @@ export default function BookingPage() {
               <span className="rounded-full bg-white px-3 py-1 text-xs font-bold capitalize text-brand">{booking.approvalStatus || booking.status}</span>
             </div>
           ))}
-          {bookings.length === 0 && <div className="rounded-xl border border-dashed border-slate-300 p-6 text-sm text-slate-500">No booking requests yet.</div>}
+          {bookings.length === 0 && <div className="rounded-xl border border-dashed border-slate-300 p-6 text-sm text-slate-500">No {isDemoStudent ? "demo" : "class"} bookings yet.</div>}
         </div>
       </section>
     </div>

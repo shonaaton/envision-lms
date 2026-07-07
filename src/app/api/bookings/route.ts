@@ -10,6 +10,7 @@ import { User } from "@/models/User";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
 import { ACADEMY_TIME_ZONE } from "@/lib/academyTime";
 import { isBookingWithinAvailability, type AvailabilitySlot } from "@/lib/bookingAvailability";
+import { bookingFeatureNameForType, bookingFeatureNameLowerForType } from "@/lib/bookingLabels";
 
 export const dynamic = "force-dynamic";
 
@@ -77,6 +78,11 @@ function classroomStartTime(value: string | Date) {
   }).format(new Date(value));
 }
 
+function bookingNotificationPath(role: "student" | "instructor" | "admin") {
+  if (role === "admin") return "/admin/onboarding";
+  return role === "instructor" ? "/availability" : "/booking";
+}
+
 async function notifyBookingUsers({
   booking,
   student,
@@ -93,9 +99,9 @@ async function notifyBookingUsers({
   message: string;
 }) {
   const recipients = [
-    student?._id ? { user: student._id, email: student.email, name: student.name, href: "/booking" } : null,
-    coach?._id ? { user: coach._id, email: coach.email, name: coach.name, href: "/availability" } : null,
-    ...admins.map((admin: any) => ({ user: admin._id, email: admin.email, name: admin.name, href: "/admin/demo-bookings" })),
+    student?._id ? { user: student._id, email: student.email, name: student.name, href: bookingNotificationPath("student") } : null,
+    coach?._id ? { user: coach._id, email: coach.email, name: coach.name, href: bookingNotificationPath("instructor") } : null,
+    ...admins.map((admin: any) => ({ user: admin._id, email: admin.email, name: admin.name, href: bookingNotificationPath("admin") })),
   ].filter(Boolean) as any[];
   await Notification.insertMany(
     recipients.map((recipient) => ({
@@ -210,24 +216,26 @@ export async function POST(req: Request) {
     });
     const coach = instructor;
     const admins = await User.find({ role: "admin", isActive: true }).select("_id email name").lean<AdminUser[]>();
+    const bookingLabel = bookingFeatureNameForType(decision.bookingType);
+    const bookingLabelLower = bookingFeatureNameLowerForType(decision.bookingType);
     const adminTitle = isDemo
       ? "Demo booking needs approval"
       : decision.bookingType === "credit_class"
-        ? "Credit class request raised"
-        : "Booking request created";
+        ? "Class booking request raised"
+        : "Class booking created";
     const adminMessage = isDemo
-      ? `${student.name} requested a demo with ${coach?.name || "coach"}.`
+      ? `${student.name} submitted a demo booking with ${coach?.name || "coach"}.`
       : decision.bookingType === "credit_class"
-        ? `${student.name} requested a credit class with ${coach?.name || "coach"}.`
-        : `${student.name} requested a class with ${coach?.name || "coach"}.`;
+        ? `${student.name} submitted a class booking with ${coach?.name || "coach"}.`
+        : `${student.name} submitted a class booking with ${coach?.name || "coach"}.`;
     await Notification.insertMany([
-      { user: student._id, type: "booking.created", title: isDemo ? "Demo request received" : decision.status === "confirmed" ? "Class booked" : "Class request sent", message: isDemo ? "Your demo request is waiting for academy approval." : decision.status === "confirmed" ? "Your class has been confirmed." : "Your coach will review this class request before a classroom is created.", metadata: { booking: created._id, href: "/booking" } },
-      ...(coach?._id ? [{ user: coach._id, type: "booking.created", title: isDemo ? "Demo request pending" : decision.status === "confirmed" ? "Class booked" : "New class request", message: `${student.name} requested ${isDemo ? "a demo" : "a class"} for ${formatBookingTime(startAt)}.`, metadata: { booking: created._id, href: "/availability" } }] : []),
-      ...admins.map((admin) => ({ user: admin._id, type: "booking.created", title: adminTitle, message: adminMessage, metadata: { booking: created._id, href: "/admin/demo-bookings" } })),
+      { user: student._id, type: "booking.created", title: isDemo ? "Demo booking received" : decision.status === "confirmed" ? "Class booking confirmed" : "Class booking sent", message: isDemo ? "Your demo booking is waiting for academy approval." : decision.status === "confirmed" ? "Your class booking has been confirmed." : "Your coach will review your class booking before a classroom is created.", metadata: { booking: created._id, href: bookingNotificationPath("student") } },
+      ...(coach?._id ? [{ user: coach._id, type: "booking.created", title: isDemo ? "Demo booking pending" : decision.status === "confirmed" ? "Class booking confirmed" : "New class booking", message: `${student.name} requested a ${bookingLabelLower} for ${formatBookingTime(startAt)}.`, metadata: { booking: created._id, href: bookingNotificationPath("instructor") } }] : []),
+      ...admins.map((admin) => ({ user: admin._id, type: "booking.created", title: adminTitle, message: adminMessage, metadata: { booking: created._id, href: bookingNotificationPath("admin") } })),
     ]);
     await Promise.all([
-      student.email && sendAutomationEmail({ to: student.email, subject: isDemo ? "Demo booking request received" : decision.status === "confirmed" ? "Class booked" : "Class request sent", message: `Hello ${student.name},\n\n${isDemo ? "Your demo booking request has been received and is waiting for academy approval." : decision.status === "confirmed" ? "Your class has been confirmed." : "Your class request has been sent to the coach for approval."}\n\nTime: ${formatBookingTime(startAt)}` }),
-      coach?.email && sendAutomationEmail({ to: coach.email, subject: isDemo ? "Demo request pending approval" : decision.status === "confirmed" ? "Class booked" : "New class request awaiting your response", message: `${student.name} requested ${isDemo ? "a demo class" : "a class"}.\n\nTime: ${formatBookingTime(startAt)}` }),
+      student.email && sendAutomationEmail({ to: student.email, subject: isDemo ? "Demo booking received" : decision.status === "confirmed" ? "Class booking confirmed" : "Class booking sent", message: `Hello ${student.name},\n\n${isDemo ? "Your demo booking has been received and is waiting for academy approval." : decision.status === "confirmed" ? "Your class booking has been confirmed." : "Your class booking has been sent to the coach for approval."}\n\nTime: ${formatBookingTime(startAt)}` }),
+      coach?.email && sendAutomationEmail({ to: coach.email, subject: isDemo ? "Demo booking pending approval" : decision.status === "confirmed" ? "Class booking confirmed" : "New class booking awaiting your response", message: `${student.name} requested a ${bookingLabelLower}.\n\nTime: ${formatBookingTime(startAt)}` }),
       ...admins.filter((admin) => admin.email).map((admin) => sendAutomationEmail({ to: String(admin.email), subject: adminTitle, message: `${adminMessage}\n\nTime: ${formatBookingTime(startAt)}` })),
     ]);
     await recordActivity({
@@ -278,7 +286,7 @@ export async function PATCH(req: Request) {
       classroomType: "single",
       status: "scheduled",
       level: "beginner",
-      levelName: booking.level || student.studentLevel || "Class request",
+      levelName: booking.level || student.studentLevel || "Class Booking",
       topicName: booking.bookingType === "demo" ? "Demo class" : "Booked practice class",
       meetingProvider: "meet",
       coach: coach._id,
@@ -301,8 +309,8 @@ export async function PATCH(req: Request) {
       student,
       coach,
       admins,
-      title: "Class request approved",
-      message: `${coach.name} approved ${student.name}'s class for ${formatBookingTime(booking.startAt)}. The classroom is now scheduled.`,
+      title: `${bookingFeatureNameForType(booking.bookingType)} approved`,
+      message: `${coach.name} approved ${student.name}'s ${bookingFeatureNameLowerForType(booking.bookingType)} for ${formatBookingTime(booking.startAt)}. The classroom is now scheduled.`,
     });
   } else if (action === "cancel") {
     booking.status = "cancelled";
@@ -314,8 +322,8 @@ export async function PATCH(req: Request) {
       student,
       coach,
       admins,
-      title: "Class request cancelled",
-      message: `${coach.name} could not accept the class requested for ${formatBookingTime(booking.startAt)}.`,
+      title: `${bookingFeatureNameForType(booking.bookingType)} cancelled`,
+      message: `${coach.name} could not accept the ${bookingFeatureNameLowerForType(booking.bookingType)} requested for ${formatBookingTime(booking.startAt)}.`,
     });
   } else if (action === "suggest_time") {
     const proposedStart = new Date(body.proposedStartAt);
@@ -333,8 +341,8 @@ export async function PATCH(req: Request) {
       student,
       coach,
       admins,
-      title: "Coach suggested a new class time",
-      message: `${coach.name} suggested ${formatBookingTime(proposedStart)} for ${student.name}'s class request.`,
+      title: `Coach suggested a new ${bookingFeatureNameLowerForType(booking.bookingType)} time`,
+      message: `${coach.name} suggested ${formatBookingTime(proposedStart)} for ${student.name}'s ${bookingFeatureNameLowerForType(booking.bookingType)}.`,
     });
   } else {
     return NextResponse.json({ error: "Unknown request action." }, { status: 400 });

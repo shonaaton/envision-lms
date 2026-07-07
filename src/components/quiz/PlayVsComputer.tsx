@@ -88,6 +88,7 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
   const [result, setResult] = useState("");
   const [showSetup, setShowSetup] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [showResignConfirm, setShowResignConfirm] = useState(false);
   const [showResultModal, setShowResultModal] = useState(false);
   const [checkingDemoLimit, setCheckingDemoLimit] = useState(false);
   const [selectedColor, setSelectedColor] = useState<PlayerColor>("white");
@@ -425,6 +426,7 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
 
   function resignGame() {
     if (status !== "playing") return;
+    setShowResignConfirm(false);
     setThinking(false);
     finishGame("Resigned", "You resigned");
   }
@@ -510,7 +512,7 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
         <div className="flex flex-wrap gap-1.5 sm:gap-2">
           {status === "playing" ? (
             <>
-              <button className="btn-outline gap-2 border-red-200 bg-white text-red-700 hover:bg-red-50" onClick={resignGame}>
+              <button className="btn-outline gap-2 border-red-200 bg-white text-red-700 hover:bg-red-50" onClick={() => setShowResignConfirm(true)}>
                 <Flag size={16} /> Resign
               </button>
               <button className="btn-outline gap-2 bg-white" onClick={restartGame}>
@@ -631,6 +633,14 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
           onClose={() => setShowSetup(false)}
           onStart={startGame}
           starting={checkingDemoLimit}
+        />
+      )}
+
+      {showResignConfirm && (
+        <ResignConfirmModal
+          botName={selectedBot.name}
+          onCancel={() => setShowResignConfirm(false)}
+          onConfirm={resignGame}
         />
       )}
 
@@ -825,6 +835,77 @@ function ColorOption({ active, label, icon, onClick }: { active: boolean; label:
       {icon}
       {label}
     </button>
+  );
+}
+
+function ResignConfirmModal({
+  botName,
+  onCancel,
+  onConfirm,
+}: {
+  botName: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onCancel();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onCancel]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-3 backdrop-blur-sm sm:p-4"
+      onMouseDown={onCancel}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="resign-confirm-title"
+    >
+      <div
+        className="w-full max-w-[420px] rounded-2xl border border-red-100 bg-white p-4 shadow-2xl shadow-red-950/15 sm:p-5"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-red-50 text-red-600">
+              <Flag size={18} />
+            </span>
+            <div>
+              <h2 id="resign-confirm-title" className="text-lg font-black text-slate-950">
+                Resign this game?
+              </h2>
+              <p className="mt-1 text-sm leading-6 text-slate-600">
+                This will immediately end your game against {botName}. Only confirm if you are sure.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-slate-200 text-slate-500 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
+            onClick={onCancel}
+            aria-label="Close resign confirmation"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="mt-5 grid gap-2 sm:grid-cols-2">
+          <button type="button" className="btn-outline min-h-11 bg-white" onClick={onCancel}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-sm font-bold text-white shadow-lg shadow-red-600/20 transition hover:bg-red-700"
+            onClick={onConfirm}
+          >
+            <Flag size={16} />
+            Confirm Resign
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

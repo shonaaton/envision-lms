@@ -207,7 +207,7 @@ export default function SquareTrainerPage() {
       <div className="rounded-3xl border border-amber-200 bg-white p-8 text-center shadow-xl">
         <h1 className="text-2xl font-black text-slate-950">Demo Square Trainer completed</h1>
         <p className="mx-auto mt-2 max-w-xl text-slate-600">{limitBlocked}</p>
-        <a href="/booking" className="btn-primary mt-5 inline-flex">Book Demo Class</a>
+        <a href="/booking" className="btn-primary mt-5 inline-flex">Open Demo Booking</a>
       </div>
     ) : (
     <div className="flex min-h-[calc(100dvh-76px)] flex-col overflow-y-auto bg-[linear-gradient(180deg,#fffdf6_0%,#fff 52%,#faf8fc_100%)] p-2 text-slate-950 sm:p-4 md:h-[calc(100vh-92px)] md:min-h-[620px] md:overflow-hidden">

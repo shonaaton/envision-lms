@@ -1,4 +1,5 @@
 import { Classroom } from "@/models/Classroom";
+import "@/models/User";
 
 export type AppRole = "student" | "instructor" | "admin";
 

@@ -5,7 +5,7 @@ import { Tournament } from "@/models/Tournament";
 import { TournamentGame } from "@/models/TournamentGame";
 import "@/models/User";
 import { playerKeyForExternal, playerKeyForUser } from "@/lib/tournamentEngine";
-import { finalizeTournamentIfComplete, recalculateTournamentStandings, syncArenaPairings, syncSwissRoundState } from "@/lib/tournamentEngine";
+import { finalizeTournamentIfComplete, recalculateTournamentStandings, startTournament, syncArenaPairings, syncSwissRoundState } from "@/lib/tournamentEngine";
 import { cookies } from "next/headers";
 import { getTournamentGuestUsername } from "@/lib/tournamentGuests";
 
@@ -13,6 +13,10 @@ export const dynamic = "force-dynamic";
 
 function objectId(value: any) {
   return value?._id?.toString?.() ?? value?.toString?.() ?? "";
+}
+
+function participantCount(tournament: any) {
+  return Number((tournament?.participants || []).length) + Number((tournament?.externalParticipants || []).length);
 }
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
@@ -43,10 +47,17 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
   if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const mutable: any = await Tournament.findById(params.id);
-  if (mutable?.status === "live" && mutable.type === "arena") {
-    await syncArenaPairings(mutable);
-  }
   if (mutable) {
+    const dueToStart =
+      ["draft", "upcoming"].includes(String(mutable.status || "")) &&
+      new Date(mutable.startAt || 0).getTime() <= Date.now() &&
+      participantCount(mutable) >= 2;
+    if (dueToStart) {
+      await startTournament(mutable);
+    }
+    if (mutable.status === "live" && mutable.type === "arena") {
+      await syncArenaPairings(mutable);
+    }
     if (mutable.type === "swiss") await syncSwissRoundState(mutable);
     await recalculateTournamentStandings(mutable);
     await finalizeTournamentIfComplete(mutable);

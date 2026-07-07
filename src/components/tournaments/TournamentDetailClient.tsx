@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Clock3, Crown, Download, Play, RefreshCcw, Shield, Swords, Trophy } from "lucide-react";
 
@@ -66,6 +66,7 @@ export function TournamentDetailClient({
   const [state, setState] = useState<DetailState>(initialState);
   const [error, setError] = useState("");
   const [pending, startTransition] = useTransition();
+  const autoOpenedGameRef = useRef("");
 
   const refresh = useCallback(async () => {
     const response = await fetch(`/api/tournaments/${tournamentId}/state`, { cache: "no-store" });
@@ -78,6 +79,13 @@ export function TournamentDetailClient({
     const timer = window.setInterval(refresh, 2500);
     return () => window.clearInterval(timer);
   }, [refresh]);
+
+  useEffect(() => {
+    const activeGameId = state.activeGame?._id ? String(state.activeGame._id) : "";
+    if (role !== "student" || !activeGameId || autoOpenedGameRef.current === activeGameId) return;
+    autoOpenedGameRef.current = activeGameId;
+    router.push(`/tournaments/${tournamentId}/play`);
+  }, [role, router, state.activeGame?._id, tournamentId]);
 
   async function runAction(path: string) {
     setError("");

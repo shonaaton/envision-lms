@@ -45,6 +45,7 @@ function seatSummary(seat: any, tournamentStatus: string) {
   if (seat.status === "assigned") return `Assigned to round ${seat.roundNumber || "-"} - board ${seat.boardNumber || "-"}`;
   if (seat.status === "completed") return tournamentStatus === "completed" ? "Tournament finished" : "Current round completed";
   if (seat.status === "joined") return "Registered and ready";
+  if (seat.status === "waiting") return "Waiting for an opponent";
   return "Waiting for next board";
 }
 
@@ -113,6 +114,7 @@ export function TournamentPlayClient({
   const activeGame = state?.activeGame || null;
   const tournamentStatus = String(state?.tournament?.status || "");
   const currentSeat = state?.currentSeat || null;
+  const myColor = currentSeat?.color === "black" ? "black" : "white";
   const myStanding = useMemo(() => {
     if (!state?.tournament?.standings || !state?.myGames?.length) return null;
     const myNames = new Set(
@@ -260,6 +262,8 @@ export function TournamentPlayClient({
                     ? "Your current board is finished. If this is a Swiss event, wait for the next round. If this is an arena, your next game will appear automatically."
                     : currentSeat?.status === "assigned"
                       ? "Your opponent has been assigned. As soon as the board is live, it will open here automatically."
+                      : currentSeat?.status === "waiting" && state?.tournament?.type === "arena"
+                        ? "You are in the arena queue. Because there is an odd number of players or all opponents are already playing, please wait here. Your board will open automatically when an opponent is available."
                       : tournamentStatus === "live"
                         ? "If the tournament is running, your next pairing will appear automatically here. For Swiss events, the next round opens when the admin pairs it."
                     : "The event has not started yet. Once the admin starts the tournament, your pairing and board will appear here."}
@@ -302,6 +306,7 @@ export function TournamentPlayClient({
                   promotionToSquare={pendingPromotion?.to as any}
                   promotionDialogVariant="modal"
                   arePiecesDraggable={activeGame.status === "active"}
+                  boardOrientation={myColor}
                   customSquareStyles={moveHintStyles as any}
                   customDarkSquareStyle={{ backgroundColor: "#b58863" }}
                   customLightSquareStyle={{ backgroundColor: "#f0d9b5" }}

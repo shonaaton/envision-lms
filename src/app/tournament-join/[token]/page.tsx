@@ -36,6 +36,12 @@ export default async function ExternalTournamentJoinPage({ params }: { params: {
   if (!tournament) notFound();
   const cookieStore = await cookies();
   const joinedGuest = getTournamentGuestUsername(cookieStore, params.token);
+  if (
+    joinedGuest &&
+    (tournament.externalParticipants || []).some((player: any) => String(player.username || "").toLowerCase() === joinedGuest.toLowerCase())
+  ) {
+    redirect(`/tournament-join/${params.token}/play`);
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 px-4 py-10 text-white">

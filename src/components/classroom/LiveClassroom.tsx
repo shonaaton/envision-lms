@@ -516,7 +516,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     void load(true);
     const timer = window.setInterval(() => {
       void load();
-    }, 250);
+    }, 1000);
     return () => {
       window.clearInterval(timer);
       if (refreshTimerRef.current) window.clearTimeout(refreshTimerRef.current);

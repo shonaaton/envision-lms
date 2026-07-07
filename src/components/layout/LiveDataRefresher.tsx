@@ -96,6 +96,7 @@ function patchFetchOnce() {
 export default function LiveDataRefresher() {
   const router = useRouter();
   const pathname = usePathname();
+  const isLiveClassroomRoute = /^\/classrooms\/[^/]+(?:\/live)?$/.test(pathname || "");
   const [showSync, setShowSync] = useState(false);
   const [isPending, startTransition] = useTransition();
   const refreshTimerRef = useRef<number | null>(null);
@@ -112,6 +113,7 @@ export default function LiveDataRefresher() {
   const refreshNow = useCallback(
     ({ silent = false }: RefreshDetail = {}) => {
       if (typeof document !== "undefined" && document.hidden) return;
+      if (isLiveClassroomRoute) return;
       if (refreshTimerRef.current) window.clearTimeout(refreshTimerRef.current);
 
       refreshTimerRef.current = window.setTimeout(() => {
@@ -128,14 +130,16 @@ export default function LiveDataRefresher() {
         }
       }, silent ? 0 : 450);
     },
-    [router],
+    [isLiveClassroomRoute, router],
   );
 
   useEffect(() => {
+    if (isLiveClassroomRoute) return;
     patchFetchOnce();
-  }, []);
+  }, [isLiveClassroomRoute]);
 
   useEffect(() => {
+    if (isLiveClassroomRoute) return;
     const onDataChanged = (event: Event) => {
       const detail = (event as CustomEvent<RefreshDetail>).detail || {};
       refreshNow(detail);
@@ -159,9 +163,10 @@ export default function LiveDataRefresher() {
       document.removeEventListener("visibilitychange", onVisibilityChange);
       clearTimers();
     };
-  }, [clearTimers, refreshNow]);
+  }, [clearTimers, isLiveClassroomRoute, refreshNow]);
 
   useEffect(() => {
+    if (isLiveClassroomRoute) return;
     const interval = window.setInterval(() => {
       if (!document.hidden && Date.now() - lastRefreshRef.current > 25000) {
         refreshNow({ silent: true });
@@ -169,12 +174,13 @@ export default function LiveDataRefresher() {
     }, 30000);
 
     return () => window.clearInterval(interval);
-  }, [refreshNow]);
+  }, [isLiveClassroomRoute, refreshNow]);
 
   useEffect(() => {
     setShowSync(false);
   }, [pathname]);
 
+  if (isLiveClassroomRoute) return null;
   if (!showSync && !isPending) return null;
 
   return (

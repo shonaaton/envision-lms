@@ -378,6 +378,7 @@ function submissionLabel(result: any, summary: ReturnType<typeof aggregateLiveRe
 export default function LiveClassroom({ classroomId, role, userId, sessionId }: { classroomId: string; role: Role; userId: string; sessionId?: string }) {
   const router = useRouter();
   const [data, setData] = useState<any>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>(role === "student" ? "chat" : "students");
   const [tool, setTool] = useState<ToolKey>("move");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
@@ -430,6 +431,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const pendingOptimisticClearTimerRef = useRef<number | null>(null);
   const pendingDrawingsHashRef = useRef("");
   const dataRef = useRef<any>(null);
+  const loadedOnceRef = useRef(false);
   const coach = isCoach(role);
 
   function focusBoard() {
@@ -449,17 +451,34 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       return;
     }
     loadInFlightRef.current = true;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 12000);
     try {
-      const res = await fetch(liveUrl(), { cache: "no-store" });
-      if (res.ok) {
-        const nextData = await res.json();
-        const pending = pendingOptimisticLiveRef.current;
-        if (pending && Date.now() < pendingOptimisticUntilRef.current && nextData?.live) {
-          nextData.live = { ...nextData.live, ...pending };
-        }
-        setData(nextData);
+      const res = await fetch(liveUrl(), { cache: "no-store", signal: controller.signal });
+      const nextData = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(nextData?.error || "Classroom could not be loaded");
+      }
+      if (!nextData?.classroom || !nextData?.live) {
+        throw new Error("Classroom data is incomplete. Please try again.");
+      }
+      const pending = pendingOptimisticLiveRef.current;
+      if (pending && Date.now() < pendingOptimisticUntilRef.current && nextData?.live) {
+        nextData.live = { ...nextData.live, ...pending };
+      }
+      loadedOnceRef.current = true;
+      setLoadError(null);
+      setData(nextData);
+    } catch (error: any) {
+      if (!loadedOnceRef.current) {
+        const message =
+          error?.name === "AbortError"
+            ? "The classroom is taking too long to respond. Please try again."
+            : error?.message || "Classroom could not be loaded. Please try again.";
+        setLoadError(message);
       }
     } finally {
+      window.clearTimeout(timeout);
       loadInFlightRef.current = false;
       if (refreshQueuedRef.current) {
         refreshQueuedRef.current = false;
@@ -1726,7 +1745,43 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     setAttendanceDraft(draft);
   }, [classSummary.rows, summaryOpen]);
 
-  if (!data) return <div className="rounded-lg border border-slate-200 bg-white p-5">Loading classroom...</div>;
+  if (!data) {
+    if (loadError) {
+      return (
+        <div className="rounded-2xl border border-red-100 bg-white p-6 shadow-sm">
+          <div className="max-w-2xl">
+            <p className="text-xs font-bold uppercase tracking-[0.24em] text-red-600">Classroom loading issue</p>
+            <h2 className="mt-2 text-2xl font-black text-slate-950">The classroom did not open properly</h2>
+            <p className="mt-2 text-sm text-slate-600">{loadError}</p>
+            <div className="mt-5 flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={() => void load(true)}
+                className="inline-flex h-10 items-center gap-2 rounded-xl bg-purple-700 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-purple-800"
+              >
+                <RefreshCcw size={16} /> Try again
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push("/classrooms")}
+                className="inline-flex h-10 items-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:border-purple-200 hover:text-purple-800"
+              >
+                Back to classes
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div className="rounded-2xl border border-purple-100 bg-white p-6 shadow-sm">
+        <div className="flex items-center gap-3 text-sm font-semibold text-slate-700">
+          <span className="h-4 w-4 animate-spin rounded-full border-2 border-purple-200 border-t-purple-700" />
+          Loading classroom...
+        </div>
+      </div>
+    );
+  }
 
   const SidebarButton = ({
     id,

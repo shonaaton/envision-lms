@@ -4,6 +4,7 @@ import { dbConnect } from "@/lib/db";
 import { Classroom } from "@/models/Classroom";
 import { PGN } from "@/models/PGN";
 import { ClassroomChatMessage, ClassroomSession, LiveQuestion, LiveQuestionResponse } from "@/models/ClassroomLive";
+import "@/models/User";
 import { getLiveClassroomForUser, type AppRole } from "@/lib/liveClassroomAccess";
 import {
   buildLiveSessionKey,

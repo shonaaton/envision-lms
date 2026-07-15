@@ -143,7 +143,7 @@ export default function Sidebar({
   mobileOpen?: boolean;
   onCloseMobile?: () => void;
 }) {
-  const pathname = usePathname();
+  const pathname = usePathname() || "";
   const visibleSections = useMemo(
     () =>
       sections

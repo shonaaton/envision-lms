@@ -56,7 +56,8 @@ function parsePgnPuzzle(pgn: string) {
 }
 
 export default function HomeworkAttemptPage() {
-  const { id } = useParams<{ id: string }>();
+  const params = useParams<{ id: string }>();
+  const id = params?.id || "";
   const [hw, setHw] = useState<any>(null);
   const [elapsed, setElapsed] = useState(0);
   const [quizAnswers, setQuizAnswers] = useState<Record<string, string>>({});
@@ -64,6 +65,7 @@ export default function HomeworkAttemptPage() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
+    if (!id) return;
     fetch(`/api/homework/${id}`).then((r) => r.json()).then(setHw).catch(() => toast.error("Could not load assignment"));
   }, [id]);
 

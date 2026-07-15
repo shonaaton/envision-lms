@@ -154,8 +154,8 @@ export default function PgnLibraryPage() {
   const rootPersonalGames = useMemo(() => visibleGames.filter((game) => game.visibility !== "shared"), [visibleGames]);
 
   useEffect(() => {
-    const folderPath = normalizeFolderPath(searchParams.get("folder"));
-    const folderScope = searchParams.get("scope") === "shared" ? "shared" : "personal";
+    const folderPath = normalizeFolderPath(searchParams?.get("folder"));
+    const folderScope = searchParams?.get("scope") === "shared" ? "shared" : "personal";
     if (!folderPath) {
       setCurrentFolder(null);
       setQuery("");

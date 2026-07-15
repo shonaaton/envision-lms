@@ -1,11 +1,13 @@
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { Batch } from "@/models/Batch";
+import { Course } from "@/models/Course";
 import { User } from "@/models/User";
 import { Tournament } from "@/models/Tournament";
 import TournamentCreateForm from "@/components/tournaments/TournamentCreateForm";
 import { redirect } from "next/navigation";
 import { Chess } from "chess.js";
+import { randomBytes } from "crypto";
 
 export const dynamic = "force-dynamic";
 
@@ -40,8 +42,20 @@ async function createTournament(_: CreateTournamentState, formData: FormData): P
   const arenaDurationMinutes = Math.max(0, Number(formData.get("arenaDurationMinutes") || 0));
   const rounds = Math.max(0, Number(formData.get("rounds") || 0));
   const breakBetweenRoundsMinutes = Math.max(0, Number(formData.get("breakBetweenRoundsMinutes") || 0));
+  const rated = formData.get("rated") === "yes";
+  const allowBerserk = formData.get("allowBerserk") === "yes";
+  const arenaStreaks = formData.get("arenaStreaks") !== "no";
+  const chatEnabled = formData.get("chatEnabled") === "yes";
+  const lateJoiningAllowed = formData.get("lateJoiningAllowed") !== "no";
+  const entryRestrictions = String(formData.get("entryRestrictions") || "").trim();
   const startingPositionType = String(formData.get("startingPositionType") || "normal");
   const customFen = String(formData.get("customFen") || "").trim();
+  const initialStatus = String(formData.get("initialStatus") || "registration_open");
+  const externalInviteEnabled = formData.get("externalInviteEnabled") === "yes";
+  const externalInviteMode = String(formData.get("externalInviteMode") || "private");
+  const externalInvitePassword = String(formData.get("externalInvitePassword") || "").trim();
+  const externalInviteEntryCode = String(formData.get("externalInviteEntryCode") || "").trim();
+  const externalInviteExpiresAt = String(formData.get("externalInviteExpiresAt") || "").trim();
 
   if (!name) return fail("Tournament name is required.", { name: "Tournament name is required." });
   if (type !== "swiss" && type !== "arena") return fail("Please choose either Swiss or Arena format.", { type: "Choose Swiss or Arena." });
@@ -58,19 +72,54 @@ async function createTournament(_: CreateTournamentState, formData: FormData): P
       return fail("The custom FEN is not valid.", { customFen: "The custom FEN is not valid." });
     }
   }
+  if (!["draft", "created", "registration_open"].includes(initialStatus)) {
+    return fail("Choose a valid initial tournament status.");
+  }
+  if (externalInviteEnabled && !["public", "private", "password", "entry_code"].includes(externalInviteMode)) {
+    return fail("Choose a valid external invitation mode.");
+  }
+  if (externalInviteEnabled && externalInviteMode === "password" && !externalInvitePassword) {
+    return fail("External invitation password is required.", { externalInvitePassword: "Password is required." });
+  }
+  if (externalInviteEnabled && externalInviteMode === "entry_code" && !externalInviteEntryCode) {
+    return fail("External invitation entry code is required.", { externalInviteEntryCode: "Entry code is required." });
+  }
 
   const selectedBatchIds = formData.getAll("batches").map(String).filter(Boolean);
-  const [activeStudents, inactiveStudents, coaches, batches] = await Promise.all([
+  const selectedStudentIds = formData.getAll("students").map(String).filter(Boolean);
+  const selectedCourseIds = formData.getAll("courses").map(String).filter(Boolean);
+  const selectedLevels = formData.getAll("levels").map(String).filter(Boolean);
+  const [activeStudents, inactiveStudents, coaches, batches, selectedStudents, selectedCourses] = await Promise.all([
     formData.get("allActiveStudents") === "yes" ? User.find({ role: "student", isActive: { $ne: false } }).lean() : [],
     formData.get("includeInactiveStudents") === "yes" ? User.find({ role: "student", isActive: false }).lean() : [],
     formData.get("includeCoaches") === "yes" ? User.find({ role: "instructor", isActive: { $ne: false } }).lean() : [],
     selectedBatchIds.length ? Batch.find({ _id: { $in: selectedBatchIds } }).lean() : [],
+    selectedStudentIds.length ? User.find({ _id: { $in: selectedStudentIds }, role: "student" }).lean() : [],
+    selectedCourseIds.length ? Course.find({ _id: { $in: selectedCourseIds } }).lean() : [],
   ]);
-  if (formData.get("allActiveStudents") !== "yes" && formData.get("includeInactiveStudents") !== "yes" && formData.get("includeCoaches") !== "yes" && !selectedBatchIds.length) {
-    return fail("Select at least one access group before creating the tournament.", { access: "Select at least one access group." });
+  if (
+    formData.get("allActiveStudents") !== "yes" &&
+    formData.get("includeInactiveStudents") !== "yes" &&
+    formData.get("includeCoaches") !== "yes" &&
+    !selectedBatchIds.length &&
+    !selectedStudentIds.length &&
+    !selectedCourseIds.length &&
+    !selectedLevels.length &&
+    !externalInviteEnabled
+  ) {
+    return fail("Select at least one access group or enable external invitation access.", { access: "Select at least one access group or enable external invitation access." });
   }
   const batchStudentIds = batches.flatMap((batch: any) => (batch.students || []).map((id: any) => id.toString()));
-  const accessUsers = Array.from(new Set([...activeStudents, ...inactiveStudents, ...coaches].map((user: any) => user._id.toString()).concat(batchStudentIds)));
+  const courseLevelTargets = selectedCourses
+    .map((course: any) => String(course.level || ""))
+    .filter((level) => level && level !== "mixed");
+  const levelTargets = Array.from(new Set([...selectedLevels, ...courseLevelTargets]));
+  const levelStudents = levelTargets.length ? await User.find({ role: "student", studentLevel: { $in: levelTargets }, isActive: { $ne: false } }).lean() : [];
+  const accessUsers = Array.from(new Set(
+    [...activeStudents, ...inactiveStudents, ...coaches, ...selectedStudents, ...levelStudents]
+      .map((user: any) => user._id.toString())
+      .concat(batchStudentIds)
+  ));
   const baseStart = combineDateTime(startDate, startTime);
   if (Number.isNaN(baseStart.getTime())) return fail("The tournament start date or time is invalid.", { startDate: "Start date or time is invalid." });
   const repeatEnabled = formData.get("repeatEnabled") === "yes";
@@ -98,12 +147,18 @@ async function createTournament(_: CreateTournamentState, formData: FormData): P
         name: repeatEnabled ? datedName(name, startAt) : name,
         description: String(formData.get("description") || "").trim(),
         type,
-        status: "upcoming",
+        status: initialStatus,
         arenaDurationMinutes: type === "arena" ? arenaDurationMinutes : 0,
         rounds: type === "swiss" ? rounds : 0,
         timeControlMinutes,
         incrementSeconds,
         breakBetweenRoundsMinutes: type === "swiss" ? breakBetweenRoundsMinutes : 0,
+        rated,
+        allowBerserk: type === "arena" ? allowBerserk : false,
+        arenaStreaks: type === "arena" ? arenaStreaks : false,
+        chatEnabled,
+        lateJoiningAllowed,
+        entryRestrictions,
         startAt,
         repeat: {
           enabled: repeatEnabled,
@@ -121,7 +176,18 @@ async function createTournament(_: CreateTournamentState, formData: FormData): P
           includeCoaches: formData.get("includeCoaches") === "yes",
           includeInactiveStudents: formData.get("includeInactiveStudents") === "yes",
           batches: selectedBatchIds,
+          courses: selectedCourseIds,
+          levels: levelTargets,
           users: accessUsers,
+        },
+        externalInvite: {
+          enabled: externalInviteEnabled,
+          token: externalInviteEnabled ? randomBytes(24).toString("hex") : "",
+          password: externalInviteEnabled && externalInviteMode === "password" ? externalInvitePassword : "",
+          entryCode: externalInviteEnabled && externalInviteMode === "entry_code" ? externalInviteEntryCode : "",
+          accessMode: externalInviteEnabled ? externalInviteMode : "private",
+          createdAt: externalInviteEnabled ? new Date() : undefined,
+          expiresAt: externalInviteEnabled && externalInviteExpiresAt ? new Date(externalInviteExpiresAt) : undefined,
         },
         createdBy: (session!.user as any).id,
       });
@@ -139,10 +205,16 @@ export default async function NewTournamentPage({ searchParams }: { searchParams
   const session = await auth();
   if ((session?.user as any)?.role !== "admin") return <div className="p-6">Forbidden</div>;
   let batches: any[] = [];
+  let students: any[] = [];
+  let courses: any[] = [];
   let loadError = "";
   try {
     await dbConnect();
-    batches = await Batch.find({ isActive: { $ne: false } }).sort({ name: 1 }).lean();
+    [batches, students, courses] = await Promise.all([
+      Batch.find({ isActive: { $ne: false } }).sort({ name: 1 }).lean(),
+      User.find({ role: "student" }).sort({ name: 1 }).select("name email studentLevel isActive").lean(),
+      Course.find({ isActive: { $ne: false } }).sort({ name: 1 }).lean(),
+    ]);
   } catch (error) {
     console.error("Tournament page load failed", error);
     loadError = "The tournament setup page could not load academy data right now.";
@@ -154,7 +226,24 @@ export default async function NewTournamentPage({ searchParams }: { searchParams
         <h1 className="text-2xl font-semibold">Create Tournament</h1>
         <p className="mt-1 text-sm text-slate-500">Create Swiss or Arena tournaments and define student access.</p>
       </div>
-      <TournamentCreateForm error={errorMessage} action={createTournament} batches={batches.map((batch: any) => ({ id: batch._id.toString(), name: batch.name }))} />
+      <TournamentCreateForm
+        error={errorMessage}
+        action={createTournament}
+        batches={batches.map((batch: any) => ({ id: batch._id.toString(), name: batch.name }))}
+        students={students.map((student: any) => ({
+          id: student._id.toString(),
+          name: student.name,
+          email: student.email,
+          level: student.studentLevel || "not_set",
+          active: student.isActive !== false,
+        }))}
+        courses={courses.map((course: any) => ({
+          id: course._id.toString(),
+          name: course.name,
+          level: course.level || "mixed",
+          levels: (course.levels || []).map((level: any) => ({ id: String(level._id), name: level.name })),
+        }))}
+      />
     </div>
   );
 }

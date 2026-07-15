@@ -1,0 +1,25 @@
+import { NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
+import { dbConnect } from "@/lib/db";
+import { Tournament } from "@/models/Tournament";
+import { recordActivity } from "@/lib/activity";
+
+export const dynamic = "force-dynamic";
+
+export async function POST(_: Request, { params }: { params: { id: string } }) {
+  const session = await auth();
+  if ((session?.user as any)?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  await dbConnect();
+  const tournament: any = await Tournament.findById(params.id);
+  if (!tournament) return NextResponse.json({ error: "Tournament not found" }, { status: 404 });
+  tournament.pausedByAdmin = true;
+  tournament.adminActions = [...(tournament.adminActions || []), {
+    actor: (session!.user as any).id,
+    action: "tournament.paused",
+    note: "Tournament pairing paused by admin.",
+    createdAt: new Date(),
+  }];
+  await tournament.save();
+  await recordActivity({ actor: (session!.user as any).id, type: "tournament.paused", label: `Paused tournament ${tournament.name}`, entityType: "Tournament", entityId: tournament._id.toString() });
+  return NextResponse.json({ ok: true });
+}

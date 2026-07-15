@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { TournamentGame } from "@/models/TournamentGame";
 import { Tournament } from "@/models/Tournament";
-import { applyGameMove, finalizeTournamentIfComplete, recalculateTournamentStandings, syncArenaPairings, syncSwissRoundState } from "@/lib/tournamentEngine";
+import { applyGameMove, enforceTournamentGameTimeouts, finalizeTournamentIfComplete, queueCompletedArenaPlayers, recalculateTournamentStandings, syncArenaPairings, syncSwissRoundState } from "@/lib/tournamentEngine";
 import { StudentReward } from "@/models/ClassroomLive";
 import { cookies } from "next/headers";
 import { getTournamentGuestUsername } from "@/lib/tournamentGuests";
@@ -44,12 +44,15 @@ export async function POST(req: Request, { params }: { params: { gameId: string 
   const session = await auth();
 
   await dbConnect();
-  const game: any = await TournamentGame.findById(params.gameId);
+  let game: any = await TournamentGame.findById(params.gameId);
   if (!game) return NextResponse.json({ error: "Game not found" }, { status: 404 });
   if (game.status !== "active") return NextResponse.json({ error: "This game is no longer active." }, { status: 400 });
 
   const tournament: any = await Tournament.findById(game.tournament);
   if (!tournament) return NextResponse.json({ error: "Tournament not found" }, { status: 404 });
+  await enforceTournamentGameTimeouts(tournament);
+  game = await TournamentGame.findById(params.gameId);
+  if (game.status !== "active") return NextResponse.json({ error: "This game is no longer active." }, { status: 400 });
 
   const cookieStore = await cookies();
   const guestUsername = tournament.externalInvite?.token ? getTournamentGuestUsername(cookieStore, tournament.externalInvite.token) : "";
@@ -79,6 +82,7 @@ export async function POST(req: Request, { params }: { params: { gameId: string 
   }
 
   if (game.status === "completed") {
+    queueCompletedArenaPlayers(tournament, game);
     const currentRound = (tournament.roundsData || []).find((round: any) => Number(round.roundNumber) === Number(game.roundNumber));
     if (currentRound) {
       currentRound.pairings = (currentRound.pairings || []).map((pairing: any) =>

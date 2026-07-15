@@ -9,7 +9,7 @@ import { randomBytes } from "crypto";
 import { Link2, RefreshCcw, Trophy } from "lucide-react";
 import { TournamentDetailClient } from "@/components/tournaments/TournamentDetailClient";
 import { TournamentGame } from "@/models/TournamentGame";
-import { playerKeyForUser } from "@/lib/tournamentEngine";
+import { playerKeyForUser, setTournamentPlayerState } from "@/lib/tournamentEngine";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +30,13 @@ async function joinTournament(formData: FormData) {
   if (!session) throw new Error("Unauthorized");
   const id = String(formData.get("id"));
   await dbConnect();
-  await Tournament.findByIdAndUpdate(id, { $addToSet: { participants: (session.user as any).id } });
+  const tournament: any = await Tournament.findById(id);
+  if (!tournament) return;
+  if (!(tournament.participants || []).some((participant: any) => participant?.toString?.() === String((session.user as any).id))) {
+    tournament.participants.push((session.user as any).id);
+  }
+  setTournamentPlayerState(tournament, playerKeyForUser(String((session.user as any).id)), tournament.type === "arena" && tournament.status === "live" ? "queued" : "joined");
+  await tournament.save();
   revalidatePath(`/tournaments/${id}`);
 }
 
@@ -47,6 +53,7 @@ async function leaveTournament(formData: FormData) {
     return;
   }
   tournament.participants = (tournament.participants || []).filter((participant: any) => participant?.toString?.() !== String((session.user as any).id));
+  setTournamentPlayerState(tournament, playerKeyForUser(String((session.user as any).id)), "withdrawn");
   await tournament.save();
   revalidatePath(`/tournaments/${id}`);
 }
@@ -142,11 +149,13 @@ export default async function TournamentDetailPage({ params }: { params: { id: s
   const role = (session?.user as any)?.role;
   const userId = (session?.user as any)?.id;
   await dbConnect();
-  const tournament: any = await Tournament.findById(params.id).populate("participants", "name username").lean();
+  const tournament: any = await Tournament.findById(params.id).populate("participants", "name username rating").lean();
   if (!tournament) redirect("/tournaments");
   const allowed = role === "admin" || role === "instructor" || tournament.access?.allActiveStudents || (tournament.access?.users || []).map((id: any) => id.toString()).includes(userId) || (tournament.participants || []).some((p: any) => p._id?.toString() === userId);
   if (!allowed) return <div className="p-6">You do not have access to this tournament.</div>;
   const joined = (tournament.participants || []).some((p: any) => p._id?.toString() === userId);
+  const myPlayerKey = playerKeyForUser(String(userId || ""));
+  const participantState = (tournament.participantStates || []).find((entry: any) => entry.playerKey === myPlayerKey) || null;
   const host = headers().get("host");
   const protocol = headers().get("x-forwarded-proto") || "https";
   const externalInviteUrl = tournament.externalInvite?.token ? `${protocol}://${host}/tournament-join/${tournament.externalInvite.token}` : "";
@@ -154,13 +163,17 @@ export default async function TournamentDetailPage({ params }: { params: { id: s
   const activeGame =
     games.find((game: any) => game.status === "active" && [game.whiteUser?.toString?.(), game.blackUser?.toString?.()].includes(String(userId))) || null;
   const myGames = games.filter((game: any) => [game.whiteUser?.toString?.(), game.blackUser?.toString?.()].includes(String(userId))).slice(0, 10);
+  const activeGames = games.filter((game: any) => game.status === "active");
   const initialState = {
     tournament: toPlain(tournament),
     activeGame: activeGame ? toPlain(activeGame) : null,
     games: toPlain(games.slice(0, 25)),
     myGames: toPlain(myGames),
+    featuredGame: activeGames[0] ? toPlain(activeGames[0]) : null,
+    topGames: toPlain(activeGames.slice(0, 8)),
     joined,
     currentSeat: toPlain(buildCurrentSeat({ userId: String(userId || ""), joined, tournament, activeGame, myGames })),
+    participantState: toPlain(participantState),
     canManage: role === "admin",
     canPlay: role === "student" || role === "admin",
   };

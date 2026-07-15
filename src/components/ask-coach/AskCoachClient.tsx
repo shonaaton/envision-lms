@@ -54,14 +54,14 @@ export default function AskCoachClient({ role }: { role: Role }) {
 
   const load = useCallback(async (nextConversationId?: string) => {
     const params = new URLSearchParams();
-    const requestedConversation = nextConversationId || activeId || searchParams.get("conversation") || "";
+    const requestedConversation = nextConversationId || activeId || searchParams?.get("conversation") || "";
     if (query) params.set("q", query);
     if (requestedConversation) params.set("conversation", requestedConversation);
     const res = await fetch(`/api/ask-coach${params.toString() ? `?${params.toString()}` : ""}`, { cache: "no-store" });
     if (!res.ok) return;
     const next: AskCoachResponse = await res.json();
     setData(next);
-    const requestedFromUrl = searchParams.get("conversation");
+    const requestedFromUrl = searchParams?.get("conversation");
     if (requestedFromUrl && next.conversations.some((conversation) => conversation._id === requestedFromUrl)) {
       setActiveId(requestedFromUrl);
       return;
@@ -88,7 +88,7 @@ export default function AskCoachClient({ role }: { role: Role }) {
   );
 
   useEffect(() => {
-    const requestedMessage = searchParams.get("message");
+    const requestedMessage = searchParams?.get("message");
     if (!requestedMessage || !activeMessages.length) return;
     document.getElementById(`ask-coach-message-${requestedMessage}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [activeMessages, searchParams]);

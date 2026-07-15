@@ -14,7 +14,7 @@ export default function ResetPasswordPage() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [tokenState, setTokenState] = useState<"checking" | "valid" | "invalid">("checking");
   const [tokenError, setTokenError] = useState("");
-  const token = searchParams.get("token") || "";
+  const token = searchParams?.get("token") || "";
 
   useEffect(() => {
     if (!token) {

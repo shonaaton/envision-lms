@@ -66,7 +66,7 @@ export default function HomeworkAttemptPage() {
 
   useEffect(() => {
     if (!id) return;
-    fetch(`/api/homework/${id}`).then((r) => r.json()).then(setHw).catch(() => toast.error("Could not load assignment"));
+    fetch(`/api/homework/${id}`, { cache: "no-store" }).then((r) => r.json()).then(setHw).catch(() => toast.error("Could not load assignment"));
   }, [id]);
 
   useEffect(() => {

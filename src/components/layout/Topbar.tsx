@@ -28,7 +28,7 @@ export default function Topbar({ user, onOpenMobileNav }: { user: { name?: strin
   const [unreadCount, setUnreadCount] = useState(0);
 
   async function loadNotifications() {
-    const response = await fetch("/api/notifications");
+    const response = await fetch("/api/notifications", { cache: "no-store" });
     if (!response.ok) return;
     const data = await response.json();
     setNotifications(data.notifications || []);
@@ -51,13 +51,13 @@ export default function Topbar({ user, onOpenMobileNav }: { user: { name?: strin
   }, []);
 
   return (
-    <header className="sticky top-0 z-30 border-b border-brand/10 bg-white/82 px-4 py-2 shadow-sm shadow-brand-900/5 backdrop-blur-xl sm:px-5">
-      <div className="flex items-center justify-between gap-4">
+    <header className="sticky top-0 z-30 border-b border-brand/10 bg-white/88 px-3 py-2 shadow-sm shadow-brand-900/5 backdrop-blur-xl sm:px-5 lg:px-6">
+      <div className="flex min-h-[52px] items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
           <button
             type="button"
             onClick={onOpenMobileNav}
-            className="inline-flex h-10 w-10 flex-none items-center justify-center rounded-xl border border-brand/15 bg-white text-brand shadow-sm md:hidden"
+            className="inline-flex h-10 w-10 flex-none items-center justify-center rounded-lg border border-brand/15 bg-white text-brand shadow-sm transition hover:border-brand/35 hover:bg-brand-50 md:hidden"
             aria-label="Open navigation"
           >
             <Menu size={19} />
@@ -69,13 +69,13 @@ export default function Topbar({ user, onOpenMobileNav }: { user: { name?: strin
             </div>
             <div className="mt-0.5 truncate text-xs text-slate-600 sm:text-sm">
               Welcome back, <span className="font-semibold text-brand">{user.name || "Player"}</span>
-              <span className="ml-2 chip capitalize">{user.role}</span>
+              <span className="ml-2 hidden rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-bold capitalize text-brand ring-1 ring-brand/10 sm:inline-flex">{user.role}</span>
             </div>
           </div>
         </div>
         <div className="flex items-center gap-2 sm:gap-3">
           <div className="relative">
-            <button onClick={openBell} className="relative inline-flex h-10 w-10 items-center justify-center rounded-xl bg-accent text-brand shadow-sm ring-1 ring-accent-600/20 transition hover:-translate-y-0.5 hover:shadow-md" aria-label="Notifications">
+            <button type="button" onClick={openBell} className="relative inline-flex h-10 w-10 items-center justify-center rounded-lg bg-accent text-brand shadow-sm ring-1 ring-accent-600/20 transition hover:-translate-y-0.5 hover:shadow-md" aria-label="Notifications" aria-expanded={openNotifications}>
               <Bell size={18} />
               {unreadCount > 0 && (
                 <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-brand px-1 text-[10px] font-black text-white">
@@ -84,15 +84,15 @@ export default function Topbar({ user, onOpenMobileNav }: { user: { name?: strin
               )}
             </button>
             {openNotifications && (
-              <div className="absolute right-0 top-12 z-50 w-[min(360px,calc(100vw-2rem))] rounded-2xl border border-brand/10 bg-white p-3 shadow-2xl shadow-brand/20">
+              <div className="absolute right-0 top-12 z-50 w-[min(380px,calc(100vw-1.5rem))] rounded-lg border border-brand/10 bg-white p-3 shadow-2xl shadow-brand/20">
                 <div className="mb-2 flex items-center justify-between gap-3 px-1">
                   <div className="font-black text-brand">Notifications</div>
-                  <button onClick={loadNotifications} className="text-xs font-bold text-brand/70 hover:text-brand">Refresh</button>
+                  <button type="button" onClick={loadNotifications} className="rounded-md px-2 py-1 text-xs font-bold text-brand/70 hover:bg-brand-50 hover:text-brand">Refresh</button>
                 </div>
                 <div className="max-h-96 space-y-2 overflow-y-auto pr-1">
-                  {notifications.length === 0 && <div className="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">No notifications yet.</div>}
+                  {notifications.length === 0 && <div className="rounded-lg bg-slate-50 p-4 text-sm text-slate-500">No notifications yet.</div>}
                   {notifications.map((item) => (
-                    <a key={item._id} href={notificationHref(item)} className="block rounded-xl border border-slate-200 bg-white p-3 shadow-sm hover:border-brand/20 hover:bg-slate-50">
+                    <a key={item._id} href={notificationHref(item)} className="block rounded-lg border border-slate-200 bg-white p-3 shadow-sm transition hover:border-brand/20 hover:bg-slate-50">
                       <div className="flex items-start justify-between gap-2">
                         <div className="font-bold text-slate-950">{item.title}</div>
                         {!item.readAt && <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-brand" />}
@@ -107,10 +107,10 @@ export default function Topbar({ user, onOpenMobileNav }: { user: { name?: strin
               </div>
             )}
           </div>
-          <button className="btn-outline hidden sm:inline-flex" onClick={() => signOut({ callbackUrl: "/" })}>
+          <button type="button" className="btn-outline hidden sm:inline-flex" onClick={() => signOut({ callbackUrl: "/" })}>
             <LogOut size={16} /> Sign out
           </button>
-          <button className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-brand/15 bg-white text-brand shadow-sm sm:hidden" onClick={() => signOut({ callbackUrl: "/" })} aria-label="Sign out">
+          <button type="button" className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-brand/15 bg-white text-brand shadow-sm transition hover:border-brand/35 hover:bg-brand-50 sm:hidden" onClick={() => signOut({ callbackUrl: "/" })} aria-label="Sign out">
             <LogOut size={17} />
           </button>
         </div>

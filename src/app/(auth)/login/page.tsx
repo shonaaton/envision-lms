@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
 import Image from "next/image";
-import { AtSign, Eye, EyeOff, LockKeyhole, Sparkles } from "lucide-react";
+import { ArrowRight, AtSign, Eye, EyeOff, LockKeyhole, MonitorSmartphone } from "lucide-react";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -40,94 +40,89 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-[#812fe2] text-white">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_15%_25%,rgba(255,255,255,0.20),transparent_28%),radial-gradient(circle_at_80%_12%,rgba(255,255,255,0.16),transparent_24%),linear-gradient(120deg,#7358ee_0%,#9b35df_48%,#b41fd0_100%)]" />
-      <div className="pointer-events-none absolute inset-0 opacity-20">
-        {["♛", "♞", "♜", "♟", "♚", "♝", "♘", "♕"].map((piece, index) => (
-          <span
-            key={`${piece}-${index}`}
-            className="absolute font-serif text-7xl text-white/60"
-            style={{
-              left: `${[8, 16, 37, 55, 72, 84, 62, 25][index]}%`,
-              top: `${[42, 88, 18, 82, 27, 56, 8, 48][index]}%`,
-              transform: `rotate(${[-18, 14, 8, 4, -12, 19, -16, 22][index]}deg)`,
-            }}
-          >
-            {piece}
-          </span>
-        ))}
-      </div>
-
-      <div className="relative z-10 grid min-h-screen grid-cols-1 items-center gap-8 px-5 py-8 lg:grid-cols-[minmax(0,1fr)_526px] lg:px-14 xl:px-24">
-        <section className="hidden min-h-[620px] flex-col items-center justify-center text-center lg:flex">
-          <div className="rounded-[28px] border border-white/25 bg-white/15 px-10 py-7 shadow-2xl shadow-purple-950/20 backdrop-blur-md">
-            <Image src="/logo-purple.svg" alt="Envision Chess Academy" width={360} height={130} priority className="h-24 w-auto object-contain opacity-95 brightness-0 invert" />
+    <main className="min-h-screen bg-[#f7f8fb] text-slate-950">
+      <div className="grid min-h-screen lg:grid-cols-[minmax(0,1fr)_minmax(420px,540px)]">
+        <section className="relative hidden overflow-hidden bg-[linear-gradient(160deg,#451059_0%,#2a0936_62%,#14051c_100%)] p-10 text-white lg:flex lg:flex-col lg:justify-between xl:p-14">
+          <div>
+            <Image src="/logo-yellow.svg" alt="Envision Chess Academy" width={280} height={90} priority className="h-20 w-auto object-contain" />
+            <h1 className="mt-12 max-w-2xl text-5xl font-black leading-tight">Master the art of chess with one calm workspace.</h1>
+            <p className="mt-5 max-w-xl text-lg leading-8 text-white/75">
+              Classes, homework, PGNs, tournaments, attendance, bookings, and payments stay connected for students, coaches, and admins.
+            </p>
           </div>
-          <h1 className="mt-12 max-w-3xl font-display text-6xl font-semibold leading-tight drop-shadow-lg">Master the Art of Chess</h1>
-          <p className="mt-8 max-w-2xl text-2xl leading-relaxed text-white/90">
-            Elevate your game with professional coaching, strategic analysis, and complete academy training.
-          </p>
+          <div className="grid gap-3 xl:grid-cols-3">
+            {["Live classes", "Smart practice", "Progress reports"].map((item) => (
+              <div key={item} className="rounded-lg border border-white/10 bg-white/[0.08] p-4 text-sm font-bold text-white/90">
+                {item}
+              </div>
+            ))}
+          </div>
         </section>
 
-        <section className="mx-auto w-full max-w-[526px] rounded-[28px] bg-white/95 px-7 py-9 text-slate-950 shadow-2xl shadow-purple-950/30 backdrop-blur sm:px-12 lg:py-14">
-          <div className="mb-9 text-center">
-            <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-full bg-purple-100 text-purple-700 lg:hidden">
-              <Sparkles size={22} />
+        <section className="flex min-h-screen items-center justify-center px-5 py-8 sm:px-8">
+          <div className="w-full max-w-[480px]">
+            <div className="mb-6 flex justify-center lg:hidden">
+              <Image src="/logo-purple.svg" alt="Envision Chess Academy" width={230} height={78} priority className="h-16 w-auto object-contain" />
             </div>
-            <h2 className="text-3xl font-bold tracking-tight">Welcome Back, Player</h2>
-            <p className="mt-4 text-lg text-slate-500">Continue your journey to chess mastery</p>
-          </div>
 
-          <form onSubmit={onSubmit} className="space-y-6">
-            <label className="group block">
-              <span className="ml-4 bg-white px-2 text-sm font-medium text-purple-700">Email or Username</span>
-              <span className="-mt-2 flex h-[70px] items-center gap-3 rounded-2xl border-2 border-purple-700 bg-white px-5 transition group-focus-within:shadow-[0_0_0_4px_rgba(126,58,242,0.12)]">
-                <AtSign className="shrink-0 text-slate-600" size={28} />
-                <input
-                  className="h-full w-full bg-transparent text-xl text-slate-950 outline-none placeholder:text-slate-400"
-                  name="email"
-                  type="text"
-                  placeholder="Enter your email or username"
-                  required
-                />
-              </span>
-            </label>
+            <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-2xl shadow-brand-900/10 sm:p-8">
+              <div className="mb-7">
+                <div className="mb-4 inline-flex h-11 w-11 items-center justify-center rounded-lg bg-brand/10 text-brand">
+                  <MonitorSmartphone size={22} />
+                </div>
+                <h2 className="text-2xl font-black tracking-normal text-slate-950 sm:text-3xl">Welcome back</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-500">Continue your academy journey from any device.</p>
+              </div>
 
-            <label className="group block">
-              <span className="ml-4 bg-white px-2 text-sm font-medium text-slate-600">Password</span>
-              <span className="-mt-2 flex h-[70px] items-center gap-3 rounded-2xl border border-slate-200 bg-white px-5 transition group-focus-within:border-purple-600 group-focus-within:shadow-[0_0_0_4px_rgba(126,58,242,0.10)]">
-                <LockKeyhole className="shrink-0 text-slate-600" size={27} />
-                <input
-                  className="h-full w-full bg-transparent text-xl text-slate-950 outline-none placeholder:text-slate-400"
-                  name="password"
-                  type={showPassword ? "text" : "password"}
-                  placeholder="Enter your password"
-                  required
-                />
-                <button type="button" className="rounded-full p-1 text-slate-500 hover:bg-slate-100" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? "Hide password" : "Show password"}>
-                  {showPassword ? <EyeOff size={27} /> : <Eye size={27} />}
+              <form onSubmit={onSubmit} className="space-y-5">
+                <label className="block">
+                  <span className="mb-2 block text-sm font-semibold text-slate-700">Email or username</span>
+                  <span className="flex h-12 items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 text-slate-500 shadow-sm transition focus-within:border-brand focus-within:ring-4 focus-within:ring-brand/10">
+                    <AtSign className="shrink-0" size={20} />
+                    <input
+                      className="h-full w-full bg-transparent text-base text-slate-950 outline-none placeholder:text-slate-400"
+                      name="email"
+                      type="text"
+                      autoComplete="username"
+                      placeholder="Enter email or username"
+                      required
+                    />
+                  </span>
+                </label>
+
+                <label className="block">
+                  <span className="mb-2 block text-sm font-semibold text-slate-700">Password</span>
+                  <span className="flex h-12 items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 text-slate-500 shadow-sm transition focus-within:border-brand focus-within:ring-4 focus-within:ring-brand/10">
+                    <LockKeyhole className="shrink-0" size={20} />
+                    <input
+                      className="h-full w-full bg-transparent text-base text-slate-950 outline-none placeholder:text-slate-400"
+                      name="password"
+                      type={showPassword ? "text" : "password"}
+                      autoComplete="current-password"
+                      placeholder="Enter password"
+                      required
+                    />
+                    <button type="button" className="grid h-9 w-9 shrink-0 place-items-center rounded-md text-slate-500 hover:bg-slate-100" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? "Hide password" : "Show password"}>
+                      {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                    </button>
+                  </span>
+                </label>
+
+                <div className="flex justify-end">
+                  <Link href="/forgot-password" className="text-sm font-semibold text-brand hover:text-brand-700">Forgot password?</Link>
+                </div>
+
+                <button className="btn-primary h-12 w-full" disabled={loading}>
+                  {loading ? "Signing in..." : "Sign in"} {!loading && <ArrowRight size={17} />}
                 </button>
-              </span>
-            </label>
+              </form>
 
-            <div className="flex justify-end">
-              <Link href="/forgot-password" className="text-base font-medium text-purple-700 hover:text-purple-900">Forgot Password?</Link>
+              <div className="mt-6 border-t border-slate-200 pt-5 text-center">
+                <p className="text-sm text-slate-500">
+                  No account? <Link href="/register" className="font-semibold text-brand hover:text-brand-700">Create one</Link>
+                </p>
+              </div>
             </div>
-
-            <button
-              className="h-16 w-full rounded-2xl bg-gradient-to-r from-[#7040b2] to-[#51237f] text-xl font-bold text-white shadow-lg shadow-purple-900/20 transition hover:translate-y-[-1px] hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-70"
-              disabled={loading}
-            >
-              {loading ? "Signing In..." : "Sign In to Academy"}
-            </button>
-          </form>
-
-          <div className="mt-7 border-t border-slate-200 pt-6 text-center">
-            <div className="font-bold">Envision Chess Academy</div>
-            <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-slate-500">Professional chess coaching, analysis, classes, tournaments, and student progress tracking.</p>
-            <p className="mt-5 text-sm text-slate-500">
-              No account? <Link href="/register" className="font-semibold text-purple-700 hover:text-purple-900">Create one</Link>
-            </p>
           </div>
         </section>
       </div>

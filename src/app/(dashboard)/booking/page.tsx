@@ -38,8 +38,8 @@ export default function BookingPage() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    fetch("/api/availability").then((r) => r.json()).then((payload) => setCoaches(Array.isArray(payload) ? payload : []));
-    fetch("/api/bookings").then((r) => r.json()).then((payload) => setBookings(Array.isArray(payload) ? payload : []));
+    fetch("/api/availability", { cache: "no-store" }).then((r) => r.json()).then((payload) => setCoaches(Array.isArray(payload) ? payload : []));
+    fetch("/api/bookings", { cache: "no-store" }).then((r) => r.json()).then((payload) => setBookings(Array.isArray(payload) ? payload : []));
   }, []);
 
   const slotOptions = useMemo<SlotOption[]>(() => {
@@ -67,8 +67,8 @@ export default function BookingPage() {
             day: "numeric",
             hour: "numeric",
             minute: "2-digit",
-          }).format(start)} • ${minutes} min`,
-          coachLabel: `${dayNames[slot.dayOfWeek]} • ${slot.startTime} (${coachTimeZone})`,
+          }).format(start)} - ${minutes} min`,
+          coachLabel: `${dayNames[slot.dayOfWeek]} - ${slot.startTime} (${coachTimeZone})`,
           start,
           end,
         };
@@ -103,7 +103,7 @@ export default function BookingPage() {
     );
     setSelectedSlot("");
     setNotes("");
-    fetch("/api/bookings").then((r) => r.json()).then((next) => setBookings(Array.isArray(next) ? next : []));
+    fetch("/api/bookings", { cache: "no-store" }).then((r) => r.json()).then((next) => setBookings(Array.isArray(next) ? next : []));
   }
 
   return (
@@ -137,7 +137,7 @@ export default function BookingPage() {
               <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Available Time</span>
               <select value={selectedSlot} onChange={(event) => setSelectedSlot(event.target.value)} className="h-12 w-full rounded-xl border border-slate-200 px-3 text-sm" disabled={!selectedCoach}>
                 <option value="">Select time</option>
-                {slotOptions.map((slot) => <option key={slot.id} value={slot.id}>{slot.label} — {slot.coachLabel}</option>)}
+                {slotOptions.map((slot) => <option key={slot.id} value={slot.id}>{slot.label} - {slot.coachLabel}</option>)}
               </select>
             </label>
           </div>

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { toast } from "sonner";
 import { ArrowLeft, Eye, EyeOff, KeyRound } from "lucide-react";
 
@@ -66,61 +67,61 @@ export default function ResetPasswordPage() {
   }
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-[#812fe2] text-white">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_15%_25%,rgba(255,255,255,0.20),transparent_28%),radial-gradient(circle_at_80%_12%,rgba(255,255,255,0.16),transparent_24%),linear-gradient(120deg,#7358ee_0%,#9b35df_48%,#b41fd0_100%)]" />
-      <div className="relative z-10 flex min-h-screen items-center justify-center px-5 py-8">
-        <section className="w-full max-w-[520px] rounded-[28px] bg-white/95 px-7 py-9 text-slate-950 shadow-2xl shadow-purple-950/30 backdrop-blur sm:px-12 lg:py-14">
-          <div className="mb-9 text-center">
-            <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-full bg-purple-100 text-purple-700">
+    <main className="grid min-h-screen place-items-center bg-[#f7f8fb] px-5 py-8 text-slate-950">
+      <section className="w-full max-w-[480px]">
+        <div className="mb-6 flex justify-center">
+          <Image src="/logo-purple.svg" alt="Envision Chess Academy" width={230} height={78} priority className="h-16 w-auto object-contain" />
+        </div>
+
+        <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-2xl shadow-brand-900/10 sm:p-8">
+          <div className="mb-7">
+            <div className="mb-4 inline-flex h-11 w-11 items-center justify-center rounded-lg bg-brand/10 text-brand">
               <KeyRound size={22} />
             </div>
-            <h1 className="text-3xl font-bold tracking-tight">Choose a new password</h1>
-            <p className="mt-4 text-lg text-slate-500">Set a fresh password for your academy account.</p>
+            <h1 className="text-2xl font-black tracking-normal text-slate-950 sm:text-3xl">Choose a new password</h1>
+            <p className="mt-2 text-sm leading-6 text-slate-500">Set a fresh password for your academy account.</p>
           </div>
 
           {tokenState === "checking" ? (
-            <div className="rounded-2xl bg-purple-50 p-5 text-center font-semibold text-purple-800">Checking your secure reset link...</div>
+            <div className="rounded-lg bg-brand-50 p-5 text-center font-semibold text-brand">Checking your secure reset link...</div>
           ) : tokenState === "invalid" ? (
-            <div className="rounded-2xl border border-rose-200 bg-rose-50 p-5 text-center">
+            <div className="rounded-lg border border-rose-200 bg-rose-50 p-5 text-center">
               <p className="font-semibold text-rose-800">{tokenError}</p>
-              <Link href="/forgot-password" className="mt-4 inline-flex rounded-xl bg-purple-700 px-5 py-3 font-semibold text-white">
-                Request a New Link
+              <Link href="/forgot-password" className="btn-primary mt-4">
+                Request a new link
               </Link>
             </div>
           ) : (
-          <form onSubmit={onSubmit} className="space-y-6">
-            <PasswordField
-              name="password"
-              label="New Password"
-              placeholder="Enter your new password"
-              show={showPassword}
-              onToggle={() => setShowPassword((value) => !value)}
-            />
-            <PasswordField
-              name="confirmPassword"
-              label="Confirm Password"
-              placeholder="Re-enter your new password"
-              show={showConfirmPassword}
-              onToggle={() => setShowConfirmPassword((value) => !value)}
-            />
+            <form onSubmit={onSubmit} className="space-y-5">
+              <PasswordField
+                name="password"
+                label="New password"
+                placeholder="Enter your new password"
+                show={showPassword}
+                onToggle={() => setShowPassword((value) => !value)}
+              />
+              <PasswordField
+                name="confirmPassword"
+                label="Confirm password"
+                placeholder="Re-enter your new password"
+                show={showConfirmPassword}
+                onToggle={() => setShowConfirmPassword((value) => !value)}
+              />
 
-            <button
-              className="h-16 w-full rounded-2xl bg-gradient-to-r from-[#7040b2] to-[#51237f] text-xl font-bold text-white shadow-lg shadow-purple-900/20 transition hover:translate-y-[-1px] hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-70"
-              disabled={loading}
-            >
-              {loading ? "Updating..." : "Reset Password"}
-            </button>
-          </form>
+              <button className="btn-primary h-12 w-full" disabled={loading}>
+                {loading ? "Updating..." : "Reset password"}
+              </button>
+            </form>
           )}
 
-          <div className="mt-7 border-t border-slate-200 pt-6">
-            <Link href="/login" className="inline-flex items-center gap-2 text-sm font-semibold text-purple-700 hover:text-purple-900">
+          <div className="mt-6 border-t border-slate-200 pt-5">
+            <Link href="/login" className="inline-flex items-center gap-2 text-sm font-semibold text-brand hover:text-brand-700">
               <ArrowLeft size={16} />
               Back to sign in
             </Link>
           </div>
-        </section>
-      </div>
+        </div>
+      </section>
     </main>
   );
 }
@@ -139,20 +140,21 @@ function PasswordField({
   onToggle: () => void;
 }) {
   return (
-    <label className="group block">
-      <span className="ml-4 bg-white px-2 text-sm font-medium text-slate-600">{label}</span>
-      <span className="-mt-2 flex h-[70px] items-center gap-3 rounded-2xl border border-slate-200 bg-white px-5 transition group-focus-within:border-purple-600 group-focus-within:shadow-[0_0_0_4px_rgba(126,58,242,0.10)]">
-        <KeyRound className="shrink-0 text-slate-600" size={24} />
+    <label className="block">
+      <span className="mb-2 block text-sm font-semibold text-slate-700">{label}</span>
+      <span className="flex h-12 items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 text-slate-500 shadow-sm transition focus-within:border-brand focus-within:ring-4 focus-within:ring-brand/10">
+        <KeyRound className="shrink-0" size={20} />
         <input
-          className="h-full w-full bg-transparent text-xl text-slate-950 outline-none placeholder:text-slate-400"
+          className="h-full w-full bg-transparent text-base text-slate-950 outline-none placeholder:text-slate-400"
           name={name}
           type={show ? "text" : "password"}
+          autoComplete={name === "password" ? "new-password" : "new-password"}
           placeholder={placeholder}
           minLength={8}
           required
         />
-        <button type="button" className="rounded-full p-1 text-slate-500 hover:bg-slate-100" onClick={onToggle} aria-label={show ? "Hide password" : "Show password"}>
-          {show ? <EyeOff size={24} /> : <Eye size={24} />}
+        <button type="button" className="grid h-9 w-9 shrink-0 place-items-center rounded-md text-slate-500 hover:bg-slate-100" onClick={onToggle} aria-label={show ? "Hide password" : "Show password"}>
+          {show ? <EyeOff size={20} /> : <Eye size={20} />}
         </button>
       </span>
     </label>

@@ -38,7 +38,7 @@ export default function AvailabilityPage() {
 
   useEffect(() => {
     if (!userId) return;
-    fetch(`/api/availability?instructor=${userId}`)
+    fetch(`/api/availability?instructor=${userId}`, { cache: "no-store" })
       .then((response) => response.json())
       .then((payload) => {
         setSlots(Array.isArray(payload.slots) ? payload.slots : []);

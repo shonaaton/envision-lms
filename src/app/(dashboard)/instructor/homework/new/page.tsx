@@ -96,9 +96,9 @@ export default function NewHomeworkPage() {
 
   useEffect(() => {
     Promise.all([
-      fetch("/api/classrooms").then((r) => r.json()),
-      fetch("/api/homework/targets").then((r) => r.json()),
-      fetch("/api/pgn").then((r) => r.json()),
+      fetch("/api/classrooms", { cache: "no-store" }).then((r) => r.json()),
+      fetch("/api/homework/targets", { cache: "no-store" }).then((r) => r.json()),
+      fetch("/api/pgn", { cache: "no-store" }).then((r) => r.json()),
     ])
       .then(([classroomData, targetData, pgnData]) => {
         setClassrooms(Array.isArray(classroomData) ? classroomData : []);

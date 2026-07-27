@@ -96,14 +96,14 @@ export default function AdminUsersPage() {
   }, [q, sort, status, tab, tag]);
 
   const loadBatches = useCallback(async () => {
-    const response = await fetch("/api/admin/batches");
+    const response = await fetch("/api/admin/batches", { cache: "no-store" });
     setBatches(await response.json());
   }, []);
 
   const loadDirectory = useCallback(async () => {
     const [studentsResponse, coachesResponse] = await Promise.all([
-      fetch("/api/admin/users?role=student"),
-      fetch("/api/admin/users?role=instructor"),
+      fetch("/api/admin/users?role=student", { cache: "no-store" }),
+      fetch("/api/admin/users?role=instructor", { cache: "no-store" }),
     ]);
     setAllStudents(await studentsResponse.json());
     setAllCoaches(await coachesResponse.json());

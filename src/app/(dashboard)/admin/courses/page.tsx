@@ -52,7 +52,7 @@ export default function AdminCoursesPage() {
 
   async function load() {
     setLoading(true);
-    const response = await fetch(`/api/admin/courses${query ? `?q=${encodeURIComponent(query)}` : ""}`);
+    const response = await fetch(`/api/admin/courses${query ? `?q=${encodeURIComponent(query)}` : ""}`, { cache: "no-store" });
     if (!response.ok) {
       toast.error("Could not load courses");
       setLoading(false);

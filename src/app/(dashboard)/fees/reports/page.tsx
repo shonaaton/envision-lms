@@ -31,13 +31,13 @@ function dateFilter(params: Record<string, string | string[] | undefined>) {
   if (month) {
     const date = new Date(`${month}-01`);
     filter.createdAt = { $gte: new Date(date.getFullYear(), date.getMonth(), 1), $lte: new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999) };
-  } else if (fy) {
-    const startYear = Number(fy);
-    filter.createdAt = { $gte: new Date(startYear, 3, 1), $lte: new Date(startYear + 1, 2, 31, 23, 59, 59, 999) };
   } else if (from || to) {
     filter.createdAt = {};
     if (from) filter.createdAt.$gte = new Date(from);
     if (to) filter.createdAt.$lte = new Date(`${to}T23:59:59.999`);
+  } else if (fy) {
+    const startYear = Number(fy);
+    filter.createdAt = { $gte: new Date(startYear, 3, 1), $lte: new Date(startYear + 1, 2, 31, 23, 59, 59, 999) };
   }
   return filter;
 }

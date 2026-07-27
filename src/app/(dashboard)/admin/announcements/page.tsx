@@ -73,8 +73,8 @@ export default function AdminAnnouncementsPage() {
   async function load() {
     setLoading(true);
     const [targetsResponse, announcementsResponse] = await Promise.all([
-      fetch("/api/admin/announcements/targets"),
-      fetch("/api/admin/announcements"),
+      fetch("/api/admin/announcements/targets", { cache: "no-store" }),
+      fetch("/api/admin/announcements", { cache: "no-store" }),
     ]);
     if (!targetsResponse.ok || !announcementsResponse.ok) {
       toast.error("Could not load announcement data");

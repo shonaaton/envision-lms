@@ -78,8 +78,8 @@ export default function RegisterPage() {
 
   if (applicationSent) {
     return (
-      <main className="grid min-h-screen place-items-center bg-[linear-gradient(135deg,#5a1372_0%,#8a2bc0_55%,#fff7b5_140%)] p-5">
-        <section className="w-full max-w-xl rounded-[28px] bg-white p-8 text-center shadow-2xl">
+      <main className="grid min-h-screen place-items-center bg-[#f7f8fb] p-5">
+        <section className="w-full max-w-xl rounded-lg border border-slate-200 bg-white p-8 text-center shadow-2xl shadow-brand-900/10">
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-50 text-emerald-700">
             <CheckCircle2 size={28} />
           </div>
@@ -92,29 +92,28 @@ export default function RegisterPage() {
   }
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-[#5a1372] px-5 py-8">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_12%_10%,rgba(253,231,90,0.28),transparent_28%),radial-gradient(circle_at_86%_8%,rgba(255,255,255,0.22),transparent_24%),linear-gradient(135deg,#5a1372_0%,#8a2bc0_52%,#fde75a_160%)]" />
-      <div className="relative z-10 mx-auto grid min-h-[calc(100vh-64px)] max-w-6xl items-center gap-8 lg:grid-cols-[1fr_560px]">
-        <section className="hidden text-white lg:block">
-          <div className="inline-flex rounded-3xl border border-white/20 bg-white/15 px-8 py-6 shadow-2xl backdrop-blur">
-            <Image src="/logo-purple.svg" alt="Envision Chess Academy" width={320} height={120} priority className="h-20 w-auto brightness-0 invert" />
+    <main className="min-h-screen bg-[#f7f8fb] px-5 py-8 text-slate-950">
+      <div className="mx-auto grid min-h-[calc(100dvh-64px)] max-w-7xl items-center gap-8 lg:grid-cols-[minmax(0,0.9fr)_minmax(420px,560px)]">
+        <section className="hidden rounded-lg bg-[linear-gradient(160deg,#451059_0%,#2a0936_62%,#14051c_100%)] p-10 text-white shadow-2xl shadow-brand-900/20 lg:block xl:p-12">
+          <div className="inline-flex rounded-lg border border-white/10 bg-white/[0.08] px-6 py-5 shadow-2xl backdrop-blur">
+            <Image src="/logo-yellow.svg" alt="Envision Chess Academy" width={300} height={108} priority className="h-20 w-auto object-contain" />
           </div>
-          <h1 className="mt-10 max-w-2xl text-6xl font-bold leading-tight">Start with the right access.</h1>
-          <p className="mt-6 max-w-xl text-xl leading-relaxed text-white/85">Students begin with a safe demo workspace. Coaches apply first, then admin approval activates teaching access.</p>
+          <h1 className="mt-10 max-w-2xl text-5xl font-black leading-tight">Start with the right access.</h1>
+          <p className="mt-5 max-w-xl text-lg leading-8 text-white/75">Students begin with a safe demo workspace. Coaches apply first, then admin approval activates teaching access.</p>
         </section>
 
-        <form onSubmit={onSubmit} className="max-h-[calc(100vh-64px)] overflow-auto rounded-[28px] bg-white/95 p-7 text-slate-950 shadow-2xl shadow-brand-900/30 backdrop-blur sm:p-9">
+        <form onSubmit={onSubmit} className="rounded-lg border border-slate-200 bg-white p-5 text-slate-950 shadow-2xl shadow-brand-900/10 sm:p-7 lg:max-h-[calc(100dvh-64px)] lg:overflow-auto">
           <div className="mb-6 text-center">
-            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-accent text-brand"><ShieldCheck size={23} /></div>
-            <h1 className="text-3xl font-bold">{role === "student" ? "Create Demo Student Account" : "Coach Application"}</h1>
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-accent text-brand"><ShieldCheck size={23} /></div>
+            <h1 className="text-2xl font-black sm:text-3xl">{role === "student" ? "Create Demo Student Account" : "Coach Application"}</h1>
             <p className="mt-2 text-sm text-slate-500">{role === "student" ? "Demo users get limited practice access and can create a demo booking." : "Coach applications are reviewed by admin before account activation."}</p>
           </div>
 
-          <div className="mb-5 grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1">
-            <button type="button" onClick={() => setRole("student")} className={`rounded-xl px-4 py-3 text-sm font-bold ${role === "student" ? "bg-white text-brand shadow" : "text-slate-600"}`}>
+          <div className="mb-5 grid grid-cols-2 gap-2 rounded-lg bg-slate-100 p-1">
+            <button type="button" onClick={() => setRole("student")} className={`rounded-lg px-3 py-3 text-sm font-bold transition ${role === "student" ? "bg-white text-brand shadow" : "text-slate-600 hover:bg-white/70"}`}>
               <UsersRound size={16} className="mr-2 inline" /> Student Demo
             </button>
-            <button type="button" onClick={() => setRole("instructor")} className={`rounded-xl px-4 py-3 text-sm font-bold ${role === "instructor" ? "bg-white text-brand shadow" : "text-slate-600"}`}>
+            <button type="button" onClick={() => setRole("instructor")} className={`rounded-lg px-3 py-3 text-sm font-bold transition ${role === "instructor" ? "bg-white text-brand shadow" : "text-slate-600 hover:bg-white/70"}`}>
               <BriefcaseBusiness size={16} className="mr-2 inline" /> Coach Application
             </button>
           </div>
@@ -124,14 +123,14 @@ export default function RegisterPage() {
             {role === "student" && <IconInput icon={<UserRound size={19} />} name="parentName" placeholder="Parent name" required />}
             <IconInput icon={<Mail size={19} />} name="email" type="email" placeholder="Email" required />
             <div className="grid grid-cols-[128px_1fr] gap-2">
-              <select name="countryCode" defaultValue="+91" className="h-12 rounded-xl border border-brand/15 bg-white px-3 text-sm">
+              <select name="countryCode" defaultValue="+91" className="h-12 rounded-lg border border-brand/15 bg-white px-3 text-sm">
                 {countries.map((item) => <option key={`${item.code}-${item.country}`} value={item.code}>{item.code}</option>)}
               </select>
               <IconInput icon={<Phone size={19} />} name="phone" placeholder="Phone number" required />
             </div>
             <div className="grid gap-2 sm:grid-cols-2">
               <IconInput icon={<MapPin size={19} />} name="city" placeholder="City" required />
-              <select name="country" required className="h-12 rounded-xl border border-brand/15 bg-white px-3 text-sm">
+              <select name="country" required className="h-12 rounded-lg border border-brand/15 bg-white px-3 text-sm">
                 <option value="">Country</option>
                 {countries.map((item) => <option key={item.country} value={item.country}>{item.country}</option>)}
                 <option value="Other">Other</option>
@@ -139,7 +138,7 @@ export default function RegisterPage() {
             </div>
 
             {role === "student" ? (
-              <select name="level" required className="h-12 rounded-xl border border-brand/15 bg-white px-3 text-sm">
+              <select name="level" required className="h-12 rounded-lg border border-brand/15 bg-white px-3 text-sm">
                 <option value="">Current chess level</option>
                 <option value="absolute_beginner">Absolute Beginner</option>
                 <option value="beginner">Beginner</option>
@@ -154,16 +153,16 @@ export default function RegisterPage() {
                   <input name="fideId" className="input h-12" placeholder="FIDE ID (optional)" />
                   <input name="rating" type="number" className="input h-12" placeholder="Rating (optional)" />
                 </div>
-                <textarea name="coachExperience" required className="min-h-24 rounded-xl border border-brand/15 px-3 py-3 text-sm outline-none focus:border-brand" placeholder="Coaching experience, certifications, students taught..." />
-                <textarea name="preferredStudents" className="min-h-20 rounded-xl border border-brand/15 px-3 py-3 text-sm outline-none focus:border-brand" placeholder="Preferred student levels / age groups" />
-                <textarea name="availabilityNote" className="min-h-20 rounded-xl border border-brand/15 px-3 py-3 text-sm outline-none focus:border-brand" placeholder="General availability note" />
-                <textarea name="message" className="min-h-20 rounded-xl border border-brand/15 px-3 py-3 text-sm outline-none focus:border-brand" placeholder="Anything else admin should know" />
+                <textarea name="coachExperience" required className="min-h-24 rounded-lg border border-brand/15 px-3 py-3 text-sm outline-none transition focus:border-brand focus:ring-4 focus:ring-brand/10" placeholder="Coaching experience, certifications, students taught..." />
+                <textarea name="preferredStudents" className="min-h-20 rounded-lg border border-brand/15 px-3 py-3 text-sm outline-none transition focus:border-brand focus:ring-4 focus:ring-brand/10" placeholder="Preferred student levels / age groups" />
+                <textarea name="availabilityNote" className="min-h-20 rounded-lg border border-brand/15 px-3 py-3 text-sm outline-none transition focus:border-brand focus:ring-4 focus:ring-brand/10" placeholder="General availability note" />
+                <textarea name="message" className="min-h-20 rounded-lg border border-brand/15 px-3 py-3 text-sm outline-none transition focus:border-brand focus:ring-4 focus:ring-brand/10" placeholder="Anything else admin should know" />
               </>
             )}
 
             <IconInput icon={<ShieldCheck size={19} />} name="password" type="password" placeholder="Password (min 8)" required minLength={8} />
 
-            <div className="space-y-2 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm">
+            <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm">
               <PolicyCheck name="acceptedPrivacy" label="I accept the Privacy Policy" href="https://www.envisionchessacademy.com/privacy-policy" />
               <PolicyCheck name="acceptedTerms" label="I accept the Terms and Conditions" href="https://www.envisionchessacademy.com/terms-and-conditions" />
               <PolicyCheck name="acceptedRefund" label="I accept the Refund Policy" href="https://www.envisionchessacademy.com/refund-policy" />
@@ -182,7 +181,7 @@ export default function RegisterPage() {
 
 function IconInput({ icon, ...props }: InputHTMLAttributes<HTMLInputElement> & { icon: ReactNode }) {
   return (
-    <label className="flex h-12 items-center gap-3 rounded-xl border border-brand/15 bg-white px-3 text-slate-500 shadow-sm focus-within:border-brand focus-within:ring-4 focus-within:ring-brand/10">
+    <label className="flex h-12 items-center gap-3 rounded-lg border border-brand/15 bg-white px-3 text-slate-500 shadow-sm transition focus-within:border-brand focus-within:ring-4 focus-within:ring-brand/10">
       {icon}
       <input className="h-full min-w-0 flex-1 bg-transparent text-sm text-slate-950 outline-none placeholder:text-slate-400" {...props} />
     </label>
@@ -191,8 +190,8 @@ function IconInput({ icon, ...props }: InputHTMLAttributes<HTMLInputElement> & {
 
 function PolicyCheck({ name, label, href }: { name: string; label: string; href: string }) {
   return (
-    <label className="flex items-center gap-2 text-slate-700">
-      <input name={name} type="checkbox" required className="h-4 w-4 accent-brand" />
+    <label className="flex items-start gap-2 text-slate-700">
+      <input name={name} type="checkbox" required className="mt-0.5 h-4 w-4 shrink-0 accent-brand" />
       <span>{label} <Link href={href} target="_blank" className="font-semibold text-brand underline">View</Link></span>
     </label>
   );

@@ -18,8 +18,8 @@ export default function AddBatchModal({
 
   useEffect(() => {
     if (!open) return;
-    fetch("/api/admin/users?role=instructor").then((r) => r.json()).then(setCoaches);
-    fetch("/api/admin/users?role=student").then((r) => r.json()).then(setStudents);
+    fetch("/api/admin/users?role=instructor", { cache: "no-store" }).then((r) => r.json()).then(setCoaches);
+    fetch("/api/admin/users?role=student", { cache: "no-store" }).then((r) => r.json()).then(setStudents);
   }, [open]);
 
   if (!open) return null;
@@ -58,7 +58,7 @@ export default function AddBatchModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
       <div className="card w-full max-w-xl" onClick={(e) => e.stopPropagation()}>
-        <h2 className="mb-4 text-xl font-semibold text-white">Add Batch</h2>
+        <h2 className="mb-4 text-xl font-semibold text-slate-950">Add Batch</h2>
         <form onSubmit={submit} className="space-y-3">
           <input className="input" name="name" placeholder="Batch name (e.g. Sunday Morning A)" required />
           <textarea className="input min-h-[60px]" name="description" placeholder="Description" />
@@ -75,16 +75,16 @@ export default function AddBatchModal({
           </div>
           <input className="input" name="tags" placeholder="Tags (comma separated)" />
           <div>
-            <div className="mb-1 text-xs uppercase text-gray-400">Students ({selectedStudents.length} selected)</div>
-            <div className="max-h-48 overflow-y-auto rounded border border-ink-700 p-2 text-sm">
+            <div className="mb-1 text-xs uppercase text-slate-500">Students ({selectedStudents.length} selected)</div>
+            <div className="max-h-48 overflow-y-auto rounded border border-slate-200 p-2 text-sm">
               {students.map((s) => (
                 <label key={s._id} className="flex items-center gap-2 py-1">
                   <input type="checkbox" checked={selectedStudents.includes(s._id)} onChange={() => toggle(s._id)} />
-                  <span className="text-white">{s.name}</span>
-                  <span className="text-gray-500">— {s.email}</span>
+                  <span className="text-slate-950">{s.name}</span>
+                  <span className="text-slate-500">- {s.email}</span>
                 </label>
               ))}
-              {students.length === 0 && <div className="text-gray-500">No students yet.</div>}
+              {students.length === 0 && <div className="text-slate-500">No students yet.</div>}
             </div>
           </div>
           <div className="flex justify-end gap-2">

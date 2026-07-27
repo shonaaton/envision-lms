@@ -185,36 +185,37 @@ export default function Sidebar({
         type="button"
         aria-label="Close navigation"
         onClick={onCloseMobile}
-        className={cn("fixed inset-0 z-40 bg-slate-950/55 backdrop-blur-sm transition-opacity md:hidden", mobileOpen ? "opacity-100" : "pointer-events-none opacity-0")}
+        className={cn("fixed inset-0 z-40 bg-slate-950/50 backdrop-blur-sm transition-opacity duration-300 md:hidden", mobileOpen ? "opacity-100" : "pointer-events-none opacity-0")}
       />
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex h-dvh w-[min(82vw,19rem)] flex-shrink-0 flex-col border-r border-white/10 bg-[radial-gradient(circle_at_20%_0%,rgba(253,231,90,0.20),transparent_30%),linear-gradient(180deg,#5a1372_0%,#3a0c4a_58%,#1a0622_100%)] px-3 py-4 shadow-2xl shadow-brand-900/30 transition-transform duration-200 md:sticky md:top-0 md:z-20 md:h-screen md:w-64 md:translate-x-0",
+          "fixed inset-y-0 left-0 z-50 flex h-dvh w-[min(88vw,20rem)] flex-shrink-0 flex-col border-r border-white/10 bg-[linear-gradient(180deg,#451059_0%,#2a0936_58%,#14051c_100%)] px-3 py-4 shadow-2xl shadow-brand-900/30 transition-transform duration-300 ease-out will-change-transform md:sticky md:top-0 md:z-20 md:h-dvh md:w-[16.5rem] md:translate-x-0 lg:w-72",
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
-      <div className="mb-4 flex items-center gap-2 rounded-2xl border border-white/10 bg-white/10 px-3 py-3 shadow-lg shadow-black/10 backdrop-blur">
+      <div className="mb-4 flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.08] px-3 py-3 shadow-lg shadow-black/10 backdrop-blur">
         <div className="min-w-0 flex-1"><Logo /></div>
         <button
           type="button"
           onClick={onCloseMobile}
-          className="grid h-9 w-9 flex-none place-items-center rounded-xl bg-white/10 text-white md:hidden"
+          className="grid h-10 w-10 flex-none place-items-center rounded-lg bg-white/10 text-white transition hover:bg-white/20 md:hidden"
           aria-label="Close navigation"
         >
           <X size={18} />
         </button>
       </div>
-      <nav className="flex-1 space-y-2 overflow-y-auto pr-1">
+      <nav className="flex-1 space-y-2 overflow-y-auto pr-1" aria-label="Dashboard navigation">
         {visibleSections.map((section) => {
           const expanded = openSections.includes(section.id);
           const sectionActive = section.items.some((item) => isActive(pathname, item));
           return (
-            <div key={section.id} className={cn("rounded-2xl border transition", sectionActive ? "border-accent/30 bg-white/10" : "border-transparent")}>
+            <div key={section.id} className={cn("rounded-lg border transition", sectionActive ? "border-accent/30 bg-white/[0.08]" : "border-transparent")}>
               <button
                 type="button"
                 onClick={() => toggleSection(section.id)}
+                aria-expanded={expanded}
                 className={cn(
-                  "flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-[10px] font-bold uppercase tracking-[0.16em] transition",
+                  "flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[10px] font-bold uppercase tracking-[0.16em] transition",
                   sectionActive ? "text-accent" : "text-accent/80 hover:bg-white/10 hover:text-accent"
                 )}
               >
@@ -222,7 +223,7 @@ export default function Sidebar({
                 <ChevronDown size={15} className={cn("transition", expanded ? "rotate-180" : "")} />
               </button>
               {expanded && (
-                <ul className="space-y-1.5 px-1 pb-2">
+                <ul className="space-y-1 px-1 pb-2">
                   {section.items.map((item) => {
                     const Icon = item.icon;
                     const active = isActive(pathname, item);
@@ -232,14 +233,14 @@ export default function Sidebar({
                           href={item.href}
                           onClick={onCloseMobile}
                           className={cn(
-                            "group flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-semibold transition",
+                            "group flex min-h-10 items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-semibold transition",
                             active ? "bg-white text-brand shadow-lg shadow-black/10" : "text-white/75 hover:bg-white/10 hover:text-white"
                           )}
                         >
-                          <span className={cn("flex h-7 w-7 items-center justify-center rounded-lg transition", active ? "bg-accent text-brand" : "bg-white/10 text-accent group-hover:bg-accent group-hover:text-brand")}>
+                          <span className={cn("flex h-7 w-7 flex-none items-center justify-center rounded-md transition", active ? "bg-accent text-brand" : "bg-white/10 text-accent group-hover:bg-accent group-hover:text-brand")}>
                             <Icon size={16} />
                           </span>
-                          <span>{item.href === "/booking" ? bookingFeatureNameForAccount(accountStatus) : item.label}</span>
+                          <span className="truncate">{item.href === "/booking" ? bookingFeatureNameForAccount(accountStatus) : item.label}</span>
                         </Link>
                       </li>
                     );
@@ -250,7 +251,7 @@ export default function Sidebar({
           );
         })}
       </nav>
-      <div className="mt-4 rounded-2xl border border-white/10 bg-white/10 p-3 text-sm text-white/80">
+      <div className="mt-4 rounded-lg border border-white/10 bg-white/[0.08] p-3 text-sm text-white/80">
         <div className="font-semibold text-white">Envision Academy</div>
         <div className="mt-1 text-xs leading-relaxed text-white/60">Premium chess tools, classes, PGNs, tournaments, and progress in one place.</div>
       </div>

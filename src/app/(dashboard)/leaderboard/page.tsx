@@ -30,7 +30,7 @@ export default async function LeaderboardPage({
     LiveQuestionResponse.find({}).lean(),
     StudentReward.find({}).lean(),
     Batch.find({ isActive: true }).sort({ name: 1 }).lean(),
-    Classroom.find({ isActive: { $ne: false } }).populate("students", "_id").select("courseName students title").lean(),
+    Classroom.find({ isActive: { $ne: false } }).populate("students", "_id").select("courseName level levelName students title").lean(),
   ]);
 
   const scope = searchParams.scope || "academy";
@@ -40,7 +40,7 @@ export default async function LeaderboardPage({
   const selectedLevel = searchParams.level || "";
   const selectedClassroom = searchParams.classroom || "";
   const availableCourses = Array.from(new Set(classrooms.map((item: any) => String(item.courseName || "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
-  const availableLevels = Array.from(new Set(classrooms.map((item: any) => String(item.levelName || "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+  const availableLevels = Array.from(new Set(classrooms.map((item: any) => String(item.levelName || item.level || "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
 
   const courseStudentIds = new Set(
     selectedCourse
@@ -52,7 +52,7 @@ export default async function LeaderboardPage({
   const levelStudentIds = new Set(
     selectedLevel
       ? classrooms
-          .filter((item: any) => String(item.levelName || "") === selectedLevel)
+          .filter((item: any) => String(item.levelName || item.level || "") === selectedLevel)
           .flatMap((item: any) => (item.students || []).map((student: any) => objectId(student)))
       : []
   );
@@ -68,7 +68,7 @@ export default async function LeaderboardPage({
       .filter((item: any) => {
         if (scope === "class" && selectedClassroom) return objectId(item._id) === selectedClassroom;
         if (scope === "course" && selectedCourse) return String(item.courseName || "") === selectedCourse;
-        if (scope === "level" && selectedLevel) return String(item.levelName || "") === selectedLevel;
+        if (scope === "level" && selectedLevel) return String(item.levelName || item.level || "") === selectedLevel;
         return true;
       })
       .map((item: any) => objectId(item._id))

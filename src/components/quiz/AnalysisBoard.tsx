@@ -844,7 +844,7 @@ function SaveDialog({ isDark, onClose, onSave }: { isDark: boolean; onClose: () 
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    fetch("/api/pgn")
+    fetch("/api/pgn", { cache: "no-store" })
       .then((response) => response.ok ? response.json() : [])
       .then((data) => setItems(Array.isArray(data) ? data : []))
       .catch(() => setItems([]));

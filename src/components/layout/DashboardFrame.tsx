@@ -29,13 +29,26 @@ export default function DashboardFrame({
     };
   }, [mobileNavOpen]);
 
+  useEffect(() => {
+    if (!mobileNavOpen) return;
+
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setMobileNavOpen(false);
+      }
+    }
+
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [mobileNavOpen]);
+
   return (
-    <div className="flex min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(253,231,90,0.18),transparent_28%),linear-gradient(135deg,#fff_0%,#fbf7ff_48%,#fff8c9_140%)]">
+    <div className="flex min-h-dvh bg-[linear-gradient(180deg,#f8fafc_0%,#f3f0f7_52%,#f8fafc_100%)] text-slate-950 md:h-dvh md:overflow-hidden">
       <Sidebar role={role} accountStatus={accountStatus} mobileOpen={mobileNavOpen} onCloseMobile={() => setMobileNavOpen(false)} />
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col md:h-full">
         <Topbar user={user} onOpenMobileNav={() => setMobileNavOpen(true)} />
-        <main className="flex-1 overflow-y-auto p-2 sm:p-4">
-          <div className="mx-auto w-full max-w-[1800px]">{children}</div>
+        <main className="min-h-0 flex-1 overflow-y-auto px-3 py-4 sm:px-5 lg:px-6">
+          <div className="mx-auto w-full max-w-[1720px]">{children}</div>
         </main>
       </div>
       <LiveDataRefresher />

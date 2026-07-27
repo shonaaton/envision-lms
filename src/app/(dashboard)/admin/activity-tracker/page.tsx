@@ -85,7 +85,8 @@ export default async function ActivityTrackerPage({
   const filtered = activities.filter((item: any) => {
     const actor = item.actor || null;
     const target = item.targetUser || null;
-    const actorRole = actor?.role || target?.role || "";
+    const relatedRoles = [actor?.role, target?.role].filter(Boolean);
+    const relatedUserIds = [actor?._id, target?._id].map(objectId).filter(Boolean);
     const actorBatchIds = [...(actor?.batches || []), ...(target?.batches || [])].map(objectId);
     const actorBatchNames = actorBatchIds.map((id) => batchNameById.get(id)).filter(Boolean);
     const haystack = [
@@ -103,8 +104,8 @@ export default async function ActivityTrackerPage({
     ].filter(Boolean).join(" ").toLowerCase();
 
     if (q && !haystack.includes(q)) return false;
-    if (userType && actorRole !== userType) return false;
-    if (userId && objectId(actor?._id || target?._id) !== userId) return false;
+    if (userType && !relatedRoles.includes(userType)) return false;
+    if (userId && !relatedUserIds.includes(userId)) return false;
     if (batchId && !actorBatchIds.includes(batchId)) return false;
     if (courseName && String(item.metadata?.courseName || "").trim() !== courseName) return false;
     return true;
@@ -127,9 +128,9 @@ export default async function ActivityTrackerPage({
           </div>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Stat label="Total Records" value={filtered.length} />
-            <Stat label="Admins" value={filtered.filter((item: any) => (item.actor?.role || item.targetUser?.role) === "admin").length} />
-            <Stat label="Coaches" value={filtered.filter((item: any) => (item.actor?.role || item.targetUser?.role) === "instructor").length} />
-            <Stat label="Students" value={filtered.filter((item: any) => (item.actor?.role || item.targetUser?.role) === "student").length} />
+            <Stat label="Admins" value={filtered.filter((item: any) => [item.actor?.role, item.targetUser?.role].includes("admin")).length} />
+            <Stat label="Coaches" value={filtered.filter((item: any) => [item.actor?.role, item.targetUser?.role].includes("instructor")).length} />
+            <Stat label="Students" value={filtered.filter((item: any) => [item.actor?.role, item.targetUser?.role].includes("student")).length} />
           </div>
         </div>
       </section>

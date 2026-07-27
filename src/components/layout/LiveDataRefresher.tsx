@@ -67,6 +67,15 @@ function shouldEmitRefresh(rawUrl: string, method: string, body: string) {
   return true;
 }
 
+function freshApiFetchArgs(input: Parameters<typeof fetch>[0], init: Parameters<typeof fetch>[1] | undefined, method: string, url: string) {
+  if ((method !== "GET" && method !== "HEAD") || !isSameOriginAppApi(url)) return [input, init] as Parameters<typeof fetch>;
+
+  const requestCache = typeof input !== "string" && !(input instanceof URL) ? input.cache : undefined;
+  if (init?.cache || requestCache === "no-store") return [input, init] as Parameters<typeof fetch>;
+
+  return [input, { ...init, cache: "no-store" }] as Parameters<typeof fetch>;
+}
+
 function patchFetchOnce() {
   if (typeof window === "undefined" || window.__lmsFetchPatched) return;
 
@@ -77,7 +86,8 @@ function patchFetchOnce() {
     const method = requestMethod(input, init);
     const url = requestUrl(input);
     const body = bodyText(init);
-    const response = await originalFetch(...args);
+    const freshArgs = freshApiFetchArgs(input, init, method, url);
+    const response = await originalFetch(...freshArgs);
 
     if (response.ok && shouldEmitRefresh(url, method, body)) {
       window.dispatchEvent(
@@ -153,13 +163,19 @@ export default function LiveDataRefresher() {
       if (!document.hidden && Date.now() - lastRefreshRef.current > 6000) refreshNow();
     };
 
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted || Date.now() - lastRefreshRef.current > 6000) refreshNow({ silent: true });
+    };
+
     window.addEventListener("lms:data-changed", onDataChanged);
     window.addEventListener("focus", onFocus);
+    window.addEventListener("pageshow", onPageShow);
     document.addEventListener("visibilitychange", onVisibilityChange);
 
     return () => {
       window.removeEventListener("lms:data-changed", onDataChanged);
       window.removeEventListener("focus", onFocus);
+      window.removeEventListener("pageshow", onPageShow);
       document.removeEventListener("visibilitychange", onVisibilityChange);
       clearTimers();
     };

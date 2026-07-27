@@ -67,6 +67,11 @@ Traefik picks up the labels in `docker-compose.yml` and routes
 `platform.envisionchessacademy.com` to the container on port 3000, with automatic
 Let's Encrypt TLS.
 
+Tournament Arena realtime play uses Socket.IO over WebSocket only. Deploy the app as
+the included standalone Node server or another long-running Node process. Do not use
+a serverless-only target for playable tournaments, because serverless functions do
+not reliably keep WebSocket rooms, presence, and live board updates alive.
+
 If you use Caddy instead of Traefik, drop these lines in your `Caddyfile`:
 
 ```

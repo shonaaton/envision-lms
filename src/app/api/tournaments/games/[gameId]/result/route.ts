@@ -10,6 +10,31 @@ import { getTournamentGuestUsername } from "@/lib/tournamentGuests";
 
 export const dynamic = "force-dynamic";
 
+function hasActiveTabConflict(game: any, playerKey: string, tabId: string) {
+  if (!tabId) return false;
+  const isWhite = game.whiteKey === playerKey;
+  const activeTab = String(isWhite ? game.whiteActiveTabId || "" : game.blackActiveTabId || "");
+  const activeAt = isWhite ? game.whiteActiveTabAt : game.blackActiveTabAt;
+  if (!activeTab || activeTab === tabId) return false;
+  return activeAt && Date.now() - new Date(activeAt).getTime() <= 15_000;
+}
+
+function markActionTab(game: any, playerKey: string, tabId: string) {
+  if (!tabId) return;
+  const isWhite = game.whiteKey === playerKey;
+  if (isWhite) {
+    game.whiteActiveTabId = tabId;
+    game.whiteActiveTabAt = new Date();
+    game.whiteOnlineAt = new Date();
+    game.whiteDisconnectedAt = undefined;
+  } else {
+    game.blackActiveTabId = tabId;
+    game.blackActiveTabAt = new Date();
+    game.blackOnlineAt = new Date();
+    game.blackDisconnectedAt = undefined;
+  }
+}
+
 async function awardForGame(game: any) {
   if (game.status !== "completed" || game.result === "*") return;
   const items = [
@@ -76,6 +101,11 @@ export async function POST(req: Request, { params }: { params: { gameId: string 
   if (role !== "admin" && !canActAsPlayer) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
+  const tabId = String(body.tabId || "").slice(0, 120);
+  if (canActAsPlayer && actorKey && hasActiveTabConflict(game, actorKey, tabId)) {
+    return NextResponse.json({ error: "This board is already active in another tab." }, { status: 409 });
+  }
+  if (canActAsPlayer && actorKey) markActionTab(game, actorKey, tabId);
 
   if (body.action === "resign") {
     if (!canActAsPlayer) return NextResponse.json({ error: "Only an assigned player can resign this game." }, { status: 400 });

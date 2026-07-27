@@ -19,6 +19,7 @@ type PlayState = {
   joined: boolean;
   currentSeat: any;
   participantState?: any;
+  myPlayerKey?: string;
   canManage: boolean;
   canPlay: boolean;
   guestUsername?: string;
@@ -65,6 +66,7 @@ export function TournamentPlayClient({
   publicRoom?: boolean;
 }) {
   const boardWrapRef = useRef<HTMLDivElement | null>(null);
+  const tabIdRef = useRef("");
   const [boardWidth, setBoardWidth] = useState(520);
   const [state, setState] = useState<PlayState | null>(null);
   const [error, setError] = useState("");
@@ -75,6 +77,9 @@ export function TournamentPlayClient({
   const [confirmAction, setConfirmAction] = useState<"resign" | "draw" | null>(null);
   const [pending, startTransition] = useTransition();
   const [, forceClockTick] = useState(0);
+  if (!tabIdRef.current && typeof window !== "undefined") {
+    tabIdRef.current = window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
 
   const refresh = useCallback(async () => {
     const response = await fetch(`/api/tournaments/${tournamentId}/state`, { cache: "no-store" });
@@ -121,7 +126,7 @@ export function TournamentPlayClient({
   const currentSeat = state?.currentSeat || null;
   const participantState = state?.participantState || null;
   const myColor = currentSeat?.color === "black" ? "black" : "white";
-  const myPlayerKey = activeGame ? (myColor === "white" ? activeGame.whiteKey : activeGame.blackKey) : "";
+  const myPlayerKey = state?.myPlayerKey || (activeGame ? (myColor === "white" ? activeGame.whiteKey : activeGame.blackKey) : "");
   const myTurn = activeGame?.status === "active" && ((activeGame.turn === "w" && myColor === "white") || (activeGame.turn === "b" && myColor === "black"));
   const { connected, broadcastTournamentUpdate, emitPresence } = useTournamentSocket({
     tournamentId,
@@ -129,12 +134,9 @@ export function TournamentPlayClient({
     onUpdate: refresh,
   });
   const myStanding = useMemo(() => {
-    if (!state?.tournament?.standings || !state?.myGames?.length) return null;
-    const myNames = new Set(
-      (state.myGames || []).flatMap((game: any) => [game.whiteName, game.blackName]).filter(Boolean)
-    );
-    return (state.tournament.standings || []).find((entry: any) => myNames.has(entry.displayName)) || null;
-  }, [state?.myGames, state?.tournament?.standings]);
+    if (!state?.tournament?.standings || !myPlayerKey) return null;
+    return (state.tournament.standings || []).find((entry: any) => entry.playerKey === myPlayerKey) || null;
+  }, [myPlayerKey, state?.tournament?.standings]);
   const chess = useMemo(() => {
     try {
       return new Chess(activeGame?.fen && activeGame.fen !== "start" ? activeGame.fen : undefined);
@@ -157,17 +159,27 @@ export function TournamentPlayClient({
 
   useEffect(() => {
     if (!activeGame?._id) return;
-    const ping = () => {
-      void fetch(`/api/tournaments/games/${activeGame._id}/presence`, { method: "POST" }).catch(() => null);
+    const payload = (visible = document.visibilityState === "visible") => JSON.stringify({ tabId: tabIdRef.current, visible });
+    const ping = (visible = document.visibilityState === "visible") => {
+      void fetch(`/api/tournaments/games/${activeGame._id}/presence`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: payload(visible),
+      }).catch(() => null);
     };
     const beacon = () => {
-      navigator.sendBeacon?.(`/api/tournaments/games/${activeGame._id}/presence`);
+      navigator.sendBeacon?.(`/api/tournaments/games/${activeGame._id}/presence`, new Blob([payload(false)], { type: "application/json" }));
+    };
+    const visibility = () => {
+      ping(document.visibilityState === "visible");
     };
     ping();
     const timer = window.setInterval(ping, 10_000);
+    window.addEventListener("visibilitychange", visibility);
     window.addEventListener("pagehide", beacon);
     return () => {
       window.clearInterval(timer);
+      window.removeEventListener("visibilitychange", visibility);
       window.removeEventListener("pagehide", beacon);
     };
   }, [activeGame?._id]);
@@ -179,7 +191,7 @@ export function TournamentPlayClient({
     const response = await fetch(`/api/tournaments/games/${activeGame._id}/move`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ from, to, promotion }),
+      body: JSON.stringify({ from, to, promotion, tabId: tabIdRef.current }),
     });
     if (!response.ok) {
       const payload = await response.json().catch(() => null);
@@ -306,7 +318,7 @@ export function TournamentPlayClient({
     const response = await fetch(`/api/tournaments/games/${activeGame._id}/result`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action }),
+      body: JSON.stringify({ action, tabId: tabIdRef.current }),
     });
     if (!response.ok) {
       const payload = await response.json().catch(() => null);
@@ -386,8 +398,8 @@ export function TournamentPlayClient({
                       : currentSeat?.status === "waiting" && state?.tournament?.type === "arena"
                         ? "You are in the arena queue. Because there is an odd number of players or all opponents are already playing, please wait here. Your board will open automatically when an opponent is available."
                       : tournamentPlaying
-                        ? "If the tournament is running, your next pairing will appear automatically here. For Swiss events, the next round opens when the admin pairs it."
-                    : "The event has not started yet. Once the admin starts the tournament, your pairing and board will appear here."}
+                        ? "If the tournament is running, your next pairing will appear automatically here. Swiss rounds open automatically after the break time."
+                    : "The event has not started yet. When the scheduled start time arrives, the server will open the tournament and assign boards automatically."}
               </p>
               <button onClick={refresh} className="mt-4 inline-flex h-10 items-center gap-2 rounded-xl bg-purple-700 px-4 text-sm font-semibold text-white">
                 <RefreshCcw size={15} /> Refresh seat

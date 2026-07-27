@@ -3,12 +3,37 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { TournamentGame } from "@/models/TournamentGame";
 import { Tournament } from "@/models/Tournament";
-import { applyGameMove, enforceTournamentGameTimeouts, finalizeTournamentIfComplete, queueCompletedArenaPlayers, recalculateTournamentStandings, syncArenaPairings, syncSwissRoundState } from "@/lib/tournamentEngine";
+import { applyGameMove, autoAdvanceSwissTournament, enforceTournamentGameTimeouts, finalizeTournamentIfComplete, queueCompletedArenaPlayers, recalculateTournamentStandings, syncArenaPairings } from "@/lib/tournamentEngine";
 import { StudentReward } from "@/models/ClassroomLive";
 import { cookies } from "next/headers";
 import { getTournamentGuestUsername } from "@/lib/tournamentGuests";
 
 export const dynamic = "force-dynamic";
+
+function hasActiveTabConflict(game: any, playerKey: string, tabId: string) {
+  if (!tabId) return false;
+  const isWhite = game.whiteKey === playerKey;
+  const activeTab = String(isWhite ? game.whiteActiveTabId || "" : game.blackActiveTabId || "");
+  const activeAt = isWhite ? game.whiteActiveTabAt : game.blackActiveTabAt;
+  if (!activeTab || activeTab === tabId) return false;
+  return activeAt && Date.now() - new Date(activeAt).getTime() <= 15_000;
+}
+
+function markActionTab(game: any, playerKey: string, tabId: string) {
+  if (!tabId) return;
+  const isWhite = game.whiteKey === playerKey;
+  if (isWhite) {
+    game.whiteActiveTabId = tabId;
+    game.whiteActiveTabAt = new Date();
+    game.whiteOnlineAt = new Date();
+    game.whiteDisconnectedAt = undefined;
+  } else {
+    game.blackActiveTabId = tabId;
+    game.blackActiveTabAt = new Date();
+    game.blackOnlineAt = new Date();
+    game.blackDisconnectedAt = undefined;
+  }
+}
 
 async function awardForGame(game: any) {
   if (game.status !== "completed" || !game.result || game.result === "*") return;
@@ -75,7 +100,13 @@ export async function POST(req: Request, { params }: { params: { gameId: string 
   }
 
   const body = await req.json();
+  const tabId = String(body.tabId || "").slice(0, 120);
   try {
+    const actorPlayerKey = isWhite || isGuestWhite ? game.whiteKey : game.blackKey;
+    if (hasActiveTabConflict(game, actorPlayerKey, tabId)) {
+      return NextResponse.json({ error: "This board is already active in another tab." }, { status: 409 });
+    }
+    markActionTab(game, actorPlayerKey, tabId);
     await applyGameMove(game, { from: body.from, to: body.to, promotion: body.promotion || "q" });
   } catch (error: any) {
     return NextResponse.json({ error: error?.message || "Could not register move" }, { status: 400 });
@@ -95,9 +126,7 @@ export async function POST(req: Request, { params }: { params: { gameId: string 
     }
     await awardForGame(game);
   }
-  if (tournament.type === "swiss") {
-    await syncSwissRoundState(tournament);
-  }
+  if (tournament.type === "swiss") await autoAdvanceSwissTournament(tournament);
   await recalculateTournamentStandings(tournament);
   if (tournament.type === "arena") await syncArenaPairings(tournament);
   await finalizeTournamentIfComplete(tournament);

@@ -115,6 +115,8 @@ export function TournamentDetailClient({
   const [externalDraft, setExternalDraft] = useState<any>({});
   const [announcementDraft, setAnnouncementDraft] = useState({ title: "Tournament announcement", message: "" });
   const [correctionDraft, setCorrectionDraft] = useState<{ gameId: string; label: string; current: string; result: "1-0" | "0-1" | "1/2-1/2"; reason: string } | null>(null);
+  const [selectedPlayerDetail, setSelectedPlayerDetail] = useState<any>(null);
+  const [selectedPlayerLoading, setSelectedPlayerLoading] = useState(false);
   const [chatMessage, setChatMessage] = useState("");
   const [pending, startTransition] = useTransition();
   const autoOpenedGameRef = useRef("");
@@ -139,6 +141,30 @@ export function TournamentDetailClient({
     autoOpenedGameRef.current = activeGameId;
     router.push(`/tournaments/${tournamentId}/play`);
   }, [role, router, state.activeGame?._id, tournamentId]);
+
+  useEffect(() => {
+    if (!selectedPlayerKey) {
+      setSelectedPlayerDetail(null);
+      return;
+    }
+    let cancelled = false;
+    setSelectedPlayerLoading(true);
+    setSelectedPlayerDetail(null);
+    fetch(`/api/tournaments/${tournamentId}/players/${encodeURIComponent(selectedPlayerKey)}`, { cache: "no-store" })
+      .then((response) => response.ok ? response.json() : null)
+      .then((payload) => {
+        if (!cancelled) setSelectedPlayerDetail(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setSelectedPlayerDetail(null);
+      })
+      .finally(() => {
+        if (!cancelled) setSelectedPlayerLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedPlayerKey, tournamentId]);
 
   async function runAction(path: string) {
     setError("");
@@ -285,7 +311,8 @@ export function TournamentDetailClient({
   const finalSnapshot = tournament.finalSnapshot || null;
   const podium = finalSnapshot?.podium?.length ? finalSnapshot.podium : standings.slice(0, 3);
   const selectedPlayer = standings.find((entry: any) => entry.playerKey === selectedPlayerKey) || null;
-  const selectedPlayerGames = selectedPlayer ? (state.games || []).filter((game: any) => [game.whiteKey, game.blackKey].includes(selectedPlayer.playerKey)) : [];
+  const selectedPlayerGames = selectedPlayerDetail?.games || (selectedPlayer ? (state.games || []).filter((game: any) => [game.whiteKey, game.blackKey].includes(selectedPlayer.playerKey)) : []);
+  const selectedPlayerStats = selectedPlayerDetail?.stats || null;
   const filteredStandings = standings.filter((entry: any) => String(entry.displayName || "").toLowerCase().includes(playerSearch.toLowerCase()));
   const visibleStandingsRows = filteredStandings.slice(0, visibleStandings);
   const isPlaying = ["live", "playing"].includes(String(tournament.status || ""));
@@ -990,11 +1017,14 @@ export function TournamentDetailClient({
               <SeatTile label="Rating" value={selectedPlayer.rating || "-"} />
               <SeatTile label="Games" value={selectedPlayer.gamesPlayed} />
               <SeatTile label="Wins" value={selectedPlayer.wins} />
-              <SeatTile label="Win %" value={selectedPlayer.gamesPlayed ? `${Math.round((selectedPlayer.wins / selectedPlayer.gamesPlayed) * 100)}%` : "0%"} />
-              <SeatTile label="Avg Opp" value={averageOpponentRating(selectedPlayerGames, selectedPlayer.playerKey)} />
+              <SeatTile label="Win %" value={selectedPlayerStats ? `${selectedPlayerStats.winPercentage}%` : selectedPlayer.gamesPlayed ? `${Math.round((selectedPlayer.wins / selectedPlayer.gamesPlayed) * 100)}%` : "0%"} />
+              <SeatTile label="Avg Opp" value={selectedPlayerStats?.averageOpponentRating || averageOpponentRating(selectedPlayerGames, selectedPlayer.playerKey)} />
               <SeatTile label="Performance" value={performanceLabel(selectedPlayer, tournament)} />
             </div>
-            <div className="mt-4 text-sm font-semibold text-slate-900">Game history</div>
+            <div className="mt-4 flex items-center justify-between gap-3">
+              <div className="text-sm font-semibold text-slate-900">Game history</div>
+              {selectedPlayerLoading ? <div className="text-xs font-semibold text-slate-500">Loading full history...</div> : null}
+            </div>
             <div className="mt-2 space-y-2">
               {selectedPlayerGames.map((game: any) => {
                 const isWhite = game.whiteKey === selectedPlayer.playerKey;
@@ -1005,7 +1035,7 @@ export function TournamentDetailClient({
                       <span className="font-semibold">{resultLabel(game)}</span>
                     </div>
                     <div className="mt-1 text-xs text-slate-500">
-                      {isWhite ? "White" : "Black"} - {game.status} - {game.moveHistorySAN?.length || 0} moves - {pointsEarnedFor(game, selectedPlayer.playerKey, tournament)} pts earned
+                      {game.color || (isWhite ? "White" : "Black")} - {game.status} - {game.moveHistorySAN?.length || 0} moves - {game.pointsEarned ?? pointsEarnedFor(game, selectedPlayer.playerKey, tournament)} pts earned
                     </div>
                   </div>
                 );

@@ -196,6 +196,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     currentSeat,
     participantState,
     health,
+    myPlayerKey,
     canManage: role === "admin",
     canPlay: isGuest || role === "student" || role === "admin",
     guestUsername: isGuest ? guestUsername : "",

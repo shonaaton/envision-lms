@@ -60,7 +60,7 @@ export function getTournamentPlayers(tournament: TournamentLike): TournamentPlay
   const internal = (tournament.participants || []).map((item: any) => ({
     key: playerKeyForUser(objectId(item)),
     userId: objectId(item),
-    name: item?.name || item?.username || standingMap.get(playerKeyForUser(objectId(item)))?.displayName || "Student",
+    name: item?.username || item?.name || standingMap.get(playerKeyForUser(objectId(item)))?.displayName || "Student",
     rating: Number(item?.rating || standingMap.get(playerKeyForUser(objectId(item)))?.rating || 0),
   }));
   const external = (tournament.externalParticipants || []).map((item: any) => ({

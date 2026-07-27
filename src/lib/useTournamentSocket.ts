@@ -33,7 +33,10 @@ export function useTournamentSocket({ tournamentId, playerKey, onUpdate, onPrese
       const socket = io({
         path: "/api/socket/io",
         addTrailingSlash: false,
-        transports: ["websocket", "polling"],
+        transports: ["websocket"],
+        reconnection: true,
+        reconnectionAttempts: Infinity,
+        reconnectionDelayMax: 5000,
       });
       socketRef.current = socket;
 

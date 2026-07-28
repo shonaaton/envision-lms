@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { PGN } from "@/models/PGN";
 import { PgnFolder } from "@/models/PgnFolder";
-import { buildOwnedFolderFilter, buildPgnFolderFilter, canManageSharedFolder, normalizeFolderPath } from "@/lib/pgnAccess";
+import { buildOwnedFolderFilter, buildPgnFolderFilter, buildPgnLibraryFilter, canManageSharedFolder, normalizeFolderPath } from "@/lib/pgnAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -31,8 +31,29 @@ export async function GET() {
   if (!hasPgnAccess(session)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
 
-  const folders = await PgnFolder.find(buildPgnFolderFilter(session)).sort({ path: 1 }).lean();
-  return NextResponse.json(folders);
+  const folders = await PgnFolder.find(buildPgnFolderFilter(session)).sort({ sortOrder: 1, path: 1 }).lean();
+  const games = await PGN.find(buildPgnLibraryFilter(session)).select("folder visibility updatedAt createdAt").lean();
+  const stats = new Map<string, { gameCount: number; lastUpdatedAt?: Date }>();
+  games.forEach((game: any) => {
+    const path = normalizeFolderPath(game.folder);
+    if (!path) return;
+    const scope = game.visibility === "shared" ? "shared" : "personal";
+    const parts = path.split("/");
+    for (let index = 0; index < parts.length; index += 1) {
+      const folderPath = parts.slice(0, index + 1).join("/");
+      const key = `${scope}:${folderPath}`;
+      const current = stats.get(key) || { gameCount: 0 };
+      current.gameCount += index === parts.length - 1 ? 1 : 0;
+      const updatedAt = new Date(game.updatedAt || game.createdAt);
+      if (!current.lastUpdatedAt || updatedAt > current.lastUpdatedAt) current.lastUpdatedAt = updatedAt;
+      stats.set(key, current);
+    }
+  });
+  return NextResponse.json(folders.map((folder: any) => {
+    const scope = folder.visibility === "shared" ? "shared" : "personal";
+    const stat = stats.get(`${scope}:${normalizeFolderPath(folder.path)}`) || { gameCount: 0 };
+    return { ...folder, gameCount: stat.gameCount, lastUpdatedAt: stat.lastUpdatedAt || folder.updatedAt };
+  }));
 }
 
 export async function POST(req: Request) {
@@ -41,7 +62,7 @@ export async function POST(req: Request) {
   if (!hasPgnAccess(session)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
 
-  const { name, currentFolder, personal = false } = await req.json();
+  const { name, currentFolder, personal = false, description, coverImage, tags = [] } = await req.json();
   const trimmedName = String(name || "").trim();
   if (!trimmedName) return NextResponse.json({ error: "Folder name required" }, { status: 400 });
 
@@ -56,6 +77,9 @@ export async function POST(req: Request) {
     name: trimmedName,
     path,
     parentPath: parentPath || "",
+    description: String(description || "").trim(),
+    coverImage: String(coverImage || "").trim(),
+    tags: Array.isArray(tags) ? tags.map(String).filter(Boolean) : [],
     uploadedBy: (session.user as any).id,
     visibility,
   });

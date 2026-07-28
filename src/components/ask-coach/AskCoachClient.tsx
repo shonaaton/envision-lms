@@ -1,30 +1,41 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import type { KeyboardEvent } from "react";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Check, EyeOff, MessageSquare, Search, Send, Shield, Trash2, Users } from "lucide-react";
+import type { KeyboardEvent, UIEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AlertTriangle, Check, CheckCheck, EyeOff, MessageSquare, Search, Send, Shield, Trash2, Users } from "lucide-react";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 type Role = "student" | "instructor" | "admin";
+type DeliveryStatus = "sent" | "delivered" | "seen";
+type UserRef = { _id?: string; name?: string; username?: string; role?: Role } | null;
 type ConversationRecord = {
   _id: string;
   type?: "direct" | "batch";
   title?: string;
+  lastMessageAt?: string;
   lastMessagePreview?: string;
-  coach?: { name?: string } | null;
-  student?: { name?: string } | null;
+  unreadCount?: number;
+  currentStatus?: string;
+  coach?: UserRef;
+  student?: UserRef;
   batch?: { name?: string } | null;
 };
+type ReadReceipt = { user?: string | { _id?: string }; readAt?: string };
 type MessageRecord = {
   _id: string;
   conversation?: string | { _id?: string };
-  sender?: { name?: string } | null;
+  sender?: UserRef;
   body?: string;
   createdAt?: string;
   flagged?: boolean;
   moderationStatus?: string;
   status?: string;
+  deliveryStatus?: DeliveryStatus;
+  readBy?: ReadReceipt[];
+  readByCount?: number;
+  recipientCount?: number;
   flagReasons?: string[];
 };
 type TargetRecord = { _id: string; name?: string };
@@ -36,10 +47,94 @@ type AskCoachResponse = {
     coaches?: TargetRecord[];
     batches?: TargetRecord[];
   };
+  currentUser?: { id: string; role: Role };
 };
+
+const nearBottomDistance = 120;
+
+function idOf(value: unknown) {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "object") {
+    const candidate = value as { _id?: string; toString?: () => string };
+    return candidate._id || candidate.toString?.() || "";
+  }
+  return "";
+}
 
 function conversationIdOf(message: MessageRecord) {
   return typeof message.conversation === "string" ? message.conversation : message.conversation?._id || "";
+}
+
+function senderIdOf(message: MessageRecord) {
+  return idOf(message.sender);
+}
+
+function readReceiptUserId(receipt: ReadReceipt) {
+  return idOf(receipt.user);
+}
+
+function hasReadMessage(message: MessageRecord, userId: string) {
+  return Boolean(userId && (message.readBy || []).some((receipt) => readReceiptUserId(receipt) === userId));
+}
+
+function validDate(value?: string) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function startOfLocalDay(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function isSameLocalDay(a: Date, b: Date) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+function dayLabel(value?: string) {
+  const date = validDate(value);
+  if (!date) return "";
+  const today = startOfLocalDay(new Date());
+  const messageDay = startOfLocalDay(date);
+  const dayDiff = Math.round((today.getTime() - messageDay.getTime()) / 86400000);
+  if (dayDiff === 0) return "Today";
+  if (dayDiff === 1) return "Yesterday";
+  if (dayDiff > 1 && dayDiff < 7) return new Intl.DateTimeFormat(undefined, { weekday: "long" }).format(date);
+  return new Intl.DateTimeFormat(undefined, { day: "numeric", month: "long", year: "numeric" }).format(date);
+}
+
+function messageTime(value?: string) {
+  const date = validDate(value);
+  if (!date) return "";
+  return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(date);
+}
+
+function conversationTime(value?: string) {
+  const date = validDate(value);
+  if (!date) return "";
+  const now = new Date();
+  if (isSameLocalDay(date, now)) return messageTime(value);
+  return new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short" }).format(date);
+}
+
+function statusLabel(status?: DeliveryStatus) {
+  if (status === "seen") return "Seen";
+  if (status === "delivered") return "Delivered";
+  return "Sent";
+}
+
+function MessageStatus({ message }: { message: MessageRecord }) {
+  const title = `${statusLabel(message.deliveryStatus)}${
+    message.recipientCount ? ` - read by ${message.readByCount || 0} of ${message.recipientCount}` : ""
+  }`;
+  if (message.deliveryStatus === "seen") {
+    return <CheckCheck size={15} className="text-sky-500" aria-label="Seen" />;
+  }
+  if (message.deliveryStatus === "delivered") {
+    return <CheckCheck size={15} className="text-slate-500" aria-label="Delivered" />;
+  }
+  return <Check size={15} className="text-slate-500" aria-label={title} />;
 }
 
 export default function AskCoachClient({ role }: { role: Role }) {
@@ -51,6 +146,17 @@ export default function AskCoachClient({ role }: { role: Role }) {
   const [batch, setBatch] = useState("");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
+  const [isNearBottom, setIsNearBottom] = useState(true);
+  const [hasNewMessages, setHasNewMessages] = useState(false);
+
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const bottomRef = useRef<HTMLDivElement | null>(null);
+  const nearBottomRef = useRef(true);
+  const previousLastMessageRef = useRef("");
+  const initialScrollConversationRef = useRef("");
+  const readPendingRef = useRef<Set<string>>(new Set());
+
+  const currentUserId = data.currentUser?.id || "";
 
   const load = useCallback(async (nextConversationId?: string) => {
     const params = new URLSearchParams();
@@ -61,12 +167,23 @@ export default function AskCoachClient({ role }: { role: Role }) {
     if (!res.ok) return;
     const next: AskCoachResponse = await res.json();
     setData(next);
+
     const requestedFromUrl = searchParams?.get("conversation");
     if (requestedFromUrl && next.conversations.some((conversation) => conversation._id === requestedFromUrl)) {
       setActiveId(requestedFromUrl);
       return;
     }
-    if (!activeId && next.conversations[0]?._id) setActiveId(next.conversations[0]._id);
+    if (requestedConversation && next.conversations.some((conversation) => conversation._id === requestedConversation)) {
+      setActiveId(requestedConversation);
+      return;
+    }
+    if (!activeId && next.conversations[0]?._id) {
+      setActiveId(next.conversations[0]._id);
+      return;
+    }
+    if (activeId && !next.conversations.some((conversation) => conversation._id === activeId) && next.conversations[0]?._id) {
+      setActiveId(next.conversations[0]._id);
+    }
   }, [activeId, query, searchParams]);
 
   useEffect(() => {
@@ -75,26 +192,102 @@ export default function AskCoachClient({ role }: { role: Role }) {
     return () => clearInterval(timer);
   }, [load]);
 
-  useEffect(() => {
-    if (!activeId) return;
-    void load(activeId);
-  }, [activeId, load]);
-
   const conversations = data.conversations;
   const activeConversation = conversations.find((conversation) => conversation._id === activeId) || conversations[0];
   const activeMessages = useMemo(
     () => data.messages.filter((item) => conversationIdOf(item) === activeConversation?._id),
     [data.messages, activeConversation?._id]
   );
+  const firstUnreadIncomingId = useMemo(
+    () => activeMessages.find((item) => senderIdOf(item) !== currentUserId && !hasReadMessage(item, currentUserId))?._id || "",
+    [activeMessages, currentUserId]
+  );
+
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
+    window.requestAnimationFrame(() => {
+      bottomRef.current?.scrollIntoView({ behavior, block: "end" });
+    });
+  }, []);
+
+  const markConversationRead = useCallback(async (conversationId: string) => {
+    const conversation = data.conversations.find((item) => item._id === conversationId);
+    if (!conversation?.unreadCount || readPendingRef.current.has(conversationId) || !currentUserId) return;
+
+    readPendingRef.current.add(conversationId);
+    try {
+      const res = await fetch("/api/ask-coach", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversationId }),
+      });
+      if (!res.ok) return;
+      const readAt = new Date().toISOString();
+      setData((current) => ({
+        ...current,
+        conversations: current.conversations.map((item) =>
+          item._id === conversationId ? { ...item, unreadCount: 0, currentStatus: "Up to date" } : item
+        ),
+        messages: current.messages.map((item) => {
+          if (conversationIdOf(item) !== conversationId || senderIdOf(item) === currentUserId || hasReadMessage(item, currentUserId)) return item;
+          return { ...item, readBy: [...(item.readBy || []), { user: currentUserId, readAt }] };
+        }),
+      }));
+    } finally {
+      readPendingRef.current.delete(conversationId);
+    }
+  }, [currentUserId, data.conversations]);
+
+  const handleScroll = useCallback((event: UIEvent<HTMLDivElement>) => {
+    const element = event.currentTarget;
+    const near = element.scrollHeight - element.scrollTop - element.clientHeight <= nearBottomDistance;
+    nearBottomRef.current = near;
+    setIsNearBottom(near);
+    if (near) {
+      setHasNewMessages(false);
+      if (activeConversation?._id) void markConversationRead(activeConversation._id);
+    }
+  }, [activeConversation?._id, markConversationRead]);
 
   useEffect(() => {
-    const requestedMessage = searchParams?.get("message");
-    if (!requestedMessage || !activeMessages.length) return;
-    document.getElementById(`ask-coach-message-${requestedMessage}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [activeMessages, searchParams]);
+    const conversationId = activeConversation?._id;
+    if (!conversationId) return;
 
-  const flaggedMessages = data.messages.filter((item) => item.flagged || item.moderationStatus === "pending");
-  const canSendBatch = role === "admin" || role === "instructor";
+    const requestedMessage = searchParams?.get("message");
+    const lastMessage = activeMessages[activeMessages.length - 1];
+    const firstOpenForConversation = initialScrollConversationRef.current !== conversationId;
+    const lastChanged = Boolean(lastMessage?._id && previousLastMessageRef.current && previousLastMessageRef.current !== lastMessage._id);
+
+    if (requestedMessage && activeMessages.some((item) => item._id === requestedMessage)) {
+      window.requestAnimationFrame(() => {
+        document.getElementById(`ask-coach-message-${requestedMessage}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
+      initialScrollConversationRef.current = conversationId;
+    } else if (firstOpenForConversation) {
+      scrollToBottom("auto");
+      initialScrollConversationRef.current = conversationId;
+      nearBottomRef.current = true;
+      setIsNearBottom(true);
+      setHasNewMessages(false);
+      window.setTimeout(() => void markConversationRead(conversationId), 120);
+    } else if (lastChanged) {
+      const sentByMe = lastMessage ? senderIdOf(lastMessage) === currentUserId : false;
+      if (nearBottomRef.current || sentByMe) {
+        scrollToBottom(sentByMe ? "auto" : "smooth");
+        setHasNewMessages(false);
+        window.setTimeout(() => void markConversationRead(conversationId), 160);
+      } else {
+        setHasNewMessages(true);
+      }
+    }
+
+    previousLastMessageRef.current = lastMessage?._id || "";
+  }, [activeConversation?._id, activeMessages, currentUserId, markConversationRead, scrollToBottom, searchParams]);
+
+  useEffect(() => {
+    if (activeConversation?._id && activeConversation.unreadCount && nearBottomRef.current) {
+      void markConversationRead(activeConversation._id);
+    }
+  }, [activeConversation?._id, activeConversation?.unreadCount, markConversationRead]);
 
   async function sendMessage() {
     if (!message.trim()) return;
@@ -115,11 +308,17 @@ export default function AskCoachClient({ role }: { role: Role }) {
       toast.error(error.error || "Could not send message");
       return;
     }
+    const created: MessageRecord = await res.json();
+    const nextConversationId = conversationIdOf(created) || activeConversation?._id || "";
     setMessage("");
     setBatch("");
     setReceiver("");
+    setHasNewMessages(false);
+    nearBottomRef.current = true;
     toast.success("Message sent");
-    await load(activeConversation?._id);
+    if (nextConversationId) setActiveId(nextConversationId);
+    await load(nextConversationId);
+    scrollToBottom("auto");
   }
 
   function handleMessageKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -146,8 +345,21 @@ export default function AskCoachClient({ role }: { role: Role }) {
     return conversation.title || conversation.student?.name || conversation.coach?.name || "Conversation";
   }
 
+  function jumpToNewMessages() {
+    if (firstUnreadIncomingId) {
+      document.getElementById(`ask-coach-message-${firstUnreadIncomingId}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    } else {
+      scrollToBottom("smooth");
+    }
+    setHasNewMessages(false);
+    if (activeConversation?._id) window.setTimeout(() => void markConversationRead(activeConversation._id), 220);
+  }
+
+  const flaggedMessages = data.messages.filter((item) => item.flagged || item.moderationStatus === "pending");
+  const canSendBatch = role === "admin" || role === "instructor";
+
   return (
-    <div className="flex min-h-[calc(100dvh-88px)] flex-col overflow-hidden rounded-[22px] border border-brand/10 bg-white shadow-[0_24px_70px_rgba(90,19,114,0.14)] lg:h-[calc(100vh-92px)] lg:min-h-[620px] lg:rounded-[28px]">
+    <div className="flex h-[calc(100dvh-88px)] min-h-[560px] flex-col overflow-hidden rounded-[22px] border border-brand/10 bg-white shadow-[0_24px_70px_rgba(90,19,114,0.14)] max-lg:min-h-[calc(100dvh-88px)] lg:h-[calc(100vh-92px)] lg:rounded-[28px]">
       <div className="flex-none border-b border-brand/10 bg-gradient-to-r from-white via-purple-50/60 to-white p-4 sm:p-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
@@ -156,7 +368,7 @@ export default function AskCoachClient({ role }: { role: Role }) {
               Safe Academy Messaging
             </div>
             <h1 className="mt-1 text-2xl font-black text-brand sm:text-3xl lg:text-2xl">Ask Coach</h1>
-            <p className="mt-1 max-w-2xl text-sm text-slate-600">Focused student-coach conversations with moderation and alerts built in.</p>
+            <p className="mt-1 max-w-2xl text-sm text-slate-600">Student-coach guidance inbox</p>
           </div>
           <div className="relative w-full lg:max-w-sm">
             <Search className="absolute left-3 top-3 text-slate-400" size={16} />
@@ -165,48 +377,126 @@ export default function AskCoachClient({ role }: { role: Role }) {
         </div>
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[280px_minmax(0,1fr)_300px] lg:overflow-hidden">
-        <aside className="order-1 max-h-[260px] min-h-0 overflow-auto border-b border-brand/10 bg-slate-50/70 p-3 lg:max-h-none lg:border-b-0 lg:border-r">
-          <div className="mb-3 flex items-center gap-2 text-sm font-black text-slate-950"><MessageSquare size={16} className="text-brand" /> Conversations</div>
+      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[280px_minmax(0,1fr)_300px]">
+        <aside className="order-1 max-h-44 min-h-0 overflow-auto border-b border-brand/10 bg-slate-50/70 p-3 lg:max-h-none lg:border-b-0 lg:border-r">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-sm font-black text-slate-950"><MessageSquare size={16} className="text-brand" /> Conversations</div>
+            {conversations.some((conversation) => (conversation.unreadCount || 0) > 0) && (
+              <span className="rounded-full bg-brand px-2 py-0.5 text-[11px] font-black text-white">
+                {conversations.reduce((total, conversation) => total + (conversation.unreadCount || 0), 0)}
+              </span>
+            )}
+          </div>
           <div className="space-y-2">
             {conversations.length ? conversations.map((conversation) => (
-              <button key={conversation._id} onClick={() => setActiveId(conversation._id)} className={`w-full rounded-2xl border p-3 text-left shadow-sm transition hover:-translate-y-0.5 ${activeConversation?._id === conversation._id ? "border-brand/30 bg-white shadow-brand/10" : "border-slate-200 bg-white/80 hover:bg-white"}`}>
-                <div className="text-sm font-black text-slate-950">{conversationTitle(conversation)}</div>
-                <div className="mt-1 truncate text-xs text-slate-500">{conversation.lastMessagePreview || (conversation.type === "batch" ? "Batch conversation" : "Direct conversation")}</div>
+              <button key={conversation._id} onClick={() => setActiveId(conversation._id)} className={cn(
+                "w-full rounded-2xl border p-3 text-left shadow-sm transition hover:-translate-y-0.5",
+                activeConversation?._id === conversation._id ? "border-brand/30 bg-white shadow-brand/10" : "border-slate-200 bg-white/80 hover:bg-white"
+              )}>
+                <div className="flex min-w-0 items-start justify-between gap-2">
+                  <div className="min-w-0 text-sm font-black text-slate-950">{conversationTitle(conversation)}</div>
+                  <div className="shrink-0 text-[11px] font-semibold text-slate-400">{conversationTime(conversation.lastMessageAt)}</div>
+                </div>
+                <div className="mt-1 flex min-w-0 items-center gap-2">
+                  <div className={cn("min-w-0 flex-1 truncate text-xs", (conversation.unreadCount || 0) > 0 ? "font-bold text-slate-800" : "text-slate-500")}>
+                    {conversation.lastMessagePreview || (conversation.type === "batch" ? "Batch conversation" : "Direct conversation")}
+                  </div>
+                  {(conversation.unreadCount || 0) > 0 && (
+                    <span className="inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-brand px-1.5 text-[11px] font-black text-white">
+                      {(conversation.unreadCount || 0) > 9 ? "9+" : conversation.unreadCount}
+                    </span>
+                  )}
+                </div>
+                <div className="mt-2 text-[11px] font-semibold text-slate-400">{conversation.currentStatus || "Up to date"}</div>
               </button>
             )) : <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-5 text-center text-sm text-slate-500">No conversations yet.</div>}
           </div>
         </aside>
 
-        <main className="order-3 flex min-h-[520px] flex-col border-t border-brand/10 lg:order-2 lg:min-h-0 lg:border-t-0">
+        <main className="order-2 flex min-h-0 flex-col border-b border-brand/10 lg:border-b-0">
           <div className="flex-none border-b border-brand/10 bg-white p-3 sm:p-4">
-            <h2 className="text-lg font-black text-slate-950">{activeConversation ? conversationTitle(activeConversation) : "New Message"}</h2>
-            <p className="text-xs text-slate-500">{activeConversation?.type === "batch" ? "Batch chat" : "Individual chat"}</p>
-          </div>
-          <div className="min-h-0 flex-1 space-y-3 overflow-auto bg-[radial-gradient(circle_at_top,rgba(90,19,114,0.07),transparent_34%),#f8fafc] p-3 sm:p-4">
-            {activeMessages.length ? activeMessages.map((item) => (
-              <div id={`ask-coach-message-${item._id}`} key={item._id} className={`rounded-2xl border bg-white p-3 shadow-sm ${item.flagged ? "border-amber-300 ring-2 ring-amber-100" : "border-slate-200"}`}>
-                <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-                  <div className="min-w-0 text-xs font-semibold text-slate-500">{item.sender?.name || "User"} - {new Date(item.createdAt || "").toLocaleString()}</div>
-                  {item.flagged && <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700"><AlertTriangle size={13} /> Flagged</span>}
-                </div>
-                <div className={`break-words text-sm leading-relaxed text-slate-800 ${item.status === "hidden" && role !== "admin" ? "italic text-slate-400" : ""}`}>
-                  {item.status === "hidden" && role !== "admin" ? "Hidden pending admin review" : item.body}
-                </div>
-                {item.flagReasons?.length ? <div className="mt-2 text-xs text-amber-700">Reasons: {item.flagReasons.join(", ")}</div> : null}
-                {role === "admin" && (item.flagged || item.moderationStatus !== "none") && (
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <button onClick={() => moderate(item._id, "approve")} className="inline-flex h-8 items-center gap-1 rounded-md border px-2 text-xs"><Check size={13} /> Approve</button>
-                    <button onClick={() => moderate(item._id, "hide")} className="inline-flex h-8 items-center gap-1 rounded-md border px-2 text-xs"><EyeOff size={13} /> Hide</button>
-                    <button onClick={() => moderate(item._id, "delete")} className="inline-flex h-8 items-center gap-1 rounded-md border px-2 text-xs text-red-600"><Trash2 size={13} /> Delete</button>
-                    <button onClick={() => moderate(item._id, "warn")} className="inline-flex h-8 items-center gap-1 rounded-md border px-2 text-xs text-amber-700"><Shield size={13} /> Warn</button>
-                    <button onClick={() => moderate(item._id, "review")} className="inline-flex h-8 items-center gap-1 rounded-md border px-2 text-xs">Reviewed</button>
-                  </div>
-                )}
+            <div className="flex min-w-0 items-center justify-between gap-3">
+              <div className="min-w-0">
+                <h2 className="truncate text-lg font-black text-slate-950">{activeConversation ? conversationTitle(activeConversation) : "New Message"}</h2>
+                <p className="text-xs text-slate-500">{activeConversation?.type === "batch" ? "Batch chat" : "Individual chat"}</p>
               </div>
-            )) : <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">Select a conversation or send a new message.</div>}
+              {activeConversation?.unreadCount ? (
+                <span className="rounded-full bg-brand/10 px-2.5 py-1 text-xs font-black text-brand">{activeConversation.unreadCount} unread</span>
+              ) : null}
+            </div>
           </div>
-          <div className="sticky bottom-0 z-10 flex-none border-t border-brand/10 bg-white/95 p-3 backdrop-blur lg:static">
+          <div
+            ref={scrollerRef}
+            onScroll={handleScroll}
+            className="relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-[radial-gradient(circle_at_top,rgba(90,19,114,0.07),transparent_34%),#f8fafc] p-3 sm:p-4"
+          >
+            <div className="space-y-3">
+              {activeMessages.length ? activeMessages.map((item, index) => {
+                const mine = senderIdOf(item) === currentUserId;
+                const previous = activeMessages[index - 1];
+                const showDay = !previous || dayLabel(previous.createdAt) !== dayLabel(item.createdAt);
+                const showUnreadMarker = firstUnreadIncomingId === item._id;
+                return (
+                  <div key={item._id}>
+                    {showDay && (
+                      <div className="sticky top-2 z-10 my-3 flex justify-center">
+                        <span className="rounded-full border border-slate-200 bg-white/95 px-3 py-1 text-[11px] font-black text-slate-500 shadow-sm backdrop-blur">
+                          {dayLabel(item.createdAt)}
+                        </span>
+                      </div>
+                    )}
+                    {showUnreadMarker && (
+                      <div className="my-3 flex items-center gap-3" aria-label="Unread messages start">
+                        <div className="h-px flex-1 bg-brand/20" />
+                        <span className="rounded-full bg-brand px-3 py-1 text-[11px] font-black text-white shadow-sm">New messages</span>
+                        <div className="h-px flex-1 bg-brand/20" />
+                      </div>
+                    )}
+                    <div id={`ask-coach-message-${item._id}`} className={cn("flex", mine ? "justify-end" : "justify-start")}>
+                      <div className={cn(
+                        "max-w-[min(82%,42rem)] rounded-2xl border p-3 shadow-sm",
+                        mine ? "rounded-br-md border-brand/20 bg-brand text-white" : "rounded-bl-md border-slate-200 bg-white text-slate-900",
+                        item.flagged ? "border-amber-300 ring-2 ring-amber-100" : ""
+                      )}>
+                        <div className={cn("mb-1 flex flex-wrap items-center justify-between gap-2 text-xs font-semibold", mine ? "text-white/75" : "text-slate-500")}>
+                          <span className="min-w-0 truncate">{mine ? "You" : item.sender?.name || "User"}</span>
+                          {item.flagged && <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700"><AlertTriangle size={13} /> Flagged</span>}
+                        </div>
+                        <div className={cn("break-words text-sm leading-relaxed", item.status === "hidden" && role !== "admin" ? "italic opacity-70" : "")}>
+                          {item.status === "hidden" && role !== "admin" ? "Hidden pending admin review" : item.body}
+                        </div>
+                        {item.flagReasons?.length ? <div className={cn("mt-2 text-xs", mine ? "text-amber-100" : "text-amber-700")}>Reasons: {item.flagReasons.join(", ")}</div> : null}
+                        <div className={cn("mt-2 flex items-center justify-end gap-1 text-[11px] font-semibold", mine ? "text-white/75" : "text-slate-500")}>
+                          <span>{messageTime(item.createdAt)}</span>
+                          {mine && <span title={statusLabel(item.deliveryStatus)} className="inline-flex"><MessageStatus message={item} /></span>}
+                        </div>
+                        {role === "admin" && (item.flagged || item.moderationStatus !== "none") && (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <button onClick={() => moderate(item._id, "approve")} className="inline-flex h-8 items-center gap-1 rounded-md border bg-white px-2 text-xs text-slate-700"><Check size={13} /> Approve</button>
+                            <button onClick={() => moderate(item._id, "hide")} className="inline-flex h-8 items-center gap-1 rounded-md border bg-white px-2 text-xs text-slate-700"><EyeOff size={13} /> Hide</button>
+                            <button onClick={() => moderate(item._id, "delete")} className="inline-flex h-8 items-center gap-1 rounded-md border bg-white px-2 text-xs text-red-600"><Trash2 size={13} /> Delete</button>
+                            <button onClick={() => moderate(item._id, "warn")} className="inline-flex h-8 items-center gap-1 rounded-md border bg-white px-2 text-xs text-amber-700"><Shield size={13} /> Warn</button>
+                            <button onClick={() => moderate(item._id, "review")} className="inline-flex h-8 items-center gap-1 rounded-md border bg-white px-2 text-xs text-slate-700">Reviewed</button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              }) : <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">Select a conversation or send a new message.</div>}
+              <div ref={bottomRef} />
+            </div>
+            {hasNewMessages && !isNearBottom && (
+              <button
+                type="button"
+                onClick={jumpToNewMessages}
+                className="sticky bottom-3 left-1/2 z-20 mx-auto mt-3 flex -translate-x-0 items-center justify-center rounded-full bg-brand px-4 py-2 text-xs font-black text-white shadow-lg shadow-brand/20"
+              >
+                New Messages
+              </button>
+            )}
+          </div>
+          <div className="sticky bottom-0 z-10 flex-none border-t border-brand/10 bg-white/95 p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur lg:static">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
               <textarea
                 value={message}
@@ -221,7 +511,7 @@ export default function AskCoachClient({ role }: { role: Role }) {
           </div>
         </main>
 
-        <aside className="order-2 min-h-0 overflow-auto border-b border-brand/10 bg-white p-3 lg:order-3 lg:border-b-0 lg:border-l">
+        <aside className="order-3 min-h-0 overflow-auto bg-white p-3 lg:border-l">
           <div className="space-y-4">
             <section className="rounded-2xl border border-brand/10 bg-slate-50 p-3 shadow-sm sm:p-4">
               <h3 className="flex items-center gap-2 font-black text-slate-950"><Users size={16} className="text-brand" /> New Message</h3>

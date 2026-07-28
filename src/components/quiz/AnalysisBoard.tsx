@@ -27,6 +27,7 @@ import { Chess } from "chess.js";
 import { toast } from "sonner";
 import { buildMoveHintStyles, legalTargetsFromGame } from "@/lib/chessboardUi";
 import { isPromotionMove, promotionFromBoardPiece, type PendingPromotion, type PromotionPiece } from "@/lib/chessPromotion";
+import PgnLibraryPicker, { type PgnLibraryGame } from "@/components/pgn/PgnLibraryPicker";
 
 const Chessboard = dynamic(() => import("react-chessboard").then((m) => m.Chessboard), { ssr: false });
 
@@ -1000,9 +1001,28 @@ function PdfPanel({
 function PgnDialog({ isDark, onClose, onLoad }: { isDark: boolean; onClose: () => void; onLoad: (pgn: string) => boolean }) {
   const [pgn, setPgn] = useState("");
   const [error, setError] = useState("");
+  const [libraryOpen, setLibraryOpen] = useState(false);
+
+  function loadLibraryGame(games: PgnLibraryGame[]) {
+    const game = games[0];
+    if (!game) return;
+    if (onLoad(game.pgn)) {
+      onClose();
+    } else {
+      setError("That library PGN could not be loaded.");
+    }
+  }
 
   return (
-    <ModalFrame isDark={isDark} title="Load PGN Game" subtitle="Paste a PGN game or drag-and-drop a PGN file." onClose={onClose} width="max-w-[470px]">
+    <ModalFrame isDark={isDark} title="Load PGN Game" subtitle="Load from the master library, paste a PGN, or upload a PGN file." onClose={onClose} width="max-w-[520px]">
+      <button
+        type="button"
+        onClick={() => setLibraryOpen(true)}
+        className="mb-4 flex w-full items-center justify-between rounded-lg border border-purple-200 bg-purple-50 px-4 py-3 text-left text-sm font-semibold text-purple-800 hover:bg-purple-100"
+      >
+        <span className="inline-flex items-center gap-2"><BookOpen size={16} /> Load from master PGN library</span>
+        <ChevronRight size={16} />
+      </button>
       <label className={`mb-5 flex h-[118px] cursor-pointer flex-col items-center justify-center rounded-md border border-dashed text-sm ${isDark ? "border-ink-600 text-blue-200/70" : "border-slate-200 text-slate-500"}`}>
         Drag & Drop a PGN file here
         <span className="mt-2">or click to browse</span>
@@ -1024,6 +1044,7 @@ function PgnDialog({ isDark, onClose, onLoad }: { isDark: boolean; onClose: () =
         <button className={controlButton(isDark)} onClick={onClose}>Cancel</button>
         <button className="btn-primary" onClick={() => pgn.trim() && (onLoad(pgn) || setError("That PGN could not be loaded."))}>Load Position</button>
       </div>
+      <PgnLibraryPicker open={libraryOpen} onClose={() => setLibraryOpen(false)} onSelect={loadLibraryGame} />
     </ModalFrame>
   );
 }

@@ -1,6 +1,4 @@
-export function normalizeFolderPath(value?: string | null) {
-  return String(value || "").trim().replace(/^\/+|\/+$/g, "").replace(/\/{2,}/g, "/");
-}
+export { normalizeFolderPath } from "@/lib/pgnLibrary";
 
 export function requestedPgnVisibility(session: any, visibility?: string) {
   if ((session?.user as any)?.role === "admin" && visibility === "shared") return "shared";

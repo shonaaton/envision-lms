@@ -1,0 +1,338 @@
+export type PortalRole = "student" | "instructor" | "admin";
+export type FeatureStatus = "enabled" | "disabled" | "testing" | "coming_soon";
+
+export type FeaturePermission = {
+  id: string;
+  label: string;
+  critical?: boolean;
+};
+
+export type FeatureDefinition = {
+  key: string;
+  label: string;
+  category: string;
+  description: string;
+  routes: string[];
+  apiPrefixes?: string[];
+  permissions: FeaturePermission[];
+  defaultStatus?: FeatureStatus;
+  defaultRolePermissions?: Partial<Record<PortalRole, string[]>>;
+};
+
+export const PORTAL_ROLES: PortalRole[] = ["student", "instructor", "admin"];
+
+const view = { id: "view", label: "View" };
+const create = { id: "create", label: "Create" };
+const edit = { id: "edit", label: "Edit" };
+const del = { id: "delete", label: "Delete", critical: true };
+const manage = { id: "manage", label: "Manage", critical: true };
+const approve = { id: "approve", label: "Approve", critical: true };
+const assign = { id: "assign", label: "Assign" };
+const exportRecords = { id: "export", label: "Export" };
+const share = { id: "share", label: "Share" };
+const full = { id: "full", label: "Full Access", critical: true };
+
+const all = (...items: FeaturePermission[]) => items.map((item) => item.id);
+
+export const FEATURE_DEFINITIONS: FeatureDefinition[] = [
+  {
+    key: "dashboard",
+    label: "Dashboard",
+    category: "Learning",
+    description: "Home dashboard, summaries, shortcuts, and portal entry points.",
+    routes: ["/dashboard"],
+    permissions: [view],
+    defaultStatus: "enabled",
+    defaultRolePermissions: { student: ["view"], instructor: ["view"], admin: ["view"] },
+  },
+  {
+    key: "classrooms",
+    label: "Classrooms",
+    category: "Classroom",
+    description: "Classes, classroom details, live sessions, summaries, and scheduling records.",
+    routes: ["/classrooms", "/instructor/classrooms"],
+    apiPrefixes: ["/api/classrooms"],
+    permissions: [view, { id: "join", label: "Join Classes" }, create, edit, { id: "cancel", label: "Cancel Classes", critical: true }, assign, { id: "attendance", label: "Manage Attendance" }],
+    defaultStatus: "enabled",
+    defaultRolePermissions: {
+      student: ["view", "join"],
+      instructor: ["view", "join", "create", "edit", "attendance"],
+      admin: ["view", "join", "create", "edit", "cancel", "assign", "attendance"],
+    },
+  },
+  {
+    key: "calendar",
+    label: "Calendar",
+    category: "Classroom",
+    description: "Student, coach, and academy calendar views.",
+    routes: ["/calendar", "/availability", "/booking"],
+    apiPrefixes: ["/api/availability", "/api/bookings"],
+    permissions: [view, create, edit, approve],
+    defaultStatus: "enabled",
+    defaultRolePermissions: { student: ["view", "create"], instructor: ["view", "edit", "approve"], admin: all(view, create, edit, approve) },
+  },
+  {
+    key: "homework",
+    label: "Homework",
+    category: "Learning",
+    description: "Homework lists, assignment creation, submissions, and review workflows.",
+    routes: ["/homework", "/instructor/homework"],
+    apiPrefixes: ["/api/homework"],
+    permissions: [view, create, edit, del, assign],
+    defaultStatus: "enabled",
+    defaultRolePermissions: { student: ["view"], instructor: ["view", "create", "edit", "assign"], admin: all(view, create, edit, del, assign) },
+  },
+  {
+    key: "attendance",
+    label: "Attendance",
+    category: "Reports",
+    description: "Attendance workspace and attendance updates.",
+    routes: ["/attendance"],
+    apiPrefixes: ["/api/attendance"],
+    permissions: [view, edit, exportRecords],
+    defaultStatus: "enabled",
+    defaultRolePermissions: { student: ["view"], instructor: ["view"], admin: all(view, edit, exportRecords) },
+  },
+  {
+    key: "askCoach",
+    label: "Ask Coach",
+    category: "Communication",
+    description: "Student questions, coach replies, moderation, and batch messages.",
+    routes: ["/ask-coach"],
+    apiPrefixes: ["/api/ask-coach"],
+    permissions: [view, create, { id: "moderate", label: "Moderate", critical: true }, share],
+    defaultStatus: "enabled",
+    defaultRolePermissions: { student: ["view", "create"], instructor: ["view", "create", "share"], admin: all(view, create, share, { id: "moderate", label: "Moderate" }) },
+  },
+  {
+    key: "tournaments",
+    label: "Tournaments",
+    category: "Tournaments",
+    description: "Tournament lists, creation, game play, pairings, results, and reports.",
+    routes: ["/tournaments"],
+    apiPrefixes: ["/api/tournaments"],
+    permissions: [
+      view,
+      { id: "join", label: "Join Tournament" },
+      create,
+      edit,
+      { id: "cancel", label: "Cancel Tournament", critical: true },
+      { id: "participants", label: "Manage Participants" },
+      { id: "pairings", label: "Generate Pairings" },
+      { id: "results", label: "Correct Results" },
+      exportRecords,
+    ],
+    defaultStatus: "enabled",
+    defaultRolePermissions: {
+      student: ["view", "join"],
+      instructor: ["view"],
+      admin: ["view", "join", "create", "edit", "cancel", "participants", "pairings", "results", "export"],
+    },
+  },
+  {
+    key: "leaderboards",
+    label: "Leaderboards",
+    category: "Tournaments",
+    description: "Ranking, tournament standings, and student leaderboard views.",
+    routes: ["/leaderboard"],
+    permissions: [view, exportRecords],
+    defaultStatus: "enabled",
+    defaultRolePermissions: { student: ["view"], instructor: ["view"], admin: ["view", "export"] },
+  },
+  {
+    key: "pgnLibrary",
+    label: "PGN Library",
+    category: "Training Tools",
+    description: "PGN library, folders, viewers, sharing, and imports.",
+    routes: ["/pgn"],
+    apiPrefixes: ["/api/pgn"],
+    permissions: [view, create, edit, del, share],
+    defaultStatus: "enabled",
+    defaultRolePermissions: { instructor: ["view", "create", "edit", "share"], admin: all(view, create, edit, del, share) },
+  },
+  {
+    key: "analysisBoard",
+    label: "Analysis Board",
+    category: "Training Tools",
+    description: "Chess analysis board and lesson analysis tools.",
+    routes: ["/analysis"],
+    permissions: [view, share],
+    defaultStatus: "enabled",
+    defaultRolePermissions: { instructor: ["view", "share"], admin: ["view", "share"] },
+  },
+  {
+    key: "tacticsTrainer",
+    label: "Tactics Trainer",
+    category: "Training Tools",
+    description: "Tactics trainer and puzzle practice.",
+    routes: ["/play/tactics-trainer", "/tactics-trainer"],
+    apiPrefixes: ["/api/tactics-trainer"],
+    permissions: [view, { id: "practice", label: "Practice" }],
+    defaultStatus: "enabled",
+    defaultRolePermissions: { student: ["view", "practice"], admin: ["view", "practice"] },
+  },
+  {
+    key: "kingHunt",
+    label: "King Hunt",
+    category: "Training Tools",
+    description: "King Hunt practice mode.",
+    routes: ["/play/king-hunt", "/king-hunt"],
+    permissions: [view, { id: "practice", label: "Practice" }],
+    defaultStatus: "enabled",
+    defaultRolePermissions: { student: ["view", "practice"], admin: ["view", "practice"] },
+  },
+  {
+    key: "squareTrainer",
+    label: "Square Trainer",
+    category: "Training Tools",
+    description: "Square trainer practice mode.",
+    routes: ["/play/square-trainer", "/square-trainer"],
+    apiPrefixes: ["/api/square-trainer"],
+    permissions: [view, { id: "practice", label: "Practice" }],
+    defaultStatus: "enabled",
+    defaultRolePermissions: { student: ["view", "practice"], admin: ["view", "practice"] },
+  },
+  {
+    key: "playVsComputer",
+    label: "Play vs Computer",
+    category: "Training Tools",
+    description: "Computer opponent practice and rewards.",
+    routes: ["/play/computer"],
+    apiPrefixes: ["/api/play/computer"],
+    permissions: [view, { id: "play", label: "Play" }],
+    defaultStatus: "enabled",
+    defaultRolePermissions: { student: ["view", "play"], admin: ["view", "play"] },
+  },
+  {
+    key: "fees",
+    label: "Fees Management",
+    category: "Payments",
+    description: "Fee dashboard, plans, student fees, reports, credits, payments, and invoices.",
+    routes: ["/fees", "/invoices"],
+    apiPrefixes: ["/api/fees", "/api/payments"],
+    permissions: [view, { id: "invoice", label: "Create Invoice" }, edit, { id: "payment", label: "Record Payment" }, { id: "credit", label: "Issue Credit", critical: true }, exportRecords],
+    defaultStatus: "enabled",
+    defaultRolePermissions: { student: ["view"], admin: ["view", "invoice", "edit", "payment", "credit", "export"] },
+  },
+  {
+    key: "notifications",
+    label: "Notifications",
+    category: "Communication",
+    description: "Portal notifications and notification management.",
+    routes: ["/admin/notifications"],
+    apiPrefixes: ["/api/notifications"],
+    permissions: [view, create, manage],
+    defaultStatus: "enabled",
+    defaultRolePermissions: { student: ["view"], instructor: ["view"], admin: all(view, create, manage) },
+  },
+  {
+    key: "userManagement",
+    label: "Student, Coach, and Admin Management",
+    category: "Administration",
+    description: "User directory, account creation, role changes, activation, and password resets.",
+    routes: ["/admin/users"],
+    apiPrefixes: ["/api/admin/users"],
+    permissions: [view, create, edit, del, manage],
+    defaultStatus: "enabled",
+    defaultRolePermissions: { admin: all(view, create, edit, del, manage) },
+  },
+  {
+    key: "onboarding",
+    label: "Onboarding",
+    category: "Administration",
+    description: "Demo student approvals, coach applications, and onboarding decisions.",
+    routes: ["/admin/onboarding"],
+    permissions: [view, approve, edit],
+    defaultStatus: "enabled",
+    defaultRolePermissions: { admin: all(view, approve, edit) },
+  },
+  {
+    key: "courseManagement",
+    label: "Course Management",
+    category: "Administration",
+    description: "Courses, batches, levels, branches, and enrolment structure.",
+    routes: ["/admin/courses"],
+    apiPrefixes: ["/api/admin/courses", "/api/admin/batches"],
+    permissions: [view, create, edit, del, assign],
+    defaultStatus: "enabled",
+    defaultRolePermissions: { admin: all(view, create, edit, del, assign) },
+  },
+  {
+    key: "reports",
+    label: "Reports and Progress",
+    category: "Reports",
+    description: "Reports center, activity tracker, progress exports, and operational history.",
+    routes: ["/admin/reports", "/admin/activity-tracker"],
+    apiPrefixes: ["/api/admin/reports"],
+    permissions: [view, exportRecords, manage],
+    defaultStatus: "enabled",
+    defaultRolePermissions: { admin: all(view, exportRecords, manage) },
+  },
+  {
+    key: "announcements",
+    label: "Announcements",
+    category: "Communication",
+    description: "Academy announcements and targeted communication.",
+    routes: ["/admin/announcements"],
+    apiPrefixes: ["/api/admin/announcements"],
+    permissions: [view, create, edit, del, share],
+    defaultStatus: "enabled",
+    defaultRolePermissions: { admin: all(view, create, edit, del, share) },
+  },
+  {
+    key: "academySettings",
+    label: "Academy Setup",
+    category: "Settings",
+    description: "Branding, invoice identity, GST settings, and academy defaults.",
+    routes: ["/admin/settings"],
+    apiPrefixes: ["/api/branding"],
+    permissions: [view, edit, manage],
+    defaultStatus: "enabled",
+    defaultRolePermissions: { admin: all(view, edit, manage) },
+  },
+  {
+    key: "featureAccess",
+    label: "Feature Access & Permissions",
+    category: "Settings",
+    description: "Central controls for feature flags, role permissions, pilot access, templates, and audit history.",
+    routes: ["/admin/feature-access"],
+    apiPrefixes: ["/api/admin/feature-access"],
+    permissions: [view, edit, manage, full],
+    defaultStatus: "enabled",
+    defaultRolePermissions: { admin: all(view, edit, manage, full) },
+  },
+  {
+    key: "certificates",
+    label: "Certificates",
+    category: "Learning",
+    description: "Certificate generation and student achievement records.",
+    routes: ["/certificates"],
+    permissions: [view, create, share],
+  },
+  {
+    key: "activityCentre",
+    label: "Activity Centre",
+    category: "Learning",
+    description: "Student activity centre and practice challenges.",
+    routes: ["/activity-centre"],
+    permissions: [view, create, edit],
+  },
+];
+
+export const FEATURE_CATEGORIES = Array.from(new Set(FEATURE_DEFINITIONS.map((feature) => feature.category)));
+
+export function findFeatureByPath(pathname: string) {
+  const normalized = pathname === "/" ? "/" : pathname.replace(/\/$/, "");
+  return FEATURE_DEFINITIONS
+    .flatMap((feature) => feature.routes.map((route) => ({ feature, route })))
+    .sort((a, b) => b.route.length - a.route.length)
+    .find(({ route }) => normalized === route || normalized.startsWith(`${route}/`))?.feature;
+}
+
+export function findFeatureByApiPath(pathname: string) {
+  const normalized = pathname === "/" ? "/" : pathname.replace(/\/$/, "");
+  return FEATURE_DEFINITIONS
+    .flatMap((feature) => (feature.apiPrefixes || []).map((route) => ({ feature, route })))
+    .sort((a, b) => b.route.length - a.route.length)
+    .find(({ route }) => normalized === route || normalized.startsWith(`${route}/`))?.feature;
+}

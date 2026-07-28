@@ -24,6 +24,7 @@ import {
   MessageSquare,
   Receipt,
   Settings,
+  ShieldCheck,
   Trophy,
   Users,
   WalletCards,
@@ -39,40 +40,42 @@ import { bookingFeatureNameForAccount } from "@/lib/bookingLabels";
 
 type Role = "student" | "instructor" | "admin";
 type AccountStatus = "demo" | "enrolled" | "coach_applicant" | "approved" | "rejected";
-type NavItem = { href: string; label: string; icon: any; roles?: Role[]; demoOnly?: boolean; hideForDemo?: boolean };
-type NavSection = { id: string; title: string; items: NavItem[]; roles?: Role[] };
+type FeatureStatus = "enabled" | "disabled" | "testing" | "coming_soon";
+type FeatureState = Record<string, { visible: boolean; status: FeatureStatus }>;
+type NavItem = { href: string; label: string; icon: any; featureKey?: string; roles?: Role[]; demoOnly?: boolean; hideForDemo?: boolean; superAdminOnly?: boolean };
+type NavSection = { id: string; title: string; items: NavItem[]; roles?: Role[]; superAdminOnly?: boolean };
 
 const sections: NavSection[] = [
   {
     id: "academy",
     title: "Academy",
-    items: [{ href: "/dashboard", label: "Dashboard", icon: LayoutDashboard }],
+    items: [{ href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, featureKey: "dashboard" }],
   },
   {
     id: "class-tools",
     title: "Class Tools",
     items: [
-      { href: "/classrooms", label: "Classrooms", icon: BookOpen },
-      { href: "/availability", label: "Available Times", icon: CalendarDays, roles: ["instructor", "admin"] },
-      { href: "/booking", label: "Booking", icon: CalendarDays, roles: ["student"] },
-      { href: "/ask-coach", label: "Ask Coach", icon: MessageSquare },
-      { href: "/homework", label: "Homework", icon: FileText },
-      { href: "/attendance", label: "Attendance", icon: ClipboardList },
-      { href: "/calendar", label: "Calendar", icon: CalendarDays },
-      { href: "/tournaments", label: "Tournaments", icon: Trophy },
-      { href: "/leaderboard", label: "Leaderboards", icon: Trophy },
+      { href: "/classrooms", label: "Classrooms", icon: BookOpen, featureKey: "classrooms" },
+      { href: "/availability", label: "Available Times", icon: CalendarDays, featureKey: "calendar", roles: ["instructor", "admin"] },
+      { href: "/booking", label: "Booking", icon: CalendarDays, featureKey: "calendar", roles: ["student"] },
+      { href: "/ask-coach", label: "Ask Coach", icon: MessageSquare, featureKey: "askCoach" },
+      { href: "/homework", label: "Homework", icon: FileText, featureKey: "homework" },
+      { href: "/attendance", label: "Attendance", icon: ClipboardList, featureKey: "attendance" },
+      { href: "/calendar", label: "Calendar", icon: CalendarDays, featureKey: "calendar" },
+      { href: "/tournaments", label: "Tournaments", icon: Trophy, featureKey: "tournaments" },
+      { href: "/leaderboard", label: "Leaderboards", icon: Trophy, featureKey: "leaderboards" },
     ],
   },
   {
     id: "chess-tools",
     title: "Chess Tools",
     items: [
-      { href: "/pgn", label: "PGN Library", icon: Library, roles: ["instructor", "admin"] },
-      { href: "/analysis", label: "Analysis Board", icon: ListChecks, roles: ["instructor", "admin"] },
-      { href: "/play/tactics-trainer", label: "Tactics Trainer", icon: Target, roles: ["student", "admin"] },
-      { href: "/play/king-hunt", label: "King Hunt", icon: Crown, roles: ["student", "admin"] },
-      { href: "/play/square-trainer", label: "Square Trainer", icon: Crosshair, roles: ["student", "admin"] },
-      { href: "/play/computer", label: "Play vs Computer", icon: Cpu, roles: ["student", "admin"] },
+      { href: "/pgn", label: "PGN Library", icon: Library, featureKey: "pgnLibrary", roles: ["instructor", "admin"] },
+      { href: "/analysis", label: "Analysis Board", icon: ListChecks, featureKey: "analysisBoard", roles: ["instructor", "admin"] },
+      { href: "/play/tactics-trainer", label: "Tactics Trainer", icon: Target, featureKey: "tacticsTrainer", roles: ["student", "admin"] },
+      { href: "/play/king-hunt", label: "King Hunt", icon: Crown, featureKey: "kingHunt", roles: ["student", "admin"] },
+      { href: "/play/square-trainer", label: "Square Trainer", icon: Crosshair, featureKey: "squareTrainer", roles: ["student", "admin"] },
+      { href: "/play/computer", label: "Play vs Computer", icon: Cpu, featureKey: "playVsComputer", roles: ["student", "admin"] },
     ],
   },
   {
@@ -80,12 +83,12 @@ const sections: NavSection[] = [
     title: "Fees Management",
     roles: ["admin"],
     items: [
-      { href: "/fees", label: "Fee Dashboard", icon: Banknote },
-      { href: "/fees/fee-plans", label: "Fee Plans", icon: FileText },
-      { href: "/fees/student-fees", label: "Student Fees", icon: Users },
-      { href: "/fees/credit-monitoring", label: "Credit Monitoring", icon: WalletCards },
-      { href: "/fees/invoices", label: "Invoices", icon: Receipt },
-      { href: "/fees/reports", label: "Fee Reports", icon: BarChart3 },
+      { href: "/fees", label: "Fee Dashboard", icon: Banknote, featureKey: "fees" },
+      { href: "/fees/fee-plans", label: "Fee Plans", icon: FileText, featureKey: "fees" },
+      { href: "/fees/student-fees", label: "Student Fees", icon: Users, featureKey: "fees" },
+      { href: "/fees/credit-monitoring", label: "Credit Monitoring", icon: WalletCards, featureKey: "fees" },
+      { href: "/fees/invoices", label: "Invoices", icon: Receipt, featureKey: "fees" },
+      { href: "/fees/reports", label: "Fee Reports", icon: BarChart3, featureKey: "fees" },
     ],
   },
   {
@@ -93,9 +96,9 @@ const sections: NavSection[] = [
     title: "Billing",
     roles: ["student"],
     items: [
-      { href: "/fees", label: "Credits & Payments", icon: WalletCards },
-      { href: "/fees/credit-history", label: "Credit History", icon: WalletCards },
-      { href: "/fees/invoices", label: "My Invoices", icon: Receipt },
+      { href: "/fees", label: "Credits & Payments", icon: WalletCards, featureKey: "fees" },
+      { href: "/fees/credit-history", label: "Credit History", icon: WalletCards, featureKey: "fees" },
+      { href: "/fees/invoices", label: "My Invoices", icon: Receipt, featureKey: "fees" },
     ],
   },
   {
@@ -103,24 +106,29 @@ const sections: NavSection[] = [
     title: "Administration",
     roles: ["admin"],
     items: [
-      { href: "/admin/users", label: "Users", icon: Users },
-      { href: "/admin/onboarding", label: "Onboarding", icon: UserPlus },
-      { href: "/admin/courses", label: "Courses", icon: BookOpenCheck },
-      { href: "/admin/activity-tracker", label: "Activity Tracker", icon: ActivitySquare },
-      { href: "/admin/reports", label: "Reports Center", icon: BarChart3 },
-      { href: "/admin/announcements", label: "Announcements", icon: Megaphone },
-      { href: "/admin/notifications", label: "Notifications", icon: Bell },
+      { href: "/admin/users", label: "Users", icon: Users, featureKey: "userManagement" },
+      { href: "/admin/onboarding", label: "Onboarding", icon: UserPlus, featureKey: "onboarding" },
+      { href: "/admin/courses", label: "Courses", icon: BookOpenCheck, featureKey: "courseManagement" },
+      { href: "/admin/activity-tracker", label: "Activity Tracker", icon: ActivitySquare, featureKey: "reports" },
+      { href: "/admin/reports", label: "Reports Center", icon: BarChart3, featureKey: "reports" },
+      { href: "/admin/announcements", label: "Announcements", icon: Megaphone, featureKey: "announcements" },
+      { href: "/admin/notifications", label: "Notifications", icon: Bell, featureKey: "notifications" },
     ],
   },
   {
     id: "settings",
     title: "Settings",
-    items: [{ href: "/admin/settings", label: "Academy Setup", icon: Settings, roles: ["admin"] }],
+    items: [
+      { href: "/admin/settings", label: "Academy Setup", icon: Settings, featureKey: "academySettings", roles: ["admin"] },
+      { href: "/admin/feature-access", label: "Feature Access", icon: ShieldCheck, featureKey: "featureAccess", roles: ["admin"], superAdminOnly: true },
+    ],
   },
 ];
 
-function canSee(role: Role, accountStatus: AccountStatus | undefined, item: { roles?: Role[]; demoOnly?: boolean; hideForDemo?: boolean }) {
+function canSee(role: Role, accountStatus: AccountStatus | undefined, isSuperAdmin: boolean | undefined, featureState: FeatureState | undefined, item: { roles?: Role[]; demoOnly?: boolean; hideForDemo?: boolean; featureKey?: string; superAdminOnly?: boolean }) {
   const isDemo = accountStatus === "demo";
+  if (item.superAdminOnly && !isSuperAdmin) return false;
+  if (item.featureKey && featureState?.[item.featureKey] && !featureState[item.featureKey].visible) return false;
   if (item.demoOnly && !isDemo) return false;
   if (item.hideForDemo && isDemo) return false;
   if (isDemo) {
@@ -137,6 +145,8 @@ function isActive(pathname: string, item: NavItem) {
 export default function Sidebar({
   role,
   accountStatus,
+  isSuperAdmin,
+  featureState,
   mobileOpen = false,
   desktopCollapsed = false,
   onToggleDesktop,
@@ -144,22 +154,41 @@ export default function Sidebar({
 }: {
   role: Role;
   accountStatus?: AccountStatus;
+  isSuperAdmin?: boolean;
+  featureState?: FeatureState;
   mobileOpen?: boolean;
   desktopCollapsed?: boolean;
   onToggleDesktop?: () => void;
   onCloseMobile?: () => void;
 }) {
   const pathname = usePathname() || "";
+  const [askCoachUnreadCount, setAskCoachUnreadCount] = useState(0);
   const visibleSections = useMemo(
     () =>
       sections
-        .filter((section) => canSee(role, accountStatus, section))
-        .map((section) => ({ ...section, items: section.items.filter((item) => canSee(role, accountStatus, item)) }))
+        .filter((section) => canSee(role, accountStatus, isSuperAdmin, featureState, section))
+        .map((section) => ({ ...section, items: section.items.filter((item) => canSee(role, accountStatus, isSuperAdmin, featureState, item)) }))
         .filter((section) => section.items.length > 0),
-    [role, accountStatus]
+    [role, accountStatus, isSuperAdmin, featureState]
   );
   const activeSection = visibleSections.find((section) => section.items.some((item) => isActive(pathname, item)))?.id || "academy";
   const [openSections, setOpenSections] = useState<string[]>([activeSection]);
+
+  useEffect(() => {
+    let mounted = true;
+    async function loadAskCoachUnreadCount() {
+      const res = await fetch("/api/ask-coach?summary=1", { cache: "no-store" }).catch(() => null);
+      if (!res?.ok) return;
+      const data = await res.json().catch(() => ({}));
+      if (mounted) setAskCoachUnreadCount(Number(data.unreadCount || 0));
+    }
+    void loadAskCoachUnreadCount();
+    const timer = window.setInterval(() => void loadAskCoachUnreadCount(), 10000);
+    return () => {
+      mounted = false;
+      window.clearInterval(timer);
+    };
+  }, []);
 
   useEffect(() => {
     try {
@@ -245,22 +274,33 @@ export default function Sidebar({
                   {section.items.map((item) => {
                     const Icon = item.icon;
                     const active = isActive(pathname, item);
+                    const comingSoon = item.featureKey ? featureState?.[item.featureKey]?.status === "coming_soon" : false;
                     return (
                       <li key={item.href}>
                         <Link
-                          href={item.href}
+                          href={comingSoon ? "#" : item.href}
                           onClick={onCloseMobile}
                           title={desktopCollapsed ? (item.href === "/booking" ? bookingFeatureNameForAccount(accountStatus) : item.label) : undefined}
                           className={cn(
-                            "group flex min-h-10 items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-semibold transition",
+                            "group relative flex min-h-10 items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-semibold transition",
                             desktopCollapsed ? "md:justify-center md:px-2" : "",
-                            active ? "bg-white text-brand shadow-lg shadow-black/10" : "text-white/75 hover:bg-white/10 hover:text-white"
+                            active ? "bg-white text-brand shadow-lg shadow-black/10" : comingSoon ? "cursor-not-allowed text-white/45" : "text-white/75 hover:bg-white/10 hover:text-white"
                           )}
+                          aria-disabled={comingSoon}
                         >
                           <span className={cn("flex h-7 w-7 flex-none items-center justify-center rounded-md transition", active ? "bg-accent text-brand" : "bg-white/10 text-accent group-hover:bg-accent group-hover:text-brand")}>
                             <Icon size={16} />
                           </span>
                           <span className={cn("truncate", desktopCollapsed ? "md:hidden" : "")}>{item.href === "/booking" ? bookingFeatureNameForAccount(accountStatus) : item.label}</span>
+                          {comingSoon && <span className={cn("ml-auto rounded bg-accent/20 px-1.5 py-0.5 text-[10px] font-black uppercase text-accent", desktopCollapsed ? "md:hidden" : "")}>Soon</span>}
+                          {item.href === "/ask-coach" && askCoachUnreadCount > 0 && (
+                            <span className={cn(
+                              "ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1.5 text-[11px] font-black text-brand shadow-sm",
+                              desktopCollapsed ? "md:absolute md:right-1.5 md:top-1.5 md:h-4 md:min-w-4 md:px-1 md:text-[9px]" : ""
+                            )}>
+                              {askCoachUnreadCount > 9 ? "9+" : askCoachUnreadCount}
+                            </span>
+                          )}
                         </Link>
                       </li>
                     );

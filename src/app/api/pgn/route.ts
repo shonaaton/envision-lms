@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { PGN } from "@/models/PGN";
-import { Chess } from "chess.js";
 import { recordActivity } from "@/lib/activity";
 import { buildPgnLibraryFilter, normalizeFolderPath, requestedPgnVisibility } from "@/lib/pgnAccess";
+import { isValidPgnOrFenSetup, splitPgnGames, summarizePgn } from "@/lib/pgnLibrary";
 
 export const dynamic = "force-dynamic";
 
@@ -13,37 +13,22 @@ function hasPgnAccess(session: any) {
   return role === "instructor" || role === "admin";
 }
 
-function extractHeader(pgn: string, key: string): string | undefined {
-  const m = pgn.match(new RegExp(`\\[${key}\\s+"([^"]*)"\\]`));
-  return m?.[1];
+function escapeRegex(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function splitPgnGames(pgn: string) {
-  const normalized = pgn.replace(/\r\n/g, "\n").trim();
-  if (!normalized) return [];
-
-  const starts = Array.from(normalized.matchAll(/(^|\n)\s*(?=\[Event\s+")/g)).map((match) => match.index + match[1].length);
-  if (starts.length <= 1) return [normalized];
-
-  return starts
-    .map((start, index) => normalized.slice(start, starts[index + 1]).trim())
-    .filter(Boolean);
-}
-
-function isValidPgnOrFenSetup(pgn: string) {
-  try {
-    new Chess().loadPgn(pgn);
-    return true;
-  } catch {
-    const fen = extractHeader(pgn, "FEN");
-    if (!fen) return false;
-    try {
-      new Chess(fen);
-      return true;
-    } catch {
-      return false;
-    }
-  }
+function sortFor(value: string | null): Record<string, 1 | -1> {
+  if (value === "oldest") return { createdAt: 1 };
+  if (value === "title") return { title: 1 };
+  if (value === "players") return { white: 1, black: 1 };
+  if (value === "event") return { event: 1 };
+  if (value === "date") return { date: -1 };
+  if (value === "opening") return { opening: 1, eco: 1 };
+  if (value === "result") return { result: 1 };
+  if (value === "moves") return { moveCount: -1 };
+  if (value === "most-viewed") return { viewedCount: -1, createdAt: -1 };
+  if (value === "recently-opened") return { lastOpenedAt: -1, createdAt: -1 };
+  return { createdAt: -1 };
 }
 
 export async function GET(req: Request) {
@@ -53,9 +38,46 @@ export async function GET(req: Request) {
   await dbConnect();
   const url = new URL(req.url);
   const q = url.searchParams.get("q");
-  let filter: any = buildPgnLibraryFilter(session);
-  if (q) filter.$text = { $search: q };
-  const list = await PGN.find(filter).sort({ createdAt: -1 }).limit(100).lean();
+  const folder = normalizeFolderPath(url.searchParams.get("folder"));
+  const scope = url.searchParams.get("scope");
+  const result = url.searchParams.get("result");
+  const opening = url.searchParams.get("opening");
+  const year = url.searchParams.get("year");
+  const annotated = url.searchParams.get("annotated");
+  const variations = url.searchParams.get("variations");
+  const limit = Math.max(1, Math.min(500, Number(url.searchParams.get("limit") || 150)));
+  const extra: Record<string, any> = {};
+  if (folder) extra.folder = folder;
+  if (scope === "shared") extra.visibility = "shared";
+  if (scope === "personal") extra.visibility = { $ne: "shared" };
+  if (result) extra.result = result;
+  if (opening) extra.$or = [{ opening: new RegExp(escapeRegex(opening), "i") }, { eco: new RegExp(escapeRegex(opening), "i") }];
+  if (year) extra.date = new RegExp(`^${escapeRegex(year)}`);
+  if (annotated === "1") extra.hasAnnotations = true;
+  if (variations === "1") extra.hasVariations = true;
+  let filter: any = buildPgnLibraryFilter(session, extra);
+  if (q) {
+    const regex = new RegExp(escapeRegex(q), "i");
+    filter = {
+      $and: [
+        filter,
+        {
+          $or: [
+            { title: regex },
+            { white: regex },
+            { black: regex },
+            { event: regex },
+            { opening: regex },
+            { eco: regex },
+            { sourceFileName: regex },
+            { commentsText: regex },
+            { tags: regex },
+          ],
+        },
+      ],
+    };
+  }
+  const list = await PGN.find(filter).sort(sortFor(url.searchParams.get("sort"))).limit(limit).lean();
   return NextResponse.json(list);
 }
 
@@ -64,7 +86,7 @@ export async function POST(req: Request) {
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!hasPgnAccess(session)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
-  const { pgn, title, visibility = "private", classroom, folder } = await req.json();
+  const { pgn, title, visibility = "private", classroom, folder, sourceFileName, description, tags = [] } = await req.json();
   if (!pgn) return NextResponse.json({ error: "pgn required" }, { status: 400 });
   const games = splitPgnGames(pgn);
   if (!games.length || games.some((game) => !isValidPgnOrFenSetup(game))) {
@@ -75,17 +97,15 @@ export async function POST(req: Request) {
   const savedVisibility = requestedPgnVisibility(session, visibility);
 
   const docs = await PGN.insertMany(games.map((game, index) => {
-    const event = extractHeader(game, "Event");
+    const summary = summarizePgn(game, title || "PGN Game");
     return {
-      title: games.length > 1 ? event || `${title || "PGN Game"} ${index + 1}` : title || event || "Untitled game",
-      white: extractHeader(game, "White"),
-      black: extractHeader(game, "Black"),
-      event,
-      result: extractHeader(game, "Result"),
-      eco: extractHeader(game, "ECO"),
-      date: extractHeader(game, "Date"),
+      ...summary,
+      title: games.length > 1 ? summary.event || summary.title || `${title || "PGN Game"} ${index + 1}` : title || summary.title || "Untitled game",
       pgn: game,
       folder: normalizedFolder || undefined,
+      sourceFileName,
+      description,
+      tags: Array.isArray(tags) ? tags.map(String).filter(Boolean) : [],
       visibility: savedVisibility,
       classroom,
       uploadedBy: (session.user as any).id,

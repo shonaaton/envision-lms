@@ -113,6 +113,8 @@ const ClassroomSchema = new Schema(
     parentClassroom: { type: Schema.Types.ObjectId, ref: "Classroom", index: true },
     sourceSessionId: { type: String, index: true },
     sessionDate: { type: Date, index: true },
+    isTestClassroom: { type: Boolean, default: false, index: true },
+    testOwner: { type: Schema.Types.ObjectId, ref: "User", index: true },
   },
   { timestamps: true }
 );

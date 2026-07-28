@@ -14,11 +14,12 @@ export default async function PgnDetail({ params, searchParams }: { params: { id
   await dbConnect();
   const game: any = await PGN.findOne(buildPgnLibraryFilter(session, { _id: params.id })).lean();
   if (!game) notFound();
+  await PGN.updateOne({ _id: game._id }, { $inc: { viewedCount: 1 }, $set: { lastOpenedAt: new Date() } });
 
   const folderFilter = game.folder
     ? { folder: game.folder }
     : { $or: [{ folder: { $exists: false } }, { folder: null }, { folder: "" }] };
-  const folderGames: any[] = await PGN.find(buildPgnLibraryFilter(session, folderFilter)).sort({ createdAt: -1 }).select("_id title visibility").lean();
+  const folderGames: any[] = await PGN.find(buildPgnLibraryFilter(session, folderFilter)).sort({ createdAt: -1 }).select("_id title visibility white black result opening eco moveCount").lean();
   const scopedFolderGames = folderGames.filter((item) => (searchParams?.scope === "shared" ? item.visibility === "shared" : item.visibility !== "shared"));
   const currentIndex = scopedFolderGames.findIndex((item) => item._id.toString() === game._id.toString());
   const previousGame = currentIndex > 0 ? scopedFolderGames[currentIndex - 1] : null;
@@ -28,6 +29,16 @@ export default async function PgnDetail({ params, searchParams }: { params: { id
   const backHref = folderQuery ? `/pgn${folderQuery}` : "/pgn";
   const previousFile = previousGame ? { href: `/pgn/${previousGame._id.toString()}${folderQuery}`, title: previousGame.title } : null;
   const nextFile = nextGame ? { href: `/pgn/${nextGame._id.toString()}${folderQuery}`, title: nextGame.title } : null;
+  const folderFiles = scopedFolderGames.map((item: any) => ({
+    href: `/pgn/${item._id.toString()}${folderQuery}`,
+    id: item._id.toString(),
+    title: item.title,
+    white: item.white,
+    black: item.black,
+    result: item.result,
+    opening: item.opening || item.eco,
+    moveCount: item.moveCount,
+  }));
 
   return (
     <div className="flex h-[calc(100vh-92px)] min-h-0 flex-col gap-3 overflow-hidden bg-slate-50 p-3 text-slate-950">
@@ -43,7 +54,7 @@ export default async function PgnDetail({ params, searchParams }: { params: { id
         )}
       </div>
       <div className="min-h-0 flex-1">
-        <PgnViewer pgn={game.pgn} backHref={backHref} previousFile={previousFile} nextFile={nextFile} />
+        <PgnViewer pgn={game.pgn} backHref={backHref} previousFile={previousFile} nextFile={nextFile} folderFiles={folderFiles} currentFileId={game._id.toString()} />
       </div>
     </div>
   );

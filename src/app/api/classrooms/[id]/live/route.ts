@@ -6,6 +6,7 @@ import { PGN } from "@/models/PGN";
 import { ClassroomChatMessage, ClassroomSession, LiveQuestion, LiveQuestionResponse } from "@/models/ClassroomLive";
 import "@/models/User";
 import { getLiveClassroomForUser, type AppRole } from "@/lib/liveClassroomAccess";
+import { buildPgnLibraryFilter } from "@/lib/pgnAccess";
 import {
   buildLiveSessionKey,
   ensureLiveSessionIndexes,
@@ -107,20 +108,19 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     const responses = activeQuestion
       ? await LiveQuestionResponse.find({ question: activeQuestion._id }).populate("student", "name username").sort({ submittedAt: -1 }).lean()
       : [];
-    const pgnFilter =
-      canCoach(role)
-        ? {}
-        : {
-            $or: [
-              { uploadedBy: userId },
-              { visibility: "classroom", classroom: params.id },
-              { visibility: "classroom" },
-            ],
-          };
+    const pgnFilter = canCoach(role)
+      ? buildPgnLibraryFilter(session)
+      : {
+          $or: [
+            { uploadedBy: userId },
+            { visibility: "classroom", classroom: params.id },
+            { visibility: "classroom" },
+          ],
+        };
     const pgnLibrary = await PGN.find(pgnFilter)
-      .select("title white black event result date folder pgn")
+      .select("title white black event result date eco opening moveCount hasAnnotations hasVariations folder pgn")
       .sort({ folder: 1, createdAt: -1 })
-      .limit(80)
+      .limit(200)
       .lean();
     const chatMessages = await ClassroomChatMessage.find({ classroom: params.id, scheduledSessionId })
       .populate("sender", "name username role")

@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { deriveScheduledSessionStatus, isJoinWindowOpen } from "@/lib/classroomSessions";
 import { resolveScheduledSession } from "@/lib/classroomLiveSession";
+import { isSuperAdminSession } from "@/lib/featureAccess";
 import { Classroom } from "@/models/Classroom";
 import { ClassroomSession } from "@/models/ClassroomLive";
 import { notFound, redirect } from "next/navigation";
@@ -41,6 +42,8 @@ export default async function ClassroomDetail({ params, searchParams }: { params
   await dbConnect();
   const classroom: any = await Classroom.findById(params.id).lean();
   if (!classroom) notFound();
+  const isSuperAdmin = await isSuperAdminSession(session?.user as any);
+  if (classroom.isTestClassroom && (!isSuperAdmin || String(classroom.testOwner || "") !== userId)) redirect("/dashboard");
   if (!participantHasAccess(classroom, role, userId)) redirect("/dashboard");
 
   if (role !== "admin") {

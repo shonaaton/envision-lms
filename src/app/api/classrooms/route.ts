@@ -5,6 +5,7 @@ import { Classroom } from "@/models/Classroom";
 import { Course } from "@/models/Course";
 import { buildGeneratedSessions, buildSessionPlan } from "@/lib/classroomSchedule";
 import { syncClassroomSessionInstances } from "@/lib/classroomSessionInstances";
+import { isSuperAdminSession } from "@/lib/featureAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -14,11 +15,16 @@ export async function GET() {
   await dbConnect();
   const userId = (session.user as any).id;
   const role = (session.user as any).role;
+  const isSuperAdmin = await isSuperAdminSession(session.user as any);
+  const visibleClassrooms =
+    role === "admin" && isSuperAdmin
+      ? { $or: [{ isTestClassroom: { $ne: true } }, { isTestClassroom: true, testOwner: userId }] }
+      : { isTestClassroom: { $ne: true } };
   const filter = role === "admin"
-    ? { isSessionInstance: { $ne: true } }
+    ? { isSessionInstance: { $ne: true }, ...visibleClassrooms }
     : role === "instructor"
-      ? { $or: [{ instructor: userId }, { coach: userId }], isSessionInstance: { $ne: true } }
-      : { students: userId, isSessionInstance: { $ne: true } };
+      ? { $or: [{ instructor: userId }, { coach: userId }], isSessionInstance: { $ne: true }, ...visibleClassrooms }
+      : { students: userId, isSessionInstance: { $ne: true }, ...visibleClassrooms };
   const list = await Classroom.find(filter)
     .populate("coach instructor", "name email username")
     .populate("students", "name email username isActive")

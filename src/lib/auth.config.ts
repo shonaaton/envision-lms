@@ -17,6 +17,7 @@ export const authConfig = {
       if (user) {
         token.id = (user as any).id;
         token.role = (user as any).role;
+        token.isSuperAdmin = (user as any).isSuperAdmin;
         token.accountStatus = (user as any).accountStatus;
       }
       return token;
@@ -25,6 +26,7 @@ export const authConfig = {
       if (token) {
         (session.user as any).id = token.id as string;
         (session.user as any).role = token.role as any;
+        (session.user as any).isSuperAdmin = token.isSuperAdmin as boolean | undefined;
         (session.user as any).accountStatus = token.accountStatus as any;
       }
       return session;

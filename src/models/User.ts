@@ -10,6 +10,7 @@ const UserSchema = new Schema(
     passwordChangedAt: { type: Date },
     passwordChangeSource: { type: String, enum: ["registration", "admin_reset", "self_reset"], default: "registration" },
     role: { type: String, enum: ["student", "instructor", "admin"], default: "student", index: true },
+    isSuperAdmin: { type: Boolean, default: false, index: true },
     accountStatus: {
       type: String,
       enum: ["demo", "enrolled", "coach_applicant", "approved", "rejected"],

@@ -4,6 +4,7 @@ import { dbConnect } from "@/lib/db";
 import { User } from "@/models/User";
 import { Batch } from "@/models/Batch";
 import { AskCoachConversation, AskCoachMessage } from "@/models/AskCoach";
+import { Notification } from "@/models/Fee";
 import { createAskCoachMessage, ensureBatchConversation, ensureDirectConversation, notifyUser } from "@/lib/askCoach";
 
 export const dynamic = "force-dynamic";
@@ -41,6 +42,28 @@ type ConversationRecord = {
   title?: string;
 };
 
+function readUserIds(message: any) {
+  return new Set(
+    (message.readBy || [])
+      .map((entry: any) => toId(entry.user))
+      .filter(Boolean)
+  );
+}
+
+function messageDeliveryStatus(message: any, conversation: any, currentUserId: string) {
+  if (toId(message.sender) !== currentUserId) return undefined;
+  if (message.status !== "sent") return "sent";
+
+  const senderId = toId(message.sender);
+  const recipients = (conversation?.participants || [])
+    .map((participant: any) => toId(participant))
+    .filter((participantId: string) => participantId && participantId !== senderId);
+  if (!recipients.length) return "sent";
+
+  const readers = readUserIds(message);
+  return recipients.every((participantId: string) => readers.has(participantId)) ? "seen" : "delivered";
+}
+
 function userId(session: AuthSession) {
   return session.user.id;
 }
@@ -73,6 +96,19 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const conversationId = url.searchParams.get("conversation");
   const q = url.searchParams.get("q")?.trim();
+  if (url.searchParams.get("summary") === "1") {
+    const summaryFilter: Record<string, unknown> = role !== "admin" ? { participants: id } : {};
+    const conversationIds = await AskCoachConversation.find(summaryFilter).distinct("_id");
+    const unreadCount = conversationIds.length
+      ? await AskCoachMessage.countDocuments({
+        conversation: { $in: conversationIds },
+        sender: { $ne: id },
+        status: "sent",
+        readBy: { $not: { $elemMatch: { user: id } } },
+      })
+      : 0;
+    return NextResponse.json({ unreadCount });
+  }
 
   let targets: { students: unknown[]; coaches: unknown[]; batches: unknown[]; coach?: PopulatedUserRef | null } = { students: [], coaches: [], batches: [] };
   if (role === "student") {
@@ -95,16 +131,29 @@ export async function GET(req: Request) {
   }
 
   const filter: Record<string, unknown> = role !== "admin" ? { participants: id } : {};
-  if (conversationId) filter._id = conversationId;
 
-  const conversations = await AskCoachConversation.find(filter)
+  let conversations: any[] = await AskCoachConversation.find(filter)
     .populate("student coach participants", "name username email role")
     .populate("batch", "name")
     .sort({ lastMessageAt: -1 })
     .limit(50)
     .lean();
 
-  const activeConversationId = conversationId || conversations[0]?._id?.toString?.() || "";
+  if (conversationId && !conversations.some((conversation) => conversation._id?.toString?.() === conversationId)) {
+    const requestedConversation = await AskCoachConversation.findById(conversationId)
+      .populate("student coach participants", "name username email role")
+      .populate("batch", "name")
+      .lean() as any;
+    const canAccess =
+      requestedConversation &&
+      (role === "admin" || (requestedConversation.participants || []).some((participant: any) => toId(participant) === id));
+    if (canAccess) conversations = [requestedConversation, ...conversations];
+  }
+
+  const activeConversationId =
+    (conversationId && conversations.some((conversation) => conversation._id?.toString?.() === conversationId) ? conversationId : "") ||
+    conversations[0]?._id?.toString?.() ||
+    "";
   const conversationIds = conversations.map((conversation) => conversation._id);
   const messageFilter: Record<string, unknown> = q
     ? { conversation: { $in: conversationIds }, $text: { $search: q } }
@@ -119,7 +168,53 @@ export async function GET(req: Request) {
     .limit(q ? 100 : 150)
     .lean();
 
-  return NextResponse.json({ conversations, messages, targets, role });
+  const unreadCounts = await Promise.all(
+    conversations.map(async (conversation) => {
+      const unreadCount = await AskCoachMessage.countDocuments({
+        conversation: conversation._id,
+        sender: { $ne: id },
+        status: "sent",
+        readBy: { $not: { $elemMatch: { user: id } } },
+      });
+      return [conversation._id.toString(), unreadCount] as const;
+    })
+  );
+  const unreadByConversation = new Map(unreadCounts);
+  const conversationsById = new Map(conversations.map((conversation) => [conversation._id.toString(), conversation]));
+
+  const conversationsWithStatus = conversations.map((conversation) => {
+    const unreadCount = unreadByConversation.get(conversation._id.toString()) || 0;
+    return {
+      ...conversation,
+      unreadCount,
+      currentStatus: unreadCount > 0 ? `${unreadCount} unread` : "Up to date",
+    };
+  });
+
+  const messagesWithStatus = messages.map((message: any) => {
+    const conversationKey = toId(message.conversation);
+    const conversation = conversationsById.get(conversationKey);
+    const readers = readUserIds(message);
+    const senderId = toId(message.sender);
+    const recipientCount = (conversation?.participants || []).filter((participant: any) => {
+      const participantId = toId(participant);
+      return participantId && participantId !== senderId;
+    }).length;
+    return {
+      ...message,
+      deliveryStatus: messageDeliveryStatus(message, conversation, id),
+      readByCount: readers.size,
+      recipientCount,
+    };
+  });
+
+  return NextResponse.json({
+    conversations: conversationsWithStatus,
+    messages: messagesWithStatus,
+    targets,
+    role,
+    currentUser: { id, role },
+  });
 }
 
 export async function POST(req: Request) {
@@ -221,4 +316,44 @@ export async function POST(req: Request) {
       })));
   }
   return NextResponse.json(created);
+}
+
+export async function PATCH(req: Request) {
+  const session = await auth();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  await dbConnect();
+  const role = userRole(session as AuthSession);
+  const id = userId(session as AuthSession);
+  const body = await req.json().catch(() => ({}));
+  const conversationId = String(body.conversationId || "");
+  if (!conversationId) return NextResponse.json({ error: "Conversation required" }, { status: 400 });
+
+  const conversation = await AskCoachConversation.findById(conversationId).select("participants").lean() as any;
+  const canAccess =
+    conversation &&
+    (role === "admin" || (conversation.participants || []).some((participant: any) => toId(participant) === id));
+  if (!canAccess) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  const readAt = new Date();
+  await AskCoachMessage.updateMany(
+    {
+      conversation: conversationId,
+      sender: { $ne: id },
+      status: "sent",
+      readBy: { $not: { $elemMatch: { user: id } } },
+    },
+    { $push: { readBy: { user: id, readAt } } }
+  );
+  await Notification.updateMany(
+    {
+      user: id,
+      readAt: { $exists: false },
+      type: { $in: ["ask_coach", "ask_coach_admin"] },
+      $or: [{ "metadata.conversation": conversationId }, { "metadata.conversation": conversation._id }],
+    },
+    { readAt }
+  );
+
+  return NextResponse.json({ ok: true, readAt });
 }

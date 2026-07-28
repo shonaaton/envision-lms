@@ -36,13 +36,22 @@ type PgnDoc = {
   black?: string;
   result?: string;
   event?: string;
+  date?: string;
+  eco?: string;
+  opening?: string;
+  moveCount?: number;
+  hasAnnotations?: boolean;
+  hasVariations?: boolean;
+  sourceFileName?: string;
+  createdAt?: string;
+  updatedAt?: string;
   pgn: string;
   folder?: string;
   uploadedBy?: string;
   visibility?: "private" | "shared" | "classroom";
 };
 
-type FolderDoc = { id: string; name: string; path: string; personal: boolean };
+type FolderDoc = { id: string; name: string; path: string; personal: boolean; gameCount?: number; lastUpdatedAt?: string; description?: string; coverImage?: string };
 
 type ModalName = "folder" | "upload" | "generator" | "edit-folder" | "edit-pgn" | null;
 type UploadTab = "single" | "multiple";
@@ -93,6 +102,10 @@ export default function PgnLibraryPage() {
         name: folderLabel(folder.path || folder.name),
         path: normalizeFolderPath(folder.path || folder.name),
         personal: folder.visibility !== "shared",
+        gameCount: Number(folder.gameCount || 0),
+        lastUpdatedAt: folder.lastUpdatedAt || folder.updatedAt,
+        description: folder.description,
+        coverImage: folder.coverImage,
       })) : []);
     }
   }, [role]);
@@ -106,15 +119,16 @@ export default function PgnLibraryPage() {
 
   const visibleGames = useMemo(() => {
     const folderPath = activeFolderPath;
-    const q = folderPath ? "" : query.trim().toLowerCase();
-    return games.filter((game) => {
+    const q = query.trim().toLowerCase();
+    const filtered = games.filter((game) => {
       if (folderPath && game.folder !== folderPath) return false;
       if (folderPath && currentFolder && (game.visibility === "shared") !== !currentFolder.personal) return false;
       if (!folderPath && String(game.folder || "").includes("/")) return false;
       if (!q) return true;
-      return [game.title, game.white, game.black, game.event].filter(Boolean).some((value) => value!.toLowerCase().includes(q));
+      return [game.title, game.white, game.black, game.event, game.opening, game.eco, game.sourceFileName, game.result, game.date].filter(Boolean).some((value) => value!.toLowerCase().includes(q));
     });
-  }, [games, activeFolderPath, query, currentFolder]);
+    return sortGames(filtered, sort);
+  }, [games, activeFolderPath, query, currentFolder, sort]);
 
   const allKnownFolders = useMemo(() => {
     const byPath = new Map<string, FolderDoc>();
@@ -140,7 +154,7 @@ export default function PgnLibraryPage() {
 
   const visibleFolders = useMemo(() => {
     const folderPath = activeFolderPath;
-    const q = folderPath ? "" : query.trim().toLowerCase();
+    const q = query.trim().toLowerCase();
     return allKnownFolders
       .filter((folder) => getImmediateChildPath(folderPath, folder.path) === folder.path)
       .filter((folder) => !folderPath || !currentFolder || folder.personal === currentFolder.personal)
@@ -345,17 +359,21 @@ export default function PgnLibraryPage() {
                 <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition ${reorder ? "left-4" : "left-0.5"}`} />
               </button>
             </label>
-            {!currentFolder && (
-              <div className="relative">
-                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input className="input w-[220px] bg-white pl-9 text-slate-950" placeholder="Search folders and PGN..." value={query} onChange={(event) => setQuery(event.target.value)} />
-              </div>
-            )}
+            <div className="relative">
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input className="input w-[min(72vw,260px)] bg-white pl-9 text-slate-950" placeholder={currentFolder ? "Search inside folder" : "Search PGN database"} value={query} onChange={(event) => setQuery(event.target.value)} />
+            </div>
             <div className="relative">
               <select className="input w-[140px] appearance-none bg-white pr-10 text-slate-950" value={sort} onChange={(event) => setSort(event.target.value)}>
-                <option>None</option>
-                <option>Name</option>
                 <option>Newest</option>
+                <option>Oldest</option>
+                <option>Name</option>
+                <option>Players</option>
+                <option>Event</option>
+                <option>Date</option>
+                <option>Opening</option>
+                <option>Result</option>
+                <option>Moves</option>
               </select>
               <ChevronDown size={15} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
             </div>
@@ -466,6 +484,26 @@ function safeFileName(value: string) {
   return value.trim().replace(/[^a-z0-9-_]+/gi, "-").replace(/^-+|-+$/g, "") || "pgn";
 }
 
+function sortGames(games: PgnDoc[], sort: string) {
+  return [...games].sort((a, b) => {
+    if (sort === "Oldest") return String(a.createdAt || "").localeCompare(String(b.createdAt || ""));
+    if (sort === "Name") return String(a.title || "").localeCompare(String(b.title || ""));
+    if (sort === "Players") return `${a.white || ""} ${a.black || ""}`.localeCompare(`${b.white || ""} ${b.black || ""}`);
+    if (sort === "Event") return String(a.event || "").localeCompare(String(b.event || ""));
+    if (sort === "Date") return String(b.date || "").localeCompare(String(a.date || ""));
+    if (sort === "Opening") return `${a.opening || ""} ${a.eco || ""}`.localeCompare(`${b.opening || ""} ${b.eco || ""}`);
+    if (sort === "Result") return String(a.result || "").localeCompare(String(b.result || ""));
+    if (sort === "Moves") return Number(b.moveCount || 0) - Number(a.moveCount || 0);
+    return String(b.createdAt || b.updatedAt || "").localeCompare(String(a.createdAt || a.updatedAt || ""));
+  });
+}
+
+function formatDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
 function normalizeFolderPath(value?: string | null) {
   return String(value || "").trim().replace(/^\/+|\/+$/g, "").replace(/\/{2,}/g, "/");
 }
@@ -522,17 +560,26 @@ function FolderGrid({
   const [openMenu, setOpenMenu] = useState<string | null>(null);
 
   return (
-    <div className="grid gap-4 md:grid-cols-3">
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
       {folders.map((folder) => (
         <div
           key={folder.id}
-          className="relative flex h-14 items-center justify-between rounded-md border border-slate-200 bg-white px-4 text-left transition hover:bg-slate-50"
+          className="relative rounded-md border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-amber-200 hover:bg-amber-50/30"
         >
-          <button className="inline-flex flex-1 items-center gap-3 font-medium" onClick={() => onOpen(folder)}>
-            <Folder size={22} className="fill-slate-700 text-slate-700" /> {folder.name}
+          <button className="block w-full pr-9 text-left" onClick={() => onOpen(folder)}>
+            <div className="flex items-start gap-3">
+              <span className="grid h-10 w-10 flex-none place-items-center rounded-md bg-amber-50 text-amber-600">
+                <Folder size={22} className="fill-amber-500 text-amber-500" />
+              </span>
+              <span className="min-w-0">
+                <span className="block truncate font-semibold">{folder.name}</span>
+                <span className="mt-1 block text-xs text-slate-500">{folder.gameCount || 0} PGNs{folder.lastUpdatedAt ? ` - Updated ${formatDate(folder.lastUpdatedAt)}` : ""}</span>
+                {folder.description && <span className="mt-1 line-clamp-2 block text-xs text-slate-500">{folder.description}</span>}
+              </span>
+            </div>
           </button>
           <button
-            className="rounded-md p-2 hover:bg-slate-100"
+            className="absolute right-2 top-2 rounded-md p-2 hover:bg-slate-100"
             onClick={(event) => {
               event.stopPropagation();
               setOpenMenu((current) => current === folder.id ? null : folder.id);
@@ -635,17 +682,26 @@ function GameGrid({
   const [openMenu, setOpenMenu] = useState<string | null>(null);
 
   return (
-    <div className="grid gap-4 md:grid-cols-3">
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
       {games.map((game) => (
-        <div key={game._id} className="relative rounded-md border border-slate-200 bg-white p-4 shadow-sm hover:bg-slate-50">
+        <div key={game._id} className="relative rounded-md border border-slate-200 bg-white p-4 shadow-sm transition hover:border-purple-200 hover:bg-purple-50/20">
           {(() => {
             const canManage = isAdmin || String(game.uploadedBy || "") === currentUserId;
             return (
               <>
           <Link href={folder ? `/pgn/${game._id}?folder=${encodeURIComponent(folder)}&scope=${game.visibility === "shared" ? "shared" : "personal"}` : `/pgn/${game._id}`} className="block pr-8">
-            <div className="font-semibold">{game.title}</div>
-            <div className="mt-2 text-sm text-slate-500">{game.white || "?"} vs {game.black || "?"} - {game.result || "*"}</div>
-            {game.event && <div className="mt-1 text-xs text-slate-400">{game.event}</div>}
+            <div className="truncate font-semibold">{game.title}</div>
+            <div className="mt-2 text-sm text-slate-600">{game.white || "White"} vs {game.black || "Black"} - {game.result || "*"}</div>
+            <div className="mt-1 truncate text-xs text-slate-500">
+              {[game.event, game.date].filter(Boolean).join(" - ") || "No event metadata"}
+            </div>
+            <div className="mt-3 flex flex-wrap gap-1.5 text-[11px] font-semibold text-slate-500">
+              {game.eco && <span className="rounded bg-slate-100 px-2 py-1">{game.eco}</span>}
+              {game.opening && <span className="max-w-full truncate rounded bg-slate-100 px-2 py-1">{game.opening}</span>}
+              {game.moveCount ? <span className="rounded bg-slate-100 px-2 py-1">{game.moveCount} moves</span> : null}
+              {game.hasAnnotations && <span className="rounded bg-emerald-50 px-2 py-1 text-emerald-700">Annotated</span>}
+              {game.hasVariations && <span className="rounded bg-sky-50 px-2 py-1 text-sky-700">Variations</span>}
+            </div>
           </Link>
           <button
             className="absolute right-2 top-2 rounded-md p-2 hover:bg-slate-100"

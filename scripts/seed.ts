@@ -14,7 +14,7 @@ async function main() {
 
   const admin = await User.findOneAndUpdate(
     { email: "admin@envision.local" },
-    { name: "Admin", email: "admin@envision.local", passwordHash: await hash("admin12345"), role: "admin" },
+    { name: "Admin", email: "admin@envision.local", passwordHash: await hash("admin12345"), role: "admin", isSuperAdmin: true },
     { upsert: true, new: true }
   );
   const coach = await User.findOneAndUpdate(

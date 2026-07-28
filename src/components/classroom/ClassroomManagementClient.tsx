@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   deriveScheduledSessionStatus,
@@ -63,6 +64,7 @@ type ClassroomItem = {
   generatedSessions?: Array<any>;
   meetingProvider?: "meet";
   meetingUrl?: string;
+  isTestClassroom?: boolean;
 };
 
 type SessionFilterStatus =
@@ -182,7 +184,8 @@ function blankForm() {
   };
 }
 
-export default function ClassroomManagementClient({ role }: { role: Role }) {
+export default function ClassroomManagementClient({ role, isSuperAdmin = false }: { role: Role; isSuperAdmin?: boolean }) {
+  const router = useRouter();
   const [items, setItems] = useState<ClassroomItem[]>([]);
   const [targets, setTargets] = useState<TargetsPayload>({ students: [], coaches: [], batches: [], courses: [] });
   const [loading, setLoading] = useState(true);
@@ -487,6 +490,21 @@ export default function ClassroomManagementClient({ role }: { role: Role }) {
     });
   }
 
+  async function openTestClassroom() {
+    await withBusy("Preparing test classroom...", async () => {
+      const response = await fetch("/api/classrooms/test", { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) {
+        toast.error(data.error || "Could not prepare test classroom");
+        return;
+      }
+      toast.success("Test classroom ready");
+      await load();
+      const sessionQuery = data.sessionId ? `?session=${encodeURIComponent(data.sessionId)}` : "";
+      router.push(`/classrooms/${data.classroomId}/live${sessionQuery}`);
+    });
+  }
+
   if (role !== "admin") {
     return <SimpleClassroomList items={items} loading={loading} role={role} />;
   }
@@ -505,6 +523,11 @@ export default function ClassroomManagementClient({ role }: { role: Role }) {
           <p className="text-sm text-slate-600">Create one-off classes and recurring learning series from one scheduling hub.</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          {isSuperAdmin && (
+            <button className="btn-outline border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100" onClick={openTestClassroom}>
+              <CopyPlus size={15} /> Test Classroom
+            </button>
+          )}
           <button className="btn-outline" onClick={() => resetModal("single")}>
             <Plus size={15} /> Single Class
           </button>
@@ -557,6 +580,7 @@ export default function ClassroomManagementClient({ role }: { role: Role }) {
                             <div className="text-lg font-black text-slate-950">{item.title}</div>
                             <div className="mt-1 flex flex-wrap gap-2 text-xs">
                               <span className="rounded-full bg-brand/10 px-2.5 py-1 font-bold text-brand">{item.classroomType === "single" ? "Single Class" : "Learning Series"}</span>
+                              {item.isTestClassroom && <span className="rounded-full bg-violet-50 px-2.5 py-1 font-bold text-violet-700">Test Classroom</span>}
                               <span className="rounded-full bg-slate-100 px-2.5 py-1 font-semibold text-slate-600">{titleCase(item.status)}</span>
                               {item.courseName && <span className="rounded-full bg-amber-50 px-2.5 py-1 font-semibold text-amber-700">{item.courseName}</span>}
                               {item.levelName && <span className="rounded-full bg-sky-50 px-2.5 py-1 font-semibold text-sky-700">{item.levelName}</span>}
@@ -1254,6 +1278,7 @@ function normalizeClassroomItem(item: any): ClassroomItem {
     generatedSessions: Array.isArray(item?.generatedSessions) ? item.generatedSessions : [],
     meetingProvider: item?.meetingProvider === "meet" ? "meet" : undefined,
     meetingUrl: item?.meetingUrl ? String(item.meetingUrl) : "",
+    isTestClassroom: Boolean(item?.isTestClassroom),
   };
 }
 

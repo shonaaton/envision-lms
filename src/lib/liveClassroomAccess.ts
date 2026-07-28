@@ -1,4 +1,5 @@
 import { Classroom } from "@/models/Classroom";
+import { isSuperAdminSession } from "@/lib/featureAccess";
 import "@/models/User";
 
 export type AppRole = "student" | "instructor" | "admin";
@@ -8,6 +9,8 @@ type ClassroomAccessShape = {
   coach?: unknown;
   instructor?: unknown;
   students?: unknown[];
+  isTestClassroom?: boolean;
+  testOwner?: unknown;
 };
 
 function objectId(value: unknown) {
@@ -26,6 +29,7 @@ function objectId(value: unknown) {
 
 export function canAccessLiveClassroom(classroom: ClassroomAccessShape | null | undefined, role: AppRole, userId: string) {
   if (!classroom) return false;
+  if (classroom.isTestClassroom) return false;
   if (role === "admin") return true;
   if (role === "student") {
     return (classroom.students || []).some((student) => objectId(student) === userId);
@@ -39,5 +43,10 @@ export async function getLiveClassroomForUser(classroomId: string, role: AppRole
     .lean();
 
   if (!classroom) return { classroom: null, allowed: false as const };
+  if (classroom.isTestClassroom) {
+    const ownsSandbox = objectId(classroom.testOwner) === userId;
+    const isSuperAdmin = await isSuperAdminSession({ id: userId, role });
+    return { classroom, allowed: role === "admin" && ownsSandbox && isSuperAdmin };
+  }
   return { classroom, allowed: canAccessLiveClassroom(classroom, role, userId) as boolean };
 }

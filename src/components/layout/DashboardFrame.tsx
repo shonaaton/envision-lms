@@ -12,11 +12,15 @@ type AccountStatus = "demo" | "enrolled" | "coach_applicant" | "approved" | "rej
 export default function DashboardFrame({
   role,
   accountStatus,
+  isSuperAdmin,
+  featureState,
   user,
   children,
 }: {
   role: Role;
   accountStatus?: AccountStatus;
+  isSuperAdmin?: boolean;
+  featureState?: Record<string, { visible: boolean; status: "enabled" | "disabled" | "testing" | "coming_soon" }>;
   user: { name?: string | null; role: string };
   children: ReactNode;
 }) {
@@ -48,6 +52,8 @@ export default function DashboardFrame({
       <Sidebar
         role={role}
         accountStatus={accountStatus}
+        isSuperAdmin={isSuperAdmin}
+        featureState={featureState}
         mobileOpen={mobileNavOpen}
         desktopCollapsed={desktopNavCollapsed}
         onToggleDesktop={() => setDesktopNavCollapsed((value) => !value)}

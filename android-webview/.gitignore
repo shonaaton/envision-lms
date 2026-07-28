@@ -1,0 +1,4 @@
+.android-sdk/
+.downloads/
+build/
+debug.keystore

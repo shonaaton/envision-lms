@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { ChevronsLeft, ChevronsRight, ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronsLeft, ChevronsRight, ChevronLeft, ChevronRight, ListTree, Search } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Chess } from "chess.js";
@@ -32,8 +32,14 @@ type MoveRow = {
 };
 
 type FileNavItem = {
+  id?: string;
   href: string;
   title: string;
+  white?: string;
+  black?: string;
+  result?: string;
+  opening?: string;
+  moveCount?: number;
 } | null;
 
 function extractHeader(pgn: string, key: string) {
@@ -93,11 +99,15 @@ export default function PgnViewer({
   backHref,
   previousFile,
   nextFile,
+  folderFiles = [],
+  currentFileId,
 }: {
   pgn: string;
   backHref: string;
   previousFile: FileNavItem;
   nextFile: FileNavItem;
+  folderFiles?: NonNullable<FileNavItem>[];
+  currentFileId?: string;
 }) {
   const boardWrapRef = useRef<HTMLDivElement | null>(null);
   const router = useRouter();
@@ -107,6 +117,8 @@ export default function PgnViewer({
   const [movePage, setMovePage] = useState(0);
   const [boardWidth, setBoardWidth] = useState(620);
   const [navigating, setNavigating] = useState(false);
+  const [folderSidebarOpen, setFolderSidebarOpen] = useState(true);
+  const [folderQuery, setFolderQuery] = useState("");
 
   const totalPages = Math.max(1, Math.ceil(parsed.moves.length / movesPerPage));
   const pageStart = movePage * movesPerPage;
@@ -115,6 +127,13 @@ export default function PgnViewer({
     return rowStart >= pageStart && rowStart < pageStart + movesPerPage;
   });
   const position = useMemo(() => replayPosition(parsed.start, parsed.moves, ply), [parsed.start, parsed.moves, ply]);
+  const visibleFolderFiles = useMemo(() => {
+    const q = folderQuery.trim().toLowerCase();
+    return folderFiles.filter((item) => {
+      if (!q) return true;
+      return [item.title, item.white, item.black, item.result, item.opening].filter(Boolean).some((value) => String(value).toLowerCase().includes(q));
+    });
+  }, [folderFiles, folderQuery]);
 
   useEffect(() => {
     setPly(0);
@@ -214,6 +233,54 @@ export default function PgnViewer({
       </section>
 
       <aside className="min-h-0 overflow-hidden rounded-lg border border-slate-200 bg-white p-3 text-slate-950 shadow-sm">
+        {folderFiles.length > 1 && (
+          <div className="mb-3 rounded-md border border-slate-200">
+            <button
+              type="button"
+              onClick={() => setFolderSidebarOpen((value) => !value)}
+              className="flex w-full items-center justify-between px-3 py-2 text-left text-sm font-semibold text-slate-700"
+              aria-expanded={folderSidebarOpen}
+            >
+              <span className="inline-flex items-center gap-2"><ListTree size={16} /> Folder Games</span>
+              <span className="text-xs text-slate-400">{folderFiles.findIndex((item) => item.id === currentFileId) + 1 || 1} / {folderFiles.length}</span>
+            </button>
+            {folderSidebarOpen && (
+              <div className="border-t border-slate-200 p-2">
+                <label className="relative mb-2 block">
+                  <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    value={folderQuery}
+                    onChange={(event) => setFolderQuery(event.target.value)}
+                    className="h-9 w-full rounded-md border border-slate-200 pl-8 pr-2 text-xs outline-none focus:border-brand focus:ring-4 focus:ring-brand/10"
+                    placeholder="Search this folder"
+                  />
+                </label>
+                <div className="max-h-52 space-y-1 overflow-y-auto pr-1">
+                  {visibleFolderFiles.map((item, index) => {
+                    const active = item.id === currentFileId;
+                    return (
+                      <button
+                        key={item.href}
+                        type="button"
+                        onClick={() => !active && openFile(item)}
+                        className={[
+                          "w-full rounded-md border px-2 py-2 text-left text-xs transition",
+                          active ? "border-brand bg-brand/10 text-brand" : "border-slate-100 hover:border-brand/30 hover:bg-brand/5",
+                        ].join(" ")}
+                        aria-current={active ? "true" : undefined}
+                      >
+                        <span className="block truncate font-semibold">{index + 1}. {item.title}</span>
+                        <span className="mt-0.5 block truncate text-slate-500">{item.white || "White"} vs {item.black || "Black"}{item.result ? ` - ${item.result}` : ""}</span>
+                        <span className="mt-0.5 block truncate text-slate-400">{[item.opening, item.moveCount ? `${item.moveCount} moves` : ""].filter(Boolean).join(" - ")}</span>
+                      </button>
+                    );
+                  })}
+                  {!visibleFolderFiles.length && <div className="rounded-md border border-dashed border-slate-200 p-3 text-center text-xs text-slate-500">No games match that search.</div>}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
         <div className="mb-3 flex items-center justify-between gap-2">
           <div className="text-sm font-semibold text-slate-700">Move List</div>
           <div className="flex items-center gap-1 text-xs text-slate-500">

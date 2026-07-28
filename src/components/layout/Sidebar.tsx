@@ -171,12 +171,6 @@ export default function Sidebar({
         .filter((section) => section.items.length > 0),
     [role, accountStatus, isSuperAdmin, featureState]
   );
-  const pinnedItems = useMemo(() => {
-    const pinnedHrefs = ["/dashboard", "/classrooms", "/homework", "/calendar", "/fees"];
-    return pinnedHrefs
-      .map((href) => visibleSections.flatMap((section) => section.items).find((item) => item.href === href))
-      .filter(Boolean) as NavItem[];
-  }, [visibleSections]);
   const activeSection = visibleSections.find((section) => section.items.some((item) => isActive(pathname, item)))?.id || "academy";
   const [openSections, setOpenSections] = useState<string[]>([activeSection]);
 
@@ -256,38 +250,6 @@ export default function Sidebar({
         </button>
       </div>
       <nav className="flex-1 space-y-2 overflow-y-auto pr-1" aria-label="Dashboard navigation">
-        {pinnedItems.length > 0 && (
-          <div className="rounded-lg border border-accent/25 bg-white/[0.10] p-1.5">
-            <div className={cn("px-2 pb-1 text-[10px] font-bold uppercase tracking-[0.16em] text-accent/90", desktopCollapsed ? "md:hidden" : "")}>
-              Pinned
-            </div>
-            <ul className="grid gap-1">
-              {pinnedItems.map((item) => {
-                const Icon = item.icon;
-                const active = isActive(pathname, item);
-                return (
-                  <li key={`pinned-${item.href}`}>
-                    <Link
-                      href={item.href}
-                      onClick={onCloseMobile}
-                      title={desktopCollapsed ? (item.href === "/booking" ? bookingFeatureNameForAccount(accountStatus) : item.label) : undefined}
-                      className={cn(
-                        "group relative flex min-h-10 items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-semibold transition",
-                        desktopCollapsed ? "md:justify-center md:px-2" : "",
-                        active ? "bg-accent text-brand shadow-lg shadow-black/10" : "text-white/85 hover:bg-white/10 hover:text-white"
-                      )}
-                    >
-                      <span className={cn("flex h-7 w-7 flex-none items-center justify-center rounded-md transition", active ? "bg-brand text-accent" : "bg-white/10 text-accent group-hover:bg-accent group-hover:text-brand")}>
-                        <Icon size={16} />
-                      </span>
-                      <span className={cn("truncate", desktopCollapsed ? "md:hidden" : "")}>{item.label === "Fee Dashboard" ? "Fees" : item.label}</span>
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        )}
         {visibleSections.map((section) => {
           const expanded = openSections.includes(section.id);
           const sectionActive = section.items.some((item) => isActive(pathname, item));

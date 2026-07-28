@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import { Chess } from "chess.js";
 import { toast } from "sonner";
@@ -400,6 +400,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const [quizTotalTime, setQuizTotalTime] = useState(0);
   const [quizTimePerPosition, setQuizTimePerPosition] = useState(60);
   const [chatText, setChatText] = useState("");
+  const [chatRecipient, setChatRecipient] = useState("group");
   const [manualLoadText, setManualLoadText] = useState("");
   const [setupLoadText, setSetupLoadText] = useState("");
   const [selectedPgnIds, setSelectedPgnIds] = useState<string[]>([]);
@@ -423,11 +424,14 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const [engineText, setEngineText] = useState("Engine ready");
   const [engineLines, setEngineLines] = useState<Array<{ multipv: number; eval: string; variation: string }>>([]);
   const [boardWidth, setBoardWidth] = useState(620);
+  const [sidePanelWidth, setSidePanelWidth] = useState(336);
+  const [resizingSidePanel, setResizingSidePanel] = useState(false);
   const [selectedMoveSquare, setSelectedMoveSquare] = useState<string | null>(null);
   const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion | null>(null);
   const [coachDrawings, setCoachDrawings] = useState<any[]>([]);
   const [drawingsDirty, setDrawingsDirty] = useState(false);
   const [annotationDrag, setAnnotationDrag] = useState<{ from: string; to?: string; x: number; y: number } | null>(null);
+  const classroomLayoutRef = useRef<HTMLDivElement | null>(null);
   const boardShellRef = useRef<HTMLDivElement | null>(null);
   const boardAreaRef = useRef<HTMLDivElement | null>(null);
   const engineRef = useRef<Worker | null>(null);
@@ -505,6 +509,35 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       void load(true);
     }, delay);
   }, [load]);
+
+  useEffect(() => {
+    if (!resizingSidePanel || typeof window === "undefined") return;
+    const previousCursor = document.body.style.cursor;
+    const previousUserSelect = document.body.style.userSelect;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    function onPointerMove(event: PointerEvent) {
+      const layoutRight = classroomLayoutRef.current?.getBoundingClientRect().right ?? window.innerWidth;
+      const nextWidth = Math.round(layoutRight - event.clientX - 6);
+      setSidePanelWidth(Math.max(292, Math.min(560, nextWidth)));
+    }
+
+    function stopResize() {
+      setResizingSidePanel(false);
+    }
+
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", stopResize);
+    window.addEventListener("pointercancel", stopResize);
+    return () => {
+      document.body.style.cursor = previousCursor;
+      document.body.style.userSelect = previousUserSelect;
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", stopResize);
+      window.removeEventListener("pointercancel", stopResize);
+    };
+  }, [resizingSidePanel]);
 
   function applyOptimisticLive(update: any) {
     setData((current: any) => {
@@ -673,6 +706,11 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const classroomName = classroom?.title || "Live Classroom";
   const coachName = classroom?.coach?.name || classroom?.instructor?.name || "Coach";
   const activeStudents = students.filter((student: any) => student?.status !== "inactive");
+
+  useEffect(() => {
+    if (chatRecipient === "group") return;
+    if (!activeStudents.some((student: any) => entityId(student) === chatRecipient)) setChatRecipient("group");
+  }, [activeStudents, chatRecipient]);
 
   useEffect(() => {
     if (live?.status === "ended") {
@@ -1508,7 +1546,10 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     const res = await fetch(liveUrl("/chat"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: chatText }),
+      body: JSON.stringify({
+        message: chatText,
+        recipient: coach && chatRecipient !== "group" ? chatRecipient : undefined,
+      }),
     });
     if (res.ok) {
       setChatText("");
@@ -1861,34 +1902,37 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   ];
   const classroomTabs = coach ? coachSidebarTabs : studentPanelTabs;
   const quizFocusMode = Boolean(studentQuizMode || coachQuizMode);
+  const layoutStyle = !quizFocusMode
+    ? ({ "--classroom-side-panel-width": `${sidePanelWidth}px` } as CSSProperties)
+    : undefined;
 
   return (
     <div className="flex min-h-[calc(100dvh-76px)] flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg shadow-brand/10 md:h-[calc(100vh-92px)] md:min-h-[640px]">
-      <div className="flex flex-none flex-col gap-2 border-b border-slate-200 bg-white px-3 py-2 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <span className="inline-flex h-7 items-center gap-1.5 rounded-md bg-purple-50 px-2 text-[11px] font-black uppercase tracking-[0.14em] text-brand">
+      <div className="flex min-h-11 flex-none items-center gap-2 border-b border-slate-200 bg-white px-3 py-1.5">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden whitespace-nowrap">
+          <span className="inline-flex h-6 flex-none items-center gap-1.5 rounded-md bg-purple-50 px-2 text-[10px] font-black uppercase tracking-[0.12em] text-brand">
             <BookOpen size={13} />
             {coach ? "Teaching" : "Learning"}
           </span>
-          <h2 className="max-w-[360px] truncate text-sm font-black text-slate-950 sm:text-base">{classroomName}</h2>
-          <span className="rounded-md bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">{coachName}</span>
-          <span className="max-w-[260px] truncate rounded-md bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">{live?.topic || "Topic not set"}</span>
-          <span className="rounded-md bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">{duration} min</span>
-          {activeQuestion ? <span className="rounded-md bg-purple-100 px-2 py-1 text-[11px] font-black text-purple-800">Live quiz</span> : null}
+          <h2 className="min-w-[120px] max-w-[360px] truncate text-sm font-black text-slate-950">{classroomName}</h2>
+          <span className="min-w-0 max-w-[170px] truncate rounded-md bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">{coachName}</span>
+          <span className="min-w-0 max-w-[240px] truncate rounded-md bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">{live?.topic || "Topic not set"}</span>
+          <span className="flex-none rounded-md bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">{duration} min</span>
+          {activeQuestion ? <span className="flex-none rounded-md bg-purple-100 px-2 py-1 text-[11px] font-black text-purple-800">Live quiz</span> : null}
         </div>
-        <div className="flex min-w-0 flex-wrap items-center gap-2 lg:justify-end">
+        <div className="flex min-w-0 flex-none items-center gap-2">
           {classroom?.meetingUrl ? (
             <a
               href={classroom.meetingUrl}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-brand/15 bg-white px-2.5 text-xs font-bold text-brand shadow-sm transition hover:bg-brand/5"
+              className="inline-flex h-7 items-center gap-1.5 rounded-md border border-brand/15 bg-white px-2.5 text-xs font-bold text-brand shadow-sm transition hover:bg-brand/5"
             >
               <ExternalLink size={15} /> Open Google Meet
             </a>
           ) : null}
         {coach && (
-            <div className="flex h-8 min-w-0 max-w-full items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-2.5 text-left shadow-sm sm:min-w-[220px]">
+            <div className="flex h-7 min-w-0 max-w-[290px] items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-2.5 text-left shadow-sm">
               <div className="min-w-0">
                 <div className="truncate text-xs font-semibold text-blue-800">{live?.pgnTitle || live?.topic || "Classroom board"}</div>
               </div>
@@ -1902,7 +1946,11 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
         </div>
       </div>
 
-      <div className={`grid min-h-0 flex-1 grid-cols-1 overflow-y-auto bg-slate-50/70 md:overflow-hidden ${quizFocusMode ? "" : "xl:grid-cols-[minmax(0,1fr)_minmax(288px,336px)]"}`}>
+      <div
+        ref={classroomLayoutRef}
+        className={`grid min-h-0 flex-1 grid-cols-1 overflow-y-auto bg-slate-50/70 md:overflow-hidden ${quizFocusMode ? "" : "xl:grid-cols-[minmax(0,1fr)_6px_var(--classroom-side-panel-width)]"}`}
+        style={layoutStyle}
+      >
         <section className="flex min-h-0 min-w-0 flex-col gap-3 overflow-visible p-2 md:overflow-hidden md:p-3">
           <div ref={boardShellRef} className="min-h-0 min-w-0 flex-1 overflow-visible rounded-lg border border-slate-200 bg-white p-2 shadow-sm md:overflow-auto sm:p-3">
             {studentQuizMode ? (
@@ -2074,23 +2122,23 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
 
                 {coach && (
                   <div className="mx-auto mt-3 flex w-full max-w-[720px] flex-col gap-2">
-                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-2 py-2">
-                      <div className="min-w-0 px-1 text-xs font-semibold text-slate-500">
-                        <span className="text-slate-900">{live?.pgnTitle || "Classroom board"}</span>
-                        <span className="ml-2 rounded-md bg-slate-100 px-2 py-1 text-slate-600">{currentMoveIndex} / {pgnMoves.length || (live?.moveHistory || []).length}</span>
+                    <div className="flex min-w-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2 py-1.5">
+                      <div className="flex min-w-0 flex-1 items-center gap-2 px-1 text-xs font-semibold text-slate-500">
+                        <span className="min-w-0 truncate text-slate-900">{live?.pgnTitle || "Classroom board"}</span>
+                        <span className="flex-none rounded-md bg-slate-100 px-2 py-1 text-slate-600">{currentMoveIndex}/{pgnMoves.length || (live?.moveHistory || []).length}</span>
                       </div>
-                      <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
-                        <button disabled={!pgnMoves.length} onClick={() => navigateMove(0)} className="grid h-8 w-8 place-items-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><SkipBack size={15} /></button>
-                        <button disabled={!pgnMoves.length} onClick={() => navigateMove(currentMoveIndex - 1)} className="grid h-8 w-8 place-items-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><ChevronLeft size={15} /></button>
-                        <button disabled={!pgnMoves.length} onClick={() => navigateMove(currentMoveIndex + 1)} className="grid h-8 w-8 place-items-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><ChevronRight size={15} /></button>
-                        <button disabled={!pgnMoves.length} onClick={() => navigateMove(pgnMoves.length)} className="grid h-8 w-8 place-items-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><SkipForward size={15} /></button>
-                        <button disabled={!activePgnCollection.length || activePgnCollectionIndex <= 0} onClick={() => loadAdjacentPgn(-1)} className="rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 disabled:opacity-40">Previous game</button>
-                        <button disabled={!activePgnCollection.length || activePgnCollectionIndex >= activePgnCollection.length - 1} onClick={() => loadAdjacentPgn(1)} className="rounded-md bg-purple-700 px-2.5 py-1.5 text-xs font-semibold text-white disabled:opacity-40">Next game</button>
+                      <div className="flex flex-none items-center justify-end gap-1">
+                        <button disabled={!pgnMoves.length} onClick={() => navigateMove(0)} className="grid h-7 w-7 place-items-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><SkipBack size={14} /></button>
+                        <button disabled={!pgnMoves.length} onClick={() => navigateMove(currentMoveIndex - 1)} className="grid h-7 w-7 place-items-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><ChevronLeft size={14} /></button>
+                        <button disabled={!pgnMoves.length} onClick={() => navigateMove(currentMoveIndex + 1)} className="grid h-7 w-7 place-items-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><ChevronRight size={14} /></button>
+                        <button disabled={!pgnMoves.length} onClick={() => navigateMove(pgnMoves.length)} className="grid h-7 w-7 place-items-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><SkipForward size={14} /></button>
+                        <button disabled={!activePgnCollection.length || activePgnCollectionIndex <= 0} onClick={() => loadAdjacentPgn(-1)} className="h-7 rounded-md border border-slate-200 px-2 text-[11px] font-semibold text-slate-700 disabled:opacity-40">Prev</button>
+                        <button disabled={!activePgnCollection.length || activePgnCollectionIndex >= activePgnCollection.length - 1} onClick={() => loadAdjacentPgn(1)} className="h-7 rounded-md bg-purple-700 px-2 text-[11px] font-semibold text-white disabled:opacity-40">Next</button>
                         <button
                           type="button"
                           onClick={createQuiz}
                           disabled={!canLaunchBoardQuiz}
-                          className="rounded-md border border-purple-200 bg-purple-50 px-2.5 py-1.5 text-xs font-semibold text-purple-800 disabled:opacity-40"
+                          className="h-7 rounded-md border border-purple-200 bg-purple-50 px-2 text-[11px] font-semibold text-purple-800 disabled:opacity-40"
                         >
                           Ask Quiz
                         </button>
@@ -2138,6 +2186,19 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
             )}
           </div>
         </section>
+
+        {!quizFocusMode && (
+          <button
+            type="button"
+            aria-label="Resize classroom side panel"
+            title="Drag to resize side panel"
+            onPointerDown={(event) => {
+              event.preventDefault();
+              setResizingSidePanel(true);
+            }}
+            className={`hidden min-h-0 cursor-col-resize border-x border-slate-200 bg-slate-100 transition hover:bg-purple-100 xl:block ${resizingSidePanel ? "bg-purple-100" : ""}`}
+          />
+        )}
 
         {!quizFocusMode && <aside className="flex min-h-[240px] flex-col border-t border-slate-200 bg-white md:min-h-0 xl:border-l xl:border-t-0">
           <div className={`grid overflow-x-auto border-b border-slate-200 bg-white text-xs ${coach ? "grid-cols-4" : "grid-cols-2"}`}>
@@ -2244,16 +2305,49 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
             {activeTab === "chat" && (
               <div className="flex min-h-full flex-col">
                 <div className="flex-1 space-y-2">
-                  {chatMessages.length ? chatMessages.map((message: any) => (
-                    <div key={message._id} className="rounded-lg bg-slate-50 p-3">
-                      <div className="text-xs font-semibold text-slate-500">{message.sender?.name || message.sender?.username || "User"}</div>
-                      <div className="mt-1 text-sm text-slate-800">{message.message}</div>
-                    </div>
-                  )) : <div className="rounded-lg border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">No classroom messages yet.</div>}
+                  {chatMessages.length ? chatMessages.map((message: any) => {
+                    const recipientName = message.recipient?.name || message.recipient?.username || "student";
+                    return (
+                      <div key={message._id} className="rounded-lg bg-slate-50 p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0 truncate text-xs font-semibold text-slate-500">{message.sender?.name || message.sender?.username || "User"}</div>
+                          <span className={`flex-none rounded-full px-2 py-0.5 text-[10px] font-bold ${message.recipient ? "bg-purple-100 text-purple-800" : "bg-slate-200 text-slate-600"}`}>
+                            {message.recipient ? (coach ? `Private to ${recipientName}` : "Private") : "Everyone"}
+                          </span>
+                        </div>
+                        <div className="mt-1 text-sm text-slate-800">{message.message}</div>
+                      </div>
+                    );
+                  }) : <div className="rounded-lg border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">No classroom messages yet.</div>}
                 </div>
-                <div className="mt-4 flex gap-2">
-                  <input value={chatText} onChange={(event) => setChatText(event.target.value)} onKeyDown={(event) => event.key === "Enter" && sendChat()} className="h-11 flex-1 rounded-md border border-slate-200 px-3 text-sm" placeholder="Send a classroom message" />
-                  <button onClick={sendChat} className="grid h-11 w-11 place-items-center rounded-md bg-purple-700 text-white"><Send size={17} /></button>
+                <div className="mt-4 space-y-2">
+                  {coach && (
+                    <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+                      <span className="flex-none">To</span>
+                      <select
+                        value={chatRecipient}
+                        onChange={(event) => setChatRecipient(event.target.value)}
+                        className="h-9 min-w-0 flex-1 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700"
+                      >
+                        <option value="group">Everyone</option>
+                        {activeStudents.map((student: any) => (
+                          <option key={entityId(student)} value={entityId(student)}>
+                            {student.name || student.username || "Student"}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                  <div className="flex gap-2">
+                    <input
+                      value={chatText}
+                      onChange={(event) => setChatText(event.target.value)}
+                      onKeyDown={(event) => event.key === "Enter" && sendChat()}
+                      className="h-10 min-w-0 flex-1 rounded-md border border-slate-200 px-3 text-sm"
+                      placeholder={coach && chatRecipient !== "group" ? "Send a private message" : "Send a classroom message"}
+                    />
+                    <button onClick={sendChat} className="grid h-10 w-10 flex-none place-items-center rounded-md bg-purple-700 text-white"><Send size={17} /></button>
+                  </div>
                 </div>
               </div>
             )}
@@ -2437,8 +2531,8 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                   ))}
                   {visiblePgnLibrary.length ? visiblePgnLibrary.map((pgn: any, index: number) => (
                     <div key={pgn._id} className={`rounded-lg border bg-white p-3 transition ${selectedPgnIds.includes(pgn._id) ? "border-purple-400 ring-2 ring-purple-100" : "border-slate-200"}`}>
-                      <label className="grid cursor-pointer grid-cols-[88px_minmax(0,1fr)_20px] items-start gap-3">
-                        <MiniFenBoard fen={previewFenFromPgn(pgn.pgn, pgn.initialFen)} className="w-[88px]" />
+                      <label className="grid cursor-pointer grid-cols-[112px_minmax(0,1fr)_20px] items-start gap-3">
+                        <MiniFenBoard fen={previewFenFromPgn(pgn.pgn, pgn.initialFen)} className="w-[112px]" />
                         <span className="min-w-0">
                           <span className="block truncate text-sm font-semibold text-slate-950">{pgn.title}</span>
                           <span className="mt-1 block truncate text-xs text-slate-500">{pgn.white || "White"} vs {pgn.black || "Black"}{pgn.result ? ` - ${pgn.result}` : ""}</span>
@@ -2656,8 +2750,8 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                   <div className="text-sm font-black text-slate-950">Selected positions</div>
                   <div className="mt-3 max-h-[430px] space-y-2 overflow-auto pr-1">
                     {quizComposerItems.map((item, index) => (
-                      <div key={item.id} className="grid grid-cols-[76px_minmax(0,1fr)] gap-3 rounded-lg border border-slate-200 bg-white p-2">
-                        <MiniFenBoard fen={item.fen} className="w-[76px]" />
+                      <div key={item.id} className="grid grid-cols-[96px_minmax(0,1fr)] gap-3 rounded-lg border border-slate-200 bg-white p-2">
+                        <MiniFenBoard fen={item.fen} className="w-[96px]" />
                         <div className="min-w-0">
                           <div className="truncate text-sm font-semibold text-slate-950">{index + 1}. {item.title}</div>
                           <div className="mt-1 text-xs text-slate-500">{item.solution.length ? `${item.solution.length} move${item.solution.length === 1 ? "" : "s"} in answer line` : "No answer line found"}</div>
@@ -3394,40 +3488,34 @@ function CoachQuizMonitor({
   }, [autoSuggestedIndex, manualProgression, question?.currentItemIndex]);
 
   return (
-    <div className="mx-auto w-full max-w-[840px] space-y-4">
-      <div className="rounded-2xl border border-purple-200 bg-purple-50 p-4 shadow-sm">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <div className="text-xs font-black uppercase tracking-[0.16em] text-purple-700">Live Quiz</div>
-            <h3 className="mt-1 text-xl font-black text-purple-950">{question?.title || "Classroom Quiz"}</h3>
-            <p className="mt-1 text-sm text-purple-800">{question?.instructions || "Students are solving directly on their boards."}</p>
+    <div className="mx-auto w-full max-w-[1180px] space-y-3">
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-purple-200 bg-purple-50 px-3 py-2 shadow-sm">
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <span className="rounded bg-purple-100 px-2 py-1 text-[11px] font-black uppercase tracking-[0.14em] text-purple-700">Live Quiz</span>
+            <h3 className="truncate text-sm font-black text-purple-950 sm:text-base">{question?.title || "Classroom Quiz"}</h3>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => onUpdateProgression({ progressionMode: manualProgression ? "auto" : "manual", currentItemIndex: effectiveIndex })}
-              className={`rounded-xl px-4 py-2 text-sm font-bold ${manualProgression ? "bg-slate-900 text-white" : "bg-white text-purple-800 border border-purple-200"}`}
-            >
-              {manualProgression ? "Manual progression on" : "Switch to manual"}
-            </button>
-            <button onClick={onEndQuiz} className="rounded-xl bg-purple-700 px-4 py-2 text-sm font-bold text-white shadow-lg shadow-purple-900/20">End Quiz</button>
-          </div>
+          <p className="mt-1 truncate text-xs text-purple-800">{question?.instructions || "Students are solving directly on their boards."}</p>
         </div>
-        <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          <SummaryCard label="Students Submitted" value={`${submitted}/${totalStudents}`} icon={<Users size={16} />} />
-          <SummaryCard label="Items in Quiz" value={items.length} icon={<FileQuestion size={16} />} />
-          <SummaryCard label="Time Remaining" value={<CountdownValue seconds={timerSeconds} resetKey={timerResetKey} />} icon={<Clock size={16} />} />
-        </div>
-        <div className="mt-3 grid gap-3 sm:grid-cols-3">
-          <SummaryCard label="Solved This Item" value={solvedCount} icon={<CheckSquare size={16} />} />
-          <SummaryCard label="Skipped This Item" value={skippedCount} icon={<SkipForward size={16} />} />
-          <SummaryCard label="Waiting / In Progress" value={waitingCount} icon={<HourglassIcon />} />
+        <div className="flex flex-wrap items-center gap-1.5 text-xs font-bold text-slate-700">
+          <span className="rounded-md bg-white px-2 py-1">{submitted}/{totalStudents} submitted</span>
+          <span className="rounded-md bg-white px-2 py-1">{solvedCount} solved</span>
+          <span className="rounded-md bg-white px-2 py-1">{waitingCount} waiting</span>
+          <span className="rounded-md bg-white px-2 py-1"><CountdownValue seconds={timerSeconds} resetKey={timerResetKey} /></span>
+          <button
+            onClick={() => onUpdateProgression({ progressionMode: manualProgression ? "auto" : "manual", currentItemIndex: effectiveIndex })}
+            className={`h-8 rounded-md px-3 text-xs font-bold ${manualProgression ? "bg-slate-900 text-white" : "border border-purple-200 bg-white text-purple-800"}`}
+          >
+            {manualProgression ? "Manual on" : "Manual"}
+          </button>
+          <button onClick={onEndQuiz} className="h-8 rounded-md bg-purple-700 px-3 text-xs font-bold text-white">End Quiz</button>
         </div>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(300px,420px)_1fr]">
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-lg shadow-brand/10">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <div className="text-sm font-bold text-slate-700">Current quiz position</div>
+      <div className="grid gap-3 xl:grid-cols-[300px_minmax(0,1fr)]">
+        <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <div className="text-xs font-bold text-slate-700">Current position</div>
             {items.length > 1 ? (
               <div className="flex items-center gap-2">
                 <button
@@ -3437,7 +3525,7 @@ function CoachQuizMonitor({
                     const nextIndex = Math.max(0, effectiveIndex - 1);
                     if (manualProgression) onUpdateProgression({ currentItemIndex: nextIndex });
                   }}
-                  className={`grid h-8 w-8 place-items-center rounded-lg border ${manualProgression ? "border-slate-200 bg-white text-slate-700" : "border-slate-100 bg-slate-50 text-slate-300"}`}
+                  className={`grid h-7 w-7 place-items-center rounded-md border ${manualProgression ? "border-slate-200 bg-white text-slate-700" : "border-slate-100 bg-slate-50 text-slate-300"}`}
                 >
                   <ChevronLeft size={14} />
                 </button>
@@ -3449,48 +3537,53 @@ function CoachQuizMonitor({
                     const nextIndex = Math.min(items.length - 1, effectiveIndex + 1);
                     if (manualProgression) onUpdateProgression({ currentItemIndex: nextIndex });
                   }}
-                  className={`grid h-8 w-8 place-items-center rounded-lg border ${manualProgression ? "border-slate-200 bg-white text-slate-700" : "border-slate-100 bg-slate-50 text-slate-300"}`}
+                  className={`grid h-7 w-7 place-items-center rounded-md border ${manualProgression ? "border-slate-200 bg-white text-slate-700" : "border-slate-100 bg-slate-50 text-slate-300"}`}
                 >
                   <ChevronRight size={14} />
                 </button>
               </div>
             ) : null}
           </div>
-          <Chessboard
-            position={position}
-            boardWidth={380}
-            arePiecesDraggable={false}
-            showBoardNotation={false}
-            customDarkSquareStyle={{ backgroundColor: "#b58863" }}
-            customLightSquareStyle={{ backgroundColor: "#f0d9b5" }}
-          />
-          <div className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-600">
+          <div className="mx-auto w-fit overflow-hidden rounded-md border border-slate-200">
+            <Chessboard
+              position={position}
+              boardWidth={260}
+              arePiecesDraggable={false}
+              showBoardNotation={false}
+              customDarkSquareStyle={{ backgroundColor: "#b58863" }}
+              customLightSquareStyle={{ backgroundColor: "#f0d9b5" }}
+            />
+          </div>
+          <div className="mt-2 rounded-md bg-slate-50 px-2 py-1.5 text-xs text-slate-600">
             {activeItem?.title || "Current position"} • {activeItem?.points || question?.scoring?.correct || 5} pts
           </div>
-          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          <div className="mt-2 grid gap-2 text-xs sm:grid-cols-2">
             <InfoTile label="Mode" value={manualProgression ? "Coach-controlled" : "Auto progression"} />
             <InfoTile label="Question" value={`${effectiveIndex + 1} of ${items.length}`} />
           </div>
         </div>
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-lg shadow-brand/10">
-          <div className="mb-3 text-sm font-bold text-slate-700">Student submissions</div>
-          <div className="space-y-3">
+        <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+          <div className="mb-2 flex items-center justify-between">
+            <div className="text-sm font-bold text-slate-700">Student submissions</div>
+            <span className="text-xs font-semibold text-slate-500">{submissionRows.length} students</span>
+          </div>
+          <div className="grid max-h-[calc(100vh-245px)] gap-2 overflow-auto pr-1 lg:grid-cols-2 2xl:grid-cols-3">
             {submissionRows.map(({ student, response, summary, activeItemResult, accuracy, statusLabel, submittedAt, lastMove }) => {
               return (
-                <div key={student._id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <div className="font-semibold text-slate-950">{student.name}</div>
+                <div key={student._id} className="rounded-lg border border-slate-200 bg-slate-50 p-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-semibold text-slate-950">{student.name}</div>
                       <div className="text-xs text-slate-500">{student.username || student.email}</div>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2 text-xs font-bold">
-                      <span className={`rounded-full px-2.5 py-1 ${response ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"}`}>
+                    <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-bold">
+                      <span className={`rounded px-2 py-1 ${response ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"}`}>
                         {response ? "Submitted" : "Waiting"}
                       </span>
                       {response ? (
                         <>
-                          <span className={`rounded-full px-2.5 py-1 ${
+                          <span className={`rounded px-2 py-1 ${
                             activeItemResult?.solved
                               ? "bg-emerald-100 text-emerald-700"
                               : activeItemResult?.skipped
@@ -3501,13 +3594,13 @@ function CoachQuizMonitor({
                           }`}>
                             {statusLabel}
                           </span>
-                          <span className="rounded-full bg-purple-100 px-2.5 py-1 text-purple-700">{Number(summary.score || 0)} pts</span>
+                          <span className="rounded bg-purple-100 px-2 py-1 text-purple-700">{Number(summary.score || 0)} pts</span>
                         </>
                       ) : null}
                     </div>
                   </div>
                   {response ? (
-                    <div className="mt-3 grid gap-2 sm:grid-cols-4">
+                    <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
                       <InfoTile label="Time" value={`${Number(summary.timeTakenSeconds || 0)} sec`} />
                       <InfoTile label="Attempts" value={Number(summary.attemptsUsed || 0)} />
                       <InfoTile label="Hints" value={Number(summary.hintsUsed || 0)} />
@@ -3515,11 +3608,11 @@ function CoachQuizMonitor({
                     </div>
                   ) : null}
                   {response ? (
-                    <div className="mt-2 grid gap-2 text-xs text-slate-500 sm:grid-cols-2">
+                    <div className="mt-2 grid gap-1 text-xs text-slate-500">
                       <div>Progress: {Number(summary.completedItems || 0)}/{Number(summary.totalItems || items.length)} items completed</div>
                       <div>Last move: {lastMove || "-"}</div>
                       <div>Submitted: {submittedAt ? new Date(submittedAt).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", second: "2-digit" }) : "-"}</div>
-                      <div className="sm:col-span-2">Moves tried: {activeItemResult?.attempts?.length ? activeItemResult.attempts.join(", ") : lastMove || "-"}</div>
+                      <div>Moves tried: {activeItemResult?.attempts?.length ? activeItemResult.attempts.join(", ") : lastMove || "-"}</div>
                     </div>
                   ) : null}
                 </div>

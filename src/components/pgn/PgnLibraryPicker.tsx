@@ -213,8 +213,8 @@ export default function PgnLibraryPicker({
                     return (
                       <article key={game._id} className={cn("rounded-lg border p-3 shadow-sm transition", selected ? "border-purple-400 ring-2 ring-purple-100" : "border-slate-200 hover:border-purple-200")}>
                         <button type="button" onClick={() => toggleGame(game)} className="block w-full text-left">
-                          <div className="grid grid-cols-[88px_minmax(0,1fr)_24px] items-start gap-3">
-                            <MiniFenBoard fen={previewFenFromPgn(game.pgn, game.initialFen)} className="w-[88px]" />
+                          <div className="grid grid-cols-[112px_minmax(0,1fr)_24px] items-start gap-3">
+                            <MiniFenBoard fen={previewFenFromPgn(game.pgn, game.initialFen)} className="w-[112px]" />
                             <div className="min-w-0">
                               <h3 className="truncate text-sm font-semibold">{game.title}</h3>
                               <p className="mt-1 truncate text-xs text-slate-500">{game.white || "White"} vs {game.black || "Black"} {game.result ? `- ${game.result}` : ""}</p>

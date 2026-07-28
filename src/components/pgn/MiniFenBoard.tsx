@@ -26,7 +26,7 @@ export default function MiniFenBoard({ fen, className = "" }: { fen: string; cla
   };
   const pieces = fenPieces(fen);
   return (
-    <div className={`grid aspect-square grid-cols-8 grid-rows-8 overflow-hidden rounded-md border border-slate-200 bg-slate-100 ${className}`} aria-hidden="true">
+    <div className={`grid aspect-square grid-cols-8 grid-rows-8 overflow-hidden rounded-md border border-slate-200 bg-slate-100 shadow-inner ${className}`} aria-hidden="true">
       {Array.from({ length: 64 }).map((_, index) => {
         const file = index % 8;
         const rank = Math.floor(index / 8);
@@ -36,7 +36,7 @@ export default function MiniFenBoard({ fen, className = "" }: { fen: string; cla
         return (
           <span
             key={index}
-            className={`flex items-center justify-center text-[clamp(10px,9cqw,18px)] leading-none ${light ? "bg-[#efd6a8]" : "bg-[#bd8d62]"} ${whitePiece ? "text-white [text-shadow:_0_1px_1px_rgb(0_0_0_/_0.8)]" : "text-black"}`}
+            className={`flex items-center justify-center text-[13px] leading-none ${light ? "bg-[#efd6a8]" : "bg-[#bd8d62]"} ${whitePiece ? "text-white [text-shadow:_0_1px_1px_rgb(0_0_0_/_0.75)]" : "text-black"}`}
           >
             {pieceMap[piece] || ""}
           </span>

@@ -76,6 +76,7 @@ const ClassroomChatMessageSchema = new Schema(
     classroom: { type: Schema.Types.ObjectId, ref: "Classroom", required: true, index: true },
     scheduledSessionId: { type: String, required: true, index: true },
     sender: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
+    recipient: { type: Schema.Types.ObjectId, ref: "User", index: true },
     message: { type: String, required: true },
   },
   { timestamps: true }

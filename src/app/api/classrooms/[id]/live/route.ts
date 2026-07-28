@@ -122,8 +122,17 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
       .sort({ folder: 1, createdAt: -1 })
       .limit(200)
       .lean();
-    const chatMessages = await ClassroomChatMessage.find({ classroom: params.id, scheduledSessionId })
-      .populate("sender", "name username role")
+    const chatFilter: Record<string, any> = { classroom: params.id, scheduledSessionId };
+    if (!canCoach(role)) {
+      chatFilter.$or = [
+        { recipient: { $exists: false } },
+        { recipient: null },
+        { sender: userId },
+        { recipient: userId },
+      ];
+    }
+    const chatMessages = await ClassroomChatMessage.find(chatFilter)
+      .populate("sender recipient", "name username role")
       .sort({ createdAt: -1 })
       .limit(50)
       .lean();

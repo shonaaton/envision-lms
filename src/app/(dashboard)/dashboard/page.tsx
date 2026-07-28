@@ -172,12 +172,12 @@ function miniBars(points: { label: string; value: number }[]) {
 
 function SectionTitle({ icon: Icon, title, subtitle }: { icon: any; title: string; subtitle?: string }) {
   return (
-    <div className="mb-4 flex items-center gap-2">
-      <span className="flex h-8 w-8 items-center justify-center rounded-md bg-purple-50 text-purple-700 shadow-md shadow-purple-900/10">
-        <Icon size={16} />
+    <div className="mb-3 flex items-center gap-2">
+      <span className="flex h-7 w-7 items-center justify-center rounded-md bg-purple-50 text-purple-700 shadow-sm shadow-purple-900/10">
+        <Icon size={15} />
       </span>
       <div>
-        <h2 className="text-base font-semibold text-slate-950">{title}</h2>
+        <h2 className="text-sm font-semibold text-slate-950">{title}</h2>
         {subtitle && <p className="text-xs text-slate-500">{subtitle}</p>}
       </div>
     </div>
@@ -194,15 +194,15 @@ function StatCard({ label, value, note, icon: Icon, tone = "purple" }: { label: 
   };
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm shadow-brand/5 transition hover:-translate-y-0.5 hover:border-brand/20 hover:shadow-lg hover:shadow-brand/10">
-      <div className="flex items-start justify-between gap-3">
-        <div>
+    <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm shadow-brand/5 transition hover:border-brand/20 hover:shadow-md hover:shadow-brand/10">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
           <div className="text-xs font-medium text-slate-500">{label}</div>
-          <div className="mt-2 text-2xl font-semibold text-slate-950">{value}</div>
+          <div className="mt-1 truncate text-xl font-semibold text-slate-950">{value}</div>
           <div className="mt-1 text-xs text-slate-500">{note}</div>
         </div>
-        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md ${tones[tone]}`}>
-          <Icon size={18} />
+        <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${tones[tone]}`}>
+          <Icon size={15} />
         </span>
       </div>
     </div>
@@ -236,8 +236,8 @@ function MiniBarChart({ points, barClassName }: { points: Array<{ label: string;
 
 function InfoTile({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-      <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">{label}</div>
+    <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+      <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">{label}</div>
       <div className="mt-1 text-sm font-semibold text-slate-950">{value}</div>
     </div>
   );
@@ -276,17 +276,17 @@ function DashboardHero({
   children?: React.ReactNode;
 }) {
   return (
-    <section className="rounded-lg border border-brand/10 bg-white p-5 shadow-lg shadow-brand/10">
-      <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
+    <section className="rounded-lg border border-brand/10 bg-white p-3 shadow-sm shadow-brand/10 sm:p-4">
+      <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <div className="min-w-0">
-          <div className="inline-flex items-center gap-2 rounded-full bg-brand-50 px-3 py-1 text-[11px] font-black uppercase tracking-[0.16em] text-brand">
-            <Icon size={14} />
+          <div className="inline-flex h-7 items-center gap-2 rounded-full bg-brand-50 px-3 text-[10px] font-black uppercase tracking-[0.14em] text-brand">
+            <Icon size={13} />
             {eyebrow}
           </div>
-          <h1 className="mt-3 text-2xl font-black tracking-normal text-slate-950 sm:text-3xl">{title}</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">{subtitle}</p>
+          <h1 className="mt-2 text-xl font-black tracking-normal text-slate-950 sm:text-2xl">{title}</h1>
+          <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-600 sm:text-sm">{subtitle}</p>
         </div>
-        {children && <div className="w-full xl:max-w-3xl">{children}</div>}
+        {children && <div className="w-full xl:max-w-5xl">{children}</div>}
       </div>
     </section>
   );
@@ -300,7 +300,7 @@ function DashboardPanel({
   className?: string;
 }) {
   return (
-    <section className={`rounded-lg border border-slate-200 bg-white p-4 shadow-sm shadow-brand/5 sm:p-5 ${className}`}>
+    <section className={`rounded-lg border border-slate-200 bg-white p-3 shadow-sm shadow-brand/5 sm:p-4 ${className}`}>
       {children}
     </section>
   );
@@ -1523,45 +1523,47 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
         subtitle={`Latest academy performance from ${formatDate(from)} to ${formatDate(to)}.`}
         icon={SlidersHorizontal}
       >
-        <form method="get" className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 shadow-inner shadow-white sm:grid-cols-2 lg:grid-cols-6">
-          <label className="flex flex-col gap-1 text-xs font-semibold text-slate-500">
+        <form method="get" className="grid gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2 shadow-inner shadow-white sm:grid-cols-2 lg:grid-cols-6 xl:grid-cols-[110px_140px_130px_140px_140px_minmax(160px,1fr)_auto_auto]">
+          <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-500">
             Academic Year
-            <input name="academicYear" type="number" defaultValue={academicYearStart} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/15" />
+            <input name="academicYear" type="number" defaultValue={academicYearStart} className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-700 outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/15" />
           </label>
-          <label className="flex flex-col gap-1 text-xs font-semibold text-slate-500">
+          <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-500">
             Focus Date
-            <input name="date" type="date" defaultValue={dateKey(focusDate)} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/15" />
+            <input name="date" type="date" defaultValue={dateKey(focusDate)} className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-700 outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/15" />
           </label>
-          <label className="flex flex-col gap-1 text-xs font-semibold text-slate-500">
+          <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-500">
             Range
-            <select name="preset" defaultValue={preset} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/15">
+            <select name="preset" defaultValue={preset} className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-700 outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/15">
               <option value="7">Last 7 days</option>
               <option value="30">Last 30 days</option>
               <option value="90">Last 90 days</option>
               <option value="custom">Custom range</option>
             </select>
           </label>
-          <label className="flex flex-col gap-1 text-xs font-semibold text-slate-500">
+          <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-500">
             From
-            <input name="from" type="date" defaultValue={dateKey(from)} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/15" />
+            <input name="from" type="date" defaultValue={dateKey(from)} className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-700 outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/15" />
           </label>
-          <label className="flex flex-col gap-1 text-xs font-semibold text-slate-500">
+          <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-500">
             To
-            <input name="to" type="date" defaultValue={dateKey(to)} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/15" />
+            <input name="to" type="date" defaultValue={dateKey(to)} className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-700 outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/15" />
           </label>
-          <label className="flex flex-col gap-1 text-xs font-semibold text-slate-500 sm:col-span-2 lg:col-span-1">
+          <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-500 sm:col-span-2 lg:col-span-1">
             Search
             <span className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-              <input name="q" defaultValue={searchParams.q} placeholder="Student name, email, username" className="h-10 w-full rounded-md border border-slate-200 bg-white pl-9 pr-3 text-sm text-slate-700 outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/15" />
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+              <input name="q" defaultValue={searchParams.q} placeholder="Student name, email, username" className="h-8 w-full rounded-md border border-slate-200 bg-white pl-8 pr-2 text-xs text-slate-700 outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/15" />
             </span>
           </label>
-          <div className="flex flex-wrap gap-2 sm:col-span-2 lg:col-span-6">
-            <button className="inline-flex h-10 items-center gap-2 rounded-md bg-purple-700 px-4 text-sm font-semibold text-white shadow-md shadow-purple-900/20 transition hover:bg-purple-800">
-              <SlidersHorizontal size={16} /> Apply filters
+          <div className="flex items-end">
+            <button className="inline-flex h-8 items-center gap-2 rounded-md bg-purple-700 px-3 text-xs font-semibold text-white shadow-sm shadow-purple-900/20 transition hover:bg-purple-800">
+              <SlidersHorizontal size={14} /> Apply
             </button>
-            <Link href="/dashboard" className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:border-brand/30 hover:text-brand">
-              <RotateCcw size={15} /> Reset
+          </div>
+          <div className="flex items-end">
+            <Link href="/dashboard" className="inline-flex h-8 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:border-brand/30 hover:text-brand">
+              <RotateCcw size={14} /> Reset
             </Link>
           </div>
         </form>
@@ -1569,41 +1571,41 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
 
       <DashboardPanel>
         <SectionTitle icon={Users} title="Academy Snapshot" subtitle={`Academic year ${academicYearStart}-${String(academicYearStart + 1).slice(-2)} and selected date ${formatDate(focusDate)}`} />
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-5">
           <StatCard label="Total Student Strength" value={students.length} note="All student profiles" icon={Users} tone="purple" />
           <StatCard label="Total Active Students" value={activeStudents.length} note="Active student profiles" icon={CheckCircle2} tone="green" />
           <StatCard label="Students Added Today" value={studentsAddedToday.length} note={formatDate(focusDate)} icon={GraduationCap} tone="blue" />
           <StatCard label="Today's Fee Collection" value={money(todayCollection)} note="Paid invoices on selected date" icon={CircleDollarSign} tone="green" />
           <StatCard label="Today's Due Amount" value={money(todayDue)} note="Invoices due on selected date" icon={Calendar} tone="amber" />
         </div>
-        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-4">
           <StatCard label="Teaching Hours" value={totalTeachingHours.toFixed(1)} note="Selected date range" icon={BookOpen} tone="blue" />
           <StatCard label="Top Coach" value={topCoach?.name || "-"} note={`${topCoach?.hours?.toFixed?.(1) || 0} hours`} icon={GraduationCap} tone="purple" />
           <StatCard label="Top Batch" value={topBatch?.batchName || "-"} note={`${topBatch?.hoursConducted?.toFixed?.(1) || 0} hours`} icon={Users} tone="green" />
           <StatCard label="Avg / Coach" value={averageTeachingHours.toFixed(1)} note="Average teaching hours" icon={BarChart3} tone="amber" />
         </div>
-        <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-3">
-          <div className="rounded-xl bg-slate-50 p-4 shadow-inner shadow-slate-200/70">
+        <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-3">
+          <div className="rounded-lg bg-slate-50 p-3 shadow-inner shadow-slate-200/70">
             <h3 className="text-sm font-semibold text-slate-950">Gender-wise Student Count</h3>
-            <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+            <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
               <div>Male <b className="float-right">{genderCounts.male}</b></div>
               <div>Female <b className="float-right">{genderCounts.female}</b></div>
               <div>Others <b className="float-right">{genderCounts.other}</b></div>
               <div>Not Available <b className="float-right">{genderCounts.notAvailable}</b></div>
             </div>
           </div>
-          <div className="rounded-xl bg-slate-50 p-4 shadow-inner shadow-slate-200/70">
+          <div className="rounded-lg bg-slate-50 p-3 shadow-inner shadow-slate-200/70">
             <h3 className="text-sm font-semibold text-slate-950">Overall Fee Statistics</h3>
-            <div className="mt-3 space-y-2 text-sm">
+            <div className="mt-2 space-y-1.5 text-sm">
               <div>Collected Fees <b className="float-right">{money(collectedFees)}</b></div>
               <div>Past Dues <b className="float-right text-rose-700">{money(pastDues)}</b></div>
               <div>Future Dues <b className="float-right text-amber-700">{money(futureDues)}</b></div>
               <div>Bad Debt <b className="float-right text-slate-700">{money(badDebt)}</b></div>
             </div>
           </div>
-          <div className="rounded-xl bg-slate-50 p-4 shadow-inner shadow-slate-200/70">
+          <div className="rounded-lg bg-slate-50 p-3 shadow-inner shadow-slate-200/70">
             <h3 className="text-sm font-semibold text-slate-950">Mode of Transaction Summary</h3>
-            <div className="mt-3 space-y-2 text-sm">
+            <div className="mt-2 space-y-1.5 text-sm">
               {transactionModes.map((item) => (
                 <div key={item.mode}>{item.mode === "cheque" ? "Cheque / PDC / DD" : item.mode.toUpperCase()} <b className="float-right">{money(item.amount)}</b></div>
               ))}

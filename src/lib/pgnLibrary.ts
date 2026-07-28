@@ -16,6 +16,7 @@ export type PgnSummary = {
   moveCount: number;
   initialFen: string;
   finalFen: string;
+  sideToMove: "white" | "black";
   hasAnnotations: boolean;
   hasVariations: boolean;
   commentsText?: string;
@@ -81,6 +82,10 @@ function commentsFromPgn(pgn: string) {
   return comments.join("\n").slice(0, 4000) || undefined;
 }
 
+export function sideToMoveFromFen(fen?: string | null): "white" | "black" {
+  return String(fen || "").split(/\s+/)[1] === "b" ? "black" : "white";
+}
+
 export function summarizePgn(pgn: string, fallbackTitle = "Untitled PGN"): PgnSummary {
   const game = new Chess();
   const fenHeader = extractHeader(pgn, "FEN");
@@ -131,6 +136,7 @@ export function summarizePgn(pgn: string, fallbackTitle = "Untitled PGN"): PgnSu
     moveCount,
     initialFen,
     finalFen,
+    sideToMove: sideToMoveFromFen(initialFen),
     hasAnnotations: /\{[^}]+\}|\$\d+|!|\?/.test(pgn),
     hasVariations: /\([^)]*\d+\./.test(pgn),
     commentsText: commentsFromPgn(pgn),

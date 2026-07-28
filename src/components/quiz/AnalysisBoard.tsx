@@ -185,6 +185,8 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
   const [gamifiedBoardObjects, setGamifiedBoardObjects] = useState<Record<string, GamifiedObjectId>>({});
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
   const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion | null>(null);
+  const [libraryQueue, setLibraryQueue] = useState<PgnLibraryGame[]>([]);
+  const [libraryQueueIndex, setLibraryQueueIndex] = useState(0);
 
   const isDark = false;
   const panelClass = "border-slate-200 bg-white text-slate-950";
@@ -391,6 +393,24 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
     }
   }
 
+  function loadPgnCollection(games: PgnLibraryGame[], index = 0) {
+    const safeIndex = Math.max(0, Math.min(games.length - 1, index));
+    const game = games[safeIndex];
+    if (!game) return false;
+    if (!loadPgn(game.pgn)) return false;
+    setLibraryQueue(games);
+    setLibraryQueueIndex(safeIndex);
+    toast.success(games.length > 1 ? `Loaded ${safeIndex + 1} of ${games.length}: ${game.title}` : `Loaded ${game.title}`);
+    return true;
+  }
+
+  function loadAdjacentQueuedPgn(direction: 1 | -1) {
+    if (libraryQueue.length < 2) return;
+    const nextIndex = Math.max(0, Math.min(libraryQueue.length - 1, libraryQueueIndex + direction));
+    if (nextIndex === libraryQueueIndex) return;
+    loadPgnCollection(libraryQueue, nextIndex);
+  }
+
   function replayGame(ply: number) {
     const history = gameRef.current.history({ verbose: true }) as Array<{ from: string; to: string; promotion?: string }>;
     const next = new Chess(baseFenRef.current);
@@ -546,6 +566,13 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
             </button>
             <button className="btn-primary gap-2" onClick={() => setDialog("save")}><Save size={15} /> Save</button>
           </div>
+          {libraryQueue.length > 1 && (
+            <div className="mt-3 flex flex-wrap items-center justify-center gap-2 rounded-lg border border-purple-100 bg-purple-50 px-3 py-2 text-sm text-purple-900">
+              <span className="max-w-[280px] truncate font-semibold">{libraryQueueIndex + 1} / {libraryQueue.length}: {libraryQueue[libraryQueueIndex]?.title}</span>
+              <button className="rounded-md border border-purple-200 bg-white px-3 py-1.5 text-xs font-bold disabled:opacity-40" onClick={() => loadAdjacentQueuedPgn(-1)} disabled={libraryQueueIndex === 0}>Previous PGN</button>
+              <button className="rounded-md bg-purple-700 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-40" onClick={() => loadAdjacentQueuedPgn(1)} disabled={libraryQueueIndex >= libraryQueue.length - 1}>Next PGN</button>
+            </div>
+          )}
         </section>
 
         <aside className={`order-2 min-h-[320px] overflow-auto rounded-lg border p-3 sm:p-4 md:min-h-0 xl:order-2 ${panelClass}`}>
@@ -578,7 +605,7 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
         </aside>
       </div>
 
-      {dialog === "pgn" && <PgnDialog isDark={isDark} onClose={() => setDialog(null)} onLoad={loadPgn} />}
+      {dialog === "pgn" && <PgnDialog isDark={isDark} onClose={() => setDialog(null)} onLoad={loadPgn} onLoadCollection={loadPgnCollection} />}
       {dialog === "fen" && <FenDialog isDark={isDark} currentFen={gameRef.current.fen()} onClose={() => setDialog(null)} onLoad={loadFen} />}
       {dialog === "setup" && <SetupDialog isDark={isDark} currentFen={position} boardTheme={boardTheme} pieceTheme={pieceTheme} initialGamifiedObjects={gamifiedBoardObjects} onClose={() => setDialog(null)} onLoad={loadFen} />}
       {dialog === "settings" && <SettingsDialog isDark={isDark} scale={boardScale} boardTheme={boardTheme} pieceTheme={pieceTheme} onScale={setBoardScale} onBoardTheme={setBoardTheme} onPieceTheme={setPieceTheme} onClose={() => setDialog(null)} />}
@@ -998,18 +1025,27 @@ function PdfPanel({
   );
 }
 
-function PgnDialog({ isDark, onClose, onLoad }: { isDark: boolean; onClose: () => void; onLoad: (pgn: string) => boolean }) {
+function PgnDialog({
+  isDark,
+  onClose,
+  onLoad,
+  onLoadCollection,
+}: {
+  isDark: boolean;
+  onClose: () => void;
+  onLoad: (pgn: string) => boolean;
+  onLoadCollection: (games: PgnLibraryGame[]) => boolean;
+}) {
   const [pgn, setPgn] = useState("");
   const [error, setError] = useState("");
   const [libraryOpen, setLibraryOpen] = useState(false);
 
   function loadLibraryGame(games: PgnLibraryGame[]) {
-    const game = games[0];
-    if (!game) return;
-    if (onLoad(game.pgn)) {
+    if (!games.length) return;
+    if (onLoadCollection(games)) {
       onClose();
     } else {
-      setError("That library PGN could not be loaded.");
+      setError("That library selection could not be loaded.");
     }
   }
 
@@ -1044,7 +1080,7 @@ function PgnDialog({ isDark, onClose, onLoad }: { isDark: boolean; onClose: () =
         <button className={controlButton(isDark)} onClick={onClose}>Cancel</button>
         <button className="btn-primary" onClick={() => pgn.trim() && (onLoad(pgn) || setError("That PGN could not be loaded."))}>Load Position</button>
       </div>
-      <PgnLibraryPicker open={libraryOpen} onClose={() => setLibraryOpen(false)} onSelect={loadLibraryGame} />
+      <PgnLibraryPicker open={libraryOpen} mode="multiple" onClose={() => setLibraryOpen(false)} onSelect={loadLibraryGame} />
     </ModalFrame>
   );
 }

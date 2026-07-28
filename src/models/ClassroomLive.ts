@@ -33,6 +33,16 @@ const ClassroomSessionSchema = new Schema(
       student: { type: Schema.Types.ObjectId, ref: "User" },
       side: { type: String, enum: ["white", "black"] },
       active: { type: Boolean, default: false },
+      currentIndex: { type: Number, default: 0 },
+      pgnCollection: [
+        {
+          id: String,
+          title: String,
+          pgn: String,
+          fen: String,
+          sideToMove: String,
+        },
+      ],
     },
     drawings: [
       {

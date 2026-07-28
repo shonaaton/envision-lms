@@ -17,6 +17,7 @@ const PGNSchema = new Schema(
     moveCount: { type: Number, default: 0, index: true },
     initialFen: String,
     finalFen: String,
+    sideToMove: { type: String, enum: ["white", "black"], index: true },
     hasAnnotations: { type: Boolean, default: false, index: true },
     hasVariations: { type: Boolean, default: false, index: true },
     commentsText: String,

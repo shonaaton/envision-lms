@@ -9,7 +9,7 @@ type ActivityKind = "mcq" | "play_computer" | "pgn_quiz";
 type TargetMode = "all" | "batches" | "students";
 type QuizOption = { id: string; text: string; correct: boolean };
 type McqQuestion = { id: string; text: string; positionFen: string; options: QuizOption[]; explanation: string };
-type PgnDoc = { _id: string; title: string; pgn: string; folder?: string; white?: string; black?: string; event?: string };
+type PgnDoc = { _id: string; title: string; pgn: string; folder?: string; white?: string; black?: string; event?: string; initialFen?: string; sideToMove?: "white" | "black" };
 
 type Activity = {
   id: string;
@@ -76,6 +76,12 @@ function makeActivity(kind: ActivityKind, index: number): Activity {
 
 function normalizeFolderPath(value?: string | null) {
   return String(value || "").trim().replace(/^\/+|\/+$/g, "").replace(/\/{2,}/g, "/");
+}
+
+function pgnSideToMoveLabel(pgn: PgnDoc) {
+  const fen = pgn.initialFen || pgn.pgn.match(/\[FEN\s+"([^"]+)"\]/)?.[1] || "";
+  const side = pgn.sideToMove || (fen.split(/\s+/)[1] === "b" ? "black" : "white");
+  return side === "black" ? "Black to play" : "White to play";
 }
 
 export default function NewHomeworkPage() {
@@ -487,7 +493,7 @@ function PgnQuizActivity({ activity, pgns, folders, onChange }: { activity: Acti
         {allSelected ? "Clear selected" : "Select all in folder"}
       </button>
       <div className="grid max-h-72 gap-2 overflow-y-auto md:grid-cols-2">
-        {pgns.map((pgn) => <CheckboxRow key={pgn._id} label={pgn.title} sub={`${normalizeFolderPath(pgn.folder) || "Unfiled"} - ${pgn.white || "White"} vs ${pgn.black || "Black"}`} checked={activity.selectedPgnIds.includes(pgn._id)} onChange={() => toggleId(pgn._id, activity.selectedPgnIds, (selectedPgnIds) => onChange({ selectedPgnIds }))} />)}
+        {pgns.map((pgn) => <CheckboxRow key={pgn._id} label={pgn.title} sub={`${normalizeFolderPath(pgn.folder) || "Unfiled"} - ${pgn.white || "White"} vs ${pgn.black || "Black"} - ${pgnSideToMoveLabel(pgn)}`} checked={activity.selectedPgnIds.includes(pgn._id)} onChange={() => toggleId(pgn._id, activity.selectedPgnIds, (selectedPgnIds) => onChange({ selectedPgnIds }))} />)}
         {!pgns.length && <div className="rounded-lg border border-dashed border-slate-200 p-4 text-sm text-slate-500">No PGNs found in this folder.</div>}
       </div>
     </div>

@@ -118,7 +118,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
           ],
         };
     const pgnLibrary = await PGN.find(pgnFilter)
-      .select("title white black event result date eco opening moveCount hasAnnotations hasVariations folder pgn")
+      .select("title white black event result date eco opening moveCount sideToMove initialFen hasAnnotations hasVariations folder pgn")
       .sort({ folder: 1, createdAt: -1 })
       .limit(200)
       .lean();

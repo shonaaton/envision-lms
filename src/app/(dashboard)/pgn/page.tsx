@@ -43,6 +43,7 @@ type PgnDoc = {
   hasAnnotations?: boolean;
   hasVariations?: boolean;
   initialFen?: string;
+  sideToMove?: "white" | "black";
   sourceFileName?: string;
   createdAt?: string;
   updatedAt?: string;
@@ -548,6 +549,11 @@ function previewFen(game: PgnDoc) {
   }
 }
 
+function sideToMoveLabel(game: PgnDoc, fen?: string) {
+  const side = game.sideToMove || (String(fen || "").split(/\s+/)[1] === "b" ? "black" : "white");
+  return side === "black" ? "Black to play" : "White to play";
+}
+
 function fenPieces(fen: string) {
   const board = String(fen || startFen).split(" ")[0] || "";
   const pieces: string[] = [];
@@ -794,6 +800,7 @@ function GameGrid({
               <div className="mt-3 flex flex-wrap gap-1.5 text-[11px] font-semibold text-slate-500">
                 {game.eco && <span className="rounded bg-slate-100 px-2 py-1">{game.eco}</span>}
                 {game.opening && <span className="max-w-full truncate rounded bg-slate-100 px-2 py-1">{game.opening}</span>}
+                <span className="rounded bg-purple-50 px-2 py-1 text-purple-700">{sideToMoveLabel(game, previewFens.get(game._id))}</span>
                 {game.moveCount ? <span className="rounded bg-slate-100 px-2 py-1">{game.moveCount} moves</span> : null}
                 {game.hasAnnotations && <span className="rounded bg-emerald-50 px-2 py-1 text-emerald-700">Annotated</span>}
                 {game.hasVariations && <span className="rounded bg-sky-50 px-2 py-1 text-sky-700">Variations</span>}

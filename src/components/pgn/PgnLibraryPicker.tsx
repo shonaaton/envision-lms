@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { BookOpen, Check, ChevronLeft, Folder, Search, X } from "lucide-react";
 import { folderBreadcrumbs, folderLabel, getImmediateChildPath, normalizeFolderPath } from "@/lib/pgnLibrary";
 import { cn } from "@/lib/utils";
+import MiniFenBoard, { previewFenFromPgn } from "@/components/pgn/MiniFenBoard";
 
 export type PgnLibraryGame = {
   _id: string;
@@ -16,6 +17,8 @@ export type PgnLibraryGame = {
   eco?: string;
   opening?: string;
   moveCount?: number;
+  initialFen?: string;
+  sideToMove?: "white" | "black";
   folder?: string;
   pgn: string;
   visibility?: "private" | "shared" | "classroom";
@@ -26,6 +29,12 @@ type FolderItem = {
   name: string;
   gameCount: number;
 };
+
+function sideToMoveLabel(game: PgnLibraryGame) {
+  const fen = game.initialFen || game.pgn.match(/\[FEN\s+"([^"]+)"\]/)?.[1] || "";
+  const side = game.sideToMove || (fen.split(/\s+/)[1] === "b" ? "black" : "white");
+  return side === "black" ? "Black to play" : "White to play";
+}
 
 export default function PgnLibraryPicker({
   open,
@@ -204,18 +213,20 @@ export default function PgnLibraryPicker({
                     return (
                       <article key={game._id} className={cn("rounded-lg border p-3 shadow-sm transition", selected ? "border-purple-400 ring-2 ring-purple-100" : "border-slate-200 hover:border-purple-200")}>
                         <button type="button" onClick={() => toggleGame(game)} className="block w-full text-left">
-                          <div className="flex items-start justify-between gap-2">
+                          <div className="grid grid-cols-[88px_minmax(0,1fr)_24px] items-start gap-3">
+                            <MiniFenBoard fen={previewFenFromPgn(game.pgn, game.initialFen)} className="w-[88px]" />
                             <div className="min-w-0">
                               <h3 className="truncate text-sm font-semibold">{game.title}</h3>
                               <p className="mt-1 truncate text-xs text-slate-500">{game.white || "White"} vs {game.black || "Black"} {game.result ? `- ${game.result}` : ""}</p>
+                              <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] font-semibold text-slate-500">
+                                {game.eco && <span className="rounded bg-slate-100 px-2 py-1">{game.eco}</span>}
+                                {game.opening && <span className="rounded bg-slate-100 px-2 py-1">{game.opening}</span>}
+                                <span className="rounded bg-purple-50 px-2 py-1 text-purple-700">{sideToMoveLabel(game)}</span>
+                                {game.moveCount ? <span className="rounded bg-slate-100 px-2 py-1">{game.moveCount} moves</span> : null}
+                                {game.date && <span className="rounded bg-slate-100 px-2 py-1">{game.date}</span>}
+                              </div>
                             </div>
                             <span className={cn("grid h-6 w-6 flex-none place-items-center rounded-full border text-xs", selected ? "border-purple-600 bg-purple-600 text-white" : "border-slate-300 text-transparent")}><Check size={14} /></span>
-                          </div>
-                          <div className="mt-3 flex flex-wrap gap-1.5 text-[11px] font-semibold text-slate-500">
-                            {game.eco && <span className="rounded bg-slate-100 px-2 py-1">{game.eco}</span>}
-                            {game.opening && <span className="rounded bg-slate-100 px-2 py-1">{game.opening}</span>}
-                            {game.moveCount ? <span className="rounded bg-slate-100 px-2 py-1">{game.moveCount} moves</span> : null}
-                            {game.date && <span className="rounded bg-slate-100 px-2 py-1">{game.date}</span>}
                           </div>
                         </button>
                         {mode === "single" && <button type="button" onClick={() => confirmSelection(game)} className="mt-3 h-9 w-full rounded-md bg-purple-700 text-sm font-semibold text-white">Load this PGN</button>}

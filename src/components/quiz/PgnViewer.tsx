@@ -40,6 +40,7 @@ type FileNavItem = {
   result?: string;
   opening?: string;
   moveCount?: number;
+  sideToMove?: "white" | "black";
 } | null;
 
 function extractHeader(pgn: string, key: string) {
@@ -127,6 +128,7 @@ export default function PgnViewer({
     return rowStart >= pageStart && rowStart < pageStart + movesPerPage;
   });
   const position = useMemo(() => replayPosition(parsed.start, parsed.moves, ply), [parsed.start, parsed.moves, ply]);
+  const activeSideToMove = parsed.start.split(/\s+/)[1] === "b" ? "Black to play" : "White to play";
   const visibleFolderFiles = useMemo(() => {
     const q = folderQuery.trim().toLowerCase();
     return folderFiles.filter((item) => {
@@ -186,7 +188,10 @@ export default function PgnViewer({
       <PageLoadingOverlay visible={navigating} message="Opening PGN..." />
       <section className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white p-3 text-slate-950 shadow-sm">
         <div ref={boardWrapRef} className="flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden pb-2">
-          <BoardWithOutsideCoordinates position={position} boardWidth={boardWidth} />
+          <div className="flex flex-col items-center gap-2">
+            <span className="rounded-md bg-purple-50 px-3 py-1 text-xs font-bold uppercase tracking-wide text-purple-700">{activeSideToMove}</span>
+            <BoardWithOutsideCoordinates position={position} boardWidth={boardWidth} />
+          </div>
         </div>
 
         <div className="flex flex-none items-center justify-center gap-2">
@@ -265,7 +270,7 @@ export default function PgnViewer({
                       >
                         <span className="block truncate font-semibold">{index + 1}. {item.title}</span>
                         <span className="mt-0.5 block truncate text-slate-500">{item.white || "White"} vs {item.black || "Black"}{item.result ? ` - ${item.result}` : ""}</span>
-                        <span className="mt-0.5 block truncate text-slate-400">{[item.opening, item.moveCount ? `${item.moveCount} moves` : ""].filter(Boolean).join(" - ")}</span>
+                        <span className="mt-0.5 block truncate text-slate-400">{[item.sideToMove === "black" ? "Black to play" : "White to play", item.opening, item.moveCount ? `${item.moveCount} moves` : ""].filter(Boolean).join(" - ")}</span>
                       </button>
                     );
                   })}

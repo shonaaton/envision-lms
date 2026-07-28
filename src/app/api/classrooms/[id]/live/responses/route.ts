@@ -28,7 +28,10 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const existing: any = await LiveQuestionResponse.findOne({ question: question._id, student: userId });
   let submittedMove = String(body.submittedMove || "").trim();
   let correct = question.solution?.length ? question.solution[0] === submittedMove || question.solution.join(" ") === submittedMove : false;
-  let score = correct ? question.scoring?.correct ?? 5 : -(question.scoring?.wrongPenalty ?? 0);
+  const correctMarks = Number(question.scoring?.correct ?? 5);
+  const wrongPenalty = Number(question.scoring?.wrongPenalty ?? 0);
+  const hintPenalty = Number(question.scoring?.hintPenalty ?? 0);
+  let score = correct ? correctMarks : -wrongPenalty;
   let itemResults: Record<string, any> = {};
   let completedItems = 0;
   let totalItems = 0;
@@ -46,11 +49,12 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     for (const item of question.items) {
       const result = itemResults[item.id] || {};
       const solved = Boolean(result.solved);
+      const attempted = Boolean(result.skipped || result.pending || result.submittedMove || (Array.isArray(result.attempts) && result.attempts.length));
       const mistakes = Number(result.mistakes || 0);
       const itemHints = Number(result.hintsUsed || 0);
-      const base = Number(item.points ?? question.scoring?.correct ?? 5);
+      const base = Number(item.points ?? correctMarks);
       if (solved) completedItems += 1;
-      score += solved ? Math.max(0, base - mistakes - itemHints * 0.5) : 0;
+      score += solved ? Math.max(0, base - itemHints * hintPenalty) : attempted ? -wrongPenalty : 0;
       attemptsUsed += Math.max(1, mistakes + 1);
       hintsUsed += itemHints;
     }

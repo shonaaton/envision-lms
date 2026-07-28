@@ -51,6 +51,7 @@ import {
   X,
 } from "lucide-react";
 import PageLoadingOverlay from "@/components/feedback/PageLoadingOverlay";
+import MiniFenBoard, { previewFenFromPgn } from "@/components/pgn/MiniFenBoard";
 
 const Chessboard = dynamic(() => import("react-chessboard").then((m) => m.Chessboard), { ssr: false });
 
@@ -63,6 +64,8 @@ type SetupTab = "pieces" | "objects";
 type SetupMovementMode = "white" | "black" | "free";
 type GamifiedObjectId = "star" | "gem" | "coin" | "apple" | "fire" | "trophy" | "gift" | "shield" | "key" | "puzzle" | "rocket" | "monster" | "dragon";
 type SetupSelection = string | "erase" | GamifiedObjectId;
+type QuizComposerMode = "current" | "pgn_collection";
+type QuizComposerItem = { id: string; title: string; fen: string; pgn?: string; pgnTitle?: string; solution: string[] };
 
 const gamifiedObjectDisplayIcons: Record<GamifiedObjectId, string> = {
   star: "⭐",
@@ -117,6 +120,11 @@ function isCoach(role: Role) {
 
 function extractFen(pgn: string) {
   return pgn.match(/\[FEN\s+"([^"]+)"\]/)?.[1];
+}
+
+function pgnSideToMoveLabel(pgn: any) {
+  const side = pgn?.sideToMove || (String(pgn?.initialFen || pgn?.fen || extractFen(pgn?.pgn || "") || "").split(/\s+/)[1] === "b" ? "black" : "white");
+  return side === "black" ? "Black to play" : "White to play";
 }
 
 function parsePgnPuzzle(pgn: string) {
@@ -335,7 +343,7 @@ function minutesBetween(start?: string | Date, end?: string | Date) {
   return Math.max(0, Math.round((new Date(end).getTime() - new Date(start).getTime()) / 60000));
 }
 
-type LiveBoardQuizResult = { solved: boolean; mistakes: number; hintsUsed: number; timeTakenSeconds: number; skipped?: boolean; submittedMove?: string };
+type LiveBoardQuizResult = { solved: boolean; mistakes: number; hintsUsed: number; timeTakenSeconds: number; skipped?: boolean; submittedMove?: string; attempts?: string[] };
 
 function aggregateLiveResponses(responses: any[]) {
   return responses.reduce(
@@ -381,20 +389,22 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const [loadError, setLoadError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>(role === "student" ? "chat" : "students");
   const [tool, setTool] = useState<ToolKey>("move");
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [moveAnswer, setMoveAnswer] = useState("");
   const [quizTitle, setQuizTitle] = useState("Best move from current position");
   const [quizComposerOpen, setQuizComposerOpen] = useState(false);
+  const [quizComposerMode, setQuizComposerMode] = useState<QuizComposerMode>("current");
+  const [quizComposerItems, setQuizComposerItems] = useState<QuizComposerItem[]>([]);
   const [quizSolution, setQuizSolution] = useState<string[]>([]);
   const [quizPoints, setQuizPoints] = useState(5);
+  const [quizNegativeMarks, setQuizNegativeMarks] = useState(0);
+  const [quizTotalTime, setQuizTotalTime] = useState(0);
+  const [quizTimePerPosition, setQuizTimePerPosition] = useState(60);
   const [chatText, setChatText] = useState("");
   const [manualLoadText, setManualLoadText] = useState("");
   const [setupLoadText, setSetupLoadText] = useState("");
   const [selectedPgnIds, setSelectedPgnIds] = useState<string[]>([]);
   const [pgnFolderQuery, setPgnFolderQuery] = useState("");
   const [activePgnFolder, setActivePgnFolder] = useState<string | null>(null);
-  const [previewPgn, setPreviewPgn] = useState<any>(null);
-  const [challengeTimer, setChallengeTimer] = useState(60);
   const [selectedPiece, setSelectedPiece] = useState("wQ");
   const [setupTab, setSetupTab] = useState<SetupTab>("pieces");
   const [gamifiedSetup, setGamifiedSetup] = useState<Record<string, GamifiedObjectId>>({});
@@ -587,6 +597,14 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   );
   const students = useMemo(() => classroom?.students || [], [classroom?.students]);
   const pgnLibrary = useMemo(() => data?.pgnLibrary || [], [data?.pgnLibrary]);
+  const activePgnCollection = useMemo(
+    () => Array.isArray(live?.challenge?.pgnCollection) && live.challenge.pgnCollection.length > 1 ? live.challenge.pgnCollection : pgnLibrary,
+    [live?.challenge?.pgnCollection, pgnLibrary]
+  );
+  const activePgnCollectionIndex = useMemo(
+    () => activePgnCollection.findIndex((pgn: any) => pgn.title === live?.pgnTitle || pgn.pgn === live?.pgn),
+    [activePgnCollection, live?.pgnTitle, live?.pgn]
+  );
   const questionUsesBoardFlow = Boolean((Array.isArray(activeQuestion?.items) && activeQuestion.items.length > 0) || activeQuestion?.solution?.length);
   const studentQuizMode = Boolean(activeQuestion) && !coach && hiddenStudentQuizId !== String(activeQuestion?._id || "") && ((Array.isArray(activeQuestion?.items) && activeQuestion.items.length > 0) || activeQuestion?.solution?.length);
   const coachQuizMode = Boolean(activeQuestion) && coach;
@@ -1277,39 +1295,97 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   }
 
   async function createQuiz() {
+    setQuizComposerMode("current");
+    setQuizComposerItems([{
+      id: `${live?._id || classroomId}-current`,
+      title: "Current classroom position",
+      fen: live?.fen || "start",
+      pgn: live?.pgn,
+      pgnTitle: live?.pgnTitle,
+      solution: [],
+    }]);
+    setQuizTitle("Best move from current position");
     setQuizSolution([]);
+    setQuizNegativeMarks(0);
+    setQuizComposerOpen(true);
+  }
+
+  function openSelectedPgnQuizComposer() {
+    const selected = pgnLibrary.filter((pgn: any) => selectedPgnIds.includes(pgn._id));
+    if (!selected.length) return toast.info("Select at least one PGN");
+    const items = selected.map((pgn: any) => {
+      const parsed = parsePgnPuzzle(pgn.pgn);
+      return {
+        id: pgn._id,
+        title: pgn.title,
+        pgn: pgn.pgn,
+        pgnTitle: pgn.title,
+        fen: parsed.start,
+        solution: parsed.moves.map((move: any) => move.san),
+      };
+    });
+    if (!items.some((item: QuizComposerItem) => item.solution.length)) {
+      toast.error("Selected PGNs do not contain playable moves for a quiz");
+      return;
+    }
+    setQuizComposerMode("pgn_collection");
+    setQuizComposerItems(items);
+    setQuizTitle(selected.length === 1 ? `One Move Challenge: ${selected[0].title}` : `Classroom Quiz: ${selected.length} PGNs`);
+    setQuizSolution([]);
+    setQuizNegativeMarks(0);
+    setQuizTotalTime(0);
     setQuizComposerOpen(true);
   }
 
   async function launchComposedQuiz() {
-    if (!quizSolution.length) {
+    const isCurrentPositionQuiz = quizComposerMode === "current";
+    if (isCurrentPositionQuiz && !quizSolution.length) {
       toast.error("Play the correct answer on the board first");
       return;
     }
-    const res = await fetch(liveUrl("/question"), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        type: "best_move",
-        title: quizTitle,
-        topic: "Classroom Quiz",
-        difficulty: "medium",
-        instructions: "Find the best move from the current classroom position.",
-        fen: live?.fen || "start",
-        pgn: live?.pgn,
-        moveHistory: live?.moveHistory || [],
-        solution: quizSolution,
-        items: [{
+    const sourceItems = isCurrentPositionQuiz
+      ? [{
           id: `${live?._id || classroomId}-current`,
           title: quizTitle,
           fen: live?.fen || "start",
           pgn: live?.pgn,
+          pgnTitle: live?.pgnTitle,
           solution: quizSolution,
-          points: quizPoints,
-          timerSeconds: challengeTimer,
-        }],
-        timer: { perQuestionSeconds: challengeTimer },
-        scoring: { correct: quizPoints, wrongPenalty: 1, hintPenalty: 1, speedBonus: 2 },
+        }]
+      : quizComposerItems;
+    if (!sourceItems.length) {
+      toast.error("Choose at least one quiz position");
+      return;
+    }
+    const items = sourceItems.map((item) => ({
+      id: item.id,
+      title: item.title,
+      pgn: item.pgn,
+      pgnTitle: item.pgnTitle,
+      fen: item.fen,
+      solution: item.solution,
+      points: quizPoints,
+      timerSeconds: quizTimePerPosition,
+    }));
+    const first = items[0];
+    const res = await fetch(liveUrl("/question"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: isCurrentPositionQuiz ? "best_move" : "move_sequence",
+        title: quizTitle,
+        topic: "Classroom Quiz",
+        difficulty: "medium",
+        instructions: isCurrentPositionQuiz
+          ? "Solve the current classroom position by playing the answer line."
+          : "Solve each PGN position by playing the side-to-move continuation.",
+        fen: first.fen || live?.fen || "start",
+        pgn: first.pgn || live?.pgn,
+        moveHistory: live?.moveHistory || [],
+        solution: first.solution || [],
+        items,
+        timer: { overallSeconds: quizTotalTime || undefined, perQuestionSeconds: quizTimePerPosition || undefined },
+        scoring: { correct: quizPoints, wrongPenalty: quizNegativeMarks, hintPenalty: 0, speedBonus: 0, attemptPenalty: 0 },
         attempts: "multiple",
         hintsEnabled: true,
         progressionMode: "auto",
@@ -1322,7 +1398,22 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       return;
     }
     toast.success("Live quiz launched");
+    if (!isCurrentPositionQuiz && first) {
+      await patch({
+        fen: first.fen,
+        pgn: first.pgn || "",
+        pgnTitle: first.pgnTitle || first.title,
+        pgnMoves: first.solution || [],
+        pgnMoveIndex: 0,
+        moveHistory: [],
+        mode: "one_move_challenge",
+        studentMovesEnabled: true,
+        boardControlStudents: students.map((student: any) => student._id),
+        locked: false,
+      });
+    }
     setQuizComposerOpen(false);
+    setPgnOpen(false);
     setActiveTab("leaderboard");
     queueRefresh(60);
   }
@@ -1494,12 +1585,23 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     };
   }, [currentMoveIndex, navigateMove]);
 
-  function loadPgn(pgn: any, index: number) {
+  function collectionItems(items: any[]) {
+    return items.map((item: any) => ({
+      id: item._id || item.id,
+      title: item.title,
+      pgn: item.pgn,
+      fen: item.initialFen || item.fen || extractFen(item.pgn) || "start",
+      sideToMove: item.sideToMove || (String(item.initialFen || item.fen || extractFen(item.pgn) || "").split(/\s+/)[1] === "b" ? "black" : "white"),
+    }));
+  }
+
+  function loadPgn(pgn: any, index: number, collection?: any[]) {
     const chess = new Chess();
     try {
       chess.loadPgn(pgn.pgn);
       const moves = chess.history();
-      const startFen = extractFen(pgn.pgn) || "start";
+      const startFen = pgn.initialFen || pgn.fen || extractFen(pgn.pgn) || "start";
+      const selectedCollection = collection?.length ? collectionItems(collection) : live?.challenge?.pgnCollection || [];
       patch({
         pgn: pgn.pgn,
         pgnTitle: pgn.title,
@@ -1509,6 +1611,12 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
         moveHistory: [],
         setupMode: false,
         drawings: [],
+        challenge: {
+          ...(live?.challenge || {}),
+          active: false,
+          currentIndex: index,
+          pgnCollection: selectedCollection,
+        },
         usedResources: resourceHistory({ type: "pgn", title: pgn.title, pgn: pgn.pgn, fen: startFen }),
       });
       setActiveTab("moves");
@@ -1558,10 +1666,13 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   }
 
   function loadAdjacentPgn(direction: 1 | -1) {
-    if (!pgnLibrary.length) return;
-    const current = pgnLibrary.findIndex((pgn: any) => pgn.title === live?.pgnTitle || pgn.pgn === live?.pgn);
-    const next = current < 0 ? 0 : Math.max(0, Math.min(pgnLibrary.length - 1, current + direction));
-    loadPgn(pgnLibrary[next], next);
+    const collection = Array.isArray(live?.challenge?.pgnCollection) && live.challenge.pgnCollection.length > 1
+      ? live.challenge.pgnCollection
+      : pgnLibrary;
+    if (!collection.length) return;
+    const current = collection.findIndex((pgn: any) => pgn.title === live?.pgnTitle || pgn.pgn === live?.pgn);
+    const next = current < 0 ? 0 : Math.max(0, Math.min(collection.length - 1, current + direction));
+    loadPgn(collection[next], next, collection);
   }
 
   function togglePgnSelection(id: string) {
@@ -1571,66 +1682,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   function loadSelectedPgns() {
     const selected = pgnLibrary.filter((pgn: any) => selectedPgnIds.includes(pgn._id));
     if (!selected.length) return toast.info("Select at least one PGN");
-    loadPgn(selected[0], 0);
-  }
-
-  async function askSelectedPgnAsQuiz() {
-    const selected = pgnLibrary.filter((pgn: any) => selectedPgnIds.includes(pgn._id));
-    if (!selected.length) return toast.info("Select at least one PGN");
-    const first = selected[0];
-    try {
-      const firstParsed = parsePgnPuzzle(first.pgn);
-      const firstMoves = firstParsed.moves.map((move: any) => move.san);
-      const res = await fetch(liveUrl("/question"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type: "move_sequence",
-          title: selected.length === 1 ? `One Move Challenge: ${first.title}` : `Classroom Quiz: ${selected.length} PGNs`,
-          instructions: selected.length === 1 ? "Find the next move from this PGN position." : "Solve each board on the classroom board. Correct answers move automatically to the next one.",
-          fen: firstParsed.start,
-          pgn: first.pgn,
-          moveHistory: [],
-          solution: firstMoves.length ? [firstMoves[0]] : [],
-          items: selected.map((pgn: any, index: number) => {
-            const parsed = parsePgnPuzzle(pgn.pgn);
-            return {
-              id: pgn._id,
-              title: pgn.title,
-              pgn: pgn.pgn,
-              pgnTitle: pgn.title,
-              fen: parsed.start,
-              solution: parsed.moves.map((move: any) => move.san),
-              points: 5,
-              timerSeconds: challengeTimer,
-            };
-          }),
-          timer: { perQuestionSeconds: challengeTimer },
-          scoring: { correct: 5, wrongPenalty: 1, hintPenalty: 1, speedBonus: 2, attemptPenalty: 1 },
-          attempts: "multiple",
-          hintsEnabled: true,
-        }),
-      });
-      if (res.ok) {
-        await patch({
-          fen: firstParsed.start,
-          pgn: first.pgn,
-          pgnTitle: first.title,
-          pgnMoves: firstMoves,
-          pgnMoveIndex: 0,
-          moveHistory: [],
-          mode: "one_move_challenge",
-          studentMovesEnabled: true,
-          boardControlStudents: students.map((student: any) => student._id),
-          locked: false,
-        });
-        setActiveTab("leaderboard");
-        setPgnOpen(false);
-        toast.success("Challenge sent to students");
-      }
-    } catch {
-      toast.error("This PGN could not be used as a quiz");
-    }
+    loadPgn(selected[0], 0, selected);
   }
 
   const displayedDrawings = useMemo(
@@ -1783,55 +1835,6 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     );
   }
 
-  const SidebarButton = ({
-    id,
-    icon,
-    label,
-    active,
-    onClick,
-    disabled = false,
-    disabledLabel,
-    emphasis = "default",
-  }: {
-    id?: ToolKey;
-    icon: React.ReactNode;
-    label: string;
-    active?: boolean;
-    onClick?: () => void;
-    disabled?: boolean;
-    disabledLabel?: string;
-    emphasis?: "default" | "danger";
-  }) => (
-    <button
-      type="button"
-      onClick={disabled ? undefined : onClick || (() => id && setTool(id))}
-      title={disabled ? disabledLabel || label : label}
-      disabled={disabled}
-      className={`flex min-h-10 items-center rounded-lg border px-2.5 py-2 text-left text-xs font-semibold transition ${
-        sidebarCollapsed ? "justify-center" : "gap-2"
-      } ${
-        active || (id && tool === id)
-          ? "border-brand/25 bg-brand/10 text-brand"
-          : emphasis === "danger"
-            ? "border-red-200 bg-white text-red-600 hover:border-red-300 hover:bg-red-50"
-            : "border-slate-200 bg-white text-slate-700 hover:border-brand/25 hover:bg-brand-50 hover:text-brand"
-      } ${
-        disabled ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400 hover:border-slate-200 hover:bg-slate-100 hover:text-slate-400" : ""
-      }`}
-    >
-      <span className="grid h-6 w-6 flex-none place-items-center">{icon}</span>
-      {!sidebarCollapsed && <span className="truncate">{label}</span>}
-    </button>
-  );
-
-  const ToolButton = ({ id, icon, label, active, onClick, disabled, disabledLabel, emphasis }: { id?: ToolKey; icon: React.ReactNode; label: string; active?: boolean; onClick?: () => void; disabled?: boolean; disabledLabel?: string; emphasis?: "default" | "danger" }) => (
-    <SidebarButton id={id} icon={icon} label={label} active={active} onClick={onClick} disabled={disabled} disabledLabel={disabledLabel} emphasis={emphasis} />
-  );
-
-  const ToggleButton = ({ active, label, icon, onClick, disabled, disabledLabel, emphasis }: { active: boolean; label: string; icon: React.ReactNode; onClick: () => void; disabled?: boolean; disabledLabel?: string; emphasis?: "default" | "danger" }) => (
-    <SidebarButton active={active} icon={icon} label={label} onClick={onClick} disabled={disabled} disabledLabel={disabledLabel} emphasis={emphasis} />
-  );
-
   const orientation = (live?.orientation || "white") as "white" | "black";
   const files = coordinateFiles(orientation);
   const ranks = coordinateRanks(orientation);
@@ -1842,11 +1845,6 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     { key: "students" as TabKey, icon: <Users size={19} />, label: "Students" },
     { key: "chat" as TabKey, icon: <MessageSquare size={19} />, label: "Chat" },
     { key: "moves" as TabKey, icon: <ClipboardList size={19} />, label: "Moves / Notation" },
-    { key: "leaderboard" as TabKey, icon: <Crown size={19} />, label: "Leaderboard" },
-  ];
-  const studentSidebarTabs = [
-    { icon: <Home size={19} />, label: "Live Board", onClick: focusBoard, active: false },
-    { key: "chat" as TabKey, icon: <MessageSquare size={19} />, label: "Chat" },
     { key: "leaderboard" as TabKey, icon: <Crown size={19} />, label: "Leaderboard" },
   ];
   const classroomTabs = coach ? coachSidebarTabs : studentPanelTabs;
@@ -1892,58 +1890,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       </div>
 
       <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto bg-slate-50/70 md:overflow-hidden xl:grid-cols-[minmax(0,1fr)_minmax(300px,360px)]">
-        <section className="flex min-h-0 min-w-0 flex-col gap-3 overflow-visible p-2 md:overflow-hidden md:p-3 lg:flex-row">
-          <aside className={`hidden max-h-full flex-none flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition-all duration-200 lg:flex ${sidebarCollapsed ? "lg:w-[72px]" : "lg:w-[232px]"}`}>
-            <div className={`flex items-center border-b border-slate-200 p-2 ${sidebarCollapsed ? "justify-center" : "justify-between"}`}>
-              {!sidebarCollapsed && <div className="px-2 text-xs font-black uppercase tracking-[0.18em] text-slate-500">{coach ? "Classroom Tools" : "Classroom"}</div>}
-              <button
-                type="button"
-                title={sidebarCollapsed ? "Expand classroom sidebar" : "Collapse classroom sidebar"}
-                onClick={() => setSidebarCollapsed((value) => !value)}
-                className="grid h-10 w-10 place-items-center rounded-lg border border-slate-200 bg-white text-slate-700 transition hover:border-brand/25 hover:bg-brand-50 hover:text-brand"
-              >
-                {sidebarCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
-              </button>
-            </div>
-            <div className="flex-1 space-y-3 overflow-y-auto p-2">
-              <div className="space-y-2">
-                {(coach ? coachSidebarTabs : studentSidebarTabs).map((item: any) => (
-                  <SidebarButton
-                    key={item.label}
-                    icon={item.icon}
-                    label={item.label}
-                    active={item.key ? activeTab === item.key : item.active}
-                    onClick={item.key ? () => setActiveTab(item.key) : item.onClick}
-                  />
-                ))}
-              </div>
-              {coach && (
-                <>
-                  <div className="border-t border-slate-200" />
-                  <div className="space-y-3">
-                    <div className="space-y-2">
-                      {!sidebarCollapsed && <div className="px-2 text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">Teaching Tools</div>}
-                      <ToolButton icon={<Library size={19} />} label="Load PGN" onClick={() => setPgnOpen(true)} disabled={!canLoadPgnLibrary} disabledLabel="No PGNs are available in the library yet" />
-                      <ToggleButton active={setupOpen} icon={<Settings size={19} />} label="Setup Board" onClick={() => { setSetupPosition(boardPieceMap); setGamifiedSetup(liveGamifiedObjects); setSetupMovementMode(live?.illegalMovesEnabled ? "free" : live?.fen?.split(" ")?.[1] === "b" ? "black" : "white"); setSetupOpen(true); }} />
-                      <ToggleButton active={!!live?.illegalMovesEnabled} icon={<ShieldAlert size={19} />} label="Free Movement" onClick={() => patch({ illegalMovesEnabled: !live?.illegalMovesEnabled })} />
-                      <ToolButton id="highlight" icon={<Highlighter size={19} />} label="Highlight Square" />
-                      <ToolButton id="arrow" icon={<Send size={19} />} label="Draw Arrow" />
-                      <ToolButton icon={<Eraser size={19} />} label="Clear Drawings" onClick={() => patch({ drawings: [] })} />
-                      <ToolButton icon={<FileQuestion size={19} />} label="Ask Challenge" onClick={askEveryone} />
-                      <ToolButton icon={<Sparkles size={19} />} label="Start Quiz" onClick={createQuiz} disabled={!canLaunchBoardQuiz} disabledLabel="Load a PGN position first so the next move can be checked on the board" />
-                    </div>
-
-                    <div className="space-y-2">
-                      {!sidebarCollapsed && <div className="px-2 text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">Session</div>}
-                      <ToggleButton active={!!live?.studentMovesEnabled} icon={<Users size={19} />} label={live?.studentMovesEnabled ? "Student Control On" : "Give Student Control"} onClick={() => patch({ studentMovesEnabled: !live?.studentMovesEnabled, mode: !live?.studentMovesEnabled ? "student_move" : "teaching" })} disabled={!students.length} disabledLabel="No students are in this classroom yet" />
-                      <ToolButton icon={<X size={19} />} label="End Class" onClick={openEndSummary} emphasis="danger" />
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-          </aside>
-
+        <section className="flex min-h-0 min-w-0 flex-col gap-3 overflow-visible p-2 md:overflow-hidden md:p-3">
           <div ref={boardShellRef} className="min-h-0 min-w-0 flex-1 overflow-visible rounded-lg border border-slate-200 bg-white p-2 shadow-sm md:overflow-auto sm:p-3">
             {studentQuizMode ? (
               <div className="mx-auto w-full max-w-[560px]">
@@ -2124,29 +2071,29 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                         <button disabled={!pgnMoves.length} onClick={() => navigateMove(currentMoveIndex - 1)} className="grid h-8 w-8 place-items-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><ChevronLeft size={15} /></button>
                         <button disabled={!pgnMoves.length} onClick={() => navigateMove(currentMoveIndex + 1)} className="grid h-8 w-8 place-items-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><ChevronRight size={15} /></button>
                         <button disabled={!pgnMoves.length} onClick={() => navigateMove(pgnMoves.length)} className="grid h-8 w-8 place-items-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><SkipForward size={15} /></button>
-                        <button disabled={!pgnLibrary.length} onClick={() => loadAdjacentPgn(-1)} className="rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 disabled:opacity-40">Previous game</button>
-                        <button disabled={!pgnLibrary.length} onClick={() => loadAdjacentPgn(1)} className="rounded-md bg-purple-700 px-2.5 py-1.5 text-xs font-semibold text-white disabled:opacity-40">Next game</button>
+                        <button disabled={!activePgnCollection.length || activePgnCollectionIndex <= 0} onClick={() => loadAdjacentPgn(-1)} className="rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 disabled:opacity-40">Previous game</button>
+                        <button disabled={!activePgnCollection.length || activePgnCollectionIndex >= activePgnCollection.length - 1} onClick={() => loadAdjacentPgn(1)} className="rounded-md bg-purple-700 px-2.5 py-1.5 text-xs font-semibold text-white disabled:opacity-40">Next game</button>
                       </div>
                     </div>
-
-                    <div className="flex items-center gap-1.5 overflow-x-auto rounded-lg border border-slate-200 bg-slate-50 p-2 lg:hidden">
-                      <button onClick={() => setPgnOpen(true)} disabled={!canLoadPgnLibrary} className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 disabled:opacity-40">Load PGN</button>
-                      <button onClick={() => { const nextMode = live?.illegalMovesEnabled ? "free" : live?.fen?.split(" ")?.[1] === "b" ? "black" : "white"; setSetupPosition(boardPieceMap); setGamifiedSetup(liveGamifiedObjects); setSetupMovementMode(nextMode); if (nextMode === "white" || nextMode === "black") setSetupPieceColor(nextMode); setSetupOpen(true); }} className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700">Setup</button>
-                      <button onClick={toggleFreeMove} className={`rounded-md border px-2.5 py-1.5 text-xs font-semibold ${live?.illegalMovesEnabled ? "border-purple-200 bg-purple-50 text-purple-800" : "border-slate-200 bg-white text-slate-700"}`}>{live?.illegalMovesEnabled ? "Back to PGN" : "Free move"}</button>
-                      <button onClick={() => setTool("highlight")} className={`rounded-md border px-2.5 py-1.5 text-xs font-semibold ${tool === "highlight" ? "border-purple-200 bg-purple-50 text-purple-800" : "border-slate-200 bg-white text-slate-700"}`}>Highlight</button>
-                      <button onClick={() => setTool("arrow")} className={`rounded-md border px-2.5 py-1.5 text-xs font-semibold ${tool === "arrow" ? "border-purple-200 bg-purple-50 text-purple-800" : "border-slate-200 bg-white text-slate-700"}`}>Draw</button>
-                      <button onClick={() => patch({ drawings: [] })} className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700">Clear</button>
-                      <button onClick={() => patch({ locked: !live?.locked })} className={`rounded-md border px-2.5 py-1.5 text-xs font-semibold ${live?.locked ? "border-purple-200 bg-purple-50 text-purple-800" : "border-slate-200 bg-white text-slate-700"}`}>{live?.locked ? "Unlock" : "Lock"}</button>
-                      <button onClick={() => patch({ showCoordinates: !live?.showCoordinates })} className={`rounded-md border px-2.5 py-1.5 text-xs font-semibold ${live?.showCoordinates !== false ? "border-purple-200 bg-purple-50 text-purple-800" : "border-slate-200 bg-white text-slate-700"}`}>Coordinates</button>
-                      <button onClick={() => patch({ orientation: live?.orientation === "white" ? "black" : "white" })} className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700">Flip</button>
-                      <button onClick={resetGame} className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700">Reset</button>
-                      <button onClick={() => patch({ soundEnabled: !live?.soundEnabled })} className={`rounded-md border px-2.5 py-1.5 text-xs font-semibold ${live?.soundEnabled ? "border-purple-200 bg-purple-50 text-purple-800" : "border-slate-200 bg-white text-slate-700"}`}>Sound</button>
-                      <button onClick={askEveryone} className="rounded-md border border-purple-200 bg-purple-50 px-2.5 py-1.5 text-xs font-semibold text-purple-800">Challenge</button>
-                      <button onClick={createQuiz} disabled={!canLaunchBoardQuiz} className="rounded-md bg-purple-700 px-2.5 py-1.5 text-xs font-semibold text-white disabled:opacity-40">Quiz</button>
-                      <button onClick={() => patch({ studentMovesEnabled: !live?.studentMovesEnabled, mode: !live?.studentMovesEnabled ? "student_move" : "teaching" })} disabled={!students.length} className={`rounded-md border px-2.5 py-1.5 text-xs font-semibold disabled:opacity-40 ${live?.studentMovesEnabled ? "border-purple-200 bg-purple-50 text-purple-800" : "border-slate-200 bg-white text-slate-700"}`}>Student control</button>
-                      <button onClick={() => setActiveTab("moves")} className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700">Moves</button>
-                      <button onClick={() => setActiveTab("leaderboard")} className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700">Leaderboard</button>
-                      <button onClick={openEndSummary} className="rounded-md border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs font-semibold text-red-700">End class</button>
+                    <div className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 sm:flex-row sm:items-center">
+                      <input
+                        type="range"
+                        min={0}
+                        max={pgnMoves.length}
+                        value={Math.min(currentMoveIndex, pgnMoves.length)}
+                        disabled={!pgnMoves.length}
+                        onChange={(event) => navigateMove(Number(event.target.value))}
+                        className="h-2 min-w-0 flex-1 accent-purple-700 disabled:opacity-40"
+                        aria-label="Navigate PGN moves"
+                      />
+                      <button
+                        type="button"
+                        onClick={createQuiz}
+                        disabled={!canLaunchBoardQuiz}
+                        className="h-9 rounded-md border border-purple-200 bg-purple-50 px-3 text-xs font-semibold text-purple-800 disabled:opacity-40"
+                      >
+                        Ask Current Position as Quiz
+                      </button>
                     </div>
                   </div>
                 )}
@@ -2256,17 +2203,17 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <button onClick={loadSelectedPgns} className="h-10 rounded-md bg-purple-700 text-sm font-semibold text-white">Load on Board</button>
-                    <button onClick={askSelectedPgnAsQuiz} className="h-10 rounded-md border border-purple-200 bg-purple-50 text-sm font-semibold text-purple-800">Ask as Quiz</button>
+                    <button onClick={openSelectedPgnQuizComposer} className="h-10 rounded-md border border-purple-200 bg-purple-50 text-sm font-semibold text-purple-800">Ask as Quiz</button>
                   </div>
                   <label className="mt-3 block text-xs font-semibold text-slate-600">Challenge Timer</label>
-                  <input value={challengeTimer} onChange={(event) => setChallengeTimer(Number(event.target.value || 0))} type="number" min={10} className="mt-1 h-9 w-full rounded-md border border-slate-200 px-3 text-sm" />
+                  <input value={quizTimePerPosition} onChange={(event) => setQuizTimePerPosition(Number(event.target.value || 0))} type="number" min={10} className="mt-1 h-9 w-full rounded-md border border-slate-200 px-3 text-sm" />
                   <div className="mt-3 max-h-48 space-y-2 overflow-auto rounded-md border border-slate-200 bg-slate-50 p-2">
                     {pgnLibrary.length ? pgnLibrary.map((pgn: any) => (
                       <label key={pgn._id} className="flex cursor-pointer items-start gap-2 rounded-md bg-white p-2 text-xs text-slate-700">
                         <input checked={selectedPgnIds.includes(pgn._id)} onChange={() => togglePgnSelection(pgn._id)} type="checkbox" className="mt-0.5 h-4 w-4" />
                         <span className="min-w-0">
                           <span className="block truncate font-semibold text-slate-950">{pgn.title}</span>
-                          <span className="block truncate text-slate-500">{pgn.folder || "Library"} - {pgn.white || "White"} vs {pgn.black || "Black"}</span>
+                          <span className="block truncate text-slate-500">{pgn.folder || "Library"} - {pgn.white || "White"} vs {pgn.black || "Black"} - {pgnSideToMoveLabel(pgn)}</span>
                         </span>
                       </label>
                     )) : <div className="p-3 text-center text-xs text-slate-500">No PGNs available.</div>}
@@ -2286,7 +2233,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                   {pgnLibrary.length ? pgnLibrary.map((pgn: any, index: number) => (
                     <button key={pgn._id} onClick={() => loadPgn(pgn, index)} className={`w-full rounded-lg border p-3 text-left transition hover:border-purple-300 hover:bg-purple-50 ${live?.pgnTitle === pgn.title ? "border-purple-300 bg-purple-50" : "border-slate-200"}`}>
                       <div className="text-sm font-semibold text-slate-950">{pgn.title}</div>
-                      <div className="mt-1 text-xs text-slate-500">{pgn.folder || "Library"} · {pgn.white || "White"} vs {pgn.black || "Black"} {pgn.result ? `· ${pgn.result}` : ""}</div>
+                      <div className="mt-1 text-xs text-slate-500">{pgn.folder || "Library"} · {pgn.white || "White"} vs {pgn.black || "Black"} · {pgnSideToMoveLabel(pgn)} {pgn.result ? `· ${pgn.result}` : ""}</div>
                     </button>
                   )) : <div className="rounded-lg border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">No PGNs available yet.</div>}
                 </div>
@@ -2489,12 +2436,14 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                   ))}
                   {visiblePgnLibrary.length ? visiblePgnLibrary.map((pgn: any, index: number) => (
                     <div key={pgn._id} className={`rounded-lg border bg-white p-3 transition ${selectedPgnIds.includes(pgn._id) ? "border-purple-400 ring-2 ring-purple-100" : "border-slate-200"}`}>
-                      <label className="flex cursor-pointer items-start gap-2">
-                        <input checked={selectedPgnIds.includes(pgn._id)} onChange={() => togglePgnSelection(pgn._id)} type="checkbox" className="mt-1 h-4 w-4" />
+                      <label className="grid cursor-pointer grid-cols-[88px_minmax(0,1fr)_20px] items-start gap-3">
+                        <MiniFenBoard fen={previewFenFromPgn(pgn.pgn, pgn.initialFen)} className="w-[88px]" />
                         <span className="min-w-0">
                           <span className="block truncate text-sm font-semibold text-slate-950">{pgn.title}</span>
-                          <span className="block truncate text-xs text-slate-500">{pgn.white || "White"} vs {pgn.black || "Black"}{pgn.result ? ` - ${pgn.result}` : ""}</span>
+                          <span className="mt-1 block truncate text-xs text-slate-500">{pgn.white || "White"} vs {pgn.black || "Black"}{pgn.result ? ` - ${pgn.result}` : ""}</span>
+                          <span className="mt-2 inline-flex rounded bg-purple-50 px-2 py-1 text-[11px] font-semibold text-purple-700">{pgnSideToMoveLabel(pgn)}</span>
                         </span>
+                        <input checked={selectedPgnIds.includes(pgn._id)} onChange={() => togglePgnSelection(pgn._id)} type="checkbox" className="mt-1 h-4 w-4" />
                       </label>
                       <button onClick={() => loadPgn(pgn, index)} className="mt-3 h-9 w-full rounded-md bg-purple-700 text-xs font-semibold text-white">Load this PGN</button>
                     </div>
@@ -2503,11 +2452,10 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
               </div>
               <div className="space-y-4">
                 <div className="rounded-xl border border-purple-100 bg-purple-50 p-3">
-                  <label className="text-xs font-semibold text-slate-600">Challenge Timer</label>
-                  <input value={challengeTimer} onChange={(event) => setChallengeTimer(Number(event.target.value || 0))} type="number" min={10} className="mt-1 h-9 w-full rounded-md border border-slate-200 px-3 text-sm" />
+                  <label className="text-xs font-semibold text-slate-600">Selected PGNs</label>
                   <div className="mt-3 grid gap-2">
-                    <button onClick={loadSelectedPgns} className="h-10 rounded-md bg-purple-700 text-sm font-semibold text-white">Load Selected</button>
-                    <button onClick={askSelectedPgnAsQuiz} className="h-10 rounded-md border border-purple-200 bg-white text-sm font-semibold text-purple-800">Ask Selected as Quiz</button>
+                    <button onClick={loadSelectedPgns} className="h-10 rounded-md bg-purple-700 text-sm font-semibold text-white">Load Selected Collection</button>
+                    <button onClick={openSelectedPgnQuizComposer} className="h-10 rounded-md border border-purple-200 bg-white text-sm font-semibold text-purple-800">Ask Selected as Quiz</button>
                   </div>
                 </div>
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -2694,13 +2642,30 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
           <div className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
             <div className="flex flex-none items-start justify-between gap-4 border-b border-slate-200 p-4">
               <div>
-                <h3 className="text-xl font-black text-slate-950">Create Position Quiz</h3>
-                <p className="mt-1 text-sm text-slate-500">Play the correct answer directly on the board, then set the timer and marks.</p>
+                <h3 className="text-xl font-black text-slate-950">{quizComposerMode === "current" ? "Ask Current Position as Quiz" : "Create PGN Quiz"}</h3>
+                <p className="mt-1 text-sm text-slate-500">{quizComposerMode === "current" ? "Play the correct answer directly on the board, then set the timer and marks." : "Set the quiz timing and marks before sending these PGN positions to students."}</p>
               </div>
               <button onClick={() => setQuizComposerOpen(false)} className="grid h-9 w-9 place-items-center rounded-md border border-slate-200"><X size={16} /></button>
             </div>
             <div className="grid min-h-0 flex-1 gap-5 overflow-y-auto p-4 lg:grid-cols-[minmax(300px,420px)_1fr]">
-              <QuizAnswerComposer startFen={live?.fen || "start"} onChange={setQuizSolution} />
+              {quizComposerMode === "current" ? (
+                <QuizAnswerComposer startFen={live?.fen || "start"} onChange={setQuizSolution} />
+              ) : (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="text-sm font-black text-slate-950">Selected positions</div>
+                  <div className="mt-3 max-h-[430px] space-y-2 overflow-auto pr-1">
+                    {quizComposerItems.map((item, index) => (
+                      <div key={item.id} className="grid grid-cols-[76px_minmax(0,1fr)] gap-3 rounded-lg border border-slate-200 bg-white p-2">
+                        <MiniFenBoard fen={item.fen} className="w-[76px]" />
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-semibold text-slate-950">{index + 1}. {item.title}</div>
+                          <div className="mt-1 text-xs text-slate-500">{item.solution.length ? `${item.solution.length} move${item.solution.length === 1 ? "" : "s"} in answer line` : "No answer line found"}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="space-y-4">
                 <label className="block">
                   <span className="text-xs font-black uppercase tracking-wide text-slate-500">Quiz title</span>
@@ -2708,19 +2673,31 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                 </label>
                 <div className="grid grid-cols-2 gap-3">
                   <label>
-                    <span className="text-xs font-black uppercase tracking-wide text-slate-500">Time per position</span>
-                    <input type="number" min={10} value={challengeTimer} onChange={(event) => setChallengeTimer(Number(event.target.value || 10))} className="input mt-1 h-11" />
+                    <span className="text-xs font-black uppercase tracking-wide text-slate-500">Total time</span>
+                    <input type="number" min={0} value={quizTotalTime} onChange={(event) => setQuizTotalTime(Math.max(0, Number(event.target.value || 0)))} className="input mt-1 h-11" />
                   </label>
                   <label>
-                    <span className="text-xs font-black uppercase tracking-wide text-slate-500">Marks</span>
-                    <input type="number" min={1} value={quizPoints} onChange={(event) => setQuizPoints(Number(event.target.value || 1))} className="input mt-1 h-11" />
+                    <span className="text-xs font-black uppercase tracking-wide text-slate-500">Time per position</span>
+                    <input type="number" min={0} value={quizTimePerPosition} onChange={(event) => setQuizTimePerPosition(Math.max(0, Number(event.target.value || 0)))} className="input mt-1 h-11" />
+                  </label>
+                  <label>
+                    <span className="text-xs font-black uppercase tracking-wide text-slate-500">Marks per position</span>
+                    <input type="number" min={1} value={quizPoints} onChange={(event) => setQuizPoints(Math.max(1, Number(event.target.value || 1)))} className="input mt-1 h-11" />
+                  </label>
+                  <label>
+                    <span className="text-xs font-black uppercase tracking-wide text-slate-500">Negative marks</span>
+                    <input type="number" min={0} value={quizNegativeMarks} onChange={(event) => setQuizNegativeMarks(Math.max(0, Number(event.target.value || 0)))} className="input mt-1 h-11" />
                   </label>
                 </div>
                 <div className="rounded-2xl border border-brand/10 bg-brand/5 p-4">
-                  <div className="text-sm font-black text-brand">Recorded answer</div>
-                  <div className="mt-2 min-h-10 text-sm text-slate-700">{quizSolution.length ? quizSolution.join(" ") : "Play the answer line on the board."}</div>
+                  <div className="text-sm font-black text-brand">{quizComposerMode === "current" ? "Recorded answer" : "Quiz settings"}</div>
+                  <div className="mt-2 min-h-10 text-sm text-slate-700">
+                    {quizComposerMode === "current"
+                      ? quizSolution.length ? quizSolution.join(" ") : "Play the answer line on the board."
+                      : `${quizComposerItems.length} position${quizComposerItems.length === 1 ? "" : "s"} selected. ${quizTimePerPosition || "Flexible"} seconds per position.`}
+                  </div>
                 </div>
-                <button onClick={launchComposedQuiz} disabled={!quizSolution.length} className="btn-primary w-full justify-center disabled:opacity-40">
+                <button onClick={launchComposedQuiz} disabled={quizComposerMode === "current" && !quizSolution.length} className="btn-primary w-full justify-center disabled:opacity-40">
                   <Sparkles size={16} /> Launch Quiz
                 </button>
               </div>
@@ -2886,6 +2863,7 @@ function LiveBoardQuiz({
   const [quizStartedAt] = useState(Date.now());
   const [itemStartedAt, setItemStartedAt] = useState(Date.now());
   const [remaining, setRemaining] = useState(Number(question.timer?.perQuestionSeconds || items[0]?.timerSeconds || 0));
+  const [totalRemaining, setTotalRemaining] = useState(Number(question.timer?.overallSeconds || 0));
   const submittedRef = useRef(false);
 
   const activeItem = items[currentIndex];
@@ -2972,7 +2950,8 @@ function LiveBoardQuiz({
     setResults(existingItemResults || {});
     setQuizFinished(false);
     setQuizSubmitted(false);
-  }, [question._id, existingItemResults, serverIndex]);
+    setTotalRemaining(Number(question.timer?.overallSeconds || 0));
+  }, [question._id, question.timer?.overallSeconds, existingItemResults, serverIndex]);
 
   useEffect(() => {
     setResults(existingItemResults || {});
@@ -3034,6 +3013,37 @@ function LiveBoardQuiz({
     }, 1000);
     return () => window.clearInterval(timer);
   }, [remaining, skipCurrent, solved]);
+
+  const submitQuiz = useCallback((nextResults = results, nextFeedback = "Quiz submitted successfully. Waiting for the coach.") => {
+    if (submittedRef.current) return;
+    submittedRef.current = true;
+    setQuizSubmitted(true);
+    setFeedback(nextFeedback);
+    onComplete(nextResults, Math.round((Date.now() - quizStartedAt) / 1000));
+    onSubmitted?.();
+  }, [onComplete, onSubmitted, quizStartedAt, results]);
+
+  useEffect(() => {
+    if (!totalRemaining || quizSubmitted) return;
+    const timer = window.setInterval(() => {
+      setTotalRemaining((value) => {
+        if (value <= 1) {
+          window.clearInterval(timer);
+          if (!submittedRef.current) {
+            const timedOutResults = items.reduce((acc: Record<string, LiveBoardQuizResult>, item: any) => {
+              if (acc[item.id]) return acc;
+              acc[item.id] = { solved: false, skipped: true, mistakes: 0, hintsUsed: 0, timeTakenSeconds: 0, submittedMove: "", attempts: [] };
+              return acc;
+            }, { ...results });
+            queueMicrotask(() => submitQuiz(timedOutResults, "Time is up. Your quiz has been submitted."));
+          }
+          return 0;
+        }
+        return value - 1;
+      });
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [items, quizSubmitted, results, submitQuiz, totalRemaining]);
 
   useEffect(() => {
     if (!solved || advancedRef.current || !activeItem) return;
@@ -3184,15 +3194,6 @@ function LiveBoardQuiz({
     setRemaining(Number(question.timer?.perQuestionSeconds || activeItem?.timerSeconds || 0));
   }
 
-  function submitQuiz() {
-    if (submittedRef.current) return;
-    submittedRef.current = true;
-    setQuizSubmitted(true);
-    setFeedback("Quiz submitted successfully. Waiting for the coach.");
-    onComplete(results, Math.round((Date.now() - quizStartedAt) / 1000));
-    onSubmitted?.();
-  }
-
   if (!activeItem) return null;
 
   if (quizSubmitted) {
@@ -3220,6 +3221,7 @@ function LiveBoardQuiz({
         </div>
         <div className="flex items-center gap-2">
           <span className="rounded-full bg-purple-100 px-3 py-1 text-xs font-bold text-purple-800"><Clock size={12} className="mr-1 inline" /> {remaining ? `${remaining}s left` : "No timer"}</span>
+          {Number(question.timer?.overallSeconds || 0) ? <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-slate-700"><Clock size={12} className="mr-1 inline" /> Total {totalRemaining}s</span> : null}
           <span className={`rounded-full px-3 py-1 text-xs font-bold ${quizFinished ? "bg-amber-100 text-amber-800" : "bg-slate-200 text-slate-700"}`}>{quizFinished ? "Ready to submit" : "Not submitted"}</span>
         </div>
       </div>
@@ -3285,7 +3287,7 @@ function LiveBoardQuiz({
             <InfoTile label="Time Taken" value={`${summary.timeTakenSeconds}s`} />
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
-            <button type="button" className="rounded-lg bg-purple-700 px-4 py-2 text-sm font-bold text-white" onClick={submitQuiz}>Submit Quiz</button>
+            <button type="button" className="rounded-lg bg-purple-700 px-4 py-2 text-sm font-bold text-white" onClick={() => submitQuiz()}>Submit Quiz</button>
           </div>
         </div>
       ) : (

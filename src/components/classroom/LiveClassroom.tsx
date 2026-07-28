@@ -1807,14 +1807,14 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       onClick={disabled ? undefined : onClick || (() => id && setTool(id))}
       title={disabled ? disabledLabel || label : label}
       disabled={disabled}
-      className={`flex min-h-10 items-center rounded-xl border px-2.5 py-2 text-left text-xs font-semibold transition ${
+      className={`flex min-h-10 items-center rounded-lg border px-2.5 py-2 text-left text-xs font-semibold transition ${
         sidebarCollapsed ? "justify-center" : "gap-2"
       } ${
         active || (id && tool === id)
-          ? "border-purple-300 bg-purple-100 text-purple-800"
+          ? "border-brand/25 bg-brand/10 text-brand"
           : emphasis === "danger"
             ? "border-red-200 bg-white text-red-600 hover:border-red-300 hover:bg-red-50"
-            : "border-slate-200 bg-white text-slate-700 hover:border-purple-300 hover:bg-purple-50 hover:text-purple-800"
+            : "border-slate-200 bg-white text-slate-700 hover:border-brand/25 hover:bg-brand-50 hover:text-brand"
       } ${
         disabled ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400 hover:border-slate-200 hover:bg-slate-100 hover:text-slate-400" : ""
       }`}
@@ -1852,12 +1852,16 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const classroomTabs = coach ? coachSidebarTabs : studentPanelTabs;
 
   return (
-    <div className="flex min-h-[calc(100dvh-76px)] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg shadow-brand/10 md:h-[calc(100vh-92px)] md:min-h-[640px]">
-      <div className="flex flex-none flex-col border-b border-slate-200 px-3 py-2 lg:flex-row lg:items-center lg:justify-between lg:px-4 lg:py-2.5">
+    <div className="flex min-h-[calc(100dvh-76px)] flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg shadow-brand/10 md:h-[calc(100vh-92px)] md:min-h-[640px]">
+      <div className="flex flex-none flex-col gap-3 border-b border-slate-200 bg-white px-3 py-3 lg:flex-row lg:items-center lg:justify-between lg:px-4">
         <div>
-          <h2 className="text-base font-semibold text-slate-950 sm:text-xl">{classroomName}</h2>
+          <div className="inline-flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.16em] text-brand">
+            <BookOpen size={14} />
+            {coach ? "Teaching Workspace" : "Learning Workspace"}
+          </div>
+          <h2 className="mt-1 text-lg font-black text-slate-950 sm:text-xl">{classroomName}</h2>
           <p className="text-xs text-slate-500 sm:text-sm">
-            Instructor: {coachName} - Topic: {live?.topic || "Not set"} - {duration} min
+            {coachName} - {live?.topic || "Topic not set"} - {duration} min
           </p>
         </div>
         <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2 lg:mt-0 lg:max-w-[58%] lg:justify-end">
@@ -1887,16 +1891,16 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
         </div>
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto md:overflow-hidden xl:grid-cols-[minmax(0,1fr)_350px]">
-        <section className="flex min-h-0 min-w-0 flex-col gap-2 overflow-visible p-2 md:overflow-hidden md:p-3 lg:flex-row">
-          <aside style={{ display: "none" }} className={`flex max-h-full flex-none flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 shadow-sm transition-all duration-200 ${sidebarCollapsed ? "lg:w-[74px]" : "lg:w-[230px]"}`}>
+      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto bg-slate-50/70 md:overflow-hidden xl:grid-cols-[minmax(0,1fr)_minmax(300px,360px)]">
+        <section className="flex min-h-0 min-w-0 flex-col gap-3 overflow-visible p-2 md:overflow-hidden md:p-3 lg:flex-row">
+          <aside className={`hidden max-h-full flex-none flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition-all duration-200 lg:flex ${sidebarCollapsed ? "lg:w-[72px]" : "lg:w-[232px]"}`}>
             <div className={`flex items-center border-b border-slate-200 p-2 ${sidebarCollapsed ? "justify-center" : "justify-between"}`}>
               {!sidebarCollapsed && <div className="px-2 text-xs font-black uppercase tracking-[0.18em] text-slate-500">{coach ? "Classroom Tools" : "Classroom"}</div>}
               <button
                 type="button"
                 title={sidebarCollapsed ? "Expand classroom sidebar" : "Collapse classroom sidebar"}
                 onClick={() => setSidebarCollapsed((value) => !value)}
-                className="grid h-10 w-10 place-items-center rounded-xl border border-slate-200 bg-white text-slate-700 transition hover:border-purple-300 hover:bg-purple-50 hover:text-purple-800"
+                className="grid h-10 w-10 place-items-center rounded-lg border border-slate-200 bg-white text-slate-700 transition hover:border-brand/25 hover:bg-brand-50 hover:text-brand"
               >
                 {sidebarCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
               </button>
@@ -1940,7 +1944,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
             </div>
           </aside>
 
-          <div ref={boardShellRef} className="min-h-0 min-w-0 flex-1 overflow-visible md:overflow-auto">
+          <div ref={boardShellRef} className="min-h-0 min-w-0 flex-1 overflow-visible rounded-lg border border-slate-200 bg-white p-2 shadow-sm md:overflow-auto sm:p-3">
             {studentQuizMode ? (
               <div className="mx-auto w-full max-w-[560px]">
                 <LiveBoardQuiz
@@ -2125,7 +2129,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                       </div>
                     </div>
 
-                    <div className="flex flex-wrap items-center justify-end gap-1.5">
+                    <div className="flex items-center gap-1.5 overflow-x-auto rounded-lg border border-slate-200 bg-slate-50 p-2 lg:hidden">
                       <button onClick={() => setPgnOpen(true)} disabled={!canLoadPgnLibrary} className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 disabled:opacity-40">Load PGN</button>
                       <button onClick={() => { const nextMode = live?.illegalMovesEnabled ? "free" : live?.fen?.split(" ")?.[1] === "b" ? "black" : "white"; setSetupPosition(boardPieceMap); setGamifiedSetup(liveGamifiedObjects); setSetupMovementMode(nextMode); if (nextMode === "white" || nextMode === "black") setSetupPieceColor(nextMode); setSetupOpen(true); }} className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700">Setup</button>
                       <button onClick={toggleFreeMove} className={`rounded-md border px-2.5 py-1.5 text-xs font-semibold ${live?.illegalMovesEnabled ? "border-purple-200 bg-purple-50 text-purple-800" : "border-slate-200 bg-white text-slate-700"}`}>{live?.illegalMovesEnabled ? "Back to PGN" : "Free move"}</button>
@@ -2187,10 +2191,10 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
           </div>
         </section>
 
-        <aside className="flex min-h-[280px] flex-col border-t border-slate-200 md:min-h-0 xl:border-l xl:border-t-0">
-          <div className={`grid overflow-x-auto border-b border-slate-200 text-sm ${coach ? "grid-cols-4" : "grid-cols-2"}`}>
+        <aside className="flex min-h-[280px] flex-col border-t border-slate-200 bg-white md:min-h-0 xl:border-l xl:border-t-0">
+          <div className={`grid overflow-x-auto border-b border-slate-200 bg-white text-sm ${coach ? "grid-cols-4" : "grid-cols-2"}`}>
             {classroomTabs.map(({ key, icon, label }: any) => (
-              <button key={key} onClick={() => setActiveTab(key)} className={`flex h-10 min-w-fit items-center justify-center gap-1 border-b-2 px-2 text-xs font-semibold sm:h-11 ${activeTab === key ? "border-purple-700 text-purple-800" : "border-transparent text-slate-500"}`} title={label}>
+              <button key={key} onClick={() => setActiveTab(key)} className={`flex h-11 min-w-fit items-center justify-center gap-1 border-b-2 px-2 text-xs font-semibold transition ${activeTab === key ? "border-brand text-brand" : "border-transparent text-slate-500 hover:bg-slate-50 hover:text-slate-800"}`} title={label}>
                 {icon}
                 <span className="hidden sm:inline 2xl:inline">{label}</span>
               </button>

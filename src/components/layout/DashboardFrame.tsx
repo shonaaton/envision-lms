@@ -21,6 +21,7 @@ export default function DashboardFrame({
   children: ReactNode;
 }) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [desktopNavCollapsed, setDesktopNavCollapsed] = useState(false);
 
   useEffect(() => {
     document.body.style.overflow = mobileNavOpen ? "hidden" : "";
@@ -44,7 +45,14 @@ export default function DashboardFrame({
 
   return (
     <div className="flex min-h-dvh bg-[linear-gradient(180deg,#f8fafc_0%,#f3f0f7_52%,#f8fafc_100%)] text-slate-950 md:h-dvh md:overflow-hidden">
-      <Sidebar role={role} accountStatus={accountStatus} mobileOpen={mobileNavOpen} onCloseMobile={() => setMobileNavOpen(false)} />
+      <Sidebar
+        role={role}
+        accountStatus={accountStatus}
+        mobileOpen={mobileNavOpen}
+        desktopCollapsed={desktopNavCollapsed}
+        onToggleDesktop={() => setDesktopNavCollapsed((value) => !value)}
+        onCloseMobile={() => setMobileNavOpen(false)}
+      />
       <div className="flex min-w-0 flex-1 flex-col md:h-full">
         <Topbar user={user} onOpenMobileNav={() => setMobileNavOpen(true)} />
         <main className="min-h-0 flex-1 overflow-y-auto px-3 py-4 sm:px-5 lg:px-6">

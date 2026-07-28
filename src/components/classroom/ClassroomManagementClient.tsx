@@ -494,8 +494,8 @@ export default function ClassroomManagementClient({ role }: { role: Role }) {
   return (
     <>
     <PageLoadingOverlay visible={!!busyMessage} message={busyMessage} />
-    <div className="min-h-full space-y-3 text-slate-950">
-      <div className="mb-3 flex flex-none flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+    <div className="min-h-full space-y-4 text-slate-950">
+      <div className="flex flex-none flex-col gap-3 rounded-lg border border-brand/10 bg-white px-4 py-4 shadow-sm lg:flex-row lg:items-center lg:justify-between">
         <div>
           <div className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-brand">
             <GraduationCap size={14} />
@@ -514,7 +514,7 @@ export default function ClassroomManagementClient({ role }: { role: Role }) {
         </div>
       </div>
 
-      <div className="mb-3 grid flex-none gap-2 xl:grid-cols-[repeat(6,minmax(0,1fr))]">
+      <div className="grid flex-none gap-2 rounded-lg border border-slate-200 bg-white p-3 shadow-sm md:grid-cols-2 xl:grid-cols-[repeat(6,minmax(0,1fr))]">
         <FilterSelect label="Coach" value={filters.coach} onChange={(value) => setFilters((current) => ({ ...current, coach: value }))} options={targets.coaches.map((coach) => ({ value: coach._id, label: coach.name }))} />
         <FilterSelect label="Batch" value={filters.batch} onChange={(value) => setFilters((current) => ({ ...current, batch: value }))} options={targets.batches.map((batch) => ({ value: batch._id, label: batch.name }))} />
         <FilterSelect label="Student" value={filters.student} onChange={(value) => setFilters((current) => ({ ...current, student: value }))} options={targets.students.map((student) => ({ value: student._id, label: student.name }))} />
@@ -528,12 +528,12 @@ export default function ClassroomManagementClient({ role }: { role: Role }) {
         />
       </div>
 
-      <div className="mb-3 flex flex-none gap-2">
-        <button className={cn("rounded-lg px-3 py-2 text-sm font-semibold", view === "list" ? "bg-brand text-white" : "bg-white text-slate-700 border border-slate-200")} onClick={() => setView("list")}>List</button>
-        <button className={cn("rounded-lg px-3 py-2 text-sm font-semibold", view === "calendar" ? "bg-brand text-white" : "bg-white text-slate-700 border border-slate-200")} onClick={() => setView("calendar")}>Calendar</button>
+      <div className="inline-flex w-fit flex-none rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
+        <button className={cn("rounded-md px-3 py-2 text-sm font-semibold transition", view === "list" ? "bg-brand text-white" : "text-slate-700 hover:bg-slate-50")} onClick={() => setView("list")}>List</button>
+        <button className={cn("rounded-md px-3 py-2 text-sm font-semibold transition", view === "calendar" ? "bg-brand text-white" : "text-slate-700 hover:bg-slate-50")} onClick={() => setView("calendar")}>Calendar</button>
       </div>
 
-      <div className="rounded-2xl border border-brand/10 bg-white shadow-xl shadow-brand/5">
+      <div className="rounded-lg border border-brand/10 bg-white shadow-xl shadow-brand/5">
         {view === "list" ? (
           <div className="p-4">
             {loading ? (
@@ -550,7 +550,7 @@ export default function ClassroomManagementClient({ role }: { role: Role }) {
                     ? `${formatDate(item.classDate)} at ${item.startTime || "--"} for ${formatDuration(item.durationMinutes || 60)}`
                     : `${item.generatedSessions?.length || 0} scheduled sessions ? starts ${formatDate(item.startDate)}`;
                   return (
-                    <div key={item._id} className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-lg shadow-slate-200/60">
+                    <div key={item._id} className="rounded-lg border border-slate-200 bg-white px-4 py-4 shadow-sm">
                       <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                         <div className="min-w-0 flex-1 space-y-3">
                           <div className="min-w-0">
@@ -563,7 +563,7 @@ export default function ClassroomManagementClient({ role }: { role: Role }) {
                             </div>
                           </div>
 
-                          <div className="grid gap-2 lg:grid-cols-[minmax(240px,1.2fr)_repeat(4,minmax(110px,auto))]">
+                          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-[minmax(240px,1.2fr)_repeat(4,minmax(110px,auto))]">
                             <CompactInfo label="Topic" value={item.topicName || "Not set"} />
                             <CompactInfo label="Coach" value={(item.coach as any)?.name || "Unassigned"} />
                             <CompactInfo label="Students" value={String(item.students?.length || 0)} />
@@ -584,13 +584,13 @@ export default function ClassroomManagementClient({ role }: { role: Role }) {
                         </div>
 
                         <div className="flex flex-none flex-col gap-3 xl:min-w-[220px] xl:items-end">
-                          <div className="flex justify-end gap-1">
+                          <div className="flex justify-start gap-1 xl:justify-end">
                             <Link href={summaryHref} className="grid h-9 w-9 place-items-center rounded-lg border border-slate-200 text-slate-700"><Eye size={15} /></Link>
                             <button onClick={() => resetModal(item.classroomType, item)} className="grid h-9 w-9 place-items-center rounded-lg border border-slate-200 text-slate-700"><Pencil size={15} /></button>
                             <button onClick={() => deleteItem(item)} className="grid h-9 w-9 place-items-center rounded-lg border border-red-200 bg-red-50 text-red-600"><Trash2 size={15} /></button>
                           </div>
 
-                          <div className="flex flex-wrap justify-end gap-2">
+                          <div className="flex flex-wrap justify-start gap-2 xl:justify-end">
                             <ActionButton icon={<Clock3 size={14} />} label="Reschedule" onClick={() => { setActionModal({ type: "reschedule_class", item }); setActionDraft({ classDate: item.classDate ? formatDateInput(item.classDate) : "", startTime: item.startTime || "", durationMinutes: item.durationMinutes || 60 }); }} />
                             <ActionButton icon={<X size={14} />} label="Cancel" onClick={() => { setActionModal({ type: "cancel_class", item }); setActionDraft({}); }} />
                             <ActionButton icon={<UserCog size={14} />} label="Substitute Coach" onClick={() => { setActionModal({ type: "substitute_coach", item }); setActionDraft({ scope: item.classroomType === "series" ? "future" : "entire", coach: "" }); }} />
@@ -1091,7 +1091,7 @@ function SimpleClassroomList({ items, loading, role }: { items: ClassroomItem[];
 
   return (
     <div className="space-y-4 text-slate-950">
-      <div className="rounded-[26px] border border-brand/10 bg-white px-5 py-4 shadow-[0_18px_45px_rgba(90,19,114,0.10)]">
+      <div className="rounded-lg border border-brand/10 bg-white px-5 py-4 shadow-sm">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <div className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-brand">
@@ -1101,7 +1101,7 @@ function SimpleClassroomList({ items, loading, role }: { items: ClassroomItem[];
           <h1 className="mt-1 text-2xl font-black text-brand">{pageTitle}</h1>
           <p className="text-sm text-slate-600">{pageSubtitle}</p>
         </div>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+        <div className="grid grid-cols-3 gap-2">
           <MiniMetric label="Upcoming" value={upcoming.length} />
           <MiniMetric label="Completed" value={history.filter((row) => deriveScheduledSessionStatus(row.session, now) === "completed").length} />
           <MiniMetric label="Closed" value={history.length} />
@@ -1109,7 +1109,7 @@ function SimpleClassroomList({ items, loading, role }: { items: ClassroomItem[];
       </div>
       </div>
 
-      <div className="rounded-[26px] border border-brand/10 bg-white p-4 shadow-[0_18px_45px_rgba(90,19,114,0.08)]">
+      <div className="rounded-lg border border-brand/10 bg-white p-4 shadow-sm">
       <div className="mb-3 flex items-center justify-between">
         <div>
           <h2 className="text-lg font-black text-slate-950">{role === "student" ? "Upcoming Classes" : "Upcoming Teaching Sessions"}</h2>
@@ -1125,7 +1125,7 @@ function SimpleClassroomList({ items, loading, role }: { items: ClassroomItem[];
             const joinOpen = canJoinScheduledSession(session, now);
             const summaryHref = `/classrooms/${classroom._id}/summary?session=${String(session._id)}`;
             return (
-              <div key={`${classroom._id}-${session._id}`} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-md shadow-brand/5">
+              <div key={`${classroom._id}-${session._id}`} className="rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
                 <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
@@ -1133,7 +1133,7 @@ function SimpleClassroomList({ items, loading, role }: { items: ClassroomItem[];
                       <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-bold", sessionStatusTone(status))}>{formatJoinWindowLabel(session, now)}</span>
                       {classroom.courseName && <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-700">{classroom.courseName}</span>}
                     </div>
-                    <div className="mt-2 grid gap-2 md:grid-cols-[1.4fr_1fr_1fr_1fr]">
+                    <div className="mt-2 grid gap-2 md:grid-cols-2 xl:grid-cols-[1.4fr_1fr_1fr_1fr]">
                       <CompactInfo label="Topic" value={session.topicName || classroom.topicName || "Not set"} />
                       <CompactInfo label={currentRoleLabel} value={role === "student" ? ((classroom.coach as any)?.name || "Coach") : ((classroom.batches || []).map((batch: any) => batch.name).join(", ") || `${classroom.students?.length || 0} assigned`)} />
                       <CompactInfo label="When" value={`${formatDate(String(session.scheduledFor || classroom.classDate || classroom.startDate || ""))} at ${session.startTime || classroom.startTime || "--"}`} />
@@ -1159,7 +1159,7 @@ function SimpleClassroomList({ items, loading, role }: { items: ClassroomItem[];
       )}
       </div>
 
-      <div className="rounded-[26px] border border-brand/10 bg-white p-4 shadow-[0_18px_45px_rgba(90,19,114,0.08)]">
+      <div className="rounded-lg border border-brand/10 bg-white p-4 shadow-sm">
         <div className="mb-3">
           <h2 className="text-2xl font-black text-slate-950">{role === "student" ? "Class History" : "Completed Sessions"}</h2>
           <p className="mt-1 text-sm text-slate-500">
@@ -1176,14 +1176,14 @@ function SimpleClassroomList({ items, loading, role }: { items: ClassroomItem[];
               const status = deriveScheduledSessionStatus(session, now);
               const summaryHref = `/classrooms/${classroom._id}/summary?session=${String(session._id)}`;
               return (
-                <div key={`history-${classroom._id}-${session._id}`} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-md shadow-brand/5">
+                <div key={`history-${classroom._id}-${session._id}`} className="rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
                   <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <h3 className="truncate text-base font-black text-slate-950">{classroom.title}</h3>
                         <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-bold", statusTone(status))}>{formatJoinWindowLabel(session, now)}</span>
                       </div>
-                      <div className="mt-2 grid gap-2 md:grid-cols-[1.4fr_1fr_1fr_1fr]">
+                      <div className="mt-2 grid gap-2 md:grid-cols-2 xl:grid-cols-[1.4fr_1fr_1fr_1fr]">
                         <CompactInfo label="Topic" value={session.topicName || classroom.topicName || "Not set"} />
                         <CompactInfo label={currentRoleLabel} value={role === "student" ? ((classroom.coach as any)?.name || "Coach") : ((classroom.batches || []).map((batch: any) => batch.name).join(", ") || `${classroom.students?.length || 0} assigned`)} />
                         <CompactInfo label="When" value={`${formatDate(String(session.scheduledFor || classroom.classDate || classroom.startDate || ""))} at ${session.startTime || classroom.startTime || "--"}`} />
@@ -1206,9 +1206,9 @@ function SimpleClassroomList({ items, loading, role }: { items: ClassroomItem[];
 
 function MiniMetric({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-2xl border border-brand/10 bg-slate-50 px-4 py-3 text-right">
+    <div className="rounded-lg border border-brand/10 bg-slate-50 px-3 py-3 text-right">
       <div className="text-[11px] font-black uppercase tracking-[0.15em] text-slate-500">{label}</div>
-      <div className="mt-1 text-2xl font-black text-brand">{value}</div>
+      <div className="mt-1 text-xl font-black text-brand sm:text-2xl">{value}</div>
     </div>
   );
 }

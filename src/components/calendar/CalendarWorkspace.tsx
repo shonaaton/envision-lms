@@ -143,9 +143,22 @@ function eventCount(events: CalendarEvent[], type: CalendarType | "all") {
   return type === "all" ? events.length : events.filter((event) => event.type === type).length;
 }
 
+function EventLegend() {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {typeOptions.filter((item) => item.id !== "all").map((item) => (
+        <span key={item.id} className={cn("inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold", typeTone(item.id as CalendarType))}>
+          <span className="h-2 w-2 rounded-full bg-current" />
+          {item.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function EmptyState({ label }: { label: string }) {
   return (
-    <div className="flex min-h-[220px] items-center justify-center rounded-3xl border border-dashed border-slate-300 bg-white/70 p-8 text-center text-sm text-slate-500">
+    <div className="flex min-h-[220px] items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white/70 p-8 text-center text-sm text-slate-500">
       {label}
     </div>
   );
@@ -177,7 +190,7 @@ function EventChip({
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <div className="text-sm font-semibold text-slate-950 sm:truncate">{event.title}</div>
-          <div className="mt-1 text-xs leading-5 text-slate-500 sm:truncate">{format(eventDate(event.start), "h:mm a")} {event.subtitle ? `• ${event.subtitle}` : ""}</div>
+          <div className="mt-1 text-xs leading-5 text-slate-500 sm:truncate">{format(eventDate(event.start), "h:mm a")} {event.subtitle ? `- ${event.subtitle}` : ""}</div>
         </div>
         <div className="shrink-0">
           <EventBadge label={prettyStatus(event.status)} className={statusTone(event.status)} />
@@ -203,7 +216,7 @@ function DayEvents({
     .sort((a, b) => eventDate(a.start).getTime() - eventDate(b.start).getTime());
 
   return (
-    <div className={cn("rounded-3xl border p-3", isToday(day) ? "border-brand/25 bg-brand/[0.03]" : "border-slate-200 bg-white/80")}>
+    <div className={cn("rounded-lg border p-3", isToday(day) ? "border-brand/25 bg-brand/[0.03]" : "border-slate-200 bg-white/80")}>
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
           <div className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">{format(day, "EEE")}</div>
@@ -237,7 +250,7 @@ function CalendarMonth({
   });
 
   return (
-    <div className="overflow-hidden rounded-[28px] border border-brand/10 bg-white shadow-[0_20px_50px_rgba(90,19,114,0.08)]">
+    <div className="overflow-hidden rounded-lg border border-brand/10 bg-white shadow-[0_12px_28px_rgba(90,19,114,0.08)]">
       <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50">
         {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day) => (
           <div key={day} className="px-3 py-3 text-center text-xs font-black uppercase tracking-[0.14em] text-slate-500">{day}</div>
@@ -272,10 +285,10 @@ function CalendarMonth({
                     className={cn(
                       "w-full truncate rounded-xl border px-2.5 py-1.5 text-left text-xs font-semibold shadow-sm transition",
                       typeTone(event.type),
-                      selectedId === event.id ? "ring-2 ring-brand/25" : ""
+                      selectedId === event.id ? "border-brand bg-brand/10 text-brand ring-2 ring-brand/25" : ""
                     )}
                   >
-                    {format(eventDate(event.start), "h:mm a")} • {event.title}
+                    {format(eventDate(event.start), "h:mm a")} - {event.title}
                   </button>
                 ))}
                 {dayEvents.length > visible.length && (
@@ -314,7 +327,7 @@ function CalendarAgenda({
   return (
     <div className="space-y-4">
       {keys.map((key) => (
-        <div key={key} className="rounded-[28px] border border-brand/10 bg-white p-4 shadow-[0_20px_50px_rgba(90,19,114,0.08)]">
+        <div key={key} className="rounded-lg border border-brand/10 bg-white p-4 shadow-[0_12px_28px_rgba(90,19,114,0.08)]">
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
               <div className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">{format(new Date(key), "EEEE")}</div>
@@ -338,7 +351,7 @@ function CalendarAgenda({
 function EventDetails({ event, role }: { event?: CalendarEvent; role: CalendarRole }) {
   if (!event) {
     return (
-      <div className="rounded-[28px] border border-brand/10 bg-white p-4 shadow-[0_20px_50px_rgba(90,19,114,0.08)] sm:p-5 xl:sticky xl:top-24">
+      <div className="rounded-lg border border-brand/10 bg-white p-4 shadow-[0_12px_28px_rgba(90,19,114,0.08)] sm:p-5 xl:sticky xl:top-24">
         <div className="flex items-center gap-2 text-brand">
           <CalendarDays size={18} />
           <div className="text-sm font-black uppercase tracking-[0.18em]">Event Details</div>
@@ -351,7 +364,7 @@ function EventDetails({ event, role }: { event?: CalendarEvent; role: CalendarRo
   }
 
   return (
-    <div className="rounded-[28px] border border-brand/10 bg-white p-4 shadow-[0_20px_50px_rgba(90,19,114,0.08)] sm:p-5 xl:sticky xl:top-24">
+    <div className="rounded-lg border border-brand/10 bg-white p-4 shadow-[0_12px_28px_rgba(90,19,114,0.08)] sm:p-5 xl:sticky xl:top-24">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex flex-wrap items-center gap-2">
@@ -363,7 +376,7 @@ function EventDetails({ event, role }: { event?: CalendarEvent; role: CalendarRo
         </div>
         <div className="rounded-2xl bg-slate-50 px-4 py-3 text-right">
           <div className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Scheduled</div>
-          <div className="mt-1 text-sm font-semibold text-slate-950">{format(eventDate(event.start), "EEE, d MMM • h:mm a")}</div>
+          <div className="mt-1 text-sm font-semibold text-slate-950">{format(eventDate(event.start), "EEE, d MMM - h:mm a")}</div>
         </div>
       </div>
 
@@ -681,7 +694,7 @@ function StaffCalendarWorkspace({
 
   return (
     <div className="space-y-4 text-slate-950">
-      <section className="rounded-[28px] border border-brand/10 bg-white p-4 shadow-[0_16px_38px_rgba(90,19,114,0.08)] sm:p-5">
+      <section className="rounded-lg border border-brand/10 bg-white p-4 shadow-[0_12px_28px_rgba(90,19,114,0.08)] sm:p-5">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div>
             <div className="text-[11px] font-black uppercase tracking-[0.18em] text-brand/70">{staffLabel}</div>
@@ -696,7 +709,7 @@ function StaffCalendarWorkspace({
         </div>
       </section>
 
-      <section className="rounded-[28px] border border-brand/10 bg-white p-3 shadow-[0_14px_34px_rgba(90,19,114,0.07)] sm:p-4">
+      <section className="rounded-lg border border-brand/10 bg-white p-3 shadow-[0_12px_28px_rgba(90,19,114,0.07)] sm:p-4">
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px] lg:items-start">
           <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-2">
@@ -747,6 +760,11 @@ function StaffCalendarWorkspace({
             <div className="mt-2 text-3xl font-black text-slate-950">{visibleEvents.length}</div>
             <div className="mt-1 text-sm text-slate-500">After current view and filter selection</div>
           </div>
+        </div>
+
+        <div className="mt-4 rounded-lg border border-slate-200 bg-white p-3">
+          <div className="mb-2 text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Color Legend</div>
+          <EventLegend />
         </div>
 
         <div className="mt-4 space-y-3">
@@ -822,7 +840,7 @@ function StaffCalendarWorkspace({
         <div className="space-y-3">
           <EventDetails event={selectedEvent} role={role} />
 
-          <div className="rounded-[28px] border border-brand/10 bg-white p-5 shadow-[0_20px_50px_rgba(90,19,114,0.08)]">
+          <div className="rounded-lg border border-brand/10 bg-white p-5 shadow-[0_12px_28px_rgba(90,19,114,0.08)]">
             <div className="mb-4 flex items-center gap-2 text-brand">
               <ClipboardCheck size={18} />
               <div className="text-sm font-black uppercase tracking-[0.18em]">At a glance</div>

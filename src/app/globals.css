@@ -130,6 +130,14 @@ main .rounded-xl.border.bg-white {
   box-shadow: 0 12px 28px rgba(35, 25, 55, 0.07);
 }
 
+main .rounded-3xl,
+main .rounded-\[22px\],
+main .rounded-\[24px\],
+main .rounded-\[26px\],
+main .rounded-\[28px\] {
+  border-radius: 0.5rem;
+}
+
 main .overflow-x-auto {
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-x: contain;

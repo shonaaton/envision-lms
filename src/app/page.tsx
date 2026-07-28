@@ -4,7 +4,6 @@ import {
   BarChart3,
   BookOpen,
   CalendarDays,
-  CheckCircle2,
   ClipboardList,
   MonitorSmartphone,
   Trophy,
@@ -23,6 +22,32 @@ const previewRows = [
   { label: "Homework", value: "12 active tasks", tone: "bg-slate-100 text-slate-900" },
   { label: "Tournaments", value: "Swiss event ready", tone: "bg-accent text-brand" },
 ];
+
+const boardSquares = [
+  "r", "n", "b", "q", "k", "b", "n", "r",
+  "p", "p", "p", "", "p", "p", "p", "p",
+  "", "", "", "", "", "", "", "",
+  "", "", "", "p", "", "", "", "",
+  "", "", "B", "P", "", "", "", "",
+  "", "", "N", "", "", "N", "", "",
+  "P", "P", "P", "", "P", "P", "P", "P",
+  "R", "", "B", "Q", "K", "", "", "R",
+];
+
+const pieceMap: Record<string, string> = {
+  k: "♚",
+  q: "♛",
+  r: "♜",
+  b: "♝",
+  n: "♞",
+  p: "♟",
+  K: "♔",
+  Q: "♕",
+  R: "♖",
+  B: "♗",
+  N: "♘",
+  P: "♙",
+};
 
 export default function Home() {
   return (
@@ -46,54 +71,57 @@ export default function Home() {
         <div className="absolute inset-x-0 bottom-0 top-32 opacity-55 lg:top-14" aria-hidden="true">
           <div className="mx-auto grid h-full max-w-7xl grid-cols-1 gap-4 px-4 sm:px-6 lg:grid-cols-[0.9fr_1.1fr] lg:px-8">
             <div className="hidden lg:block" />
-            <div className="self-end rounded-lg border border-white/80 bg-white/80 p-4 shadow-2xl shadow-brand-900/10 backdrop-blur">
+            <div className="self-end rounded-lg border border-white/80 bg-white/85 p-4 shadow-2xl shadow-brand-900/10 backdrop-blur">
               <div className="mb-4 flex items-center justify-between gap-3 border-b border-slate-200 pb-3">
                 <div>
-                  <div className="text-xs font-bold uppercase tracking-[0.16em] text-brand/70">Academy Workspace</div>
-                  <div className="mt-1 text-lg font-black text-slate-950">Operations overview</div>
+                  <div className="text-xs font-bold uppercase tracking-[0.16em] text-brand/70">Chess Course Preview</div>
+                  <div className="mt-1 text-lg font-black text-slate-950">Live board, homework, and training</div>
                 </div>
                 <div className="rounded-lg bg-brand px-3 py-2 text-xs font-bold text-white">Live</div>
               </div>
-              <div className="grid gap-3 sm:grid-cols-3">
-                {previewRows.map((item) => (
-                  <div key={item.label} className="rounded-lg border border-slate-200 bg-white p-3">
-                    <div className="text-xs font-semibold text-slate-500">{item.label}</div>
-                    <div className="mt-2 text-sm font-black text-slate-950">{item.value}</div>
-                    <div className={`mt-3 h-1.5 rounded-full ${item.tone}`} />
+              <div className="grid gap-4 md:grid-cols-[240px_minmax(0,1fr)]">
+                <div className="overflow-hidden rounded-lg border border-brand/15 bg-brand p-2 shadow-inner shadow-black/10">
+                  <div className="grid aspect-square grid-cols-8 overflow-hidden rounded-md">
+                    {boardSquares.map((piece, index) => {
+                      const dark = (Math.floor(index / 8) + index) % 2 === 1;
+                      return (
+                        <div key={`${piece}-${index}`} className={dark ? "grid place-items-center bg-[#8a5a31] text-2xl text-white" : "grid place-items-center bg-[#f0d9b5] text-2xl text-brand"}>
+                          {piece ? pieceMap[piece] : ""}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="grid content-start gap-3">
+                  {previewRows.map((item) => (
+                    <div key={item.label} className="rounded-lg border border-slate-200 bg-white p-3">
+                      <div className="text-xs font-semibold text-slate-500">{item.label}</div>
+                      <div className="mt-2 text-sm font-black text-slate-950">{item.value}</div>
+                      <div className={`mt-3 h-1.5 rounded-full ${item.tone}`} />
+                    </div>
+                  ))}
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                    <div className="mb-3 flex items-center justify-between">
+                      <span className="text-sm font-bold text-slate-900">Course track</span>
+                      <Trophy size={18} className="text-brand" />
+                    </div>
+                    <div className="space-y-2">
+                      {["Opening principles", "Tactical motifs", "Endgame basics"].map((item, index) => (
+                        <div key={item} className="flex items-center justify-between rounded-md bg-white px-3 py-2 text-xs font-semibold text-slate-600">
+                          <span>{item}</span>
+                          <span className={index === 0 ? "text-emerald-700" : "text-brand"}>{index === 0 ? "Done" : "Ready"}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                {["Desktop", "Tablet", "Mobile"].map((item) => (
+                  <div key={item} className="rounded-lg bg-slate-50 p-3 text-center text-xs font-semibold text-slate-600">
+                    {item}
                   </div>
                 ))}
-              </div>
-              <div className="mt-4 grid gap-3 md:grid-cols-[1.1fr_0.9fr]">
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                  <div className="mb-4 flex items-center justify-between">
-                    <span className="text-sm font-bold text-slate-900">Student progress</span>
-                    <Trophy size={18} className="text-brand" />
-                  </div>
-                  <div className="space-y-3">
-                    {[78, 64, 88].map((width, index) => (
-                      <div key={width} className="space-y-1">
-                        <div className="flex justify-between text-xs text-slate-500">
-                          <span>Batch {index + 1}</span>
-                          <span>{width}%</span>
-                        </div>
-                        <div className="h-2 rounded-full bg-white">
-                          <div className="h-full rounded-full bg-brand" style={{ width: `${width}%` }} />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div className="rounded-lg border border-slate-200 bg-white p-4">
-                  <div className="mb-4 flex items-center gap-2 text-sm font-bold text-slate-900">
-                    <CheckCircle2 size={17} className="text-emerald-600" />
-                    Ready for every screen
-                  </div>
-                  <div className="grid grid-cols-3 gap-2 text-center text-xs font-semibold text-slate-600">
-                    <div className="rounded-lg bg-slate-50 p-3">Desktop</div>
-                    <div className="rounded-lg bg-slate-50 p-3">Tablet</div>
-                    <div className="rounded-lg bg-slate-50 p-3">Mobile</div>
-                  </div>
-                </div>
               </div>
             </div>
           </div>

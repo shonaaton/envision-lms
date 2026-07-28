@@ -22,6 +22,7 @@ import {
 } from "@/lib/classroomSessions";
 import { summarizeCoachSessions } from "@/lib/teachingStats";
 import JoinScheduledSessionButton from "@/components/classroom/JoinScheduledSessionButton";
+import { DataPanel, EmptyState as CommonEmptyState, FilterBar, PageHeader, StatCard as CommonStatCard } from "@/components/common/PageHeader";
 import { bookingFeatureNameForAccount } from "@/lib/bookingLabels";
 import { demoStudentExperience } from "@/lib/demoStudentExperience";
 import { unstable_noStore as noStore } from "next/cache";
@@ -57,6 +58,7 @@ export const dynamic = "force-dynamic";
 const DAY = 24 * 60 * 60 * 1000;
 
 type DashboardSearchParams = {
+  tab?: string;
   preset?: string;
   from?: string;
   to?: string;
@@ -185,28 +187,7 @@ function SectionTitle({ icon: Icon, title, subtitle }: { icon: any; title: strin
 }
 
 function StatCard({ label, value, note, icon: Icon, tone = "purple" }: { label: string; value: string | number; note: string; icon: any; tone?: "purple" | "green" | "amber" | "blue" | "rose" }) {
-  const tones = {
-    purple: "bg-purple-50 text-purple-700",
-    green: "bg-emerald-50 text-emerald-700",
-    amber: "bg-amber-50 text-amber-700",
-    blue: "bg-sky-50 text-sky-700",
-    rose: "bg-rose-50 text-rose-700",
-  };
-
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm shadow-brand/5 transition hover:border-brand/20 hover:shadow-md hover:shadow-brand/10">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="text-xs font-medium text-slate-500">{label}</div>
-          <div className="mt-1 truncate text-xl font-semibold text-slate-950">{value}</div>
-          <div className="mt-1 text-xs text-slate-500">{note}</div>
-        </div>
-        <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${tones[tone]}`}>
-          <Icon size={15} />
-        </span>
-      </div>
-    </div>
-  );
+  return <CommonStatCard label={label} value={value} note={note} icon={Icon} tone={tone} />;
 }
 
 function MiniBarChart({ points, barClassName }: { points: Array<{ label: string; value: number; height: number }>; barClassName: string }) {
@@ -275,21 +256,7 @@ function DashboardHero({
   icon: any;
   children?: React.ReactNode;
 }) {
-  return (
-    <section className="rounded-lg border border-brand/10 bg-white p-3 shadow-sm shadow-brand/10 sm:p-4">
-      <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-        <div className="min-w-0">
-          <div className="inline-flex h-7 items-center gap-2 rounded-full bg-brand-50 px-3 text-[10px] font-black uppercase tracking-[0.14em] text-brand">
-            <Icon size={13} />
-            {eyebrow}
-          </div>
-          <h1 className="mt-2 text-xl font-black tracking-normal text-slate-950 sm:text-2xl">{title}</h1>
-          <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-600 sm:text-sm">{subtitle}</p>
-        </div>
-        {children && <div className="w-full xl:max-w-5xl">{children}</div>}
-      </div>
-    </section>
-  );
+  return <PageHeader eyebrow={eyebrow} title={title} subtitle={subtitle} icon={Icon}>{children}</PageHeader>;
 }
 
 function DashboardPanel({
@@ -299,11 +266,7 @@ function DashboardPanel({
   children: React.ReactNode;
   className?: string;
 }) {
-  return (
-    <section className={`rounded-lg border border-slate-200 bg-white p-3 shadow-sm shadow-brand/5 sm:p-4 ${className}`}>
-      {children}
-    </section>
-  );
+  return <DataPanel className={className}>{children}</DataPanel>;
 }
 
 function DemoPreviewBadge() {
@@ -671,7 +634,7 @@ function coachSessionDayLabel(date: Date, now: Date) {
 
 async function StudentDashboard({ userId }: { userId: string }) {
   const now = new Date();
-  const [student, classrooms, homework, submissions, tournaments, rewards, attendance, conversations, messages] = await Promise.all([
+  const [student, classrooms, homework, submissions, tournaments, rewards, attendance, conversations, messages, studentInvoices] = await Promise.all([
     User.findById(userId).populate("batches", "name level").lean(),
     Classroom.find({ students: userId, isActive: { $ne: false } })
       .populate("coach instructor", "name username")
@@ -691,6 +654,7 @@ async function StudentDashboard({ userId }: { userId: string }) {
     Attendance.find({ "records.student": userId }).lean(),
     AskCoachConversation.find({ $or: [{ student: userId }, { "participants.user": userId }] }).sort({ updatedAt: -1 }).limit(6).lean(),
     AskCoachMessage.find({ receiver: userId }).sort({ createdAt: -1 }).limit(10).lean(),
+    Invoice.find({ student: userId, status: { $in: ["draft", "unpaid", "overdue"] } }).sort({ dueDate: 1 }).limit(6).lean(),
   ]);
 
   const batchIds = ((student as any)?.batches || []).map((batch: any) => objectId(batch));
@@ -706,6 +670,8 @@ async function StudentDashboard({ userId }: { userId: string }) {
     .sort((a, b) => (b.start?.getTime() || 0) - (a.start?.getTime() || 0));
   const nextSession = upcomingSessions[0];
   const activeHomework = visibleHomework.slice(0, 4);
+  const pendingHomework = visibleHomework.filter((item: any) => !submissions.some((submission: any) => objectId(submission.homework) === objectId(item._id)));
+  const feesDue = studentInvoices.reduce((sum: number, invoice: any) => sum + (invoice.totalAmount || 0), 0);
   const totalXp = rewards.reduce((sum: number, reward: any) => sum + (reward.xp || 0), 0);
   const totalCoins = rewards.reduce((sum: number, reward: any) => sum + (reward.coins || 0), 0);
   const totalBadges = rewards.filter((reward: any) => reward.badge).length;
@@ -732,6 +698,18 @@ async function StudentDashboard({ userId }: { userId: string }) {
   const bookingFeatureName = bookingFeatureNameForAccount((student as any)?.accountStatus);
   const demoUsage = (student as any)?.demoUsage || {};
   const demoLimits = (student as any)?.demoLimits || {};
+  const primaryStudentAction = nextSession && heroSessionOpen
+    ? {
+        label: "Join Class",
+        href: `/classrooms/${objectId(nextSession.classroom._id)}/live?session=${String(nextSession.session._id)}`,
+        icon: PlayCircle,
+      }
+    : {
+        label: "Continue Practice",
+        href: "/play/computer",
+        icon: PlayCircle,
+      };
+  const PrimaryStudentActionIcon = primaryStudentAction.icon;
 
   if (isDemoAccount) {
     return (
@@ -767,6 +745,21 @@ async function StudentDashboard({ userId }: { userId: string }) {
             <StatCard label="Coins" value={totalCoins} note="Rewards earned" icon={Trophy} tone="green" />
           </div>
       </DashboardHero>
+
+      <section className="rounded-lg border border-brand/10 bg-white p-4 shadow-sm shadow-brand/10">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="grid flex-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <InfoTile label="Next Class" value={nextSession ? formatJoinWindowLabel(nextSession.session, now) : "No class scheduled"} />
+            <InfoTile label="Pending Homework" value={pendingHomework.length} />
+            <InfoTile label="Practice" value={currentStreak ? `${currentStreak} day streak` : "Ready"} />
+            <InfoTile label="Fees Due" value={feesDue ? money(feesDue) : "Clear"} />
+          </div>
+          <Link href={primaryStudentAction.href} className="btn-primary shrink-0">
+            <PrimaryStudentActionIcon size={17} />
+            {primaryStudentAction.label}
+          </Link>
+        </div>
+      </section>
 
       <section className="grid gap-5 xl:grid-cols-[1.35fr_0.85fr]">
         <div className="rounded-[28px] border border-brand/10 bg-[linear-gradient(135deg,rgba(90,19,114,1),rgba(124,31,162,0.92))] p-6 text-white shadow-[0_24px_60px_rgba(90,19,114,0.18)]">
@@ -1514,6 +1507,27 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
   );
 
   const upcomingBookings = bookings.filter((booking: any) => new Date(booking.startAt) >= new Date()).slice(0, 4);
+  const adminTabs = [
+    { id: "today", label: "Today", icon: Calendar },
+    { id: "students", label: "Students", icon: Users },
+    { id: "fees", label: "Fees", icon: CircleDollarSign },
+    { id: "coaches", label: "Coaches", icon: GraduationCap },
+    { id: "activity", label: "Activity", icon: ActivityIcon },
+  ];
+  const adminTabIds = adminTabs.map((tab) => tab.id);
+  const activeTab = adminTabIds.includes(searchParams.tab || "") ? searchParams.tab || "today" : "today";
+  const tabHref = (tab: string) => {
+    const params = new URLSearchParams();
+    if (preset) params.set("preset", preset);
+    if (searchParams.from) params.set("from", searchParams.from);
+    if (searchParams.to) params.set("to", searchParams.to);
+    if (searchParams.q) params.set("q", searchParams.q);
+    if (searchParams.date) params.set("date", searchParams.date);
+    if (searchParams.academicYear) params.set("academicYear", searchParams.academicYear);
+    if (searchParams.summaryMonth) params.set("summaryMonth", searchParams.summaryMonth);
+    params.set("tab", tab);
+    return `/dashboard?${params.toString()}`;
+  };
 
   return (
     <div className="space-y-5 text-slate-950">
@@ -1523,7 +1537,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
         subtitle={`Latest academy performance from ${formatDate(from)} to ${formatDate(to)}.`}
         icon={SlidersHorizontal}
       >
-        <form method="get" className="grid gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2 shadow-inner shadow-white sm:grid-cols-2 lg:grid-cols-6 xl:grid-cols-[110px_140px_130px_140px_140px_minmax(160px,1fr)_auto_auto]">
+        <FilterBar method="get" className="sm:grid-cols-2 lg:grid-cols-6 xl:grid-cols-[110px_140px_130px_140px_140px_minmax(160px,1fr)_auto_auto]">
+          <input type="hidden" name="tab" value={activeTab} />
           <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-500">
             Academic Year
             <input name="academicYear" type="number" defaultValue={academicYearStart} className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-700 outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/15" />
@@ -1566,9 +1581,29 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
               <RotateCcw size={14} /> Reset
             </Link>
           </div>
-        </form>
+        </FilterBar>
       </DashboardHero>
 
+      <nav className="flex gap-2 overflow-x-auto rounded-lg border border-slate-200 bg-white p-1 shadow-sm shadow-brand/5" aria-label="Admin dashboard sections">
+        {adminTabs.map((tab) => {
+          const Icon = tab.icon;
+          const selected = activeTab === tab.id;
+          return (
+            <Link
+              key={tab.id}
+              href={tabHref(tab.id)}
+              className={selected ? "inline-flex min-h-10 shrink-0 items-center gap-2 rounded-md bg-brand px-4 text-sm font-bold text-white shadow-sm" : "inline-flex min-h-10 shrink-0 items-center gap-2 rounded-md px-4 text-sm font-bold text-slate-600 transition hover:bg-brand-50 hover:text-brand"}
+              aria-current={selected ? "page" : undefined}
+            >
+              <Icon size={16} />
+              {tab.label}
+            </Link>
+          );
+        })}
+      </nav>
+
+      {activeTab === "today" && (
+      <>
       <DashboardPanel>
         <SectionTitle icon={Users} title="Academy Snapshot" subtitle={`Academic year ${academicYearStart}-${String(academicYearStart + 1).slice(-2)} and selected date ${formatDate(focusDate)}`} />
         <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-5">
@@ -1614,48 +1649,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
         </div>
       </DashboardPanel>
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(360px,0.9fr)]">
-        <DashboardPanel>
-          <SectionTitle icon={TrendingUp} title="Student Growth Analytics" subtitle="New student registrations inside the selected calendar range" />
-          <MiniBarChart points={growthPoints} barClassName="bg-purple-600" />
-          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-4">
-            <div className="rounded-md bg-slate-50 p-3">
-              <div className="text-xs text-slate-500">Growth</div>
-              <div className="mt-1 text-lg font-semibold text-slate-950">{newStudents.length}</div>
-            </div>
-            <div className="rounded-md bg-slate-50 p-3">
-              <div className="text-xs text-slate-500">Avg Score</div>
-              <div className="mt-1 text-lg font-semibold text-slate-950">{scoreRate}%</div>
-            </div>
-            <div className="rounded-md bg-slate-50 p-3">
-              <div className="text-xs text-slate-500">PGN/Game Reviews</div>
-              <div className="mt-1 text-lg font-semibold text-slate-950">{pgns.length}</div>
-            </div>
-            <div className="rounded-md bg-slate-50 p-3">
-              <div className="text-xs text-slate-500">Booked Sessions</div>
-              <div className="mt-1 text-lg font-semibold text-slate-950">{bookings.length}</div>
-            </div>
-          </div>
-        </DashboardPanel>
-
-        <DashboardPanel>
-          <SectionTitle icon={ActivityIcon} title="Activity Tracker" subtitle="Open the full monitoring center for account, learning, attendance, payment, and PGN activity" />
-          <div className="grid gap-3">
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <div className="text-sm font-semibold text-slate-950">Recent activity in range</div>
-              <div className="mt-1 text-3xl font-black text-brand">{activities.length}</div>
-              <div className="mt-1 text-xs text-slate-500">Showing the latest academy activity across the selected filters.</div>
-            </div>
-            <QuickLinkCard
-              href="/admin/activity-tracker"
-              title="Open Activity Tracker"
-              subtitle="Review logins, classroom actions, homework, payments, PGNs, and admin changes in one place."
-              icon={ActivityIcon}
-            />
-          </div>
-        </DashboardPanel>
-      </div>
-
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <DashboardPanel className="xl:col-span-2">
           <SectionTitle icon={BarChart3} title="Classroom & Engagement" subtitle="Attendance, homework submissions, sessions, and platform usage" />
@@ -1684,10 +1677,58 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
           </div>
         </DashboardPanel>
       </div>
+      </>
+      )}
+
+      {activeTab === "students" && (
+      <>
+      <DashboardPanel>
+        <SectionTitle icon={TrendingUp} title="Student Growth Analytics" subtitle="New student registrations inside the selected calendar range" />
+        <MiniBarChart points={growthPoints} barClassName="bg-purple-600" />
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-4">
+          <div className="rounded-md bg-slate-50 p-3">
+            <div className="text-xs text-slate-500">Growth</div>
+            <div className="mt-1 text-lg font-semibold text-slate-950">{newStudents.length}</div>
+          </div>
+          <div className="rounded-md bg-slate-50 p-3">
+            <div className="text-xs text-slate-500">Avg Score</div>
+            <div className="mt-1 text-lg font-semibold text-slate-950">{scoreRate}%</div>
+          </div>
+          <div className="rounded-md bg-slate-50 p-3">
+            <div className="text-xs text-slate-500">PGN/Game Reviews</div>
+            <div className="mt-1 text-lg font-semibold text-slate-950">{pgns.length}</div>
+          </div>
+          <div className="rounded-md bg-slate-50 p-3">
+            <div className="text-xs text-slate-500">Booked Sessions</div>
+            <div className="mt-1 text-lg font-semibold text-slate-950">{bookings.length}</div>
+          </div>
+        </div>
+      </DashboardPanel>
 
       <DashboardPanel>
         <SectionTitle icon={Users} title="Student Progress & Performance" subtitle="Homework, classes, attendance, PGN activity, and latest engagement" />
-        <div className="overflow-x-auto">
+        <div className="grid gap-3 md:hidden">
+          {studentRows.length ? studentRows.map((row) => (
+            <article key={row.id} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="font-semibold text-slate-950">{row.name}</h3>
+                  <p className="text-xs text-slate-500">{row.username || "No username"}</p>
+                </div>
+                <span className="rounded-full bg-brand/10 px-3 py-1 text-xs font-bold text-brand">{row.attendance}% attendance</span>
+              </div>
+              <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
+                <InfoTile label="Classes" value={row.classes} />
+                <InfoTile label="Homework" value={row.homework} />
+                <InfoTile label="PGNs" value={row.pgns} />
+              </div>
+              <div className="mt-3 text-xs text-slate-500">Last activity: {row.lastActivity ? formatTimeAgo(row.lastActivity) : "No activity"}</div>
+            </article>
+          )) : (
+            <CommonEmptyState title="No students match these filters" description="Try clearing the search or widening the date range." />
+          )}
+        </div>
+        <div className="hidden overflow-x-auto md:block">
           <table className="min-w-full text-left text-sm">
             <thead className="text-xs uppercase text-slate-500">
               <tr className="border-b border-slate-100">
@@ -1717,10 +1758,75 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
           </table>
         </div>
       </DashboardPanel>
+      </>
+      )}
 
+      {activeTab === "fees" && (
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <DashboardPanel>
+          <SectionTitle icon={CircleDollarSign} title="Fee Overview" subtitle={`Academic year ${academicYearStart}-${String(academicYearStart + 1).slice(-2)}`} />
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <StatCard label="Today's Collection" value={money(todayCollection)} note={formatDate(focusDate)} icon={CircleDollarSign} tone="green" />
+            <StatCard label="Today's Due" value={money(todayDue)} note="Due on selected date" icon={Calendar} tone="amber" />
+            <StatCard label="Collected Fees" value={money(collectedFees)} note="Paid invoices" icon={CheckCircle2} tone="green" />
+            <StatCard label="Past Dues" value={money(pastDues)} note="Needs follow-up" icon={BellRing} tone="rose" />
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <div className="rounded-lg bg-slate-50 p-3">
+              <h3 className="text-sm font-semibold text-slate-950">Due Pipeline</h3>
+              <div className="mt-2 space-y-2 text-sm">
+                <div>Future Dues <b className="float-right text-amber-700">{money(futureDues)}</b></div>
+                <div>Bad Debt <b className="float-right text-slate-700">{money(badDebt)}</b></div>
+                <div>Revenue in Range <b className="float-right text-emerald-700">{money(paidRevenue)}</b></div>
+              </div>
+            </div>
+            <div className="rounded-lg bg-slate-50 p-3 sm:col-span-2">
+              <h3 className="text-sm font-semibold text-slate-950">Mode of Transaction Summary</h3>
+              <div className="mt-2 grid gap-2 text-sm sm:grid-cols-2">
+                {transactionModes.map((item) => (
+                  <div key={item.mode} className="rounded-md bg-white px-3 py-2 shadow-sm">
+                    {item.mode === "cheque" ? "Cheque / PDC / DD" : item.mode.toUpperCase()} <b className="float-right">{money(item.amount)}</b>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </DashboardPanel>
+        <DashboardPanel>
+          <SectionTitle icon={WalletCards} title="Fee Actions" subtitle="Open focused fee workspaces" />
+          <div className="grid gap-3">
+            <QuickLinkCard href="/fees" title="Fee Dashboard" subtitle="Review credits, balances, and payment status." icon={WalletCards} />
+            <QuickLinkCard href="/fees/invoices" title="Invoices" subtitle="Create, update, and send fee invoices." icon={CircleDollarSign} />
+            <QuickLinkCard href="/fees/reports" title="Reports" subtitle="Export collection and due reports." icon={BarChart3} />
+          </div>
+        </DashboardPanel>
+      </div>
+      )}
+
+      {activeTab === "coaches" && (
+      <>
       <DashboardPanel>
         <SectionTitle icon={GraduationCap} title="Coach Performance" subtitle="Assigned students, active classes, homework, and attendance sessions" />
-        <div className="overflow-x-auto">
+        <div className="grid gap-3 md:hidden">
+          {coachRows.length ? coachRows.map((row) => (
+            <article key={row.id} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <h3 className="font-semibold text-slate-950">{row.name}</h3>
+                <span className="rounded-full bg-brand/10 px-3 py-1 text-xs font-bold text-brand">{row.hours.toFixed(1)} hrs</span>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <InfoTile label="Students" value={compactNumber(row.students)} />
+                <InfoTile label="Classes" value={compactNumber(row.classes)} />
+                <InfoTile label="Attendance" value={`${row.attendancePercentage}%`} />
+                <InfoTile label="Sessions" value={compactNumber(row.sessions)} />
+              </div>
+              <Link href="/classrooms" className="btn-outline mt-3 w-full">View Classes</Link>
+            </article>
+          )) : (
+            <CommonEmptyState title="No coaches found" description="Add coaches from the Users area to begin tracking teaching workload." action={<Link href="/admin/users" className="btn-primary">Add Coach</Link>} />
+          )}
+        </div>
+        <div className="hidden overflow-x-auto md:block">
           <table className="min-w-full text-left text-sm">
             <thead className="text-xs uppercase text-slate-500">
               <tr className="border-b border-slate-100">
@@ -1758,7 +1864,26 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
 
       <DashboardPanel>
         <SectionTitle icon={Users} title="Batch-Wise Teaching Hours" subtitle="Completed teaching workload per batch" />
-        <div className="overflow-x-auto">
+        <div className="grid gap-3 md:hidden">
+          {batchTeachingRows.length ? batchTeachingRows.map((row) => (
+            <article key={row.batchName} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="font-semibold text-slate-950">{row.batchName}</h3>
+                  <p className="text-xs text-slate-500">Coach: {row.coachName || "-"}</p>
+                </div>
+                <span className="rounded-full bg-brand/10 px-3 py-1 text-xs font-bold text-brand">{row.hoursConducted.toFixed(1)} hrs</span>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <InfoTile label="Classes" value={row.classesConducted} />
+                <InfoTile label="Students" value={row.students} />
+              </div>
+            </article>
+          )) : (
+            <CommonEmptyState title="No completed scheduled classes yet" description="Batch teaching hours will appear after coaches complete scheduled classes in this range." />
+          )}
+        </div>
+        <div className="hidden overflow-x-auto md:block">
           <table className="min-w-full text-left text-sm">
             <thead className="text-xs uppercase text-slate-500">
               <tr className="border-b border-slate-100">
@@ -1787,6 +1912,37 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
           </table>
         </div>
       </DashboardPanel>
+      </>
+      )}
+
+      {activeTab === "activity" && (
+      <DashboardPanel>
+        <SectionTitle icon={ActivityIcon} title="Activity Tracker" subtitle="Recent account, learning, attendance, payment, and PGN activity" />
+        <div className="grid gap-4 xl:grid-cols-[280px_minmax(0,1fr)]">
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <div className="text-sm font-semibold text-slate-950">Recent activity in range</div>
+            <div className="mt-1 text-3xl font-black text-brand">{activities.length}</div>
+            <div className="mt-1 text-xs text-slate-500">Showing the latest academy activity across the selected filters.</div>
+            <Link href="/admin/activity-tracker" className="btn-primary mt-4 w-full">Open Activity Tracker</Link>
+          </div>
+          <div className="space-y-3">
+            {activities.length ? activities.slice(0, 12).map((activity) => (
+              <article key={activity.id} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-950">{activity.label}</h3>
+                    <p className="mt-1 text-xs text-slate-500">{activity.actor} - {activity.type}</p>
+                  </div>
+                  <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-slate-500 shadow-sm">{formatTimeAgo(activity.when)}</span>
+                </div>
+              </article>
+            )) : (
+              <CommonEmptyState title="No activity in this range" description="Try a wider date range or clear the search filter to see more academy activity." action={<Link href="/admin/activity-tracker" className="btn-primary">Open Activity Tracker</Link>} />
+            )}
+          </div>
+        </div>
+      </DashboardPanel>
+      )}
     </div>
   );
 }

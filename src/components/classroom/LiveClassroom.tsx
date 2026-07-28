@@ -571,9 +571,9 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       const viewportWidth = typeof window === "undefined" ? width : window.innerWidth;
       const viewportHeight = typeof window === "undefined" ? 720 : window.innerHeight;
       const isMobile = viewportWidth < 768;
-      const heightLimit = isMobile ? viewportHeight - 260 : viewportHeight - (coach ? 330 : 255);
+      const heightLimit = isMobile ? viewportHeight - 220 : viewportHeight - (coach ? 260 : 230);
       const coordinateGutter = data?.live?.showCoordinates === false ? 12 : isMobile ? 40 : 56;
-      const maxBoard = isMobile ? Math.min(520, viewportWidth - 42) : 620;
+      const maxBoard = isMobile ? Math.min(520, viewportWidth - 42) : 700;
       const minBoard = isMobile ? 248 : 300;
       setBoardWidth(Math.max(minBoard, Math.min(maxBoard, width - coordinateGutter, heightLimit)));
     };
@@ -848,7 +848,9 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
 
   function currentPgnFen() {
     if (!pgnMoves.length) return live?.fen || "start";
-    const startFen = extractFen(live?.pgn || "") || "start";
+    const collectionItem = (Array.isArray(live?.challenge?.pgnCollection) ? live.challenge.pgnCollection : [])
+      .find((pgn: any) => pgn.title === live?.pgnTitle || pgn.pgn === live?.pgn);
+    const startFen = collectionItem?.fen || extractFen(live?.pgn || "") || "start";
     return applyMoves(startFen, pgnMoves, currentMoveIndex);
   }
 
@@ -1557,9 +1559,11 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const navigateMove = useCallback((nextIndex: number) => {
     if (!pgnMoves.length) return;
     const boundedIndex = Math.max(0, Math.min(pgnMoves.length, nextIndex));
-    const startFen = extractFen(live?.pgn || "") || "start";
+    const collectionItem = (Array.isArray(live?.challenge?.pgnCollection) ? live.challenge.pgnCollection : [])
+      .find((pgn: any) => pgn.title === live?.pgnTitle || pgn.pgn === live?.pgn);
+    const startFen = collectionItem?.fen || extractFen(live?.pgn || "") || "start";
     patch({ fen: applyMoves(startFen, pgnMoves, boundedIndex), pgnMoveIndex: boundedIndex, moveHistory: pgnMoves.slice(0, boundedIndex) });
-  }, [live?.pgn, patch, pgnMoves]);
+  }, [live?.challenge?.pgnCollection, live?.pgn, live?.pgnTitle, patch, pgnMoves]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -1568,8 +1572,16 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       else if (event.ctrlKey || event.metaKey) setModifier("ctrl");
       else if (event.altKey) setModifier("alt");
       else setModifier("default");
-      if (event.key === "ArrowLeft") navigateMove(currentMoveIndex - 1);
-      if (event.key === "ArrowRight") navigateMove(currentMoveIndex + 1);
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        if (event.shiftKey) loadAdjacentPgn(-1);
+        else navigateMove(currentMoveIndex - 1);
+      }
+      if (event.key === "ArrowRight") {
+        event.preventDefault();
+        if (event.shiftKey) loadAdjacentPgn(1);
+        else navigateMove(currentMoveIndex + 1);
+      }
     }
     function onKeyUp(event: KeyboardEvent) {
       if (event.shiftKey) setModifier("shift");
@@ -1583,7 +1595,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
     };
-  }, [currentMoveIndex, navigateMove]);
+  });
 
   function collectionItems(items: any[]) {
     return items.map((item: any) => ({
@@ -1601,7 +1613,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       chess.loadPgn(pgn.pgn);
       const moves = chess.history();
       const startFen = pgn.initialFen || pgn.fen || extractFen(pgn.pgn) || "start";
-      const selectedCollection = collection?.length ? collectionItems(collection) : live?.challenge?.pgnCollection || [];
+      const selectedCollection = collection?.length ? collectionItems(collection) : collectionItems([pgn]);
       patch({
         pgn: pgn.pgn,
         pgnTitle: pgn.title,
@@ -1848,40 +1860,41 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     { key: "leaderboard" as TabKey, icon: <Crown size={19} />, label: "Leaderboard" },
   ];
   const classroomTabs = coach ? coachSidebarTabs : studentPanelTabs;
+  const quizFocusMode = Boolean(studentQuizMode || coachQuizMode);
 
   return (
     <div className="flex min-h-[calc(100dvh-76px)] flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg shadow-brand/10 md:h-[calc(100vh-92px)] md:min-h-[640px]">
-      <div className="flex flex-none flex-col gap-3 border-b border-slate-200 bg-white px-3 py-3 lg:flex-row lg:items-center lg:justify-between lg:px-4">
-        <div>
-          <div className="inline-flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.16em] text-brand">
-            <BookOpen size={14} />
-            {coach ? "Teaching Workspace" : "Learning Workspace"}
-          </div>
-          <h2 className="mt-1 text-lg font-black text-slate-950 sm:text-xl">{classroomName}</h2>
-          <p className="text-xs text-slate-500 sm:text-sm">
-            {coachName} - {live?.topic || "Topic not set"} - {duration} min
-          </p>
+      <div className="flex flex-none flex-col gap-2 border-b border-slate-200 bg-white px-3 py-2 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <span className="inline-flex h-7 items-center gap-1.5 rounded-md bg-purple-50 px-2 text-[11px] font-black uppercase tracking-[0.14em] text-brand">
+            <BookOpen size={13} />
+            {coach ? "Teaching" : "Learning"}
+          </span>
+          <h2 className="max-w-[360px] truncate text-sm font-black text-slate-950 sm:text-base">{classroomName}</h2>
+          <span className="rounded-md bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">{coachName}</span>
+          <span className="max-w-[260px] truncate rounded-md bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">{live?.topic || "Topic not set"}</span>
+          <span className="rounded-md bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">{duration} min</span>
+          {activeQuestion ? <span className="rounded-md bg-purple-100 px-2 py-1 text-[11px] font-black text-purple-800">Live quiz</span> : null}
         </div>
-        <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2 lg:mt-0 lg:max-w-[58%] lg:justify-end">
+        <div className="flex min-w-0 flex-wrap items-center gap-2 lg:justify-end">
           {classroom?.meetingUrl ? (
             <a
               href={classroom.meetingUrl}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex h-9 items-center gap-2 rounded-lg border border-brand/15 bg-white px-3 text-xs font-bold text-brand shadow-sm transition hover:bg-brand/5 sm:h-10 sm:text-sm"
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-brand/15 bg-white px-2.5 text-xs font-bold text-brand shadow-sm transition hover:bg-brand/5"
             >
               <ExternalLink size={15} /> Open Google Meet
             </a>
           ) : null}
         {coach && (
-            <div className="flex min-w-0 max-w-full items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-left shadow-sm sm:min-w-[220px]">
+            <div className="flex h-8 min-w-0 max-w-full items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-2.5 text-left shadow-sm sm:min-w-[220px]">
               <div className="min-w-0">
-                <div className="truncate text-sm font-semibold text-blue-800">{live?.pgnTitle || live?.topic || "Classroom board"}</div>
-                <div className="truncate text-xs text-slate-500">{pgnMoves.length ? `${currentMoveIndex} / ${pgnMoves.length} moves loaded` : "No PGN loaded"}</div>
+                <div className="truncate text-xs font-semibold text-blue-800">{live?.pgnTitle || live?.topic || "Classroom board"}</div>
               </div>
               {(live?.pgn || live?.pgnTitle || live?.gamifiedObjects && Object.keys(live.gamifiedObjects).length) && (
-                <button type="button" onClick={clearClassroomLoad} className="grid h-7 w-7 flex-none place-items-center rounded-md text-slate-500 transition hover:bg-white hover:text-red-600" title="Clear classroom loading">
-                  <X size={16} />
+                <button type="button" onClick={clearClassroomLoad} className="grid h-6 w-6 flex-none place-items-center rounded-md text-slate-500 transition hover:bg-white hover:text-red-600" title="Clear classroom loading">
+                  <X size={14} />
                 </button>
               )}
             </div>
@@ -1889,7 +1902,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
         </div>
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto bg-slate-50/70 md:overflow-hidden xl:grid-cols-[minmax(0,1fr)_minmax(300px,360px)]">
+      <div className={`grid min-h-0 flex-1 grid-cols-1 overflow-y-auto bg-slate-50/70 md:overflow-hidden ${quizFocusMode ? "" : "xl:grid-cols-[minmax(0,1fr)_minmax(288px,336px)]"}`}>
         <section className="flex min-h-0 min-w-0 flex-col gap-3 overflow-visible p-2 md:overflow-hidden md:p-3">
           <div ref={boardShellRef} className="min-h-0 min-w-0 flex-1 overflow-visible rounded-lg border border-slate-200 bg-white p-2 shadow-sm md:overflow-auto sm:p-3">
             {studentQuizMode ? (
@@ -2073,27 +2086,15 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                         <button disabled={!pgnMoves.length} onClick={() => navigateMove(pgnMoves.length)} className="grid h-8 w-8 place-items-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><SkipForward size={15} /></button>
                         <button disabled={!activePgnCollection.length || activePgnCollectionIndex <= 0} onClick={() => loadAdjacentPgn(-1)} className="rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 disabled:opacity-40">Previous game</button>
                         <button disabled={!activePgnCollection.length || activePgnCollectionIndex >= activePgnCollection.length - 1} onClick={() => loadAdjacentPgn(1)} className="rounded-md bg-purple-700 px-2.5 py-1.5 text-xs font-semibold text-white disabled:opacity-40">Next game</button>
+                        <button
+                          type="button"
+                          onClick={createQuiz}
+                          disabled={!canLaunchBoardQuiz}
+                          className="rounded-md border border-purple-200 bg-purple-50 px-2.5 py-1.5 text-xs font-semibold text-purple-800 disabled:opacity-40"
+                        >
+                          Ask Quiz
+                        </button>
                       </div>
-                    </div>
-                    <div className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 sm:flex-row sm:items-center">
-                      <input
-                        type="range"
-                        min={0}
-                        max={pgnMoves.length}
-                        value={Math.min(currentMoveIndex, pgnMoves.length)}
-                        disabled={!pgnMoves.length}
-                        onChange={(event) => navigateMove(Number(event.target.value))}
-                        className="h-2 min-w-0 flex-1 accent-purple-700 disabled:opacity-40"
-                        aria-label="Navigate PGN moves"
-                      />
-                      <button
-                        type="button"
-                        onClick={createQuiz}
-                        disabled={!canLaunchBoardQuiz}
-                        className="h-9 rounded-md border border-purple-200 bg-purple-50 px-3 text-xs font-semibold text-purple-800 disabled:opacity-40"
-                      >
-                        Ask Current Position as Quiz
-                      </button>
                     </div>
                   </div>
                 )}
@@ -2138,33 +2139,33 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
           </div>
         </section>
 
-        <aside className="flex min-h-[280px] flex-col border-t border-slate-200 bg-white md:min-h-0 xl:border-l xl:border-t-0">
-          <div className={`grid overflow-x-auto border-b border-slate-200 bg-white text-sm ${coach ? "grid-cols-4" : "grid-cols-2"}`}>
+        {!quizFocusMode && <aside className="flex min-h-[240px] flex-col border-t border-slate-200 bg-white md:min-h-0 xl:border-l xl:border-t-0">
+          <div className={`grid overflow-x-auto border-b border-slate-200 bg-white text-xs ${coach ? "grid-cols-4" : "grid-cols-2"}`}>
             {classroomTabs.map(({ key, icon, label }: any) => (
-              <button key={key} onClick={() => setActiveTab(key)} className={`flex h-11 min-w-fit items-center justify-center gap-1 border-b-2 px-2 text-xs font-semibold transition ${activeTab === key ? "border-brand text-brand" : "border-transparent text-slate-500 hover:bg-slate-50 hover:text-slate-800"}`} title={label}>
+              <button key={key} onClick={() => setActiveTab(key)} className={`flex h-9 min-w-fit items-center justify-center gap-1 border-b-2 px-2 text-[11px] font-semibold transition ${activeTab === key ? "border-brand text-brand" : "border-transparent text-slate-500 hover:bg-slate-50 hover:text-slate-800"}`} title={label}>
                 {icon}
                 <span className="hidden sm:inline 2xl:inline">{label}</span>
               </button>
             ))}
           </div>
 
-          <div className="min-h-0 flex-1 overflow-auto p-2 sm:p-3">
+          <div className="min-h-0 flex-1 overflow-auto p-2">
             {activeTab === "students" && (
-              <div className="space-y-4">
-                <div className="rounded-lg border border-slate-200 p-4">
-                  <h3 className="font-semibold text-slate-950">Classroom Students</h3>
-                  <p className="mt-1 text-sm text-slate-500">{activeStudents.length} students available for this session</p>
+              <div className="space-y-2">
+                <div className="rounded-lg border border-slate-200 p-3">
+                  <h3 className="text-sm font-semibold text-slate-950">Classroom Students</h3>
+                  <p className="mt-1 text-xs text-slate-500">{activeStudents.length} students available</p>
                 </div>
                 <div className="space-y-2">
                   {students.map((student: any) => {
                     const studentKey = entityId(student);
                     const hasControl = (live?.boardControlStudents || []).some((s: any) => entityId(s) === studentKey);
                     return (
-                      <div key={student._id} className="flex items-center justify-between rounded-lg border border-slate-200 p-3">
+                      <div key={student._id} className="flex items-center justify-between rounded-lg border border-slate-200 p-2">
                         <div className="flex items-center gap-3">
-                          <div className="grid h-9 w-9 place-items-center rounded-full bg-purple-100 text-xs font-bold text-purple-800">{initials(student.name)}</div>
+                          <div className="grid h-8 w-8 place-items-center rounded-full bg-purple-100 text-[11px] font-bold text-purple-800">{initials(student.name)}</div>
                           <div>
-                            <div className="text-sm font-semibold text-slate-950">{student.name}</div>
+                            <div className="text-xs font-semibold text-slate-950">{student.name}</div>
                             <div className="text-xs text-slate-500">{student.username || student.email}</div>
                           </div>
                         </div>
@@ -2338,24 +2339,24 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
             )}
           </div>
 
-          <div className="border-t border-slate-200 p-4">
-            <div className="mb-3 flex items-center justify-between">
+          <div className="border-t border-slate-200 p-3">
+            <div className="mb-2 flex items-center justify-between">
               <div>
-                <h3 className="text-lg font-semibold text-slate-950">{classroomName}</h3>
-                <p className="text-sm text-slate-500">Instructor: {coachName}</p>
+                <h3 className="text-sm font-semibold text-slate-950">{classroomName}</h3>
+                <p className="text-xs text-slate-500">Instructor: {coachName}</p>
               </div>
-              <button onClick={() => void load(true)} className="grid h-10 w-10 place-items-center rounded-md border border-slate-200 text-slate-700 transition hover:border-purple-300 hover:bg-purple-50 hover:text-purple-800" title="Refresh classroom panel">
-                <RefreshCcw size={17} />
+              <button onClick={() => void load(true)} className="grid h-8 w-8 place-items-center rounded-md border border-slate-200 text-slate-700 transition hover:border-purple-300 hover:bg-purple-50 hover:text-purple-800" title="Refresh classroom panel">
+                <RefreshCcw size={15} />
               </button>
             </div>
             {coach && (
               <div className="grid grid-cols-2 gap-2">
-                <button onClick={() => setPgnOpen(true)} className="h-11 rounded-md bg-purple-700 text-sm font-semibold text-white">Load PGNs</button>
-                <button onClick={openEndSummary} className="h-11 rounded-md bg-red-500 text-sm font-semibold text-white">End Classroom</button>
+                <button onClick={() => setPgnOpen(true)} className="h-9 rounded-md bg-purple-700 text-xs font-semibold text-white">Load PGNs</button>
+                <button onClick={openEndSummary} className="h-9 rounded-md bg-red-500 text-xs font-semibold text-white">End Classroom</button>
               </div>
             )}
           </div>
-        </aside>
+        </aside>}
       </div>
 
       {pgnOpen && coach && (

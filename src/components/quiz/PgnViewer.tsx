@@ -145,8 +145,8 @@ export default function PgnViewer({
     if (!element) return;
 
     const resize = () => {
-      const heightLimit = Math.max(300, window.innerHeight - 255);
-      setBoardWidth(Math.max(300, Math.min(560, element.clientWidth, heightLimit)));
+      const heightLimit = Math.max(260, window.innerHeight - 360);
+      setBoardWidth(Math.max(260, Math.min(540, element.clientWidth - 28, heightLimit)));
     };
     resize();
     const observer = new ResizeObserver(resize);
@@ -184,24 +184,18 @@ export default function PgnViewer({
   return (
     <div className="grid h-full min-h-0 gap-3 lg:grid-cols-[minmax(0,1fr)_300px]">
       <PageLoadingOverlay visible={navigating} message="Opening PGN..." />
-      <section className="flex min-h-0 flex-col rounded-lg border border-slate-200 bg-white p-3 text-slate-950 shadow-sm">
-        <div ref={boardWrapRef} className="mx-auto min-h-0 w-full max-w-[560px] flex-1">
-          <Chessboard
-            position={position}
-            arePiecesDraggable={false}
-            boardWidth={boardWidth}
-            customDarkSquareStyle={{ backgroundColor: darkSquare }}
-            customLightSquareStyle={{ backgroundColor: lightSquare }}
-          />
+      <section className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white p-3 text-slate-950 shadow-sm">
+        <div ref={boardWrapRef} className="flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden pb-2">
+          <BoardWithOutsideCoordinates position={position} boardWidth={boardWidth} />
         </div>
 
-        <div className="mt-3 flex items-center justify-center gap-2">
+        <div className="flex flex-none items-center justify-center gap-2">
           <button className={iconButton} onClick={() => goTo(0)} disabled={ply === 0} aria-label="Go to first position"><ChevronsLeft size={16} /></button>
           <button className={iconButton} onClick={() => goTo(ply - 1)} disabled={ply === 0} aria-label="Previous move"><ChevronLeft size={16} /></button>
           <button className={iconButton} onClick={() => goTo(ply + 1)} disabled={ply === parsed.moves.length} aria-label="Next move"><ChevronRight size={16} /></button>
           <button className={iconButton} onClick={() => goTo(parsed.moves.length)} disabled={ply === parsed.moves.length} aria-label="Go to final position"><ChevronsRight size={16} /></button>
         </div>
-        <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+        <div className="mt-3 flex flex-none flex-wrap items-center justify-center gap-2">
           <Link href={backHref} className={`${navButton} border-slate-200 bg-white text-slate-700 hover:bg-slate-50`}>
             Back to folder
           </Link>
@@ -320,5 +314,33 @@ function MoveButton({ label, active, onClick }: { label?: string; active: boolea
     >
       {label || ""}
     </button>
+  );
+}
+
+function BoardWithOutsideCoordinates({ position, boardWidth }: { position: string; boardWidth: number }) {
+  return (
+    <div className="grid gap-1" style={{ gridTemplateColumns: "18px auto", gridTemplateRows: "auto 18px" }}>
+      <div className="grid text-[11px] font-semibold text-slate-400" style={{ height: boardWidth, gridTemplateRows: "repeat(8, 1fr)" }} aria-hidden="true">
+        {["8", "7", "6", "5", "4", "3", "2", "1"].map((rank) => (
+          <span key={rank} className="flex items-center justify-center">{rank}</span>
+        ))}
+      </div>
+      <div className="overflow-hidden rounded-sm">
+        <Chessboard
+          position={position}
+          arePiecesDraggable={false}
+          boardWidth={boardWidth}
+          showBoardNotation={false}
+          customDarkSquareStyle={{ backgroundColor: darkSquare }}
+          customLightSquareStyle={{ backgroundColor: lightSquare }}
+        />
+      </div>
+      <div aria-hidden="true" />
+      <div className="grid text-[11px] font-semibold text-slate-400" style={{ width: boardWidth, gridTemplateColumns: "repeat(8, 1fr)" }} aria-hidden="true">
+        {["a", "b", "c", "d", "e", "f", "g", "h"].map((file) => (
+          <span key={file} className="flex items-center justify-center">{file}</span>
+        ))}
+      </div>
+    </div>
   );
 }

@@ -42,6 +42,7 @@ type PgnDoc = {
   moveCount?: number;
   hasAnnotations?: boolean;
   hasVariations?: boolean;
+  initialFen?: string;
   sourceFileName?: string;
   createdAt?: string;
   updatedAt?: string;
@@ -75,7 +76,7 @@ export default function PgnLibraryPage() {
   const [selectedFolder, setSelectedFolder] = useState<FolderDoc | null>(null);
   const [selectedGame, setSelectedGame] = useState<PgnDoc | null>(null);
   const [query, setQuery] = useState("");
-  const [sort, setSort] = useState("None");
+  const [sort, setSort] = useState("Newest");
   const [reorder, setReorder] = useState(false);
   const role = (session?.user as any)?.role;
   const isAdmin = (session?.user as any)?.role === "admin";
@@ -149,7 +150,25 @@ export default function PgnLibraryPage() {
         parentPath = parentFolderPath(parentPath);
       }
     });
-    return Array.from(byPath.values()).sort((a, b) => a.path.localeCompare(b.path));
+    return Array.from(byPath.values())
+      .map((folder) => {
+        const folderGames = games.filter((game) => {
+          const gameFolder = normalizeFolderPath(game.folder);
+          const sameScope = (game.visibility === "shared") !== folder.personal;
+          return sameScope && (gameFolder === folder.path || gameFolder.startsWith(`${folder.path}/`));
+        });
+        const latest = folderGames
+          .map((game) => game.updatedAt || game.createdAt)
+          .filter(Boolean)
+          .sort()
+          .at(-1);
+        return {
+          ...folder,
+          gameCount: folder.gameCount || folderGames.length,
+          lastUpdatedAt: folder.lastUpdatedAt || latest,
+        };
+      })
+      .sort((a, b) => a.path.localeCompare(b.path));
   }, [folders, games]);
 
   const visibleFolders = useMemo(() => {
@@ -504,6 +523,23 @@ function formatDate(value: string) {
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 
+function extractHeader(pgn: string, key: string) {
+  const match = pgn.match(new RegExp(`\\[${key}\\s+"([^"]*)"\\]`));
+  return match?.[1];
+}
+
+function previewFen(game: PgnDoc) {
+  if (game.initialFen) return game.initialFen;
+  try {
+    const chess = new Chess();
+    chess.loadPgn(game.pgn);
+    const history = chess.history({ verbose: true }) as Array<{ before?: string }>;
+    return history[0]?.before || extractHeader(game.pgn, "FEN") || startFen;
+  } catch {
+    return extractHeader(game.pgn, "FEN") || startFen;
+  }
+}
+
 function normalizeFolderPath(value?: string | null) {
   return String(value || "").trim().replace(/^\/+|\/+$/g, "").replace(/\/{2,}/g, "/");
 }
@@ -689,18 +725,30 @@ function GameGrid({
             const canManage = isAdmin || String(game.uploadedBy || "") === currentUserId;
             return (
               <>
-          <Link href={folder ? `/pgn/${game._id}?folder=${encodeURIComponent(folder)}&scope=${game.visibility === "shared" ? "shared" : "personal"}` : `/pgn/${game._id}`} className="block pr-8">
-            <div className="truncate font-semibold">{game.title}</div>
-            <div className="mt-2 text-sm text-slate-600">{game.white || "White"} vs {game.black || "Black"} - {game.result || "*"}</div>
-            <div className="mt-1 truncate text-xs text-slate-500">
-              {[game.event, game.date].filter(Boolean).join(" - ") || "No event metadata"}
+          <Link href={folder ? `/pgn/${game._id}?folder=${encodeURIComponent(folder)}&scope=${game.visibility === "shared" ? "shared" : "personal"}` : `/pgn/${game._id}`} className="grid grid-cols-[112px_minmax(0,1fr)] gap-4 pr-8">
+            <div className="h-28 w-28 overflow-hidden rounded-md border border-slate-200 bg-slate-100" aria-label={`Preview board for ${game.title}`}>
+              <Chessboard
+                position={previewFen(game)}
+                arePiecesDraggable={false}
+                boardWidth={112}
+                showBoardNotation={false}
+                customDarkSquareStyle={{ backgroundColor: darkSquare }}
+                customLightSquareStyle={{ backgroundColor: lightSquare }}
+              />
             </div>
-            <div className="mt-3 flex flex-wrap gap-1.5 text-[11px] font-semibold text-slate-500">
-              {game.eco && <span className="rounded bg-slate-100 px-2 py-1">{game.eco}</span>}
-              {game.opening && <span className="max-w-full truncate rounded bg-slate-100 px-2 py-1">{game.opening}</span>}
-              {game.moveCount ? <span className="rounded bg-slate-100 px-2 py-1">{game.moveCount} moves</span> : null}
-              {game.hasAnnotations && <span className="rounded bg-emerald-50 px-2 py-1 text-emerald-700">Annotated</span>}
-              {game.hasVariations && <span className="rounded bg-sky-50 px-2 py-1 text-sky-700">Variations</span>}
+            <div className="min-w-0">
+              <div className="truncate font-semibold">{game.title}</div>
+              <div className="mt-2 text-sm text-slate-600">{game.white || "White"} vs {game.black || "Black"} - {game.result || "*"}</div>
+              <div className="mt-1 truncate text-xs text-slate-500">
+                {[game.event, game.date].filter(Boolean).join(" - ") || "No event metadata"}
+              </div>
+              <div className="mt-3 flex flex-wrap gap-1.5 text-[11px] font-semibold text-slate-500">
+                {game.eco && <span className="rounded bg-slate-100 px-2 py-1">{game.eco}</span>}
+                {game.opening && <span className="max-w-full truncate rounded bg-slate-100 px-2 py-1">{game.opening}</span>}
+                {game.moveCount ? <span className="rounded bg-slate-100 px-2 py-1">{game.moveCount} moves</span> : null}
+                {game.hasAnnotations && <span className="rounded bg-emerald-50 px-2 py-1 text-emerald-700">Annotated</span>}
+                {game.hasVariations && <span className="rounded bg-sky-50 px-2 py-1 text-sky-700">Variations</span>}
+              </div>
             </div>
           </Link>
           <button

@@ -43,7 +43,7 @@ export async function GET() {
       const folderPath = parts.slice(0, index + 1).join("/");
       const key = `${scope}:${folderPath}`;
       const current = stats.get(key) || { gameCount: 0 };
-      current.gameCount += index === parts.length - 1 ? 1 : 0;
+      current.gameCount += 1;
       const updatedAt = new Date(game.updatedAt || game.createdAt);
       if (!current.lastUpdatedAt || updatedAt > current.lastUpdatedAt) current.lastUpdatedAt = updatedAt;
       stats.set(key, current);

@@ -107,6 +107,7 @@ export default function LiveDataRefresher() {
   const router = useRouter();
   const pathname = usePathname();
   const isLiveClassroomRoute = /^\/classrooms\/[^/]+(?:\/live)?$/.test(pathname || "");
+  const isQuietRefreshRoute = isLiveClassroomRoute || (pathname || "").startsWith("/pgn");
   const [showSync, setShowSync] = useState(false);
   const [isPending, startTransition] = useTransition();
   const refreshTimerRef = useRef<number | null>(null);
@@ -123,7 +124,7 @@ export default function LiveDataRefresher() {
   const refreshNow = useCallback(
     ({ silent = false }: RefreshDetail = {}) => {
       if (typeof document !== "undefined" && document.hidden) return;
-      if (isLiveClassroomRoute) return;
+      if (isQuietRefreshRoute) return;
       if (refreshTimerRef.current) window.clearTimeout(refreshTimerRef.current);
 
       refreshTimerRef.current = window.setTimeout(() => {
@@ -140,16 +141,16 @@ export default function LiveDataRefresher() {
         }
       }, silent ? 0 : 450);
     },
-    [isLiveClassroomRoute, router],
+    [isQuietRefreshRoute, router],
   );
 
   useEffect(() => {
-    if (isLiveClassroomRoute) return;
+    if (isQuietRefreshRoute) return;
     patchFetchOnce();
-  }, [isLiveClassroomRoute]);
+  }, [isQuietRefreshRoute]);
 
   useEffect(() => {
-    if (isLiveClassroomRoute) return;
+    if (isQuietRefreshRoute) return;
     const onDataChanged = (event: Event) => {
       const detail = (event as CustomEvent<RefreshDetail>).detail || {};
       refreshNow(detail);
@@ -179,10 +180,10 @@ export default function LiveDataRefresher() {
       document.removeEventListener("visibilitychange", onVisibilityChange);
       clearTimers();
     };
-  }, [clearTimers, isLiveClassroomRoute, refreshNow]);
+  }, [clearTimers, isQuietRefreshRoute, refreshNow]);
 
   useEffect(() => {
-    if (isLiveClassroomRoute) return;
+    if (isQuietRefreshRoute) return;
     const interval = window.setInterval(() => {
       if (!document.hidden && Date.now() - lastRefreshRef.current > 25000) {
         refreshNow({ silent: true });
@@ -190,13 +191,13 @@ export default function LiveDataRefresher() {
     }, 30000);
 
     return () => window.clearInterval(interval);
-  }, [isLiveClassroomRoute, refreshNow]);
+  }, [isQuietRefreshRoute, refreshNow]);
 
   useEffect(() => {
     setShowSync(false);
   }, [pathname]);
 
-  if (isLiveClassroomRoute) return null;
+  if (isQuietRefreshRoute) return null;
   if (!showSync && !isPending) return null;
 
   return (

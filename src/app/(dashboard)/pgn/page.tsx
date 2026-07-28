@@ -185,6 +185,11 @@ export default function PgnLibraryPage() {
   const rootPersonalFolders = useMemo(() => visibleFolders.filter((folder) => folder.personal), [visibleFolders]);
   const rootSharedGames = useMemo(() => visibleGames.filter((game) => game.visibility === "shared"), [visibleGames]);
   const rootPersonalGames = useMemo(() => visibleGames.filter((game) => game.visibility !== "shared"), [visibleGames]);
+  const previewFens = useMemo(() => {
+    const map = new Map<string, string>();
+    games.forEach((game) => map.set(game._id, previewFen(game)));
+    return map;
+  }, [games]);
 
   useEffect(() => {
     const folderPath = normalizeFolderPath(searchParams?.get("folder"));
@@ -423,6 +428,7 @@ export default function PgnLibraryPage() {
                   <div className="mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">PGNs</div>
                   <GameGrid
                     games={visibleGames}
+                    previewFens={previewFens}
                     folder={currentFolder.path}
                     isAdmin={isAdmin}
                     currentUserId={currentUserId}
@@ -444,6 +450,7 @@ export default function PgnLibraryPage() {
               description="Shared folders and PGNs available across the academy."
               folders={rootSharedFolders}
               games={rootSharedGames}
+              previewFens={previewFens}
               isAdmin={isAdmin}
               currentUserId={currentUserId}
               onOpen={openFolder}
@@ -459,6 +466,7 @@ export default function PgnLibraryPage() {
               description="Private folders and PGNs visible only to you."
               folders={rootPersonalFolders}
               games={rootPersonalGames}
+              previewFens={previewFens}
               isAdmin={isAdmin}
               currentUserId={currentUserId}
               onOpen={openFolder}
@@ -538,6 +546,49 @@ function previewFen(game: PgnDoc) {
   } catch {
     return extractHeader(game.pgn, "FEN") || startFen;
   }
+}
+
+function fenPieces(fen: string) {
+  const board = String(fen || startFen).split(" ")[0] || "";
+  const pieces: string[] = [];
+  board.split("/").forEach((rank) => {
+    for (const char of rank) {
+      const empty = Number(char);
+      if (Number.isInteger(empty) && empty > 0) {
+        pieces.push(...Array.from({ length: empty }, () => ""));
+      } else {
+        pieces.push(char);
+      }
+    }
+  });
+  return pieces.slice(0, 64);
+}
+
+function MiniFenBoard({ fen }: { fen: string }) {
+  const pieceMap: Record<string, string> = {
+    p: "♟", n: "♞", b: "♝", r: "♜", q: "♛", k: "♚",
+    P: "♙", N: "♘", B: "♗", R: "♖", Q: "♕", K: "♔",
+  };
+  const pieces = fenPieces(fen);
+  return (
+    <div className="grid h-full w-full grid-cols-8 grid-rows-8" aria-hidden="true">
+      {Array.from({ length: 64 }).map((_, index) => {
+        const file = index % 8;
+        const rank = Math.floor(index / 8);
+        const light = (file + rank) % 2 === 0;
+        const piece = pieces[index] || "";
+        const whitePiece = piece === piece.toUpperCase();
+        return (
+          <span
+            key={index}
+            className={`flex items-center justify-center text-[15px] leading-none ${light ? "bg-[#efd6a8]" : "bg-[#bd8d62]"} ${whitePiece ? "text-white [text-shadow:_0_1px_1px_rgb(0_0_0_/_0.8)]" : "text-black"}`}
+          >
+            {pieceMap[piece] || ""}
+          </span>
+        );
+      })}
+    </div>
+  );
 }
 
 function normalizeFolderPath(value?: string | null) {
@@ -642,6 +693,7 @@ function LibrarySection({
   description,
   folders,
   games,
+  previewFens,
   isAdmin,
   currentUserId,
   onOpen,
@@ -656,6 +708,7 @@ function LibrarySection({
   description: string;
   folders: FolderDoc[];
   games: PgnDoc[];
+  previewFens: Map<string, string>;
   isAdmin: boolean;
   currentUserId: string;
   onOpen: (folder: FolderDoc) => void;
@@ -687,6 +740,7 @@ function LibrarySection({
       {games.length > 0 && (
         <GameGrid
           games={games}
+          previewFens={previewFens}
           isAdmin={isAdmin}
           currentUserId={currentUserId}
           onEdit={onEditGame}
@@ -700,6 +754,7 @@ function LibrarySection({
 
 function GameGrid({
   games,
+  previewFens,
   folder,
   isAdmin,
   currentUserId,
@@ -708,6 +763,7 @@ function GameGrid({
   onDownload,
 }: {
   games: PgnDoc[];
+  previewFens: Map<string, string>;
   folder?: string;
   isAdmin: boolean;
   currentUserId: string;
@@ -727,14 +783,7 @@ function GameGrid({
               <>
           <Link href={folder ? `/pgn/${game._id}?folder=${encodeURIComponent(folder)}&scope=${game.visibility === "shared" ? "shared" : "personal"}` : `/pgn/${game._id}`} className="grid grid-cols-[112px_minmax(0,1fr)] gap-4 pr-8">
             <div className="h-28 w-28 overflow-hidden rounded-md border border-slate-200 bg-slate-100" aria-label={`Preview board for ${game.title}`}>
-              <Chessboard
-                position={previewFen(game)}
-                arePiecesDraggable={false}
-                boardWidth={112}
-                showBoardNotation={false}
-                customDarkSquareStyle={{ backgroundColor: darkSquare }}
-                customLightSquareStyle={{ backgroundColor: lightSquare }}
-              />
+              <MiniFenBoard fen={previewFens.get(game._id) || startFen} />
             </div>
             <div className="min-w-0">
               <div className="truncate font-semibold">{game.title}</div>

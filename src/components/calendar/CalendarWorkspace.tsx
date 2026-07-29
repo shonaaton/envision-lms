@@ -145,10 +145,10 @@ function eventCount(events: CalendarEvent[], type: CalendarType | "all") {
 
 function EventLegend() {
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex flex-nowrap gap-1.5 overflow-x-auto pb-1">
       {typeOptions.filter((item) => item.id !== "all").map((item) => (
-        <span key={item.id} className={cn("inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold", typeTone(item.id as CalendarType))}>
-          <span className="h-2 w-2 rounded-full bg-current" />
+        <span key={item.id} className={cn("inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold", typeTone(item.id as CalendarType))}>
+          <span className="h-1.5 w-1.5 rounded-full bg-current" />
           {item.label}
         </span>
       ))}
@@ -183,7 +183,7 @@ function EventChip({
       title={event.title}
       onClick={onClick}
       className={cn(
-        "w-full rounded-2xl border px-3 py-3 text-left shadow-sm transition sm:px-4",
+        "w-full rounded-lg border px-3 py-2 text-left shadow-sm transition",
         active ? "border-brand bg-brand/5 shadow-brand/10" : "border-slate-200 bg-white hover:border-brand/20 hover:bg-brand/5"
       )}
     >
@@ -227,7 +227,7 @@ function DayEvents({
       <div className="space-y-2">
         {dayEvents.length ? dayEvents.map((event) => (
           <EventChip key={event.id} event={event} active={selectedId === event.id} onClick={() => onSelect(event)} />
-        )) : <div className="rounded-2xl bg-slate-50 px-3 py-6 text-center text-xs text-slate-400">No events</div>}
+        )) : <div className="rounded-lg bg-slate-50 px-3 py-5 text-center text-xs text-slate-400">No events</div>}
       </div>
     </div>
   );
@@ -264,7 +264,7 @@ function CalendarMonth({
             <div
               key={day.toISOString()}
               className={cn(
-                "min-h-[150px] border-b border-r border-slate-200 p-2 align-top md:min-h-[170px]",
+                "min-h-[116px] border-b border-r border-slate-200 p-2 align-top md:min-h-[128px]",
                 !isSameMonth(day, currentDate) && "bg-slate-50/80",
                 isToday(day) && "bg-brand/[0.03]"
               )}
@@ -283,7 +283,7 @@ function CalendarMonth({
                     title={event.title}
                     onClick={() => onSelect(event)}
                     className={cn(
-                      "w-full truncate rounded-xl border px-2.5 py-1.5 text-left text-xs font-semibold shadow-sm transition",
+                      "w-full truncate rounded-md border px-2 py-1 text-left text-[11px] font-semibold shadow-sm transition",
                       typeTone(event.type),
                       selectedId === event.id ? "border-brand bg-brand/10 text-brand ring-2 ring-brand/25" : ""
                     )}
@@ -292,7 +292,7 @@ function CalendarMonth({
                   </button>
                 ))}
                 {dayEvents.length > visible.length && (
-                  <div className="rounded-xl bg-slate-100 px-2.5 py-1.5 text-xs font-semibold text-slate-500">
+                  <div className="rounded-md bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-500">
                     +{dayEvents.length - visible.length} more
                   </div>
                 )}
@@ -420,17 +420,15 @@ function DetailRow({ icon, label, value }: { icon: ReactNode; label: string; val
   );
 }
 
-function SummaryCard({ label, value, icon: Icon }: { label: string; value: number; icon: any }) {
+function CompactSummary({ label, value, icon: Icon }: { label: string; value: number; icon: any }) {
   return (
-    <div className="min-w-0 rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">{label}</div>
-          <div className="mt-2 text-2xl font-black text-slate-950">{value}</div>
-        </div>
-        <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-brand/10 text-brand">
-          <Icon size={18} />
-        </span>
+    <div className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 shadow-sm">
+      <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-brand/10 text-brand">
+        <Icon size={15} />
+      </span>
+      <div className="leading-none">
+        <div className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">{label}</div>
+        <div className="mt-1 text-lg font-black text-slate-950">{value}</div>
       </div>
     </div>
   );
@@ -643,7 +641,7 @@ function StaffCalendarWorkspace({
   events: CalendarEvent[];
 }) {
 
-  const [view, setView] = useState<CalendarView>("daily");
+  const [view, setView] = useState<CalendarView>("monthly");
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [typeFilter, setTypeFilter] = useState<CalendarType | "all">("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -693,46 +691,45 @@ function StaffCalendarWorkspace({
   const staffLabel = role === "instructor" ? "Coach Calendar" : "Academy Calendar";
 
   return (
-    <div className="space-y-4 text-slate-950">
-      <section className="rounded-lg border border-brand/10 bg-white p-4 shadow-[0_12px_28px_rgba(90,19,114,0.08)] sm:p-5">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+    <div className="space-y-3 text-slate-950">
+      <section className="rounded-lg border border-brand/10 bg-white p-4 shadow-[0_12px_28px_rgba(90,19,114,0.08)]">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div>
             <div className="text-[11px] font-black uppercase tracking-[0.18em] text-brand/70">{staffLabel}</div>
-            <h1 className="mt-1 text-3xl font-black text-brand">{title}</h1>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">{subtitle}</p>
+            <h1 className="mt-1 text-2xl font-black text-brand sm:text-3xl">{title}</h1>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600">{subtitle}</p>
           </div>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-            <SummaryCard label="Today" value={todayEvents} icon={CalendarDays} />
-            <SummaryCard label="Upcoming" value={upcomingEvents} icon={Clock3} />
-            <SummaryCard label="Completed" value={completedEvents} icon={CheckCircle2} />
+          <div className="flex flex-wrap gap-2 xl:justify-end">
+            <CompactSummary label="Today" value={todayEvents} icon={CalendarDays} />
+            <CompactSummary label="Upcoming" value={upcomingEvents} icon={Clock3} />
+            <CompactSummary label="Completed" value={completedEvents} icon={CheckCircle2} />
           </div>
         </div>
       </section>
 
-      <section className="rounded-lg border border-brand/10 bg-white p-3 shadow-[0_12px_28px_rgba(90,19,114,0.07)] sm:p-4">
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px] lg:items-start">
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <button type="button" onClick={() => setCurrentDate(new Date())} className="h-11 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-900 shadow-sm">Today</button>
-              <button type="button" onClick={() => setCurrentDate((current) => navigateDate(view, current, -1))} className="grid h-11 w-11 place-items-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm"><ChevronLeft size={17} /></button>
-              <button type="button" onClick={() => setCurrentDate((current) => navigateDate(view, current, 1))} className="grid h-11 w-11 place-items-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm"><ChevronRight size={17} /></button>
-              <div className="min-w-0 inline-flex max-w-full items-center gap-2 rounded-2xl bg-slate-50 px-3 py-2 text-sm font-bold text-slate-900">
-                <CalendarDays size={16} className="shrink-0 text-brand" />
+      <section className="rounded-lg border border-brand/10 bg-white p-3 shadow-[0_12px_28px_rgba(90,19,114,0.07)]">
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-2 xl:flex-row xl:items-center">
+            <div className="flex shrink-0 items-center gap-1.5">
+              <button type="button" onClick={() => setCurrentDate(new Date())} className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-900 shadow-sm">Today</button>
+              <button type="button" onClick={() => setCurrentDate((current) => navigateDate(view, current, -1))} className="grid h-9 w-9 place-items-center rounded-lg border border-slate-200 bg-white text-slate-700 shadow-sm"><ChevronLeft size={16} /></button>
+              <button type="button" onClick={() => setCurrentDate((current) => navigateDate(view, current, 1))} className="grid h-9 w-9 place-items-center rounded-lg border border-slate-200 bg-white text-slate-700 shadow-sm"><ChevronRight size={16} /></button>
+            </div>
+            <div className="flex min-w-0 flex-1 flex-col gap-2 lg:flex-row lg:items-center">
+              <div className="inline-flex min-w-0 flex-1 items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm font-bold text-slate-900">
+                <CalendarDays size={15} className="shrink-0 text-brand" />
                 <span className="truncate">{formatRangeLabel(view, currentDate)}</span>
               </div>
-            </div>
-
-            <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
-              <div className="overflow-x-auto pb-1">
-                <div className="inline-flex min-w-full gap-1 rounded-2xl bg-slate-50 p-1">
+              <div className="overflow-x-auto pb-1 lg:pb-0">
+                <div className="inline-flex gap-1 rounded-lg bg-slate-100 p-1">
                   {viewOptions.map((item) => (
                     <button
                       key={item.id}
                       type="button"
                       onClick={() => setView(item.id)}
                       className={cn(
-                        "min-h-[44px] flex-1 rounded-xl px-4 py-2 text-sm font-bold whitespace-nowrap transition",
-                        view === item.id ? "bg-white text-slate-950 shadow-md" : "text-slate-500 hover:text-slate-900"
+                        "h-8 shrink-0 rounded-md px-3 text-xs font-bold whitespace-nowrap transition",
+                        view === item.id ? "bg-white text-slate-950 shadow-sm" : "text-slate-500 hover:text-slate-900"
                       )}
                     >
                       {item.label}
@@ -740,8 +737,8 @@ function StaffCalendarWorkspace({
                   ))}
                 </div>
               </div>
-              <label className="space-y-1">
-                <span className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Jump To Date</span>
+              <label className="flex shrink-0 items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1 shadow-sm">
+                <span className="hidden text-[10px] font-black uppercase tracking-[0.12em] text-slate-500 sm:inline">Jump</span>
                 <input
                   type="date"
                   value={currentDateValue}
@@ -749,69 +746,68 @@ function StaffCalendarWorkspace({
                     const next = event.target.value ? new Date(`${event.target.value}T12:00:00`) : new Date();
                     if (!Number.isNaN(next.getTime())) setCurrentDate(next);
                   }}
-                  className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 shadow-sm outline-none focus:border-brand"
+                  className="h-7 w-[145px] bg-transparent text-sm font-semibold text-slate-900 outline-none"
                 />
               </label>
+              <div className="hidden shrink-0 rounded-lg bg-brand/10 px-3 py-2 text-xs font-black uppercase tracking-[0.12em] text-brand xl:block">
+                {visibleEvents.length} visible
+              </div>
             </div>
           </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <div className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Visible Items</div>
-            <div className="mt-2 text-3xl font-black text-slate-950">{visibleEvents.length}</div>
-            <div className="mt-1 text-sm text-slate-500">After current view and filter selection</div>
-          </div>
-        </div>
-
-        <div className="mt-4 rounded-lg border border-slate-200 bg-white p-3">
-          <div className="mb-2 text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Color Legend</div>
-          <EventLegend />
-        </div>
-
-        <div className="mt-4 space-y-3">
-          <div className="overflow-x-auto pb-1">
-            <div className="inline-flex min-w-full items-center gap-2">
-              <span className="inline-flex shrink-0 items-center gap-2 rounded-full bg-slate-100 px-3 py-2 text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
-                <Filter size={12} />
-                Types
-              </span>
-              {typeOptions.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => setTypeFilter(item.id)}
-                  className={cn(
-                    "shrink-0 rounded-full border px-4 py-2 text-sm font-semibold whitespace-nowrap transition",
-                    typeFilter === item.id ? "border-brand bg-brand/10 text-brand" : "border-slate-200 bg-white text-slate-600 hover:border-brand/20 hover:text-slate-900"
-                  )}
-                >
-                  {item.label}
-                  {item.id !== "all" && <span className="ml-2 text-xs text-slate-400">{eventCount(events, item.id)}</span>}
-                </button>
-              ))}
+          <div className="grid gap-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] xl:items-center">
+            <div className="min-w-0 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2">
+              <div className="mb-1 text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">Legend</div>
+              <EventLegend />
             </div>
-          </div>
+            <div className="min-w-0 space-y-2">
+              <div className="overflow-x-auto pb-1">
+                <div className="inline-flex min-w-full items-center gap-1.5">
+                  <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1.5 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">
+                    <Filter size={11} />
+                    Types
+                  </span>
+                  {typeOptions.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => setTypeFilter(item.id)}
+                      className={cn(
+                        "shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition",
+                        typeFilter === item.id ? "border-brand bg-brand/10 text-brand" : "border-slate-200 bg-white text-slate-600 hover:border-brand/20 hover:text-slate-900"
+                      )}
+                    >
+                      {item.label}
+                      {item.id !== "all" && <span className="ml-1.5 text-[11px] text-slate-400">{eventCount(events, item.id)}</span>}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-          <div className="overflow-x-auto pb-1">
-            <div className="inline-flex min-w-full items-center gap-2">
-              {statusOptions.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => setStatusFilter(item.id)}
-                  className={cn(
-                    "shrink-0 rounded-full border px-4 py-2 text-sm font-semibold whitespace-nowrap transition",
-                    statusFilter === item.id ? "border-brand bg-brand text-white" : "border-slate-200 bg-white text-slate-600 hover:border-brand/20 hover:text-slate-900"
-                  )}
-                >
-                  {item.label}
-                </button>
-              ))}
+              <div className="overflow-x-auto pb-1">
+                <div className="inline-flex min-w-full items-center gap-1.5">
+                  {statusOptions.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => setStatusFilter(item.id)}
+                      className={cn(
+                        "shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition",
+                        statusFilter === item.id ? "border-brand bg-brand text-white" : "border-slate-200 bg-white text-slate-600 hover:border-brand/20 hover:text-slate-900"
+                      )}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                  <span className="shrink-0 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-500 xl:hidden">{visibleEvents.length} visible</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </section>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_300px]">
         <div className="min-w-0 space-y-3">
           {view === "monthly" && <CalendarMonth currentDate={currentDate} events={visibleEvents} selectedId={selectedId} onSelect={(event) => setSelectedId(event.id)} />}
 

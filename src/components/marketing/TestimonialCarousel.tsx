@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Pause, Play, Star } from "lucide-react";
 import type { ReviewRecord } from "@/lib/achievementData";
@@ -39,9 +40,13 @@ export default function TestimonialCarousel({ reviews }: { reviews: ReviewRecord
     >
       <div className="grid gap-0 lg:grid-cols-[0.72fr_1.28fr]">
         <div className="border-b border-white/10 bg-[#111722]/72 p-6 text-white sm:p-8 lg:border-b-0 lg:border-r">
-          <div className="grid h-20 w-20 place-items-center rounded-lg bg-accent text-2xl font-black text-brand shadow-lg shadow-accent/10">
-            {active.name.split(" ").map((part) => part[0]).join("").slice(0, 2)}
-          </div>
+          {active.profilePhotoUrl ? (
+            <Image src={active.profilePhotoUrl} alt={`${active.name} profile`} width={80} height={80} unoptimized className="h-20 w-20 rounded-lg border border-white/14 bg-white object-cover shadow-lg shadow-black/20" />
+          ) : (
+            <div className="grid h-20 w-20 place-items-center rounded-lg bg-accent text-2xl font-black text-brand shadow-lg shadow-accent/10">
+              {active.name.split(" ").map((part) => part[0]).join("").slice(0, 2)}
+            </div>
+          )}
           <div className="mt-5 flex gap-1 text-accent">
             {Array.from({ length: active.rating }).map((_, itemIndex) => (
               <Star key={itemIndex} size={18} fill="currentColor" />

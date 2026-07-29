@@ -29,8 +29,9 @@ import AchievementShowcase from "@/components/marketing/AchievementShowcase";
 import AnimatedImpactCounters from "@/components/marketing/AnimatedImpactCounters";
 import TestimonialCarousel from "@/components/marketing/TestimonialCarousel";
 import { ACADEMY_DEFAULTS } from "@/lib/branding";
-import { academyBranches, anishStory, impactCounters, publicAchievementList, studentSlug, verifiedReviews } from "@/lib/achievementData";
+import { academyBranches, anishStory, impactCounters, publicAchievementList, studentSlug } from "@/lib/achievementData";
 import { getLandingAchievements } from "@/lib/achievements";
+import { getLandingReviews } from "@/lib/googleReviews";
 
 export const dynamic = "force-dynamic";
 
@@ -112,6 +113,7 @@ const learningSteps = [
 
 export default async function Home() {
   const achievements = publicAchievementList(await getLandingAchievements());
+  const reviews = await getLandingReviews();
   const featured = achievements.filter((item) => item.isFeatured).slice(0, 12);
   const heroCards = featured.slice(0, 5);
 
@@ -447,7 +449,7 @@ export default async function Home() {
               Review Source <ArrowRight size={16} />
             </Link>
           </div>
-          <TestimonialCarousel reviews={verifiedReviews} />
+          <TestimonialCarousel reviews={reviews} />
         </div>
       </section>
 

@@ -300,7 +300,7 @@ function fitImage(image: PdfImage, maxWidth: number, maxHeight: number) {
   return { width: image.width * ratio, height: image.height * ratio };
 }
 
-export async function makeInvoicePdf(invoice: any, settings: any) {
+async function makeInvoicePdf(invoice: any, settings: any) {
   const logoSource = await resolveImageSource(settings.logoUrl || ACADEMY_LOGO_URL, ACADEMY_LOGO_URL);
   const signatorySource = await resolveImageSource(settings.signatoryUrl || ACADEMY_SIGNATURE_URL, ACADEMY_SIGNATURE_URL);
   const logo = parseImage(logoSource, "ImLogo");

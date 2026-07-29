@@ -13,6 +13,38 @@ function configuredGraphVersion() {
   return process.env.WHATSAPP_GRAPH_VERSION || "v25.0";
 }
 
+function resolveTemplateParam(raw: string, input: WhatsAppReminderInput, message: string, templateText: string) {
+  const metadata = input.metadata || {};
+  const replacements: Record<string, unknown> = {
+    message,
+    templateText,
+    student: templateText,
+    studentName: templateText,
+    ...metadata,
+  };
+
+  return raw.replace(/\{([^}]+)\}/g, (_match, key) => {
+    const value = replacements[String(key).trim()];
+    return value === undefined || value === null ? "" : String(value);
+  }).trim();
+}
+
+function templateBodyParameters(input: WhatsAppReminderInput, message: string, templateText: string) {
+  const configuredParams = process.env.WHATSAPP_TEMPLATE_BODY_PARAMS;
+  if (configuredParams !== undefined) {
+    return configuredParams
+      .split("|")
+      .map((param) => resolveTemplateParam(param, input, message, templateText).slice(0, 1024))
+      .filter(Boolean);
+  }
+
+  if (process.env.WHATSAPP_TEMPLATE_HAS_BODY_PARAM === "true") {
+    return [templateText];
+  }
+
+  return [];
+}
+
 export async function sendWhatsAppReminder(input: WhatsAppReminderInput) {
   const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
   const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
@@ -27,6 +59,7 @@ export async function sendWhatsAppReminder(input: WhatsAppReminderInput) {
   const mode = String(process.env.WHATSAPP_MESSAGE_MODE || "template").toLowerCase();
   const message = String(input.message || "").trim().slice(0, 4000);
   const templateText = String(input.templateText || message || "Student").trim().slice(0, 1024);
+  const bodyParameters = templateBodyParameters(input, message, templateText);
   const body =
     mode === "text"
       ? {
@@ -42,12 +75,12 @@ export async function sendWhatsAppReminder(input: WhatsAppReminderInput) {
           template: {
             name: process.env.WHATSAPP_TEMPLATE_NAME || "jaspers_market_plain_text_v1",
             language: { code: process.env.WHATSAPP_TEMPLATE_LANGUAGE || "en_US" },
-            ...(process.env.WHATSAPP_TEMPLATE_HAS_BODY_PARAM === "true"
+            ...(bodyParameters.length
               ? {
                   components: [
                     {
                       type: "body",
-                      parameters: [{ type: "text", text: templateText }],
+                      parameters: bodyParameters.map((text) => ({ type: "text", text })),
                     },
                   ],
                 }

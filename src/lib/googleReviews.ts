@@ -1,5 +1,7 @@
 import { dbConnect } from "@/lib/db";
 import { verifiedReviews, type ReviewRecord } from "@/lib/achievementData";
+import { getGoogleBusinessAccessToken } from "@/lib/googleBusinessAuth";
+import { GoogleBusinessIntegration } from "@/models/GoogleBusinessIntegration";
 import { GoogleReview } from "@/models/GoogleReview";
 
 const fifteenDaysMs = 15 * 24 * 60 * 60 * 1000;
@@ -105,51 +107,72 @@ async function fetchPlacesReviews(): Promise<NormalizedGoogleReview[]> {
 async function fetchBusinessProfileReviews(): Promise<NormalizedGoogleReview[]> {
   const accountId = process.env.GOOGLE_BUSINESS_ACCOUNT_ID;
   const locationId = process.env.GOOGLE_BUSINESS_LOCATION_ID;
-  const accessToken = process.env.GOOGLE_BUSINESS_ACCESS_TOKEN;
-  if (!accountId || !locationId || !accessToken) return [];
+  const accessToken = await getGoogleBusinessAccessToken();
+  if (!accessToken) return [];
+
+  let parents: string[] = [];
+  if (accountId && locationId) parents = [`accounts/${accountId}/locations/${locationId}`];
+  if (!parents.length) {
+    const integration: any = await GoogleBusinessIntegration.findOne({ singletonKey: "google-business" }).lean();
+    parents = (integration?.locations || []).map((location: any) => location.reviewParent).filter(Boolean);
+  }
+  if (!parents.length) return [];
 
   const reviews: NormalizedGoogleReview[] = [];
-  let pageToken = "";
 
-  do {
-    const url = new URL(`https://mybusiness.googleapis.com/v4/accounts/${accountId}/locations/${locationId}/reviews`);
-    url.searchParams.set("pageSize", "50");
-    url.searchParams.set("orderBy", "updateTime desc");
-    if (pageToken) url.searchParams.set("pageToken", pageToken);
+  for (const parent of parents) {
+    let pageToken = "";
+    do {
+      const url = new URL(`https://mybusiness.googleapis.com/v4/${parent}/reviews`);
+      url.searchParams.set("pageSize", "50");
+      url.searchParams.set("orderBy", "updateTime desc");
+      if (pageToken) url.searchParams.set("pageToken", pageToken);
 
-    const response = await fetch(url, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-      next: { revalidate: 0 },
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data?.error?.message || "Could not fetch Google Business Profile reviews.");
-
-    for (const item of data.reviews || []) {
-      const rating = starRatingToNumber(item.starRating);
-      const text = reviewText(item);
-      if (!rating || !text) continue;
-      reviews.push({
-        googleReviewId: item.name || `business:${item.reviewId}`,
-        name: reviewerName(item),
-        role: "Google review",
-        rating,
-        text,
-        profilePhotoUrl: item.reviewer?.profilePhotoUrl,
-        publishTime: item.createTime ? new Date(item.createTime) : undefined,
-        updateTime: item.updateTime ? new Date(item.updateTime) : undefined,
-        source: "business_profile",
+      const response = await fetch(url, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        next: { revalidate: 0 },
       });
-    }
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.error?.message || `Could not fetch Google reviews for ${parent}.`);
 
-    pageToken = data.nextPageToken || "";
-  } while (pageToken);
+      for (const item of data.reviews || []) {
+        const rating = starRatingToNumber(item.starRating);
+        const text = reviewText(item);
+        if (!rating || !text) continue;
+        reviews.push({
+          googleReviewId: item.name || `business:${parent}:${item.reviewId}`,
+          name: reviewerName(item),
+          role: "Google review",
+          rating,
+          text,
+          profilePhotoUrl: item.reviewer?.profilePhotoUrl,
+          publishTime: item.createTime ? new Date(item.createTime) : undefined,
+          updateTime: item.updateTime ? new Date(item.updateTime) : undefined,
+          source: "business_profile",
+        });
+      }
+
+      pageToken = data.nextPageToken || "";
+    } while (pageToken);
+  }
 
   return reviews;
 }
 
 export async function syncGoogleReviews() {
   await dbConnect();
-  const reviews = (await fetchBusinessProfileReviews()).concat(await fetchPlacesReviews());
+  let syncError = "";
+  let reviews: NormalizedGoogleReview[] = [];
+  try {
+    reviews = reviews.concat(await fetchBusinessProfileReviews());
+  } catch (error: any) {
+    syncError = error?.message || "Business Profile review sync failed.";
+  }
+  try {
+    reviews = reviews.concat(await fetchPlacesReviews());
+  } catch (error: any) {
+    syncError = syncError || error?.message || "Places review sync failed.";
+  }
   const unique = Array.from(new Map(reviews.map((review) => [review.googleReviewId, review])).values());
   const syncedAt = new Date();
 
@@ -177,6 +200,12 @@ export async function syncGoogleReviews() {
     );
   }
 
+  await GoogleBusinessIntegration.updateOne(
+    { singletonKey: "google-business" },
+    { $set: { lastSyncedAt: syncedAt, lastSyncError: syncError } }
+  ).catch(() => undefined);
+
+  if (!unique.length && syncError) throw new Error(syncError);
   return unique.length;
 }
 

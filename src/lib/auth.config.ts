@@ -48,6 +48,7 @@ export const authConfig = {
         nextUrl.pathname.startsWith("/api/auth") ||
         nextUrl.pathname.startsWith("/api/register") ||
         nextUrl.pathname.startsWith("/api/password") ||
+        nextUrl.pathname.startsWith("/api/fees/invoices") ||
         nextUrl.pathname.startsWith("/tournament-join");
       const isAdminRoute = nextUrl.pathname.startsWith("/admin");
       const isInstructorRoute = nextUrl.pathname.startsWith("/instructor");

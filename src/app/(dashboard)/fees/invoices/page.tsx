@@ -5,6 +5,7 @@ import { sendAutomationEmail } from "@/lib/emailAutomation";
 import { formatINR } from "@/lib/utils";
 import { CreditLedger, FeeAssignment, FeePlan, Invoice, Notification } from "@/models/Fee";
 import { User } from "@/models/User";
+import { createHash, randomBytes } from "crypto";
 import PayButton from "@/components/PayButton";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -24,6 +25,21 @@ function appBaseUrl() {
   const raw = process.env.NEXTAUTH_URL || process.env.LMS_HOST || "";
   if (!raw) return "";
   return raw.startsWith("http") ? raw.replace(/\/$/, "") : `https://${raw.replace(/\/$/, "")}`;
+}
+
+function hashInvoiceToken(token: string) {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+async function createPublicInvoiceUrl(invoiceId: string) {
+  const baseUrl = appBaseUrl();
+  if (!baseUrl) return "";
+  const token = randomBytes(32).toString("base64url");
+  await Invoice.findByIdAndUpdate(invoiceId, {
+    publicDownloadTokenHash: hashInvoiceToken(token),
+    publicDownloadTokenExpiresAt: new Date(Date.now() + 45 * 24 * 60 * 60 * 1000),
+  });
+  return `${baseUrl}/api/fees/invoices/${invoiceId}/pdf?token=${encodeURIComponent(token)}`;
 }
 
 function deliveryStatus(delivery: ReminderDelivery) {
@@ -138,8 +154,7 @@ async function sendInvoiceToStudent(formData: FormData) {
     revalidatePath("/fees/invoices");
     redirect(`${returnPath}send=missing_email`);
   }
-  const baseUrl = appBaseUrl();
-  const invoiceUrl = baseUrl ? `${baseUrl}/api/fees/invoices/${invoice._id}/pdf` : "";
+  const invoiceUrl = await createPublicInvoiceUrl(invoice._id.toString());
   const delivery = await sendAutomationEmail({
     to: invoice.student.email,
     subject: `Invoice ${invoice.invoiceNumber} from Envisions Chess Academy LLP`,
@@ -198,7 +213,6 @@ async function sendBulkInvoiceReminders(formData: FormData) {
   const filter: any = { status: { $in: ["unpaid", "overdue"] } };
   if (mode === "due") filter.dueDate = { $lte: now };
   const invoices: any[] = await Invoice.find(filter).populate("student plan").sort({ dueDate: 1 }).limit(500).lean();
-  const baseUrl = appBaseUrl();
   const summary: ReminderSummary = { sent: 0, failed: 0, missing: 0, skipped: 0, total: invoices.length };
 
   for (const invoice of invoices) {
@@ -207,7 +221,7 @@ async function sendBulkInvoiceReminders(formData: FormData) {
       await Invoice.findByIdAndUpdate(invoice._id, { lastEmailStatus: "missing_email", lastSentAt: new Date(), lastSentTo: "" });
       continue;
     }
-    const invoiceUrl = baseUrl ? `${baseUrl}/api/fees/invoices/${invoice._id}/pdf` : "";
+    const invoiceUrl = await createPublicInvoiceUrl(invoice._id.toString());
     const delivery = await sendAutomationEmail({
       to: invoice.student.email,
       subject: `Reminder: Invoice ${invoice.invoiceNumber} is pending`,

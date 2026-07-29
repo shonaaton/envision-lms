@@ -81,6 +81,8 @@ const InvoiceSchema = new Schema(
     paidAt: Date,
     payment: { type: Schema.Types.ObjectId, ref: "Payment" },
     notes: String,
+    publicDownloadTokenHash: { type: String, index: true },
+    publicDownloadTokenExpiresAt: Date,
     lastSentAt: Date,
     lastSentTo: String,
     lastEmailStatus: { type: String, enum: ["sent", "failed", "skipped", "missing_email", "not_configured"], default: undefined },

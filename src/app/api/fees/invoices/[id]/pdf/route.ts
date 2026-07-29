@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { inflateSync, deflateSync } from "zlib";
+import { createHash } from "crypto";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { getAcademySettings } from "@/lib/fees";
@@ -61,6 +62,10 @@ function titleCase(value: unknown) {
 
 function safeFilename(value: unknown) {
   return String(value || "invoice").replace(/[^a-zA-Z0-9._-]+/g, "_").replace(/^_+|_+$/g, "") || "invoice";
+}
+
+function hashInvoiceToken(token: string) {
+  return createHash("sha256").update(token).digest("hex");
 }
 
 function displayAcademyName(settings: any) {
@@ -483,16 +488,25 @@ async function makeInvoicePdf(invoice: any, settings: any) {
   return Buffer.from(pdf, "binary");
 }
 
-export async function GET(_: Request, { params }: { params: { id: string } }) {
+export async function GET(req: Request, { params }: { params: { id: string } }) {
   const session = await auth();
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   await dbConnect();
 
   const invoice: any = await Invoice.findById(params.id).populate("student plan").lean();
   if (!invoice) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const role = (session.user as any).role;
-  if (role !== "admin" && invoice.student?._id?.toString() !== (session.user as any).id) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const token = new URL(req.url).searchParams.get("token") || "";
+  const tokenAllowed =
+    token &&
+    invoice.publicDownloadTokenHash &&
+    invoice.publicDownloadTokenHash === hashInvoiceToken(token) &&
+    invoice.publicDownloadTokenExpiresAt &&
+    new Date(invoice.publicDownloadTokenExpiresAt).getTime() >= Date.now();
+  if (!tokenAllowed) {
+    if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const role = (session.user as any).role;
+    if (role !== "admin" && invoice.student?._id?.toString() !== (session.user as any).id) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
   }
   const settings: any = await getAcademySettings();
   const pdf = await makeInvoicePdf(invoice, settings);

@@ -102,7 +102,7 @@ export default function AdminUsersPage() {
 
   const loadDirectory = useCallback(async () => {
     const [studentsResponse, coachesResponse] = await Promise.all([
-      fetch("/api/admin/users?role=student", { cache: "no-store" }),
+      fetch("/api/admin/users?role=student&status=active", { cache: "no-store" }),
       fetch("/api/admin/users?role=instructor", { cache: "no-store" }),
     ]);
     setAllStudents(await studentsResponse.json());
@@ -303,9 +303,13 @@ export default function AdminUsersPage() {
                       <td className="py-3 text-slate-600">{u.email}</td>
                       <td className="py-3 text-slate-600">{u.phone || "-"}</td>
                       <td className="py-3">
-                        <span className={`rounded-full px-2.5 py-0.5 text-xs ${u.isActive ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
+                        <button
+                          className={`rounded-full px-2.5 py-1 text-xs font-semibold transition hover:shadow-sm ${u.isActive ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200" : "bg-red-100 text-red-700 hover:bg-red-200"}`}
+                          onClick={() => updateUser(u._id, { isActive: !u.isActive })}
+                          title={u.isActive ? "Mark inactive" : "Mark active"}
+                        >
                           {u.isActive ? "Active" : "Inactive"}
-                        </span>
+                        </button>
                       </td>
                       <td className="relative py-3 text-right">
                         <button className="rounded p-1 hover:bg-slate-100" onClick={() => setMenu(menu?.id === u._id ? null : { type: "user", id: u._id })}><MoreVertical size={16} /></button>
@@ -359,7 +363,7 @@ export default function AdminUsersPage() {
           { icon: KeyRound, label: "Reset Password", onClick: async () => { await updateUser(openMenuUser._id, { resetPassword: true }); setMenu(null); } },
           ...(openMenuUser.role === "instructor" ? [{ icon: UserPlus, label: "Assign Students", onClick: () => { setAssignCoach(openMenuUser); setMenu(null); } }] : []),
           { icon: FileText, label: `${openMenuUser.role === "instructor" ? "Coach" : "Student"} Report`, onClick: () => { setReportUser(openMenuUser); setMenu(null); } },
-          { icon: openMenuUser.isActive ? UserX : UserCheck, label: openMenuUser.isActive ? "Deactivate" : "Activate", onClick: async () => { await updateUser(openMenuUser._id, { isActive: !openMenuUser.isActive }); setMenu(null); } },
+          { icon: openMenuUser.isActive ? UserX : UserCheck, label: openMenuUser.isActive ? "Mark Inactive" : "Mark Active", onClick: async () => { await updateUser(openMenuUser._id, { isActive: !openMenuUser.isActive }); setMenu(null); } },
           { icon: Trash2, label: "Delete / Deactivate", onClick: () => deleteUser(openMenuUser) },
         ]} />
       )}

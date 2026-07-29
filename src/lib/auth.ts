@@ -9,6 +9,7 @@ declare module "next-auth" {
       id: string;
       role: "student" | "instructor" | "admin";
       isSuperAdmin?: boolean;
+      isActive?: boolean;
       accountStatus?: "demo" | "enrolled" | "coach_applicant" | "approved" | "rejected";
     } & DefaultSession["user"];
   }
@@ -16,6 +17,7 @@ declare module "next-auth" {
   interface User {
     role?: "student" | "instructor" | "admin";
     isSuperAdmin?: boolean;
+    isActive?: boolean;
     accountStatus?: "demo" | "enrolled" | "coach_applicant" | "approved" | "rejected";
   }
 }
@@ -40,7 +42,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             { username: normalized },
           ],
         });
-        if (!user || !user.isActive) return null;
+        if (!user || (user.isActive === false && user.role !== "student")) return null;
         const ok = await bcrypt.compare(String(creds.password), user.passwordHash);
         if (!ok) return null;
         const explicitSuperAdminExists = await User.exists({ role: "admin", isSuperAdmin: true, isActive: { $ne: false } });
@@ -51,6 +53,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           email: user.email,
           role: user.role,
           isSuperAdmin: Boolean(user.isSuperAdmin || isBootstrapSuperAdmin),
+          isActive: user.isActive !== false,
           accountStatus: user.accountStatus || "enrolled",
         };
       },

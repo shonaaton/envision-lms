@@ -18,6 +18,7 @@ export const authConfig = {
         token.id = (user as any).id;
         token.role = (user as any).role;
         token.isSuperAdmin = (user as any).isSuperAdmin;
+        token.isActive = (user as any).isActive;
         token.accountStatus = (user as any).accountStatus;
       }
       return token;
@@ -27,6 +28,7 @@ export const authConfig = {
         (session.user as any).id = token.id as string;
         (session.user as any).role = token.role as any;
         (session.user as any).isSuperAdmin = token.isSuperAdmin as boolean | undefined;
+        (session.user as any).isActive = token.isActive as boolean | undefined;
         (session.user as any).accountStatus = token.accountStatus as any;
       }
       return session;
@@ -35,6 +37,7 @@ export const authConfig = {
       const isLoggedIn = !!auth?.user;
       const role = (auth?.user as any)?.role as "student" | "instructor" | "admin" | undefined;
       const accountStatus = (auth?.user as any)?.accountStatus as string | undefined;
+      const isInactiveStudent = role === "student" && (auth?.user as any)?.isActive === false;
 
       const isAuthRoute = ["/login", "/register", "/forgot-password", "/reset-password"].some((p) => nextUrl.pathname.startsWith(p));
       const isPublic =
@@ -73,6 +76,18 @@ export const authConfig = {
       if (isPublic) return true;
       if (isAuthRoute) return true;
       if (!isLoggedIn) return false; // triggers redirect to signIn
+      if (
+        isInactiveStudent &&
+        (
+          nextUrl.pathname.startsWith("/booking") ||
+          nextUrl.pathname.startsWith("/classrooms") ||
+          nextUrl.pathname.startsWith("/calendar") ||
+          nextUrl.pathname.startsWith("/tournaments") ||
+          nextUrl.pathname.startsWith("/api/bookings") ||
+          nextUrl.pathname.startsWith("/api/classrooms") ||
+          nextUrl.pathname.startsWith("/api/tournaments")
+        )
+      ) return Response.redirect(new URL("/dashboard", nextUrl));
       if (accountStatus === "demo" && !demoAllowed) return Response.redirect(new URL("/dashboard", nextUrl));
       if (isAdminRoute && role !== "admin") return Response.redirect(new URL("/dashboard", nextUrl));
       if (isInstructorRoute && role !== "instructor" && role !== "admin")

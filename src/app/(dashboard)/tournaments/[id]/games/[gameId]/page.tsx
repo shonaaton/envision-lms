@@ -4,6 +4,7 @@ import { Tournament } from "@/models/Tournament";
 import { TournamentGame } from "@/models/TournamentGame";
 import { TournamentSpectatorBoard } from "@/components/tournaments/TournamentSpectatorBoard";
 import { redirect } from "next/navigation";
+import { inactiveStudentMessage, isCurrentStudent } from "@/lib/studentAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +26,9 @@ export default async function TournamentGameSpectatorPage({ params }: { params: 
     TournamentGame.findOne({ _id: params.gameId, tournament: params.id }).lean(),
   ]);
   if (!tournament || !game) redirect(`/tournaments/${params.id}`);
+  if (role === "student" && !(await isCurrentStudent(userId))) {
+    return <div className="p-6 text-slate-950">{inactiveStudentMessage}</div>;
+  }
   const allowed =
     role === "admin" ||
     role === "instructor" ||

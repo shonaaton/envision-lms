@@ -7,6 +7,7 @@ import { autoAdvanceSwissTournament, completeGame, enforceTournamentGameTimeouts
 import { StudentReward } from "@/models/ClassroomLive";
 import { cookies } from "next/headers";
 import { getTournamentGuestUsername } from "@/lib/tournamentGuests";
+import { inactiveStudentMessage, isCurrentStudent } from "@/lib/studentAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -77,6 +78,9 @@ export async function POST(req: Request, { params }: { params: { gameId: string 
   if (!tournament) return NextResponse.json({ error: "Tournament not found" }, { status: 404 });
   const role = session ? (session.user as any).role : "";
   const userId = session ? String((session.user as any).id) : "";
+  if (role === "student" && !(await isCurrentStudent(userId))) {
+    return NextResponse.json({ error: inactiveStudentMessage }, { status: 403 });
+  }
   await enforceTournamentGameTimeouts(tournament);
   game = await TournamentGame.findById(params.gameId);
   if (game.status !== "active" && role !== "admin") {

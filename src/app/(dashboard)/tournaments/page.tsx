@@ -1,6 +1,8 @@
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
+import { inactiveStudentMessage } from "@/lib/studentAccess";
 import { Tournament } from "@/models/Tournament";
+import { User } from "@/models/User";
 import Link from "next/link";
 import { Plus, Trophy } from "lucide-react";
 
@@ -22,6 +24,20 @@ export default async function TournamentsPage() {
   const role = (session?.user as any)?.role;
   const userId = (session?.user as any)?.id;
   await dbConnect();
+  const currentStudent = role === "student" && userId
+    ? await User.findById(userId).select("isActive role").lean()
+    : null;
+  if (role === "student" && ((currentStudent as any)?.role !== "student" || (currentStudent as any)?.isActive === false)) {
+    return (
+      <div className="min-h-screen bg-slate-50 px-2 py-3 text-slate-950 sm:px-6 sm:py-5 lg:px-8">
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-5">
+          <div className="flex items-center gap-2 font-semibold text-amber-900"><Trophy size={18} /> Tournaments paused</div>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-amber-800">{inactiveStudentMessage}</p>
+          <Link href="/dashboard" className="mt-4 inline-flex h-10 items-center rounded-md bg-purple-700 px-4 text-sm font-semibold text-white">Back to Dashboard</Link>
+        </div>
+      </div>
+    );
+  }
   const filter = role === "admin" || role === "instructor" ? {} : {
     $or: [{ "access.users": userId }, { participants: userId }, { "access.allActiveStudents": true }],
   };

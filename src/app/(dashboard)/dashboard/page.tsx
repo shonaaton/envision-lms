@@ -25,6 +25,7 @@ import JoinScheduledSessionButton from "@/components/classroom/JoinScheduledSess
 import { DataPanel, EmptyState as CommonEmptyState, FilterBar, PageHeader, StatCard as CommonStatCard } from "@/components/common/PageHeader";
 import { bookingFeatureNameForAccount } from "@/lib/bookingLabels";
 import { demoStudentExperience } from "@/lib/demoStudentExperience";
+import { inactiveStudentMessage } from "@/lib/studentAccess";
 import { unstable_noStore as noStore } from "next/cache";
 import {
   Activity as ActivityIcon,
@@ -43,9 +44,11 @@ import {
   PlayCircle,
   RotateCcw,
   Search,
+  ShieldCheck,
   SlidersHorizontal,
   Target,
   TrendingUp,
+  UserCheck,
   Users,
   Trophy,
   WalletCards,
@@ -533,6 +536,33 @@ function DemoStudentDashboard({
   );
 }
 
+function InactiveStudentDashboard({ studentName }: { studentName?: string }) {
+  return (
+    <div className="space-y-5 text-slate-950">
+      <DashboardHero
+        eyebrow="Student Status"
+        title={`Account inactive${studentName ? `, ${studentName}` : ""}`}
+        subtitle={inactiveStudentMessage}
+        icon={ShieldCheck}
+      >
+        <div className="grid gap-3 sm:grid-cols-3">
+          <StatCard label="Portal Login" value="Allowed" note="You can still sign in" icon={UserCheck} tone="green" />
+          <StatCard label="Classes & Booking" value="Paused" note="No class access or booking" icon={Calendar} tone="rose" />
+          <StatCard label="Tournaments" value="Paused" note="Not counted as current student" icon={Trophy} tone="amber" />
+        </div>
+      </DashboardHero>
+      <DashboardPanel>
+        <SectionTitle icon={BellRing} title="What this means" subtitle="Academy access is paused, but your account remains available." />
+        <div className="grid gap-3 md:grid-cols-3">
+          <InfoTile label="Can login" value="Yes" />
+          <InfoTile label="Can book classes" value="No" />
+          <InfoTile label="Can join tournaments" value="No" />
+        </div>
+      </DashboardPanel>
+    </div>
+  );
+}
+
 async function computeStudentRank(userId: string) {
   const [students, submissions, rewards] = await Promise.all([
     User.find({ role: "student", isActive: { $ne: false } }).select("_id batches").lean(),
@@ -656,6 +686,10 @@ async function StudentDashboard({ userId }: { userId: string }) {
     AskCoachMessage.find({ receiver: userId }).sort({ createdAt: -1 }).limit(10).lean(),
     Invoice.find({ student: userId, status: { $in: ["draft", "unpaid", "overdue"] } }).sort({ dueDate: 1 }).limit(6).lean(),
   ]);
+
+  if ((student as any)?.isActive === false) {
+    return <InactiveStudentDashboard studentName={(student as any)?.name || "Student"} />;
+  }
 
   const batchIds = ((student as any)?.batches || []).map((batch: any) => objectId(batch));
   const classroomIds = classrooms.map((classroom: any) => objectId(classroom._id));

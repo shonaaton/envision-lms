@@ -3,9 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
-import { CalendarDays, CheckCircle2, Clock3, Sparkles, UserRound } from "lucide-react";
+import { CalendarDays, CheckCircle2, Clock3, LockKeyhole, Sparkles, UserRound } from "lucide-react";
 import { nextOccurrenceForWeeklySlot } from "@/lib/bookingAvailability";
 import { bookingFeatureNameForAccount, bookingFeatureNameForType, isDemoBookingAccount } from "@/lib/bookingLabels";
+import { inactiveStudentMessage } from "@/lib/studentStatus";
 
 const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -28,6 +29,7 @@ type SlotOption = {
 export default function BookingPage() {
   const { data: session } = useSession();
   const accountStatus = (session?.user as any)?.accountStatus as string | undefined;
+  const isInactiveStudent = (session?.user as any)?.role === "student" && (session?.user as any)?.isActive === false;
   const isDemoStudent = isDemoBookingAccount(accountStatus);
   const featureName = bookingFeatureNameForAccount(accountStatus);
   const [coaches, setCoaches] = useState<CoachAvailabilityEntry[]>([]);
@@ -108,6 +110,12 @@ export default function BookingPage() {
 
   return (
     <div className="min-h-[calc(100vh-92px)] space-y-5 rounded-3xl bg-white/70 p-5 text-slate-950 shadow-xl shadow-brand/5">
+      {isInactiveStudent ? (
+        <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
+          <div className="flex items-center gap-2 font-black text-amber-900"><LockKeyhole size={18} /> Booking paused</div>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-amber-800">{inactiveStudentMessage}</p>
+        </section>
+      ) : null}
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <div className="inline-flex items-center gap-2 rounded-full bg-amber-100 px-3 py-1 text-xs font-black uppercase tracking-[0.18em] text-amber-700">
@@ -122,7 +130,7 @@ export default function BookingPage() {
         </div>
       </header>
 
-      <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_420px]">
+      {!isInactiveStudent && <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_420px]">
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <h2 className="text-lg font-black text-slate-950">Choose an available time</h2>
           <div className="mt-4 grid gap-4 md:grid-cols-2">
@@ -158,7 +166,7 @@ export default function BookingPage() {
             <Info icon={<Clock3 size={16} />} title="Monthly students" text="Monthly-plan classes remain fixed. Reschedule/cancel requests should still go through admin approval." />
           </div>
         </aside>
-      </section>
+      </section>}
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-black text-slate-950">Your Bookings</h2>

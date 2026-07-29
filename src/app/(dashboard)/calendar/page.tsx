@@ -10,6 +10,7 @@ import {
   flattenScheduledSessions,
   isSessionUpcomingLike,
 } from "@/lib/classroomSessions";
+import { inactiveStudentMessage } from "@/lib/studentStatus";
 import CalendarWorkspace, { type CalendarEvent } from "@/components/calendar/CalendarWorkspace";
 
 export const dynamic = "force-dynamic";
@@ -165,6 +166,13 @@ function buildTaskEvent(item: any): CalendarEvent {
 
 async function getStudentEvents(userId: string) {
   const me: any = await User.findById(userId).populate("batches", "name level").lean();
+  if (me?.isActive === false) {
+    return {
+      title: "Calendar",
+      subtitle: inactiveStudentMessage,
+      events: [],
+    };
+  }
   const batchIds = ((me?.batches || []) as any[]).map(objectId);
 
   const classrooms: any[] = await Classroom.find({

@@ -5,6 +5,7 @@ import { TournamentGame } from "@/models/TournamentGame";
 import { Tournament } from "@/models/Tournament";
 import { cookies } from "next/headers";
 import { getTournamentGuestUsername } from "@/lib/tournamentGuests";
+import { inactiveStudentMessage, isCurrentStudent } from "@/lib/studentAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -51,6 +52,10 @@ export async function POST(req: Request, { params }: { params: { gameId: string 
   const guestUsername = tournament.externalInvite?.token ? getTournamentGuestUsername(cookieStore, tournament.externalInvite.token) : "";
   const normalizedGuest = guestUsername.toLowerCase();
   const userId = session ? String((session.user as any).id) : "";
+  const role = session ? (session.user as any).role : "";
+  if (role === "student" && !(await isCurrentStudent(userId))) {
+    return NextResponse.json({ error: inactiveStudentMessage }, { status: 403 });
+  }
   const isWhite = String(game.whiteUser || "") === userId || (normalizedGuest && String(game.whiteExternalUsername || "").toLowerCase() === normalizedGuest);
   const isBlack = String(game.blackUser || "") === userId || (normalizedGuest && String(game.blackExternalUsername || "").toLowerCase() === normalizedGuest);
   if (!isWhite && !isBlack) return NextResponse.json({ error: "Forbidden" }, { status: 403 });

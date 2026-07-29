@@ -1,7 +1,8 @@
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
+import { inactiveStudentMessage, isCurrentStudent } from "@/lib/studentAccess";
 import { Tournament } from "@/models/Tournament";
-import "@/models/User";
+import { User } from "@/models/User";
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
@@ -32,6 +33,10 @@ async function joinTournament(formData: FormData) {
   await dbConnect();
   const tournament: any = await Tournament.findById(id);
   if (!tournament) return;
+  if ((session.user as any).role === "student" && !(await isCurrentStudent(String((session.user as any).id)))) {
+    revalidatePath(`/tournaments/${id}`);
+    return;
+  }
   if (!(tournament.participants || []).some((participant: any) => participant?.toString?.() === String((session.user as any).id))) {
     tournament.participants.push((session.user as any).id);
   }
@@ -151,6 +156,18 @@ export default async function TournamentDetailPage({ params }: { params: { id: s
   await dbConnect();
   const tournament: any = await Tournament.findById(params.id).populate("participants", "name username rating").lean();
   if (!tournament) redirect("/tournaments");
+  const currentStudent = role === "student" && userId ? await User.findById(userId).select("role isActive").lean() : null;
+  const isInactiveStudent = role === "student" && ((currentStudent as any)?.role !== "student" || (currentStudent as any)?.isActive === false);
+  if (isInactiveStudent) {
+    return (
+      <div className="min-h-screen bg-slate-50 px-4 py-5 text-slate-950 sm:px-6 lg:px-8">
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-5">
+          <div className="flex items-center gap-2 font-semibold text-amber-900"><Trophy size={18} /> Tournament access paused</div>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-amber-800">{inactiveStudentMessage}</p>
+        </div>
+      </div>
+    );
+  }
   const allowed = role === "admin" || role === "instructor" || tournament.access?.allActiveStudents || (tournament.access?.users || []).map((id: any) => id.toString()).includes(userId) || (tournament.participants || []).some((p: any) => p._id?.toString() === userId);
   if (!allowed) return <div className="p-6">You do not have access to this tournament.</div>;
   const joined = (tournament.participants || []).some((p: any) => p._id?.toString() === userId);
@@ -175,7 +192,7 @@ export default async function TournamentDetailPage({ params }: { params: { id: s
     currentSeat: toPlain(buildCurrentSeat({ userId: String(userId || ""), joined, tournament, activeGame, myGames })),
     participantState: toPlain(participantState),
     canManage: role === "admin",
-    canPlay: role === "student" || role === "admin",
+    canPlay: (role === "student" && !isInactiveStudent) || role === "admin",
   };
   const registrationLocked = tournament.status === "live" || tournament.status === "completed";
 

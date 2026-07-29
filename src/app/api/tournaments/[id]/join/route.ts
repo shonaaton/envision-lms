@@ -2,11 +2,13 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { Tournament } from "@/models/Tournament";
+import { User } from "@/models/User";
 import { cookies } from "next/headers";
 import { getTournamentGuestUsername } from "@/lib/tournamentGuests";
 import { playerKeyForExternal, playerKeyForUser, recalculateTournamentStandings, setTournamentPlayerState, syncArenaPairings } from "@/lib/tournamentEngine";
 import { notifyAdmins, notifyTournamentUsers } from "@/lib/tournamentNotifications";
 import { recordActivity } from "@/lib/activity";
+import { inactiveStudentMessage } from "@/lib/studentAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +40,12 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
   if (session) {
     const role = (session.user as any).role;
     const userId = String((session.user as any).id);
+    if (role === "student") {
+      const student = await User.findById(userId).select("role isActive").lean();
+      if ((student as any)?.role !== "student" || (student as any)?.isActive === false) {
+        return NextResponse.json({ error: inactiveStudentMessage }, { status: 403 });
+      }
+    }
     const eligible =
       role === "student" ||
       role === "admin" ||

@@ -5,6 +5,7 @@ import { TournamentGame } from "@/models/TournamentGame";
 import { Tournament } from "@/models/Tournament";
 import { cookies } from "next/headers";
 import { getTournamentGuestUsername } from "@/lib/tournamentGuests";
+import { inactiveStudentMessage, isCurrentStudent } from "@/lib/studentAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +29,9 @@ export async function GET(_: Request, { params }: { params: { gameId: string } }
     : false;
   const role = session ? (session.user as any).role : "";
   const userId = session ? String((session.user as any).id) : "";
+  if (role === "student" && !(await isCurrentStudent(userId))) {
+    return NextResponse.json({ error: inactiveStudentMessage }, { status: 403 });
+  }
   const allowed = guestJoined || (
     session && (
       role === "admin" ||

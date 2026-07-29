@@ -9,6 +9,7 @@ import { autoAdvanceSwissTournament, enforceTournamentGameTimeouts, finalizeTour
 import { cookies } from "next/headers";
 import { getTournamentGuestUsername } from "@/lib/tournamentGuests";
 import { notifyExternalTournamentParticipants, notifyTournamentUsers } from "@/lib/tournamentNotifications";
+import { inactiveStudentMessage, isCurrentStudent } from "@/lib/studentAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +37,9 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
 
   const role = session ? (session.user as any).role : "";
   const userId = session ? (session.user as any).id : "";
+  if (role === "student" && !(await isCurrentStudent(String(userId)))) {
+    return NextResponse.json({ error: inactiveStudentMessage }, { status: 403 });
+  }
   const isGuest = guestJoined && !session;
   const myPlayerKey = isGuest ? playerKeyForExternal(guestUsername) : playerKeyForUser(String(userId));
   const allowed = guestJoined || (

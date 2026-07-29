@@ -11,6 +11,7 @@ import { sendAutomationEmail } from "@/lib/emailAutomation";
 import { ACADEMY_TIME_ZONE } from "@/lib/academyTime";
 import { isBookingWithinAvailability, type AvailabilitySlot } from "@/lib/bookingAvailability";
 import { bookingFeatureNameForType, bookingFeatureNameLowerForType } from "@/lib/bookingLabels";
+import { inactiveStudentMessage } from "@/lib/studentAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -39,6 +40,7 @@ type BasicUser = {
   country?: string;
   studentLevel?: string;
   accountStatus?: string;
+  isActive?: boolean;
   role?: "student" | "instructor" | "admin";
 };
 
@@ -146,8 +148,9 @@ export async function POST(req: Request) {
     const body = bookingSchema.parse(await req.json());
     await dbConnect();
     const { id: studentUserId, role } = sessionUser(session as AuthSession);
-    const student = await User.findById(studentUserId).select("name email phone parentName city country studentLevel accountStatus").lean<BasicUser | null>();
+    const student = await User.findById(studentUserId).select("name email phone parentName city country studentLevel accountStatus isActive").lean<BasicUser | null>();
     if (!student || role !== "student") return NextResponse.json({ error: "Only students can book sessions." }, { status: 403 });
+    if (student.isActive === false) return NextResponse.json({ error: inactiveStudentMessage }, { status: 403 });
     const instructor = await User.findOne({ _id: body.instructor, role: "instructor", isActive: true }).select("name email").lean<BasicUser | null>();
     if (!instructor) return NextResponse.json({ error: "That coach is no longer available for booking." }, { status: 404 });
 
@@ -260,7 +263,7 @@ export async function PATCH(req: Request) {
   await dbConnect();
   const { id: actorId, role } = sessionUser(session as AuthSession);
   const body = await req.json();
-  const booking = await Booking.findById(body.bookingId).populate("student instructor", "name email studentLevel");
+  const booking = await Booking.findById(body.bookingId).populate("student instructor", "name email studentLevel isActive");
   if (!booking) return NextResponse.json({ error: "Request not found" }, { status: 404 });
   const isAssignedCoach = booking.instructor?._id?.toString() === actorId;
   if (role !== "admin" && !isAssignedCoach) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -272,6 +275,9 @@ export async function PATCH(req: Request) {
   const action = String(body.action || "");
 
   if (action === "approve") {
+    if (student.isActive === false) {
+      return NextResponse.json({ error: "This student is inactive, so a classroom cannot be created for this booking." }, { status: 400 });
+    }
     if (booking.bookingType === "credit_class") {
       const assignment = await FeeAssignment.findOne({ student: student._id, type: "credits" }).lean<CreditAssignment | null>();
       if (!assignment || Number(assignment.creditBalance || 0) <= 0) {

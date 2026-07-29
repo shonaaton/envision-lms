@@ -1,5 +1,6 @@
 export const ACADEMY_LOGO_URL = "https://res.cloudinary.com/dlafr6yu3/image/upload/v1781225175/text_logo_yellow_2_jkykvz.png";
 export const ACADEMY_SIGNATURE_URL = "https://res.cloudinary.com/dlafr6yu3/image/upload/v1785307810/sayantan_signature_3_jq2ayo.jpg";
+export const ACADEMY_FAVICON_URL = ACADEMY_LOGO_URL;
 
 export const ACADEMY_DEFAULTS = {
   academyName: "Envision Chess Academy",

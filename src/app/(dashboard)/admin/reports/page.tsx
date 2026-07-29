@@ -103,16 +103,16 @@ export default async function AdminReportsPage() {
       <section className="overflow-hidden rounded-xl border border-brand/10 bg-white shadow-sm">
         <div className="border-b border-slate-100 px-4 py-3">
           <h2 className="text-sm font-black text-slate-950">Exports</h2>
-          <p className="text-xs text-slate-500">Choose date range and format, then download.</p>
+          <p className="text-xs text-slate-500">Choose people, date range, and format.</p>
         </div>
         {reportCards.map((report) => {
           const Icon = report.icon;
           return (
-            <form key={report.type} action="/api/admin/reports" className="grid gap-3 border-b border-slate-100 px-4 py-3 last:border-b-0 xl:grid-cols-[minmax(260px,1fr)_minmax(180px,220px)_minmax(180px,220px)_160px_160px_130px_170px] xl:items-end">
+            <form key={report.type} action="/api/admin/reports" className="grid gap-2 border-b border-slate-100 px-3 py-3 last:border-b-0 lg:grid-cols-2 xl:grid-cols-[minmax(220px,1fr)_minmax(0,160px)_minmax(0,160px)_128px_128px_104px_116px] xl:items-end">
               <input type="hidden" name="type" value={report.type} />
               <div className="flex min-w-0 items-start gap-3">
-                <span className="flex h-9 w-9 flex-none items-center justify-center rounded-lg bg-brand/10 text-brand">
-                  <Icon size={18} />
+                <span className="flex h-8 w-8 flex-none items-center justify-center rounded-lg bg-brand/10 text-brand">
+                  <Icon size={17} />
                 </span>
                 <div className="min-w-0">
                   <h3 className="truncate text-sm font-black text-slate-950">{report.title}</h3>
@@ -125,23 +125,23 @@ export default async function AdminReportsPage() {
               {(report.peopleFilters as readonly string[]).includes("coach") ? (
                 <SelectField name="coachId" label="Coach" options={[["", "All coaches"], ...coaches.map((coach: any) => [String(coach._id), `${coach.name} (${coach.username || coach.email})`] as [string, string])]} />
               ) : <div className="hidden xl:block" />}
-              <label className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5">
+              <label className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5">
                 <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">From</div>
                 <input type="date" name="from" className="mt-0.5 w-full bg-transparent text-xs outline-none" />
               </label>
-              <label className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5">
+              <label className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5">
                 <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">To</div>
                 <input type="date" name="to" className="mt-0.5 w-full bg-transparent text-xs outline-none" />
               </label>
-              <label className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5">
+              <label className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5">
                 <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Format</div>
                 <select name="format" className="mt-0.5 w-full bg-transparent text-xs outline-none">
                   <option value="csv">CSV</option>
                   <option value="xls">Excel (.xls)</option>
                 </select>
               </label>
-              <button className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-purple-700 px-3 text-xs font-semibold text-white shadow-sm">
-                <Download size={15} /> Download
+              <button className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-purple-700 px-2.5 text-xs font-semibold text-white shadow-sm">
+                <Download size={14} /> Download
               </button>
             </form>
           );
@@ -153,7 +153,7 @@ export default async function AdminReportsPage() {
 
 function SelectField({ name, label, options }: { name: string; label: string; options: Array<[string, string]> }) {
   return (
-    <label className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5">
+    <label className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5">
       <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{label}</div>
       <select name={name} className="mt-0.5 w-full bg-transparent text-xs outline-none">
         {options.map(([value, text]) => <option key={`${name}-${value || "all"}`} value={value}>{text}</option>)}

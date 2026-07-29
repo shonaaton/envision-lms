@@ -1,6 +1,6 @@
 import { Types } from "mongoose";
 import { AcademySettings, CreditLedger, FeeAssignment, Invoice, Notification } from "@/models/Fee";
-import { ACADEMY_DEFAULTS, ACADEMY_LOGO_URL, ACADEMY_SIGNATURE_URL } from "@/lib/branding";
+import { ACADEMY_DEFAULTS, ACADEMY_FAVICON_URL, ACADEMY_LOGO_URL, ACADEMY_SIGNATURE_URL } from "@/lib/branding";
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -14,9 +14,10 @@ export async function getAcademySettings() {
       gstNumber: (existing as any).gstNumber || ACADEMY_DEFAULTS.gstNumber,
       email: (existing as any).email || ACADEMY_DEFAULTS.email,
       phone: (existing as any).phone || ACADEMY_DEFAULTS.phone,
-      authorizedSignatory: (existing as any).authorizedSignatory || ACADEMY_DEFAULTS.authorizedSignatory,
-      logoUrl: (existing as any).logoUrl || ACADEMY_LOGO_URL,
-      signatoryUrl: (existing as any).signatoryUrl || ACADEMY_SIGNATURE_URL,
+      authorizedSignatory: ACADEMY_DEFAULTS.authorizedSignatory,
+      logoUrl: ACADEMY_LOGO_URL,
+      signatoryUrl: ACADEMY_SIGNATURE_URL,
+      faviconUrl: ACADEMY_FAVICON_URL,
     } as any;
   }
   const created = await AcademySettings.create({
@@ -28,6 +29,7 @@ export async function getAcademySettings() {
     authorizedSignatory: ACADEMY_DEFAULTS.authorizedSignatory,
     logoUrl: ACADEMY_LOGO_URL,
     signatoryUrl: ACADEMY_SIGNATURE_URL,
+    faviconUrl: ACADEMY_FAVICON_URL,
   });
   return created.toObject();
 }

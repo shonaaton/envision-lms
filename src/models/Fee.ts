@@ -1,5 +1,5 @@
 import { Schema, model, models, type InferSchemaType } from "mongoose";
-import { ACADEMY_DEFAULTS, ACADEMY_LOGO_URL, ACADEMY_SIGNATURE_URL } from "@/lib/branding";
+import { ACADEMY_DEFAULTS, ACADEMY_FAVICON_URL, ACADEMY_LOGO_URL, ACADEMY_SIGNATURE_URL } from "@/lib/branding";
 
 const AcademySettingsSchema = new Schema(
   {
@@ -9,7 +9,7 @@ const AcademySettingsSchema = new Schema(
     email: { type: String, default: ACADEMY_DEFAULTS.email },
     logoUrl: { type: String, default: ACADEMY_LOGO_URL },
     signatoryUrl: { type: String, default: ACADEMY_SIGNATURE_URL },
-    faviconUrl: { type: String, default: "" },
+    faviconUrl: { type: String, default: ACADEMY_FAVICON_URL },
     phone: { type: String, default: ACADEMY_DEFAULTS.phone },
     authorizedSignatory: { type: String, default: ACADEMY_DEFAULTS.authorizedSignatory },
     invoiceFooter: { type: String, default: "" },

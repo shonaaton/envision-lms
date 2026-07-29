@@ -10,7 +10,7 @@ type NotificationItem = {
   message: string;
   readAt?: string;
   createdAt: string;
-  metadata?: { href?: string; conversation?: string; message?: string };
+  metadata?: { href?: string; conversation?: string; message?: string; editedAt?: string };
 };
 
 function notificationHref(item: NotificationItem) {
@@ -99,7 +99,7 @@ export default function Topbar({ user, onOpenMobileNav }: { user: { name?: strin
                       </div>
                       <div className="mt-1 text-sm leading-relaxed text-slate-600">{item.message}</div>
                       <div className="mt-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                        {new Date(item.createdAt).toLocaleString()}
+                        {item.metadata?.editedAt ? `Edited ${new Date(item.metadata.editedAt).toLocaleString()}` : new Date(item.createdAt).toLocaleString()}
                       </div>
                     </a>
                   ))}

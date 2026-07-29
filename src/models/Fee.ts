@@ -78,6 +78,9 @@ const InvoiceSchema = new Schema(
     paidAt: Date,
     payment: { type: Schema.Types.ObjectId, ref: "Payment" },
     notes: String,
+    lastSentAt: Date,
+    lastSentTo: String,
+    lastEmailStatus: { type: String, enum: ["sent", "failed", "skipped", "missing_email", "not_configured"], default: undefined },
   },
   { timestamps: true }
 );

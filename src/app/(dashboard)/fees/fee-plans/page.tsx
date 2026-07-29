@@ -3,7 +3,7 @@ import { dbConnect } from "@/lib/db";
 import { FeePlan } from "@/models/Fee";
 import { revalidatePath } from "next/cache";
 import { Banknote } from "lucide-react";
-import { CreateFeePlanForm, FeePlanEditor } from "@/components/fees/FeePlanForms";
+import { FeePlansWorkspace } from "@/components/fees/FeePlanForms";
 
 export const dynamic = "force-dynamic";
 
@@ -76,26 +76,19 @@ export default async function FeePlansPage() {
   const monthlyPlans = plans.filter((plan: any) => plan.type === "monthly");
   const creditPlans = plans.filter((plan: any) => plan.type === "credits");
 
-  function renderPlan(plan: any) {
-    return (
-      <FeePlanEditor
-        key={plan._id.toString()}
-        plan={{
-          id: plan._id.toString(),
-          name: plan.name,
-          type: plan.type,
-          amount: plan.amount,
-          gstMode: plan.gstMode || "non_gst",
-          gstPercentage: plan.gstPercentage || 0,
-          credits: plan.credits || 0,
-          lateFeeAmount: plan.lateFeeAmount || 50000,
-          lateFeeAfterDays: plan.lateFeeAfterDays || 10,
-          isActive: plan.isActive !== false,
-        }}
-        updateAction={updatePlan}
-        archiveAction={archivePlan}
-      />
-    );
+  function serializePlan(plan: any) {
+    return {
+      id: plan._id.toString(),
+      name: plan.name,
+      type: plan.type,
+      amount: plan.amount,
+      gstMode: plan.gstMode || "non_gst",
+      gstPercentage: plan.gstPercentage || 0,
+      credits: plan.credits || 0,
+      lateFeeAmount: plan.lateFeeAmount || 50000,
+      lateFeeAfterDays: plan.lateFeeAfterDays || 10,
+      isActive: plan.isActive !== false,
+    };
   }
 
   return (
@@ -108,30 +101,13 @@ export default async function FeePlansPage() {
         </div>
       </div>
 
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="mb-4 font-semibold">Create Plan</h2>
-        <CreateFeePlanForm action={createPlan} />
-      </section>
-
-      <section className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
-        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="mb-1 font-semibold">Monthly Plans</h2>
-          <p className="mb-4 text-sm text-slate-500">Recurring fee plans. Type is locked after creation.</p>
-          <div className="space-y-3">
-            {monthlyPlans.map(renderPlan)}
-            {monthlyPlans.length === 0 && <p className="rounded-md bg-slate-50 p-4 text-sm text-slate-500">No monthly plans created yet.</p>}
-          </div>
-        </div>
-
-        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="mb-1 font-semibold">Credit Plans</h2>
-          <p className="mb-4 text-sm text-slate-500">Recharge packs. Type is locked after creation.</p>
-          <div className="space-y-3">
-            {creditPlans.map(renderPlan)}
-            {creditPlans.length === 0 && <p className="rounded-md bg-slate-50 p-4 text-sm text-slate-500">No credit plans created yet.</p>}
-          </div>
-        </div>
-      </section>
+      <FeePlansWorkspace
+        monthlyPlans={monthlyPlans.map(serializePlan)}
+        creditPlans={creditPlans.map(serializePlan)}
+        createAction={createPlan}
+        updateAction={updatePlan}
+        archiveAction={archivePlan}
+      />
     </div>
   );
 }

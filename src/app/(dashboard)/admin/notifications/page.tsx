@@ -144,7 +144,7 @@ function NotificationCard({ item, href }: { item: any; href: string }) {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">Sent</div>
-            <div className="mt-1 text-sm text-slate-500">{new Date(item.createdAt).toLocaleString()}</div>
+            <div className="mt-1 text-sm text-slate-500">{notificationTimeLabel(item)}</div>
           </div>
           {href ? (
             <span className="inline-flex h-10 items-center justify-center rounded-xl border border-brand/15 px-4 text-sm font-bold text-brand">
@@ -182,7 +182,7 @@ function NotificationTableRow({ item, href }: { item: any; href: string }) {
       <div className="pt-0.5">
         <NotificationStatus readAt={item.readAt} />
       </div>
-      <div className="pt-1 text-xs leading-5 text-slate-500">{new Date(item.createdAt).toLocaleString()}</div>
+      <div className="pt-1 text-xs leading-5 text-slate-500">{notificationTimeLabel(item)}</div>
       <div className="flex justify-end">
         {href ? (
           <Link href={href} className="inline-flex h-10 items-center justify-center rounded-xl border border-brand/15 px-3 text-xs font-bold text-brand transition hover:bg-brand hover:text-white">
@@ -196,4 +196,8 @@ function NotificationTableRow({ item, href }: { item: any; href: string }) {
       </div>
     </div>
   );
+}
+
+function notificationTimeLabel(item: any) {
+  return item.metadata?.editedAt ? `Edited ${new Date(item.metadata.editedAt).toLocaleString()}` : new Date(item.createdAt).toLocaleString();
 }

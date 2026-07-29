@@ -4,7 +4,7 @@ import { formatINR } from "@/lib/utils";
 import { CreditLedger, Invoice } from "@/models/Fee";
 import { Payment } from "@/models/Payment";
 import { User } from "@/models/User";
-import { BarChart3, Download, Eye } from "lucide-react";
+import { BarChart3, CalendarDays, Download, Eye, FileSpreadsheet, Filter, ReceiptText, UsersRound } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -45,6 +45,37 @@ function dateFilter(params: Record<string, string | string[] | undefined>) {
 function downloadHref(params: Record<string, string>, format: "xls" | "csv") {
   const next = new URLSearchParams({ ...params, format });
   return `/api/fees/reports?${next.toString()}`;
+}
+
+function reportHref(params: Record<string, string | string[] | undefined>, type: string, currentYear: number) {
+  const next = new URLSearchParams({
+    type,
+    from: value(params, "from"),
+    to: value(params, "to"),
+    month: value(params, "month"),
+    fy: value(params, "fy", String(currentYear)),
+    planType: value(params, "planType"),
+    student: value(params, "student"),
+  });
+  return `/fees/reports?${next.toString()}`;
+}
+
+function statusClass(value: unknown) {
+  const status = String(value || "").toLowerCase();
+  if (["paid", "captured", "completed", "success"].includes(status)) return "bg-emerald-50 text-emerald-700 ring-emerald-200";
+  if (["cancelled", "failed", "refunded", "void"].includes(status)) return "bg-rose-50 text-rose-700 ring-rose-200";
+  if (["pending", "unpaid", "created"].includes(status)) return "bg-amber-50 text-amber-700 ring-amber-200";
+  return "bg-slate-100 text-slate-700 ring-slate-200";
+}
+
+function filterLabel(params: Record<string, string | string[] | undefined>, currentYear: number) {
+  const from = value(params, "from");
+  const to = value(params, "to");
+  const month = value(params, "month");
+  const fy = value(params, "fy", String(currentYear));
+  if (month) return new Date(`${month}-01`).toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+  if (from || to) return `${from || "Start"} to ${to || "Today"}`;
+  return `FY ${fy}-${String(Number(fy) + 1).slice(-2)}`;
 }
 
 async function getPreview(params: Record<string, string | string[] | undefined>) {
@@ -126,6 +157,7 @@ export default async function FeeReportsPage({ searchParams }: { searchParams?: 
   const selected = REPORTS[selectedType];
   const students = await User.find({ role: "student" }, { passwordHash: 0 }).sort({ name: 1 }).lean();
   const preview = await getPreview({ ...params, type: selectedType });
+  const selectedStudent = students.find((student: any) => student._id.toString() === value(params, "student"));
   const downloadParams = {
     type: selectedType,
     from: value(params, "from"),
@@ -138,59 +170,160 @@ export default async function FeeReportsPage({ searchParams }: { searchParams?: 
 
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-5 text-slate-950 sm:px-6 lg:px-8">
-      <div className="mb-5 flex items-center gap-2">
-        <span className="flex h-9 w-9 items-center justify-center rounded-md bg-purple-50 text-purple-700"><BarChart3 size={18} /></span>
-        <div><h1 className="text-2xl font-semibold">Fee Reports</h1><p className="text-sm text-slate-500">Preview reports on the platform, then download Excel or CSV when ready.</p></div>
-      </div>
+      <section className="mb-4 rounded-lg border border-brand/10 bg-white p-4 shadow-[0_12px_28px_rgba(90,19,114,0.08)]">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex items-start gap-3">
+            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-brand/10 text-brand"><BarChart3 size={21} /></span>
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-brand/70">Finance workspace</p>
+              <h1 className="mt-1 text-3xl font-black text-slate-950">Fee Reports</h1>
+              <p className="mt-1 text-sm leading-6 text-slate-500">Choose a report, refine the filters, preview results, then export only when ready.</p>
+            </div>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-3">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+              <div className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">Records</div>
+              <div className="mt-1 text-2xl font-black text-slate-950">{preview.rows.length}</div>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+              <div className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">Period</div>
+              <div className="mt-1 truncate text-sm font-black text-slate-950">{filterLabel(params, currentYear)}</div>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+              <div className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">Audience</div>
+              <div className="mt-1 truncate text-sm font-black text-slate-950">{selectedStudent ? selectedStudent.name : "All students"}</div>
+            </div>
+          </div>
+        </div>
+      </section>
 
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-        <form className="grid grid-cols-1 gap-3 lg:grid-cols-7">
-          <select name="type" defaultValue={selectedType} className="h-10 rounded-md border border-slate-200 px-3 text-sm lg:col-span-2">
-            {Object.entries(REPORTS).map(([key, report]) => <option key={key} value={key}>{report.title}</option>)}
-          </select>
-          <input name="from" type="date" defaultValue={value(params, "from")} className="h-10 rounded-md border border-slate-200 px-3 text-sm" />
-          <input name="to" type="date" defaultValue={value(params, "to")} className="h-10 rounded-md border border-slate-200 px-3 text-sm" />
-          <input name="month" type="month" defaultValue={value(params, "month")} className="h-10 rounded-md border border-slate-200 px-3 text-sm" />
-          <input name="fy" type="number" defaultValue={value(params, "fy", String(currentYear))} className="h-10 rounded-md border border-slate-200 px-3 text-sm" placeholder="FY start" />
-          <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-purple-700 px-4 text-sm font-semibold text-white"><Eye size={15} /> Preview</button>
+      <section className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+        {Object.entries(REPORTS).map(([key, report]) => {
+          const active = key === selectedType;
+          return (
+            <a
+              key={key}
+              href={reportHref(params, key, currentYear)}
+              className={`rounded-lg border p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg ${active ? "border-brand bg-brand text-white shadow-brand/20" : "border-slate-200 bg-white text-slate-950 hover:border-brand/25"}`}
+            >
+              <span className={`mb-3 grid h-9 w-9 place-items-center rounded-lg ${active ? "bg-accent text-brand" : "bg-brand/10 text-brand"}`}>
+                <ReceiptText size={18} />
+              </span>
+              <span className="block text-sm font-black">{report.title}</span>
+              <span className={`mt-1 line-clamp-2 block text-xs leading-5 ${active ? "text-white/72" : "text-slate-500"}`}>{report.description}</span>
+            </a>
+          );
+        })}
+      </section>
 
-          <select name="planType" defaultValue={value(params, "planType")} className="h-10 rounded-md border border-slate-200 px-3 text-sm lg:col-span-2">
-            <option value="">All plan types</option>
-            <option value="monthly">Monthly</option>
-            <option value="credits">Credit-Based</option>
-          </select>
-          <select name="student" defaultValue={value(params, "student")} className="h-10 rounded-md border border-slate-200 px-3 text-sm lg:col-span-3">
-            <option value="">All students</option>
-            {students.map((student: any) => <option key={student._id} value={student._id.toString()}>{student.name}{student.username ? ` (${student.username})` : ""}</option>)}
-          </select>
-          <div className="flex gap-2 lg:col-span-2">
-            <a href={downloadHref(downloadParams, "xls")} className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-md border border-slate-200 px-4 text-sm font-semibold"><Download size={15} /> Excel</a>
-            <a href={downloadHref(downloadParams, "csv")} className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-md border border-slate-200 px-4 text-sm font-semibold"><Download size={15} /> CSV</a>
+      <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <form className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)_280px]">
+          <input type="hidden" name="type" value={selectedType} />
+
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <div className="mb-3 flex items-center gap-2 text-brand">
+              <CalendarDays size={17} />
+              <h2 className="text-sm font-black uppercase tracking-[0.14em]">Date Range</h2>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="space-y-1">
+                <span className="text-xs font-semibold text-slate-500">From</span>
+                <input name="from" type="date" defaultValue={value(params, "from")} className="input h-10" />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs font-semibold text-slate-500">To</span>
+                <input name="to" type="date" defaultValue={value(params, "to")} className="input h-10" />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs font-semibold text-slate-500">Month</span>
+                <input name="month" type="month" defaultValue={value(params, "month")} className="input h-10" />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs font-semibold text-slate-500">Financial Year Start</span>
+                <input name="fy" type="number" defaultValue={value(params, "fy", String(currentYear))} className="input h-10" placeholder="FY start" />
+              </label>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <div className="mb-3 flex items-center gap-2 text-brand">
+              <Filter size={17} />
+              <h2 className="text-sm font-black uppercase tracking-[0.14em]">Filters</h2>
+            </div>
+            <div className="grid gap-3">
+              <label className="space-y-1">
+                <span className="text-xs font-semibold text-slate-500">Plan Type</span>
+                <select name="planType" defaultValue={value(params, "planType")} className="input h-10">
+                  <option value="">All plan types</option>
+                  <option value="monthly">Monthly</option>
+                  <option value="credits">Credit-Based</option>
+                </select>
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs font-semibold text-slate-500">Student</span>
+                <select name="student" defaultValue={value(params, "student")} className="input h-10">
+                  <option value="">All students</option>
+                  {students.map((student: any) => <option key={student._id} value={student._id.toString()}>{student.name}{student.username ? ` (${student.username})` : ""}</option>)}
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-brand/10 bg-brand p-4 text-white shadow-sm">
+            <div className="mb-4 flex items-center gap-2">
+              <FileSpreadsheet size={18} className="text-accent" />
+              <h2 className="text-sm font-black uppercase tracking-[0.14em]">Preview & Export</h2>
+            </div>
+            <p className="mb-4 text-sm leading-6 text-white/72">Apply filters first. Export uses the same report selection.</p>
+            <button className="mb-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 text-sm font-black text-brand shadow-sm"><Eye size={15} /> Preview Report</button>
+            <div className="grid grid-cols-2 gap-2">
+              <a href={downloadHref(downloadParams, "xls")} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-white/15 bg-white/10 px-4 text-sm font-bold text-white hover:bg-white/15"><Download size={15} /> Excel</a>
+              <a href={downloadHref(downloadParams, "csv")} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-white/15 bg-white/10 px-4 text-sm font-bold text-white hover:bg-white/15"><Download size={15} /> CSV</a>
+            </div>
           </div>
         </form>
       </section>
 
       <section className="mt-4 rounded-lg border border-slate-200 bg-white shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 p-5">
-          <div>
-            <h2 className="text-lg font-semibold">{selected.title}</h2>
-            <p className="text-sm text-slate-500">{selected.description}</p>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-5">
+          <div className="flex items-start gap-3">
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-brand/10 text-brand"><UsersRound size={18} /></span>
+            <div>
+              <h2 className="text-xl font-black text-slate-950">{selected.title}</h2>
+              <p className="mt-1 text-sm leading-6 text-slate-500">{selected.description}</p>
+            </div>
           </div>
-          <span className="rounded-full bg-purple-50 px-3 py-1 text-xs font-semibold text-purple-700">{preview.rows.length} records</span>
+          <span className="rounded-full bg-brand/10 px-3 py-1 text-xs font-black text-brand">{preview.rows.length} records</span>
         </div>
 
         {preview.rows.length === 0 ? (
-          <div className="p-8 text-sm text-slate-500">No records found for the selected report filters.</div>
+          <div className="p-8 text-center">
+            <div className="mx-auto grid h-12 w-12 place-items-center rounded-lg bg-slate-100 text-slate-500"><FileSpreadsheet size={22} /></div>
+            <h3 className="mt-4 text-lg font-black text-slate-950">No records found</h3>
+            <p className="mt-2 text-sm text-slate-500">Try a wider date range or remove one of the filters.</p>
+          </div>
         ) : (
-          <div className="max-h-[60vh] overflow-auto">
-            <table className="min-w-full text-left text-sm">
-              <thead className="sticky top-0 bg-slate-50 text-xs uppercase text-slate-500">
-                <tr>{preview.headers.map((header) => <th key={header} className="border-b px-3 py-3 font-semibold">{header}</th>)}</tr>
+          <div className="max-h-[62vh] overflow-auto">
+            <table className="min-w-full border-separate border-spacing-0 text-left text-sm">
+              <thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-[0.08em] text-slate-500">
+                <tr>{preview.headers.map((header) => <th key={header} className="border-b border-slate-200 px-4 py-3 font-black">{header}</th>)}</tr>
               </thead>
               <tbody>
                 {preview.rows.map((row, rowIndex) => (
-                  <tr key={rowIndex} className="border-b last:border-0">
-                    {row.map((cell, cellIndex) => <td key={`${rowIndex}-${cellIndex}`} className="whitespace-nowrap px-3 py-3">{String(cell ?? "")}</td>)}
+                  <tr key={rowIndex} className="group border-b last:border-0 hover:bg-brand/[0.03]">
+                    {row.map((cell, cellIndex) => {
+                      const header = preview.headers[cellIndex]?.toLowerCase();
+                      const content = String(cell ?? "");
+                      return (
+                        <td key={`${rowIndex}-${cellIndex}`} className="whitespace-nowrap border-b border-slate-100 px-4 py-3 text-slate-800 group-last:border-b-0">
+                          {header === "status" ? (
+                            <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ring-1 ${statusClass(content)}`}>{content || "-"}</span>
+                          ) : (
+                            <span className={cellIndex === 0 ? "font-semibold text-slate-950" : ""}>{content}</span>
+                          )}
+                        </td>
+                      );
+                    })}
                   </tr>
                 ))}
               </tbody>

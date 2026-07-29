@@ -12,6 +12,10 @@ export const dynamic = "force-dynamic";
 
 type RangeLike = { from?: Date; to?: Date };
 
+function objectId(value: any) {
+  return value?._id?.toString?.() ?? value?.toString?.() ?? "";
+}
+
 function escapeHtml(value: unknown) {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -139,6 +143,8 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const type = String(url.searchParams.get("type") || "classrooms");
   const format = String(url.searchParams.get("format") || "csv");
+  const studentId = String(url.searchParams.get("studentId") || "");
+  const coachId = String(url.searchParams.get("coachId") || "");
   const range = buildRange(url);
 
   let title = "Admin Report";
@@ -150,7 +156,10 @@ export async function GET(req: Request) {
       .populate("coach instructor students batches", "name")
       .sort({ updatedAt: -1 })
       .lean();
-    const sessionRows = plainSessionRows(classrooms, range);
+    const selectedClassrooms = coachId
+      ? classrooms.filter((classroom: any) => [classroom.coach, classroom.instructor].map(objectId).includes(coachId))
+      : classrooms;
+    const sessionRows = plainSessionRows(selectedClassrooms, range);
 
     title = "Classroom Sessions Report";
     headers = ["Classroom", "Course", "Level", "Topic", "Coach", "Batches", "Date", "Start Time", "Lifecycle", "Join Access", "Planned Duration", "Teaching Time", "Students", "Meeting"];
@@ -171,23 +180,31 @@ export async function GET(req: Request) {
       row.meetingConfigured,
     ]);
   } else if (type === "attendance") {
-    const attendanceDocs = await Attendance.find({})
-      .populate("classroom", "title courseName levelName topicName")
-      .populate("records.student coach", "name username")
+    const attendanceDocs = await Attendance.find({
+      ...(studentId ? { "records.student": studentId } : {}),
+    })
+      .populate("classroom", "title courseName levelName topicName coach instructor")
+      .populate("records.student coach", "name username email")
       .sort({ sessionDate: -1, createdAt: -1 })
       .lean();
 
-    const filteredDocs = attendanceDocs.filter((doc: any) => inRange(doc.sessionDate || doc.createdAt, range));
+    const filteredDocs = attendanceDocs
+      .filter((doc: any) => inRange(doc.sessionDate || doc.createdAt, range))
+      .filter((doc: any) => !coachId || [doc.coach, doc.classroom?.coach, doc.classroom?.instructor].map(objectId).includes(coachId));
     title = "Attendance Report";
-    headers = ["Classroom", "Course", "Level", "Topic", "Session Date", "Student", "Status", "Coach Status", "Teaching Time", "Note"];
+    headers = ["Classroom", "Course", "Level", "Topic", "Session Date", "Coach", "Student", "Student ID", "Status", "Coach Status", "Teaching Time", "Note"];
     rows = filteredDocs.flatMap((doc: any) =>
-      (doc.records || []).map((record: any) => [
+      (doc.records || [])
+        .filter((record: any) => !studentId || objectId(record.student) === studentId)
+        .map((record: any) => [
         doc.classroom?.title || "Classroom",
         doc.classroom?.courseName || "",
         doc.classroom?.levelName || "",
         doc.classroom?.topicName || "",
         formatDate(doc.sessionDate),
+        doc.coach?.name || "Not assigned",
         record.student?.name || "Student",
+        record.student?.username || record.student?.email || "",
         record.status || "pending",
         doc.coachStatus || "pending",
         formatDuration(doc.teachingMinutes),
@@ -233,7 +250,9 @@ export async function GET(req: Request) {
       .lean();
 
     const coachGroups = new Map<string, { coachName: string; classrooms: any[] }>();
-    classrooms.forEach((classroom: any) => {
+    classrooms
+      .filter((classroom: any) => !coachId || [classroom.coach, classroom.instructor].map(objectId).includes(coachId))
+      .forEach((classroom: any) => {
       const coach = classroom.coach || classroom.instructor || null;
       if (!coach?._id) return;
       const key = String(coach._id);

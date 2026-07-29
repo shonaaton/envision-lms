@@ -17,24 +17,28 @@ const reportCards = [
     title: "Classroom Sessions",
     description: "Sessions, coach, topic, students, meeting readiness.",
     icon: GraduationCap,
+    peopleFilters: ["coach"],
   },
   {
     type: "tournaments",
     title: "Tournament Overview",
     description: "Lifecycle, players, boards, leaders, rounds.",
     icon: Trophy,
+    peopleFilters: [],
   },
   {
     type: "attendance",
     title: "Attendance Records",
-    description: "Student attendance, coach status, teaching time.",
+    description: "Student-wise or teacher-wise attendance with teaching time.",
     icon: ClipboardList,
+    peopleFilters: ["student", "coach"],
   },
   {
     type: "coaching-hours",
     title: "Coaching Hours",
-    description: "Coach workload, batch hours, teaching coverage.",
+    description: "Coach-wise workload, batch hours, teaching coverage.",
     icon: CalendarDays,
+    peopleFilters: ["coach"],
   },
 ] as const;
 
@@ -53,11 +57,13 @@ export default async function AdminReportsPage() {
 
   await dbConnect();
 
-  const [classroomCount, tournamentCount, attendanceCount, coachCount] = await Promise.all([
+  const [classroomCount, tournamentCount, attendanceCount, coachCount, students, coaches] = await Promise.all([
     Classroom.countDocuments({}),
     Tournament.countDocuments({}),
     Attendance.countDocuments({}),
     User.countDocuments({ role: "instructor", isActive: { $ne: false } }),
+    User.find({ role: "student", isActive: { $ne: false } }, { name: 1, username: 1, email: 1 }).sort({ name: 1 }).lean(),
+    User.find({ role: "instructor", isActive: { $ne: false } }, { name: 1, username: 1, email: 1 }).sort({ name: 1 }).lean(),
   ]);
   const classroomDocs = await Classroom.find({})
     .populate("coach instructor students batches", "name")
@@ -102,7 +108,7 @@ export default async function AdminReportsPage() {
         {reportCards.map((report) => {
           const Icon = report.icon;
           return (
-            <form key={report.type} action="/api/admin/reports" className="grid gap-3 border-b border-slate-100 px-4 py-3 last:border-b-0 xl:grid-cols-[minmax(250px,1fr)_160px_160px_130px_190px] xl:items-end">
+            <form key={report.type} action="/api/admin/reports" className="grid gap-3 border-b border-slate-100 px-4 py-3 last:border-b-0 xl:grid-cols-[minmax(260px,1fr)_minmax(180px,220px)_minmax(180px,220px)_160px_160px_130px_170px] xl:items-end">
               <input type="hidden" name="type" value={report.type} />
               <div className="flex min-w-0 items-start gap-3">
                 <span className="flex h-9 w-9 flex-none items-center justify-center rounded-lg bg-brand/10 text-brand">
@@ -113,6 +119,12 @@ export default async function AdminReportsPage() {
                   <p className="mt-0.5 text-xs text-slate-600">{report.description}</p>
                 </div>
               </div>
+              {(report.peopleFilters as readonly string[]).includes("student") ? (
+                <SelectField name="studentId" label="Student" options={[["", "All students"], ...students.map((student: any) => [String(student._id), `${student.name} (${student.username || student.email})`] as [string, string])]} />
+              ) : <div className="hidden xl:block" />}
+              {(report.peopleFilters as readonly string[]).includes("coach") ? (
+                <SelectField name="coachId" label="Coach" options={[["", "All coaches"], ...coaches.map((coach: any) => [String(coach._id), `${coach.name} (${coach.username || coach.email})`] as [string, string])]} />
+              ) : <div className="hidden xl:block" />}
               <label className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5">
                 <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">From</div>
                 <input type="date" name="from" className="mt-0.5 w-full bg-transparent text-xs outline-none" />
@@ -136,5 +148,16 @@ export default async function AdminReportsPage() {
         })}
       </section>
     </div>
+  );
+}
+
+function SelectField({ name, label, options }: { name: string; label: string; options: Array<[string, string]> }) {
+  return (
+    <label className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5">
+      <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{label}</div>
+      <select name={name} className="mt-0.5 w-full bg-transparent text-xs outline-none">
+        {options.map(([value, text]) => <option key={`${name}-${value || "all"}`} value={value}>{text}</option>)}
+      </select>
+    </label>
   );
 }

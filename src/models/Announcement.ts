@@ -17,6 +17,18 @@ const AnnouncementSchema = new Schema(
     recipientCount: { type: Number, default: 0 },
     createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
     sentAt: { type: Date, default: Date.now, index: true },
+    editedAt: { type: Date, index: true },
+    editedBy: { type: Schema.Types.ObjectId, ref: "User" },
+    editCount: { type: Number, default: 0 },
+    editHistory: [
+      {
+        editedAt: { type: Date, default: Date.now },
+        editedBy: { type: Schema.Types.ObjectId, ref: "User" },
+        previousTitle: String,
+        previousMessage: String,
+        previousPriority: String,
+      },
+    ],
   },
   { timestamps: true }
 );

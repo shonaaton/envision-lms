@@ -17,7 +17,7 @@ function currency(paise: number) {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="space-y-1.5">
-      <span className="block text-sm font-semibold text-slate-800">{label}</span>
+      <span className="block text-xs font-bold uppercase tracking-[0.1em] text-slate-500">{label}</span>
       {children}
     </label>
   );
@@ -25,7 +25,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function StepPill({ active, done, label }: { active: boolean; done: boolean; label: string }) {
   return (
-    <div className={`flex items-center gap-2 rounded-full px-3 py-2 text-xs font-bold ${active ? "bg-purple-700 text-white" : done ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
+    <div className={`flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-bold ${active ? "bg-brand text-white" : done ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
       {done ? <CheckCircle2 size={14} /> : null}
       {label}
     </div>
@@ -83,7 +83,7 @@ export function InvoiceCreationForm({
     step === 4;
 
   return (
-    <form action={action} className="space-y-5">
+    <form action={action} className="space-y-4">
       <input type="hidden" name="student" value={studentId} />
       <input type="hidden" name="type" value={invoiceType} />
       <input type="hidden" name="plan" value={planId} />
@@ -101,12 +101,12 @@ export function InvoiceCreationForm({
         <StepPill active={step === 4} done={false} label="4 Review" />
       </div>
 
-      <div className="rounded-lg border border-purple-100 bg-purple-50/50 p-4">
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
         {step === 1 ? (
           <div className="max-w-xl">
-            <h3 className="font-semibold text-slate-950">Select student</h3>
+            <h3 className="text-lg font-black text-slate-950">Select student</h3>
             <p className="mt-1 text-sm text-slate-500">Choose who this invoice is for.</p>
-            <select value={studentId} onChange={(event) => { setStudentId(event.target.value); setPlanId(""); }} className="mt-4 h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-sm">
+            <select value={studentId} onChange={(event) => { setStudentId(event.target.value); setPlanId(""); }} className="mt-4 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-brand focus:ring-4 focus:ring-brand/10">
               <option value="">Select Student</option>
               {students.map((student) => <option key={student.id} value={student.id}>{student.name}</option>)}
             </select>
@@ -115,7 +115,7 @@ export function InvoiceCreationForm({
 
         {step === 2 ? (
           <div>
-            <h3 className="font-semibold text-slate-950">Select invoice type</h3>
+            <h3 className="text-lg font-black text-slate-950">Select invoice type</h3>
             <p className="mt-1 text-sm text-slate-500">The type controls which assigned plans are shown next.</p>
             <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
               {[
@@ -123,8 +123,8 @@ export function InvoiceCreationForm({
                 ["credits", "Credit Plan", "For recharge or credit packs."],
                 ["manual", "Custom Invoice", "For adjustments or offline billing."],
               ].map(([value, label, help]) => (
-                <button key={value} type="button" onClick={() => { setInvoiceType(value as InvoiceType); setPlanId(""); }} className={`rounded-lg border p-4 text-left ${invoiceType === value ? "border-purple-700 bg-white shadow-sm" : "border-slate-200 bg-white/70"}`}>
-                  <div className="font-semibold">{label}</div>
+                <button key={value} type="button" onClick={() => { setInvoiceType(value as InvoiceType); setPlanId(""); }} className={`rounded-lg border p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${invoiceType === value ? "border-brand bg-white text-brand ring-2 ring-brand/10" : "border-slate-200 bg-white text-slate-950 hover:border-brand/25"}`}>
+                  <div className="font-black">{label}</div>
                   <div className="mt-1 text-xs text-slate-500">{help}</div>
                 </button>
               ))}
@@ -134,9 +134,9 @@ export function InvoiceCreationForm({
 
         {step === 3 ? (
           <div>
-            <h3 className="font-semibold text-slate-950">Select assigned plan</h3>
+            <h3 className="text-lg font-black text-slate-950">Select assigned plan</h3>
             <p className="mt-1 text-sm text-slate-500">Only plans already assigned to the selected student are shown.</p>
-            <select value={planId} onChange={(event) => setPlanId(event.target.value)} className="mt-4 h-11 w-full max-w-xl rounded-md border border-slate-200 bg-white px-3 text-sm">
+            <select value={planId} onChange={(event) => setPlanId(event.target.value)} className="mt-4 h-11 w-full max-w-xl rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-brand focus:ring-4 focus:ring-brand/10">
               <option value="">{availablePlans.length ? "Select Assigned Plan" : "No matching assigned plan found"}</option>
               {availablePlans.map((plan) => <option key={plan.id} value={plan.id}>{plan.name}</option>)}
             </select>
@@ -145,33 +145,33 @@ export function InvoiceCreationForm({
 
         {step === 4 ? (
           <div className="space-y-4">
-            <h3 className="font-semibold text-slate-950">Review and generate</h3>
+            <h3 className="text-lg font-black text-slate-950">Review and generate</h3>
             <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
               <Field label="Invoice Date">
-                <input type="date" value={invoiceDate} onChange={(event) => setInvoiceDate(event.target.value)} className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm" />
+                <input type="date" value={invoiceDate} onChange={(event) => setInvoiceDate(event.target.value)} className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none transition focus:border-brand focus:ring-4 focus:ring-brand/10" />
               </Field>
               <Field label="Due Date">
-                <input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm" />
+                <input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none transition focus:border-brand focus:ring-4 focus:ring-brand/10" />
               </Field>
               <Field label="Amount">
-                <input type="number" min="0" value={amount} onChange={(event) => setAmount(event.target.value)} className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm" />
+                <input type="number" min="0" value={amount} onChange={(event) => setAmount(event.target.value)} className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none transition focus:border-brand focus:ring-4 focus:ring-brand/10" />
               </Field>
               <Field label="Tax Mode">
-                <select value={invoiceMode} onChange={(event) => setInvoiceMode(event.target.value as TaxMode)} className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm">
+                <select value={invoiceMode} onChange={(event) => setInvoiceMode(event.target.value as TaxMode)} className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-brand focus:ring-4 focus:ring-brand/10">
                   <option value="included">GST Included</option>
                   <option value="excluded">GST Excluded</option>
                   <option value="non_gst">Non-GST Invoice</option>
                 </select>
               </Field>
               <Field label="GST Percentage">
-                <input type="number" min="0" value={gstPercentage} onChange={(event) => setGstPercentage(event.target.value)} disabled={invoiceMode === "non_gst"} className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm disabled:bg-slate-100" />
+                <input type="number" min="0" value={gstPercentage} onChange={(event) => setGstPercentage(event.target.value)} disabled={invoiceMode === "non_gst"} className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none transition focus:border-brand focus:ring-4 focus:ring-brand/10 disabled:bg-slate-100" />
               </Field>
               <Field label="Invoice Title">
-                <input value={title} onChange={(event) => setTitle(event.target.value)} className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm" />
+                <input value={title} onChange={(event) => setTitle(event.target.value)} className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none transition focus:border-brand focus:ring-4 focus:ring-brand/10" />
               </Field>
             </div>
-            <input name="notes" placeholder="Internal note, optional" className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm" />
-            <div className="rounded-md bg-white p-4 text-sm">
+            <input name="notes" placeholder="Internal note, optional" className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none transition focus:border-brand focus:ring-4 focus:ring-brand/10" />
+            <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm">
               <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-4">
                 <div><span className="text-slate-500">Student:</span> <b>{selectedStudent?.name || "-"}</b></div>
                 <div><span className="text-slate-500">Plan:</span> <b>{selectedPlan?.name || "-"}</b></div>
@@ -184,15 +184,15 @@ export function InvoiceCreationForm({
       </div>
 
       <div className="flex flex-wrap justify-between gap-2">
-        <button type="button" disabled={step === 1} onClick={() => setStep((value) => Math.max(1, value - 1))} className="inline-flex h-10 items-center gap-2 rounded-md border px-4 text-sm font-semibold disabled:opacity-40">
+        <button type="button" disabled={step === 1} onClick={() => setStep((value) => Math.max(1, value - 1))} className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 disabled:opacity-40">
           <ArrowLeft size={15} /> Back
         </button>
         {step < 4 ? (
-          <button type="button" disabled={!canContinue} onClick={() => setStep((value) => Math.min(4, value + 1))} className="inline-flex h-10 items-center gap-2 rounded-md bg-purple-700 px-4 text-sm font-semibold text-white disabled:opacity-40">
+          <button type="button" disabled={!canContinue} onClick={() => setStep((value) => Math.min(4, value + 1))} className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand px-4 text-sm font-semibold text-white disabled:opacity-40">
             Continue <ArrowRight size={15} />
           </button>
         ) : (
-          <button disabled={!studentId || !invoiceType || !planId || !amount} className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-purple-700 px-4 text-sm font-semibold text-white hover:bg-purple-800 disabled:opacity-40">
+          <button disabled={!studentId || !invoiceType || !planId || !amount} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-brand px-4 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-40">
             <Plus size={15} /> Generate Invoice
           </button>
         )}

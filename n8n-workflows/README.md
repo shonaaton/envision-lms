@@ -8,7 +8,7 @@ This folder contains the n8n workflow used by the LMS for:
 
 ## Files
 
-- `lms-email-automation.json` - the main workflow that receives LMS webhook requests and sends branded emails through SMTP
+- `lms-email-automation.json` - the main workflow that receives LMS webhook requests and sends branded emails through Gmail
 
 ## Payload format
 
@@ -42,7 +42,7 @@ Password reset emails also include:
 2. Use **Import from File**.
 3. Import `lms-email-automation.json`.
 4. Open the `Send Email` node.
-5. Create or select your SMTP credential.
+5. Create or select your Gmail OAuth credential.
 6. Save the workflow.
 7. Activate the workflow.
 
@@ -102,6 +102,5 @@ Expected response:
 ## Notes
 
 - The workflow must be active before the production webhook URL works.
-- If you want different sender details, edit the defaults in the `Prepare Email` code node:
-  - `noreply@yourdomain.com`
-  - `support@yourdomain.com`
+- If you want different sender details, edit the reply-to default in the `Prepare Email` code node.
+- The Gmail node should not include an empty attachment field. If n8n shows an attachment mapping with no binary property, remove it before activating the workflow.

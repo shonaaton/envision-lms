@@ -1,11 +1,17 @@
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
-import { CreditLedger, FeeAssignment, FeePlan } from "@/models/Fee";
-import { AlertTriangle, CheckCircle2, Download, Filter, Search, WalletCards, XCircle } from "lucide-react";
+import { sendAutomationEmail } from "@/lib/emailAutomation";
+import { formatINR } from "@/lib/utils";
+import { AcademySettings, CreditLedger, FeeAssignment, FeePlan, Notification } from "@/models/Fee";
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import { AlertTriangle, CheckCircle2, Download, Filter, MailCheck, MailWarning, Search, Send, WalletCards, XCircle } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
 type Params = { q?: string; filter?: string; plan?: string; min?: string; max?: string };
+type ReminderDelivery = Awaited<ReturnType<typeof sendAutomationEmail>>;
+type ReminderSummary = { sent: number; failed: number; missing: number; skipped: number; total: number };
 
 function value(params: Params, key: keyof Params) {
   return String(params[key] || "");
@@ -21,6 +27,122 @@ function exportHref(params: Params, format: "csv" | "xls" | "history") {
     format,
   });
   return `/api/fees/credit-monitoring?${next.toString()}`;
+}
+
+function appBaseUrl() {
+  const raw = process.env.NEXTAUTH_URL || process.env.LMS_HOST || "";
+  if (!raw) return "";
+  return raw.startsWith("http") ? raw.replace(/\/$/, "") : `https://${raw.replace(/\/$/, "")}`;
+}
+
+function deliveryStatus(delivery: ReminderDelivery) {
+  if (delivery.delivered) return "sent";
+  if (delivery.skipped) return "not_configured";
+  return "failed";
+}
+
+function reminderStatusCopy(status?: string) {
+  if (status === "sent") return "Reminder sent";
+  if (status === "not_configured") return "Email not configured";
+  if (status === "missing_email") return "No email";
+  if (status === "failed") return "Reminder failed";
+  return "No reminder yet";
+}
+
+function bulkReminderRedirect(summary: ReminderSummary) {
+  const params = new URLSearchParams({
+    creditReminder: "sent",
+    sent: String(summary.sent),
+    failed: String(summary.failed),
+    missing: String(summary.missing),
+    skipped: String(summary.skipped),
+    total: String(summary.total),
+  });
+  redirect(`/fees/credit-monitoring?${params.toString()}`);
+}
+
+function creditReminderBanner(params: Params & Record<string, string | string[] | undefined>) {
+  if (String(params.creditReminder || "") !== "sent") return null;
+  const sent = String(params.sent || "0");
+  const failed = String(params.failed || "0");
+  const missing = String(params.missing || "0");
+  const skipped = String(params.skipped || "0");
+  const total = String(params.total || "0");
+  const hasProblems = Number(failed) || Number(missing) || Number(skipped);
+  return {
+    tone: hasProblems ? "border-amber-200 bg-amber-50 text-amber-900" : "border-emerald-200 bg-emerald-50 text-emerald-800",
+    icon: hasProblems ? MailWarning : MailCheck,
+    text: `Credit reminders processed: ${sent} sent, ${failed} failed, ${missing} missing email, ${skipped} not configured, ${total} total.`,
+  };
+}
+
+async function sendBulkCreditReminders(formData: FormData) {
+  "use server";
+  const session = await auth();
+  if ((session?.user as any)?.role !== "admin") throw new Error("Forbidden");
+  await dbConnect();
+  const mode = String(formData.get("creditReminderMode") || "low");
+  const settings: any = await AcademySettings.findOne().lean();
+  const lowCreditThreshold = Math.max(1, Number(settings?.lowCreditThreshold || 3));
+  const threshold = mode === "empty" ? 0 : lowCreditThreshold;
+  const assignments: any[] = await FeeAssignment.find({ type: "credits", creditBalance: { $lte: threshold } }).populate("student plan").sort({ creditBalance: 1 }).limit(500).lean();
+  const portalUrl = appBaseUrl() ? `${appBaseUrl()}/fees` : "";
+  const summary: ReminderSummary = { sent: 0, failed: 0, missing: 0, skipped: 0, total: assignments.length };
+
+  for (const assignment of assignments) {
+    const student = assignment.student;
+    const balance = Number(assignment.creditBalance || 0);
+    if (!student?._id || !student.email) {
+      summary.missing += 1;
+      await FeeAssignment.findByIdAndUpdate(assignment._id, { lastCreditReminderStatus: "missing_email", lastCreditReminderAt: new Date(), lastCreditReminderTo: "" });
+      continue;
+    }
+    const delivery = await sendAutomationEmail({
+      to: student.email,
+      subject: balance <= 0 ? "Recharge required: class credits are finished" : "Low credit reminder from Envision Chess Academy",
+      message: [
+        `Hello ${student.name},`,
+        balance <= 0
+          ? "Your class credit balance is now 0. Please recharge before booking or attending the next credit-based class."
+          : `Your class credit balance is low. You currently have ${balance} credit${balance === 1 ? "" : "s"} remaining.`,
+        assignment.plan?.name ? `Current plan: ${assignment.plan.name}.` : "",
+        assignment.plan?.amount ? `Recharge plan amount: ${formatINR(assignment.plan.amount)}.` : "",
+        portalUrl ? `Open your student billing page: ${portalUrl}` : "Please log in to your student portal to review credits and invoices.",
+        "If you have already recharged, please ignore this message.",
+      ].filter(Boolean).join("\n\n"),
+      metadata: {
+        kind: "credit_reminder",
+        studentId: student.username || student._id.toString(),
+        studentObjectId: student._id.toString(),
+        assignmentId: assignment._id.toString(),
+        creditBalance: balance,
+        planName: assignment.plan?.name || "",
+        portalUrl,
+        previewText: "A class credit balance reminder from Envision Chess Academy.",
+      },
+    });
+    const status = deliveryStatus(delivery);
+    if (status === "sent") summary.sent += 1;
+    else if (status === "not_configured") summary.skipped += 1;
+    else summary.failed += 1;
+    await FeeAssignment.findByIdAndUpdate(assignment._id, {
+      lastCreditReminderAt: new Date(),
+      lastCreditReminderTo: student.email,
+      lastCreditReminderStatus: status,
+    });
+    if (status === "sent") {
+      await Notification.create({
+        user: student._id,
+        type: "credits.reminder",
+        title: balance <= 0 ? "Credit recharge required" : "Low credit reminder",
+        message: balance <= 0 ? "Your class credits are finished. Please recharge before your next credit-based class." : `Your remaining class credits are low (${balance}).`,
+        metadata: { assignment: assignment._id.toString(), email: student.email, balance },
+      });
+    }
+  }
+
+  revalidatePath("/fees/credit-monitoring");
+  bulkReminderRedirect(summary);
 }
 
 function statusFor(balance: number) {
@@ -72,6 +194,7 @@ export default async function CreditMonitoringPage({ searchParams }: { searchPar
   const lowCount = allAssignments.filter((assignment: any) => Number(assignment.creditBalance || 0) > 0 && Number(assignment.creditBalance || 0) <= 3).length;
   const emptyCount = allAssignments.filter((assignment: any) => Number(assignment.creditBalance || 0) <= 0).length;
   const totalRemaining = allAssignments.reduce((sum: number, assignment: any) => sum + Number(assignment.creditBalance || 0), 0);
+  const reminderBanner = creditReminderBanner(params as any);
 
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-5 text-slate-950 sm:px-6 lg:px-8">
@@ -91,6 +214,31 @@ export default async function CreditMonitoringPage({ searchParams }: { searchPar
             <MiniStat label="Empty" value={emptyCount} note="0 credits left" icon={<XCircle size={15} />} />
             <MiniStat label="Remaining" value={totalRemaining} note="Total credits" icon={<CheckCircle2 size={15} />} />
           </div>
+        </div>
+      </section>
+
+      {reminderBanner && (
+        <div className={`mb-4 flex items-center gap-3 rounded-lg border px-4 py-3 text-sm font-semibold ${reminderBanner.tone}`}>
+          <reminderBanner.icon size={18} />
+          {reminderBanner.text}
+        </div>
+      )}
+
+      <section className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h2 className="text-lg font-black text-amber-950">Bulk Credit Email Reminders</h2>
+            <p className="mt-1 text-sm leading-6 text-amber-800">Send recharge reminders to students whose credits are low or already finished.</p>
+          </div>
+          <form action={sendBulkCreditReminders} className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <select name="creditReminderMode" defaultValue="low" className="h-11 rounded-lg border border-amber-300 bg-white px-3 text-sm font-semibold text-slate-800">
+              <option value="low">Low and zero credits</option>
+              <option value="empty">Zero credits only</option>
+            </select>
+            <button className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-brand px-4 text-sm font-bold text-white shadow-sm hover:bg-brand-700">
+              <Send size={16} /> Send Credit Reminders
+            </button>
+          </form>
         </div>
       </section>
 
@@ -170,6 +318,11 @@ export default async function CreditMonitoringPage({ searchParams }: { searchPar
                         </span>
                       </div>
                       <div className="mt-1 text-xs text-slate-500">{assignment.student?.username || assignment.student?.email || "-"}</div>
+                      <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-600">
+                        {String(assignment.lastCreditReminderStatus || "") === "sent" ? <MailCheck size={13} className="text-emerald-600" /> : <MailWarning size={13} className="text-amber-600" />}
+                        {reminderStatusCopy(String(assignment.lastCreditReminderStatus || ""))}
+                        {assignment.lastCreditReminderAt ? ` - ${new Date(assignment.lastCreditReminderAt).toLocaleString("en-IN")}` : ""}
+                      </div>
                       <div className="mt-4 grid gap-3 md:grid-cols-4">
                         <div className="rounded-lg bg-slate-50 p-3">
                           <div className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">Plan</div>

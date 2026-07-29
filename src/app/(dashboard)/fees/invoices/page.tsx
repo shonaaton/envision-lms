@@ -13,6 +13,9 @@ import { InvoiceCreationForm } from "@/components/fees/InvoiceCreationForm";
 
 export const dynamic = "force-dynamic";
 
+type ReminderDelivery = Awaited<ReturnType<typeof sendAutomationEmail>>;
+type ReminderSummary = { sent: number; failed: number; missing: number; skipped: number; total: number };
+
 function paise(value: FormDataEntryValue | null) {
   return Math.round(Number(value || 0) * 100);
 }
@@ -21,6 +24,35 @@ function appBaseUrl() {
   const raw = process.env.NEXTAUTH_URL || process.env.LMS_HOST || "";
   if (!raw) return "";
   return raw.startsWith("http") ? raw.replace(/\/$/, "") : `https://${raw.replace(/\/$/, "")}`;
+}
+
+function deliveryStatus(delivery: ReminderDelivery) {
+  if (delivery.delivered) return "sent";
+  if (delivery.skipped) return "not_configured";
+  return "failed";
+}
+
+function bulkReminderRedirect(summary: ReminderSummary, kind = "invoice_reminders") {
+  const params = new URLSearchParams({
+    bulk: kind,
+    sent: String(summary.sent),
+    failed: String(summary.failed),
+    missing: String(summary.missing),
+    skipped: String(summary.skipped),
+    total: String(summary.total),
+  });
+  redirect(`/fees/invoices?${params.toString()}`);
+}
+
+function invoiceReminderMessage(invoice: any, invoiceUrl: string) {
+  return [
+    `Hello ${invoice.student.name},`,
+    `This is a friendly reminder that invoice ${invoice.invoiceNumber} for ${invoice.title} is still pending.`,
+    `Total amount: ${formatINR(invoice.totalAmount)}.`,
+    `Due date: ${new Date(invoice.dueDate).toLocaleDateString("en-IN")}.`,
+    invoiceUrl ? `Download invoice: ${invoiceUrl}` : "Please log in to your student portal to view and pay the invoice.",
+    "If you have already paid, please ignore this message or share the payment reference with the academy.",
+  ].join("\n\n");
 }
 
 async function createManualInvoice(formData: FormData) {
@@ -156,6 +188,65 @@ async function sendInvoiceToStudent(formData: FormData) {
   redirect(`${returnPath}send=${status}`);
 }
 
+async function sendBulkInvoiceReminders(formData: FormData) {
+  "use server";
+  const session = await auth();
+  if ((session?.user as any)?.role !== "admin") throw new Error("Forbidden");
+  await dbConnect();
+  const mode = String(formData.get("invoiceReminderMode") || "due");
+  const now = new Date();
+  const filter: any = { status: { $in: ["unpaid", "overdue"] } };
+  if (mode === "due") filter.dueDate = { $lte: now };
+  const invoices: any[] = await Invoice.find(filter).populate("student plan").sort({ dueDate: 1 }).limit(500).lean();
+  const baseUrl = appBaseUrl();
+  const summary: ReminderSummary = { sent: 0, failed: 0, missing: 0, skipped: 0, total: invoices.length };
+
+  for (const invoice of invoices) {
+    if (!invoice?.student?._id || !invoice.student.email) {
+      summary.missing += 1;
+      await Invoice.findByIdAndUpdate(invoice._id, { lastEmailStatus: "missing_email", lastSentAt: new Date(), lastSentTo: "" });
+      continue;
+    }
+    const invoiceUrl = baseUrl ? `${baseUrl}/api/fees/invoices/${invoice._id}/pdf` : "";
+    const delivery = await sendAutomationEmail({
+      to: invoice.student.email,
+      subject: `Reminder: Invoice ${invoice.invoiceNumber} is pending`,
+      message: invoiceReminderMessage(invoice, invoiceUrl),
+      metadata: {
+        kind: "invoice_reminder",
+        invoiceId: invoice._id.toString(),
+        invoiceNumber: invoice.invoiceNumber,
+        studentId: invoice.student.username || invoice.student._id.toString(),
+        studentObjectId: invoice.student._id.toString(),
+        invoiceUrl,
+        reminderMode: mode,
+        previewText: "A fee invoice reminder from Envision Chess Academy.",
+      },
+    });
+    const status = deliveryStatus(delivery);
+    if (status === "sent") summary.sent += 1;
+    else if (status === "not_configured") summary.skipped += 1;
+    else summary.failed += 1;
+    await Invoice.findByIdAndUpdate(invoice._id, {
+      lastSentAt: new Date(),
+      lastSentTo: invoice.student.email,
+      lastEmailStatus: status,
+    });
+    if (status === "sent") {
+      await Notification.create({
+        user: invoice.student._id,
+        type: "invoice.reminder",
+        title: "Invoice payment reminder",
+        message: `${invoice.invoiceNumber} reminder has been emailed to ${invoice.student.email}.`,
+        metadata: { invoice: invoice._id.toString(), email: invoice.student.email },
+      });
+    }
+  }
+
+  revalidatePath("/fees/invoices");
+  bulkReminderRedirect(summary);
+}
+
 function queryValue(params: Record<string, string | string[] | undefined>, key: string) {
   const raw = params[key];
   return typeof raw === "string" ? raw : "";
@@ -183,6 +274,21 @@ function sendBanner(status: string) {
   if (status === "missing_email") return { tone: "border-amber-200 bg-amber-50 text-amber-800", icon: MailWarning, text: "Invoice was not emailed because the student does not have an email address." };
   if (status === "failed") return { tone: "border-rose-200 bg-rose-50 text-rose-800", icon: AlertCircle, text: "Invoice email failed. Please check the email automation webhook." };
   return null;
+}
+
+function bulkBanner(params: Record<string, string | string[] | undefined>) {
+  if (queryValue(params, "bulk") !== "invoice_reminders") return null;
+  const sent = queryValue(params, "sent") || "0";
+  const failed = queryValue(params, "failed") || "0";
+  const missing = queryValue(params, "missing") || "0";
+  const skipped = queryValue(params, "skipped") || "0";
+  const total = queryValue(params, "total") || "0";
+  const hasProblems = Number(failed) || Number(missing) || Number(skipped);
+  return {
+    tone: hasProblems ? "border-amber-200 bg-amber-50 text-amber-900" : "border-emerald-200 bg-emerald-50 text-emerald-800",
+    icon: hasProblems ? MailWarning : MailCheck,
+    text: `Invoice reminders processed: ${sent} sent, ${failed} failed, ${missing} missing email, ${skipped} not configured, ${total} total.`,
+  };
 }
 
 function invoiceTypeLabel(type: string) {
@@ -229,6 +335,7 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
   ]);
   const sendStatus = queryValue(params, "send");
   const banner = sendBanner(sendStatus);
+  const reminderBanner = bulkBanner(params);
   const paidCount = invoices.filter((invoice: any) => invoice.status === "paid").length;
   const unpaidCount = invoices.filter((invoice: any) => invoice.status === "unpaid" || invoice.status === "overdue").length;
   const totalValue = invoices.reduce((sum: number, invoice: any) => sum + Number(invoice.totalAmount || 0), 0);
@@ -259,8 +366,32 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
           {banner.text}
         </div>
       )}
+      {reminderBanner && (
+        <div className={`mb-4 flex items-center gap-3 rounded-lg border px-4 py-3 text-sm font-semibold ${reminderBanner.tone}`}>
+          <reminderBanner.icon size={18} />
+          {reminderBanner.text}
+        </div>
+      )}
 
       {role === "admin" && (
+        <>
+        <section className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4 shadow-sm">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <h2 className="text-lg font-black text-amber-950">Bulk Invoice Email Reminders</h2>
+              <p className="mt-1 text-sm leading-6 text-amber-800">Choose who should receive a fee reminder, then send emails through the active n8n workflow.</p>
+            </div>
+            <form action={sendBulkInvoiceReminders} className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <select name="invoiceReminderMode" defaultValue="due" className="h-11 rounded-lg border border-amber-300 bg-white px-3 text-sm font-semibold text-slate-800">
+                <option value="due">Due or overdue invoices</option>
+                <option value="pending">All pending invoices</option>
+              </select>
+              <button className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-brand px-4 text-sm font-bold text-white shadow-sm hover:bg-brand-700">
+                <Send size={16} /> Send Reminders
+              </button>
+            </form>
+          </div>
+        </section>
         <section className="mb-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
           <div className="mb-4 flex items-start justify-between gap-3">
             <div>
@@ -276,6 +407,7 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
             assignments={assignments.map((assignment: any) => ({ studentId: assignment.student?.toString(), planId: assignment.plan?.toString() }))}
           />
         </section>
+        </>
       )}
 
       <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">

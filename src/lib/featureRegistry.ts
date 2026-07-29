@@ -258,6 +258,17 @@ export const FEATURE_DEFINITIONS: FeatureDefinition[] = [
     defaultRolePermissions: { admin: all(view, create, edit, del, assign) },
   },
   {
+    key: "achievements",
+    label: "Achievement Management",
+    category: "Administration",
+    description: "Student achievement records, images, featured homepage placement, public visibility, and ordering.",
+    routes: ["/admin/achievements"],
+    apiPrefixes: ["/api/admin/achievements"],
+    permissions: [view, create, edit, del, manage],
+    defaultStatus: "enabled",
+    defaultRolePermissions: { admin: all(view, create, edit, del, manage) },
+  },
+  {
     key: "reports",
     label: "Reports and Progress",
     category: "Reports",

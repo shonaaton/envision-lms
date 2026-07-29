@@ -2,33 +2,24 @@
 
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, Pause, Play, Trophy } from "lucide-react";
+import { ArrowLeft, ArrowRight, MapPin, Pause, Play, Sparkles, Trophy } from "lucide-react";
+import type { AchievementRecord } from "@/lib/achievementData";
 
-export type AchievementSlide = {
-  student: string;
-  title: string;
-  result: string;
-  location: string;
-  year: string;
-  description: string;
-  category: string;
-  image: string;
-  alt: string;
-  placeholder?: boolean;
-};
-
-export default function AchievementShowcase({ slides }: { slides: AchievementSlide[] }) {
+export default function AchievementShowcase({ achievements }: { achievements: AchievementRecord[] }) {
+  const slides = achievements.slice(0, 10);
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
   const touchStart = useRef<number | null>(null);
   const active = slides[index] || slides[0];
-  const categories = useMemo(() => Array.from(new Set(slides.map((slide) => slide.category))), [slides]);
+  const categories = useMemo(() => Array.from(new Set(slides.map((slide) => slide.achievementLevel))), [slides]);
 
   useEffect(() => {
     if (paused || slides.length < 2) return;
-    const timer = window.setInterval(() => setIndex((current) => (current + 1) % slides.length), 6500);
+    const timer = window.setInterval(() => setIndex((current) => (current + 1) % slides.length), 5600);
     return () => window.clearInterval(timer);
   }, [paused, slides.length]);
+
+  if (!active) return null;
 
   function go(step: number) {
     setIndex((current) => (current + step + slides.length) % slides.length);
@@ -58,56 +49,54 @@ export default function AchievementShowcase({ slides }: { slides: AchievementSli
         touchStart.current = event.touches[0].clientX;
       }}
       onTouchEnd={onTouchEnd}
-      className="bg-[#16051d] py-14 text-white outline-none lg:py-20"
+      className="relative overflow-hidden bg-[#18051f] py-16 text-white outline-none lg:py-24"
       aria-roledescription="carousel"
       aria-label="Student achievement slideshow"
     >
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="mb-8 grid gap-5 lg:grid-cols-[0.95fr_1.05fr] lg:items-end">
+      <div className="absolute inset-0 opacity-[0.055] [background-image:linear-gradient(45deg,#fde75a_25%,transparent_25%),linear-gradient(-45deg,#fde75a_25%,transparent_25%),linear-gradient(45deg,transparent_75%,#fde75a_75%),linear-gradient(-45deg,transparent_75%,#fde75a_75%)] [background-position:0_0,0_18px,18px_-18px,-18px_0] [background-size:36px_36px]" />
+      <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="mb-10 grid gap-6 lg:grid-cols-[0.9fr_1.1fr] lg:items-end">
           <div>
-            <p className="text-xs font-black uppercase tracking-[0.16em] text-accent">Real students. Real tournaments. Real progress.</p>
+            <p className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-[0.16em] text-accent">
+              <Sparkles size={15} /> Real students. Real tournaments. Real progress.
+            </p>
             <h2 className="mt-3 text-3xl font-black leading-tight text-white sm:text-5xl">
               Achievement stories stay at the centre.
             </h2>
           </div>
-          <p className="max-w-2xl text-sm leading-6 text-white/70 sm:text-base">
-            Add Cloudinary achievement images and verified result details here. Any missing student, tournament, location, year, or title is intentionally shown as an editable placeholder.
+          <p className="max-w-2xl text-sm leading-6 text-white/72 sm:text-base">
+            Verified student results are presented with the achievement photographs, tournament details, result, location, year, and level.
           </p>
         </div>
 
-        <div className="grid overflow-hidden rounded-lg border border-white/12 bg-white/[0.06] shadow-2xl shadow-black/25 lg:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
-          <div className="relative min-h-[330px] bg-black sm:min-h-[500px]">
+        <div className="grid overflow-hidden rounded-lg border border-white/12 bg-white/[0.07] shadow-2xl shadow-black/30 lg:grid-cols-[minmax(0,1.12fr)_minmax(360px,0.88fr)]">
+          <div className="group relative min-h-[340px] bg-black sm:min-h-[540px]">
             <Image
-              key={active.image}
-              src={active.image}
-              alt={active.alt}
+              key={active.achievementImageUrl}
+              src={active.achievementImageUrl}
+              alt={`${active.studentName} ${active.result}`}
               fill
               priority={index === 0}
               sizes="(min-width: 1024px) 58vw, 100vw"
-              className="object-cover object-top transition duration-500"
+              className="object-cover object-center transition duration-700 group-hover:scale-[1.035]"
             />
-            <div className="absolute inset-x-0 bottom-0 bg-[linear-gradient(180deg,transparent,rgba(0,0,0,0.76))] p-4 sm:p-6">
+            <div className="absolute inset-x-0 bottom-0 bg-[linear-gradient(180deg,transparent,rgba(0,0,0,0.78))] p-5 sm:p-7">
               <div className="inline-flex items-center gap-2 rounded-full bg-accent px-3 py-1 text-xs font-black uppercase text-brand-900">
-                <Trophy size={14} /> {active.category}
+                <Trophy size={14} /> {active.achievementLevel}
               </div>
-              {active.placeholder && (
-                <div className="mt-3 inline-flex rounded-full border border-white/20 bg-white/12 px-3 py-1 text-xs font-bold text-white">
-                  Editable placeholder until Cloudinary asset details are added
-                </div>
-              )}
             </div>
           </div>
 
           <div className="flex flex-col justify-between p-5 sm:p-7 lg:p-8">
             <div>
               <div className="text-xs font-black uppercase tracking-[0.16em] text-accent">{active.result}</div>
-              <h3 className="mt-3 text-3xl font-black leading-tight text-white">{active.student}</h3>
-              <p className="mt-2 text-lg font-semibold text-white/90">{active.title}</p>
-              <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                <Info label="Location" value={active.location} />
+              <h3 className="mt-3 text-3xl font-black leading-tight text-white">{active.studentName}</h3>
+              <p className="mt-3 text-lg font-semibold text-white/90">{active.tournamentName}</p>
+              <div className="mt-5 grid gap-2 sm:grid-cols-2">
+                <Info label="Location" value={active.tournamentLocation} />
                 <Info label="Year" value={active.year} />
               </div>
-              <p className="mt-5 text-sm leading-7 text-white/70">{active.description}</p>
+              <p className="mt-5 text-sm leading-7 text-white/72">{active.shortDescription}</p>
             </div>
 
             <div className="mt-8 space-y-5">
@@ -133,7 +122,7 @@ export default function AchievementShowcase({ slides }: { slides: AchievementSli
                 <div className="flex items-center gap-1.5" aria-label="Achievement slide position">
                   {slides.map((slide, slideIndex) => (
                     <button
-                      key={`${slide.student}-${slideIndex}`}
+                      key={`${slide.studentName}-${slideIndex}`}
                       type="button"
                       onClick={() => setIndex(slideIndex)}
                       className={`h-2.5 rounded-full transition ${slideIndex === index ? "w-8 bg-accent" : "w-2.5 bg-white/30 hover:bg-white/55"}`}
@@ -148,6 +137,25 @@ export default function AchievementShowcase({ slides }: { slides: AchievementSli
               </div>
             </div>
           </div>
+        </div>
+
+        <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {slides.slice(0, 4).map((item, itemIndex) => (
+            <button
+              key={`${item.studentName}-${itemIndex}-thumb`}
+              type="button"
+              onClick={() => setIndex(itemIndex)}
+              className="group grid grid-cols-[76px_minmax(0,1fr)] gap-3 rounded-lg border border-white/10 bg-white/[0.07] p-2 text-left transition hover:-translate-y-1 hover:bg-white/[0.11]"
+            >
+              <span className="relative aspect-square overflow-hidden rounded-md bg-black">
+                <Image src={item.achievementImageUrl} alt="" fill sizes="76px" className="object-cover transition duration-500 group-hover:scale-110" />
+              </span>
+              <span className="self-center">
+                <span className="block truncate text-sm font-black text-white">{item.studentName}</span>
+                <span className="mt-1 flex items-center gap-1 text-xs text-white/62"><MapPin size={12} /> {item.tournamentLocation}</span>
+              </span>
+            </button>
+          ))}
         </div>
       </div>
     </section>

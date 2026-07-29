@@ -171,3 +171,43 @@ main td {
     padding-right: 0.75rem;
   }
 }
+
+@keyframes motion-rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes motion-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+.motion-rise {
+  animation: motion-rise 720ms ease-out both;
+}
+
+.motion-float {
+  animation: motion-float 8s ease-in-out infinite;
+}
+
+.counter-card {
+  transform-origin: center bottom;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .motion-rise,
+  .motion-float {
+    animation: none !important;
+  }
+}

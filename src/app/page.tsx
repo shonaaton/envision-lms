@@ -12,145 +12,82 @@ import {
   CreditCard,
   Gamepad2,
   Globe2,
-  GraduationCap,
   MapPin,
-  MessageSquare,
   Menu,
+  MessageSquare,
   MonitorSmartphone,
+  Quote,
   Receipt,
   ShieldCheck,
   Sparkles,
   Target,
   Trophy,
-  UsersRound,
   WalletCards,
 } from "lucide-react";
 import Logo from "@/components/layout/Logo";
-import AchievementShowcase, { type AchievementSlide } from "@/components/marketing/AchievementShowcase";
+import AchievementShowcase from "@/components/marketing/AchievementShowcase";
+import TestimonialCarousel from "@/components/marketing/TestimonialCarousel";
 import { ACADEMY_DEFAULTS } from "@/lib/branding";
+import { academyBranches, anishStory, impactCounters, publicAchievementList, studentSlug, verifiedReviews } from "@/lib/achievementData";
+import { getLandingAchievements } from "@/lib/achievements";
+
+export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://www.envisionchessacademy.com"),
-  title: "Envision Chess Academy | Structured Chess Coaching and Student LMS",
+  title: "Envision Chess Academy | Premium Chess Coaching and Student LMS",
   description:
-    "Premium online and offline chess coaching with student achievements, live classes, homework, tournaments, practice tools, progress tracking, and payments in one platform.",
+    "Premium online and offline chess coaching with verified student achievements, structured mentorship, tournaments, practice tools, progress tracking, and payments in one student portal.",
   alternates: { canonical: "https://www.envisionchessacademy.com/" },
   openGraph: {
     title: "Envision Chess Academy",
-    description: "Structured chess coaching, proven student journeys, and an all-in-one learning portal.",
+    description: "Structured chess coaching, verified student achievements, and an all-in-one learning portal.",
     url: "https://www.envisionchessacademy.com/",
     siteName: "Envision Chess Academy",
     type: "website",
-    images: [{ url: "/images/landing/anish-bijibilla.jpg", width: 1200, height: 900, alt: "Envision Chess Academy student achievement" }],
+    images: [{ url: "/images/achievements/682626726_122217430778279433_7786835792267057544_n.jpg", width: 1200, height: 900, alt: "Envision Chess Academy student achievement" }],
   },
   twitter: {
     card: "summary_large_image",
     title: "Envision Chess Academy",
     description: "Practise, compete, and improve in one chess-learning platform.",
-    images: ["/images/landing/anish-bijibilla.jpg"],
+    images: ["/images/achievements/682626726_122217430778279433_7786835792267057544_n.jpg"],
   },
 };
 
 const demoHref = "/register";
 const cloudinaryCollectionUrl = "https://collection.cloudinary.com/dlafr6yu3/3ddc9e2d8d7656087c4a52336a2e1df4";
-
-const achievementSlides: AchievementSlide[] = [
-  {
-    student: "Anish Bijibilla",
-    title: "World Cadets Chess Championship qualification",
-    result: "World Cadets Qualifier",
-    location: "Batumi, Georgia",
-    year: "[Verified Year]",
-    description:
-      "Anish's journey is the verified student spotlight currently available in the LMS assets. Add final rating, event year, and parent quote after academy review.",
-    category: "International",
-    image: "/images/landing/anish-bijibilla.jpg",
-    alt: "Anish Bijibilla achievement photograph for Envision Chess Academy",
-  },
-  {
-    student: "[Student Name]",
-    title: "[Tournament or championship name]",
-    result: "[Position, medal, title, or rating result]",
-    location: "[Event location]",
-    year: "[Year]",
-    description: "Replace this placeholder with verified details from the Cloudinary achievement collection before publishing.",
-    category: "National",
-    image: "/images/landing/anish-bijibilla.jpg",
-    alt: "Editable achievement placeholder using existing Envision Chess Academy student image",
-    placeholder: true,
-  },
-  {
-    student: "[Student Name]",
-    title: "[State, district, or rating achievement]",
-    result: "[Verified result]",
-    location: "[Event location]",
-    year: "[Year]",
-    description: "Use this slot for another Cloudinary achievement photograph and verified result copy.",
-    category: "Rating Achievements",
-    image: "/images/landing/anish-bijibilla.jpg",
-    alt: "Editable Cloudinary achievement placeholder",
-    placeholder: true,
-  },
-];
-
-const achievementSummary = [
-  { label: "International achievements", value: "[Verified count]" },
-  { label: "National or state champions", value: "[Verified count]" },
-  { label: "Rated players developed", value: "[Verified count]" },
-  { label: "Tournament winners", value: "[Verified count]" },
-];
+const offlineSourceUrl = "https://www.envisionchessacademy.com/chess-academy-in-kolkata";
 
 const navItems = [
   ["Home", "#home"],
   ["Achievements", "#achievements"],
-  ["Platform", "#platform"],
+  ["Anish", "#anish"],
+  ["Portal", "#platform"],
   ["Programs", "#programs"],
-  ["Anish's Journey", "#anish"],
   ["Reviews", "#reviews"],
   ["Centres", "#centres"],
 ];
 
 const portalTabs = [
-  {
-    title: "Dashboard",
-    icon: MonitorSmartphone,
-    points: ["Upcoming classes", "Homework status", "Attendance", "Credit balance", "Notifications"],
-  },
-  {
-    title: "Live Classes",
-    icon: CalendarDays,
-    points: ["Assigned classrooms", "Scheduled join button", "Live chessboard", "Chat and questions", "Shared notes"],
-  },
-  {
-    title: "Homework",
-    icon: ClipboardList,
-    points: ["Pending work", "Late work", "Move submission", "Score after submission", "Coach feedback"],
-  },
-  {
-    title: "Competition",
-    icon: Trophy,
-    points: ["Tournament lobby", "Pairings", "Live games", "Results", "Leaderboards"],
-  },
-  {
-    title: "Payments",
-    icon: WalletCards,
-    points: ["Credit balance", "Usage history", "Monthly dues", "Invoice PDF", "Razorpay payments"],
-  },
+  { title: "Dashboard", icon: MonitorSmartphone, points: ["Upcoming classes", "Homework status", "Attendance", "Credit balance", "Notifications"] },
+  { title: "Live Classes", icon: CalendarDays, points: ["Assigned classrooms", "Scheduled join button", "Live chessboard", "Chat and questions", "Shared notes"] },
+  { title: "Homework", icon: ClipboardList, points: ["Pending work", "Late work", "Move submission", "Score after submission", "Coach feedback"] },
+  { title: "Competition", icon: Trophy, points: ["Tournament lobby", "Pairings", "Live games", "Results", "Leaderboards"] },
+  { title: "Payments", icon: WalletCards, points: ["Credit balance", "Usage history", "Monthly dues", "Invoice PDF", "Razorpay payments"] },
 ];
 
 const practiceTools = [
-  { title: "Tactics Trainer", detail: "Solve focused puzzles and build calculation habits.", icon: Target },
-  { title: "King Hunt", detail: "Practise direct attacking patterns and checkmate vision.", icon: Crown },
-  { title: "Square Trainer", detail: "Sharpen board coordinates and chessboard fluency.", icon: Sparkles },
-  { title: "Play vs Computer", detail: "Train against a guided engine opponent.", icon: Gamepad2 },
+  { title: "Tactics Trainer", detail: "Focused puzzle solving for calculation habits and tactical alertness.", icon: Target },
+  { title: "King Hunt", detail: "Direct attacking patterns, forcing moves, and checkmate vision.", icon: Crown },
+  { title: "Square Trainer", detail: "Board coordinates and chessboard fluency for younger learners.", icon: Sparkles },
+  { title: "Play vs Computer", detail: "Guided practice games against a friendly engine opponent.", icon: Gamepad2 },
 ];
 
-const learningSteps = [
-  "Book a free assessment",
-  "Get placed in the correct level",
-  "Attend structured live classes",
-  "Practise through assignments and tournaments",
-  "Track progress through feedback and reports",
+const programs = [
+  { title: "Group Classes", detail: "Level-based batches for structured progress and healthy competition.", mode: "Beginner to advanced" },
+  { title: "Individual Coaching", detail: "Personal mentoring for students who need deeper attention and tournament planning.", mode: "Custom plan" },
+  { title: "Rated-Player Training", detail: "Opening preparation, game analysis, calculation routines, and event readiness.", mode: "Advanced track" },
 ];
 
 const advantages = [
@@ -164,28 +101,19 @@ const advantages = [
   "Dedicated mentorship",
 ];
 
-const programs = [
-  { title: "Group Classes", detail: "Level-based batches for steady learning and healthy competition.", mode: "Beginner to advanced" },
-  { title: "Individual Coaching", detail: "Focused mentoring for students who need deeper attention.", mode: "Custom plan" },
-  { title: "Rated-Player Training", detail: "Tournament preparation, analysis habits, and competitive planning.", mode: "Advanced track" },
+const learningSteps = [
+  "Book a free assessment",
+  "Get placed in the correct level",
+  "Attend structured live classes",
+  "Practise through assignments and tournaments",
+  "Track progress through feedback and reports",
 ];
 
-const centres = ["Bowbazar", "Haridevpur", "Silpara, Behala", "Jodhpur Park", "New Alipore"];
+export default async function Home() {
+  const achievements = publicAchievementList(await getLandingAchievements());
+  const featured = achievements.filter((item) => item.isFeatured).slice(0, 12);
+  const heroCards = featured.slice(0, 5);
 
-const reviews = [
-  {
-    name: "[Parent Name]",
-    role: "[Student level or relationship]",
-    text: "[Add verified parent review here. Do not publish fabricated testimonials.]",
-  },
-  {
-    name: "[Student Name]",
-    role: "[Program or batch]",
-    text: "[Add verified student review here after consent.]",
-  },
-];
-
-export default function Home() {
   const schema = {
     "@context": "https://schema.org",
     "@type": "EducationalOrganization",
@@ -193,9 +121,9 @@ export default function Home() {
     url: "https://www.envisionchessacademy.com/",
     description:
       "Chess academy offering structured online and offline coaching, student learning tools, tournament preparation, and progress tracking.",
-    address: centres.map((centre) => ({
+    address: academyBranches.map((centre) => ({
       "@type": "PostalAddress",
-      streetAddress: centre,
+      streetAddress: centre.address,
       addressLocality: "Kolkata",
       addressRegion: "West Bengal",
       addressCountry: "IN",
@@ -204,34 +132,16 @@ export default function Home() {
     telephone: ACADEMY_DEFAULTS.phone,
   };
 
-  const faqSchema = {
-    "@context": "https://schema.org",
-    "@type": "FAQPage",
-    mainEntity: [
-      {
-        "@type": "Question",
-        name: "Can I book a free demo class?",
-        acceptedAnswer: { "@type": "Answer", text: "Yes. Families can create a demo student account and request a trial class through the LMS booking flow." },
-      },
-      {
-        "@type": "Question",
-        name: "Does the LMS support online and offline learning?",
-        acceptedAnswer: { "@type": "Answer", text: "Yes. The platform supports scheduled classes, homework, attendance, calendar, communication, tournaments, practice tools, and student billing." },
-      },
-    ],
-  };
-
   return (
-    <main id="home" className="min-h-screen bg-[#f8fafc] text-slate-950">
+    <main id="home" className="min-h-screen bg-[#f7f8fb] text-slate-950">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }} />
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }} />
 
-      <header className="sticky top-0 z-50 border-b border-white/10 bg-[#180620]/96 text-white backdrop-blur-xl">
+      <header className="sticky top-0 z-50 border-b border-white/10 bg-[#17051f]/95 text-white backdrop-blur-xl">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
           <Link href="#home" aria-label="Envision Chess Academy home">
             <Logo tone="yellow" className="max-w-[178px] sm:max-w-[230px]" />
           </Link>
-          <nav className="hidden items-center gap-5 lg:flex" aria-label="Main navigation">
+          <nav className="hidden items-center gap-5 xl:flex" aria-label="Main navigation">
             {navItems.map(([label, href]) => (
               <Link key={href} href={href} className="text-sm font-semibold text-white/72 hover:text-accent">
                 {label}
@@ -242,15 +152,12 @@ export default function Home() {
             <Link href="/login" className="btn border border-white/15 bg-white/10 text-white hover:bg-white/15">
               Login
             </Link>
-            <Link href="/register" className="btn border border-white/15 bg-white/10 text-white hover:bg-white/15">
-              Register
-            </Link>
             <Link href={demoHref} className="btn-accent">
-              Book a Free Demo
+              Book Free Demo Class
             </Link>
           </div>
-          <details className="relative lg:hidden">
-            <summary className="grid h-11 w-11 cursor-pointer list-none place-items-center rounded-lg border border-white/15 bg-white/10 text-sm font-black text-accent">
+          <details className="relative xl:hidden">
+            <summary className="grid h-11 w-11 cursor-pointer list-none place-items-center rounded-lg border border-white/15 bg-white/10 text-accent">
               <Menu size={20} />
             </summary>
             <div className="absolute right-0 mt-3 w-[min(88vw,340px)] rounded-lg border border-white/12 bg-[#21082c] p-3 shadow-2xl shadow-black/35">
@@ -261,33 +168,36 @@ export default function Home() {
               ))}
               <div className="mt-3 grid gap-2 border-t border-white/10 pt-3">
                 <Link href="/login" className="btn border border-white/15 bg-white/10 text-white">Login</Link>
-                <Link href="/register" className="btn-accent">Book a Free Demo</Link>
+                <Link href={demoHref} className="btn-accent">Book Free Demo Class</Link>
               </div>
             </div>
           </details>
         </div>
       </header>
 
-      <section className="relative overflow-hidden bg-[#180620] text-white">
-        <div className="absolute inset-0 bg-[linear-gradient(125deg,#180620_0%,#401052_52%,#0d1117_100%)]" />
-        <div className="absolute inset-0 opacity-[0.06] [background-image:linear-gradient(45deg,#fde75a_25%,transparent_25%),linear-gradient(-45deg,#fde75a_25%,transparent_25%),linear-gradient(45deg,transparent_75%,#fde75a_75%),linear-gradient(-45deg,transparent_75%,#fde75a_75%)] [background-position:0_0,0_18px,18px_-18px,-18px_0] [background-size:36px_36px]" />
-        <div className="relative mx-auto grid max-w-7xl gap-8 px-4 py-12 sm:px-6 lg:min-h-[calc(100dvh-74px)] lg:grid-cols-[0.95fr_1.05fr] lg:items-center lg:px-8 lg:py-16">
-          <div>
+      <section className="relative overflow-hidden bg-[#17051f] text-white">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_18%,rgba(253,231,90,0.17),transparent_30%),linear-gradient(125deg,#17051f_0%,#45105a_52%,#0c1017_100%)]" />
+        <div className="absolute inset-0 opacity-[0.055] [background-image:linear-gradient(45deg,#fde75a_25%,transparent_25%),linear-gradient(-45deg,#fde75a_25%,transparent_25%),linear-gradient(45deg,transparent_75%,#fde75a_75%),linear-gradient(-45deg,transparent_75%,#fde75a_75%)] [background-position:0_0,0_20px,20px_-20px,-20px_0] [background-size:40px_40px]" />
+        <div className="relative mx-auto grid max-w-7xl gap-10 px-4 py-12 sm:px-6 lg:min-h-[calc(100dvh-74px)] lg:grid-cols-[0.86fr_1.14fr] lg:items-center lg:px-8 lg:py-16">
+          <div className="motion-rise">
             <p className="inline-flex items-center gap-2 rounded-full border border-accent/35 bg-accent/10 px-3 py-1.5 text-xs font-black uppercase tracking-[0.14em] text-accent">
-              Empower Your Chess Vision
+              <ShieldCheck size={15} /> Empower Your Chess Vision
             </p>
             <h1 className="mt-5 text-4xl font-black leading-[1.04] text-white sm:text-6xl">
               Structured Chess Coaching. Proven Champions. One Powerful Platform.
             </h1>
-            <p className="mt-5 max-w-2xl text-base leading-7 text-white/76 sm:text-lg">
+            <p className="mt-5 max-w-2xl text-base leading-7 text-white/78 sm:text-lg">
               Envision Chess Academy combines certified coaching, tournament preparation, regular feedback, structured learning, and an all-in-one student portal for measurable chess improvement.
             </p>
             <div className="mt-7 flex flex-col gap-3 sm:flex-row">
               <Link href={demoHref} className="btn-accent min-h-12 px-5">
-                Book a Free Demo Class <ArrowRight size={18} />
+                Book Free Demo Class <ArrowRight size={18} />
               </Link>
-              <Link href="#achievements" className="btn min-h-12 border border-white/18 bg-white/10 px-5 text-white hover:bg-white/15">
-                Explore Student Achievements
+              <Link href="#platform" className="btn min-h-12 border border-white/18 bg-white/10 px-5 text-white hover:bg-white/15">
+                Explore Learning Portal
+              </Link>
+              <Link href="/success-stories" className="btn min-h-12 border border-white/18 bg-white/10 px-5 text-white hover:bg-white/15">
+                Student Success Stories
               </Link>
             </div>
             <div className="mt-7 flex flex-wrap gap-3 text-sm font-semibold text-white/78">
@@ -300,78 +210,101 @@ export default function Home() {
           </div>
 
           <div className="grid gap-4 lg:grid-cols-[0.85fr_1.15fr] lg:items-end">
-            <div className="overflow-hidden rounded-lg border border-accent/25 bg-white/[0.08] shadow-2xl shadow-black/30">
-              <div className="relative aspect-[0.82]">
-                <Image src="/images/landing/anish-bijibilla.jpg" alt="Anish Bijibilla student achievement photograph" fill priority sizes="(min-width: 1024px) 28vw, 100vw" className="object-cover object-top" />
-              </div>
-              <div className="p-4">
-                <div className="text-xs font-black uppercase tracking-[0.14em] text-accent">Student Spotlight</div>
-                <div className="mt-1 font-black">Anish Bijibilla</div>
-                <p className="mt-1 text-sm leading-5 text-white/68">World Cadets journey details ready for academy verification.</p>
-              </div>
-            </div>
+            <HeroSpotlight achievements={heroCards} />
             <PortalMockup />
           </div>
         </div>
       </section>
 
-      <section className="relative z-10 mx-auto -mt-6 grid max-w-7xl gap-3 px-4 sm:grid-cols-2 sm:px-6 lg:grid-cols-4 lg:px-8">
-        {achievementSummary.map((item) => (
-          <article key={item.label} className="rounded-lg border border-slate-200 bg-white p-5 shadow-xl shadow-brand-900/8">
-            <div className="text-2xl font-black text-brand">{item.value}</div>
-            <div className="mt-2 text-sm font-semibold text-slate-600">{item.label}</div>
+      <section className="relative z-10 mx-auto -mt-8 grid max-w-7xl gap-3 px-4 sm:grid-cols-2 sm:px-6 lg:grid-cols-5 lg:px-8">
+        {impactCounters.map((item, index) => (
+          <article key={item.label} className="counter-card motion-rise rounded-lg border border-slate-200 bg-white p-5 shadow-xl shadow-brand-900/10" style={{ animationDelay: `${index * 80}ms` }}>
+            <div className="text-3xl font-black text-brand">{item.value}</div>
+            <div className="mt-2 text-sm font-semibold leading-5 text-slate-600">{item.label}</div>
           </article>
         ))}
       </section>
 
-      <AchievementShowcase slides={achievementSlides} />
+      <AchievementShowcase achievements={featured.length ? featured : achievements} />
 
-      <section id="anish" className="bg-[#fffdf0] py-14 lg:py-20">
-        <div className="mx-auto grid max-w-7xl gap-8 px-4 sm:px-6 lg:grid-cols-[0.9fr_1.1fr] lg:px-8">
-          <div className="overflow-hidden rounded-lg border border-brand/10 bg-white shadow-2xl shadow-brand-900/10">
+      <section id="anish" className="bg-[#fffdf0] py-16 lg:py-24">
+        <div className="mx-auto grid max-w-7xl gap-8 px-4 sm:px-6 lg:grid-cols-[0.85fr_1.15fr] lg:px-8">
+          <div className="group overflow-hidden rounded-lg border border-brand/10 bg-white shadow-2xl shadow-brand-900/12">
             <div className="relative aspect-[0.92]">
-              <Image src="/images/landing/anish-bijibilla.jpg" alt="Anish Bijibilla Envision Chess Academy journey" fill sizes="(min-width: 1024px) 38vw, 100vw" className="object-cover object-top" />
+              <Image src="/images/achievements/682626726_122217430778279433_7786835792267057544_n.jpg" alt="Anish qualified for the World Cadets Chess Championship" fill sizes="(min-width: 1024px) 38vw, 100vw" className="object-cover object-center transition duration-700 group-hover:scale-[1.035]" />
             </div>
           </div>
           <div className="self-center">
             <p className="text-xs font-black uppercase tracking-[0.16em] text-brand">Dedicated Student Spotlight</p>
             <h2 className="mt-3 text-3xl font-black leading-tight text-slate-950 sm:text-5xl">Meet Anish: A Journey Built Move by Move</h2>
             <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600">
-              This section is designed for a verified, emotional student story. The image is preserved as-is; missing details remain editable until confirmed.
+              {anishStory.achievement}
             </p>
-            <div className="mt-6 grid gap-3">
-              {[
-                ["Starting level", "[Anish's Starting Level]"],
-                ["Coaching duration", "[Coaching Duration]"],
-                ["Current level or rating", "[Current Level or Rating]"],
-                ["Major achievement", "[Major Achievement]"],
-                ["Parent feedback", "[Parent Testimonial]"],
-              ].map(([label, value], itemIndex) => (
-                <div key={label} className="grid grid-cols-[44px_minmax(0,1fr)] gap-3 rounded-lg border border-brand/10 bg-white p-4">
-                  <div className="grid h-11 w-11 place-items-center rounded-lg bg-brand text-sm font-black text-white">{itemIndex + 1}</div>
-                  <div>
-                    <div className="text-xs font-black uppercase tracking-[0.14em] text-brand/65">{label}</div>
-                    <div className="mt-1 font-bold text-slate-950">{value}</div>
-                  </div>
-                </div>
-              ))}
+            <div className="mt-6 grid gap-3 sm:grid-cols-3">
+              <JourneyStat label="Starting Level" value={anishStory.startingLevel} />
+              <JourneyStat label="Current Level" value={anishStory.currentLevel} />
+              <JourneyStat label="Coaching Duration" value={anishStory.coachingDuration} />
+            </div>
+            <div className="mt-5 rounded-lg border border-brand/10 bg-white p-5 shadow-xl shadow-brand-900/8">
+              <Quote className="text-brand" size={24} />
+              <p className="mt-3 text-base leading-8 text-slate-700">{anishStory.fatherTestimonial}</p>
+              <div className="mt-4 font-black text-slate-950">Anish&apos;s Father</div>
             </div>
             <Link href={demoHref} className="btn-primary mt-6 min-h-12 px-5">
-              Book a Free Demo <ArrowRight size={18} />
+              Start Your Chess Journey <ArrowRight size={18} />
             </Link>
           </div>
         </div>
       </section>
 
-      <section id="platform" className="bg-white py-14 lg:py-20">
+      <section className="bg-white py-16 lg:py-24">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="mb-8 flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-brand">Achievement Gallery</p>
+              <h2 className="mt-3 text-3xl font-black text-slate-950 sm:text-4xl">A visible record of tournament progress.</h2>
+            </div>
+            <Link href={cloudinaryCollectionUrl} target="_blank" rel="noreferrer" className="btn-outline">
+              Cloudinary Collection <ArrowRight size={16} />
+            </Link>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {achievements.slice(0, 8).map((item, index) => (
+              <article key={`${item.studentName}-${item.displayOrder}`} className="group overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm shadow-brand-900/5 transition duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-brand-900/12">
+                <div className="relative aspect-[1.08] overflow-hidden bg-slate-100">
+                  <Image src={item.achievementImageUrl} alt={`${item.studentName} achievement`} fill sizes="(min-width: 1024px) 25vw, 50vw" className="object-cover transition duration-700 group-hover:scale-110" />
+                  <div className="absolute left-3 top-3 rounded-full bg-accent px-2.5 py-1 text-xs font-black text-brand">#{index + 1}</div>
+                  {item.studentPhotoUrl && (
+                    <div className="absolute bottom-3 right-3 h-12 w-12 overflow-hidden rounded-lg border-2 border-white bg-white">
+                      <Image src={item.studentPhotoUrl} alt={`${item.studentName} profile`} fill sizes="48px" className="object-cover" />
+                    </div>
+                  )}
+                </div>
+                <div className="p-4">
+                  <div className="text-xs font-black uppercase tracking-[0.12em] text-brand">{item.achievementLevel}</div>
+                  <h3 className="mt-2 line-clamp-1 font-black text-slate-950">{item.studentName}</h3>
+                  <p className="mt-1 line-clamp-1 text-xs font-semibold text-slate-500">{item.tournamentName}</p>
+                  <p className="mt-1 line-clamp-2 text-sm font-semibold leading-5 text-slate-700">{item.result}</p>
+                  <p className="mt-3 flex items-center gap-1 text-xs text-slate-500"><MapPin size={13} /> {item.tournamentLocation}</p>
+                  <Link href={`/success-stories/${studentSlug(item.studentName)}`} className="mt-4 inline-flex items-center gap-1 text-sm font-black text-brand">
+                    Student Profile <ArrowRight size={15} />
+                  </Link>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section id="platform" className="bg-[#eef6f1] py-16 lg:py-24">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="mb-8 grid gap-5 lg:grid-cols-[0.9fr_1.1fr] lg:items-end">
             <div>
-              <p className="text-xs font-black uppercase tracking-[0.16em] text-brand">Student Learning Portal</p>
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-emerald-700">Student Learning Portal</p>
               <h2 className="mt-3 text-3xl font-black leading-tight text-slate-950 sm:text-5xl">Everything a Chess Student Needs Inside One Platform</h2>
             </div>
             <p className="text-sm leading-6 text-slate-600 sm:text-base">
-              The promotional mockups below use fictional sample data and mirror the LMS features already built for students.
+              Live classes, homework, attendance, tournaments, practice tools, coach messaging, billing, and notifications work together in one learning system.
             </p>
           </div>
           <div className="grid gap-5 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
@@ -380,9 +313,9 @@ export default function Home() {
               {portalTabs.map((item) => {
                 const Icon = item.icon;
                 return (
-                  <article key={item.title} className="rounded-lg border border-slate-200 bg-[#f8fafc] p-4">
+                  <article key={item.title} className="rounded-lg border border-emerald-900/10 bg-white p-4 shadow-sm shadow-emerald-900/5">
                     <div className="flex items-start gap-3">
-                      <span className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-brand/10 text-brand">
+                      <span className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-emerald-50 text-emerald-700">
                         <Icon size={20} />
                       </span>
                       <div>
@@ -402,20 +335,20 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="bg-[#f2f7f3] py-14 lg:py-20">
+      <section className="bg-white py-16 lg:py-24">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="mb-8 flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
             <div>
               <p className="text-xs font-black uppercase tracking-[0.16em] text-emerald-700">Practice Tools</p>
               <h2 className="mt-3 text-3xl font-black text-slate-950 sm:text-4xl">Practise between classes with focused chess tools.</h2>
             </div>
-            <Link href="/register" className="btn-outline">Create Student Account</Link>
+            <Link href={demoHref} className="btn-outline">Explore Learning Portal</Link>
           </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {practiceTools.map((tool) => {
               const Icon = tool.icon;
               return (
-                <article key={tool.title} className="rounded-lg border border-emerald-900/10 bg-white p-5 shadow-sm shadow-emerald-900/5">
+                <article key={tool.title} className="rounded-lg border border-slate-200 bg-[#f8fafc] p-5 transition duration-300 hover:-translate-y-1 hover:border-emerald-700/25 hover:shadow-xl hover:shadow-emerald-900/10">
                   <span className="grid h-12 w-12 place-items-center rounded-lg bg-emerald-50 text-emerald-700">
                     <Icon size={21} />
                   </span>
@@ -428,107 +361,110 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="py-14 lg:py-20">
-        <div className="mx-auto grid max-w-7xl gap-8 px-4 sm:px-6 lg:grid-cols-[0.9fr_1.1fr] lg:px-8">
+      <section className="bg-[#17051f] py-16 text-white lg:py-24">
+        <div className="mx-auto grid max-w-7xl gap-10 px-4 sm:px-6 lg:grid-cols-[0.8fr_1.2fr] lg:px-8">
           <div>
-            <p className="text-xs font-black uppercase tracking-[0.16em] text-brand">How it works</p>
-            <h2 className="mt-3 text-3xl font-black text-slate-950 sm:text-4xl">A clear learning path parents can follow.</h2>
+            <p className="text-xs font-black uppercase tracking-[0.16em] text-accent">How it works</p>
+            <h2 className="mt-3 text-3xl font-black sm:text-4xl">A clear learning path parents can follow.</h2>
           </div>
           <div className="grid gap-3">
             {learningSteps.map((step, index) => (
-              <div key={step} className="grid grid-cols-[44px_minmax(0,1fr)] gap-3 rounded-lg border border-slate-200 bg-white p-4">
+              <div key={step} className="group grid grid-cols-[46px_minmax(0,1fr)] gap-3 rounded-lg border border-white/12 bg-white/[0.07] p-4 transition hover:-translate-y-1 hover:bg-white/[0.1]">
                 <div className="grid h-11 w-11 place-items-center rounded-lg bg-accent text-sm font-black text-brand-900">{index + 1}</div>
-                <div className="self-center font-bold text-slate-950">{step}</div>
+                <div className="self-center font-bold text-white">{step}</div>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      <section className="bg-[#17051f] py-14 text-white lg:py-20">
+      <section id="programs" className="bg-[#fffdf0] py-16 lg:py-24">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="mb-8">
-            <p className="text-xs font-black uppercase tracking-[0.16em] text-accent">Coaching Advantages</p>
-            <h2 className="mt-3 text-3xl font-black sm:text-4xl">Structured coaching with visible support.</h2>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {advantages.map((advantage) => (
-              <div key={advantage} className="rounded-lg border border-white/12 bg-white/[0.07] p-4 text-sm font-bold text-white/82">
-                <CheckCircle2 size={17} className="mb-3 text-accent" />
-                {advantage}
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section id="programs" className="bg-white py-14 lg:py-20">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="mb-8 flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
+          <div className="mb-8 grid gap-6 lg:grid-cols-[0.9fr_1.1fr] lg:items-end">
             <div>
-              <p className="text-xs font-black uppercase tracking-[0.16em] text-brand">Programs and Learning Formats</p>
-              <h2 className="mt-3 text-3xl font-black text-slate-950 sm:text-4xl">Choose the right format after assessment.</h2>
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-brand">Coaching Advantages</p>
+              <h2 className="mt-3 text-3xl font-black text-slate-950 sm:text-4xl">Structured coaching with visible support.</h2>
             </div>
-            <Link href={demoHref} className="btn-primary">View Programs and Fees</Link>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {advantages.map((advantage) => (
+                <div key={advantage} className="rounded-lg border border-brand/10 bg-white px-4 py-3 text-sm font-bold text-slate-700 shadow-sm">
+                  <CheckCircle2 size={17} className="mb-2 text-brand" />
+                  {advantage}
+                </div>
+              ))}
+            </div>
           </div>
           <div className="grid gap-4 lg:grid-cols-3">
             {programs.map((program) => (
-              <article key={program.title} className="rounded-lg border border-slate-200 bg-[#fbfcff] p-5">
+              <article key={program.title} className="rounded-lg border border-brand/10 bg-white p-5 shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-brand-900/10">
                 <div className="flex items-start justify-between gap-3">
                   <h3 className="text-xl font-black text-slate-950">{program.title}</h3>
                   <span className="chip-accent">{program.mode}</span>
                 </div>
                 <p className="mt-4 text-sm leading-6 text-slate-600">{program.detail}</p>
-                <Link href={demoHref} className="mt-5 inline-flex text-sm font-black text-brand">Book demo <ArrowRight size={16} /></Link>
+                <Link href={demoHref} className="mt-5 inline-flex items-center gap-1 text-sm font-black text-brand">Book Free Demo Class <ArrowRight size={16} /></Link>
               </article>
             ))}
           </div>
         </div>
       </section>
 
-      <section id="reviews" className="bg-[#f8fafc] py-14 lg:py-20">
+      <section id="reviews" className="bg-white py-16 lg:py-24">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="mb-8">
-            <p className="text-xs font-black uppercase tracking-[0.16em] text-brand">Reviews and Parent Trust</p>
-            <h2 className="mt-3 text-3xl font-black text-slate-950 sm:text-4xl">Publish only consented, verified reviews.</h2>
+          <div className="mb-8 flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-brand">Parent Trust</p>
+              <h2 className="mt-3 text-3xl font-black text-slate-950 sm:text-4xl">Reviews grounded in real academy feedback.</h2>
+            </div>
+            <Link href={offlineSourceUrl} target="_blank" rel="noreferrer" className="btn-outline">
+              Review Source <ArrowRight size={16} />
+            </Link>
           </div>
-          <div className="grid gap-4 lg:grid-cols-2">
-            {reviews.map((review) => (
-              <article key={review.name} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-                <p className="text-base leading-7 text-slate-700">{review.text}</p>
-                <div className="mt-4 font-black text-slate-950">{review.name}</div>
-                <div className="text-sm text-slate-500">{review.role}</div>
-              </article>
-            ))}
-          </div>
+          <TestimonialCarousel reviews={verifiedReviews} />
         </div>
       </section>
 
-      <section id="centres" className="bg-[#fffdf0] py-14 lg:py-20">
-        <div className="mx-auto grid max-w-7xl gap-8 px-4 sm:px-6 lg:grid-cols-[0.8fr_1.2fr] lg:px-8">
+      <section id="centres" className="bg-[#edf3ff] py-16 lg:py-24">
+        <div className="mx-auto grid max-w-7xl gap-8 px-4 sm:px-6 lg:grid-cols-[0.78fr_1.22fr] lg:px-8">
           <div>
-            <p className="text-xs font-black uppercase tracking-[0.16em] text-brand">Centres and Global Reach</p>
+            <p className="text-xs font-black uppercase tracking-[0.16em] text-blue-700">Centres and Global Reach</p>
             <h2 className="mt-3 text-3xl font-black text-slate-950 sm:text-4xl">Offline in Kolkata. Online for global students.</h2>
+            <p className="mt-4 text-sm leading-6 text-slate-600">Branch information is sourced from the academy&apos;s Kolkata coaching page.</p>
+            <div className="mt-5 flex flex-wrap gap-3">
+              <Link href={`tel:${ACADEMY_DEFAULTS.phone}`} className="btn-primary">Call Academy</Link>
+              <Link href={`mailto:${ACADEMY_DEFAULTS.email}`} className="btn-outline">Email Academy</Link>
+            </div>
           </div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {centres.map((centre) => (
-              <div key={centre} className="rounded-lg border border-brand/10 bg-white p-4">
-                <MapPin size={18} className="text-brand" />
-                <div className="mt-3 font-black text-slate-950">{centre}</div>
-                <div className="mt-1 text-sm text-slate-500">Class availability: [Confirm active schedule]</div>
+            {academyBranches.map((centre) => (
+              <div key={centre.name} className="overflow-hidden rounded-lg border border-blue-900/10 bg-white shadow-sm">
+                <div className="p-4">
+                <MapPin size={18} className="text-blue-700" />
+                <div className="mt-3 font-black text-slate-950">{centre.name}</div>
+                <div className="mt-1 text-sm leading-5 text-slate-500">{centre.address}</div>
+                <Link href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(centre.address)}`} target="_blank" rel="noreferrer" className="mt-3 inline-flex text-xs font-black text-blue-700">
+                  Open directions
+                </Link>
+                </div>
+                <iframe
+                  title={`${centre.name} map`}
+                  src={`https://maps.google.com/maps?q=${encodeURIComponent(centre.address)}&output=embed`}
+                  className="h-32 w-full border-0"
+                  loading="lazy"
+                />
               </div>
             ))}
-            <div className="rounded-lg border border-brand/10 bg-brand p-4 text-white">
+            <div className="rounded-lg border border-brand/10 bg-brand p-4 text-white shadow-xl shadow-brand-900/15">
               <Globe2 size={18} className="text-accent" />
               <div className="mt-3 font-black">Online Classes</div>
-              <div className="mt-1 text-sm text-white/70">Global time-zone friendly batches</div>
+              <div className="mt-1 text-sm text-white/72">Structured programs, personal mentorship, and proven methods from home.</div>
             </div>
           </div>
         </div>
       </section>
 
-      <section className="bg-white px-4 py-14 sm:px-6 lg:px-8 lg:py-20">
-        <div className="mx-auto max-w-7xl rounded-lg bg-[#180620] p-6 text-white shadow-2xl shadow-brand-900/20 sm:p-8 lg:flex lg:items-center lg:justify-between lg:gap-8">
+      <section className="bg-white px-4 py-16 sm:px-6 lg:px-8 lg:py-24">
+        <div className="mx-auto max-w-7xl rounded-lg bg-[#17051f] p-6 text-white shadow-2xl shadow-brand-900/20 sm:p-8 lg:flex lg:items-center lg:justify-between lg:gap-8">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.16em] text-accent">Start with a free assessment</p>
             <h2 className="mt-3 text-3xl font-black sm:text-4xl">Your Child&apos;s Next Great Move Starts Here</h2>
@@ -537,9 +473,9 @@ export default function Home() {
             </p>
           </div>
           <div className="mt-6 flex flex-col gap-3 sm:flex-row lg:mt-0">
-            <Link href={demoHref} className="btn-accent">Book Free Demo</Link>
-            <Link href="/register" className="btn border border-white/15 bg-white/10 text-white">Create Student Account</Link>
-            <Link href="/login" className="btn border border-white/15 bg-white/10 text-white">Login to Portal</Link>
+            <Link href={demoHref} className="btn-accent">Book Free Demo Class</Link>
+            <Link href={demoHref} className="btn border border-white/15 bg-white/10 text-white">Start Your Chess Journey</Link>
+            <Link href="#platform" className="btn border border-white/15 bg-white/10 text-white">Explore Learning Portal</Link>
           </div>
         </div>
       </section>
@@ -547,12 +483,48 @@ export default function Home() {
       <footer className="border-t border-slate-200 bg-white py-6 text-sm text-slate-500">
         <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
           <div>Copyright {new Date().getFullYear()} Envision Chess Academy</div>
-          <Link href={cloudinaryCollectionUrl} target="_blank" rel="noreferrer" className="font-semibold text-brand">
-            Cloudinary achievement source collection
-          </Link>
+          <div className="flex flex-wrap gap-4">
+            <Link href={cloudinaryCollectionUrl} target="_blank" rel="noreferrer" className="font-semibold text-brand">Achievement images</Link>
+            <Link href={offlineSourceUrl} target="_blank" rel="noreferrer" className="font-semibold text-brand">Offline academy source</Link>
+          </div>
         </div>
       </footer>
     </main>
+  );
+}
+
+function HeroSpotlight({ achievements }: { achievements: ReturnType<typeof publicAchievementList> }) {
+  const [primary, ...secondary] = achievements;
+  if (!primary) return null;
+  return (
+    <div className="motion-float space-y-4">
+      <article className="group overflow-hidden rounded-lg border border-accent/25 bg-white/[0.08] shadow-2xl shadow-black/30">
+        <div className="relative aspect-[0.86]">
+          <Image src={primary.achievementImageUrl} alt={`${primary.studentName} achievement`} fill priority sizes="(min-width: 1024px) 28vw, 100vw" className="object-cover transition duration-700 group-hover:scale-[1.04]" />
+        </div>
+        <div className="p-4">
+          <div className="text-xs font-black uppercase tracking-[0.14em] text-accent">Student Spotlight</div>
+          <div className="mt-1 font-black">{primary.studentName}</div>
+          <p className="mt-1 text-sm leading-5 text-white/70">{primary.result}</p>
+        </div>
+      </article>
+      <div className="grid grid-cols-2 gap-3">
+        {secondary.slice(0, 4).map((item) => (
+          <div key={`${item.studentName}-${item.displayOrder}`} className="relative aspect-[1.08] overflow-hidden rounded-lg border border-white/10 bg-white/[0.07]">
+            <Image src={item.achievementImageUrl} alt="" fill sizes="140px" className="object-cover" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function JourneyStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-brand/10 bg-white p-4 shadow-sm">
+      <div className="text-xs font-black uppercase tracking-[0.12em] text-brand/65">{label}</div>
+      <div className="mt-2 text-lg font-black text-slate-950">{value}</div>
+    </div>
   );
 }
 
@@ -562,7 +534,7 @@ function PortalMockup({ light = false }: { light?: boolean }) {
   const heading = light ? "text-slate-950" : "text-white";
 
   return (
-    <div className={`rounded-lg border p-4 ${shell}`}>
+    <div className={`motion-rise rounded-lg border p-4 ${shell}`}>
       <div className="mb-4 flex items-center justify-between gap-3 border-b border-current/10 pb-3">
         <div>
           <div className="text-xs font-black uppercase tracking-[0.14em] text-brand">Student Portal Preview</div>

@@ -15,7 +15,7 @@ export default function AchievementShowcase({ achievements }: { achievements: Ac
 
   useEffect(() => {
     if (paused || slides.length < 2) return;
-    const timer = window.setInterval(() => setIndex((current) => (current + 1) % slides.length), 5600);
+    const timer = window.setInterval(() => setIndex((current) => (current + 1) % slides.length), 3800);
     return () => window.clearInterval(timer);
   }, [paused, slides.length]);
 
@@ -49,28 +49,37 @@ export default function AchievementShowcase({ achievements }: { achievements: Ac
         touchStart.current = event.touches[0].clientX;
       }}
       onTouchEnd={onTouchEnd}
-      className="relative overflow-hidden bg-[#18051f] py-16 text-white outline-none lg:py-24"
+      className="relative overflow-hidden bg-[#10131b] py-16 text-white outline-none lg:py-24"
       aria-roledescription="carousel"
       aria-label="Student achievement slideshow"
     >
-      <div className="absolute inset-0 opacity-[0.055] [background-image:linear-gradient(45deg,#fde75a_25%,transparent_25%),linear-gradient(-45deg,#fde75a_25%,transparent_25%),linear-gradient(45deg,transparent_75%,#fde75a_75%),linear-gradient(-45deg,transparent_75%,#fde75a_75%)] [background-position:0_0,0_18px,18px_-18px,-18px_0] [background-size:36px_36px]" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_18%,rgba(253,231,90,0.12),transparent_26%),radial-gradient(circle_at_82%_36%,rgba(90,19,114,0.42),transparent_28%),linear-gradient(180deg,#111722_0%,#18051f_100%)]" />
+      <div className="absolute inset-0 opacity-[0.1] [background-image:linear-gradient(rgba(255,255,255,0.07)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.07)_1px,transparent_1px)] [background-size:84px_84px]" />
       <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="mb-10 grid gap-6 lg:grid-cols-[0.9fr_1.1fr] lg:items-end">
           <div>
-            <p className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-[0.16em] text-accent">
+            <p className="inline-flex items-center gap-2 border-l-2 border-accent bg-white/[0.045] px-3 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-accent">
               <Sparkles size={15} /> Real students. Real tournaments. Real progress.
             </p>
-            <h2 className="mt-3 text-3xl font-black leading-tight text-white sm:text-5xl">
-              Achievement stories stay at the centre.
+            <h2 className="mt-4 text-3xl font-black leading-tight text-white sm:text-5xl">
+              A premium record of academy results.
             </h2>
           </div>
-          <p className="max-w-2xl text-sm leading-6 text-white/72 sm:text-base">
-            Verified student results are presented with the achievement photographs, tournament details, result, location, year, and level.
+          <p className="max-w-2xl text-sm leading-7 text-white/68 sm:text-base">
+            Verified achievements rotate automatically with full artwork visible, clean result details, and quick navigation for parents who want proof before they commit.
           </p>
         </div>
 
-        <div className="grid overflow-hidden rounded-lg border border-white/12 bg-white/[0.07] shadow-2xl shadow-black/30 lg:grid-cols-[minmax(0,1.12fr)_minmax(360px,0.88fr)]">
-          <div className="group relative min-h-[340px] bg-black sm:min-h-[540px]">
+        <div className="grid overflow-hidden rounded-lg border border-white/12 bg-white/[0.055] shadow-2xl shadow-black/35 backdrop-blur lg:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)]">
+          <div className="group relative min-h-[360px] overflow-hidden bg-[#090b10] sm:min-h-[560px]">
+            <Image
+              key={`${active.achievementImageUrl}-bg`}
+              src={active.achievementImageUrl}
+              alt=""
+              fill
+              sizes="(min-width: 1024px) 54vw, 100vw"
+              className="scale-110 object-cover opacity-22 blur-2xl transition duration-700"
+            />
             <Image
               key={active.achievementImageUrl}
               src={active.achievementImageUrl}
@@ -78,25 +87,25 @@ export default function AchievementShowcase({ achievements }: { achievements: Ac
               fill
               priority={index === 0}
               sizes="(min-width: 1024px) 58vw, 100vw"
-              className="object-cover object-center transition duration-700 group-hover:scale-[1.035]"
+              className="object-contain p-4 transition duration-700 group-hover:scale-[1.015] sm:p-6"
             />
-            <div className="absolute inset-x-0 bottom-0 bg-[linear-gradient(180deg,transparent,rgba(0,0,0,0.78))] p-5 sm:p-7">
+            <div className="absolute inset-x-0 bottom-0 bg-[linear-gradient(180deg,transparent,rgba(0,0,0,0.72))] p-5 sm:p-7">
               <div className="inline-flex items-center gap-2 rounded-full bg-accent px-3 py-1 text-xs font-black uppercase text-brand-900">
                 <Trophy size={14} /> {active.achievementLevel}
               </div>
             </div>
           </div>
 
-          <div className="flex flex-col justify-between p-5 sm:p-7 lg:p-8">
+          <div className="flex flex-col justify-between bg-[#131722]/72 p-5 sm:p-7 lg:p-8">
             <div>
               <div className="text-xs font-black uppercase tracking-[0.16em] text-accent">{active.result}</div>
               <h3 className="mt-3 text-3xl font-black leading-tight text-white">{active.studentName}</h3>
-              <p className="mt-3 text-lg font-semibold text-white/90">{active.tournamentName}</p>
+              <p className="mt-3 text-lg font-semibold leading-7 text-white/88">{active.tournamentName}</p>
               <div className="mt-5 grid gap-2 sm:grid-cols-2">
                 <Info label="Location" value={active.tournamentLocation} />
                 <Info label="Year" value={active.year} />
               </div>
-              <p className="mt-5 text-sm leading-7 text-white/72">{active.shortDescription}</p>
+              <p className="mt-5 text-sm leading-7 text-white/68">{active.shortDescription}</p>
             </div>
 
             <div className="mt-8 space-y-5">
@@ -145,10 +154,10 @@ export default function AchievementShowcase({ achievements }: { achievements: Ac
               key={`${item.studentName}-${itemIndex}-thumb`}
               type="button"
               onClick={() => setIndex(itemIndex)}
-              className="group grid grid-cols-[76px_minmax(0,1fr)] gap-3 rounded-lg border border-white/10 bg-white/[0.07] p-2 text-left transition hover:-translate-y-1 hover:bg-white/[0.11]"
+              className={`group grid grid-cols-[76px_minmax(0,1fr)] gap-3 rounded-lg border p-2 text-left transition hover:-translate-y-1 hover:bg-white/[0.11] ${index === itemIndex ? "border-accent/55 bg-white/[0.1]" : "border-white/10 bg-white/[0.055]"}`}
             >
-              <span className="relative aspect-square overflow-hidden rounded-md bg-black">
-                <Image src={item.achievementImageUrl} alt="" fill sizes="76px" className="object-cover transition duration-500 group-hover:scale-110" />
+              <span className="relative aspect-square overflow-hidden rounded-md bg-[#090b10]">
+                <Image src={item.achievementImageUrl} alt="" fill sizes="76px" className="object-contain p-1 transition duration-500 group-hover:scale-105" />
               </span>
               <span className="self-center">
                 <span className="block truncate text-sm font-black text-white">{item.studentName}</span>

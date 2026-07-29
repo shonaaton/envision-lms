@@ -74,7 +74,6 @@ export const academyBranches = [
   { name: "Haridevpur", address: "403B, Mahatma Gandhi Rd, Kolkata 700082" },
   { name: "Jodhpur Park", address: "1D, Jodhpur Park, Kolkata, West Bengal 700068" },
   { name: "New Alipore", address: "2/1, Shyama Charan Smriti Tirtha Rd, Kolkata 700053" },
-  { name: "Silpara, Behala", address: "Kolkata offline centre" },
 ];
 
 export const verifiedReviews: ReviewRecord[] = [
@@ -103,6 +102,7 @@ export const verifiedReviews: ReviewRecord[] = [
 
 export const anishStory = {
   studentName: "Anish Bijibilla",
+  fatherName: "Nandakishore Bijibilla",
   startingLevel: "Beginner",
   currentLevel: "Professional",
   coachingDuration: "2.5 Years",

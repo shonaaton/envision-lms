@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { createInvoice, ensureMonthlyInvoices, markInvoicePaid as applyInvoicePayment } from "@/lib/fees";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
+import { sendWhatsAppReminder } from "@/lib/whatsappAutomation";
 import { formatINR } from "@/lib/utils";
 import { CreditLedger, FeeAssignment, FeePlan, Invoice, Notification } from "@/models/Fee";
 import { User } from "@/models/User";
@@ -9,12 +10,13 @@ import { createHash, randomBytes } from "crypto";
 import PayButton from "@/components/PayButton";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { AlertCircle, CheckCircle2, Clock3, Download, FileText, IndianRupee, MailCheck, MailWarning, Printer, Receipt, Send, Trash2, XCircle } from "lucide-react";
+import { AlertCircle, CheckCircle2, Clock3, Download, FileText, IndianRupee, MailCheck, MailWarning, MessageCircle, Printer, Receipt, Send, Trash2, XCircle } from "lucide-react";
 import { InvoiceCreationForm } from "@/components/fees/InvoiceCreationForm";
 
 export const dynamic = "force-dynamic";
 
 type ReminderDelivery = Awaited<ReturnType<typeof sendAutomationEmail>>;
+type WhatsAppDelivery = Awaited<ReturnType<typeof sendWhatsAppReminder>>;
 type ReminderSummary = { sent: number; failed: number; missing: number; skipped: number; total: number };
 
 function paise(value: FormDataEntryValue | null) {
@@ -43,6 +45,12 @@ async function createPublicInvoiceUrl(invoiceId: string) {
 }
 
 function deliveryStatus(delivery: ReminderDelivery) {
+  if (delivery.delivered) return "sent";
+  if (delivery.skipped) return "not_configured";
+  return "failed";
+}
+
+function whatsappStatus(delivery: WhatsAppDelivery) {
   if (delivery.delivered) return "sent";
   if (delivery.skipped) return "not_configured";
   return "failed";
@@ -203,6 +211,30 @@ async function sendInvoiceToStudent(formData: FormData) {
   redirect(`${returnPath}send=${status}`);
 }
 
+async function sendInvoiceWhatsAppTest(formData: FormData) {
+  "use server";
+  const session = await auth();
+  if ((session?.user as any)?.role !== "admin") throw new Error("Forbidden");
+  await dbConnect();
+  const invoiceId = String(formData.get("invoice") || "");
+  const returnStudent = String(formData.get("studentFilter") || "");
+  const returnPath = `/fees/invoices${returnStudent ? `?student=${encodeURIComponent(returnStudent)}&` : "?"}`;
+  const invoice: any = await Invoice.findById(invoiceId).populate("student plan").lean();
+  if (!invoice?.student?._id) redirect(`${returnPath}whatsapp=failed`);
+  const invoiceUrl = await createPublicInvoiceUrl(invoice._id.toString());
+  const delivery = await sendWhatsAppReminder({
+    message: invoiceReminderMessage(invoice, invoiceUrl),
+    metadata: {
+      kind: "invoice_whatsapp_test",
+      invoiceId: invoice._id.toString(),
+      invoiceNumber: invoice.invoiceNumber,
+      studentId: invoice.student.username || invoice.student._id.toString(),
+      invoiceUrl,
+    },
+  });
+  redirect(`${returnPath}whatsapp=${whatsappStatus(delivery)}`);
+}
+
 async function sendBulkInvoiceReminders(formData: FormData) {
   "use server";
   const session = await auth();
@@ -290,6 +322,13 @@ function sendBanner(status: string) {
   return null;
 }
 
+function whatsappBanner(status: string) {
+  if (status === "sent") return { tone: "border-emerald-200 bg-emerald-50 text-emerald-800", icon: MessageCircle, text: "WhatsApp test reminder sent to the configured test number." };
+  if (status === "not_configured") return { tone: "border-amber-200 bg-amber-50 text-amber-800", icon: MailWarning, text: "WhatsApp test was not sent because WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID, or WHATSAPP_TEST_RECIPIENT is missing." };
+  if (status === "failed") return { tone: "border-rose-200 bg-rose-50 text-rose-800", icon: AlertCircle, text: "WhatsApp test failed. Check the Meta token, phone number ID, template name, and recipient allowlist." };
+  return null;
+}
+
 function bulkBanner(params: Record<string, string | string[] | undefined>) {
   if (queryValue(params, "bulk") !== "invoice_reminders") return null;
   const sent = queryValue(params, "sent") || "0";
@@ -350,6 +389,7 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
   const sendStatus = queryValue(params, "send");
   const banner = sendBanner(sendStatus);
   const reminderBanner = bulkBanner(params);
+  const waBanner = whatsappBanner(queryValue(params, "whatsapp"));
   const paidCount = invoices.filter((invoice: any) => invoice.status === "paid").length;
   const unpaidCount = invoices.filter((invoice: any) => invoice.status === "unpaid" || invoice.status === "overdue").length;
   const totalValue = invoices.reduce((sum: number, invoice: any) => sum + Number(invoice.totalAmount || 0), 0);
@@ -384,6 +424,12 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
         <div className={`mb-4 flex items-center gap-3 rounded-lg border px-4 py-3 text-sm font-semibold ${reminderBanner.tone}`}>
           <reminderBanner.icon size={18} />
           {reminderBanner.text}
+        </div>
+      )}
+      {waBanner && (
+        <div className={`mb-4 flex items-center gap-3 rounded-lg border px-4 py-3 text-sm font-semibold ${waBanner.tone}`}>
+          <waBanner.icon size={18} />
+          {waBanner.text}
         </div>
       )}
 
@@ -517,6 +563,11 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
                         <input type="hidden" name="invoice" value={invoiceId} />
                         <input type="hidden" name="studentFilter" value={selectedStudent} />
                         <button className="inline-flex h-9 items-center gap-1 rounded-lg bg-brand px-3 text-xs font-bold text-white shadow-sm hover:bg-brand-700"><Send size={14} /> Send to Student</button>
+                      </form>
+                      <form action={sendInvoiceWhatsAppTest}>
+                        <input type="hidden" name="invoice" value={invoiceId} />
+                        <input type="hidden" name="studentFilter" value={selectedStudent} />
+                        <button className="inline-flex h-9 items-center gap-1 rounded-lg border border-emerald-200 px-3 text-xs font-bold text-emerald-700"><MessageCircle size={14} /> WhatsApp Test</button>
                       </form>
                       <button disabled title="Parent profile is not linked yet" className="inline-flex h-9 items-center gap-1 rounded-lg border border-slate-200 px-3 text-xs font-bold text-slate-400">Send to Parent</button>
                       {invoice.status !== "paid" && invoice.status !== "cancelled" && (

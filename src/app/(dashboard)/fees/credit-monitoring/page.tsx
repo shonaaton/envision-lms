@@ -1,16 +1,18 @@
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
+import { sendWhatsAppReminder } from "@/lib/whatsappAutomation";
 import { formatINR } from "@/lib/utils";
 import { AcademySettings, CreditLedger, FeeAssignment, FeePlan, Notification } from "@/models/Fee";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { AlertTriangle, CheckCircle2, Download, Filter, MailCheck, MailWarning, Search, Send, WalletCards, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Download, Filter, MailCheck, MailWarning, MessageCircle, Search, Send, WalletCards, XCircle } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
 type Params = { q?: string; filter?: string; plan?: string; min?: string; max?: string };
 type ReminderDelivery = Awaited<ReturnType<typeof sendAutomationEmail>>;
+type WhatsAppDelivery = Awaited<ReturnType<typeof sendWhatsAppReminder>>;
 type ReminderSummary = { sent: number; failed: number; missing: number; skipped: number; total: number };
 
 function value(params: Params, key: keyof Params) {
@@ -36,6 +38,12 @@ function appBaseUrl() {
 }
 
 function deliveryStatus(delivery: ReminderDelivery) {
+  if (delivery.delivered) return "sent";
+  if (delivery.skipped) return "not_configured";
+  return "failed";
+}
+
+function whatsappStatus(delivery: WhatsAppDelivery) {
   if (delivery.delivered) return "sent";
   if (delivery.skipped) return "not_configured";
   return "failed";
@@ -76,6 +84,28 @@ function creditReminderBanner(params: Params & Record<string, string | string[] 
   };
 }
 
+function whatsappBanner(status?: string) {
+  if (status === "sent") return { tone: "border-emerald-200 bg-emerald-50 text-emerald-800", icon: MessageCircle, text: "WhatsApp test reminder sent to the configured test number." };
+  if (status === "not_configured") return { tone: "border-amber-200 bg-amber-50 text-amber-800", icon: MailWarning, text: "WhatsApp test was not sent because WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID, or WHATSAPP_TEST_RECIPIENT is missing." };
+  if (status === "failed") return { tone: "border-rose-200 bg-rose-50 text-rose-800", icon: XCircle, text: "WhatsApp test failed. Check the Meta token, phone number ID, template name, and recipient allowlist." };
+  return null;
+}
+
+function creditReminderMessage(assignment: any, portalUrl: string) {
+  const student = assignment.student;
+  const balance = Number(assignment.creditBalance || 0);
+  return [
+    `Hello ${student.name},`,
+    balance <= 0
+      ? "Your class credit balance is now 0. Please recharge before booking or attending the next credit-based class."
+      : `Your class credit balance is low. You currently have ${balance} credit${balance === 1 ? "" : "s"} remaining.`,
+    assignment.plan?.name ? `Current plan: ${assignment.plan.name}.` : "",
+    assignment.plan?.amount ? `Recharge plan amount: ${formatINR(assignment.plan.amount)}.` : "",
+    portalUrl ? `Open your student billing page: ${portalUrl}` : "Please log in to your student portal to review credits and invoices.",
+    "If you have already recharged, please ignore this message.",
+  ].filter(Boolean).join("\n\n");
+}
+
 async function sendBulkCreditReminders(formData: FormData) {
   "use server";
   const session = await auth();
@@ -100,16 +130,7 @@ async function sendBulkCreditReminders(formData: FormData) {
     const delivery = await sendAutomationEmail({
       to: student.email,
       subject: balance <= 0 ? "Recharge required: class credits are finished" : "Low credit reminder from Envision Chess Academy",
-      message: [
-        `Hello ${student.name},`,
-        balance <= 0
-          ? "Your class credit balance is now 0. Please recharge before booking or attending the next credit-based class."
-          : `Your class credit balance is low. You currently have ${balance} credit${balance === 1 ? "" : "s"} remaining.`,
-        assignment.plan?.name ? `Current plan: ${assignment.plan.name}.` : "",
-        assignment.plan?.amount ? `Recharge plan amount: ${formatINR(assignment.plan.amount)}.` : "",
-        portalUrl ? `Open your student billing page: ${portalUrl}` : "Please log in to your student portal to review credits and invoices.",
-        "If you have already recharged, please ignore this message.",
-      ].filter(Boolean).join("\n\n"),
+      message: creditReminderMessage(assignment, portalUrl),
       metadata: {
         kind: "credit_reminder",
         studentId: student.username || student._id.toString(),
@@ -143,6 +164,28 @@ async function sendBulkCreditReminders(formData: FormData) {
 
   revalidatePath("/fees/credit-monitoring");
   bulkReminderRedirect(summary);
+}
+
+async function sendCreditWhatsAppTest(formData: FormData) {
+  "use server";
+  const session = await auth();
+  if ((session?.user as any)?.role !== "admin") throw new Error("Forbidden");
+  await dbConnect();
+  const assignmentId = String(formData.get("assignment") || "");
+  const assignment: any = await FeeAssignment.findById(assignmentId).populate("student plan").lean();
+  if (!assignment?.student?._id) redirect("/fees/credit-monitoring?whatsapp=failed");
+  const portalUrl = appBaseUrl() ? `${appBaseUrl()}/fees` : "";
+  const delivery = await sendWhatsAppReminder({
+    message: creditReminderMessage(assignment, portalUrl),
+    metadata: {
+      kind: "credit_whatsapp_test",
+      assignmentId: assignment._id.toString(),
+      studentId: assignment.student.username || assignment.student._id.toString(),
+      creditBalance: Number(assignment.creditBalance || 0),
+      portalUrl,
+    },
+  });
+  redirect(`/fees/credit-monitoring?whatsapp=${whatsappStatus(delivery)}`);
 }
 
 function statusFor(balance: number) {
@@ -195,6 +238,7 @@ export default async function CreditMonitoringPage({ searchParams }: { searchPar
   const emptyCount = allAssignments.filter((assignment: any) => Number(assignment.creditBalance || 0) <= 0).length;
   const totalRemaining = allAssignments.reduce((sum: number, assignment: any) => sum + Number(assignment.creditBalance || 0), 0);
   const reminderBanner = creditReminderBanner(params as any);
+  const waBanner = whatsappBanner(String((params as any).whatsapp || ""));
 
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-5 text-slate-950 sm:px-6 lg:px-8">
@@ -221,6 +265,12 @@ export default async function CreditMonitoringPage({ searchParams }: { searchPar
         <div className={`mb-4 flex items-center gap-3 rounded-lg border px-4 py-3 text-sm font-semibold ${reminderBanner.tone}`}>
           <reminderBanner.icon size={18} />
           {reminderBanner.text}
+        </div>
+      )}
+      {waBanner && (
+        <div className={`mb-4 flex items-center gap-3 rounded-lg border px-4 py-3 text-sm font-semibold ${waBanner.tone}`}>
+          <waBanner.icon size={18} />
+          {waBanner.text}
         </div>
       )}
 
@@ -353,6 +403,12 @@ export default async function CreditMonitoringPage({ searchParams }: { searchPar
                       <div className="mt-3 text-sm leading-6 text-slate-600">
                         {balance <= 0 ? "Recharge should be arranged before the next paid class." : balance <= 3 ? "Student is close to needing a recharge." : "Balance is currently healthy."}
                       </div>
+                      <form action={sendCreditWhatsAppTest} className="mt-3">
+                        <input type="hidden" name="assignment" value={assignment._id.toString()} />
+                        <button className="inline-flex h-9 items-center justify-center gap-1 rounded-lg border border-emerald-200 bg-white px-3 text-xs font-bold text-emerald-700">
+                          <MessageCircle size={14} /> WhatsApp Test
+                        </button>
+                      </form>
                     </div>
                   </div>
                 </article>

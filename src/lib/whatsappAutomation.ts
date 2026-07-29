@@ -1,6 +1,7 @@
 type WhatsAppReminderInput = {
   to?: string;
   message: string;
+  templateText?: string;
   metadata?: Record<string, unknown>;
 };
 
@@ -25,6 +26,7 @@ export async function sendWhatsAppReminder(input: WhatsAppReminderInput) {
 
   const mode = String(process.env.WHATSAPP_MESSAGE_MODE || "template").toLowerCase();
   const message = String(input.message || "").trim().slice(0, 4000);
+  const templateText = String(input.templateText || message || "Student").trim().slice(0, 1024);
   const body =
     mode === "text"
       ? {
@@ -45,7 +47,7 @@ export async function sendWhatsAppReminder(input: WhatsAppReminderInput) {
                   components: [
                     {
                       type: "body",
-                      parameters: [{ type: "text", text: message }],
+                      parameters: [{ type: "text", text: templateText }],
                     },
                   ],
                 }
@@ -65,10 +67,11 @@ export async function sendWhatsAppReminder(input: WhatsAppReminderInput) {
     });
     const payload = await response.json().catch(() => null);
     const delivered = response.ok && Boolean(payload?.messages?.[0]?.id);
+    const errorMessage = delivered ? "" : String(payload?.error?.message || payload?.error?.error_user_msg || "");
     if (!delivered) {
       console.error("WhatsApp reminder failed", { status: response.status, payload, metadata: input.metadata });
     }
-    return { ok: delivered, delivered, skipped: false, status: response.status, payload, testMode, recipient };
+    return { ok: delivered, delivered, skipped: false, status: response.status, payload, errorMessage, testMode, recipient };
   } catch (error) {
     console.error("WhatsApp reminder request failed", error);
     return { ok: false, delivered: false, skipped: false, error: "whatsapp_failed", testMode, recipient };

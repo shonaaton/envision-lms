@@ -56,6 +56,12 @@ function whatsappStatus(delivery: WhatsAppDelivery) {
   return "failed";
 }
 
+function whatsappErrorParam(delivery: WhatsAppDelivery) {
+  if (delivery.delivered || delivery.skipped) return "";
+  const message = "errorMessage" in delivery ? delivery.errorMessage : "";
+  return message ? `&waError=${encodeURIComponent(String(message).slice(0, 180))}` : "";
+}
+
 function bulkReminderRedirect(summary: ReminderSummary, kind = "invoice_reminders") {
   const params = new URLSearchParams({
     bulk: kind,
@@ -224,6 +230,7 @@ async function sendInvoiceWhatsAppTest(formData: FormData) {
   const invoiceUrl = await createPublicInvoiceUrl(invoice._id.toString());
   const delivery = await sendWhatsAppReminder({
     message: invoiceReminderMessage(invoice, invoiceUrl),
+    templateText: invoice.student.name || "Student",
     metadata: {
       kind: "invoice_whatsapp_test",
       invoiceId: invoice._id.toString(),
@@ -232,7 +239,7 @@ async function sendInvoiceWhatsAppTest(formData: FormData) {
       invoiceUrl,
     },
   });
-  redirect(`${returnPath}whatsapp=${whatsappStatus(delivery)}`);
+  redirect(`${returnPath}whatsapp=${whatsappStatus(delivery)}${whatsappErrorParam(delivery)}`);
 }
 
 async function sendBulkInvoiceReminders(formData: FormData) {
@@ -322,10 +329,10 @@ function sendBanner(status: string) {
   return null;
 }
 
-function whatsappBanner(status: string) {
+function whatsappBanner(status: string, error = "") {
   if (status === "sent") return { tone: "border-emerald-200 bg-emerald-50 text-emerald-800", icon: MessageCircle, text: "WhatsApp test reminder sent to the configured test number." };
   if (status === "not_configured") return { tone: "border-amber-200 bg-amber-50 text-amber-800", icon: MailWarning, text: "WhatsApp test was not sent because WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID, or WHATSAPP_TEST_RECIPIENT is missing." };
-  if (status === "failed") return { tone: "border-rose-200 bg-rose-50 text-rose-800", icon: AlertCircle, text: "WhatsApp test failed. Check the Meta token, phone number ID, template name, and recipient allowlist." };
+  if (status === "failed") return { tone: "border-rose-200 bg-rose-50 text-rose-800", icon: AlertCircle, text: error ? `WhatsApp test failed: ${error}` : "WhatsApp test failed. Check the Meta token, phone number ID, template name, and recipient allowlist." };
   return null;
 }
 
@@ -389,7 +396,7 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
   const sendStatus = queryValue(params, "send");
   const banner = sendBanner(sendStatus);
   const reminderBanner = bulkBanner(params);
-  const waBanner = whatsappBanner(queryValue(params, "whatsapp"));
+  const waBanner = whatsappBanner(queryValue(params, "whatsapp"), queryValue(params, "waError"));
   const paidCount = invoices.filter((invoice: any) => invoice.status === "paid").length;
   const unpaidCount = invoices.filter((invoice: any) => invoice.status === "unpaid" || invoice.status === "overdue").length;
   const totalValue = invoices.reduce((sum: number, invoice: any) => sum + Number(invoice.totalAmount || 0), 0);

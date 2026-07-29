@@ -49,6 +49,12 @@ function whatsappStatus(delivery: WhatsAppDelivery) {
   return "failed";
 }
 
+function whatsappErrorParam(delivery: WhatsAppDelivery) {
+  if (delivery.delivered || delivery.skipped) return "";
+  const message = "errorMessage" in delivery ? delivery.errorMessage : "";
+  return message ? `&waError=${encodeURIComponent(String(message).slice(0, 180))}` : "";
+}
+
 function reminderStatusCopy(status?: string) {
   if (status === "sent") return "Reminder sent";
   if (status === "not_configured") return "Email not configured";
@@ -84,10 +90,10 @@ function creditReminderBanner(params: Params & Record<string, string | string[] 
   };
 }
 
-function whatsappBanner(status?: string) {
+function whatsappBanner(status?: string, error = "") {
   if (status === "sent") return { tone: "border-emerald-200 bg-emerald-50 text-emerald-800", icon: MessageCircle, text: "WhatsApp test reminder sent to the configured test number." };
   if (status === "not_configured") return { tone: "border-amber-200 bg-amber-50 text-amber-800", icon: MailWarning, text: "WhatsApp test was not sent because WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID, or WHATSAPP_TEST_RECIPIENT is missing." };
-  if (status === "failed") return { tone: "border-rose-200 bg-rose-50 text-rose-800", icon: XCircle, text: "WhatsApp test failed. Check the Meta token, phone number ID, template name, and recipient allowlist." };
+  if (status === "failed") return { tone: "border-rose-200 bg-rose-50 text-rose-800", icon: XCircle, text: error ? `WhatsApp test failed: ${error}` : "WhatsApp test failed. Check the Meta token, phone number ID, template name, and recipient allowlist." };
   return null;
 }
 
@@ -177,6 +183,7 @@ async function sendCreditWhatsAppTest(formData: FormData) {
   const portalUrl = appBaseUrl() ? `${appBaseUrl()}/fees` : "";
   const delivery = await sendWhatsAppReminder({
     message: creditReminderMessage(assignment, portalUrl),
+    templateText: assignment.student.name || "Student",
     metadata: {
       kind: "credit_whatsapp_test",
       assignmentId: assignment._id.toString(),
@@ -185,7 +192,7 @@ async function sendCreditWhatsAppTest(formData: FormData) {
       portalUrl,
     },
   });
-  redirect(`/fees/credit-monitoring?whatsapp=${whatsappStatus(delivery)}`);
+  redirect(`/fees/credit-monitoring?whatsapp=${whatsappStatus(delivery)}${whatsappErrorParam(delivery)}`);
 }
 
 function statusFor(balance: number) {
@@ -238,7 +245,7 @@ export default async function CreditMonitoringPage({ searchParams }: { searchPar
   const emptyCount = allAssignments.filter((assignment: any) => Number(assignment.creditBalance || 0) <= 0).length;
   const totalRemaining = allAssignments.reduce((sum: number, assignment: any) => sum + Number(assignment.creditBalance || 0), 0);
   const reminderBanner = creditReminderBanner(params as any);
-  const waBanner = whatsappBanner(String((params as any).whatsapp || ""));
+  const waBanner = whatsappBanner(String((params as any).whatsapp || ""), String((params as any).waError || ""));
 
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-5 text-slate-950 sm:px-6 lg:px-8">

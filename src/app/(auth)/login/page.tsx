@@ -5,7 +5,14 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
 import Image from "next/image";
-import { ArrowRight, AtSign, Eye, EyeOff, LockKeyhole, MonitorSmartphone } from "lucide-react";
+import { ArrowRight, AtSign, CalendarDays, Eye, EyeOff, LockKeyhole, Target, Trophy } from "lucide-react";
+import { ACADEMY_LOGO_URL } from "@/lib/branding";
+
+const loginHighlights = [
+  { label: "Next class", value: "Live links and coach notes", icon: CalendarDays },
+  { label: "Practice", value: "Puzzles, PGNs, and homework", icon: Target },
+  { label: "Progress", value: "Reports and tournament prep", icon: Trophy },
+];
 
 export default function LoginPage() {
   const router = useRouter();
@@ -42,36 +49,44 @@ export default function LoginPage() {
   return (
     <main className="min-h-screen bg-[#f7f8fb] text-slate-950">
       <div className="grid min-h-screen lg:grid-cols-[minmax(0,1fr)_minmax(420px,540px)]">
-        <section className="relative hidden overflow-hidden bg-[linear-gradient(160deg,#451059_0%,#2a0936_62%,#14051c_100%)] p-10 text-white lg:flex lg:flex-col lg:justify-between xl:p-14">
-          <div>
-            <Image src="/logo-yellow.svg" alt="Envision Chess Academy" width={280} height={90} priority className="h-20 w-auto object-contain" />
-            <h1 className="mt-12 max-w-2xl text-5xl font-black leading-tight">Master the art of chess with one calm workspace.</h1>
-            <p className="mt-5 max-w-xl text-lg leading-8 text-white/75">
-              Classes, homework, PGNs, tournaments, attendance, bookings, and payments stay connected for students, coaches, and admins.
+        <section className="relative hidden overflow-hidden bg-brand-900 p-10 text-white lg:flex lg:flex-col lg:justify-between xl:p-14">
+          <Image src="/images/landing/anish-bijibilla.jpg" alt="Envision Chess Academy student achievement" fill priority sizes="58vw" className="object-cover opacity-42" />
+          <div className="absolute inset-0 bg-[linear-gradient(120deg,#200629_0%,rgba(50,10,64,0.88)_48%,rgba(32,6,41,0.72)_100%)]" />
+          <div className="relative z-10">
+            <Image src={ACADEMY_LOGO_URL} alt="Envision Chess Academy" width={280} height={90} priority unoptimized className="h-20 w-auto object-contain" />
+            <p className="mt-12 text-sm font-bold uppercase tracking-[0.16em] text-accent">Student portal</p>
+            <h1 className="mt-3 max-w-2xl text-5xl font-black leading-tight">Continue class, homework, and practice without losing the thread.</h1>
+            <p className="mt-5 max-w-xl text-lg leading-8 text-white/76">
+              Everything students need after enrolment stays connected: upcoming classes, assigned work, practice plans, and progress notes.
             </p>
           </div>
-          <div className="grid gap-3 xl:grid-cols-3">
-            {["Live classes", "Smart practice", "Progress reports"].map((item) => (
-              <div key={item} className="rounded-lg border border-white/10 bg-white/[0.08] p-4 text-sm font-bold text-white/90">
-                {item}
-              </div>
-            ))}
+          <div className="relative z-10 grid gap-3 xl:grid-cols-3">
+            {loginHighlights.map((item) => {
+              const Icon = item.icon;
+              return (
+                <div key={item.label} className="rounded-lg border border-white/12 bg-white/[0.09] p-4 backdrop-blur">
+                  <Icon size={19} className="text-accent" />
+                  <div className="mt-3 text-sm font-black text-white">{item.label}</div>
+                  <div className="mt-1 text-xs leading-5 text-white/68">{item.value}</div>
+                </div>
+              );
+            })}
           </div>
         </section>
 
         <section className="flex min-h-screen items-center justify-center px-5 py-8 sm:px-8">
           <div className="w-full max-w-[480px]">
             <div className="mb-6 flex justify-center lg:hidden">
-              <Image src="/logo-purple.svg" alt="Envision Chess Academy" width={230} height={78} priority className="h-16 w-auto object-contain" />
+              <Image src={ACADEMY_LOGO_URL} alt="Envision Chess Academy" width={230} height={78} priority unoptimized className="h-16 w-auto object-contain" />
             </div>
 
             <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-2xl shadow-brand-900/10 sm:p-8">
               <div className="mb-7">
-                <div className="mb-4 inline-flex h-11 w-11 items-center justify-center rounded-lg bg-brand/10 text-brand">
-                  <MonitorSmartphone size={22} />
+                <div className="mb-4 inline-flex h-11 w-11 items-center justify-center rounded-lg bg-accent text-brand">
+                  <Trophy size={22} />
                 </div>
                 <h2 className="text-2xl font-black tracking-normal text-slate-950 sm:text-3xl">Welcome back</h2>
-                <p className="mt-2 text-sm leading-6 text-slate-500">Continue your academy journey from any device.</p>
+                <p className="mt-2 text-sm leading-6 text-slate-500">Sign in to reach your classes, homework, practice, fees, and progress updates.</p>
               </div>
 
               <form onSubmit={onSubmit} className="space-y-5">

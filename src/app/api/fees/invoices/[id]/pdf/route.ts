@@ -3,6 +3,7 @@ import { inflateSync, deflateSync } from "zlib";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { getAcademySettings } from "@/lib/fees";
+import { ACADEMY_DEFAULTS, ACADEMY_LOGO_URL, ACADEMY_SIGNATURE_URL } from "@/lib/branding";
 import { Invoice } from "@/models/Fee";
 
 export const dynamic = "force-dynamic";
@@ -210,6 +211,23 @@ function parseImage(value: unknown, name: string): PdfImage | null {
   return null;
 }
 
+async function resolveImageSource(value: unknown, fallback?: string) {
+  const source = String(value || fallback || "").trim();
+  if (!source) return "";
+  if (source.startsWith("data:")) return source;
+  if (!/^https?:\/\//i.test(source)) return "";
+  try {
+    const response = await fetch(source, { cache: "force-cache" });
+    if (!response.ok) throw new Error(`Image request failed: ${response.status}`);
+    const contentType = response.headers.get("content-type") || "image/png";
+    const buffer = Buffer.from(await response.arrayBuffer());
+    return `data:${contentType};base64,${buffer.toString("base64")}`;
+  } catch {
+    if (fallback && fallback !== source) return resolveImageSource(fallback);
+    return "";
+  }
+}
+
 class PdfCanvas {
   private commands: string[] = [];
 
@@ -282,12 +300,27 @@ function fitImage(image: PdfImage, maxWidth: number, maxHeight: number) {
   return { width: image.width * ratio, height: image.height * ratio };
 }
 
-function makePdf(invoice: any, settings: any) {
-  const logo = parseImage(settings.logoUrl, "ImLogo");
-  const signatory = parseImage(settings.signatoryUrl, "ImSign");
+export async function makeInvoicePdf(invoice: any, settings: any) {
+  const logoSource = await resolveImageSource(settings.logoUrl || ACADEMY_LOGO_URL, ACADEMY_LOGO_URL);
+  const signatorySource = await resolveImageSource(settings.signatoryUrl || ACADEMY_SIGNATURE_URL, ACADEMY_SIGNATURE_URL);
+  const logo = parseImage(logoSource, "ImLogo");
+  const signatory = parseImage(signatorySource, "ImSign");
   const images = [logo, signatory].filter(Boolean) as PdfImage[];
   const canvas = new PdfCanvas();
-  const academyName = displayAcademyName(settings);
+  const academyName = settings.academyName || ACADEMY_DEFAULTS.academyName;
+  const legalName = displayAcademyName({ academyName: ACADEMY_DEFAULTS.legalName });
+  const registeredAddress = settings.registeredAddress || ACADEMY_DEFAULTS.registeredAddress;
+  const gstNumber = settings.gstNumber || ACADEMY_DEFAULTS.gstNumber;
+  const sellerLines = [
+    `Unit of ${legalName}`,
+    ...String(registeredAddress).split(/\r?\n/).filter(Boolean),
+    ACADEMY_DEFAULTS.affiliationLine,
+    ACADEMY_DEFAULTS.recognitionLine,
+    `GSTN: ${gstNumber}`,
+    settings.phone || ACADEMY_DEFAULTS.phone,
+    settings.email || ACADEMY_DEFAULTS.email,
+    ACADEMY_DEFAULTS.website,
+  ];
   const isGstInvoice = invoice.invoiceMode === "included" || invoice.invoiceMode === "excluded";
   const isPaid = invoice.status === "paid";
   const student = invoice.student || {};
@@ -295,19 +328,21 @@ function makePdf(invoice: any, settings: any) {
   const invoiceTitle = invoice.type === "credits" ? "Credit Plan Invoice" : invoice.type === "monthly" ? "Monthly Fee Invoice" : "Custom Fee Invoice";
   const taxMode = invoice.invoiceMode === "included" ? "GST Included" : invoice.invoiceMode === "excluded" ? "GST Excluded" : "Non-GST";
   const statusColor = isPaid ? GREEN : invoice.status === "cancelled" || invoice.status === "overdue" ? RED : BRAND;
+  const qty = invoice.credits ? `${invoice.credits}` : "1";
+  const unitLabel = invoice.credits ? "credits" : "fee";
+  const gstRate = Number(invoice.gstPercentage || 0);
+  const baseAmount = Number(invoice.taxableAmount || invoice.amount || 0);
+  const amountWords = `Amount in words: ${money(invoice.totalAmount)} only`;
 
   canvas.rect(0, 0, PAGE.width, PAGE.height, "#ffffff");
-  canvas.rect(0, 0, PAGE.width, 106, BRAND);
-  canvas.rect(0, 106, PAGE.width, 6, ACCENT);
+  canvas.rect(0, 0, PAGE.width, 112, BRAND);
+  canvas.rect(0, 112, PAGE.width, 6, ACCENT);
 
   if (logo) {
-    canvas.rect(34, 25, 128, 50, "#ffffff");
-    const fitted = fitImage(logo, 112, 34);
-    canvas.image(logo.name, 42, 33 + (34 - fitted.height) / 2, fitted.width, fitted.height);
+    const fitted = fitImage(logo, 200, 58);
+    canvas.image(logo.name, 34, 28 + (58 - fitted.height) / 2, fitted.width, fitted.height);
   } else {
-    canvas.rect(34, 25, 128, 50, "#ffffff");
-    canvas.text("ENVISION", 46, 52, { size: 18, font: "bold", color: BRAND });
-    canvas.text("CHESS ACADEMY", 47, 68, { size: 7, font: "bold", color: BRAND });
+    canvas.text("ENVISION CHESS ACADEMY", 34, 58, { size: 16, font: "bold", color: ACCENT });
   }
 
   canvas.text(isGstInvoice ? "TAX INVOICE" : "INVOICE", 558, 34, { size: 22, font: "bold", color: "#ffffff", align: "right" });
@@ -315,35 +350,54 @@ function makePdf(invoice: any, settings: any) {
   canvas.text(`Invoice No: ${invoice.invoiceNumber || "-"}`, 558, 70, { size: 9, font: "bold", color: "#ffffff", align: "right" });
   canvas.pill(titleCase(invoice.status), 485, 82, 73, statusColor);
 
-  canvas.rect(34, 134, 527, 106, "#ffffff", LINE);
-  canvas.text(academyName, 50, 162, { size: 15, font: "bold", color: INK, maxWidth: 245, lineHeight: 16 });
-  canvas.text(settings.registeredAddress || "Registered address not added", 50, 187, { size: 8, color: MUTED, maxWidth: 260, maxLines: 3, lineHeight: 10 });
-  canvas.text([settings.email, settings.phone].filter(Boolean).join(" | ") || "Contact details not added", 50, 221, { size: 7.5, color: MUTED, maxWidth: 260, maxLines: 2 });
-  canvas.line(320, 152, 320, 222, LINE);
-  canvas.text("Bill To", 338, 160, { size: 8, font: "bold", color: BRAND });
-  canvas.text(student.name || "Student", 338, 181, { size: 14, font: "bold", color: INK, maxWidth: 185, maxLines: 2, lineHeight: 15 });
-  canvas.text(student.email || student.username || "Student details not added", 338, 211, { size: 8, color: MUTED, maxWidth: 185, maxLines: 2 });
-  if (invoice.credits) canvas.text(`${invoice.credits} credits`, 338, 226, { size: 8, font: "bold", color: BRAND });
+  canvas.rect(34, 138, 527, 150, "#ffffff", LINE);
+  canvas.text("Seller Details", 50, 160, { size: 8, font: "bold", color: BRAND });
+  canvas.text(academyName, 50, 179, { size: 13, font: "bold", color: INK, maxWidth: 230, lineHeight: 15 });
+  sellerLines.forEach((line, index) => {
+    const strong = line.startsWith("GSTN:") || line === settings.phone || line === settings.email || line === ACADEMY_DEFAULTS.website;
+    canvas.text(line, 50, 199 + index * 10, { size: 7.2, font: strong ? "bold" : "regular", color: "#344054", maxWidth: 240, maxLines: 1 });
+  });
 
-  canvas.rect(34, 258, 527, 64, PANEL, LINE);
-  canvas.meta("Issue Date", date(invoice.issueDate), 52, 282, 76);
-  canvas.meta("Due Date", date(invoice.dueDate), 142, 282, 76);
-  canvas.meta("GSTIN", isGstInvoice ? settings.gstNumber || "Not added" : "Not applicable", 232, 282, 118);
-  canvas.meta("Tax Mode", taxMode, 364, 282, 76);
-  canvas.meta("Student Plan", plan.name || titleCase(invoice.type), 454, 282, 84);
+  canvas.line(310, 154, 310, 272, LINE);
+  canvas.text("Bill To", 326, 160, { size: 8, font: "bold", color: BRAND });
+  canvas.text(student.name || "Student", 326, 181, { size: 13, font: "bold", color: INK, maxWidth: 108, maxLines: 2, lineHeight: 15 });
+  canvas.text(student.email || student.username || "Student details not added", 326, 213, { size: 7.5, color: "#344054", maxWidth: 108, maxLines: 2 });
 
-  canvas.rect(34, 352, 527, 28, BRAND);
-  canvas.text("Description", 50, 370, { size: 8, font: "bold", color: "#ffffff" });
-  canvas.text("Qty", 393, 370, { size: 8, font: "bold", color: "#ffffff", align: "right" });
-  canvas.text("Amount", 544, 370, { size: 8, font: "bold", color: "#ffffff", align: "right" });
-  canvas.rect(34, 380, 527, 72, "#ffffff", LINE);
-  canvas.text(invoice.title || plan.name || invoiceTitle, 50, 408, { size: 10, font: "bold", color: INK, maxWidth: 270, maxLines: 2, lineHeight: 12 });
-  canvas.text(invoice.notes || "Academy fee generated through the Envision LMS billing system.", 50, 431, { size: 7.5, color: MUTED, maxWidth: 290, maxLines: 2, lineHeight: 9 });
-  canvas.text(invoice.credits ? `${invoice.credits} credits` : "1", 393, 410, { size: 9, font: "bold", color: INK, align: "right" });
-  canvas.text(money(invoice.amount), 544, 410, { size: 9, font: "bold", color: INK, align: "right" });
+  canvas.line(447, 154, 447, 272, LINE);
+  canvas.meta("Invoice Date", date(invoice.issueDate), 464, 162, 80);
+  canvas.meta("Due Date", date(invoice.dueDate), 464, 198, 80);
+  canvas.meta("GSTIN", isGstInvoice ? gstNumber : "Not applicable", 464, 234, 80);
 
-  canvas.rect(321, 480, 240, isGstInvoice ? 145 : 96, "#ffffff", LINE);
-  let rowY = 504;
+  canvas.rect(34, 310, 527, 52, PANEL, LINE);
+  canvas.meta("Tax Mode", taxMode, 52, 333, 95);
+  canvas.meta("Student Plan", plan.name || titleCase(invoice.type), 165, 333, 130);
+  canvas.meta("Place of Supply", "West Bengal", 315, 333, 105);
+  canvas.meta("Payment Status", titleCase(invoice.status), 444, 333, 90);
+
+  canvas.rect(34, 392, 527, 28, BRAND);
+  canvas.text("#", 50, 410, { size: 8, font: "bold", color: "#ffffff" });
+  canvas.text("Item Name", 78, 410, { size: 8, font: "bold", color: "#ffffff" });
+  canvas.text("Qty", 325, 410, { size: 8, font: "bold", color: "#ffffff", align: "right" });
+  canvas.text("Unit", 368, 410, { size: 8, font: "bold", color: "#ffffff", align: "right" });
+  canvas.text("Price", 427, 410, { size: 8, font: "bold", color: "#ffffff", align: "right" });
+  canvas.text("GST", 483, 410, { size: 8, font: "bold", color: "#ffffff", align: "right" });
+  canvas.text("Amount", 544, 410, { size: 8, font: "bold", color: "#ffffff", align: "right" });
+  canvas.rect(34, 420, 527, 70, "#ffffff", LINE);
+  canvas.text("1", 50, 446, { size: 9, color: INK });
+  canvas.text(invoice.title || plan.name || invoiceTitle, 78, 446, { size: 10, font: "bold", color: INK, maxWidth: 210, maxLines: 2, lineHeight: 12 });
+  canvas.text(invoice.notes || "Academy fee generated through the Envision LMS billing system.", 78, 468, { size: 7.5, color: "#475467", maxWidth: 220, maxLines: 2, lineHeight: 9 });
+  canvas.text(qty, 325, 446, { size: 9, font: "bold", color: INK, align: "right" });
+  canvas.text(unitLabel, 368, 446, { size: 8, color: "#475467", align: "right" });
+  canvas.text(money(baseAmount), 427, 446, { size: 8.5, color: INK, align: "right" });
+  canvas.text(isGstInvoice ? `${gstRate}%` : "-", 483, 446, { size: 8.5, color: INK, align: "right" });
+  canvas.text(money(invoice.totalAmount), 544, 446, { size: 9, font: "bold", color: INK, align: "right" });
+
+  canvas.rect(34, 510, 252, 72, PANEL, LINE);
+  canvas.text("Amount in words", 52, 535, { size: 8, font: "bold", color: BRAND });
+  canvas.text(amountWords, 52, 558, { size: 8, color: "#475467", maxWidth: 210, maxLines: 3, lineHeight: 10 });
+
+  canvas.rect(321, 510, 240, isGstInvoice ? 126 : 84, "#ffffff", LINE);
+  let rowY = 533;
   const totalRow = (label: string, value: string, bold = false, color = INK) => {
     canvas.text(label, 339, rowY, { size: bold ? 9 : 8, font: bold ? "bold" : "regular", color });
     canvas.text(value, 543, rowY, { size: bold ? 9 : 8, font: bold ? "bold" : "regular", color, align: "right" });
@@ -359,30 +413,25 @@ function makePdf(invoice: any, settings: any) {
   canvas.line(339, rowY - 7, 543, rowY - 7, LINE);
   totalRow("Grand total", money(invoice.totalAmount), true, BRAND);
 
-  canvas.rect(34, 480, 252, 96, PANEL, LINE);
-  canvas.text("Payment Status", 52, 506, { size: 8, font: "bold", color: MUTED });
-  canvas.text(titleCase(invoice.status), 52, 532, { size: 20, font: "bold", color: statusColor });
-  canvas.text(isPaid ? `Paid on ${date(invoice.paidAt)}` : `Payment due by ${date(invoice.dueDate)}`, 52, 552, { size: 8, color: MUTED });
-
-  canvas.rect(34, 604, 252, 112, "#ffffff", LINE);
-  canvas.text("Terms & Notes", 52, 630, { size: 8, font: "bold", color: BRAND });
-  canvas.text(settings.invoiceFooter || "Thank you for choosing Envisions Chess Academy LLP. This is a computer-generated invoice issued from the academy LMS.", 52, 654, {
+  canvas.rect(34, 620, 252, 88, "#ffffff", LINE);
+  canvas.text("Terms & Notes", 52, 644, { size: 8, font: "bold", color: BRAND });
+  canvas.text(settings.invoiceFooter || "Thank you for choosing Envisions Chess Academy LLP. This is a computer-generated invoice issued from the academy LMS.", 52, 668, {
     size: 7.5,
-    color: MUTED,
+    color: "#475467",
     maxWidth: 212,
-    maxLines: 5,
+    maxLines: 4,
     lineHeight: 10,
   });
 
-  canvas.rect(321, 650, 240, 98, "#ffffff", LINE);
-  canvas.text("For", 339, 674, { size: 7.5, color: MUTED });
-  canvas.text(academyName, 339, 691, { size: 9, font: "bold", color: INK, maxWidth: 190, maxLines: 2 });
+  canvas.rect(321, 642, 240, 104, "#ffffff", LINE);
+  canvas.text("For", 339, 666, { size: 7.5, color: MUTED });
+  canvas.text(legalName, 339, 683, { size: 9, font: "bold", color: INK, maxWidth: 190, maxLines: 2 });
   if (signatory) {
-    const fitted = fitImage(signatory, 120, 34);
-    canvas.image(signatory.name, 339, 704, fitted.width, fitted.height);
+    const fitted = fitImage(signatory, 128, 40);
+    canvas.image(signatory.name, 339, 694, fitted.width, fitted.height);
   }
-  canvas.line(339, 730, 526, 730, BRAND, 1.1);
-  canvas.text(settings.authorizedSignatory || "Authorized Signatory", 339, 744, { size: 8, font: "bold", color: INK, maxWidth: 180 });
+  canvas.line(339, 725, 526, 725, BRAND, 1.1);
+  canvas.text(settings.authorizedSignatory || ACADEMY_DEFAULTS.authorizedSignatory, 339, 739, { size: 8, font: "bold", color: INK, maxWidth: 180 });
 
   canvas.rect(34, 780, 527, 28, BRAND);
   canvas.text("Generated by Envision LMS", 52, 798, { size: 8, font: "bold", color: "#ffffff" });
@@ -446,7 +495,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const settings: any = await getAcademySettings();
-  const pdf = makePdf(invoice, settings);
+  const pdf = await makeInvoicePdf(invoice, settings);
 
   return new NextResponse(pdf, {
     headers: {

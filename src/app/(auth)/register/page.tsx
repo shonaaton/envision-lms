@@ -7,7 +7,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
 import Image from "next/image";
-import { BriefcaseBusiness, CheckCircle2, Mail, MapPin, Phone, ShieldCheck, UserRound, UsersRound } from "lucide-react";
+import { BookOpen, BriefcaseBusiness, CalendarDays, CheckCircle2, Mail, MapPin, Phone, ShieldCheck, Target, UserRound, UsersRound } from "lucide-react";
+import { ACADEMY_LOGO_URL } from "@/lib/branding";
 
 const countries = [
   { code: "+91", country: "India" },
@@ -18,6 +19,12 @@ const countries = [
   { code: "+971", country: "United Arab Emirates" },
   { code: "+974", country: "Qatar" },
   { code: "+966", country: "Saudi Arabia" },
+];
+
+const registerSteps = [
+  { title: "Free demo", detail: "Start with a level check and batch recommendation.", icon: CalendarDays },
+  { title: "Structured classes", detail: "Learn through levels, coach notes, and practice sessions.", icon: BookOpen },
+  { title: "Keep improving", detail: "Use homework, puzzles, and feedback between classes.", icon: Target },
 ];
 
 export default function RegisterPage() {
@@ -93,20 +100,42 @@ export default function RegisterPage() {
 
   return (
     <main className="min-h-screen bg-[#f7f8fb] px-5 py-8 text-slate-950">
-      <div className="mx-auto grid min-h-[calc(100dvh-64px)] max-w-7xl items-center gap-8 lg:grid-cols-[minmax(0,0.9fr)_minmax(420px,560px)]">
-        <section className="hidden rounded-lg bg-[linear-gradient(160deg,#451059_0%,#2a0936_62%,#14051c_100%)] p-10 text-white shadow-2xl shadow-brand-900/20 lg:block xl:p-12">
-          <div className="inline-flex rounded-lg border border-white/10 bg-white/[0.08] px-6 py-5 shadow-2xl backdrop-blur">
-            <Image src="/logo-yellow.svg" alt="Envision Chess Academy" width={300} height={108} priority className="h-20 w-auto object-contain" />
+      <div className="mx-auto grid min-h-[calc(100dvh-64px)] max-w-7xl items-center gap-8 lg:grid-cols-[minmax(0,0.92fr)_minmax(420px,580px)]">
+        <section className="relative hidden overflow-hidden rounded-lg bg-brand-900 p-10 text-white shadow-2xl shadow-brand-900/20 lg:flex lg:min-h-[720px] lg:flex-col lg:justify-between xl:p-12">
+          <Image src="/images/landing/anish-bijibilla.jpg" alt="Envision Chess Academy student achievement" fill priority sizes="48vw" className="object-cover opacity-38" />
+          <div className="absolute inset-0 bg-[linear-gradient(150deg,#21062b_0%,rgba(55,11,70,0.93)_52%,rgba(23,5,31,0.76)_100%)]" />
+          <div className="relative z-10">
+            <Image src={ACADEMY_LOGO_URL} alt="Envision Chess Academy" width={300} height={108} priority unoptimized className="h-20 w-auto object-contain" />
+            <p className="mt-12 text-sm font-bold uppercase tracking-[0.16em] text-accent">Join Envision</p>
+            <h1 className="mt-3 max-w-2xl text-5xl font-black leading-tight">Begin with a demo, then grow through a clear chess pathway.</h1>
+            <p className="mt-5 max-w-xl text-lg leading-8 text-white/75">Students get a guided start. Coaches apply first, then admin approval activates teaching access.</p>
           </div>
-          <h1 className="mt-10 max-w-2xl text-5xl font-black leading-tight">Start with the right access.</h1>
-          <p className="mt-5 max-w-xl text-lg leading-8 text-white/75">Students begin with a safe demo workspace. Coaches apply first, then admin approval activates teaching access.</p>
+          <div className="relative z-10 grid gap-3">
+            {registerSteps.map((item) => {
+              const Icon = item.icon;
+              return (
+                <div key={item.title} className="flex items-start gap-3 rounded-lg border border-white/12 bg-white/[0.09] p-4 backdrop-blur">
+                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-accent text-brand">
+                    <Icon size={19} />
+                  </span>
+                  <span>
+                    <span className="block text-sm font-black text-white">{item.title}</span>
+                    <span className="mt-1 block text-sm leading-6 text-white/70">{item.detail}</span>
+                  </span>
+                </div>
+              );
+            })}
+          </div>
         </section>
 
         <form onSubmit={onSubmit} className="rounded-lg border border-slate-200 bg-white p-5 text-slate-950 shadow-2xl shadow-brand-900/10 sm:p-7 lg:max-h-[calc(100dvh-64px)] lg:overflow-auto">
+          <div className="mb-5 flex justify-center lg:hidden">
+            <Image src={ACADEMY_LOGO_URL} alt="Envision Chess Academy" width={230} height={78} priority unoptimized className="h-16 w-auto object-contain" />
+          </div>
           <div className="mb-6 text-center">
             <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-accent text-brand"><ShieldCheck size={23} /></div>
             <h1 className="text-2xl font-black sm:text-3xl">{role === "student" ? "Create Demo Student Account" : "Coach Application"}</h1>
-            <p className="mt-2 text-sm text-slate-500">{role === "student" ? "Demo users get limited practice access and can create a demo booking." : "Coach applications are reviewed by admin before account activation."}</p>
+            <p className="mt-2 text-sm leading-6 text-slate-500">{role === "student" ? "Create access for the demo journey, practice area, and class booking flow." : "Coach applications are reviewed by admin before teaching access is activated."}</p>
           </div>
 
           <div className="mb-5 grid grid-cols-2 gap-2 rounded-lg bg-slate-100 p-1">
@@ -169,7 +198,7 @@ export default function RegisterPage() {
             </div>
           </div>
 
-          <button className="btn-primary mt-6 h-[52px] w-full rounded-xl" disabled={loading}>{loading ? "Submitting..." : role === "student" ? "Create Demo Account" : "Submit Coach Application"}</button>
+          <button className="btn-primary mt-6 h-[52px] w-full" disabled={loading}>{loading ? "Submitting..." : role === "student" ? "Create Demo Account" : "Submit Coach Application"}</button>
           <p className="mt-5 text-center text-sm text-slate-500">
             Have an account? <Link href="/login" className="font-semibold text-brand hover:text-brand-700">Sign in</Link>
           </p>

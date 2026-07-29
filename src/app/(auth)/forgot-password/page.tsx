@@ -5,6 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { toast } from "sonner";
 import { ArrowLeft, AtSign, MailQuestion } from "lucide-react";
+import { ACADEMY_LOGO_URL } from "@/lib/branding";
 
 export default function ForgotPasswordPage() {
   const [loading, setLoading] = useState(false);
@@ -28,7 +29,7 @@ export default function ForgotPasswordPage() {
     <main className="grid min-h-screen place-items-center bg-[#f7f8fb] px-5 py-8 text-slate-950">
       <section className="w-full max-w-[480px]">
         <div className="mb-6 flex justify-center">
-          <Image src="/logo-purple.svg" alt="Envision Chess Academy" width={230} height={78} priority className="h-16 w-auto object-contain" />
+          <Image src={ACADEMY_LOGO_URL} alt="Envision Chess Academy" width={230} height={78} priority unoptimized className="h-16 w-auto object-contain" />
         </div>
 
         <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-2xl shadow-brand-900/10 sm:p-8">

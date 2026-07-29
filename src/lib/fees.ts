@@ -1,12 +1,34 @@
 import { Types } from "mongoose";
 import { AcademySettings, CreditLedger, FeeAssignment, Invoice, Notification } from "@/models/Fee";
+import { ACADEMY_DEFAULTS, ACADEMY_LOGO_URL, ACADEMY_SIGNATURE_URL } from "@/lib/branding";
 
 const DAY = 24 * 60 * 60 * 1000;
 
 export async function getAcademySettings() {
   const existing = await AcademySettings.findOne().lean();
-  if (existing) return existing as any;
-  const created = await AcademySettings.create({});
+  if (existing) {
+    return {
+      ...(existing as any),
+      academyName: (existing as any).academyName || ACADEMY_DEFAULTS.academyName,
+      registeredAddress: (existing as any).registeredAddress || ACADEMY_DEFAULTS.registeredAddress,
+      gstNumber: (existing as any).gstNumber || ACADEMY_DEFAULTS.gstNumber,
+      email: (existing as any).email || ACADEMY_DEFAULTS.email,
+      phone: (existing as any).phone || ACADEMY_DEFAULTS.phone,
+      authorizedSignatory: (existing as any).authorizedSignatory || ACADEMY_DEFAULTS.authorizedSignatory,
+      logoUrl: (existing as any).logoUrl || ACADEMY_LOGO_URL,
+      signatoryUrl: (existing as any).signatoryUrl || ACADEMY_SIGNATURE_URL,
+    } as any;
+  }
+  const created = await AcademySettings.create({
+    academyName: ACADEMY_DEFAULTS.academyName,
+    registeredAddress: ACADEMY_DEFAULTS.registeredAddress,
+    gstNumber: ACADEMY_DEFAULTS.gstNumber,
+    email: ACADEMY_DEFAULTS.email,
+    phone: ACADEMY_DEFAULTS.phone,
+    authorizedSignatory: ACADEMY_DEFAULTS.authorizedSignatory,
+    logoUrl: ACADEMY_LOGO_URL,
+    signatoryUrl: ACADEMY_SIGNATURE_URL,
+  });
   return created.toObject();
 }
 

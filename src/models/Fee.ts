@@ -1,16 +1,17 @@
 import { Schema, model, models, type InferSchemaType } from "mongoose";
+import { ACADEMY_DEFAULTS, ACADEMY_LOGO_URL, ACADEMY_SIGNATURE_URL } from "@/lib/branding";
 
 const AcademySettingsSchema = new Schema(
   {
-    academyName: { type: String, default: "Envision Chess Academy" },
-    registeredAddress: { type: String, default: "" },
-    gstNumber: { type: String, default: "" },
-    email: { type: String, default: "" },
-    logoUrl: { type: String, default: "" },
-    signatoryUrl: { type: String, default: "" },
+    academyName: { type: String, default: ACADEMY_DEFAULTS.academyName },
+    registeredAddress: { type: String, default: ACADEMY_DEFAULTS.registeredAddress },
+    gstNumber: { type: String, default: ACADEMY_DEFAULTS.gstNumber },
+    email: { type: String, default: ACADEMY_DEFAULTS.email },
+    logoUrl: { type: String, default: ACADEMY_LOGO_URL },
+    signatoryUrl: { type: String, default: ACADEMY_SIGNATURE_URL },
     faviconUrl: { type: String, default: "" },
-    phone: { type: String, default: "" },
-    authorizedSignatory: { type: String, default: "" },
+    phone: { type: String, default: ACADEMY_DEFAULTS.phone },
+    authorizedSignatory: { type: String, default: ACADEMY_DEFAULTS.authorizedSignatory },
     invoiceFooter: { type: String, default: "" },
     invoiceMode: { type: String, enum: ["gst", "non_gst"], default: "non_gst" },
     gstPercentage: { type: Number, default: 18 },

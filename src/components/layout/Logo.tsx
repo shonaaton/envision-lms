@@ -2,9 +2,10 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { ACADEMY_LOGO_URL } from "@/lib/branding";
 
 export default function Logo({ className = "", tone = "yellow" }: { className?: string; tone?: "yellow" | "purple" }) {
-  const fallbackLogo = tone === "purple" ? "/logo-purple.svg" : "/logo-yellow.svg";
+  const fallbackLogo = ACADEMY_LOGO_URL;
   const [branding, setBranding] = useState({ academyName: "Envision Chess Academy", logoUrl: fallbackLogo });
 
   useEffect(() => {

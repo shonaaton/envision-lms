@@ -274,14 +274,14 @@ export default function RegisterPage() {
           <div className="relative min-h-0 flex-1 overflow-hidden rounded-lg border border-white/10 bg-[#1a0622] p-5 xl:p-6">
             <Image src="/images/landing/anish-bijibilla.jpg" alt="Envision Chess Academy student achievement" fill priority sizes="34vw" className="object-cover object-top opacity-22" />
             <div className="absolute inset-0 bg-[linear-gradient(155deg,#17051f_0%,rgba(43,7,55,0.92)_50%,rgba(12,3,16,0.82)_100%)]" />
-            <div className="relative z-10 flex h-full flex-col">
-              <Image src={ACADEMY_LOGO_URL} alt="Envision Chess Academy" width={270} height={92} priority unoptimized className="h-14 w-auto object-contain xl:h-20" />
-              <div className="mt-auto max-w-[390px]">
+            <div className="relative z-10 flex h-full flex-col justify-between gap-4">
+              <Image src={ACADEMY_LOGO_URL} alt="Envision Chess Academy" width={270} height={92} priority unoptimized className="h-12 w-auto object-contain xl:h-16" />
+              <div className="max-w-[390px]">
                 <p className="inline-flex items-center gap-2 rounded-full border border-accent/30 bg-accent/10 px-3 py-1 text-xs font-black uppercase text-accent">
                   <Sparkles size={14} /> Guided onboarding
                 </p>
-                <h1 className="mt-3 text-[2rem] font-black leading-[1.03] xl:text-4xl 2xl:text-[2.65rem]">A cleaner start for every academy journey.</h1>
-                <p className="mt-3 text-xs leading-5 text-white/76 xl:text-sm xl:leading-6">
+                <h1 className="mt-3 max-w-[12ch] text-[1.85rem] font-black leading-[1.02] xl:text-[2.15rem] 2xl:text-[2.3rem]">A cleaner start for every academy journey.</h1>
+                <p className="mt-3 max-w-[34ch] text-xs leading-5 text-white/78">
                   Students request a demo. Coaches submit a reviewed application. Every account begins with the right context.
                 </p>
               </div>

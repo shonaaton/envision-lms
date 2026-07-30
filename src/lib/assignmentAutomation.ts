@@ -263,7 +263,11 @@ export async function autoAssignHomeworkForSession({
   const created = await Homework.create({
     classroom: classroomId,
     instructor,
-    type: template.activities?.some((activity: any) => activity.type === "study_pgn") ? "pgn_study" : template.activities?.some((activity: any) => activity.type === "quiz") ? "quiz" : "puzzle_set",
+    type: template.activities?.some((activity: any) => activity.type === "study_pgn")
+      ? "pgn_study"
+      : template.activities?.some((activity: any) => activity.type === "quiz" || activity.type === "written_answer")
+        ? "quiz"
+        : "puzzle_set",
     title: template.title,
     description: template.description,
     instructions: template.instructions,

@@ -30,7 +30,16 @@ function activitySummary(template: any) {
   return activities
     .map((activity: any) => {
       const count = Array.isArray(activity.items) ? activity.items.length : 0;
-      return `${String(activity.type || "activity").replaceAll("_", " ")}${count ? ` (${count})` : ""}`;
+      const sourceKind = activity.source?.kind;
+      const label =
+        sourceKind === "fen_mcq" ? "FEN + MCQ"
+        : sourceKind === "fen_written_answer" ? "FEN + Written"
+        : activity.type === "quiz" ? "MCQ"
+        : activity.type === "written_answer" ? "Written Answer"
+        : activity.type === "study_pgn" ? "PGN Homework"
+        : activity.type === "play_computer" ? "Play vs Computer"
+        : String(activity.type || "activity").replaceAll("_", " ");
+      return `${label}${count ? ` (${count})` : ""}`;
     })
     .join(", ");
 }

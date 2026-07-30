@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { Chess } from "chess.js";
 import { toast } from "sonner";
-import { BookOpen, CheckCircle2, ChevronLeft, ChevronRight, Clock, FileQuestion, Gamepad2, HelpCircle, RotateCcw, Trophy } from "lucide-react";
+import { BookOpen, CheckCircle2, ChevronLeft, ChevronRight, Clock, FileQuestion, FileText, Gamepad2, HelpCircle, RotateCcw, Trophy } from "lucide-react";
 import { buildMoveHintStyles, legalTargetsFromGame } from "@/lib/chessboardUi";
 import { isPromotionMove, promotionFromBoardPiece, type PendingPromotion, type PromotionPiece } from "@/lib/chessPromotion";
 import { normalizePermissiveFen } from "@/lib/pgnLibrary";
@@ -85,6 +85,19 @@ function previewFen(fen: string) {
   return "";
 }
 
+function useBoardWidth(maxWidth: number, minWidth = 220) {
+  const [width, setWidth] = useState(maxWidth);
+  useEffect(() => {
+    function updateWidth() {
+      setWidth(Math.max(minWidth, Math.min(maxWidth, window.innerWidth - 64)));
+    }
+    updateWidth();
+    window.addEventListener("resize", updateWidth);
+    return () => window.removeEventListener("resize", updateWidth);
+  }, [maxWidth, minWidth]);
+  return width;
+}
+
 function parsePgnPuzzle(pgn: string) {
   try {
     const game = new Chess();
@@ -108,6 +121,7 @@ export default function HomeworkAttemptPage() {
   const [hw, setHw] = useState<any>(null);
   const [elapsed, setElapsed] = useState(0);
   const [quizAnswers, setQuizAnswers] = useState<Record<string, string>>({});
+  const [writtenAnswers, setWrittenAnswers] = useState<Record<string, string>>({});
   const [boardResults, setBoardResults] = useState<Record<string, BoardResult>>({});
   const [submitting, setSubmitting] = useState(false);
 
@@ -151,6 +165,7 @@ export default function HomeworkAttemptPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         quizAnswers,
+        writtenAnswers,
         activityResults: boardResults,
         timeTakenSeconds: elapsed,
         metrics: {
@@ -200,6 +215,8 @@ export default function HomeworkAttemptPage() {
             locked={locked}
             quizAnswers={quizAnswers}
             setQuizAnswers={setQuizAnswers}
+            writtenAnswers={writtenAnswers}
+            setWrittenAnswers={setWrittenAnswers}
             boardResults={boardResults}
             setBoardResults={setBoardResults}
           />
@@ -259,6 +276,7 @@ function ReportActivity({ activity, index, submission }: { activity: any; index:
         <h2 className="text-xl font-black text-brand">{activity.title}</h2>
       </div>
       {activity.type === "quiz" && <ReportMcq activity={activity} submission={submission} />}
+      {activity.type === "written_answer" && <ReportWrittenAnswers activity={activity} submission={submission} />}
       {isPgnQuiz && <ReportPgnBoards activity={activity} submission={submission} />}
       {activity.type === "play_computer" && <ComputerPlaceholder activity={activity} />}
     </section>
@@ -294,6 +312,37 @@ function ReportMcq({ activity, submission }: { activity: any; submission: any })
   );
 }
 
+function ReportWrittenAnswers({ activity, submission }: { activity: any; submission: any }) {
+  return (
+    <div className="space-y-3">
+      {(activity.items || []).map((item: any, index: number) => {
+        const fen = itemFen(item);
+        const answer = submission.writtenAnswers?.[key(activity._id, item.id)] || "";
+        return (
+          <div key={item.id || index} className="rounded-xl border border-slate-200 p-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <b className="text-brand">Question {index + 1}</b>
+              <span className="rounded-full bg-amber-50 px-2 py-1 text-xs font-bold text-amber-700">Coach review</span>
+            </div>
+            {fen && <FenBox fen={fen} />}
+            <div className="mt-2 rounded-xl bg-slate-50 p-3 font-semibold">{item.question}</div>
+            <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3 text-sm">
+              <div className="mb-1 text-xs font-bold uppercase tracking-wide text-slate-500">Your answer</div>
+              <div className="whitespace-pre-wrap text-slate-800">{answer || "Not answered"}</div>
+            </div>
+            {(item.expectedAnswer || item.explanation) && (
+              <div className="mt-3 rounded-xl bg-accent/20 p-3 text-sm text-brand">
+                {item.expectedAnswer && <div><b>Model answer:</b> {item.expectedAnswer}</div>}
+                {item.explanation && <div className="mt-1"><b>Explanation:</b> {item.explanation}</div>}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function ReportPgnBoards({ activity, submission }: { activity: any; submission: any }) {
   return (
     <div className="space-y-4">
@@ -320,6 +369,7 @@ function ReportPgnBoards({ activity, submission }: { activity: any; submission: 
 function ReviewPgnBoard({ pgn }: { pgn: string }) {
   const parsed = useMemo(() => parsePgnPuzzle(pgn), [pgn]);
   const [ply, setPly] = useState(0);
+  const boardWidth = useBoardWidth(360, 220);
   const position = useMemo(() => {
     if (!parsed.moves.length) return parsed.start;
     const game = buildGame(parsed.start);
@@ -329,7 +379,7 @@ function ReviewPgnBoard({ pgn }: { pgn: string }) {
 
   return (
     <div>
-      <Chessboard position={position} arePiecesDraggable={false} boardWidth={360} customDarkSquareStyle={{ backgroundColor: "#b58863" }} customLightSquareStyle={{ backgroundColor: "#f0d9b5" }} />
+      <Chessboard position={position} arePiecesDraggable={false} boardWidth={boardWidth} customDarkSquareStyle={{ backgroundColor: "#b58863" }} customLightSquareStyle={{ backgroundColor: "#f0d9b5" }} />
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <button type="button" className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold" onClick={() => setPly((value) => Math.max(0, value - 1))}>Previous</button>
         <span className="text-sm font-bold text-slate-600">{ply}/{parsed.moves.length}</span>
@@ -348,13 +398,14 @@ function ReportStat({ label, value }: { label: string; value: string | number })
   );
 }
 
-function ActivitySection({ activity, index, locked, quizAnswers, setQuizAnswers, boardResults, setBoardResults }: any) {
+function ActivitySection({ activity, index, locked, quizAnswers, setQuizAnswers, writtenAnswers, setWrittenAnswers, boardResults, setBoardResults }: any) {
   const [activeItemIndex, setActiveItemIndex] = useState(0);
   const isPgnQuiz = activity.type === "study_pgn" && activity.source?.kind === "pgn_quiz";
-  const icon = activity.type === "quiz" ? <FileQuestion size={16} /> : isPgnQuiz ? <BookOpen size={16} /> : activity.type === "play_computer" ? <Gamepad2 size={16} /> : <Trophy size={16} />;
+  const isWritten = activity.type === "written_answer";
+  const icon = activity.type === "quiz" ? <FileQuestion size={16} /> : isWritten ? <FileText size={16} /> : isPgnQuiz ? <BookOpen size={16} /> : activity.type === "play_computer" ? <Gamepad2 size={16} /> : <Trophy size={16} />;
   const items = activity.items || [];
   const activeItem = items[Math.min(activeItemIndex, Math.max(0, items.length - 1))];
-  const hasOneByOneItems = (activity.type === "quiz" || isPgnQuiz) && items.length > 0;
+  const hasOneByOneItems = (activity.type === "quiz" || isWritten || isPgnQuiz) && items.length > 0;
 
   useEffect(() => {
     setActiveItemIndex(0);
@@ -378,7 +429,7 @@ function ActivitySection({ activity, index, locked, quizAnswers, setQuizAnswers,
     <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <span className="inline-flex items-center gap-2 rounded-full bg-purple-50 px-3 py-1 text-xs font-black text-purple-700">{icon}{isPgnQuiz ? "PGN Quiz" : activity.type === "quiz" ? "MCQ" : activity.type.replaceAll("_", " ")}</span>
+          <span className="inline-flex items-center gap-2 rounded-full bg-purple-50 px-3 py-1 text-xs font-black text-purple-700">{icon}{isPgnQuiz ? "PGN Homework" : activity.type === "quiz" ? "MCQ" : isWritten ? "Written Answer" : activity.type.replaceAll("_", " ")}</span>
           <h2 className="mt-2 text-xl font-black text-brand">Activity {index + 1}: {activity.title}</h2>
           {activity.instructions && <p className="mt-1 text-sm text-slate-600">{activity.instructions}</p>}
         </div>
@@ -411,6 +462,17 @@ function ActivitySection({ activity, index, locked, quizAnswers, setQuizAnswers,
             setQuizAnswers((current: any) => ({ ...current, [key(activity._id, activeItem.id)]: optionId }));
             window.setTimeout(goNext, 250);
           }}
+        />
+      )}
+
+      {isWritten && activeItem && (
+        <WrittenQuestion
+          key={activeItem.id || activeItemIndex}
+          item={activeItem}
+          index={activeItemIndex}
+          locked={locked}
+          value={writtenAnswers[key(activity._id, activeItem.id)] || ""}
+          onChange={(answer: string) => setWrittenAnswers((current: any) => ({ ...current, [key(activity._id, activeItem.id)]: answer }))}
         />
       )}
 
@@ -472,13 +534,39 @@ function McqQuestion({ activityId, item, index, value, onChange, locked }: any) 
             {option.text}
           </label>
         ))}
+        {!(item.options || []).length && <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-800">No options were added for this MCQ.</div>}
       </div>
+    </div>
+  );
+}
+
+function WrittenQuestion({ item, index, value, onChange, locked }: any) {
+  const fen = itemFen(item);
+  return (
+    <div className="rounded-xl border border-slate-200 p-3">
+      <div className="mb-2 flex items-center justify-between">
+        <b className="text-brand">Question {index + 1}</b>
+        <span className="rounded-full bg-accent/30 px-2 py-1 text-xs font-bold text-brand">{item.points || 1} pts</span>
+      </div>
+      {fen && <FenBox fen={fen} />}
+      <div className="mt-2 rounded-xl bg-slate-50 p-4 font-semibold text-slate-900">{item.question}</div>
+      <label className="mt-3 block text-xs font-bold uppercase tracking-wide text-slate-500">
+        Your answer
+        <textarea
+          disabled={locked}
+          className="mt-2 min-h-32 w-full resize-y rounded-xl border border-slate-200 bg-white p-3 text-sm font-medium text-slate-900 outline-none focus:border-brand focus:ring-2 focus:ring-brand/15 disabled:bg-slate-100"
+          placeholder="Type your answer here..."
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      </label>
     </div>
   );
 }
 
 function PgnBoardTask({ activityId, item, index, locked, onResult, onSolved }: any) {
   const parsed = useMemo(() => parsePgnPuzzle(item.pgn || ""), [item.pgn]);
+  const boardWidth = useBoardWidth(440, 220);
   const [game, setGame] = useState(() => buildGame(parsed.start));
   const [position, setPosition] = useState(parsed.start);
   const [ply, setPly] = useState(0);
@@ -630,7 +718,7 @@ function PgnBoardTask({ activityId, item, index, locked, onResult, onSolved }: a
           showPromotionDialog={!!pendingPromotion}
           promotionToSquare={pendingPromotion?.to as any}
           promotionDialogVariant="modal"
-          boardWidth={440}
+          boardWidth={boardWidth}
           customSquareStyles={moveHintStyles as any}
           customDarkSquareStyle={{ backgroundColor: "#b58863" }}
           customLightSquareStyle={{ backgroundColor: "#f0d9b5" }}
@@ -679,16 +767,17 @@ function MoveHistoryTrace({ history }: { history: MoveTrace[] }) {
 
 function FenBox({ fen }: { fen: string }) {
   const boardFen = previewFen(fen);
+  const boardWidth = useBoardWidth(260, 200);
   if (!boardFen) {
     return <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 font-mono text-xs text-slate-700">{fen}</div>;
   }
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-      <div className="mx-auto w-[240px] max-w-full overflow-hidden rounded-lg border border-slate-200">
+      <div className="mx-auto max-w-full overflow-hidden rounded-lg border border-slate-200" style={{ width: boardWidth }}>
         <Chessboard
           position={boardFen}
           arePiecesDraggable={false}
-          boardWidth={240}
+          boardWidth={boardWidth}
           customDarkSquareStyle={{ backgroundColor: "#b58863" }}
           customLightSquareStyle={{ backgroundColor: "#f0d9b5" }}
         />

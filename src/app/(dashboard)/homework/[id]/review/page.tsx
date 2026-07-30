@@ -76,6 +76,24 @@ export default async function HomeworkReviewPage({ params }: { params: { id: str
             </div>
 
             <div className="space-y-4">
+              {(submission.answers || []).filter((answer: any) => answer.kind === "written_answer").map((answer: any, answerIndex: number) => (
+                <div key={`${answer.activityId || "written"}-${answer.itemId || answerIndex}`} className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+                    <div className="font-semibold text-slate-950">Written answer {answerIndex + 1}</div>
+                    <span className="rounded-full bg-white px-2 py-1 text-xs font-bold text-amber-700">Needs review</span>
+                  </div>
+                  {answer.question && <div className="mb-3 rounded-lg bg-white px-3 py-2 text-sm font-semibold text-slate-800">{answer.question}</div>}
+                  <div className="rounded-lg bg-white px-3 py-3 text-sm">
+                    <div className="mb-1 text-xs font-bold uppercase tracking-wide text-slate-500">Student answer</div>
+                    <div className="whitespace-pre-wrap text-slate-900">{answer.textAnswer || "Not answered"}</div>
+                  </div>
+                  {answer.expectedAnswer && (
+                    <div className="mt-3 rounded-lg bg-white/70 px-3 py-3 text-sm text-slate-700">
+                      <b>Model answer:</b> {answer.expectedAnswer}
+                    </div>
+                  )}
+                </div>
+              ))}
               {Object.entries(submission.activityResults || {}).map(([resultKey, resultValue]: [string, any]) => (
                 <div key={resultKey} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                   <div className="mb-2 flex items-center justify-between gap-3">

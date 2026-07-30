@@ -3,12 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { BookOpen, CalendarClock, Check, ChevronDown, FileQuestion, Gamepad2, Plus, Search, Trash2, Users } from "lucide-react";
+import { BookOpen, CalendarClock, Check, ChevronDown, FileQuestion, FileText, Gamepad2, Plus, Search, Trash2, Users } from "lucide-react";
 
-type ActivityKind = "mcq" | "play_computer" | "pgn_quiz";
+type ActivityKind = "mcq" | "fen_mcq" | "written_answer" | "fen_written_answer" | "play_computer" | "pgn_quiz";
 type TargetMode = "all" | "batches" | "students";
 type QuizOption = { id: string; text: string; correct: boolean };
-type McqQuestion = { id: string; text: string; positionFen: string; options: QuizOption[]; explanation: string };
+type AssignmentQuestion = { id: string; text: string; positionFen: string; options: QuizOption[]; explanation: string; expectedAnswer: string };
 type PgnDoc = { _id: string; title: string; pgn: string; folder?: string; white?: string; black?: string; event?: string; initialFen?: string; sideToMove?: "white" | "black" };
 
 type Activity = {
@@ -18,7 +18,7 @@ type Activity = {
   points: number;
   negativePoints: number;
   timeLimitMinutes: number;
-  questions: McqQuestion[];
+  questions: AssignmentQuestion[];
   minLevel: number;
   maxLevel: number;
   side: "random" | "white" | "black";
@@ -40,18 +40,28 @@ function makeOption(index: number): QuizOption {
   return { id: `${Date.now()}-${index}-${Math.random().toString(36).slice(2, 6)}`, text: `Option ${index + 1}`, correct: index === 0 };
 }
 
-function makeQuestion(index: number): McqQuestion {
+function makeQuestion(index: number, withFen = false, withOptions = true): AssignmentQuestion {
   return {
     id: `question-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     text: index === 0 ? "What is the best move for White?" : `Question ${index + 1}`,
-    positionFen: "",
-    options: [0, 1, 2, 3].map(makeOption),
+    positionFen: withFen ? defaultFen : "",
+    options: withOptions ? [0, 1, 2, 3].map(makeOption) : [],
     explanation: "",
+    expectedAnswer: "",
   };
 }
 
 function makeActivity(kind: ActivityKind, index: number): Activity {
-  const title = kind === "mcq" ? "Multiple Choice Questions" : kind === "play_computer" ? "Play vs Computer" : "Quiz from PGN Library";
+  const title =
+    kind === "mcq" ? "MCQ"
+    : kind === "fen_mcq" ? "FEN + MCQ"
+    : kind === "written_answer" ? "Written Answer"
+    : kind === "fen_written_answer" ? "FEN + Written Answer"
+    : kind === "play_computer" ? "Play vs Computer"
+    : "PGN Homework";
+  const isMcq = kind === "mcq" || kind === "fen_mcq";
+  const isWritten = kind === "written_answer" || kind === "fen_written_answer";
+  const hasFen = kind === "fen_mcq" || kind === "fen_written_answer";
   return {
     id: `${kind}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     kind,
@@ -59,7 +69,7 @@ function makeActivity(kind: ActivityKind, index: number): Activity {
     points: 1,
     negativePoints: 0,
     timeLimitMinutes: 0,
-    questions: kind === "mcq" ? [makeQuestion(0)] : [],
+    questions: isMcq || isWritten ? [makeQuestion(0, hasFen, isMcq)] : [],
     minLevel: 1,
     maxLevel: 3,
     side: "random",
@@ -155,10 +165,10 @@ export default function NewHomeworkPage() {
     if (!activities.length) return toast.error("Add at least one activity");
 
     const assignmentActivities = activities.map((activity) => {
-      if (activity.kind === "mcq") {
+      if (activity.kind === "mcq" || activity.kind === "fen_mcq") {
         return {
           type: "quiz",
-          title: activity.title || "Multiple Choice Questions",
+          title: activity.title || (activity.kind === "fen_mcq" ? "FEN + MCQ" : "MCQ"),
           instructions: "Answer all multiple-choice questions.",
           points: activity.points,
           timeLimitMinutes: activity.timeLimitMinutes,
@@ -172,7 +182,26 @@ export default function NewHomeworkPage() {
             explanation: question.explanation,
             points: activity.points,
           })),
-          source: { kind: "mcq", negativePoints: activity.negativePoints },
+          source: { kind: activity.kind, negativePoints: activity.negativePoints },
+        };
+      }
+      if (activity.kind === "written_answer" || activity.kind === "fen_written_answer") {
+        return {
+          type: "written_answer",
+          title: activity.title || (activity.kind === "fen_written_answer" ? "FEN + Written Answer" : "Written Answer"),
+          instructions: "Write your answer in the box. Your coach will review it.",
+          points: activity.points,
+          timeLimitMinutes: activity.timeLimitMinutes,
+          items: activity.questions.map((question, index) => ({
+            id: question.id,
+            title: `Question ${index + 1}`,
+            question: question.text,
+            positionFen: question.positionFen,
+            expectedAnswer: question.expectedAnswer,
+            explanation: question.explanation,
+            points: activity.points,
+          })),
+          source: { kind: activity.kind },
         };
       }
       if (activity.kind === "play_computer") {
@@ -242,7 +271,7 @@ export default function NewHomeworkPage() {
       <header className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h1 className="text-2xl font-black text-brand">Create Assignment</h1>
-          <p className="text-sm text-slate-500">Simple builder: MCQ, Play vs Computer, and PGN Quiz.</p>
+          <p className="text-sm text-slate-500">Build MCQ, written answer, board-based, PGN, and computer-play homework.</p>
         </div>
         <button className="rounded-lg bg-brand px-4 py-2 text-sm font-black text-white"><Check size={15} className="mr-1 inline" /> Create Assignment</button>
       </header>
@@ -309,8 +338,11 @@ export default function NewHomeworkPage() {
         </div>
         <div className="mb-4 flex flex-wrap gap-2">
           <AddActivityButton icon={<FileQuestion size={15} />} label="Add MCQ" onClick={() => addActivity("mcq")} />
+          <AddActivityButton icon={<FileQuestion size={15} />} label="Add FEN + MCQ" onClick={() => addActivity("fen_mcq")} />
+          <AddActivityButton icon={<FileText size={15} />} label="Add Written Answer" onClick={() => addActivity("written_answer")} />
+          <AddActivityButton icon={<FileText size={15} />} label="Add FEN + Written" onClick={() => addActivity("fen_written_answer")} />
           <AddActivityButton icon={<Gamepad2 size={15} />} label="Add Play vs Computer" onClick={() => addActivity("play_computer")} />
-          <AddActivityButton icon={<BookOpen size={15} />} label="Add PGN Quiz" onClick={() => addActivity("pgn_quiz")} />
+          <AddActivityButton icon={<BookOpen size={15} />} label="Add PGN Homework" onClick={() => addActivity("pgn_quiz")} />
         </div>
 
         <div className="space-y-3">
@@ -344,8 +376,12 @@ function ActivityCard({ activity, index, open, pgns, folders, onToggle, onRemove
   onChange: (patch: Partial<Activity>) => void;
 }) {
   const filteredPgns = pgns.filter((pgn) => activity.pgnFolder === "all" || (normalizeFolderPath(pgn.folder) || "Unfiled") === activity.pgnFolder);
-  const summary = activity.kind === "mcq"
+  const isMcq = activity.kind === "mcq" || activity.kind === "fen_mcq";
+  const isWritten = activity.kind === "written_answer" || activity.kind === "fen_written_answer";
+  const summary = isMcq
     ? `${activity.questions.length} question${activity.questions.length === 1 ? "" : "s"}`
+    : isWritten
+      ? `${activity.questions.length} written response${activity.questions.length === 1 ? "" : "s"}`
     : activity.kind === "play_computer"
       ? `Level ${activity.minLevel}-${activity.maxLevel} · ${activity.side === "random" ? "Any color" : activity.side}`
       : `${activity.selectedPgnIds.length} game${activity.selectedPgnIds.length === 1 ? "" : "s"} selected`;
@@ -371,7 +407,7 @@ function ActivityCard({ activity, index, open, pgns, folders, onToggle, onRemove
               <input className="input mt-1 h-10" value={activity.title} onChange={(event) => onChange({ title: event.target.value })} />
             </label>
             <label className="text-xs font-bold text-slate-600">
-              Points per correct answer
+              Points
               <input className="input mt-1 h-10" type="number" min={0} value={activity.points} onChange={(event) => onChange({ points: Number(event.target.value) })} />
             </label>
             <label className="text-xs font-bold text-slate-600">
@@ -379,7 +415,8 @@ function ActivityCard({ activity, index, open, pgns, folders, onToggle, onRemove
               <input className="input mt-1 h-10" type="number" min={0} placeholder="0 means no limit" value={activity.timeLimitMinutes} onChange={(event) => onChange({ timeLimitMinutes: Number(event.target.value) })} />
             </label>
           </div>
-          {activity.kind === "mcq" && <McqActivity activity={activity} onChange={onChange} />}
+          {isMcq && <McqActivity activity={activity} onChange={onChange} />}
+          {isWritten && <WrittenAnswerActivity activity={activity} onChange={onChange} />}
           {activity.kind === "play_computer" && <ComputerActivity activity={activity} onChange={onChange} />}
           {activity.kind === "pgn_quiz" && <PgnQuizActivity activity={activity} pgns={filteredPgns} folders={folders} onChange={onChange} />}
         </div>
@@ -389,10 +426,10 @@ function ActivityCard({ activity, index, open, pgns, folders, onToggle, onRemove
 }
 
 function McqActivity({ activity, onChange }: { activity: Activity; onChange: (patch: Partial<Activity>) => void }) {
-  function updateQuestion(id: string, patch: Partial<McqQuestion>) {
+  function updateQuestion(id: string, patch: Partial<AssignmentQuestion>) {
     onChange({ questions: activity.questions.map((question) => (question.id === id ? { ...question, ...patch } : question)) });
   }
-  function updateOption(question: McqQuestion, optionId: string, patch: Partial<QuizOption>) {
+  function updateOption(question: AssignmentQuestion, optionId: string, patch: Partial<QuizOption>) {
     updateQuestion(question.id, { options: question.options.map((option) => (option.id === optionId ? { ...option, ...patch } : option)) });
   }
   return (
@@ -432,7 +469,42 @@ function McqActivity({ activity, onChange }: { activity: Activity; onChange: (pa
           </label>
         </div>
       ))}
-      <button type="button" className="rounded-lg border border-dashed border-brand/30 px-4 py-2 text-sm font-black text-brand" onClick={() => onChange({ questions: [...activity.questions, makeQuestion(activity.questions.length)] })}>+ Add question</button>
+      <button type="button" className="rounded-lg border border-dashed border-brand/30 px-4 py-2 text-sm font-black text-brand" onClick={() => onChange({ questions: [...activity.questions, makeQuestion(activity.questions.length, activity.kind === "fen_mcq", true)] })}>+ Add question</button>
+    </div>
+  );
+}
+
+function WrittenAnswerActivity({ activity, onChange }: { activity: Activity; onChange: (patch: Partial<Activity>) => void }) {
+  function updateQuestion(id: string, patch: Partial<AssignmentQuestion>) {
+    onChange({ questions: activity.questions.map((question) => (question.id === id ? { ...question, ...patch } : question)) });
+  }
+  return (
+    <div className="space-y-4">
+      {activity.questions.map((question, questionIndex) => (
+        <div key={question.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="font-black text-brand">Question {questionIndex + 1}</h3>
+            {activity.questions.length > 1 && <button type="button" className="text-red-500" onClick={() => onChange({ questions: activity.questions.filter((item) => item.id !== question.id) })}><Trash2 size={16} /></button>}
+          </div>
+          <label className="text-xs font-bold text-slate-600">
+            Question text
+            <textarea className="input mt-1 h-20 resize-none" placeholder="e.g. Explain why this move wins material." value={question.text} onChange={(event) => updateQuestion(question.id, { text: event.target.value })} />
+          </label>
+          <label className="mt-3 block text-xs font-bold text-slate-600">
+            Chess position for this question
+            <textarea className="input mt-1 h-16 resize-none font-mono text-xs" placeholder="Optional FEN. Leave empty for a text-only question." value={question.positionFen} onChange={(event) => updateQuestion(question.id, { positionFen: event.target.value })} />
+          </label>
+          <label className="mt-3 block text-xs font-bold text-slate-600">
+            Model answer for coach reference
+            <textarea className="input mt-1 h-20 resize-none" placeholder="Optional. Students will not be auto-marked from this." value={question.expectedAnswer} onChange={(event) => updateQuestion(question.id, { expectedAnswer: event.target.value })} />
+          </label>
+          <label className="mt-3 block text-xs font-bold text-slate-600">
+            Explanation / review note
+            <textarea className="input mt-1 h-16 resize-none" placeholder="Optional explanation shown after submission." value={question.explanation} onChange={(event) => updateQuestion(question.id, { explanation: event.target.value })} />
+          </label>
+        </div>
+      ))}
+      <button type="button" className="rounded-lg border border-dashed border-brand/30 px-4 py-2 text-sm font-black text-brand" onClick={() => onChange({ questions: [...activity.questions, makeQuestion(activity.questions.length, activity.kind === "fen_written_answer", false)] })}>+ Add question</button>
     </div>
   );
 }

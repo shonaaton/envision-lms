@@ -28,6 +28,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 
   const payload = await req.json();
   const quizAnswers = payload.quizAnswers || {};
+  const writtenAnswers = payload.writtenAnswers || {};
   const activityResults = payload.activityResults || {};
   const clientMetrics = payload.metrics || {};
 
@@ -57,6 +58,23 @@ export async function POST(req: Request, { params }: { params: { id: string } })
         }
         totalScore += points;
         graded.push({ activityId: activity._id, itemId: item.id, kind: "mcq", correct, pointsAwarded: points, selected });
+      }
+    }
+
+    if (activity.type === "written_answer") {
+      for (const item of activity.items || []) {
+        const textAnswer = String(writtenAnswers[answerKey(activity._id.toString(), item.id)] || "").trim();
+        graded.push({
+          activityId: activity._id,
+          itemId: item.id,
+          kind: "written_answer",
+          question: item.question || item.title || "",
+          textAnswer,
+          expectedAnswer: item.expectedAnswer || item.answerText || "",
+          correct: false,
+          pointsAwarded: 0,
+          needsReview: true,
+        });
       }
     }
 
@@ -107,6 +125,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     {
       answers: graded,
       quizAnswers,
+      writtenAnswers,
       activityResults,
       metrics: { mistakes, hintsUsed, solvedBoards, totalBoards, correctMcq, totalMcq },
       attemptsUsed: attemptsUsed + 1,

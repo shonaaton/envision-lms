@@ -87,6 +87,7 @@ export const classroomSchema = z.object({
 const assignmentActivityTypeSchema = z.enum([
   "solve_position",
   "quiz",
+  "written_answer",
   "play_computer",
   "find_best_move",
   "find_combination",
@@ -110,6 +111,8 @@ const assignmentActivityItemSchema = z.object({
   options: z.array(assignmentQuizOptionSchema).default([]),
   multipleCorrect: z.boolean().default(false),
   explanation: z.string().optional(),
+  expectedAnswer: z.string().optional(),
+  answerText: z.string().optional(),
   fen: z.string().optional(),
   solution: z.array(z.string()).default([]),
   pgn: z.string().optional(),
@@ -147,6 +150,7 @@ const assignmentActivitySchema = z.object({
       multipleCorrect: z.boolean().default(false),
       explanation: z.string().optional(),
       positionFen: z.string().optional(),
+      expectedAnswer: z.string().optional(),
     })
     .optional(),
   computer: z

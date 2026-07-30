@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { PGN } from "@/models/PGN";
 import { PgnFolder } from "@/models/PgnFolder";
-import { buildManageableFolderFilter, buildManageablePgnFilter, buildOwnedFolderFilter, buildPgnFolderFilter, buildPgnLibraryFilter, canManageSharedFolder, normalizeFolderPath } from "@/lib/pgnAccess";
+import { buildManageableFolderFilter, buildManageablePgnFilter, buildPgnFolderFilter, buildPgnLibraryFilter, canManageSharedFolder, normalizeFolderPath } from "@/lib/pgnAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -116,20 +116,40 @@ export async function PATCH(req: Request) {
   if (!hasPgnAccess(session)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
 
-  const { oldName, newName } = await req.json();
+  const { oldName, newName, scope } = await req.json();
   const oldPath = normalizeFolderPath(oldName);
   const newPath = normalizeFolderPath(newName);
   if (!oldPath || !newPath) return NextResponse.json({ error: "Folder names required" }, { status: 400 });
+  if (oldPath === newPath) return NextResponse.json({ ok: true, name: newPath, unchanged: true });
+  if (newPath.startsWith(`${oldPath}/`)) {
+    return NextResponse.json({ error: "A folder cannot be renamed inside itself" }, { status: 400 });
+  }
 
-  const rootFolder: any = await PgnFolder.findOne(buildOwnedFolderFilter(session, { path: oldPath }));
-  if (!rootFolder) return NextResponse.json({ error: "Folder not found" }, { status: 404 });
-  if (rootFolder.visibility === "shared" && !canManageSharedFolder(session)) {
+  const requestedVisibility = scope === "shared" ? "shared" : scope === "personal" ? "private" : undefined;
+  const rootFolder: any = await PgnFolder.findOne(buildManageableFolderFilter(session, { path: oldPath, ...(requestedVisibility ? { visibility: requestedVisibility } : {}) }));
+  const folderVisibility = rootFolder?.visibility || requestedVisibility;
+  if (folderVisibility === "shared" && !canManageSharedFolder(session)) {
     return NextResponse.json({ error: "Only admins can edit shared folders" }, { status: 403 });
   }
 
   const matcher = folderTreeMatcher(oldPath);
-  const folders = await PgnFolder.find(buildOwnedFolderFilter(session, { path: matcher })).lean();
-  const docs = await PGN.find(buildOwnedFolderFilter(session, { folder: matcher })).lean();
+  const pgnVisibilityFilter = folderVisibility === "shared" ? "shared" : folderVisibility === "private" ? { $ne: "shared" } : undefined;
+  const folderVisibilityFilter = folderVisibility ? { visibility: folderVisibility } : {};
+  const folders = await PgnFolder.find(buildManageableFolderFilter(session, { path: matcher, ...folderVisibilityFilter })).lean();
+  const docs = await PGN.find(buildManageablePgnFilter(session, { folder: matcher, ...(pgnVisibilityFilter ? { visibility: pgnVisibilityFilter } : {}) })).lean();
+
+  if (!rootFolder && !folders.length && !docs.length) {
+    return NextResponse.json({ error: "Folder not found" }, { status: 404 });
+  }
+
+  const targetMatcher = folderTreeMatcher(newPath);
+  const [targetFolder, targetPgn] = await Promise.all([
+    PgnFolder.findOne(buildManageableFolderFilter(session, { $and: [{ path: targetMatcher }, { path: { $not: matcher } }], ...folderVisibilityFilter })).select("_id").lean(),
+    PGN.findOne(buildManageablePgnFilter(session, { $and: [{ folder: targetMatcher }, { folder: { $not: matcher } }], ...(pgnVisibilityFilter ? { visibility: pgnVisibilityFilter } : {}) })).select("_id").lean(),
+  ]);
+  if (targetFolder || targetPgn) {
+    return NextResponse.json({ error: "A folder already exists with that name" }, { status: 409 });
+  }
 
   await Promise.all([
     ...folders.map((folder: any) => {
@@ -152,7 +172,7 @@ export async function PATCH(req: Request) {
     }),
   ]);
 
-  return NextResponse.json({ ok: true, name: newPath });
+  return NextResponse.json({ ok: true, name: newPath, updatedFolders: folders.length, updatedPgns: docs.length });
 }
 
 export async function DELETE(req: Request) {

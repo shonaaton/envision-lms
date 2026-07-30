@@ -258,14 +258,19 @@ export default function PgnLibraryPage() {
     const response = await fetch("/api/pgn/folders", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ oldName: folder.path, newName: nextPath }),
+      body: JSON.stringify({ oldName: folder.path, newName: nextPath, scope: folder.personal ? "personal" : "shared" }),
     });
-    if (!response.ok) return toast.error("Could not rename folder");
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      return toast.error(data.error || "Could not rename folder");
+    }
     await load();
-    if (currentFolder?.path === folder.path) {
-      const nextFolder = { ...folder, name: nextName, path: nextPath, personal: folder.personal };
+    if (currentFolder?.path === folder.path || currentFolder?.path?.startsWith(`${folder.path}/`)) {
+      const currentSuffix = currentFolder.path.slice(folder.path.length);
+      const nextCurrentPath = normalizeFolderPath(`${nextPath}${currentSuffix}`);
+      const nextFolder = { ...currentFolder, name: folderLabel(nextCurrentPath), path: nextCurrentPath, personal: folder.personal };
       setCurrentFolder(nextFolder);
-      router.push(`/pgn?folder=${encodeURIComponent(nextPath)}&scope=${nextFolder.personal ? "personal" : "shared"}`);
+      router.push(`/pgn?folder=${encodeURIComponent(nextCurrentPath)}&scope=${nextFolder.personal ? "personal" : "shared"}`);
     }
     setModal(null);
     toast.success("Folder renamed");
@@ -390,6 +395,17 @@ export default function PgnLibraryPage() {
           <button className="btn-primary gap-2 px-5" onClick={() => setModal("folder")}><Plus size={16} /> New Folder</button>
           {currentFolder && (
             <>
+              {isAdmin && (
+                <button
+                  className="btn gap-2 border border-slate-300 bg-white text-slate-950 hover:bg-slate-50"
+                  onClick={() => {
+                    setSelectedFolder(currentFolder);
+                    setModal("edit-folder");
+                  }}
+                >
+                  <Edit3 size={16} /> Rename Folder
+                </button>
+              )}
               <button className="btn-primary gap-2 px-5" onClick={() => setModal("upload")}><FileUp size={16} /> Upload PGN</button>
               <button className="btn gap-2 border border-slate-300 bg-white text-slate-950 hover:bg-slate-50" onClick={() => setModal("generator")}><Plus size={16} /> Create Game</button>
             </>
@@ -545,7 +561,7 @@ export default function PgnLibraryPage() {
       </section>
 
       {modal === "folder" && <NewFolderModal currentFolder={currentFolder?.path} currentFolderPersonal={currentFolder?.personal} onClose={() => setModal(null)} onCreate={addFolder} />}
-      {modal === "edit-folder" && selectedFolder && <EditNameModal title="Edit Folder" label="Folder Name" initialName={selectedFolder.name} onClose={() => setModal(null)} onSave={(name) => renameFolder(selectedFolder, name)} />}
+      {modal === "edit-folder" && selectedFolder && <EditNameModal title="Rename Folder" label="Folder Name" initialName={selectedFolder.name} helpText={`Current path: ${selectedFolder.path}`} onClose={() => setModal(null)} onSave={(name) => renameFolder(selectedFolder, name)} />}
       {modal === "edit-pgn" && selectedGame && <EditPgnModal game={selectedGame} onClose={() => setModal(null)} onSave={(title, pgn) => updateGame(selectedGame, title, pgn)} />}
       {modal === "upload" && <UploadPgnModal onClose={() => setModal(null)} onUpload={uploadGame} onUploadMany={uploadPgnFiles} />}
       {modal === "generator" && <PgnGeneratorModal onClose={() => setModal(null)} onSave={uploadGame} />}
@@ -729,7 +745,7 @@ function FolderGrid({
           {openMenu === folder.id && (
             <ActionMenu>
               <MenuAction tone="danger" icon={<Trash2 size={13} />} onClick={() => { setOpenMenu(null); onDelete(folder); }}>Delete</MenuAction>
-              <MenuAction icon={<Edit3 size={13} />} onClick={() => { setOpenMenu(null); onEdit(folder); }}>Edit</MenuAction>
+              <MenuAction icon={<Edit3 size={13} />} onClick={() => { setOpenMenu(null); onEdit(folder); }}>Rename</MenuAction>
               {isAdmin && <MenuAction icon={<Download size={13} />} onClick={() => { setOpenMenu(null); onDownload(folder); }}>Download</MenuAction>}
             </ActionMenu>
           )}
@@ -966,12 +982,13 @@ function NewFolderModal({ currentFolder, currentFolderPersonal, onClose, onCreat
   );
 }
 
-function EditNameModal({ title, label, initialName, onClose, onSave }: { title: string; label: string; initialName: string; onClose: () => void; onSave: (name: string) => void }) {
+function EditNameModal({ title, label, initialName, helpText, onClose, onSave }: { title: string; label: string; initialName: string; helpText?: string; onClose: () => void; onSave: (name: string) => void }) {
   const [name, setName] = useState(initialName);
   return (
     <ModalFrame title={title} onClose={onClose} width="max-w-[476px]">
       <label className="mb-2 block text-sm">{label}</label>
       <input className="input bg-white text-slate-950" value={name} onChange={(event) => setName(event.target.value)} />
+      {helpText && <p className="mt-2 break-words text-xs text-slate-500">{helpText}</p>}
       <div className="mt-6 flex justify-end gap-2">
         <button className="btn border border-slate-200 bg-white text-slate-950" onClick={onClose}>Cancel</button>
         <button className="btn-primary" disabled={!name.trim()} onClick={() => onSave(name.trim())}>Save</button>

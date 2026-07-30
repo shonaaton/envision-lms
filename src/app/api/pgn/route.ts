@@ -45,7 +45,7 @@ export async function GET(req: Request) {
   const year = url.searchParams.get("year");
   const annotated = url.searchParams.get("annotated");
   const variations = url.searchParams.get("variations");
-  const limit = Math.max(1, Math.min(500, Number(url.searchParams.get("limit") || 150)));
+  const limit = Math.max(1, Math.min(5000, Number(url.searchParams.get("limit") || 5000)));
   const extra: Record<string, any> = {};
   if (folder) extra.folder = folder;
   if (scope === "shared") extra.visibility = "shared";

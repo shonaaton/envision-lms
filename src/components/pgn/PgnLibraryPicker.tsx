@@ -61,7 +61,7 @@ export default function PgnLibraryPicker({
     if (!open) return;
     setLoading(true);
     setError("");
-    fetch("/api/pgn?limit=500&sort=recently-added", { cache: "no-store" })
+    fetch("/api/pgn?limit=5000&sort=recently-added", { cache: "no-store" })
       .then((response) => response.ok ? response.json() : Promise.reject(new Error("Could not load the PGN library.")))
       .then((data) => setGames(Array.isArray(data) ? data : []))
       .catch((err) => setError(err?.message || "Could not load the PGN library."))

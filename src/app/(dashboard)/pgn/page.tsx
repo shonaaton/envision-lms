@@ -90,7 +90,7 @@ export default function PgnLibraryPage() {
   const load = useCallback(async () => {
     if (role === "student") return;
     const [gamesResponse, foldersResponse] = await Promise.all([
-      fetch("/api/pgn", { cache: "no-store" }),
+      fetch("/api/pgn?limit=5000", { cache: "no-store" }),
       fetch("/api/pgn/folders", { cache: "no-store" }),
     ]);
     if (gamesResponse.ok) {

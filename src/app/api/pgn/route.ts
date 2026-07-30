@@ -4,7 +4,7 @@ import { dbConnect } from "@/lib/db";
 import { PGN } from "@/models/PGN";
 import { recordActivity } from "@/lib/activity";
 import { buildPgnLibraryFilter, normalizeFolderPath, requestedPgnVisibility } from "@/lib/pgnAccess";
-import { isValidPgnOrFenSetup, splitPgnGames, summarizePgn } from "@/lib/pgnLibrary";
+import { invalidPgnIndexes, splitPgnGames, summarizePgn } from "@/lib/pgnLibrary";
 
 export const dynamic = "force-dynamic";
 
@@ -89,8 +89,14 @@ export async function POST(req: Request) {
   const { pgn, title, visibility = "private", classroom, folder, sourceFileName, description, tags = [] } = await req.json();
   if (!pgn) return NextResponse.json({ error: "pgn required" }, { status: 400 });
   const games = splitPgnGames(pgn);
-  if (!games.length || games.some((game) => !isValidPgnOrFenSetup(game))) {
-    return NextResponse.json({ error: "Invalid PGN" }, { status: 400 });
+  const invalidChapters = invalidPgnIndexes(games);
+  if (!games.length || invalidChapters.length) {
+    return NextResponse.json({
+      error: invalidChapters.length
+        ? `Invalid PGN chapter${invalidChapters.length === 1 ? "" : "s"}: ${invalidChapters.slice(0, 5).join(", ")}${invalidChapters.length > 5 ? "..." : ""}`
+        : "Invalid PGN",
+      invalidChapters,
+    }, { status: 400 });
   }
 
   const normalizedFolder = normalizeFolderPath(folder);

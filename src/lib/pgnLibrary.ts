@@ -67,9 +67,19 @@ export function extractHeader(pgn: string, key: string): string | undefined {
 export function splitPgnGames(pgn: string) {
   const normalized = pgn.replace(/\r\n/g, "\n").trim();
   if (!normalized) return [];
-  const starts = Array.from(normalized.matchAll(/(^|\n)\s*(?=\[Event\s+")/g)).map((match) => match.index + match[1].length);
+  const eventStarts = Array.from(normalized.matchAll(/(^|\n)\s*(?=\[Event\s+")/g)).map((match) => match.index + match[1].length);
+  const starts = eventStarts.length > 1
+    ? eventStarts
+    : Array.from(normalized.matchAll(/(^|\n)\s*(?=\[(?:FEN|SetUp)\s+")/g)).map((match) => match.index + match[1].length);
   if (starts.length <= 1) return [normalized];
   return starts.map((start, index) => normalized.slice(start, starts[index + 1]).trim()).filter(Boolean);
+}
+
+export function invalidPgnIndexes(games: string[]) {
+  return games.reduce((indexes, game, index) => {
+    if (!isValidPgnOrFenSetup(game)) indexes.push(index + 1);
+    return indexes;
+  }, [] as number[]);
 }
 
 function numberHeader(pgn: string, key: string) {

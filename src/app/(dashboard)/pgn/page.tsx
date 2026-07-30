@@ -358,7 +358,7 @@ export default function PgnLibraryPage() {
         });
         const data = await response.json().catch(() => null);
         if (!response.ok) {
-          failures.push(file.name);
+          failures.push(data?.error ? `${file.name}: ${data.error}` : file.name);
           continue;
         }
         createdCount += Array.isArray(data) ? data.length : 1;
@@ -369,7 +369,7 @@ export default function PgnLibraryPage() {
 
     await load();
     if (failures.length) {
-      toast.error(`${failures.length} file${failures.length === 1 ? "" : "s"} could not be uploaded`);
+      toast.error(failures.length === 1 ? failures[0] : `${failures.length} files could not be uploaded`);
       return;
     }
     toast.success(`Uploaded ${createdCount} PGN chapter${createdCount === 1 ? "" : "s"} from ${pgnFiles.length} file${pgnFiles.length === 1 ? "" : "s"}`);

@@ -35,7 +35,7 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
   }
 }
 
-export async function DELETE(_: Request, { params }: { params: { id: string } }) {
+export async function DELETE(req: Request, { params }: { params: { id: string } }) {
   const session = await auth();
   const role = (session?.user as any)?.role;
   if (!session || !canManage(role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -45,8 +45,14 @@ export async function DELETE(_: Request, { params }: { params: { id: string } })
   if (role === "instructor" && String(existing.createdBy || "") !== (session.user as any).id) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  existing.isActive = false;
-  existing.autoAssign = false;
-  await existing.save();
-  return NextResponse.json({ ok: true });
+  const url = new URL(req.url);
+  if (url.searchParams.get("mode") === "deactivate") {
+    existing.isActive = false;
+    existing.autoAssign = false;
+    existing.updatedBy = (session.user as any).id;
+    await existing.save();
+    return NextResponse.json({ ok: true, deactivated: true });
+  }
+  await AssignmentTemplate.deleteOne({ _id: existing._id });
+  return NextResponse.json({ ok: true, deleted: true });
 }

@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { FileUp, PowerOff } from "lucide-react";
+import { FileUp, Trash2 } from "lucide-react";
 
 export function ImportHomeworkPgnButton() {
   const router = useRouter();
@@ -26,20 +26,21 @@ export function ImportHomeworkPgnButton() {
   );
 }
 
-export function DeactivateTemplateButton({ id }: { id: string }) {
+export function DeleteTemplateButton({ id }: { id: string }) {
   const router = useRouter();
 
-  async function deactivate() {
-    if (!window.confirm("Deactivate this template? It will stop auto-assigning.")) return;
+  async function remove() {
+    if (!window.confirm("Permanently delete this assignment template? Existing assigned homework will not be deleted.")) return;
     const response = await fetch(`/api/admin/assignment-templates/${id}`, { method: "DELETE" });
-    if (!response.ok) return toast.error("Could not deactivate template");
-    toast.success("Template deactivated");
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) return toast.error(data.error || "Could not delete template");
+    toast.success("Template deleted");
     router.refresh();
   }
 
   return (
-    <button type="button" onClick={deactivate} className="grid h-9 w-9 place-items-center rounded-lg border border-red-100 text-red-600 hover:bg-red-50" title="Deactivate template">
-      <PowerOff size={15} />
+    <button type="button" onClick={remove} className="grid h-9 w-9 place-items-center rounded-lg border border-red-100 text-red-600 hover:bg-red-50" title="Delete template">
+      <Trash2 size={15} />
     </button>
   );
 }

@@ -21,6 +21,7 @@ function filterFor(session: any, url: URL) {
   const status = String(url.searchParams.get("status") || "").trim();
   const filter: Record<string, any> = role === "admin" ? {} : { createdBy: (session.user as any).id };
   if (status === "active") filter.isActive = true;
+  else if (status !== "all") filter.isActive = { $ne: false };
   if (status === "review") filter.linkStatus = { $ne: "linked" };
   if (q) {
     const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");

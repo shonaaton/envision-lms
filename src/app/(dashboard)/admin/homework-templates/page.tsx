@@ -3,7 +3,7 @@ import { AlertTriangle, BookOpenCheck, CheckCircle2, Clock3, FileText, Link2Off 
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { AssignmentAutomationLog, AssignmentTemplate } from "@/models/AssignmentTemplate";
-import { DeactivateTemplateButton, ImportHomeworkPgnButton } from "@/components/homework/AssignmentTemplateActions";
+import { DeleteTemplateButton, ImportHomeworkPgnButton } from "@/components/homework/AssignmentTemplateActions";
 import "@/models/Batch";
 import "@/models/Classroom";
 import "@/models/Course";
@@ -54,10 +54,10 @@ export default async function HomeworkTemplatesPage() {
   await dbConnect();
 
   const [templates, logs] = await Promise.all([
-    AssignmentTemplate.find({})
+    AssignmentTemplate.find({ isActive: { $ne: false } })
       .populate("course", "name")
       .populate("defaultBatches", "name")
-      .sort({ isActive: -1, updatedAt: -1 })
+      .sort({ updatedAt: -1 })
       .limit(300)
       .lean(),
     AssignmentAutomationLog.find({})
@@ -131,7 +131,7 @@ export default async function HomeworkTemplatesPage() {
                       ? `${template.duePolicy.daysAfterClass || 7} days after class`
                       : `${template.duePolicy?.minutesBefore ?? 1} min before next class`}
                   </td>
-                  <td className="px-3 py-3"><DeactivateTemplateButton id={String(template._id)} /></td>
+                  <td className="px-3 py-3"><DeleteTemplateButton id={String(template._id)} /></td>
                 </tr>
               ))}
               {!templates.length && (

@@ -113,12 +113,16 @@ export async function POST(req: Request) {
       },
       updatedBy: (session.user as any).id,
     };
-    const existing = await AssignmentTemplate.findOne({ topicKey, "source.kind": "pgn_import" });
+    const existing = await AssignmentTemplate.findOne({ topicKey, "source.kind": "pgn_import", isActive: { $ne: false } });
     const doc = existing
       ? await AssignmentTemplate.findByIdAndUpdate(existing._id, payload, { new: true })
       : await AssignmentTemplate.create({ ...payload, createdBy: (session.user as any).id });
     report.push({ topicName: group.topicName, topicKey, templateId: doc?._id, pgnCount: group.pgns.length, linkStatus, courseName: payload.courseName, levelName: payload.levelName });
   }
 
-  return NextResponse.json({ imported: report.length, skipped: pgns.length === 0 ? "No PGNs with HW/Homework in the name were found." : undefined, report });
+  return NextResponse.json({
+    imported: report.length,
+    skipped: pgns.length === 0 ? "No PGNs with HW/Homework in the name were found." : undefined,
+    report,
+  });
 }

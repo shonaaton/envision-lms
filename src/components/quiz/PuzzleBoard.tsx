@@ -1,6 +1,6 @@
 "use client";
 import dynamic from "next/dynamic";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Chess } from "chess.js";
 import { buildMoveHintStyles, legalTargetsFromGame } from "@/lib/chessboardUi";
 import { isPromotionMove, promotionFromBoardPiece, type PendingPromotion, type PromotionPiece } from "@/lib/chessPromotion";
@@ -22,6 +22,26 @@ export default function PuzzleBoard({
   const [status, setStatus] = useState<"playing" | "wrong" | "solved">("playing");
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
   const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion | null>(null);
+  const boardWrapRef = useRef<HTMLDivElement | null>(null);
+  const [boardWidth, setBoardWidth] = useState(400);
+
+  useEffect(() => {
+    const element = boardWrapRef.current;
+    if (!element) return;
+
+    const resize = () => {
+      const available = Math.min(element.clientWidth, window.innerWidth - 32);
+      setBoardWidth(Math.max(220, Math.min(400, available)));
+    };
+    resize();
+    const observer = new ResizeObserver(resize);
+    observer.observe(element);
+    window.addEventListener("resize", resize);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", resize);
+    };
+  }, []);
 
   function commitMove(source: string, target: string, promotion: PromotionPiece = "q") {
     if (status !== "playing") return false;
@@ -98,8 +118,8 @@ export default function PuzzleBoard({
 
   return (
     <div className="flex flex-col items-center gap-3">
-      <div className="w-full max-w-md">
-        <Chessboard position={position} onPieceDrop={onDrop} onSquareClick={onSquareClick as any} boardWidth={400}
+      <div ref={boardWrapRef} className="w-full max-w-md">
+        <Chessboard position={position} onPieceDrop={onDrop} onSquareClick={onSquareClick as any} boardWidth={boardWidth}
           onPromotionPieceSelect={onPromotionPieceSelect as any}
           showPromotionDialog={!!pendingPromotion}
           promotionToSquare={pendingPromotion?.to as any}

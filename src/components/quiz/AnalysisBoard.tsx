@@ -248,7 +248,8 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
     const resize = () => {
       const isMobile = window.innerWidth < 768;
       const heightLimit = typeof window === "undefined" ? 560 : window.innerHeight - (isMobile ? 270 : 330);
-      setBoardWidth(Math.max(isMobile ? 245 : 280, Math.min(isMobile ? window.innerWidth - 58 : 540, element.clientWidth, heightLimit)));
+      const scaledWidthLimit = isMobile ? Math.floor((window.innerWidth - 76) / (boardScale / 100)) : 540;
+      setBoardWidth(Math.max(isMobile ? 220 : 280, Math.min(scaledWidthLimit, element.clientWidth, heightLimit)));
     };
     resize();
     const observer = new ResizeObserver(resize);
@@ -258,7 +259,7 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
       observer.disconnect();
       window.removeEventListener("resize", resize);
     };
-  }, []);
+  }, [boardScale]);
 
   useEffect(() => {
     if (!withEngine) return;
@@ -544,7 +545,7 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
   }
 
   return (
-    <div className={["flex min-h-[calc(100dvh-76px)] flex-col overflow-y-auto rounded-xl p-2 transition-colors sm:p-3 md:h-[calc(100vh-92px)] md:min-h-[640px] md:overflow-hidden", isDark ? "bg-black text-white" : "bg-white text-slate-950"].join(" ")}>
+    <div className={["flex min-h-[calc(100dvh-72px)] flex-col overflow-y-auto rounded-lg p-2 transition-colors sm:p-3 md:h-[calc(100vh-92px)] md:min-h-[640px] md:overflow-hidden", isDark ? "bg-black text-white" : "bg-white text-slate-950"].join(" ")}>
       <div className="mb-2 flex flex-none flex-col gap-2 sm:flex-row sm:items-start sm:justify-between md:mb-3 md:gap-3">
         <div>
           <h1 className="font-display text-xl sm:text-2xl">Analysis Board</h1>
@@ -558,7 +559,7 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
       </div>
 
       <div className="grid flex-1 grid-cols-1 gap-2 md:min-h-0 xl:grid-cols-[minmax(0,1fr)_460px]">
-        <section className={`order-1 min-h-[430px] overflow-auto rounded-lg border p-2 sm:p-4 md:min-h-0 xl:order-1 ${panelClass}`}>
+        <section className={`order-1 min-h-[330px] overflow-auto rounded-lg border p-2 sm:min-h-[430px] sm:p-4 md:min-h-0 xl:order-1 ${panelClass}`}>
           <div className="flex justify-center">
             <div className="grid grid-cols-[18px_minmax(0,auto)] gap-1 sm:grid-cols-[24px_minmax(0,auto)] sm:gap-2">
               <div className={`grid grid-rows-8 pb-7 pt-1 text-right text-[11px] font-semibold sm:text-xs ${mutedText}`}>
@@ -596,7 +597,7 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
             </div>
           </div>
 
-          <div className={`mx-auto mt-3 grid max-w-[560px] grid-cols-3 gap-2 text-xs sm:mt-4 sm:gap-3 sm:text-sm ${mutedText}`}>
+          <div className={`mx-auto mt-3 grid max-w-[560px] grid-cols-1 gap-2 text-xs sm:mt-4 sm:grid-cols-3 sm:gap-3 sm:text-sm ${mutedText}`}>
             <div><span className={isDark ? "text-white" : "text-slate-950"}>Turn:</span> {gameRef.current.turn() === "w" ? "White" : "Black"}</div>
             <div><span className={isDark ? "text-white" : "text-slate-950"}>Status:</span> {gameRef.current.isGameOver() ? "Complete" : "In Progress"}</div>
             <div><span className={isDark ? "text-white" : "text-slate-950"}>Orientation:</span> {orientation}</div>
@@ -633,7 +634,7 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
           )}
         </section>
 
-        <aside className={`order-2 min-h-[320px] overflow-auto rounded-lg border p-3 sm:p-4 md:min-h-0 xl:order-2 ${panelClass}`}>
+        <aside className={`order-2 min-h-[260px] overflow-auto rounded-lg border p-3 sm:min-h-[320px] sm:p-4 md:min-h-0 xl:order-2 ${panelClass}`}>
           <TabBar active={tab} isDark={isDark} onChange={setTab} />
           {tab === "moves" && <MovesPanel rows={moveRows} isDark={isDark} selectedPly={selectedPly} onSelect={goToPly} onPrevious={goPrevious} onNext={goNext} canPrevious={selectedPly > 0} canNext={selectedPly < gameRef.current.history().length} />}
           {tab === "engine" && (

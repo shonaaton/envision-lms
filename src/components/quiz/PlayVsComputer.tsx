@@ -296,9 +296,9 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
     const resize = () => {
       const isMobile = window.innerWidth < 768;
       const width = element.clientWidth;
-      const heightLimit = isMobile ? window.innerHeight - 310 : window.innerHeight - 245;
+      const heightLimit = isMobile ? window.innerHeight - 300 : window.innerHeight - 245;
       const clockRail = !isMobile && width >= 520 ? 150 : 0;
-      setBoardWidth(Math.max(isMobile ? 245 : 240, Math.min(isMobile ? window.innerWidth - 50 : 560, width - clockRail, heightLimit)));
+      setBoardWidth(Math.max(isMobile ? 220 : 240, Math.min(isMobile ? window.innerWidth - 36 : 560, width - clockRail, heightLimit)));
     };
     resize();
     const observer = new ResizeObserver(resize);
@@ -499,7 +499,7 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
   }
 
   return (
-    <div className="flex min-h-[calc(100dvh-76px)] flex-col overflow-y-auto bg-[linear-gradient(180deg,#fffdf8_0%,#fff 48%,#f7f7fb_100%)] p-2 text-slate-950 sm:p-4 md:h-[calc(100vh-92px)] md:min-h-[620px] md:overflow-hidden">
+    <div className="flex min-h-[calc(100dvh-72px)] flex-col overflow-y-auto bg-[linear-gradient(180deg,#fffdf8_0%,#fff 48%,#f7f7fb_100%)] p-2 text-slate-950 sm:p-4 md:h-[calc(100vh-92px)] md:min-h-[620px] md:overflow-hidden">
       <div className="mb-2 flex flex-none flex-wrap items-end justify-between gap-2 md:mb-3 md:gap-3">
         <div>
           <div className="inline-flex items-center gap-2 rounded-full bg-amber-100 px-3 py-1 text-xs font-black uppercase tracking-[0.18em] text-amber-700">
@@ -531,7 +531,7 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
       </div>
 
       <div className="grid flex-1 gap-2 md:min-h-0 md:gap-3 xl:grid-cols-[minmax(0,1fr)_300px]">
-        <section className="order-1 flex min-h-[430px] flex-col rounded-2xl border border-slate-200 bg-white/95 p-2 shadow-lg shadow-brand/5 sm:p-4 md:min-h-0 xl:order-1">
+        <section className="order-1 flex min-h-[360px] flex-col rounded-lg border border-slate-200 bg-white/95 p-2 shadow-lg shadow-brand/5 sm:min-h-[430px] sm:p-4 md:min-h-0 xl:order-1">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2 md:mb-3">
             <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 sm:px-4 sm:py-2 sm:text-sm">
               Status: <span className="font-black text-slate-950">{status === "playing" ? "In Progress" : status === "ended" ? result : "Not Started"}</span>
@@ -560,8 +560,8 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
                   customLightSquareStyle={{ backgroundColor: "#f0d9b5" }}
                 />
               {status === "idle" && (
-                <div className="absolute inset-0 flex items-center justify-center backdrop-blur-[3px]">
-                  <div className="rounded-2xl border border-white/70 bg-white/70 px-8 py-7 text-center shadow-xl">
+                <div className="absolute inset-0 flex items-center justify-center p-3 backdrop-blur-[3px]">
+                  <div className="rounded-lg border border-white/70 bg-white/80 px-4 py-5 text-center shadow-xl sm:px-8 sm:py-7">
                     <div className="mb-4 text-sm font-semibold text-slate-700">Ready to Play?</div>
                     <button className="btn-primary gap-2 px-5" onClick={() => setShowSetup(true)}>
                       <Play size={16} /> Start New Game
@@ -595,7 +595,7 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
           </div>
         </section>
 
-        <aside className="order-2 flex min-h-[300px] flex-col rounded-2xl border border-slate-200 bg-white/95 p-2 shadow-lg shadow-brand/5 sm:p-4 md:min-h-0 xl:order-2">
+        <aside className="order-2 flex min-h-[260px] flex-col rounded-lg border border-slate-200 bg-white/95 p-2 shadow-lg shadow-brand/5 sm:min-h-[300px] sm:p-4 md:min-h-0 xl:order-2">
           {status === "playing" && (
             <div className="mb-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-center sm:mb-3 sm:p-4">
               <div className="flex items-center justify-center gap-4 text-sm font-semibold text-slate-950">
@@ -921,7 +921,7 @@ function GameHistory({ records, onBack, onSelectRecord }: { records: GameRecord[
   );
 
   return (
-    <div className="flex h-[calc(100vh-92px)] min-h-[620px] flex-col overflow-hidden bg-[linear-gradient(180deg,#fffdf8_0%,#fff 48%,#f7f7fb_100%)] p-4 text-slate-950">
+    <div className="flex min-h-[calc(100dvh-72px)] flex-col overflow-y-auto bg-[linear-gradient(180deg,#fffdf8_0%,#fff 48%,#f7f7fb_100%)] p-2 text-slate-950 sm:p-4 md:h-[calc(100vh-92px)] md:min-h-[620px] md:overflow-hidden">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-black text-slate-950">Game History</h1>

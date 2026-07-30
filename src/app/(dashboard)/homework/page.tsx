@@ -93,13 +93,13 @@ export default async function HomeworkListPage() {
   const completed = list.filter((item: any) => byHomework.has(item._id.toString()));
 
   return (
-    <div className="min-h-screen bg-slate-50 px-4 py-5 text-slate-950 sm:px-6 lg:px-8">
-      <div className="mb-5 flex items-center justify-between">
+    <div className="min-h-screen bg-slate-50 px-2 py-4 text-slate-950 sm:px-6 sm:py-5 lg:px-8">
+      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2">
           <span className="flex h-9 w-9 items-center justify-center rounded-md bg-purple-50 text-purple-700"><FileText size={18} /></span>
           <div><h1 className="text-2xl font-semibold">Homework</h1><p className="text-sm text-slate-500">Pending, completed, late homework and assignment analytics.</p></div>
         </div>
-        {(role === "instructor" || role === "admin") && <Link href="/instructor/homework/new" className="rounded-md bg-purple-700 px-4 py-2 text-sm font-semibold text-white">Assign Homework</Link>}
+        {(role === "instructor" || role === "admin") && <Link href="/instructor/homework/new" className="inline-flex min-h-11 items-center justify-center rounded-md bg-purple-700 px-4 py-2 text-sm font-semibold text-white">Assign Homework</Link>}
       </div>
 
       {role !== "student" && (
@@ -118,9 +118,36 @@ export default async function HomeworkListPage() {
           <section><h2 className="mb-3 font-semibold">Completed Homework</h2><div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">{completed.map((h: any) => <HomeworkCard key={h._id} item={h} submission={byHomework.get(h._id.toString())} />)}{completed.length === 0 && <div className="rounded-lg border bg-white p-5 text-sm text-slate-500">No completed homework yet.</div>}</div></section>
         </div>
       ) : (
-        <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <section className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm sm:p-5">
           <h2 className="mb-3 font-semibold">Homework Tracking</h2>
-          <div className="overflow-x-auto">
+          <div className="grid gap-3 md:hidden">
+            {list.map((h: any) => {
+              const rows = submissions.filter((s: any) => s.homework.toString() === h._id.toString());
+              const recipientCount = assignedStudentCount(h);
+              return (
+                <article key={h._id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h3 className="truncate font-semibold text-slate-950">{h.title}</h3>
+                      <p className="mt-1 text-xs text-slate-500">{h.type} - {h.dueAt ? new Date(h.dueAt).toLocaleDateString("en-IN") : "No due date"}</p>
+                    </div>
+                    <span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-xs font-bold text-slate-700 shadow-sm">{h.dueAt && new Date(h.dueAt) < new Date() ? "Due passed" : "Active"}</span>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                    <InfoTile label="Submissions" value={String(rows.length)} />
+                    <InfoTile label="Completion" value={`${percent(rows.length, recipientCount)}%`} />
+                    <InfoTile label="Avg Score" value={String(rows.length ? Math.round(rows.reduce((s: number, x: any) => s + (x.totalScore || 0), 0) / rows.length) : 0)} />
+                    <InfoTile label="Recipients" value={String(recipientCount)} />
+                  </div>
+                  <div className="mt-3">
+                    <HomeworkActions homework={JSON.parse(JSON.stringify(h))} />
+                  </div>
+                </article>
+              );
+            })}
+            {list.length === 0 && <div className="rounded-lg border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">No homework yet.</div>}
+          </div>
+          <div className="hidden overflow-x-auto md:block">
             <table className="min-w-full text-left text-sm">
               <thead className="text-xs uppercase text-slate-500"><tr className="border-b"><th className="px-3 py-3">Homework</th><th>Type</th><th>Due</th><th>Submissions</th><th>Completion Rate</th><th>Average Score</th><th>Status</th><th>Actions</th></tr></thead>
               <tbody>{list.map((h: any) => {
@@ -132,6 +159,15 @@ export default async function HomeworkListPage() {
           </div>
         </section>
       )}
+    </div>
+  );
+}
+
+function InfoTile({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg bg-white px-3 py-2">
+      <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{label}</div>
+      <div className="mt-1 text-sm font-semibold text-slate-950">{value}</div>
     </div>
   );
 }

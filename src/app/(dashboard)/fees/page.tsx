@@ -89,15 +89,15 @@ export default async function FeesDashboardPage() {
     const unpaidInvoices = invoices.filter((invoice: any) => invoice.status !== "paid" && invoice.status !== "cancelled");
 
     return (
-      <div className="min-h-screen bg-[linear-gradient(135deg,#fffdf2_0%,#fbf6ff_45%,#ffffff_100%)] px-4 py-5 text-slate-950 sm:px-6 lg:px-8">
-        <div className="mb-5 rounded-[28px] border border-brand/10 bg-white p-5 shadow-[0_24px_60px_rgba(90,19,114,0.12)]">
+      <div className="min-h-screen bg-[linear-gradient(135deg,#fffdf2_0%,#fbf6ff_45%,#ffffff_100%)] px-2 py-4 text-slate-950 sm:px-6 sm:py-5 lg:px-8">
+        <div className="mb-5 rounded-lg border border-brand/10 bg-white p-4 shadow-[0_24px_60px_rgba(90,19,114,0.12)] sm:p-5">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <div className="text-[11px] font-black uppercase tracking-[0.18em] text-brand/70">Student Billing</div>
-              <h1 className="mt-1 text-3xl font-black text-brand">Credits & Payments</h1>
+              <h1 className="mt-1 text-2xl font-black text-brand sm:text-3xl">Credits & Payments</h1>
               <p className="mt-1 text-sm text-slate-600">Track class credits, monthly dues, invoices, and payment history in one place.</p>
             </div>
-            <Link href="/fees/invoices" className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-brand px-4 text-sm font-bold text-white shadow-lg shadow-brand/20">
+            <Link href="/fees/invoices" className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-brand px-4 text-sm font-bold text-white shadow-lg shadow-brand/20 sm:w-auto">
               <Receipt size={16} /> View All Invoices
             </Link>
           </div>
@@ -111,8 +111,8 @@ export default async function FeesDashboardPage() {
         </div>
 
         <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[0.95fr_1.05fr]">
-          <section className="rounded-[24px] border border-brand/10 bg-white p-5 shadow-[0_18px_45px_rgba(90,19,114,0.10)]">
-            <div className="mb-4 flex items-center justify-between gap-3">
+          <section className="rounded-lg border border-brand/10 bg-white p-4 shadow-[0_18px_45px_rgba(90,19,114,0.10)] sm:p-5">
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h2 className="text-lg font-black text-slate-950">Credit Usage History</h2>
                 <p className="text-sm text-slate-500">Credits are deducted automatically when attendance is marked present or late.</p>
@@ -140,12 +140,34 @@ export default async function FeesDashboardPage() {
             </div>
           </section>
 
-          <section className="rounded-[24px] border border-brand/10 bg-white p-5 shadow-[0_18px_45px_rgba(90,19,114,0.10)]">
+          <section className="rounded-lg border border-brand/10 bg-white p-4 shadow-[0_18px_45px_rgba(90,19,114,0.10)] sm:p-5">
             <div className="mb-4">
               <h2 className="text-lg font-black text-slate-950">Invoices & Payment History</h2>
               <p className="text-sm text-slate-500">Download invoices created by the academy in PDF format.</p>
             </div>
-            <div className="overflow-x-auto">
+            <div className="grid gap-3 md:hidden">
+              {invoices.length ? invoices.slice(0, 12).map((invoice: any) => (
+                <article key={invoice._id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="truncate font-bold text-slate-950">{invoice.invoiceNumber || "Invoice"}</div>
+                      <div className="mt-1 text-xs text-slate-500">{invoice.title}</div>
+                    </div>
+                    <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${statusTone(invoice.status)}`}>{invoice.status}</span>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                    <InfoBox label="Due" value={new Date(invoice.dueDate).toLocaleDateString("en-IN")} />
+                    <InfoBox label="Amount" value={formatINR(invoice.totalAmount)} />
+                  </div>
+                  <a href={`/api/fees/invoices/${invoice._id}/pdf`} target="_blank" className="mt-3 inline-flex h-10 w-full items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-brand">
+                    <Download size={14} /> PDF
+                  </a>
+                </article>
+              )) : (
+                <div className="rounded-lg border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">No invoices have been generated yet.</div>
+              )}
+            </div>
+            <div className="hidden overflow-x-auto md:block">
               <table className="min-w-full text-left text-sm">
                 <thead className="text-xs uppercase text-slate-500">
                   <tr className="border-b border-slate-100">
@@ -196,7 +218,7 @@ export default async function FeesDashboardPage() {
     : [["/fees/invoices", "My Invoices"], ["/invoices", "Invoice List"]];
 
   return (
-    <div className="min-h-screen bg-slate-50 px-4 py-5 text-slate-950 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-slate-50 px-2 py-4 text-slate-950 sm:px-6 sm:py-5 lg:px-8">
       <div className="mb-5">
         <h1 className="text-2xl font-semibold">Fees Dashboard</h1>
         <p className="mt-1 text-sm text-slate-500">High-level fee collection, invoices, and credit monitoring.</p>
@@ -226,7 +248,7 @@ export default async function FeesDashboardPage() {
           <h2 className="mb-3 font-semibold">Students With Low Credits</h2>
           <div className="space-y-2 text-sm">
             {lowCredit.slice(0, 8).map((a: any) => (
-              <div key={a._id} className="flex items-center justify-between rounded-md bg-rose-50 px-3 py-2 text-rose-900">
+              <div key={a._id} className="flex items-center justify-between gap-3 rounded-md bg-rose-50 px-3 py-2 text-rose-900">
                 <span>{a.student?.name || "Student"}</span><b>{a.creditBalance}</b>
               </div>
             ))}
@@ -237,7 +259,7 @@ export default async function FeesDashboardPage() {
           <h2 className="mb-3 font-semibold">Recent Transactions</h2>
           <div className="space-y-2 text-sm">
             {recentCredits.map((item: any) => (
-              <div key={item._id} className="flex items-center justify-between rounded-md bg-slate-50 px-3 py-2">
+              <div key={item._id} className="flex items-center justify-between gap-3 rounded-md bg-slate-50 px-3 py-2">
                 <span>{item.student?.name || item.type}</span>
                 <b className={item.credits > 0 ? "text-emerald-700" : "text-rose-700"}>{item.credits > 0 ? "+" : ""}{item.credits}</b>
               </div>
@@ -250,3 +272,11 @@ export default async function FeesDashboardPage() {
   );
 }
 
+function InfoBox({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg bg-white px-3 py-2">
+      <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{label}</div>
+      <div className="mt-1 text-sm font-semibold text-slate-950">{value}</div>
+    </div>
+  );
+}

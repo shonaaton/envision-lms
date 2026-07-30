@@ -69,7 +69,7 @@ export default function DashboardFrame({
         >
           <Menu size={19} />
         </button>
-        <main className="min-h-0 flex-1 overflow-y-auto px-3 pb-4 pt-16 sm:px-5 md:py-4 lg:px-6">
+        <main className="min-h-0 flex-1 overflow-y-auto px-2 pb-4 pt-14 sm:px-5 md:py-4 lg:px-6">
           <div className="mx-auto w-full max-w-[1720px]">{children}</div>
         </main>
       </div>

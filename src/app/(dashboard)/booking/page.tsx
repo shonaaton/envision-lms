@@ -109,7 +109,7 @@ export default function BookingPage() {
   }
 
   return (
-    <div className="min-h-[calc(100vh-92px)] space-y-5 rounded-3xl bg-white/70 p-5 text-slate-950 shadow-xl shadow-brand/5">
+    <div className="min-h-[calc(100vh-92px)] space-y-4 rounded-lg bg-white/70 p-3 text-slate-950 shadow-xl shadow-brand/5 sm:space-y-5 sm:p-5">
       {isInactiveStudent ? (
         <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
           <div className="flex items-center gap-2 font-black text-amber-900"><LockKeyhole size={18} /> Booking paused</div>
@@ -121,7 +121,7 @@ export default function BookingPage() {
           <div className="inline-flex items-center gap-2 rounded-full bg-amber-100 px-3 py-1 text-xs font-black uppercase tracking-[0.18em] text-amber-700">
             <Sparkles size={14} /> Academy Time Finder
           </div>
-          <h1 className="mt-2 text-3xl font-black text-brand">{featureName}</h1>
+          <h1 className="mt-2 text-2xl font-black text-brand sm:text-3xl">{featureName}</h1>
           <p className="mt-1 max-w-2xl text-sm text-slate-600">
             {isDemoStudent
               ? "Choose a coach and send your demo booking for academy approval."
@@ -131,19 +131,19 @@ export default function BookingPage() {
       </header>
 
       {!isInactiveStudent && <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_420px]">
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
           <h2 className="text-lg font-black text-slate-950">Choose an available time</h2>
           <div className="mt-4 grid gap-4 md:grid-cols-2">
             <label className="space-y-2">
               <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Coach</span>
-              <select value={selectedCoach} onChange={(event) => { setSelectedCoach(event.target.value); setSelectedSlot(""); }} className="h-12 w-full rounded-xl border border-slate-200 px-3 text-sm">
+              <select value={selectedCoach} onChange={(event) => { setSelectedCoach(event.target.value); setSelectedSlot(""); }} className="h-12 w-full rounded-lg border border-slate-200 px-3 text-sm">
                 <option value="">Select coach</option>
                 {coaches.map((entry) => <option key={entry.coach?._id} value={entry.coach?._id}>{entry.coach?.name}</option>)}
               </select>
             </label>
             <label className="space-y-2">
               <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Available Time</span>
-              <select value={selectedSlot} onChange={(event) => setSelectedSlot(event.target.value)} className="h-12 w-full rounded-xl border border-slate-200 px-3 text-sm" disabled={!selectedCoach}>
+              <select value={selectedSlot} onChange={(event) => setSelectedSlot(event.target.value)} className="h-12 w-full rounded-lg border border-slate-200 px-3 text-sm" disabled={!selectedCoach}>
                 <option value="">Select time</option>
                 {slotOptions.map((slot) => <option key={slot.id} value={slot.id}>{slot.label} - {slot.coachLabel}</option>)}
               </select>
@@ -151,14 +151,14 @@ export default function BookingPage() {
           </div>
           <label className="mt-4 block space-y-2">
             <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Message for academy</span>
-            <textarea value={notes} onChange={(event) => setNotes(event.target.value)} className="min-h-24 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm outline-none focus:border-brand" placeholder="Mention preferred topic, goal, or anything the coach should know." />
+            <textarea value={notes} onChange={(event) => setNotes(event.target.value)} className="min-h-24 w-full rounded-lg border border-slate-200 px-3 py-3 text-sm outline-none focus:border-brand" placeholder="Mention preferred topic, goal, or anything the coach should know." />
           </label>
-          <button onClick={book} disabled={loading} className="btn-primary mt-4">
+          <button onClick={book} disabled={loading} className="btn-primary mt-4 w-full sm:w-auto">
             <CalendarDays size={16} /> {loading ? `Sending ${featureName}...` : `Request ${featureName}`}
           </button>
         </div>
 
-        <aside className="rounded-2xl border border-purple-100 bg-purple-50/80 p-5">
+        <aside className="rounded-lg border border-purple-100 bg-purple-50/80 p-4 sm:p-5">
           <h3 className="font-black text-brand">How this works</h3>
           <div className="mt-4 space-y-3 text-sm text-slate-700">
             <Info icon={<UserRound size={16} />} title="Demo students" text="Your Demo Booking is sent to admin first. Admin can confirm the coach and time before the demo classroom opens." />
@@ -168,19 +168,19 @@ export default function BookingPage() {
         </aside>
       </section>}
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
         <h2 className="text-lg font-black text-slate-950">Your Bookings</h2>
         <div className="mt-4 grid gap-3">
           {bookings.map((booking) => (
-            <div key={booking._id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-              <div>
+            <div key={booking._id} className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
                 <div className="font-bold text-slate-950">{bookingFeatureNameForType(booking.bookingType)} with {booking.instructor?.name || "Coach"}</div>
                 <div className="text-sm text-slate-500">{new Date(booking.startAt).toLocaleString()}</div>
                 {booking.approvalStatus === "reschedule_proposed" && booking.proposedStartAt ? (
                   <div className="mt-1 text-sm font-semibold text-amber-700">Coach suggested {new Date(booking.proposedStartAt).toLocaleString()}</div>
                 ) : null}
               </div>
-              <span className="rounded-full bg-white px-3 py-1 text-xs font-bold capitalize text-brand">{booking.approvalStatus || booking.status}</span>
+              <span className="w-fit rounded-full bg-white px-3 py-1 text-xs font-bold capitalize text-brand">{booking.approvalStatus || booking.status}</span>
             </div>
           ))}
           {bookings.length === 0 && <div className="rounded-xl border border-dashed border-slate-300 p-6 text-sm text-slate-500">No {isDemoStudent ? "demo" : "class"} bookings yet.</div>}

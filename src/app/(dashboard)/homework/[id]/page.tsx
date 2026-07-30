@@ -89,7 +89,7 @@ function useBoardWidth(maxWidth: number, minWidth = 220) {
   const [width, setWidth] = useState(maxWidth);
   useEffect(() => {
     function updateWidth() {
-      setWidth(Math.max(minWidth, Math.min(maxWidth, window.innerWidth - 64)));
+      setWidth(Math.max(minWidth, Math.min(maxWidth, window.innerWidth - 40)));
     }
     updateWidth();
     window.addEventListener("resize", updateWidth);
@@ -185,7 +185,7 @@ export default function HomeworkAttemptPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 px-4 py-5 text-slate-950 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-slate-50 px-2 py-4 text-slate-950 sm:px-6 sm:py-5 lg:px-8">
       <header className="mb-3 rounded-xl bg-brand px-4 py-3 text-white shadow-lg shadow-brand-900/15">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
@@ -223,8 +223,8 @@ export default function HomeworkAttemptPage() {
         ))}
       </div>
 
-      <div className="sticky bottom-4 mt-5 flex justify-end">
-        <button disabled={locked || submitting} onClick={submit} className="rounded-xl bg-brand px-5 py-3 text-sm font-black text-white shadow-xl shadow-brand-900/20 disabled:cursor-not-allowed disabled:bg-slate-400">
+      <div className="sticky bottom-3 mt-5 flex justify-end">
+        <button disabled={locked || submitting} onClick={submit} className="min-h-11 w-full rounded-xl bg-brand px-5 py-3 text-sm font-black text-white shadow-xl shadow-brand-900/20 disabled:cursor-not-allowed disabled:bg-slate-400 sm:w-auto">
           {submitting ? "Submitting..." : "Submit assignment"}
         </button>
       </div>
@@ -234,7 +234,7 @@ export default function HomeworkAttemptPage() {
 
 function CompletedReport({ hw, activities, submission }: { hw: any; activities: any[]; submission: any }) {
   return (
-    <div className="min-h-screen bg-slate-50 px-4 py-5 text-slate-950 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-slate-50 px-2 py-4 text-slate-950 sm:px-6 sm:py-5 lg:px-8">
       <header className="mb-3 rounded-xl bg-brand px-4 py-3 text-white shadow-lg shadow-brand-900/15">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
@@ -270,7 +270,7 @@ function CompletedReport({ hw, activities, submission }: { hw: any; activities: 
 function ReportActivity({ activity, index, submission }: { activity: any; index: number; submission: any }) {
   const isPgnQuiz = activity.type === "study_pgn" && activity.source?.kind === "pgn_quiz";
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <section className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
       <div className="mb-4">
         <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Activity {index + 1}</div>
         <h2 className="text-xl font-black text-brand">{activity.title}</h2>
@@ -391,7 +391,7 @@ function ReviewPgnBoard({ pgn }: { pgn: string }) {
 
 function ReportStat({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
       <div className="text-2xl font-black text-brand">{value}</div>
       <div className="text-xs font-bold uppercase tracking-wide text-slate-500">{label}</div>
     </div>
@@ -426,14 +426,14 @@ function ActivitySection({ activity, index, locked, quizAnswers, setQuizAnswers,
   }
 
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <section className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
           <span className="inline-flex items-center gap-2 rounded-full bg-purple-50 px-3 py-1 text-xs font-black text-purple-700">{icon}{isPgnQuiz ? "PGN Homework" : activity.type === "quiz" ? "MCQ" : isWritten ? "Written Answer" : activity.type.replaceAll("_", " ")}</span>
           <h2 className="mt-2 text-xl font-black text-brand">Activity {index + 1}: {activity.title}</h2>
           {activity.instructions && <p className="mt-1 text-sm text-slate-600">{activity.instructions}</p>}
         </div>
-        <div className="flex gap-2 text-xs font-bold">
+        <div className="flex flex-wrap gap-2 text-xs font-bold">
           <span className="rounded-full bg-accent/30 px-3 py-1 text-brand">{activity.points || 0} pts each</span>
           {!!activity.timeLimitMinutes && <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-600">{activity.timeLimitMinutes} min</span>}
         </div>
@@ -485,7 +485,7 @@ function ActivitySection({ activity, index, locked, quizAnswers, setQuizAnswers,
       )}
 
       {isPgnQuiz && activeItem && (
-        <div className="max-w-[520px]">
+        <div className="w-full max-w-[520px]">
           <PgnBoardTask
             key={activeItem.id || activeItemIndex}
             activityId={activity._id}
@@ -505,12 +505,12 @@ function ActivitySection({ activity, index, locked, quizAnswers, setQuizAnswers,
 
 function ItemPager({ current, total, timeLabel, onPrevious, onNext, onSkip, showNext = true }: { current: number; total: number; timeLabel: string; onPrevious: () => void; onNext: () => void; onSkip: () => void; showNext?: boolean }) {
   return (
-    <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+    <div className="mb-3 flex flex-col gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
       <div>
         <div className="text-xs font-bold text-slate-700">Item {current + 1} of {total}</div>
         <div className="text-xs font-semibold text-slate-500">{timeLabel}</div>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="grid grid-cols-3 gap-2 sm:flex sm:items-center">
         <button type="button" className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 disabled:cursor-not-allowed disabled:text-slate-300" onClick={onPrevious} disabled={current === 0}>
           <ChevronLeft size={15} /> Previous
         </button>
@@ -723,7 +723,7 @@ function PgnBoardTask({ activityId, item, index, locked, onResult, onSolved }: a
   }
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xl shadow-brand-900/10">
+    <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-xl shadow-brand-900/10 sm:p-4">
       <div className="mb-3 flex items-center justify-between gap-2">
         <div>
           <b className="text-brand">{item.title || item.pgnTitle || `PGN ${index + 1}`}</b>
@@ -731,7 +731,7 @@ function PgnBoardTask({ activityId, item, index, locked, onResult, onSolved }: a
         </div>
         {solved && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-xs font-bold text-emerald-700"><CheckCircle2 size={13} /> Solved</span>}
       </div>
-      <div className="rounded-2xl bg-[#31210f] p-3 shadow-inner">
+      <div className="rounded-lg bg-[#31210f] p-1.5 shadow-inner sm:p-3">
         <Chessboard
           position={position}
           onPieceDrop={onDrop}

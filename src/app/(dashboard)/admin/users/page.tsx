@@ -207,50 +207,50 @@ export default function AdminUsersPage() {
   }
 
   return (
-    <div className="-m-6 min-h-screen space-y-6 bg-slate-50 p-6 text-slate-950">
-      <div className="flex items-start justify-between">
+    <div className="min-h-screen space-y-4 bg-slate-50 p-3 text-slate-950 sm:space-y-6 sm:p-5 lg:p-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="font-display text-3xl">User Management</h1>
+          <h1 className="font-display text-2xl sm:text-3xl">User Management</h1>
           <p className="text-sm text-slate-500">Manage students, coaches, and organize them into batches</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {tab === "batches" ? (
-            <button className="btn-primary" onClick={() => setOpenBatchModal(true)}><Plus size={16} className="mr-1" /> Add Batch</button>
+            <button className="btn-primary w-full sm:w-auto" onClick={() => setOpenBatchModal(true)}><Plus size={16} className="mr-1" /> Add Batch</button>
           ) : tab !== "roles" ? (
             <>
-              <button className="btn-primary" onClick={() => setOpenUserModal(true)}><Plus size={16} className="mr-1" /> Add {tabLabel}</button>
-              <button className="btn border border-slate-200 bg-white text-slate-700" onClick={exportCsv}><Upload size={16} className="mr-1" /> Export CSV</button>
+              <button className="btn-primary flex-1 sm:flex-none" onClick={() => setOpenUserModal(true)}><Plus size={16} className="mr-1" /> Add {tabLabel}</button>
+              <button className="btn flex-1 border border-slate-200 bg-white text-slate-700 sm:flex-none" onClick={exportCsv}><Upload size={16} className="mr-1" /> Export CSV</button>
             </>
           ) : null}
         </div>
       </div>
 
-      <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex gap-1 rounded-lg bg-slate-100 p-1">
+      <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm sm:p-5">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex overflow-x-auto rounded-lg bg-slate-100 p-1">
             {(["students", "coaches", "batches", "roles"] as Tab[]).map((t) => (
-              <button key={t} onClick={() => { setTab(t); setMenu(null); }} className={`rounded-md px-4 py-1.5 text-sm capitalize ${tab === t ? "bg-white text-slate-950 shadow" : "text-slate-600"}`}>
+              <button key={t} onClick={() => { setTab(t); setMenu(null); }} className={`min-w-fit rounded-md px-4 py-1.5 text-sm capitalize ${tab === t ? "bg-white text-slate-950 shadow" : "text-slate-600"}`}>
                 {t}
               </button>
             ))}
           </div>
-          <div className="flex flex-1 flex-wrap justify-end gap-2">
+          <div className="grid gap-2 sm:grid-cols-2 lg:flex lg:flex-1 lg:flex-wrap lg:justify-end">
             {(tab === "students" || tab === "coaches") && (
               <>
-                <select className="input max-w-[160px] bg-white text-slate-950" value={status} onChange={(e) => setStatus(e.target.value)}>
+                <select className="input w-full bg-white text-slate-950 lg:max-w-[160px]" value={status} onChange={(e) => setStatus(e.target.value)}>
                   <option value="">Filter by status</option>
                   <option value="active">Active</option>
                   <option value="inactive">Inactive</option>
                 </select>
-                <input className="input max-w-[160px] bg-white text-slate-950" placeholder="Filter by tag" value={tag} onChange={(e) => setTag(e.target.value)} />
-                <select className="input max-w-[140px] bg-white text-slate-950" value={sort} onChange={(e) => setSort(e.target.value)}>
+                <input className="input w-full bg-white text-slate-950 lg:max-w-[160px]" placeholder="Filter by tag" value={tag} onChange={(e) => setTag(e.target.value)} />
+                <select className="input w-full bg-white text-slate-950 lg:max-w-[140px]" value={sort} onChange={(e) => setSort(e.target.value)}>
                   <option value="newest">Newest first</option>
                   <option value="name">Name</option>
                 </select>
               </>
             )}
             {(tab !== "roles") && (
-              <div className="relative">
+              <div className="relative sm:col-span-2 lg:col-span-1">
                 <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input className="input bg-white pl-9 text-slate-950" placeholder={`Search ${tab}...`} value={q} onChange={(e) => setQ(e.target.value)} />
               </div>
@@ -264,7 +264,48 @@ export default function AdminUsersPage() {
               <span className="rounded-full bg-emerald-100 px-3 py-1 text-emerald-700">Active {counts.active}</span>
               <span className="rounded-full bg-red-100 px-3 py-1 text-red-700">Inactive {counts.inactive}</span>
             </div>
-            <div className="mt-4 overflow-x-auto">
+            <div className="mt-4 grid gap-3 md:hidden">
+              {users.map((u, i) => (
+                <article key={u._id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <button className="flex min-w-0 items-center gap-2 text-left" onClick={() => setDetailUser(u)}>
+                      <Avatar name={u.name} />
+                      <span className="min-w-0">
+                        <span className="block truncate font-semibold text-slate-950">{u.name}</span>
+                        <span className="block truncate text-xs text-slate-500">{u.email}</span>
+                      </span>
+                    </button>
+                    <button className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-white text-slate-600 shadow-sm" onClick={() => setMenu(menu?.id === u._id ? null : { type: "user", id: u._id })} aria-label={`Actions for ${u.name}`}>
+                      <MoreVertical size={17} />
+                    </button>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                    <InfoPill label="S.No" value={String(i + 1)} />
+                    <InfoPill label="Username" value={u.username || "-"} />
+                    <InfoPill label="Phone" value={u.phone || "-"} />
+                    <button
+                      className={`rounded-lg px-3 py-2 text-left text-xs font-bold ${u.isActive ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}
+                      onClick={() => updateUser(u._id, { isActive: !u.isActive })}
+                    >
+                      {u.isActive ? "Active" : "Inactive"}
+                    </button>
+                  </div>
+                  <div className="mt-2">
+                    {u.tempPassword ? (
+                      <button className="inline-flex items-center gap-1 rounded bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-800" onClick={() => copyCredentials(u)}>
+                        Temporary password <Copy size={12} />
+                      </button>
+                    ) : (
+                      <span className="inline-flex rounded bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">
+                        {passwordStatus(u)}
+                      </span>
+                    )}
+                  </div>
+                </article>
+              ))}
+              {users.length === 0 && <div className="rounded-lg border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">No {tab} yet.</div>}
+            </div>
+            <div className="mt-4 hidden overflow-x-auto md:block">
               <table className="w-full text-sm">
                 <thead className="text-xs uppercase text-slate-500">
                   <tr className="border-b border-slate-200">
@@ -324,7 +365,28 @@ export default function AdminUsersPage() {
         )}
 
         {tab === "batches" && (
-          <div className="mt-6 overflow-x-auto">
+          <>
+          <div className="mt-6 grid gap-3 md:hidden">
+            {currentBatches.map((batch, index) => (
+              <article key={batch._id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Batch {index + 1}</div>
+                    <h3 className="mt-1 font-semibold text-slate-950">{batch.name}</h3>
+                    <p className="mt-1 text-sm text-slate-500">Coach: {batch.coach?.name || "-"}</p>
+                  </div>
+                  <button className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-white text-slate-600 shadow-sm" onClick={() => setMenu(menu?.id === batch._id ? null : { type: "batch", id: batch._id })} aria-label={`Actions for ${batch.name}`}>
+                    <MoreVertical size={17} />
+                  </button>
+                </div>
+                <div className="mt-3">
+                  <InfoPill label="Students" value={String(batch.students?.length || 0)} />
+                </div>
+              </article>
+            ))}
+            {currentBatches.length === 0 && <div className="rounded-lg border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">No batches yet.</div>}
+          </div>
+          <div className="mt-6 hidden overflow-x-auto md:block">
             <table className="w-full text-sm">
               <thead className="text-xs uppercase text-slate-500">
                 <tr className="border-b border-slate-200">
@@ -351,6 +413,7 @@ export default function AdminUsersPage() {
               </tbody>
             </table>
           </div>
+          </>
         )}
 
         {tab === "roles" && <RolesPanel />}
@@ -391,7 +454,7 @@ export default function AdminUsersPage() {
 function ActionMenu({ items, onClose }: { items: Array<{ icon: any; label: string; onClick: () => void }>; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-40" onClick={onClose}>
-      <div className="absolute right-10 top-48 min-w-52 rounded-lg border border-slate-200 bg-white p-2 text-sm text-slate-950 shadow-xl" onClick={(e) => e.stopPropagation()}>
+      <div className="absolute inset-x-3 bottom-4 rounded-lg border border-slate-200 bg-white p-2 text-sm text-slate-950 shadow-xl sm:inset-x-auto sm:bottom-auto sm:right-10 sm:top-48 sm:min-w-52" onClick={(e) => e.stopPropagation()}>
         <div className="px-2 py-2 font-semibold">Actions</div>
         {items.map((item) => {
           const Icon = item.icon;
@@ -441,7 +504,16 @@ function UserDetailsModal({ user, batches, onClose, onCopy }: { user: AdminUser;
 }
 
 function InfoRow({ label, value }: { label: string; value: string }) {
-  return <div className="grid grid-cols-[120px_1fr] text-sm"><span className="text-slate-500">{label}</span><span className="font-medium">{value}</span></div>;
+  return <div className="grid gap-1 text-sm sm:grid-cols-[120px_1fr]"><span className="text-slate-500">{label}</span><span className="break-words font-medium">{value}</span></div>;
+}
+
+function InfoPill({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg bg-white px-3 py-2">
+      <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{label}</div>
+      <div className="mt-1 truncate text-xs font-semibold text-slate-950">{value}</div>
+    </div>
+  );
 }
 
 function passwordStatus(user: AdminUser) {

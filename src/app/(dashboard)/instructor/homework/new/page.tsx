@@ -3,9 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { BookOpen, CalendarClock, Check, ChevronDown, FileQuestion, FileText, Gamepad2, Plus, Search, Trash2, Users } from "lucide-react";
+import { BookOpen, CalendarClock, Check, ChevronDown, FileQuestion, FileText, Gamepad2, Search, Trash2, Upload, Users } from "lucide-react";
 
 type ActivityKind = "mcq" | "fen_mcq" | "written_answer" | "fen_written_answer" | "play_computer" | "pgn_quiz";
+type PgnSourceMode = "library" | "upload";
 type TargetMode = "all" | "batches" | "students";
 type QuizOption = { id: string; text: string; correct: boolean };
 type AssignmentQuestion = { id: string; text: string; positionFen: string; options: QuizOption[]; explanation: string; expectedAnswer: string };
@@ -28,8 +29,13 @@ type Activity = {
   minutes: number;
   increment: number;
   maxAttempts: number;
+  pgnSourceMode: PgnSourceMode;
   pgnFolder: string;
+  pgnSearch: string;
   selectedPgnIds: string[];
+  uploadedPgnTitle: string;
+  uploadedPgnText: string;
+  uploadedPgnFileName: string;
 };
 
 type FolderOption = { value: string; label: string };
@@ -79,8 +85,13 @@ function makeActivity(kind: ActivityKind, index: number): Activity {
     minutes: 10,
     increment: 0,
     maxAttempts: 1,
+    pgnSourceMode: "library",
     pgnFolder: "all",
+    pgnSearch: "",
     selectedPgnIds: [],
+    uploadedPgnTitle: "Uploaded PGN Homework",
+    uploadedPgnText: "",
+    uploadedPgnFileName: "",
   };
 }
 
@@ -92,6 +103,17 @@ function pgnSideToMoveLabel(pgn: PgnDoc) {
   const fen = pgn.initialFen || pgn.pgn.match(/\[FEN\s+"([^"]+)"\]/)?.[1] || "";
   const side = pgn.sideToMove || (fen.split(/\s+/)[1] === "b" ? "black" : "white");
   return side === "black" ? "Black to play" : "White to play";
+}
+
+function splitAssignmentPgns(pgn: string, fallbackTitle: string) {
+  const text = pgn.trim();
+  if (!text) return [];
+  const games = text.split(/\n\s*(?=\[Event\s+")/g).map((item) => item.trim()).filter(Boolean);
+  const chunks = games.length ? games : [text];
+  return chunks.map((game, index) => {
+    const title = game.match(/\[(?:ChapterName|Event)\s+"([^"]+)"\]/)?.[1] || fallbackTitle || `Uploaded PGN ${index + 1}`;
+    return { id: `uploaded-${Date.now()}-${index}`, title, pgn: game };
+  });
 }
 
 export default function NewHomeworkPage() {
@@ -163,6 +185,8 @@ export default function NewHomeworkPage() {
     event.preventDefault();
     if (!classroom) return toast.error("Choose a classroom");
     if (!activities.length) return toast.error("Add at least one activity");
+    const emptyPgnActivity = activities.find((activity) => activity.kind === "pgn_quiz" && activity.selectedPgnIds.length === 0 && splitAssignmentPgns(activity.uploadedPgnText, activity.uploadedPgnTitle).length === 0);
+    if (emptyPgnActivity) return toast.error("Add at least one PGN from the library or upload a PGN file.");
 
     const assignmentActivities = activities.map((activity) => {
       if (activity.kind === "mcq" || activity.kind === "fen_mcq") {
@@ -225,14 +249,16 @@ export default function NewHomeworkPage() {
         };
       }
       const selected = pgns.filter((pgn) => activity.selectedPgnIds.includes(pgn._id));
+      const uploaded = splitAssignmentPgns(activity.uploadedPgnText, activity.uploadedPgnTitle);
       return {
         type: "study_pgn",
-        title: activity.title || "Quiz from PGN Library",
+        title: activity.title || "PGN Homework",
         instructions: "Study the selected PGNs and complete the quiz.",
         points: activity.points,
         timeLimitMinutes: activity.timeLimitMinutes,
-        source: { kind: "pgn_quiz", folder: activity.pgnFolder, maxAttempts: activity.maxAttempts },
-        items: selected.map((pgn) => ({
+        source: { kind: "pgn_quiz", folder: activity.pgnFolder, maxAttempts: activity.maxAttempts, sourceMode: activity.pgnSourceMode },
+        items: [
+          ...selected.map((pgn) => ({
           id: pgn._id,
           title: pgn.title,
           pgnTitle: pgn.title,
@@ -240,7 +266,16 @@ export default function NewHomeworkPage() {
           pgn: pgn.pgn,
           source: { kind: "pgn", folder: pgn.folder || "Unfiled" },
           points: activity.points,
-        })),
+          })),
+          ...uploaded.map((pgn) => ({
+            id: pgn.id,
+            title: pgn.title,
+            pgnTitle: pgn.title,
+            pgn: pgn.pgn,
+            source: { kind: "uploaded_pgn", fileName: activity.uploadedPgnFileName || undefined },
+            points: activity.points,
+          })),
+        ],
       };
     });
 
@@ -267,45 +302,45 @@ export default function NewHomeworkPage() {
   }
 
   return (
-    <form onSubmit={submit} className="space-y-4 p-4 text-slate-950">
-      <header className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+    <form onSubmit={submit} className="space-y-3 p-3 text-slate-950 sm:p-4">
+      <header className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2.5 shadow-sm lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h1 className="text-2xl font-black text-brand">Create Assignment</h1>
-          <p className="text-sm text-slate-500">Build MCQ, written answer, board-based, PGN, and computer-play homework.</p>
+          <h1 className="text-xl font-black text-brand">Create Assignment</h1>
+          <p className="text-xs text-slate-500">Build MCQ, written answer, board-based, PGN, and computer-play homework.</p>
         </div>
-        <button className="rounded-lg bg-brand px-4 py-2 text-sm font-black text-white"><Check size={15} className="mr-1 inline" /> Create Assignment</button>
+        <button className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-brand px-3 text-xs font-black text-white"><Check size={14} /> Create Assignment</button>
       </header>
 
-      <section className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:grid-cols-[1.2fr_1fr_1fr]">
+      <section className="grid gap-2 rounded-lg border border-slate-200 bg-white p-3 shadow-sm lg:grid-cols-[1.2fr_1fr_1fr]">
         <label className="text-xs font-bold text-slate-600">
           Assignment title
-          <input className="input mt-1 h-10" value={title} onChange={(event) => setTitle(event.target.value)} required />
+          <input className="input mt-1 h-9" value={title} onChange={(event) => setTitle(event.target.value)} required />
         </label>
         <label className="text-xs font-bold text-slate-600">
           Classroom
-          <select className="input mt-1 h-10" value={classroom} onChange={(event) => setClassroom(event.target.value)} required>
+          <select className="input mt-1 h-9" value={classroom} onChange={(event) => setClassroom(event.target.value)} required>
             <option value="">Choose classroom</option>
             {classrooms.map((item) => <option key={item._id} value={item._id}>{item.title}</option>)}
           </select>
         </label>
         <label className="text-xs font-bold text-slate-600">
           Due date
-          <span className="mt-1 flex h-10 items-center gap-2 rounded-lg border border-slate-200 px-3">
-            <CalendarClock size={15} className="text-brand" />
+          <span className="mt-1 flex h-9 items-center gap-2 rounded-lg border border-slate-200 px-3">
+            <CalendarClock size={14} className="text-brand" />
             <input className="min-w-0 flex-1 outline-none" type="datetime-local" value={dueAt} onChange={(event) => setDueAt(event.target.value)} />
           </span>
         </label>
         <label className="text-xs font-bold text-slate-600 lg:col-span-3">
           Description
-          <textarea className="input mt-1 h-16 resize-none" value={description} onChange={(event) => setDescription(event.target.value)} />
+          <textarea className="input mt-1 h-10 resize-none" value={description} onChange={(event) => setDescription(event.target.value)} />
         </label>
       </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="mb-3 flex items-center gap-2 font-black text-brand"><Users size={17} /> Assign To</div>
-        <div className="mb-3 flex flex-wrap gap-2">
+      <section className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+        <div className="mb-2 flex items-center gap-2 text-sm font-black text-brand"><Users size={15} /> Assign To</div>
+        <div className="flex flex-wrap gap-2">
           {(["all", "batches", "students"] as TargetMode[]).map((mode) => (
-            <button key={mode} type="button" className={`rounded-full px-4 py-2 text-sm font-bold ${targetMode === mode ? "bg-brand text-white" : "bg-slate-100 text-slate-600"}`} onClick={() => setTargetMode(mode)}>
+            <button key={mode} type="button" className={`rounded-full px-3 py-1.5 text-xs font-bold ${targetMode === mode ? "bg-brand text-white" : "bg-slate-100 text-slate-600"}`} onClick={() => setTargetMode(mode)}>
               {mode === "all" ? "Entire class" : mode === "batches" ? "Batches" : "Specific students"}
             </button>
           ))}
@@ -328,15 +363,15 @@ export default function NewHomeworkPage() {
         )}
       </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+      <section className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <div>
-            <h2 className="text-lg font-black text-brand">Activities</h2>
-            <p className="text-sm text-slate-500">Add one or more activities students must complete.</p>
+            <h2 className="text-base font-black text-brand">Activities</h2>
+            <p className="text-xs text-slate-500">Add one or more activities students must complete.</p>
           </div>
           <span className="rounded-full bg-slate-950 px-3 py-1 text-xs font-black text-white">{activities.length} activit{activities.length === 1 ? "y" : "ies"}</span>
         </div>
-        <div className="mb-4 flex flex-wrap gap-2">
+        <div className="mb-3 flex flex-wrap gap-2">
           <AddActivityButton icon={<FileQuestion size={15} />} label="Add MCQ" onClick={() => addActivity("mcq")} />
           <AddActivityButton icon={<FileQuestion size={15} />} label="Add FEN + MCQ" onClick={() => addActivity("fen_mcq")} />
           <AddActivityButton icon={<FileText size={15} />} label="Add Written Answer" onClick={() => addActivity("written_answer")} />
@@ -387,8 +422,8 @@ function ActivityCard({ activity, index, open, pgns, folders, onToggle, onRemove
       : `${activity.selectedPgnIds.length} game${activity.selectedPgnIds.length === 1 ? "" : "s"} selected`;
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white">
-      <button type="button" className="flex w-full items-center justify-between gap-3 p-4 text-left" onClick={onToggle}>
+    <div className="rounded-lg border border-slate-200 bg-white">
+      <button type="button" className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left" onClick={onToggle}>
         <div>
           <div className="text-xs text-slate-500">Activity {index + 1}</div>
           <div className="font-black text-slate-950">{activity.title}</div>
@@ -400,19 +435,19 @@ function ActivityCard({ activity, index, open, pgns, folders, onToggle, onRemove
         </div>
       </button>
       {open && (
-        <div className="border-t border-slate-100 p-4">
-          <div className="mb-4 grid gap-3 md:grid-cols-3">
+        <div className="border-t border-slate-100 p-3">
+          <div className="mb-3 grid gap-2 md:grid-cols-3">
             <label className="text-xs font-bold text-slate-600">
               Activity title
-              <input className="input mt-1 h-10" value={activity.title} onChange={(event) => onChange({ title: event.target.value })} />
+              <input className="input mt-1 h-9" value={activity.title} onChange={(event) => onChange({ title: event.target.value })} />
             </label>
             <label className="text-xs font-bold text-slate-600">
               Points
-              <input className="input mt-1 h-10" type="number" min={0} value={activity.points} onChange={(event) => onChange({ points: Number(event.target.value) })} />
+              <input className="input mt-1 h-9" type="number" min={0} value={activity.points} onChange={(event) => onChange({ points: Number(event.target.value) })} />
             </label>
             <label className="text-xs font-bold text-slate-600">
               Time limit in minutes
-              <input className="input mt-1 h-10" type="number" min={0} placeholder="0 means no limit" value={activity.timeLimitMinutes} onChange={(event) => onChange({ timeLimitMinutes: Number(event.target.value) })} />
+              <input className="input mt-1 h-9" type="number" min={0} placeholder="0 means no limit" value={activity.timeLimitMinutes} onChange={(event) => onChange({ timeLimitMinutes: Number(event.target.value) })} />
             </label>
           </div>
           {isMcq && <McqActivity activity={activity} onChange={onChange} />}
@@ -542,38 +577,92 @@ function ComputerActivity({ activity, onChange }: { activity: Activity; onChange
 }
 
 function PgnQuizActivity({ activity, pgns, folders, onChange }: { activity: Activity; pgns: PgnDoc[]; folders: FolderOption[]; onChange: (patch: Partial<Activity>) => void }) {
-  const allSelected = pgns.length > 0 && pgns.every((pgn) => activity.selectedPgnIds.includes(pgn._id));
+  const searchablePgns = pgns.filter((pgn) => `${pgn.title} ${pgn.white || ""} ${pgn.black || ""} ${pgn.folder || ""}`.toLowerCase().includes(activity.pgnSearch.toLowerCase()));
+  const allSelected = searchablePgns.length > 0 && searchablePgns.every((pgn) => activity.selectedPgnIds.includes(pgn._id));
+  const uploadedChapters = splitAssignmentPgns(activity.uploadedPgnText, activity.uploadedPgnTitle);
+  function readUploadedPgn(file?: File) {
+    if (!file) return;
+    file.text()
+      .then((text) => onChange({ uploadedPgnText: text, uploadedPgnFileName: file.name, uploadedPgnTitle: activity.uploadedPgnTitle || file.name.replace(/\.pgn$/i, "") }))
+      .catch(() => toast.error("Could not read PGN file"));
+  }
   return (
-    <div className="space-y-4">
-      <div className="grid gap-3 md:grid-cols-3">
+    <div className="space-y-3">
+      <div className="grid gap-2 md:grid-cols-3">
         <label className="text-xs font-bold text-slate-600">
           Maximum attempts
-          <input className="input mt-1 h-10" type="number" min={1} value={activity.maxAttempts} onChange={(event) => onChange({ maxAttempts: Number(event.target.value) })} />
-        </label>
-        <label className="text-xs font-bold text-slate-600">
-          Select folder
-          <select className="input mt-1 h-10" value={activity.pgnFolder} onChange={(event) => onChange({ pgnFolder: event.target.value, selectedPgnIds: [] })}>
-            {folders.map((folder) => <option key={folder.value} value={folder.value}>{folder.label}</option>)}
-          </select>
+          <input className="input mt-1 h-9" type="number" min={1} value={activity.maxAttempts} onChange={(event) => onChange({ maxAttempts: Number(event.target.value) })} />
         </label>
         <label className="text-xs font-bold text-slate-600">
           Selected games
-          <div className="mt-1 rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold">{activity.selectedPgnIds.length} / {pgns.length}</div>
+          <div className="mt-1 rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold">{activity.selectedPgnIds.length + uploadedChapters.length} total</div>
         </label>
+        <div className="flex items-end">
+          <div className="inline-flex h-9 rounded-lg border border-slate-200 bg-slate-50 p-1">
+            {(["library", "upload"] as PgnSourceMode[]).map((mode) => (
+              <button key={mode} type="button" className={`rounded-md px-3 text-xs font-black ${activity.pgnSourceMode === mode ? "bg-brand text-white shadow-sm" : "text-slate-600"}`} onClick={() => onChange({ pgnSourceMode: mode })}>
+                {mode === "library" ? "Library" : "Upload PGN"}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
-      <button type="button" className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold" onClick={() => onChange({ selectedPgnIds: allSelected ? [] : pgns.map((pgn) => pgn._id) })}>
-        {allSelected ? "Clear selected" : "Select all in folder"}
-      </button>
-      <div className="grid max-h-72 gap-2 overflow-y-auto md:grid-cols-2">
-        {pgns.map((pgn) => <CheckboxRow key={pgn._id} label={pgn.title} sub={`${normalizeFolderPath(pgn.folder) || "Unfiled"} - ${pgn.white || "White"} vs ${pgn.black || "Black"} - ${pgnSideToMoveLabel(pgn)}`} checked={activity.selectedPgnIds.includes(pgn._id)} onChange={() => toggleId(pgn._id, activity.selectedPgnIds, (selectedPgnIds) => onChange({ selectedPgnIds }))} />)}
-        {!pgns.length && <div className="rounded-lg border border-dashed border-slate-200 p-4 text-sm text-slate-500">No PGNs found in this folder.</div>}
-      </div>
+
+      {activity.pgnSourceMode === "library" && (
+        <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
+          <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(180px,260px)_auto] md:items-end">
+            <label className="text-xs font-bold text-slate-600">
+              Search library
+              <span className="mt-1 flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3">
+                <Search size={14} className="text-slate-400" />
+                <input className="min-w-0 flex-1 bg-transparent text-sm outline-none" placeholder="Search PGN, player, folder" value={activity.pgnSearch} onChange={(event) => onChange({ pgnSearch: event.target.value })} />
+              </span>
+            </label>
+            <label className="text-xs font-bold text-slate-600">
+              Folder
+              <select className="input mt-1 h-9 bg-white" value={activity.pgnFolder} onChange={(event) => onChange({ pgnFolder: event.target.value, selectedPgnIds: [] })}>
+                {folders.map((folder) => <option key={folder.value} value={folder.value}>{folder.label}</option>)}
+              </select>
+            </label>
+            <button type="button" className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-700" onClick={() => onChange({ selectedPgnIds: allSelected ? activity.selectedPgnIds.filter((id) => !searchablePgns.some((pgn) => pgn._id === id)) : Array.from(new Set([...activity.selectedPgnIds, ...searchablePgns.map((pgn) => pgn._id)])) })}>
+              {allSelected ? "Clear shown" : "Select shown"}
+            </button>
+          </div>
+          <div className="grid max-h-64 gap-2 overflow-y-auto md:grid-cols-2">
+            {searchablePgns.map((pgn) => <CheckboxRow key={pgn._id} label={pgn.title} sub={`${normalizeFolderPath(pgn.folder) || "Unfiled"} - ${pgn.white || "White"} vs ${pgn.black || "Black"} - ${pgnSideToMoveLabel(pgn)}`} checked={activity.selectedPgnIds.includes(pgn._id)} onChange={() => toggleId(pgn._id, activity.selectedPgnIds, (selectedPgnIds) => onChange({ selectedPgnIds }))} />)}
+            {!searchablePgns.length && <div className="rounded-lg border border-dashed border-slate-200 bg-white p-4 text-sm text-slate-500">No PGNs found for this selection.</div>}
+          </div>
+        </div>
+      )}
+
+      {activity.pgnSourceMode === "upload" && (
+        <div className="grid gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2 lg:grid-cols-[260px_minmax(0,1fr)]">
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-slate-600">
+              Title
+              <input className="input mt-1 h-9 bg-white" value={activity.uploadedPgnTitle} onChange={(event) => onChange({ uploadedPgnTitle: event.target.value })} />
+            </label>
+            <label className="flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-brand/30 bg-white p-3 text-center text-sm font-bold text-brand">
+              <Upload size={20} />
+              <span className="mt-1">{activity.uploadedPgnFileName || "Upload .pgn file"}</span>
+              <input className="hidden" type="file" accept=".pgn" onChange={(event) => readUploadedPgn(event.target.files?.[0])} />
+            </label>
+            <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600">
+              {uploadedChapters.length ? `${uploadedChapters.length} chapter${uploadedChapters.length === 1 ? "" : "s"} ready` : "Paste or upload a PGN"}
+            </div>
+          </div>
+          <label className="text-xs font-bold text-slate-600">
+            PGN content
+            <textarea className="input mt-1 min-h-44 resize-y bg-white font-mono text-xs" placeholder="Paste PGN here..." value={activity.uploadedPgnText} onChange={(event) => onChange({ uploadedPgnText: event.target.value })} />
+          </label>
+        </div>
+      )}
     </div>
   );
 }
 
 function AddActivityButton({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick: () => void }) {
-  return <button type="button" className="inline-flex items-center gap-2 rounded-lg border border-brand/20 bg-white px-3 py-2 text-sm font-black text-brand hover:bg-brand/5" onClick={onClick}>{icon}{label}</button>;
+  return <button type="button" className="inline-flex h-9 items-center gap-2 rounded-lg border border-brand/20 bg-white px-3 text-xs font-black text-brand hover:bg-brand/5" onClick={onClick}>{icon}{label}</button>;
 }
 
 function CheckboxRow({ label, sub, checked, onChange }: { label: string; sub?: string; checked: boolean; onChange: () => void }) {

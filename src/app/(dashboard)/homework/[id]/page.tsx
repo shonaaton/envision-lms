@@ -62,6 +62,29 @@ function buildGame(fen?: string) {
   return new Chess();
 }
 
+function itemFen(item: any) {
+  return String(item?.positionFen || item?.fen || "").trim();
+}
+
+function previewFen(fen: string) {
+  if (!fen || fen === "start") return startFen;
+  try {
+    return new Chess(fen).fen();
+  } catch {
+    const normalizedFen = normalizeBoardResourceFen(fen);
+    if (normalizedFen) {
+      try {
+        const chess = new Chess();
+        chess.load(normalizedFen, { skipValidation: true });
+        return chess.fen();
+      } catch {
+        // Keep the original FEN visible below when it cannot be rendered.
+      }
+    }
+  }
+  return "";
+}
+
 function parsePgnPuzzle(pgn: string) {
   try {
     const game = new Chess();
@@ -246,6 +269,7 @@ function ReportMcq({ activity, submission }: { activity: any; submission: any })
   return (
     <div className="space-y-3">
       {(activity.items || []).map((item: any, index: number) => {
+        const fen = itemFen(item);
         const selected = submission.quizAnswers?.[key(activity._id, item.id)];
         const selectedOption = (item.options || []).find((option: any) => option.id === selected);
         const correctOption = (item.options || []).find((option: any) => option.correct);
@@ -256,7 +280,7 @@ function ReportMcq({ activity, submission }: { activity: any; submission: any })
               <b className="text-brand">Question {index + 1}</b>
               <span className={`rounded-full px-2 py-1 text-xs font-bold ${correct ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>{correct ? "Correct" : "Review"}</span>
             </div>
-            {item.positionFen && <FenBox fen={item.positionFen} />}
+            {fen && <FenBox fen={fen} />}
             <div className="mt-2 rounded-xl bg-slate-50 p-3 font-semibold">{item.question}</div>
             <div className="mt-3 grid gap-2 text-sm">
               <div className="rounded-lg bg-slate-50 px-3 py-2"><b>Your answer:</b> {selectedOption?.text || "Not answered"}</div>
@@ -432,13 +456,14 @@ function ItemPager({ current, total, timeLabel, onPrevious, onNext, onSkip }: { 
 }
 
 function McqQuestion({ activityId, item, index, value, onChange, locked }: any) {
+  const fen = itemFen(item);
   return (
     <div className="rounded-xl border border-slate-200 p-3">
       <div className="mb-2 flex items-center justify-between">
         <b className="text-brand">Question {index + 1}</b>
         <span className="rounded-full bg-accent/30 px-2 py-1 text-xs font-bold text-brand">{item.points || 1} pts</span>
       </div>
-      {item.positionFen && <FenBox fen={item.positionFen} />}
+      {fen && <FenBox fen={fen} />}
       <div className="mt-2 rounded-xl bg-slate-50 p-4 font-semibold text-slate-900">{item.question}</div>
       <div className="mt-2 grid gap-2">
         {(item.options || []).map((option: any) => (
@@ -653,7 +678,24 @@ function MoveHistoryTrace({ history }: { history: MoveTrace[] }) {
 }
 
 function FenBox({ fen }: { fen: string }) {
-  return <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 font-mono text-xs text-slate-700">{fen}</div>;
+  const boardFen = previewFen(fen);
+  if (!boardFen) {
+    return <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 font-mono text-xs text-slate-700">{fen}</div>;
+  }
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+      <div className="mx-auto w-[240px] max-w-full overflow-hidden rounded-lg border border-slate-200">
+        <Chessboard
+          position={boardFen}
+          arePiecesDraggable={false}
+          boardWidth={240}
+          customDarkSquareStyle={{ backgroundColor: "#b58863" }}
+          customLightSquareStyle={{ backgroundColor: "#f0d9b5" }}
+        />
+      </div>
+      <div className="mt-2 break-all rounded-lg bg-slate-50 px-2 py-1 font-mono text-[11px] text-slate-500">{fen}</div>
+    </div>
+  );
 }
 
 function MiniStat({ label, value }: { label: string; value: string | number }) {

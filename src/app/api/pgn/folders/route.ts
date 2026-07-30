@@ -144,17 +144,21 @@ export async function DELETE(req: Request) {
   if (!name) return NextResponse.json({ error: "Folder name required" }, { status: 400 });
 
   const rootFolder: any = await PgnFolder.findOne(buildManageableFolderFilter(session, { path: name, ...(requestedVisibility ? { visibility: requestedVisibility } : {}) }));
-  if (!rootFolder) return NextResponse.json({ error: "Folder not found" }, { status: 404 });
-  if (rootFolder.visibility === "shared" && !canManageSharedFolder(session)) {
+  const folderVisibility = rootFolder?.visibility || requestedVisibility;
+  if (folderVisibility === "shared" && !canManageSharedFolder(session)) {
     return NextResponse.json({ error: "Only admins can delete shared folders" }, { status: 403 });
   }
 
   const matcher = folderTreeMatcher(name);
-  const pgnVisibilityFilter = rootFolder.visibility === "shared" ? "shared" : { $ne: "shared" };
-  await Promise.all([
-    PgnFolder.deleteMany(buildManageableFolderFilter(session, { path: matcher, visibility: rootFolder.visibility })),
-    PGN.deleteMany(buildManageablePgnFilter(session, { folder: matcher, visibility: pgnVisibilityFilter })),
+  const pgnVisibilityFilter = folderVisibility === "shared" ? "shared" : folderVisibility === "private" ? { $ne: "shared" } : undefined;
+  const [deletedFolders, deletedPgns] = await Promise.all([
+    PgnFolder.deleteMany(buildManageableFolderFilter(session, { path: matcher, ...(folderVisibility ? { visibility: folderVisibility } : {}) })),
+    PGN.deleteMany(buildManageablePgnFilter(session, { folder: matcher, ...(pgnVisibilityFilter ? { visibility: pgnVisibilityFilter } : {}) })),
   ]);
 
-  return NextResponse.json({ ok: true });
+  if (!rootFolder && !deletedFolders.deletedCount && !deletedPgns.deletedCount) {
+    return NextResponse.json({ error: "Folder not found" }, { status: 404 });
+  }
+
+  return NextResponse.json({ ok: true, deletedFolders: deletedFolders.deletedCount || 0, deletedPgns: deletedPgns.deletedCount || 0 });
 }

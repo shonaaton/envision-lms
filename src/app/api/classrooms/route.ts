@@ -53,14 +53,19 @@ export async function POST(req: Request) {
 
 async function normalizeClassroomPayload(raw: any, actorId: string) {
   const classroomType = raw.classroomType === "series" ? "series" : "single";
+  const seriesTopicMode = raw.seriesTopicMode === "selected" ? "selected" : "all";
   const meetingProvider = "meet";
   const title = String(raw.title || "").trim();
   if (!title) throw new Error("Class name is required.");
 
   const levelName = String(raw.levelName || "").trim();
-  const topicName = String(raw.topicName || raw.customTopicName || "").trim();
+  let topicName = String(raw.topicName || raw.customTopicName || "").trim();
   const durationMinutes = Math.max(15, Number(raw.durationMinutes || 60));
   const courseId = String(raw.course || "").trim() || undefined;
+  const classCount = Math.max(1, Number(raw.classCount || 1));
+  const selectedTopicNames = Array.isArray(raw.selectedTopicNames)
+    ? raw.selectedTopicNames.map((name: any) => String(name || "").trim()).filter(Boolean)
+    : [];
 
   let sessionPlan = Array.isArray(raw.sessionPlan) ? raw.sessionPlan : [];
   let courseName = String(raw.courseName || "").trim();
@@ -72,13 +77,32 @@ async function normalizeClassroomPayload(raw: any, actorId: string) {
       courseName = course.name;
       level = course.level === "mixed" ? "beginner" : course.level;
       const selectedLevel = (course.levels || []).find((item: any) => String(item.name) === levelName) || course.levels?.[0];
-      if (selectedLevel && !sessionPlan.length) {
+      if (selectedLevel && classroomType === "series" && seriesTopicMode === "selected") {
+        const namesInOrder = selectedTopicNames.length
+          ? selectedTopicNames
+          : sessionPlan.map((item: any) => String(item.topicName || "").trim()).filter(Boolean);
+        if (namesInOrder.length !== classCount) {
+          throw new Error(`Select exactly ${classCount} topic${classCount > 1 ? "s" : ""} for this series.`);
+        }
+        const selectedTopics = namesInOrder.map((name: string) => {
+          const topic = (selectedLevel.topics || []).find((item: any) => String(item.name) === name);
+          if (!topic) throw new Error(`Topic "${name}" is not available in ${String(selectedLevel.name || "the selected level")}.`);
+          return topic;
+        });
+        sessionPlan = buildSessionPlan(selectedTopics.map((topic: any, index: number) => ({
+          name: topic.name,
+          order: index + 1,
+        })));
+        topicName = `${sessionPlan.length} selected topics`;
+      } else if (selectedLevel && !sessionPlan.length) {
         sessionPlan = buildSessionPlan((selectedLevel.topics || []).map((topic: any, index: number) => ({
           name: topic.name,
           order: Number(topic.order ?? index),
         })));
       }
     }
+  } else if (classroomType === "series" && seriesTopicMode === "selected") {
+    throw new Error("Select a course and level before choosing selected topics.");
   }
 
   const daysOfWeek = Array.isArray(raw.daysOfWeek)

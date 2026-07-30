@@ -10,6 +10,7 @@ import {
   Eye,
   GraduationCap,
   Link2,
+  ListChecks,
   Pencil,
   Plus,
   Search,
@@ -85,6 +86,7 @@ type TargetsPayload = {
 };
 
 type CreateMode = "single" | "series";
+type SeriesTopicMode = "all" | "selected";
 type EndCondition = "on_date" | "after_n_sessions" | "course_complete" | "never";
 
 function latestSummarySessionId(item: ClassroomItem) {
@@ -167,6 +169,9 @@ function blankForm() {
     topicOrder: 0,
     useCustomTopic: false,
     customTopicName: "",
+    seriesTopicMode: "all" as SeriesTopicMode,
+    classCount: 1,
+    selectedTopicNames: [] as string[],
     classDate: "",
     startTime: "",
     durationMinutes: 60,
@@ -253,6 +258,15 @@ export default function ClassroomManagementClient({ role, isSuperAdmin = false }
     () => selectedCourse?.levels?.find((level) => level.name === form.levelName) || null,
     [selectedCourse, form.levelName]
   );
+  const selectedSeriesTopics = useMemo(() => {
+    if (form.classroomType !== "series") return [];
+    if (form.seriesTopicMode === "selected") {
+      return form.selectedTopicNames
+        .map((topicName) => (selectedLevel?.topics || []).find((topic) => topic.name === topicName))
+        .filter(Boolean) as Array<{ name: string; order?: number }>;
+    }
+    return selectedLevel?.topics || [];
+  }, [form.classroomType, form.selectedTopicNames, form.seriesTopicMode, selectedLevel]);
 
   const filteredItems = useMemo(() => {
     return items.filter((item) => {
@@ -322,7 +336,7 @@ export default function ClassroomManagementClient({ role, isSuperAdmin = false }
     );
   }, [coachSearch, targets.coaches]);
 
-  function resetModal(mode: CreateMode, item?: ClassroomItem | null) {
+  function resetModal(mode: CreateMode, item?: ClassroomItem | null, seriesTopicMode: SeriesTopicMode = "all") {
     setStudentSearch("");
     setCoachSearch("");
     if (!item) {
@@ -330,7 +344,7 @@ export default function ClassroomManagementClient({ role, isSuperAdmin = false }
       setEditItem(null);
       setStep(1);
       setOpen(true);
-      setForm((current) => ({ ...current, classroomType: mode }));
+      setForm((current) => ({ ...current, classroomType: mode, seriesTopicMode, endCondition: mode === "series" ? "course_complete" : current.endCondition }));
       return;
     }
     setEditItem(item);
@@ -344,6 +358,9 @@ export default function ClassroomManagementClient({ role, isSuperAdmin = false }
       topicOrder: 0,
       useCustomTopic: !item.courseName || !item.topicName,
       customTopicName: item.topicName || "",
+      seriesTopicMode: "all",
+      classCount: item.generatedSessions?.length || 1,
+      selectedTopicNames: [],
       classDate: item.classDate ? formatDateInput(item.classDate) : "",
       startTime: item.startTime || "",
       durationMinutes: item.durationMinutes || 60,
@@ -377,6 +394,8 @@ export default function ClassroomManagementClient({ role, isSuperAdmin = false }
       topicOrder: Number(course?.levels?.[0]?.topics?.[0]?.order || 0),
       useCustomTopic: false,
       customTopicName: "",
+      selectedTopicNames: [],
+      classCount: 1,
     });
   }
 
@@ -386,6 +405,32 @@ export default function ClassroomManagementClient({ role, isSuperAdmin = false }
       levelName,
       topicName: level?.topics?.[0]?.name || "",
       topicOrder: Number(level?.topics?.[0]?.order || 0),
+      selectedTopicNames: [],
+      classCount: 1,
+    });
+  }
+
+  function setClassCount(classCount: number) {
+    const nextCount = Math.max(1, Math.min(Number(classCount || 1), selectedLevel?.topics?.length || 1));
+    setForm((current) => ({
+      ...current,
+      classCount: nextCount,
+      selectedTopicNames: current.selectedTopicNames.slice(0, nextCount),
+      endCondition: "course_complete",
+      endAfterSessions: nextCount,
+    }));
+  }
+
+  function toggleSeriesTopic(topicName: string) {
+    setForm((current) => {
+      if (current.selectedTopicNames.includes(topicName)) {
+        return { ...current, selectedTopicNames: current.selectedTopicNames.filter((name) => name !== topicName) };
+      }
+      if (current.selectedTopicNames.length >= current.classCount) {
+        toast.error(`You have already selected ${current.classCount} topic${current.classCount > 1 ? "s" : ""}.`);
+        return current;
+      }
+      return { ...current, selectedTopicNames: [...current.selectedTopicNames, topicName] };
     });
   }
 
@@ -420,7 +465,15 @@ export default function ClassroomManagementClient({ role, isSuperAdmin = false }
 
   async function submitForm() {
     await withBusy(editItem ? "Updating classroom..." : "Creating classroom...", async () => {
-      const reviewTopicName = form.useCustomTopic ? form.customTopicName : form.topicName;
+      const reviewTopicName = form.classroomType === "series" && form.seriesTopicMode === "selected"
+        ? `${selectedSeriesTopics.length} selected topics`
+        : form.useCustomTopic
+          ? form.customTopicName
+          : form.topicName;
+      if (form.classroomType === "series" && form.seriesTopicMode === "selected" && form.selectedTopicNames.length !== form.classCount) {
+        toast.error(`Select ${form.classCount} topic${form.classCount > 1 ? "s" : ""} in order.`);
+        return;
+      }
       const sessionPlan =
         form.classroomType === "single"
           ? [{
@@ -428,15 +481,17 @@ export default function ClassroomManagementClient({ role, isSuperAdmin = false }
               topicName: reviewTopicName || form.title || "Session 1",
               topicOrder: Number(form.topicOrder || 0),
             }]
-          : (selectedLevel?.topics || []).map((topic, index) => ({
+          : selectedSeriesTopics.map((topic, index) => ({
               sessionNumber: index + 1,
               topicName: topic.name,
-              topicOrder: Number(topic.order ?? index),
+              topicOrder: form.seriesTopicMode === "selected" ? index + 1 : Number(topic.order ?? index),
             }));
 
       const payload = {
         ...form,
         topicName: reviewTopicName,
+        endCondition: form.classroomType === "series" && form.seriesTopicMode === "selected" ? "course_complete" : form.endCondition,
+        endAfterSessions: form.classroomType === "series" && form.seriesTopicMode === "selected" ? form.classCount : form.endAfterSessions,
         meetingProvider: "meet",
         sessionPlan,
       };
@@ -530,6 +585,9 @@ export default function ClassroomManagementClient({ role, isSuperAdmin = false }
           )}
           <button className="btn-outline" onClick={() => resetModal("single")}>
             <Plus size={15} /> Single Class
+          </button>
+          <button className="btn-outline" onClick={() => resetModal("series", null, "selected")}>
+            <ListChecks size={15} /> Selected Topics
           </button>
           <button className="btn-primary" onClick={() => resetModal("series")}>
             <CalendarDays size={15} /> Learning Series
@@ -638,7 +696,7 @@ export default function ClassroomManagementClient({ role, isSuperAdmin = false }
           <div className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
             <div className="flex items-start justify-between border-b border-slate-100 px-5 py-4">
               <div>
-                <div className="text-xs font-black uppercase tracking-[0.16em] text-brand">{form.classroomType === "single" ? "Single Class" : "Learning Series"}</div>
+                <div className="text-xs font-black uppercase tracking-[0.16em] text-brand">{classroomModeLabel(form)}</div>
                 <h2 className="mt-1 text-2xl font-black text-slate-950">{editItem ? "Edit Classroom" : "Create Classroom"}</h2>
                 <p className="text-sm text-slate-500">Step {step} of 4</p>
               </div>
@@ -666,28 +724,37 @@ export default function ClassroomManagementClient({ role, isSuperAdmin = false }
                         {targets.courses.map((course) => <option key={course._id} value={course._id}>{course.name}</option>)}
                       </select>
                     </Field>
-                    <div className="grid gap-4 sm:grid-cols-2">
+                    <div className={cn("grid gap-4", form.classroomType === "single" ? "sm:grid-cols-2" : "")}>
                       <Field label="Level">
                         <select className="input h-10" value={form.levelName} onChange={(event) => setLevel(event.target.value)}>
                           <option value="">Select level</option>
                           {(selectedCourse?.levels || []).map((level) => <option key={level.name} value={level.name}>{level.name}</option>)}
                         </select>
                       </Field>
-                      <Field label="Topic">
-                        <select className="input h-10" value={form.topicName} onChange={(event) => updateForm({ topicName: event.target.value })} disabled={form.useCustomTopic}>
-                          <option value="">Select topic</option>
-                          {(selectedLevel?.topics || []).map((topic) => <option key={topic.name} value={topic.name}>{topic.name}</option>)}
-                        </select>
-                      </Field>
+                      {form.classroomType === "single" && (
+                        <Field label="Topic">
+                          <select className="input h-10" value={form.topicName} onChange={(event) => updateForm({ topicName: event.target.value })} disabled={form.useCustomTopic}>
+                            <option value="">Select topic</option>
+                            {(selectedLevel?.topics || []).map((topic) => <option key={topic.name} value={topic.name}>{topic.name}</option>)}
+                          </select>
+                        </Field>
+                      )}
                     </div>
-                    <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700">
-                      <input type="checkbox" checked={form.useCustomTopic} onChange={(event) => updateForm({ useCustomTopic: event.target.checked, customTopicName: event.target.checked ? form.customTopicName : "" })} />
-                      Custom Topic
-                    </label>
-                    {form.useCustomTopic && (
-                      <Field label="Custom Topic Name">
-                        <input className="input h-10" value={form.customTopicName} onChange={(event) => updateForm({ customTopicName: event.target.value })} placeholder="Enter custom topic name" />
-                      </Field>
+                    {form.classroomType === "single" && (
+                      <>
+                        <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700">
+                          <input type="checkbox" checked={form.useCustomTopic} onChange={(event) => updateForm({ useCustomTopic: event.target.checked, customTopicName: event.target.checked ? form.customTopicName : "" })} />
+                          Custom Topic
+                        </label>
+                        {form.useCustomTopic && (
+                          <Field label="Custom Topic Name">
+                            <input className="input h-10" value={form.customTopicName} onChange={(event) => updateForm({ customTopicName: event.target.value })} placeholder="Enter custom topic name" />
+                          </Field>
+                        )}
+                      </>
+                    )}
+                    {form.classroomType === "series" && form.seriesTopicMode === "selected" && (
+                      <SelectedSeriesTopicPicker form={form} selectedLevel={selectedLevel} setClassCount={setClassCount} toggleSeriesTopic={toggleSeriesTopic} />
                     )}
                   </div>
 
@@ -727,31 +794,39 @@ export default function ClassroomManagementClient({ role, isSuperAdmin = false }
                           </select>
                         </Field>
                         <SeriesScheduleEditor form={form} updateForm={updateForm} updateDay={updateDay} />
-                        <div className="grid gap-4 sm:grid-cols-2">
-                          <Field label="End Condition">
-                            <select className="input h-10" value={form.endCondition} onChange={(event) => updateForm({ endCondition: event.target.value as EndCondition })}>
-                              <option value="on_date">End on Specific Date</option>
-                              <option value="after_n_sessions">End After Number of Sessions</option>
-                              <option value="course_complete">End When Course is Completed</option>
-                              <option value="never">Never End</option>
-                            </select>
+                        {form.seriesTopicMode === "selected" ? (
+                          <Field label="Series Length">
+                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700">
+                              {form.selectedTopicNames.length} of {form.classCount} topics selected. The series ends after the selected topics are scheduled.
+                            </div>
                           </Field>
-                          {form.endCondition === "on_date" ? (
-                            <Field label="End Date">
-                              <input type="date" className="input h-10" value={form.endDate} onChange={(event) => updateForm({ endDate: event.target.value })} />
-                            </Field>
-                          ) : form.endCondition === "after_n_sessions" ? (
-                            <Field label="Sessions">
-                              <input type="number" className="input h-10" min={1} value={form.endAfterSessions} onChange={(event) => updateForm({ endAfterSessions: Number(event.target.value || 1) })} />
-                            </Field>
-                          ) : (
-                            <Field label="Duration">
-                              <select className="input h-10" value={form.durationMinutes} onChange={(event) => updateForm({ durationMinutes: Number(event.target.value) })}>
-                                {durationOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                        ) : (
+                          <div className="grid gap-4 sm:grid-cols-2">
+                            <Field label="End Condition">
+                              <select className="input h-10" value={form.endCondition} onChange={(event) => updateForm({ endCondition: event.target.value as EndCondition })}>
+                                <option value="on_date">End on Specific Date</option>
+                                <option value="after_n_sessions">End After Number of Sessions</option>
+                                <option value="course_complete">End When Course is Completed</option>
+                                <option value="never">Never End</option>
                               </select>
                             </Field>
-                          )}
-                        </div>
+                            {form.endCondition === "on_date" ? (
+                              <Field label="End Date">
+                                <input type="date" className="input h-10" value={form.endDate} onChange={(event) => updateForm({ endDate: event.target.value })} />
+                              </Field>
+                            ) : form.endCondition === "after_n_sessions" ? (
+                              <Field label="Sessions">
+                                <input type="number" className="input h-10" min={1} value={form.endAfterSessions} onChange={(event) => updateForm({ endAfterSessions: Number(event.target.value || 1) })} />
+                              </Field>
+                            ) : (
+                              <Field label="Duration">
+                                <select className="input h-10" value={form.durationMinutes} onChange={(event) => updateForm({ durationMinutes: Number(event.target.value) })}>
+                                  {durationOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                </select>
+                              </Field>
+                            )}
+                          </div>
+                        )}
                       </>
                     )}
                     <Field label="Meeting URL">
@@ -840,12 +915,12 @@ export default function ClassroomManagementClient({ role, isSuperAdmin = false }
                     <div className="mt-4 grid gap-3 md:grid-cols-2">
                       <ReviewRow label="Course" value={form.courseName || "Not linked"} />
                       <ReviewRow label="Level" value={form.levelName || "Not set"} />
-                      <ReviewRow label="Topic" value={form.useCustomTopic ? form.customTopicName : form.topicName || "Not set"} />
+                      <ReviewRow label="Topic" value={form.classroomType === "series" ? `${selectedSeriesTopics.length} topic${selectedSeriesTopics.length === 1 ? "" : "s"}` : form.useCustomTopic ? form.customTopicName : form.topicName || "Not set"} />
                       <ReviewRow label="Coach" value={targets.coaches.find((coach) => coach._id === form.coach)?.name || "Not assigned"} />
                       <ReviewRow label="Students" value={`${form.students.length} selected`} />
                       <ReviewRow label="Meeting" value={form.meetingUrl ? "Meeting ready" : "Not added"} />
                       <ReviewRow label="Duration" value={formatDuration(form.durationMinutes)} />
-                      <ReviewRow label="Type" value={form.classroomType === "single" ? "Single Class" : "Learning Series"} />
+                      <ReviewRow label="Type" value={classroomModeLabel(form)} />
                     </div>
                   </div>
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -856,7 +931,7 @@ export default function ClassroomManagementClient({ role, isSuperAdmin = false }
                       </div>
                     ) : (
                       <div className="mt-3 space-y-2">
-                        {(selectedLevel?.topics || []).map((topic, index) => (
+                        {selectedSeriesTopics.map((topic, index) => (
                           <div key={topic.name} className="rounded-xl border border-white bg-white px-3 py-2 text-sm text-slate-700">
                             Session {index + 1}: {topic.name}
                           </div>
@@ -997,6 +1072,83 @@ function FilterSelect({ label, value, onChange, options }: { label: string; valu
         {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
     </label>
+  );
+}
+
+function SelectedSeriesTopicPicker({
+  form,
+  selectedLevel,
+  setClassCount,
+  toggleSeriesTopic,
+}: {
+  form: ReturnType<typeof blankForm>;
+  selectedLevel: CourseOption["levels"][number] | null;
+  setClassCount: (classCount: number) => void;
+  toggleSeriesTopic: (topicName: string) => void;
+}) {
+  const topics = selectedLevel?.topics || [];
+  const selectedSet = new Set(form.selectedTopicNames);
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div className="grid gap-3 sm:grid-cols-[180px_1fr]">
+        <Field label="Number of Classes">
+          <input
+            type="number"
+            className="input h-10"
+            min={1}
+            max={Math.max(topics.length, 1)}
+            value={form.classCount}
+            onChange={(event) => setClassCount(Number(event.target.value || 1))}
+          />
+        </Field>
+        <div className="rounded-xl border border-white bg-white px-3 py-2 text-sm text-slate-600">
+          Select topics in the exact order the classes should be created. Selected topics cannot exceed the class count.
+        </div>
+      </div>
+
+      <div className="mt-3">
+        <div className="mb-2 text-xs font-black uppercase tracking-[0.16em] text-slate-500">Selected Order</div>
+        {form.selectedTopicNames.length ? (
+          <div className="flex flex-wrap gap-2">
+            {form.selectedTopicNames.map((topicName, index) => (
+              <button
+                key={`${topicName}-${index}`}
+                type="button"
+                onClick={() => toggleSeriesTopic(topicName)}
+                className="inline-flex items-center gap-2 rounded-lg border border-brand/20 bg-white px-3 py-2 text-sm font-bold text-brand shadow-sm"
+              >
+                {index + 1}. {topicName}
+                <X size={13} />
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-xl border border-dashed border-slate-300 bg-white px-3 py-3 text-sm text-slate-500">No topics selected yet.</div>
+        )}
+      </div>
+
+      <div className="mt-3 grid gap-2 md:grid-cols-2">
+        {topics.map((topic, index) => {
+          const active = selectedSet.has(topic.name);
+          const position = form.selectedTopicNames.indexOf(topic.name) + 1;
+          return (
+            <button
+              key={`${topic.name}-${index}`}
+              type="button"
+              onClick={() => toggleSeriesTopic(topic.name)}
+              className={cn(
+                "flex items-center justify-between rounded-xl border px-3 py-2 text-left text-sm shadow-sm transition",
+                active ? "border-brand bg-brand/10 text-brand" : "border-white bg-white text-slate-700 hover:border-slate-200"
+              )}
+            >
+              <span className="min-w-0 truncate font-semibold">{topic.name}</span>
+              {active && <span className="rounded-full bg-white px-2 py-0.5 text-xs font-black">{position}</span>}
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -1235,6 +1387,11 @@ function MiniMetric({ label, value }: { label: string; value: number }) {
       <div className="mt-1 text-xl font-black text-brand sm:text-2xl">{value}</div>
     </div>
   );
+}
+
+function classroomModeLabel(form: ReturnType<typeof blankForm>) {
+  if (form.classroomType === "single") return "Single Class";
+  return form.seriesTopicMode === "selected" ? "Selected Topic Series" : "Learning Series";
 }
 
 function formatDate(value?: string) {

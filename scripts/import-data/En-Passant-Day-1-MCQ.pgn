@@ -1,0 +1,208 @@
+[Event "En Passant Day 1 MCQ Classwork"]
+[Date "2026.07.31"]
+[White "Student"]
+[Black "MCQ"]
+[Result "*"]
+[Variant "Standard"]
+[StudyName "En Passant Day 1 MCQ Classwork"]
+[ChapterName "1. Pawns Move Forward but Capture Diagonally"]
+[FEN "4k3/pppppp1p/8/6p1/5P2/8/PPPPP1PP/4K3 w - - 0 2"]
+[SetUp "1"]
+
+{ [#] MCQ: Which move allows the white f-pawn to capture the black pawn?
+
+A) f5
+B) fxg5
+C) fxe5
+D) g4 }
+
+2. fxg5 { Correct Answer: B) fxg5. Pawns move straight forward but capture one square diagonally. } *
+
+
+[Event "En Passant Day 1 MCQ Classwork"]
+[Date "2026.07.31"]
+[White "Student"]
+[Black "MCQ"]
+[Result "*"]
+[Variant "Standard"]
+[StudyName "En Passant Day 1 MCQ Classwork"]
+[ChapterName "2. A Pawn May Move Two Squares Only From Its Starting Rank"]
+[FEN "8/4k3/8/8/2p5/8/1P6/2K5 w - - 0 1"]
+[SetUp "1"]
+
+{ [#] MCQ: Which move advances the white b-pawn two squares from its starting position?
+
+A) b3
+B) b4
+C) Kb1
+D) c3 }
+
+1. b4 { Correct Answer: B) b4. A pawn may move two squares only on its first move from its starting rank, provided both squares are empty. } *
+
+
+[Event "En Passant Day 1 MCQ Classwork"]
+[Date "2026.07.31"]
+[White "Student"]
+[Black "MCQ"]
+[Result "*"]
+[Variant "Standard"]
+[StudyName "En Passant Day 1 MCQ Classwork"]
+[ChapterName "3. En Passant Is Triggered by a Two-Square Pawn Move"]
+[FEN "8/4k3/8/8/1Pp5/8/8/2K5 b - b3 0 1"]
+[SetUp "1"]
+
+{ [#] MCQ: White has just played b2-b4. Which move is Black allowed to play?
+
+A) c3
+B) cxb3 en passant
+C) Kf6
+D) cxb4 }
+
+1... cxb3 { Correct Answer: B) cxb3 en passant. Black captures the pawn as though it had moved only from b2 to b3. } *
+
+
+[Event "En Passant Day 1 MCQ Classwork"]
+[Date "2026.07.31"]
+[White "Student"]
+[Black "MCQ"]
+[Result "*"]
+[Variant "Standard"]
+[StudyName "En Passant Day 1 MCQ Classwork"]
+[ChapterName "4. The Two Pawns Must Be Side by Side"]
+[FEN "rnbqkbnr/pp1ppp1p/8/1Pp3pP/8/8/P1PPPPP1/RNBQKBNR w KQkq g6 0 2"]
+[SetUp "1"]
+
+{ [#] MCQ: Why is White allowed to capture the black g-pawn en passant?
+
+A) Pawns are allowed to capture straight forward.
+B) The black pawn moved two squares and stopped beside the white h-pawn.
+C) The white h-pawn is still on its starting square.
+D) The black king is in check. }
+
+2. hxg6 { Correct Answer: B. The pawns are side by side after Black's two-square pawn move, so White may capture en passant immediately. } *
+
+
+[Event "En Passant Day 1 MCQ Classwork"]
+[Date "2026.07.31"]
+[White "Student"]
+[Black "MCQ"]
+[Result "*"]
+[Variant "Standard"]
+[StudyName "En Passant Day 1 MCQ Classwork"]
+[ChapterName "5. En Passant Must Be Played Immediately"]
+[FEN "8/2k5/8/1pP5/3K4/8/8/8 w - b6 0 2"]
+[SetUp "1"]
+
+{ [#] MCQ: Black has just played b7-b5. What must White play now to use the en passant right?
+
+A) Kd3
+B) cxb6+
+C) c6
+D) Ke5 }
+
+2. cxb6+ { Correct Answer: B) cxb6+. White must capture immediately; the move also gives check to the black king. } *
+
+
+[Event "En Passant Day 1 MCQ Classwork"]
+[Date "2026.07.31"]
+[White "Student"]
+[Black "MCQ"]
+[Result "*"]
+[Variant "Standard"]
+[StudyName "En Passant Day 1 MCQ Classwork"]
+[ChapterName "6. The En Passant Right Is Lost After Any Other Move"]
+[FEN "8/2k5/8/1pPK4/8/8/8/8 b - - 1 3"]
+[SetUp "1"]
+
+{ [#] MCQ: White played Kd5 instead of capturing the b-pawn en passant. Can White capture that pawn en passant on the next turn?
+
+A) Yes, after the black king moves.
+B) Yes, en passant remains available for the rest of the game.
+C) No, the right expired when White played another move.
+D) Only if the move gives check. }
+
+3... Kd8 { Correct Answer: C. En passant is available only on the move immediately following the opponent's two-square pawn move. } *
+
+
+[Event "En Passant Day 1 MCQ Classwork"]
+[Date "2026.07.31"]
+[White "Student"]
+[Black "MCQ"]
+[Result "*"]
+[Variant "Standard"]
+[StudyName "En Passant Day 1 MCQ Classwork"]
+[ChapterName "7. The Capturing Pawn Lands on the Passed-Over Square"]
+[FEN "8/ppp1k3/8/8/5pP1/8/PPP5/5K2 b - g3 0 1"]
+[SetUp "1"]
+
+{ [#] MCQ: Black captures the white g-pawn en passant. On which square will the black pawn finish?
+
+A) f3
+B) g3
+C) g4
+D) h3 }
+
+1... fxg3 { Correct Answer: B) g3. The black pawn moves from f4 to g3, the square that the white pawn passed over. } *
+
+
+[Event "En Passant Day 1 MCQ Classwork"]
+[Date "2026.07.31"]
+[White "Student"]
+[Black "MCQ"]
+[Result "*"]
+[Variant "Standard"]
+[StudyName "En Passant Day 1 MCQ Classwork"]
+[ChapterName "8. En Passant Removes a Pawn From a Different Square"]
+[FEN "rnbqkbnr/ppp1pppp/8/2Pp4/8/8/PP1PPPPP/RNBQKBNR w KQkq d6 0 2"]
+[SetUp "1"]
+
+{ [#] MCQ: After White plays cxd6 en passant, which black pawn is removed from the board?
+
+A) The pawn on c5
+B) The pawn on d5
+C) The pawn on d7
+D) The pawn on e7 }
+
+2. cxd6 { Correct Answer: B. The black pawn on d5 is removed even though the white pawn finishes on d6. } *
+
+
+[Event "En Passant Day 1 MCQ Classwork"]
+[Date "2026.07.31"]
+[White "Student"]
+[Black "MCQ"]
+[Result "*"]
+[Variant "Standard"]
+[StudyName "En Passant Day 1 MCQ Classwork"]
+[ChapterName "9. White Captures En Passant Onto the Sixth Rank"]
+[FEN "rnbqkbnr/ppp1pppp/8/2Pp4/8/8/PP1PPPPP/RNBQKBNR w KQkq d6 0 2"]
+[SetUp "1"]
+
+{ [#] MCQ: Black has just moved d7-d5. Which move correctly performs en passant?
+
+A) c6
+B) cxd6
+C) cxb6
+D) d4 }
+
+2. cxd6 { Correct Answer: B) cxd6. A white pawn capturing en passant finishes on the sixth rank. } *
+
+
+[Event "En Passant Day 1 MCQ Classwork"]
+[Date "2026.07.31"]
+[White "Student"]
+[Black "MCQ"]
+[Result "*"]
+[Variant "Standard"]
+[StudyName "En Passant Day 1 MCQ Classwork"]
+[ChapterName "10. A Rook Pawn Can Also Capture En Passant"]
+[FEN "rnbqkbnr/pp1ppp1p/8/1Pp3pP/8/8/P1PPPPP1/RNBQKBNR w KQkq g6 0 2"]
+[SetUp "1"]
+
+{ [#] MCQ: Black has just played g7-g5. Which move allows the white h-pawn to capture en passant?
+
+A) h6
+B) hxg6
+C) hxg5
+D) g4 }
+
+2. hxg6 { Correct Answer: B) hxg6. A rook pawn can capture en passant when an adjacent pawn makes a legal two-square move. } *

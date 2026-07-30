@@ -1,0 +1,228 @@
+[Event "Notation Writing MCQ Classwork"]
+[Date "2026.07.31"]
+[White "Student"]
+[Black "MCQ"]
+[Result "*"]
+[Variant "Standard"]
+[StudyName "Notation Writing MCQ Classwork"]
+[ChapterName "1. Write the Piece Symbol Before the Destination Square"]
+[FEN "k7/8/8/8/8/8/2K5/B6N w - - 0 1"]
+[SetUp "1"]
+
+{ FEN: k7/8/8/8/8/8/2K5/B6N w - - 0 1
+
+MCQ: White moves the bishop from a1 to f6. Which is the correct notation?
+
+A) Bf6
+B) B-f6
+C) f6
+D) Bxf6 }
+
+1. Bf6 { Correct answer: A) Bf6 } *
+
+
+[Event "Notation Writing MCQ Classwork"]
+[Date "2026.07.31"]
+[White "Student"]
+[Black "MCQ"]
+[Result "*"]
+[Variant "Standard"]
+[StudyName "Notation Writing MCQ Classwork"]
+[ChapterName "2. Add + When the Move Gives Check"]
+[FEN "8/k7/1r6/q7/6K1/8/8/8 b - - 0 1"]
+[SetUp "1"]
+
+{ FEN: 8/k7/1r6/q7/6K1/8/8/8 b - - 0 1
+
+MCQ: Black moves the rook from b6 to b4 and gives check. Which is the correct notation?
+
+A) Rb4
+B) Rxb4+
+C) Rb4+
+D) Rb4# }
+
+1... Rb4+ { Correct answer: C) Rb4+ } *
+
+
+[Event "Notation Writing MCQ Classwork"]
+[Date "2026.07.31"]
+[White "Student"]
+[Black "MCQ"]
+[Result "*"]
+[Variant "Standard"]
+[StudyName "Notation Writing MCQ Classwork"]
+[ChapterName "3. Use x for a Capture and + for Check"]
+[FEN "8/4b2k/R5r1/8/2n4B/8/3N4/4K3 b - - 1 1"]
+[SetUp "1"]
+
+{ FEN: 8/4b2k/R5r1/8/2n4B/8/3N4/4K3 b - - 1 1
+
+MCQ: Black's bishop on e7 captures the bishop on h4 and gives check. Which is the correct notation?
+
+A) Bh4+
+B) Bxh4
+C) Bxh4+
+D) bxh4+ }
+
+1... Bxh4+ { Correct answer: C) Bxh4+ } *
+
+
+[Event "Notation Writing MCQ Classwork"]
+[Date "2026.07.31"]
+[White "Student"]
+[Black "MCQ"]
+[Result "*"]
+[Variant "Standard"]
+[StudyName "Notation Writing MCQ Classwork"]
+[ChapterName "4. Do Not Write a Piece Symbol for a Pawn Move"]
+[FEN "k7/3p4/7p/8/8/P7/4P3/7K w - - 0 1"]
+[SetUp "1"]
+
+{ FEN: k7/3p4/7p/8/8/P7/4P3/7K w - - 0 1
+
+MCQ: White moves the pawn from e2 to e4. Which is the correct notation?
+
+A) Pe4
+B) e2-e4
+C) e4
+D) e4+ }
+
+1. e4 { Correct answer: C) e4 } *
+
+
+[Event "Notation Writing MCQ Classwork"]
+[Date "2026.07.31"]
+[White "Student"]
+[Black "MCQ"]
+[Result "*"]
+[Variant "Standard"]
+[StudyName "Notation Writing MCQ Classwork"]
+[ChapterName "5. Add the Starting File When Two Identical Pieces Can Reach the Same Square"]
+[FEN "r6r/4k3/8/8/8/8/2N3N1/4K3 w - - 0 1"]
+[SetUp "1"]
+
+{ FEN: r6r/4k3/8/8/8/8/2N3N1/4K3 w - - 0 1
+
+MCQ: Both white knights can move to e3. The knight from c2 moves to e3. Which is the correct notation?
+
+A) Ne3
+B) Nge3
+C) N2e3
+D) Nce3 }
+
+1. Nce3 { Correct answer: D) Nce3 } *
+
+
+[Event "Notation Writing MCQ Classwork"]
+[Date "2026.07.31"]
+[White "Student"]
+[Black "MCQ"]
+[Result "*"]
+[Variant "Standard"]
+[StudyName "Notation Writing MCQ Classwork"]
+[ChapterName "6. Write Kingside Castling as O-O"]
+[FEN "r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w KQkq - 0 1"]
+[SetUp "1"]
+
+{ FEN: r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w KQkq - 0 1
+
+MCQ: White castles on the kingside. Which is the correct notation?
+
+A) Kg1
+B) O-O
+C) O-O-O
+D) Kh1 }
+
+1. O-O { Correct answer: B) O-O } *
+
+
+[Event "Notation Writing MCQ Classwork"]
+[Date "2026.07.31"]
+[White "Student"]
+[Black "MCQ"]
+[Result "*"]
+[Variant "Standard"]
+[StudyName "Notation Writing MCQ Classwork"]
+[ChapterName "7. Write Both the Capture and the Promotion"]
+[FEN "r7/1P1P4/8/8/8/8/1pk2pK1/4B3 w - - 0 1"]
+[SetUp "1"]
+
+{ FEN: r7/1P1P4/8/8/8/8/1pk2pK1/4B3 w - - 0 1
+
+MCQ: The white pawn on b7 captures the rook on a8 and promotes to a queen. Which is the correct notation?
+
+A) b8=Q
+B) bxa8=Q
+C) ba8Q
+D) bxa8Q }
+
+1. bxa8=Q { Correct answer: B) bxa8=Q } *
+
+
+[Event "Notation Writing MCQ Classwork"]
+[Date "2026.07.31"]
+[White "Student"]
+[Black "MCQ"]
+[Result "*"]
+[Variant "Standard"]
+[StudyName "Notation Writing MCQ Classwork"]
+[ChapterName "8. Add # When the Move Gives Checkmate"]
+[FEN "8/1q6/8/8/8/2k5/8/K7 b - - 0 1"]
+[SetUp "1"]
+
+{ FEN: 8/1q6/8/8/8/2k5/8/K7 b - - 0 1
+
+MCQ: Black moves the queen from b7 to b2 and checkmates White. Which is the correct notation?
+
+A) Qb2
+B) Qb2+
+C) Qxb2#
+D) Qb2# }
+
+1... Qb2# { Correct answer: D) Qb2# } *
+
+
+[Event "Notation Writing MCQ Classwork"]
+[Date "2026.07.31"]
+[White "Student"]
+[Black "MCQ"]
+[Result "*"]
+[Variant "Standard"]
+[StudyName "Notation Writing MCQ Classwork"]
+[ChapterName "9. Use the Starting File to Identify Which Queen Moved"]
+[FEN "7k/1Q6/Q7/1K6/8/8/8/8 w - - 0 1"]
+[SetUp "1"]
+
+{ FEN: 7k/1Q6/Q7/1K6/8/8/8/8 w - - 0 1
+
+MCQ: Both white queens can move to a8. The queen from a6 moves to a8 and gives checkmate. Which is the correct notation?
+
+A) Qa8#
+B) Qba8#
+C) Qaa8+
+D) Qaa8# }
+
+1. Qaa8# { Correct answer: D) Qaa8# } *
+
+
+[Event "Notation Writing MCQ Classwork"]
+[Date "2026.07.31"]
+[White "Student"]
+[Black "MCQ"]
+[Result "*"]
+[Variant "Standard"]
+[StudyName "Notation Writing MCQ Classwork"]
+[ChapterName "10. A Pawn Capture Starts With the Pawn's File"]
+[FEN "rnbqkbnr/ppp1pppp/8/3p4/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 1"]
+[SetUp "1"]
+
+{ FEN: rnbqkbnr/ppp1pppp/8/3p4/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 1
+
+MCQ: The white pawn on e4 captures the black pawn on d5. Which is the correct notation?
+
+A) ed5
+B) Pxd5
+C) exd5
+D) e5xd5 }
+
+1. exd5 { Correct answer: C) exd5 } *

@@ -140,10 +140,10 @@ export default function AttendanceWorkspace({ role }: { role: Role }) {
   if (role === "student") {
     const sessionRows = data?.sessionRows || [];
     return (
-      <div className="space-y-6 text-slate-950">
+      <div className="space-y-4 text-slate-950 sm:space-y-6">
         <PageLoadingOverlay visible={!!busyMessage} message={busyMessage} />
         <div>
-          <h1 className="font-display text-3xl text-brand">Attendance</h1>
+          <h1 className="font-display text-2xl text-brand sm:text-3xl">Attendance</h1>
           <p className="mt-1 text-sm text-slate-500">Track your class participation, attendance history, and session details.</p>
         </div>
 
@@ -155,9 +155,22 @@ export default function AttendanceWorkspace({ role }: { role: Role }) {
           <SummaryCard label="Hours Attended" value={data?.overall?.totalTeachingHoursAttended || 0} icon={<CalendarDays size={16} />} />
         </div>
 
-        <section className="rounded-3xl border border-brand/10 bg-white p-5 shadow-[0_18px_45px_rgba(90,19,114,0.08)]">
+        <section className="rounded-lg border border-brand/10 bg-white p-4 shadow-[0_18px_45px_rgba(90,19,114,0.08)] sm:p-5">
           <h2 className="text-lg font-black text-slate-950">Course-Wise Attendance</h2>
-          <div className="mt-4 overflow-x-auto">
+          <div className="mt-4 grid gap-3 md:hidden">
+            {(data?.courseRows || []).map((row: any) => (
+              <div key={row.courseName} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <div className="font-semibold text-slate-950">{row.courseName}</div>
+                <div className="mt-3 grid grid-cols-3 gap-2">
+                  <InfoTile label="Attendance" value={`${row.attendancePercentage}%`} />
+                  <InfoTile label="Attended" value={row.attended} />
+                  <InfoTile label="Missed" value={row.missed} />
+                </div>
+              </div>
+            ))}
+            {!(data?.courseRows || []).length && <div className="rounded-lg border border-dashed border-slate-300 p-5 text-sm text-slate-500">No course attendance yet.</div>}
+          </div>
+          <div className="mt-4 hidden overflow-x-auto md:block">
             <table className="min-w-full text-left text-sm">
               <thead className="text-xs uppercase text-slate-500"><tr className="border-b border-slate-100"><th className="px-3 py-3">Course</th><th className="px-3 py-3">Attendance %</th><th className="px-3 py-3">Attended</th><th className="px-3 py-3">Missed</th></tr></thead>
               <tbody>
@@ -174,11 +187,11 @@ export default function AttendanceWorkspace({ role }: { role: Role }) {
           </div>
         </section>
 
-        <section className="rounded-3xl border border-brand/10 bg-white p-5 shadow-[0_18px_45px_rgba(90,19,114,0.08)]">
+        <section className="rounded-lg border border-brand/10 bg-white p-4 shadow-[0_18px_45px_rgba(90,19,114,0.08)] sm:p-5">
           <h2 className="text-lg font-black text-slate-950">Session Details</h2>
           <div className="mt-4 space-y-3">
             {sessionRows.map((row: any) => (
-              <div key={row.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div key={row.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3 sm:p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <div className="font-black text-slate-950">{row.title}</div>
@@ -205,18 +218,18 @@ export default function AttendanceWorkspace({ role }: { role: Role }) {
   }
 
   return (
-    <div className="space-y-6 text-slate-950">
+    <div className="space-y-4 text-slate-950 sm:space-y-6">
       <PageLoadingOverlay visible={!!busyMessage} message={busyMessage} />
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h1 className="font-display text-3xl text-brand">Attendance</h1>
+          <h1 className="font-display text-2xl text-brand sm:text-3xl">Attendance</h1>
           <p className="mt-1 text-sm text-slate-500">
             {role === "admin"
               ? "Monitor today’s attendance, review missed records, and override sessions when needed."
               : "Backup attendance management for your completed classes and pending session records."}
           </p>
         </div>
-        <input className="input h-11 w-full max-w-[220px]" type="date" value={date} onChange={(event) => setDate(event.target.value)} />
+        <input className="input h-11 w-full lg:max-w-[220px]" type="date" value={date} onChange={(event) => setDate(event.target.value)} />
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -233,17 +246,17 @@ export default function AttendanceWorkspace({ role }: { role: Role }) {
         </div>
       )}
 
-      <div className="grid gap-5 xl:grid-cols-[420px_1fr]">
-        <section className="rounded-3xl border border-brand/10 bg-white p-4 shadow-[0_18px_45px_rgba(90,19,114,0.08)]">
+      <div className="grid gap-4 xl:grid-cols-[420px_1fr] xl:gap-5">
+        <section className="rounded-lg border border-brand/10 bg-white p-3 shadow-[0_18px_45px_rgba(90,19,114,0.08)] sm:p-4">
           <div className="mb-3 text-sm font-black uppercase tracking-[0.16em] text-brand">Sessions</div>
           <div className="space-y-3">
-            {(data?.sessions || []).length === 0 && <div className="rounded-2xl border border-dashed border-slate-300 p-5 text-sm text-slate-500">No sessions found for the selected date.</div>}
+            {(data?.sessions || []).length === 0 && <div className="rounded-lg border border-dashed border-slate-300 p-5 text-sm text-slate-500">No sessions found for the selected date.</div>}
             {(data?.sessions || []).map((session: SessionRow) => (
               <button
                 key={session.id}
                 type="button"
                 onClick={() => setSelectedSessionId(session.id)}
-                className={`w-full rounded-2xl border p-4 text-left transition ${selectedSessionId === session.id ? "border-brand bg-brand/5 shadow-lg shadow-brand/10" : "border-slate-200 bg-slate-50 hover:border-brand/20"}`}
+                className={`w-full rounded-lg border p-3 text-left transition sm:p-4 ${selectedSessionId === session.id ? "border-brand bg-brand/5 shadow-lg shadow-brand/10" : "border-slate-200 bg-slate-50 hover:border-brand/20"}`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -266,7 +279,7 @@ export default function AttendanceWorkspace({ role }: { role: Role }) {
           </div>
         </section>
 
-        <section className="rounded-3xl border border-brand/10 bg-white p-5 shadow-[0_18px_45px_rgba(90,19,114,0.08)]">
+        <section className="rounded-lg border border-brand/10 bg-white p-3 shadow-[0_18px_45px_rgba(90,19,114,0.08)] sm:p-5">
           {selectedSession ? (
             <>
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -282,7 +295,7 @@ export default function AttendanceWorkspace({ role }: { role: Role }) {
                       View Details
                     </Link>
                   ) : null}
-                  {canEditAttendance ? <button className="btn-primary" onClick={saveAttendance}>Save Attendance</button> : null}
+                  {canEditAttendance ? <button className="btn-primary w-full sm:w-auto" onClick={saveAttendance}>Save Attendance</button> : null}
                 </div>
               </div>
 
@@ -305,7 +318,7 @@ export default function AttendanceWorkspace({ role }: { role: Role }) {
                       type="button"
                       onClick={() => canEditAttendance && setCoachStatus(value)}
                       disabled={!canEditAttendance}
-                      className={`rounded-xl border px-4 py-2 text-sm font-semibold ${coachStatus === value ? "border-brand bg-brand/10 text-brand" : "border-slate-200 bg-white text-slate-700"}`}
+                      className={`min-w-[96px] flex-1 rounded-lg border px-3 py-2 text-sm font-semibold sm:flex-none ${coachStatus === value ? "border-brand bg-brand/10 text-brand" : "border-slate-200 bg-white text-slate-700"}`}
                     >
                       {value[0].toUpperCase() + value.slice(1)}
                     </button>
@@ -315,19 +328,19 @@ export default function AttendanceWorkspace({ role }: { role: Role }) {
 
               <div className="mt-5 space-y-3">
                 {selectedSession.students.map((student) => (
-                  <div key={student._id} className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div key={student._id} className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 lg:flex-row lg:items-center lg:justify-between">
                     <div>
                       <div className="font-semibold text-slate-950">{student.name}</div>
                       <div className="text-xs text-slate-500">{student.username || student.email}</div>
                     </div>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap">
                       {(["present", "absent", "late"] as const).map((value) => (
                         <button
                           key={value}
                           type="button"
                           onClick={() => canEditAttendance && setDraft((current) => ({ ...current, [student._id]: value }))}
                           disabled={!canEditAttendance}
-                          className={`min-w-[104px] rounded-xl border px-4 py-2 text-sm font-semibold ${draft[student._id] === value ? "border-brand bg-brand/10 text-brand" : "border-slate-200 bg-white text-slate-700"}`}
+                          className={`min-w-0 rounded-lg border px-2 py-2 text-xs font-semibold sm:min-w-[104px] sm:px-4 sm:text-sm ${draft[student._id] === value ? "border-brand bg-brand/10 text-brand" : "border-slate-200 bg-white text-slate-700"}`}
                         >
                           {value[0].toUpperCase() + value.slice(1)}
                         </button>
@@ -338,7 +351,7 @@ export default function AttendanceWorkspace({ role }: { role: Role }) {
               </div>
             </>
           ) : (
-            <div className="rounded-2xl border border-dashed border-slate-300 p-6 text-sm text-slate-500">Select a session to view or edit attendance.</div>
+            <div className="rounded-lg border border-dashed border-slate-300 p-6 text-sm text-slate-500">Select a session to view or edit attendance.</div>
           )}
         </section>
       </div>
@@ -348,13 +361,13 @@ export default function AttendanceWorkspace({ role }: { role: Role }) {
 
 function SummaryCard({ label, value, icon }: { label: string; value: string | number; icon: React.ReactNode }) {
   return (
-    <div className="rounded-2xl border border-brand/10 bg-white p-4 shadow-[0_18px_45px_rgba(90,19,114,0.08)]">
+    <div className="rounded-lg border border-brand/10 bg-white p-4 shadow-[0_18px_45px_rgba(90,19,114,0.08)]">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-xs font-bold uppercase tracking-[0.16em] text-slate-500">{label}</div>
           <div className="mt-2 text-2xl font-black text-brand">{value}</div>
         </div>
-        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand/10 text-brand">{icon}</span>
+        <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand/10 text-brand">{icon}</span>
       </div>
     </div>
   );
@@ -362,7 +375,7 @@ function SummaryCard({ label, value, icon }: { label: string; value: string | nu
 
 function InfoTile({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 sm:px-4 sm:py-3">
       <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">{label}</div>
       <div className="mt-1 text-sm font-semibold text-slate-950">{value}</div>
     </div>

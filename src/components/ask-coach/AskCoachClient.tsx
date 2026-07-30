@@ -141,6 +141,7 @@ export default function AskCoachClient({ role }: { role: Role }) {
   const searchParams = useSearchParams();
   const [data, setData] = useState<AskCoachResponse>({ conversations: [], messages: [], targets: {} });
   const [activeId, setActiveId] = useState("");
+  const [mobilePanel, setMobilePanel] = useState<"conversations" | "chat" | "compose">("chat");
   const [message, setMessage] = useState("");
   const [receiver, setReceiver] = useState("");
   const [batch, setBatch] = useState("");
@@ -317,6 +318,7 @@ export default function AskCoachClient({ role }: { role: Role }) {
     nearBottomRef.current = true;
     toast.success("Message sent");
     if (nextConversationId) setActiveId(nextConversationId);
+    setMobilePanel("chat");
     await load(nextConversationId);
     scrollToBottom("auto");
   }
@@ -325,6 +327,13 @@ export default function AskCoachClient({ role }: { role: Role }) {
     if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
     event.preventDefault();
     void sendMessage();
+  }
+
+  function openConversation(conversationId: string) {
+    setActiveId(conversationId);
+    setReceiver("");
+    setBatch("");
+    setMobilePanel("chat");
   }
 
   async function moderate(messageId: string, action: string) {
@@ -357,9 +366,14 @@ export default function AskCoachClient({ role }: { role: Role }) {
 
   const flaggedMessages = data.messages.filter((item) => item.flagged || item.moderationStatus === "pending");
   const canSendBatch = role === "admin" || role === "instructor";
+  const mobileTabs = [
+    { id: "conversations" as const, label: "Chats", count: conversations.reduce((total, conversation) => total + (conversation.unreadCount || 0), 0) },
+    { id: "chat" as const, label: "Open", count: activeConversation?.unreadCount || 0 },
+    { id: "compose" as const, label: role === "student" ? "Ask" : "New", count: 0 },
+  ];
 
   return (
-    <div className="flex h-[calc(100dvh-88px)] min-h-[560px] flex-col overflow-hidden rounded-2xl border border-white/70 bg-slate-100 shadow-[0_28px_80px_rgba(47,23,65,0.18)] ring-1 ring-brand/10 max-lg:min-h-[calc(100dvh-88px)] lg:h-[calc(100vh-92px)]">
+    <div className="flex h-[calc(100dvh-72px)] min-h-[520px] flex-col overflow-hidden rounded-lg border border-white/70 bg-slate-100 shadow-[0_28px_80px_rgba(47,23,65,0.18)] ring-1 ring-brand/10 sm:h-[calc(100dvh-88px)] sm:min-h-[560px] lg:h-[calc(100vh-92px)]">
       <div className="flex-none border-b border-white/70 bg-white/90 px-4 py-2.5 shadow-sm backdrop-blur">
         <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex min-w-0 items-center gap-3">
@@ -379,10 +393,26 @@ export default function AskCoachClient({ role }: { role: Role }) {
             <input value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => event.key === "Enter" && void load()} className="h-9 w-full rounded-full border border-slate-200 bg-slate-50 pl-9 pr-3 text-sm shadow-inner outline-none transition focus:border-brand/40 focus:bg-white focus:ring-4 focus:ring-brand/10" placeholder="Search messages" />
           </div>
         </div>
+        <div className="mt-2 grid grid-cols-3 gap-1 rounded-lg bg-slate-100 p-1 lg:hidden">
+          {mobileTabs.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setMobilePanel(item.id)}
+              className={cn(
+                "flex min-h-9 items-center justify-center gap-1 rounded-md px-2 text-xs font-black transition",
+                mobilePanel === item.id ? "bg-white text-brand shadow-sm" : "text-slate-600"
+              )}
+            >
+              {item.label}
+              {item.count > 0 && <span className="rounded-full bg-brand px-1.5 py-0.5 text-[10px] text-white">{item.count > 9 ? "9+" : item.count}</span>}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-px overflow-hidden bg-slate-200/80 lg:grid-cols-[280px_minmax(0,1fr)_300px]">
-        <aside className="order-1 max-h-44 min-h-0 overflow-auto bg-slate-50 p-3 lg:max-h-none">
+        <aside className={cn("order-1 min-h-0 overflow-auto bg-slate-50 p-3 lg:block", mobilePanel === "conversations" ? "block" : "hidden")}>
           <div className="mb-3 flex items-center justify-between gap-2 px-1">
             <div className="flex items-center gap-2 text-sm font-black text-slate-950"><MessageSquare size={16} className="text-brand" /> Conversations</div>
             {conversations.some((conversation) => (conversation.unreadCount || 0) > 0) && (
@@ -393,8 +423,8 @@ export default function AskCoachClient({ role }: { role: Role }) {
           </div>
           <div className="space-y-2">
             {conversations.length ? conversations.map((conversation) => (
-              <button key={conversation._id} onClick={() => setActiveId(conversation._id)} className={cn(
-                "w-full rounded-2xl border p-3 text-left shadow-sm transition hover:-translate-y-0.5",
+              <button key={conversation._id} onClick={() => openConversation(conversation._id)} className={cn(
+                "w-full rounded-lg border p-3 text-left shadow-sm transition hover:-translate-y-0.5",
                 activeConversation?._id === conversation._id ? "border-brand/25 bg-white shadow-[0_12px_30px_rgba(90,19,114,0.12)]" : "border-white bg-white/75 hover:bg-white hover:shadow-md"
               )}>
                 <div className="flex min-w-0 items-start justify-between gap-2">
@@ -421,11 +451,11 @@ export default function AskCoachClient({ role }: { role: Role }) {
                 </div>
                 <div className="mt-2 pl-10 text-[11px] font-semibold text-slate-400">{conversation.currentStatus || "Up to date"}</div>
               </button>
-            )) : <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-5 text-center text-sm text-slate-500">No conversations yet.</div>}
+            )) : <div className="rounded-lg border border-dashed border-slate-300 bg-white p-5 text-center text-sm text-slate-500">No conversations yet.</div>}
           </div>
         </aside>
 
-        <main className="order-2 flex min-h-0 flex-col bg-white">
+        <main className={cn("order-2 min-h-0 flex-col bg-white lg:flex", mobilePanel === "chat" ? "flex" : "hidden")}>
           <div className="flex-none border-b border-slate-200 bg-white/95 px-4 py-3 shadow-sm">
             <div className="flex min-w-0 items-center justify-between gap-3">
               <div className="flex min-w-0 items-center gap-3">
@@ -476,7 +506,7 @@ export default function AskCoachClient({ role }: { role: Role }) {
                         </span>
                       )}
                       <div className={cn(
-                        "max-w-[min(82%,42rem)] rounded-[20px] border px-3.5 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.08)]",
+                        "max-w-[min(84%,42rem)] rounded-lg border px-3.5 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.08)] sm:max-w-[min(82%,42rem)]",
                         mine ? "rounded-br-md border-brand/20 bg-gradient-to-br from-brand to-purple-700 text-white" : "rounded-bl-md border-white bg-white text-slate-900",
                         item.flagged ? "border-amber-300 ring-2 ring-amber-100" : ""
                       )}>
@@ -510,7 +540,7 @@ export default function AskCoachClient({ role }: { role: Role }) {
                     </div>
                   </div>
                 );
-              }) : <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">Select a conversation or send a new message.</div>}
+              }) : <div className="rounded-lg border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">Select a conversation or send a new message.</div>}
               <div ref={bottomRef} />
             </div>
             {hasNewMessages && !isNearBottom && (
@@ -529,23 +559,23 @@ export default function AskCoachClient({ role }: { role: Role }) {
                 value={message}
                 onChange={(event) => setMessage(event.target.value)}
                 onKeyDown={handleMessageKeyDown}
-                className="min-h-12 flex-1 resize-none rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm shadow-inner outline-none transition focus:border-brand/40 focus:bg-white focus:ring-4 focus:ring-brand/10"
+                className="min-h-12 flex-1 resize-none rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm shadow-inner outline-none transition focus:border-brand/40 focus:bg-white focus:ring-4 focus:ring-brand/10"
                 placeholder="Type your message. Press Enter to send, Shift+Enter for a new line."
                 rows={2}
               />
-              <button disabled={loading || !message.trim()} onClick={sendMessage} className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-2xl bg-brand px-5 text-sm font-black text-white shadow-lg shadow-brand/25 transition hover:-translate-y-0.5 disabled:translate-y-0 disabled:opacity-60"><Send size={16} /> Send</button>
+              <button disabled={loading || !message.trim()} onClick={sendMessage} className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-lg bg-brand px-5 text-sm font-black text-white shadow-lg shadow-brand/25 transition hover:-translate-y-0.5 disabled:translate-y-0 disabled:opacity-60"><Send size={16} /> Send</button>
             </div>
           </div>
         </main>
 
-        <aside className="order-3 min-h-0 overflow-auto bg-slate-50 p-3">
+        <aside className={cn("order-3 min-h-0 overflow-auto bg-slate-50 p-3 lg:block", mobilePanel === "compose" ? "block" : "hidden")}>
           <div className="space-y-4">
-            <section className="rounded-2xl border border-white bg-white p-3 shadow-[0_12px_32px_rgba(15,23,42,0.08)] sm:p-4">
-              <h3 className="flex items-center gap-2 font-black text-slate-950"><Users size={16} className="text-brand" /> New Message</h3>
+            <section className="rounded-lg border border-white bg-white p-3 shadow-[0_12px_32px_rgba(15,23,42,0.08)] sm:p-4">
+              <h3 className="flex items-center gap-2 font-black text-slate-950"><Users size={16} className="text-brand" /> {role === "student" ? "Ask Your Coach" : "New Message"}</h3>
               {role !== "student" && (
                 <div className="mt-3 space-y-2">
                   <label className="block text-xs font-semibold text-slate-500">Student / Coach</label>
-                  <select value={receiver} onChange={(event) => { setReceiver(event.target.value); setBatch(""); }} className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm shadow-inner">
+                  <select value={receiver} onChange={(event) => { setReceiver(event.target.value); setBatch(""); }} className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm shadow-inner">
                     <option value="">Select person</option>
                     {(data.targets.students || []).map((student) => <option key={student._id} value={student._id}>{student.name} - Student</option>)}
                     {role === "admin" && (data.targets.coaches || []).map((coach) => <option key={coach._id} value={coach._id}>{coach.name} - Coach</option>)}
@@ -555,17 +585,28 @@ export default function AskCoachClient({ role }: { role: Role }) {
               {canSendBatch && (
                 <div className="mt-3 space-y-2">
                   <label className="block text-xs font-semibold text-slate-500">Batch Message</label>
-                  <select value={batch} onChange={(event) => { setBatch(event.target.value); setReceiver(""); }} className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm shadow-inner">
+                  <select value={batch} onChange={(event) => { setBatch(event.target.value); setReceiver(""); }} className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm shadow-inner">
                     <option value="">Select batch</option>
                     {(data.targets.batches || []).map((batchItem) => <option key={batchItem._id} value={batchItem._id}>{batchItem.name}</option>)}
                   </select>
                 </div>
               )}
               {role === "student" && <p className="mt-3 text-sm text-slate-500">Messages are sent to your assigned coach. Batch announcements from your coach appear in conversations.</p>}
+              <div className="mt-4 grid gap-2 lg:hidden">
+                <textarea
+                  value={message}
+                  onChange={(event) => setMessage(event.target.value)}
+                  onKeyDown={handleMessageKeyDown}
+                  className="min-h-28 resize-none rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm shadow-inner outline-none transition focus:border-brand/40 focus:bg-white focus:ring-4 focus:ring-brand/10"
+                  placeholder={role === "student" ? "Ask your coach a question..." : "Write the new message..."}
+                  rows={4}
+                />
+                <button disabled={loading || !message.trim()} onClick={sendMessage} className="inline-flex h-12 items-center justify-center gap-2 rounded-lg bg-brand px-5 text-sm font-black text-white shadow-lg shadow-brand/25 disabled:opacity-60"><Send size={16} /> Send</button>
+              </div>
             </section>
 
             {role === "admin" && (
-              <section className="rounded-2xl border border-amber-200 bg-gradient-to-b from-amber-50 to-white p-4 shadow-[0_12px_32px_rgba(146,64,14,0.10)]">
+              <section className="rounded-lg border border-amber-200 bg-gradient-to-b from-amber-50 to-white p-4 shadow-[0_12px_32px_rgba(146,64,14,0.10)]">
                 <h3 className="flex items-center gap-2 font-semibold text-amber-900"><AlertTriangle size={16} /> Flagged Messages</h3>
                 <div className="mt-3 space-y-2">
                   {flaggedMessages.length ? flaggedMessages.slice(0, 8).map((item) => (

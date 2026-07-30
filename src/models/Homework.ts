@@ -131,9 +131,18 @@ const HomeworkSchema = new Schema(
       attemptPenalty: { type: Number, default: 0 },
       latePenalty: { type: Number, default: 0 },
     },
+    sourceTemplate: { type: Schema.Types.ObjectId, ref: "AssignmentTemplate", index: true },
+    sourceSessionId: { type: String, index: true },
+    autoAssigned: { type: Boolean, default: false, index: true },
+    automationStatus: { type: String, index: true },
     isPublished: { type: Boolean, default: true },
   },
   { timestamps: true }
+);
+
+HomeworkSchema.index(
+  { classroom: 1, sourceSessionId: 1, sourceTemplate: 1 },
+  { unique: true, partialFilterExpression: { autoAssigned: true, sourceSessionId: { $exists: true }, sourceTemplate: { $exists: true } } }
 );
 
 const SubmissionSchema = new Schema(

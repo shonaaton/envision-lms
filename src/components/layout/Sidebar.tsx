@@ -109,6 +109,7 @@ const sections: NavSection[] = [
       { href: "/admin/users", label: "Users", icon: Users, featureKey: "userManagement" },
       { href: "/admin/onboarding", label: "Onboarding", icon: UserPlus, featureKey: "onboarding" },
       { href: "/admin/courses", label: "Courses", icon: BookOpenCheck, featureKey: "courseManagement" },
+      { href: "/admin/homework-templates", label: "HW Templates", icon: FileText, featureKey: "homework" },
       { href: "/admin/achievements", label: "Achievements", icon: Trophy, featureKey: "achievements" },
       { href: "/admin/activity-tracker", label: "Activity Tracker", icon: ActivitySquare, featureKey: "reports" },
       { href: "/admin/reports", label: "Reports Center", icon: BarChart3, featureKey: "reports" },

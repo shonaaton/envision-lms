@@ -192,6 +192,52 @@ export const homeworkSchema = z.object({
     .default([]),
 });
 
+export const assignmentTemplateSchema = z.object({
+  title: z.string().min(2).max(160),
+  description: z.string().optional(),
+  instructions: z.string().optional(),
+  course: z.string().optional(),
+  courseName: z.string().optional(),
+  level: z.enum(["beginner", "intermediate", "advanced", "mixed", ""]).default(""),
+  levelName: z.string().optional(),
+  topicName: z.string().min(1).max(160),
+  activities: z.array(assignmentActivitySchema).default([]),
+  puzzles: z
+    .array(
+      z.object({
+        fen: z.string(),
+        solution: z.array(z.string()).default([]),
+        prompt: z.string().optional(),
+        points: z.number().int().min(1).default(1),
+      })
+    )
+    .default([]),
+  numberOfAttempts: z.number().int().min(1).default(1),
+  timeLimitMinutes: z.number().int().min(0).default(0),
+  targetMode: z.enum(["classroom_batches", "all_class_students", "specific_batches", "specific_students"]).default("classroom_batches"),
+  defaultBatches: z.array(z.string()).default([]),
+  defaultStudents: z.array(z.string()).default([]),
+  duePolicy: z
+    .object({
+      type: z.enum(["before_next_class", "days_after_class"]).default("before_next_class"),
+      minutesBefore: z.number().int().min(0).default(1),
+      daysAfterClass: z.number().int().min(1).default(7),
+      noNextClassBehavior: z.enum(["assign_without_due", "skip"]).default("assign_without_due"),
+    })
+    .default({ type: "before_next_class", minutesBefore: 1, daysAfterClass: 7, noNextClassBehavior: "assign_without_due" }),
+  autoAssign: z.boolean().default(true),
+  isActive: z.boolean().default(true),
+  linkStatus: z.enum(["linked", "needs_review", "unlinked"]).default("unlinked"),
+  source: z
+    .object({
+      kind: z.enum(["manual", "pgn_import", "mcq_import"]).default("manual"),
+      pgnIds: z.array(z.string()).default([]),
+      fileNames: z.array(z.string()).default([]),
+      importBatchId: z.string().optional(),
+    })
+    .optional(),
+});
+
 export const bookingSchema = z.object({
   instructor: z.string(),
   startAt: z.string().datetime(),

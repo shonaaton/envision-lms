@@ -1,5 +1,6 @@
 import { Classroom } from "@/models/Classroom";
 import { ClassroomSession } from "@/models/ClassroomLive";
+import { autoAssignHomeworkForSession } from "@/lib/assignmentAutomation";
 import { actualSessionMinutes, punctualityBreakdown, scheduledPaymentMinutes } from "@/lib/teachingStats";
 
 export function getRequestedSessionId(req: Request) {
@@ -104,4 +105,9 @@ export async function markScheduledSessionFinished({
   );
   classroom.status = allDone ? "completed" : "scheduled";
   await classroom.save();
+  try {
+    await autoAssignHomeworkForSession({ classroomId, scheduledSessionId, actorId, endedAt: finish });
+  } catch (error) {
+    console.error("Homework auto-assignment failed", error);
+  }
 }

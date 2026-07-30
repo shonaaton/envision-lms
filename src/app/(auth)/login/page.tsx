@@ -28,6 +28,8 @@ const portalBenefits = [
   { label: "Track progress", value: "Attendance, tournaments, credits, and invoices", icon: Trophy },
 ];
 
+const rememberedLoginKey = "envision:remembered-login";
+
 export default function LoginPage() {
   const router = useRouter();
   const { status } = useSession();
@@ -35,6 +37,8 @@ export default function LoginPage() {
   const clearedExistingSessionRef = useRef(false);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [loginId, setLoginId] = useState("");
+  const [rememberMe, setRememberMe] = useState(false);
 
   useEffect(() => {
     if (status === "authenticated" && !submittedRef.current && !clearedExistingSessionRef.current) {
@@ -43,18 +47,32 @@ export default function LoginPage() {
     }
   }, [status]);
 
+  useEffect(() => {
+    const rememberedLogin = window.localStorage.getItem(rememberedLoginKey);
+    if (rememberedLogin) {
+      setLoginId(rememberedLogin);
+      setRememberMe(true);
+    }
+  }, []);
+
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     submittedRef.current = true;
     setLoading(true);
     const fd = new FormData(e.currentTarget);
+    const email = String(fd.get("email") || "").trim();
     const res = await signIn("credentials", {
       redirect: false,
-      email: fd.get("email"),
+      email,
       password: fd.get("password"),
     });
     setLoading(false);
     if (res?.error) return toast.error("Invalid email, user ID, or password");
+    if (rememberMe) {
+      window.localStorage.setItem(rememberedLoginKey, email);
+    } else {
+      window.localStorage.removeItem(rememberedLoginKey);
+    }
     toast.success("Welcome back");
     router.push("/dashboard");
     router.refresh();
@@ -142,6 +160,8 @@ export default function LoginPage() {
                       type="text"
                       autoComplete="username"
                       placeholder="name@example.com"
+                      value={loginId}
+                      onChange={(event) => setLoginId(event.target.value)}
                       required
                     />
                   </span>
@@ -172,7 +192,13 @@ export default function LoginPage() {
 
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <label className="inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-slate-600">
-                    <input type="checkbox" className="h-4 w-4 rounded border-slate-300 accent-brand" />
+                    <input
+                      type="checkbox"
+                      name="remember"
+                      className="h-4 w-4 rounded border-slate-300 accent-brand"
+                      checked={rememberMe}
+                      onChange={(event) => setRememberMe(event.target.checked)}
+                    />
                     Remember me
                   </label>
                   <Link href="/forgot-password" className="text-sm font-semibold text-brand hover:text-brand-700">

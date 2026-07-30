@@ -1,9 +1,10 @@
 import { redirect } from "next/navigation";
-import { AlertTriangle, BookOpenCheck, CheckCircle2, Clock3, FileText, Link2Off } from "lucide-react";
+import Link from "next/link";
+import { AlertTriangle, BookOpenCheck, CheckCircle2, Clock3, FileText, Link2Off, Search } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { AssignmentAutomationLog, AssignmentTemplate } from "@/models/AssignmentTemplate";
-import { DeleteTemplateButton, ImportHomeworkPgnButton } from "@/components/homework/AssignmentTemplateActions";
+import { ImportHomeworkPgnButton, TemplateRowActions, UploadTemplateButton } from "@/components/homework/AssignmentTemplateActions";
 import "@/models/Batch";
 import "@/models/Classroom";
 import "@/models/Course";
@@ -44,6 +45,27 @@ function activitySummary(template: any) {
     .join(", ");
 }
 
+function escapeRegex(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function templateFilter(q: string) {
+  const filter: Record<string, any> = { isActive: { $ne: false } };
+  if (q) {
+    const regex = new RegExp(escapeRegex(q), "i");
+    filter.$or = [{ title: regex }, { topicName: regex }, { courseName: regex }, { levelName: regex }];
+  }
+  return filter;
+}
+
+function pageHref(page: number, q: string) {
+  const params = new URLSearchParams();
+  if (q) params.set("q", q);
+  if (page > 1) params.set("page", String(page));
+  const query = params.toString();
+  return query ? `/admin/homework-templates?${query}` : "/admin/homework-templates";
+}
+
 function StatCard({ label, value, icon }: { label: string; value: string | number; icon: React.ReactNode }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
@@ -56,19 +78,27 @@ function StatCard({ label, value, icon }: { label: string; value: string | numbe
   );
 }
 
-export default async function HomeworkTemplatesPage() {
+export default async function HomeworkTemplatesPage({ searchParams }: { searchParams?: { q?: string; page?: string } }) {
   const session = await auth();
   const role = (session?.user as any)?.role;
   if (!session || role !== "admin") redirect("/dashboard");
   await dbConnect();
 
-  const [templates, logs] = await Promise.all([
-    AssignmentTemplate.find({ isActive: { $ne: false } })
+  const q = String(searchParams?.q || "").trim();
+  const page = Math.max(1, Number(searchParams?.page || 1));
+  const pageSize = 25;
+  const filter = templateFilter(q);
+
+  const [templates, totalTemplates, allActiveTemplates, logs] = await Promise.all([
+    AssignmentTemplate.find(filter)
       .populate("course", "name")
       .populate("defaultBatches", "name")
       .sort({ updatedAt: -1 })
-      .limit(300)
+      .skip((page - 1) * pageSize)
+      .limit(pageSize)
       .lean(),
+    AssignmentTemplate.countDocuments(filter),
+    AssignmentTemplate.find({ isActive: { $ne: false } }, { isActive: 1, linkStatus: 1 }).lean(),
     AssignmentAutomationLog.find({})
       .populate("classroom", "title")
       .populate("sourceTemplate", "title")
@@ -78,10 +108,11 @@ export default async function HomeworkTemplatesPage() {
       .lean(),
   ]);
 
-  const activeCount = templates.filter((template: any) => template.isActive).length;
-  const linkedCount = templates.filter((template: any) => template.linkStatus === "linked").length;
-  const reviewCount = templates.filter((template: any) => template.linkStatus !== "linked").length;
+  const activeCount = allActiveTemplates.filter((template: any) => template.isActive).length;
+  const linkedCount = allActiveTemplates.filter((template: any) => template.linkStatus === "linked").length;
+  const reviewCount = allActiveTemplates.filter((template: any) => template.linkStatus !== "linked").length;
   const missingCount = logs.filter((log: any) => ["missing_template", "ambiguous_template"].includes(log.status)).length;
+  const totalPages = Math.max(1, Math.ceil(totalTemplates / pageSize));
 
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-5 text-slate-950 sm:px-6 lg:px-8">
@@ -91,7 +122,10 @@ export default async function HomeworkTemplatesPage() {
           <h1 className="mt-1 text-2xl font-black text-slate-950">Assignment Templates</h1>
           <p className="mt-1 text-sm text-slate-500">Auto-assigned templates linked to course topics, batches, and scheduled class deadlines.</p>
         </div>
-        <ImportHomeworkPgnButton />
+        <div className="flex flex-wrap gap-2">
+          <UploadTemplateButton />
+          <ImportHomeworkPgnButton />
+        </div>
       </header>
 
       <section className="mb-5 grid gap-3 md:grid-cols-4">
@@ -102,9 +136,22 @@ export default async function HomeworkTemplatesPage() {
       </section>
 
       <section className="mb-5 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="mb-4 flex items-center gap-2">
-          <FileText size={18} className="text-brand" />
-          <h2 className="text-lg font-black text-slate-950">Templates</h2>
+        <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div className="flex items-center gap-2">
+            <FileText size={18} className="text-brand" />
+            <div>
+              <h2 className="text-lg font-black text-slate-950">Templates</h2>
+              <p className="text-xs text-slate-500">{totalTemplates} shown by current search</p>
+            </div>
+          </div>
+          <form className="flex w-full max-w-xl flex-col gap-2 sm:flex-row">
+            <span className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3">
+              <Search size={15} className="text-slate-400" />
+              <input name="q" defaultValue={q} className="min-w-0 flex-1 text-sm outline-none" placeholder="Search template, topic, course, level" />
+            </span>
+            <button className="inline-flex h-10 items-center justify-center rounded-lg bg-brand px-4 text-sm font-black text-white">Search</button>
+            {q && <Link href="/admin/homework-templates" className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 px-4 text-sm font-bold text-slate-700">Clear</Link>}
+          </form>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
@@ -140,14 +187,21 @@ export default async function HomeworkTemplatesPage() {
                       ? `${template.duePolicy.daysAfterClass || 7} days after class`
                       : `${template.duePolicy?.minutesBefore ?? 1} min before next class`}
                   </td>
-                  <td className="px-3 py-3"><DeleteTemplateButton id={String(template._id)} /></td>
+                  <td className="px-3 py-3"><TemplateRowActions id={String(template._id)} /></td>
                 </tr>
               ))}
               {!templates.length && (
-                <tr><td colSpan={7} className="px-3 py-8 text-center text-sm text-slate-500">No templates yet. Upload PGNs with HW in the file name, then import them here.</td></tr>
+                <tr><td colSpan={7} className="px-3 py-8 text-center text-sm text-slate-500">No templates found. Upload a JSON template or adjust the search.</td></tr>
               )}
             </tbody>
           </table>
+        </div>
+        <div className="mt-4 flex flex-col gap-3 border-t border-slate-100 pt-4 text-sm sm:flex-row sm:items-center sm:justify-between">
+          <div className="font-semibold text-slate-500">Page {page} of {totalPages}</div>
+          <div className="flex flex-wrap gap-2">
+            <Link href={pageHref(Math.max(1, page - 1), q)} className={`rounded-lg border border-slate-200 px-3 py-2 font-bold ${page <= 1 ? "pointer-events-none text-slate-300" : "text-slate-700"}`}>Previous</Link>
+            <Link href={pageHref(Math.min(totalPages, page + 1), q)} className={`rounded-lg border border-slate-200 px-3 py-2 font-bold ${page >= totalPages ? "pointer-events-none text-slate-300" : "text-slate-700"}`}>Next</Link>
+          </div>
         </div>
       </section>
 

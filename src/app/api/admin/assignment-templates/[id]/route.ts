@@ -11,6 +11,19 @@ function canManage(role?: string) {
   return role === "admin" || role === "instructor";
 }
 
+export async function GET(_: Request, { params }: { params: { id: string } }) {
+  const session = await auth();
+  const role = (session?.user as any)?.role;
+  if (!session || !canManage(role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  await dbConnect();
+  const existing: any = await AssignmentTemplate.findById(params.id).lean();
+  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (role === "instructor" && String(existing.createdBy || "") !== (session.user as any).id) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  return NextResponse.json(existing);
+}
+
 export async function PUT(req: Request, { params }: { params: { id: string } }) {
   const session = await auth();
   const role = (session?.user as any)?.role;

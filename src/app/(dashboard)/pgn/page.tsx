@@ -324,17 +324,55 @@ export default function PgnLibraryPage() {
     downloadText(`${safeFileName(folder.name)}.pgn`, folderGames.map((game) => game.pgn).join("\n\n"));
   }
 
-  async function uploadGame(title: string, pgn: string, createFolder: boolean) {
+  async function uploadGame(title: string, pgn: string, createFolder: boolean, sourceFileName?: string) {
     const folderName = createFolder ? (currentFolder?.path ? `${currentFolder.path}/${title}` : title) : currentFolder?.path;
     const visibility = currentFolder?.personal === false ? "shared" : "private";
     const response = await fetch("/api/pgn", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, pgn, folder: folderName, visibility }),
+      body: JSON.stringify({ title, pgn, folder: folderName, visibility, sourceFileName }),
     });
     if (!response.ok) return toast.error("Invalid PGN");
     await load();
     toast.success("PGN uploaded");
+    setModal(null);
+  }
+
+  async function uploadPgnFiles(files: File[]) {
+    const pgnFiles = files.filter((file) => file.name.toLowerCase().endsWith(".pgn"));
+    if (!pgnFiles.length) return toast.error("Select at least one PGN file");
+
+    const visibility = currentFolder?.personal === false ? "shared" : "private";
+    let createdCount = 0;
+    const failures: string[] = [];
+
+    for (const file of pgnFiles) {
+      const title = file.name.replace(/\.pgn$/i, "").trim() || "Untitled PGN";
+      const folderName = currentFolder?.path ? `${currentFolder.path}/${title}` : title;
+      try {
+        const pgnText = await file.text();
+        const response = await fetch("/api/pgn", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title, pgn: pgnText, folder: folderName, visibility, sourceFileName: file.name }),
+        });
+        const data = await response.json().catch(() => null);
+        if (!response.ok) {
+          failures.push(file.name);
+          continue;
+        }
+        createdCount += Array.isArray(data) ? data.length : 1;
+      } catch {
+        failures.push(file.name);
+      }
+    }
+
+    await load();
+    if (failures.length) {
+      toast.error(`${failures.length} file${failures.length === 1 ? "" : "s"} could not be uploaded`);
+      return;
+    }
+    toast.success(`Uploaded ${createdCount} PGN chapter${createdCount === 1 ? "" : "s"} from ${pgnFiles.length} file${pgnFiles.length === 1 ? "" : "s"}`);
     setModal(null);
   }
 
@@ -506,7 +544,7 @@ export default function PgnLibraryPage() {
       {modal === "folder" && <NewFolderModal currentFolder={currentFolder?.path} currentFolderPersonal={currentFolder?.personal} onClose={() => setModal(null)} onCreate={addFolder} />}
       {modal === "edit-folder" && selectedFolder && <EditNameModal title="Edit Folder" label="Folder Name" initialName={selectedFolder.name} onClose={() => setModal(null)} onSave={(name) => renameFolder(selectedFolder, name)} />}
       {modal === "edit-pgn" && selectedGame && <EditPgnModal game={selectedGame} onClose={() => setModal(null)} onSave={(title, pgn) => updateGame(selectedGame, title, pgn)} />}
-      {modal === "upload" && <UploadPgnModal onClose={() => setModal(null)} onUpload={uploadGame} />}
+      {modal === "upload" && <UploadPgnModal onClose={() => setModal(null)} onUpload={uploadGame} onUploadMany={uploadPgnFiles} />}
       {modal === "generator" && <PgnGeneratorModal onClose={() => setModal(null)} onSave={uploadGame} />}
     </div>
   );
@@ -956,10 +994,19 @@ function EditPgnModal({ game, onClose, onSave }: { game: PgnDoc; onClose: () => 
   );
 }
 
-function UploadPgnModal({ onClose, onUpload }: { onClose: () => void; onUpload: (title: string, pgn: string, createFolder: boolean) => void }) {
+function UploadPgnModal({
+  onClose,
+  onUpload,
+  onUploadMany,
+}: {
+  onClose: () => void;
+  onUpload: (title: string, pgn: string, createFolder: boolean, sourceFileName?: string) => void;
+  onUploadMany: (files: File[]) => void;
+}) {
   const [tab, setTab] = useState<UploadTab>("single");
   const [title, setTitle] = useState("");
   const [pgn, setPgn] = useState("");
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [createFolder, setCreateFolder] = useState(false);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -998,17 +1045,30 @@ function UploadPgnModal({ onClose, onUpload }: { onClose: () => void; onUpload: 
       ) : (
         <button className="flex h-[170px] w-full flex-col items-center justify-center rounded-md border border-slate-200" onClick={() => folderInputRef.current?.click()}>
           <Box size={40} className="mb-5 text-brand" />
-          <div className="font-semibold">Click to select a folder.</div>
-          <div className="mt-3 text-sm font-medium text-slate-500">Supports nested folder structures. Only .pgn files will be uploaded.</div>
+          <div className="font-semibold">{selectedFiles.length ? `${selectedFiles.length} PGN file${selectedFiles.length === 1 ? "" : "s"} selected` : "Click to select PGN files."}</div>
+          <div className="mt-3 text-center text-sm font-medium text-slate-500">
+            Each PGN file creates one folder. Chapters inside that file are saved inside its folder.
+          </div>
           <input ref={folderInputRef} className="hidden" type="file" accept=".pgn" multiple onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file) readSingle(file);
+            setSelectedFiles(Array.from(event.target.files || []).filter((file) => file.name.toLowerCase().endsWith(".pgn")));
           }} />
         </button>
       )}
       <div className="mt-8 flex justify-end gap-2">
         <button className="btn border border-slate-200 bg-white text-slate-950" onClick={onClose}>Cancel</button>
-        <button className="btn-primary" disabled={!pgn.trim()} onClick={() => onUpload(title.trim() || "Untitled PGN", pgn, createFolder)}>Upload</button>
+        <button
+          className="btn-primary"
+          disabled={tab === "single" ? !pgn.trim() : selectedFiles.length === 0}
+          onClick={() => {
+            if (tab === "multiple") {
+              onUploadMany(selectedFiles);
+              return;
+            }
+            onUpload(title.trim() || "Untitled PGN", pgn, createFolder);
+          }}
+        >
+          Upload
+        </button>
       </div>
     </ModalFrame>
   );

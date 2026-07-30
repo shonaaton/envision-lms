@@ -49,10 +49,33 @@ export async function GET() {
       stats.set(key, current);
     }
   });
-  return NextResponse.json(folders.map((folder: any) => {
+  const folderRows = new Map<string, any>();
+  folders.forEach((folder: any) => {
     const scope = folder.visibility === "shared" ? "shared" : "personal";
     const stat = stats.get(`${scope}:${normalizeFolderPath(folder.path)}`) || { gameCount: 0 };
-    return { ...folder, gameCount: stat.gameCount, lastUpdatedAt: stat.lastUpdatedAt || folder.updatedAt };
+    folderRows.set(`${scope}:${normalizeFolderPath(folder.path)}`, { ...folder, gameCount: stat.gameCount, lastUpdatedAt: stat.lastUpdatedAt || folder.updatedAt });
+  });
+
+  stats.forEach((stat, key) => {
+    if (folderRows.has(key)) return;
+    const [scope, ...pathParts] = key.split(":");
+    const path = normalizeFolderPath(pathParts.join(":"));
+    if (!path) return;
+    folderRows.set(key, {
+      _id: key,
+      name: path.split("/").pop(),
+      path,
+      parentPath: normalizeFolderPath(path.split("/").slice(0, -1).join("/")),
+      visibility: scope === "shared" ? "shared" : "private",
+      gameCount: stat.gameCount,
+      lastUpdatedAt: stat.lastUpdatedAt,
+      inferred: true,
+    });
+  });
+
+  return NextResponse.json(Array.from(folderRows.values()).sort((a: any, b: any) => {
+    const visibilitySort = String(a.visibility || "").localeCompare(String(b.visibility || ""));
+    return visibilitySort || String(a.path || "").localeCompare(String(b.path || ""));
   }));
 }
 

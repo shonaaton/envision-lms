@@ -27,6 +27,7 @@ import { Chess } from "chess.js";
 import { toast } from "sonner";
 import { buildMoveHintStyles, legalTargetsFromGame } from "@/lib/chessboardUi";
 import { isPromotionMove, promotionFromBoardPiece, type PendingPromotion, type PromotionPiece } from "@/lib/chessPromotion";
+import { normalizePermissiveFen } from "@/lib/pgnLibrary";
 import PgnLibraryPicker, { type PgnLibraryGame } from "@/components/pgn/PgnLibraryPicker";
 
 const Chessboard = dynamic(() => import("react-chessboard").then((m) => m.Chessboard), { ssr: false });
@@ -160,14 +161,42 @@ function pieceGlyph(piece: PieceCode) {
   return glyphs[piece];
 }
 
+function extractFenHeader(pgn: string) {
+  return pgn.match(/\[FEN\s+"([^"]+)"\]/)?.[1];
+}
+
+function normalizeBoardResourceFen(value?: string | null) {
+  if (!value || value === "start") return "";
+  return normalizePermissiveFen(value) || String(value).trim();
+}
+
+function buildAnalysisGame(fen?: string) {
+  try {
+    if (fen && fen !== "start") return new Chess(fen);
+  } catch {
+    const normalizedFen = normalizeBoardResourceFen(fen);
+    if (normalizedFen) {
+      try {
+        const chess = new Chess();
+        chess.load(normalizedFen, { skipValidation: true });
+        return chess;
+      } catch {
+        // Fall through to the normal starting board.
+      }
+    }
+  }
+  return new Chess();
+}
+
 export default function AnalysisBoard({ initialFen, withEngine = true }: { initialFen?: string; withEngine?: boolean }) {
-  const gameRef = useRef(new Chess(initialFen || undefined));
-  const baseFenRef = useRef(initialFen || startFen);
+  const initialPosition = normalizeBoardResourceFen(initialFen) || initialFen || startFen;
+  const gameRef = useRef(buildAnalysisGame(initialPosition));
+  const baseFenRef = useRef(initialPosition);
   const workerRef = useRef<Worker | null>(null);
-  const analysisFenRef = useRef(initialFen || gameRef.current.fen());
+  const analysisFenRef = useRef(initialPosition || gameRef.current.fen());
   const boardWrapRef = useRef<HTMLDivElement | null>(null);
   const pdfInputRef = useRef<HTMLInputElement | null>(null);
-  const [position, setPosition] = useState(initialFen || gameRef.current.fen());
+  const [position, setPosition] = useState(initialPosition || gameRef.current.fen());
   const [selectedPly, setSelectedPly] = useState(0);
   const [orientation, setOrientation] = useState<"white" | "black">("white");
   const [tab, setTab] = useState<SideTab>("engine");
@@ -345,8 +374,9 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
   }
 
   function reset() {
-    gameRef.current = new Chess(initialFen || undefined);
-    baseFenRef.current = initialFen || startFen;
+    const resetFen = normalizeBoardResourceFen(initialFen) || initialFen || startFen;
+    gameRef.current = buildAnalysisGame(resetFen);
+    baseFenRef.current = resetFen;
     setBestMove("");
     setEvalCp(null);
     setEngineLines([]);
@@ -370,7 +400,19 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
       setDialog(null);
       return true;
     } catch {
-      return false;
+      const normalizedFen = normalizeBoardResourceFen(fen);
+      if (!normalizedFen) return false;
+      gameRef.current = buildAnalysisGame(normalizedFen);
+      baseFenRef.current = normalizedFen;
+      setBestMove("");
+      setEvalCp(null);
+      setEngineLines([]);
+      setGamifiedBoardObjects(gamifiedObjects || {});
+      setSelectedPly(0);
+      setSelectedSquare(null);
+      setPosition(normalizedFen);
+      setDialog(null);
+      return true;
     }
   }
 
@@ -378,9 +420,10 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
     try {
       const next = new Chess();
       (next as unknown as { loadPgn: (value: string) => void }).loadPgn(pgn);
+      const history = next.history({ verbose: true }) as Array<{ before?: string }>;
       gameRef.current = next;
-      baseFenRef.current = startFen;
-      setSelectedPly(next.history().length);
+      baseFenRef.current = history[0]?.before || normalizeBoardResourceFen(extractFenHeader(pgn)) || startFen;
+      setSelectedPly(history.length);
       setBestMove("");
       setEvalCp(null);
       setEngineLines([]);
@@ -389,7 +432,18 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
       setDialog(null);
       return true;
     } catch {
-      return false;
+      const fen = normalizeBoardResourceFen(extractFenHeader(pgn));
+      if (!fen) return false;
+      gameRef.current = buildAnalysisGame(fen);
+      baseFenRef.current = fen;
+      setSelectedPly(0);
+      setBestMove("");
+      setEvalCp(null);
+      setEngineLines([]);
+      setGamifiedBoardObjects({});
+      setPosition(fen);
+      setDialog(null);
+      return true;
     }
   }
 
@@ -413,9 +467,13 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
 
   function replayGame(ply: number) {
     const history = gameRef.current.history({ verbose: true }) as Array<{ from: string; to: string; promotion?: string }>;
-    const next = new Chess(baseFenRef.current);
+    const next = buildAnalysisGame(baseFenRef.current);
     history.slice(0, ply).forEach((move) => {
-      next.move({ from: move.from, to: move.to, promotion: move.promotion || "q" });
+      try {
+        next.move({ from: move.from, to: move.to, promotion: move.promotion || "q" });
+      } catch {
+        // Stop replaying if a permissive board has no legal continuation.
+      }
     });
     return next;
   }
@@ -1233,7 +1291,13 @@ function SetupDialog({
       setCastling(parsed.castling);
       return true;
     } catch {
-      return false;
+      const normalizedFen = normalizeBoardResourceFen(value);
+      if (!normalizedFen) return false;
+      const parsed = parseFenSetup(normalizedFen);
+      setSetup(parsed.setup);
+      setTurn(parsed.turn);
+      setCastling(parsed.castling);
+      return true;
     }
   }
 

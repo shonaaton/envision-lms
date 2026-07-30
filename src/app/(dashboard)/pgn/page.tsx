@@ -332,7 +332,10 @@ export default function PgnLibraryPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title, pgn, folder: folderName, visibility, sourceFileName }),
     });
-    if (!response.ok) return toast.error("Invalid PGN");
+    if (!response.ok) {
+      const data = await response.json().catch(() => null);
+      return toast.error(data?.error || "Invalid PGN");
+    }
     await load();
     toast.success("PGN uploaded");
     setModal(null);

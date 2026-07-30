@@ -68,9 +68,15 @@ export function splitPgnGames(pgn: string) {
   const normalized = pgn.replace(/\r\n/g, "\n").trim();
   if (!normalized) return [];
   const eventStarts = Array.from(normalized.matchAll(/(^|\n)\s*(?=\[Event\s+")/g)).map((match) => match.index + match[1].length);
+  const fenStarts = Array.from(normalized.matchAll(/(^|\n)\s*(?=\[FEN\s+")/g)).map((match) => match.index + match[1].length);
+  const setupStarts = Array.from(normalized.matchAll(/(^|\n)\s*(?=\[SetUp\s+")/g)).map((match) => match.index + match[1].length);
   const starts = eventStarts.length > 1
     ? eventStarts
-    : Array.from(normalized.matchAll(/(^|\n)\s*(?=\[(?:FEN|SetUp)\s+")/g)).map((match) => match.index + match[1].length);
+    : fenStarts.length > 1
+      ? fenStarts
+      : setupStarts.length > 1
+        ? setupStarts
+        : [];
   if (starts.length <= 1) return [normalized];
   return starts.map((start, index) => normalized.slice(start, starts[index + 1]).trim()).filter(Boolean);
 }
@@ -96,11 +102,35 @@ export function sideToMoveFromFen(fen?: string | null): "white" | "black" {
   return String(fen || "").split(/\s+/)[1] === "b" ? "black" : "white";
 }
 
+export function normalizePermissiveFen(value?: string | null) {
+  const parts = String(value || "").trim().split(/\s+/).filter(Boolean);
+  const board = parts[0] || "";
+  const ranks = board.split("/");
+  if (ranks.length !== 8) return "";
+  const validBoard = ranks.every((rank) => {
+    let count = 0;
+    for (const char of rank) {
+      if (/^[1-8]$/.test(char)) count += Number(char);
+      else if (/^[pnbrqkPNBRQK]$/.test(char)) count += 1;
+      else return false;
+    }
+    return count === 8;
+  });
+  if (!validBoard) return "";
+
+  const turn = parts[1] === "b" ? "b" : "w";
+  const castling = parts[2] && /^(-|[KQkq]+)$/.test(parts[2]) ? parts[2] : "-";
+  const enPassant = parts[3] && /^(-|[a-h][36])$/.test(parts[3]) ? parts[3] : "-";
+  const halfMove = parts[4] && /^\d+$/.test(parts[4]) ? parts[4] : "0";
+  const fullMove = parts[5] && /^[1-9]\d*$/.test(parts[5]) ? parts[5] : "1";
+  return `${board} ${turn} ${castling} ${enPassant} ${halfMove} ${fullMove}`;
+}
+
 export function summarizePgn(pgn: string, fallbackTitle = "Untitled PGN"): PgnSummary {
   const game = new Chess();
   const fenHeader = extractHeader(pgn, "FEN");
   let moveCount = 0;
-  let initialFen = fenHeader || chessStartFen;
+  let initialFen = normalizePermissiveFen(fenHeader) || fenHeader || chessStartFen;
   let finalFen = initialFen;
 
   try {
@@ -110,7 +140,11 @@ export function summarizePgn(pgn: string, fallbackTitle = "Untitled PGN"): PgnSu
     initialFen = history[0]?.before || fenHeader || chessStartFen;
     finalFen = game.fen();
   } catch {
-    if (fenHeader) {
+    const permissiveFen = normalizePermissiveFen(fenHeader);
+    if (permissiveFen) {
+      initialFen = permissiveFen;
+      finalFen = permissiveFen;
+    } else if (fenHeader) {
       try {
         const fenGame = new Chess(fenHeader);
         initialFen = fenGame.fen();
@@ -160,6 +194,7 @@ export function isValidPgnOrFenSetup(pgn: string) {
   } catch {
     const fen = extractHeader(pgn, "FEN");
     if (!fen) return false;
+    if (normalizePermissiveFen(fen)) return true;
     try {
       new Chess(fen);
       return true;

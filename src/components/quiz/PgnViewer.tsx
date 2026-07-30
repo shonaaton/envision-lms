@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Chess } from "chess.js";
 import { useRouter } from "next/navigation";
 import PageLoadingOverlay from "@/components/feedback/PageLoadingOverlay";
+import { normalizePermissiveFen } from "@/lib/pgnLibrary";
 
 const Chessboard = dynamic(() => import("react-chessboard").then((m) => m.Chessboard), { ssr: false });
 
@@ -55,6 +56,10 @@ function parsePgn(pgn: string) {
   } catch {
     const fen = extractHeader(pgn, "FEN");
     if (fen) {
+      const permissivePosition = normalizePermissiveFen(fen);
+      if (permissivePosition) {
+        return { valid: true, start: permissivePosition, final: permissivePosition, moves: [] as PgnMove[] };
+      }
       try {
         const position = new Chess(fen).fen();
         return { valid: true, start: position, final: position, moves: [] as PgnMove[] };
@@ -72,11 +77,16 @@ function parsePgn(pgn: string) {
 }
 
 function replayPosition(start: string, moves: PgnMove[], ply: number) {
-  const game = new Chess(start);
-  moves.slice(0, ply).forEach((move) => {
-    game.move({ from: move.from, to: move.to, promotion: move.promotion || "q" });
-  });
-  return game.fen();
+  if (!moves.length) return start;
+  try {
+    const game = new Chess(start);
+    moves.slice(0, ply).forEach((move) => {
+      game.move({ from: move.from, to: move.to, promotion: move.promotion || "q" });
+    });
+    return game.fen();
+  } catch {
+    return start;
+  }
 }
 
 function buildRows(moves: PgnMove[]) {

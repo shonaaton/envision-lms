@@ -52,6 +52,7 @@ import {
 } from "lucide-react";
 import PageLoadingOverlay from "@/components/feedback/PageLoadingOverlay";
 import MiniFenBoard, { previewFenFromPgn } from "@/components/pgn/MiniFenBoard";
+import { normalizePermissiveFen } from "@/lib/pgnLibrary";
 
 const Chessboard = dynamic(() => import("react-chessboard").then((m) => m.Chessboard), { ssr: false });
 
@@ -122,8 +123,31 @@ function extractFen(pgn: string) {
   return pgn.match(/\[FEN\s+"([^"]+)"\]/)?.[1];
 }
 
+function normalizeBoardResourceFen(value?: string | null) {
+  if (!value || value === "start") return "";
+  return normalizePermissiveFen(value) || String(value).trim();
+}
+
+function pgnStartFen(pgn: any) {
+  return normalizeBoardResourceFen(pgn?.initialFen || pgn?.fen || extractFen(pgn?.pgn || "")) || "start";
+}
+
+function isStrictChessFen(fen?: string | null) {
+  if (!fen || fen === "start") return true;
+  try {
+    new Chess(fen);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isBoardResourceFen(fen?: string | null) {
+  return Boolean(fen && fen !== "start" && !isStrictChessFen(fen) && normalizePermissiveFen(fen));
+}
+
 function pgnSideToMoveLabel(pgn: any) {
-  const side = pgn?.sideToMove || (String(pgn?.initialFen || pgn?.fen || extractFen(pgn?.pgn || "") || "").split(/\s+/)[1] === "b" ? "black" : "white");
+  const side = pgn?.sideToMove || (pgnStartFen(pgn).split(/\s+/)[1] === "b" ? "black" : "white");
   return side === "black" ? "Black to play" : "White to play";
 }
 
@@ -139,14 +163,15 @@ function parsePgnPuzzle(pgn: string) {
       valid: true,
     };
   } catch {
-    const fen = extractFen(pgn);
+    const fen = normalizeBoardResourceFen(extractFen(pgn));
     return { start: fen || "start", moves: [], valid: Boolean(fen) };
   }
 }
 
 function fenToPosition(fen?: string): BoardPosition {
   const chess = new Chess();
-  if (fen && fen !== "start") chess.load(fen, { skipValidation: true });
+  const normalizedFen = normalizeBoardResourceFen(fen);
+  if (normalizedFen) chess.load(normalizedFen, { skipValidation: true });
   const position: BoardPosition = {};
   chess.board().forEach((rank, rankIndex) => {
     rank.forEach((piece, fileIndex) => {
@@ -186,13 +211,24 @@ function buildGame(fen?: string) {
   try {
     if (fen && fen !== "start") return new Chess(fen);
   } catch {
-    // Fall through to a clean board if an instructor is experimenting with setup mode.
+    const normalizedFen = normalizeBoardResourceFen(fen);
+    if (normalizedFen) {
+      try {
+        const chess = new Chess();
+        chess.load(normalizedFen, { skipValidation: true });
+        return chess;
+      } catch {
+        // Fall through to a clean board if an instructor is experimenting with setup mode.
+      }
+    }
   }
   return new Chess();
 }
 
 function applyMoves(startFen: string | undefined, moves: string[], count: number) {
-  const chess = startFen && startFen !== "start" ? new Chess(startFen) : new Chess();
+  const normalizedStartFen = normalizeBoardResourceFen(startFen);
+  if (!moves.length) return normalizedStartFen || "start";
+  const chess = normalizedStartFen ? buildGame(normalizedStartFen) : new Chess();
   for (const move of moves.slice(0, Math.max(0, count))) {
     try {
       chess.move(move);
@@ -255,7 +291,12 @@ function formatEval(cp: number) {
 }
 
 function normalizeEngineFen(fen?: string) {
-  return !fen || fen === "start" ? new Chess().fen() : fen;
+  if (!fen || fen === "start") return new Chess().fen();
+  try {
+    return new Chess(fen).fen();
+  } catch {
+    return new Chess().fen();
+  }
 }
 
 function formatEnginePv(fen: string, pv: string) {
@@ -888,7 +929,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     if (!pgnMoves.length) return live?.fen || "start";
     const collectionItem = (Array.isArray(live?.challenge?.pgnCollection) ? live.challenge.pgnCollection : [])
       .find((pgn: any) => pgn.title === live?.pgnTitle || pgn.pgn === live?.pgn);
-    const startFen = collectionItem?.fen || extractFen(live?.pgn || "") || "start";
+    const startFen = normalizeBoardResourceFen(collectionItem?.fen || extractFen(live?.pgn || "")) || "start";
     return applyMoves(startFen, pgnMoves, currentMoveIndex);
   }
 
@@ -1121,6 +1162,13 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       return;
     } catch {
       // Try PGN next.
+    }
+    const permissiveFen = normalizeBoardResourceFen(value);
+    if (permissiveFen) {
+      setSetupPosition(fenToPosition(permissiveFen));
+      setSetupLoadText("");
+      toast.success("Board position loaded into setup board");
+      return;
     }
     try {
       const pgnGame = new Chess();
@@ -1602,7 +1650,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     const boundedIndex = Math.max(0, Math.min(pgnMoves.length, nextIndex));
     const collectionItem = (Array.isArray(live?.challenge?.pgnCollection) ? live.challenge.pgnCollection : [])
       .find((pgn: any) => pgn.title === live?.pgnTitle || pgn.pgn === live?.pgn);
-    const startFen = collectionItem?.fen || extractFen(live?.pgn || "") || "start";
+    const startFen = normalizeBoardResourceFen(collectionItem?.fen || extractFen(live?.pgn || "")) || "start";
     patch({ fen: applyMoves(startFen, pgnMoves, boundedIndex), pgnMoveIndex: boundedIndex, moveHistory: pgnMoves.slice(0, boundedIndex) });
   }, [live?.challenge?.pgnCollection, live?.pgn, live?.pgnTitle, patch, pgnMoves]);
 
@@ -1643,18 +1691,18 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       id: item._id || item.id,
       title: item.title,
       pgn: item.pgn,
-      fen: item.initialFen || item.fen || extractFen(item.pgn) || "start",
-      sideToMove: item.sideToMove || (String(item.initialFen || item.fen || extractFen(item.pgn) || "").split(/\s+/)[1] === "b" ? "black" : "white"),
+      fen: pgnStartFen(item),
+      sideToMove: item.sideToMove || (pgnStartFen(item).split(/\s+/)[1] === "b" ? "black" : "white"),
     }));
   }
 
   function loadPgn(pgn: any, index: number, collection?: any[]) {
     const chess = new Chess();
+    const startFen = pgnStartFen(pgn);
+    const selectedCollection = collection?.length ? collectionItems(collection) : collectionItems([pgn]);
     try {
       chess.loadPgn(pgn.pgn);
       const moves = chess.history();
-      const startFen = pgn.initialFen || pgn.fen || extractFen(pgn.pgn) || "start";
-      const selectedCollection = collection?.length ? collectionItems(collection) : collectionItems([pgn]);
       patch({
         pgn: pgn.pgn,
         pgnTitle: pgn.title,
@@ -1676,7 +1724,31 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       setPgnOpen(false);
       toast.success(`Loaded ${pgn.title}`);
     } catch {
-      toast.error("This PGN could not be loaded");
+      if (!startFen || startFen === "start") {
+        toast.error("This PGN could not be loaded");
+        return;
+      }
+      patch({
+        pgn: pgn.pgn,
+        pgnTitle: pgn.title,
+        pgnMoves: [],
+        pgnMoveIndex: 0,
+        fen: startFen,
+        moveHistory: [],
+        setupMode: false,
+        illegalMovesEnabled: isBoardResourceFen(startFen),
+        drawings: [],
+        challenge: {
+          ...(live?.challenge || {}),
+          active: false,
+          currentIndex: index,
+          pgnCollection: selectedCollection,
+        },
+        usedResources: resourceHistory({ type: "pgn", title: pgn.title, pgn: pgn.pgn, fen: startFen }),
+      });
+      setActiveTab("moves");
+      setPgnOpen(false);
+      toast.success(`Loaded ${pgn.title}`);
     }
   }
 
@@ -1692,6 +1764,25 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       return;
     } catch {
       // Try PGN next.
+    }
+    const permissiveFen = normalizeBoardResourceFen(value);
+    if (permissiveFen) {
+      patch({
+        fen: permissiveFen,
+        pgn: "",
+        pgnTitle: "Custom Board",
+        pgnMoves: [],
+        pgnMoveIndex: 0,
+        moveHistory: [],
+        setupMode: false,
+        illegalMovesEnabled: true,
+        drawings: [],
+        usedResources: resourceHistory({ type: "position", title: "Custom Board", fen: permissiveFen }),
+      });
+      setManualLoadText("");
+      setPgnOpen(false);
+      toast.success("Board position loaded into classroom");
+      return;
     }
     try {
       const pgnGame = new Chess();
@@ -2856,7 +2947,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
 }
 
 function QuizAnswerComposer({ startFen, onChange }: { startFen: string; onChange: (moves: string[]) => void }) {
-  const makeGame = () => startFen && startFen !== "start" ? new Chess(startFen) : new Chess();
+  const makeGame = () => buildGame(startFen);
   const [fen, setFen] = useState(() => makeGame().fen());
   const [moves, setMoves] = useState<string[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
@@ -2871,7 +2962,7 @@ function QuizAnswerComposer({ startFen, onChange }: { startFen: string; onChange
 
   function play(from: string, to: string) {
     try {
-      const game = new Chess(fen);
+      const game = buildGame(fen);
       const move = game.move({ from, to, promotion: "q" });
       if (!move) return false;
       const next = [...moves, move.san];
@@ -2973,7 +3064,7 @@ function LiveBoardQuiz({
       valid: true,
     };
   }, [activeItem?.fen, activeItem?.pgn, activeItem?.solution, question.fen]);
-  const [game, setGame] = useState(() => (parsed.start === "start" ? new Chess() : new Chess(parsed.start)));
+  const [game, setGame] = useState(() => buildGame(parsed.start));
   const [position, setPosition] = useState(parsed.start);
   const [ply, setPly] = useState(0);
   const [mistakes, setMistakes] = useState(0);
@@ -3076,7 +3167,7 @@ function LiveBoardQuiz({
   }, [items.length, progressionMode, serverIndex]);
 
   useEffect(() => {
-    const next = parsed.start === "start" ? new Chess() : new Chess(parsed.start);
+    const next = buildGame(parsed.start);
     setGame(next);
     setPosition(parsed.start);
     setPly(0);
@@ -3275,7 +3366,7 @@ function LiveBoardQuiz({
   }
 
   function reset() {
-    const next = parsed.start === "start" ? new Chess() : new Chess(parsed.start);
+    const next = buildGame(parsed.start);
     setGame(next);
     setPosition(parsed.start);
     setPly(0);

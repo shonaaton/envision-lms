@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { BookOpen, CheckCircle2, ChevronLeft, ChevronRight, Clock, FileQuestion, Gamepad2, HelpCircle, RotateCcw, Trophy } from "lucide-react";
 import { buildMoveHintStyles, legalTargetsFromGame } from "@/lib/chessboardUi";
 import { isPromotionMove, promotionFromBoardPiece, type PendingPromotion, type PromotionPiece } from "@/lib/chessPromotion";
+import { normalizePermissiveFen } from "@/lib/pgnLibrary";
 
 const Chessboard = dynamic(() => import("react-chessboard").then((m) => m.Chessboard), { ssr: false });
 
@@ -38,6 +39,29 @@ function extractHeader(pgn: string, name: string) {
   return pgn.match(new RegExp(`\\[${name}\\s+"([^"]+)"\\]`))?.[1];
 }
 
+function normalizeBoardResourceFen(value?: string | null) {
+  if (!value || value === "start") return "";
+  return normalizePermissiveFen(value) || String(value).trim();
+}
+
+function buildGame(fen?: string) {
+  try {
+    if (fen && fen !== "start") return new Chess(fen);
+  } catch {
+    const normalizedFen = normalizeBoardResourceFen(fen);
+    if (normalizedFen) {
+      try {
+        const chess = new Chess();
+        chess.load(normalizedFen, { skipValidation: true });
+        return chess;
+      } catch {
+        // Fall through to the normal starting board.
+      }
+    }
+  }
+  return new Chess();
+}
+
 function parsePgnPuzzle(pgn: string) {
   try {
     const game = new Chess();
@@ -50,7 +74,7 @@ function parsePgnPuzzle(pgn: string) {
       valid: true,
     };
   } catch {
-    const fen = extractHeader(pgn, "FEN");
+    const fen = normalizeBoardResourceFen(extractHeader(pgn, "FEN"));
     return { start: fen || startFen, moves: [], valid: Boolean(fen) };
   }
 }
@@ -273,7 +297,8 @@ function ReviewPgnBoard({ pgn }: { pgn: string }) {
   const parsed = useMemo(() => parsePgnPuzzle(pgn), [pgn]);
   const [ply, setPly] = useState(0);
   const position = useMemo(() => {
-    const game = new Chess(parsed.start);
+    if (!parsed.moves.length) return parsed.start;
+    const game = buildGame(parsed.start);
     parsed.moves.slice(0, ply).forEach((move) => game.move({ from: move.from, to: move.to, promotion: move.promotion || "q" }));
     return game.fen();
   }, [parsed.start, parsed.moves, ply]);
@@ -429,7 +454,7 @@ function McqQuestion({ activityId, item, index, value, onChange, locked }: any) 
 
 function PgnBoardTask({ activityId, item, index, locked, onResult, onSolved }: any) {
   const parsed = useMemo(() => parsePgnPuzzle(item.pgn || ""), [item.pgn]);
-  const [game, setGame] = useState(() => new Chess(parsed.start));
+  const [game, setGame] = useState(() => buildGame(parsed.start));
   const [position, setPosition] = useState(parsed.start);
   const [ply, setPly] = useState(0);
   const [mistakes, setMistakes] = useState(0);
@@ -443,7 +468,7 @@ function PgnBoardTask({ activityId, item, index, locked, onResult, onSolved }: a
   const advancedRef = useRef(false);
 
   useEffect(() => {
-    const next = new Chess(parsed.start);
+    const next = buildGame(parsed.start);
     setGame(next);
     setPosition(parsed.start);
     setPly(0);
@@ -482,7 +507,7 @@ function PgnBoardTask({ activityId, item, index, locked, onResult, onSolved }: a
   function commitMove(source: string, target: string, promotion: PromotionPiece = "q") {
     if (locked || solved || ply >= parsed.moves.length) return false;
     const expected = parsed.moves[ply];
-    const nextGame = new Chess(game.fen());
+    const nextGame = buildGame(game.fen());
     const move = nextGame.move({ from: source, to: target, promotion });
     if (!move) return false;
     if (move.san !== expected.san) {
@@ -522,7 +547,7 @@ function PgnBoardTask({ activityId, item, index, locked, onResult, onSolved }: a
   }
 
   function reset() {
-    const next = new Chess(parsed.start);
+    const next = buildGame(parsed.start);
     setGame(next);
     setPosition(parsed.start);
     setPly(0);

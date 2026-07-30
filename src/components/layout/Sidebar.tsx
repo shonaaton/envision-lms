@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { signOut } from "next-auth/react";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -32,6 +33,8 @@ import {
   Target,
   PanelLeftClose,
   PanelLeftOpen,
+  LogOut,
+  Sparkles,
   X,
 } from "lucide-react";
 import Logo from "./Logo";
@@ -44,6 +47,15 @@ type FeatureStatus = "enabled" | "disabled" | "testing" | "coming_soon";
 type FeatureState = Record<string, { visible: boolean; status: FeatureStatus }>;
 type NavItem = { href: string; label: string; icon: any; featureKey?: string; roles?: Role[]; demoOnly?: boolean; hideForDemo?: boolean; superAdminOnly?: boolean };
 type NavSection = { id: string; title: string; items: NavItem[]; roles?: Role[]; superAdminOnly?: boolean };
+type NotificationItem = {
+  _id: string;
+  type: string;
+  title: string;
+  message: string;
+  readAt?: string;
+  createdAt: string;
+  metadata?: { href?: string; conversation?: string; message?: string; editedAt?: string };
+};
 
 const sections: NavSection[] = [
   {
@@ -144,11 +156,21 @@ function isActive(pathname: string, item: NavItem) {
   return pathname === item.href || pathname.startsWith(`${item.href}/`);
 }
 
+function notificationHref(item: NotificationItem) {
+  if (item.metadata?.href) return item.metadata.href;
+  if (item.metadata?.conversation) {
+    const message = item.metadata.message ? `&message=${encodeURIComponent(String(item.metadata.message))}` : "";
+    return `/ask-coach?conversation=${encodeURIComponent(String(item.metadata.conversation))}${message}`;
+  }
+  return "/admin/notifications";
+}
+
 export default function Sidebar({
   role,
   accountStatus,
   isSuperAdmin,
   featureState,
+  user,
   mobileOpen = false,
   desktopCollapsed = false,
   onToggleDesktop,
@@ -158,6 +180,7 @@ export default function Sidebar({
   accountStatus?: AccountStatus;
   isSuperAdmin?: boolean;
   featureState?: FeatureState;
+  user: { name?: string | null; role: string };
   mobileOpen?: boolean;
   desktopCollapsed?: boolean;
   onToggleDesktop?: () => void;
@@ -165,6 +188,9 @@ export default function Sidebar({
 }) {
   const pathname = usePathname() || "";
   const [askCoachUnreadCount, setAskCoachUnreadCount] = useState(0);
+  const [openNotifications, setOpenNotifications] = useState(false);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const visibleSections = useMemo(
     () =>
       sections
@@ -175,6 +201,27 @@ export default function Sidebar({
   );
   const activeSection = visibleSections.find((section) => section.items.some((item) => isActive(pathname, item)))?.id || "academy";
   const [openSections, setOpenSections] = useState<string[]>([activeSection]);
+
+  async function loadNotifications() {
+    const response = await fetch("/api/notifications", { cache: "no-store" }).catch(() => null);
+    if (!response?.ok) return 0;
+    const data = await response.json().catch(() => ({}));
+    setNotifications(data.notifications || []);
+    const nextUnreadCount = Number(data.unreadCount || 0);
+    setUnreadCount(nextUnreadCount);
+    return nextUnreadCount;
+  }
+
+  async function openBell() {
+    const nextOpen = !openNotifications;
+    setOpenNotifications(nextOpen);
+    if (!nextOpen) return;
+    const nextUnreadCount = await loadNotifications();
+    if (nextUnreadCount > 0) {
+      await fetch("/api/notifications", { method: "PATCH" }).catch(() => undefined);
+      setUnreadCount(0);
+    }
+  }
 
   useEffect(() => {
     let mounted = true;
@@ -190,6 +237,10 @@ export default function Sidebar({
       mounted = false;
       window.clearInterval(timer);
     };
+  }, []);
+
+  useEffect(() => {
+    void loadNotifications();
   }, []);
 
   useEffect(() => {
@@ -313,9 +364,75 @@ export default function Sidebar({
           );
         })}
       </nav>
-      <div className={cn("mt-4 rounded-lg border border-white/10 bg-white/[0.08] p-3 text-sm text-white/80", desktopCollapsed ? "md:hidden" : "")}>
-        <div className="font-semibold text-white">Envision Academy</div>
-        <div className="mt-1 text-xs leading-relaxed text-white/60">Premium chess tools, classes, PGNs, tournaments, and progress in one place.</div>
+      <div className="relative mt-4">
+        <div className={cn("rounded-lg border border-white/10 bg-white/[0.08] p-3 text-sm text-white/80", desktopCollapsed ? "md:p-2" : "")}>
+          <div className={cn("flex items-start gap-2", desktopCollapsed ? "md:flex-col md:items-center" : "")}>
+            <div className={cn("min-w-0 flex-1", desktopCollapsed ? "md:hidden" : "")}>
+              <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-accent">
+                <Sparkles size={13} />
+                Academy Workspace
+              </div>
+              <div className="mt-1 truncate text-sm font-semibold text-white">{user.name || "Player"}</div>
+              <div className="mt-1 inline-flex rounded-full bg-white/10 px-2 py-0.5 text-[11px] font-bold capitalize text-white/70 ring-1 ring-white/10">{user.role}</div>
+            </div>
+            <div className={cn("flex flex-none items-center gap-2", desktopCollapsed ? "md:flex-col" : "")}>
+              <button
+                type="button"
+                onClick={openBell}
+                className="relative inline-flex h-10 w-10 items-center justify-center rounded-lg bg-accent text-brand shadow-sm ring-1 ring-accent-600/20 transition hover:-translate-y-0.5 hover:shadow-md"
+                aria-label="Notifications"
+                aria-expanded={openNotifications}
+                title="Notifications"
+              >
+                <Bell size={18} />
+                {unreadCount > 0 && (
+                  <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-white px-1 text-[10px] font-black text-brand">
+                    {unreadCount > 9 ? "9+" : unreadCount}
+                  </span>
+                )}
+              </button>
+              <button
+                type="button"
+                className={cn("inline-flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 bg-white/10 text-white shadow-sm transition hover:bg-white/20", desktopCollapsed ? "md:inline-flex" : "md:hidden")}
+                onClick={() => signOut({ callbackUrl: "/" })}
+                aria-label="Sign out"
+                title="Sign out"
+              >
+                <LogOut size={17} />
+              </button>
+            </div>
+          </div>
+          <button
+            type="button"
+            className={cn("mt-3 hidden h-9 w-full items-center justify-center gap-2 rounded-lg border border-white/10 bg-white text-sm font-bold text-brand shadow-sm transition hover:bg-accent", desktopCollapsed ? "" : "sm:inline-flex")}
+            onClick={() => signOut({ callbackUrl: "/" })}
+          >
+            <LogOut size={16} /> Sign out
+          </button>
+        </div>
+        {openNotifications && (
+          <div className={cn("absolute bottom-[calc(100%+0.75rem)] left-0 z-50 w-[min(360px,calc(100vw-1.5rem))] rounded-lg border border-brand/10 bg-white p-3 text-slate-950 shadow-2xl shadow-brand/20", desktopCollapsed ? "md:left-full md:bottom-0 md:ml-3" : "")}>
+            <div className="mb-2 flex items-center justify-between gap-3 px-1">
+              <div className="font-black text-brand">Notifications</div>
+              <button type="button" onClick={loadNotifications} className="rounded-md px-2 py-1 text-xs font-bold text-brand/70 hover:bg-brand-50 hover:text-brand">Refresh</button>
+            </div>
+            <div className="max-h-96 space-y-2 overflow-y-auto pr-1">
+              {notifications.length === 0 && <div className="rounded-lg bg-slate-50 p-4 text-sm text-slate-500">No notifications yet.</div>}
+              {notifications.map((item) => (
+                <a key={item._id} href={notificationHref(item)} className="block rounded-lg border border-slate-200 bg-white p-3 shadow-sm transition hover:border-brand/20 hover:bg-slate-50">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="font-bold text-slate-950">{item.title}</div>
+                    {!item.readAt && <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-brand" />}
+                  </div>
+                  <div className="mt-1 text-sm leading-relaxed text-slate-600">{item.message}</div>
+                  <div className="mt-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                    {item.metadata?.editedAt ? `Edited ${new Date(item.metadata.editedAt).toLocaleString()}` : new Date(item.createdAt).toLocaleString()}
+                  </div>
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </aside>
     </>

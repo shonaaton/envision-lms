@@ -273,7 +273,8 @@ export default function PgnLibraryPage() {
 
   async function deleteFolder(folder: FolderDoc) {
     if (!window.confirm(`Delete "${folder.name}" and all PGNs inside it?`)) return;
-    const response = await fetch(`/api/pgn/folders?name=${encodeURIComponent(folder.path)}`, { method: "DELETE" });
+    const scope = folder.personal ? "personal" : "shared";
+    const response = await fetch(`/api/pgn/folders?name=${encodeURIComponent(folder.path)}&scope=${scope}`, { method: "DELETE" });
     if (!response.ok) return toast.error("Could not delete folder");
     await load();
     if (currentFolder?.path === folder.path || currentFolder?.path?.startsWith(`${folder.path}/`)) openRoot();

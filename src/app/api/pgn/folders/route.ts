@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { PGN } from "@/models/PGN";
 import { PgnFolder } from "@/models/PgnFolder";
-import { buildOwnedFolderFilter, buildPgnFolderFilter, buildPgnLibraryFilter, canManageSharedFolder, normalizeFolderPath } from "@/lib/pgnAccess";
+import { buildManageableFolderFilter, buildManageablePgnFilter, buildOwnedFolderFilter, buildPgnFolderFilter, buildPgnLibraryFilter, canManageSharedFolder, normalizeFolderPath } from "@/lib/pgnAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -140,18 +140,20 @@ export async function DELETE(req: Request) {
 
   const url = new URL(req.url);
   const name = normalizeFolderPath(url.searchParams.get("name"));
+  const requestedVisibility = url.searchParams.get("scope") === "shared" ? "shared" : url.searchParams.get("scope") === "personal" ? "private" : undefined;
   if (!name) return NextResponse.json({ error: "Folder name required" }, { status: 400 });
 
-  const rootFolder: any = await PgnFolder.findOne(buildOwnedFolderFilter(session, { path: name }));
+  const rootFolder: any = await PgnFolder.findOne(buildManageableFolderFilter(session, { path: name, ...(requestedVisibility ? { visibility: requestedVisibility } : {}) }));
   if (!rootFolder) return NextResponse.json({ error: "Folder not found" }, { status: 404 });
   if (rootFolder.visibility === "shared" && !canManageSharedFolder(session)) {
     return NextResponse.json({ error: "Only admins can delete shared folders" }, { status: 403 });
   }
 
   const matcher = folderTreeMatcher(name);
+  const pgnVisibilityFilter = rootFolder.visibility === "shared" ? "shared" : { $ne: "shared" };
   await Promise.all([
-    PgnFolder.deleteMany(buildOwnedFolderFilter(session, { path: matcher })),
-    PGN.deleteMany(buildOwnedFolderFilter(session, { folder: matcher })),
+    PgnFolder.deleteMany(buildManageableFolderFilter(session, { path: matcher, visibility: rootFolder.visibility })),
+    PGN.deleteMany(buildManageablePgnFilter(session, { folder: matcher, visibility: pgnVisibilityFilter })),
   ]);
 
   return NextResponse.json({ ok: true });

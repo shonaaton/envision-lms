@@ -45,6 +45,42 @@ export function buildOwnedFolderFilter(session: any, extra: Record<string, any> 
   };
 }
 
+export function buildManageablePgnFilter(session: any, extra: Record<string, any> = {}) {
+  const userId = (session.user as any).id;
+  const isAdmin = (session?.user as any)?.role === "admin";
+  return {
+    $and: [
+      isAdmin
+        ? {
+            $or: [
+              { uploadedBy: userId },
+              { visibility: "shared" },
+            ],
+          }
+        : { uploadedBy: userId },
+      extra,
+    ],
+  };
+}
+
+export function buildManageableFolderFilter(session: any, extra: Record<string, any> = {}) {
+  const userId = (session.user as any).id;
+  const isAdmin = (session?.user as any)?.role === "admin";
+  return {
+    $and: [
+      isAdmin
+        ? {
+            $or: [
+              { uploadedBy: userId },
+              { visibility: "shared" },
+            ],
+          }
+        : { uploadedBy: userId },
+      extra,
+    ],
+  };
+}
+
 export function canManageSharedFolder(session: any) {
   return (session?.user as any)?.role === "admin";
 }

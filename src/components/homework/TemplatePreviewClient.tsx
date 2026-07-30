@@ -83,16 +83,16 @@ export default function TemplatePreviewClient({ template }: { template: any }) {
 
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-5 text-slate-950 sm:px-6 lg:px-8">
-      <header className="mb-5 rounded-3xl bg-brand p-5 text-white shadow-xl shadow-brand-900/20">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+      <header className="mb-3 rounded-xl bg-brand px-4 py-3 text-white shadow-lg shadow-brand-900/15">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <div className="text-xs font-bold uppercase tracking-[0.18em] text-accent">Student Preview</div>
-            <h1 className="mt-1 text-3xl font-black">{template.title}</h1>
-            <p className="mt-2 max-w-3xl text-sm text-white/75">{template.description || "Solve this template exactly like a student would see it."}</p>
+            <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-accent">Student Preview</div>
+            <h1 className="mt-0.5 text-xl font-black">{template.title}</h1>
+            <p className="mt-1 max-w-3xl text-xs text-white/75">{template.description || "Solve this template exactly like a student would see it."}</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Link href={`/admin/homework-templates/${template._id}/edit`} className="inline-flex h-10 items-center gap-2 rounded-xl bg-white/10 px-4 text-sm font-black text-white ring-1 ring-white/20"><Edit3 size={16} /> Edit</Link>
-            <button onClick={() => setChecked(true)} className="inline-flex h-10 items-center gap-2 rounded-xl bg-accent px-4 text-sm font-black text-brand"><CheckCircle2 size={16} /> Check MCQs</button>
+            <Link href={`/admin/homework-templates/${template._id}/edit`} className="inline-flex h-9 items-center gap-2 rounded-lg bg-white/10 px-3 text-xs font-black text-white ring-1 ring-white/20"><Edit3 size={14} /> Edit</Link>
+            <button onClick={() => setChecked(true)} className="inline-flex h-9 items-center gap-2 rounded-lg bg-accent px-3 text-xs font-black text-brand"><CheckCircle2 size={14} /> Check MCQs</button>
           </div>
         </div>
       </header>
@@ -105,12 +105,12 @@ export default function TemplatePreviewClient({ template }: { template: any }) {
 
       <div className="space-y-4">
         {(template.activities || []).map((activity: any, activityIndex: number) => (
-          <section key={activity._id || activityIndex} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+          <section key={activity._id || activityIndex} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+            <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
               <div>
-                <span className="inline-flex items-center gap-2 rounded-full bg-purple-50 px-3 py-1 text-xs font-black text-purple-700">{activityIcon(activity)}{activityLabel(activity)}</span>
-                <h2 className="mt-2 text-xl font-black text-brand">Activity {activityIndex + 1}: {activity.title}</h2>
-                {activity.instructions && <p className="mt-1 text-sm text-slate-600">{activity.instructions}</p>}
+                <span className="inline-flex items-center gap-2 rounded-full bg-purple-50 px-2.5 py-1 text-[11px] font-black text-purple-700">{activityIcon(activity)}{activityLabel(activity)}</span>
+                <h2 className="mt-1.5 text-lg font-black text-brand">Activity {activityIndex + 1}: {activity.title}</h2>
+                {activity.instructions && <p className="mt-0.5 text-xs text-slate-600">{activity.instructions}</p>}
               </div>
               <span className="rounded-full bg-accent/30 px-3 py-1 text-xs font-bold text-brand">{activity.points || 0} pts</span>
             </div>
@@ -133,40 +133,72 @@ function activityIcon(activity: any) {
 
 function FenBox({ fen }: { fen: string }) {
   const boardFen = previewFen(fen);
-  if (!boardFen) return <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 font-mono text-xs text-slate-700">{fen}</div>;
+  if (!boardFen) return <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-800">This position could not be shown on the board.</div>;
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+    <div className="rounded-lg border border-slate-200 bg-white p-2 shadow-sm">
       <div className="mx-auto max-w-full overflow-hidden rounded-lg border border-slate-200" style={{ width: 260 }}>
         <Chessboard position={boardFen} arePiecesDraggable={false} boardWidth={260} customDarkSquareStyle={{ backgroundColor: "#b58863" }} customLightSquareStyle={{ backgroundColor: "#f0d9b5" }} />
       </div>
-      <div className="mt-2 break-all rounded-lg bg-slate-50 px-2 py-1 font-mono text-[11px] text-slate-500">{fen}</div>
     </div>
   );
 }
 
 function QuizPreview({ activity, answers, setAnswers, checked }: { activity: any; answers: Record<string, string>; setAnswers: (next: Record<string, string>) => void; checked: boolean }) {
+  const items = activity.items || [];
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [savedKey, setSavedKey] = useState("");
+  const item = items[Math.min(activeIndex, Math.max(0, items.length - 1))];
+  if (!item) return <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-800">No questions were added for this activity.</div>;
+  const answerKey = key(activity._id || activity.title, item.id);
+  const selected = answers[answerKey] || "";
+  const correct = (item.options || []).some((option: any) => option.id === selected && option.correct);
+  const hasOptions = (item.options || []).length > 0;
+  const submitLabel = activeIndex >= items.length - 1 ? (savedKey === answerKey ? "Answer Saved" : "Save Answer") : "Submit Answer";
+
+  function submitAnswer() {
+    if (!selected) return;
+    if (activeIndex >= items.length - 1) {
+      setSavedKey(answerKey);
+      return;
+    }
+    setSavedKey("");
+    setActiveIndex((value) => Math.min(items.length - 1, value + 1));
+  }
+
   return (
-    <div className="space-y-3">
-      {(activity.items || []).map((item: any, index: number) => {
-        const answerKey = key(activity._id || activity.title, item.id);
-        const selected = answers[answerKey] || "";
-        const correct = (item.options || []).some((option: any) => option.id === selected && option.correct);
-        return (
-          <div key={item.id || index} className="rounded-xl border border-slate-200 p-3">
-            <div className="mb-2 flex items-center justify-between"><b className="text-brand">Question {index + 1}</b>{checked && <span className={`rounded-full px-2 py-1 text-xs font-bold ${correct ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>{correct ? "Correct" : "Review"}</span>}</div>
-            {itemFen(item) && <FenBox fen={itemFen(item)} />}
-            <div className="mt-2 rounded-xl bg-slate-50 p-4 font-semibold text-slate-900">{item.question}</div>
-            <div className="mt-2 grid gap-2">
-              {(item.options || []).map((option: any) => (
-                <label key={option.id} className={`flex items-center gap-3 rounded-xl border p-3 text-sm font-semibold ${selected === option.id ? "border-brand bg-brand/5" : "border-slate-200"}`}>
-                  <input type="radio" checked={selected === option.id} onChange={() => setAnswers({ ...answers, [answerKey]: option.id })} />
-                  {option.text}
-                </label>
-              ))}
-            </div>
+    <div className="rounded-lg border border-slate-200 p-3">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <b className="text-sm text-brand">Question {activeIndex + 1} of {items.length}</b>
+        <div className="flex items-center gap-2">
+          {checked && <span className={`rounded-full px-2 py-1 text-xs font-bold ${correct ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>{correct ? "Correct" : "Review"}</span>}
+          <button type="button" className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-bold text-slate-600 disabled:cursor-not-allowed disabled:text-slate-300" onClick={() => setActiveIndex((value) => Math.max(0, value - 1))} disabled={activeIndex === 0}>Previous</button>
+        </div>
+      </div>
+      <div className={`grid gap-3 ${itemFen(item) ? "lg:grid-cols-[280px_minmax(0,1fr)] lg:items-start" : ""}`}>
+        {itemFen(item) && <FenBox fen={itemFen(item)} />}
+        <div className="min-w-0">
+          <div className="rounded-lg bg-slate-50 p-3 text-sm font-semibold text-slate-900">{item.question}</div>
+          <div className="mt-2 grid gap-2">
+            {hasOptions ? (item.options || []).map((option: any) => (
+              <label key={option.id} className={`flex items-center gap-3 rounded-lg border p-2.5 text-sm font-semibold ${selected === option.id ? "border-brand bg-brand/5" : "border-slate-200"}`}>
+                <input type="radio" checked={selected === option.id} onChange={() => {
+                  setSavedKey("");
+                  setAnswers({ ...answers, [answerKey]: option.id });
+                }} />
+                <span className="min-w-0">{option.text}</span>
+              </label>
+            )) : <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-800">No options were added for this MCQ.</div>}
           </div>
-        );
-      })}
+          <button
+            type="button"
+            disabled={!selected}
+            onClick={submitAnswer}
+            className="mt-3 rounded-lg bg-brand px-4 py-2 text-xs font-black text-white shadow-sm disabled:cursor-not-allowed disabled:bg-slate-300"
+          >
+            {submitLabel}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

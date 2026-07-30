@@ -78,7 +78,7 @@ function previewFen(fen: string) {
         chess.load(normalizedFen, { skipValidation: true });
         return chess.fen();
       } catch {
-        // Keep the original FEN visible below when it cannot be rendered.
+        // Fall through to a friendly render error.
       }
     }
   }
@@ -186,12 +186,12 @@ export default function HomeworkAttemptPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-5 text-slate-950 sm:px-6 lg:px-8">
-      <header className="mb-5 rounded-3xl bg-brand p-5 text-white shadow-xl shadow-brand-900/20">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+      <header className="mb-3 rounded-xl bg-brand px-4 py-3 text-white shadow-lg shadow-brand-900/15">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <div className="text-xs font-bold uppercase tracking-[0.18em] text-accent">Assignment Attempt</div>
-            <h1 className="mt-1 text-3xl font-black">{hw.title}</h1>
-            {hw.description && <p className="mt-2 max-w-3xl text-sm text-white/75">{hw.description}</p>}
+            <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-accent">Assignment Attempt</div>
+            <h1 className="mt-0.5 text-xl font-black">{hw.title}</h1>
+            {hw.description && <p className="mt-1 max-w-3xl text-xs text-white/75">{hw.description}</p>}
           </div>
           <div className="grid grid-cols-2 gap-2 text-center">
             <MiniStat label="Timer" value={timeLimit ? formatTime(timeLeft) : formatTime(elapsed)} />
@@ -235,12 +235,12 @@ export default function HomeworkAttemptPage() {
 function CompletedReport({ hw, activities, submission }: { hw: any; activities: any[]; submission: any }) {
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-5 text-slate-950 sm:px-6 lg:px-8">
-      <header className="mb-5 rounded-3xl bg-brand p-5 text-white shadow-xl shadow-brand-900/20">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+      <header className="mb-3 rounded-xl bg-brand px-4 py-3 text-white shadow-lg shadow-brand-900/15">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <div className="text-xs font-bold uppercase tracking-[0.18em] text-accent">Completed Assignment</div>
-            <h1 className="mt-1 text-3xl font-black">{hw.title}</h1>
-            <p className="mt-2 text-sm text-white/75">Review your report, answers, correct solutions, and boards.</p>
+            <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-accent">Completed Assignment</div>
+            <h1 className="mt-0.5 text-xl font-black">{hw.title}</h1>
+            <p className="mt-1 text-xs text-white/75">Review your report, answers, correct solutions, and boards.</p>
           </div>
           <div className="grid grid-cols-2 gap-2 text-center md:grid-cols-4">
             <MiniStat label="Score" value={submission.totalScore ?? 0} />
@@ -447,6 +447,7 @@ function ActivitySection({ activity, index, locked, quizAnswers, setQuizAnswers,
           onPrevious={() => setActiveItemIndex((value) => Math.max(0, value - 1))}
           onNext={goNext}
           onSkip={skipCurrent}
+          showNext={activity.type !== "quiz"}
         />
       )}
 
@@ -460,8 +461,15 @@ function ActivitySection({ activity, index, locked, quizAnswers, setQuizAnswers,
           value={quizAnswers[key(activity._id, activeItem.id)] || ""}
           onChange={(optionId: string) => {
             setQuizAnswers((current: any) => ({ ...current, [key(activity._id, activeItem.id)]: optionId }));
-            window.setTimeout(goNext, 250);
           }}
+          onSubmitAnswer={() => {
+            if (activeItemIndex >= items.length - 1) {
+              toast.success("Answer saved. Submit assignment when done.");
+              return;
+            }
+            goNext();
+          }}
+          isLast={activeItemIndex >= items.length - 1}
         />
       )}
 
@@ -495,46 +503,60 @@ function ActivitySection({ activity, index, locked, quizAnswers, setQuizAnswers,
   );
 }
 
-function ItemPager({ current, total, timeLabel, onPrevious, onNext, onSkip }: { current: number; total: number; timeLabel: string; onPrevious: () => void; onNext: () => void; onSkip: () => void }) {
+function ItemPager({ current, total, timeLabel, onPrevious, onNext, onSkip, showNext = true }: { current: number; total: number; timeLabel: string; onPrevious: () => void; onNext: () => void; onSkip: () => void; showNext?: boolean }) {
   return (
-    <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+    <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
       <div>
-        <div className="text-sm font-bold text-slate-700">Item {current + 1} of {total}</div>
+        <div className="text-xs font-bold text-slate-700">Item {current + 1} of {total}</div>
         <div className="text-xs font-semibold text-slate-500">{timeLabel}</div>
       </div>
       <div className="flex items-center gap-2">
-        <button type="button" className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 disabled:cursor-not-allowed disabled:text-slate-300" onClick={onPrevious} disabled={current === 0}>
+        <button type="button" className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 disabled:cursor-not-allowed disabled:text-slate-300" onClick={onPrevious} disabled={current === 0}>
           <ChevronLeft size={15} /> Previous
         </button>
-        <button type="button" className="inline-flex items-center rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-700" onClick={onSkip}>
+        <button type="button" className="inline-flex items-center rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700" onClick={onSkip}>
           Skip
         </button>
-        <button type="button" className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 disabled:cursor-not-allowed disabled:text-slate-300" onClick={onNext} disabled={current >= total - 1}>
-          Next <ChevronRight size={15} />
-        </button>
+        {showNext && (
+          <button type="button" className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 disabled:cursor-not-allowed disabled:text-slate-300" onClick={onNext} disabled={current >= total - 1}>
+            Next <ChevronRight size={15} />
+          </button>
+        )}
       </div>
     </div>
   );
 }
 
-function McqQuestion({ activityId, item, index, value, onChange, locked }: any) {
+function McqQuestion({ item, index, value, onChange, onSubmitAnswer, locked, isLast }: any) {
   const fen = itemFen(item);
   return (
-    <div className="rounded-xl border border-slate-200 p-3">
+    <div className="rounded-lg border border-slate-200 p-3">
       <div className="mb-2 flex items-center justify-between">
-        <b className="text-brand">Question {index + 1}</b>
+        <b className="text-sm text-brand">Question {index + 1}</b>
         <span className="rounded-full bg-accent/30 px-2 py-1 text-xs font-bold text-brand">{item.points || 1} pts</span>
       </div>
-      {fen && <FenBox fen={fen} />}
-      <div className="mt-2 rounded-xl bg-slate-50 p-4 font-semibold text-slate-900">{item.question}</div>
-      <div className="mt-2 grid gap-2">
-        {(item.options || []).map((option: any) => (
-          <label key={option.id} className={`flex items-center gap-3 rounded-xl border p-3 text-sm font-semibold ${value === option.id ? "border-brand bg-brand/5" : "border-slate-200"}`}>
-            <input disabled={locked} type="radio" checked={value === option.id} onChange={() => onChange(option.id)} />
-            {option.text}
-          </label>
-        ))}
-        {!(item.options || []).length && <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-800">No options were added for this MCQ.</div>}
+      <div className={`grid gap-3 ${fen ? "lg:grid-cols-[280px_minmax(0,1fr)] lg:items-start" : ""}`}>
+        {fen && <FenBox fen={fen} />}
+        <div className="min-w-0">
+          <div className="rounded-lg bg-slate-50 p-3 text-sm font-semibold text-slate-900">{item.question}</div>
+          <div className="mt-2 grid gap-2">
+            {(item.options || []).map((option: any) => (
+              <label key={option.id} className={`flex items-center gap-3 rounded-lg border p-2.5 text-sm font-semibold ${value === option.id ? "border-brand bg-brand/5" : "border-slate-200"}`}>
+                <input disabled={locked} type="radio" checked={value === option.id} onChange={() => onChange(option.id)} />
+                <span className="min-w-0">{option.text}</span>
+              </label>
+            ))}
+            {!(item.options || []).length && <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-800">No options were added for this MCQ.</div>}
+          </div>
+          <button
+            type="button"
+            disabled={locked || !value}
+            onClick={onSubmitAnswer}
+            className="mt-3 rounded-lg bg-brand px-4 py-2 text-xs font-black text-white shadow-sm disabled:cursor-not-allowed disabled:bg-slate-300"
+          >
+            {isLast ? "Save Answer" : "Submit Answer"}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -769,10 +791,10 @@ function FenBox({ fen }: { fen: string }) {
   const boardFen = previewFen(fen);
   const boardWidth = useBoardWidth(260, 200);
   if (!boardFen) {
-    return <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 font-mono text-xs text-slate-700">{fen}</div>;
+    return <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-800">This position could not be shown on the board.</div>;
   }
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+    <div className="rounded-lg border border-slate-200 bg-white p-2 shadow-sm">
       <div className="mx-auto max-w-full overflow-hidden rounded-lg border border-slate-200" style={{ width: boardWidth }}>
         <Chessboard
           position={boardFen}
@@ -782,16 +804,15 @@ function FenBox({ fen }: { fen: string }) {
           customLightSquareStyle={{ backgroundColor: "#f0d9b5" }}
         />
       </div>
-      <div className="mt-2 break-all rounded-lg bg-slate-50 px-2 py-1 font-mono text-[11px] text-slate-500">{fen}</div>
     </div>
   );
 }
 
 function MiniStat({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="rounded-2xl bg-white/10 px-4 py-3">
-      <div className="text-lg font-black text-accent">{value}</div>
-      <div className="text-[11px] font-bold uppercase tracking-wide text-white/60">{label}</div>
+    <div className="rounded-lg bg-white/10 px-3 py-2">
+      <div className="text-sm font-black text-accent">{value}</div>
+      <div className="text-[10px] font-bold uppercase tracking-wide text-white/60">{label}</div>
     </div>
   );
 }

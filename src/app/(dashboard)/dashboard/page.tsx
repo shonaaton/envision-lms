@@ -22,14 +22,13 @@ import {
 } from "@/lib/classroomSessions";
 import { summarizeCoachSessions } from "@/lib/teachingStats";
 import JoinScheduledSessionButton from "@/components/classroom/JoinScheduledSessionButton";
-import { DataPanel, EmptyState as CommonEmptyState, FilterBar, PageHeader, StatCard as CommonStatCard } from "@/components/common/PageHeader";
+import { DataPanel, EmptyState as CommonEmptyState, FilterBar } from "@/components/common/PageHeader";
 import { bookingFeatureNameForAccount } from "@/lib/bookingLabels";
 import { demoStudentExperience } from "@/lib/demoStudentExperience";
 import { inactiveStudentMessage } from "@/lib/studentAccess";
 import { unstable_noStore as noStore } from "next/cache";
 import {
   Activity as ActivityIcon,
-  ArrowRight,
   BarChart3,
   BellRing,
   BookOpen,
@@ -190,7 +189,28 @@ function SectionTitle({ icon: Icon, title, subtitle }: { icon: any; title: strin
 }
 
 function StatCard({ label, value, note, icon: Icon, tone = "purple" }: { label: string; value: string | number; note: string; icon: any; tone?: "purple" | "green" | "amber" | "blue" | "rose" }) {
-  return <CommonStatCard label={label} value={value} note={note} icon={Icon} tone={tone} />;
+  const tones = {
+    purple: "bg-brand/10 text-brand",
+    green: "bg-emerald-50 text-emerald-700",
+    amber: "bg-amber-50 text-amber-700",
+    blue: "bg-blue-50 text-blue-700",
+    rose: "bg-rose-50 text-rose-700",
+  };
+
+  return (
+    <div className="min-h-[86px] rounded-xl border border-slate-200 bg-white p-3 shadow-[0_10px_28px_rgba(15,23,42,0.08)] transition hover:-translate-y-0.5 hover:border-brand/20 hover:shadow-brand/10 sm:p-4">
+      <div className="flex h-full items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="truncate text-[10px] font-semibold text-slate-500 sm:text-xs">{label}</div>
+          <div className="mt-1 truncate text-xl font-black text-slate-950 sm:text-2xl">{value}</div>
+          <div className="mt-0.5 truncate text-[10px] text-slate-500 sm:text-xs">{note}</div>
+        </div>
+        <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-lg ${tones[tone]} sm:h-11 sm:w-11`}>
+          <Icon size={18} />
+        </span>
+      </div>
+    </div>
+  );
 }
 
 function MiniBarChart({ points, barClassName }: { points: Array<{ label: string; value: number; height: number }>; barClassName: string }) {
@@ -229,19 +249,12 @@ function InfoTile({ label, value }: { label: string; value: string | number }) {
 
 function QuickLinkCard({ href, title, subtitle, icon: Icon }: { href: string; title: string; subtitle: string; icon: any }) {
   return (
-    <Link href={href} className="group rounded-lg border border-slate-200 bg-slate-50 p-4 transition hover:-translate-y-0.5 hover:border-brand/20 hover:bg-white hover:shadow-lg hover:shadow-brand/10">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="font-black text-slate-950">{title}</div>
-          <div className="mt-1 text-sm text-slate-600">{subtitle}</div>
-        </div>
-        <span className="flex h-10 w-10 items-center justify-center rounded-md bg-brand/10 text-brand">
-          <Icon size={18} />
-        </span>
-      </div>
-      <div className="mt-3 inline-flex items-center gap-2 text-sm font-bold text-brand">
-        Open <ArrowRight size={14} className="transition group-hover:translate-x-0.5" />
-      </div>
+    <Link href={href} className="group flex min-h-[116px] flex-col items-center justify-center rounded-xl border border-slate-200 bg-white p-3 text-center shadow-[0_10px_28px_rgba(15,23,42,0.08)] transition hover:-translate-y-0.5 hover:border-brand/20 hover:shadow-brand/10">
+      <span className="grid h-10 w-10 place-items-center rounded-lg bg-brand/10 text-brand transition group-hover:bg-brand group-hover:text-white">
+        <Icon size={18} />
+      </span>
+      <div className="mt-2 text-xs font-black leading-tight text-slate-950 sm:text-sm">{title}</div>
+      <div className="mt-1 line-clamp-2 text-[11px] leading-snug text-slate-500 sm:text-xs">{subtitle}</div>
     </Link>
   );
 }
@@ -259,7 +272,30 @@ function DashboardHero({
   icon: any;
   children?: React.ReactNode;
 }) {
-  return <PageHeader eyebrow={eyebrow} title={title} subtitle={subtitle} icon={Icon}>{children}</PageHeader>;
+  return (
+    <div className="space-y-3">
+      <section className="overflow-hidden rounded-2xl border border-brand/10 bg-gradient-to-br from-brand via-purple-800 to-brand-900 p-4 text-white shadow-[0_18px_44px_rgba(90,19,114,0.22)] sm:p-5">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-accent">
+              <Icon size={14} />
+              {eyebrow}
+            </div>
+            <h1 className="mt-3 text-2xl font-black leading-tight text-white sm:text-3xl">{title}</h1>
+            <div className="mt-2 max-w-3xl text-sm leading-6 text-white/80">{subtitle}</div>
+          </div>
+          <span className="hidden h-12 w-12 shrink-0 place-items-center rounded-xl bg-white/10 text-accent sm:grid">
+            <Icon size={22} />
+          </span>
+        </div>
+      </section>
+      {children && (
+        <section className="rounded-2xl border border-brand/10 bg-white p-3 text-slate-950 shadow-[0_12px_32px_rgba(90,19,114,0.08)]">
+          {children}
+        </section>
+      )}
+    </div>
+  );
 }
 
 function DashboardPanel({
@@ -763,10 +799,10 @@ async function StudentDashboard({ userId }: { userId: string }) {
         title={`Welcome back, ${(student as any)?.name || "Student"}`}
         subtitle={
           <>
-            Level: <span className="font-semibold text-slate-900">{(student as any)?.batches?.[0]?.level || "Not set"}</span>
-            <span className="mx-2 text-slate-300">-</span>
-            Batch: <span className="font-semibold text-slate-900">{(student as any)?.batches?.[0]?.name || "Not assigned"}</span>
-            <span className="mx-2 text-slate-300">-</span>
+            Level: <span className="font-semibold text-white">{(student as any)?.batches?.[0]?.level || "Not set"}</span>
+            <span className="mx-2 text-white/40">-</span>
+            Batch: <span className="font-semibold text-white">{(student as any)?.batches?.[0]?.name || "Not assigned"}</span>
+            <span className="mx-2 text-white/40">-</span>
             {formatDate(new Date())}
           </>
         }
@@ -780,7 +816,7 @@ async function StudentDashboard({ userId }: { userId: string }) {
           </div>
       </DashboardHero>
 
-      <section className="rounded-lg border border-brand/10 bg-white p-4 shadow-sm shadow-brand/10">
+      <section className="rounded-2xl border border-brand/10 bg-white p-4 shadow-[0_12px_32px_rgba(90,19,114,0.08)]">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="grid flex-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <InfoTile label="Next Class" value={nextSession ? formatJoinWindowLabel(nextSession.session, now) : "No class scheduled"} />
@@ -788,10 +824,20 @@ async function StudentDashboard({ userId }: { userId: string }) {
             <InfoTile label="Practice" value={currentStreak ? `${currentStreak} day streak` : "Ready"} />
             <InfoTile label="Fees Due" value={feesDue ? money(feesDue) : "Clear"} />
           </div>
-          <Link href={primaryStudentAction.href} className="btn-primary shrink-0">
+          <Link href={primaryStudentAction.href} className="btn-primary w-full shrink-0 justify-center sm:w-auto">
             <PrimaryStudentActionIcon size={17} />
             {primaryStudentAction.label}
           </Link>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-brand/10 bg-white p-4 shadow-[0_12px_32px_rgba(90,19,114,0.08)]">
+        <SectionTitle icon={Zap} title="Quick Actions" subtitle="The most-used student tools, easy to tap on mobile" />
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <QuickLinkCard href="/homework" title="Assignments" subtitle={`${pendingHomework.length} pending`} icon={ClipboardList} />
+          <QuickLinkCard href="/play/tactics-trainer" title="Tactics" subtitle="Solve puzzles" icon={Target} />
+          <QuickLinkCard href="/ask-coach" title="Ask Coach" subtitle={`${unreadCoachReplies} unread`} icon={MessageSquare} />
+          <QuickLinkCard href="/fees" title="Fees" subtitle={feesDue ? money(feesDue) : "Clear"} icon={WalletCards} />
         </div>
       </section>
 
@@ -799,7 +845,7 @@ async function StudentDashboard({ userId }: { userId: string }) {
         <div className="rounded-[28px] border border-brand/10 bg-[linear-gradient(135deg,rgba(90,19,114,1),rgba(124,31,162,0.92))] p-6 text-white shadow-[0_24px_60px_rgba(90,19,114,0.18)]">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <div className="inline-flex items-center gap-2 rounded-full bg-white/12 px-3 py-1 text-[11px] font-black uppercase tracking-[0.18em] text-accent">
+              <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-[11px] font-black uppercase tracking-[0.18em] text-accent">
                 <BellRing size={14} />
                 Featured Activity
               </div>
@@ -810,7 +856,7 @@ async function StudentDashboard({ userId }: { userId: string }) {
                   : "Your next class, homework, tournaments, and training challenges will show up here."}
               </p>
             </div>
-            <span className="rounded-full bg-white/12 px-4 py-2 text-sm font-bold text-white/90">
+            <span className="rounded-full bg-white/10 px-4 py-2 text-sm font-bold text-white/90">
               {nextSession ? formatJoinWindowLabel(nextSession.session, now) : "No class scheduled"}
             </span>
           </div>
@@ -1091,6 +1137,16 @@ async function CoachDashboard({ userId, searchParams }: { userId: string; search
             <StatCard label="Students" value={teaching.totalStudentsTaught || new Set(classrooms.flatMap((item: any) => (item.students || []).map((student: any) => objectId(student)))).size} note={`${teaching.attendancePercentage}% completion`} icon={Users} tone="green" />
           </div>
       </DashboardHero>
+
+      <section className="rounded-2xl border border-brand/10 bg-white p-4 shadow-[0_12px_32px_rgba(90,19,114,0.08)]">
+        <SectionTitle icon={Zap} title="Quick Actions" subtitle="Fast coach tasks without digging through menus" />
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <QuickLinkCard href="/classrooms" title="Classes" subtitle={`${sessions.length} upcoming`} icon={Calendar} />
+          <QuickLinkCard href="/classrooms" title="Students" subtitle={`${teaching.totalStudentsTaught || new Set(classrooms.flatMap((item: any) => (item.students || []).map((student: any) => objectId(student)))).size} assigned`} icon={Users} />
+          <QuickLinkCard href="/homework" title="Homework" subtitle={`${homework.length} active`} icon={ClipboardList} />
+          <QuickLinkCard href="/ask-coach" title="Ask Coach" subtitle="Student messages" icon={MessageSquare} />
+        </div>
+      </section>
 
       <section className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
         <div className="rounded-[28px] border border-brand/10 bg-white p-5 shadow-[0_20px_50px_rgba(90,19,114,0.10)]">
@@ -1567,8 +1623,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
     <div className="space-y-5 text-slate-950">
       <DashboardHero
         eyebrow="Admin Workspace"
-        title="Academy Command Center"
-        subtitle={`Latest academy performance from ${formatDate(from)} to ${formatDate(to)}.`}
+        title="Welcome to Admin Dashboard"
+        subtitle={`Manage academy operations from one central view. Showing ${formatDate(from)} to ${formatDate(to)}.`}
         icon={SlidersHorizontal}
       >
         <FilterBar method="get" className="sm:grid-cols-2 lg:grid-cols-6 xl:grid-cols-[110px_140px_130px_140px_140px_minmax(160px,1fr)_auto_auto]">
@@ -1617,6 +1673,16 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
           </div>
         </FilterBar>
       </DashboardHero>
+
+      <section className="rounded-2xl border border-brand/10 bg-white p-4 shadow-[0_12px_32px_rgba(90,19,114,0.08)]">
+        <SectionTitle icon={Zap} title="Quick Actions" subtitle="Common admin tasks made thumb-friendly" />
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <QuickLinkCard href="/admin/users" title="Add Student" subtitle="Students and users" icon={Users} />
+          <QuickLinkCard href="/instructor/classrooms/new" title="Schedule Class" subtitle="Create a session" icon={Calendar} />
+          <QuickLinkCard href="/admin/users" title="Create Batch" subtitle="Batches and roles" icon={UserCheck} />
+          <QuickLinkCard href="/attendance" title="Attendance" subtitle="Check records" icon={CheckCircle2} />
+        </div>
+      </section>
 
       <nav className="flex gap-2 overflow-x-auto rounded-lg border border-slate-200 bg-white p-1 shadow-sm shadow-brand/5" aria-label="Admin dashboard sections">
         {adminTabs.map((tab) => {

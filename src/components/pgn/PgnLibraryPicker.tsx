@@ -56,6 +56,7 @@ export default function PgnLibraryPicker({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [mobilePanel, setMobilePanel] = useState<"folders" | "games">("folders");
 
   useEffect(() => {
     if (!open) return;
@@ -73,6 +74,7 @@ export default function PgnLibraryPicker({
       setSelectedIds([]);
       setQuery("");
       setActiveFolder("");
+      setMobilePanel("folders");
     }
   }, [open]);
 
@@ -103,7 +105,11 @@ export default function PgnLibraryPicker({
     const q = query.trim().toLowerCase();
     const folder = normalizeFolderPath(activeFolder);
     const sorted = games
-      .filter((game) => normalizeFolderPath(game.folder) === folder)
+      .filter((game) => {
+        const gameFolder = normalizeFolderPath(game.folder);
+        if (!folder) return true;
+        return gameFolder === folder;
+      })
       .filter((game) => {
         if (!q) return true;
         return [game.title, game.white, game.black, game.event, game.opening, game.eco, game.date, game.result]
@@ -129,6 +135,11 @@ export default function PgnLibraryPicker({
     setSelectedIds((current) => current.includes(game._id) ? current.filter((id) => id !== game._id) : [...current, game._id]);
   }
 
+  function openFolder(path: string) {
+    setActiveFolder(path);
+    setMobilePanel("games");
+  }
+
   function confirmSelection(game?: PgnLibraryGame) {
     const selected = game ? [game] : games.filter((item) => selectedIds.includes(item._id));
     if (!selected.length) return;
@@ -139,9 +150,9 @@ export default function PgnLibraryPicker({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/50 p-3 backdrop-blur-sm">
-      <section role="dialog" aria-modal="true" aria-label={title} className="flex max-h-[88vh] w-full max-w-5xl flex-col overflow-hidden rounded-lg bg-white text-slate-950 shadow-2xl">
-        <header className="flex flex-col gap-3 border-b border-slate-200 p-4 md:flex-row md:items-center md:justify-between">
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/50 p-2 backdrop-blur-sm sm:p-3">
+      <section role="dialog" aria-modal="true" aria-label={title} className="flex h-[calc(100dvh-1rem)] w-full max-w-5xl flex-col overflow-hidden rounded-lg bg-white text-slate-950 shadow-2xl sm:max-h-[88vh] sm:h-auto">
+        <header className="flex flex-col gap-3 border-b border-slate-200 p-3 sm:p-4 md:flex-row md:items-center md:justify-between">
           <div className="min-w-0">
             <h2 className="flex items-center gap-2 text-lg font-semibold"><BookOpen size={18} /> {title}</h2>
             <p className="mt-1 text-sm text-slate-500">Browse the master PGN library by folder, then load one game or a selected collection.</p>
@@ -149,20 +160,39 @@ export default function PgnLibraryPicker({
           <button type="button" onClick={onClose} className="grid h-10 w-10 place-items-center rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50" aria-label="Close PGN library picker">
             <X size={18} />
           </button>
+          <div className="grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1 md:hidden">
+            {[
+              { id: "folders" as const, label: "Folders", count: visibleFolders.length },
+              { id: "games" as const, label: "PGNs", count: visibleGames.length },
+            ].map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setMobilePanel(item.id)}
+                className={cn(
+                  "flex min-h-9 items-center justify-center gap-1 rounded-md px-2 text-xs font-black transition",
+                  mobilePanel === item.id ? "bg-white text-purple-800 shadow-sm" : "text-slate-600"
+                )}
+              >
+                {item.label}
+                <span className="rounded-full bg-slate-200 px-1.5 py-0.5 text-[10px] text-slate-600">{item.count}</span>
+              </button>
+            ))}
+          </div>
         </header>
 
         <div className="grid min-h-0 flex-1 md:grid-cols-[280px_minmax(0,1fr)]">
-          <aside className="min-h-0 border-b border-slate-200 p-3 md:border-b-0 md:border-r">
+          <aside className={cn("min-h-0 border-b border-slate-200 p-3 md:block md:border-b-0 md:border-r", mobilePanel === "folders" ? "block" : "hidden")}>
             <label className="relative block">
               <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input value={query} onChange={(event) => setQuery(event.target.value)} className="h-10 w-full rounded-md border border-slate-200 pl-9 pr-3 text-sm outline-none focus:border-purple-500 focus:ring-4 focus:ring-purple-100" placeholder="Search library" />
             </label>
-            <button type="button" onClick={() => setActiveFolder("")} className={cn("mt-3 flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-semibold", !activeFolder ? "bg-purple-50 text-purple-800" : "hover:bg-slate-50")}>
+            <button type="button" onClick={() => { setActiveFolder(""); setMobilePanel("games"); }} className={cn("mt-3 flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-semibold", !activeFolder ? "bg-purple-50 text-purple-800" : "hover:bg-slate-50")}>
               <BookOpen size={16} /> Library Root
             </button>
             <div className="mt-2 max-h-[45vh] space-y-1 overflow-y-auto pr-1">
               {visibleFolders.map((folder) => (
-                <button key={folder.path} type="button" onClick={() => setActiveFolder(folder.path)} className="flex w-full items-center justify-between gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-slate-50">
+                <button key={folder.path} type="button" onClick={() => openFolder(folder.path)} className="flex w-full items-center justify-between gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-slate-50">
                   <span className="inline-flex min-w-0 items-center gap-2">
                     <Folder size={16} className="flex-none text-amber-500" />
                     <span className="truncate">{folder.name}</span>
@@ -174,7 +204,7 @@ export default function PgnLibraryPicker({
             </div>
           </aside>
 
-          <main className="flex min-h-0 flex-col p-3">
+          <main className={cn("min-h-0 flex-col p-3 md:flex", mobilePanel === "games" ? "flex" : "hidden")}>
             <div className="mb-3 flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex min-w-0 flex-wrap items-center gap-1 text-sm">
                 {activeFolder && (
@@ -236,7 +266,7 @@ export default function PgnLibraryPicker({
                 </div>
               ) : (
                 <div className="flex min-h-52 items-center justify-center rounded-lg border border-dashed border-slate-200 text-center text-sm text-slate-500">
-                  No PGNs found in this folder.
+                  {visibleFolders.length && !activeFolder && !query.trim() ? "Choose a folder to view the PGNs inside." : "No PGNs found in this view."}
                 </div>
               )}
             </div>

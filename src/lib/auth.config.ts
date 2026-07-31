@@ -35,7 +35,7 @@ export const authConfig = {
     },
     authorized({ auth, request: { nextUrl } }) {
       const isLoggedIn = !!auth?.user;
-      const role = (auth?.user as any)?.role as "student" | "instructor" | "admin" | undefined;
+      const role = (auth?.user as any)?.role as "student" | "instructor" | "admin" | "sub-admin" | undefined;
       const accountStatus = (auth?.user as any)?.accountStatus as string | undefined;
       const isInactiveStudent = role === "student" && (auth?.user as any)?.isActive === false;
 
@@ -90,14 +90,14 @@ export const authConfig = {
         )
       ) return Response.redirect(new URL("/dashboard", nextUrl));
       if (accountStatus === "demo" && !demoAllowed) return Response.redirect(new URL("/dashboard", nextUrl));
-      if (isAdminRoute && role !== "admin") return Response.redirect(new URL("/dashboard", nextUrl));
-      if (isInstructorRoute && role !== "instructor" && role !== "admin")
+      if (isAdminRoute && role !== "admin" && role !== "sub-admin") return Response.redirect(new URL("/dashboard", nextUrl));
+      if (isInstructorRoute && role !== "instructor" && role !== "admin" && role !== "sub-admin")
         return Response.redirect(new URL("/dashboard", nextUrl));
       if (isPgnRoute && role === "student") return Response.redirect(new URL("/dashboard", nextUrl));
       if (isAnalysisRoute && role === "student") return Response.redirect(new URL("/dashboard", nextUrl));
       if (isPlayVsComputerRoute && role === "instructor") return Response.redirect(new URL("/dashboard", nextUrl));
       if (isFeesRoute && role === "instructor") return Response.redirect(new URL("/dashboard", nextUrl));
-      if (isTournamentCreateRoute && role !== "admin") return Response.redirect(new URL("/tournaments", nextUrl));
+      if (isTournamentCreateRoute && role !== "admin" && role !== "sub-admin") return Response.redirect(new URL("/tournaments", nextUrl));
       return true;
     },
   },

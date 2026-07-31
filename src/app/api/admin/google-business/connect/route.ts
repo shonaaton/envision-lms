@@ -1,13 +1,13 @@
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireAdminApiAccess } from "@/lib/adminApiAccess";
 import { googleBusinessOAuthUrl } from "@/lib/googleBusinessAuth";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
-  const session = await auth();
-  if ((session?.user as any)?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+export async function GET(req: Request) {
+  const session = await requireAdminApiAccess(req, "manage");
+  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const state = randomUUID();
   const response = NextResponse.redirect(googleBusinessOAuthUrl(state));

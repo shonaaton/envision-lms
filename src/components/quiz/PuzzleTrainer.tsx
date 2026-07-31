@@ -201,7 +201,7 @@ export default function PuzzleTrainer({ mode = "tactics" }: PuzzleTrainerProps) 
     const resize = () => {
       const isMobile = window.innerWidth < 768;
       const availableWidth = element.clientWidth - (isMobile ? 42 : 96);
-      const availableHeight = isMobile ? window.innerHeight - 260 : element.clientHeight - 70;
+      const availableHeight = isMobile ? window.innerHeight - 330 : element.clientHeight - 70;
       setBoardSize(Math.max(isMobile ? 245 : 280, Math.min(isMobile ? window.innerWidth - 54 : 560, availableWidth, availableHeight)));
     };
     resize();
@@ -353,31 +353,33 @@ export default function PuzzleTrainer({ mode = "tactics" }: PuzzleTrainerProps) 
 
   if (!difficulty || (isKingHunt && !mateIn)) {
     return (
-      <div className="flex min-h-[calc(100vh-92px)] items-center justify-center bg-[linear-gradient(180deg,#fffdf6_0%,#fff_45%,#faf8fc_100%)] p-5 text-slate-950">
-        <section className="w-full max-w-5xl rounded-2xl border border-slate-200 bg-white p-6 shadow-xl shadow-brand/10">
+      <div className="flex min-h-[calc(100dvh-76px)] items-center justify-center bg-[linear-gradient(180deg,#fffdf6_0%,#fff_45%,#faf8fc_100%)] p-3 text-slate-950 sm:p-5">
+        <section className="w-full max-w-5xl rounded-2xl border border-slate-200 bg-white p-4 shadow-xl shadow-brand/10 sm:p-6">
           <div className="mx-auto max-w-2xl text-center">
             <div className="inline-flex items-center gap-2 rounded-full bg-amber-100 px-3 py-1 text-[11px] font-black uppercase tracking-[0.18em] text-amber-700">
               {isKingHunt ? <Target size={14} /> : <Crosshair size={14} />} {isKingHunt ? "King Hunt" : "Tactics Trainer"}
             </div>
-            <h1 className="mt-4 text-3xl font-black text-brand">
-              {isKingHunt ? "Practice Checkmates in 1-5 Moves" : "Choose Your Puzzle Level"}
+            <h1 className="mt-3 text-2xl font-black text-brand sm:mt-4 sm:text-3xl">
+              {isKingHunt ? (mateIn ? "Choose Difficulty" : "Choose Checkmate Length") : "Choose Your Puzzle Level"}
             </h1>
             <p className="mt-2 text-sm text-slate-600">
               {isKingHunt
-                ? "Choose the checkmate length and a comfortable puzzle difficulty."
+                ? mateIn
+                  ? `Step 2 of 2: choose a level for Mate in ${mateIn}.`
+                  : "Step 1 of 2: choose the checkmate length first."
                 : "Pick a comfortable starting point. You can change the level whenever you request a new puzzle."}
             </p>
           </div>
-          {isKingHunt ? (
+          {isKingHunt && !mateIn ? (
             <div className="mx-auto mt-7 max-w-3xl">
               <div className="mb-3 text-center text-xs font-black uppercase tracking-[0.16em] text-slate-500">Choose Checkmate Length</div>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+              <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2 sm:grid-cols-5">
                 {mateOptions.map((moves) => (
                   <button
                     key={moves}
                     type="button"
                     onClick={() => setMateIn(moves)}
-                    className={`rounded-xl border px-3 py-3 text-sm font-black transition ${
+                    className={`min-h-12 rounded-xl border px-3 py-3 text-sm font-black transition ${
                       mateIn === moves
                         ? "border-brand bg-brand text-white shadow-lg shadow-brand/20"
                         : "border-purple-100 bg-purple-50 text-brand hover:border-brand hover:bg-white"
@@ -389,27 +391,34 @@ export default function PuzzleTrainer({ mode = "tactics" }: PuzzleTrainerProps) 
               </div>
             </div>
           ) : null}
-          <div className="mt-7 text-center text-xs font-black uppercase tracking-[0.16em] text-slate-500">Choose Difficulty</div>
-          <div className="mt-7 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-            {(Object.entries(difficultyLevels) as [DifficultyKey, (typeof difficultyLevels)[DifficultyKey]][]).map(([key, level], index) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => {
-                  if (isKingHunt && !mateIn) {
-                    toast.error("Please choose Mate in 1, 2, 3, 4, or 5 first.");
-                    return;
-                  }
-                  loadPuzzle(key, mateIn || undefined);
-                }}
-                className="group min-h-36 rounded-2xl border border-purple-100 bg-purple-50 p-4 text-left transition hover:-translate-y-1 hover:border-brand hover:bg-white hover:shadow-lg"
-              >
-                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brand text-sm font-black text-white">{index + 1}</span>
-                <span className="mt-4 block text-base font-black text-slate-950">{level.label}</span>
-                <span className="mt-1 block text-xs font-semibold text-slate-500">{level.rangeLabel}</span>
-              </button>
-            ))}
-          </div>
+          {!isKingHunt || mateIn ? (
+            <>
+              <div className="mt-6 flex items-center justify-center gap-3 text-center text-xs font-black uppercase tracking-[0.16em] text-slate-500 sm:mt-7">
+                {isKingHunt ? (
+                  <button type="button" onClick={() => setMateIn(null)} className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[10px] tracking-normal text-slate-600">
+                    Change Mate
+                  </button>
+                ) : null}
+                <span>Choose Difficulty</span>
+              </div>
+              <div className="mt-4 grid gap-2 sm:mt-7 sm:grid-cols-2 sm:gap-3 lg:grid-cols-5">
+                {(Object.entries(difficultyLevels) as [DifficultyKey, (typeof difficultyLevels)[DifficultyKey]][]).map(([key, level], index) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => loadPuzzle(key, mateIn || undefined)}
+                    className="group grid min-h-20 grid-cols-[34px_minmax(0,1fr)] items-center gap-3 rounded-xl border border-purple-100 bg-purple-50 p-3 text-left transition hover:border-brand hover:bg-white hover:shadow-lg sm:min-h-32 sm:block sm:rounded-2xl sm:p-4"
+                  >
+                    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brand text-sm font-black text-white">{index + 1}</span>
+                    <span className="min-w-0">
+                      <span className="block text-sm font-black text-slate-950 sm:mt-4 sm:text-base">{level.label}</span>
+                      <span className="mt-0.5 block text-xs font-semibold text-slate-500 sm:mt-1">{level.rangeLabel}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : null}
         </section>
       </div>
     );
@@ -438,20 +447,20 @@ export default function PuzzleTrainer({ mode = "tactics" }: PuzzleTrainerProps) 
 
       <main className="grid flex-1 gap-2 md:min-h-0 md:gap-4 xl:grid-cols-[280px_minmax(0,1fr)_290px]">
         <aside className="order-2 flex min-h-0 flex-col rounded-2xl border border-slate-200 bg-white p-3 shadow-lg shadow-brand/5 sm:p-4 xl:order-1">
-          <div className="rounded-2xl bg-brand p-3 text-white sm:p-4">
+          <div className="hidden rounded-2xl bg-brand p-3 text-white sm:p-4 md:block">
             <div className="text-[11px] font-black uppercase tracking-[0.16em] text-accent">Current Task</div>
             <div className="mt-1.5 text-xl font-black sm:text-2xl">{sideToMove} to move</div>
             <p className="mt-1.5 text-xs text-white/80 sm:text-sm">{message}</p>
           </div>
 
-          <div className="mt-3 grid grid-cols-2 gap-2">
+          <div className="mt-3 hidden grid-cols-2 gap-2 md:grid">
             <InfoTile label="Difficulty" value={difficultyLevels[difficulty].label} />
             {isKingHunt ? <InfoTile label="Challenge" value={`Mate in ${mateIn}`} /> : null}
             <InfoTile label="Hints" value={hintsUsed} />
             <InfoTile label="Moves" value={`${progress}/${totalPlayerMoves}`} />
           </div>
 
-          <div className="mt-4 flex flex-wrap gap-2">
+          <div className="grid grid-cols-3 gap-2 md:mt-4 md:flex md:flex-wrap">
             <button onClick={() => loadPuzzle()} className="btn-primary" disabled={loading || saving}>
               {loading ? <Loader2 size={16} className="animate-spin" /> : <RotateCcw size={16} />} New Puzzle
             </button>
@@ -475,7 +484,12 @@ export default function PuzzleTrainer({ mode = "tactics" }: PuzzleTrainerProps) 
 
         </aside>
 
-        <section ref={boardWrapRef} className="order-1 flex min-h-[330px] min-w-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 shadow-lg shadow-brand/5 sm:p-4 md:min-h-0 xl:order-2">
+        <section ref={boardWrapRef} className="order-1 flex min-h-[310px] min-w-0 flex-col items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 shadow-lg shadow-brand/5 sm:p-4 md:min-h-0 xl:order-2">
+          <div className="mb-2 grid w-full grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 md:hidden">
+            <div className="min-w-0 truncate text-sm font-black text-slate-950">{sideToMove} to move</div>
+            <div className="rounded-full bg-white px-2 py-1 text-xs font-black text-brand">{seconds}s</div>
+            <div className="rounded-full bg-white px-2 py-1 text-xs font-black text-slate-700">{progress}/{totalPlayerMoves}</div>
+          </div>
           {loading ? (
             <div className="flex items-center gap-2 text-sm font-bold text-slate-500"><Loader2 className="animate-spin" size={18} /> Loading puzzle...</div>
           ) : (

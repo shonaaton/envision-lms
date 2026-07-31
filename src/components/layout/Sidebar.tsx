@@ -41,7 +41,7 @@ import Logo from "./Logo";
 import { cn } from "@/lib/utils";
 import { bookingFeatureNameForAccount } from "@/lib/bookingLabels";
 
-type Role = "student" | "instructor" | "admin";
+type Role = "student" | "instructor" | "admin" | "sub-admin";
 type AccountStatus = "demo" | "enrolled" | "coach_applicant" | "approved" | "rejected";
 type FeatureStatus = "enabled" | "disabled" | "testing" | "coming_soon";
 type FeatureState = Record<string, { visible: boolean; status: FeatureStatus }>;
@@ -68,7 +68,7 @@ const sections: NavSection[] = [
     title: "Class Tools",
     items: [
       { href: "/classrooms", label: "Classrooms", icon: BookOpen, featureKey: "classrooms" },
-      { href: "/availability", label: "Available Times", icon: CalendarDays, featureKey: "calendar", roles: ["instructor", "admin"] },
+      { href: "/availability", label: "Available Times", icon: CalendarDays, featureKey: "calendar", roles: ["instructor", "admin", "sub-admin"] },
       { href: "/booking", label: "Booking", icon: CalendarDays, featureKey: "calendar", roles: ["student"] },
       { href: "/ask-coach", label: "Ask Coach", icon: MessageSquare, featureKey: "askCoach" },
       { href: "/homework", label: "Homework", icon: FileText, featureKey: "homework" },
@@ -82,18 +82,18 @@ const sections: NavSection[] = [
     id: "chess-tools",
     title: "Chess Tools",
     items: [
-      { href: "/pgn", label: "PGN Library", icon: Library, featureKey: "pgnLibrary", roles: ["instructor", "admin"] },
-      { href: "/analysis", label: "Analysis Board", icon: ListChecks, featureKey: "analysisBoard", roles: ["instructor", "admin"] },
-      { href: "/play/tactics-trainer", label: "Tactics Trainer", icon: Target, featureKey: "tacticsTrainer", roles: ["student", "admin"] },
-      { href: "/play/king-hunt", label: "King Hunt", icon: Crown, featureKey: "kingHunt", roles: ["student", "admin"] },
-      { href: "/play/square-trainer", label: "Square Trainer", icon: Crosshair, featureKey: "squareTrainer", roles: ["student", "admin"] },
-      { href: "/play/computer", label: "Play vs Computer", icon: Cpu, featureKey: "playVsComputer", roles: ["student", "admin"] },
+      { href: "/pgn", label: "PGN Library", icon: Library, featureKey: "pgnLibrary", roles: ["instructor", "admin", "sub-admin"] },
+      { href: "/analysis", label: "Analysis Board", icon: ListChecks, featureKey: "analysisBoard", roles: ["instructor", "admin", "sub-admin"] },
+      { href: "/play/tactics-trainer", label: "Tactics Trainer", icon: Target, featureKey: "tacticsTrainer", roles: ["student", "admin", "sub-admin"] },
+      { href: "/play/king-hunt", label: "King Hunt", icon: Crown, featureKey: "kingHunt", roles: ["student", "admin", "sub-admin"] },
+      { href: "/play/square-trainer", label: "Square Trainer", icon: Crosshair, featureKey: "squareTrainer", roles: ["student", "admin", "sub-admin"] },
+      { href: "/play/computer", label: "Play vs Computer", icon: Cpu, featureKey: "playVsComputer", roles: ["student", "admin", "sub-admin"] },
     ],
   },
   {
     id: "fees-management",
     title: "Fees Management",
-    roles: ["admin"],
+    roles: ["admin", "sub-admin"],
     items: [
       { href: "/fees", label: "Fee Dashboard", icon: Banknote, featureKey: "fees" },
       { href: "/fees/fee-plans", label: "Fee Plans", icon: FileText, featureKey: "fees" },
@@ -116,7 +116,7 @@ const sections: NavSection[] = [
   {
     id: "administration",
     title: "Administration",
-    roles: ["admin"],
+    roles: ["admin", "sub-admin"],
     items: [
       { href: "/admin/users", label: "Users", icon: Users, featureKey: "userManagement" },
       { href: "/admin/onboarding", label: "Onboarding", icon: UserPlus, featureKey: "onboarding" },
@@ -133,7 +133,7 @@ const sections: NavSection[] = [
     id: "settings",
     title: "Settings",
     items: [
-      { href: "/admin/settings", label: "Academy Setup", icon: Settings, featureKey: "academySettings", roles: ["admin"] },
+      { href: "/admin/settings", label: "Academy Setup", icon: Settings, featureKey: "academySettings", roles: ["admin", "sub-admin"] },
       { href: "/admin/feature-access", label: "Feature Access", icon: ShieldCheck, featureKey: "featureAccess", roles: ["admin"], superAdminOnly: true },
     ],
   },

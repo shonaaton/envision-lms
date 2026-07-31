@@ -35,7 +35,7 @@ export const addUserSchema = z.object({
   email: z.string().email(),
   phone: z.string().optional(),
   password: z.string().min(8).max(72).optional(), // auto-generated if omitted
-  role: z.enum(["student", "instructor", "admin"]),
+  role: z.enum(["student", "instructor", "admin", "sub-admin"]),
   tags: z.array(z.string()).default([]),
   batches: z.array(z.string()).default([]),
   fideId: z.string().optional(),

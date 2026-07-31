@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
+import { requireAdminApiAccess } from "@/lib/adminApiAccess";
 import { Attendance } from "@/models/Attendance";
 import { Classroom } from "@/models/Classroom";
 import { Tournament } from "@/models/Tournament";
@@ -133,10 +133,8 @@ function plainSessionRows(classrooms: any[], range: RangeLike) {
 }
 
 export async function GET(req: Request) {
-  const session = await auth();
-  if ((session?.user as any)?.role !== "admin") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const session = await requireAdminApiAccess(req, "export");
+  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   await dbConnect();
 

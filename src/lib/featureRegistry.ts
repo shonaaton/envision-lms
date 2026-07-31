@@ -1,4 +1,4 @@
-export type PortalRole = "student" | "instructor" | "admin";
+export type PortalRole = "student" | "instructor" | "admin" | "sub-admin";
 export type FeatureStatus = "enabled" | "disabled" | "testing" | "coming_soon";
 
 export type FeaturePermission = {
@@ -19,7 +19,7 @@ export type FeatureDefinition = {
   defaultRolePermissions?: Partial<Record<PortalRole, string[]>>;
 };
 
-export const PORTAL_ROLES: PortalRole[] = ["student", "instructor", "admin"];
+export const PORTAL_ROLES: PortalRole[] = ["student", "instructor", "admin", "sub-admin"];
 
 const view = { id: "view", label: "View" };
 const create = { id: "create", label: "Create" };
@@ -77,7 +77,7 @@ export const FEATURE_DEFINITIONS: FeatureDefinition[] = [
     category: "Learning",
     description: "Homework lists, assignment creation, submissions, and review workflows.",
     routes: ["/homework", "/instructor/homework"],
-    apiPrefixes: ["/api/homework"],
+    apiPrefixes: ["/api/homework", "/api/admin/assignment-templates"],
     permissions: [view, create, edit, del, assign],
     defaultStatus: "enabled",
     defaultRolePermissions: { student: ["view"], instructor: ["view", "create", "edit", "assign"], admin: all(view, create, edit, del, assign) },
@@ -274,7 +274,7 @@ export const FEATURE_DEFINITIONS: FeatureDefinition[] = [
     category: "Reports",
     description: "Reports center, activity tracker, progress exports, and operational history.",
     routes: ["/admin/reports", "/admin/activity-tracker"],
-    apiPrefixes: ["/api/admin/reports"],
+    apiPrefixes: ["/api/admin/reports", "/api/admin/activity-tracker"],
     permissions: [view, exportRecords, manage],
     defaultStatus: "enabled",
     defaultRolePermissions: { admin: all(view, exportRecords, manage) },
@@ -296,7 +296,7 @@ export const FEATURE_DEFINITIONS: FeatureDefinition[] = [
     category: "Settings",
     description: "Branding, invoice identity, GST settings, and academy defaults.",
     routes: ["/admin/settings"],
-    apiPrefixes: ["/api/branding"],
+    apiPrefixes: ["/api/branding", "/api/admin/google-business", "/api/admin/google-reviews"],
     permissions: [view, edit, manage],
     defaultStatus: "enabled",
     defaultRolePermissions: { admin: all(view, edit, manage) },

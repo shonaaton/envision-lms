@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { recordActivity } from "@/lib/activity";
 import { Course } from "@/models/Course";
+import { requireAdminApiAccess } from "@/lib/adminApiAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -38,8 +38,8 @@ function normalizeCourse(input: any) {
 }
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
-  const session = await auth();
-  if ((session?.user as any)?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const session = await requireAdminApiAccess(req, "edit");
+  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const actorId = (session!.user as any).id;
   try {
     const body = normalizeCourse(await req.json());
@@ -61,9 +61,9 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   }
 }
 
-export async function DELETE(_: Request, { params }: { params: { id: string } }) {
-  const session = await auth();
-  if ((session?.user as any)?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+export async function DELETE(req: Request, { params }: { params: { id: string } }) {
+  const session = await requireAdminApiAccess(req, "delete");
+  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const actorId = (session!.user as any).id;
   await dbConnect();
   const course = await Course.findByIdAndDelete(params.id);

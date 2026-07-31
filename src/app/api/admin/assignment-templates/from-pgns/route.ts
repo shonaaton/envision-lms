@@ -3,6 +3,7 @@ import fs from "fs";
 import path from "path";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
+import { canAccessFeature } from "@/lib/featureAccess";
 import { normalizeTopicKey, topicFromHomeworkFileName } from "@/lib/assignmentAutomation";
 import { AssignmentTemplate } from "@/models/AssignmentTemplate";
 import { Course } from "@/models/Course";
@@ -26,8 +27,11 @@ const bundledFenMcqSources = [
   },
 ];
 
-function canManage(role?: string) {
-  return role === "admin" || role === "instructor";
+async function canManageSession(session: any, permission = "view") {
+  const role = (session?.user as any)?.role;
+  if (role === "instructor") return true;
+  if (role === "admin" || role === "sub-admin") return canAccessFeature("homework", session.user as any, permission);
+  return false;
 }
 
 function sourceName(pgn: any) {
@@ -210,12 +214,12 @@ async function importBundledFenMcqTemplates(userId: string) {
 export async function POST(req: Request) {
   const session = await auth();
   const role = (session?.user as any)?.role;
-  if (!session || !canManage(role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!session || !(await canManageSession(session, "create"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
   const body = await req.json().catch(() => ({}));
   const ids = Array.isArray(body.pgnIds) ? body.pgnIds.map(String).filter(Boolean) : [];
   const filter: Record<string, any> = ids.length ? { _id: { $in: ids } } : {};
-  if (role !== "admin") filter.uploadedBy = (session.user as any).id;
+  if (role !== "admin" && role !== "sub-admin") filter.uploadedBy = (session.user as any).id;
   const pgns = (await PGN.find(filter).sort({ sourceFileName: 1, title: 1 }).lean()).filter(looksLikeHomeworkPgn);
   const groups = groupByTopic(pgns);
   const report: any[] = [];

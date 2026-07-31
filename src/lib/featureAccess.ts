@@ -48,6 +48,7 @@ function rolePermissionsFor(feature: FeatureDefinition): Record<PortalRole, stri
     student: [...(feature.defaultRolePermissions?.student || [])],
     instructor: [...(feature.defaultRolePermissions?.instructor || [])],
     admin: [...(feature.defaultRolePermissions?.admin || [])],
+    "sub-admin": [...(feature.defaultRolePermissions?.["sub-admin"] || [])],
   };
 }
 
@@ -79,6 +80,7 @@ function normalizeState(feature: FeatureDefinition, doc?: any): FeatureAccessSta
       student: [...(rolePermissions.student || [])],
       instructor: [...(rolePermissions.instructor || [])],
       admin: [...(rolePermissions.admin || [])],
+      "sub-admin": [...(rolePermissions["sub-admin"] || [])],
     },
     pilotRoles: [...(doc.pilotRoles || [])],
     pilotUsers: ids(doc.pilotUsers),
@@ -128,6 +130,7 @@ export async function seedPermissionTemplates(actorId?: string) {
     { name: "Tournament Admin", role: "admin", description: "Tournament creation, pairings, participant control, and exports." },
     { name: "Content Admin", role: "admin", description: "Courses, PGNs, homework, announcements, and learning content." },
     { name: "Super Admin", role: "admin", description: "Full portal administration and protected feature access controls." },
+    { name: "Standard Sub Admin", role: "sub-admin", description: "Starts with no access. Super Admins can grant selected modules from Feature Access." },
   ] as const;
 
   const featureDefaults = FEATURE_DEFINITIONS.reduce<Record<string, string[]>>((acc, feature) => {
@@ -279,7 +282,7 @@ export function sanitizeRolePermissions(input: any, feature: FeatureDefinition):
     const values = Array.isArray(input?.[role]) ? input[role] : [];
     acc[role] = Array.from(new Set(values.map(String).filter((value: string) => allowed.has(value))));
     return acc;
-  }, { student: [], instructor: [], admin: [] });
+  }, { student: [], instructor: [], admin: [], "sub-admin": [] });
 }
 
 export function serializeForAudit(value: unknown) {

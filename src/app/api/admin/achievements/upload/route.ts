@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireAdminApiAccess } from "@/lib/adminApiAccess";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -16,8 +16,8 @@ function safeName(name: string) {
 }
 
 export async function POST(req: Request) {
-  const session = await auth();
-  if ((session?.user as any)?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const session = await requireAdminApiAccess(req, "create");
+  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const formData = await req.formData();
   const file = formData.get("file");

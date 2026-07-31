@@ -39,6 +39,7 @@ const roleLabels: Record<PortalRole, string> = {
   student: "Students",
   instructor: "Coaches",
   admin: "Admins",
+  "sub-admin": "Sub Admins",
 };
 
 function cloneFeatures(features: FeatureRow[]) {
@@ -204,6 +205,7 @@ export default function FeatureAccessClient({ initialData }: { initialData: ApiD
               student: [...(definition?.defaultRolePermissions?.student || [])],
               instructor: [...(definition?.defaultRolePermissions?.instructor || [])],
               admin: [...(definition?.defaultRolePermissions?.admin || [])],
+              "sub-admin": [...(definition?.defaultRolePermissions?.["sub-admin"] || [])],
             },
           };
         }
@@ -324,6 +326,8 @@ export default function FeatureAccessClient({ initialData }: { initialData: ApiD
             <option value="testing">Move selected to Testing</option>
             <option value="copy:student:instructor">Copy Students to Coaches</option>
             <option value="copy:student:admin">Copy Students to Admins</option>
+            <option value="copy:admin:sub-admin">Copy Admins to Sub Admins</option>
+            <option value="copy:instructor:sub-admin">Copy Coaches to Sub Admins</option>
             <option value="copy:instructor:student">Copy Coaches to Students</option>
             <option value="defaults">Restore selected defaults</option>
           </select>

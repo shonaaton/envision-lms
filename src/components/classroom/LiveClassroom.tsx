@@ -53,6 +53,7 @@ import {
 import PageLoadingOverlay from "@/components/feedback/PageLoadingOverlay";
 import MiniFenBoard, { previewFenFromPgn } from "@/components/pgn/MiniFenBoard";
 import { normalizePermissiveFen } from "@/lib/pgnLibrary";
+import { cn } from "@/lib/utils";
 
 const Chessboard = dynamic(() => import("react-chessboard").then((m) => m.Chessboard), { ssr: false });
 
@@ -447,6 +448,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const [selectedPgnIds, setSelectedPgnIds] = useState<string[]>([]);
   const [pgnFolderQuery, setPgnFolderQuery] = useState("");
   const [activePgnFolder, setActivePgnFolder] = useState<string | null>(null);
+  const [pgnMobilePanel, setPgnMobilePanel] = useState<"library" | "selection">("library");
   const [selectedPiece, setSelectedPiece] = useState("wQ");
   const [setupTab, setSetupTab] = useState<SetupTab>("pieces");
   const [gamifiedSetup, setGamifiedSetup] = useState<Record<string, GamifiedObjectId>>({});
@@ -719,7 +721,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     return pgnLibrary.filter((pgn: any) => {
       const folder = normalizeFolderPath(pgn.folder);
       const inFolder = activePgnFolder === null
-        ? !folder
+        ? true
         : activePgnFolder === "__unfiled__"
           ? !folder
           : folder === activePgnFolder;
@@ -768,6 +770,10 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     setSetupMovementMode(nextSetupMode);
     if (nextSetupMode === "white" || nextSetupMode === "black") setSetupPieceColor(nextSetupMode);
   }, [boardPieceMap, live?.fen, live?.illegalMovesEnabled, live?.setupMode, liveGamifiedObjects, setupOpen]);
+
+  useEffect(() => {
+    if (pgnOpen) setPgnMobilePanel("library");
+  }, [pgnOpen]);
 
   useEffect(() => {
     if (!live?.engineEnabled || !live?.fen || activeTab !== "moves") {
@@ -2545,19 +2551,38 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       </div>
 
       {pgnOpen && coach && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
-          <div className="flex max-h-[88vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-            <div className="flex items-start justify-between gap-4 border-b border-slate-200 p-5">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-2 sm:p-4">
+          <div className="flex h-[calc(100dvh-1rem)] w-full max-w-5xl flex-col overflow-hidden rounded-lg bg-white shadow-2xl sm:max-h-[88vh] sm:h-auto">
+            <div className="flex flex-none items-start justify-between gap-3 border-b border-slate-200 p-3 sm:gap-4 sm:p-5">
               <div>
                 <h3 className="text-xl font-semibold text-slate-950">Classroom PGN Library</h3>
                 <p className="text-sm text-slate-500">Load a PGN onto the classroom board or turn a selected PGN into a quiz.</p>
               </div>
               <button onClick={() => setPgnOpen(false)} className="grid h-9 w-9 place-items-center rounded-md border border-slate-200"><X size={16} /></button>
             </div>
-            <div className="grid min-h-0 flex-1 gap-4 overflow-auto p-5 lg:grid-cols-[minmax(0,1fr)_300px]">
-              <div className="min-h-0 space-y-3">
+            <div className="grid grid-cols-2 gap-1 border-b border-slate-200 bg-slate-50 p-2 lg:hidden">
+              {[
+                { id: "library" as const, label: "Library", count: visiblePgnLibrary.length + pgnFolders.length },
+                { id: "selection" as const, label: "Load", count: selectedPgnIds.length },
+              ].map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setPgnMobilePanel(item.id)}
+                  className={cn(
+                    "flex min-h-9 items-center justify-center gap-1 rounded-md px-2 text-xs font-black transition",
+                    pgnMobilePanel === item.id ? "bg-white text-purple-800 shadow-sm" : "text-slate-600"
+                  )}
+                >
+                  {item.label}
+                  <span className="rounded-full bg-slate-200 px-1.5 py-0.5 text-[10px] text-slate-600">{item.count > 99 ? "99+" : item.count}</span>
+                </button>
+              ))}
+            </div>
+            <div className="grid min-h-0 flex-1 gap-3 overflow-hidden p-3 sm:p-5 lg:grid-cols-[minmax(0,1fr)_300px] lg:gap-4">
+              <div className={cn("min-h-0 space-y-3 overflow-hidden lg:block", pgnMobilePanel === "library" ? "block" : "hidden")}>
                 <div className="flex flex-wrap items-center gap-2">
-                  <div className="relative min-w-[220px] flex-1 sm:max-w-xs">
+                  <div className="relative min-w-0 flex-1 sm:max-w-xs">
                     <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                     <input
                       value={pgnFolderQuery}
@@ -2566,11 +2591,11 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                       placeholder={activePgnFolder ? "Search PGNs in folder" : "Search folders or files"}
                     />
                   </div>
-                  <button onClick={() => setSelectedPgnIds(visiblePgnLibrary.map((pgn: any) => pgn._id))} className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 px-3 text-xs font-semibold"><CheckSquare size={14} /> Select All</button>
-                  <button onClick={() => setSelectedPgnIds([])} className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 px-3 text-xs font-semibold"><X size={14} /> Clear Selection</button>
+                  <button onClick={() => { setSelectedPgnIds(visiblePgnLibrary.map((pgn: any) => pgn._id)); setPgnMobilePanel("selection"); }} className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 px-3 text-xs font-semibold"><CheckSquare size={14} /> Select All</button>
+                  <button onClick={() => setSelectedPgnIds([])} className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 px-3 text-xs font-semibold"><X size={14} /> Clear</button>
                   <span className="rounded-full bg-purple-50 px-3 py-1 text-xs font-semibold text-purple-800">{selectedPgnIds.length} selected</span>
                 </div>
-                <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
                   <button onClick={() => setActivePgnFolder(null)} className={`inline-flex items-center gap-1 ${activePgnFolder ? "text-blue-600" : "font-semibold text-slate-900"}`}><Home size={14} /> Library</button>
                   {activePgnFolder && folderBreadcrumbs(activePgnFolder).map((item) => (
                     <span key={item.path} className="contents">
@@ -2580,7 +2605,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                   ))}
                 </div>
                 {activePgnFolder === null ? (
-                  <div className="grid max-h-[56vh] gap-2 overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-2 md:grid-cols-2">
+                  <div className="grid max-h-[calc(100dvh-230px)] gap-2 overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-2 md:grid-cols-2 lg:max-h-[56vh]">
                     {pgnFolders.length ? pgnFolders.map((folder) => (
                       <button key={folder.path} onClick={() => setActivePgnFolder(folder.path)} className="flex items-center justify-between rounded-lg border border-slate-200 bg-white p-4 text-left transition hover:border-purple-300 hover:shadow-sm">
                         <span className="flex min-w-0 items-center gap-3">
@@ -2592,7 +2617,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                         </span>
                         <ChevronRight size={16} className="text-slate-400" />
                       </button>
-                    )) : <div className="rounded-lg border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 md:col-span-2">No folders found in the PGN library yet.</div>}
+                    )) : null}
                     {pgnLibrary.some((pgn: any) => !String(pgn.folder || "").trim()) && (
                       <button onClick={() => setActivePgnFolder("__unfiled__")} className="flex items-center justify-between rounded-lg border border-slate-200 bg-white p-4 text-left transition hover:border-purple-300 hover:shadow-sm md:col-span-2">
                         <span className="flex min-w-0 items-center gap-3">
@@ -2605,9 +2630,23 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                         <ChevronRight size={16} className="text-slate-400" />
                       </button>
                     )}
+                    {visiblePgnLibrary.length ? visiblePgnLibrary.map((pgn: any, index: number) => (
+                      <div key={pgn._id} className={`rounded-lg border bg-white p-3 transition ${selectedPgnIds.includes(pgn._id) ? "border-purple-400 ring-2 ring-purple-100" : "border-slate-200"}`}>
+                        <label className="grid cursor-pointer grid-cols-[88px_minmax(0,1fr)_20px] items-start gap-3 sm:grid-cols-[112px_minmax(0,1fr)_20px]">
+                          <MiniFenBoard fen={previewFenFromPgn(pgn.pgn, pgn.initialFen)} className="w-[88px] sm:w-[112px]" />
+                          <span className="min-w-0">
+                            <span className="block truncate text-sm font-semibold text-slate-950">{pgn.title}</span>
+                            <span className="mt-1 block truncate text-xs text-slate-500">{pgn.white || "White"} vs {pgn.black || "Black"}{pgn.result ? ` - ${pgn.result}` : ""}</span>
+                            <span className="mt-2 inline-flex rounded bg-purple-50 px-2 py-1 text-[11px] font-semibold text-purple-700">{pgnSideToMoveLabel(pgn)}</span>
+                          </span>
+                          <input checked={selectedPgnIds.includes(pgn._id)} onChange={() => togglePgnSelection(pgn._id)} type="checkbox" className="mt-1 h-4 w-4" />
+                        </label>
+                        <button onClick={() => loadPgn(pgn, index)} className="mt-3 h-9 w-full rounded-md bg-purple-700 text-xs font-semibold text-white">Load this PGN</button>
+                      </div>
+                    )) : (!pgnFolders.length && !pgnLibrary.some((pgn: any) => !String(pgn.folder || "").trim()) ? <div className="rounded-lg border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 md:col-span-2">No PGNs found in the library yet.</div> : null)}
                   </div>
                 ) : (
-                  <div className="grid max-h-[56vh] gap-2 overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-2 md:grid-cols-2">
+                  <div className="grid max-h-[calc(100dvh-230px)] gap-2 overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-2 md:grid-cols-2 lg:max-h-[56vh]">
                   {pgnFolders.map((folder) => (
                     <button key={folder.path} onClick={() => setActivePgnFolder(folder.path)} className="flex items-center justify-between rounded-lg border border-slate-200 bg-white p-4 text-left transition hover:border-purple-300 hover:shadow-sm">
                       <span className="flex min-w-0 items-center gap-3">
@@ -2622,8 +2661,8 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                   ))}
                   {visiblePgnLibrary.length ? visiblePgnLibrary.map((pgn: any, index: number) => (
                     <div key={pgn._id} className={`rounded-lg border bg-white p-3 transition ${selectedPgnIds.includes(pgn._id) ? "border-purple-400 ring-2 ring-purple-100" : "border-slate-200"}`}>
-                      <label className="grid cursor-pointer grid-cols-[112px_minmax(0,1fr)_20px] items-start gap-3">
-                        <MiniFenBoard fen={previewFenFromPgn(pgn.pgn, pgn.initialFen)} className="w-[112px]" />
+                      <label className="grid cursor-pointer grid-cols-[88px_minmax(0,1fr)_20px] items-start gap-3 sm:grid-cols-[112px_minmax(0,1fr)_20px]">
+                        <MiniFenBoard fen={previewFenFromPgn(pgn.pgn, pgn.initialFen)} className="w-[88px] sm:w-[112px]" />
                         <span className="min-w-0">
                           <span className="block truncate text-sm font-semibold text-slate-950">{pgn.title}</span>
                           <span className="mt-1 block truncate text-xs text-slate-500">{pgn.white || "White"} vs {pgn.black || "Black"}{pgn.result ? ` - ${pgn.result}` : ""}</span>
@@ -2636,15 +2675,15 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                   )) : pgnFolders.length ? null : <div className="rounded-lg border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 md:col-span-2">No PGNs found in this folder.</div>}
                 </div>)}
               </div>
-              <div className="space-y-4">
-                <div className="rounded-xl border border-purple-100 bg-purple-50 p-3">
+              <div className={cn("min-h-0 space-y-4 overflow-y-auto lg:block", pgnMobilePanel === "selection" ? "block" : "hidden")}>
+                <div className="rounded-lg border border-purple-100 bg-purple-50 p-3">
                   <label className="text-xs font-semibold text-slate-600">Selected PGNs</label>
                   <div className="mt-3 grid gap-2">
                     <button onClick={loadSelectedPgns} className="h-10 rounded-md bg-purple-700 text-sm font-semibold text-white">Load Selected Collection</button>
                     <button onClick={openSelectedPgnQuizComposer} className="h-10 rounded-md border border-purple-200 bg-white text-sm font-semibold text-purple-800">Ask Selected as Quiz</button>
                   </div>
                 </div>
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                   <label className="text-xs font-semibold text-slate-600">Paste PGN or FEN</label>
                   <textarea
                     value={manualLoadText}

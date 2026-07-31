@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { recordActivity } from "@/lib/activity";
 import { Course } from "@/models/Course";
+import { requireAdminApiAccess } from "@/lib/adminApiAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -105,8 +105,8 @@ function mergeCourseData(existingCourse: any, incomingCourse: any) {
 }
 
 export async function GET(req: Request) {
-  const session = await auth();
-  if ((session?.user as any)?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const session = await requireAdminApiAccess(req, "view");
+  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
   const url = new URL(req.url);
   const q = url.searchParams.get("q");
@@ -117,8 +117,8 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const session = await auth();
-  if ((session?.user as any)?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const session = await requireAdminApiAccess(req, "create");
+  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const actorId = (session!.user as any).id;
   try {
     const body = normalizeCourse(await req.json(), actorId);

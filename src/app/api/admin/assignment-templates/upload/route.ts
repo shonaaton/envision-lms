@@ -1,14 +1,18 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
+import { canAccessFeature } from "@/lib/featureAccess";
 import { normalizeTopicKey } from "@/lib/assignmentAutomation";
 import { assignmentTemplateSchema } from "@/lib/validation";
 import { AssignmentTemplate } from "@/models/AssignmentTemplate";
 
 export const dynamic = "force-dynamic";
 
-function canManage(role?: string) {
-  return role === "admin" || role === "instructor";
+async function canManageSession(session: any, permission = "view") {
+  const role = (session?.user as any)?.role;
+  if (role === "instructor") return true;
+  if (role === "admin" || role === "sub-admin") return canAccessFeature("homework", session.user as any, permission);
+  return false;
 }
 
 function cleanTemplate(raw: any) {
@@ -40,7 +44,7 @@ function cleanTemplate(raw: any) {
 export async function POST(req: Request) {
   const session = await auth();
   const role = (session?.user as any)?.role;
-  if (!session || !canManage(role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!session || !(await canManageSession(session, "create"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   try {
     const json = await req.json();
     const rawTemplates = Array.isArray(json) ? json : Array.isArray(json.templates) ? json.templates : [json.template || json];
@@ -54,7 +58,7 @@ export async function POST(req: Request) {
       const filter: Record<string, any> = importBatchId
         ? { topicKey, "source.importBatchId": importBatchId, isActive: { $ne: false } }
         : { topicKey, title: body.title, isActive: { $ne: false } };
-      if (role !== "admin") filter.createdBy = (session.user as any).id;
+      if (role !== "admin" && role !== "sub-admin") filter.createdBy = (session.user as any).id;
       const existing = await AssignmentTemplate.findOne(filter);
       const payload = {
         ...body,

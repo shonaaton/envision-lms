@@ -202,14 +202,96 @@ export default function SquareTrainerPage() {
     window.setTimeout(() => setLastAttempt(null), 260);
   }
 
-  return (
-    limitBlocked ? (
+  const resultModal = showResult ? (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-4">
+      <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+        <div className="flex items-center gap-3">
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
+            <Trophy size={22} />
+          </div>
+          <div>
+            <h2 className="text-2xl font-black text-slate-950">Round Complete</h2>
+            <p className="text-sm text-slate-500">{duration} second coordinate round</p>
+          </div>
+        </div>
+        <div className="mt-5 grid grid-cols-2 gap-3">
+          <MiniStat label="Correct" value={correct} />
+          <MiniStat label="Accuracy" value={`${accuracy}%`} />
+          <MiniStat label="Best streak" value={bestStreak} />
+          <MiniStat label="Mistakes" value={mistakes} />
+          <MiniStat label="XP earned" value={reward?.xp ?? (saving ? "..." : 0)} />
+          <MiniStat label="Coins" value={reward?.coins ?? (saving ? "..." : 0)} />
+        </div>
+        <div className="mt-5 flex gap-2">
+          <button type="button" className="btn-outline flex-1" onClick={() => setShowResult(false)}>Close</button>
+          <button type="button" className="btn-primary flex-1" onClick={startSession} disabled={checkingLimit}><Play size={16} /> {checkingLimit ? "Checking..." : "Play Again"}</button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
+  if (limitBlocked) {
+    return (
       <div className="rounded-3xl border border-amber-200 bg-white p-8 text-center shadow-xl">
         <h1 className="text-2xl font-black text-slate-950">Demo Square Trainer completed</h1>
         <p className="mx-auto mt-2 max-w-xl text-slate-600">{limitBlocked}</p>
         <a href="/booking" className="btn-primary mt-5 inline-flex">Open Demo Booking</a>
       </div>
-    ) : (
+    );
+  }
+
+  if (status !== "running") {
+    return (
+      <div className="flex min-h-[calc(100dvh-76px)] items-center justify-center bg-[linear-gradient(180deg,#fffdf6_0%,#fff_52%,#faf8fc_100%)] p-3 text-slate-950 sm:p-5">
+        <section className="w-full max-w-3xl rounded-2xl border border-slate-200 bg-white p-4 shadow-xl shadow-brand/10 sm:p-6">
+          <div className="text-center">
+            <div className="inline-flex items-center gap-2 rounded-full bg-amber-100 px-3 py-1 text-xs font-black uppercase tracking-[0.18em] text-amber-700">
+              <Crosshair size={14} />
+              Square Trainer
+            </div>
+            <h1 className="mt-3 text-2xl font-black text-slate-950 sm:text-3xl">Set Up Board Vision Practice</h1>
+            <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-600">Choose the round length and the side you want to read from. The board appears after you start.</p>
+          </div>
+
+          <div className="mt-6 grid gap-4 md:grid-cols-2">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <label className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Round Length</label>
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                {[30, 60, 120].map((seconds) => (
+                  <button key={seconds} type="button" onClick={() => { setDuration(seconds); setRemaining(seconds); }} className={cn("min-h-12 rounded-xl border px-3 py-2 text-sm font-bold transition", duration === seconds ? "border-brand bg-brand text-white" : "border-slate-200 bg-white hover:border-brand/40")}>
+                    {seconds}s
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <label className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Board Side</label>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                {(["white", "black"] as Orientation[]).map((side) => (
+                  <button key={side} type="button" onClick={() => setOrientation(side)} className={cn("min-h-12 rounded-xl border px-3 py-2 text-sm font-bold capitalize transition", orientation === side ? "border-brand bg-brand text-white" : "border-slate-200 bg-white hover:border-brand/40")}>
+                    {side}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className={cn("mt-5 rounded-2xl border px-4 py-3 text-sm font-semibold", feedback.type === "correct" && "border-emerald-200 bg-emerald-50 text-emerald-700", feedback.type === "wrong" && "border-rose-200 bg-rose-50 text-rose-700", feedback.type === "info" && "border-slate-200 bg-slate-50 text-slate-600")}>
+            {showResult ? "Your last round is saved. Start again when ready." : "When the round starts, the target square, timer, score, mistakes, live streak, and best streak stay on screen."}
+          </div>
+
+          <button type="button" onClick={startSession} disabled={checkingLimit} className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-brand px-4 py-3 text-sm font-bold text-white shadow-lg shadow-brand/20 transition hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-60">
+            <Play size={16} />
+            {checkingLimit ? "Checking..." : showResult ? "Play Again" : "Start Round"}
+          </button>
+        </section>
+        {resultModal}
+      </div>
+    );
+  }
+
+  return (
     <div className="flex min-h-[calc(100dvh-76px)] flex-col overflow-y-auto bg-[linear-gradient(180deg,#fffdf6_0%,#fff 52%,#faf8fc_100%)] p-2 text-slate-950 sm:p-4 md:h-[calc(100vh-92px)] md:min-h-[620px] md:overflow-hidden">
       <div className="mb-2 flex flex-none flex-wrap items-end justify-between gap-2 md:mb-3 md:gap-3">
         <div>
@@ -247,28 +329,6 @@ export default function SquareTrainerPage() {
           </div>
 
           <div className="mt-3 space-y-3 overflow-auto pr-1 sm:mt-4 sm:space-y-4">
-            <div>
-              <label className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Round Length</label>
-              <div className="mt-2 grid grid-cols-3 gap-2">
-                {[30, 60, 120].map((seconds) => (
-                  <button key={seconds} type="button" onClick={() => { setDuration(seconds); setRemaining(seconds); }} className={cn("rounded-xl border px-3 py-2 text-sm font-bold transition", duration === seconds ? "border-brand bg-brand text-white" : "border-slate-200 bg-white hover:border-brand/40")}>
-                    {seconds}s
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <label className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Board Side</label>
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                {(["white", "black"] as Orientation[]).map((side) => (
-                  <button key={side} type="button" onClick={() => setOrientation(side)} className={cn("rounded-xl border px-3 py-2 text-sm font-bold capitalize transition", orientation === side ? "border-brand bg-brand text-white" : "border-slate-200 bg-white hover:border-brand/40")}>
-                    {side}
-                  </button>
-                ))}
-              </div>
-            </div>
-
             <div className="grid grid-cols-2 gap-2">
               <MiniStat label="Correct" value={correct} />
               <MiniStat label="Mistakes" value={mistakes} />
@@ -337,35 +397,8 @@ export default function SquareTrainerPage() {
           </div>
         </aside>
       </div>
-      {showResult ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-4">
-          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
-                <Trophy size={22} />
-              </div>
-              <div>
-                <h2 className="text-2xl font-black text-slate-950">Round Complete</h2>
-                <p className="text-sm text-slate-500">{duration} second coordinate round</p>
-              </div>
-            </div>
-            <div className="mt-5 grid grid-cols-2 gap-3">
-              <MiniStat label="Correct" value={correct} />
-              <MiniStat label="Accuracy" value={`${accuracy}%`} />
-              <MiniStat label="Best streak" value={bestStreak} />
-              <MiniStat label="Mistakes" value={mistakes} />
-              <MiniStat label="XP earned" value={reward?.xp ?? (saving ? "..." : 0)} />
-              <MiniStat label="Coins" value={reward?.coins ?? (saving ? "..." : 0)} />
-            </div>
-            <div className="mt-5 flex gap-2">
-              <button type="button" className="btn-outline flex-1" onClick={() => setShowResult(false)}>Close</button>
-              <button type="button" className="btn-primary flex-1" onClick={startSession} disabled={checkingLimit}><Play size={16} /> {checkingLimit ? "Checking..." : "Play Again"}</button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      {resultModal}
     </div>
-    )
   );
 }
 

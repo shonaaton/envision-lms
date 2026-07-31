@@ -5,16 +5,24 @@ import { dbConnect } from "@/lib/db";
 import { User, generateUsername } from "@/models/User";
 import { addUserSchema } from "@/lib/validation";
 import { recordActivity } from "@/lib/activity";
+import { canAccessFeature, isSuperAdminSession } from "@/lib/featureAccess";
 
 export const dynamic = "force-dynamic";
+
+async function requireUserManagement(permission: "view" | "create") {
+  const session = await auth();
+  if (!session?.user) return null;
+  if (!(await canAccessFeature("userManagement", session.user as any, permission))) return null;
+  return session;
+}
 
 function genPassword() {
   return Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 6).toUpperCase();
 }
 
 export async function GET(req: Request) {
-  const session = await auth();
-  if ((session?.user as any)?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const session = await requireUserManagement("view");
+  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
   const url = new URL(req.url);
   const role = url.searchParams.get("role"); // student | instructor | admin
@@ -47,12 +55,16 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const session = await auth();
-  if ((session?.user as any)?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const session = await requireUserManagement("create");
+  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const actorId = (session!.user as any).id;
   try {
     const body = addUserSchema.parse(await req.json());
     await dbConnect();
+    const actorIsSuperAdmin = await isSuperAdminSession(session.user as any);
+    if ((body.role === "admin" || body.role === "sub-admin") && !actorIsSuperAdmin) {
+      return NextResponse.json({ error: "Only Super Admins can create admin or sub-admin accounts." }, { status: 403 });
+    }
     const exists = await User.findOne({ email: body.email.toLowerCase() });
     if (exists) return NextResponse.json({ error: "Email already registered" }, { status: 409 });
     const username = await generateUsername(body.name);

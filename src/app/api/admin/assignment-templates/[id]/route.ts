@@ -1,20 +1,24 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
+import { canAccessFeature } from "@/lib/featureAccess";
 import { normalizeTopicKey } from "@/lib/assignmentAutomation";
 import { assignmentTemplateSchema } from "@/lib/validation";
 import { AssignmentTemplate } from "@/models/AssignmentTemplate";
 
 export const dynamic = "force-dynamic";
 
-function canManage(role?: string) {
-  return role === "admin" || role === "instructor";
+async function canManageSession(session: any, permission = "view") {
+  const role = (session?.user as any)?.role;
+  if (role === "instructor") return true;
+  if (role === "admin" || role === "sub-admin") return canAccessFeature("homework", session.user as any, permission);
+  return false;
 }
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
   const session = await auth();
   const role = (session?.user as any)?.role;
-  if (!session || !canManage(role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!session || !(await canManageSession(session, "view"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
   const existing: any = await AssignmentTemplate.findById(params.id).lean();
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -27,7 +31,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
 export async function PUT(req: Request, { params }: { params: { id: string } }) {
   const session = await auth();
   const role = (session?.user as any)?.role;
-  if (!session || !canManage(role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!session || !(await canManageSession(session, "edit"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
   const existing: any = await AssignmentTemplate.findById(params.id);
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -51,7 +55,7 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
 export async function DELETE(req: Request, { params }: { params: { id: string } }) {
   const session = await auth();
   const role = (session?.user as any)?.role;
-  if (!session || !canManage(role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!session || !(await canManageSession(session, "delete"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
   const existing: any = await AssignmentTemplate.findById(params.id);
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });

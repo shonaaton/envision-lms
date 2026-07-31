@@ -43,7 +43,7 @@ export default async function PgnDetail({ params, searchParams }: { params: { id
   const sideToMove = game.sideToMove || (String(game.initialFen || game.pgn?.match?.(/\[FEN\s+"([^"]+)"\]/)?.[1] || "").split(/\s+/)[1] === "b" ? "black" : "white");
 
   return (
-    <div className="flex h-[calc(100vh-92px)] min-h-0 flex-col gap-3 overflow-hidden bg-slate-50 p-3 text-slate-950">
+    <div className="flex min-h-[calc(100dvh-72px)] flex-col gap-3 overflow-y-auto bg-slate-50 p-2 text-slate-950 sm:p-3 lg:h-[calc(100vh-92px)] lg:min-h-0 lg:overflow-hidden">
       <div className="flex-none">
         <h1 className="truncate font-display text-xl">{game.title}</h1>
         <div className="mt-1 text-sm text-slate-500">

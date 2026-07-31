@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { recordActivity } from "@/lib/activity";
 import { sendEmailAutomation } from "@/lib/emailAutomation";
+import { requireAdminApiAccess } from "@/lib/adminApiAccess";
 import { Announcement } from "@/models/Announcement";
 import { Batch } from "@/models/Batch";
 import { Notification } from "@/models/Fee";
@@ -66,9 +66,9 @@ async function resolveRecipients(targetType: string, targetId?: string) {
   throw new Error("Please select a valid audience.");
 }
 
-export async function GET() {
-  const session = await auth();
-  if ((session?.user as any)?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+export async function GET(req: Request) {
+  const session = await requireAdminApiAccess(req, "view");
+  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   await dbConnect();
   const list = await Announcement.find({})
@@ -83,8 +83,8 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const session = await auth();
-  if ((session?.user as any)?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const session = await requireAdminApiAccess(req, "create");
+  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const actorId = (session!.user as any).id;
 
   const body = await req.json();
@@ -166,8 +166,8 @@ export async function POST(req: Request) {
 }
 
 export async function PUT(req: Request) {
-  const session = await auth();
-  if ((session?.user as any)?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const session = await requireAdminApiAccess(req, "edit");
+  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const actorId = (session!.user as any).id;
 
   const body = await req.json();

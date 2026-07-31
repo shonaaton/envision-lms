@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
+import { canAccessFeature } from "@/lib/featureAccess";
 import { normalizeTopicKey } from "@/lib/assignmentAutomation";
 import { assignmentTemplateSchema } from "@/lib/validation";
 import { AssignmentTemplate } from "@/models/AssignmentTemplate";
@@ -11,15 +12,18 @@ import "@/models/User";
 
 export const dynamic = "force-dynamic";
 
-function canManage(role?: string) {
-  return role === "admin" || role === "instructor";
+async function canManageSession(session: any, permission = "view") {
+  const role = (session?.user as any)?.role;
+  if (role === "instructor") return true;
+  if (role === "admin" || role === "sub-admin") return canAccessFeature("homework", session.user as any, permission);
+  return false;
 }
 
 function filterFor(session: any, url: URL) {
   const role = (session.user as any).role;
   const q = String(url.searchParams.get("q") || "").trim();
   const status = String(url.searchParams.get("status") || "").trim();
-  const filter: Record<string, any> = role === "admin" ? {} : { createdBy: (session.user as any).id };
+  const filter: Record<string, any> = role === "admin" || role === "sub-admin" ? {} : { createdBy: (session.user as any).id };
   if (status === "active") filter.isActive = true;
   else if (status !== "all") filter.isActive = { $ne: false };
   if (status === "review") filter.linkStatus = { $ne: "linked" };
@@ -32,8 +36,7 @@ function filterFor(session: any, url: URL) {
 
 export async function GET(req: Request) {
   const session = await auth();
-  const role = (session?.user as any)?.role;
-  if (!session || !canManage(role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!session || !(await canManageSession(session, "view"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
   const url = new URL(req.url);
   const list = await AssignmentTemplate.find(filterFor(session, url))
@@ -48,8 +51,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   const session = await auth();
-  const role = (session?.user as any)?.role;
-  if (!session || !canManage(role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!session || !(await canManageSession(session, "create"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   try {
     await dbConnect();
     const body = assignmentTemplateSchema.parse(await req.json());

@@ -507,6 +507,7 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
             Play vs Computer
           </div>
           <h1 className="mt-1.5 text-xl font-black text-slate-950 sm:text-2xl">Play with Computer</h1>
+          <p className="mt-0.5 max-w-xl text-xs leading-5 text-slate-600 sm:text-sm">Pick your side, choose a gentle bot, then start the game when you are ready.</p>
         </div>
 
         <div className="flex flex-wrap gap-1.5 sm:gap-2">
@@ -561,9 +562,12 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
                 />
               {status === "idle" && (
                 <div className="absolute inset-0 flex items-center justify-center p-3 backdrop-blur-[3px]">
-                  <div className="rounded-lg border border-white/70 bg-white/80 px-4 py-5 text-center shadow-xl sm:px-8 sm:py-7">
-                    <div className="mb-4 text-sm font-semibold text-slate-700">Ready to Play?</div>
-                    <button className="btn-primary gap-2 px-5" onClick={() => setShowSetup(true)}>
+                  <div className="w-full max-w-sm rounded-xl border border-white/70 bg-white/90 px-4 py-5 text-center shadow-xl sm:px-8 sm:py-7">
+                    <div className="inline-flex items-center gap-2 rounded-full bg-amber-100 px-3 py-1 text-[11px] font-black uppercase tracking-[0.16em] text-amber-700">
+                      <Bot size={13} /> Ready to Play
+                    </div>
+                    <div className="mt-3 text-sm font-semibold leading-6 text-slate-700">Set your color, bot, level, and clock in one quick step.</div>
+                    <button className="btn-primary mt-4 gap-2 px-5" onClick={() => setShowSetup(true)}>
                       <Play size={16} /> Start New Game
                     </button>
                   </div>
@@ -746,8 +750,8 @@ function SetupModal({
   starting?: boolean;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-4">
-      <div className="w-full max-w-[520px] rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-3 sm:p-4">
+      <div className="max-h-[calc(100dvh-24px)] w-full max-w-[520px] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl sm:p-5">
         <div className="mb-5 flex items-center justify-between">
           <h2 className="text-xl font-semibold text-slate-950">New Game</h2>
           <button className="text-slate-500 hover:text-slate-900" onClick={onClose} aria-label="Close">
@@ -759,8 +763,8 @@ function SetupModal({
           Color: <span className="font-semibold capitalize text-slate-950">{selectedColor}</span>
         </div>
         <div className="grid grid-cols-3 gap-2">
-          <ColorOption active={selectedColor === "white"} label="White" icon={<span className="text-3xl">K</span>} onClick={() => onColorChange("white")} />
-          <ColorOption active={selectedColor === "black"} label="Black" icon={<span className="text-3xl">k</span>} onClick={() => onColorChange("black")} />
+          <ColorOption active={selectedColor === "white"} label="White" icon={<span className="h-8 w-8 rounded-full border-2 border-slate-300 bg-white shadow-inner" />} onClick={() => onColorChange("white")} />
+          <ColorOption active={selectedColor === "black"} label="Black" icon={<span className="h-8 w-8 rounded-full border-2 border-slate-900 bg-slate-950 shadow-inner" />} onClick={() => onColorChange("black")} />
           <ColorOption active={selectedColor === "random"} label="Random" icon={<Shuffle size={28} />} onClick={() => onColorChange("random")} />
         </div>
 
@@ -786,7 +790,7 @@ function SetupModal({
         <div className="mt-6 text-center text-sm text-slate-500">
           Level: <span className="font-semibold text-slate-950">{levelToElo[level - 1]} ELO</span>
         </div>
-        <div className="mt-4 grid grid-cols-12 items-start gap-2">
+        <div className="mt-4 grid grid-cols-6 items-start gap-2 sm:grid-cols-12">
           {levelToElo.map((_, index) => (
             <button
               key={index}

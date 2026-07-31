@@ -5,6 +5,7 @@ const rolePermissionSchema = new Schema(
     student: { type: [String], default: [] },
     instructor: { type: [String], default: [] },
     admin: { type: [String], default: [] },
+    "sub-admin": { type: [String], default: [] },
   },
   { _id: false }
 );
@@ -25,7 +26,7 @@ const FeatureAccessSchema = new Schema(
     key: { type: String, required: true, unique: true, index: true },
     status: { type: String, enum: ["enabled", "disabled", "testing", "coming_soon"], default: "disabled", index: true },
     rolePermissions: { type: rolePermissionSchema, default: () => ({}) },
-    pilotRoles: { type: [String], enum: ["student", "instructor", "admin"], default: [] },
+    pilotRoles: { type: [String], enum: ["student", "instructor", "admin", "sub-admin"], default: [] },
     pilotUsers: [{ type: Schema.Types.ObjectId, ref: "User", index: true }],
     pilotBatches: [{ type: Schema.Types.ObjectId, ref: "Batch", index: true }],
     pilotCourses: [{ type: Schema.Types.ObjectId, ref: "Course", index: true }],
@@ -40,7 +41,7 @@ const PermissionTemplateSchema = new Schema(
   {
     name: { type: String, required: true, unique: true, index: true },
     description: String,
-    role: { type: String, enum: ["student", "instructor", "admin"], required: true, index: true },
+    role: { type: String, enum: ["student", "instructor", "admin", "sub-admin"], required: true, index: true },
     permissions: {
       type: Map,
       of: [String],

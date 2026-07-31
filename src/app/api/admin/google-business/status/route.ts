@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireAdminApiAccess } from "@/lib/adminApiAccess";
 import { dbConnect } from "@/lib/db";
 import { GoogleBusinessIntegration } from "@/models/GoogleBusinessIntegration";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
-  const session = await auth();
-  if ((session?.user as any)?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+export async function GET(req: Request) {
+  const session = await requireAdminApiAccess(req, "view");
+  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   await dbConnect();
   const integration: any = await GoogleBusinessIntegration.findOne({ singletonKey: "google-business" }).lean();

@@ -11,7 +11,7 @@ export default function AddUserModal({
   open: boolean;
   onClose: () => void;
   onCreated: () => void;
-  defaultRole: "student" | "instructor" | "admin";
+  defaultRole: "student" | "instructor" | "admin" | "sub-admin";
 }) {
   const [loading, setLoading] = useState(false);
   if (!open) return null;
@@ -48,7 +48,7 @@ export default function AddUserModal({
     onClose();
   }
 
-  const label = defaultRole === "instructor" ? "Coach" : defaultRole === "admin" ? "Admin" : "Student";
+  const label = defaultRole === "instructor" ? "Coach" : defaultRole === "admin" ? "Admin" : defaultRole === "sub-admin" ? "Sub Admin" : "Student";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={onClose}>

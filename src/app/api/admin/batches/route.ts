@@ -5,12 +5,23 @@ import { Batch } from "@/models/Batch";
 import { User } from "@/models/User";
 import { batchSchema } from "@/lib/validation";
 import { recordActivity } from "@/lib/activity";
+import { canAccessFeature } from "@/lib/featureAccess";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+async function requireBatchAccess(permission: "view" | "create") {
   const session = await auth();
-  if ((session?.user as any)?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!session?.user) return null;
+  const user = session.user as any;
+  const allowed =
+    (await canAccessFeature("courseManagement", user, permission)) ||
+    (await canAccessFeature("userManagement", user, permission));
+  return allowed ? session : null;
+}
+
+export async function GET() {
+  const session = await requireBatchAccess("view");
+  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
   const list = await Batch.find({})
     .populate("coach", "name email")
@@ -21,8 +32,8 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const session = await auth();
-  if ((session?.user as any)?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const session = await requireBatchAccess("create");
+  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const actorId = (session!.user as any).id;
   try {
     const body = batchSchema.parse(await req.json());

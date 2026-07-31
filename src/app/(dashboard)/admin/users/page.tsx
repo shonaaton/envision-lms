@@ -25,8 +25,8 @@ import AddBatchModal from "@/components/admin/AddBatchModal";
 
 export const dynamic = "force-dynamic";
 
-type Tab = "students" | "coaches" | "batches" | "roles";
-type UserRole = "student" | "instructor" | "admin";
+type Tab = "students" | "coaches" | "sub-admins" | "batches" | "roles";
+type UserRole = "student" | "instructor" | "admin" | "sub-admin";
 
 type AdminUser = {
   _id: string;
@@ -64,6 +64,13 @@ type BatchUpdatePayload = {
   students?: string[];
 };
 
+function userRoleLabel(role: UserRole) {
+  if (role === "instructor") return "Coach";
+  if (role === "sub-admin") return "Sub Admin";
+  if (role === "admin") return "Admin";
+  return "Student";
+}
+
 export default function AdminUsersPage() {
   const [tab, setTab] = useState<Tab>("students");
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -85,8 +92,8 @@ export default function AdminUsersPage() {
   const [editBatch, setEditBatch] = useState<BatchItem | null>(null);
 
   const loadUsers = useCallback(async () => {
-    if (tab !== "students" && tab !== "coaches") return;
-    const role = tab === "students" ? "student" : "instructor";
+    if (tab !== "students" && tab !== "coaches" && tab !== "sub-admins") return;
+    const role = tab === "students" ? "student" : tab === "coaches" ? "instructor" : "sub-admin";
     const params = new URLSearchParams({ role, sort });
     if (q) params.set("q", q);
     if (status) params.set("status", status);
@@ -138,7 +145,7 @@ export default function AdminUsersPage() {
     });
   }, [batches, q]);
 
-  const tabLabel = tab === "students" ? "Student" : tab === "coaches" ? "Coach" : "Batch";
+  const tabLabel = tab === "students" ? "Student" : tab === "coaches" ? "Coach" : tab === "sub-admins" ? "Sub Admin" : "Batch";
   const openMenuUser = users.find((u) => menu?.type === "user" && menu.id === u._id);
   const openMenuBatch = batches.find((b) => menu?.type === "batch" && menu.id === b._id);
 
@@ -228,14 +235,14 @@ export default function AdminUsersPage() {
       <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm sm:p-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex overflow-x-auto rounded-lg bg-slate-100 p-1">
-            {(["students", "coaches", "batches", "roles"] as Tab[]).map((t) => (
+            {(["students", "coaches", "sub-admins", "batches", "roles"] as Tab[]).map((t) => (
               <button key={t} onClick={() => { setTab(t); setMenu(null); }} className={`min-w-fit rounded-md px-4 py-1.5 text-sm capitalize ${tab === t ? "bg-white text-slate-950 shadow" : "text-slate-600"}`}>
-                {t}
+                {t.replace("-", " ")}
               </button>
             ))}
           </div>
           <div className="grid gap-2 sm:grid-cols-2 lg:flex lg:flex-1 lg:flex-wrap lg:justify-end">
-            {(tab === "students" || tab === "coaches") && (
+            {(tab === "students" || tab === "coaches" || tab === "sub-admins") && (
               <>
                 <select className="input w-full bg-white text-slate-950 lg:max-w-[160px]" value={status} onChange={(e) => setStatus(e.target.value)}>
                   <option value="">Filter by status</option>
@@ -258,7 +265,7 @@ export default function AdminUsersPage() {
           </div>
         </div>
 
-        {(tab === "students" || tab === "coaches") && (
+        {(tab === "students" || tab === "coaches" || tab === "sub-admins") && (
           <>
             <div className="mt-6 flex gap-2 text-xs">
               <span className="rounded-full bg-emerald-100 px-3 py-1 text-emerald-700">Active {counts.active}</span>
@@ -422,10 +429,10 @@ export default function AdminUsersPage() {
       {menu && openMenuUser && (
         <ActionMenu onClose={() => setMenu(null)} items={[
           { icon: Eye, label: "View Details", onClick: () => { setDetailUser(openMenuUser); setMenu(null); } },
-          { icon: Edit, label: `Edit ${openMenuUser.role === "instructor" ? "Coach" : "Student"}`, onClick: () => { setEditUser(openMenuUser); setMenu(null); } },
+          { icon: Edit, label: `Edit ${userRoleLabel(openMenuUser.role)}`, onClick: () => { setEditUser(openMenuUser); setMenu(null); } },
           { icon: KeyRound, label: "Reset Password", onClick: async () => { await updateUser(openMenuUser._id, { resetPassword: true }); setMenu(null); } },
           ...(openMenuUser.role === "instructor" ? [{ icon: UserPlus, label: "Assign Students", onClick: () => { setAssignCoach(openMenuUser); setMenu(null); } }] : []),
-          { icon: FileText, label: `${openMenuUser.role === "instructor" ? "Coach" : "Student"} Report`, onClick: () => { setReportUser(openMenuUser); setMenu(null); } },
+          { icon: FileText, label: `${userRoleLabel(openMenuUser.role)} Report`, onClick: () => { setReportUser(openMenuUser); setMenu(null); } },
           { icon: openMenuUser.isActive ? UserX : UserCheck, label: openMenuUser.isActive ? "Mark Inactive" : "Mark Active", onClick: async () => { await updateUser(openMenuUser._id, { isActive: !openMenuUser.isActive }); setMenu(null); } },
           { icon: Trash2, label: "Delete / Deactivate", onClick: () => deleteUser(openMenuUser) },
         ]} />
@@ -439,7 +446,7 @@ export default function AdminUsersPage() {
         ]} />
       )}
 
-      <AddUserModal open={openUserModal} onClose={() => setOpenUserModal(false)} onCreated={loadUsers} defaultRole={tab === "coaches" ? "instructor" : "student"} />
+      <AddUserModal open={openUserModal} onClose={() => setOpenUserModal(false)} onCreated={loadUsers} defaultRole={tab === "coaches" ? "instructor" : tab === "sub-admins" ? "sub-admin" : "student"} />
       <AddBatchModal open={openBatchModal} onClose={() => setOpenBatchModal(false)} onCreated={loadBatches} />
       {detailUser && <UserDetailsModal user={detailUser} batches={batches} onClose={() => setDetailUser(null)} onCopy={() => copyCredentials(detailUser)} />}
       {editUser && <EditUserModal user={editUser} onClose={() => setEditUser(null)} onSave={async (payload) => { await updateUser(editUser._id, payload); setEditUser(null); }} />}
@@ -531,7 +538,7 @@ function passwordStatus(user: AdminUser) {
 
 function EditUserModal({ user, onClose, onSave }: { user: AdminUser; onClose: () => void; onSave: (payload: Partial<AdminUser>) => void }) {
   return (
-    <ModalShell title={`Edit ${user.role === "instructor" ? "Coach" : "Student"}`} onClose={onClose}>
+    <ModalShell title={`Edit ${userRoleLabel(user.role)}`} onClose={onClose}>
       <form className="grid gap-3" onSubmit={(e) => {
         e.preventDefault();
         const fd = new FormData(e.currentTarget);
@@ -664,6 +671,7 @@ function RolesPanel() {
         ["student", "Can view assigned classes, homework, PGN library, fees, and bookings."],
         ["instructor", "Can manage classes, homework, attendance, availability, and assigned students."],
         ["admin", "Full access including user, coach, batch, billing, and settings management."],
+        ["sub-admin", "Configurable admin account. Access is selected from Feature Access by a Super Admin."],
       ].map(([role, description]) => (
         <div key={role} className="rounded-lg border border-slate-200 p-4">
           <div className="mb-2 font-semibold capitalize">{role}</div>

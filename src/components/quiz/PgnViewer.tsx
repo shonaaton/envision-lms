@@ -8,6 +8,7 @@ import { Chess } from "chess.js";
 import { useRouter } from "next/navigation";
 import PageLoadingOverlay from "@/components/feedback/PageLoadingOverlay";
 import { normalizePermissiveFen } from "@/lib/pgnLibrary";
+import { cn } from "@/lib/utils";
 
 const Chessboard = dynamic(() => import("react-chessboard").then((m) => m.Chessboard), { ssr: false });
 
@@ -130,6 +131,7 @@ export default function PgnViewer({
   const [navigating, setNavigating] = useState(false);
   const [folderSidebarOpen, setFolderSidebarOpen] = useState(true);
   const [folderQuery, setFolderQuery] = useState("");
+  const [mobilePanel, setMobilePanel] = useState<"board" | "files" | "moves">("board");
 
   const totalPages = Math.max(1, Math.ceil(parsed.moves.length / movesPerPage));
   const pageStart = movePage * movesPerPage;
@@ -157,8 +159,9 @@ export default function PgnViewer({
     if (!element) return;
 
     const resize = () => {
-      const heightLimit = Math.max(260, window.innerHeight - 360);
-      setBoardWidth(Math.max(260, Math.min(540, element.clientWidth - 28, heightLimit)));
+      const heightOffset = window.innerWidth < 768 ? 310 : 360;
+      const heightLimit = Math.max(240, window.innerHeight - heightOffset);
+      setBoardWidth(Math.max(240, Math.min(540, element.clientWidth - 28, heightLimit)));
     };
     resize();
     const observer = new ResizeObserver(resize);
@@ -193,10 +196,34 @@ export default function PgnViewer({
     );
   }
 
+  const mobileTabs = [
+    { id: "board" as const, label: "Board" },
+    { id: "files" as const, label: "Files", count: folderFiles.length },
+    { id: "moves" as const, label: "Moves", count: parsed.moves.length },
+  ];
+
   return (
-    <div className="grid h-full min-h-0 gap-3 lg:grid-cols-[minmax(0,1fr)_300px]">
+    <div className="flex h-full min-h-0 flex-col gap-2">
       <PageLoadingOverlay visible={navigating} message="Opening PGN..." />
-      <section className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white p-3 text-slate-950 shadow-sm">
+      <div className="grid grid-cols-3 gap-1 rounded-lg bg-slate-100 p-1 lg:hidden">
+        {mobileTabs.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => setMobilePanel(item.id)}
+            className={cn(
+              "flex min-h-9 items-center justify-center gap-1 rounded-md px-2 text-xs font-black transition",
+              mobilePanel === item.id ? "bg-white text-brand shadow-sm" : "text-slate-600"
+            )}
+          >
+            {item.label}
+            {typeof item.count === "number" && <span className="rounded-full bg-slate-200 px-1.5 py-0.5 text-[10px] text-slate-600">{item.count > 99 ? "99+" : item.count}</span>}
+          </button>
+        ))}
+      </div>
+
+      <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(0,1fr)_300px]">
+      <section className={cn("min-h-0 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white p-3 text-slate-950 shadow-sm lg:flex", mobilePanel === "board" ? "flex" : "hidden")}>
         <div ref={boardWrapRef} className="flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden pb-2">
           <div className="flex flex-col items-center gap-2">
             <span className="rounded-md bg-purple-50 px-3 py-1 text-xs font-bold uppercase tracking-wide text-purple-700">{activeSideToMove}</span>
@@ -241,8 +268,9 @@ export default function PgnViewer({
         </div>
       </section>
 
-      <aside className="min-h-0 overflow-hidden rounded-lg border border-slate-200 bg-white p-3 text-slate-950 shadow-sm">
-        {folderFiles.length > 1 && (
+      <aside className={cn("min-h-0 overflow-hidden rounded-lg border border-slate-200 bg-white p-3 text-slate-950 shadow-sm lg:block", mobilePanel === "files" || mobilePanel === "moves" ? "block" : "hidden")}>
+        <div className={cn("lg:block", mobilePanel === "files" ? "block" : "hidden")}>
+        {folderFiles.length > 1 ? (
           <div className="mb-3 rounded-md border border-slate-200">
             <button
               type="button"
@@ -289,7 +317,12 @@ export default function PgnViewer({
               </div>
             )}
           </div>
+        ) : (
+          <div className="mb-3 rounded-md border border-dashed border-slate-200 p-5 text-center text-sm text-slate-500">No other PGNs in this folder.</div>
         )}
+        </div>
+
+        <div className={cn("lg:block", mobilePanel === "moves" ? "block" : "hidden")}>
         <div className="mb-3 flex items-center justify-between gap-2">
           <div className="text-sm font-semibold text-slate-700">Move List</div>
           <div className="flex items-center gap-1 text-xs text-slate-500">
@@ -311,7 +344,9 @@ export default function PgnViewer({
             )}
           </div>
         </div>
+        </div>
       </aside>
+      </div>
     </div>
   );
 }

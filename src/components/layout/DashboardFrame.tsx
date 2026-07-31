@@ -6,7 +6,7 @@ import { Menu } from "lucide-react";
 import LiveDataRefresher from "@/components/layout/LiveDataRefresher";
 import Sidebar from "@/components/layout/Sidebar";
 
-type Role = "student" | "instructor" | "admin";
+type Role = "student" | "instructor" | "admin" | "sub-admin";
 type AccountStatus = "demo" | "enrolled" | "coach_applicant" | "approved" | "rejected";
 
 export default function DashboardFrame({

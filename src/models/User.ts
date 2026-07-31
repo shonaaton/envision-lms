@@ -9,7 +9,7 @@ const UserSchema = new Schema(
     tempPassword: { type: String },
     passwordChangedAt: { type: Date },
     passwordChangeSource: { type: String, enum: ["registration", "admin_reset", "self_reset"], default: "registration" },
-    role: { type: String, enum: ["student", "instructor", "admin"], default: "student", index: true },
+    role: { type: String, enum: ["student", "instructor", "admin", "sub-admin"], default: "student", index: true },
     isSuperAdmin: { type: Boolean, default: false, index: true },
     accountStatus: {
       type: String,

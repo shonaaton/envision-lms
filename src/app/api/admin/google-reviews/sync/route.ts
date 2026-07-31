@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireAdminApiAccess } from "@/lib/adminApiAccess";
 import { syncGoogleReviews } from "@/lib/googleReviews";
 
 export const dynamic = "force-dynamic";
 
-export async function POST() {
-  const session = await auth();
-  if ((session?.user as any)?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+export async function POST(req: Request) {
+  const session = await requireAdminApiAccess(req, "manage");
+  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   try {
     const syncedCount = await syncGoogleReviews();

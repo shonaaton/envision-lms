@@ -1,21 +1,16 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { recordActivity } from "@/lib/activity";
+import { requireAdminApiAccess } from "@/lib/adminApiAccess";
 import { normalizeAchievement, serializeAchievement } from "@/lib/achievements";
 import { Achievement } from "@/models/Achievement";
 
 export const dynamic = "force-dynamic";
 
-function adminId(session: any) {
-  if (session?.user?.role !== "admin") return null;
-  return session.user.id as string;
-}
-
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
-  const session = await auth();
-  const actorId = adminId(session);
-  if (!actorId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const session = await requireAdminApiAccess(req, "edit");
+  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const actorId = (session.user as any).id as string;
 
   await dbConnect();
   const achievement: any = await Achievement.findById(params.id);
@@ -36,10 +31,10 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   return NextResponse.json(serializeAchievement(achievement));
 }
 
-export async function DELETE(_: Request, { params }: { params: { id: string } }) {
-  const session = await auth();
-  const actorId = adminId(session);
-  if (!actorId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+export async function DELETE(req: Request, { params }: { params: { id: string } }) {
+  const session = await requireAdminApiAccess(req, "delete");
+  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const actorId = (session.user as any).id as string;
 
   await dbConnect();
   const achievement: any = await Achievement.findByIdAndDelete(params.id);

@@ -1,20 +1,15 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { recordActivity } from "@/lib/activity";
+import { requireAdminApiAccess } from "@/lib/adminApiAccess";
 import { normalizeAchievement, seedVerifiedAchievements, serializeAchievement } from "@/lib/achievements";
 import { Achievement } from "@/models/Achievement";
 
 export const dynamic = "force-dynamic";
 
-function adminId(session: any) {
-  if (session?.user?.role !== "admin") return null;
-  return session.user.id as string;
-}
-
 export async function GET(req: Request) {
-  const session = await auth();
-  if (!adminId(session)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const session = await requireAdminApiAccess(req, "view");
+  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const url = new URL(req.url);
   const q = url.searchParams.get("q")?.trim();
@@ -45,9 +40,9 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const session = await auth();
-  const actorId = adminId(session);
-  if (!actorId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const session = await requireAdminApiAccess(req, "create");
+  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const actorId = (session.user as any).id as string;
 
   const input = await req.json();
   await dbConnect();

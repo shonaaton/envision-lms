@@ -11,3 +11,10 @@ lichess_db_puzzle*.zst
 .DS_Store
 .vercel
 .turbo
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/

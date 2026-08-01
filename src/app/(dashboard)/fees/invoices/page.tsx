@@ -1,4 +1,5 @@
 import { auth } from "@/lib/auth";
+import { resolvePublicAppUrl } from "@/lib/appUrl";
 import { dbConnect } from "@/lib/db";
 import { createInvoice, ensureMonthlyInvoices, markInvoicePaid as applyInvoicePayment } from "@/lib/fees";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
@@ -23,18 +24,12 @@ function paise(value: FormDataEntryValue | null) {
   return Math.round(Number(value || 0) * 100);
 }
 
-function appBaseUrl() {
-  const raw = process.env.NEXTAUTH_URL || process.env.LMS_HOST || "";
-  if (!raw) return "";
-  return raw.startsWith("http") ? raw.replace(/\/$/, "") : `https://${raw.replace(/\/$/, "")}`;
-}
-
 function hashInvoiceToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
 async function createPublicInvoiceUrl(invoiceId: string) {
-  const baseUrl = appBaseUrl();
+  const baseUrl = resolvePublicAppUrl();
   if (!baseUrl) return "";
   const token = randomBytes(32).toString("base64url");
   await Invoice.findByIdAndUpdate(invoiceId, {

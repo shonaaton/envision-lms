@@ -12,7 +12,7 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
 public class MainActivity extends Activity {
-    private static final String APP_URL = "https://lms.srv1170212.hstgr.cloud";
+    private static final String APP_URL = "https://www.classroom.envisionchessacademy.com";
     private WebView webView;
 
     @Override
@@ -55,7 +55,7 @@ public class MainActivity extends Activity {
                     return true;
                 }
 
-                if (host != null && (host.equals("lms.srv1170212.hstgr.cloud") || host.endsWith(".srv1170212.hstgr.cloud"))) {
+                if (isAppHost(host)) {
                     return false;
                 }
 
@@ -63,6 +63,11 @@ public class MainActivity extends Activity {
                 return true;
             }
         });
+    }
+
+    private boolean isAppHost(String host) {
+        String appHost = Uri.parse(APP_URL).getHost();
+        return host != null && appHost != null && (host.equals(appHost) || host.endsWith("." + appHost));
     }
 
     @Override

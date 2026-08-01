@@ -1,124 +1,108 @@
-# Deploy Envision Chess Academy LMS
+# Move The LMS To The Classroom Domain
 
-You've got everything ready. Three steps remain — all of them require access I don't have
-(your VPS, your Mongo Atlas cluster, your Razorpay account), so I'm leaving copy-paste
-commands for you here.
+The LMS domain is:
 
----
-
-## Step 1 — On your laptop: push the project to a git repo
-
-So the VPS can `git clone` it. Github / Gitlab / your own Gitea — any will do.
-
-```bash
-cd "C:\Users\User\LMS PRoject\Experimentating to create an LMS\lms"
-git init
-git add .
-git commit -m "Initial Envision Chess Academy LMS"
-git branch -M main
-git remote add origin git@github.com:<your-user>/envision-lms.git   # ← change
-git push -u origin main
+```text
+https://www.classroom.envisionchessacademy.com
 ```
 
-If you'd rather skip git, you can `scp -r lms/ user@vps:/opt/envision-lms` — same result.
+Use HTTPS in production, even if you type `http://` first. Traefik should issue SSL and serve the final secure URL.
 
----
+## 1. Point DNS to the VPS
 
-## Step 2 — On your Hostinger VPS: deploy
+In your domain DNS panel, add this record:
 
-SSH in (`ssh root@<vps-ip>`) and:
+```text
+Type: A
+Name: www.classroom
+Value: <your-vps-ip-address>
+TTL: Automatic or 300
+```
+
+If your DNS panel asks for the full host instead of just the name, enter:
+
+```text
+www.classroom.envisionchessacademy.com
+```
+
+## 2. Update `.env` on the VPS
+
+On the VPS, open the live `.env` file and set:
+
+```env
+LMS_HOST="www.classroom.envisionchessacademy.com"
+NEXTAUTH_URL="https://www.classroom.envisionchessacademy.com"
+NEXT_PUBLIC_APP_URL="https://www.classroom.envisionchessacademy.com"
+
+NEXT_PUBLIC_MARKETING_URL="https://www.envisionchessacademy.com"
+NEXT_PUBLIC_POLICY_BASE_URL="https://www.envisionchessacademy.com"
+```
+
+Keep your existing MongoDB, Razorpay, WhatsApp, and `AUTH_SECRET` values unchanged.
+
+## 3. Update connected services
+
+Razorpay webhook:
+
+```text
+https://www.classroom.envisionchessacademy.com/api/payments/webhook
+```
+
+Google Business callback:
+
+```text
+https://www.classroom.envisionchessacademy.com/api/auth/google-business/callback
+```
+
+n8n webhook URLs, if used:
+
+```env
+ASK_COACH_EMAIL_WEBHOOK_URL="https://n8n.envisionchessacademy.com/webhook/lms-email-automation"
+EMAIL_AUTOMATION_WEBHOOK_URL="https://n8n.envisionchessacademy.com/webhook/lms-email-automation"
+PASSWORD_RESET_EMAIL_WEBHOOK_URL="https://n8n.envisionchessacademy.com/webhook/lms-password-reset"
+```
+
+If n8n is still on a Hostinger temporary URL, keep that existing n8n URL until you move n8n too.
+
+## 4. Rebuild and restart
+
+From the LMS folder on the VPS:
 
 ```bash
-# 1) Pull the code
-git clone git@github.com:<your-user>/envision-lms.git /opt/envision-lms
-cd /opt/envision-lms
-
-# 2) Fill in environment
-cp .env.example .env
-nano .env
-#   MONGODB_URI       = mongodb+srv://...     (from your Atlas cluster)
-#   AUTH_SECRET       = $(openssl rand -base64 32)
-#   NEXTAUTH_URL      = https://platform.envisionchessacademy.com
-#   RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET / RAZORPAY_WEBHOOK_SECRET
-#   NEXT_PUBLIC_RAZORPAY_KEY_ID = (same as RAZORPAY_KEY_ID)
-
-# 3) DNS — point your domain to the VPS
-#    A record:   platform.envisionchessacademy.com   →  <your-vps-ip>
-
-# 4) Run the one-shot deploy
 bash scripts/deploy.sh
 ```
 
-`deploy.sh` does:
-- pulls Stockfish.js into `/public/stockfish/`
-- ensures the shared `root_default` Docker network exists (so Traefik + n8n can see this app)
-- runs `docker compose up -d --build`
-- tails 15s of logs so you can confirm the app booted
+This rebuild is important because public browser settings such as the app URL and Razorpay key are included during the build.
 
-After Traefik picks it up (~30–60s) it'll issue a Let's Encrypt cert automatically.
-Visit https://platform.envisionchessacademy.com — you should see the landing page.
+## 5. Test the domain
 
----
+Open:
 
-## Step 3 — Promote your account to admin
-
-Register on the deployed site first (visit /register, sign up normally). Then make
-yourself admin one of two ways:
-
-**Easiest — Atlas UI:**
-1. Open cloud.mongodb.com → your cluster → Browse Collections
-2. Pick database `envision_chess` → collection `users`
-3. Find your user → edit → set `role: "admin"` → save
-
-**Or from anywhere with `node`:**
-```bash
-MONGODB_URI="mongodb+srv://..." node scripts/promote-admin.js you@example.com
+```text
+https://www.classroom.envisionchessacademy.com
 ```
 
----
+Then test:
 
-## Step 4 — Razorpay webhook (one minute, do this last)
+- Register
+- Login
+- Password reset email link
+- Invoice PDF link
+- Razorpay test payment
+- Google Business connection, if enabled
+- Android app wrapper, if you build the APK
 
-1. Razorpay dashboard → Settings → Webhooks → Add
-2. URL: `https://platform.envisionchessacademy.com/api/payments/webhook`
-3. Secret: same string you put in `RAZORPAY_WEBHOOK_SECRET`
-4. Events: `payment.captured` and `payment.failed`
+## 6. Android app wrapper
 
----
+When rebuilding the Android APK, pass the same final LMS URL:
 
-## Hooking into your n8n (bonus)
-
-Both this LMS and n8n now live on the same VPS, same docker network. From inside
-the LMS container you can hit `http://n8n:5678/webhook/<path>` to fire workflows
-on every enrollment, booking, attendance mark, etc. Drop this into `.env`:
-
-```
-N8N_WEBHOOK_BASE=http://n8n:5678/webhook
+```powershell
+.\android-webview\build-apk.ps1 -AppUrl "https://www.classroom.envisionchessacademy.com"
 ```
 
-…then call it from any API route, e.g. in `src/app/api/payments/verify/route.ts`
-after the enrollment update:
+## Notes
 
-```ts
-if (process.env.N8N_WEBHOOK_BASE) {
-  await fetch(`${process.env.N8N_WEBHOOK_BASE}/student-enrolled`, {
-    method: "POST",
-    body: JSON.stringify({ userId: pay.user, classroomId: pay.refId }),
-  });
-}
-```
-
-Your n8n flow can then fire WhatsApp/email/Discord notifications without touching
-this codebase again.
-
----
-
-## Troubleshooting
-
-| Symptom | Fix |
-| --- | --- |
-| `docker compose` says network `root_default` not found | `docker network create root_default` then retry |
-| Traefik returns 404 | Check labels in `docker-compose.yml` match your Traefik entrypoint name (`websecure`) and resolver name (`letsencrypt`) — yours may differ |
-| MongoDB `MongoServerSelectionError` | Add the VPS IP to Atlas Network Access allowlist (Atlas → Network Access) |
-| Razorpay checkout shows "key id missing" | `NEXT_PUBLIC_RAZORPAY_KEY_ID` must be set at **build time** — re-run `docker compose up -d --build` after editing `.env` |
-| Analysis board "engine: —" | `scripts/setup-assets.sh` didn't fetch Stockfish. Run it manually |
+- Do not change MongoDB data for the domain move.
+- Do not rotate Razorpay or Google secrets unless you want to.
+- Leave `AUTH_SECRET` unchanged on the live site; changing it logs everyone out.
+- DNS can take a few minutes to update, and SSL may take 30-60 seconds after Traefik sees the new domain.

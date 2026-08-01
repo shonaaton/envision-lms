@@ -28,6 +28,7 @@ import Logo from "@/components/layout/Logo";
 import AnimatedImpactCounters from "@/components/marketing/AnimatedImpactCounters";
 import TestimonialCarousel from "@/components/marketing/TestimonialCarousel";
 import { ACADEMY_DEFAULTS } from "@/lib/branding";
+import { MARKETING_BASE_URL, OFFLINE_ACADEMY_URL } from "@/lib/publicLinks";
 import { academyBranches, anishStory, impactCounters, publicAchievementList, studentSlug } from "@/lib/achievementData";
 import { getLandingAchievements } from "@/lib/achievements";
 import { getLandingReviews } from "@/lib/googleReviews";
@@ -35,15 +36,15 @@ import { getLandingReviews } from "@/lib/googleReviews";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://www.envisionchessacademy.com"),
+  metadataBase: new URL(MARKETING_BASE_URL),
   title: "Envision Chess Academy | Premium Chess Coaching and Student LMS",
   description:
     "Premium online and offline chess coaching with verified student achievements, structured mentorship, tournaments, practice tools, progress tracking, and payments in one student portal.",
-  alternates: { canonical: "https://www.envisionchessacademy.com/" },
+  alternates: { canonical: `${MARKETING_BASE_URL}/` },
   openGraph: {
     title: "Envision Chess Academy",
     description: "Structured chess coaching, verified student achievements, and an all-in-one learning portal.",
-    url: "https://www.envisionchessacademy.com/",
+    url: `${MARKETING_BASE_URL}/`,
     siteName: "Envision Chess Academy",
     type: "website",
     images: [{ url: "/images/achievements/682626726_122217430778279433_7786835792267057544_n.jpg", width: 1200, height: 900, alt: "Envision Chess Academy student achievement" }],
@@ -58,7 +59,7 @@ export const metadata: Metadata = {
 
 const demoHref = "/register";
 const cloudinaryCollectionUrl = "https://collection.cloudinary.com/dlafr6yu3/3ddc9e2d8d7656087c4a52336a2e1df4";
-const offlineSourceUrl = "https://www.envisionchessacademy.com/chess-academy-in-kolkata";
+const offlineSourceUrl = OFFLINE_ACADEMY_URL;
 
 const navItems = [
   ["Home", "#home"],
@@ -127,7 +128,7 @@ export default async function Home() {
     "@context": "https://schema.org",
     "@type": "EducationalOrganization",
     name: "Envision Chess Academy",
-    url: "https://www.envisionchessacademy.com/",
+    url: `${MARKETING_BASE_URL}/`,
     description:
       "Chess academy offering structured online and offline coaching, student learning tools, tournament preparation, and progress tracking.",
     address: academyBranches.map((centre) => ({

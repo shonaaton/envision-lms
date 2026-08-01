@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
+import { LEGAL_LINKS } from "@/lib/publicLinks";
 
 export default function TermsPage() {
-  redirect("https://www.envisionchessacademy.com/terms-and-conditions");
+  redirect(LEGAL_LINKS.terms);
 }

@@ -1,4 +1,5 @@
 import { auth } from "@/lib/auth";
+import { resolvePublicAppUrl } from "@/lib/appUrl";
 import { dbConnect } from "@/lib/db";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
 import { sendWhatsAppReminder } from "@/lib/whatsappAutomation";
@@ -29,12 +30,6 @@ function exportHref(params: Params, format: "csv" | "xls" | "history") {
     format,
   });
   return `/api/fees/credit-monitoring?${next.toString()}`;
-}
-
-function appBaseUrl() {
-  const raw = process.env.NEXTAUTH_URL || process.env.LMS_HOST || "";
-  if (!raw) return "";
-  return raw.startsWith("http") ? raw.replace(/\/$/, "") : `https://${raw.replace(/\/$/, "")}`;
 }
 
 function deliveryStatus(delivery: ReminderDelivery) {
@@ -122,7 +117,8 @@ async function sendBulkCreditReminders(formData: FormData) {
   const lowCreditThreshold = Math.max(1, Number(settings?.lowCreditThreshold || 3));
   const threshold = mode === "empty" ? 0 : lowCreditThreshold;
   const assignments: any[] = await FeeAssignment.find({ type: "credits", creditBalance: { $lte: threshold } }).populate("student plan").sort({ creditBalance: 1 }).limit(500).lean();
-  const portalUrl = appBaseUrl() ? `${appBaseUrl()}/fees` : "";
+  const baseUrl = resolvePublicAppUrl();
+  const portalUrl = baseUrl ? `${baseUrl}/fees` : "";
   const summary: ReminderSummary = { sent: 0, failed: 0, missing: 0, skipped: 0, total: assignments.length };
 
   for (const assignment of assignments) {
@@ -180,7 +176,8 @@ async function sendCreditWhatsAppTest(formData: FormData) {
   const assignmentId = String(formData.get("assignment") || "");
   const assignment: any = await FeeAssignment.findById(assignmentId).populate("student plan").lean();
   if (!assignment?.student?._id) redirect("/fees/credit-monitoring?whatsapp=failed");
-  const portalUrl = appBaseUrl() ? `${appBaseUrl()}/fees` : "";
+  const baseUrl = resolvePublicAppUrl();
+  const portalUrl = baseUrl ? `${baseUrl}/fees` : "";
   const delivery = await sendWhatsAppReminder({
     message: creditReminderMessage(assignment, portalUrl),
     templateText: assignment.student.name || "Student",

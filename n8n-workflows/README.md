@@ -49,7 +49,7 @@ Password reset emails also include:
 After activation, the production webhook URL should be:
 
 ```text
-https://n8n.srv1170212.hstgr.cloud/webhook/lms-email-automation
+https://n8n.envisionchessacademy.com/webhook/lms-email-automation
 ```
 
 ## LMS environment values
@@ -57,8 +57,8 @@ https://n8n.srv1170212.hstgr.cloud/webhook/lms-email-automation
 Put both webhook variables in your LMS `.env` file:
 
 ```env
-ASK_COACH_EMAIL_WEBHOOK_URL="https://n8n.srv1170212.hstgr.cloud/webhook/lms-email-automation"
-EMAIL_AUTOMATION_WEBHOOK_URL="https://n8n.srv1170212.hstgr.cloud/webhook/lms-email-automation"
+ASK_COACH_EMAIL_WEBHOOK_URL="https://n8n.envisionchessacademy.com/webhook/lms-email-automation"
+EMAIL_AUTOMATION_WEBHOOK_URL="https://n8n.envisionchessacademy.com/webhook/lms-email-automation"
 ```
 
 Both can point to the same workflow. The payload already tells n8n what kind of email it is sending.
@@ -83,7 +83,7 @@ bash scripts/deploy.sh
 After the workflow is active, send a test request:
 
 ```bash
-curl -X POST "https://n8n.srv1170212.hstgr.cloud/webhook/lms-email-automation" \
+curl -X POST "https://n8n.envisionchessacademy.com/webhook/lms-email-automation" \
   -H "Content-Type: application/json" \
   -d '{
     "to":"you@example.com",

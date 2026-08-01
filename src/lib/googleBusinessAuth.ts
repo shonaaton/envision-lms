@@ -1,12 +1,14 @@
+import { resolvePublicAppUrl } from "@/lib/appUrl";
 import { dbConnect } from "@/lib/db";
 import { GoogleBusinessIntegration } from "@/models/GoogleBusinessIntegration";
 
 const scope = "https://www.googleapis.com/auth/business.manage";
 
 export function googleBusinessRedirectUri() {
+  const baseUrl = resolvePublicAppUrl();
   return (
     process.env.GOOGLE_BUSINESS_REDIRECT_URI ||
-    `${(process.env.NEXT_PUBLIC_APP_URL || process.env.NEXTAUTH_URL || "http://localhost:3000").replace(/\/$/, "")}/api/auth/google-business/callback`
+    `${baseUrl}/api/auth/google-business/callback`
   );
 }
 

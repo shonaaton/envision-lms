@@ -2,10 +2,18 @@
 
 This folder contains a small native Android wrapper for the hosted LMS.
 
-- App URL: `https://lms.srv1170212.hstgr.cloud`
+- App URL: `https://www.classroom.envisionchessacademy.com`
 - Package: `com.envisionchessacademy.lms`
 - Output APK: `build/outputs/envision-lms-debug.apk`
 
-Run `.\build-apk-legacy.ps1` from this folder to build with the SDK at
-`C:\Users\User\Downloads\android-sdk`. If a modern Android SDK is installed, you can
-also run `.\build-apk.ps1`.
+Run one of these from this folder:
+
+```powershell
+.\build-apk.ps1 -AppUrl "https://www.classroom.envisionchessacademy.com"
+```
+
+If you need the legacy SDK path:
+
+```powershell
+.\build-apk-legacy.ps1 -AppUrl "https://www.classroom.envisionchessacademy.com"
+```

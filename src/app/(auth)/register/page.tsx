@@ -30,6 +30,7 @@ import {
   UsersRound,
 } from "lucide-react";
 import { ACADEMY_LOGO_URL } from "@/lib/branding";
+import { LEGAL_LINKS } from "@/lib/publicLinks";
 
 const countries = [
   { code: "+91", country: "India" },
@@ -476,9 +477,9 @@ export default function RegisterPage() {
                   </div>
                 </div>
                 <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4 text-sm">
-                  <PolicyCheck checked={form.acceptedPrivacy} onChange={(value) => setField("acceptedPrivacy", value)} label="I accept the Privacy Policy" href="https://www.envisionchessacademy.com/privacy-policy" />
-                  <PolicyCheck checked={form.acceptedTerms} onChange={(value) => setField("acceptedTerms", value)} label="I accept the Terms and Conditions" href="https://www.envisionchessacademy.com/terms-and-conditions" />
-                  <PolicyCheck checked={form.acceptedRefund} onChange={(value) => setField("acceptedRefund", value)} label="I accept the Refund Policy" href="https://www.envisionchessacademy.com/refund-policy" />
+                  <PolicyCheck checked={form.acceptedPrivacy} onChange={(value) => setField("acceptedPrivacy", value)} label="I accept the Privacy Policy" href={LEGAL_LINKS.privacy} />
+                  <PolicyCheck checked={form.acceptedTerms} onChange={(value) => setField("acceptedTerms", value)} label="I accept the Terms and Conditions" href={LEGAL_LINKS.terms} />
+                  <PolicyCheck checked={form.acceptedRefund} onChange={(value) => setField("acceptedRefund", value)} label="I accept the Refund Policy" href={LEGAL_LINKS.refund} />
                   {role === "student" && <PlainCheck checked={form.parentConsent} onChange={(value) => setField("parentConsent", value)} label="Parent or guardian consent is confirmed." />}
                   <PlainCheck checked={form.academyUpdates} onChange={(value) => setField("academyUpdates", value)} label="Receive academy updates and event announcements." />
                 </div>

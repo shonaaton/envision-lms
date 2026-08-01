@@ -32,5 +32,13 @@ docker compose up -d --build
 echo "==> Tailing logs for 15s..."
 ( timeout 15 docker compose logs -f envision-lms || true )
 
-echo "==> Done. Visit https://platform.envisionchessacademy.com"
+APP_URL="$(grep -E '^NEXT_PUBLIC_APP_URL=' .env | tail -1 | cut -d= -f2- | tr -d '\"')"
+if [ -z "$APP_URL" ]; then
+  LMS_HOST_VALUE="$(grep -E '^LMS_HOST=' .env | tail -1 | cut -d= -f2- | tr -d '\"')"
+  if [ -n "$LMS_HOST_VALUE" ]; then
+    APP_URL="https://${LMS_HOST_VALUE}"
+  fi
+fi
+
+echo "==> Done. Visit ${APP_URL:-your configured LMS domain}"
 echo "   (DNS A record must point at this VPS, Traefik will issue TLS automatically)"

@@ -33,7 +33,8 @@ export const loginSchema = z.object({
 export const addUserSchema = z.object({
   name: z.string().min(2).max(80),
   email: z.string().email(),
-  phone: z.string().optional(),
+  countryCode: optionalText(8),
+  phone: optionalText(40),
   password: z.string().min(8).max(72).optional(), // auto-generated if omitted
   role: z.enum(["student", "instructor", "admin", "sub-admin"]),
   tags: z.array(z.string()).default([]),

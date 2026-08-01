@@ -55,7 +55,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     return NextResponse.json({ ...u?.toObject?.(), tempPassword });
   }
   // Whitelist allowed fields
-  const allowed = ["name", "email", "phone", "role", "tags", "batches", "fideId", "rating", "notes", "isActive", "isSuperAdmin"];
+  const allowed = ["name", "email", "countryCode", "phone", "role", "tags", "batches", "fideId", "rating", "notes", "isActive", "isSuperAdmin"];
   const update: any = {};
   for (const k of allowed) if (k in body) update[k] = body[k];
   if ("isSuperAdmin" in update && !actorIsSuperAdmin) return NextResponse.json({ error: "Only Super Admins can grant or remove Super Admin access." }, { status: 403 });

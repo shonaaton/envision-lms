@@ -36,6 +36,7 @@ type AdminUser = {
   passwordChangeSource?: "registration" | "admin_reset" | "self_reset";
   name: string;
   email: string;
+  countryCode?: string;
   phone?: string;
   role: UserRole;
   tags?: string[];
@@ -69,6 +70,12 @@ function userRoleLabel(role: UserRole) {
   if (role === "sub-admin") return "Sub Admin";
   if (role === "admin") return "Admin";
   return "Student";
+}
+
+function contactNumber(user: Pick<AdminUser, "countryCode" | "phone">) {
+  const phone = user.phone?.trim();
+  if (!phone) return "-";
+  return [user.countryCode, phone].map((part) => part?.trim()).filter(Boolean).join(" ");
 }
 
 export default function AdminUsersPage() {
@@ -195,7 +202,7 @@ export default function AdminUsersPage() {
   function exportCsv() {
     const rows = tab === "batches"
       ? [["Name", "Coach", "Students", "Level"], ...currentBatches.map((b) => [b.name, b.coach?.name || "", String(b.students?.length || 0), b.level || ""])]
-      : [["Username", "Password Status", "Name", "Email", "Phone", "Status"], ...users.map((u) => [u.username || "", passwordStatus(u), u.name, u.email, u.phone || "", u.isActive ? "Active" : "Inactive"])];
+      : [["Username", "Password Status", "Name", "Email", "Phone", "Status"], ...users.map((u) => [u.username || "", passwordStatus(u), u.name, u.email, contactNumber(u), u.isActive ? "Active" : "Inactive"])];
     const csv = rows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
     const link = document.createElement("a");
     link.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
@@ -289,7 +296,7 @@ export default function AdminUsersPage() {
                   <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                     <InfoPill label="S.No" value={String(i + 1)} />
                     <InfoPill label="Username" value={u.username || "-"} />
-                    <InfoPill label="Phone" value={u.phone || "-"} />
+                    <InfoPill label="Phone" value={contactNumber(u)} />
                     <button
                       className={`rounded-lg px-3 py-2 text-left text-xs font-bold ${u.isActive ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}
                       onClick={() => updateUser(u._id, { isActive: !u.isActive })}
@@ -349,7 +356,7 @@ export default function AdminUsersPage() {
                         </button>
                       </td>
                       <td className="py-3 text-slate-600">{u.email}</td>
-                      <td className="py-3 text-slate-600">{u.phone || "-"}</td>
+                      <td className="py-3 text-slate-600">{contactNumber(u)}</td>
                       <td className="py-3">
                         <button
                           className={`rounded-full px-2.5 py-1 text-xs font-semibold transition hover:shadow-sm ${u.isActive ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200" : "bg-red-100 text-red-700 hover:bg-red-200"}`}
@@ -497,7 +504,7 @@ function UserDetailsModal({ user, batches, onClose, onCopy }: { user: AdminUser;
           <InfoRow label="Email" value={user.email} />
           <InfoRow label="Username" value={user.username || "-"} />
           <InfoRow label="Password" value={user.tempPassword ? "Temporary password available to admin" : passwordStatus(user)} />
-          <InfoRow label="Contact No." value={user.phone || "-"} />
+          <InfoRow label="Contact No." value={contactNumber(user)} />
           <InfoRow label="Status" value={user.isActive ? "Active" : "Inactive"} />
           {user.tempPassword ? <button className="btn-primary gap-2" onClick={onCopy}><Copy size={15} /> Copy temporary credentials</button> : null}
         </div>
@@ -542,10 +549,13 @@ function EditUserModal({ user, onClose, onSave }: { user: AdminUser; onClose: ()
       <form className="grid gap-3" onSubmit={(e) => {
         e.preventDefault();
         const fd = new FormData(e.currentTarget);
+        const phone = String(fd.get("phone") || "").trim();
+        const countryCode = String(fd.get("countryCode") || "").trim();
         onSave({
           name: String(fd.get("name") || ""),
           email: String(fd.get("email") || ""),
-          phone: String(fd.get("phone") || ""),
+          countryCode: phone ? countryCode : "",
+          phone,
           tags: String(fd.get("tags") || "").split(",").map((s) => s.trim()).filter(Boolean),
           notes: String(fd.get("notes") || ""),
           isActive: fd.get("isActive") === "on",
@@ -553,7 +563,10 @@ function EditUserModal({ user, onClose, onSave }: { user: AdminUser; onClose: ()
       }}>
         <input className="input bg-white text-slate-950" name="name" defaultValue={user.name} required />
         <input className="input bg-white text-slate-950" name="email" type="email" defaultValue={user.email} required />
-        <input className="input bg-white text-slate-950" name="phone" defaultValue={user.phone || ""} />
+        <div className="grid grid-cols-[110px_minmax(0,1fr)] gap-3">
+          <input className="input bg-white text-slate-950" name="countryCode" defaultValue={user.countryCode || ""} placeholder="+91" inputMode="tel" autoComplete="tel-country-code" />
+          <input className="input bg-white text-slate-950" name="phone" defaultValue={user.phone || ""} placeholder="Phone" inputMode="tel" autoComplete="tel-national" />
+        </div>
         <input className="input bg-white text-slate-950" name="tags" defaultValue={(user.tags || []).join(", ")} />
         <textarea className="input min-h-24 bg-white text-slate-950" name="notes" defaultValue={user.notes || ""} />
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="isActive" defaultChecked={user.isActive} /> Active</label>

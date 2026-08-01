@@ -145,6 +145,7 @@ export default function RegisterPage() {
         toast.error("Please enter a valid email address.");
         return false;
       }
+      if (!requireText(form.countryCode, "Please enter the country code.")) return false;
       if (!requireText(form.phone, "Please enter a phone number.")) return false;
     }
 
@@ -207,7 +208,7 @@ export default function RegisterPage() {
       email: form.email.trim(),
       password: form.password,
       role,
-      countryCode: form.countryCode,
+      countryCode: form.countryCode.trim(),
       phone: form.phone.trim(),
       city: form.city.trim(),
       country: form.country,
@@ -376,11 +377,9 @@ export default function RegisterPage() {
                   <TextField icon={<UserRound size={18} />} label={role === "student" ? "Student name" : "Full name"} value={form.name} onChange={(value) => setField("name", value)} autoComplete="name" />
                   {role === "student" && <TextField icon={<UsersRound size={18} />} label="Parent or guardian name" value={form.parentName} onChange={(value) => setField("parentName", value)} />}
                   <TextField icon={<Mail size={18} />} label="Email address" value={form.email} onChange={(value) => setField("email", value)} type="email" autoComplete="email" />
-                  <div className="grid grid-cols-[118px_1fr] gap-3">
-                    <SelectField label="Code" value={form.countryCode} onChange={(value) => setField("countryCode", value)}>
-                      {countries.map((item) => <option key={`${item.code}-${item.country}`} value={item.code}>{item.code}</option>)}
-                    </SelectField>
-                    <TextField icon={<Phone size={18} />} label="Phone number" value={form.phone} onChange={(value) => setField("phone", value)} autoComplete="tel" />
+                  <div className="grid grid-cols-[118px_minmax(0,1fr)] gap-3">
+                    <TextField icon={<Phone size={18} />} label="Code" value={form.countryCode} onChange={(value) => setField("countryCode", value)} autoComplete="tel-country-code" inputMode="tel" placeholder="+91" />
+                    <TextField icon={<Phone size={18} />} label="Phone number" value={form.phone} onChange={(value) => setField("phone", value)} autoComplete="tel-national" inputMode="tel" />
                   </div>
                 </div>
                 <PremiumNote>Demo requests and coach applications are reviewed with the same contact record, so the academy team can follow up cleanly.</PremiumNote>

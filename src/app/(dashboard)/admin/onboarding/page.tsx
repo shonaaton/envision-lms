@@ -17,6 +17,12 @@ function tempPassword() {
   return `ENVCoach${Math.floor(100000 + Math.random() * 900000)}`;
 }
 
+function contactNumber(record: { countryCode?: string; phone?: string }) {
+  const phone = record.phone?.trim();
+  if (!phone) return "No phone";
+  return [record.countryCode, phone].map((part) => part?.trim()).filter(Boolean).join(" ");
+}
+
 async function approveBooking(formData: FormData) {
   "use server";
   const session = await auth();
@@ -163,7 +169,7 @@ export default async function AdminOnboardingPage() {
   if ((session?.user as any)?.role !== "admin") redirect("/dashboard");
   await dbConnect();
   const [bookings, applications, demoStudents, coaches] = await Promise.all([
-    Booking.find({ bookingType: "demo" }).populate("student instructor", "name email phone username accountStatus").sort({ createdAt: -1 }).limit(100).lean(),
+    Booking.find({ bookingType: "demo" }).populate("student instructor", "name email countryCode phone username accountStatus").sort({ createdAt: -1 }).limit(100).lean(),
     CoachApplication.find({}).sort({ createdAt: -1 }).limit(100).lean(),
     User.find({ role: "student", accountStatus: "demo" }, { passwordHash: 0 }).sort({ createdAt: -1 }).limit(100).lean(),
     User.find({ role: "instructor", isActive: true }, { name: 1, email: 1 }).sort({ name: 1 }).lean(),
@@ -224,7 +230,7 @@ export default async function AdminOnboardingPage() {
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <div className="font-black">{application.name}</div>
-                  <div className="mt-1 text-sm text-slate-500">{application.email} · {application.phone || "No phone"} · {application.status}</div>
+                  <div className="mt-1 text-sm text-slate-500">{application.email} · {contactNumber(application)} · {application.status}</div>
                   <div className="mt-2 max-w-3xl text-sm text-slate-700">{application.experience || "No experience note added."}</div>
                 </div>
                 {application.status === "pending" || application.status === "shortlisted" ? (
@@ -247,6 +253,7 @@ export default async function AdminOnboardingPage() {
             <div key={student._id} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
               <div className="font-black">{student.name}</div>
               <div className="mt-1 text-sm text-slate-500">{student.email} · {student.username}</div>
+              <div className="mt-1 text-sm text-slate-500">{contactNumber(student)}</div>
               <div className="mt-2 text-xs text-slate-500">
                 Computer {student.demoUsage?.playComputer || 0}/{student.demoLimits?.playComputer || 0} · Square {student.demoUsage?.squareTrainer || 0}/{student.demoLimits?.squareTrainer || 0} · King Hunt {student.demoUsage?.kingHunt || 0}/{student.demoLimits?.kingHunt || 3}
               </div>

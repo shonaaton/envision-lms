@@ -20,10 +20,13 @@ export default function AddUserModal({
     e.preventDefault();
     setLoading(true);
     const fd = new FormData(e.currentTarget);
+    const phone = String(fd.get("phone") || "").trim();
+    const countryCode = String(fd.get("countryCode") || "").trim();
     const payload = {
       name: fd.get("name"),
       email: fd.get("email"),
-      phone: fd.get("phone") || undefined,
+      countryCode: phone ? countryCode || undefined : undefined,
+      phone: phone || undefined,
       role: defaultRole,
       fideId: fd.get("fideId") || undefined,
       rating: Number(fd.get("rating") || 0),
@@ -58,7 +61,10 @@ export default function AddUserModal({
           <input className="input" name="name" placeholder="Full name *" required />
           <div className="grid grid-cols-2 gap-3">
             <input className="input" name="email" type="email" placeholder="Email *" required />
-            <input className="input" name="phone" placeholder="Phone" />
+            <div className="grid grid-cols-[92px_minmax(0,1fr)] gap-2">
+              <input className="input" name="countryCode" placeholder="+91" defaultValue="+91" inputMode="tel" autoComplete="tel-country-code" />
+              <input className="input" name="phone" placeholder="Phone" inputMode="tel" autoComplete="tel-national" />
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <input className="input" name="fideId" placeholder="FIDE ID (optional)" />

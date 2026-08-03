@@ -302,6 +302,22 @@ export const FEATURE_DEFINITIONS: FeatureDefinition[] = [
     defaultRolePermissions: { admin: all(view, edit, manage) },
   },
   {
+    key: "accountSettings",
+    label: "Account Settings",
+    category: "Settings",
+    description: "Personal profile image, limited profile details, password changes, and password reset requests.",
+    routes: ["/profile"],
+    apiPrefixes: ["/api/profile"],
+    permissions: [view, edit, { id: "security", label: "Password & Security" }],
+    defaultStatus: "enabled",
+    defaultRolePermissions: {
+      student: ["view", "edit", "security"],
+      instructor: ["view", "edit", "security"],
+      admin: ["view", "edit", "security"],
+      "sub-admin": ["view", "edit", "security"],
+    },
+  },
+  {
     key: "featureAccess",
     label: "Feature Access & Permissions",
     category: "Settings",

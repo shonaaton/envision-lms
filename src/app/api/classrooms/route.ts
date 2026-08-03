@@ -6,6 +6,7 @@ import { Course } from "@/models/Course";
 import { buildGeneratedSessions, buildSessionPlan } from "@/lib/classroomSchedule";
 import { syncClassroomSessionInstances } from "@/lib/classroomSessionInstances";
 import { canAccessFeature, isSuperAdminSession } from "@/lib/featureAccess";
+import { coachClassroomQuery, limitClassroomToCoachSessions } from "@/lib/classroomCoachAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +27,7 @@ export async function GET() {
   const filter = role === "admin" || role === "sub-admin"
     ? { isSessionInstance: { $ne: true }, ...visibleClassrooms }
     : role === "instructor"
-      ? { $or: [{ instructor: userId }, { coach: userId }], isSessionInstance: { $ne: true }, ...visibleClassrooms }
+      ? { ...coachClassroomQuery(userId), isSessionInstance: { $ne: true }, ...visibleClassrooms }
       : { students: userId, isSessionInstance: { $ne: true }, ...visibleClassrooms };
   const list = await Classroom.find(filter)
     .populate("coach instructor", "name email username")
@@ -35,7 +36,7 @@ export async function GET() {
     .populate("course", "name category level")
     .sort({ classDate: 1, startDate: 1, createdAt: -1 })
     .lean();
-  return NextResponse.json(list);
+  return NextResponse.json(role === "instructor" ? list.map((item: any) => limitClassroomToCoachSessions(item, userId)) : list);
 }
 
 export async function POST(req: Request) {

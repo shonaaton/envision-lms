@@ -10,6 +10,7 @@ import CsvDownloadButton from "@/components/common/CsvDownloadButton";
 import SessionResourceReview from "@/components/classroom/SessionResourceReview";
 import { formatAcademyDateTime } from "@/lib/academyTime";
 import { getSessionStart } from "@/lib/classroomSessions";
+import { coachCanAccessClassroomSession } from "@/lib/classroomCoachAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -17,10 +18,10 @@ function objectId(value: any) {
   return value?._id?.toString?.() ?? value?.toString?.() ?? "";
 }
 
-function participantHasAccess(classroom: any, role: string, userId: string) {
+function participantHasAccess(classroom: any, role: string, userId: string, scheduledSessionId?: string) {
   if (role === "admin" || role === "sub-admin") return true;
   if (role === "student") return (classroom.students || []).some((student: any) => String(student) === userId || String(student?._id || "") === userId);
-  return [classroom.coach, classroom.instructor].some((coach: any) => String(coach) === userId || String(coach?._id || "") === userId);
+  return coachCanAccessClassroomSession(classroom, userId, scheduledSessionId);
 }
 
 function formatDate(value?: string | Date | null) {
@@ -94,13 +95,15 @@ export default async function ClassroomSummaryPage({
     .populate("coach instructor students batches", "name username email")
     .lean();
   if (!classroom) notFound();
-  if (!participantHasAccess(classroom, role, userId)) redirect("/dashboard");
 
-  const sessions = Array.isArray(classroom.generatedSessions) && classroom.generatedSessions.length
+  const allSessions = Array.isArray(classroom.generatedSessions) && classroom.generatedSessions.length
     ? classroom.generatedSessions
     : classroom.classDate
       ? [resolveScheduledSession(classroom)]
       : [];
+  const sessions = role === "instructor"
+    ? allSessions.filter((item: any) => coachCanAccessClassroomSession(classroom, userId, String(item?._id || "")))
+    : allSessions;
   if (!sessions.length) notFound();
 
   const selectedSession =
@@ -112,6 +115,7 @@ export default async function ClassroomSummaryPage({
       .sort((a: any, b: any) => new Date(b.actualEndedAt || b.scheduledFor || 0).getTime() - new Date(a.actualEndedAt || a.scheduledFor || 0).getTime())[0];
 
   if (!selectedSession) notFound();
+  if (!participantHasAccess(classroom, role, userId, String(selectedSession._id || ""))) redirect("/dashboard");
 
   const scheduledSessionId = String(selectedSession._id || "");
   const [attendance, liveSession, questions, responses] = await Promise.all([

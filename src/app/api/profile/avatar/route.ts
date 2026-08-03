@@ -5,6 +5,7 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { User } from "@/models/User";
 import { recordActivity } from "@/lib/activity";
+import { canAccessFeature } from "@/lib/featureAccess";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -24,8 +25,8 @@ export async function POST(request: Request) {
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const role = (session.user as any).role as string;
-  if (role !== "student" && role !== "instructor") {
-    return NextResponse.json({ error: "Profile images are available to students and coaches." }, { status: 403 });
+  if (!["student", "instructor", "admin", "sub-admin"].includes(role) || !(await canAccessFeature("accountSettings", session.user as any, "edit"))) {
+    return NextResponse.json({ error: "You do not have permission to update the account image." }, { status: 403 });
   }
 
   const formData = await request.formData().catch(() => null);
@@ -44,7 +45,7 @@ export async function POST(request: Request) {
   const extension = detectedType === "image/jpeg" ? "jpg" : detectedType === "image/png" ? "png" : "webp";
   const userId = String((session.user as any).id);
   await dbConnect();
-  const existing: any = await User.findOne({ _id: userId, role: { $in: ["student", "instructor"] } }).select("avatar role").lean();
+  const existing: any = await User.findOne({ _id: userId, role: { $in: ["student", "instructor", "admin", "sub-admin"] } }).select("avatar role").lean();
   if (!existing) return NextResponse.json({ error: "Profile not found." }, { status: 404 });
 
   const filename = `avatar-${userId}-${Date.now()}.${extension}`;
@@ -54,7 +55,7 @@ export async function POST(request: Request) {
 
   const avatar = `/images/profiles/${filename}`;
   const updated = await User.findOneAndUpdate(
-    { _id: userId, role: { $in: ["student", "instructor"] } },
+    { _id: userId, role: { $in: ["student", "instructor", "admin", "sub-admin"] } },
     { $set: { avatar } },
     { new: true }
   ).select("_id");

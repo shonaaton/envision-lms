@@ -8,6 +8,7 @@ import { buildGeneratedSessions } from "@/lib/classroomSchedule";
 import { deleteClassroomSessionInstances, syncClassroomSessionInstances } from "@/lib/classroomSessionInstances";
 import { canAccessFeature, isSuperAdminSession } from "@/lib/featureAccess";
 import { academyDateTime } from "@/lib/academyTime";
+import { coachCanAccessClassroomSession, isPrimaryClassroomCoach, limitClassroomToCoachSessions } from "@/lib/classroomCoachAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -37,18 +38,18 @@ function recordId(value: any) {
   return String(value?._id || value || "");
 }
 
-async function canAccessRecord(doc: any, user: any) {
+async function canAccessRecord(doc: any, user: any, allowSubstitute = false, scheduledSessionId?: string) {
   const role = user?.role;
   const userId = String(user?.id || "");
   if (doc?.isTestClassroom) {
     return role === "admin" && recordId(doc.testOwner) === userId && isSuperAdminSession(user);
   }
   if (role === "admin" || role === "sub-admin") return true;
-  if (role === "instructor") return [doc?.coach, doc?.instructor].some((value) => recordId(value) === userId);
+  if (role === "instructor") return isPrimaryClassroomCoach(doc, userId) || (allowSubstitute && coachCanAccessClassroomSession(doc, userId, scheduledSessionId));
   return (doc?.students || []).some((value: any) => recordId(value) === userId);
 }
 
-export async function GET(_: Request, { params }: { params: { id: string } }) {
+export async function GET(req: Request, { params }: { params: { id: string } }) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!(await canAccessFeature("classrooms", session.user as any, "view"))) {
@@ -62,8 +63,9 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     .populate("course", "name category level")
     .lean();
   if (!doc) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (!(await canAccessRecord(doc, session.user as any))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  return NextResponse.json(doc);
+  const scheduledSessionId = new URL(req.url).searchParams.get("session") || undefined;
+  if (!(await canAccessRecord(doc, session.user as any, true, scheduledSessionId))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  return NextResponse.json((session.user as any).role === "instructor" ? limitClassroomToCoachSessions(doc, String((session.user as any).id || "")) : doc);
 }
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
@@ -84,6 +86,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const existing: any = await Classroom.findById(params.id);
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
   if (!(await canAccessRecord(existing, session.user as any))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const reassignedSessionIds: string[] = [];
 
   if (body.action === "cancel_class" || body.action === "cancel_series") {
     existing.status = "cancelled";
@@ -136,15 +139,21 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       existing.generatedSessions[0].status = "scheduled";
     }
   } else if (body.action === "substitute_coach") {
+    if (!String(body.coach || "").trim()) return NextResponse.json({ error: "Select a substitute coach" }, { status: 400 });
     if (body.scope === "session" && body.sessionId) {
       const target = existing.generatedSessions?.id?.(body.sessionId);
-      if (target) target.substituteCoach = body.coach;
+      if (!target) return NextResponse.json({ error: "Scheduled class not found" }, { status: 404 });
+      target.substituteCoach = body.coach;
+      reassignedSessionIds.push(String(target._id));
     } else {
       existing.coach = body.coach || existing.coach;
       existing.instructor = body.coach || existing.instructor;
       if (body.scope === "future" && Array.isArray(existing.generatedSessions)) {
         existing.generatedSessions.forEach((item: any) => {
-          if (item.status === "scheduled") item.substituteCoach = body.coach;
+          if (item.status === "scheduled") {
+            item.substituteCoach = body.coach;
+            reassignedSessionIds.push(String(item._id));
+          }
         });
       }
     }
@@ -196,6 +205,18 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   }
 
   await existing.save();
+  if (reassignedSessionIds.length) {
+    await Promise.all([
+      ClassroomSession.updateMany(
+        { classroom: params.id, scheduledSessionId: { $in: reassignedSessionIds } },
+        { $set: { coach: body.coach } }
+      ),
+      Attendance.updateMany(
+        { classroom: params.id, scheduledSessionId: { $in: reassignedSessionIds } },
+        { $set: { coach: body.coach } }
+      ),
+    ]);
+  }
   await syncClassroomSessionInstances(params.id);
   const updated = await Classroom.findById(params.id);
   return NextResponse.json(updated);

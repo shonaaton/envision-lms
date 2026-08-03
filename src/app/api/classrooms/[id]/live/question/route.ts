@@ -13,11 +13,11 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   if (!session || (role !== "admin" && role !== "instructor")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
   const userId = (session.user as { id?: string }).id || "";
-  const { classroom, allowed } = await getLiveClassroomForUser(params.id, role, userId);
-  if (!classroom) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const scheduledSessionId = getRequestedSessionId(req);
   if (!scheduledSessionId) return NextResponse.json({ error: "Scheduled session required" }, { status: 400 });
+  const { classroom, allowed } = await getLiveClassroomForUser(params.id, role, userId, scheduledSessionId);
+  if (!classroom) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const live: any = await ClassroomSession.findOne({ classroom: params.id, scheduledSessionId });
   if (!live) return NextResponse.json({ error: "Live session missing" }, { status: 404 });
   const body = await req.json();
@@ -59,11 +59,11 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (!session || (role !== "admin" && role !== "instructor")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
   const userId = (session.user as { id?: string }).id || "";
-  const { classroom, allowed } = await getLiveClassroomForUser(params.id, role, userId);
-  if (!classroom) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const scheduledSessionId = getRequestedSessionId(req);
   if (!scheduledSessionId) return NextResponse.json({ error: "Scheduled session required" }, { status: 400 });
+  const { classroom, allowed } = await getLiveClassroomForUser(params.id, role, userId, scheduledSessionId);
+  if (!classroom) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const body = await req.json();
   const live: any = await ClassroomSession.findOne({ classroom: params.id, scheduledSessionId });

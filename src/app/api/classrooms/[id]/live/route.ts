@@ -61,7 +61,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     const role = (session.user as { role?: AppRole }).role;
     const userId = (session.user as { id?: string }).id || "";
     if (!role || !userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const { classroom, allowed } = await getLiveClassroomForUser(params.id, role, userId);
+    const { classroom, allowed } = await getLiveClassroomForUser(params.id, role, userId, requestedSessionId);
     if (!classroom) return NextResponse.json({ error: "Not found" }, { status: 404 });
     const classroomDoc = classroom as Record<string, any>;
     if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -76,7 +76,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
         classroom: params.id,
         scheduledSessionId,
         sessionKey: buildLiveSessionKey(params.id, scheduledSessionId),
-        coach: classroomDoc.coach || classroomDoc.instructor,
+        coach: scheduledSession.substituteCoach || classroomDoc.coach || classroomDoc.instructor,
         topic: scheduledSession.topicName || classroomDoc.topicName || classroomDoc.title,
         fen: "start",
         mode: "teaching",
@@ -150,7 +150,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   await dbConnect();
   await ensureLiveSessionIndexes();
   const userId = (session.user as { id?: string }).id || "";
-  const { classroom, allowed } = await getLiveClassroomForUser(params.id, role, userId);
+  const requestedSessionId = getRequestedSessionId(req);
+  const { classroom, allowed } = await getLiveClassroomForUser(params.id, role, userId, requestedSessionId);
   if (!classroom) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const classroomDoc = classroom as Record<string, any>;
   if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -169,7 +170,6 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       illegalMovesEnabled: false,
     });
   }
-  const requestedSessionId = getRequestedSessionId(req);
   const scheduledSession = resolveScheduledSession(classroomDoc, requestedSessionId);
   if (!scheduledSession) return NextResponse.json({ error: "Scheduled session not found" }, { status: 404 });
   const scheduledSessionId = String(scheduledSession._id);

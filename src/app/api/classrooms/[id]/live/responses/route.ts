@@ -14,11 +14,11 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const userId = (session.user as { id?: string }).id || "";
   const role = (session.user as { role?: "student" | "instructor" | "admin" }).role;
   if (!role || !userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const { classroom, allowed } = await getLiveClassroomForUser(params.id, role, userId);
-  if (!classroom) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const scheduledSessionId = getRequestedSessionId(req);
   if (!scheduledSessionId) return NextResponse.json({ error: "Scheduled session required" }, { status: 400 });
+  const { classroom, allowed } = await getLiveClassroomForUser(params.id, role, userId, scheduledSessionId);
+  if (!classroom) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const body = await req.json();
   const question: any = await LiveQuestion.findById(body.question);
   if (!question) return NextResponse.json({ error: "Question not found" }, { status: 404 });

@@ -27,7 +27,7 @@ export type ProfileData = {
   username: string;
   email: string;
   phone: string;
-  role: "student" | "instructor";
+  role: "student" | "instructor" | "admin" | "sub-admin";
   accountStatus: string;
   city: string;
   country: string;
@@ -75,7 +75,7 @@ function LockedField({ label, value }: { label: string; value: string | number |
   );
 }
 
-export default function ProfileEditor({ initialProfile }: { initialProfile: ProfileData }) {
+export default function ProfileEditor({ initialProfile, permissions }: { initialProfile: ProfileData; permissions: { edit: boolean; security: boolean } }) {
   const initialEditable = useMemo<EditableProfile>(() => ({
     city: initialProfile.city,
     country: initialProfile.country,
@@ -93,6 +93,7 @@ export default function ProfileEditor({ initialProfile }: { initialProfile: Prof
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const changed = JSON.stringify(form) !== JSON.stringify(saved);
   const isStudent = initialProfile.role === "student";
+  const roleLabel = initialProfile.role === "instructor" ? "Coach" : initialProfile.role === "sub-admin" ? "Sub Admin" : titleCase(initialProfile.role);
   const avatarIsImage = form.avatar.startsWith("/images/profiles/");
 
   function update<K extends keyof EditableProfile>(key: K, value: EditableProfile[K]) {
@@ -228,17 +229,17 @@ export default function ProfileEditor({ initialProfile }: { initialProfile: Prof
                 {!avatarIsImage && initials(initialProfile.name)}
               </div>
               <h2 className="mt-3 text-xl font-black text-slate-950">{initialProfile.name}</h2>
-              <p className="mt-1 text-sm font-semibold capitalize text-brand">{initialProfile.role === "instructor" ? "Coach" : "Student"}</p>
+              <p className="mt-1 text-sm font-semibold capitalize text-brand">{roleLabel}</p>
               <div className="mt-4 flex flex-wrap justify-center gap-2">
                 <span className="chip"><BadgeCheck size={13} /> {titleCase(initialProfile.accountStatus)}</span>
                 {initialProfile.rating > 0 && <span className="chip-accent">Rating {initialProfile.rating}</span>}
               </div>
               <input ref={avatarInputRef} className="hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={uploadAvatar} />
               <div className="mt-4 flex flex-wrap justify-center gap-2">
-                <button type="button" className="btn-outline" disabled={uploadingAvatar} onClick={() => avatarInputRef.current?.click()}>
+                <button type="button" className="btn-outline" disabled={uploadingAvatar || !permissions.edit} onClick={() => avatarInputRef.current?.click()}>
                   <ImageUp size={16} /> {uploadingAvatar ? "Uploading…" : avatarIsImage ? "Replace photo" : "Upload photo"}
                 </button>
-                {avatarIsImage && (
+                {avatarIsImage && permissions.edit && (
                   <button type="button" className="btn-ghost text-red-700" onClick={() => update("avatar", "#5a1372")}>
                     <Trash2 size={15} /> Remove
                   </button>
@@ -269,7 +270,7 @@ export default function ProfileEditor({ initialProfile }: { initialProfile: Prof
               <LockedField label="Phone number" value={initialProfile.phone} />
               {isStudent && <LockedField label="Student level" value={titleCase(initialProfile.studentLevel)} />}
               {isStudent && initialProfile.parentName && <LockedField label="Parent / guardian" value={initialProfile.parentName} />}
-              <LockedField label="Role" value={initialProfile.role === "instructor" ? "Coach" : "Student"} />
+              <LockedField label="Role" value={roleLabel} />
               <LockedField label="Rating" value={initialProfile.rating || "Not rated"} />
             </div>
           </section>
@@ -286,15 +287,15 @@ export default function ProfileEditor({ initialProfile }: { initialProfile: Prof
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="block">
                 <span className="mb-1.5 flex items-center gap-1.5 text-xs font-bold uppercase tracking-[0.1em] text-slate-500"><MapPin size={13} /> City</span>
-                <input className="input" value={form.city} maxLength={80} onChange={(event) => update("city", event.target.value)} placeholder="Your city" autoComplete="address-level2" />
+                <input className="input" value={form.city} maxLength={80} disabled={!permissions.edit} onChange={(event) => update("city", event.target.value)} placeholder="Your city" autoComplete="address-level2" />
               </label>
               <label className="block">
                 <span className="mb-1.5 flex items-center gap-1.5 text-xs font-bold uppercase tracking-[0.1em] text-slate-500"><Globe2 size={13} /> Country</span>
-                <input className="input" value={form.country} maxLength={80} onChange={(event) => update("country", event.target.value)} placeholder="Your country" autoComplete="country-name" />
+                <input className="input" value={form.country} maxLength={80} disabled={!permissions.edit} onChange={(event) => update("country", event.target.value)} placeholder="Your country" autoComplete="country-name" />
               </label>
               <label className="block">
                 <span className="mb-1.5 block text-xs font-bold uppercase tracking-[0.1em] text-slate-500">Gender</span>
-                <select className="input" value={form.gender} onChange={(event) => update("gender", event.target.value as Gender)}>
+                <select className="input" value={form.gender} disabled={!permissions.edit} onChange={(event) => update("gender", event.target.value as Gender)}>
                   <option value="not_available">Prefer not to say</option>
                   <option value="male">Male</option>
                   <option value="female">Female</option>
@@ -303,7 +304,7 @@ export default function ProfileEditor({ initialProfile }: { initialProfile: Prof
               </label>
               <label className="block">
                 <span className="mb-1.5 block text-xs font-bold uppercase tracking-[0.1em] text-slate-500">FIDE ID</span>
-                <input className="input" value={form.fideId} maxLength={20} inputMode="numeric" onChange={(event) => update("fideId", event.target.value.replace(/\D/g, ""))} placeholder="Optional" />
+                <input className="input" value={form.fideId} maxLength={20} inputMode="numeric" disabled={!permissions.edit} onChange={(event) => update("fideId", event.target.value.replace(/\D/g, ""))} placeholder="Optional" />
               </label>
             </div>
 
@@ -315,6 +316,7 @@ export default function ProfileEditor({ initialProfile }: { initialProfile: Prof
                   <button
                     key={colour}
                     type="button"
+                    disabled={!permissions.edit}
                     onClick={() => update("avatar", colour)}
                     className="grid h-11 w-11 place-items-center rounded-full border-4 border-white shadow-md ring-2 transition hover:scale-105"
                     style={{ backgroundColor: colour, boxShadow: form.avatar === colour ? `0 0 0 3px ${colour}` : undefined }}
@@ -328,16 +330,16 @@ export default function ProfileEditor({ initialProfile }: { initialProfile: Prof
             </fieldset>
           </section>
 
-          <div className="sticky bottom-3 flex flex-col-reverse gap-2 rounded-lg border border-slate-200 bg-white/95 p-3 shadow-xl shadow-slate-900/10 backdrop-blur sm:flex-row sm:items-center sm:justify-between">
+          {permissions.edit && <div className="sticky bottom-3 flex flex-col-reverse gap-2 rounded-lg border border-slate-200 bg-white/95 p-3 shadow-xl shadow-slate-900/10 backdrop-blur sm:flex-row sm:items-center sm:justify-between">
             <p className="text-xs font-semibold text-slate-500">{changed ? "You have unsaved changes." : "Your profile is up to date."}</p>
             <div className="flex gap-2">
               <button type="button" className="btn-outline flex-1 sm:flex-none" disabled={!changed || saving} onClick={() => setForm(saved)}><RotateCcw size={16} /> Reset</button>
               <button type="submit" className="btn-primary flex-1 sm:flex-none" disabled={!changed || saving}><Save size={16} /> {saving ? "Saving…" : "Save changes"}</button>
             </div>
-          </div>
+          </div>}
         </form>
 
-          <section className="card">
+          {permissions.security && <section className="card">
             <div className="mb-5 flex items-start gap-3">
               <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-amber-50 text-amber-700"><KeyRound size={19} /></span>
               <div>
@@ -370,7 +372,7 @@ export default function ProfileEditor({ initialProfile }: { initialProfile: Prof
                 </button>
               </div>
             </form>
-          </section>
+          </section>}
         </div>
       </div>
     </div>

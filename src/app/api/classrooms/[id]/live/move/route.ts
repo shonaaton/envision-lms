@@ -103,7 +103,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 
   const scheduledSessionId = getRequestedSessionId(req);
   if (!scheduledSessionId) return NextResponse.json({ error: "Scheduled session required" }, { status: 400 });
-  const { classroom, allowed } = await getLiveClassroomForUser(params.id, "student", userId);
+  const { classroom, allowed } = await getLiveClassroomForUser(params.id, "student", userId, scheduledSessionId);
   if (!classroom) return NextResponse.json({ error: "Not found" }, { status: 404 });
   if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 

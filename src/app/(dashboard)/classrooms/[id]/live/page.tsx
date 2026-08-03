@@ -8,19 +8,23 @@ import { Classroom } from "@/models/Classroom";
 import { ClassroomSession } from "@/models/ClassroomLive";
 import { notFound, redirect } from "next/navigation";
 import LiveClassroom from "@/components/classroom/LiveClassroom";
+import { coachCanAccessClassroomSession } from "@/lib/classroomCoachAccess";
 
 export const dynamic = "force-dynamic";
 
-function participantHasAccess(classroom: any, role: string, userId: string) {
+function participantHasAccess(classroom: any, role: string, userId: string, scheduledSessionId?: string) {
   if (role === "admin") return true;
   if (role === "student") return (classroom.students || []).some((student: any) => String(student) === userId || String(student?._id || "") === userId);
-  return [classroom.coach, classroom.instructor].some((coach: any) => String(coach) === userId || String(coach?._id || "") === userId);
+  return coachCanAccessClassroomSession(classroom, userId, scheduledSessionId);
 }
 
-function pickScheduledSession(classroom: any, requestedSessionId?: string) {
-  const sessions = Array.isArray(classroom?.generatedSessions) ? classroom.generatedSessions : [];
+function pickScheduledSession(classroom: any, requestedSessionId: string | undefined, role: string, userId: string) {
+  const allSessions = Array.isArray(classroom?.generatedSessions) ? classroom.generatedSessions : [];
+  const sessions = role === "instructor"
+    ? allSessions.filter((item: any) => coachCanAccessClassroomSession(classroom, userId, String(item?._id || "")))
+    : allSessions;
   if (requestedSessionId) {
-    const exact = resolveScheduledSession(classroom, requestedSessionId);
+    const exact = sessions.find((item: any) => String(item?._id || "") === requestedSessionId);
     if (exact) return exact;
   }
   const now = new Date();
@@ -33,7 +37,7 @@ function pickScheduledSession(classroom: any, requestedSessionId?: string) {
     .filter((session: any) => deriveScheduledSessionStatus(session, now) === "upcoming")
     .sort((a: any, b: any) => new Date(a.scheduledFor || 0).getTime() - new Date(b.scheduledFor || 0).getTime())[0];
   if (upcoming) return upcoming;
-  return resolveScheduledSession(classroom, requestedSessionId);
+  return sessions[0] || resolveScheduledSession(classroom, requestedSessionId);
 }
 
 export default async function ClassroomLivePage({ params, searchParams }: { params: { id: string }; searchParams: { session?: string } }) {
@@ -45,12 +49,12 @@ export default async function ClassroomLivePage({ params, searchParams }: { para
   if (!classroom) notFound();
   const isSuperAdmin = await isSuperAdminSession(session?.user as any);
   if (classroom.isTestClassroom && (!isSuperAdmin || String(classroom.testOwner || "") !== userId)) redirect("/dashboard");
-  if (!participantHasAccess(classroom, role, userId)) redirect("/dashboard");
   if (role === "student" && !(await isCurrentStudent(userId))) redirect("/dashboard");
 
   if (role !== "admin") {
-    const scheduledSession: any = pickScheduledSession(classroom, searchParams.session);
+    const scheduledSession: any = pickScheduledSession(classroom, searchParams.session, role, userId);
     if (!scheduledSession) redirect("/classrooms");
+    if (!participantHasAccess(classroom, role, userId, String(scheduledSession._id))) redirect("/dashboard");
     if (!isJoinWindowOpen(scheduledSession)) redirect("/classrooms");
     const sessionStatus = deriveScheduledSessionStatus(scheduledSession);
     if (["completed", "cancelled", "rescheduled", "missed"].includes(sessionStatus)) redirect("/classrooms");
@@ -58,6 +62,8 @@ export default async function ClassroomLivePage({ params, searchParams }: { para
     if (liveSession?.status === "ended") redirect("/classrooms");
     return <LiveClassroom classroomId={params.id} role={role} userId={userId} sessionId={String(scheduledSession._id)} />;
   }
+
+  if (!participantHasAccess(classroom, role, userId)) redirect("/dashboard");
 
   return <LiveClassroom classroomId={params.id} role={role} userId={userId} sessionId={searchParams.session} />;
 }

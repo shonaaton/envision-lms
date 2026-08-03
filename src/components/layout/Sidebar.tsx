@@ -135,7 +135,7 @@ const sections: NavSection[] = [
     id: "settings",
     title: "Settings",
     items: [
-      { href: "/profile", label: "My Profile", icon: UserRound, roles: ["student", "instructor"] },
+      { href: "/profile", label: "Account Settings", icon: UserRound, featureKey: "accountSettings" },
       { href: "/admin/settings", label: "Academy Setup", icon: Settings, featureKey: "academySettings", roles: ["admin", "sub-admin"] },
       { href: "/admin/feature-access", label: "Feature Access", icon: ShieldCheck, featureKey: "featureAccess", roles: ["admin"], superAdminOnly: true },
     ],

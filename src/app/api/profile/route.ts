@@ -5,6 +5,7 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { User } from "@/models/User";
+import { canAccessFeature } from "@/lib/featureAccess";
 
 const profileSchema = z
   .object({
@@ -25,8 +26,8 @@ export async function PATCH(request: Request) {
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const role = (session.user as any).role as string;
-  if (role !== "student" && role !== "instructor") {
-    return NextResponse.json({ error: "Profile editing is available to students and coaches." }, { status: 403 });
+  if (!["student", "instructor", "admin", "sub-admin"].includes(role) || !(await canAccessFeature("accountSettings", session.user as any, "edit"))) {
+    return NextResponse.json({ error: "You do not have permission to edit account settings." }, { status: 403 });
   }
 
   const rawBody = await request.json().catch(() => null);
@@ -36,7 +37,7 @@ export async function PATCH(request: Request) {
   }
 
   await dbConnect();
-  const profileFilter = { _id: (session.user as any).id, role: { $in: ["student", "instructor"] } };
+  const profileFilter = { _id: (session.user as any).id, role: { $in: ["student", "instructor", "admin", "sub-admin"] } };
   const previous: any = parsed.data.avatar ? await User.findOne(profileFilter).select("avatar").lean() : null;
   const updated: any = await User.findOneAndUpdate(
     profileFilter,

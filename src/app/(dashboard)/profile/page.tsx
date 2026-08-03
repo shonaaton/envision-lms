@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { User } from "@/models/User";
 import ProfileEditor, { type ProfileData } from "./ProfileEditor";
+import { getFeaturePermissionState } from "@/lib/featureAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +12,9 @@ export default async function ProfilePage() {
   if (!session?.user) redirect("/login");
 
   const role = (session.user as any).role as string;
-  if (role !== "student" && role !== "instructor") redirect("/dashboard");
+  if (!["student", "instructor", "admin", "sub-admin"].includes(role)) redirect("/dashboard");
+  const permissions = await getFeaturePermissionState("accountSettings", session.user as any, ["view", "edit", "security"]);
+  if (!permissions.view) redirect("/dashboard?restricted=1");
 
   await dbConnect();
   const user: any = await User.findById((session.user as any).id)
@@ -44,5 +47,5 @@ export default async function ProfilePage() {
     parentName: user.parentName || "",
   };
 
-  return <ProfileEditor initialProfile={profile} />;
+  return <ProfileEditor initialProfile={profile} permissions={{ edit: permissions.edit, security: permissions.security }} />;
 }

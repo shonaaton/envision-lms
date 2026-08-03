@@ -26,6 +26,7 @@ import { DataPanel, EmptyState as CommonEmptyState, FilterBar } from "@/componen
 import { bookingFeatureNameForAccount } from "@/lib/bookingLabels";
 import { demoStudentExperience } from "@/lib/demoStudentExperience";
 import { inactiveStudentMessage } from "@/lib/studentAccess";
+import { coachClassroomQuery, limitClassroomToCoachSessions } from "@/lib/classroomCoachAccess";
 import { unstable_noStore as noStore } from "next/cache";
 import {
   Activity as ActivityIcon,
@@ -1095,9 +1096,9 @@ async function StudentDashboard({ userId }: { userId: string }) {
 async function CoachDashboard({ userId, searchParams }: { userId: string; searchParams: DashboardSearchParams }) {
   const now = new Date();
   const summaryRange = getTeachingSummaryRange(searchParams);
-  const [classrooms, homework, tournaments] = await Promise.all([
+  const [classroomDocs, homework, tournaments] = await Promise.all([
     Classroom.find({
-      $or: [{ coach: userId }, { instructor: userId }],
+      ...coachClassroomQuery(userId),
       isActive: { $ne: false },
       isSessionInstance: { $ne: true },
     })
@@ -1107,6 +1108,7 @@ async function CoachDashboard({ userId, searchParams }: { userId: string; search
     Homework.find({ instructor: userId }).sort({ dueAt: 1, createdAt: -1 }).limit(6).lean(),
     Tournament.find({ status: { $in: ["upcoming", "live"] } }).sort({ startAt: 1 }).limit(4).lean(),
   ]);
+  const classrooms = classroomDocs.map((classroom: any) => limitClassroomToCoachSessions(classroom, userId));
 
   const sessions = buildCoachUpcomingSessions(classrooms, now);
   const completedSessions = flattenScheduledSessions(classrooms)

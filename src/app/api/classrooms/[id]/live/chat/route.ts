@@ -19,7 +19,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const cleanMessage = typeof message === "string" ? message.trim() : "";
   if (!cleanMessage) return NextResponse.json({ error: "Message required" }, { status: 400 });
   await dbConnect();
-  const { classroom, allowed } = await getLiveClassroomForUser(params.id, role, userId);
+  const { classroom, allowed } = await getLiveClassroomForUser(params.id, role, userId, scheduledSessionId);
   if (!classroom) return NextResponse.json({ error: "Not found" }, { status: 404 });
   if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const recipientId = typeof recipient === "string" && recipient !== "group" ? recipient.trim() : "";

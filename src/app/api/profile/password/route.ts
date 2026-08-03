@@ -5,6 +5,7 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { User } from "@/models/User";
 import { recordActivity } from "@/lib/activity";
+import { canAccessFeature } from "@/lib/featureAccess";
 
 const passwordSchema = z
   .object({
@@ -20,8 +21,8 @@ export async function POST(request: Request) {
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const role = (session.user as any).role as string;
-  if (role !== "student" && role !== "instructor") {
-    return NextResponse.json({ error: "Password changes are available to students and coaches." }, { status: 403 });
+  if (!["student", "instructor", "admin", "sub-admin"].includes(role) || !(await canAccessFeature("accountSettings", session.user as any, "security"))) {
+    return NextResponse.json({ error: "You do not have permission to change this account password." }, { status: 403 });
   }
 
   const body = await request.json().catch(() => null);

@@ -12,6 +12,7 @@ import {
 } from "@/lib/classroomSessions";
 import { inactiveStudentMessage } from "@/lib/studentStatus";
 import CalendarWorkspace, { type CalendarEvent } from "@/components/calendar/CalendarWorkspace";
+import { coachClassroomQuery, limitClassroomToCoachSessions } from "@/lib/classroomCoachAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -238,11 +239,12 @@ async function getStudentEvents(userId: string) {
 }
 
 async function getCoachEvents(userId: string) {
-  const classrooms: any[] = await Classroom.find({ $or: [{ coach: userId }, { instructor: userId }], isActive: { $ne: false } })
+  const classroomDocs: any[] = await Classroom.find({ ...coachClassroomQuery(userId), isActive: { $ne: false }, isSessionInstance: { $ne: true } })
     .populate("coach instructor", "name username")
     .populate("batches", "name")
     .populate("students", "name")
     .lean();
+  const classrooms = classroomDocs.map((classroom: any) => limitClassroomToCoachSessions(classroom, userId));
 
   const classroomIds = classrooms.map((item: any) => item._id);
   const [homework, tournaments, attendance] = await Promise.all([

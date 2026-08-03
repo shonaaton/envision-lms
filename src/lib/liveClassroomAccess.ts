@@ -1,6 +1,7 @@
 import { Classroom } from "@/models/Classroom";
 import { isSuperAdminSession } from "@/lib/featureAccess";
 import { User } from "@/models/User";
+import { coachCanAccessClassroomSession } from "@/lib/classroomCoachAccess";
 
 export type AppRole = "student" | "instructor" | "admin";
 
@@ -9,6 +10,7 @@ type ClassroomAccessShape = {
   coach?: unknown;
   instructor?: unknown;
   students?: unknown[];
+  generatedSessions?: unknown[];
   isTestClassroom?: boolean;
   testOwner?: unknown;
 };
@@ -27,17 +29,17 @@ function objectId(value: unknown) {
   return String(value);
 }
 
-export function canAccessLiveClassroom(classroom: ClassroomAccessShape | null | undefined, role: AppRole, userId: string) {
+export function canAccessLiveClassroom(classroom: ClassroomAccessShape | null | undefined, role: AppRole, userId: string, scheduledSessionId?: string) {
   if (!classroom) return false;
   if (classroom.isTestClassroom) return false;
   if (role === "admin") return true;
   if (role === "student") {
     return (classroom.students || []).some((student) => objectId(student) === userId);
   }
-  return [classroom.coach, classroom.instructor].some((coach) => objectId(coach) === userId);
+  return coachCanAccessClassroomSession(classroom, userId, scheduledSessionId);
 }
 
-export async function getLiveClassroomForUser(classroomId: string, role: AppRole, userId: string) {
+export async function getLiveClassroomForUser(classroomId: string, role: AppRole, userId: string, scheduledSessionId?: string) {
   const classroom: any = await Classroom.findById(classroomId)
     .populate("coach instructor students", "name email username role")
     .lean();
@@ -54,5 +56,5 @@ export async function getLiveClassroomForUser(classroomId: string, role: AppRole
       return { classroom, allowed: false as const };
     }
   }
-  return { classroom, allowed: canAccessLiveClassroom(classroom, role, userId) as boolean };
+  return { classroom, allowed: canAccessLiveClassroom(classroom, role, userId, scheduledSessionId) as boolean };
 }

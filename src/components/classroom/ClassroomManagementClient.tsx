@@ -722,6 +722,12 @@ export default function ClassroomManagementClient({
                                             setActionDraft({ classDate: formatDateInput(scheduledSession.scheduledFor), startTime: scheduledSession.startTime || item.startTime || "", durationMinutes: scheduledSession.durationMinutes || item.durationMinutes || 60 });
                                           }} />
                                         ) : null}
+                                        {permissions.assign && !isFinished && !isCancelled ? (
+                                          <ActionButton icon={<UserCog size={14} />} label="Substitute Coach" onClick={() => {
+                                            setActionModal({ type: "substitute_coach", item, session: scheduledSession });
+                                            setActionDraft({ scope: "session", coach: "" });
+                                          }} />
+                                        ) : null}
                                         {permissions.cancel && !isFinished && !isCancelled ? (
                                           <ActionButton icon={<X size={14} />} label="Cancel" onClick={() => { setActionModal({ type: "cancel_session", item, session: scheduledSession }); setActionDraft({}); }} />
                                         ) : null}
@@ -1073,13 +1079,18 @@ export default function ClassroomManagementClient({
               )}
               {actionModal.type === "substitute_coach" && (
                 <>
-                  <Field label="Scope">
-                    <select className="input h-10" value={actionDraft.scope || "entire"} onChange={(event) => setActionDraft((current: any) => ({ ...current, scope: event.target.value }))}>
-                      {actionModal.item.classroomType === "series" && <option value="session">One Session</option>}
-                      {actionModal.item.classroomType === "series" && <option value="future">Future Sessions</option>}
-                      <option value="entire">Entire {actionModal.item.classroomType === "series" ? "Series" : "Class"}</option>
-                    </select>
-                  </Field>
+                  {actionModal.session ? (
+                    <div className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm font-semibold text-sky-800">
+                      The substitute coach will be assigned only to this selected class.
+                    </div>
+                  ) : (
+                    <Field label="Scope">
+                      <select className="input h-10" value={actionDraft.scope || "entire"} onChange={(event) => setActionDraft((current: any) => ({ ...current, scope: event.target.value }))}>
+                        {actionModal.item.classroomType === "series" && <option value="future">Future Sessions</option>}
+                        <option value="entire">Entire {actionModal.item.classroomType === "series" ? "Series" : "Class"}</option>
+                      </select>
+                    </Field>
+                  )}
                   <Field label="Coach">
                     <select className="input h-10" value={actionDraft.coach || ""} onChange={(event) => setActionDraft((current: any) => ({ ...current, coach: event.target.value }))}>
                       <option value="">Select coach</option>

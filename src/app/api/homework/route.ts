@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { Homework } from "@/models/Homework";
 import { Classroom } from "@/models/Classroom";
+import { Batch } from "@/models/Batch";
 import { User } from "@/models/User";
 import { homeworkSchema } from "@/lib/validation";
 
@@ -20,12 +21,16 @@ export async function GET(req: Request) {
   let filter: any = {};
   if (classroomId) filter.classroom = classroomId;
   else if (role === "student") {
-    const [myClassrooms, me] = await Promise.all([
+    const [myClassrooms, me, batchMemberships] = await Promise.all([
       Classroom.find({ students: userId }, { _id: 1 }).lean(),
       User.findById(userId, { batches: 1 }).lean(),
+      Batch.find({ students: userId }, { _id: 1 }).lean(),
     ]);
     const classroomIds = myClassrooms.map((c) => c._id);
-    const batchIds = ((me as any)?.batches || []).map((id: any) => id.toString());
+    const batchIds = Array.from(new Set([
+      ...((me as any)?.batches || []).map((id: any) => id.toString()),
+      ...batchMemberships.map((batch: any) => batch._id.toString()),
+    ]));
     filter.$or = [
       { assignedStudents: userId },
       { assignedBatches: { $in: batchIds } },

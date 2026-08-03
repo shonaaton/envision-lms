@@ -118,9 +118,9 @@ export default async function HomeworkTemplatesPage({ searchParams }: { searchPa
     <div className="min-h-screen bg-slate-50 px-4 py-5 text-slate-950 sm:px-6 lg:px-8">
       <header className="mb-5 flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-5 shadow-sm lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <div className="text-xs font-black uppercase tracking-[0.16em] text-brand">Homework Automation</div>
+          <div className="text-xs font-black uppercase tracking-[0.16em] text-brand">Homework Assignment Templates</div>
           <h1 className="mt-1 text-2xl font-black text-slate-950">Assignment Templates</h1>
-          <p className="mt-1 text-sm text-slate-500">Auto-assigned templates linked to course topics, batches, and scheduled class deadlines.</p>
+          <p className="mt-1 text-sm text-slate-500">Assign a template manually to students or batches, or link it to course topics for automatic assignment.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <UploadTemplateButton />
@@ -187,7 +187,7 @@ export default async function HomeworkTemplatesPage({ searchParams }: { searchPa
                       ? `${template.duePolicy.daysAfterClass || 7} days after class`
                       : `${template.duePolicy?.minutesBefore ?? 1} min before next class`}
                   </td>
-                  <td className="px-3 py-3"><TemplateRowActions id={String(template._id)} /></td>
+                  <td className="px-3 py-3"><TemplateRowActions id={String(template._id)} title={template.title} /></td>
                 </tr>
               ))}
               {!templates.length && (

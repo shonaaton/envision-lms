@@ -30,7 +30,8 @@ export async function GET() {
     (classroom.batches || []).forEach((batchId: any) => classroomBatchIds.add(batchId.toString()));
   });
 
-  const batchFilter = role === "admin" ? {} : { $or: [{ coach: userId }, { _id: { $in: Array.from(classroomBatchIds) } }] };
+  const batchAccessFilter = role === "admin" ? {} : { $or: [{ coach: userId }, { _id: { $in: Array.from(classroomBatchIds) } }] };
+  const batchFilter = { $and: [{ isActive: { $ne: false } }, batchAccessFilter] };
   const batches: any[] = await Batch.find(batchFilter, { name: 1, students: 1, level: 1, coach: 1 })
     .populate("students", "name email username")
     .lean();

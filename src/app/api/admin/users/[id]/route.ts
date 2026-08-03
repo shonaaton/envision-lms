@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
+import { isValidObjectId } from "mongoose";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { User } from "@/models/User";
 import { recordActivity } from "@/lib/activity";
 import { canAccessFeature, isSuperAdminSession } from "@/lib/featureAccess";
+import { deleteUserRecords } from "@/lib/deleteUserRecords";
 
 export const dynamic = "force-dynamic";
 
@@ -82,27 +84,36 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   return NextResponse.json(u);
 }
 
-export async function DELETE(_: Request, { params }: { params: { id: string } }) {
+export async function DELETE(req: Request, { params }: { params: { id: string } }) {
   const session = await requireUserManagement("delete");
   if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const actorId = (session!.user as any).id;
+  if (!isValidObjectId(params.id)) return NextResponse.json({ error: "Invalid user ID." }, { status: 400 });
+  if (actorId === params.id) return NextResponse.json({ error: "You cannot permanently delete your own account." }, { status: 409 });
   await dbConnect();
-  const target = await User.findById(params.id).select("isSuperAdmin").lean();
-  if ((target as any)?.isSuperAdmin) {
-    const actorIsSuperAdmin = await isSuperAdminSession(session!.user as any);
-    if (!actorIsSuperAdmin) return NextResponse.json({ error: "Only Super Admins can deactivate another Super Admin." }, { status: 403 });
+  const target: any = await User.findById(params.id).select("name role isSuperAdmin").lean();
+  if (!target) return NextResponse.json({ error: "User not found." }, { status: 404 });
+
+  const actorIsSuperAdmin = await isSuperAdminSession(session!.user as any);
+  if ((target.role === "admin" || target.role === "sub-admin" || target.isSuperAdmin) && !actorIsSuperAdmin) {
+    return NextResponse.json({ error: "Only Super Admins can permanently delete admin accounts." }, { status: 403 });
+  }
+  if (target.isSuperAdmin) {
     const remaining = await User.countDocuments({ _id: { $ne: params.id }, role: "admin", isSuperAdmin: true, isActive: { $ne: false } });
     if (remaining === 0) return NextResponse.json({ error: "At least one active Super Admin must remain." }, { status: 409 });
   }
-  // Soft-delete: deactivate, don't drop, so historical refs stay valid.
-  const u = await User.findByIdAndUpdate(params.id, { isActive: false });
+
+  const body = await req.json().catch(() => ({}));
+  if (body.confirmName !== target.name) {
+    return NextResponse.json({ error: "Enter the user's full name to confirm permanent deletion." }, { status: 400 });
+  }
+
+  const summary = await deleteUserRecords(params.id);
   await recordActivity({
     actor: actorId,
-    targetUser: params.id,
-    type: "user.deactivated",
-    label: `Deactivated ${u?.name ?? "user"}`,
-    entityType: "User",
-    entityId: params.id,
+    type: "user.deleted",
+    label: `Permanently deleted a ${target.role} account`,
+    metadata: summary,
   });
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, ...summary });
 }

@@ -3,7 +3,7 @@
 The LMS domain is:
 
 ```text
-https://www.classroom.envisionchessacademy.com
+https://classroom.envisionchessacademy.com
 ```
 
 Use HTTPS in production, even if you type `http://` first. Traefik should issue SSL and serve the final secure URL.
@@ -14,7 +14,7 @@ In your domain DNS panel, add this record:
 
 ```text
 Type: A
-Name: www.classroom
+Name: classroom
 Value: <your-vps-ip-address>
 TTL: Automatic or 300
 ```
@@ -22,7 +22,7 @@ TTL: Automatic or 300
 If your DNS panel asks for the full host instead of just the name, enter:
 
 ```text
-www.classroom.envisionchessacademy.com
+classroom.envisionchessacademy.com
 ```
 
 ## 2. Update `.env` on the VPS
@@ -30,9 +30,9 @@ www.classroom.envisionchessacademy.com
 On the VPS, open the live `.env` file and set:
 
 ```env
-LMS_HOST="www.classroom.envisionchessacademy.com"
-NEXTAUTH_URL="https://www.classroom.envisionchessacademy.com"
-NEXT_PUBLIC_APP_URL="https://www.classroom.envisionchessacademy.com"
+LMS_HOST="classroom.envisionchessacademy.com"
+NEXTAUTH_URL="https://classroom.envisionchessacademy.com"
+NEXT_PUBLIC_APP_URL="https://classroom.envisionchessacademy.com"
 
 NEXT_PUBLIC_MARKETING_URL="https://www.envisionchessacademy.com"
 NEXT_PUBLIC_POLICY_BASE_URL="https://www.envisionchessacademy.com"
@@ -45,13 +45,13 @@ Keep your existing MongoDB, Razorpay, WhatsApp, and `AUTH_SECRET` values unchang
 Razorpay webhook:
 
 ```text
-https://www.classroom.envisionchessacademy.com/api/payments/webhook
+https://classroom.envisionchessacademy.com/api/payments/webhook
 ```
 
 Google Business callback:
 
 ```text
-https://www.classroom.envisionchessacademy.com/api/auth/google-business/callback
+https://classroom.envisionchessacademy.com/api/auth/google-business/callback
 ```
 
 n8n webhook URLs, if used:
@@ -79,7 +79,7 @@ This rebuild is important because public browser settings such as the app URL an
 Open:
 
 ```text
-https://www.classroom.envisionchessacademy.com
+https://classroom.envisionchessacademy.com
 ```
 
 Then test:
@@ -97,7 +97,7 @@ Then test:
 When rebuilding the Android APK, pass the same final LMS URL:
 
 ```powershell
-.\android-webview\build-apk.ps1 -AppUrl "https://www.classroom.envisionchessacademy.com"
+.\android-webview\build-apk.ps1 -AppUrl "https://classroom.envisionchessacademy.com"
 ```
 
 ## Notes

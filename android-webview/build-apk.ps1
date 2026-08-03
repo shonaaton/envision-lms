@@ -1,6 +1,6 @@
 param(
     [string]$SdkRoot = "",
-    [string]$AppUrl = "https://www.classroom.envisionchessacademy.com"
+    [string]$AppUrl = "https://classroom.envisionchessacademy.com"
 )
 
 $ErrorActionPreference = "Stop"

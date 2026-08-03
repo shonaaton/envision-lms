@@ -1,6 +1,6 @@
 param(
     [string]$SdkRoot = "C:\Users\User\Downloads\android-sdk",
-    [string]$AppUrl = "https://www.classroom.envisionchessacademy.com",
+    [string]$AppUrl = "https://classroom.envisionchessacademy.com",
     [string]$LegacyJavaBin = "C:\Program Files (x86)\DownloadUtility3.4\jre\bin"
 )
 

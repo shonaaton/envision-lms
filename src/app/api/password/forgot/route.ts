@@ -20,7 +20,6 @@ export async function POST(req: Request) {
     const normalized = login.toLowerCase();
     const user: any = await User.findOne({
       $or: [{ email: normalized }, { username: login }, { username: normalized }],
-      isActive: { $ne: false },
     }).lean();
 
     if (!user) {

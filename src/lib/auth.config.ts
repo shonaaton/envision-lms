@@ -1,4 +1,5 @@
 import type { NextAuthConfig } from "next-auth";
+import { isInactiveRestrictedPath } from "./inactiveAccess";
 
 /**
  * Edge-safe NextAuth config (no DB imports).
@@ -37,7 +38,7 @@ export const authConfig = {
       const isLoggedIn = !!auth?.user;
       const role = (auth?.user as any)?.role as "student" | "instructor" | "admin" | "sub-admin" | undefined;
       const accountStatus = (auth?.user as any)?.accountStatus as string | undefined;
-      const isInactiveStudent = role === "student" && (auth?.user as any)?.isActive === false;
+      const isInactiveAccount = (auth?.user as any)?.isActive === false;
 
       const isAuthRoute = ["/login", "/register", "/forgot-password", "/reset-password"].some((p) => nextUrl.pathname.startsWith(p));
       const isPublic =
@@ -63,6 +64,8 @@ export const authConfig = {
       const isTournamentCreateRoute = nextUrl.pathname.startsWith("/tournaments/new");
       const demoAllowed =
         nextUrl.pathname.startsWith("/dashboard") ||
+        nextUrl.pathname.startsWith("/profile") ||
+        nextUrl.pathname.startsWith("/api/profile") ||
         isBookingRoute ||
         isPlayVsComputerRoute ||
         isSquareTrainerRoute ||
@@ -77,18 +80,7 @@ export const authConfig = {
       if (isPublic) return true;
       if (isAuthRoute) return true;
       if (!isLoggedIn) return false; // triggers redirect to signIn
-      if (
-        isInactiveStudent &&
-        (
-          nextUrl.pathname.startsWith("/booking") ||
-          nextUrl.pathname.startsWith("/classrooms") ||
-          nextUrl.pathname.startsWith("/calendar") ||
-          nextUrl.pathname.startsWith("/tournaments") ||
-          nextUrl.pathname.startsWith("/api/bookings") ||
-          nextUrl.pathname.startsWith("/api/classrooms") ||
-          nextUrl.pathname.startsWith("/api/tournaments")
-        )
-      ) return Response.redirect(new URL("/dashboard", nextUrl));
+      if (isInactiveAccount && isInactiveRestrictedPath(nextUrl.pathname)) return Response.redirect(new URL("/dashboard", nextUrl));
       if (accountStatus === "demo" && !demoAllowed) return Response.redirect(new URL("/dashboard", nextUrl));
       if (isAdminRoute && role !== "admin" && role !== "sub-admin") return Response.redirect(new URL("/dashboard", nextUrl));
       if (isInstructorRoute && role !== "instructor" && role !== "admin" && role !== "sub-admin")

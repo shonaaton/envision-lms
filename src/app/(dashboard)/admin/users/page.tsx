@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  AlertTriangle,
   ChevronRight,
   Copy,
   Edit,
@@ -95,6 +96,7 @@ export default function AdminUsersPage() {
   const [editUser, setEditUser] = useState<AdminUser | null>(null);
   const [reportUser, setReportUser] = useState<AdminUser | null>(null);
   const [assignCoach, setAssignCoach] = useState<AdminUser | null>(null);
+  const [deleteUserTarget, setDeleteUserTarget] = useState<AdminUser | null>(null);
   const [detailBatch, setDetailBatch] = useState<BatchItem | null>(null);
   const [editBatch, setEditBatch] = useState<BatchItem | null>(null);
 
@@ -167,16 +169,31 @@ export default function AdminUsersPage() {
     toast.success(payload.resetPassword ? "Password reset" : "User updated");
     await loadUsers();
     await loadBatches();
+    await loadDirectory();
     return data;
   }
 
-  async function deleteUser(user: AdminUser) {
-    if (!window.confirm(`Deactivate ${user.name}?`)) return;
-    const response = await fetch(`/api/admin/users/${user._id}`, { method: "DELETE" });
-    if (!response.ok) return toast.error("Could not deactivate user");
-    toast.success(`${user.name} deactivated`);
+  async function toggleUserAccess(user: AdminUser) {
+    if (user.isActive && !window.confirm(`Deactivate ${user.name}? They will still be able to sign in, but class-related features will be unavailable.`)) return;
+    await updateUser(user._id, { isActive: !user.isActive });
+  }
+
+  async function permanentlyDeleteUser(user: AdminUser, confirmName: string) {
+    const response = await fetch(`/api/admin/users/${user._id}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirmName }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      toast.error(data.error || "Could not permanently delete this user");
+      return false;
+    }
+    toast.success(`${user.name} and ${Math.max(0, Number(data.deletedRecords || 0) - 1)} linked records were permanently deleted`);
+    setDeleteUserTarget(null);
     setMenu(null);
-    loadUsers();
+    await Promise.all([loadUsers(), loadBatches(), loadDirectory()]);
+    return true;
   }
 
   async function updateBatch(id: string, payload: BatchUpdatePayload) {
@@ -299,7 +316,7 @@ export default function AdminUsersPage() {
                     <InfoPill label="Phone" value={contactNumber(u)} />
                     <button
                       className={`rounded-lg px-3 py-2 text-left text-xs font-bold ${u.isActive ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}
-                      onClick={() => updateUser(u._id, { isActive: !u.isActive })}
+                      onClick={() => toggleUserAccess(u)}
                     >
                       {u.isActive ? "Active" : "Inactive"}
                     </button>
@@ -360,7 +377,7 @@ export default function AdminUsersPage() {
                       <td className="py-3">
                         <button
                           className={`rounded-full px-2.5 py-1 text-xs font-semibold transition hover:shadow-sm ${u.isActive ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200" : "bg-red-100 text-red-700 hover:bg-red-200"}`}
-                          onClick={() => updateUser(u._id, { isActive: !u.isActive })}
+                          onClick={() => toggleUserAccess(u)}
                           title={u.isActive ? "Mark inactive" : "Mark active"}
                         >
                           {u.isActive ? "Active" : "Inactive"}
@@ -440,8 +457,8 @@ export default function AdminUsersPage() {
           { icon: KeyRound, label: "Reset Password", onClick: async () => { await updateUser(openMenuUser._id, { resetPassword: true }); setMenu(null); } },
           ...(openMenuUser.role === "instructor" ? [{ icon: UserPlus, label: "Assign Students", onClick: () => { setAssignCoach(openMenuUser); setMenu(null); } }] : []),
           { icon: FileText, label: `${userRoleLabel(openMenuUser.role)} Report`, onClick: () => { setReportUser(openMenuUser); setMenu(null); } },
-          { icon: openMenuUser.isActive ? UserX : UserCheck, label: openMenuUser.isActive ? "Mark Inactive" : "Mark Active", onClick: async () => { await updateUser(openMenuUser._id, { isActive: !openMenuUser.isActive }); setMenu(null); } },
-          { icon: Trash2, label: "Delete / Deactivate", onClick: () => deleteUser(openMenuUser) },
+          { icon: openMenuUser.isActive ? UserX : UserCheck, label: openMenuUser.isActive ? "Deactivate access" : "Reactivate access", onClick: async () => { await toggleUserAccess(openMenuUser); setMenu(null); } },
+          { icon: Trash2, label: "Delete permanently", danger: true, onClick: () => { setDeleteUserTarget(openMenuUser); setMenu(null); } },
         ]} />
       )}
 
@@ -457,6 +474,7 @@ export default function AdminUsersPage() {
       <AddBatchModal open={openBatchModal} onClose={() => setOpenBatchModal(false)} onCreated={loadBatches} />
       {detailUser && <UserDetailsModal user={detailUser} batches={batches} onClose={() => setDetailUser(null)} onCopy={() => copyCredentials(detailUser)} />}
       {editUser && <EditUserModal user={editUser} onClose={() => setEditUser(null)} onSave={async (payload) => { await updateUser(editUser._id, payload); setEditUser(null); }} />}
+      {deleteUserTarget && <PermanentDeleteUserModal user={deleteUserTarget} onClose={() => setDeleteUserTarget(null)} onDelete={(confirmName) => permanentlyDeleteUser(deleteUserTarget, confirmName)} />}
       {reportUser && <ReportModal user={reportUser} batches={batches} onClose={() => setReportUser(null)} />}
       {assignCoach && <AssignStudentsModal coach={assignCoach} students={allStudents} batches={batches} onClose={() => setAssignCoach(null)} onSave={async (batchId, students) => { await updateBatch(batchId, { students }); setAssignCoach(null); }} />}
       {detailBatch && <BatchDetailsModal batch={detailBatch} onClose={() => setDetailBatch(null)} />}
@@ -465,17 +483,59 @@ export default function AdminUsersPage() {
   );
 }
 
-function ActionMenu({ items, onClose }: { items: Array<{ icon: any; label: string; onClick: () => void }>; onClose: () => void }) {
+function ActionMenu({ items, onClose }: { items: Array<{ icon: any; label: string; danger?: boolean; onClick: () => void }>; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-40" onClick={onClose}>
       <div className="absolute inset-x-3 bottom-4 rounded-lg border border-slate-200 bg-white p-2 text-sm text-slate-950 shadow-xl sm:inset-x-auto sm:bottom-auto sm:right-10 sm:top-48 sm:min-w-52" onClick={(e) => e.stopPropagation()}>
         <div className="px-2 py-2 font-semibold">Actions</div>
         {items.map((item) => {
           const Icon = item.icon;
-          return <button key={item.label} className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left hover:bg-slate-50" onClick={item.onClick}><Icon size={16} /> {item.label}</button>;
+          return <button key={item.label} className={`flex w-full items-center gap-3 rounded-md px-2 py-2 text-left hover:bg-slate-50 ${item.danger ? "text-red-700 hover:bg-red-50" : ""}`} onClick={item.onClick}><Icon size={16} /> {item.label}</button>;
         })}
       </div>
     </div>
+  );
+}
+
+function PermanentDeleteUserModal({ user, onClose, onDelete }: { user: AdminUser; onClose: () => void; onDelete: (confirmName: string) => Promise<boolean> }) {
+  const [confirmName, setConfirmName] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const confirmed = confirmName === user.name;
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!confirmed || deleting) return;
+    setDeleting(true);
+    const deleted = await onDelete(confirmName);
+    if (!deleted) setDeleting(false);
+  }
+
+  return (
+    <ModalShell title="Permanently delete user" onClose={deleting ? () => undefined : onClose}>
+      <form onSubmit={submit} className="space-y-4">
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-950">
+          <div className="flex items-start gap-3">
+            <AlertTriangle size={22} className="mt-0.5 shrink-0 text-red-700" />
+            <div>
+              <div className="font-black">This cannot be undone</div>
+              <p className="mt-1 text-sm leading-6 text-red-900/80">
+                Deleting <strong>{user.name}</strong> removes the account and linked class assignments, homework, attendance, bookings, billing, messages, tournament participation, and learning records. Shared academy records will be detached where they can be safely retained.
+              </p>
+            </div>
+          </div>
+        </div>
+        <label className="block">
+          <span className="text-sm font-semibold text-slate-700">Enter <strong>{user.name}</strong> to confirm</span>
+          <input className="input mt-2" value={confirmName} onChange={(event) => setConfirmName(event.target.value)} autoComplete="off" autoFocus />
+        </label>
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button className="btn-outline" type="button" onClick={onClose} disabled={deleting}>Cancel</button>
+          <button className="btn bg-red-700 text-white hover:bg-red-800" type="submit" disabled={!confirmed || deleting}>
+            <Trash2 size={16} /> {deleting ? "Deleting everything…" : "Delete permanently"}
+          </button>
+        </div>
+      </form>
+    </ModalShell>
   );
 }
 

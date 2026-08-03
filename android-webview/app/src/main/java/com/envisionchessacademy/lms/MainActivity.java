@@ -12,7 +12,7 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
 public class MainActivity extends Activity {
-    private static final String APP_URL = "https://www.classroom.envisionchessacademy.com";
+    private static final String APP_URL = "https://classroom.envisionchessacademy.com";
     private WebView webView;
 
     @Override

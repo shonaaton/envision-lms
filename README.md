@@ -50,7 +50,7 @@ Assumes you already have:
 
 - A Hostinger KVM VPS with Docker + Docker Compose
 - n8n running behind Traefik (or Caddy) with an external Docker network named `web`
-- DNS `www.classroom.envisionchessacademy.com` pointing at the VPS
+- DNS `classroom.envisionchessacademy.com` pointing at the VPS
 
 Then:
 
@@ -74,7 +74,7 @@ not reliably keep WebSocket rooms, presence, and live board updates alive.
 If you use Caddy instead of Traefik, drop these lines in your `Caddyfile`:
 
 ```
-www.classroom.envisionchessacademy.com {
+classroom.envisionchessacademy.com {
   reverse_proxy envision-lms:3000
 }
 ```

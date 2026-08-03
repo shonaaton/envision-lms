@@ -572,19 +572,23 @@ function DemoStudentDashboard({
   );
 }
 
-function InactiveStudentDashboard({ studentName }: { studentName?: string }) {
+function InactiveAccountDashboard({ userName, role }: { userName?: string | null; role?: string }) {
+  const roleLabel = role === "instructor" ? "Coach" : role === "student" ? "Student" : "Account";
+  const message = role === "student"
+    ? inactiveStudentMessage
+    : "Your account is currently inactive. You can log in and view your profile, but class-related features are paused until the academy reactivates your account.";
   return (
     <div className="space-y-5 text-slate-950">
       <DashboardHero
-        eyebrow="Student Status"
-        title={`Account inactive${studentName ? `, ${studentName}` : ""}`}
-        subtitle={inactiveStudentMessage}
+        eyebrow={`${roleLabel} Status`}
+        title={`Account inactive${userName ? `, ${userName}` : ""}`}
+        subtitle={message}
         icon={ShieldCheck}
       >
         <div className="grid gap-3 sm:grid-cols-3">
           <StatCard label="Portal Login" value="Allowed" note="You can still sign in" icon={UserCheck} tone="green" />
           <StatCard label="Classes & Booking" value="Paused" note="No class access or booking" icon={Calendar} tone="rose" />
-          <StatCard label="Tournaments" value="Paused" note="Not counted as current student" icon={Trophy} tone="amber" />
+          <StatCard label="Class tools" value="Paused" note="Class-related access is disabled" icon={Trophy} tone="amber" />
         </div>
       </DashboardHero>
       <DashboardPanel>
@@ -724,7 +728,7 @@ async function StudentDashboard({ userId }: { userId: string }) {
   ]);
 
   if ((student as any)?.isActive === false) {
-    return <InactiveStudentDashboard studentName={(student as any)?.name || "Student"} />;
+    return <InactiveAccountDashboard userName={(student as any)?.name || "Student"} role="student" />;
   }
 
   const batchIds = ((student as any)?.batches || []).map((batch: any) => objectId(batch));
@@ -1341,6 +1345,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
   const session = await auth();
   const userId = (session?.user as any)?.id;
   const role = (session?.user as any)?.role as "student" | "instructor" | "admin" | undefined;
+
+  if ((session?.user as any)?.isActive === false) {
+    return <InactiveAccountDashboard userName={session?.user?.name} role={role} />;
+  }
 
   await dbConnect();
 

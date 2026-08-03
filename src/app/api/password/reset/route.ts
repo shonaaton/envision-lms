@@ -14,7 +14,6 @@ export async function GET(req: Request) {
   const user = await User.exists({
     passwordResetTokenHash: hashPasswordResetToken(token),
     passwordResetExpiresAt: { $gt: new Date() },
-    isActive: { $ne: false },
   });
   if (!user) return NextResponse.json({ valid: false, error: "This reset link is invalid, expired, or already used." }, { status: 400 });
   return NextResponse.json({ valid: true });
@@ -38,7 +37,6 @@ export async function POST(req: Request) {
       {
         passwordResetTokenHash: hashPasswordResetToken(token),
         passwordResetExpiresAt: { $gt: new Date() },
-        isActive: { $ne: false },
       },
       {
         $set: {

@@ -21,7 +21,7 @@ export default function DashboardFrame({
   accountStatus?: AccountStatus;
   isSuperAdmin?: boolean;
   featureState?: Record<string, { visible: boolean; status: "enabled" | "disabled" | "testing" | "coming_soon" }>;
-  user: { name?: string | null; role: string };
+  user: { name?: string | null; role: string; isActive?: boolean };
   children: ReactNode;
 }) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -61,6 +61,11 @@ export default function DashboardFrame({
         onCloseMobile={() => setMobileNavOpen(false)}
       />
       <div className="flex min-w-0 flex-1 flex-col md:h-full">
+        {user.isActive === false && (
+          <div className="border-b border-amber-200 bg-amber-50 py-2 pl-14 pr-4 text-center text-sm font-semibold text-amber-900 md:px-4">
+            This account is inactive. You can sign in, but class-related features are unavailable. Contact the academy to reactivate access.
+          </div>
+        )}
         <button
           type="button"
           onClick={() => setMobileNavOpen(true)}

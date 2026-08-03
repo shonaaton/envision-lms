@@ -30,6 +30,7 @@ import {
   Users,
   WalletCards,
   UserPlus,
+  UserRound,
   Target,
   PanelLeftClose,
   PanelLeftOpen,
@@ -40,6 +41,7 @@ import {
 import Logo from "./Logo";
 import { cn } from "@/lib/utils";
 import { bookingFeatureNameForAccount } from "@/lib/bookingLabels";
+import { isInactiveRestrictedPath } from "@/lib/inactiveAccess";
 
 type Role = "student" | "instructor" | "admin" | "sub-admin";
 type AccountStatus = "demo" | "enrolled" | "coach_applicant" | "approved" | "rejected";
@@ -133,20 +135,22 @@ const sections: NavSection[] = [
     id: "settings",
     title: "Settings",
     items: [
+      { href: "/profile", label: "My Profile", icon: UserRound, roles: ["student", "instructor"] },
       { href: "/admin/settings", label: "Academy Setup", icon: Settings, featureKey: "academySettings", roles: ["admin", "sub-admin"] },
       { href: "/admin/feature-access", label: "Feature Access", icon: ShieldCheck, featureKey: "featureAccess", roles: ["admin"], superAdminOnly: true },
     ],
   },
 ];
 
-function canSee(role: Role, accountStatus: AccountStatus | undefined, isSuperAdmin: boolean | undefined, featureState: FeatureState | undefined, item: { roles?: Role[]; demoOnly?: boolean; hideForDemo?: boolean; featureKey?: string; superAdminOnly?: boolean }) {
+function canSee(role: Role, accountStatus: AccountStatus | undefined, isActive: boolean | undefined, isSuperAdmin: boolean | undefined, featureState: FeatureState | undefined, item: { href?: string; roles?: Role[]; demoOnly?: boolean; hideForDemo?: boolean; featureKey?: string; superAdminOnly?: boolean }) {
   const isDemo = accountStatus === "demo";
+  if (isActive === false && item.href && isInactiveRestrictedPath(item.href)) return false;
   if (item.superAdminOnly && !isSuperAdmin) return false;
   if (item.featureKey && featureState?.[item.featureKey] && !featureState[item.featureKey].visible) return false;
   if (item.demoOnly && !isDemo) return false;
   if (item.hideForDemo && isDemo) return false;
   if (isDemo) {
-    const demoAllowed = ["/dashboard", "/booking", "/play/square-trainer", "/play/tactics-trainer", "/play/king-hunt", "/play/computer"];
+    const demoAllowed = ["/dashboard", "/profile", "/booking", "/play/square-trainer", "/play/tactics-trainer", "/play/king-hunt", "/play/computer"];
     if ("href" in item && typeof (item as any).href === "string" && !demoAllowed.includes((item as any).href)) return false;
   }
   return !item.roles || item.roles.includes(role);
@@ -180,7 +184,7 @@ export default function Sidebar({
   accountStatus?: AccountStatus;
   isSuperAdmin?: boolean;
   featureState?: FeatureState;
-  user: { name?: string | null; role: string };
+  user: { name?: string | null; role: string; isActive?: boolean };
   mobileOpen?: boolean;
   desktopCollapsed?: boolean;
   onToggleDesktop?: () => void;
@@ -194,10 +198,10 @@ export default function Sidebar({
   const visibleSections = useMemo(
     () =>
       sections
-        .filter((section) => canSee(role, accountStatus, isSuperAdmin, featureState, section))
-        .map((section) => ({ ...section, items: section.items.filter((item) => canSee(role, accountStatus, isSuperAdmin, featureState, item)) }))
+        .filter((section) => canSee(role, accountStatus, user.isActive, isSuperAdmin, featureState, section))
+        .map((section) => ({ ...section, items: section.items.filter((item) => canSee(role, accountStatus, user.isActive, isSuperAdmin, featureState, item)) }))
         .filter((section) => section.items.length > 0),
-    [role, accountStatus, isSuperAdmin, featureState]
+    [role, accountStatus, user.isActive, isSuperAdmin, featureState]
   );
   const activeSection = visibleSections.find((section) => section.items.some((item) => isActive(pathname, item)))?.id || "academy";
   const [openSections, setOpenSections] = useState<string[]>([activeSection]);

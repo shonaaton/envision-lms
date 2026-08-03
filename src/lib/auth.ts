@@ -1,7 +1,9 @@
 import NextAuth, { type DefaultSession } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
+import { headers } from "next/headers";
 import { authConfig } from "./auth.config";
+import { isInactiveRestrictedPath } from "./inactiveAccess";
 
 declare module "next-auth" {
   interface Session {
@@ -22,7 +24,7 @@ declare module "next-auth" {
   }
 }
 
-export const { handlers, auth, signIn, signOut } = NextAuth({
+const nextAuth = NextAuth({
   ...authConfig,
   providers: [
     Credentials({
@@ -42,7 +44,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             { username: normalized },
           ],
         });
-        if (!user || (user.isActive === false && user.role !== "student")) return null;
+        if (!user) return null;
         const ok = await bcrypt.compare(String(creds.password), user.passwordHash);
         if (!ok) return null;
         const explicitSuperAdminExists = await User.exists({ role: "admin", isSuperAdmin: true, isActive: { $ne: false } });
@@ -60,3 +62,25 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
   ],
 });
+
+export const { handlers, signIn, signOut } = nextAuth;
+
+// JWT sessions can outlive an admin status change. Re-check the database on every
+// authenticated server request so deactivation and deletion take effect immediately.
+export async function auth() {
+  const session = await nextAuth.auth();
+  const userId = (session?.user as any)?.id;
+  if (!userId) return session;
+
+  const { dbConnect } = await import("./db");
+  const { User } = await import("@/models/User");
+  await dbConnect();
+  const currentUser: any = await User.findById(userId).select("isActive").lean();
+  if (!currentUser) return null;
+
+  const isActive = currentUser.isActive !== false;
+  (session!.user as any).isActive = isActive;
+  const pathname = headers().get("x-pathname") || "";
+  if (!isActive && pathname.startsWith("/api/") && isInactiveRestrictedPath(pathname)) return null;
+  return session;
+}

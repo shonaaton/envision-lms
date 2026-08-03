@@ -6,12 +6,15 @@ import { recordActivity } from "@/lib/activity";
 import { consumeAttendanceCredit } from "@/lib/fees";
 import { Classroom } from "@/models/Classroom";
 import { actualSessionMinutes, punctualityBreakdown, scheduledPaymentMinutes } from "@/lib/teachingStats";
+import { canAccessFeature } from "@/lib/featureAccess";
+import { coachCanAccessClassroomSession, coachClassroomQuery, limitClassroomToCoachSessions } from "@/lib/classroomCoachAccess";
+import { academyDateKey } from "@/lib/academyTime";
 
 export const dynamic = "force-dynamic";
 
 type SessionUser = {
   id: string;
-  role: "student" | "instructor" | "admin";
+  role: "student" | "instructor" | "admin" | "sub-admin";
 };
 
 type AuthSession = {
@@ -51,33 +54,70 @@ export async function GET(req: Request) {
   if (classroom) filter.classroom = classroom;
   if (sessionId) filter.scheduledSessionId = sessionId;
   if (sessionDate) filter.sessionDate = new Date(sessionDate);
+  const role = (session.user as SessionUser).role;
+  const userId = (session.user as SessionUser).id;
+  let instructorSessions: Map<string, Set<string>> | null = null;
+  if (role === "student") {
+    filter["records.student"] = userId;
+  } else {
+    if (!(await canAccessFeature("attendance", session.user as any, "view"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (role === "instructor") {
+      const classroomDocs: any[] = await Classroom.find({ ...coachClassroomQuery(userId), isSessionInstance: { $ne: true } })
+        .select("coach instructor generatedSessions")
+        .lean();
+      instructorSessions = new Map(classroomDocs.map((item: any) => {
+        const visible = limitClassroomToCoachSessions(item, userId);
+        return [String(item._id), new Set((visible.generatedSessions || []).map((scheduled: any) => String(scheduled._id)))];
+      }));
+      const classroomIds = classroomDocs.map((item: any) => item._id);
+      filter.classroom = classroom ? { $in: classroomIds.filter((id: any) => String(id) === classroom) } : { $in: classroomIds };
+    }
+  }
   const list = await Attendance.find(filter).sort({ sessionDate: -1 }).limit(100).lean();
-  return NextResponse.json(list);
+  const visibleList = instructorSessions
+    ? list.filter((item: any) => instructorSessions?.get(String(item.classroom))?.has(String(item.scheduledSessionId || "")))
+    : list;
+  return NextResponse.json(visibleList);
 }
 
 export async function POST(req: Request) {
   const session = await auth();
   const role = (session?.user as SessionUser | undefined)?.role;
-  if (!session || (role !== "instructor" && role !== "admin")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!session || !role || !["instructor", "admin", "sub-admin"].includes(role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!(await canAccessFeature("classrooms", session.user as any, "attendance"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const { classroom, sessionDate, sessionId, records, coach, coachStatus, teachingMinutes, metadata } = await req.json() as AttendancePayload;
   if (!classroom || !sessionDate) return NextResponse.json({ error: "missing fields" }, { status: 400 });
   await dbConnect();
   await Attendance.collection.dropIndex("classroom_1_sessionDate_1").catch(() => undefined);
   const normalizedDate = new Date(sessionDate);
+  if (Number.isNaN(normalizedDate.getTime())) return NextResponse.json({ error: "Invalid session date" }, { status: 400 });
   const classroomDoc = await Classroom.findById(classroom);
+  if (!classroomDoc) return NextResponse.json({ error: "Classroom not found" }, { status: 404 });
   const target = sessionId ? classroomDoc?.generatedSessions?.id?.(sessionId) : null;
+  if (sessionId && !target) return NextResponse.json({ error: "Scheduled class not found" }, { status: 404 });
+  if (target && academyDateKey(normalizedDate) !== academyDateKey(target.scheduledFor)) {
+    return NextResponse.json({ error: "Attendance date does not match the scheduled class date" }, { status: 400 });
+  }
+  if (role === "instructor" && !coachCanAccessClassroomSession(classroomDoc, (session.user as SessionUser).id, sessionId)) {
+    return NextResponse.json({ error: "You are not assigned to this class" }, { status: 403 });
+  }
+  const assignedStudentIds = new Set((classroomDoc.students || []).map((student: any) => String(student?._id || student)));
+  if ((records || []).some((record) => !record.student || !assignedStudentIds.has(String(record.student)))) {
+    return NextResponse.json({ error: "Attendance includes a student who is not assigned to this classroom" }, { status: 400 });
+  }
   const scheduledMinutes = target ? scheduledPaymentMinutes(target, classroomDoc) : Math.max(0, Number(classroomDoc?.durationMinutes || teachingMinutes || 0));
   const actualMinutes = target
     ? Number(target.actualTeachingMinutes || actualSessionMinutes(target))
     : Math.max(0, Number(metadata?.summary?.actualTeachingMinutes || 0));
   const punctualityScore = target ? Number(target.punctualityScore || punctualityBreakdown(target, classroomDoc).punctualityScore) : 0;
+  const assignedCoach = target?.substituteCoach || classroomDoc.coach || classroomDoc.instructor || coach;
   const doc = await Attendance.findOneAndUpdate(
     { classroom, scheduledSessionId: sessionId || "", sessionDate: normalizedDate },
     {
       records,
       markedBy: (session.user as SessionUser).id,
       scheduledSessionId: sessionId || "",
-      coach,
+      coach: assignedCoach,
       coachStatus: coachStatus || "pending",
       teachingMinutes: scheduledMinutes,
       actualTeachingMinutes: actualMinutes,

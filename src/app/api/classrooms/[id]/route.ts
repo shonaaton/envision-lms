@@ -9,33 +9,96 @@ import { deleteClassroomSessionInstances, syncClassroomSessionInstances } from "
 import { canAccessFeature, isSuperAdminSession } from "@/lib/featureAccess";
 import { academyDateTime } from "@/lib/academyTime";
 import { coachCanAccessClassroomSession, isPrimaryClassroomCoach, limitClassroomToCoachSessions } from "@/lib/classroomCoachAccess";
+import { User } from "@/models/User";
+import { Homework, Submission } from "@/models/Homework";
+import { AssignmentAutomationLog } from "@/models/AssignmentTemplate";
+import { PGN } from "@/models/PGN";
+import { Booking } from "@/models/Booking";
+import { DemoBooking } from "@/models/Onboarding";
 
 export const dynamic = "force-dynamic";
 
 async function deleteClassroomRecords(classroomId: string) {
   const questions = await LiveQuestion.find({ classroom: classroomId }).select("_id").lean();
   const questionIds = questions.map((question: any) => question._id);
+  const homework = await Homework.find({ classroom: classroomId }).select("_id").lean();
+  const homeworkIds = homework.map((item: any) => item._id);
   await Promise.all([
     Attendance.deleteMany({ classroom: classroomId }),
     ClassroomSession.deleteMany({ classroom: classroomId }),
     ClassroomChatMessage.deleteMany({ classroom: classroomId }),
     questionIds.length ? LiveQuestionResponse.deleteMany({ question: { $in: questionIds } }) : Promise.resolve(),
     LiveQuestion.deleteMany({ classroom: classroomId }),
+    homeworkIds.length ? Submission.deleteMany({ homework: { $in: homeworkIds } }) : Promise.resolve(),
+    Homework.deleteMany({ classroom: classroomId }),
+    AssignmentAutomationLog.deleteMany({ classroom: classroomId }),
+    PGN.updateMany({ classroom: classroomId }, { $unset: { classroom: 1 }, $set: { visibility: "private" } }),
+    Booking.updateMany({ classroom: classroomId }, { $unset: { classroom: 1 } }),
+    DemoBooking.updateMany({ classroom: classroomId }, { $unset: { classroom: 1 } }),
   ]);
 }
 
 async function sessionHasRecords(classroomId: string, scheduledSessionId: string) {
-  const [attendance, liveSession, chat, question] = await Promise.all([
+  const [attendance, liveSession, chat, question, homework, automation] = await Promise.all([
     Attendance.exists({ classroom: classroomId, scheduledSessionId }),
     ClassroomSession.exists({ classroom: classroomId, scheduledSessionId }),
     ClassroomChatMessage.exists({ classroom: classroomId, scheduledSessionId }),
     LiveQuestion.exists({ classroom: classroomId, scheduledSessionId }),
+    Homework.exists({ classroom: classroomId, sourceSessionId: scheduledSessionId }),
+    AssignmentAutomationLog.exists({ classroom: classroomId, scheduledSessionId }),
   ]);
-  return Boolean(attendance || liveSession || chat || question);
+  return Boolean(attendance || liveSession || chat || question || homework || automation);
 }
 
 function recordId(value: any) {
   return String(value?._id || value || "");
+}
+
+function dateOnly(value: any) {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "invalid" : date.toISOString().slice(0, 10);
+}
+
+function plainSchedule(value: any) {
+  return JSON.parse(JSON.stringify(value?.toObject?.() || value || [])).map((item: any) => {
+    const { _id, ...rest } = item;
+    return rest;
+  });
+}
+
+function scheduleFingerprint(source: any) {
+  return JSON.stringify({
+    classroomType: source.classroomType || "single",
+    classDate: dateOnly(source.classDate),
+    startTime: source.startTime || "",
+    durationMinutes: Number(source.durationMinutes || 60),
+    startDate: dateOnly(source.startDate),
+    endDate: dateOnly(source.endDate),
+    frequency: source.frequency || "weekly",
+    daysOfWeek: plainSchedule(source.daysOfWeek),
+    endCondition: source.endCondition || "on_date",
+    endAfterSessions: Number(source.endAfterSessions || 0),
+    sessionPlan: plainSchedule(source.sessionPlan),
+    topicName: source.topicName || "",
+  });
+}
+
+function proposedSchedule(existing: any, body: any) {
+  const next: Record<string, any> = {};
+  for (const key of ["classroomType", "classDate", "startTime", "durationMinutes", "startDate", "endDate", "frequency", "daysOfWeek", "endCondition", "endAfterSessions", "sessionPlan", "topicName"]) {
+    next[key] = body[key] !== undefined ? body[key] : existing[key];
+  }
+  return next;
+}
+
+function safeAcademyDateTime(date: string | Date, time: string) {
+  try {
+    const value = academyDateTime(date, time);
+    return Number.isNaN(value.getTime()) ? null : value;
+  } catch {
+    return null;
+  }
 }
 
 async function canAccessRecord(doc: any, user: any, allowSubstitute = false, scheduledSessionId?: string) {
@@ -45,7 +108,10 @@ async function canAccessRecord(doc: any, user: any, allowSubstitute = false, sch
     return role === "admin" && recordId(doc.testOwner) === userId && isSuperAdminSession(user);
   }
   if (role === "admin" || role === "sub-admin") return true;
-  if (role === "instructor") return isPrimaryClassroomCoach(doc, userId) || (allowSubstitute && coachCanAccessClassroomSession(doc, userId, scheduledSessionId));
+  if (role === "instructor") {
+    if (scheduledSessionId) return coachCanAccessClassroomSession(doc, userId, scheduledSessionId);
+    return isPrimaryClassroomCoach(doc, userId) || (allowSubstitute && coachCanAccessClassroomSession(doc, userId));
+  }
   return (doc?.students || []).some((value: any) => recordId(value) === userId);
 }
 
@@ -89,6 +155,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const reassignedSessionIds: string[] = [];
 
   if (body.action === "cancel_class" || body.action === "cancel_series") {
+    if (existing.status === "completed") return NextResponse.json({ error: "A completed classroom cannot be cancelled" }, { status: 409 });
     existing.status = "cancelled";
     (existing.generatedSessions || []).forEach((session: any) => {
       if (!session.actualEndedAt && session.status !== "completed") {
@@ -100,8 +167,14 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     const sessionId = String(body.sessionId || "");
     const target = existing.generatedSessions?.id?.(sessionId) || (existing.generatedSessions || []).find((session: any) => String(session._id) === sessionId);
     if (!target) return NextResponse.json({ error: "Scheduled class not found" }, { status: 404 });
+    const finished = target.status === "completed" || target.status === "ongoing" || Boolean(target.actualStartedAt || target.actualEndedAt);
+    if (finished) return NextResponse.json({ error: "A started or completed class can no longer be changed or deleted" }, { status: 409 });
+    if (target.status === "cancelled" && body.action !== "delete_session") return NextResponse.json({ error: "A cancelled class can only be deleted" }, { status: 409 });
 
     if (body.action === "delete_session") {
+      if (existing.classroomType === "series" && (existing.generatedSessions?.length || 0) <= 1) {
+        return NextResponse.json({ error: "A series must keep at least one class. Delete the entire series instead." }, { status: 409 });
+      }
       if (await sessionHasRecords(params.id, sessionId)) {
         return NextResponse.json({ error: "This class already has attendance or live-class records. Cancel it instead of deleting it." }, { status: 409 });
       }
@@ -112,12 +185,17 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       target.coachAttendanceStatus = "cancelled";
     } else {
       const nextStartTime = String(body.startTime || target.startTime || existing.startTime || "00:00");
+      if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(nextStartTime)) return NextResponse.json({ error: "Select a valid class time" }, { status: 400 });
       if (body.classDate) {
         if (body.action === "reschedule_session" && !target.originalDate) target.originalDate = target.scheduledFor;
-        target.scheduledFor = academyDateTime(String(body.classDate), nextStartTime);
+        const scheduledFor = safeAcademyDateTime(String(body.classDate), nextStartTime);
+        if (!scheduledFor) return NextResponse.json({ error: "Select a valid class date" }, { status: 400 });
+        target.scheduledFor = scheduledFor;
       } else if (body.startTime) {
         if (body.action === "reschedule_session" && !target.originalDate) target.originalDate = target.scheduledFor;
-        target.scheduledFor = academyDateTime(target.scheduledFor, nextStartTime);
+        const scheduledFor = safeAcademyDateTime(target.scheduledFor, nextStartTime);
+        if (!scheduledFor) return NextResponse.json({ error: "Select a valid class date" }, { status: 400 });
+        target.scheduledFor = scheduledFor;
       }
       target.startTime = nextStartTime;
       target.durationMinutes = Math.max(15, Number(body.durationMinutes || target.durationMinutes || existing.durationMinutes || 60));
@@ -127,44 +205,65 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
         target.coachAttendanceStatus = "pending";
       }
     }
+    const remainingStatuses = (existing.generatedSessions || []).map((item: any) => String(item.status || "scheduled"));
+    if (remainingStatuses.length && remainingStatuses.every((status: string) => status === "cancelled")) existing.status = "cancelled";
+    else if (remainingStatuses.length && remainingStatuses.every((status: string) => status === "completed" || status === "cancelled")) existing.status = "completed";
   } else if (body.action === "reschedule_class") {
+    if (existing.status === "completed" || existing.status === "cancelled") return NextResponse.json({ error: "This class can no longer be rescheduled" }, { status: 409 });
+    if (!String(body.classDate || "").trim() || !/^([01]\d|2[0-3]):[0-5]\d$/.test(String(body.startTime || ""))) {
+      return NextResponse.json({ error: "Select a valid date and time" }, { status: 400 });
+    }
+    const nextScheduledFor = safeAcademyDateTime(body.classDate, body.startTime);
+    if (!nextScheduledFor) return NextResponse.json({ error: "Select a valid class date" }, { status: 400 });
     existing.classDate = body.classDate ? new Date(body.classDate) : existing.classDate;
     existing.startTime = body.startTime || existing.startTime;
     existing.durationMinutes = Math.max(15, Number(body.durationMinutes || existing.durationMinutes || 60));
     if (Array.isArray(existing.generatedSessions) && existing.generatedSessions[0]) {
       existing.generatedSessions[0].originalDate = existing.generatedSessions[0].scheduledFor;
-      existing.generatedSessions[0].scheduledFor = body.classDate ? academyDateTime(body.classDate, body.startTime || existing.generatedSessions[0].startTime) : existing.generatedSessions[0].scheduledFor;
+      existing.generatedSessions[0].scheduledFor = nextScheduledFor;
       existing.generatedSessions[0].startTime = body.startTime || existing.generatedSessions[0].startTime;
       existing.generatedSessions[0].durationMinutes = Math.max(15, Number(body.durationMinutes || existing.generatedSessions[0].durationMinutes || 60));
       existing.generatedSessions[0].status = "scheduled";
     }
   } else if (body.action === "substitute_coach") {
     if (!String(body.coach || "").trim()) return NextResponse.json({ error: "Select a substitute coach" }, { status: 400 });
+    if (!(await User.exists({ _id: body.coach, role: "instructor", isActive: { $ne: false } }))) return NextResponse.json({ error: "The selected coach is not active" }, { status: 400 });
     if (body.scope === "session" && body.sessionId) {
       const target = existing.generatedSessions?.id?.(body.sessionId);
       if (!target) return NextResponse.json({ error: "Scheduled class not found" }, { status: 404 });
+      if (["completed", "cancelled"].includes(target.status) || target.actualEndedAt) return NextResponse.json({ error: "A completed or cancelled class cannot be reassigned" }, { status: 409 });
       target.substituteCoach = body.coach;
       reassignedSessionIds.push(String(target._id));
+    } else if (body.scope === "future" && Array.isArray(existing.generatedSessions)) {
+      existing.generatedSessions.forEach((item: any) => {
+        if (item.status === "scheduled" && !item.actualStartedAt && !item.actualEndedAt) {
+          item.substituteCoach = body.coach;
+          reassignedSessionIds.push(String(item._id));
+        }
+      });
+      if (!reassignedSessionIds.length) return NextResponse.json({ error: "This series has no future classes available for reassignment" }, { status: 409 });
     } else {
-      existing.coach = body.coach || existing.coach;
-      existing.instructor = body.coach || existing.instructor;
-      if (body.scope === "future" && Array.isArray(existing.generatedSessions)) {
-        existing.generatedSessions.forEach((item: any) => {
-          if (item.status === "scheduled") {
-            item.substituteCoach = body.coach;
-            reassignedSessionIds.push(String(item._id));
-          }
-        });
-      }
+      existing.coach = body.coach;
+      existing.instructor = body.coach;
+      (existing.generatedSessions || []).forEach((item: any) => {
+        if (!["completed", "cancelled"].includes(item.status) && !item.actualEndedAt) {
+          item.substituteCoach = undefined;
+          reassignedSessionIds.push(String(item._id));
+        }
+      });
     }
   } else if (body.action === "add_extra_class") {
+    if (existing.classroomType !== "series" || existing.status === "completed" || existing.status === "cancelled") return NextResponse.json({ error: "Extra classes can only be added to an active series" }, { status: 409 });
+    if (!String(body.classDate || "").trim() || !/^([01]\d|2[0-3]):[0-5]\d$/.test(String(body.startTime || ""))) return NextResponse.json({ error: "Select a valid date and time" }, { status: 400 });
+    const extraScheduledFor = safeAcademyDateTime(body.classDate, String(body.startTime));
+    if (!extraScheduledFor) return NextResponse.json({ error: "Select a valid class date" }, { status: 400 });
     const nextNumber = (existing.generatedSessions?.length || 0) + 1;
     existing.generatedSessions = [
       ...(existing.generatedSessions || []),
       {
         sessionNumber: nextNumber,
         topicName: String(body.topicName || "Extra Class"),
-        scheduledFor: academyDateTime(body.classDate, String(body.startTime || existing.startTime || "16:00")),
+        scheduledFor: extraScheduledFor,
         startTime: String(body.startTime || existing.startTime || "16:00"),
         durationMinutes: Math.max(15, Number(body.durationMinutes || existing.durationMinutes || 60)),
         status: "scheduled",
@@ -179,29 +278,76 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   } else {
     const nextDays = Array.isArray(body.daysOfWeek) ? body.daysOfWeek : existing.daysOfWeek || [];
     const nextType = body.classroomType || existing.classroomType || "single";
+    if (!String(body.title ?? existing.title ?? "").trim()) return NextResponse.json({ error: "Class name is required" }, { status: 400 });
+    if (!String(body.coach ?? existing.coach ?? "").trim()) return NextResponse.json({ error: "Select a coach for this classroom" }, { status: 400 });
+    if (body.coach && recordId(body.coach) !== recordId(existing.coach) && !(await canAccessFeature("classrooms", session.user as any, "assign"))) {
+      return NextResponse.json({ error: "You do not have permission to reassign this classroom" }, { status: 403 });
+    }
+    if (body.coach && !(await User.exists({ _id: body.coach, role: "instructor", isActive: { $ne: false } }))) return NextResponse.json({ error: "The selected coach is not active" }, { status: 400 });
+    const nextSchedule = proposedSchedule(existing, body);
+    if (nextType === "single") {
+      if (!nextSchedule.classDate || Number.isNaN(new Date(nextSchedule.classDate).getTime())) return NextResponse.json({ error: "Select a valid class date" }, { status: 400 });
+      if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(String(nextSchedule.startTime || ""))) return NextResponse.json({ error: "Select a valid class time" }, { status: 400 });
+    } else {
+      const scheduleDays = Array.isArray(nextSchedule.daysOfWeek) ? nextSchedule.daysOfWeek : [];
+      if (!nextSchedule.startDate || Number.isNaN(new Date(nextSchedule.startDate).getTime())) return NextResponse.json({ error: "Select a valid series start date" }, { status: 400 });
+      if (!scheduleDays.some((day: any) => Array.isArray(day.slots) && day.slots.length)) return NextResponse.json({ error: "Add at least one day and time slot" }, { status: 400 });
+      if (scheduleDays.some((day: any) => new Set((day.slots || []).map((slot: any) => slot.startTime)).size !== (day.slots || []).length)) {
+        return NextResponse.json({ error: "Remove duplicate time slots from the same day" }, { status: 400 });
+      }
+      if (nextSchedule.endCondition === "on_date" && (!nextSchedule.endDate || new Date(nextSchedule.endDate).getTime() < new Date(nextSchedule.startDate).getTime())) {
+        return NextResponse.json({ error: "The series end date must be on or after the start date" }, { status: 400 });
+      }
+    }
+    const scheduleChanged = scheduleFingerprint(existing) !== scheduleFingerprint(nextSchedule);
+    const previousSessions = (existing.generatedSessions || []).map((item: any) => item.toObject());
+    if (scheduleChanged) {
+      const hasProtectedSessions = previousSessions.some((item: any) => item.status !== "scheduled" || item.actualStartedAt || item.actualEndedAt || item.attendanceMarkedAt);
+      const hasRecords = await Promise.all([
+        Attendance.exists({ classroom: params.id }),
+        ClassroomSession.exists({ classroom: params.id }),
+      ]).then((values) => values.some(Boolean));
+      if (hasProtectedSessions || hasRecords) {
+        return NextResponse.json({ error: "This classroom already has session history. Use the individual class controls to change future dates, times, durations, or topics." }, { status: 409 });
+      }
+    }
+    const safeBody = { ...body };
+    delete safeBody.action;
+    delete safeBody.sessionId;
+    delete safeBody.generatedSessions;
+    delete safeBody._id;
     existing.set({
-      ...body,
+      ...safeBody,
+      course: body.course ? body.course : undefined,
       classDate: body.classDate ? new Date(body.classDate) : existing.classDate,
       startDate: body.startDate ? new Date(body.startDate) : existing.startDate,
-      endDate: body.endDate ? new Date(body.endDate) : existing.endDate,
+      endDate: body.endDate ? new Date(body.endDate) : undefined,
       durationMinutes: Math.max(15, Number(body.durationMinutes || existing.durationMinutes || 60)),
     });
-    existing.generatedSessions = buildGeneratedSessions({
-      classroomType: nextType,
-      title: existing.title,
-      topicName: existing.topicName || existing.title,
-      topicOrder: existing.topicOrder || 0,
-      classDate: existing.classDate,
-      startTime: existing.startTime,
-      durationMinutes: existing.durationMinutes,
-      startDate: existing.startDate,
-      endDate: existing.endDate,
-      frequency: existing.frequency || "weekly",
-      daysOfWeek: nextDays,
-      endCondition: existing.endCondition || "on_date",
-      endAfterSessions: existing.endAfterSessions,
-      sessionPlan: existing.sessionPlan || [],
-    });
+    if (scheduleChanged) {
+      const regenerated = buildGeneratedSessions({
+        classroomType: nextType,
+        title: existing.title,
+        topicName: existing.topicName || existing.title,
+        topicOrder: existing.topicOrder || 0,
+        classDate: existing.classDate,
+        startTime: existing.startTime,
+        durationMinutes: existing.durationMinutes,
+        startDate: existing.startDate,
+        endDate: existing.endDate,
+        frequency: existing.frequency || "weekly",
+        daysOfWeek: nextDays,
+        endCondition: existing.endCondition || "on_date",
+        endAfterSessions: existing.endAfterSessions,
+        sessionPlan: existing.sessionPlan || [],
+      });
+      if (!regenerated.length) return NextResponse.json({ error: "The updated schedule did not create any classes. Check the dates, topics, days, and times." }, { status: 400 });
+      existing.generatedSessions = regenerated.map((item: any, index: number) => ({
+        ...item,
+        ...(previousSessions[index]?._id ? { _id: previousSessions[index]._id } : {}),
+        ...(previousSessions[index]?.substituteCoach ? { substituteCoach: previousSessions[index].substituteCoach } : {}),
+      }));
+    }
   }
 
   await existing.save();
@@ -218,7 +364,12 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     ]);
   }
   await syncClassroomSessionInstances(params.id);
-  const updated = await Classroom.findById(params.id);
+  const updated = await Classroom.findById(params.id)
+    .populate("coach instructor", "name email username")
+    .populate("generatedSessions.substituteCoach", "name email username")
+    .populate("students", "name email username isActive")
+    .populate("batches", "name")
+    .populate("course", "name category level");
   return NextResponse.json(updated);
 }
 

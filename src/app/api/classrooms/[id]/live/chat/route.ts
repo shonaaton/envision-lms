@@ -24,7 +24,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const recipientId = typeof recipient === "string" && recipient !== "group" ? recipient.trim() : "";
   const classroomDoc = classroom as Record<string, any>;
-  const canSendPrivate = role === "admin" || role === "instructor";
+  const canSendPrivate = role === "admin" || role === "sub-admin" || role === "instructor";
   if (recipientId && !canSendPrivate) return NextResponse.json({ error: "Only coaches can send private classroom messages" }, { status: 403 });
   if (recipientId) {
     const studentIds = (classroomDoc.students || []).map((student: any) => String(student?._id || student));

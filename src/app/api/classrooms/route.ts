@@ -7,6 +7,7 @@ import { buildGeneratedSessions, buildSessionPlan } from "@/lib/classroomSchedul
 import { syncClassroomSessionInstances } from "@/lib/classroomSessionInstances";
 import { canAccessFeature, isSuperAdminSession } from "@/lib/featureAccess";
 import { coachClassroomQuery, limitClassroomToCoachSessions } from "@/lib/classroomCoachAccess";
+import { User } from "@/models/User";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +32,7 @@ export async function GET() {
       : { students: userId, isSessionInstance: { $ne: true }, ...visibleClassrooms };
   const list = await Classroom.find(filter)
     .populate("coach instructor", "name email username")
+    .populate("generatedSessions.substituteCoach", "name email username")
     .populate("students", "name email username isActive")
     .populate("batches", "name")
     .populate("course", "name category level")
@@ -47,7 +49,11 @@ export async function POST(req: Request) {
   try {
     await dbConnect();
     const raw = await req.json();
-    const body = await normalizeClassroomPayload(raw, (session.user as any).id);
+    const actorId = String((session.user as any).id || "");
+    if ((session.user as any).role === "instructor" && String(raw.coach || "") !== actorId && !(await canAccessFeature("classrooms", session.user as any, "assign"))) {
+      return NextResponse.json({ error: "You can only create a classroom assigned to yourself" }, { status: 403 });
+    }
+    const body = await normalizeClassroomPayload(raw, actorId);
     const created = await Classroom.create(body);
     await syncClassroomSessionInstances(String(created._id));
     return NextResponse.json(created);
@@ -71,6 +77,12 @@ async function normalizeClassroomPayload(raw: any, actorId: string) {
   const selectedTopicNames = Array.isArray(raw.selectedTopicNames)
     ? raw.selectedTopicNames.map((name: any) => String(name || "").trim()).filter(Boolean)
     : [];
+  if (!String(raw.coach || "").trim()) throw new Error("Select a coach for this classroom.");
+  if (!(await User.exists({ _id: raw.coach, role: "instructor", isActive: { $ne: false } }))) throw new Error("The selected coach is not active.");
+  if (classroomType === "single" && !String(raw.classDate || "").trim()) throw new Error("Select the class date.");
+  if (classroomType === "single" && !String(raw.startTime || "").trim()) throw new Error("Select the class start time.");
+  if (classroomType === "single" && Number.isNaN(new Date(raw.classDate).getTime())) throw new Error("Select a valid class date.");
+  if (classroomType === "single" && !/^([01]\d|2[0-3]):[0-5]\d$/.test(String(raw.startTime || ""))) throw new Error("Select a valid class start time.");
 
   let sessionPlan = Array.isArray(raw.sessionPlan) ? raw.sessionPlan : [];
   let courseName = String(raw.courseName || "").trim();
@@ -116,15 +128,27 @@ async function normalizeClassroomPayload(raw: any, actorId: string) {
           day: Number(daySlot.day),
           slots: Array.isArray(daySlot.slots)
             ? daySlot.slots
-                .filter((slot: any) => String(slot.startTime || "").trim())
+                .filter((slot: any) => /^([01]\d|2[0-3]):[0-5]\d$/.test(String(slot.startTime || "").trim()))
                 .map((slot: any) => ({
                   startTime: String(slot.startTime || "").trim(),
                   durationMinutes: Math.max(15, Number(slot.durationMinutes || durationMinutes)),
                 }))
             : [],
         }))
-        .filter((daySlot: any) => Number.isFinite(daySlot.day) && daySlot.slots.length)
+        .filter((daySlot: any) => Number.isInteger(daySlot.day) && daySlot.day >= 0 && daySlot.day <= 6 && daySlot.slots.length)
     : [];
+  if (classroomType === "series" && !String(raw.startDate || "").trim()) throw new Error("Select the series start date.");
+  if (classroomType === "series" && Number.isNaN(new Date(raw.startDate).getTime())) throw new Error("Select a valid series start date.");
+  if (classroomType === "series" && !daysOfWeek.length) throw new Error("Add at least one day and time slot for the series.");
+  if (classroomType === "series" && daysOfWeek.some((day: any) => new Set(day.slots.map((slot: any) => slot.startTime)).size !== day.slots.length)) {
+    throw new Error("Remove duplicate time slots from the same day.");
+  }
+  if (classroomType === "series" && !sessionPlan.length) throw new Error("Select a course level with at least one topic for the series.");
+  if (classroomType === "series" && raw.endCondition === "on_date" && !String(raw.endDate || "").trim()) throw new Error("Select the series end date.");
+  if (classroomType === "series" && raw.endCondition === "on_date" && Number.isNaN(new Date(raw.endDate).getTime())) throw new Error("Select a valid series end date.");
+  if (classroomType === "series" && raw.endCondition === "on_date" && new Date(raw.endDate).getTime() < new Date(raw.startDate).getTime()) {
+    throw new Error("The series end date must be on or after the start date.");
+  }
 
   const generatedSessions = buildGeneratedSessions({
     classroomType,
@@ -142,6 +166,7 @@ async function normalizeClassroomPayload(raw: any, actorId: string) {
     endAfterSessions: Number(raw.endAfterSessions || 0) || undefined,
     sessionPlan,
   });
+  if (!generatedSessions.length) throw new Error("The classroom schedule did not create any sessions. Check the dates, topics, days, and times.");
 
   return {
     title,
@@ -166,8 +191,9 @@ async function normalizeClassroomPayload(raw: any, actorId: string) {
     durationMinutes,
     startDate: raw.startDate ? new Date(raw.startDate) : undefined,
     endDate: raw.endDate ? new Date(raw.endDate) : undefined,
+    seriesTopicMode,
     frequency: raw.frequency === "custom" ? "custom" : "weekly",
-    sessionsPerWeek: Math.max(1, Number(raw.sessionsPerWeek || 1)),
+    sessionsPerWeek: daysOfWeek.reduce((total: number, day: any) => total + day.slots.length, 0),
     repeatEvery: 1,
     daysOfWeek,
     endCondition: ["on_date", "after_n_sessions", "course_complete", "never"].includes(raw.endCondition) ? raw.endCondition : "on_date",

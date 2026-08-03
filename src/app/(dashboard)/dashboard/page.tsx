@@ -55,6 +55,7 @@ import {
   Zap,
 } from "lucide-react";
 import Link from "next/link";
+import { canAccessFeature } from "@/lib/featureAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -703,12 +704,13 @@ function coachSessionDayLabel(date: Date, now: Date) {
   return new Intl.DateTimeFormat("en-IN", { weekday: "long", day: "numeric", month: "short" }).format(date);
 }
 
-async function StudentDashboard({ userId }: { userId: string }) {
+async function StudentDashboard({ userId, joinAllowed }: { userId: string; joinAllowed: boolean }) {
   const now = new Date();
   const [student, classrooms, homework, submissions, tournaments, rewards, attendance, conversations, messages, studentInvoices] = await Promise.all([
     User.findById(userId).populate("batches", "name level").lean(),
-    Classroom.find({ students: userId, isActive: { $ne: false } })
+    Classroom.find({ students: userId, isActive: { $ne: false }, isSessionInstance: { $ne: true } })
       .populate("coach instructor", "name username")
+      .populate("generatedSessions.substituteCoach", "name username")
       .populate("batches", "name")
       .lean(),
     Homework.find({ isPublished: true }).sort({ dueAt: 1, createdAt: -1 }).lean(),
@@ -767,7 +769,7 @@ async function StudentDashboard({ userId }: { userId: string }) {
       return diff === 1 && streak === index ? streak + 1 : streak;
     }, submissions.length ? 1 : 0);
   const unreadCoachReplies = messages.filter((message: any) => !(message.readBy || []).some((entry: any) => objectId(entry.user) === userId)).length;
-  const heroSessionOpen = nextSession ? canJoinScheduledSession(nextSession.session, now) : false;
+  const heroSessionOpen = nextSession ? joinAllowed && canJoinScheduledSession(nextSession.session, now) : false;
   const studentRank = await computeStudentRank(userId);
   const isDemoAccount = (student as any)?.accountStatus === "demo";
   const bookingFeatureName = bookingFeatureNameForAccount((student as any)?.accountStatus);
@@ -857,7 +859,7 @@ async function StudentDashboard({ userId }: { userId: string }) {
               <h2 className="mt-4 text-3xl font-black">{nextSession ? sessionTopic(nextSession.session, nextSession.classroom) : "Stay sharp today"}</h2>
               <p className="mt-2 max-w-2xl text-sm text-white/80">
                 {nextSession
-                  ? `${nextSession.classroom.courseName || "General class"} - ${nextSession.classroom.levelName || "Level not set"} - Coach ${(nextSession.classroom.coach as any)?.name || "Assigned coach"}`
+                  ? `${nextSession.classroom.courseName || "General class"} - ${nextSession.classroom.levelName || "Level not set"} - Coach ${nextSession.session?.substituteCoach?.name || (nextSession.classroom.coach as any)?.name || "Assigned coach"}`
                   : "Your next class, homework, tournaments, and training challenges will show up here."}
               </p>
             </div>
@@ -906,13 +908,13 @@ async function StudentDashboard({ userId }: { userId: string }) {
             {upcomingSessions.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">No upcoming classes yet.</div>
             ) : upcomingSessions.slice(0, 4).map(({ classroom, session }) => {
-              const canJoin = canJoinScheduledSession(session, now);
+              const canJoin = joinAllowed && canJoinScheduledSession(session, now);
               return (
                 <div key={`${classroom._id}-${session._id}`} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <div className="text-lg font-black text-slate-950">{sessionTopic(session, classroom)}</div>
-                      <div className="mt-1 text-sm text-slate-600">{classroom.courseName || "General"} - {classroom.levelName || "Not set"} - Coach {(classroom.coach as any)?.name || "Assigned coach"}</div>
+                      <div className="mt-1 text-sm text-slate-600">{classroom.courseName || "General"} - {classroom.levelName || "Not set"} - Coach {session?.substituteCoach?.name || (classroom.coach as any)?.name || "Assigned coach"}</div>
                     </div>
                     <span className={canJoin ? "chip bg-emerald-50 text-emerald-700" : "chip"}>{formatJoinWindowLabel(session, now)}</span>
                   </div>
@@ -1043,7 +1045,7 @@ async function StudentDashboard({ userId }: { userId: string }) {
                     <div>
                       <div className="text-lg font-black text-slate-950">{sessionTopic(session, classroom)}</div>
                       <div className="mt-1 text-sm text-slate-600">
-                        {classroom.courseName || "General"} - {classroom.levelName || "Not set"} - Coach {(classroom.coach as any)?.name || "Assigned coach"}
+                        {classroom.courseName || "General"} - {classroom.levelName || "Not set"} - Coach {session?.substituteCoach?.name || (classroom.coach as any)?.name || "Assigned coach"}
                       </div>
                     </div>
                     <span className={statusChipClass(status)}>{formatJoinWindowLabel(session, now)}</span>
@@ -1093,7 +1095,7 @@ async function StudentDashboard({ userId }: { userId: string }) {
   );
 }
 
-async function CoachDashboard({ userId, searchParams }: { userId: string; searchParams: DashboardSearchParams }) {
+async function CoachDashboard({ userId, searchParams, joinAllowed }: { userId: string; searchParams: DashboardSearchParams; joinAllowed: boolean }) {
   const now = new Date();
   const summaryRange = getTeachingSummaryRange(searchParams);
   const [classroomDocs, homework, tournaments] = await Promise.all([
@@ -1241,7 +1243,7 @@ async function CoachDashboard({ userId, searchParams }: { userId: string; search
                 </div>
                 <div className="space-y-3">
                   {rows.slice(0, 3).map(({ classroom, session }) => {
-                    const canJoin = canJoinScheduledSession(session, now);
+                    const canJoin = joinAllowed && canJoinScheduledSession(session, now);
                     const targetNames = (classroom.batches || []).map((batch: any) => batch.name).join(", ") || `${classroom.students?.length || 0} students`;
                     return (
                       <div key={`${classroom._id}-${session._id}`} className="rounded-2xl border border-slate-200 bg-white p-4">
@@ -1353,9 +1355,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
   }
 
   await dbConnect();
+  const joinAllowed = await canAccessFeature("classrooms", session?.user as any, "join");
 
-  if (role === "student") return <StudentDashboard userId={userId} />;
-  if (role === "instructor") return <CoachDashboard userId={userId} searchParams={searchParams} />;
+  if (role === "student") return <StudentDashboard userId={userId} joinAllowed={joinAllowed} />;
+  if (role === "instructor") return <CoachDashboard userId={userId} searchParams={searchParams} joinAllowed={joinAllowed} />;
 
   const { preset, from, to } = getRange(searchParams);
   const focusDate = parseDate(searchParams.date) || new Date();
@@ -1393,7 +1396,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
     User.find({ role: "student", ...userSearch }, { passwordHash: 0 }).sort({ createdAt: -1 }).lean(),
     User.find({ role: "instructor" }, { passwordHash: 0 }).sort({ name: 1 }).lean(),
     Batch.find({}).populate("coach", "name").lean(),
-    Classroom.find({}).lean(),
+    Classroom.find({ isSessionInstance: { $ne: true } }).lean(),
     Homework.find(dateFilter("createdAt", from, to)).lean(),
     Submission.find(dateFilter("submittedAt", from, to)).populate("student", "name username").lean(),
     Attendance.find(dateFilter("sessionDate", from, to)).populate("classroom", "title").lean(),

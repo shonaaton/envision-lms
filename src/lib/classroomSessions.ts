@@ -65,7 +65,7 @@ export function deriveScheduledSessionStatus(
   const opensAt = start;
   if (now < opensAt) return "upcoming";
   if (now >= start && now <= end) return "ongoing";
-  return "completed";
+  return "missed";
 }
 
 export function isSessionUpcomingLike(status: ScheduledSessionStatus) {

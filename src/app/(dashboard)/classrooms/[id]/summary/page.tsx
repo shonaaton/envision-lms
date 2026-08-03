@@ -11,6 +11,7 @@ import SessionResourceReview from "@/components/classroom/SessionResourceReview"
 import { formatAcademyDateTime } from "@/lib/academyTime";
 import { getSessionStart } from "@/lib/classroomSessions";
 import { coachCanAccessClassroomSession } from "@/lib/classroomCoachAccess";
+import { canAccessFeature } from "@/lib/featureAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -88,6 +89,7 @@ export default async function ClassroomSummaryPage({
   if (!session) redirect("/login");
   const userId = (session.user as any).id;
   const role = (session.user as any).role as "student" | "instructor" | "admin" | "sub-admin";
+  if (!(await canAccessFeature("classrooms", session.user as any, "view"))) redirect("/dashboard");
 
   await dbConnect();
 

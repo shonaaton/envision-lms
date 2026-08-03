@@ -15,6 +15,7 @@ import {
   markScheduledSessionStarted,
   resolveScheduledSession,
 } from "@/lib/classroomLiveSession";
+import { isJoinWindowOpen } from "@/lib/classroomSessions";
 
 export const dynamic = "force-dynamic";
 
@@ -48,7 +49,7 @@ function participantUserId(participant: LiveParticipant) {
 }
 
 function canCoach(role: string | undefined) {
-  return role === "admin" || role === "instructor";
+  return role === "admin" || role === "sub-admin" || role === "instructor";
 }
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
@@ -85,7 +86,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     }
     const existingParticipant = (live?.participants || []).find((participant) => participantUserId(participant) === userId);
     if (live?.status !== "ended") {
-      if (canCoach(role)) {
+      if (canCoach(role) && isJoinWindowOpen(scheduledSession)) {
         await markScheduledSessionStarted({ classroomId: params.id, scheduledSessionId, actorId: userId });
       }
       if (existingParticipant) {

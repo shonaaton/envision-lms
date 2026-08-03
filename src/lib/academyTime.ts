@@ -50,6 +50,23 @@ export function academyDateTime(dateValue: string | Date, time = "00:00") {
   return zonedDateTime(dateValue, time, ACADEMY_TIME_ZONE);
 }
 
+export function academyDateKey(value: string | Date) {
+  if (typeof value === "string") {
+    const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (match) return `${match[1]}-${match[2]}-${match[3]}`;
+  }
+  const { year, month, day } = dateParts(value, ACADEMY_TIME_ZONE);
+  return `${year}-${month}-${day}`;
+}
+
+export function academyDayBounds(value: string | Date) {
+  const key = academyDateKey(value);
+  const start = academyDateTime(key, "00:00");
+  const end = academyDateTime(key, "23:59");
+  end.setSeconds(59, 999);
+  return { start, end };
+}
+
 export function formatAcademyDateTime(
   value: string | Date,
   options: Intl.DateTimeFormatOptions = {},

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CalendarDays,
   ChevronLeft,
@@ -37,6 +37,7 @@ type Role = "student" | "instructor" | "admin" | "sub-admin";
 
 type ClassroomPermissions = {
   view: boolean;
+  join: boolean;
   create: boolean;
   edit: boolean;
   cancel: boolean;
@@ -62,12 +63,21 @@ type ClassroomItem = {
   classroomType: "single" | "series";
   status: "scheduled" | "ongoing" | "completed" | "cancelled";
   courseName?: string;
+  course?: { _id?: string } | string;
   levelName?: string;
   topicName?: string;
   classDate?: string;
   startDate?: string;
+  endDate?: string;
   startTime?: string;
   durationMinutes?: number;
+  frequency?: "weekly" | "custom";
+  sessionsPerWeek?: number;
+  daysOfWeek?: Array<{ day: number; slots: Array<{ startTime: string; durationMinutes: number }> }>;
+  endCondition?: EndCondition;
+  endAfterSessions?: number;
+  seriesTopicMode?: SeriesTopicMode;
+  sessionPlan?: Array<{ sessionNumber: number; topicName: string; topicOrder?: number }>;
   coach?: CoachOption | string;
   students?: StudentOption[];
   batches?: Array<BatchOption | string>;
@@ -131,6 +141,13 @@ function classroomLifecycleRollup(item: ClassroomItem) {
 function canJoinScheduledSession(session: any, now = new Date()) {
   const status = deriveScheduledSessionStatus(session, now);
   return status === "join_available" || status === "ongoing" || isJoinWindowOpen(session, now);
+}
+
+function assignedCoachName(classroom: ClassroomItem, scheduledSession?: any) {
+  const substitute = scheduledSession?.substituteCoach;
+  if (substitute && typeof substitute === "object" && substitute.name) return substitute.name;
+  const coach = classroom.coach;
+  return coach && typeof coach === "object" ? coach.name || "Coach" : "Coach";
 }
 
 function dedupeSessionRows(rows: ReturnType<typeof flattenScheduledSessions>) {
@@ -229,32 +246,44 @@ export default function ClassroomManagementClient({
   });
   const [actionModal, setActionModal] = useState<{ type: string; item: ClassroomItem | null; session?: any }>({ type: "", item: null });
   const [actionDraft, setActionDraft] = useState<any>({});
+  const lastLoadErrorAt = useRef(0);
 
   async function withBusy<T>(message: string, task: () => Promise<T>) {
     setBusyMessage(message);
     try {
       return await task();
+    } catch {
+      toast.error("The request took too long or the connection was interrupted. Please try again.");
+      return undefined;
     } finally {
       setBusyMessage("");
     }
   }
 
   const load = useCallback(async () => {
-    setLoading(true);
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 15000);
+    const canLoadTargets = role !== "student" && (permissions.create || permissions.edit || permissions.assign);
     try {
       const [classroomsRes, targetsRes] = await Promise.all([
-        fetch("/api/classrooms", { cache: "no-store" }),
-        role === "admin" || role === "sub-admin" ? fetch("/api/classrooms/targets", { cache: "no-store" }) : Promise.resolve(null as any),
+        fetch("/api/classrooms", { cache: "no-store", signal: controller.signal }),
+        canLoadTargets ? fetch("/api/classrooms/targets", { cache: "no-store", signal: controller.signal }) : Promise.resolve(null as any),
       ]);
-      if (classroomsRes.ok) {
-        const data = await classroomsRes.json();
-        setItems(Array.isArray(data) ? data.map(normalizeClassroomItem) : []);
-      }
+      const classroomPayload = await classroomsRes.json().catch(() => ([]));
+      if (!classroomsRes.ok) throw new Error(classroomPayload?.error || "Could not load classrooms");
+      setItems(Array.isArray(classroomPayload) ? classroomPayload.map(normalizeClassroomItem) : []);
       if (targetsRes?.ok) setTargets(await targetsRes.json());
+    } catch {
+      const now = Date.now();
+      if (now - lastLoadErrorAt.current > 30000) {
+        toast.error("Classrooms could not be refreshed. Please try again.");
+        lastLoadErrorAt.current = now;
+      }
     } finally {
+      window.clearTimeout(timeout);
       setLoading(false);
     }
-  }, [role]);
+  }, [permissions.assign, permissions.create, permissions.edit, role]);
 
   useEffect(() => {
     load();
@@ -287,7 +316,11 @@ export default function ClassroomManagementClient({
 
   const filteredItems = useMemo(() => {
     return items.filter((item) => {
-      if (filters.coach && String((item.coach as any)?._id || item.coach || "") !== filters.coach) return false;
+      if (filters.coach) {
+        const primaryMatches = String((item.coach as any)?._id || item.coach || "") === filters.coach;
+        const substituteMatches = (item.generatedSessions || []).some((session: any) => String(session?.substituteCoach?._id || session?.substituteCoach || "") === filters.coach);
+        if (!primaryMatches && !substituteMatches) return false;
+      }
       if (filters.course && item.courseName !== filters.course) return false;
       if (filters.level && item.levelName !== filters.level) return false;
       if (filters.status) {
@@ -310,7 +343,7 @@ export default function ClassroomManagementClient({
         scheduledFor: session.scheduledFor,
         startTime: session.startTime,
         status: session.status,
-        coachName: (item.coach as any)?.name || "Coach",
+        coachName: assignedCoachName(item, session),
       }))
     );
   }, [filteredItems]);
@@ -368,27 +401,27 @@ export default function ClassroomManagementClient({
     setForm({
       classroomType: item.classroomType || mode,
       title: item.title || "",
-      course: "",
+      course: String((item.course as any)?._id || item.course || ""),
       courseName: item.courseName || "",
       levelName: item.levelName || "",
       topicName: item.topicName || "",
       topicOrder: 0,
       useCustomTopic: !item.courseName || !item.topicName,
       customTopicName: item.topicName || "",
-      seriesTopicMode: "all",
-      classCount: item.generatedSessions?.length || 1,
-      selectedTopicNames: [],
+      seriesTopicMode: item.seriesTopicMode || "all",
+      classCount: item.sessionPlan?.length || item.generatedSessions?.length || 1,
+      selectedTopicNames: item.seriesTopicMode === "selected" ? (item.sessionPlan || []).map((session) => session.topicName) : [],
       classDate: item.classDate ? formatDateInput(item.classDate) : "",
       startTime: item.startTime || "",
       durationMinutes: item.durationMinutes || 60,
       meetingUrl: item.meetingUrl || "",
       startDate: item.startDate ? formatDateInput(item.startDate) : "",
-      frequency: "weekly",
-      sessionsPerWeek: 1,
+      frequency: item.frequency || "weekly",
+      sessionsPerWeek: item.sessionsPerWeek || 1,
       daysOfWeek: normalizeDays(item),
-      endCondition: "course_complete",
-      endDate: "",
-      endAfterSessions: item.generatedSessions?.length || 20,
+      endCondition: item.endCondition || "course_complete",
+      endDate: item.endDate ? formatDateInput(item.endDate) : "",
+      endAfterSessions: item.endAfterSessions || item.generatedSessions?.length || 20,
       students: (item.students || []).map((student) => student._id),
       batches: (item.batches || []).map((batch: any) => batch._id || batch),
       coach: String((item.coach as any)?._id || item.coach || ""),
@@ -482,6 +515,13 @@ export default function ClassroomManagementClient({
 
   async function submitForm() {
     await withBusy(editItem ? "Updating classroom..." : "Creating classroom...", async () => {
+      if (!form.title.trim()) return toast.error("Enter a class name.");
+      if (!form.coach) return toast.error("Select a coach.");
+      if (form.classroomType === "single" && (!form.classDate || !form.startTime)) return toast.error("Select the class date and start time.");
+      if (form.classroomType === "series" && !form.startDate) return toast.error("Select the series start date.");
+      if (form.classroomType === "series" && !form.daysOfWeek.some((day) => day.slots.some((slot) => slot.startTime))) return toast.error("Add at least one day and time slot.");
+      if (form.classroomType === "series" && !selectedSeriesTopics.length) return toast.error("Select a course level with at least one topic.");
+      if (form.classroomType === "series" && form.endCondition === "on_date" && !form.endDate) return toast.error("Select the series end date.");
       const reviewTopicName = form.classroomType === "series" && form.seriesTopicMode === "selected"
         ? `${selectedSeriesTopics.length} selected topics`
         : form.useCustomTopic
@@ -506,6 +546,7 @@ export default function ClassroomManagementClient({
 
       const payload = {
         ...form,
+        sessionsPerWeek: form.daysOfWeek.reduce((total, day) => total + day.slots.filter((slot) => slot.startTime).length, 0),
         topicName: reviewTopicName,
         endCondition: form.classroomType === "series" && form.seriesTopicMode === "selected" ? "course_complete" : form.endCondition,
         endAfterSessions: form.classroomType === "series" && form.seriesTopicMode === "selected" ? form.classCount : form.endAfterSessions,
@@ -534,13 +575,14 @@ export default function ClassroomManagementClient({
 
   async function runAction() {
     if (!actionModal.item) return;
+    if (!actionCanSubmit(actionModal.type, actionDraft)) return toast.error("Complete the required fields before applying this action.");
     await withBusy("Updating classroom...", async () => {
       const response = await fetch(`/api/classrooms/${actionModal.item!._id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: actionModal.type, sessionId: actionModal.session?._id, ...actionDraft }),
       });
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
       if (!response.ok) {
         toast.error(data.error || "Could not update class");
         return;
@@ -557,7 +599,8 @@ export default function ClassroomManagementClient({
     if (!window.confirm(`Permanently delete ${target}? This also removes its classroom records and cannot be undone.`)) return;
     await withBusy("Deleting classroom...", async () => {
       const response = await fetch(`/api/classrooms/${item._id}`, { method: "DELETE" });
-      if (!response.ok) return toast.error("Could not delete class");
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) return toast.error(data.error || "Could not delete class");
       toast.success("Class deleted");
       await load();
     });
@@ -566,7 +609,7 @@ export default function ClassroomManagementClient({
   async function openTestClassroom() {
     await withBusy("Preparing test classroom...", async () => {
       const response = await fetch("/api/classrooms/test", { method: "POST" });
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
       if (!response.ok) {
         toast.error(data.error || "Could not prepare test classroom");
         return;
@@ -578,8 +621,9 @@ export default function ClassroomManagementClient({
     });
   }
 
-  if (role !== "admin" && role !== "sub-admin") {
-    return <SimpleClassroomList items={items} loading={loading} role={role} />;
+  const canManageClassrooms = role !== "student" && (permissions.create || permissions.edit || permissions.cancel || permissions.assign);
+  if (!canManageClassrooms) {
+    return <SimpleClassroomList items={items} loading={loading} role={role} canJoin={permissions.join} />;
   }
 
   return (
@@ -703,6 +747,7 @@ export default function ClassroomManagementClient({
                                           <span className="text-xs font-black uppercase tracking-wide text-slate-500">Class {scheduledSession.sessionNumber || sessionIndex + 1}</span>
                                           <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${sessionStatusTone(sessionStatus)}`}>{titleCase(sessionStatus)}</span>
                                           {scheduledSession.originalDate ? <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-bold text-sky-700">Rescheduled</span> : null}
+                                          {scheduledSession.substituteCoach ? <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-bold text-violet-700">Coach: {assignedCoachName(item, scheduledSession)}</span> : null}
                                         </div>
                                         <div className="mt-1 truncate text-sm font-bold text-slate-900">{scheduledSession.topicName || item.topicName || "Topic not set"}</div>
                                         <div className="mt-1 text-xs text-slate-600">
@@ -751,10 +796,10 @@ export default function ClassroomManagementClient({
                           </div>
 
                           <div className="flex flex-wrap justify-start gap-2 xl:justify-end">
-                            {permissions.edit && item.classroomType === "single" && <ActionButton icon={<Clock3 size={14} />} label="Reschedule" onClick={() => { setActionModal({ type: "reschedule_class", item }); setActionDraft({ classDate: item.classDate ? formatDateInput(item.classDate) : "", startTime: item.startTime || "", durationMinutes: item.durationMinutes || 60 }); }} />}
-                            {permissions.cancel && <ActionButton icon={<X size={14} />} label={item.classroomType === "series" ? "Cancel Entire Series" : "Cancel Class"} onClick={() => { setActionModal({ type: item.classroomType === "series" ? "cancel_series" : "cancel_class", item }); setActionDraft({}); }} />}
-                            {permissions.assign && <ActionButton icon={<UserCog size={14} />} label="Substitute Coach" onClick={() => { setActionModal({ type: "substitute_coach", item }); setActionDraft({ scope: item.classroomType === "series" ? "future" : "entire", coach: "" }); }} />}
-                            {permissions.create && item.classroomType === "series" && <ActionButton icon={<CopyPlus size={14} />} label="Add Extra Class" onClick={() => { setActionModal({ type: "add_extra_class", item }); setActionDraft({ topicName: "", classDate: "", startTime: item.startTime || "16:00", durationMinutes: item.durationMinutes || 60 }); }} />}
+                            {permissions.edit && item.classroomType === "single" && item.status === "scheduled" && <ActionButton icon={<Clock3 size={14} />} label="Reschedule" onClick={() => { setActionModal({ type: "reschedule_class", item }); setActionDraft({ classDate: item.classDate ? formatDateInput(item.classDate) : "", startTime: item.startTime || "", durationMinutes: item.durationMinutes || 60 }); }} />}
+                            {permissions.cancel && item.status !== "cancelled" && item.status !== "completed" && <ActionButton icon={<X size={14} />} label={item.classroomType === "series" ? "Cancel Entire Series" : "Cancel Class"} onClick={() => { setActionModal({ type: item.classroomType === "series" ? "cancel_series" : "cancel_class", item }); setActionDraft({}); }} />}
+                            {permissions.assign && item.status !== "cancelled" && item.status !== "completed" && <ActionButton icon={<UserCog size={14} />} label="Substitute Coach" onClick={() => { setActionModal({ type: "substitute_coach", item }); setActionDraft({ scope: item.classroomType === "series" ? "future" : "entire", coach: "" }); }} />}
+                            {permissions.create && item.classroomType === "series" && item.status !== "cancelled" && item.status !== "completed" && <ActionButton icon={<CopyPlus size={14} />} label="Add Extra Class" onClick={() => { setActionModal({ type: "add_extra_class", item }); setActionDraft({ topicName: "", classDate: "", startTime: item.startTime || "16:00", durationMinutes: item.durationMinutes || 60 }); }} />}
                           </div>
                         </div>
                       </div>
@@ -859,17 +904,14 @@ export default function ClassroomManagementClient({
                           <Field label="Start Date">
                             <input type="date" className="input h-10" value={form.startDate} onChange={(event) => updateForm({ startDate: event.target.value })} />
                           </Field>
-                          <Field label="Frequency">
-                            <select className="input h-10" value={form.frequency} onChange={(event) => updateForm({ frequency: event.target.value as "weekly" | "custom" })}>
-                              <option value="weekly">Weekly</option>
-                              <option value="custom">Custom</option>
-                            </select>
+                          <Field label="Time Zone">
+                            <div className="input flex h-10 items-center bg-slate-50 font-semibold text-slate-700">India Standard Time (IST)</div>
                           </Field>
                         </div>
-                        <Field label="Sessions Per Week">
-                          <select className="input h-10" value={form.sessionsPerWeek} onChange={(event) => updateForm({ sessionsPerWeek: Number(event.target.value) })}>
-                            {[1, 2, 3, 4, 5, 6, 7].map((count) => <option key={count} value={count}>{count} Session{count > 1 ? "s" : ""}</option>)}
-                          </select>
+                        <Field label="Planned Sessions Per Week">
+                          <div className="input flex h-10 items-center bg-slate-50 font-semibold text-slate-700">
+                            {form.daysOfWeek.reduce((total, day) => total + day.slots.filter((slot) => slot.startTime).length, 0)} session(s), based on the slots below
+                          </div>
                         </Field>
                         <SeriesScheduleEditor form={form} updateForm={updateForm} updateDay={updateDay} />
                         {form.seriesTopicMode === "selected" ? (
@@ -885,7 +927,7 @@ export default function ClassroomManagementClient({
                                 <option value="on_date">End on Specific Date</option>
                                 <option value="after_n_sessions">End After Number of Sessions</option>
                                 <option value="course_complete">End When Course is Completed</option>
-                                <option value="never">Never End</option>
+                                <option value="never">Rolling 52-Session Schedule</option>
                               </select>
                             </Field>
                             {form.endCondition === "on_date" ? (
@@ -1030,7 +1072,7 @@ export default function ClassroomManagementClient({
                   Next <ChevronRight size={15} />
                 </button>
               ) : (
-                <button onClick={submitForm} className="btn-primary">Confirm and Create</button>
+                <button onClick={submitForm} className="btn-primary">{editItem ? "Save Classroom" : "Confirm and Create"}</button>
               )}
             </div>
           </div>
@@ -1116,7 +1158,7 @@ export default function ClassroomManagementClient({
             </div>
             <div className="mt-5 flex justify-end gap-2">
               <button onClick={() => setActionModal({ type: "", item: null })} className="btn-outline">Close</button>
-              <button onClick={runAction} className={actionModal.type.startsWith("cancel") || actionModal.type.startsWith("delete") ? "btn-primary bg-red-600 hover:bg-red-700" : "btn-primary"}>
+              <button disabled={!actionCanSubmit(actionModal.type, actionDraft)} onClick={runAction} className={cn(actionModal.type.startsWith("cancel") || actionModal.type.startsWith("delete") ? "btn-primary bg-red-600 hover:bg-red-700" : "btn-primary", "disabled:cursor-not-allowed disabled:opacity-50")}>
                 {actionConfirmLabel(actionModal.type)}
               </button>
             </div>
@@ -1350,7 +1392,7 @@ function CalendarView({ sessions }: { sessions: Array<{ title: string; topicName
   );
 }
 
-function SimpleClassroomList({ items, loading, role }: { items: ClassroomItem[]; loading: boolean; role: Role }) {
+function SimpleClassroomList({ items, loading, role, canJoin }: { items: ClassroomItem[]; loading: boolean; role: Role; canJoin: boolean }) {
   if (loading) return <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500">Loading classrooms...</div>;
   const now = new Date();
   const sessions = dedupeSessionRows(flattenScheduledSessions(items)
@@ -1421,7 +1463,7 @@ function SimpleClassroomList({ items, loading, role }: { items: ClassroomItem[];
                     </div>
                     <div className="mt-2 grid gap-2 md:grid-cols-2 xl:grid-cols-[1.4fr_1fr_1fr_1fr]">
                       <CompactInfo label="Topic" value={session.topicName || classroom.topicName || "Not set"} />
-                      <CompactInfo label={currentRoleLabel} value={role === "student" ? ((classroom.coach as any)?.name || "Coach") : ((classroom.batches || []).map((batch: any) => batch.name).join(", ") || `${classroom.students?.length || 0} assigned`)} />
+                      <CompactInfo label={currentRoleLabel} value={role === "student" ? assignedCoachName(classroom, session) : ((classroom.batches || []).map((batch: any) => batch.name).join(", ") || `${classroom.students?.length || 0} assigned`)} />
                       <CompactInfo label="When" value={`${formatDate(String(session.scheduledFor || classroom.classDate || classroom.startDate || ""))} at ${session.startTime || classroom.startTime || "--"}`} />
                       <CompactInfo label="Duration" value={formatDuration(session.durationMinutes || classroom.durationMinutes || 60)} />
                     </div>
@@ -1432,8 +1474,8 @@ function SimpleClassroomList({ items, loading, role }: { items: ClassroomItem[];
                       sessionId={String(session._id)}
                       meetingUrl={classroom.meetingUrl}
                       className={joinOpen ? "btn-primary" : "btn-outline"}
-                      label="Join Classroom"
-                      disabled={!joinOpen}
+                      label={canJoin ? "Join Classroom" : "Join access not granted"}
+                      disabled={!canJoin || !joinOpen}
                     />
                     <Link href={summaryHref} className="btn-outline">View Details</Link>
                   </div>
@@ -1471,7 +1513,7 @@ function SimpleClassroomList({ items, loading, role }: { items: ClassroomItem[];
                       </div>
                       <div className="mt-2 grid gap-2 md:grid-cols-2 xl:grid-cols-[1.4fr_1fr_1fr_1fr]">
                         <CompactInfo label="Topic" value={session.topicName || classroom.topicName || "Not set"} />
-                        <CompactInfo label={currentRoleLabel} value={role === "student" ? ((classroom.coach as any)?.name || "Coach") : ((classroom.batches || []).map((batch: any) => batch.name).join(", ") || `${classroom.students?.length || 0} assigned`)} />
+                        <CompactInfo label={currentRoleLabel} value={role === "student" ? assignedCoachName(classroom, session) : ((classroom.batches || []).map((batch: any) => batch.name).join(", ") || `${classroom.students?.length || 0} assigned`)} />
                         <CompactInfo label="When" value={`${formatDate(String(session.scheduledFor || classroom.classDate || classroom.startDate || ""))} at ${session.startTime || classroom.startTime || "--"}`} />
                         <CompactInfo label="Duration" value={formatDuration(session.durationMinutes || classroom.durationMinutes || 60)} />
                       </div>
@@ -1539,12 +1581,21 @@ function normalizeClassroomItem(item: any): ClassroomItem {
     classroomType: item?.classroomType === "series" ? "series" : "single",
     status: item?.status === "ongoing" || item?.status === "completed" || item?.status === "cancelled" ? item.status : "scheduled",
     courseName: item?.courseName ? String(item.courseName) : "",
+    course: item?.course || "",
     levelName: item?.levelName ? String(item.levelName) : "",
     topicName: item?.topicName ? String(item.topicName) : "",
     classDate: item?.classDate || undefined,
     startDate: item?.startDate || undefined,
+    endDate: item?.endDate || undefined,
     startTime: item?.startTime ? String(item.startTime) : "",
     durationMinutes: Number(item?.durationMinutes || 60),
+    frequency: item?.frequency === "custom" ? "custom" : "weekly",
+    sessionsPerWeek: Number(item?.sessionsPerWeek || 1),
+    daysOfWeek: Array.isArray(item?.daysOfWeek) ? item.daysOfWeek : [],
+    endCondition: ["on_date", "after_n_sessions", "course_complete", "never"].includes(item?.endCondition) ? item.endCondition : "course_complete",
+    endAfterSessions: Number(item?.endAfterSessions || 0) || undefined,
+    seriesTopicMode: item?.seriesTopicMode === "selected" || /^\d+ selected topics$/i.test(String(item?.topicName || "")) ? "selected" : "all",
+    sessionPlan: Array.isArray(item?.sessionPlan) ? item.sessionPlan : [],
     coach: item?.coach || "",
     students: Array.isArray(item?.students) ? item.students : [],
     batches: Array.isArray(item?.batches) ? item.batches : [],
@@ -1585,6 +1636,14 @@ function actionConfirmLabel(type: string) {
   if (type === "reschedule_class" || type === "reschedule_session") return "Reschedule";
   if (type === "update_session") return "Save Class";
   return "Apply";
+}
+
+function actionCanSubmit(type: string, draft: any) {
+  if (type === "substitute_coach") return Boolean(String(draft?.coach || "").trim());
+  if (type === "reschedule_class" || type === "reschedule_session") return Boolean(draft?.classDate && draft?.startTime);
+  if (type === "update_session") return Boolean(String(draft?.topicName || "").trim() && draft?.classDate && draft?.startTime);
+  if (type === "add_extra_class") return Boolean(String(draft?.topicName || "").trim() && draft?.classDate && draft?.startTime);
+  return true;
 }
 
 function actionSuccessMessage(type: string) {

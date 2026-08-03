@@ -83,8 +83,8 @@ export function buildGeneratedSessions(input: ClassroomBuildInput) {
       : input.endCondition === "course_complete"
         ? plan.length
         : input.endCondition === "never"
-          ? Math.max(plan.length, 52)
-          : Math.max(plan.length, 1);
+          ? 52
+          : 1000;
 
   const sessions: Array<{
     sessionNumber: number;

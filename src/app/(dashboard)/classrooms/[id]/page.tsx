@@ -2,7 +2,7 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { deriveScheduledSessionStatus, isJoinWindowOpen } from "@/lib/classroomSessions";
 import { resolveScheduledSession } from "@/lib/classroomLiveSession";
-import { isSuperAdminSession } from "@/lib/featureAccess";
+import { canAccessFeature, isSuperAdminSession } from "@/lib/featureAccess";
 import { isCurrentStudent } from "@/lib/studentAccess";
 import { Classroom } from "@/models/Classroom";
 import { ClassroomSession } from "@/models/ClassroomLive";
@@ -13,7 +13,7 @@ import { coachCanAccessClassroomSession } from "@/lib/classroomCoachAccess";
 export const dynamic = "force-dynamic";
 
 function participantHasAccess(classroom: any, role: string, userId: string, scheduledSessionId?: string) {
-  if (role === "admin") return true;
+  if (role === "admin" || role === "sub-admin") return true;
   if (role === "student") return (classroom.students || []).some((student: any) => String(student) === userId || String(student?._id || "") === userId);
   return coachCanAccessClassroomSession(classroom, userId, scheduledSessionId);
 }
@@ -42,8 +42,10 @@ function pickScheduledSession(classroom: any, requestedSessionId: string | undef
 
 export default async function ClassroomDetail({ params, searchParams }: { params: { id: string }; searchParams: { session?: string } }) {
   const session = await auth();
+  if (!session) redirect("/login");
   const userId = (session?.user as any).id;
-  const role = (session?.user as any).role as "student" | "instructor" | "admin";
+  const role = (session?.user as any).role as "student" | "instructor" | "admin" | "sub-admin";
+  if (!(await canAccessFeature("classrooms", session.user as any, "join"))) redirect("/classrooms");
   await dbConnect();
   const classroom: any = await Classroom.findById(params.id).lean();
   if (!classroom) notFound();
@@ -51,7 +53,7 @@ export default async function ClassroomDetail({ params, searchParams }: { params
   if (classroom.isTestClassroom && (!isSuperAdmin || String(classroom.testOwner || "") !== userId)) redirect("/dashboard");
   if (role === "student" && !(await isCurrentStudent(userId))) redirect("/dashboard");
 
-  if (role !== "admin") {
+  if (role !== "admin" && role !== "sub-admin") {
     const scheduledSession: any = pickScheduledSession(classroom, searchParams.session, role, userId);
     if (!scheduledSession) redirect("/classrooms");
     if (!participantHasAccess(classroom, role, userId, String(scheduledSession._id))) redirect("/dashboard");

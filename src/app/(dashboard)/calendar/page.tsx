@@ -8,11 +8,14 @@ import { User } from "@/models/User";
 import {
   deriveScheduledSessionStatus,
   flattenScheduledSessions,
-  isSessionUpcomingLike,
+  isJoinWindowOpen,
 } from "@/lib/classroomSessions";
 import { inactiveStudentMessage } from "@/lib/studentStatus";
 import CalendarWorkspace, { type CalendarEvent } from "@/components/calendar/CalendarWorkspace";
 import { coachClassroomQuery, limitClassroomToCoachSessions } from "@/lib/classroomCoachAccess";
+import { academyDateKey } from "@/lib/academyTime";
+import { canAccessFeature } from "@/lib/featureAccess";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +26,7 @@ function objectId(value: any) {
 function dateKey(value?: Date | string | null) {
   if (!value) return "";
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(0, 10);
+  return Number.isNaN(date.getTime()) ? "" : academyDateKey(date);
 }
 
 function formatDuration(minutes: number) {
@@ -44,19 +47,21 @@ function buildClassEvent({
   session,
   role,
   status,
+  canJoin,
 }: {
   classroom: any;
   session: any;
-  role: "student" | "instructor" | "admin";
+  role: "student" | "instructor" | "admin" | "sub-admin";
   status: string;
+  canJoin: boolean;
 }): CalendarEvent {
   const classroomId = objectId(classroom._id);
   const sessionId = String(session._id || `${classroomId}-${session.sessionNumber || "session"}`);
-  const coachName = classroom?.coach?.name || classroom?.instructor?.name || "Assigned coach";
+  const coachName = session?.substituteCoach?.name || classroom?.coach?.name || classroom?.instructor?.name || "Assigned coach";
   const batchLabel = joinNames(classroom?.batches, classroom?.batches?.length ? "" : `${classroom?.students?.length || 0} students`);
   const studentLabel = joinNames(classroom?.students, classroom?.students?.length ? "" : "No students assigned");
   const topic = session?.topicName || classroom?.topicName || classroom?.title || "Class session";
-  const joinable = isSessionUpcomingLike(status as any);
+  const joinable = canJoin && (status === "ongoing" || isJoinWindowOpen(session));
   const summaryHref = `/classrooms/${classroomId}/summary?session=${sessionId}`;
 
   return {
@@ -165,7 +170,7 @@ function buildTaskEvent(item: any): CalendarEvent {
   };
 }
 
-async function getStudentEvents(userId: string) {
+async function getStudentEvents(userId: string, canJoin: boolean) {
   const me: any = await User.findById(userId).populate("batches", "name level").lean();
   if (me?.isActive === false) {
     return {
@@ -178,9 +183,11 @@ async function getStudentEvents(userId: string) {
 
   const classrooms: any[] = await Classroom.find({
     isActive: { $ne: false },
+    isSessionInstance: { $ne: true },
     $or: [{ students: userId }, { batches: { $in: batchIds } }],
   })
     .populate("coach instructor", "name username")
+    .populate("generatedSessions.substituteCoach", "name username")
     .populate("batches", "name")
     .populate("students", "name")
     .lean();
@@ -219,7 +226,7 @@ async function getStudentEvents(userId: string) {
     const status = deriveScheduledSessionStatus(session, new Date(), {
       attendanceStatus: attendanceBySession.get(`${objectId(classroom._id)}-${dateKey(session.scheduledFor)}`),
     });
-    return buildClassEvent({ classroom, session, role: "student", status });
+    return buildClassEvent({ classroom, session, role: "student", status, canJoin });
   });
 
   const homeworkEvents = homework.map((item: any) =>
@@ -238,9 +245,10 @@ async function getStudentEvents(userId: string) {
   };
 }
 
-async function getCoachEvents(userId: string) {
+async function getCoachEvents(userId: string, canJoin: boolean) {
   const classroomDocs: any[] = await Classroom.find({ ...coachClassroomQuery(userId), isActive: { $ne: false }, isSessionInstance: { $ne: true } })
     .populate("coach instructor", "name username")
+    .populate("generatedSessions.substituteCoach", "name username")
     .populate("batches", "name")
     .populate("students", "name")
     .lean();
@@ -262,6 +270,7 @@ async function getCoachEvents(userId: string) {
       session,
       role: "instructor",
       status: deriveScheduledSessionStatus(session, new Date()),
+      canJoin,
     })
   );
 
@@ -282,9 +291,10 @@ async function getCoachEvents(userId: string) {
   };
 }
 
-async function getAdminEvents() {
-  const classrooms: any[] = await Classroom.find({ isActive: { $ne: false } })
+async function getAdminEvents(canJoin: boolean) {
+  const classrooms: any[] = await Classroom.find({ isActive: { $ne: false }, isSessionInstance: { $ne: true } })
     .populate("coach instructor", "name username")
+    .populate("generatedSessions.substituteCoach", "name username")
     .populate("batches", "name")
     .populate("students", "name")
     .lean();
@@ -305,6 +315,7 @@ async function getAdminEvents() {
       session,
       role: "admin",
       status: deriveScheduledSessionStatus(session, new Date()),
+      canJoin,
     })
   );
 
@@ -325,12 +336,14 @@ async function getAdminEvents() {
 
 export default async function CalendarPage() {
   const session = await auth();
-  const role = ((session?.user as any)?.role || "student") as "student" | "instructor" | "admin";
+  if (!session) redirect("/login");
+  const role = ((session.user as any)?.role || "student") as "student" | "instructor" | "admin" | "sub-admin";
   const userId = (session?.user as any)?.id;
+  const canJoin = await canAccessFeature("classrooms", session.user as any, "join");
 
   await dbConnect();
 
-  const payload = role === "student" ? await getStudentEvents(userId) : role === "instructor" ? await getCoachEvents(userId) : await getAdminEvents();
+  const payload = role === "student" ? await getStudentEvents(userId, canJoin) : role === "instructor" ? await getCoachEvents(userId, canJoin) : await getAdminEvents(canJoin);
 
   return <CalendarWorkspace role={role} title={payload.title} subtitle={payload.subtitle} events={payload.events} />;
 }

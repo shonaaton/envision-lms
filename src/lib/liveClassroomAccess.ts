@@ -1,9 +1,11 @@
 import { Classroom } from "@/models/Classroom";
-import { isSuperAdminSession } from "@/lib/featureAccess";
+import { canAccessFeature, isSuperAdminSession } from "@/lib/featureAccess";
 import { User } from "@/models/User";
 import { coachCanAccessClassroomSession } from "@/lib/classroomCoachAccess";
+import { resolveScheduledSession } from "@/lib/classroomLiveSession";
+import { isJoinWindowOpen } from "@/lib/classroomSessions";
 
-export type AppRole = "student" | "instructor" | "admin";
+export type AppRole = "student" | "instructor" | "admin" | "sub-admin";
 
 type ClassroomAccessShape = {
   _id: unknown;
@@ -32,7 +34,7 @@ function objectId(value: unknown) {
 export function canAccessLiveClassroom(classroom: ClassroomAccessShape | null | undefined, role: AppRole, userId: string, scheduledSessionId?: string) {
   if (!classroom) return false;
   if (classroom.isTestClassroom) return false;
-  if (role === "admin") return true;
+  if (role === "admin" || role === "sub-admin") return true;
   if (role === "student") {
     return (classroom.students || []).some((student) => objectId(student) === userId);
   }
@@ -40,6 +42,7 @@ export function canAccessLiveClassroom(classroom: ClassroomAccessShape | null | 
 }
 
 export async function getLiveClassroomForUser(classroomId: string, role: AppRole, userId: string, scheduledSessionId?: string) {
+  const canJoin = await canAccessFeature("classrooms", { id: userId, role }, "join");
   const classroom: any = await Classroom.findById(classroomId)
     .populate("coach instructor students", "name email username role")
     .lean();
@@ -48,7 +51,7 @@ export async function getLiveClassroomForUser(classroomId: string, role: AppRole
   if (classroom.isTestClassroom) {
     const ownsSandbox = objectId(classroom.testOwner) === userId;
     const isSuperAdmin = await isSuperAdminSession({ id: userId, role });
-    return { classroom, allowed: role === "admin" && ownsSandbox && isSuperAdmin };
+    return { classroom, allowed: canJoin && role === "admin" && ownsSandbox && isSuperAdmin };
   }
   if (role === "student") {
     const student = await User.findById(userId).select("role isActive").lean();
@@ -56,5 +59,15 @@ export async function getLiveClassroomForUser(classroomId: string, role: AppRole
       return { classroom, allowed: false as const };
     }
   }
-  return { classroom, allowed: canAccessLiveClassroom(classroom, role, userId, scheduledSessionId) as boolean };
+  const scheduledSession: any = resolveScheduledSession(classroom, scheduledSessionId);
+  const sessionOpen = Boolean(
+    scheduledSession && (
+      isJoinWindowOpen(scheduledSession) ||
+      (scheduledSession.actualStartedAt && !scheduledSession.actualEndedAt && scheduledSession.status !== "cancelled")
+    )
+  );
+  return {
+    classroom,
+    allowed: canJoin && sessionOpen && canAccessLiveClassroom(classroom, role, userId, scheduledSessionId) as boolean,
+  };
 }

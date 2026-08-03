@@ -98,6 +98,7 @@ const ClassroomSchema = new Schema(
     // Series schedule
     startDate: Date,
     endDate: Date,
+    seriesTopicMode: { type: String, enum: ["all", "selected"], default: "all" },
     frequency: { type: String, enum: ["weekly", "custom"], default: "weekly" },
     sessionsPerWeek: { type: Number, default: 1 },
     repeatEvery: { type: Number, default: 1 },

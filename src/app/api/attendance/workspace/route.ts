@@ -4,23 +4,14 @@ import { dbConnect } from "@/lib/db";
 import { Attendance } from "@/models/Attendance";
 import { Classroom } from "@/models/Classroom";
 import { deriveScheduledSessionStatus, getSessionEnd, getSessionStart } from "@/lib/classroomSessions";
+import { canAccessFeature } from "@/lib/featureAccess";
+import { coachClassroomQuery, limitClassroomToCoachSessions } from "@/lib/classroomCoachAccess";
+import { academyDateKey, academyDayBounds } from "@/lib/academyTime";
 
 export const dynamic = "force-dynamic";
 
 function sameDay(value: Date, target: Date) {
-  return value.getFullYear() === target.getFullYear() && value.getMonth() === target.getMonth() && value.getDate() === target.getDate();
-}
-
-function startOfDay(value: Date) {
-  const date = new Date(value);
-  date.setHours(0, 0, 0, 0);
-  return date;
-}
-
-function endOfDay(value: Date) {
-  const date = new Date(value);
-  date.setHours(23, 59, 59, 999);
-  return date;
+  return academyDateKey(value) === academyDateKey(target);
 }
 
 function objectId(value: any) {
@@ -84,12 +75,15 @@ export async function GET(req: Request) {
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   await dbConnect();
 
-  const role = (session.user as any).role as "student" | "instructor" | "admin";
+  const role = (session.user as any).role as "student" | "instructor" | "admin" | "sub-admin";
   const userId = (session.user as any).id;
+  if (!(await canAccessFeature("attendance", session.user as any, "view"))) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const url = new URL(req.url);
-  const selectedDate = url.searchParams.get("date") ? new Date(String(url.searchParams.get("date"))) : new Date();
-  const from = startOfDay(selectedDate);
-  const to = endOfDay(selectedDate);
+  const selectedDateValue = url.searchParams.get("date") || new Date();
+  const { start: from, end: to } = academyDayBounds(selectedDateValue);
+  const selectedDate = from;
   const now = new Date();
 
   if (role === "student") {
@@ -166,19 +160,23 @@ export async function GET(req: Request) {
     });
   }
 
-  const classroomFilter = role === "admin"
+  const classroomFilter = role === "admin" || role === "sub-admin"
     ? { isSessionInstance: { $ne: true } }
     : {
-        $or: [{ instructor: userId }, { coach: userId }],
+        ...coachClassroomQuery(userId),
         isSessionInstance: { $ne: true },
       };
 
-  const classrooms: any[] = await Classroom.find(classroomFilter)
+  const classroomDocs: any[] = await Classroom.find(classroomFilter)
     .populate("coach instructor", "name username")
+    .populate("generatedSessions.substituteCoach", "name username")
     .populate("students", "name username email")
     .populate("batches", "name")
     .sort({ createdAt: -1 })
     .lean();
+  const classrooms = role === "instructor"
+    ? classroomDocs.map((classroom: any) => limitClassroomToCoachSessions(classroom, userId))
+    : classroomDocs;
 
   const attendanceDocs: any[] = await Attendance.find({ sessionDate: { $gte: new Date(from.getTime() - 120 * 24 * 60 * 60 * 1000), $lte: to } }).lean();
   const attendanceMap = new Map(attendanceDocs.map((doc: any) => [`${objectId(doc.classroom)}:${String(doc.scheduledSessionId || "")}:${new Date(doc.sessionDate).toISOString()}`, doc]));
@@ -200,7 +198,7 @@ export async function GET(req: Request) {
         courseName: classroom.courseName || "General",
         levelName: classroom.levelName || "Not set",
         batchNames: (classroom.batches || []).map((batch: any) => batch.name).filter(Boolean),
-        coachName: classroom.coach?.name || classroom.instructor?.name || "Coach",
+        coachName: session.substituteCoach?.name || classroom.coach?.name || classroom.instructor?.name || "Coach",
         scheduledFor: session.scheduledFor || classroom.classDate,
         startTime: session.startTime || classroom.startTime || "",
         durationMinutes: Number(session.durationMinutes || classroom.durationMinutes || 60),

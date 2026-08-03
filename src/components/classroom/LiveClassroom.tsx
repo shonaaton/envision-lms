@@ -57,7 +57,7 @@ import { cn } from "@/lib/utils";
 
 const Chessboard = dynamic(() => import("react-chessboard").then((m) => m.Chessboard), { ssr: false });
 
-type Role = "student" | "instructor" | "admin";
+type Role = "student" | "instructor" | "admin" | "sub-admin";
 type BoardPosition = Record<string, string | undefined>;
 type TabKey = "students" | "chat" | "moves" | "leaderboard";
 type ToolKey = "move" | "highlight" | "arrow" | "setup";
@@ -117,7 +117,7 @@ const gamifiedObjects: Array<{ id: GamifiedObjectId; label: string; icon: string
 ];
 
 function isCoach(role: Role) {
-  return role === "admin" || role === "instructor";
+  return role === "admin" || role === "sub-admin" || role === "instructor";
 }
 
 function extractFen(pgn: string) {

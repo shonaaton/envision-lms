@@ -38,7 +38,7 @@ import {
 } from "date-fns";
 import { cn } from "@/lib/utils";
 
-type CalendarRole = "student" | "instructor" | "admin";
+type CalendarRole = "student" | "instructor" | "admin" | "sub-admin";
 type CalendarView = "monthly" | "weekly" | "daily" | "agenda";
 type CalendarType = "class" | "homework" | "tournament" | "simul" | "attendance" | "task" | "reminder";
 type StatusFilter = "all" | "upcoming" | "completed";

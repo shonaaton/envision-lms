@@ -15,15 +15,21 @@ export function isSessionSubstituteCoach(classroom: any, userId: string, schedul
 }
 
 export function coachCanAccessClassroomSession(classroom: any, userId: string, scheduledSessionId?: string) {
+  if (scheduledSessionId) {
+    const target = (classroom?.generatedSessions || []).find(
+      (session: any) => classroomRecordId(session?._id) === String(scheduledSessionId)
+    );
+    if (target?.substituteCoach) return classroomRecordId(target.substituteCoach) === String(userId);
+  }
   return isPrimaryClassroomCoach(classroom, userId) || isSessionSubstituteCoach(classroom, userId, scheduledSessionId);
 }
 
 export function limitClassroomToCoachSessions(classroom: any, userId: string) {
-  if (!classroom || isPrimaryClassroomCoach(classroom, userId)) return classroom;
+  if (!classroom) return classroom;
   return {
     ...classroom,
     generatedSessions: (classroom.generatedSessions || []).filter(
-      (session: any) => classroomRecordId(session?.substituteCoach) === String(userId)
+      (session: any) => coachCanAccessClassroomSession(classroom, userId, classroomRecordId(session?._id))
     ),
   };
 }

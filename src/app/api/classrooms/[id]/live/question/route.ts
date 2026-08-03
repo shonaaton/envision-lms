@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   const session = await auth();
   const role = (session?.user as { role?: AppRole })?.role;
-  if (!session || (role !== "admin" && role !== "instructor")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!session || !role || !["admin", "sub-admin", "instructor"].includes(role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
   const userId = (session.user as { id?: string }).id || "";
   const scheduledSessionId = getRequestedSessionId(req);
@@ -56,7 +56,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   const session = await auth();
   const role = (session?.user as { role?: AppRole })?.role;
-  if (!session || (role !== "admin" && role !== "instructor")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!session || !role || !["admin", "sub-admin", "instructor"].includes(role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
   const userId = (session.user as { id?: string }).id || "";
   const scheduledSessionId = getRequestedSessionId(req);

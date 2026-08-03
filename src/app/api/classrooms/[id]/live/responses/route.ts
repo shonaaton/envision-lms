@@ -12,8 +12,9 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   await dbConnect();
   const userId = (session.user as { id?: string }).id || "";
-  const role = (session.user as { role?: "student" | "instructor" | "admin" }).role;
+  const role = (session.user as { role?: "student" | "instructor" | "admin" | "sub-admin" }).role;
   if (!role || !userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (role !== "student") return NextResponse.json({ error: "Only students can submit classroom responses" }, { status: 403 });
   const scheduledSessionId = getRequestedSessionId(req);
   if (!scheduledSessionId) return NextResponse.json({ error: "Scheduled session required" }, { status: 400 });
   const { classroom, allowed } = await getLiveClassroomForUser(params.id, role, userId, scheduledSessionId);

@@ -18,7 +18,7 @@ function objectId(value: any) {
 }
 
 function participantHasAccess(classroom: any, role: string, userId: string) {
-  if (role === "admin") return true;
+  if (role === "admin" || role === "sub-admin") return true;
   if (role === "student") return (classroom.students || []).some((student: any) => String(student) === userId || String(student?._id || "") === userId);
   return [classroom.coach, classroom.instructor].some((coach: any) => String(coach) === userId || String(coach?._id || "") === userId);
 }
@@ -86,7 +86,7 @@ export default async function ClassroomSummaryPage({
   const session = await auth();
   if (!session) redirect("/login");
   const userId = (session.user as any).id;
-  const role = (session.user as any).role as "student" | "instructor" | "admin";
+  const role = (session.user as any).role as "student" | "instructor" | "admin" | "sub-admin";
 
   await dbConnect();
 

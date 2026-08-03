@@ -20,7 +20,7 @@ export default function DashboardFrame({
   role: Role;
   accountStatus?: AccountStatus;
   isSuperAdmin?: boolean;
-  featureState?: Record<string, { visible: boolean; status: "enabled" | "disabled" | "testing" | "coming_soon" }>;
+  featureState?: Record<string, { visible: boolean; status: "enabled" | "disabled" | "testing" | "coming_soon"; permissions: string[] }>;
   user: { name?: string | null; role: string; isActive?: boolean };
   children: ReactNode;
 }) {

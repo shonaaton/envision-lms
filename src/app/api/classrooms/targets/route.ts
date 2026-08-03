@@ -4,12 +4,17 @@ import { dbConnect } from "@/lib/db";
 import { User } from "@/models/User";
 import { Batch } from "@/models/Batch";
 import { Course } from "@/models/Course";
+import { canAccessFeature } from "@/lib/featureAccess";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   const session = await auth();
-  if ((session?.user as any)?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!session || !(await canAccessFeature("classrooms", session.user as any, "view"))) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  const role = (session.user as any).role;
+  if (role !== "admin" && role !== "sub-admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
 
   const [students, coaches, batches, courses] = await Promise.all([

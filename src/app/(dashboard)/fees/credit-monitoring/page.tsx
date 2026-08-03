@@ -8,6 +8,8 @@ import { AcademySettings, CreditLedger, FeeAssignment, FeePlan, Notification } f
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { AlertTriangle, CheckCircle2, Download, Filter, MailCheck, MailWarning, MessageCircle, Search, Send, WalletCards, XCircle } from "lucide-react";
+import { getFeaturePermissionState } from "@/lib/featureAccess";
+import { requireFeesAccess } from "@/lib/feesAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -109,8 +111,7 @@ function creditReminderMessage(assignment: any, portalUrl: string) {
 
 async function sendBulkCreditReminders(formData: FormData) {
   "use server";
-  const session = await auth();
-  if ((session?.user as any)?.role !== "admin") throw new Error("Forbidden");
+  if (!(await requireFeesAccess("credit"))) throw new Error("Forbidden");
   await dbConnect();
   const mode = String(formData.get("creditReminderMode") || "low");
   const settings: any = await AcademySettings.findOne().lean();
@@ -170,8 +171,7 @@ async function sendBulkCreditReminders(formData: FormData) {
 
 async function sendCreditWhatsAppTest(formData: FormData) {
   "use server";
-  const session = await auth();
-  if ((session?.user as any)?.role !== "admin") throw new Error("Forbidden");
+  if (!(await requireFeesAccess("credit"))) throw new Error("Forbidden");
   await dbConnect();
   const assignmentId = String(formData.get("assignment") || "");
   const assignment: any = await FeeAssignment.findById(assignmentId).populate("student plan").lean();
@@ -213,7 +213,10 @@ function MiniStat({ label, value, note, icon }: { label: string; value: string |
 
 export default async function CreditMonitoringPage({ searchParams }: { searchParams?: Promise<Params> }) {
   const session = await auth();
-  if ((session?.user as any)?.role !== "admin") return <div className="p-6">Forbidden</div>;
+  const permissions = session?.user
+    ? await getFeaturePermissionState("fees", session.user as any, ["credit", "export"])
+    : { credit: false, export: false };
+  if (!permissions.credit) return <div className="p-6">Forbidden</div>;
   await dbConnect();
   const params = searchParams ? await searchParams : {};
   const q = value(params, "q").toLowerCase();
@@ -331,8 +334,8 @@ export default async function CreditMonitoringPage({ searchParams }: { searchPar
           </label>
           <div className="flex flex-wrap gap-2">
             <button className="btn-primary h-10"><Filter size={15} /> Apply</button>
-            <a href={exportHref(params, "xls")} className="btn-outline h-10"><Download size={15} /> XLS</a>
-            <a href={exportHref(params, "csv")} className="btn-outline h-10"><Download size={15} /> CSV</a>
+            {permissions.export && <a href={exportHref(params, "xls")} className="btn-outline h-10"><Download size={15} /> XLS</a>}
+            {permissions.export && <a href={exportHref(params, "csv")} className="btn-outline h-10"><Download size={15} /> CSV</a>}
           </div>
         </form>
       </section>
@@ -428,7 +431,7 @@ export default async function CreditMonitoringPage({ searchParams }: { searchPar
             <h2 className="text-xl font-black text-slate-950">Recent Credit Movement</h2>
             <p className="mt-1 text-sm text-slate-500">Recharge, class consumption, and adjustment entries from the ledger.</p>
           </div>
-          <a href={exportHref(params, "history")} className="btn-outline h-10"><Download size={15} /> History CSV</a>
+          {permissions.export && <a href={exportHref(params, "history")} className="btn-outline h-10"><Download size={15} /> History CSV</a>}
         </div>
         <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
           {ledgers.map((ledger: any) => {

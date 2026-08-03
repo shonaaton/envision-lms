@@ -13,6 +13,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { AlertCircle, CheckCircle2, Clock3, Download, FileText, IndianRupee, MailCheck, MailWarning, MessageCircle, Printer, Receipt, Send, Trash2, XCircle } from "lucide-react";
 import { InvoiceCreationForm } from "@/components/fees/InvoiceCreationForm";
+import { canAccessFeature, getFeaturePermissionState } from "@/lib/featureAccess";
+import { isFeesManager, requireFeesAccess } from "@/lib/feesAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -82,8 +84,7 @@ function invoiceReminderMessage(invoice: any, invoiceUrl: string) {
 
 async function createManualInvoice(formData: FormData) {
   "use server";
-  const session = await auth();
-  if ((session?.user as any)?.role !== "admin") throw new Error("Forbidden");
+  if (!(await requireFeesAccess("invoice"))) throw new Error("Forbidden");
   await dbConnect();
   const plan: any = await FeePlan.findById(formData.get("plan"));
   if (!plan) return;
@@ -104,10 +105,15 @@ async function createManualInvoice(formData: FormData) {
 
 async function markInvoicePaid(formData: FormData) {
   "use server";
-  const session = await auth();
-  if ((session?.user as any)?.role !== "admin") throw new Error("Forbidden");
+  const session = await requireFeesAccess("payment");
+  if (!session) throw new Error("Forbidden");
   await dbConnect();
-  await applyInvoicePayment(String(formData.get("invoice") || ""));
+  const invoiceId = String(formData.get("invoice") || "");
+  const invoice: any = await Invoice.findById(invoiceId).select("type").lean();
+  if (invoice?.type === "credits" && !(await canAccessFeature("fees", session.user as any, "credit"))) {
+    throw new Error("Forbidden");
+  }
+  await applyInvoicePayment(invoiceId);
   revalidatePath("/fees/invoices");
   revalidatePath("/fees/student-fees");
   revalidatePath("/fees");
@@ -115,8 +121,7 @@ async function markInvoicePaid(formData: FormData) {
 
 async function cancelInvoice(formData: FormData) {
   "use server";
-  const session = await auth();
-  if ((session?.user as any)?.role !== "admin") throw new Error("Forbidden");
+  if (!(await requireFeesAccess("edit"))) throw new Error("Forbidden");
   await dbConnect();
   await Invoice.findByIdAndUpdate(formData.get("invoice"), { status: "cancelled" });
   revalidatePath("/fees/invoices");
@@ -124,12 +129,15 @@ async function cancelInvoice(formData: FormData) {
 
 async function deleteInvoice(formData: FormData) {
   "use server";
-  const session = await auth();
-  if ((session?.user as any)?.role !== "admin") throw new Error("Forbidden");
+  const session = await requireFeesAccess("edit");
+  if (!session) throw new Error("Forbidden");
   await dbConnect();
   const invoiceId = String(formData.get("invoice") || "");
   const invoice: any = await Invoice.findById(invoiceId).lean();
   if (!invoice) return;
+  if (invoice.type === "credits" && invoice.status === "paid" && !(await canAccessFeature("fees", session.user as any, "credit"))) {
+    throw new Error("Forbidden");
+  }
   if (invoice.type === "credits" && invoice.status === "paid" && invoice.credits) {
     const assignment: any = await FeeAssignment.findOne({ student: invoice.student, type: "credits" });
     if (assignment) {
@@ -150,8 +158,7 @@ async function deleteInvoice(formData: FormData) {
 
 async function sendInvoiceToStudent(formData: FormData) {
   "use server";
-  const session = await auth();
-  if ((session?.user as any)?.role !== "admin") throw new Error("Forbidden");
+  if (!(await requireFeesAccess("invoice"))) throw new Error("Forbidden");
   await dbConnect();
   const invoiceId = String(formData.get("invoice") || "");
   const returnStudent = String(formData.get("studentFilter") || "");
@@ -214,8 +221,7 @@ async function sendInvoiceToStudent(formData: FormData) {
 
 async function sendInvoiceWhatsAppTest(formData: FormData) {
   "use server";
-  const session = await auth();
-  if ((session?.user as any)?.role !== "admin") throw new Error("Forbidden");
+  if (!(await requireFeesAccess("invoice"))) throw new Error("Forbidden");
   await dbConnect();
   const invoiceId = String(formData.get("invoice") || "");
   const returnStudent = String(formData.get("studentFilter") || "");
@@ -239,8 +245,7 @@ async function sendInvoiceWhatsAppTest(formData: FormData) {
 
 async function sendBulkInvoiceReminders(formData: FormData) {
   "use server";
-  const session = await auth();
-  if ((session?.user as any)?.role !== "admin") throw new Error("Forbidden");
+  if (!(await requireFeesAccess("invoice"))) throw new Error("Forbidden");
   await dbConnect();
   const mode = String(formData.get("invoiceReminderMode") || "due");
   const now = new Date();
@@ -374,19 +379,22 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
   const session = await auth();
   const role = (session?.user as any)?.role;
   const userId = (session?.user as any)?.id;
-  if (role === "instructor") redirect("/dashboard");
+  if (!userId) redirect("/login");
+  const permissions = await getFeaturePermissionState("fees", session!.user as any, ["view", "invoice", "edit", "payment", "credit", "export"]);
+  if (!permissions.view) redirect("/dashboard");
+  const manager = isFeesManager(role);
   await dbConnect();
   await ensureMonthlyInvoices();
   const params = searchParams ? await searchParams : {};
   const selectedStudent = queryValue(params, "student");
-  const invoiceFilter = role === "admin"
+  const invoiceFilter = manager
     ? selectedStudent ? { student: selectedStudent } : {}
     : { student: userId };
   const [invoices, students, plans, assignments] = await Promise.all([
     Invoice.find(invoiceFilter).populate("student plan").sort({ createdAt: -1 }).limit(300).lean(),
-    User.find({ role: "student" }, { passwordHash: 0 }).sort({ name: 1 }).lean(),
-    FeePlan.find({ isActive: true }).sort({ name: 1 }).lean(),
-    FeeAssignment.find({}).lean(),
+    manager ? User.find({ role: "student" }, { passwordHash: 0 }).sort({ name: 1 }).lean() : Promise.resolve([]),
+    manager ? FeePlan.find({ isActive: true }).sort({ name: 1 }).lean() : Promise.resolve([]),
+    manager ? FeeAssignment.find({}).lean() : Promise.resolve([]),
   ]);
   const sendStatus = queryValue(params, "send");
   const banner = sendBanner(sendStatus);
@@ -435,7 +443,7 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
         </div>
       )}
 
-      {role === "admin" && (
+      {permissions.invoice && (
         <>
         <section className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4 shadow-sm">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -478,7 +486,7 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
             <h2 className="text-xl font-black text-slate-950">Invoice List</h2>
             <p className="mt-1 text-sm text-slate-500">{invoices.length} invoices in the current view.</p>
           </div>
-          {role === "admin" && (
+          {manager && (
             <form className="flex min-w-[260px] items-center gap-2">
               <select name="student" defaultValue={selectedStudent} className="input h-10">
                 <option value="">All students</option>
@@ -512,7 +520,7 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
                       </div>
                       <p className="mt-2 text-sm font-semibold text-slate-900">{invoice.title}</p>
                       <div className="mt-3 grid gap-3 text-sm md:grid-cols-2 xl:grid-cols-4">
-                        {role === "admin" && (
+                        {manager && (
                           <div>
                             <div className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">Student</div>
                             <div className="mt-1 font-semibold text-slate-950">{invoice.student?.name || "-"}</div>
@@ -554,31 +562,31 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
                         <a href={pdfHref} target="_blank" className="inline-flex h-9 items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 hover:text-brand">View</a>
                         <a href={pdfHref} className="inline-flex h-9 items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 hover:text-brand"><Download size={14} /> PDF</a>
                         <a href={pdfHref} target="_blank" className="inline-flex h-9 items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 hover:text-brand"><Printer size={14} /> Print</a>
-                        {role !== "admin" && invoice.status !== "paid" && <PayButton amount={invoice.totalAmount} purpose="invoice" refId={invoiceId} label="Pay" />}
+                        {!manager && invoice.status !== "paid" && <PayButton amount={invoice.totalAmount} purpose="invoice" refId={invoiceId} label="Pay" />}
                       </div>
                     </div>
                   </div>
 
-                  {role === "admin" && (
+                  {manager && (permissions.invoice || permissions.payment || permissions.edit) && (
                     <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-200 pt-3">
-                      <form action={sendInvoiceToStudent}>
-                        <input type="hidden" name="invoice" value={invoiceId} />
-                        <input type="hidden" name="studentFilter" value={selectedStudent} />
-                        <button className="inline-flex h-9 items-center gap-1 rounded-lg bg-brand px-3 text-xs font-bold text-white shadow-sm hover:bg-brand-700"><Send size={14} /> Send to Student</button>
-                      </form>
-                      <form action={sendInvoiceWhatsAppTest}>
-                        <input type="hidden" name="invoice" value={invoiceId} />
-                        <input type="hidden" name="studentFilter" value={selectedStudent} />
-                        <button className="inline-flex h-9 items-center gap-1 rounded-lg border border-emerald-200 px-3 text-xs font-bold text-emerald-700"><MessageCircle size={14} /> WhatsApp Test</button>
-                      </form>
-                      <button disabled title="Parent profile is not linked yet" className="inline-flex h-9 items-center gap-1 rounded-lg border border-slate-200 px-3 text-xs font-bold text-slate-400">Send to Parent</button>
-                      {invoice.status !== "paid" && invoice.status !== "cancelled" && (
+                      {permissions.invoice && <form action={sendInvoiceToStudent}>
+                          <input type="hidden" name="invoice" value={invoiceId} />
+                          <input type="hidden" name="studentFilter" value={selectedStudent} />
+                          <button className="inline-flex h-9 items-center gap-1 rounded-lg bg-brand px-3 text-xs font-bold text-white shadow-sm hover:bg-brand-700"><Send size={14} /> Send to Student</button>
+                        </form>}
+                      {permissions.invoice && <form action={sendInvoiceWhatsAppTest}>
+                          <input type="hidden" name="invoice" value={invoiceId} />
+                          <input type="hidden" name="studentFilter" value={selectedStudent} />
+                          <button className="inline-flex h-9 items-center gap-1 rounded-lg border border-emerald-200 px-3 text-xs font-bold text-emerald-700"><MessageCircle size={14} /> WhatsApp Test</button>
+                        </form>}
+                      {permissions.invoice && <button disabled title="Parent profile is not linked yet" className="inline-flex h-9 items-center gap-1 rounded-lg border border-slate-200 px-3 text-xs font-bold text-slate-400">Send to Parent</button>}
+                      {permissions.payment && (invoice.type !== "credits" || permissions.credit) && invoice.status !== "paid" && invoice.status !== "cancelled" && (
                         <form action={markInvoicePaid}><input type="hidden" name="invoice" value={invoiceId} /><button className="inline-flex h-9 items-center gap-1 rounded-lg border border-emerald-200 px-3 text-xs font-bold text-emerald-700"><CheckCircle2 size={14} /> Mark Paid</button></form>
                       )}
-                      {invoice.status !== "cancelled" && (
+                      {permissions.edit && invoice.status !== "cancelled" && (
                         <form action={cancelInvoice}><input type="hidden" name="invoice" value={invoiceId} /><button className="inline-flex h-9 items-center gap-1 rounded-lg border border-amber-200 px-3 text-xs font-bold text-amber-700"><XCircle size={14} /> Cancel</button></form>
                       )}
-                      <form action={deleteInvoice}><input type="hidden" name="invoice" value={invoiceId} /><button className="inline-flex h-9 items-center gap-1 rounded-lg border border-rose-200 px-3 text-xs font-bold text-rose-700"><Trash2 size={14} /> Delete</button></form>
+                      {permissions.edit && (invoice.type !== "credits" || invoice.status !== "paid" || permissions.credit) && <form action={deleteInvoice}><input type="hidden" name="invoice" value={invoiceId} /><button className="inline-flex h-9 items-center gap-1 rounded-lg border border-rose-200 px-3 text-xs font-bold text-rose-700"><Trash2 size={14} /> Delete</button></form>}
                     </div>
                   )}
                 </article>

@@ -46,8 +46,8 @@ import { isInactiveRestrictedPath } from "@/lib/inactiveAccess";
 type Role = "student" | "instructor" | "admin" | "sub-admin";
 type AccountStatus = "demo" | "enrolled" | "coach_applicant" | "approved" | "rejected";
 type FeatureStatus = "enabled" | "disabled" | "testing" | "coming_soon";
-type FeatureState = Record<string, { visible: boolean; status: FeatureStatus }>;
-type NavItem = { href: string; label: string; icon: any; featureKey?: string; roles?: Role[]; demoOnly?: boolean; hideForDemo?: boolean; superAdminOnly?: boolean };
+type FeatureState = Record<string, { visible: boolean; status: FeatureStatus; permissions: string[] }>;
+type NavItem = { href: string; label: string; icon: any; featureKey?: string; permission?: string; roles?: Role[]; demoOnly?: boolean; hideForDemo?: boolean; superAdminOnly?: boolean };
 type NavSection = { id: string; title: string; items: NavItem[]; roles?: Role[]; superAdminOnly?: boolean };
 type NotificationItem = {
   _id: string;
@@ -98,11 +98,11 @@ const sections: NavSection[] = [
     roles: ["admin", "sub-admin"],
     items: [
       { href: "/fees", label: "Fee Dashboard", icon: Banknote, featureKey: "fees" },
-      { href: "/fees/fee-plans", label: "Fee Plans", icon: FileText, featureKey: "fees" },
-      { href: "/fees/student-fees", label: "Student Fees", icon: Users, featureKey: "fees" },
-      { href: "/fees/credit-monitoring", label: "Credit Monitoring", icon: WalletCards, featureKey: "fees" },
+      { href: "/fees/fee-plans", label: "Fee Plans", icon: FileText, featureKey: "fees", permission: "edit" },
+      { href: "/fees/student-fees", label: "Student Fees", icon: Users, featureKey: "fees", permission: "edit" },
+      { href: "/fees/credit-monitoring", label: "Credit Monitoring", icon: WalletCards, featureKey: "fees", permission: "credit" },
       { href: "/fees/invoices", label: "Invoices", icon: Receipt, featureKey: "fees" },
-      { href: "/fees/reports", label: "Fee Reports", icon: BarChart3, featureKey: "fees" },
+      { href: "/fees/reports", label: "Fee Reports", icon: BarChart3, featureKey: "fees", permission: "export" },
     ],
   },
   {
@@ -142,11 +142,12 @@ const sections: NavSection[] = [
   },
 ];
 
-function canSee(role: Role, accountStatus: AccountStatus | undefined, isActive: boolean | undefined, isSuperAdmin: boolean | undefined, featureState: FeatureState | undefined, item: { href?: string; roles?: Role[]; demoOnly?: boolean; hideForDemo?: boolean; featureKey?: string; superAdminOnly?: boolean }) {
+function canSee(role: Role, accountStatus: AccountStatus | undefined, isActive: boolean | undefined, isSuperAdmin: boolean | undefined, featureState: FeatureState | undefined, item: { href?: string; roles?: Role[]; demoOnly?: boolean; hideForDemo?: boolean; featureKey?: string; permission?: string; superAdminOnly?: boolean }) {
   const isDemo = accountStatus === "demo";
   if (isActive === false && item.href && isInactiveRestrictedPath(item.href)) return false;
   if (item.superAdminOnly && !isSuperAdmin) return false;
   if (item.featureKey && featureState?.[item.featureKey] && !featureState[item.featureKey].visible) return false;
+  if (item.featureKey && item.permission && featureState?.[item.featureKey] && !featureState[item.featureKey].permissions.includes(item.permission)) return false;
   if (item.demoOnly && !isDemo) return false;
   if (item.hideForDemo && isDemo) return false;
   if (isDemo) {

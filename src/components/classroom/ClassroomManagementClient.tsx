@@ -33,7 +33,16 @@ import {
 import JoinScheduledSessionButton from "@/components/classroom/JoinScheduledSessionButton";
 import PageLoadingOverlay from "@/components/feedback/PageLoadingOverlay";
 
-type Role = "student" | "instructor" | "admin";
+type Role = "student" | "instructor" | "admin" | "sub-admin";
+
+type ClassroomPermissions = {
+  view: boolean;
+  create: boolean;
+  edit: boolean;
+  cancel: boolean;
+  assign: boolean;
+  attendance: boolean;
+};
 
 type CourseOption = {
   _id: string;
@@ -189,7 +198,15 @@ function blankForm() {
   };
 }
 
-export default function ClassroomManagementClient({ role, isSuperAdmin = false }: { role: Role; isSuperAdmin?: boolean }) {
+export default function ClassroomManagementClient({
+  role,
+  isSuperAdmin = false,
+  permissions,
+}: {
+  role: Role;
+  isSuperAdmin?: boolean;
+  permissions: ClassroomPermissions;
+}) {
   const router = useRouter();
   const [items, setItems] = useState<ClassroomItem[]>([]);
   const [targets, setTargets] = useState<TargetsPayload>({ students: [], coaches: [], batches: [], courses: [] });
@@ -227,7 +244,7 @@ export default function ClassroomManagementClient({ role, isSuperAdmin = false }
     try {
       const [classroomsRes, targetsRes] = await Promise.all([
         fetch("/api/classrooms", { cache: "no-store" }),
-        role === "admin" ? fetch("/api/classrooms/targets", { cache: "no-store" }) : Promise.resolve(null as any),
+        role === "admin" || role === "sub-admin" ? fetch("/api/classrooms/targets", { cache: "no-store" }) : Promise.resolve(null as any),
       ]);
       if (classroomsRes.ok) {
         const data = await classroomsRes.json();
@@ -560,7 +577,7 @@ export default function ClassroomManagementClient({ role, isSuperAdmin = false }
     });
   }
 
-  if (role !== "admin") {
+  if (role !== "admin" && role !== "sub-admin") {
     return <SimpleClassroomList items={items} loading={loading} role={role} />;
   }
 
@@ -583,15 +600,19 @@ export default function ClassroomManagementClient({ role, isSuperAdmin = false }
               <CopyPlus size={15} /> Test Classroom
             </button>
           )}
-          <button className="btn-outline" onClick={() => resetModal("single")}>
-            <Plus size={15} /> Single Class
-          </button>
-          <button className="btn-outline" onClick={() => resetModal("series", null, "selected")}>
-            <ListChecks size={15} /> Selected Topics
-          </button>
-          <button className="btn-primary" onClick={() => resetModal("series")}>
-            <CalendarDays size={15} /> Learning Series
-          </button>
+          {permissions.create && (
+            <>
+              <button className="btn-outline" onClick={() => resetModal("single")}>
+                <Plus size={15} /> Single Class
+              </button>
+              <button className="btn-outline" onClick={() => resetModal("series", null, "selected")}>
+                <ListChecks size={15} /> Selected Topics
+              </button>
+              <button className="btn-primary" onClick={() => resetModal("series")}>
+                <CalendarDays size={15} /> Learning Series
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -668,15 +689,15 @@ export default function ClassroomManagementClient({ role, isSuperAdmin = false }
                         <div className="flex flex-none flex-col gap-3 xl:min-w-[220px] xl:items-end">
                           <div className="flex justify-start gap-1 xl:justify-end">
                             <Link href={summaryHref} className="grid h-9 w-9 place-items-center rounded-lg border border-slate-200 text-slate-700"><Eye size={15} /></Link>
-                            <button onClick={() => resetModal(item.classroomType, item)} className="grid h-9 w-9 place-items-center rounded-lg border border-slate-200 text-slate-700"><Pencil size={15} /></button>
-                            <button onClick={() => deleteItem(item)} className="grid h-9 w-9 place-items-center rounded-lg border border-red-200 bg-red-50 text-red-600"><Trash2 size={15} /></button>
+                            {permissions.edit && <button onClick={() => resetModal(item.classroomType, item)} className="grid h-9 w-9 place-items-center rounded-lg border border-slate-200 text-slate-700"><Pencil size={15} /></button>}
+                            {permissions.cancel && <button onClick={() => deleteItem(item)} className="grid h-9 w-9 place-items-center rounded-lg border border-red-200 bg-red-50 text-red-600"><Trash2 size={15} /></button>}
                           </div>
 
                           <div className="flex flex-wrap justify-start gap-2 xl:justify-end">
-                            <ActionButton icon={<Clock3 size={14} />} label="Reschedule" onClick={() => { setActionModal({ type: "reschedule_class", item }); setActionDraft({ classDate: item.classDate ? formatDateInput(item.classDate) : "", startTime: item.startTime || "", durationMinutes: item.durationMinutes || 60 }); }} />
-                            <ActionButton icon={<X size={14} />} label="Cancel" onClick={() => { setActionModal({ type: "cancel_class", item }); setActionDraft({}); }} />
-                            <ActionButton icon={<UserCog size={14} />} label="Substitute Coach" onClick={() => { setActionModal({ type: "substitute_coach", item }); setActionDraft({ scope: item.classroomType === "series" ? "future" : "entire", coach: "" }); }} />
-                            {item.classroomType === "series" && <ActionButton icon={<CopyPlus size={14} />} label="Add Extra Class" onClick={() => { setActionModal({ type: "add_extra_class", item }); setActionDraft({ topicName: "", classDate: "", startTime: item.startTime || "16:00", durationMinutes: item.durationMinutes || 60 }); }} />}
+                            {permissions.edit && <ActionButton icon={<Clock3 size={14} />} label="Reschedule" onClick={() => { setActionModal({ type: "reschedule_class", item }); setActionDraft({ classDate: item.classDate ? formatDateInput(item.classDate) : "", startTime: item.startTime || "", durationMinutes: item.durationMinutes || 60 }); }} />}
+                            {permissions.cancel && <ActionButton icon={<X size={14} />} label="Cancel" onClick={() => { setActionModal({ type: "cancel_class", item }); setActionDraft({}); }} />}
+                            {permissions.assign && <ActionButton icon={<UserCog size={14} />} label="Substitute Coach" onClick={() => { setActionModal({ type: "substitute_coach", item }); setActionDraft({ scope: item.classroomType === "series" ? "future" : "entire", coach: "" }); }} />}
+                            {permissions.create && item.classroomType === "series" && <ActionButton icon={<CopyPlus size={14} />} label="Add Extra Class" onClick={() => { setActionModal({ type: "add_extra_class", item }); setActionDraft({ topicName: "", classDate: "", startTime: item.startTime || "16:00", durationMinutes: item.durationMinutes || 60 }); }} />}
                           </div>
                         </div>
                       </div>

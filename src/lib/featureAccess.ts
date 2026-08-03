@@ -164,8 +164,30 @@ export async function seedPermissionTemplates(actorId?: string) {
 }
 
 export async function getFeatureAccessSnapshot(): Promise<FeatureAccessSnapshot[]> {
-  await ensureFeatureAccessDocuments();
-  const docs = await FeatureAccess.find({ key: { $in: FEATURE_DEFINITIONS.map((feature) => feature.key) } }).lean();
+  await dbConnect();
+  const featureKeys = FEATURE_DEFINITIONS.map((feature) => feature.key);
+  let docs = await FeatureAccess.find({ key: { $in: featureKeys } }).lean();
+  const existingKeys = new Set(docs.map((doc: any) => String(doc.key)));
+  const missingFeatures = FEATURE_DEFINITIONS.filter((feature) => !existingKeys.has(feature.key));
+
+  if (missingFeatures.length) {
+    await Promise.all(
+      missingFeatures.map((feature) =>
+        FeatureAccess.updateOne(
+          { key: feature.key },
+          {
+            $setOnInsert: {
+              key: feature.key,
+              status: feature.defaultStatus || "disabled",
+              rolePermissions: rolePermissionsFor(feature),
+            },
+          },
+          { upsert: true },
+        ),
+      ),
+    );
+    docs = await FeatureAccess.find({ key: { $in: featureKeys } }).lean();
+  }
   const byKey = new Map(docs.map((doc: any) => [doc.key, doc]));
   return FEATURE_DEFINITIONS.map((feature) => ({ ...feature, ...normalizeState(feature, byKey.get(feature.key)) }));
 }
@@ -238,6 +260,23 @@ export async function canAccessFeature(featureKey: string, user: SessionUser, pe
   return evaluateFeatureState({ feature, user: { ...user, isSuperAdmin }, permission });
 }
 
+export async function getFeaturePermissionState(featureKey: string, user: SessionUser, permissions: readonly string[]) {
+  const features = await getFeatureAccessMap();
+  const feature = features.get(featureKey);
+  const result: Record<string, boolean> = {};
+  if (!feature) {
+    permissions.forEach((permission) => { result[permission] = false; });
+    return result;
+  }
+
+  const isSuperAdmin = await isSuperAdminSession(user);
+  const effectiveUser = { ...user, isSuperAdmin };
+  permissions.forEach((permission) => {
+    result[permission] = evaluateFeatureState({ feature, user: effectiveUser, permission });
+  });
+  return result;
+}
+
 export async function canAccessPath(pathname: string, user: SessionUser, permission = "view") {
   const definition = findFeatureByPath(pathname);
   if (!definition) return true;
@@ -253,10 +292,14 @@ export async function canAccessApiPath(pathname: string, user: SessionUser, perm
 export async function getNavigationFeatureState(user: SessionUser) {
   const snapshot = await getFeatureAccessSnapshot();
   const isSuperAdmin = await isSuperAdminSession(user);
-  return snapshot.reduce<Record<string, { visible: boolean; status: FeatureStatus }>>((acc, feature) => {
+  const effectiveUser = { ...user, isSuperAdmin };
+  return snapshot.reduce<Record<string, { visible: boolean; status: FeatureStatus; permissions: string[] }>>((acc, feature) => {
     acc[feature.key] = {
-      visible: evaluateFeatureState({ feature, user: { ...user, isSuperAdmin }, permission: "view", allowComingSoonView: true }),
+      visible: evaluateFeatureState({ feature, user: effectiveUser, permission: "view", allowComingSoonView: true }),
       status: feature.status,
+      permissions: feature.permissions
+        .filter((permission) => evaluateFeatureState({ feature, user: effectiveUser, permission: permission.id }))
+        .map((permission) => permission.id),
     };
     return acc;
   }, {});

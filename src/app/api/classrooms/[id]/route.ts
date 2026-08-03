@@ -6,6 +6,7 @@ import { Attendance } from "@/models/Attendance";
 import { ClassroomChatMessage, ClassroomSession, LiveQuestion, LiveQuestionResponse } from "@/models/ClassroomLive";
 import { buildGeneratedSessions } from "@/lib/classroomSchedule";
 import { deleteClassroomSessionInstances, syncClassroomSessionInstances } from "@/lib/classroomSessionInstances";
+import { canAccessFeature, isSuperAdminSession } from "@/lib/featureAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -21,9 +22,27 @@ async function deleteClassroomRecords(classroomId: string) {
   ]);
 }
 
+function recordId(value: any) {
+  return String(value?._id || value || "");
+}
+
+async function canAccessRecord(doc: any, user: any) {
+  const role = user?.role;
+  const userId = String(user?.id || "");
+  if (doc?.isTestClassroom) {
+    return role === "admin" && recordId(doc.testOwner) === userId && isSuperAdminSession(user);
+  }
+  if (role === "admin" || role === "sub-admin") return true;
+  if (role === "instructor") return [doc?.coach, doc?.instructor].some((value) => recordId(value) === userId);
+  return (doc?.students || []).some((value: any) => recordId(value) === userId);
+}
+
 export async function GET(_: Request, { params }: { params: { id: string } }) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!(await canAccessFeature("classrooms", session.user as any, "view"))) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   await dbConnect();
   const doc = await Classroom.findById(params.id)
     .populate("instructor coach", "name email username")
@@ -32,17 +51,28 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     .populate("course", "name category level")
     .lean();
   if (!doc) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!(await canAccessRecord(doc, session.user as any))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   return NextResponse.json(doc);
 }
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   const session = await auth();
-  const role = (session?.user as any)?.role;
-  if (!session || (role !== "instructor" && role !== "admin")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  await dbConnect();
+  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const body = await req.json();
+  const permission = body.action === "cancel_class" || body.action === "delete_series"
+    ? "cancel"
+    : body.action === "substitute_coach"
+      ? "assign"
+      : body.action === "add_extra_class"
+        ? "create"
+        : "edit";
+  if (!(await canAccessFeature("classrooms", session.user as any, permission))) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  await dbConnect();
   const existing: any = await Classroom.findById(params.id);
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!(await canAccessRecord(existing, session.user as any))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   if (body.action === "cancel_class") {
     existing.status = "cancelled";
@@ -125,8 +155,13 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
 export async function DELETE(_: Request, { params }: { params: { id: string } }) {
   const session = await auth();
-  if ((session?.user as any)?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!session || !(await canAccessFeature("classrooms", session.user as any, "cancel"))) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   await dbConnect();
+  const existing = await Classroom.findById(params.id).select("coach instructor students isTestClassroom testOwner").lean();
+  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!(await canAccessRecord(existing, session.user as any))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await deleteClassroomRecords(params.id);
   await deleteClassroomSessionInstances(params.id);
   await Classroom.findByIdAndDelete(params.id);

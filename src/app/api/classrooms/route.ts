@@ -5,13 +5,16 @@ import { Classroom } from "@/models/Classroom";
 import { Course } from "@/models/Course";
 import { buildGeneratedSessions, buildSessionPlan } from "@/lib/classroomSchedule";
 import { syncClassroomSessionInstances } from "@/lib/classroomSessionInstances";
-import { isSuperAdminSession } from "@/lib/featureAccess";
+import { canAccessFeature, isSuperAdminSession } from "@/lib/featureAccess";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!(await canAccessFeature("classrooms", session.user as any, "view"))) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   await dbConnect();
   const userId = (session.user as any).id;
   const role = (session.user as any).role;
@@ -20,7 +23,7 @@ export async function GET() {
     role === "admin" && isSuperAdmin
       ? { $or: [{ isTestClassroom: { $ne: true } }, { isTestClassroom: true, testOwner: userId }] }
       : { isTestClassroom: { $ne: true } };
-  const filter = role === "admin"
+  const filter = role === "admin" || role === "sub-admin"
     ? { isSessionInstance: { $ne: true }, ...visibleClassrooms }
     : role === "instructor"
       ? { $or: [{ instructor: userId }, { coach: userId }], isSessionInstance: { $ne: true }, ...visibleClassrooms }
@@ -37,8 +40,9 @@ export async function GET() {
 
 export async function POST(req: Request) {
   const session = await auth();
-  const role = (session?.user as any)?.role;
-  if (!session || (role !== "instructor" && role !== "admin")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!session || !(await canAccessFeature("classrooms", session.user as any, "create"))) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   try {
     await dbConnect();
     const raw = await req.json();

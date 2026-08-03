@@ -1,10 +1,10 @@
-import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { formatINR } from "@/lib/utils";
 import { CreditLedger, Invoice } from "@/models/Fee";
 import { Payment } from "@/models/Payment";
 import { User } from "@/models/User";
 import { BarChart3, CalendarDays, Download, Eye, FileSpreadsheet, Filter, ReceiptText, UsersRound } from "lucide-react";
+import { requireFeesAccess } from "@/lib/feesAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -148,8 +148,7 @@ async function getPreview(params: Record<string, string | string[] | undefined>)
 }
 
 export default async function FeeReportsPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
-  const session = await auth();
-  if ((session?.user as any)?.role !== "admin") return <div className="p-6">Forbidden</div>;
+  if (!(await requireFeesAccess("export"))) return <div className="p-6">Forbidden</div>;
   await dbConnect();
   const params = searchParams ? await searchParams : {};
   const currentYear = new Date().getMonth() >= 3 ? new Date().getFullYear() : new Date().getFullYear() - 1;

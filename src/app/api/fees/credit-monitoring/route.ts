@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { CreditLedger, FeeAssignment } from "@/models/Fee";
+import { requireFeesAccess } from "@/lib/feesAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -44,8 +44,7 @@ function filterAssignments(assignments: any[], url: URL) {
 }
 
 export async function GET(req: Request) {
-  const session = await auth();
-  if ((session?.user as any)?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!(await requireFeesAccess("export"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
 
   const url = new URL(req.url);

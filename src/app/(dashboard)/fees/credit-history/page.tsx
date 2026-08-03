@@ -6,6 +6,8 @@ import "@/models/User";
 import { ArrowDownCircle, ArrowUpCircle, FileText, Receipt, WalletCards } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { canAccessFeature } from "@/lib/featureAccess";
+import { isFeesManager } from "@/lib/feesAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -68,24 +70,25 @@ export default async function CreditHistoryPage() {
   const role = (session?.user as any)?.role;
   const userId = (session?.user as any)?.id;
   if (!userId) redirect("/login");
-  if (role === "instructor") redirect("/dashboard");
+  if (!(await canAccessFeature("fees", session!.user as any, "view"))) redirect("/dashboard");
+  const manager = isFeesManager(role);
 
   await dbConnect();
 
-  const ledgerFilter = role === "admin" ? {} : { student: userId };
+  const ledgerFilter = manager ? {} : { student: userId };
   const [ledgers, assignment] = await Promise.all([
     CreditLedger.find(ledgerFilter)
       .populate("student", "name username email")
       .populate("invoice", "invoiceNumber totalAmount status type title")
       .sort({ createdAt: -1 })
-      .limit(role === "admin" ? 500 : 300)
+      .limit(manager ? 500 : 300)
       .lean(),
-    role === "admin" ? null : FeeAssignment.findOne({ student: userId, type: "credits" }).populate("plan").lean(),
+    manager ? null : FeeAssignment.findOne({ student: userId, type: "credits" }).populate("plan").lean(),
   ]);
 
   const added = ledgers.filter((item: any) => Number(item.credits || 0) > 0).reduce((sum: number, item: any) => sum + Number(item.credits || 0), 0);
   const deducted = ledgers.filter((item: any) => Number(item.credits || 0) < 0).reduce((sum: number, item: any) => sum + Math.abs(Number(item.credits || 0)), 0);
-  const currentBalance = role === "admin" ? "-" : Number((assignment as any)?.creditBalance || 0);
+  const currentBalance = manager ? "-" : Number((assignment as any)?.creditBalance || 0);
 
   return (
     <div className="min-h-screen bg-[linear-gradient(135deg,#fffdf2_0%,#fbf6ff_45%,#ffffff_100%)] px-3 py-4 text-slate-950 sm:px-6 lg:px-8">
@@ -108,7 +111,7 @@ export default async function CreditHistoryPage() {
       </div>
 
       <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Current Balance" value={currentBalance} note={role === "admin" ? "Admin view" : "Credits available"} icon={WalletCards} />
+        <StatCard label="Current Balance" value={currentBalance} note={manager ? "Management view" : "Credits available"} icon={WalletCards} />
         <StatCard label="Credits Added" value={`+${added}`} note="All recharge and adjustment credits" icon={ArrowUpCircle} />
         <StatCard label="Credits Deducted" value={`-${deducted}`} note="Classes and deductions" icon={ArrowDownCircle} />
         <StatCard label="Transactions" value={ledgers.length} note="Complete credit ledger" icon={Receipt} />
@@ -134,7 +137,7 @@ export default async function CreditHistoryPage() {
               <table className="min-w-full text-left text-sm">
                 <thead className="bg-slate-50 text-[11px] uppercase tracking-[0.12em] text-slate-500">
                   <tr>
-                    {role === "admin" && <th className="px-4 py-3">Student</th>}
+                    {manager && <th className="px-4 py-3">Student</th>}
                     <th className="px-4 py-3">Date</th>
                     <th className="px-4 py-3">Transaction Type</th>
                     <th className="px-4 py-3">Credits Added</th>
@@ -149,7 +152,7 @@ export default async function CreditHistoryPage() {
                     const credits = Number(item.credits || 0);
                     return (
                       <tr key={item._id.toString()} className="border-t border-slate-100 align-top">
-                        {role === "admin" && (
+                        {manager && (
                           <td className="px-4 py-3">
                             <div className="font-bold text-slate-950">{item.student?.name || "Student"}</div>
                             <div className="text-xs text-slate-500">{item.student?.username || item.student?.email || "-"}</div>
@@ -181,7 +184,7 @@ export default async function CreditHistoryPage() {
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="font-black text-slate-950">{transactionLabel(item.type, credits)}</p>
-                        {role === "admin" && <p className="mt-0.5 text-xs font-semibold text-slate-500">{item.student?.name || "Student"}</p>}
+                        {manager && <p className="mt-0.5 text-xs font-semibold text-slate-500">{item.student?.name || "Student"}</p>}
                         <p className="mt-1 text-sm text-slate-500">{item.note || "Credit ledger transaction"}</p>
                         <p className="mt-1 text-xs text-slate-400">{formatDate(item.createdAt)}</p>
                       </div>

@@ -109,7 +109,7 @@ export default function LiveDataRefresher() {
   const isLiveClassroomRoute = /^\/classrooms\/[^/]+(?:\/live)?$/.test(pathname || "");
   const isQuietRefreshRoute = isLiveClassroomRoute || (pathname || "").startsWith("/pgn");
   const [showSync, setShowSync] = useState(false);
-  const [isPending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
   const refreshTimerRef = useRef<number | null>(null);
   const hideTimerRef = useRef<number | null>(null);
   const lastRefreshRef = useRef(Date.now());
@@ -198,7 +198,10 @@ export default function LiveDataRefresher() {
   }, [pathname]);
 
   if (isQuietRefreshRoute) return null;
-  if (!showSync && !isPending) return null;
+  // A router refresh can remain pending when a client-only page has no new
+  // server payload to commit. The indicator has its own bounded display time,
+  // so it must never depend on the transition's pending state.
+  if (!showSync) return null;
 
   return (
     <div className="pointer-events-none fixed bottom-4 right-4 z-[90] flex items-center gap-2 rounded-full border border-[#ead7ef] bg-white/95 px-4 py-2 text-sm font-semibold text-[#5a1372] shadow-[0_18px_50px_rgba(90,19,114,0.18)] backdrop-blur">

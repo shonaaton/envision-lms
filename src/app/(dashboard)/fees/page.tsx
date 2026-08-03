@@ -7,6 +7,8 @@ import { User } from "@/models/User";
 import Link from "next/link";
 import { AlertTriangle, Banknote, CalendarClock, Download, FileText, Receipt, Users, WalletCards } from "lucide-react";
 import { redirect } from "next/navigation";
+import { getFeaturePermissionState } from "@/lib/featureAccess";
+import { isFeesManager } from "@/lib/feesAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -56,17 +58,20 @@ export default async function FeesDashboardPage() {
   const session = await auth();
   const role = (session?.user as any)?.role;
   const userId = (session?.user as any)?.id;
-  if (role === "instructor") redirect("/dashboard");
+  if (!userId) redirect("/login");
+  const permissions = await getFeaturePermissionState("fees", session!.user as any, ["view", "invoice", "edit", "payment", "credit", "export"]);
+  if (!permissions.view) redirect("/dashboard");
+  const manager = isFeesManager(role);
   await dbConnect();
   await ensureMonthlyInvoices();
 
   const { from, to } = monthRange();
-  const invoiceFilter = role === "admin" ? {} : { student: userId };
+  const invoiceFilter = manager ? {} : { student: userId };
   const [invoices, assignments, students, recentCredits] = await Promise.all([
     Invoice.find(invoiceFilter).populate("student plan").sort({ createdAt: -1 }).limit(80).lean(),
-    FeeAssignment.find(role === "admin" ? {} : { student: userId }).populate("student plan").sort({ creditBalance: 1 }).lean(),
+    FeeAssignment.find(manager ? {} : { student: userId }).populate("student plan").sort({ creditBalance: 1 }).lean(),
     User.countDocuments({ role: "student", isActive: { $ne: false } }),
-    CreditLedger.find(role === "admin" ? {} : { student: userId }).populate("student").sort({ createdAt: -1 }).limit(10).lean(),
+    CreditLedger.find(manager ? {} : { student: userId }).populate("student").sort({ createdAt: -1 }).limit(10).lean(),
   ]);
 
   const currentInvoices = invoices.filter((i: any) => new Date(i.createdAt) >= from && new Date(i.createdAt) <= to);
@@ -78,7 +83,7 @@ export default async function FeesDashboardPage() {
   const monthlyAssignments = assignments.filter((a: any) => a.type === "monthly");
   const lowCredit = creditAssignments.filter((a: any) => a.creditBalance <= 3);
 
-  if (role !== "admin") {
+  if (!manager) {
     const creditAssignment: any = creditAssignments[0];
     const monthlyAssignment: any = monthlyAssignments[0];
     const nextMonthlyInvoice: any = invoices
@@ -206,16 +211,13 @@ export default async function FeesDashboardPage() {
     );
   }
 
-  const quickLinks = role === "admin"
-    ? [
-        ["/fees/fee-plans", "Fee Plans"],
-        ["/fees/student-fees", "Student Fees"],
-        ["/fees/credit-monitoring", "Credit Monitoring"],
-        ["/fees/invoices", "Invoices"],
-        ["/fees/reports", "Reports"],
-        ["/admin/settings", "Academy Setup"],
-      ]
-    : [["/fees/invoices", "My Invoices"], ["/invoices", "Invoice List"]];
+  const quickLinks: Array<[string, string]> = [
+    ...(permissions.edit ? [["/fees/fee-plans", "Fee Plans"], ["/fees/student-fees", "Student Fees"]] as Array<[string, string]> : []),
+    ...(permissions.credit ? [["/fees/credit-monitoring", "Credit Monitoring"]] as Array<[string, string]> : []),
+    ["/fees/invoices", "Invoices"],
+    ...(permissions.export ? [["/fees/reports", "Reports"]] as Array<[string, string]> : []),
+    ...(role === "admin" ? [["/admin/settings", "Academy Setup"]] as Array<[string, string]> : []),
+  ];
 
   return (
     <div className="min-h-screen bg-slate-50 px-2 py-4 text-slate-950 sm:px-6 sm:py-5 lg:px-8">

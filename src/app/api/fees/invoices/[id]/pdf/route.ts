@@ -6,6 +6,8 @@ import { dbConnect } from "@/lib/db";
 import { getAcademySettings } from "@/lib/fees";
 import { ACADEMY_DEFAULTS, ACADEMY_LOGO_URL, ACADEMY_SIGNATURE_URL } from "@/lib/branding";
 import { Invoice } from "@/models/Fee";
+import { canAccessFeature } from "@/lib/featureAccess";
+import { isFeesManager } from "@/lib/feesAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -504,7 +506,8 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
   if (!tokenAllowed) {
     if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const role = (session.user as any).role;
-    if (role !== "admin" && invoice.student?._id?.toString() !== (session.user as any).id) {
+    const hasManagementAccess = isFeesManager(role) && await canAccessFeature("fees", session.user as any, "view");
+    if (!hasManagementAccess && invoice.student?._id?.toString() !== (session.user as any).id) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
   }

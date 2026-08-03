@@ -1,9 +1,9 @@
-import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { FeePlan } from "@/models/Fee";
 import { revalidatePath } from "next/cache";
 import { Banknote } from "lucide-react";
 import { FeePlansWorkspace } from "@/components/fees/FeePlanForms";
+import { requireFeesAccess } from "@/lib/feesAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -11,14 +11,9 @@ function paise(value: FormDataEntryValue | null) {
   return Math.round(Number(value || 0) * 100);
 }
 
-async function requireAdmin() {
-  const session = await auth();
-  if ((session?.user as any)?.role !== "admin") throw new Error("Forbidden");
-}
-
 async function createPlan(formData: FormData) {
   "use server";
-  await requireAdmin();
+  if (!(await requireFeesAccess("edit"))) throw new Error("Forbidden");
   await dbConnect();
   const type = String(formData.get("type")) as "monthly" | "credits";
   await FeePlan.create({
@@ -40,7 +35,7 @@ async function createPlan(formData: FormData) {
 
 async function updatePlan(formData: FormData) {
   "use server";
-  await requireAdmin();
+  if (!(await requireFeesAccess("edit"))) throw new Error("Forbidden");
   await dbConnect();
   const id = String(formData.get("id"));
   const type = String(formData.get("type")) as "monthly" | "credits";
@@ -62,15 +57,14 @@ async function updatePlan(formData: FormData) {
 
 async function archivePlan(formData: FormData) {
   "use server";
-  await requireAdmin();
+  if (!(await requireFeesAccess("edit"))) throw new Error("Forbidden");
   await dbConnect();
   await FeePlan.findByIdAndUpdate(formData.get("id"), { isActive: false });
   revalidatePath("/fees/fee-plans");
 }
 
 export default async function FeePlansPage() {
-  const session = await auth();
-  if ((session?.user as any)?.role !== "admin") return <div className="p-6">Forbidden</div>;
+  if (!(await requireFeesAccess("edit"))) return <div className="p-6">Forbidden</div>;
   await dbConnect();
   const plans = await FeePlan.find({}).sort({ isActive: -1, createdAt: -1 }).lean();
   const monthlyPlans = plans.filter((plan: any) => plan.type === "monthly");

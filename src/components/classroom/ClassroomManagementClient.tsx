@@ -227,7 +227,7 @@ export default function ClassroomManagementClient({
     level: "",
     status: "",
   });
-  const [actionModal, setActionModal] = useState<{ type: string; item: ClassroomItem | null }>({ type: "", item: null });
+  const [actionModal, setActionModal] = useState<{ type: string; item: ClassroomItem | null; session?: any }>({ type: "", item: null });
   const [actionDraft, setActionDraft] = useState<any>({});
 
   async function withBusy<T>(message: string, task: () => Promise<T>) {
@@ -538,14 +538,14 @@ export default function ClassroomManagementClient({
       const response = await fetch(`/api/classrooms/${actionModal.item!._id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: actionModal.type, ...actionDraft }),
+        body: JSON.stringify({ action: actionModal.type, sessionId: actionModal.session?._id, ...actionDraft }),
       });
       const data = await response.json();
       if (!response.ok) {
         toast.error(data.error || "Could not update class");
         return;
       }
-      toast.success("Class updated");
+      toast.success(actionSuccessMessage(actionModal.type));
       setActionModal({ type: "", item: null });
       setActionDraft({});
       await load();
@@ -553,7 +553,8 @@ export default function ClassroomManagementClient({
   }
 
   async function deleteItem(item: ClassroomItem) {
-    if (!window.confirm(`Delete ${item.title}?`)) return;
+    const target = item.classroomType === "series" ? `the entire series “${item.title}” and all of its classes` : `“${item.title}”`;
+    if (!window.confirm(`Permanently delete ${target}? This also removes its classroom records and cannot be undone.`)) return;
     await withBusy("Deleting classroom...", async () => {
       const response = await fetch(`/api/classrooms/${item._id}`, { method: "DELETE" });
       if (!response.ok) return toast.error("Could not delete class");
@@ -650,7 +651,7 @@ export default function ClassroomManagementClient({
                   const lifecycleRollup = classroomLifecycleRollup(item);
                   const timingLabel = item.classroomType === "single"
                     ? `${formatDate(item.classDate)} at ${item.startTime || "--"} for ${formatDuration(item.durationMinutes || 60)}`
-                    : `${item.generatedSessions?.length || 0} scheduled sessions ? starts ${formatDate(item.startDate)}`;
+                    : `${item.generatedSessions?.length || 0} scheduled sessions · starts ${formatDate(item.startDate)}`;
                   return (
                     <div key={item._id} className="rounded-lg border border-slate-200 bg-white px-4 py-4 shadow-sm">
                       <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
@@ -684,18 +685,68 @@ export default function ClassroomManagementClient({
                               ))}
                             </div>
                           ) : null}
+
+                          {item.classroomType === "series" && (item.generatedSessions?.length || 0) > 0 ? (
+                            <details className="rounded-xl border border-slate-200 bg-slate-50">
+                              <summary className="cursor-pointer select-none px-3 py-3 text-sm font-black text-slate-800">
+                                Manage individual classes ({item.generatedSessions?.length || 0})
+                              </summary>
+                              <div className="space-y-2 border-t border-slate-200 p-3">
+                                {(item.generatedSessions || []).map((scheduledSession: any, sessionIndex: number) => {
+                                  const sessionStatus = deriveScheduledSessionStatus(scheduledSession, new Date());
+                                  const isFinished = sessionStatus === "completed" || Boolean(scheduledSession.actualEndedAt);
+                                  const isCancelled = sessionStatus === "cancelled";
+                                  return (
+                                    <div key={String(scheduledSession._id || sessionIndex)} className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-3 lg:flex-row lg:items-center lg:justify-between">
+                                      <div className="min-w-0">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                          <span className="text-xs font-black uppercase tracking-wide text-slate-500">Class {scheduledSession.sessionNumber || sessionIndex + 1}</span>
+                                          <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${sessionStatusTone(sessionStatus)}`}>{titleCase(sessionStatus)}</span>
+                                          {scheduledSession.originalDate ? <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-bold text-sky-700">Rescheduled</span> : null}
+                                        </div>
+                                        <div className="mt-1 truncate text-sm font-bold text-slate-900">{scheduledSession.topicName || item.topicName || "Topic not set"}</div>
+                                        <div className="mt-1 text-xs text-slate-600">
+                                          {formatDate(scheduledSession.scheduledFor)} at {scheduledSession.startTime || item.startTime || "--"} IST · {formatDuration(Number(scheduledSession.durationMinutes || item.durationMinutes || 60))}
+                                        </div>
+                                      </div>
+                                      <div className="flex flex-wrap gap-2">
+                                        {permissions.edit && !isFinished && !isCancelled ? (
+                                          <ActionButton icon={<Pencil size={14} />} label="Edit" onClick={() => {
+                                            setActionModal({ type: "update_session", item, session: scheduledSession });
+                                            setActionDraft({ topicName: scheduledSession.topicName || "", classDate: formatDateInput(scheduledSession.scheduledFor), startTime: scheduledSession.startTime || item.startTime || "", durationMinutes: scheduledSession.durationMinutes || item.durationMinutes || 60 });
+                                          }} />
+                                        ) : null}
+                                        {permissions.edit && !isFinished && !isCancelled ? (
+                                          <ActionButton icon={<Clock3 size={14} />} label="Reschedule" onClick={() => {
+                                            setActionModal({ type: "reschedule_session", item, session: scheduledSession });
+                                            setActionDraft({ classDate: formatDateInput(scheduledSession.scheduledFor), startTime: scheduledSession.startTime || item.startTime || "", durationMinutes: scheduledSession.durationMinutes || item.durationMinutes || 60 });
+                                          }} />
+                                        ) : null}
+                                        {permissions.cancel && !isFinished && !isCancelled ? (
+                                          <ActionButton icon={<X size={14} />} label="Cancel" onClick={() => { setActionModal({ type: "cancel_session", item, session: scheduledSession }); setActionDraft({}); }} />
+                                        ) : null}
+                                        {permissions.cancel && !isFinished ? (
+                                          <ActionButton icon={<Trash2 size={14} />} label="Delete" onClick={() => { setActionModal({ type: "delete_session", item, session: scheduledSession }); setActionDraft({}); }} />
+                                        ) : null}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </details>
+                          ) : null}
                         </div>
 
                         <div className="flex flex-none flex-col gap-3 xl:min-w-[220px] xl:items-end">
                           <div className="flex justify-start gap-1 xl:justify-end">
                             <Link href={summaryHref} className="grid h-9 w-9 place-items-center rounded-lg border border-slate-200 text-slate-700"><Eye size={15} /></Link>
                             {permissions.edit && <button onClick={() => resetModal(item.classroomType, item)} className="grid h-9 w-9 place-items-center rounded-lg border border-slate-200 text-slate-700"><Pencil size={15} /></button>}
-                            {permissions.cancel && <button onClick={() => deleteItem(item)} className="grid h-9 w-9 place-items-center rounded-lg border border-red-200 bg-red-50 text-red-600"><Trash2 size={15} /></button>}
+                            {permissions.cancel && <button title={item.classroomType === "series" ? "Delete entire series" : "Delete class"} onClick={() => deleteItem(item)} className="grid h-9 w-9 place-items-center rounded-lg border border-red-200 bg-red-50 text-red-600"><Trash2 size={15} /></button>}
                           </div>
 
                           <div className="flex flex-wrap justify-start gap-2 xl:justify-end">
-                            {permissions.edit && <ActionButton icon={<Clock3 size={14} />} label="Reschedule" onClick={() => { setActionModal({ type: "reschedule_class", item }); setActionDraft({ classDate: item.classDate ? formatDateInput(item.classDate) : "", startTime: item.startTime || "", durationMinutes: item.durationMinutes || 60 }); }} />}
-                            {permissions.cancel && <ActionButton icon={<X size={14} />} label="Cancel" onClick={() => { setActionModal({ type: "cancel_class", item }); setActionDraft({}); }} />}
+                            {permissions.edit && item.classroomType === "single" && <ActionButton icon={<Clock3 size={14} />} label="Reschedule" onClick={() => { setActionModal({ type: "reschedule_class", item }); setActionDraft({ classDate: item.classDate ? formatDateInput(item.classDate) : "", startTime: item.startTime || "", durationMinutes: item.durationMinutes || 60 }); }} />}
+                            {permissions.cancel && <ActionButton icon={<X size={14} />} label={item.classroomType === "series" ? "Cancel Entire Series" : "Cancel Class"} onClick={() => { setActionModal({ type: item.classroomType === "series" ? "cancel_series" : "cancel_class", item }); setActionDraft({}); }} />}
                             {permissions.assign && <ActionButton icon={<UserCog size={14} />} label="Substitute Coach" onClick={() => { setActionModal({ type: "substitute_coach", item }); setActionDraft({ scope: item.classroomType === "series" ? "future" : "entire", coach: "" }); }} />}
                             {permissions.create && item.classroomType === "series" && <ActionButton icon={<CopyPlus size={14} />} label="Add Extra Class" onClick={() => { setActionModal({ type: "add_extra_class", item }); setActionDraft({ topicName: "", classDate: "", startTime: item.startTime || "16:00", durationMinutes: item.durationMinutes || 60 }); }} />}
                           </div>
@@ -987,6 +1038,11 @@ export default function ClassroomManagementClient({
               <div>
                 <div className="text-lg font-black text-slate-950">{actionTitle(actionModal.type)}</div>
                 <div className="text-sm text-slate-500">{actionModal.item.title}</div>
+                {actionModal.session ? (
+                  <div className="mt-1 text-xs font-semibold text-slate-600">
+                    Class {actionModal.session.sessionNumber || ""}: {actionModal.session.topicName || actionModal.item.topicName || "Topic not set"}
+                  </div>
+                ) : null}
               </div>
               <button onClick={() => setActionModal({ type: "", item: null })} className="grid h-10 w-10 place-items-center rounded-xl border border-slate-200 text-slate-600"><X size={18} /></button>
             </div>
@@ -995,6 +1051,23 @@ export default function ClassroomManagementClient({
                 <div className="grid gap-4 sm:grid-cols-3">
                   <Field label="Date"><input type="date" className="input h-10" value={actionDraft.classDate || ""} onChange={(event) => setActionDraft((current: any) => ({ ...current, classDate: event.target.value }))} /></Field>
                   <Field label="Time"><input type="time" className="input h-10" value={actionDraft.startTime || ""} onChange={(event) => setActionDraft((current: any) => ({ ...current, startTime: event.target.value }))} /></Field>
+                  <Field label="Duration"><select className="input h-10" value={actionDraft.durationMinutes || 60} onChange={(event) => setActionDraft((current: any) => ({ ...current, durationMinutes: Number(event.target.value) }))}>{durationOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field>
+                </div>
+              )}
+              {actionModal.type === "update_session" && (
+                <div className="grid gap-4">
+                  <Field label="Topic"><input className="input h-10" value={actionDraft.topicName || ""} onChange={(event) => setActionDraft((current: any) => ({ ...current, topicName: event.target.value }))} /></Field>
+                  <div className="grid gap-4 sm:grid-cols-3">
+                    <Field label="Date (IST)"><input type="date" className="input h-10" value={actionDraft.classDate || ""} onChange={(event) => setActionDraft((current: any) => ({ ...current, classDate: event.target.value }))} /></Field>
+                    <Field label="Time (IST)"><input type="time" className="input h-10" value={actionDraft.startTime || ""} onChange={(event) => setActionDraft((current: any) => ({ ...current, startTime: event.target.value }))} /></Field>
+                    <Field label="Duration"><select className="input h-10" value={actionDraft.durationMinutes || 60} onChange={(event) => setActionDraft((current: any) => ({ ...current, durationMinutes: Number(event.target.value) }))}>{durationOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field>
+                  </div>
+                </div>
+              )}
+              {actionModal.type === "reschedule_session" && (
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <Field label="New Date (IST)"><input type="date" className="input h-10" value={actionDraft.classDate || ""} onChange={(event) => setActionDraft((current: any) => ({ ...current, classDate: event.target.value }))} /></Field>
+                  <Field label="New Time (IST)"><input type="time" className="input h-10" value={actionDraft.startTime || ""} onChange={(event) => setActionDraft((current: any) => ({ ...current, startTime: event.target.value }))} /></Field>
                   <Field label="Duration"><select className="input h-10" value={actionDraft.durationMinutes || 60} onChange={(event) => setActionDraft((current: any) => ({ ...current, durationMinutes: Number(event.target.value) }))}>{durationOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field>
                 </div>
               )}
@@ -1026,10 +1099,15 @@ export default function ClassroomManagementClient({
                 </div>
               )}
               {actionModal.type === "cancel_class" && <div className="rounded-xl bg-red-50 p-4 text-sm text-red-700">This will cancel the selected class without deleting its record.</div>}
+              {actionModal.type === "cancel_series" && <div className="rounded-xl bg-red-50 p-4 text-sm text-red-700">This will cancel the entire series and all unfinished classes in it. Existing records will be kept.</div>}
+              {actionModal.type === "cancel_session" && <div className="rounded-xl bg-red-50 p-4 text-sm text-red-700">This will cancel only this class. The rest of the series will remain scheduled.</div>}
+              {actionModal.type === "delete_session" && <div className="rounded-xl bg-red-50 p-4 text-sm text-red-700">This permanently deletes only this class from the series. If attendance or live-class records already exist, deletion will be blocked and you can cancel it instead.</div>}
             </div>
             <div className="mt-5 flex justify-end gap-2">
               <button onClick={() => setActionModal({ type: "", item: null })} className="btn-outline">Close</button>
-              <button onClick={runAction} className="btn-primary">Apply</button>
+              <button onClick={runAction} className={actionModal.type.startsWith("cancel") || actionModal.type.startsWith("delete") ? "btn-primary bg-red-600 hover:bg-red-700" : "btn-primary"}>
+                {actionConfirmLabel(actionModal.type)}
+              </button>
             </div>
           </div>
         </div>
@@ -1417,13 +1495,19 @@ function classroomModeLabel(form: ReturnType<typeof blankForm>) {
 
 function formatDate(value?: string) {
   if (!value) return "Not set";
-  return new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric" }).format(new Date(value));
+  return new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kolkata" }).format(new Date(value));
 }
 
 function formatDateInput(value?: string) {
   if (!value) return "";
-  const date = new Date(value);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(value));
+  const get = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value || "";
+  return `${get("year")}-${get("month")}-${get("day")}`;
 }
 
 function formatDuration(minutes: number) {
@@ -1473,7 +1557,32 @@ function normalizeDays(item: ClassroomItem) {
 function actionTitle(type: string) {
   if (type === "reschedule_class") return "Reschedule Class";
   if (type === "cancel_class") return "Cancel Class";
+  if (type === "cancel_series") return "Cancel Entire Series";
+  if (type === "update_session") return "Edit This Class";
+  if (type === "reschedule_session") return "Reschedule This Class";
+  if (type === "cancel_session") return "Cancel This Class";
+  if (type === "delete_session") return "Delete This Class";
   if (type === "substitute_coach") return "Substitute Coach";
   if (type === "add_extra_class") return "Add Extra Class";
   return "Update Class";
+}
+
+function actionConfirmLabel(type: string) {
+  if (type === "cancel_series") return "Cancel Entire Series";
+  if (type === "cancel_class" || type === "cancel_session") return "Cancel Class";
+  if (type === "delete_session") return "Delete Class";
+  if (type === "reschedule_class" || type === "reschedule_session") return "Reschedule";
+  if (type === "update_session") return "Save Class";
+  return "Apply";
+}
+
+function actionSuccessMessage(type: string) {
+  if (type === "cancel_series") return "Series cancelled";
+  if (type === "cancel_class" || type === "cancel_session") return "Class cancelled";
+  if (type === "delete_session") return "Class deleted from the series";
+  if (type === "reschedule_class" || type === "reschedule_session") return "Class rescheduled";
+  if (type === "update_session") return "Class updated";
+  if (type === "add_extra_class") return "Extra class added";
+  if (type === "substitute_coach") return "Coach assignment updated";
+  return "Class updated";
 }

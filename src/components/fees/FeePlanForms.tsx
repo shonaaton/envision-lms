@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Archive, ArrowLeft, Banknote, CreditCard, Eye, FilePenLine, Plus, Save, Settings2 } from "lucide-react";
+import { Archive, ArrowLeft, Banknote, CreditCard, Eye, FilePenLine, Plus, Save, Settings2, Trash2 } from "lucide-react";
 
 type PlanType = "monthly" | "credits";
 type GstMode = "included" | "excluded" | "non_gst";
@@ -16,6 +16,7 @@ type FeePlanView = {
   lateFeeAmount: number;
   lateFeeAfterDays: number;
   isActive: boolean;
+  isLinked: boolean;
 };
 type ServerAction = (formData: FormData) => Promise<void>;
 type WorkspaceMode = "home" | "create" | "manage";
@@ -158,7 +159,7 @@ export function CreateFeePlanForm({ action }: { action: ServerAction }) {
   );
 }
 
-export function FeePlanEditor({ plan, updateAction, archiveAction }: { plan: FeePlanView; updateAction: ServerAction; archiveAction: ServerAction }) {
+export function FeePlanEditor({ plan, updateAction, archiveAction, deleteAction }: { plan: FeePlanView; updateAction: ServerAction; archiveAction: ServerAction; deleteAction: ServerAction }) {
   const [gstMode, setGstMode] = useState<GstMode>(plan.gstMode);
 
   return (
@@ -213,10 +214,14 @@ export function FeePlanEditor({ plan, updateAction, archiveAction }: { plan: Fee
           <button className="inline-flex h-9 items-center gap-1 rounded-md bg-slate-900 px-3 text-xs font-semibold text-white">
             <Save size={13} /> Save
           </button>
-          <button formAction={archiveAction} className="inline-flex h-9 items-center gap-1 rounded-md border border-slate-200 px-3 text-xs font-medium">
-            <Archive size={13} /> Archive
+          {plan.isActive && <button formAction={archiveAction} formNoValidate disabled={plan.isLinked} onClick={(event) => { if (!window.confirm(`Archive ${plan.name}?`)) event.preventDefault(); }} title={plan.isLinked ? "This plan is linked to a student or invoice" : "Archive plan"} className="inline-flex h-9 items-center gap-1 rounded-md border border-slate-200 px-3 text-xs font-medium disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400">
+              <Archive size={13} /> Archive
+            </button>}
+          <button formAction={deleteAction} formNoValidate disabled={plan.isLinked} onClick={(event) => { if (!window.confirm(`Permanently delete ${plan.name}? This cannot be undone.`)) event.preventDefault(); }} title={plan.isLinked ? "This plan is linked to a student or invoice" : "Delete plan permanently"} className="inline-flex h-9 items-center gap-1 rounded-md border border-rose-200 px-3 text-xs font-medium text-rose-700 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400">
+            <Trash2 size={13} /> Delete
           </button>
         </div>
+        {plan.isLinked && <p className="text-xs font-semibold text-amber-700">Archive and delete are disabled because this plan is linked to a student assignment or invoice.</p>}
       </form>
     </div>
   );
@@ -273,12 +278,14 @@ function PlanSummaryCard({
   onEdit,
   updateAction,
   archiveAction,
+  deleteAction,
 }: {
   plan: FeePlanView;
   isEditing: boolean;
   onEdit: () => void;
   updateAction: ServerAction;
   archiveAction: ServerAction;
+  deleteAction: ServerAction;
 }) {
   return (
     <article className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
@@ -310,7 +317,7 @@ function PlanSummaryCard({
 
       {isEditing && (
         <div className="mt-4 border-t border-slate-200 pt-4">
-          <FeePlanEditor plan={plan} updateAction={updateAction} archiveAction={archiveAction} />
+          <FeePlanEditor plan={plan} updateAction={updateAction} archiveAction={archiveAction} deleteAction={deleteAction} />
         </div>
       )}
     </article>
@@ -325,6 +332,7 @@ function PlanGroup({
   setEditingId,
   updateAction,
   archiveAction,
+  deleteAction,
 }: {
   title: string;
   description: string;
@@ -333,6 +341,7 @@ function PlanGroup({
   setEditingId: (id: string) => void;
   updateAction: ServerAction;
   archiveAction: ServerAction;
+  deleteAction: ServerAction;
 }) {
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
@@ -352,6 +361,7 @@ function PlanGroup({
             onEdit={() => setEditingId(editingId === plan.id ? "" : plan.id)}
             updateAction={updateAction}
             archiveAction={archiveAction}
+            deleteAction={deleteAction}
           />
         ))}
         {plans.length === 0 && <p className="rounded-lg bg-slate-50 p-4 text-sm text-slate-500">No plans created yet.</p>}
@@ -366,12 +376,14 @@ export function FeePlansWorkspace({
   createAction,
   updateAction,
   archiveAction,
+  deleteAction,
 }: {
   monthlyPlans: FeePlanView[];
   creditPlans: FeePlanView[];
   createAction: ServerAction;
   updateAction: ServerAction;
   archiveAction: ServerAction;
+  deleteAction: ServerAction;
 }) {
   const [mode, setMode] = useState<WorkspaceMode>("home");
   const [editingId, setEditingId] = useState("");
@@ -400,7 +412,7 @@ export function FeePlansWorkspace({
           <div className="grid gap-3 lg:grid-cols-3">
             <ActionCard title="Create a new plan" description="Add a monthly fee plan or a credit recharge pack in a guided setup." icon={<Plus size={22} />} onClick={() => setMode("create")} tone="brand" />
             <ActionCard title="View plans" description={`Review ${totalPlans} existing plans, split by monthly and credit-based.`} icon={<Eye size={22} />} onClick={() => setMode("manage")} />
-            <ActionCard title="Edit or archive" description="Open a plan only when changes are needed, then save or archive it." icon={<Settings2 size={22} />} onClick={() => setMode("manage")} />
+            <ActionCard title="Edit, archive, or delete" description="Open an unlinked plan to update, archive, or permanently delete it." icon={<Settings2 size={22} />} onClick={() => setMode("manage")} />
           </div>
           <div className="grid gap-3 md:grid-cols-3">
             <MiniStat label="Monthly Plans" value={monthlyPlans.length} icon={<Banknote size={17} />} />
@@ -422,8 +434,8 @@ export function FeePlansWorkspace({
 
       {mode === "manage" && (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-          <PlanGroup title="Monthly Plans" description="Recurring fee plans. Type is locked after creation." plans={monthlyPlans} editingId={editingId} setEditingId={setEditingId} updateAction={updateAction} archiveAction={archiveAction} />
-          <PlanGroup title="Credit Plans" description="Recharge packs. Type is locked after creation." plans={creditPlans} editingId={editingId} setEditingId={setEditingId} updateAction={updateAction} archiveAction={archiveAction} />
+          <PlanGroup title="Monthly Plans" description="Recurring fee plans. Type is locked after creation." plans={monthlyPlans} editingId={editingId} setEditingId={setEditingId} updateAction={updateAction} archiveAction={archiveAction} deleteAction={deleteAction} />
+          <PlanGroup title="Credit Plans" description="Recharge packs. Type is locked after creation." plans={creditPlans} editingId={editingId} setEditingId={setEditingId} updateAction={updateAction} archiveAction={archiveAction} deleteAction={deleteAction} />
         </div>
       )}
     </div>

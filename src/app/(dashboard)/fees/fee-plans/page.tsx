@@ -1,9 +1,10 @@
 import { dbConnect } from "@/lib/db";
-import { FeePlan } from "@/models/Fee";
+import { FeeAssignment, FeePlan, Invoice } from "@/models/Fee";
 import { revalidatePath } from "next/cache";
 import { Banknote } from "lucide-react";
 import { FeePlansWorkspace } from "@/components/fees/FeePlanForms";
 import { requireFeesAccess } from "@/lib/feesAccess";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +32,7 @@ async function createPlan(formData: FormData) {
     creditValidityDays: Number(formData.get("creditValidityDays") || 0),
   });
   revalidatePath("/fees/fee-plans");
+  redirect("/fees/fee-plans?success=created");
 }
 
 async function updatePlan(formData: FormData) {
@@ -53,20 +55,51 @@ async function updatePlan(formData: FormData) {
     creditValidityDays: Number(formData.get("creditValidityDays") || 0),
   });
   revalidatePath("/fees/fee-plans");
+  redirect("/fees/fee-plans?success=updated");
+}
+
+async function planIsLinked(id: string) {
+  const [assignment, invoice] = await Promise.all([
+    FeeAssignment.exists({ plan: id }),
+    Invoice.exists({ plan: id }),
+  ]);
+  return Boolean(assignment || invoice);
 }
 
 async function archivePlan(formData: FormData) {
   "use server";
   if (!(await requireFeesAccess("edit"))) throw new Error("Forbidden");
   await dbConnect();
-  await FeePlan.findByIdAndUpdate(formData.get("id"), { isActive: false });
+  const id = String(formData.get("id") || "");
+  if (await planIsLinked(id)) redirect("/fees/fee-plans?error=linked");
+  await FeePlan.findByIdAndUpdate(id, { isActive: false });
   revalidatePath("/fees/fee-plans");
+  redirect("/fees/fee-plans?success=archived");
 }
 
-export default async function FeePlansPage() {
+async function deletePlan(formData: FormData) {
+  "use server";
+  if (!(await requireFeesAccess("edit"))) throw new Error("Forbidden");
+  await dbConnect();
+  const id = String(formData.get("id") || "");
+  if (await planIsLinked(id)) redirect("/fees/fee-plans?error=linked");
+  await FeePlan.findByIdAndDelete(id);
+  revalidatePath("/fees/fee-plans");
+  redirect("/fees/fee-plans?success=deleted");
+}
+
+export default async function FeePlansPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
   if (!(await requireFeesAccess("edit"))) return <div className="p-6">Forbidden</div>;
   await dbConnect();
-  const plans = await FeePlan.find({}).sort({ isActive: -1, createdAt: -1 }).lean();
+  const params = searchParams ? await searchParams : {};
+  const success = typeof params.success === "string" ? params.success : "";
+  const error = typeof params.error === "string" ? params.error : "";
+  const [plans, assignedPlanIds, invoicedPlanIds] = await Promise.all([
+    FeePlan.find({}).sort({ isActive: -1, createdAt: -1 }).lean(),
+    FeeAssignment.distinct("plan"),
+    Invoice.distinct("plan"),
+  ]);
+  const linkedPlanIds = new Set([...assignedPlanIds, ...invoicedPlanIds].map((id: any) => String(id || "")));
   const monthlyPlans = plans.filter((plan: any) => plan.type === "monthly");
   const creditPlans = plans.filter((plan: any) => plan.type === "credits");
 
@@ -82,6 +115,7 @@ export default async function FeePlansPage() {
       lateFeeAmount: plan.lateFeeAmount || 50000,
       lateFeeAfterDays: plan.lateFeeAfterDays || 10,
       isActive: plan.isActive !== false,
+      isLinked: linkedPlanIds.has(plan._id.toString()),
     };
   }
 
@@ -95,12 +129,24 @@ export default async function FeePlansPage() {
         </div>
       </div>
 
+      {success && (
+        <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">
+          {success === "created" ? "Fee plan created successfully." : success === "updated" ? "Fee plan updated successfully." : success === "archived" ? "Fee plan archived successfully." : "Fee plan deleted permanently."}
+        </div>
+      )}
+      {error === "linked" && (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
+          This plan is linked to a student assignment or invoice. Remove those links before archiving or deleting it.
+        </div>
+      )}
+
       <FeePlansWorkspace
         monthlyPlans={monthlyPlans.map(serializePlan)}
         creditPlans={creditPlans.map(serializePlan)}
         createAction={createPlan}
         updateAction={updatePlan}
         archiveAction={archivePlan}
+        deleteAction={deletePlan}
       />
     </div>
   );

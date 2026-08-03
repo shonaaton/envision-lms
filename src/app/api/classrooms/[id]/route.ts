@@ -7,6 +7,7 @@ import { ClassroomChatMessage, ClassroomSession, LiveQuestion, LiveQuestionRespo
 import { buildGeneratedSessions } from "@/lib/classroomSchedule";
 import { deleteClassroomSessionInstances, syncClassroomSessionInstances } from "@/lib/classroomSessionInstances";
 import { canAccessFeature, isSuperAdminSession } from "@/lib/featureAccess";
+import { academyDateTime } from "@/lib/academyTime";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,16 @@ async function deleteClassroomRecords(classroomId: string) {
     questionIds.length ? LiveQuestionResponse.deleteMany({ question: { $in: questionIds } }) : Promise.resolve(),
     LiveQuestion.deleteMany({ classroom: classroomId }),
   ]);
+}
+
+async function sessionHasRecords(classroomId: string, scheduledSessionId: string) {
+  const [attendance, liveSession, chat, question] = await Promise.all([
+    Attendance.exists({ classroom: classroomId, scheduledSessionId }),
+    ClassroomSession.exists({ classroom: classroomId, scheduledSessionId }),
+    ClassroomChatMessage.exists({ classroom: classroomId, scheduledSessionId }),
+    LiveQuestion.exists({ classroom: classroomId, scheduledSessionId }),
+  ]);
+  return Boolean(attendance || liveSession || chat || question);
 }
 
 function recordId(value: any) {
@@ -59,7 +70,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const body = await req.json();
-  const permission = body.action === "cancel_class" || body.action === "delete_series"
+  const permission = ["cancel_class", "cancel_series", "cancel_session", "delete_session", "delete_series"].includes(body.action)
     ? "cancel"
     : body.action === "substitute_coach"
       ? "assign"
@@ -74,18 +85,55 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
   if (!(await canAccessRecord(existing, session.user as any))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  if (body.action === "cancel_class") {
+  if (body.action === "cancel_class" || body.action === "cancel_series") {
     existing.status = "cancelled";
+    (existing.generatedSessions || []).forEach((session: any) => {
+      if (!session.actualEndedAt && session.status !== "completed") {
+        session.status = "cancelled";
+        session.coachAttendanceStatus = "cancelled";
+      }
+    });
+  } else if (["update_session", "reschedule_session", "cancel_session", "delete_session"].includes(body.action)) {
+    const sessionId = String(body.sessionId || "");
+    const target = existing.generatedSessions?.id?.(sessionId) || (existing.generatedSessions || []).find((session: any) => String(session._id) === sessionId);
+    if (!target) return NextResponse.json({ error: "Scheduled class not found" }, { status: 404 });
+
+    if (body.action === "delete_session") {
+      if (await sessionHasRecords(params.id, sessionId)) {
+        return NextResponse.json({ error: "This class already has attendance or live-class records. Cancel it instead of deleting it." }, { status: 409 });
+      }
+      existing.generatedSessions.pull({ _id: sessionId });
+      (existing.generatedSessions || []).forEach((session: any, index: number) => { session.sessionNumber = index + 1; });
+    } else if (body.action === "cancel_session") {
+      target.status = "cancelled";
+      target.coachAttendanceStatus = "cancelled";
+    } else {
+      const nextStartTime = String(body.startTime || target.startTime || existing.startTime || "00:00");
+      if (body.classDate) {
+        if (body.action === "reschedule_session" && !target.originalDate) target.originalDate = target.scheduledFor;
+        target.scheduledFor = academyDateTime(String(body.classDate), nextStartTime);
+      } else if (body.startTime) {
+        if (body.action === "reschedule_session" && !target.originalDate) target.originalDate = target.scheduledFor;
+        target.scheduledFor = academyDateTime(target.scheduledFor, nextStartTime);
+      }
+      target.startTime = nextStartTime;
+      target.durationMinutes = Math.max(15, Number(body.durationMinutes || target.durationMinutes || existing.durationMinutes || 60));
+      if (String(body.topicName || "").trim()) target.topicName = String(body.topicName).trim();
+      if (body.action === "reschedule_session") {
+        target.status = "scheduled";
+        target.coachAttendanceStatus = "pending";
+      }
+    }
   } else if (body.action === "reschedule_class") {
     existing.classDate = body.classDate ? new Date(body.classDate) : existing.classDate;
     existing.startTime = body.startTime || existing.startTime;
     existing.durationMinutes = Math.max(15, Number(body.durationMinutes || existing.durationMinutes || 60));
     if (Array.isArray(existing.generatedSessions) && existing.generatedSessions[0]) {
       existing.generatedSessions[0].originalDate = existing.generatedSessions[0].scheduledFor;
-      existing.generatedSessions[0].scheduledFor = body.classDate ? new Date(body.classDate) : existing.generatedSessions[0].scheduledFor;
+      existing.generatedSessions[0].scheduledFor = body.classDate ? academyDateTime(body.classDate, body.startTime || existing.generatedSessions[0].startTime) : existing.generatedSessions[0].scheduledFor;
       existing.generatedSessions[0].startTime = body.startTime || existing.generatedSessions[0].startTime;
       existing.generatedSessions[0].durationMinutes = Math.max(15, Number(body.durationMinutes || existing.generatedSessions[0].durationMinutes || 60));
-      existing.generatedSessions[0].status = "rescheduled";
+      existing.generatedSessions[0].status = "scheduled";
     }
   } else if (body.action === "substitute_coach") {
     if (body.scope === "session" && body.sessionId) {
@@ -107,7 +155,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       {
         sessionNumber: nextNumber,
         topicName: String(body.topicName || "Extra Class"),
-        scheduledFor: new Date(body.classDate),
+        scheduledFor: academyDateTime(body.classDate, String(body.startTime || existing.startTime || "16:00")),
         startTime: String(body.startTime || existing.startTime || "16:00"),
         durationMinutes: Math.max(15, Number(body.durationMinutes || existing.durationMinutes || 60)),
         status: "scheduled",

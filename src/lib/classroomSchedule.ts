@@ -1,3 +1,5 @@
+import { ACADEMY_TIME_ZONE, academyDateTime } from "@/lib/academyTime";
+
 type TopicPlan = { topicName: string; topicOrder: number };
 type TimeSlot = { startTime: string; durationMinutes: number };
 type DaySlot = { day: number; slots: TimeSlot[] };
@@ -19,19 +21,28 @@ type ClassroomBuildInput = {
   sessionPlan?: TopicPlan[];
 };
 
-function startOfDay(value: Date) {
-  const date = new Date(value);
-  date.setHours(0, 0, 0, 0);
-  return date;
+function calendarParts(value: string | Date) {
+  if (typeof value === "string") {
+    const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (match) return { year: Number(match[1]), month: Number(match[2]), day: Number(match[3]) };
+  }
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: ACADEMY_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(value));
+  const part = (type: string) => Number(parts.find((item) => item.type === type)?.value || 0);
+  return { year: part("year"), month: part("month"), day: part("day") };
 }
 
-function parseClock(value: string) {
-  const [hours, minutes] = value.split(":").map((part) => Number(part || 0));
-  return { hours, minutes };
+function calendarCursor(value: string | Date) {
+  const { year, month, day } = calendarParts(value);
+  return new Date(Date.UTC(year, month - 1, day));
 }
 
-function sameDay(a: Date, b: Date) {
-  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+function calendarDateString(value: Date) {
+  return `${value.getUTCFullYear()}-${String(value.getUTCMonth() + 1).padStart(2, "0")}-${String(value.getUTCDate()).padStart(2, "0")}`;
 }
 
 export function buildSessionPlan(topics: Array<{ name: string; order?: number }>) {
@@ -49,7 +60,7 @@ export function buildGeneratedSessions(input: ClassroomBuildInput) {
       {
         sessionNumber: 1,
         topicName: input.topicName || input.title,
-        scheduledFor: new Date(input.classDate),
+        scheduledFor: academyDateTime(input.classDate, input.startTime),
         startTime: input.startTime,
         durationMinutes: input.durationMinutes,
         status: "scheduled",
@@ -64,8 +75,8 @@ export function buildGeneratedSessions(input: ClassroomBuildInput) {
     .sort((a, b) => (a.day - b.day) || a.startTime.localeCompare(b.startTime));
   if (!input.startDate || !slots.length || !plan.length) return [];
 
-  const start = startOfDay(new Date(input.startDate));
-  const end = input.endDate ? startOfDay(new Date(input.endDate)) : null;
+  const start = calendarCursor(input.startDate);
+  const end = input.endDate ? calendarCursor(input.endDate) : null;
   const maxSessions =
     input.endCondition === "after_n_sessions"
       ? Math.max(1, Number(input.endAfterSessions || 1))
@@ -90,17 +101,14 @@ export function buildGeneratedSessions(input: ClassroomBuildInput) {
 
   while (sessions.length < maxSessions) {
     if (end && cursor > end) break;
-    const weekDay = cursor.getDay();
+    const weekDay = cursor.getUTCDay();
     const todaySlots = slots.filter((slot) => slot.day === weekDay);
     if (todaySlots.length) {
       for (const slot of todaySlots) {
         if (sessions.length >= maxSessions) break;
         if (end && cursor > end) break;
         const topic = plan[Math.min(topicIndex, plan.length - 1)];
-        const sessionDate = new Date(cursor);
-        const { hours, minutes } = parseClock(slot.startTime);
-        sessionDate.setHours(hours, minutes, 0, 0);
-        if (sessionDate < new Date(input.startDate)) continue;
+        const sessionDate = academyDateTime(calendarDateString(cursor), slot.startTime);
         sessions.push({
           sessionNumber: sessions.length + 1,
           topicName: topic?.topicName || input.title,
@@ -113,9 +121,8 @@ export function buildGeneratedSessions(input: ClassroomBuildInput) {
         if (topicIndex < plan.length - 1) topicIndex += 1;
       }
     }
-    cursor.setDate(cursor.getDate() + 1);
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
     if (input.endCondition === "course_complete" && sessions.length >= plan.length) break;
-    if (input.endCondition === "on_date" && end && sameDay(cursor, new Date(end.getTime() + 86400000))) break;
   }
 
   return sessions;

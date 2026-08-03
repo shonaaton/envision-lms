@@ -458,6 +458,8 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const [setupPieceColor, setSetupPieceColor] = useState<"white" | "black">("white");
   const [setupOpen, setSetupOpen] = useState(false);
   const [pgnOpen, setPgnOpen] = useState(false);
+  const [boardControlOpen, setBoardControlOpen] = useState(false);
+  const [boardControlDraft, setBoardControlDraft] = useState<string[]>([]);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [endingClass, setEndingClass] = useState(false);
   const [hiddenStudentQuizId, setHiddenStudentQuizId] = useState<string | null>(null);
@@ -477,6 +479,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const classroomLayoutRef = useRef<HTMLDivElement | null>(null);
   const boardShellRef = useRef<HTMLDivElement | null>(null);
   const boardAreaRef = useRef<HTMLDivElement | null>(null);
+  const activePgnTabRef = useRef<HTMLDivElement | null>(null);
   const engineRef = useRef<Worker | null>(null);
   const engineFenRef = useRef("");
   const loadInFlightRef = useRef(false);
@@ -674,12 +677,8 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const students = useMemo(() => classroom?.students || [], [classroom?.students]);
   const pgnLibrary = useMemo(() => data?.pgnLibrary || [], [data?.pgnLibrary]);
   const activePgnCollection = useMemo(
-    () => Array.isArray(live?.challenge?.pgnCollection) && live.challenge.pgnCollection.length > 1 ? live.challenge.pgnCollection : pgnLibrary,
-    [live?.challenge?.pgnCollection, pgnLibrary]
-  );
-  const activePgnCollectionIndex = useMemo(
-    () => activePgnCollection.findIndex((pgn: any) => pgn.title === live?.pgnTitle || pgn.pgn === live?.pgn),
-    [activePgnCollection, live?.pgnTitle, live?.pgn]
+    () => Array.isArray(live?.challenge?.pgnCollection) ? live.challenge.pgnCollection : [],
+    [live?.challenge?.pgnCollection]
   );
   const questionUsesBoardFlow = Boolean((Array.isArray(activeQuestion?.items) && activeQuestion.items.length > 0) || activeQuestion?.solution?.length);
   const studentQuizMode = Boolean(activeQuestion) && !coach && hiddenStudentQuizId !== String(activeQuestion?._id || "") && ((Array.isArray(activeQuestion?.items) && activeQuestion.items.length > 0) || activeQuestion?.solution?.length);
@@ -749,6 +748,29 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const classroomName = classroom?.title || "Live Classroom";
   const coachName = classroom?.coach?.name || classroom?.instructor?.name || "Coach";
   const activeStudents = students.filter((student: any) => student?.status !== "inactive");
+
+  useEffect(() => {
+    activePgnTabRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+  }, [activePgnCollection.length, live?.pgn, live?.pgnTitle]);
+
+  function openBoardControl() {
+    setBoardControlDraft(
+      Array.from(new Set((live?.boardControlStudents || []).map((student: any) => entityId(student)).filter(Boolean))) as string[]
+    );
+    setBoardControlOpen(true);
+  }
+
+  function saveBoardControl() {
+    const selected = Array.from(new Set(boardControlDraft.filter(Boolean)));
+    patch({
+      boardControlStudents: selected,
+      studentMovesEnabled: selected.length > 0,
+      mode: selected.length > 0 ? "student_move" : "teaching",
+      challenge: { ...(live?.challenge || {}), active: false },
+    });
+    setBoardControlOpen(false);
+    toast.success(selected.length ? `Board control given to ${selected.length} student${selected.length === 1 ? "" : "s"}` : "Student board control removed");
+  }
 
   useEffect(() => {
     if (chatRecipient === "group") return;
@@ -1694,7 +1716,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
 
   function collectionItems(items: any[]) {
     return items.map((item: any) => ({
-      id: item._id || item.id,
+      id: item.id || item._id,
       title: item.title,
       pgn: item.pgn,
       fen: pgnStartFen(item),
@@ -1702,10 +1724,28 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     }));
   }
 
+  function pgnTabKey(item: any) {
+    return String(item?.id || item?._id || `${item?.title || "PGN"}:${item?.pgn || item?.fen || ""}`);
+  }
+
+  function isCurrentPgn(item: any) {
+    if (!item) return false;
+    if (item.pgn && live?.pgn) return item.pgn === live.pgn;
+    return Boolean(item.title && item.title === live?.pgnTitle);
+  }
+
   function loadPgn(pgn: any, index: number, collection?: any[]) {
     const chess = new Chess();
     const startFen = pgnStartFen(pgn);
-    const selectedCollection = collection?.length ? collectionItems(collection) : collectionItems([pgn]);
+    const currentTabs = collectionItems(Array.isArray(live?.challenge?.pgnCollection) ? live.challenge.pgnCollection : []);
+    const requestedItem = collectionItems([pgn])[0];
+    const requestedKey = pgnTabKey(requestedItem);
+    let selectedCollection = collection?.length ? collectionItems(collection) : currentTabs;
+    let selectedIndex = selectedCollection.findIndex((item: any) => pgnTabKey(item) === requestedKey);
+    if (selectedIndex < 0) {
+      selectedCollection = [...selectedCollection, requestedItem];
+      selectedIndex = selectedCollection.length - 1;
+    }
     try {
       chess.loadPgn(pgn.pgn);
       const moves = chess.history();
@@ -1721,7 +1761,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
         challenge: {
           ...(live?.challenge || {}),
           active: false,
-          currentIndex: index,
+          currentIndex: selectedIndex,
           pgnCollection: selectedCollection,
         },
         usedResources: resourceHistory({ type: "pgn", title: pgn.title, pgn: pgn.pgn, fen: startFen }),
@@ -1747,7 +1787,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
         challenge: {
           ...(live?.challenge || {}),
           active: false,
-          currentIndex: index,
+          currentIndex: selectedIndex,
           pgnCollection: selectedCollection,
         },
         usedResources: resourceHistory({ type: "pgn", title: pgn.title, pgn: pgn.pgn, fen: startFen }),
@@ -1793,36 +1833,42 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     try {
       const pgnGame = new Chess();
       pgnGame.loadPgn(value);
-      const moves = pgnGame.history();
       const startFen = extractFen(value) || "start";
-      patch({
-        pgn: value,
-        pgnTitle: "Pasted PGN",
-        pgnMoves: moves,
-        pgnMoveIndex: 0,
-        fen: startFen,
-        moveHistory: [],
-        setupMode: false,
-        drawings: [],
-        usedResources: resourceHistory({ type: "pgn", title: "Pasted PGN", pgn: value, fen: startFen }),
-      });
+      loadPgn({ title: "Pasted PGN", pgn: value, initialFen: startFen }, 0);
       setManualLoadText("");
-      setActiveTab("moves");
-      setPgnOpen(false);
-      toast.success("PGN loaded into classroom");
     } catch {
       toast.error("Paste a valid PGN or FEN");
     }
   }
 
   function loadAdjacentPgn(direction: 1 | -1) {
-    const collection = Array.isArray(live?.challenge?.pgnCollection) && live.challenge.pgnCollection.length > 1
-      ? live.challenge.pgnCollection
-      : pgnLibrary;
+    const collection = Array.isArray(live?.challenge?.pgnCollection) ? live.challenge.pgnCollection : [];
     if (!collection.length) return;
     const current = collection.findIndex((pgn: any) => pgn.title === live?.pgnTitle || pgn.pgn === live?.pgn);
     const next = current < 0 ? 0 : Math.max(0, Math.min(collection.length - 1, current + direction));
     loadPgn(collection[next], next, collection);
+  }
+
+  function closeLoadedPgnTab(item: any, index: number) {
+    const collection = Array.isArray(live?.challenge?.pgnCollection) ? live.challenge.pgnCollection : [];
+    const closingKey = pgnTabKey(item);
+    const remaining = collection.filter((entry: any) => pgnTabKey(entry) !== closingKey);
+    if (!isCurrentPgn(item)) {
+      patch({
+        challenge: {
+          ...(live?.challenge || {}),
+          currentIndex: Math.max(0, remaining.findIndex((entry: any) => isCurrentPgn(entry))),
+          pgnCollection: remaining,
+        },
+      });
+      return;
+    }
+    if (!remaining.length) {
+      void clearClassroomLoad();
+      return;
+    }
+    const nextIndex = Math.min(index, remaining.length - 1);
+    loadPgn(remaining[nextIndex], nextIndex, remaining);
   }
 
   function togglePgnSelection(id: string) {
@@ -2028,18 +2074,38 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
               <ExternalLink size={15} /> Open Google Meet
             </a>
           ) : null}
-        {coach && (
-            <div className="flex h-7 min-w-0 max-w-[290px] items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-2.5 text-left shadow-sm">
-              <div className="min-w-0">
-                <div className="truncate text-xs font-semibold text-blue-800">{live?.pgnTitle || live?.topic || "Classroom board"}</div>
+          {coach && activePgnCollection.length > 0 && (
+            <div className="flex min-w-0 max-w-[min(48vw,720px)] items-center gap-1.5">
+              <div className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto pb-0.5">
+                {activePgnCollection.map((item: any, index: number) => {
+                  const active = isCurrentPgn(item);
+                  return (
+                    <div
+                      key={pgnTabKey(item)}
+                      ref={active ? activePgnTabRef : undefined}
+                      className={`flex h-8 min-w-[150px] max-w-[260px] flex-none items-center gap-1 rounded-md border pl-2.5 pr-1 shadow-sm transition ${active ? "border-blue-400 bg-blue-50 text-blue-800" : "border-slate-200 bg-white text-slate-600 hover:border-blue-200"}`}
+                    >
+                      <button type="button" onClick={() => loadPgn(item, index, activePgnCollection)} className="min-w-0 flex-1 truncate text-left text-xs font-semibold" title={`Open ${item.title}`}>
+                        {item.title || `PGN ${index + 1}`}
+                      </button>
+                      <button type="button" onClick={() => closeLoadedPgnTab(item, index)} className="grid h-6 w-6 flex-none place-items-center rounded text-slate-500 transition hover:bg-white hover:text-red-600" title={`Close ${item.title || "PGN"}`} aria-label={`Close ${item.title || "PGN"}`}>
+                        <X size={14} />
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
-              {(live?.pgn || live?.pgnTitle || live?.gamifiedObjects && Object.keys(live.gamifiedObjects).length) && (
-                <button type="button" onClick={clearClassroomLoad} className="grid h-6 w-6 flex-none place-items-center rounded-md text-slate-500 transition hover:bg-white hover:text-red-600" title="Clear classroom loading">
-                  <X size={14} />
-                </button>
-              )}
+              <button type="button" onClick={clearClassroomLoad} className="grid h-8 w-8 flex-none place-items-center rounded-md border border-slate-200 bg-white text-slate-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600" title="Close all loaded PGNs" aria-label="Close all loaded PGNs">
+                <Trash2 size={14} />
+              </button>
             </div>
-        )}
+          )}
+          {coach && activePgnCollection.length === 0 && (live?.pgnTitle || live?.gamifiedObjects && Object.keys(live.gamifiedObjects).length > 0) && (
+            <div className="flex h-7 min-w-0 max-w-[290px] items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-2.5 text-left shadow-sm">
+              <div className="min-w-0 flex-1 truncate text-xs font-semibold text-blue-800">{live?.pgnTitle || "Classroom board"}</div>
+              <button type="button" onClick={clearClassroomLoad} className="grid h-6 w-6 flex-none place-items-center rounded-md text-slate-500 transition hover:bg-white hover:text-red-600" title="Clear classroom board"><X size={14} /></button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -2229,8 +2295,13 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                         <button disabled={!pgnMoves.length} onClick={() => navigateMove(currentMoveIndex - 1)} className="grid h-7 w-7 place-items-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><ChevronLeft size={14} /></button>
                         <button disabled={!pgnMoves.length} onClick={() => navigateMove(currentMoveIndex + 1)} className="grid h-7 w-7 place-items-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><ChevronRight size={14} /></button>
                         <button disabled={!pgnMoves.length} onClick={() => navigateMove(pgnMoves.length)} className="grid h-7 w-7 place-items-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><SkipForward size={14} /></button>
-                        <button disabled={!activePgnCollection.length || activePgnCollectionIndex <= 0} onClick={() => loadAdjacentPgn(-1)} className="h-7 rounded-md border border-slate-200 px-2 text-[11px] font-semibold text-slate-700 disabled:opacity-40">Prev</button>
-                        <button disabled={!activePgnCollection.length || activePgnCollectionIndex >= activePgnCollection.length - 1} onClick={() => loadAdjacentPgn(1)} className="h-7 rounded-md bg-purple-700 px-2 text-[11px] font-semibold text-white disabled:opacity-40">Next</button>
+                        <button
+                          type="button"
+                          onClick={openBoardControl}
+                          className="inline-flex h-7 items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2 text-[11px] font-semibold text-blue-800"
+                        >
+                          <MousePointer2 size={13} /> Board Control
+                        </button>
                         <button
                           type="button"
                           onClick={createQuiz}
@@ -2244,16 +2315,6 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                   </div>
                 )}
 
-                {coach && (
-                  <div className="mt-3">
-                    <input
-                      className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm"
-                      placeholder="Current topic, e.g. Queen-side attack"
-                      defaultValue={live?.topic || ""}
-                      onBlur={(event) => patch({ topic: event.target.value })}
-                    />
-                  </div>
-                )}
               </>
             )}
 
@@ -2549,6 +2610,48 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
           </div>
         </aside>}
       </div>
+
+      {boardControlOpen && coach && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4" onMouseDown={() => setBoardControlOpen(false)}>
+          <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="flex items-start justify-between gap-4 border-b border-slate-200 p-5">
+              <div>
+                <h3 className="text-xl font-black text-slate-950">Give Board Control</h3>
+                <p className="mt-1 text-sm text-slate-500">Choose which students can move pieces on the live classroom board.</p>
+              </div>
+              <button type="button" onClick={() => setBoardControlOpen(false)} className="grid h-9 w-9 flex-none place-items-center rounded-md border border-slate-200" aria-label="Close board control"><X size={16} /></button>
+            </div>
+            <div className="max-h-[50vh] space-y-2 overflow-y-auto p-5">
+              {activeStudents.length ? activeStudents.map((student: any) => {
+                const studentKey = entityId(student);
+                const selected = boardControlDraft.includes(studentKey);
+                return (
+                  <label key={studentKey} className={`flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition ${selected ? "border-blue-400 bg-blue-50" : "border-slate-200 bg-white hover:border-blue-200"}`}>
+                    <input
+                      type="checkbox"
+                      checked={selected}
+                      onChange={() => setBoardControlDraft((current) => selected ? current.filter((id) => id !== studentKey) : [...current, studentKey])}
+                      className="h-4 w-4 accent-blue-600"
+                    />
+                    <span className="grid h-9 w-9 flex-none place-items-center rounded-full bg-purple-100 text-xs font-black text-purple-800">{initials(student.name)}</span>
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-bold text-slate-950">{student.name}</span>
+                      <span className="block truncate text-xs text-slate-500">{student.username || student.email}</span>
+                    </span>
+                  </label>
+                );
+              }) : <div className="rounded-xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">No active students are assigned to this classroom.</div>}
+            </div>
+            <div className="flex items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 p-4">
+              <button type="button" onClick={() => setBoardControlDraft([])} disabled={!boardControlDraft.length} className="h-10 rounded-md px-3 text-sm font-semibold text-red-600 disabled:opacity-40">Remove all</button>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setBoardControlOpen(false)} className="h-10 rounded-md border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700">Cancel</button>
+                <button type="button" onClick={saveBoardControl} className="h-10 rounded-md bg-blue-600 px-4 text-sm font-semibold text-white">Save permissions</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {pgnOpen && coach && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-2 sm:p-4">

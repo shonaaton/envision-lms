@@ -169,6 +169,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       drawings: [],
       setupMode: false,
       illegalMovesEnabled: false,
+      challenge: { active: false, currentIndex: 0, pgnCollection: [] },
     });
   }
   const scheduledSession = resolveScheduledSession(classroomDoc, requestedSessionId);
@@ -210,7 +211,10 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (update.mode === "teaching") {
     update.studentMovesEnabled = false;
     update.boardControlStudents = [];
-    update.challenge = { active: false };
+    update.challenge = {
+      ...(body.challenge && typeof body.challenge === "object" ? body.challenge : {}),
+      active: false,
+    };
   }
   const live = await ClassroomSession.findOneAndUpdate(
     { classroom: params.id, scheduledSessionId },

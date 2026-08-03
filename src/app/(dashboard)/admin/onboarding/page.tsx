@@ -2,6 +2,7 @@ import bcrypt from "bcryptjs";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
+import { sendWelcomeEmail } from "@/lib/welcomeEmail";
 import { Booking } from "@/models/Booking";
 import { Classroom } from "@/models/Classroom";
 import { Notification } from "@/models/Fee";
@@ -132,10 +133,12 @@ async function approveCoachApplication(formData: FormData) {
     notes: application.experience,
   });
   await CoachApplication.findByIdAndUpdate(application._id, { status: "approved", convertedUser: user._id, reviewedBy: reviewerId, reviewedAt: new Date() });
-  await sendAutomationEmail({
-    to: user.email,
-    subject: "Your coach account is approved",
-    message: `Hello ${user.name},\n\nYour coach account has been approved.\n\nUsername: ${user.username}\nTemporary password: ${password}\n\nPlease sign in and update your password.`,
+  await sendWelcomeEmail({
+    name: user.name,
+    email: user.email,
+    username: user.username,
+    role: "instructor",
+    temporaryPassword: password,
   });
   revalidatePath("/admin/onboarding");
   revalidatePath("/admin/users");

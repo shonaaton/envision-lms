@@ -5,6 +5,7 @@ import { dbConnect } from "@/lib/db";
 import { User, generateUsername } from "@/models/User";
 import { CoachApplication } from "@/models/Onboarding";
 import { registerSchema } from "@/lib/validation";
+import { sendWelcomeEmail } from "@/lib/welcomeEmail";
 
 export const dynamic = "force-dynamic";
 
@@ -63,7 +64,18 @@ export async function POST(req: Request) {
       acceptedRefundAt: now,
       tags: ["demo"],
     });
-    return NextResponse.json({ id: user._id.toString(), type: "demo_student" });
+    const welcomeEmail = await sendWelcomeEmail({
+      name: user.name,
+      email: user.email,
+      username,
+      role: "student",
+      request: req,
+    });
+    return NextResponse.json({
+      id: user._id.toString(),
+      type: "demo_student",
+      welcomeEmailDelivered: welcomeEmail.delivered,
+    });
   } catch (err: any) {
     if (err instanceof ZodError) {
       const firstIssue = err.issues[0];

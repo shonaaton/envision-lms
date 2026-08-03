@@ -42,8 +42,10 @@ export default function AddUserModal({
     setLoading(false);
     const data = await res.json();
     if (!res.ok) return toast.error(data.error || "Failed");
-    if (data.tempPassword) {
-      toast.success(`${data.username} created. Temp password: ${data.tempPassword}`, { duration: 6000 });
+    if (data.welcomeEmailDelivered === false) {
+      toast.warning(`${data.username} was created, but the welcome email could not be sent. Temp password: ${data.tempPassword}`, { duration: 9000 });
+    } else if (data.tempPassword) {
+      toast.success(`${data.username} created. Welcome email sent. Temp password: ${data.tempPassword}`, { duration: 7000 });
     } else {
       toast.success(`${data.username} created`, { duration: 3500 });
     }
@@ -74,7 +76,7 @@ export default function AddUserModal({
           <input className="input" name="password" placeholder="Password (optional, auto-generated if empty)" />
           <textarea className="input min-h-[60px]" name="notes" placeholder="Internal notes (optional)" />
           <p className="text-xs text-slate-500">
-            A username (like Name@ENV) and temporary password are auto-generated. You&apos;ll see the password in the success toast.
+            A username (like Name@ENV) and temporary password are auto-generated. The user will receive them by welcome email, and you&apos;ll also see the password in the success message.
           </p>
           <div className="flex justify-end gap-2">
             <button type="button" className="btn-outline" onClick={onClose}>Cancel</button>

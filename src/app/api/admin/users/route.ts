@@ -6,6 +6,7 @@ import { User, generateUsername } from "@/models/User";
 import { addUserSchema } from "@/lib/validation";
 import { recordActivity } from "@/lib/activity";
 import { canAccessFeature, isSuperAdminSession } from "@/lib/featureAccess";
+import { sendWelcomeEmail } from "@/lib/welcomeEmail";
 
 export const dynamic = "force-dynamic";
 
@@ -89,10 +90,19 @@ export async function POST(req: Request) {
       entityId: u._id.toString(),
       metadata: { role: body.role, username },
     });
+    const welcomeEmail = await sendWelcomeEmail({
+      name: u.name,
+      email: u.email,
+      username,
+      role: body.role,
+      temporaryPassword: tempPassword,
+      request: req,
+    });
     return NextResponse.json({
       id: u._id.toString(),
       username,
       tempPassword,
+      welcomeEmailDelivered: welcomeEmail.delivered,
     });
   } catch (err: any) {
     return NextResponse.json({ error: err.message ?? "Bad request" }, { status: 400 });

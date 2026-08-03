@@ -458,6 +458,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const [setupPieceColor, setSetupPieceColor] = useState<"white" | "black">("white");
   const [setupOpen, setSetupOpen] = useState(false);
   const [pgnOpen, setPgnOpen] = useState(false);
+  const [pgnOpenMode, setPgnOpenMode] = useState<"load" | "multiple_quiz">("load");
   const [boardControlOpen, setBoardControlOpen] = useState(false);
   const [boardControlDraft, setBoardControlDraft] = useState<string[]>([]);
   const [summaryOpen, setSummaryOpen] = useState(false);
@@ -1426,9 +1427,17 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     setQuizComposerOpen(true);
   }
 
-  function openSelectedPgnQuizComposer() {
+  function openPgnLibrary(mode: "load" | "multiple_quiz" = "load") {
+    setPgnOpenMode(mode);
+    setPgnMobilePanel("library");
+    setPgnOpen(true);
+  }
+
+  function openSelectedPgnQuizComposer(minimumPositions = 1) {
     const selected = pgnLibrary.filter((pgn: any) => selectedPgnIds.includes(pgn._id));
-    if (!selected.length) return toast.info("Select at least one PGN");
+    if (selected.length < minimumPositions) {
+      return toast.info(minimumPositions > 1 ? "Select at least two PGNs for a multiple-position quiz" : "Select at least one PGN");
+    }
     const items = selected.map((pgn: any) => {
       const parsed = parsePgnPuzzle(pgn.pgn);
       return {
@@ -1450,6 +1459,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     setQuizSolution([]);
     setQuizNegativeMarks(0);
     setQuizTotalTime(0);
+    setPgnOpen(false);
     setQuizComposerOpen(true);
   }
 
@@ -2308,7 +2318,16 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                           disabled={!canLaunchBoardQuiz}
                           className="h-7 rounded-md border border-purple-200 bg-purple-50 px-2 text-[11px] font-semibold text-purple-800 disabled:opacity-40"
                         >
-                          Ask Quiz
+                          Ask Quiz from Current Position
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openPgnLibrary("multiple_quiz")}
+                          disabled={pgnLibrary.length < 2}
+                          className="inline-flex h-7 items-center gap-1 rounded-md bg-purple-700 px-2 text-[11px] font-semibold text-white disabled:opacity-40"
+                          title={pgnLibrary.length < 2 ? "At least two PGNs are required" : "Create a quiz with multiple positions"}
+                        >
+                          <FileQuestion size={13} /> Ask Quiz (Multiple Positions)
                         </button>
                       </div>
                     </div>
@@ -2423,7 +2442,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <button onClick={loadSelectedPgns} className="h-10 rounded-md bg-purple-700 text-sm font-semibold text-white">Load on Board</button>
-                    <button onClick={openSelectedPgnQuizComposer} className="h-10 rounded-md border border-purple-200 bg-purple-50 text-sm font-semibold text-purple-800">Ask as Quiz</button>
+                    <button onClick={() => openSelectedPgnQuizComposer()} className="h-10 rounded-md border border-purple-200 bg-purple-50 text-sm font-semibold text-purple-800">Ask as Quiz</button>
                   </div>
                   <label className="mt-3 block text-xs font-semibold text-slate-600">Challenge Timer</label>
                   <input value={quizTimePerPosition} onChange={(event) => setQuizTimePerPosition(Number(event.target.value || 0))} type="number" min={10} className="mt-1 h-9 w-full rounded-md border border-slate-200 px-3 text-sm" />
@@ -2603,7 +2622,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
             </div>
             {coach && (
               <div className="grid grid-cols-2 gap-2">
-                <button onClick={() => setPgnOpen(true)} className="h-9 rounded-md bg-purple-700 text-xs font-semibold text-white">Load PGNs</button>
+                <button onClick={() => openPgnLibrary("load")} className="h-9 rounded-md bg-purple-700 text-xs font-semibold text-white">Load PGNs</button>
                 <button onClick={openEndSummary} className="h-9 rounded-md bg-red-500 text-xs font-semibold text-white">End Classroom</button>
               </div>
             )}
@@ -2658,15 +2677,15 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
           <div className="flex h-[calc(100dvh-1rem)] w-full max-w-5xl flex-col overflow-hidden rounded-lg bg-white shadow-2xl sm:max-h-[88vh] sm:h-auto">
             <div className="flex flex-none items-start justify-between gap-3 border-b border-slate-200 p-3 sm:gap-4 sm:p-5">
               <div>
-                <h3 className="text-xl font-semibold text-slate-950">Classroom PGN Library</h3>
-                <p className="text-sm text-slate-500">Load a PGN onto the classroom board or turn a selected PGN into a quiz.</p>
+                <h3 className="text-xl font-semibold text-slate-950">{pgnOpenMode === "multiple_quiz" ? "Choose Multiple Quiz Positions" : "Classroom PGN Library"}</h3>
+                <p className="text-sm text-slate-500">{pgnOpenMode === "multiple_quiz" ? "Select at least two PGNs. Each selected position will become a separate quiz question." : "Load a PGN onto the classroom board or turn selected PGNs into a quiz."}</p>
               </div>
               <button onClick={() => setPgnOpen(false)} className="grid h-9 w-9 place-items-center rounded-md border border-slate-200"><X size={16} /></button>
             </div>
             <div className="grid grid-cols-2 gap-1 border-b border-slate-200 bg-slate-50 p-2 lg:hidden">
               {[
                 { id: "library" as const, label: "Library", count: visiblePgnLibrary.length + pgnFolders.length },
-                { id: "selection" as const, label: "Load", count: selectedPgnIds.length },
+                { id: "selection" as const, label: pgnOpenMode === "multiple_quiz" ? "Quiz selection" : "Load", count: selectedPgnIds.length },
               ].map((item) => (
                 <button
                   key={item.id}
@@ -2782,8 +2801,10 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                 <div className="rounded-lg border border-purple-100 bg-purple-50 p-3">
                   <label className="text-xs font-semibold text-slate-600">Selected PGNs</label>
                   <div className="mt-3 grid gap-2">
-                    <button onClick={loadSelectedPgns} className="h-10 rounded-md bg-purple-700 text-sm font-semibold text-white">Load Selected Collection</button>
-                    <button onClick={openSelectedPgnQuizComposer} className="h-10 rounded-md border border-purple-200 bg-white text-sm font-semibold text-purple-800">Ask Selected as Quiz</button>
+                    {pgnOpenMode === "load" && <button onClick={loadSelectedPgns} className="h-10 rounded-md bg-purple-700 text-sm font-semibold text-white">Load Selected Collection</button>}
+                    <button onClick={() => openSelectedPgnQuizComposer(pgnOpenMode === "multiple_quiz" ? 2 : 1)} className="h-10 rounded-md border border-purple-200 bg-white text-sm font-semibold text-purple-800">
+                      {pgnOpenMode === "multiple_quiz" ? "Continue to Multiple-Position Quiz" : "Ask Selected as Quiz"}
+                    </button>
                   </div>
                 </div>
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
@@ -2970,8 +2991,8 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
           <div className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
             <div className="flex flex-none items-start justify-between gap-4 border-b border-slate-200 p-4">
               <div>
-                <h3 className="text-xl font-black text-slate-950">{quizComposerMode === "current" ? "Ask Current Position as Quiz" : "Create PGN Quiz"}</h3>
-                <p className="mt-1 text-sm text-slate-500">{quizComposerMode === "current" ? "Play the correct answer directly on the board, then set the timer and marks." : "Set the quiz timing and marks before sending these PGN positions to students."}</p>
+                <h3 className="text-xl font-black text-slate-950">{quizComposerMode === "current" ? "Ask Quiz from Current Position" : "Create Multiple-Position Quiz"}</h3>
+                <p className="mt-1 text-sm text-slate-500">{quizComposerMode === "current" ? "Play the correct answer directly on the board, then set the timer and marks." : "Review the questions, then set per-position timing, marks and negative marks before sending the quiz to students."}</p>
               </div>
               <button onClick={() => setQuizComposerOpen(false)} className="grid h-9 w-9 place-items-center rounded-md border border-slate-200"><X size={16} /></button>
             </div>

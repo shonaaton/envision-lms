@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Archive, ArrowLeft, Banknote, CreditCard, Eye, FilePenLine, Plus, Save, Settings2, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 
 type PlanType = "monthly" | "credits";
 type GstMode = "included" | "excluded" | "non_gst";
@@ -377,6 +378,7 @@ export function FeePlansWorkspace({
   updateAction,
   archiveAction,
   deleteAction,
+  notification,
 }: {
   monthlyPlans: FeePlanView[];
   creditPlans: FeePlanView[];
@@ -384,10 +386,31 @@ export function FeePlansWorkspace({
   updateAction: ServerAction;
   archiveAction: ServerAction;
   deleteAction: ServerAction;
+  notification?: "created" | "updated" | "archived" | "deleted" | "";
 }) {
   const [mode, setMode] = useState<WorkspaceMode>("home");
   const [editingId, setEditingId] = useState("");
   const totalPlans = monthlyPlans.length + creditPlans.length;
+
+  useEffect(() => {
+    if (!notification) return;
+    const messages = {
+      created: { title: "Fee plan created successfully", description: "The new fee plan is ready and can now be assigned to students." },
+      updated: { title: "Fee plan updated successfully", description: "Your changes have been saved." },
+      archived: { title: "Fee plan archived successfully", description: "The fee plan is no longer active." },
+      deleted: { title: "Fee plan deleted permanently", description: "The unlinked fee plan has been removed." },
+    } as const;
+    const message = messages[notification];
+    toast.success(message.title, {
+      id: `fee-plan-${notification}`,
+      description: message.description,
+      duration: 6000,
+      className: "!w-[min(420px,calc(100vw-2rem))] !border-emerald-200 !bg-emerald-50 !p-5 !text-base !shadow-2xl",
+    });
+    const url = new URL(window.location.href);
+    url.searchParams.delete("success");
+    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+  }, [notification]);
 
   return (
     <div className="space-y-4">

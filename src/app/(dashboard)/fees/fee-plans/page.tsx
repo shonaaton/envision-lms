@@ -147,6 +147,7 @@ export default async function FeePlansPage({ searchParams }: { searchParams?: Pr
         updateAction={updatePlan}
         archiveAction={archivePlan}
         deleteAction={deletePlan}
+        notification={success === "created" || success === "updated" || success === "archived" || success === "deleted" ? success : ""}
       />
     </div>
   );

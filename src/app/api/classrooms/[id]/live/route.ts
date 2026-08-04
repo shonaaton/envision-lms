@@ -106,9 +106,16 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     const activeQuestion = live?.activeQuestion
       ? await LiveQuestion.findById(live.activeQuestion).lean<LiveQuestionRecord | null>()
       : await LiveQuestion.findOne({ classroom: params.id, scheduledSessionId, status: "live" }).sort({ createdAt: -1 }).lean<LiveQuestionRecord | null>();
-    const responses = activeQuestion
-      ? await LiveQuestionResponse.find({ question: activeQuestion._id }).populate("student", "name username").sort({ submittedAt: -1 }).lean()
+    const sessionQuestions = await LiveQuestion.find({ classroom: params.id, scheduledSessionId }).select("_id").lean();
+    const sessionQuestionIds = sessionQuestions.map((question: any) => question._id);
+    const sessionResponses = sessionQuestionIds.length
+      ? await LiveQuestionResponse.find({ question: { $in: sessionQuestionIds } }).populate("student", "name username").sort({ submittedAt: -1 }).lean()
       : [];
+    const activeQuestionId = activeQuestion?._id?.toString?.() || "";
+    const responses = activeQuestionId
+      ? sessionResponses.filter((response: any) => String(response.question || "") === activeQuestionId)
+      : [];
+    const includeLibrary = new URL(_.url).searchParams.get("includeLibrary") !== "false";
     const pgnFilter = canCoach(role)
       ? buildPgnLibraryFilter(session)
       : {
@@ -118,11 +125,13 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
             { visibility: "classroom" },
           ],
         };
-    const pgnLibrary = await PGN.find(pgnFilter)
-      .select("title white black event result date eco opening moveCount sideToMove initialFen hasAnnotations hasVariations folder pgn")
-      .sort({ folder: 1, createdAt: -1 })
-      .limit(5000)
-      .lean();
+    const pgnLibrary = includeLibrary
+      ? await PGN.find(pgnFilter)
+          .select("title white black event result date eco opening moveCount sideToMove initialFen hasAnnotations hasVariations folder pgn")
+          .sort({ folder: 1, createdAt: -1 })
+          .limit(5000)
+          .lean()
+      : undefined;
     const chatFilter: Record<string, any> = { classroom: params.id, scheduledSessionId };
     if (!canCoach(role)) {
       chatFilter.$or = [
@@ -137,7 +146,18 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
       .sort({ createdAt: -1 })
       .limit(50)
       .lean();
-    return NextResponse.json({ classroom: classroomDoc, scheduledSession, live, activeQuestion, responses, pgnLibrary, chatMessages: chatMessages.reverse(), serverTime: new Date() });
+    return NextResponse.json({
+      classroom: classroomDoc,
+      scheduledSession,
+      live,
+      activeQuestion,
+      responses,
+      sessionResponses,
+      sessionQuestionCount: sessionQuestions.length,
+      ...(includeLibrary ? { pgnLibrary } : {}),
+      chatMessages: chatMessages.reverse(),
+      serverTime: new Date(),
+    });
   } catch (error: any) {
     console.error("Live classroom load failed", error);
     return NextResponse.json({ error: error?.message || "Live classroom could not be loaded" }, { status: 500 });

@@ -41,7 +41,23 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   let feedback = correct ? "Correct" : "Submitted";
 
   if (Array.isArray(question.items) && question.items.length) {
-    itemResults = { ...(existing?.itemResults || {}), ...(body.itemResults || {}) };
+    const existingItemResults = existing?.itemResults || {};
+    itemResults = { ...existingItemResults };
+    for (const [itemId, incomingValue] of Object.entries(body.itemResults || {})) {
+      const previous: any = existingItemResults[itemId] || {};
+      const incoming: any = incomingValue || {};
+      const previousAttempts = Array.isArray(previous.attempts) ? previous.attempts : [];
+      const incomingAttempts = Array.isArray(incoming.attempts) ? incoming.attempts : [];
+      const incomingContainsHistory = previousAttempts.every((attempt: any, index: number) => incomingAttempts[index] === attempt);
+      itemResults[itemId] = {
+        ...previous,
+        ...incoming,
+        mistakes: Math.max(Number(previous.mistakes || 0), Number(incoming.mistakes || 0)),
+        hintsUsed: Math.max(Number(previous.hintsUsed || 0), Number(incoming.hintsUsed || 0)),
+        timeTakenSeconds: Math.max(Number(previous.timeTakenSeconds || 0), Number(incoming.timeTakenSeconds || 0)),
+        attempts: incomingContainsHistory ? incomingAttempts : [...previousAttempts, ...incomingAttempts],
+      };
+    }
     totalItems = question.items.length;
     score = 0;
     completedItems = 0;

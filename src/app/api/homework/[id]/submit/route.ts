@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { Homework, Submission } from "@/models/Homework";
 import { recordActivity } from "@/lib/activity";
+import { canStudentAccessHomework } from "@/lib/homeworkAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -13,12 +14,14 @@ function answerKey(activityId: string, itemId: string) {
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if ((session.user as any).role !== "student") return NextResponse.json({ error: "Only students can submit homework" }, { status: 403 });
   await dbConnect();
 
   const hw: any = await Homework.findById(params.id).lean();
   if (!hw) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const student = (session.user as any).id;
+  if (!(await canStudentAccessHomework(hw, student))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const existing: any = await Submission.findOne({ homework: hw._id, student }).lean();
   const maxAttempts = Math.max(1, Number(hw.numberOfAttempts || 1));
   const attemptsUsed = Number(existing?.attemptsUsed || 0);

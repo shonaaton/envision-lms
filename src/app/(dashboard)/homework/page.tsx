@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { Homework, Submission } from "@/models/Homework";
 import { Classroom } from "@/models/Classroom";
+import { Batch } from "@/models/Batch";
 import { User } from "@/models/User";
 import Link from "next/link";
 import { BarChart3, CheckCircle2, Clock, FileText } from "lucide-react";
@@ -62,12 +63,16 @@ export default async function HomeworkListPage() {
 
   let filter: any = {};
   if (role === "student") {
-    const [my, me] = await Promise.all([
+    const [my, me, batchMemberships] = await Promise.all([
       Classroom.find({ students: userId }, { _id: 1 }).lean(),
       User.findById(userId, { batches: 1 }).lean(),
+      Batch.find({ students: userId }, { _id: 1 }).lean(),
     ]);
     const classroomIds = my.map((c: any) => c._id);
-    const batchIds = ((me as any)?.batches || []).map((id: any) => id.toString());
+    const batchIds = Array.from(new Set([
+      ...((me as any)?.batches || []).map((id: any) => id.toString()),
+      ...batchMemberships.map((batch: any) => batch._id.toString()),
+    ]));
     filter.$or = [
       { assignedStudents: userId },
       { assignedBatches: { $in: batchIds } },

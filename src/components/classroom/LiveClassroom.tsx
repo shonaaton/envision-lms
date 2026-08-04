@@ -515,13 +515,17 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 12000);
     try {
-      const res = await fetch(liveUrl(), { cache: "no-store", signal: controller.signal });
+      const refreshing = loadedOnceRef.current;
+      const res = await fetch(refreshing ? liveUrl("?includeLibrary=false") : liveUrl(), { cache: "no-store", signal: controller.signal });
       const nextData = await res.json().catch(() => null);
       if (!res.ok) {
         throw new Error(nextData?.error || "Classroom could not be loaded");
       }
       if (!nextData?.classroom || !nextData?.live) {
         throw new Error("Classroom data is incomplete. Please try again.");
+      }
+      if (refreshing && !("pgnLibrary" in nextData)) {
+        nextData.pgnLibrary = dataRef.current?.pgnLibrary || [];
       }
       const pending = pendingOptimisticLiveRef.current;
       if (pending && Date.now() < pendingOptimisticUntilRef.current && nextData?.live) {
@@ -652,9 +656,9 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       const viewportHeight = typeof window === "undefined" ? 720 : window.innerHeight;
       const isMobile = viewportWidth < 768;
       const heightLimit = isMobile ? viewportHeight - 220 : viewportHeight - (coach ? 260 : 230);
-      const coordinateGutter = data?.live?.showCoordinates === false ? 12 : isMobile ? 40 : 56;
-      const maxBoard = isMobile ? Math.min(520, viewportWidth - 42) : 700;
-      const minBoard = isMobile ? 248 : 300;
+      const coordinateGutter = data?.live?.showCoordinates === false ? 12 : isMobile ? 72 : 56;
+      const maxBoard = isMobile ? Math.min(520, viewportWidth - 104) : 700;
+      const minBoard = isMobile ? Math.min(248, Math.max(180, viewportWidth - 120)) : 300;
       setBoardWidth(Math.max(minBoard, Math.min(maxBoard, width - coordinateGutter, heightLimit)));
     };
     resize();
@@ -720,6 +724,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     const q = pgnFolderQuery.trim().toLowerCase();
     return pgnLibrary.filter((pgn: any) => {
       const folder = normalizeFolderPath(pgn.folder);
+      if (activePgnFolder === null && !q) return false;
       const inFolder = activePgnFolder === null
         ? true
         : activePgnFolder === "__unfiled__"
@@ -1951,7 +1956,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     const now = live?.endedAt || new Date().toISOString();
     const studentParticipants = (live?.participants || []).filter((participant: any) => participant.role === "student");
     const participantMap = new Map(studentParticipants.map((participant: any) => [participant.user?._id || participant.user, participant]));
-    const responses = data?.responses || [];
+    const responses = data?.sessionResponses || data?.responses || [];
     const responseByStudent = new Map<string, any[]>();
     for (const response of responses) {
       const id = response.student?._id;
@@ -1989,12 +1994,12 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       late,
       absent,
       rows,
-      quizzes: activeQuestion ? 1 : 0,
-      questions: activeQuestion ? 1 : 0,
+      quizzes: Number(data?.sessionQuestionCount || (activeQuestion ? 1 : 0)),
+      questions: Number(data?.sessionQuestionCount || (activeQuestion ? 1 : 0)),
       averageScore: responses.length ? Math.round(totalScore / responses.length) : 0,
       totalPoints: totalScore,
     };
-  }, [activeQuestion, data?.responses, live?.endedAt, live?.participants, live?.startedAt, students]);
+  }, [activeQuestion, data?.responses, data?.sessionQuestionCount, data?.sessionResponses, live?.endedAt, live?.participants, live?.startedAt, students]);
 
   useEffect(() => {
     if (!summaryOpen) return;
@@ -2149,7 +2154,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
               />
             ) : (
               <>
-                <div className="mx-auto w-full max-w-[720px] rounded-lg border border-slate-200 bg-[#f6f2ea] p-1.5 shadow-sm sm:p-2">
+                <div className="mx-auto w-full max-w-[720px] overflow-x-auto rounded-lg border border-slate-200 bg-[#f6f2ea] p-1.5 shadow-sm sm:p-2">
                   <div className="mx-auto grid w-fit grid-cols-[16px_auto_16px] grid-rows-[auto_18px] gap-x-1.5 sm:grid-cols-[22px_auto_22px] sm:grid-rows-[auto_22px] sm:gap-x-2">
                     {live?.showCoordinates !== false && (
                       <div className="col-start-1 row-start-1 grid text-center text-xs font-semibold text-slate-500" style={{ height: boardWidth }}>
@@ -2295,7 +2300,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
 
                 {coach && (
                   <div className="mx-auto mt-3 flex w-full max-w-[720px] flex-col gap-2">
-                    <div className="flex min-w-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2 py-1.5">
+                    <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto rounded-lg border border-slate-200 bg-white px-2 py-1.5">
                       <div className="flex min-w-0 flex-1 items-center gap-2 px-1 text-xs font-semibold text-slate-500">
                         <span className="min-w-0 truncate text-slate-900">{live?.pgnTitle || "Classroom board"}</span>
                         <span className="flex-none rounded-md bg-slate-100 px-2 py-1 text-slate-600">{currentMoveIndex}/{pgnMoves.length || (live?.moveHistory || []).length}</span>

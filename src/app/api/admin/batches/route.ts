@@ -43,6 +43,9 @@ export async function POST(req: Request) {
       body.students = activeStudents.map((student: any) => student._id.toString());
     }
     const b = await Batch.create(body);
+    if (body.students?.length) {
+      await User.updateMany({ _id: { $in: body.students } }, { $addToSet: { batches: b._id } });
+    }
     await recordActivity({
       actor: actorId,
       type: "batch.created",

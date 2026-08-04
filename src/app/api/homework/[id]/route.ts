@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { Homework, Submission } from "@/models/Homework";
 import { homeworkSchema } from "@/lib/validation";
+import { canStudentAccessHomework } from "@/lib/homeworkAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +14,11 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
   const hw = await Homework.findById(params.id).lean();
   if (!hw) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const role = (session.user as any).role;
-  const submission = role === "student" ? await Submission.findOne({ homework: params.id, student: (session.user as any).id }).lean() : null;
+  const userId = (session.user as any).id;
+  if (role === "student" && !(await canStudentAccessHomework(hw, userId))) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  const submission = role === "student" ? await Submission.findOne({ homework: params.id, student: userId }).lean() : null;
   return NextResponse.json({ ...hw, mySubmission: submission });
 }
 

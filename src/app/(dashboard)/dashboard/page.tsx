@@ -1705,6 +1705,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
             <Link
               key={tab.id}
               href={tabHref(tab.id)}
+              scroll={false}
               className={selected ? "inline-flex min-h-10 shrink-0 items-center gap-2 rounded-md bg-brand px-4 text-sm font-bold text-white shadow-sm" : "inline-flex min-h-10 shrink-0 items-center gap-2 rounded-md px-4 text-sm font-bold text-slate-600 transition hover:bg-brand-50 hover:text-brand"}
               aria-current={selected ? "page" : undefined}
             >

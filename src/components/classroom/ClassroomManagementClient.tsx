@@ -434,6 +434,19 @@ export default function ClassroomManagementClient({
     setForm((current) => ({ ...current, ...update }));
   }
 
+  function updateDuration(durationMinutes: number) {
+    setForm((current) => ({
+      ...current,
+      durationMinutes,
+      daysOfWeek: current.classroomType === "series"
+        ? current.daysOfWeek.map((day) => ({
+            ...day,
+            slots: day.slots.map((slot) => ({ ...slot, durationMinutes })),
+          }))
+        : current.daysOfWeek,
+    }));
+  }
+
   function setCourse(courseId: string) {
     const course = targets.courses.find((item) => item._id === courseId);
     updateForm({
@@ -893,7 +906,7 @@ export default function ClassroomManagementClient({
                           </Field>
                         </div>
                         <Field label="Duration">
-                          <select className="input h-10" value={form.durationMinutes} onChange={(event) => updateForm({ durationMinutes: Number(event.target.value) })}>
+                          <select className="input h-10" value={form.durationMinutes} onChange={(event) => updateDuration(Number(event.target.value))}>
                             {durationOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                           </select>
                         </Field>
@@ -940,7 +953,7 @@ export default function ClassroomManagementClient({
                               </Field>
                             ) : (
                               <Field label="Duration">
-                                <select className="input h-10" value={form.durationMinutes} onChange={(event) => updateForm({ durationMinutes: Number(event.target.value) })}>
+                                <select className="input h-10" value={form.durationMinutes} onChange={(event) => updateDuration(Number(event.target.value))}>
                                   {durationOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                                 </select>
                               </Field>
@@ -1039,7 +1052,7 @@ export default function ClassroomManagementClient({
                       <ReviewRow label="Coach" value={targets.coaches.find((coach) => coach._id === form.coach)?.name || "Not assigned"} />
                       <ReviewRow label="Students" value={`${form.students.length} selected`} />
                       <ReviewRow label="Meeting" value={form.meetingUrl ? "Meeting ready" : "Not added"} />
-                      <ReviewRow label="Duration" value={formatDuration(form.durationMinutes)} />
+                      <ReviewRow label="Duration" value={reviewDurationLabel(form)} />
                       <ReviewRow label="Type" value={classroomModeLabel(form)} />
                     </div>
                   </div>
@@ -1568,6 +1581,17 @@ function formatDuration(minutes: number) {
   const hours = Math.floor(minutes / 60);
   const rest = minutes % 60;
   return rest ? `${hours}h ${rest}m` : `${hours}h`;
+}
+
+function reviewDurationLabel(form: ReturnType<typeof blankForm>) {
+  if (form.classroomType !== "series") return formatDuration(form.durationMinutes);
+  const slotDurations = form.daysOfWeek
+    .flatMap((day) => day.slots.map((slot) => Number(slot.durationMinutes)))
+    .filter((duration) => Number.isFinite(duration) && duration > 0);
+  const uniqueDurations = Array.from(new Set(slotDurations));
+  if (uniqueDurations.length === 0) return formatDuration(form.durationMinutes);
+  if (uniqueDurations.length === 1) return formatDuration(uniqueDurations[0]);
+  return `Varies: ${uniqueDurations.map(formatDuration).join(", ")}`;
 }
 
 function uniqueOptions(values: string[]) {

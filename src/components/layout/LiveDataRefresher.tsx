@@ -107,7 +107,8 @@ export default function LiveDataRefresher() {
   const router = useRouter();
   const pathname = usePathname();
   const isLiveClassroomRoute = /^\/classrooms\/[^/]+(?:\/live)?$/.test(pathname || "");
-  const isQuietRefreshRoute = isLiveClassroomRoute || (pathname || "").startsWith("/pgn");
+  const isAssignmentAttemptRoute = /^\/homework\/[^/]+$/.test(pathname || "");
+  const isQuietRefreshRoute = isLiveClassroomRoute || isAssignmentAttemptRoute || (pathname || "").startsWith("/pgn");
   const [showSync, setShowSync] = useState(false);
   const [, startTransition] = useTransition();
   const refreshTimerRef = useRef<number | null>(null);

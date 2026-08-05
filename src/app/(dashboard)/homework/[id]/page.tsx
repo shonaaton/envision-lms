@@ -717,6 +717,7 @@ function PgnBoardTask({ activityId, item, index, locked, onResult, onSolved }: a
       <div className="rounded-lg bg-[#31210f] p-1.5 shadow-inner sm:p-3">
         <AssignmentChessboard
           maxWidth={440}
+          viewportHeightOffset={360}
           coordinatesClassName="text-[#f0d9b5]"
           position={position}
           onPieceDrop={onDrop}

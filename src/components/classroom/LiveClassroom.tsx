@@ -625,6 +625,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const classroomLayoutRef = useRef<HTMLDivElement | null>(null);
   const boardShellRef = useRef<HTMLDivElement | null>(null);
   const boardAreaRef = useRef<HTMLDivElement | null>(null);
+  const boardControlsRef = useRef<HTMLDivElement | null>(null);
   const activePgnTabRef = useRef<HTMLDivElement | null>(null);
   const engineRef = useRef<Worker | null>(null);
   const engineFenRef = useRef("");
@@ -809,11 +810,22 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   useEffect(() => {
     if (!boardShellRef.current) return;
     const resize = () => {
-      const width = boardShellRef.current?.clientWidth || 620;
+      const boardShell = boardShellRef.current;
+      if (!boardShell) return;
+      const width = boardShell.clientWidth || 620;
       const viewportWidth = typeof window === "undefined" ? width : window.innerWidth;
       const viewportHeight = typeof window === "undefined" ? 720 : window.innerHeight;
       const isMobile = viewportWidth < 768;
-      const heightLimit = isMobile ? viewportHeight - 220 : viewportHeight - (coach ? 260 : 230);
+      const shellStyles = window.getComputedStyle(boardShell);
+      const shellVerticalPadding = Number.parseFloat(shellStyles.paddingTop || "0") + Number.parseFloat(shellStyles.paddingBottom || "0");
+      const coordinateRowHeight = data?.live?.showCoordinates === false ? 0 : viewportWidth >= 640 ? 22 : 18;
+      const boardFrameHeight = (viewportWidth >= 640 ? 16 : 12) + 2;
+      const controlsHeight = coach && boardControlsRef.current
+        ? boardControlsRef.current.offsetHeight + 12
+        : 0;
+      const panelHeightLimit = boardShell.clientHeight - shellVerticalPadding - coordinateRowHeight - boardFrameHeight - controlsHeight - 8;
+      const viewportHeightLimit = isMobile ? viewportHeight - 220 : viewportHeight - (coach ? 260 : 230);
+      const heightLimit = isMobile ? viewportHeightLimit : Math.min(viewportHeightLimit, panelHeightLimit);
       const coordinateGutter = data?.live?.showCoordinates === false ? 12 : isMobile ? 72 : 56;
       const maxBoard = isMobile ? Math.min(520, viewportWidth - 104) : 700;
       const minBoard = isMobile ? Math.min(248, Math.max(180, viewportWidth - 120)) : 300;
@@ -822,6 +834,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     resize();
     const observer = new ResizeObserver(resize);
     observer.observe(boardShellRef.current);
+    if (boardControlsRef.current) observer.observe(boardControlsRef.current);
     window.addEventListener("resize", resize);
     return () => {
       observer.disconnect();
@@ -2635,12 +2648,11 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                 )}
 
                 {coach && (
-                  <div className="mx-auto mt-3 flex w-full max-w-[720px] flex-col gap-2">
+                  <div ref={boardControlsRef} className="mx-auto mt-3 flex w-full max-w-[720px] flex-col gap-2">
                     <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto rounded-lg border border-slate-200 bg-white px-2 py-1.5">
                       <div className="hidden min-w-0 flex-1 items-center gap-2 px-1 text-xs font-semibold text-slate-500 lg:flex">
                         <span className="min-w-0 truncate text-slate-900">{live?.pgnTitle || "Classroom board"}</span>
                         <span className="flex-none rounded-md bg-slate-100 px-2 py-1 font-bold tabular-nums text-slate-600">{currentMoveIndex}/{activePgnMoves.length || (live?.moveHistory || []).length}</span>
-                        {activePgnVariation && <span className="flex-none rounded-md bg-amber-100 px-2 py-1 font-bold text-amber-800">{variationDisplayLabel(activePgnVariation, notationStartFen)}</span>}
                       </div>
                       <div className="flex flex-none items-center justify-end gap-1">
                         <div className="flex flex-none items-center gap-1 rounded-md bg-slate-50 p-0.5 ring-1 ring-inset ring-slate-200/70">

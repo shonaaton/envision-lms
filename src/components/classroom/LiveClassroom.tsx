@@ -2228,7 +2228,11 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
         style={layoutStyle}
       >
         <section className="flex min-h-0 min-w-0 flex-col gap-3 overflow-visible p-2 md:overflow-hidden md:p-3">
-          <div ref={boardShellRef} className="min-h-0 min-w-0 flex-1 overflow-visible rounded-lg border border-slate-200 bg-white p-2 shadow-sm md:overflow-auto sm:p-3">
+          <div
+            ref={boardShellRef}
+            data-quiz-viewport={quizFocusMode ? "true" : undefined}
+            className={`min-h-0 min-w-0 flex-1 overflow-visible rounded-lg border border-slate-200 bg-white p-2 shadow-sm sm:p-3 ${quizFocusMode ? "md:overflow-auto lg:overflow-hidden" : "md:overflow-auto"}`}
+          >
             {studentQuizMode ? (
               <div className="mx-auto w-full max-w-[1120px]">
                 <LiveBoardQuiz
@@ -3366,6 +3370,8 @@ function LiveBoardQuiz({
   const startingTurn = useMemo(() => buildGame(parsed.start).turn(), [parsed.start]);
   const quizOrientation = startingTurn === "b" ? "black" : "white";
   const sideToMoveLabel = startingTurn === "b" ? "Black to move" : "White to move";
+  const quizFiles = quizOrientation === "black" ? ["h", "g", "f", "e", "d", "c", "b", "a"] : ["a", "b", "c", "d", "e", "f", "g", "h"];
+  const quizRanks = quizOrientation === "black" ? ["1", "2", "3", "4", "5", "6", "7", "8"] : ["8", "7", "6", "5", "4", "3", "2", "1"];
   const positionTopic = activeItem?.title || activeItem?.pgnTitle || question.topic || question.title || `Position ${currentIndex + 1}`;
   const summary = useMemo(() => {
     const solvedCount = items.filter((item: any) => results[item.id]?.solved).length;
@@ -3436,10 +3442,17 @@ function LiveBoardQuiz({
   useEffect(() => {
     if (!quizBoardShellRef.current) return;
     const resize = () => {
-      const shellWidth = quizBoardShellRef.current?.clientWidth || 420;
-      const viewportHeight = window.innerHeight;
-      const heightAllowance = 250;
-      setQuizBoardWidth(Math.max(180, Math.min(680, shellWidth - 16, viewportHeight - heightAllowance)));
+      const shell = quizBoardShellRef.current;
+      if (!shell) return;
+      const shellWidth = shell.clientWidth || 420;
+      const shellTop = shell.getBoundingClientRect().top;
+      const quizViewport = shell.closest('[data-quiz-viewport="true"]');
+      const viewportHeight = window.visualViewport?.height || window.innerHeight;
+      const viewportBottom = quizViewport ? Math.min(viewportHeight, quizViewport.getBoundingClientRect().bottom) : viewportHeight;
+      const coordinateGutter = 18;
+      const belowBoardSpace = 118;
+      const availableHeight = viewportBottom - shellTop - coordinateGutter - belowBoardSpace;
+      setQuizBoardWidth(Math.max(160, Math.floor(Math.min(680, shellWidth - coordinateGutter - 16, availableHeight))));
     };
     resize();
     const observer = new ResizeObserver(resize);
@@ -3779,21 +3792,33 @@ function LiveBoardQuiz({
       </div>
 
       <div ref={quizBoardShellRef} className="flex min-w-0 justify-center overflow-hidden rounded-2xl bg-[#31210f] p-2 shadow-inner">
-        <div className="flex-none" style={{ width: quizBoardWidth, height: quizBoardWidth }}>
-        <Chessboard
-          position={position}
-          boardOrientation={quizOrientation}
-          onPieceDrop={onDrop}
-          onSquareClick={onSquareClick as any}
-          onPromotionPieceSelect={onQuizPromotionPieceSelect as any}
-          showPromotionDialog={!!quizPendingPromotion}
-          promotionToSquare={quizPendingPromotion?.to as any}
-          promotionDialogVariant="modal"
-          boardWidth={quizBoardWidth}
-          customSquareStyles={moveHintStyles as any}
-          customDarkSquareStyle={{ backgroundColor: "#b58863" }}
-          customLightSquareStyle={{ backgroundColor: "#f0d9b5" }}
-        />
+        <div
+          className="grid flex-none"
+          style={{ gridTemplateColumns: `18px ${quizBoardWidth}px`, gridTemplateRows: `${quizBoardWidth}px 18px` }}
+        >
+          <div aria-hidden="true" className="grid grid-rows-8 select-none text-[#f0d9b5]">
+            {quizRanks.map((rank) => <span key={rank} className="grid place-items-center text-[10px] font-bold leading-none">{rank}</span>)}
+          </div>
+          <div className="overflow-hidden rounded-md">
+            <Chessboard
+              position={position}
+              boardOrientation={quizOrientation}
+              onPieceDrop={onDrop}
+              onSquareClick={onSquareClick as any}
+              onPromotionPieceSelect={onQuizPromotionPieceSelect as any}
+              showPromotionDialog={!!quizPendingPromotion}
+              promotionToSquare={quizPendingPromotion?.to as any}
+              promotionDialogVariant="modal"
+              boardWidth={quizBoardWidth}
+              showBoardNotation={false}
+              customSquareStyles={moveHintStyles as any}
+              customDarkSquareStyle={{ backgroundColor: "#b58863" }}
+              customLightSquareStyle={{ backgroundColor: "#f0d9b5" }}
+            />
+          </div>
+          <div aria-hidden="true" className="col-start-2 grid grid-cols-8 select-none text-[#f0d9b5]">
+            {quizFiles.map((file) => <span key={file} className="grid place-items-center text-[10px] font-bold leading-none">{file}</span>)}
+          </div>
         </div>
       </div>
 

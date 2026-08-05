@@ -44,9 +44,44 @@ const AskCoachMessageSchema = new Schema(
 
 AskCoachMessageSchema.index({ body: "text" });
 
+const AskCoachEmailReminderSchema = new Schema(
+  {
+    message: { type: Schema.Types.ObjectId, ref: "AskCoachMessage", required: true, index: true },
+    conversation: { type: Schema.Types.ObjectId, ref: "AskCoachConversation", required: true, index: true },
+    recipient: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
+    recipientEmail: { type: String, required: true },
+    recipientName: { type: String, default: "" },
+    sender: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
+    senderEmail: { type: String, default: "" },
+    senderName: { type: String, default: "" },
+    senderRole: { type: String, enum: ["student", "instructor", "admin"], required: true },
+    messageBody: { type: String, required: true },
+    href: { type: String, required: true },
+    dueAt: { type: Date, required: true, index: true },
+    status: {
+      type: String,
+      enum: ["pending", "processing", "sent", "cancelled", "failed"],
+      default: "pending",
+      index: true,
+    },
+    attempts: { type: Number, default: 0 },
+    processingStartedAt: Date,
+    sentAt: Date,
+    cancelledAt: Date,
+    lastError: String,
+  },
+  { timestamps: true }
+);
+
+AskCoachEmailReminderSchema.index({ message: 1, recipient: 1 }, { unique: true });
+AskCoachEmailReminderSchema.index({ status: 1, dueAt: 1 });
+
 export type AskCoachConversationDoc = InferSchemaType<typeof AskCoachConversationSchema> & { _id: any };
 export type AskCoachMessageDoc = InferSchemaType<typeof AskCoachMessageSchema> & { _id: any };
+export type AskCoachEmailReminderDoc = InferSchemaType<typeof AskCoachEmailReminderSchema> & { _id: any };
 
 export const AskCoachConversation =
   models.AskCoachConversation || model("AskCoachConversation", AskCoachConversationSchema);
 export const AskCoachMessage = models.AskCoachMessage || model("AskCoachMessage", AskCoachMessageSchema);
+export const AskCoachEmailReminder =
+  models.AskCoachEmailReminder || model("AskCoachEmailReminder", AskCoachEmailReminderSchema);

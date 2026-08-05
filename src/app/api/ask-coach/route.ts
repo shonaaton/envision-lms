@@ -6,6 +6,11 @@ import { Batch } from "@/models/Batch";
 import { AskCoachConversation, AskCoachMessage } from "@/models/AskCoach";
 import { Notification } from "@/models/Fee";
 import { createAskCoachMessage, ensureBatchConversation, ensureDirectConversation, notifyUser } from "@/lib/askCoach";
+import {
+  cancelAskCoachUnreadEmails,
+  processDueAskCoachEmailReminders,
+  queueAskCoachUnreadEmail,
+} from "@/lib/askCoachEmailReminders";
 
 export const dynamic = "force-dynamic";
 
@@ -91,6 +96,9 @@ export async function GET(req: Request) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   await dbConnect();
+  void processDueAskCoachEmailReminders().catch((error) => {
+    console.error("Ask Coach unread email processing failed", error);
+  });
   const role = userRole(session as AuthSession);
   const id = userId(session);
   const url = new URL(req.url);
@@ -293,27 +301,48 @@ export async function POST(req: Request) {
 
   const created = await createAskCoachMessage({ conversation, sender, receiver, batch: batchId, body: messageText });
   const href = `/ask-coach?conversation=${conversation._id.toString()}`;
+  const senderUser = !created.flagged
+    ? await User.findById(sender).select("_id email name username role").lean<PopulatedUserRef | null>()
+    : null;
   if (receiver && !created.flagged) {
-    const receiverUser = await User.findById(receiver).select("email name").lean<{ email?: string; name?: string } | null>();
+    const receiverUser = await User.findById(receiver).select("_id email name username role").lean<PopulatedUserRef | null>();
     await notifyUser(receiver, "New Ask Coach message", "You have received a new message.", {
       conversation: conversation._id,
       message: created._id,
       href,
-      email: receiverUser?.email,
-      recipientName: receiverUser?.name,
-    });
+    }, { sendEmail: false });
+    if (senderUser && receiverUser) {
+      await queueAskCoachUnreadEmail({
+        messageId: created._id,
+        conversationId: conversation._id,
+        messageBody: messageText,
+        href,
+        sender: senderUser,
+        recipient: receiverUser,
+      });
+    }
   }
   if (batchId && !created.flagged) {
-    const batch = await Batch.findById(batchId).populate("students", "email name").select("students").lean<{ students?: PopulatedUserRef[] } | null>();
+    const batch = await Batch.findById(batchId).populate("students", "email name username role").select("students").lean<{ students?: PopulatedUserRef[] } | null>();
     await Promise.all((batch?.students || [])
       .filter((student) => student._id?.toString() !== sender)
-      .map((student) => notifyUser(student._id, "New batch message", "Your coach sent a new batch message.", {
-        conversation: conversation._id,
-        message: created._id,
-        href,
-        email: student?.email,
-        recipientName: student?.name,
-      })));
+      .map(async (student) => {
+        await notifyUser(student._id, "New batch message", "Your coach sent a new batch message.", {
+          conversation: conversation._id,
+          message: created._id,
+          href,
+        }, { sendEmail: false });
+        if (senderUser) {
+          await queueAskCoachUnreadEmail({
+            messageId: created._id,
+            conversationId: conversation._id,
+            messageBody: messageText,
+            href,
+            sender: senderUser,
+            recipient: student,
+          });
+        }
+      }));
   }
   return NextResponse.json(created);
 }
@@ -354,6 +383,7 @@ export async function PATCH(req: Request) {
     },
     { readAt }
   );
+  await cancelAskCoachUnreadEmails(conversation._id, id);
 
   return NextResponse.json({ ok: true, readAt });
 }

@@ -2049,6 +2049,15 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const orientation = (live?.orientation || "white") as "white" | "black";
   const files = coordinateFiles(orientation);
   const ranks = coordinateRanks(orientation);
+  const matchedPgnIndex = activePgnCollection.findIndex((item: any) => isCurrentPgn(item));
+  const storedPgnIndex = Number(live?.challenge?.currentIndex || 0);
+  const activePgnIndex = activePgnCollection.length
+    ? matchedPgnIndex >= 0
+      ? matchedPgnIndex
+      : Math.max(0, Math.min(activePgnCollection.length - 1, storedPgnIndex))
+    : -1;
+  const canLoadPreviousPgn = activePgnIndex > 0;
+  const canLoadNextPgn = activePgnIndex >= 0 && activePgnIndex < activePgnCollection.length - 1;
   const setupBoardSize = Math.min(340, Math.max(300, boardWidth));
   const canLaunchBoardQuiz = Boolean(live?.fen);
   const canLoadPgnLibrary = coach && pgnLibrary.length > 0;
@@ -2300,6 +2309,43 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
 
                 {coach && (
                   <div className="mx-auto mt-3 flex w-full max-w-[720px] flex-col gap-2">
+                    <div className="grid grid-cols-3 gap-1.5 rounded-lg border border-slate-200 bg-white p-1.5">
+                      <button
+                        type="button"
+                        disabled={!canLoadPreviousPgn}
+                        onClick={() => loadAdjacentPgn(-1)}
+                        className="inline-flex min-h-9 items-center justify-center gap-1 rounded-md border border-slate-200 bg-white px-2 text-[11px] font-bold text-slate-700 transition hover:border-purple-300 hover:bg-purple-50 disabled:cursor-not-allowed disabled:opacity-40"
+                        title={canLoadPreviousPgn ? "Load previous PGN for everyone" : "This is the first loaded PGN"}
+                        aria-label="Previous PGN"
+                      >
+                        <ChevronLeft size={15} />
+                        <span className="sm:hidden">Prev</span>
+                        <span className="hidden sm:inline">Previous PGN</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => patch({ orientation: orientation === "white" ? "black" : "white" })}
+                        className="inline-flex min-h-9 items-center justify-center gap-1 rounded-md border border-purple-200 bg-purple-50 px-2 text-[11px] font-bold text-purple-800 transition hover:border-purple-400 hover:bg-purple-100"
+                        title="Flip the board for the coach and every student"
+                        aria-label="Flip board for everyone"
+                      >
+                        <FlipHorizontal size={15} />
+                        <span className="sm:hidden">Flip</span>
+                        <span className="hidden sm:inline">Flip Board</span>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!canLoadNextPgn}
+                        onClick={() => loadAdjacentPgn(1)}
+                        className="inline-flex min-h-9 items-center justify-center gap-1 rounded-md border border-slate-200 bg-white px-2 text-[11px] font-bold text-slate-700 transition hover:border-purple-300 hover:bg-purple-50 disabled:cursor-not-allowed disabled:opacity-40"
+                        title={canLoadNextPgn ? "Load next PGN for everyone" : "This is the last loaded PGN"}
+                        aria-label="Next PGN"
+                      >
+                        <span className="sm:hidden">Next</span>
+                        <span className="hidden sm:inline">Next PGN</span>
+                        <ChevronRight size={15} />
+                      </button>
+                    </div>
                     <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto rounded-lg border border-slate-200 bg-white px-2 py-1.5">
                       <div className="flex min-w-0 flex-1 items-center gap-2 px-1 text-xs font-semibold text-slate-500">
                         <span className="min-w-0 truncate text-slate-900">{live?.pgnTitle || "Classroom board"}</span>

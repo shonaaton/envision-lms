@@ -63,6 +63,29 @@ EMAIL_AUTOMATION_WEBHOOK_URL="https://n8n.envisionchessacademy.com/webhook/lms-e
 
 Both can point to the same workflow. The payload already tells n8n what kind of email it is sending.
 
+## Unread Ask Coach reminders
+
+Ask Coach messages now notify the recipient inside the LMS first. If the recipient reads the
+message within the grace period, no email is sent. The default grace period is five minutes and
+can be changed with `ASK_COACH_UNREAD_EMAIL_DELAY_MINUTES`.
+
+The deployed LMS checks overdue reminders automatically every minute. As an optional second
+safeguard, you can also create an n8n Schedule Trigger that runs every minute and makes a GET
+request to:
+
+```text
+https://classroom.envisionchessacademy.com/api/ask-coach/email-reminders
+```
+
+Send this header, using the same secret configured in the LMS `.env` file:
+
+```text
+x-cron-secret: YOUR_ASK_COACH_REMINDER_SECRET
+```
+
+The LMS schedules each reminder immediately, runs a background check every minute, and checks
+overdue reminders during normal Ask Coach activity. The n8n trigger is therefore optional.
+
 ## VPS update steps
 
 On the VPS:

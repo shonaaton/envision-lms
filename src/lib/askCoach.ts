@@ -26,9 +26,16 @@ export function checkMessageSafety(text: string) {
   return { flagged: reasons.length > 0, reasons: Array.from(new Set(reasons)) };
 }
 
-export async function notifyUser(user: any, title: string, message: string, metadata: any = {}) {
+export async function notifyUser(
+  user: any,
+  title: string,
+  message: string,
+  metadata: any = {},
+  options: { sendEmail?: boolean } = {}
+) {
   if (!user) return;
   const notification = await Notification.create({ user, type: "ask_coach", title, message, metadata });
+  if (options.sendEmail === false) return notification;
   const recipient: { email?: string; name?: string } | null = metadata?.email
     ? { email: String(metadata.email), name: String(metadata.recipientName || "") }
     : await User.findById(user).select("email name").lean<{ email?: string; name?: string } | null>();
@@ -44,6 +51,7 @@ export async function notifyUser(user: any, title: string, message: string, meta
       },
     });
   }
+  return notification;
 }
 
 export async function notifyAdmins(title: string, message: string, metadata: any = {}) {

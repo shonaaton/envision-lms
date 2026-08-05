@@ -240,6 +240,22 @@ function parsePgnPuzzle(pgn: string) {
   }
 }
 
+function parseQuizSolution(startFen: string, solution: string[]) {
+  const game = buildGame(startFen);
+  const start = game.fen();
+  const moves: Array<{ san: string; from: string; to: string; promotion: string }> = [];
+  for (const notation of solution) {
+    try {
+      const move = game.move(notation);
+      if (!move) break;
+      moves.push({ san: move.san, from: move.from, to: move.to, promotion: move.promotion || "q" });
+    } catch {
+      break;
+    }
+  }
+  return { start, moves, valid: moves.length === solution.length && moves.length > 0 };
+}
+
 function fenToPosition(fen?: string): BoardPosition {
   const chess = new Chess();
   const normalizedFen = normalizeBoardResourceFen(fen);
@@ -1565,7 +1581,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
           id: `${live?._id || classroomId}-current`,
           title: quizTitle,
           fen: live?.fen || "start",
-          pgn: live?.pgn,
+          pgn: undefined,
           pgnTitle: live?.pgnTitle,
           solution: quizSolution,
         }]
@@ -1597,7 +1613,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
           ? "Solve the current classroom position by playing the answer line."
           : "Solve each PGN position by playing the side-to-move continuation.",
         fen: first.fen || live?.fen || "start",
-        pgn: first.pgn || live?.pgn,
+        pgn: isCurrentPositionQuiz ? undefined : first.pgn || live?.pgn,
         moveHistory: live?.moveHistory || [],
         solution: first.solution || [],
         items,
@@ -2237,7 +2253,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
               <div className="mx-auto w-full max-w-[1120px]">
                 <LiveBoardQuiz
                   question={activeQuestion}
-                  locked={Boolean(live?.locked)}
+                  locked={activeQuestion?.status !== "live"}
                   existingItemResults={myLiveResponse?.itemResults || {}}
                   progressionMode={activeQuestion?.progressionMode || "auto"}
                   serverIndex={Number(activeQuestion?.currentItemIndex || 0)}
@@ -3339,14 +3355,14 @@ function LiveBoardQuiz({
 
   const activeItem = items[currentIndex];
   const parsed = useMemo(() => {
-    if (activeItem?.pgn) {
-      return parsePgnPuzzle(activeItem.pgn);
-    }
     const solution = Array.isArray(activeItem?.solution) ? activeItem.solution : [];
+    const start = activeItem?.fen || question.fen || "start";
+    if (solution.length) return parseQuizSolution(start, solution);
+    if (activeItem?.pgn) return parsePgnPuzzle(activeItem.pgn);
     return {
-      start: activeItem?.fen || question.fen || "start",
-      moves: solution.map((san: string) => ({ san, from: "", to: "", promotion: "q" })),
-      valid: true,
+      start,
+      moves: [],
+      valid: false,
     };
   }, [activeItem?.fen, activeItem?.pgn, activeItem?.solution, question.fen]);
   const [game, setGame] = useState(() => buildGame(parsed.start));
@@ -3505,7 +3521,7 @@ function LiveBoardQuiz({
     setMistakes(0);
     setHintsUsed(0);
     setSolved(false);
-    setFeedback(parsed.moves.length === 0 ? "No moves found in this PGN." : quizFinished ? "Review this position and update your answer if needed." : "Make your move on the board.");
+    setFeedback(parsed.moves.length === 0 ? "No answer line was provided for this position." : quizFinished ? "Review this position and update your answer if needed." : "Make your move on the board.");
     setLastStudentMove("");
     setAttemptMoves([]);
     setItemStartedAt(Date.now());

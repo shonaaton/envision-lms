@@ -81,7 +81,9 @@ export async function GET(req: Request) {
   } else if (type === "gst") {
     title = "GST Report";
     headers = ["Invoice", "Student", "Student ID", "Taxable", "GST %", "CGST", "SGST", "GST Total", "Status"];
-    rows = filteredInvoices.map((i: any) => [i.invoiceNumber, i.student?.name, i.student?.username || i.student?._id?.toString?.() || "-", formatINR(i.taxableAmount || 0), i.gstPercentage, formatINR(i.cgstAmount || 0), formatINR(i.sgstAmount || 0), formatINR(i.gstAmount || 0), i.status]);
+    rows = filteredInvoices
+      .filter((i: any) => i.invoiceMode === "included")
+      .map((i: any) => [i.invoiceNumber, i.student?.name, i.student?.username || i.student?._id?.toString?.() || "-", formatINR(i.taxableAmount || 0), i.gstPercentage, formatINR(i.cgstAmount || 0), formatINR(i.sgstAmount || 0), formatINR(i.gstAmount || 0), i.status]);
   } else if (type === "collection") {
     title = "Collection Report";
     headers = ["Type", "Student", "Student ID", "Credits", "Balance After", "Invoice", "Date", "Note"];

@@ -119,7 +119,7 @@ async function getPreview(params: Record<string, string | string[] | undefined>)
     ]);
   } else if (type === "gst") {
     headers = ["Invoice", "Student", "Student ID", "Taxable", "GST %", "CGST", "SGST", "GST Total", "Status"];
-    rows = filteredInvoices.map((invoice: any) => [
+    rows = filteredInvoices.filter((invoice: any) => invoice.invoiceMode === "included").map((invoice: any) => [
       invoice.invoiceNumber,
       invoice.student?.name,
       invoice.student?.username || invoice.student?._id?.toString?.() || "-",

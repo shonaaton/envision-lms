@@ -154,6 +154,7 @@ const LiveQuestionResponseSchema = new Schema(
     correct: { type: Boolean, default: false },
     score: { type: Number, default: 0 },
     feedback: String,
+    finalSubmitted: { type: Boolean, default: false, index: true },
     submittedAt: { type: Date, default: Date.now },
   },
   { timestamps: true }

@@ -35,6 +35,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   let score = correct ? correctMarks : -wrongPenalty;
   let itemResults: Record<string, any> = {};
   let completedItems = 0;
+  let solvedItems = 0;
   let totalItems = 0;
   let hintsUsed = Number(body.hintsUsed || 0);
   let attemptsUsed = Number(body.attemptsUsed || 1);
@@ -68,16 +69,18 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       const solved = Boolean(result.solved);
       const attempted = Boolean(result.skipped || result.pending || result.submittedMove || (Array.isArray(result.attempts) && result.attempts.length));
       const mistakes = Number(result.mistakes || 0);
+      const recordedAttempts = Array.isArray(result.attempts) ? result.attempts.length : 0;
       const itemHints = Number(result.hintsUsed || 0);
       const base = Number(item.points ?? correctMarks);
-      if (solved) completedItems += 1;
+      if (solved || result.skipped) completedItems += 1;
+      if (solved) solvedItems += 1;
       score += solved ? Math.max(0, base - itemHints * hintPenalty) : attempted ? -wrongPenalty : 0;
-      attemptsUsed += Math.max(1, mistakes + 1);
+      attemptsUsed += attempted ? Math.max(1, mistakes + 1, recordedAttempts) : 0;
       hintsUsed += itemHints;
     }
-    correct = completedItems === totalItems && totalItems > 0;
+    correct = solvedItems === totalItems && totalItems > 0;
     submittedMove = "";
-    feedback = correct ? "Quiz completed" : `${completedItems}/${totalItems} solved`;
+    feedback = correct ? "Quiz completed" : `${completedItems}/${totalItems} answered`;
   }
 
   const response = await LiveQuestionResponse.findOneAndUpdate(
@@ -98,6 +101,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       correct,
       score,
       feedback,
+      finalSubmitted: Boolean(existing?.finalSubmitted || body.finalSubmitted),
       submittedAt: new Date(),
     },
     { upsert: true, new: true }

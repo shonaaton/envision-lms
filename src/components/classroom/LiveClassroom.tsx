@@ -1,7 +1,8 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Chess } from "chess.js";
 import { toast } from "sonner";
@@ -23,7 +24,6 @@ import {
   ExternalLink,
   Eye,
   FileQuestion,
-  FlipHorizontal,
   Folder,
   Grid2X2,
   HelpCircle,
@@ -35,6 +35,7 @@ import {
   MousePointer2,
   RefreshCcw,
   RotateCcw,
+  RotateCw,
   Search,
   Send,
   Settings,
@@ -70,6 +71,74 @@ type GamifiedObjectId = "star" | "gem" | "coin" | "apple" | "fire" | "trophy" | 
 type SetupSelection = string | "erase" | GamifiedObjectId;
 type QuizComposerMode = "current" | "pgn_collection";
 type QuizComposerItem = { id: string; title: string; fen: string; pgn?: string; pgnTitle?: string; solution: string[] };
+
+function ToolbarIconButton({
+  label,
+  disabled = false,
+  onClick,
+  children,
+  accent = false,
+}: {
+  label: string;
+  disabled?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+  accent?: boolean;
+}) {
+  const anchorRef = useRef<HTMLSpanElement>(null);
+  const [tooltip, setTooltip] = useState<{ left: number; top: number; above: boolean } | null>(null);
+
+  function showTooltip() {
+    const rect = anchorRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const above = rect.bottom + 46 > window.innerHeight;
+    setTooltip({
+      left: Math.max(92, Math.min(window.innerWidth - 92, rect.left + rect.width / 2)),
+      top: above ? rect.top - 7 : rect.bottom + 7,
+      above,
+    });
+  }
+
+  return (
+    <span
+      ref={anchorRef}
+      className="inline-flex flex-none"
+      onMouseEnter={showTooltip}
+      onMouseLeave={() => setTooltip(null)}
+      onFocus={showTooltip}
+      onBlur={() => setTooltip(null)}
+    >
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={onClick}
+        className={`grid h-7 w-7 place-items-center rounded-md border transition disabled:cursor-not-allowed disabled:opacity-35 ${accent
+          ? "border-purple-200 bg-purple-50 text-purple-800 hover:border-purple-400 hover:bg-purple-100"
+          : "border-slate-200 bg-white text-slate-700 hover:border-purple-300 hover:bg-purple-50 hover:text-purple-800"
+        }`}
+        aria-label={label}
+      >
+        {children}
+      </button>
+      {tooltip && typeof document !== "undefined"
+        ? createPortal(
+          <span
+            role="tooltip"
+            className="pointer-events-none fixed z-[140] whitespace-nowrap rounded-md bg-slate-950 px-2.5 py-1.5 text-[11px] font-semibold text-white shadow-xl"
+            style={{
+              left: tooltip.left,
+              top: tooltip.top,
+              transform: tooltip.above ? "translate(-50%, -100%)" : "translateX(-50%)",
+            }}
+          >
+            {label}
+          </span>,
+          document.body
+        )
+        : null}
+    </span>
+  );
+}
 
 const gamifiedObjectDisplayIcons: Record<GamifiedObjectId, string> = {
   star: "⭐",
@@ -388,6 +457,7 @@ function minutesBetween(start?: string | Date, end?: string | Date) {
 }
 
 type LiveBoardQuizResult = { solved: boolean; mistakes: number; hintsUsed: number; timeTakenSeconds: number; skipped?: boolean; submittedMove?: string; attempts?: string[] };
+type CoachQuizResultsSnapshot = { question: any; items: any[]; students: any[]; responses: any[]; endedAt?: string };
 
 function aggregateLiveResponses(responses: any[]) {
   return responses.reduce(
@@ -464,6 +534,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const [boardControlOpen, setBoardControlOpen] = useState(false);
   const [boardControlDraft, setBoardControlDraft] = useState<string[]>([]);
   const [summaryOpen, setSummaryOpen] = useState(false);
+  const [coachQuizResults, setCoachQuizResults] = useState<CoachQuizResultsSnapshot | null>(null);
   const [endingClass, setEndingClass] = useState(false);
   const [hiddenStudentQuizId, setHiddenStudentQuizId] = useState<string | null>(null);
   const [attendanceDraft, setAttendanceDraft] = useState<Record<string, "present" | "absent" | "late">>({});
@@ -945,6 +1016,19 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
 
   function setupSideToMove() {
     return setupMovementMode === "black" ? "b" : "w";
+  }
+
+  function openBoardSetup() {
+    const fenSide = live?.fen?.split(" ")?.[1] === "b" ? "black" : "white";
+    const nextSetupMode: SetupMovementMode = live?.illegalMovesEnabled ? "free" : fenSide;
+    setSetupPosition(boardPieceMap);
+    setGamifiedSetup(liveGamifiedObjects);
+    setSetupMovementMode(nextSetupMode);
+    setSetupPieceColor(fenSide);
+    setSelectedPiece(`${fenSide === "white" ? "w" : "b"}Q`);
+    setSetupTab("pieces");
+    setSetupLoadText("");
+    setSetupOpen(true);
   }
 
   function commitSetup(position = setupPosition, objects = liveGamifiedObjects) {
@@ -1507,7 +1591,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       body: JSON.stringify({
         type: isCurrentPositionQuiz ? "best_move" : "move_sequence",
         title: quizTitle,
-        topic: "Classroom Quiz",
+        topic: live?.topic || quizTitle || "Classroom Quiz",
         difficulty: "medium",
         instructions: isCurrentPositionQuiz
           ? "Solve the current classroom position by playing the answer line."
@@ -1578,6 +1662,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
         timeTakenSeconds,
         hintsUsed,
         attemptsUsed,
+        finalSubmitted: true,
       }),
     });
     if (res.ok) {
@@ -1599,6 +1684,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
         timeTakenSeconds,
         hintsUsed,
         attemptsUsed,
+        finalSubmitted: false,
       }),
     });
   }
@@ -1618,7 +1704,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     queueRefresh(40);
   }
 
-  async function endLiveQuiz() {
+  async function endLiveQuiz(resultsSnapshot?: CoachQuizResultsSnapshot) {
     if (!activeQuestion) return;
     const res = await fetch(liveUrl("/question"), {
       method: "PATCH",
@@ -1627,6 +1713,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     });
     if (res.ok) {
       toast.success("Quiz ended. Returning everyone to the live board.");
+      if (resultsSnapshot) setCoachQuizResults({ ...resultsSnapshot, endedAt: new Date().toISOString() });
       queueRefresh(40);
       return;
     }
@@ -2060,7 +2147,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     : -1;
   const canLoadPreviousPgn = activePgnIndex > 0;
   const canLoadNextPgn = activePgnIndex >= 0 && activePgnIndex < activePgnCollection.length - 1;
-  const setupBoardSize = Math.min(340, Math.max(300, boardWidth));
+  const setupBoardSize = Math.min(340, Math.max(220, boardWidth));
   const canLaunchBoardQuiz = Boolean(live?.fen);
   const canLoadPgnLibrary = coach && pgnLibrary.length > 0;
   const coachSidebarTabs = [
@@ -2143,7 +2230,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
         <section className="flex min-h-0 min-w-0 flex-col gap-3 overflow-visible p-2 md:overflow-hidden md:p-3">
           <div ref={boardShellRef} className="min-h-0 min-w-0 flex-1 overflow-visible rounded-lg border border-slate-200 bg-white p-2 shadow-sm md:overflow-auto sm:p-3">
             {studentQuizMode ? (
-              <div className="mx-auto w-full max-w-[560px]">
+              <div className="mx-auto w-full max-w-[1120px]">
                 <LiveBoardQuiz
                   question={activeQuestion}
                   locked={Boolean(live?.locked)}
@@ -2314,42 +2401,23 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                     <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto rounded-lg border border-slate-200 bg-white px-2 py-1.5">
                       <div className="flex min-w-0 flex-1 items-center gap-2 px-1 text-xs font-semibold text-slate-500">
                         <span className="min-w-0 truncate text-slate-900">{live?.pgnTitle || "Classroom board"}</span>
-                        <span className="flex-none rounded-md bg-slate-100 px-2 py-1 text-slate-600">{currentMoveIndex}/{pgnMoves.length || (live?.moveHistory || []).length}</span>
+                        <span className="flex-none rounded-md bg-slate-100 px-2 py-1 font-bold tabular-nums text-slate-600">{currentMoveIndex}/{pgnMoves.length || (live?.moveHistory || []).length}</span>
                       </div>
                       <div className="flex flex-none items-center justify-end gap-1">
-                        <button disabled={!pgnMoves.length} onClick={() => navigateMove(0)} className="grid h-7 w-7 place-items-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><SkipBack size={14} /></button>
-                        <button disabled={!pgnMoves.length} onClick={() => navigateMove(currentMoveIndex - 1)} className="grid h-7 w-7 place-items-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><ChevronLeft size={14} /></button>
-                        <button disabled={!pgnMoves.length} onClick={() => navigateMove(currentMoveIndex + 1)} className="grid h-7 w-7 place-items-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><ChevronRight size={14} /></button>
-                        <button disabled={!pgnMoves.length} onClick={() => navigateMove(pgnMoves.length)} className="grid h-7 w-7 place-items-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><SkipForward size={14} /></button>
-                        <button
-                          type="button"
-                          disabled={!canLoadPreviousPgn}
-                          onClick={() => loadAdjacentPgn(-1)}
-                          className="grid h-7 w-7 place-items-center rounded-md border border-slate-200 bg-white text-slate-700 transition hover:border-purple-300 hover:bg-purple-50 hover:text-purple-800 disabled:cursor-not-allowed disabled:opacity-40"
-                          title={canLoadPreviousPgn ? "Previous PGN" : "This is the first loaded PGN"}
-                          aria-label="Previous PGN"
-                        >
-                          <ChevronsLeft size={14} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => patch({ orientation: orientation === "white" ? "black" : "white" })}
-                          className="grid h-7 w-7 place-items-center rounded-md border border-purple-200 bg-purple-50 text-purple-800 transition hover:border-purple-400 hover:bg-purple-100"
-                          title="Flip board for everyone"
-                          aria-label="Flip board for everyone"
-                        >
-                          <FlipHorizontal size={14} />
-                        </button>
-                        <button
-                          type="button"
-                          disabled={!canLoadNextPgn}
-                          onClick={() => loadAdjacentPgn(1)}
-                          className="grid h-7 w-7 place-items-center rounded-md border border-slate-200 bg-white text-slate-700 transition hover:border-purple-300 hover:bg-purple-50 hover:text-purple-800 disabled:cursor-not-allowed disabled:opacity-40"
-                          title={canLoadNextPgn ? "Next PGN" : "This is the last loaded PGN"}
-                          aria-label="Next PGN"
-                        >
-                          <ChevronsRight size={14} />
-                        </button>
+                        <div className="flex flex-none items-center gap-1 rounded-md bg-slate-50 p-0.5 ring-1 ring-inset ring-slate-200/70">
+                          <ToolbarIconButton label="First move" disabled={!pgnMoves.length} onClick={() => navigateMove(0)}><SkipBack size={14} /></ToolbarIconButton>
+                          <ToolbarIconButton label="Previous move" disabled={!pgnMoves.length} onClick={() => navigateMove(currentMoveIndex - 1)}><ChevronLeft size={14} /></ToolbarIconButton>
+                          <ToolbarIconButton label="Next move" disabled={!pgnMoves.length} onClick={() => navigateMove(currentMoveIndex + 1)}><ChevronRight size={14} /></ToolbarIconButton>
+                          <ToolbarIconButton label="Last move" disabled={!pgnMoves.length} onClick={() => navigateMove(pgnMoves.length)}><SkipForward size={14} /></ToolbarIconButton>
+                        </div>
+                        <span aria-hidden="true" className="mx-0.5 h-5 w-px flex-none bg-slate-200" />
+                        <div className="flex flex-none items-center gap-1 rounded-md bg-purple-50/60 p-0.5 ring-1 ring-inset ring-purple-100">
+                          <ToolbarIconButton label={canLoadPreviousPgn ? "Previous PGN" : "First loaded PGN"} disabled={!canLoadPreviousPgn} onClick={() => loadAdjacentPgn(-1)}><ChevronsLeft size={14} /></ToolbarIconButton>
+                          <ToolbarIconButton label="Flip board for everyone" onClick={() => patch({ orientation: orientation === "white" ? "black" : "white" })} accent><RotateCw size={14} /></ToolbarIconButton>
+                          <ToolbarIconButton label={canLoadNextPgn ? "Next PGN" : "Last loaded PGN"} disabled={!canLoadNextPgn} onClick={() => loadAdjacentPgn(1)}><ChevronsRight size={14} /></ToolbarIconButton>
+                        </div>
+                        <span aria-hidden="true" className="mx-0.5 h-5 w-px flex-none bg-slate-200" />
+                        <ToolbarIconButton label="Board setup" onClick={openBoardSetup}><Grid2X2 size={14} /></ToolbarIconButton>
                         <button
                           type="button"
                           onClick={openBoardControl}
@@ -2391,7 +2459,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="rounded-full bg-white px-2 py-1 text-xs font-semibold text-purple-700">{activeQuestion.type?.replaceAll("_", " ")}</span>
-                    {coach ? <button onClick={endLiveQuiz} className="rounded-md bg-purple-700 px-3 py-1.5 text-xs font-semibold text-white">End Quiz</button> : null}
+                    {coach ? <button onClick={() => void endLiveQuiz()} className="rounded-md bg-purple-700 px-3 py-1.5 text-xs font-semibold text-white">End Quiz</button> : null}
                   </div>
                 </div>
                 {!coach && hiddenStudentQuizId === String(activeQuestion._id) && questionUsesBoardFlow ? (
@@ -2667,13 +2735,18 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
             </div>
             {coach && (
               <div className="grid grid-cols-2 gap-2">
-                <button onClick={() => openPgnLibrary("load")} className="h-9 rounded-md bg-purple-700 text-xs font-semibold text-white">Load PGNs</button>
-                <button onClick={openEndSummary} className="h-9 rounded-md bg-red-500 text-xs font-semibold text-white">End Classroom</button>
+                <button type="button" onClick={openBoardSetup} className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 text-xs font-semibold text-amber-900"><Grid2X2 size={14} /> Board Setup</button>
+                <button type="button" onClick={() => openPgnLibrary("load")} className="h-9 rounded-md bg-purple-700 text-xs font-semibold text-white">Load PGNs</button>
+                <button type="button" onClick={openEndSummary} className="col-span-2 h-9 rounded-md bg-red-500 text-xs font-semibold text-white">End Classroom</button>
               </div>
             )}
           </div>
         </aside>}
       </div>
+
+      {coachQuizResults && coach && (
+        <CoachQuizResultsDialog snapshot={coachQuizResults} onClose={() => setCoachQuizResults(null)} />
+      )}
 
       {boardControlOpen && coach && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4" onMouseDown={() => setBoardControlOpen(false)}>
@@ -2869,17 +2942,17 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       )}
 
       {setupOpen && coach && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
-          <div className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-2 sm:p-4" onMouseDown={() => setSetupOpen(false)}>
+          <div className="flex max-h-[94vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl sm:max-h-[90vh]" onMouseDown={(event) => event.stopPropagation()}>
             <div className="flex flex-none items-start justify-between gap-4 border-b border-slate-200 p-4">
               <div>
-                <h3 className="text-xl font-semibold text-slate-950">Customize Position</h3>
-                <p className="text-sm text-slate-500">Chess pieces and gamified objects are separate layers.</p>
+                <h3 className="text-xl font-semibold text-slate-950">Board Setup</h3>
+                <p className="text-sm text-slate-500">Arrange pieces, choose whose move it is, and share the position with every student.</p>
               </div>
-              <button onClick={() => setSetupOpen(false)} className="grid h-9 w-9 place-items-center rounded-md border border-slate-200"><X size={16} /></button>
+              <button type="button" onClick={() => setSetupOpen(false)} className="grid h-9 w-9 flex-none place-items-center rounded-md border border-slate-200" aria-label="Close board setup"><X size={16} /></button>
             </div>
-            <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto p-4 lg:grid-cols-[340px_minmax(0,1fr)]">
-              <div>
+            <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto p-2 sm:p-4 lg:grid-cols-[340px_minmax(0,1fr)]">
+              <div className="min-w-0">
                 <div className="mb-4 inline-flex rounded-xl bg-slate-100 p-1">
                   <button onClick={() => setSetupTab("pieces")} className={`rounded-lg px-5 py-2 text-sm font-semibold ${setupTab === "pieces" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500"}`}>Chess Pieces</button>
                   <button onClick={() => setSetupTab("objects")} className={`rounded-lg px-5 py-2 text-sm font-semibold ${setupTab === "objects" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500"}`}>Gamified Objects</button>
@@ -3280,12 +3353,20 @@ function LiveBoardQuiz({
   const [solved, setSolved] = useState(false);
   const [quizFinished, setQuizFinished] = useState(false);
   const [quizSubmitted, setQuizSubmitted] = useState(false);
+  const [submitConfirmationOpen, setSubmitConfirmationOpen] = useState(false);
+  const [quizBoardWidth, setQuizBoardWidth] = useState(420);
   const [feedback, setFeedback] = useState("Make the best move on the board.");
   const [lastStudentMove, setLastStudentMove] = useState("");
   const [attemptMoves, setAttemptMoves] = useState<string[]>([]);
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
   const [quizPendingPromotion, setQuizPendingPromotion] = useState<PendingPromotion | null>(null);
   const advancedRef = useRef(false);
+  const submitPromptedRef = useRef(false);
+  const quizBoardShellRef = useRef<HTMLDivElement | null>(null);
+  const startingTurn = useMemo(() => buildGame(parsed.start).turn(), [parsed.start]);
+  const quizOrientation = startingTurn === "b" ? "black" : "white";
+  const sideToMoveLabel = startingTurn === "b" ? "Black to move" : "White to move";
+  const positionTopic = activeItem?.title || activeItem?.pgnTitle || question.topic || question.title || `Position ${currentIndex + 1}`;
   const summary = useMemo(() => {
     const solvedCount = items.filter((item: any) => results[item.id]?.solved).length;
     const skippedCount = items.filter((item: any) => results[item.id]?.skipped).length;
@@ -3303,7 +3384,7 @@ function LiveBoardQuiz({
   }, [items, question.scoring?.correct, quizStartedAt, results]);
 
   const answeredCount = useCallback((nextResults: Record<string, LiveBoardQuizResult>) => {
-    return items.filter((item: any) => Boolean(nextResults[item.id])).length;
+    return items.filter((item: any) => Boolean(nextResults[item.id]?.solved || nextResults[item.id]?.skipped)).length;
   }, [items]);
 
   const nextReviewIndex = useCallback((nextResults: Record<string, LiveBoardQuizResult>, fromIndex: number) => {
@@ -3346,6 +3427,35 @@ function LiveBoardQuiz({
     setQuizSubmitted(false);
     setTotalRemaining(Number(question.timer?.overallSeconds || 0));
   }, [question._id, question.timer?.overallSeconds, existingItemResults, serverIndex]);
+
+  useEffect(() => {
+    submitPromptedRef.current = false;
+    setSubmitConfirmationOpen(false);
+  }, [question._id]);
+
+  useEffect(() => {
+    if (!quizBoardShellRef.current) return;
+    const resize = () => {
+      const shellWidth = quizBoardShellRef.current?.clientWidth || 420;
+      const viewportHeight = window.innerHeight;
+      const heightAllowance = 250;
+      setQuizBoardWidth(Math.max(180, Math.min(680, shellWidth - 16, viewportHeight - heightAllowance)));
+    };
+    resize();
+    const observer = new ResizeObserver(resize);
+    observer.observe(quizBoardShellRef.current);
+    window.addEventListener("resize", resize);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", resize);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!quizFinished || quizSubmitted || submitPromptedRef.current) return;
+    submitPromptedRef.current = true;
+    setSubmitConfirmationOpen(true);
+  }, [quizFinished, quizSubmitted]);
 
   useEffect(() => {
     setResults(existingItemResults || {});
@@ -3411,6 +3521,7 @@ function LiveBoardQuiz({
   const submitQuiz = useCallback((nextResults = results, nextFeedback = "Quiz submitted successfully. Waiting for the coach.") => {
     if (submittedRef.current) return;
     submittedRef.current = true;
+    setSubmitConfirmationOpen(false);
     setQuizSubmitted(true);
     setFeedback(nextFeedback);
     onComplete(nextResults, Math.round((Date.now() - quizStartedAt) / 1000));
@@ -3607,8 +3718,9 @@ function LiveBoardQuiz({
   }
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-lg shadow-brand/10">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+    <div className="relative grid min-h-0 gap-3 rounded-2xl border border-slate-200 bg-white p-2 shadow-lg shadow-brand/10 sm:p-3 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
+      <aside className="order-2 min-w-0 space-y-3 lg:sticky lg:top-0 lg:col-start-2 lg:row-start-1">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
         <div>
           <div className="text-sm font-bold text-slate-700">Position {Math.min(currentIndex + 1, items.length)} of {items.length}</div>
           <div className="text-xs font-semibold text-slate-500">{activeItem.title || activeItem.pgnTitle || `Board ${currentIndex + 1}`}</div>
@@ -3620,18 +3732,19 @@ function LiveBoardQuiz({
         </div>
       </div>
 
-      <div className="mb-4 grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-1">
         <SummaryCard label="Questions Completed" value={`${summary.completedCount}/${items.length}`} icon={<CheckSquare size={16} />} />
         <SummaryCard label="Questions Remaining" value={summary.remainingCount} icon={<HourglassIcon />} />
         <SummaryCard label="Current Status" value={quizFinished ? "Review answers" : results[activeItem.id] ? "Answered" : "In progress"} icon={<ClipboardList size={16} />} />
       </div>
 
-      <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
         <div className="mb-2 text-xs font-black uppercase tracking-[0.16em] text-slate-500">Quiz Progress</div>
         <div className="flex flex-wrap gap-2">
           {items.map((item: any, index: number) => {
             const itemResult = results[item.id];
-            const stateLabel = itemResult?.skipped ? "Skipped" : itemResult ? "Answered" : "Unanswered";
+            const itemComplete = Boolean(itemResult?.solved || itemResult?.skipped);
+            const stateLabel = itemResult?.skipped ? "Skipped" : itemComplete ? "Answered" : "Unanswered";
             return (
               <button
                 key={item.id}
@@ -3640,7 +3753,7 @@ function LiveBoardQuiz({
                 className={`rounded-lg border px-3 py-2 text-xs font-bold transition ${
                   currentIndex === index
                     ? "border-purple-600 bg-purple-700 text-white"
-                    : itemResult
+                    : itemComplete
                       ? "border-emerald-200 bg-emerald-50 text-emerald-700"
                       : "border-slate-200 bg-white text-slate-600"
                 }`}
@@ -3652,23 +3765,39 @@ function LiveBoardQuiz({
         </div>
       </div>
 
-      <div className="rounded-2xl bg-[#31210f] p-3 shadow-inner">
+      </aside>
+
+      <div className="order-1 min-w-0 lg:col-start-1 lg:row-start-1">
+      <div className="mb-2 flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+        <div className="min-w-0">
+          <div className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">Topic</div>
+          <div className="truncate text-sm font-bold text-slate-800">{positionTopic}</div>
+        </div>
+        <span className={`flex-none rounded-full px-3 py-1 text-xs font-black ${startingTurn === "b" ? "bg-slate-900 text-white" : "border border-slate-200 bg-white text-slate-900"}`}>
+          {sideToMoveLabel}
+        </span>
+      </div>
+
+      <div ref={quizBoardShellRef} className="flex min-w-0 justify-center overflow-hidden rounded-2xl bg-[#31210f] p-2 shadow-inner">
+        <div className="flex-none" style={{ width: quizBoardWidth, height: quizBoardWidth }}>
         <Chessboard
           position={position}
+          boardOrientation={quizOrientation}
           onPieceDrop={onDrop}
           onSquareClick={onSquareClick as any}
           onPromotionPieceSelect={onQuizPromotionPieceSelect as any}
           showPromotionDialog={!!quizPendingPromotion}
           promotionToSquare={quizPendingPromotion?.to as any}
           promotionDialogVariant="modal"
-          boardWidth={420}
+          boardWidth={quizBoardWidth}
           customSquareStyles={moveHintStyles as any}
           customDarkSquareStyle={{ backgroundColor: "#b58863" }}
           customLightSquareStyle={{ backgroundColor: "#f0d9b5" }}
         />
+        </div>
       </div>
 
-      <div className={`mt-3 rounded-xl px-3 py-2 text-sm font-semibold ${feedback.startsWith("Try") ? "bg-red-50 text-red-700" : feedback.startsWith("Hint") ? "bg-amber-50 text-amber-700" : solved ? "bg-emerald-50 text-emerald-700" : "bg-slate-50 text-slate-600"}`}>
+      <div className={`mt-2 rounded-xl px-3 py-2 text-sm font-semibold ${feedback.startsWith("Try") || feedback.startsWith("Move not") ? "bg-red-50 text-red-700" : feedback.startsWith("Hint") ? "bg-amber-50 text-amber-700" : solved ? "bg-emerald-50 text-emerald-700" : "bg-slate-50 text-slate-600"}`}>
         {feedback}
       </div>
 
@@ -3681,7 +3810,7 @@ function LiveBoardQuiz({
             <InfoTile label="Time Taken" value={`${summary.timeTakenSeconds}s`} />
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
-            <button type="button" className="rounded-lg bg-purple-700 px-4 py-2 text-sm font-bold text-white" onClick={() => submitQuiz()}>Submit Quiz</button>
+            <button type="button" className="rounded-lg bg-purple-700 px-4 py-2 text-sm font-bold text-white" onClick={() => setSubmitConfirmationOpen(true)}>Submit Quiz</button>
           </div>
         </div>
       ) : (
@@ -3690,6 +3819,22 @@ function LiveBoardQuiz({
         <button type="button" className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold" onClick={reset}><RotateCcw size={14} className="mr-1 inline" /> Reset</button>
         <button type="button" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-700" onClick={skipCurrent}>Skip</button>
       </div>)}
+      </div>
+
+      {submitConfirmationOpen && !quizSubmitted && typeof document !== "undefined" && createPortal(
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/55 p-4" role="dialog" aria-modal="true" aria-labelledby="quiz-submit-title">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
+            <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-emerald-100 text-emerald-700"><CheckSquare size={24} /></div>
+            <h3 id="quiz-submit-title" className="mt-3 text-center text-xl font-black text-slate-950">All positions completed</h3>
+            <p className="mt-2 text-center text-sm text-slate-600">You have completed all the positions. Do you want to submit the quiz now?</p>
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => setSubmitConfirmationOpen(false)} className="h-11 rounded-lg border border-slate-200 bg-white text-sm font-bold text-slate-700">Review answers</button>
+              <button type="button" onClick={() => submitQuiz()} className="h-11 rounded-lg bg-purple-700 text-sm font-bold text-white">Yes, submit quiz</button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
@@ -3705,7 +3850,7 @@ function CoachQuizMonitor({
   responses: any[];
   students: any[];
   onUpdateProgression: (update: { currentItemIndex?: number; progressionMode?: "auto" | "manual" }) => void;
-  onEndQuiz: () => void;
+  onEndQuiz: (snapshot?: CoachQuizResultsSnapshot) => void;
 }) {
   const items = useMemo(
     () => (Array.isArray(question?.items) && question.items.length
@@ -3748,6 +3893,8 @@ function CoachQuizMonitor({
   const [currentIndex, setCurrentIndex] = useState(
     Math.max(0, manualProgression ? Number(question?.currentItemIndex || 0) : autoSuggestedIndex)
   );
+  const [studentFilter, setStudentFilter] = useState("all");
+  const autoEndRequestedRef = useRef(false);
   const effectiveIndex = manualProgression ? Math.max(0, Number(question?.currentItemIndex || 0)) : autoSuggestedIndex;
   const activeItem = items[Math.min(effectiveIndex, items.length - 1)];
   const position = activeItem?.fen && activeItem.fen !== "start" ? activeItem.fen : question?.fen || "start";
@@ -3775,16 +3922,53 @@ function CoachQuizMonitor({
       lastMove: summary.moves.at(-1) || "",
     };
   });
-  const submitted = submissionRows.filter((row) => row.activeItemResult).length;
+  const submitted = submissionRows.filter((row) => row.response?.finalSubmitted).length;
   const solvedCount = submissionRows.filter((row) => row.activeItemResult?.solved).length;
   const skippedCount = submissionRows.filter((row) => row.activeItemResult?.skipped).length;
   const waitingCount = Math.max(0, totalStudents - solvedCount - skippedCount);
+  const positionSubmissionRows = submissionRows
+    .filter((row) => studentFilter === "all" || String(row.student._id) === studentFilter)
+    .flatMap((row) => {
+      const itemResults = row.response?.itemResults || {};
+      const completedCount = items.filter((item: any) => itemResults[item.id]?.solved || itemResults[item.id]?.skipped).length;
+      const inferredActiveIndex = Math.min(items.length - 1, completedCount);
+      return items.flatMap((item: any, index: number) => {
+        const result = itemResults[item.id];
+        const inferredInProgress = Boolean(row.response && !row.response.finalSubmitted && index === inferredActiveIndex && !result);
+        if (!result && !inferredInProgress) return [];
+        const attempts = Array.isArray(result?.attempts) ? result.attempts : [];
+        const submittedMove = String(result?.submittedMove || "").trim();
+        const moves = submittedMove && !attempts.includes(submittedMove) ? [...attempts, submittedMove] : attempts;
+        const basePoints = Number(item.points ?? question?.scoring?.correct ?? 5);
+        const hints = Number(result?.hintsUsed || 0);
+        const mistakes = Number(result?.mistakes || 0);
+        const score = result?.solved
+          ? Math.max(0, basePoints - hints * Number(question?.scoring?.hintPenalty || 0))
+          : result?.pending
+            ? -Number(question?.scoring?.wrongPenalty || 0)
+            : 0;
+        const status = result?.solved ? "Solved" : result?.skipped ? "Skipped" : result?.pending ? "Attempting" : "In progress";
+        return [{ ...row, item, index, result, moves, hints, mistakes, score, status }];
+      });
+    });
+  const allStudentsSubmitted = totalStudents > 0 && submitted === totalStudents;
   const timerSeconds = Number(question?.timer?.perQuestionSeconds || activeItem?.timerSeconds || 0);
   const timerResetKey = `${question?._id || "quiz"}-${effectiveIndex}-${question?.updatedAt || question?.launchedAt || ""}`;
 
   useEffect(() => {
     setCurrentIndex(Math.max(0, manualProgression ? Number(question?.currentItemIndex || 0) : autoSuggestedIndex));
   }, [autoSuggestedIndex, manualProgression, question?.currentItemIndex]);
+
+  useEffect(() => {
+    autoEndRequestedRef.current = false;
+    setStudentFilter("all");
+  }, [question?._id]);
+
+  useEffect(() => {
+    if (!allStudentsSubmitted || autoEndRequestedRef.current) return;
+    autoEndRequestedRef.current = true;
+    onEndQuiz({ question, items, students, responses });
+  }, [allStudentsSubmitted, items, onEndQuiz, question, responses, students]);
 
   return (
     <div className="mx-auto w-full max-w-[1180px] space-y-3">
@@ -3807,7 +3991,7 @@ function CoachQuizMonitor({
           >
             {manualProgression ? "Manual on" : "Manual"}
           </button>
-          <button onClick={onEndQuiz} className="h-8 rounded-md bg-purple-700 px-3 text-xs font-bold text-white">End Quiz</button>
+          <button onClick={() => onEndQuiz({ question, items, students, responses })} className="h-8 rounded-md bg-purple-700 px-3 text-xs font-bold text-white">End Quiz</button>
         </div>
       </div>
 
@@ -3863,64 +4047,170 @@ function CoachQuizMonitor({
         </div>
 
         <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-          <div className="mb-2 flex items-center justify-between">
-            <div className="text-sm font-bold text-slate-700">Student submissions</div>
-            <span className="text-xs font-semibold text-slate-500">{submissionRows.length} students</span>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <div className="text-sm font-bold text-slate-700">Student submissions by position</div>
+              <div className="text-xs text-slate-500">A new entry appears as each student starts the next PGN.</div>
+            </div>
+            <div className="flex items-center gap-2">
+              <label htmlFor="live-quiz-student-filter" className="text-xs font-bold text-slate-500">Student</label>
+              <select
+                id="live-quiz-student-filter"
+                value={studentFilter}
+                onChange={(event) => setStudentFilter(event.target.value)}
+                className="h-9 max-w-[220px] rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700"
+              >
+                <option value="all">All students ({students.length})</option>
+                {students.map((student: any) => <option key={student._id} value={student._id}>{student.name || student.username || "Student"}</option>)}
+              </select>
+            </div>
           </div>
           <div className="grid max-h-[calc(100vh-245px)] gap-2 overflow-auto pr-1 lg:grid-cols-2 2xl:grid-cols-3">
-            {submissionRows.map(({ student, response, summary, activeItemResult, accuracy, statusLabel, submittedAt, lastMove }) => {
+            {positionSubmissionRows.map((row: any) => {
+              const attemptCount = Math.max(row.moves.length, row.result ? row.mistakes + 1 : 0);
+              const updatedAt = row.response?.updatedAt || row.response?.submittedAt;
               return (
-                <div key={student._id} className="rounded-lg border border-slate-200 bg-slate-50 p-2">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
+                <div key={`${row.student._id}-${row.item.id}`} className="rounded-lg border border-slate-200 bg-slate-50 p-2.5">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <div className="truncate text-sm font-semibold text-slate-950">{student.name}</div>
-                      <div className="text-xs text-slate-500">{student.username || student.email}</div>
+                      <div className="truncate text-sm font-bold text-slate-950">{row.student.name || "Student"}</div>
+                      <div className="truncate text-xs text-slate-500">{row.student.username || row.student.email || ""}</div>
                     </div>
-                    <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-bold">
-                      <span className={`rounded px-2 py-1 ${response ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"}`}>
-                        {response ? "Submitted" : "Waiting"}
-                      </span>
-                      {response ? (
-                        <>
-                          <span className={`rounded px-2 py-1 ${
-                            activeItemResult?.solved
-                              ? "bg-emerald-100 text-emerald-700"
-                              : activeItemResult?.skipped
-                                ? "bg-amber-100 text-amber-700"
-                                : summary.correctResponses > 0
-                                  ? "bg-emerald-100 text-emerald-700"
-                                  : "bg-slate-200 text-slate-700"
-                          }`}>
-                            {statusLabel}
-                          </span>
-                          <span className="rounded bg-purple-100 px-2 py-1 text-purple-700">{Number(summary.score || 0)} pts</span>
-                        </>
-                      ) : null}
+                    <div className="flex flex-wrap items-center justify-end gap-1 text-[10px] font-black">
+                      <span className="rounded bg-white px-2 py-1 text-slate-600">P{row.index + 1}</span>
+                      <span className={`rounded px-2 py-1 ${row.status === "Solved" ? "bg-emerald-100 text-emerald-700" : row.status === "Skipped" ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700"}`}>{row.status}</span>
+                      <span className="rounded bg-purple-100 px-2 py-1 text-purple-700">{row.score} pts</span>
                     </div>
                   </div>
-                  {response ? (
-                    <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
-                      <InfoTile label="Time" value={`${Number(summary.timeTakenSeconds || 0)} sec`} />
-                      <InfoTile label="Attempts" value={Number(summary.attemptsUsed || 0)} />
-                      <InfoTile label="Hints" value={Number(summary.hintsUsed || 0)} />
-                      <InfoTile label="Accuracy" value={`${accuracy}%`} />
-                    </div>
-                  ) : null}
-                  {response ? (
-                    <div className="mt-2 grid gap-1 text-xs text-slate-500">
-                      <div>Progress: {Number(summary.completedItems || 0)}/{Number(summary.totalItems || items.length)} items completed</div>
-                      <div>Last move: {lastMove || "-"}</div>
-                      <div>Submitted: {submittedAt ? new Date(submittedAt).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", second: "2-digit" }) : "-"}</div>
-                      <div>Moves tried: {activeItemResult?.attempts?.length ? activeItemResult.attempts.join(", ") : lastMove || "-"}</div>
-                    </div>
-                  ) : null}
+                  <div className="mt-2 rounded-md bg-white px-2 py-1.5 text-xs font-semibold text-slate-700">
+                    {row.item.title || row.item.pgnTitle || `Position ${row.index + 1}`}
+                  </div>
+                  <div className="mt-2 grid grid-cols-2 gap-1.5">
+                    <InfoTile label="Time" value={`${Number(row.result?.timeTakenSeconds || 0)} sec`} />
+                    <InfoTile label="Attempts" value={attemptCount} />
+                    <InfoTile label="Mistakes" value={row.mistakes} />
+                    <InfoTile label="Hints" value={row.hints} />
+                  </div>
+                  <div className="mt-2 space-y-1 rounded-md border border-slate-200 bg-white p-2 text-xs text-slate-600">
+                    <div><span className="font-bold text-slate-700">Submitted move:</span> {row.result?.submittedMove || row.moves.at(-1) || "-"}</div>
+                    <div><span className="font-bold text-slate-700">Moves attempted:</span> {row.moves.length ? row.moves.join(", ") : "No move recorded yet"}</div>
+                    <div><span className="font-bold text-slate-700">Student status:</span> {row.response?.finalSubmitted ? "Quiz submitted" : "Quiz in progress"}</div>
+                    <div><span className="font-bold text-slate-700">Last update:</span> {updatedAt ? new Date(updatedAt).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", second: "2-digit" }) : "-"}</div>
+                  </div>
                 </div>
               );
             })}
+            {!positionSubmissionRows.length && (
+              <div className="col-span-full rounded-lg border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-sm text-slate-500">
+                No recorded attempts for {studentFilter === "all" ? "the class" : "this student"} yet.
+              </div>
+            )}
           </div>
         </div>
       </div>
     </div>
+  );
+}
+
+function CoachQuizResultsDialog({ snapshot, onClose }: { snapshot: CoachQuizResultsSnapshot; onClose: () => void }) {
+  const [studentFilter, setStudentFilter] = useState("all");
+  const responseByStudent = new Map<string, any>();
+  for (const response of snapshot.responses || []) {
+    const studentId = String(response.student?._id || response.student || "");
+    if (studentId) responseByStudent.set(studentId, response);
+  }
+  const visibleStudents = (snapshot.students || []).filter((student: any) => studentFilter === "all" || String(student._id) === studentFilter);
+  const submittedCount = (snapshot.students || []).filter((student: any) => responseByStudent.get(String(student._id))?.finalSubmitted).length;
+
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/60 p-2 sm:p-4" role="dialog" aria-modal="true" aria-labelledby="coach-quiz-results-title" onMouseDown={onClose}>
+      <div className="flex max-h-[94vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="flex flex-none flex-wrap items-start justify-between gap-3 border-b border-slate-200 p-4">
+          <div>
+            <div className="text-xs font-black uppercase tracking-[0.16em] text-emerald-700">Quiz ended</div>
+            <h3 id="coach-quiz-results-title" className="mt-1 text-xl font-black text-slate-950">{snapshot.question?.title || "Classroom quiz"} results</h3>
+            <p className="mt-1 text-sm text-slate-500">{submittedCount}/{snapshot.students.length} students submitted all {snapshot.items.length} positions.</p>
+          </div>
+          <button type="button" onClick={onClose} className="grid h-9 w-9 flex-none place-items-center rounded-md border border-slate-200" aria-label="Close quiz results"><X size={16} /></button>
+        </div>
+
+        <div className="flex flex-none flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-4 py-3">
+          <div className="text-sm font-bold text-slate-700">Student result details</div>
+          <div className="flex items-center gap-2">
+            <label htmlFor="quiz-results-student-filter" className="text-xs font-bold text-slate-500">Student</label>
+            <select
+              id="quiz-results-student-filter"
+              value={studentFilter}
+              onChange={(event) => setStudentFilter(event.target.value)}
+              className="h-9 max-w-[240px] rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700"
+            >
+              <option value="all">All students ({snapshot.students.length})</option>
+              {snapshot.students.map((student: any) => <option key={student._id} value={student._id}>{student.name || student.username || "Student"}</option>)}
+            </select>
+          </div>
+        </div>
+
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3 sm:p-4">
+          {visibleStudents.map((student: any) => {
+            const response = responseByStudent.get(String(student._id));
+            const itemResults = response?.itemResults || {};
+            const completed = snapshot.items.filter((item: any) => itemResults[item.id]?.solved || itemResults[item.id]?.skipped).length;
+            const solved = snapshot.items.filter((item: any) => itemResults[item.id]?.solved).length;
+            return (
+              <section key={student._id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="text-base font-black text-slate-950">{student.name || "Student"}</div>
+                    <div className="text-xs text-slate-500">{student.username || student.email || ""}</div>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 text-[11px] font-black">
+                    <span className={`rounded px-2 py-1 ${response?.finalSubmitted ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>{response?.finalSubmitted ? "Submitted" : "Incomplete"}</span>
+                    <span className="rounded bg-white px-2 py-1 text-slate-700">{completed}/{snapshot.items.length} answered</span>
+                    <span className="rounded bg-white px-2 py-1 text-slate-700">{solved} solved</span>
+                    <span className="rounded bg-purple-100 px-2 py-1 text-purple-700">{Number(response?.score || 0)} pts</span>
+                  </div>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  <InfoTile label="Total time" value={`${Number(response?.timeTakenSeconds || 0)} sec`} />
+                  <InfoTile label="Attempts" value={Number(response?.attemptsUsed || 0)} />
+                  <InfoTile label="Hints" value={Number(response?.hintsUsed || 0)} />
+                  <InfoTile label="Submitted" value={response?.submittedAt ? new Date(response.submittedAt).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", second: "2-digit" }) : "-"} />
+                </div>
+                <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                  {snapshot.items.map((item: any, index: number) => {
+                    const result = itemResults[item.id];
+                    const attempts = Array.isArray(result?.attempts) ? result.attempts : [];
+                    const submittedMove = String(result?.submittedMove || "").trim();
+                    const moves = submittedMove && !attempts.includes(submittedMove) ? [...attempts, submittedMove] : attempts;
+                    const status = result?.solved ? "Solved" : result?.skipped ? "Skipped" : result?.pending ? "Attempted" : "Not answered";
+                    return (
+                      <div key={item.id} className="rounded-lg border border-slate-200 bg-white p-2.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="text-xs font-black text-purple-700">Position {index + 1}</div>
+                            <div className="mt-0.5 line-clamp-2 text-xs font-semibold text-slate-700">{item.title || item.pgnTitle || `Position ${index + 1}`}</div>
+                          </div>
+                          <span className={`flex-none rounded px-2 py-1 text-[10px] font-black ${result?.solved ? "bg-emerald-100 text-emerald-700" : result?.skipped ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-600"}`}>{status}</span>
+                        </div>
+                        <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-slate-600">
+                          <div>Time: <b>{Number(result?.timeTakenSeconds || 0)}s</b></div>
+                          <div>Mistakes: <b>{Number(result?.mistakes || 0)}</b></div>
+                          <div>Hints: <b>{Number(result?.hintsUsed || 0)}</b></div>
+                          <div>Move: <b>{result?.submittedMove || moves.at(-1) || "-"}</b></div>
+                        </div>
+                        <div className="mt-2 break-words rounded-md bg-slate-50 p-2 text-xs text-slate-600"><b>Moves attempted:</b> {moves.length ? moves.join(", ") : "None"}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            );
+          })}
+        </div>
+      </div>
+    </div>,
+    document.body
   );
 }
 

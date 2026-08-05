@@ -8,6 +8,7 @@ import { Batch } from "@/models/Batch";
 import { Classroom } from "@/models/Classroom";
 import { Homework } from "@/models/Homework";
 import { User } from "@/models/User";
+import { notifyHomeworkAssigned } from "@/lib/homeworkEmail";
 
 export const dynamic = "force-dynamic";
 
@@ -122,6 +123,8 @@ export async function POST(req: Request, { params }: { params: { id: string } })
         dueAt: dueAt.toISOString(),
       },
     });
+
+    await notifyHomeworkAssigned(created, req);
 
     return NextResponse.json({
       id: created._id.toString(),

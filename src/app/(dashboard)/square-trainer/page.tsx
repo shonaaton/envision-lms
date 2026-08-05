@@ -81,10 +81,14 @@ export default function SquareTrainerPage() {
     const element = boardWrapRef.current;
     if (!element) return;
     const resize = () => {
-      const isMobile = window.innerWidth < 768;
-      const width = element.clientWidth;
-      const heightLimit = isMobile ? window.innerHeight - 265 : window.innerHeight - 250;
-      setBoardSize(Math.max(isMobile ? 245 : 280, Math.min(isMobile ? window.innerWidth - 44 : 620, width, heightLimit)));
+      const availableWidth = Math.floor(element.clientWidth);
+      const availableHeight = Math.floor(element.clientHeight);
+      const hasSideBySideLayout = window.innerWidth >= 1024;
+      const nextSize = hasSideBySideLayout
+        ? Math.min(620, availableWidth, availableHeight)
+        : Math.min(560, availableWidth);
+
+      if (nextSize > 0) setBoardSize(nextSize);
     };
     resize();
     const observer = new ResizeObserver(resize);
@@ -292,7 +296,7 @@ export default function SquareTrainerPage() {
   }
 
   return (
-    <div className="flex min-h-[calc(100dvh-76px)] flex-col overflow-y-auto bg-[linear-gradient(180deg,#fffdf6_0%,#fff 52%,#faf8fc_100%)] p-2 text-slate-950 sm:p-4 md:h-[calc(100vh-92px)] md:min-h-[620px] md:overflow-hidden">
+    <div className="flex min-h-[calc(100dvh-76px)] flex-col bg-[linear-gradient(180deg,#fffdf6_0%,#fff_52%,#faf8fc_100%)] p-2 text-slate-950 sm:p-3 lg:h-[calc(100dvh-32px)] lg:min-h-[560px] lg:overflow-hidden lg:p-0">
       <div className="mb-2 flex flex-none flex-wrap items-end justify-between gap-2 md:mb-3 md:gap-3">
         <div>
           <div className="inline-flex items-center gap-2 rounded-full bg-amber-100 px-3 py-1 text-xs font-black uppercase tracking-[0.18em] text-amber-700">
@@ -302,21 +306,21 @@ export default function SquareTrainerPage() {
           <h1 className="mt-1.5 text-xl font-black text-slate-950 sm:text-2xl">Board Vision Practice</h1>
           <p className="mt-0.5 text-xs text-slate-600 sm:text-sm">Click the named square quickly and keep the board fully in focus.</p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="grid w-full grid-cols-3 gap-1.5 sm:w-auto sm:gap-2">
           <CompactStat label="Score" value={correct} icon={<Trophy size={14} />} />
           <CompactStat label="Accuracy" value={`${accuracy}%`} icon={<CheckCircle2 size={14} />} />
           <CompactStat label="Streak" value={bestStreak} icon={<Zap size={14} />} />
         </div>
       </div>
 
-      <div className="grid flex-1 gap-2 md:min-h-0 md:gap-3 xl:grid-cols-[280px_minmax(0,1fr)_260px]">
-        <aside className="order-2 flex min-h-0 flex-col rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-lg shadow-brand/5 sm:p-4 xl:order-1">
-          <div className="rounded-2xl bg-slate-950 px-3 py-3 text-white sm:px-4 sm:py-4">
+      <div className="grid flex-1 gap-2 lg:min-h-0 lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-3 xl:grid-cols-[240px_minmax(0,1fr)_220px]">
+        <aside className="order-2 flex min-h-0 flex-col rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-lg shadow-brand/5 sm:p-4 lg:order-1 lg:p-3 xl:p-4">
+          <div className="hidden rounded-2xl bg-slate-950 px-3 py-3 text-white sm:px-4 sm:py-4 lg:block">
             <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-amber-300">Target Square</div>
             <div className="mt-1.5 text-4xl font-black tracking-wide sm:text-5xl">{target.toUpperCase()}</div>
           </div>
 
-          <div className="mt-3 flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+          <div className="mt-3 hidden items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 lg:flex">
             <div className="flex items-center gap-2 text-sm font-bold text-slate-700">
               <Timer size={16} className="text-brand" />
               Timer
@@ -324,11 +328,11 @@ export default function SquareTrainerPage() {
             <div className="text-xl font-black text-brand">{remaining}s</div>
           </div>
 
-          <div className={cn("mt-3 rounded-2xl border px-4 py-3 text-sm font-semibold", feedback.type === "correct" && "border-emerald-200 bg-emerald-50 text-emerald-700", feedback.type === "wrong" && "border-rose-200 bg-rose-50 text-rose-700", feedback.type === "info" && "border-slate-200 bg-slate-50 text-slate-600")}>
+          <div className={cn("mt-3 hidden rounded-2xl border px-4 py-3 text-sm font-semibold lg:block", feedback.type === "correct" && "border-emerald-200 bg-emerald-50 text-emerald-700", feedback.type === "wrong" && "border-rose-200 bg-rose-50 text-rose-700", feedback.type === "info" && "border-slate-200 bg-slate-50 text-slate-600")}>
             {feedback.text}
           </div>
 
-          <div className="mt-3 space-y-3 overflow-auto pr-1 sm:mt-4 sm:space-y-4">
+          <div className="space-y-3 overflow-auto pr-1 lg:mt-3 xl:mt-4">
             <div className="grid grid-cols-2 gap-2">
               <MiniStat label="Correct" value={correct} />
               <MiniStat label="Mistakes" value={mistakes} />
@@ -338,7 +342,7 @@ export default function SquareTrainerPage() {
 
           </div>
 
-          <div className="mt-4 grid flex-none grid-cols-2 gap-2">
+          <div className="mt-3 grid flex-none grid-cols-2 gap-2 xl:mt-4">
             <button type="button" onClick={startSession} disabled={checkingLimit} className="flex items-center justify-center gap-2 rounded-xl bg-brand px-4 py-3 text-sm font-bold text-white shadow-lg shadow-brand/20 transition hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-60">
               <Play size={16} />
               {checkingLimit ? "Checking..." : status === "running" ? "Restart" : "Start"}
@@ -356,12 +360,27 @@ export default function SquareTrainerPage() {
           </div>
         </aside>
 
-        <section className="order-1 flex min-h-[330px] flex-col rounded-2xl border border-slate-200 bg-white/95 p-2 shadow-lg shadow-brand/5 sm:p-4 md:min-h-0 xl:order-2">
-          <div ref={boardWrapRef} className="flex min-h-0 flex-1 items-center justify-center">
-            <div className="w-full max-w-[620px]">
+        <section className="order-1 flex min-w-0 flex-col rounded-2xl border border-slate-200 bg-white/95 p-2 shadow-lg shadow-brand/5 sm:p-3 lg:order-2 lg:min-h-0">
+          <div className="mb-2 grid grid-cols-[1fr_auto] gap-2 lg:hidden">
+            <div className="rounded-xl bg-slate-950 px-3 py-2 text-white">
+              <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-amber-300">Target Square</div>
+              <div className="mt-0.5 text-3xl font-black tracking-wide">{target.toUpperCase()}</div>
+            </div>
+            <div className="flex min-w-24 flex-col justify-center rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-center">
+              <div className="flex items-center justify-center gap-1 text-[10px] font-bold uppercase tracking-wide text-slate-500"><Timer size={13} /> Timer</div>
+              <div className="mt-0.5 text-xl font-black text-brand">{remaining}s</div>
+            </div>
+            <div className={cn("col-span-2 rounded-xl border px-3 py-2 text-xs font-semibold", feedback.type === "correct" && "border-emerald-200 bg-emerald-50 text-emerald-700", feedback.type === "wrong" && "border-rose-200 bg-rose-50 text-rose-700", feedback.type === "info" && "border-slate-200 bg-slate-50 text-slate-600")}>
+              {feedback.text}
+            </div>
+          </div>
+
+          <div ref={boardWrapRef} className="flex min-h-0 min-w-0 flex-1 items-center justify-center">
+            <div className="flex w-full max-w-[620px] justify-center">
               <div
+                data-testid="square-trainer-board"
                 className="mx-auto grid overflow-hidden rounded-xl border-[6px] border-[#8a4f25] shadow-xl shadow-black/15"
-                style={{ width: boardSize, height: boardSize, gridTemplateColumns: "repeat(8, minmax(0, 1fr))" }}
+                style={{ width: `min(100%, ${boardSize}px)`, aspectRatio: "1 / 1", gridTemplateColumns: "repeat(8, minmax(0, 1fr))" }}
               >
                 {boardSquares.map((item) => (
                   <button
@@ -385,7 +404,7 @@ export default function SquareTrainerPage() {
           </div>
         </section>
 
-        <aside className="order-3 flex min-h-0 flex-col rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-lg shadow-brand/5 sm:p-4 xl:order-3">
+        <aside className="order-3 hidden min-h-0 flex-col rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-lg shadow-brand/5 xl:flex xl:p-4">
           <div className="text-base font-black text-slate-950 sm:text-lg">How it works</div>
           <p className="mt-2 text-xs leading-5 text-slate-600 sm:text-sm sm:leading-6">
             A target square appears next to the board. Click that exact square as quickly as you can. Each correct click gives you the next target immediately.
@@ -404,7 +423,7 @@ export default function SquareTrainerPage() {
 
 function CompactStat({ label, value, icon }: { label: string; value: string | number; icon: React.ReactNode }) {
   return (
-    <div className="min-w-16 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-center shadow-lg shadow-brand/5 sm:min-w-20 sm:px-3 sm:py-2">
+    <div className="min-w-0 rounded-xl border border-slate-200 bg-white px-1.5 py-1.5 text-center shadow-lg shadow-brand/5 sm:min-w-20 sm:px-3 sm:py-2">
       <div className="flex items-center justify-center gap-1 text-[10px] font-bold uppercase tracking-wide text-slate-500 sm:text-[11px]">{icon}{label}</div>
       <div className="mt-0.5 text-base font-black text-brand sm:mt-1 sm:text-lg">{value}</div>
     </div>

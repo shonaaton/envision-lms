@@ -2,6 +2,7 @@ import { AssignmentAutomationLog, AssignmentTemplate } from "@/models/Assignment
 import { Classroom } from "@/models/Classroom";
 import { Homework } from "@/models/Homework";
 import { getSessionStart } from "@/lib/classroomSessions";
+import { notifyHomeworkAssigned } from "@/lib/homeworkEmail";
 
 export function normalizeTopicKey(value?: string | null) {
   return String(value || "")
@@ -298,6 +299,8 @@ export async function autoAssignHomeworkForSession({
     message: dueAt ? `Auto-assigned homework for "${topicName}".` : `Auto-assigned homework for "${topicName}" without a deadline because no next class was found.`,
     dueAt: dueAt || undefined,
   });
+
+  await notifyHomeworkAssigned(created);
 
   return created;
 }

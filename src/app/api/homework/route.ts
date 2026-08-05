@@ -6,6 +6,7 @@ import { Classroom } from "@/models/Classroom";
 import { Batch } from "@/models/Batch";
 import { User } from "@/models/User";
 import { homeworkSchema } from "@/lib/validation";
+import { notifyHomeworkAssigned } from "@/lib/homeworkEmail";
 
 export const dynamic = "force-dynamic";
 
@@ -52,6 +53,7 @@ export async function POST(req: Request) {
     const body = homeworkSchema.parse(await req.json());
     await dbConnect();
     const created = await Homework.create({ ...body, instructor: (session.user as any).id });
+    await notifyHomeworkAssigned(created, req);
     return NextResponse.json(created);
   } catch (err: any) {
     return NextResponse.json({ error: err.message ?? "Bad request" }, { status: 400 });

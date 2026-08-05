@@ -22,6 +22,22 @@ export type PgnSummary = {
   commentsText?: string;
 };
 
+export type PgnMoveNote = {
+  comments: string[];
+  glyphs: string[];
+  variations: string[];
+};
+
+export type ParsedPgnNotes = {
+  intro: PgnMoveNote;
+  moves: Record<number, PgnMoveNote>;
+};
+
+type PgnMovetextToken = {
+  kind: "text" | "comment" | "variation";
+  value: string;
+};
+
 export const startFen = "rnbqkbnr/pppppppp/8/8/8/8/8/8 w - - 0 1";
 export const chessStartFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
@@ -79,6 +95,141 @@ export function splitPgnGames(pgn: string) {
         : [];
   if (starts.length <= 1) return [normalized];
   return starts.map((start, index) => normalized.slice(start, starts[index + 1]).trim()).filter(Boolean);
+}
+
+function tokenizeMainlinePgn(pgn: string): PgnMovetextToken[] {
+  const body = pgn.replace(/^\s*\[[^\r\n]*\]\s*$/gm, " ");
+  const tokens: PgnMovetextToken[] = [];
+  let current = "";
+
+  function flushText() {
+    const value = current.trim();
+    if (value) tokens.push({ kind: "text", value });
+    current = "";
+  }
+
+  for (let index = 0; index < body.length; index += 1) {
+    const char = body[index];
+    if (/\s/.test(char)) {
+      flushText();
+      continue;
+    }
+    if (char === "{") {
+      flushText();
+      const end = body.indexOf("}", index + 1);
+      const finalIndex = end >= 0 ? end : body.length - 1;
+      const value = body.slice(index + 1, finalIndex).trim();
+      if (value) tokens.push({ kind: "comment", value });
+      index = finalIndex;
+      continue;
+    }
+    if (char === ";") {
+      flushText();
+      const newline = body.indexOf("\n", index + 1);
+      const finalIndex = newline >= 0 ? newline : body.length;
+      const value = body.slice(index + 1, finalIndex).trim();
+      if (value) tokens.push({ kind: "comment", value });
+      index = finalIndex;
+      continue;
+    }
+    if (char === "(") {
+      flushText();
+      let depth = 1;
+      let cursor = index + 1;
+      let inBraceComment = false;
+      let inLineComment = false;
+      for (; cursor < body.length && depth > 0; cursor += 1) {
+        const variationChar = body[cursor];
+        if (inBraceComment) {
+          if (variationChar === "}") inBraceComment = false;
+          continue;
+        }
+        if (inLineComment) {
+          if (variationChar === "\n" || variationChar === "\r") inLineComment = false;
+          continue;
+        }
+        if (variationChar === "{") inBraceComment = true;
+        else if (variationChar === ";") inLineComment = true;
+        else if (variationChar === "(") depth += 1;
+        else if (variationChar === ")") depth -= 1;
+      }
+      const finalIndex = depth === 0 ? cursor - 1 : body.length;
+      const value = body.slice(index + 1, finalIndex).trim().replace(/\s+/g, " ");
+      if (value) tokens.push({ kind: "variation", value });
+      index = finalIndex;
+      continue;
+    }
+    current += char;
+  }
+  flushText();
+  return tokens;
+}
+
+function emptyPgnMoveNote(): PgnMoveNote {
+  return { comments: [], glyphs: [], variations: [] };
+}
+
+function nagLabel(value: string) {
+  return ({ "1": "!", "2": "?", "3": "!!", "4": "??", "5": "!?", "6": "?!" } as Record<string, string>)[value] || `$${value}`;
+}
+
+export function parsePgnNotes(pgn?: string | null, moveCount = Number.POSITIVE_INFINITY): ParsedPgnNotes {
+  const result: ParsedPgnNotes = { intro: emptyPgnMoveNote(), moves: {} };
+  if (!pgn?.trim()) return result;
+  let moveIndex = -1;
+
+  function currentNote() {
+    if (moveIndex < 0) return result.intro;
+    result.moves[moveIndex] ||= emptyPgnMoveNote();
+    return result.moves[moveIndex];
+  }
+
+  tokenizeMainlinePgn(pgn).forEach((token) => {
+    if (token.kind === "comment") {
+      currentNote().comments.push(token.value);
+      return;
+    }
+    if (token.kind === "variation") {
+      currentNote().variations.push(token.value);
+      return;
+    }
+
+    const nags = Array.from(token.value.matchAll(/\$(\d+)/g)).map((match) => nagLabel(match[1]));
+    let moveToken = token.value
+      .replace(/\$\d+/g, "")
+      .replace(/^\d+\.(?:\.\.)?/, "")
+      .trim();
+    if (!moveToken || /^\.+$/.test(moveToken)) {
+      currentNote().glyphs.push(...nags);
+      return;
+    }
+    if (/^(?:1-0|0-1|1\/2-1\/2|\*)$/.test(moveToken)) return;
+
+    const symbolicGlyph = moveToken.match(/([!?]{1,2})$/)?.[1];
+    if (symbolicGlyph) moveToken = moveToken.slice(0, -symbolicGlyph.length);
+    if (!moveToken) {
+      if (symbolicGlyph) currentNote().glyphs.push(symbolicGlyph);
+      currentNote().glyphs.push(...nags);
+      return;
+    }
+    if (moveIndex + 1 >= moveCount) return;
+    moveIndex += 1;
+    const note = currentNote();
+    if (symbolicGlyph) note.glyphs.push(symbolicGlyph);
+    note.glyphs.push(...nags);
+  });
+
+  return result;
+}
+
+const naturalPgnCollator = new Intl.Collator("en", { numeric: true, sensitivity: "base" });
+
+export function sortPgnCollection<T extends { title?: string; round?: string | number }>(items: T[]) {
+  return [...items].sort((left, right) => {
+    const titleOrder = naturalPgnCollator.compare(String(left.title || ""), String(right.title || ""));
+    if (titleOrder) return titleOrder;
+    return naturalPgnCollator.compare(String(left.round || ""), String(right.round || ""));
+  });
 }
 
 export function invalidPgnIndexes(games: string[]) {

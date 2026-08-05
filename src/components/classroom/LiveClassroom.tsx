@@ -55,7 +55,7 @@ import {
 } from "lucide-react";
 import PageLoadingOverlay from "@/components/feedback/PageLoadingOverlay";
 import MiniFenBoard, { previewFenFromPgn } from "@/components/pgn/MiniFenBoard";
-import { normalizePermissiveFen } from "@/lib/pgnLibrary";
+import { normalizePermissiveFen, parsePgnNotes, sortPgnCollection, type PgnMoveNote } from "@/lib/pgnLibrary";
 import { cn } from "@/lib/utils";
 
 const Chessboard = dynamic(() => import("react-chessboard").then((m) => m.Chessboard), { ssr: false });
@@ -120,6 +120,31 @@ function buildNotationRows(moves: string[], startFen?: string | null): NotationR
     }
   });
   return rows;
+}
+
+function NotationMoveText({ move, note, active }: { move?: string; note?: PgnMoveNote; active: boolean }) {
+  if (!move) return null;
+  const hasDetails = Boolean(note?.comments.length || note?.variations.length);
+  return (
+    <span className="block min-w-0">
+      <span className="flex flex-wrap items-center gap-1">
+        <span>{move}</span>
+        {note?.glyphs.map((glyph, index) => (
+          <span key={`${glyph}-${index}`} className={`rounded px-1 py-0.5 text-[10px] font-black ${active ? "bg-white/20 text-white" : "bg-amber-100 text-amber-800"}`}>{glyph}</span>
+        ))}
+      </span>
+      {hasDetails && (
+        <span className="mt-1 block space-y-1">
+          {note?.comments.map((comment, index) => (
+            <span key={`comment-${index}`} className={`block whitespace-pre-wrap break-words text-[11px] font-normal italic leading-4 ${active ? "text-purple-50" : "text-slate-500"}`}>{comment}</span>
+          ))}
+          {note?.variations.map((variation, index) => (
+            <span key={`variation-${index}`} className={`block whitespace-normal break-words text-[10px] font-normal leading-4 ${active ? "text-amber-100" : "text-amber-700"}`}><span className="font-bold">Variation:</span> {variation}</span>
+          ))}
+        </span>
+      )}
+    </span>
+  );
 }
 
 function variationDisplayLabel(variation: LivePgnVariation, startFen?: string | null) {
@@ -908,6 +933,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   }, [pgnLibrary, activePgnFolder, pgnFolderQuery]);
   const chatMessages = data?.chatMessages || [];
   const pgnMoves = useMemo(() => live?.pgnMoves || [], [live?.pgnMoves]);
+  const sourcePgnNotes = useMemo(() => parsePgnNotes(live?.pgn, pgnMoves.length), [live?.pgn, pgnMoves.length]);
   const pgnVariations = useMemo<LivePgnVariation[]>(() => Array.isArray(live?.pgnVariations) ? live.pgnVariations : [], [live?.pgnVariations]);
   const activePgnVariation = useMemo(
     () => pgnVariations.find((variation) => variation.id === live?.activePgnVariationId) || null,
@@ -2223,7 +2249,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   }
 
   function loadSelectedPgns() {
-    const selected = pgnLibrary.filter((pgn: any) => selectedPgnIds.includes(pgn._id));
+    const selected = sortPgnCollection(pgnLibrary.filter((pgn: any) => selectedPgnIds.includes(pgn._id)));
     if (!selected.length) return toast.info("Select at least one PGN");
     loadPgn(selected[0], 0, selected);
   }
@@ -2384,6 +2410,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const notationStartFen = navigationStartFen();
   const notationMoves = activePgnMoves.length ? activePgnMoves : live?.moveHistory || [];
   const notationRows = buildNotationRows(notationMoves, notationStartFen);
+  const notationNotes = activePgnVariation ? { intro: { comments: [], glyphs: [], variations: [] }, moves: {} } : sourcePgnNotes;
   const matchedPgnIndex = activePgnCollection.findIndex((item: any) => isCurrentPgn(item));
   const storedPgnIndex = Number(live?.challenge?.currentIndex || 0);
   const activePgnIndex = activePgnCollection.length
@@ -2927,6 +2954,12 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                       ))}
                     </div>
                   ) : null}
+                  {(notationNotes.intro.comments.length || notationNotes.intro.variations.length) ? (
+                    <div className="space-y-1 border-b border-slate-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                      {notationNotes.intro.comments.map((comment, index) => <p key={`intro-comment-${index}`} className="whitespace-pre-wrap break-words italic">{comment}</p>)}
+                      {notationNotes.intro.variations.map((variation, index) => <p key={`intro-variation-${index}`} className="break-words"><span className="font-bold">Variation:</span> {variation}</p>)}
+                    </div>
+                  ) : null}
                   <div className="grid grid-cols-[48px_1fr_1fr] bg-slate-50 px-2 py-2 text-xs font-semibold text-slate-500">
                     <span>No.</span><span>White</span><span>Black</span>
                   </div>
@@ -2941,14 +2974,14 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                           onClick={() => row.whiteIndex !== undefined && navigateMove(row.whiteIndex + 1)}
                           className={`min-h-9 rounded-md px-2 text-left font-medium ${row.whiteIndex !== undefined && currentMoveIndex === row.whiteIndex + 1 ? "bg-purple-700 text-white" : "text-slate-800 hover:bg-slate-50 disabled:hover:bg-transparent"}`}
                         >
-                          {whiteMove || ""}
+                          <NotationMoveText move={whiteMove} note={row.whiteIndex === undefined ? undefined : notationNotes.moves[row.whiteIndex]} active={row.whiteIndex !== undefined && currentMoveIndex === row.whiteIndex + 1} />
                         </button>
                         <button
                           disabled={!activePgnMoves.length || row.blackIndex === undefined}
                           onClick={() => row.blackIndex !== undefined && navigateMove(row.blackIndex + 1)}
                           className={`min-h-9 rounded-md px-2 text-left font-medium ${row.blackIndex !== undefined && currentMoveIndex === row.blackIndex + 1 ? "bg-purple-700 text-white" : "text-slate-800 hover:bg-slate-50 disabled:hover:bg-transparent"}`}
                         >
-                          {blackMove || ""}
+                          <NotationMoveText move={blackMove} note={row.blackIndex === undefined ? undefined : notationNotes.moves[row.blackIndex]} active={row.blackIndex !== undefined && currentMoveIndex === row.blackIndex + 1} />
                         </button>
                       </div>
                     );

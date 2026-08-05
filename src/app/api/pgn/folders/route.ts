@@ -31,9 +31,11 @@ export async function GET() {
   if (!hasPgnAccess(session)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
 
+  const currentUserId = String((session.user as any).id);
+  const isAdmin = (session.user as any).role === "admin";
   const folders = await PgnFolder.find(buildPgnFolderFilter(session)).sort({ sortOrder: 1, path: 1 }).lean();
-  const games = await PGN.find(buildPgnLibraryFilter(session)).select("folder visibility updatedAt createdAt").lean();
-  const stats = new Map<string, { gameCount: number; lastUpdatedAt?: Date }>();
+  const games = await PGN.find(buildPgnLibraryFilter(session)).select("folder visibility uploadedBy updatedAt createdAt").lean();
+  const stats = new Map<string, { gameCount: number; lastUpdatedAt?: Date; uploaderIds: Set<string> }>();
   games.forEach((game: any) => {
     const path = normalizeFolderPath(game.folder);
     if (!path) return;
@@ -42,8 +44,9 @@ export async function GET() {
     for (let index = 0; index < parts.length; index += 1) {
       const folderPath = parts.slice(0, index + 1).join("/");
       const key = `${scope}:${folderPath}`;
-      const current = stats.get(key) || { gameCount: 0 };
+      const current = stats.get(key) || { gameCount: 0, uploaderIds: new Set<string>() };
       current.gameCount += 1;
+      if (game.uploadedBy) current.uploaderIds.add(String(game.uploadedBy));
       const updatedAt = new Date(game.updatedAt || game.createdAt);
       if (!current.lastUpdatedAt || updatedAt > current.lastUpdatedAt) current.lastUpdatedAt = updatedAt;
       stats.set(key, current);
@@ -52,8 +55,14 @@ export async function GET() {
   const folderRows = new Map<string, any>();
   folders.forEach((folder: any) => {
     const scope = folder.visibility === "shared" ? "shared" : "personal";
-    const stat = stats.get(`${scope}:${normalizeFolderPath(folder.path)}`) || { gameCount: 0 };
-    folderRows.set(`${scope}:${normalizeFolderPath(folder.path)}`, { ...folder, gameCount: stat.gameCount, lastUpdatedAt: stat.lastUpdatedAt || folder.updatedAt });
+    const stat = stats.get(`${scope}:${normalizeFolderPath(folder.path)}`) || { gameCount: 0, uploaderIds: new Set<string>() };
+    const uploadedBy = folder.uploadedBy ? String(folder.uploadedBy) : "";
+    folderRows.set(`${scope}:${normalizeFolderPath(folder.path)}`, {
+      ...folder,
+      gameCount: stat.gameCount,
+      lastUpdatedAt: stat.lastUpdatedAt || folder.updatedAt,
+      canManage: isAdmin ? scope === "shared" || uploadedBy === currentUserId : uploadedBy === currentUserId,
+    });
   });
 
   stats.forEach((stat, key) => {
@@ -69,6 +78,9 @@ export async function GET() {
       visibility: scope === "shared" ? "shared" : "private",
       gameCount: stat.gameCount,
       lastUpdatedAt: stat.lastUpdatedAt,
+      canManage: isAdmin
+        ? scope === "shared" || stat.uploaderIds.has(currentUserId)
+        : stat.uploaderIds.size > 0 && Array.from(stat.uploaderIds).every((id) => id === currentUserId),
       inferred: true,
     });
   });

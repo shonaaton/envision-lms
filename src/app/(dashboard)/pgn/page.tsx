@@ -53,7 +53,7 @@ type PgnDoc = {
   visibility?: "private" | "shared" | "classroom";
 };
 
-type FolderDoc = { id: string; name: string; path: string; personal: boolean; gameCount?: number; lastUpdatedAt?: string; description?: string; coverImage?: string };
+type FolderDoc = { id: string; name: string; path: string; personal: boolean; canManage: boolean; gameCount?: number; lastUpdatedAt?: string; description?: string; coverImage?: string };
 
 type ModalName = "folder" | "upload" | "generator" | "edit-folder" | "edit-pgn" | null;
 type UploadTab = "single" | "multiple";
@@ -104,6 +104,7 @@ export default function PgnLibraryPage() {
         name: folderLabel(folder.path || folder.name),
         path: normalizeFolderPath(folder.path || folder.name),
         personal: folder.visibility !== "shared",
+        canManage: Boolean(folder.canManage),
         gameCount: Number(folder.gameCount || 0),
         lastUpdatedAt: folder.lastUpdatedAt || folder.updatedAt,
         description: folder.description,
@@ -140,13 +141,13 @@ export default function PgnLibraryPage() {
       const personal = game.visibility !== "shared";
       const folderKey = `${personal ? "personal" : "shared"}:${path}`;
       if (path && !byPath.has(folderKey)) {
-        byPath.set(folderKey, { id: `${folderKey}-${path.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`, name: folderLabel(path), path, personal });
+        byPath.set(folderKey, { id: `${folderKey}-${path.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`, name: folderLabel(path), path, personal, canManage: String(game.uploadedBy || "") === currentUserId || isAdmin });
       }
       let parentPath = parentFolderPath(path);
       while (parentPath) {
         const parentKey = `${personal ? "personal" : "shared"}:${parentPath}`;
         if (!byPath.has(parentKey)) {
-          byPath.set(parentKey, { id: `${parentKey}-${parentPath.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`, name: folderLabel(parentPath), path: parentPath, personal });
+          byPath.set(parentKey, { id: `${parentKey}-${parentPath.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`, name: folderLabel(parentPath), path: parentPath, personal, canManage: String(game.uploadedBy || "") === currentUserId || isAdmin });
         }
         parentPath = parentFolderPath(parentPath);
       }
@@ -170,7 +171,7 @@ export default function PgnLibraryPage() {
         };
       })
       .sort((a, b) => a.path.localeCompare(b.path));
-  }, [folders, games]);
+  }, [folders, games, currentUserId, isAdmin]);
 
   const visibleFolders = useMemo(() => {
     const folderPath = activeFolderPath;
@@ -244,7 +245,7 @@ export default function PgnLibraryPage() {
       return;
     }
     const created = await response.json();
-    const folder = { id: String(created._id || path), name: folderLabel(created.path || path), path: normalizeFolderPath(created.path || path), personal: created.visibility !== "shared" };
+    const folder = { id: String(created._id || path), name: folderLabel(created.path || path), path: normalizeFolderPath(created.path || path), personal: created.visibility !== "shared", canManage: true };
     await load();
     setQuery("");
     setModal(null);
@@ -268,7 +269,7 @@ export default function PgnLibraryPage() {
     if (currentFolder?.path === folder.path || currentFolder?.path?.startsWith(`${folder.path}/`)) {
       const currentSuffix = currentFolder.path.slice(folder.path.length);
       const nextCurrentPath = normalizeFolderPath(`${nextPath}${currentSuffix}`);
-      const nextFolder = { ...currentFolder, name: folderLabel(nextCurrentPath), path: nextCurrentPath, personal: folder.personal };
+      const nextFolder = { ...currentFolder, name: folderLabel(nextCurrentPath), path: nextCurrentPath, personal: folder.personal, canManage: folder.canManage };
       setCurrentFolder(nextFolder);
       router.push(`/pgn?folder=${encodeURIComponent(nextCurrentPath)}&scope=${nextFolder.personal ? "personal" : "shared"}`);
     }
@@ -395,7 +396,7 @@ export default function PgnLibraryPage() {
           <button className="btn-primary gap-2 px-5" onClick={() => setModal("folder")}><Plus size={16} /> New Folder</button>
           {currentFolder && (
             <>
-              {isAdmin && (
+              {currentFolder.canManage && (
                 <button
                   className="btn gap-2 border border-slate-300 bg-white text-slate-950 hover:bg-slate-50"
                   onClick={() => {
@@ -421,7 +422,7 @@ export default function PgnLibraryPage() {
                 <h2 className="mb-4 text-lg font-semibold">{currentFolder.name}</h2>
                 <div className="flex items-center gap-2 text-sm">
                   <button className="inline-flex items-center gap-1 text-blue-600" onClick={openRoot}><Home size={14} /> Folders</button>
-                  {folderBreadcrumbs(currentFolder.path, currentFolder.personal).map((item) => (
+                  {folderBreadcrumbs(currentFolder.path, currentFolder.personal, currentFolder.canManage).map((item) => (
                     <span key={item.path} className="contents">
                       <ChevronRight size={14} className="text-slate-400" />
                       <button className={`font-semibold ${item.path === currentFolder.path ? "text-slate-950" : "text-blue-600"}`} onClick={() => openFolder(item)}>
@@ -686,13 +687,14 @@ function getImmediateChildPath(basePath: string, candidatePath: string) {
   return `${base}/${first}`;
 }
 
-function folderBreadcrumbs(path: string, personal = true) {
+function folderBreadcrumbs(path: string, personal = true, canManage = false) {
   const parts = normalizeFolderPath(path).split("/").filter(Boolean);
   return parts.map((part, index) => ({
     id: parts.slice(0, index + 1).join("/"),
     name: part,
     path: parts.slice(0, index + 1).join("/"),
     personal,
+    canManage,
   }));
 }
 
@@ -732,7 +734,7 @@ function FolderGrid({
               </span>
             </div>
           </button>
-          <button
+          {(folder.canManage || isAdmin) && <button
             className="absolute right-2 top-2 rounded-md p-2 hover:bg-slate-100"
             onClick={(event) => {
               event.stopPropagation();
@@ -741,11 +743,11 @@ function FolderGrid({
             aria-label={`Open menu for ${folder.name}`}
           >
             <MoreVertical size={18} className="text-slate-700" />
-          </button>
-          {openMenu === folder.id && (
+          </button>}
+          {(folder.canManage || isAdmin) && openMenu === folder.id && (
             <ActionMenu>
-              <MenuAction tone="danger" icon={<Trash2 size={13} />} onClick={() => { setOpenMenu(null); onDelete(folder); }}>Delete</MenuAction>
-              <MenuAction icon={<Edit3 size={13} />} onClick={() => { setOpenMenu(null); onEdit(folder); }}>Rename</MenuAction>
+              {folder.canManage && <MenuAction tone="danger" icon={<Trash2 size={13} />} onClick={() => { setOpenMenu(null); onDelete(folder); }}>Delete</MenuAction>}
+              {folder.canManage && <MenuAction icon={<Edit3 size={13} />} onClick={() => { setOpenMenu(null); onEdit(folder); }}>Rename</MenuAction>}
               {isAdmin && <MenuAction icon={<Download size={13} />} onClick={() => { setOpenMenu(null); onDownload(folder); }}>Download</MenuAction>}
             </ActionMenu>
           )}
@@ -868,14 +870,14 @@ function GameGrid({
               </div>
             </div>
           </Link>
-          <button
+          {(canManage || isAdmin) && <button
             className="absolute right-2 top-2 rounded-md p-2 hover:bg-slate-100"
             onClick={() => setOpenMenu((current) => current === game._id ? null : game._id)}
             aria-label={`Open menu for ${game.title}`}
           >
             <MoreVertical size={18} className="text-slate-700" />
-          </button>
-          {openMenu === game._id && (
+          </button>}
+          {(canManage || isAdmin) && openMenu === game._id && (
             <ActionMenu>
               {canManage && <MenuAction tone="danger" icon={<Trash2 size={13} />} onClick={() => { setOpenMenu(null); onDelete(game); }}>Delete</MenuAction>}
               {canManage && <MenuAction icon={<Edit3 size={13} />} onClick={() => { setOpenMenu(null); onEdit(game); }}>Edit</MenuAction>}

@@ -72,13 +72,60 @@ type SetupSelection = string | "erase" | GamifiedObjectId;
 type QuizComposerMode = "current" | "pgn_collection";
 type QuizComposerItem = { id: string; title: string; fen: string; pgn?: string; pgnTitle?: string; solution: string[] };
 type LivePgnVariation = { id: string; label: string; branchAt: number; moves: string[]; createdAt?: string };
+type NotationRow = { number: number; white?: string; black?: string; whiteIndex?: number; blackIndex?: number };
 
-function variationDisplayLabel(variation: LivePgnVariation) {
+function fenMoveContext(fen?: string | null) {
+  const parts = String(fen || "").trim().split(/\s+/);
+  return {
+    side: parts[1] === "b" ? "b" as const : "w" as const,
+    fullmove: Math.max(1, Number(parts[5]) || 1),
+  };
+}
+
+function orientationForFen(fen?: string | null): "white" | "black" {
+  return fenMoveContext(fen).side === "b" ? "black" : "white";
+}
+
+function notationPlyPrefix(plyIndex: number, startFen?: string | null) {
+  let { side, fullmove } = fenMoveContext(startFen);
+  for (let index = 0; index < plyIndex; index++) {
+    if (side === "b") {
+      side = "w";
+      fullmove += 1;
+    } else {
+      side = "b";
+    }
+  }
+  return side === "w" ? `${fullmove}.` : `${fullmove}...`;
+}
+
+function buildNotationRows(moves: string[], startFen?: string | null): NotationRow[] {
+  let { side, fullmove } = fenMoveContext(startFen);
+  const rows: NotationRow[] = [];
+  moves.forEach((move, index) => {
+    let row = rows.find((item) => item.number === fullmove);
+    if (!row) {
+      row = { number: fullmove };
+      rows.push(row);
+    }
+    if (side === "w") {
+      row.white = move;
+      row.whiteIndex = index;
+      side = "b";
+    } else {
+      row.black = move;
+      row.blackIndex = index;
+      side = "w";
+      fullmove += 1;
+    }
+  });
+  return rows;
+}
+
+function variationDisplayLabel(variation: LivePgnVariation, startFen?: string | null) {
   const branchMove = variation.moves[variation.branchAt];
   if (!branchMove) return variation.label;
-  const moveNumber = Math.floor(variation.branchAt / 2) + 1;
-  const movePrefix = variation.branchAt % 2 === 0 ? `${moveNumber}.` : `${moveNumber}...`;
-  return `${variation.label} · ${movePrefix} ${branchMove}`;
+  return `${variation.label} · ${notationPlyPrefix(variation.branchAt, startFen)} ${branchMove}`;
 }
 
 function ToolbarIconButton({
@@ -1099,12 +1146,18 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     });
   }
 
+  function navigationStartFen() {
+    const snapshot = currentLive();
+    const collectionItem = (Array.isArray(snapshot?.challenge?.pgnCollection) ? snapshot.challenge.pgnCollection : [])
+      .find((pgn: any) => pgn.title === snapshot?.pgnTitle || pgn.pgn === snapshot?.pgn);
+    const resources = Array.isArray(snapshot?.usedResources) ? snapshot.usedResources : [];
+    const matchingResource = [...resources].reverse().find((resource: any) => resource?.fen && (resource.title === snapshot?.pgnTitle || resource.type === "position"));
+    return normalizeBoardResourceFen(snapshot?.navigationStartFen || collectionItem?.fen || extractFen(snapshot?.pgn || "") || matchingResource?.fen) || "start";
+  }
+
   function currentPgnFen() {
     if (!activePgnMoves.length) return live?.fen || "start";
-    const collectionItem = (Array.isArray(live?.challenge?.pgnCollection) ? live.challenge.pgnCollection : [])
-      .find((pgn: any) => pgn.title === live?.pgnTitle || pgn.pgn === live?.pgn);
-    const startFen = normalizeBoardResourceFen(collectionItem?.fen || extractFen(live?.pgn || "")) || "start";
-    return applyMoves(startFen, activePgnMoves, currentMoveIndex);
+    return applyMoves(navigationStartFen(), activePgnMoves, currentMoveIndex);
   }
 
   function restoreLoadedPgnPosition() {
@@ -1175,19 +1228,19 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     }, 80);
   }
 
-  function pgnUpdateForCoachMove(moveSan: string) {
+  function pgnUpdateForCoachMove(moveSan: string, moveStartFen: string) {
     const pgnState = pgnStateRef.current;
     const activeVariation = pgnState.variations.find((variation) => variation.id === pgnState.activeVariationId) || null;
     const activeMoves = activeVariation?.moves || pgnState.mainMoves;
-    const hasLoadedPgn = Boolean(live?.pgn || pgnState.mainMoves.length || pgnState.variations.length);
-    if (!hasLoadedPgn) return { moveHistory: [...(currentLive()?.moveHistory || []), moveSan] };
+    const startsNewLine = !pgnState.mainMoves.length && !pgnState.variations.length && !currentLive()?.navigationStartFen;
+    const startUpdate = startsNewLine ? { navigationStartFen: moveStartFen } : {};
 
     const index = Math.max(0, Math.min(activeMoves.length, navigationIndexRef.current));
     const expectedMove = activeMoves[index];
     if (expectedMove === moveSan) {
       const nextIndex = index + 1;
       navigationIndexRef.current = nextIndex;
-      return { activePgnVariationId: activeVariation?.id || "", pgnMoveIndex: nextIndex, moveHistory: activeMoves.slice(0, nextIndex) };
+      return { ...startUpdate, activePgnVariationId: activeVariation?.id || "", pgnMoveIndex: nextIndex, moveHistory: activeMoves.slice(0, nextIndex) };
     }
 
     if (index === activeMoves.length) {
@@ -1198,6 +1251,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
         const nextVariations = pgnState.variations.map((variation) => variation.id === activeVariation.id ? { ...variation, moves: nextMoves } : variation);
         pgnStateRef.current = { ...pgnState, variations: nextVariations };
         return {
+          ...startUpdate,
           pgnVariations: nextVariations,
           activePgnVariationId: activeVariation.id,
           pgnMoveIndex: nextIndex,
@@ -1205,7 +1259,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
         };
       }
       pgnStateRef.current = { ...pgnState, mainMoves: nextMoves };
-      return { pgnMoves: nextMoves, pgnMoveIndex: nextIndex, moveHistory: nextMoves };
+      return { ...startUpdate, pgnMoves: nextMoves, pgnMoveIndex: nextIndex, moveHistory: nextMoves };
     }
 
     const variationNumber = pgnState.variations.length + 1;
@@ -1221,6 +1275,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     const nextVariations = [...pgnState.variations, variation];
     pgnStateRef.current = { ...pgnState, variations: nextVariations, activeVariationId: variation.id };
     return {
+      ...startUpdate,
       pgnVariations: nextVariations,
       activePgnVariationId: variation.id,
       pgnMoveIndex: nextIndex,
@@ -1270,6 +1325,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     }
     try {
       cancelPendingNavigationPersistence();
+      const moveStartFen = game.fen();
       const move = game.move({ from: source, to: target, promotion });
       if (!move) return collectGamifiedWithPiece(source, target, piece);
       const collectedObjectId = liveGamifiedObjects[target] as GamifiedObjectId | undefined;
@@ -1278,7 +1334,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       scheduleCoachMovePersistence({
         fen: game.fen(),
         gamifiedObjects: nextGamifiedObjects,
-        ...pgnUpdateForCoachMove(move.san),
+        ...pgnUpdateForCoachMove(move.san, moveStartFen),
         mode: live?.mode === "one_move_challenge" ? "teaching" : live?.mode,
         boardControlStudents: live?.mode === "one_move_challenge" ? [] : live?.boardControlStudents?.map((s: any) => s._id || s),
         challenge: live?.mode === "one_move_challenge" ? { active: false } : live?.challenge,
@@ -1364,7 +1420,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
 
   function loadSetupIntoClassroom() {
     const fen = positionToFen(setupPosition, setupSideToMove());
-    patch({ fen, gamifiedObjects: removeObjectsOnPieceSquares(gamifiedSetup, setupPosition), setupMode: false, illegalMovesEnabled: setupMovementMode === "free", pgn: "", pgnTitle: "Custom Position", pgnMoves: [], pgnMoveIndex: 0, pgnVariations: [], activePgnVariationId: "", moveHistory: [], drawings: [], usedResources: resourceHistory({ type: "position", title: "Custom Position", fen }) });
+    patch({ fen, orientation: orientationForFen(fen), gamifiedObjects: removeObjectsOnPieceSquares(gamifiedSetup, setupPosition), setupMode: false, illegalMovesEnabled: setupMovementMode === "free", pgn: "", pgnTitle: "Custom Position", navigationStartFen: fen, pgnMoves: [], pgnMoveIndex: 0, pgnVariations: [], activePgnVariationId: "", moveHistory: [], drawings: [], usedResources: resourceHistory({ type: "position", title: "Custom Position", fen }) });
     setSetupOpen(false);
   }
 
@@ -1744,8 +1800,10 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     if (!isCurrentPositionQuiz && first) {
       await patch({
         fen: first.fen,
+        orientation: orientationForFen(first.fen),
         pgn: first.pgn || "",
         pgnTitle: first.pgnTitle || first.title,
+        navigationStartFen: first.fen,
         pgnMoves: first.solution || [],
         pgnMoveIndex: 0,
         pgnVariations: [],
@@ -1902,15 +1960,13 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   }
 
   function resetGame() {
-    patch({ fen: "start", pgnMoveIndex: 0, moveHistory: [], drawings: [], gamifiedObjects: {}, setupMode: false, illegalMovesEnabled: false });
+    patch({ fen: "start", orientation: "white", navigationStartFen: "start", pgnMoves: [], pgnMoveIndex: 0, pgnVariations: [], activePgnVariationId: "", moveHistory: [], drawings: [], gamifiedObjects: {}, setupMode: false, illegalMovesEnabled: false });
   }
 
   function navigateMove(nextIndex: number, moves = activePgnMoves, variationId = live?.activePgnVariationId || "") {
     if (!moves.length) return;
     const boundedIndex = Math.max(0, Math.min(moves.length, nextIndex));
-    const collectionItem = (Array.isArray(live?.challenge?.pgnCollection) ? live.challenge.pgnCollection : [])
-      .find((pgn: any) => pgn.title === live?.pgnTitle || pgn.pgn === live?.pgn);
-    const startFen = normalizeBoardResourceFen(collectionItem?.fen || extractFen(live?.pgn || "")) || "start";
+    const startFen = navigationStartFen();
     const navigationUpdate = {
       fen: applyMoves(startFen, moves, boundedIndex),
       pgnMoveIndex: boundedIndex,
@@ -2018,11 +2074,13 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       patch({
         pgn: pgn.pgn,
         pgnTitle: pgn.title,
+        navigationStartFen: startFen,
         pgnMoves: moves,
         pgnMoveIndex: 0,
         pgnVariations: [],
         activePgnVariationId: "",
         fen: startFen,
+        orientation: orientationForFen(startFen),
         moveHistory: [],
         setupMode: false,
         drawings: [],
@@ -2045,11 +2103,13 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       patch({
         pgn: pgn.pgn,
         pgnTitle: pgn.title,
+        navigationStartFen: startFen,
         pgnMoves: [],
         pgnMoveIndex: 0,
         pgnVariations: [],
         activePgnVariationId: "",
         fen: startFen,
+        orientation: orientationForFen(startFen),
         moveHistory: [],
         setupMode: false,
         illegalMovesEnabled: isBoardResourceFen(startFen),
@@ -2073,7 +2133,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     if (!value) return;
     try {
       const fenGame = new Chess(value);
-      patch({ fen: fenGame.fen(), pgn: "", pgnTitle: "Custom FEN", pgnMoves: [], pgnMoveIndex: 0, pgnVariations: [], activePgnVariationId: "", moveHistory: [], setupMode: false, drawings: [], usedResources: resourceHistory({ type: "position", title: "Custom FEN", fen: fenGame.fen() }) });
+      patch({ fen: fenGame.fen(), orientation: orientationForFen(fenGame.fen()), pgn: "", pgnTitle: "Custom FEN", navigationStartFen: fenGame.fen(), pgnMoves: [], pgnMoveIndex: 0, pgnVariations: [], activePgnVariationId: "", moveHistory: [], setupMode: false, drawings: [], usedResources: resourceHistory({ type: "position", title: "Custom FEN", fen: fenGame.fen() }) });
       setManualLoadText("");
       setPgnOpen(false);
       toast.success("FEN loaded into classroom");
@@ -2085,8 +2145,10 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     if (permissiveFen) {
       patch({
         fen: permissiveFen,
+        orientation: orientationForFen(permissiveFen),
         pgn: "",
         pgnTitle: "Custom Board",
+        navigationStartFen: permissiveFen,
         pgnMoves: [],
         pgnMoveIndex: 0,
         pgnVariations: [],
@@ -2306,6 +2368,9 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const orientation = (live?.orientation || "white") as "white" | "black";
   const files = coordinateFiles(orientation);
   const ranks = coordinateRanks(orientation);
+  const notationStartFen = navigationStartFen();
+  const notationMoves = activePgnMoves.length ? activePgnMoves : live?.moveHistory || [];
+  const notationRows = buildNotationRows(notationMoves, notationStartFen);
   const matchedPgnIndex = activePgnCollection.findIndex((item: any) => isCurrentPgn(item));
   const storedPgnIndex = Number(live?.challenge?.currentIndex || 0);
   const activePgnIndex = activePgnCollection.length
@@ -2319,11 +2384,11 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const canLaunchBoardQuiz = Boolean(live?.fen);
   const canLoadPgnLibrary = coach && pgnLibrary.length > 0;
   const coachSidebarTabs = [
-    { key: "students" as TabKey, icon: <Users size={19} />, label: "Students" },
+    { key: "students" as TabKey, icon: <Users size={19} />, label: "Class" },
     { key: "chat" as TabKey, icon: <MessageSquare size={19} />, label: "Chat" },
-    { key: "moves" as TabKey, icon: <ClipboardList size={19} />, label: "Moves / Notation" },
+    { key: "moves" as TabKey, icon: <ClipboardList size={19} />, label: "Moves" },
     { key: "engine" as TabKey, icon: <Bot size={19} />, label: "Engine" },
-    { key: "leaderboard" as TabKey, icon: <Crown size={19} />, label: "Leaderboard" },
+    { key: "leaderboard" as TabKey, icon: <Crown size={19} />, label: "Scores" },
   ];
   const classroomTabs = coach ? coachSidebarTabs : studentPanelTabs;
   const quizFocusMode = Boolean(studentQuizMode || coachQuizMode);
@@ -2572,10 +2637,10 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                 {coach && (
                   <div className="mx-auto mt-3 flex w-full max-w-[720px] flex-col gap-2">
                     <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto rounded-lg border border-slate-200 bg-white px-2 py-1.5">
-                      <div className="flex min-w-0 flex-1 items-center gap-2 px-1 text-xs font-semibold text-slate-500">
+                      <div className="hidden min-w-0 flex-1 items-center gap-2 px-1 text-xs font-semibold text-slate-500 lg:flex">
                         <span className="min-w-0 truncate text-slate-900">{live?.pgnTitle || "Classroom board"}</span>
                         <span className="flex-none rounded-md bg-slate-100 px-2 py-1 font-bold tabular-nums text-slate-600">{currentMoveIndex}/{activePgnMoves.length || (live?.moveHistory || []).length}</span>
-                        {activePgnVariation && <span className="flex-none rounded-md bg-amber-100 px-2 py-1 font-bold text-amber-800">{variationDisplayLabel(activePgnVariation)}</span>}
+                        {activePgnVariation && <span className="flex-none rounded-md bg-amber-100 px-2 py-1 font-bold text-amber-800">{variationDisplayLabel(activePgnVariation, notationStartFen)}</span>}
                       </div>
                       <div className="flex flex-none items-center justify-end gap-1">
                         <div className="flex flex-none items-center gap-1 rounded-md bg-slate-50 p-0.5 ring-1 ring-inset ring-slate-200/70">
@@ -2595,26 +2660,31 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                         <button
                           type="button"
                           onClick={openBoardControl}
-                          className="inline-flex h-7 items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2 text-[11px] font-semibold text-blue-800"
+                          title="Board Control"
+                          aria-label="Board Control"
+                          className="inline-flex h-7 flex-none items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-1.5 text-[11px] font-semibold text-blue-800 sm:px-2"
                         >
-                          <MousePointer2 size={13} /> Board Control
+                          <MousePointer2 size={13} /> <span className="hidden sm:inline">Control</span>
                         </button>
                         <button
                           type="button"
                           onClick={createQuiz}
                           disabled={!canLaunchBoardQuiz}
-                          className="h-7 rounded-md border border-purple-200 bg-purple-50 px-2 text-[11px] font-semibold text-purple-800 disabled:opacity-40"
+                          title="Ask Quiz from Current Position"
+                          aria-label="Ask Quiz from Current Position"
+                          className="inline-flex h-7 flex-none items-center gap-1 rounded-md border border-purple-200 bg-purple-50 px-1.5 text-[11px] font-semibold text-purple-800 disabled:opacity-40 sm:px-2"
                         >
-                          Ask Quiz from Current Position
+                          <Sparkles size={13} /> <span className="hidden sm:inline">Position Quiz</span>
                         </button>
                         <button
                           type="button"
                           onClick={() => openPgnLibrary("multiple_quiz")}
                           disabled={pgnLibrary.length < 2}
-                          className="inline-flex h-7 items-center gap-1 rounded-md bg-purple-700 px-2 text-[11px] font-semibold text-white disabled:opacity-40"
-                          title={pgnLibrary.length < 2 ? "At least two PGNs are required" : "Create a quiz with multiple positions"}
+                          className="inline-flex h-7 flex-none items-center gap-1 rounded-md bg-purple-700 px-1.5 text-[11px] font-semibold text-white disabled:opacity-40 sm:px-2"
+                          title={pgnLibrary.length < 2 ? "At least two PGNs are required" : "Ask Quiz with Multiple Positions"}
+                          aria-label="Ask Quiz with Multiple Positions"
                         >
-                          <FileQuestion size={13} /> Ask Quiz (Multiple Positions)
+                          <FileQuestion size={13} /> <span className="hidden sm:inline">Multi Quiz</span>
                         </button>
                       </div>
                     </div>
@@ -2838,9 +2908,9 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                           type="button"
                           onClick={() => selectPgnLine(variation.id)}
                           className={`rounded-md px-2.5 py-1.5 text-xs font-bold ${activePgnVariation?.id === variation.id ? "bg-amber-500 text-white" : "bg-amber-50 text-amber-800"}`}
-                          title={`${variationDisplayLabel(variation)} — branches after ply ${variation.branchAt}`}
+                          title={`${variationDisplayLabel(variation, notationStartFen)} — branches after ply ${variation.branchAt}`}
                         >
-                          {variationDisplayLabel(variation)}
+                          {variationDisplayLabel(variation, notationStartFen)}
                         </button>
                       ))}
                     </div>
@@ -2848,26 +2918,23 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                   <div className="grid grid-cols-[48px_1fr_1fr] bg-slate-50 px-2 py-2 text-xs font-semibold text-slate-500">
                     <span>No.</span><span>White</span><span>Black</span>
                   </div>
-                  {(activePgnMoves.length ? activePgnMoves : live?.moveHistory || []).length ? Array.from({ length: Math.ceil((activePgnMoves.length ? activePgnMoves : live?.moveHistory || []).length / 2) }).map((_, row) => {
-                    const moves = activePgnMoves.length ? activePgnMoves : live?.moveHistory || [];
-                    const whiteIndex = row * 2;
-                    const blackIndex = whiteIndex + 1;
-                    const whiteMove = moves[whiteIndex];
-                    const blackMove = moves[blackIndex];
+                  {notationRows.length ? notationRows.map((row) => {
+                    const whiteMove = row.white;
+                    const blackMove = row.black;
                     return (
-                      <div key={row} className="grid grid-cols-[48px_1fr_1fr] items-center border-t border-slate-100 px-2 py-1">
-                        <span className="text-xs font-semibold text-slate-400">{row + 1}.</span>
+                      <div key={row.number} className="grid grid-cols-[48px_1fr_1fr] items-center border-t border-slate-100 px-2 py-1">
+                        <span className="text-xs font-semibold text-slate-400">{row.number}.</span>
                         <button
-                          disabled={!activePgnMoves.length}
-                          onClick={() => navigateMove(whiteIndex + 1)}
-                          className={`min-h-9 rounded-md px-2 text-left font-medium ${currentMoveIndex === whiteIndex + 1 ? "bg-purple-700 text-white" : "text-slate-800 hover:bg-slate-50 disabled:hover:bg-transparent"}`}
+                          disabled={!activePgnMoves.length || row.whiteIndex === undefined}
+                          onClick={() => row.whiteIndex !== undefined && navigateMove(row.whiteIndex + 1)}
+                          className={`min-h-9 rounded-md px-2 text-left font-medium ${row.whiteIndex !== undefined && currentMoveIndex === row.whiteIndex + 1 ? "bg-purple-700 text-white" : "text-slate-800 hover:bg-slate-50 disabled:hover:bg-transparent"}`}
                         >
                           {whiteMove || ""}
                         </button>
                         <button
-                          disabled={!activePgnMoves.length || !blackMove}
-                          onClick={() => navigateMove(blackIndex + 1)}
-                          className={`min-h-9 rounded-md px-2 text-left font-medium ${currentMoveIndex === blackIndex + 1 ? "bg-purple-700 text-white" : "text-slate-800 hover:bg-slate-50 disabled:hover:bg-transparent"}`}
+                          disabled={!activePgnMoves.length || row.blackIndex === undefined}
+                          onClick={() => row.blackIndex !== undefined && navigateMove(row.blackIndex + 1)}
+                          className={`min-h-9 rounded-md px-2 text-left font-medium ${row.blackIndex !== undefined && currentMoveIndex === row.blackIndex + 1 ? "bg-purple-700 text-white" : "text-slate-800 hover:bg-slate-50 disabled:hover:bg-transparent"}`}
                         >
                           {blackMove || ""}
                         </button>

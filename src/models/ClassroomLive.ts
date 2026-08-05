@@ -16,6 +16,7 @@ const ClassroomSessionSchema = new Schema(
     fen: { type: String, default: "start" },
     pgn: { type: String, default: "" },
     pgnTitle: { type: String, default: "" },
+    navigationStartFen: { type: String, default: "" },
     pgnMoves: [{ type: String }],
     pgnMoveIndex: { type: Number, default: 0 },
     pgnVariations: [

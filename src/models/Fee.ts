@@ -100,6 +100,8 @@ const CreditLedgerSchema = new Schema(
     balanceAfter: { type: Number, required: true },
     sourceType: { type: String, index: true },
     sourceId: { type: Schema.Types.ObjectId, index: true },
+    performedBy: { type: Schema.Types.ObjectId, ref: "User", index: true },
+    performedByRole: { type: String, enum: ["admin", "sub-admin"] },
     note: String,
   },
   { timestamps: true }

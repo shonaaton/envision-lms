@@ -80,6 +80,7 @@ export default async function CreditHistoryPage() {
     CreditLedger.find(ledgerFilter)
       .populate("student", "name username email")
       .populate("invoice", "invoiceNumber totalAmount status type title")
+      .populate("performedBy", "name username role")
       .sort({ createdAt: -1 })
       .limit(manager ? 500 : 300)
       .lean(),
@@ -144,6 +145,7 @@ export default async function CreditHistoryPage() {
                     <th className="px-4 py-3">Credits Deducted</th>
                     <th className="px-4 py-3">Balance After</th>
                     <th className="px-4 py-3">Description / Reason</th>
+                    {manager && <th className="px-4 py-3">Performed By</th>}
                     <th className="px-4 py-3">Related Invoice / Payment</th>
                   </tr>
                 </thead>
@@ -168,6 +170,7 @@ export default async function CreditHistoryPage() {
                         <td className="px-4 py-3 font-black text-rose-700">{credits < 0 ? credits : "-"}</td>
                         <td className="px-4 py-3 font-black text-slate-950">{item.balanceAfter}</td>
                         <td className="min-w-64 px-4 py-3 text-slate-600">{item.note || "Credit ledger transaction"}</td>
+                        {manager && <td className="min-w-44 px-4 py-3 text-slate-600">{item.performedBy?.name || item.performedBy?.username || "Automatic system"}{item.performedByRole ? <span className="block text-xs text-slate-400">{item.performedByRole === "sub-admin" ? "Sub-admin" : "Admin"}</span> : null}</td>}
                         <td className="min-w-44 px-4 py-3"><RelatedInvoice invoice={item.invoice} /></td>
                       </tr>
                     );
@@ -186,6 +189,7 @@ export default async function CreditHistoryPage() {
                         <p className="font-black text-slate-950">{transactionLabel(item.type, credits)}</p>
                         {manager && <p className="mt-0.5 text-xs font-semibold text-slate-500">{item.student?.name || "Student"}</p>}
                         <p className="mt-1 text-sm text-slate-500">{item.note || "Credit ledger transaction"}</p>
+                        {manager && item.performedBy && <p className="mt-1 text-xs text-slate-400">By {item.performedBy.name || item.performedBy.username || "Administrator"}</p>}
                         <p className="mt-1 text-xs text-slate-400">{formatDate(item.createdAt)}</p>
                       </div>
                       <span className={`shrink-0 rounded-2xl px-3 py-2 text-lg font-black ${credits >= 0 ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>

@@ -65,8 +65,8 @@ export async function GET(req: Request) {
   ]);
 
   if (format === "history") {
-    const ledgerHeaders = ["Date", "Student", "Student ID", "Type", "Credits", "Balance After", "Invoice", "Note"];
-    const ledgers = await CreditLedger.find({}).populate("student invoice").sort({ createdAt: -1 }).limit(1000).lean();
+    const ledgerHeaders = ["Date", "Student", "Student ID", "Type", "Credits", "Balance After", "Invoice", "Reason", "Performed By", "Administrator Role"];
+    const ledgers = await CreditLedger.find({}).populate("student invoice performedBy").sort({ createdAt: -1 }).limit(1000).lean();
     const ledgerRows = ledgers.map((ledger: any) => [
       ledger.createdAt ? new Date(ledger.createdAt).toLocaleString("en-IN") : "",
       ledger.student?.name || "",
@@ -76,6 +76,8 @@ export async function GET(req: Request) {
       ledger.balanceAfter,
       ledger.invoice?.invoiceNumber || "",
       ledger.note || "",
+      ledger.performedBy?.name || ledger.performedBy?.username || "",
+      ledger.performedByRole || "",
     ]);
     return new NextResponse(csv(ledgerHeaders, ledgerRows), {
       headers: {

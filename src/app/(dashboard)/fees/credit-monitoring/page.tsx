@@ -10,10 +10,12 @@ import { redirect } from "next/navigation";
 import { AlertTriangle, CheckCircle2, Download, Filter, MailCheck, MailWarning, MessageCircle, Search, Send, WalletCards, XCircle } from "lucide-react";
 import { getFeaturePermissionState } from "@/lib/featureAccess";
 import { requireFeesAccess } from "@/lib/feesAccess";
+import ManualCreditForm from "@/components/fees/ManualCreditForm";
+import { isValidObjectId, Types } from "mongoose";
 
 export const dynamic = "force-dynamic";
 
-type Params = { q?: string; filter?: string; plan?: string; min?: string; max?: string };
+type Params = { q?: string; filter?: string; plan?: string; min?: string; max?: string; creditAdjustment?: string; added?: string; student?: string };
 type ReminderDelivery = Awaited<ReturnType<typeof sendAutomationEmail>>;
 type WhatsAppDelivery = Awaited<ReturnType<typeof sendWhatsAppReminder>>;
 type ReminderSummary = { sent: number; failed: number; missing: number; skipped: number; total: number };
@@ -92,6 +94,85 @@ function whatsappBanner(status?: string, error = "") {
   if (status === "not_configured") return { tone: "border-amber-200 bg-amber-50 text-amber-800", icon: MailWarning, text: "WhatsApp test was not sent because WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID, or WHATSAPP_TEST_RECIPIENT is missing." };
   if (status === "failed") return { tone: "border-rose-200 bg-rose-50 text-rose-800", icon: XCircle, text: error ? `WhatsApp test failed: ${error}` : "WhatsApp test failed. Check the Meta token, phone number ID, template name, and recipient allowlist." };
   return null;
+}
+
+function manualCreditBanner(params: Params) {
+  if (params.creditAdjustment === "added") {
+    return {
+      tone: "border-emerald-200 bg-emerald-50 text-emerald-800",
+      text: `${params.added || "Credits"} credit${params.added === "1" ? "" : "s"} added to ${params.student || "the student"}. The adjustment has been recorded in the credit ledger.`,
+    };
+  }
+  if (params.creditAdjustment === "invalid") return { tone: "border-rose-200 bg-rose-50 text-rose-800", text: "Credits could not be added. Select a valid student, enter a whole number of credits, and provide a reason." };
+  if (params.creditAdjustment === "failed") return { tone: "border-rose-200 bg-rose-50 text-rose-800", text: "The manual credit adjustment could not be completed. No unrecorded credit change was kept." };
+  return null;
+}
+
+async function addManualCredits(formData: FormData) {
+  "use server";
+  const session = await requireFeesAccess("credit");
+  const role = String((session?.user as any)?.role || "");
+  if (!session?.user || (role !== "admin" && role !== "sub-admin")) throw new Error("Forbidden");
+
+  const assignmentId = String(formData.get("assignment") || "").trim();
+  const rawCredits = Number(formData.get("credits"));
+  const reason = String(formData.get("reason") || "").trim();
+  if (!isValidObjectId(assignmentId) || !Number.isInteger(rawCredits) || rawCredits < 1 || rawCredits > 1000 || reason.length < 5 || reason.length > 500) {
+    redirect("/fees/credit-monitoring?creditAdjustment=invalid");
+  }
+
+  await dbConnect();
+  let updated: any;
+  try {
+    updated = await FeeAssignment.findOneAndUpdate(
+      { _id: assignmentId, type: "credits" },
+      { $inc: { creditBalance: rawCredits, totalCreditsPurchased: rawCredits } },
+      { new: true }
+    ).populate("student", "name username email");
+  } catch {
+    redirect("/fees/credit-monitoring?creditAdjustment=failed");
+  }
+  if (!updated?.student?._id) redirect("/fees/credit-monitoring?creditAdjustment=invalid");
+
+  const balanceAfter = Number(updated.creditBalance || 0);
+  try {
+    await CreditLedger.create({
+      student: updated.student._id,
+      assignment: updated._id,
+      type: "adjustment",
+      credits: rawCredits,
+      balanceAfter,
+      sourceType: "manual_credit",
+      sourceId: new Types.ObjectId(),
+      performedBy: (session.user as any).id,
+      performedByRole: role,
+      note: reason,
+    });
+  } catch {
+    await FeeAssignment.updateOne(
+      { _id: updated._id, creditBalance: balanceAfter },
+      { $inc: { creditBalance: -rawCredits, totalCreditsPurchased: -rawCredits } }
+    ).catch(() => null);
+    redirect("/fees/credit-monitoring?creditAdjustment=failed");
+  }
+
+  await Notification.create({
+    user: updated.student._id,
+    type: "credits.manual_addition",
+    title: "Class credits added",
+    message: `${rawCredits} class credit${rawCredits === 1 ? "" : "s"} ${rawCredits === 1 ? "has" : "have"} been added to your account. Reason: ${reason}`,
+    metadata: { assignment: updated._id.toString(), credits: rawCredits, balanceAfter, reason },
+  }).catch(() => null);
+
+  revalidatePath("/fees");
+  revalidatePath("/fees/credit-history");
+  revalidatePath("/fees/credit-monitoring");
+  const params = new URLSearchParams({
+    creditAdjustment: "added",
+    added: String(rawCredits),
+    student: updated.student.name || updated.student.username || "student",
+  });
+  redirect(`/fees/credit-monitoring?${params.toString()}`);
 }
 
 function creditReminderMessage(assignment: any, portalUrl: string) {
@@ -213,6 +294,7 @@ function MiniStat({ label, value, note, icon }: { label: string; value: string |
 
 export default async function CreditMonitoringPage({ searchParams }: { searchParams?: Promise<Params> }) {
   const session = await auth();
+  const role = String((session?.user as any)?.role || "");
   const permissions = session?.user
     ? await getFeaturePermissionState("fees", session.user as any, ["credit", "export"])
     : { credit: false, export: false };
@@ -228,7 +310,7 @@ export default async function CreditMonitoringPage({ searchParams }: { searchPar
   const [allAssignments, plans, ledgers] = await Promise.all([
     FeeAssignment.find({ type: "credits" }).populate("student plan").sort({ creditBalance: 1 }).lean(),
     FeePlan.find({ type: "credits" }).sort({ name: 1 }).lean(),
-    CreditLedger.find({}).populate("student invoice").sort({ createdAt: -1 }).limit(120).lean(),
+    CreditLedger.find({}).populate("student invoice performedBy").sort({ createdAt: -1 }).limit(120).lean(),
   ]);
 
   const assignments = allAssignments
@@ -246,6 +328,19 @@ export default async function CreditMonitoringPage({ searchParams }: { searchPar
   const totalRemaining = allAssignments.reduce((sum: number, assignment: any) => sum + Number(assignment.creditBalance || 0), 0);
   const reminderBanner = creditReminderBanner(params as any);
   const waBanner = whatsappBanner(String((params as any).whatsapp || ""), String((params as any).waError || ""));
+  const adjustmentBanner = manualCreditBanner(params);
+  const canAddManualCredits = role === "admin" || role === "sub-admin";
+  const creditStudents = allAssignments
+    .filter((assignment: any) => assignment.student?._id)
+    .map((assignment: any) => ({
+      assignmentId: assignment._id.toString(),
+      studentId: assignment.student._id.toString(),
+      name: assignment.student.name || assignment.student.username || assignment.student.email || "Student",
+      username: assignment.student.username || "",
+      email: assignment.student.email || "",
+      balance: Number(assignment.creditBalance || 0),
+    }))
+    .sort((a: any, b: any) => a.name.localeCompare(b.name));
 
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-5 text-slate-950 sm:px-6 lg:px-8">
@@ -279,6 +374,22 @@ export default async function CreditMonitoringPage({ searchParams }: { searchPar
           <waBanner.icon size={18} />
           {waBanner.text}
         </div>
+      )}
+      {adjustmentBanner && (
+        <div className={`mb-4 flex items-center gap-3 rounded-lg border px-4 py-3 text-sm font-semibold ${adjustmentBanner.tone}`}>
+          <CheckCircle2 size={18} />
+          {adjustmentBanner.text}
+        </div>
+      )}
+
+      {canAddManualCredits && (
+        <section className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50/70 p-4 shadow-sm">
+          <div className="mb-4">
+            <h2 className="text-lg font-black text-emerald-950">Add Credits Manually</h2>
+            <p className="mt-1 text-sm leading-6 text-emerald-800">Search for a credit-plan student, enter the complimentary credits, and record the required reason. The balance and audit history update immediately.</p>
+          </div>
+          <ManualCreditForm students={creditStudents} action={addManualCredits} />
+        </section>
       )}
 
       <section className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4 shadow-sm">
@@ -441,6 +552,7 @@ export default async function CreditMonitoringPage({ searchParams }: { searchPar
                 <div className="min-w-0">
                   <div className="truncate font-semibold text-slate-950">{ledger.student?.name || "Student"} {credits >= 0 ? "received" : "used"} {Math.abs(credits)} credits</div>
                   <div className="truncate text-xs text-slate-500">{ledger.note || ledger.type}</div>
+                  {ledger.performedBy && <div className="truncate text-[11px] text-slate-400">Added by {ledger.performedBy.name || ledger.performedBy.username || "Administrator"} ({ledger.performedByRole === "sub-admin" ? "Sub-admin" : "Admin"})</div>}
                 </div>
                 <div className="shrink-0 text-right">
                   <div className={`font-black ${credits >= 0 ? "text-emerald-700" : "text-rose-700"}`}>{credits >= 0 ? `+${credits}` : credits}</div>

@@ -62,7 +62,7 @@ const Chessboard = dynamic(() => import("react-chessboard").then((m) => m.Chessb
 
 type Role = "student" | "instructor" | "admin" | "sub-admin";
 type BoardPosition = Record<string, string | undefined>;
-type TabKey = "students" | "chat" | "moves" | "leaderboard";
+type TabKey = "students" | "chat" | "moves" | "engine" | "leaderboard";
 type ToolKey = "move" | "highlight" | "arrow" | "setup";
 type ModifierKey = "default" | "shift" | "ctrl" | "alt";
 type SetupTab = "pieces" | "objects";
@@ -72,6 +72,14 @@ type SetupSelection = string | "erase" | GamifiedObjectId;
 type QuizComposerMode = "current" | "pgn_collection";
 type QuizComposerItem = { id: string; title: string; fen: string; pgn?: string; pgnTitle?: string; solution: string[] };
 type LivePgnVariation = { id: string; label: string; branchAt: number; moves: string[]; createdAt?: string };
+
+function variationDisplayLabel(variation: LivePgnVariation) {
+  const branchMove = variation.moves[variation.branchAt];
+  if (!branchMove) return variation.label;
+  const moveNumber = Math.floor(variation.branchAt / 2) + 1;
+  const movePrefix = variation.branchAt % 2 === 0 ? `${moveNumber}.` : `${moveNumber}...`;
+  return `${variation.label} · ${movePrefix} ${branchMove}`;
+}
 
 function ToolbarIconButton({
   label,
@@ -797,7 +805,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   ];
 
   useEffect(() => {
-    if (!coach && activeTab === "moves") setActiveTab("chat");
+    if (!coach && (activeTab === "moves" || activeTab === "engine")) setActiveTab("chat");
   }, [activeTab, coach]);
 
   useEffect(() => {
@@ -925,7 +933,8 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   }, [pgnOpen]);
 
   useEffect(() => {
-    if (!live?.engineEnabled || !live?.fen || activeTab !== "moves") {
+    if (!live?.engineEnabled || !live?.fen || activeTab !== "engine") {
+      if (engineRef.current) engineRef.current.postMessage("stop");
       setEngineLines([]);
       if (!live?.engineEnabled) setEngineText("Engine disabled");
       return;
@@ -2313,6 +2322,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     { key: "students" as TabKey, icon: <Users size={19} />, label: "Students" },
     { key: "chat" as TabKey, icon: <MessageSquare size={19} />, label: "Chat" },
     { key: "moves" as TabKey, icon: <ClipboardList size={19} />, label: "Moves / Notation" },
+    { key: "engine" as TabKey, icon: <Bot size={19} />, label: "Engine" },
     { key: "leaderboard" as TabKey, icon: <Crown size={19} />, label: "Leaderboard" },
   ];
   const classroomTabs = coach ? coachSidebarTabs : studentPanelTabs;
@@ -2565,7 +2575,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                       <div className="flex min-w-0 flex-1 items-center gap-2 px-1 text-xs font-semibold text-slate-500">
                         <span className="min-w-0 truncate text-slate-900">{live?.pgnTitle || "Classroom board"}</span>
                         <span className="flex-none rounded-md bg-slate-100 px-2 py-1 font-bold tabular-nums text-slate-600">{currentMoveIndex}/{activePgnMoves.length || (live?.moveHistory || []).length}</span>
-                        {activePgnVariation && <span className="flex-none rounded-md bg-amber-100 px-2 py-1 font-bold text-amber-800">{activePgnVariation.label}</span>}
+                        {activePgnVariation && <span className="flex-none rounded-md bg-amber-100 px-2 py-1 font-bold text-amber-800">{variationDisplayLabel(activePgnVariation)}</span>}
                       </div>
                       <div className="flex flex-none items-center justify-end gap-1">
                         <div className="flex flex-none items-center gap-1 rounded-md bg-slate-50 p-0.5 ring-1 ring-inset ring-slate-200/70">
@@ -2655,11 +2665,11 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
         )}
 
         {!quizFocusMode && <aside className="flex min-h-[240px] flex-col border-t border-slate-200 bg-white md:min-h-0 xl:border-l xl:border-t-0">
-          <div className={`grid overflow-x-auto border-b border-slate-200 bg-white text-xs ${coach ? "grid-cols-4" : "grid-cols-2"}`}>
+          <div className={`grid overflow-x-auto border-b border-slate-200 bg-white text-xs ${coach ? "grid-cols-5" : "grid-cols-2"}`}>
             {classroomTabs.map(({ key, icon, label }: any) => (
               <button key={key} onClick={() => setActiveTab(key)} className={`flex h-9 min-w-fit items-center justify-center gap-1 border-b-2 px-2 text-[11px] font-semibold transition ${activeTab === key ? "border-brand text-brand" : "border-transparent text-slate-500 hover:bg-slate-50 hover:text-slate-800"}`} title={label}>
                 {icon}
-                <span className="hidden sm:inline 2xl:inline">{label}</span>
+                <span className={coach ? "sr-only 2xl:not-sr-only" : "hidden sm:inline"}>{label}</span>
               </button>
             ))}
           </div>
@@ -2809,10 +2819,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
             {coach && activeTab === "moves" && (
               <div className="space-y-4">
                 <div className="rounded-lg border border-slate-200 p-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-semibold text-slate-950">Notation</h3>
-                    {coach && <button onClick={() => patch({ engineEnabled: !live?.engineEnabled })} className={`inline-flex items-center gap-2 rounded-md px-3 py-2 text-xs font-semibold ${live?.engineEnabled ? "bg-purple-700 text-white" : "bg-slate-100 text-slate-600"}`}><Bot size={15} /> Stockfish</button>}
-                  </div>
+                  <h3 className="font-semibold text-slate-950">Notation</h3>
                   <p className="mt-2 text-xs text-slate-500">{live?.pgnTitle || "Current classroom game"}</p>
                 </div>
                 <div className="overflow-hidden rounded-lg border border-slate-200 text-sm">
@@ -2831,9 +2838,9 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                           type="button"
                           onClick={() => selectPgnLine(variation.id)}
                           className={`rounded-md px-2.5 py-1.5 text-xs font-bold ${activePgnVariation?.id === variation.id ? "bg-amber-500 text-white" : "bg-amber-50 text-amber-800"}`}
-                          title={`Branches after ply ${variation.branchAt}`}
+                          title={`${variationDisplayLabel(variation)} — branches after ply ${variation.branchAt}`}
                         >
-                          {variation.label}
+                          {variationDisplayLabel(variation)}
                         </button>
                       ))}
                     </div>
@@ -2868,8 +2875,23 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                     );
                   }) : <div className="p-6 text-center text-sm text-slate-500">No moves loaded yet.</div>}
                 </div>
-                {coach && <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                  <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-slate-950"><Bot size={16} /> Engine</div>
+              </div>
+            )}
+
+            {coach && activeTab === "engine" && (
+              <div className="space-y-3">
+                <div className="rounded-lg border border-slate-200 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="inline-flex items-center gap-2 font-semibold text-slate-950"><Bot size={17} /> Stockfish Engine</h3>
+                      <p className="mt-1 text-xs text-slate-500">Analyze the current classroom board position.</p>
+                    </div>
+                    <button onClick={() => patch({ engineEnabled: !live?.engineEnabled })} className={`inline-flex flex-none items-center gap-2 rounded-md px-3 py-2 text-xs font-semibold ${live?.engineEnabled ? "bg-purple-700 text-white" : "bg-slate-100 text-slate-600"}`}>
+                      {live?.engineEnabled ? "Enabled" : "Enable"}
+                    </button>
+                  </div>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                   {live?.engineEnabled && engineLines.length ? (
                     <div className="space-y-2">
                       {engineLines.map((line) => (
@@ -2882,7 +2904,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                   ) : (
                     <p className="break-words text-xs text-slate-600">{live?.engineEnabled ? engineText : "Engine disabled"}</p>
                   )}
-                </div>}
+                </div>
               </div>
             )}
 

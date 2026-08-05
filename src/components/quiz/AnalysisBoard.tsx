@@ -49,6 +49,21 @@ type MoveRow = {
   blackPly?: number;
 };
 
+type AnalysisMove = {
+  from: string;
+  to: string;
+  promotion?: string;
+  san: string;
+  color: "w" | "b";
+};
+
+type AnalysisVariation = {
+  id: string;
+  label: string;
+  branchAt: number;
+  moves: AnalysisMove[];
+};
+
 type EngineLine = {
   multipv: number;
   eval: string;
@@ -188,16 +203,45 @@ function buildAnalysisGame(fen?: string) {
   return new Chess();
 }
 
-export default function AnalysisBoard({ initialFen, withEngine = true }: { initialFen?: string; withEngine?: boolean }) {
+function analysisMoves(game: Chess): AnalysisMove[] {
+  return (game.history({ verbose: true }) as Array<AnalysisMove>).map((move) => ({
+    from: move.from,
+    to: move.to,
+    promotion: move.promotion,
+    san: move.san,
+    color: move.color,
+  }));
+}
+
+function playAnalysisLine(baseFen: string, moves: AnalysisMove[], ply = moves.length) {
+  const game = buildAnalysisGame(baseFen);
+  for (const move of moves.slice(0, Math.max(0, Math.min(moves.length, ply)))) {
+    try {
+      game.move({ from: move.from, to: move.to, promotion: move.promotion || "q" });
+    } catch {
+      break;
+    }
+  }
+  return game;
+}
+
+export default function AnalysisBoard({ initialFen, withEngine = true, canUseLibrary = true }: { initialFen?: string; withEngine?: boolean; canUseLibrary?: boolean }) {
   const initialPosition = normalizeBoardResourceFen(initialFen) || initialFen || startFen;
   const gameRef = useRef(buildAnalysisGame(initialPosition));
   const baseFenRef = useRef(initialPosition);
+  const selectedPlyRef = useRef(0);
+  const mainLineMovesRef = useRef<AnalysisMove[]>([]);
+  const variationsRef = useRef<AnalysisVariation[]>([]);
+  const activeLineIdRef = useRef("");
   const workerRef = useRef<Worker | null>(null);
   const analysisFenRef = useRef(initialPosition || gameRef.current.fen());
   const boardWrapRef = useRef<HTMLDivElement | null>(null);
   const pdfInputRef = useRef<HTMLInputElement | null>(null);
   const [position, setPosition] = useState(initialPosition || gameRef.current.fen());
   const [selectedPly, setSelectedPly] = useState(0);
+  const [mainLineMoves, setMainLineMoves] = useState<AnalysisMove[]>([]);
+  const [variations, setVariations] = useState<AnalysisVariation[]>([]);
+  const [activeLineId, setActiveLineId] = useState("");
   const [orientation, setOrientation] = useState<"white" | "black">("white");
   const [tab, setTab] = useState<SideTab>("engine");
   const [dialog, setDialog] = useState<DialogName>(null);
@@ -223,11 +267,12 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
   const squareTheme = boardThemes[boardTheme];
   const boardSize = Math.round(boardWidth * (boardScale / 100));
   const customPieces = useMemo(() => createCustomPieces(pieceTheme), [pieceTheme]);
+  const activeVariation = useMemo(() => variations.find((variation) => variation.id === activeLineId) || null, [activeLineId, variations]);
+  const activeLineMoves = activeVariation?.moves || mainLineMoves;
 
-  const moveRows: MoveRow[] = (() => {
-    const verbose = gameRef.current.history({ verbose: true }) as Array<{ san: string; color: "w" | "b" }>;
+  const moveRows: MoveRow[] = useMemo(() => {
     const rows: MoveRow[] = [];
-    verbose.forEach((move, index) => {
+    activeLineMoves.forEach((move, index) => {
       const rowIndex = Math.floor(index / 2);
       if (!rows[rowIndex]) rows[rowIndex] = { number: rowIndex + 1, white: "", black: "", whitePly: rowIndex * 2 + 1 };
       if (move.color === "w") {
@@ -239,7 +284,7 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
       }
     });
     return rows;
-  })();
+  }, [activeLineMoves]);
 
   useEffect(() => {
     const element = boardWrapRef.current;
@@ -310,15 +355,64 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
     worker.postMessage("go depth 16");
   }, [engineOn, position]);
 
+  function currentAnalysisLine() {
+    return variationsRef.current.find((variation) => variation.id === activeLineIdRef.current)?.moves || mainLineMovesRef.current;
+  }
+
+  function resetAnalysisLines(moves: AnalysisMove[] = []) {
+    mainLineMovesRef.current = moves;
+    variationsRef.current = [];
+    activeLineIdRef.current = "";
+    setMainLineMoves(moves);
+    setVariations([]);
+    setActiveLineId("");
+  }
+
   function commitMove(source: string, target: string, promotion: PromotionPiece = "q") {
     try {
-      if (selectedPly < gameRef.current.history().length) {
-        gameRef.current = replayGame(selectedPly);
-      }
+      const line = currentAnalysisLine();
+      const branchAt = Math.max(0, Math.min(line.length, selectedPlyRef.current));
       const move = gameRef.current.move({ from: source, to: target, promotion });
       if (!move) return false;
+      const recordedMove: AnalysisMove = {
+        from: move.from,
+        to: move.to,
+        promotion: move.promotion,
+        san: move.san,
+        color: move.color,
+      };
+      const expectedMove = line[branchAt];
+      const followsLine = expectedMove
+        && expectedMove.from === recordedMove.from
+        && expectedMove.to === recordedMove.to
+        && (expectedMove.promotion || "") === (recordedMove.promotion || "");
+
+      if (!followsLine) {
+        const nextMoves = [...line.slice(0, branchAt), recordedMove];
+        if (branchAt === line.length && activeLineIdRef.current) {
+          const nextVariations = variationsRef.current.map((variation) => variation.id === activeLineIdRef.current ? { ...variation, moves: nextMoves } : variation);
+          variationsRef.current = nextVariations;
+          setVariations(nextVariations);
+        } else if (branchAt === line.length) {
+          mainLineMovesRef.current = nextMoves;
+          setMainLineMoves(nextMoves);
+        } else {
+          const variation: AnalysisVariation = {
+            id: `variation-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            label: `Variation ${variationsRef.current.length + 1}`,
+            branchAt,
+            moves: nextMoves,
+          };
+          const nextVariations = [...variationsRef.current, variation];
+          variationsRef.current = nextVariations;
+          activeLineIdRef.current = variation.id;
+          setVariations(nextVariations);
+          setActiveLineId(variation.id);
+        }
+      }
       setSelectedSquare(null);
-      setSelectedPly(gameRef.current.history().length);
+      selectedPlyRef.current = branchAt + 1;
+      setSelectedPly(branchAt + 1);
       setBestMove("");
       setEvalCp(null);
       setTab("engine");
@@ -382,6 +476,8 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
     setEvalCp(null);
     setEngineLines([]);
     setGamifiedBoardObjects({});
+    resetAnalysisLines();
+    selectedPlyRef.current = 0;
     setSelectedPly(0);
     setSelectedSquare(null);
     refreshBoard();
@@ -395,6 +491,8 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
       setEvalCp(null);
       setEngineLines([]);
       setGamifiedBoardObjects(gamifiedObjects || {});
+      resetAnalysisLines();
+      selectedPlyRef.current = 0;
       setSelectedPly(0);
       setSelectedSquare(null);
       refreshBoard();
@@ -409,6 +507,8 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
       setEvalCp(null);
       setEngineLines([]);
       setGamifiedBoardObjects(gamifiedObjects || {});
+      resetAnalysisLines();
+      selectedPlyRef.current = 0;
       setSelectedPly(0);
       setSelectedSquare(null);
       setPosition(normalizedFen);
@@ -424,7 +524,10 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
       const history = next.history({ verbose: true }) as Array<{ before?: string }>;
       gameRef.current = next;
       baseFenRef.current = history[0]?.before || normalizeBoardResourceFen(extractFenHeader(pgn)) || startFen;
-      setSelectedPly(history.length);
+      const moves = analysisMoves(next);
+      resetAnalysisLines(moves);
+      selectedPlyRef.current = moves.length;
+      setSelectedPly(moves.length);
       setBestMove("");
       setEvalCp(null);
       setEngineLines([]);
@@ -437,6 +540,8 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
       if (!fen) return false;
       gameRef.current = buildAnalysisGame(fen);
       baseFenRef.current = fen;
+      resetAnalysisLines();
+      selectedPlyRef.current = 0;
       setSelectedPly(0);
       setBestMove("");
       setEvalCp(null);
@@ -466,40 +571,37 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
     loadPgnCollection(libraryQueue, nextIndex);
   }
 
-  function replayGame(ply: number) {
-    const history = gameRef.current.history({ verbose: true }) as Array<{ from: string; to: string; promotion?: string }>;
-    const next = buildAnalysisGame(baseFenRef.current);
-    history.slice(0, ply).forEach((move) => {
-      try {
-        next.move({ from: move.from, to: move.to, promotion: move.promotion || "q" });
-      } catch {
-        // Stop replaying if a permissive board has no legal continuation.
-      }
-    });
-    return next;
-  }
-
-  const goToPly = useCallback((ply: number) => {
-    const next = replayGame(ply);
-    setSelectedPly(ply);
+  const goToPly = useCallback((ply: number, requestedMoves?: AnalysisMove[]) => {
+    const moves = requestedMoves
+      || variationsRef.current.find((variation) => variation.id === activeLineIdRef.current)?.moves
+      || mainLineMovesRef.current;
+    const boundedPly = Math.max(0, Math.min(moves.length, ply));
+    const next = playAnalysisLine(baseFenRef.current, moves, boundedPly);
+    gameRef.current = next;
+    selectedPlyRef.current = boundedPly;
+    setSelectedPly(boundedPly);
     setPosition(next.fen());
+    setSelectedSquare(null);
   }, []);
 
-  function goPrevious() {
-    goToPly(Math.max(0, selectedPly - 1));
+  const goPrevious = useCallback(() => {
+    goToPly(selectedPlyRef.current - 1);
+  }, [goToPly]);
+
+  const goNext = useCallback(() => {
+    goToPly(selectedPlyRef.current + 1);
+  }, [goToPly]);
+
+  function selectAnalysisLine(lineId: string) {
+    const variation = variationsRef.current.find((item) => item.id === lineId);
+    const moves = variation?.moves || mainLineMovesRef.current;
+    activeLineIdRef.current = variation?.id || "";
+    setActiveLineId(variation?.id || "");
+    const targetPly = variation
+      ? Math.min(moves.length, Math.max(variation.branchAt + 1, selectedPlyRef.current))
+      : Math.min(moves.length, selectedPlyRef.current);
+    goToPly(targetPly, moves);
   }
-
-  function goNext() {
-    goToPly(Math.min(gameRef.current.history().length, selectedPly + 1));
-  }
-
-  const goPreviousMemo = useCallback(() => {
-    goToPly(Math.max(0, selectedPly - 1));
-  }, [goToPly, selectedPly]);
-
-  const goNextMemo = useCallback(() => {
-    goToPly(Math.min(gameRef.current.history().length, selectedPly + 1));
-  }, [goToPly, selectedPly]);
 
   useEffect(() => {
     if (!engineOn) return;
@@ -516,20 +618,21 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
 
       if (event.key === "ArrowLeft") {
         event.preventDefault();
-        goPreviousMemo();
+        goPrevious();
       }
       if (event.key === "ArrowRight") {
         event.preventDefault();
-        goNextMemo();
+        goNext();
       }
     }
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [dialog, goNextMemo, goPreviousMemo]);
+  }, [dialog, goNext, goPrevious]);
 
   async function saveCurrentPgn(title: string, folder?: string) {
-    const pgn = gameRef.current.pgn() || `[Event "${title}"]\n[FEN "${gameRef.current.fen()}"]\n[SetUp "1"]\n\n*`;
+    const lineGame = playAnalysisLine(baseFenRef.current, currentAnalysisLine());
+    const pgn = lineGame.pgn() || `[Event "${title}"]\n[FEN "${lineGame.fen()}"]\n[SetUp "1"]\n\n*`;
     try {
       const response = await fetch("/api/pgn", {
         method: "POST",
@@ -578,7 +681,7 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
                     boardOrientation={orientation}
                     boardWidth={boardSize}
                     snapToCursor
-                    animationDuration={120}
+                    animationDuration={0}
                     customSquareStyles={moveHintStyles as any}
                     customDarkSquareStyle={{ backgroundColor: squareTheme.dark }}
                     customLightSquareStyle={{ backgroundColor: squareTheme.light }}
@@ -623,7 +726,7 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
             >
               <Zap size={15} /> {engineOn ? "Stop Engine" : "Start Engine"}
             </button>
-            <button className="btn-primary gap-2" onClick={() => setDialog("save")}><Save size={15} /> Save</button>
+            {canUseLibrary && <button className="btn-primary gap-2" onClick={() => setDialog("save")}><Save size={15} /> Save</button>}
           </div>
           {libraryQueue.length > 1 && (
             <div className="mt-3 flex flex-wrap items-center justify-center gap-2 rounded-lg border border-purple-100 bg-purple-50 px-3 py-2 text-sm text-purple-900">
@@ -636,7 +739,21 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
 
         <aside className={`order-2 min-h-[260px] overflow-auto rounded-lg border p-3 sm:min-h-[320px] sm:p-4 md:min-h-0 xl:order-2 ${panelClass}`}>
           <TabBar active={tab} isDark={isDark} onChange={setTab} />
-          {tab === "moves" && <MovesPanel rows={moveRows} isDark={isDark} selectedPly={selectedPly} onSelect={goToPly} onPrevious={goPrevious} onNext={goNext} canPrevious={selectedPly > 0} canNext={selectedPly < gameRef.current.history().length} />}
+          {tab === "moves" && (
+            <MovesPanel
+              rows={moveRows}
+              variations={variations}
+              activeLineId={activeLineId}
+              isDark={isDark}
+              selectedPly={selectedPly}
+              onSelect={goToPly}
+              onSelectLine={selectAnalysisLine}
+              onPrevious={goPrevious}
+              onNext={goNext}
+              canPrevious={selectedPly > 0}
+              canNext={selectedPly < activeLineMoves.length}
+            />
+          )}
           {tab === "engine" && (
             <EnginePanel
               isDark={isDark}
@@ -664,8 +781,8 @@ export default function AnalysisBoard({ initialFen, withEngine = true }: { initi
         </aside>
       </div>
 
-      {dialog === "pgn" && <PgnDialog isDark={isDark} onClose={() => setDialog(null)} onLoad={loadPgn} onLoadCollection={loadPgnCollection} />}
-      {dialog === "fen" && <FenDialog isDark={isDark} currentFen={gameRef.current.fen()} onClose={() => setDialog(null)} onLoad={loadFen} />}
+      {dialog === "pgn" && <PgnDialog isDark={isDark} canUseLibrary={canUseLibrary} onClose={() => setDialog(null)} onLoad={loadPgn} onLoadCollection={loadPgnCollection} />}
+      {dialog === "fen" && <FenDialog isDark={isDark} currentFen={position} onClose={() => setDialog(null)} onLoad={loadFen} />}
       {dialog === "setup" && <SetupDialog isDark={isDark} currentFen={position} boardTheme={boardTheme} pieceTheme={pieceTheme} initialGamifiedObjects={gamifiedBoardObjects} onClose={() => setDialog(null)} onLoad={loadFen} />}
       {dialog === "settings" && <SettingsDialog isDark={isDark} scale={boardScale} boardTheme={boardTheme} pieceTheme={pieceTheme} onScale={setBoardScale} onBoardTheme={setBoardTheme} onPieceTheme={setPieceTheme} onClose={() => setDialog(null)} />}
       {dialog === "save" && <SaveDialog isDark={isDark} onClose={() => setDialog(null)} onSave={saveCurrentPgn} />}
@@ -808,18 +925,24 @@ function TabBar({ active, isDark, onChange }: { active: SideTab; isDark: boolean
 
 function MovesPanel({
   rows,
+  variations,
+  activeLineId,
   isDark,
   selectedPly,
   onSelect,
+  onSelectLine,
   onPrevious,
   onNext,
   canPrevious,
   canNext,
 }: {
   rows: MoveRow[];
+  variations: AnalysisVariation[];
+  activeLineId: string;
   isDark: boolean;
   selectedPly: number;
   onSelect: (ply: number) => void;
+  onSelectLine: (lineId: string) => void;
   onPrevious: () => void;
   onNext: () => void;
   canPrevious: boolean;
@@ -828,9 +951,31 @@ function MovesPanel({
   return (
     <div className={`rounded-lg ${isDark ? "bg-transparent" : "bg-slate-50"}`}>
       <div className={`flex items-center justify-between border-b px-4 py-4 text-lg font-semibold ${isDark ? "border-ink-600 text-white" : "border-slate-100 text-slate-950"}`}>
-        Move History
+        <span>Move History{activeLineId ? ` · ${variations.find((variation) => variation.id === activeLineId)?.label || "Variation"}` : ""}</span>
         <Copy size={16} className={isDark ? "text-blue-200/70" : "text-slate-500"} />
       </div>
+      {(rows.length > 0 || variations.length > 0) && (
+        <div className={`flex flex-wrap gap-1.5 border-b p-3 ${isDark ? "border-ink-600" : "border-slate-100 bg-white"}`}>
+          <button
+            type="button"
+            onClick={() => onSelectLine("")}
+            className={`rounded-md px-2.5 py-1.5 text-xs font-bold ${!activeLineId ? "bg-purple-700 text-white" : isDark ? "bg-ink-700 text-blue-100" : "bg-slate-100 text-slate-600"}`}
+          >
+            Main line
+          </button>
+          {variations.map((variation) => (
+            <button
+              key={variation.id}
+              type="button"
+              onClick={() => onSelectLine(variation.id)}
+              title={`Branches after ply ${variation.branchAt}`}
+              className={`rounded-md px-2.5 py-1.5 text-xs font-bold ${activeLineId === variation.id ? "bg-amber-500 text-white" : isDark ? "bg-amber-950 text-amber-100" : "bg-amber-50 text-amber-800"}`}
+            >
+              {variation.label}
+            </button>
+          ))}
+        </div>
+      )}
       {rows.length ? (
         <div className="max-h-[360px] overflow-y-auto p-4 text-sm">
           {rows.map((row) => (
@@ -1086,11 +1231,13 @@ function PdfPanel({
 
 function PgnDialog({
   isDark,
+  canUseLibrary,
   onClose,
   onLoad,
   onLoadCollection,
 }: {
   isDark: boolean;
+  canUseLibrary: boolean;
   onClose: () => void;
   onLoad: (pgn: string) => boolean;
   onLoadCollection: (games: PgnLibraryGame[]) => boolean;
@@ -1109,15 +1256,17 @@ function PgnDialog({
   }
 
   return (
-    <ModalFrame isDark={isDark} title="Load PGN Game" subtitle="Load from the master library, paste a PGN, or upload a PGN file." onClose={onClose} width="max-w-[520px]">
-      <button
-        type="button"
-        onClick={() => setLibraryOpen(true)}
-        className="mb-4 flex w-full items-center justify-between rounded-lg border border-purple-200 bg-purple-50 px-4 py-3 text-left text-sm font-semibold text-purple-800 hover:bg-purple-100"
-      >
-        <span className="inline-flex items-center gap-2"><BookOpen size={16} /> Load from master PGN library</span>
-        <ChevronRight size={16} />
-      </button>
+    <ModalFrame isDark={isDark} title="Load PGN Game" subtitle={canUseLibrary ? "Load from the master library, paste a PGN, or upload a PGN file." : "Paste a PGN or upload a PGN file."} onClose={onClose} width="max-w-[520px]">
+      {canUseLibrary && (
+        <button
+          type="button"
+          onClick={() => setLibraryOpen(true)}
+          className="mb-4 flex w-full items-center justify-between rounded-lg border border-purple-200 bg-purple-50 px-4 py-3 text-left text-sm font-semibold text-purple-800 hover:bg-purple-100"
+        >
+          <span className="inline-flex items-center gap-2"><BookOpen size={16} /> Load from master PGN library</span>
+          <ChevronRight size={16} />
+        </button>
+      )}
       <label className={`mb-5 flex h-[118px] cursor-pointer flex-col items-center justify-center rounded-md border border-dashed text-sm ${isDark ? "border-ink-600 text-blue-200/70" : "border-slate-200 text-slate-500"}`}>
         Drag & Drop a PGN file here
         <span className="mt-2">or click to browse</span>
@@ -1139,7 +1288,7 @@ function PgnDialog({
         <button className={controlButton(isDark)} onClick={onClose}>Cancel</button>
         <button className="btn-primary" onClick={() => pgn.trim() && (onLoad(pgn) || setError("That PGN could not be loaded."))}>Load Position</button>
       </div>
-      <PgnLibraryPicker open={libraryOpen} mode="multiple" onClose={() => setLibraryOpen(false)} onSelect={loadLibraryGame} />
+      {canUseLibrary && <PgnLibraryPicker open={libraryOpen} mode="multiple" onClose={() => setLibraryOpen(false)} onSelect={loadLibraryGame} />}
     </ModalFrame>
   );
 }

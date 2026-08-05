@@ -73,14 +73,19 @@ function normalizeState(feature: FeatureDefinition, doc?: any): FeatureAccessSta
   const base = defaultState(feature);
   if (!doc) return base;
   const rolePermissions = doc.rolePermissions || {};
+  const normalizedRolePermissions = (role: PortalRole) => {
+    const configured = Array.isArray(rolePermissions[role]) ? rolePermissions[role].map(String) : [];
+    if (feature.key !== "analysisBoard") return configured;
+    return Array.from(new Set([...(base.rolePermissions[role] || []), ...configured]));
+  };
   return {
     key: feature.key,
     status: (doc.status || base.status) as FeatureStatus,
     rolePermissions: {
-      student: [...(rolePermissions.student || [])],
-      instructor: [...(rolePermissions.instructor || [])],
-      admin: [...(rolePermissions.admin || [])],
-      "sub-admin": [...(rolePermissions["sub-admin"] || [])],
+      student: normalizedRolePermissions("student"),
+      instructor: normalizedRolePermissions("instructor"),
+      admin: normalizedRolePermissions("admin"),
+      "sub-admin": normalizedRolePermissions("sub-admin"),
     },
     pilotRoles: [...(doc.pilotRoles || [])],
     pilotUsers: ids(doc.pilotUsers),

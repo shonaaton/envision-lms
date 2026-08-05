@@ -71,6 +71,7 @@ type GamifiedObjectId = "star" | "gem" | "coin" | "apple" | "fire" | "trophy" | 
 type SetupSelection = string | "erase" | GamifiedObjectId;
 type QuizComposerMode = "current" | "pgn_collection";
 type QuizComposerItem = { id: string; title: string; fen: string; pgn?: string; pgnTitle?: string; solution: string[] };
+type LivePgnVariation = { id: string; label: string; branchAt: number; moves: string[]; createdAt?: string };
 
 function ToolbarIconButton({
   label,
@@ -579,6 +580,12 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const pendingOptimisticLiveRef = useRef<any | null>(null);
   const pendingOptimisticUntilRef = useRef(0);
   const pendingOptimisticClearTimerRef = useRef<number | null>(null);
+  const navigationPersistTimerRef = useRef<number | null>(null);
+  const navigationIndexRef = useRef(0);
+  const pendingNavigationUpdateRef = useRef<Record<string, any> | null>(null);
+  const coachMovePersistTimerRef = useRef<number | null>(null);
+  const pendingCoachMoveUpdateRef = useRef<Record<string, any> | null>(null);
+  const pgnStateRef = useRef<{ mainMoves: string[]; variations: LivePgnVariation[]; activeVariationId: string }>({ mainMoves: [], variations: [], activeVariationId: "" });
   const pendingDrawingsHashRef = useRef("");
   const dataRef = useRef<any>(null);
   const loadedOnceRef = useRef(false);
@@ -679,7 +686,12 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     };
   }, [resizingSidePanel]);
 
-  function applyOptimisticLive(update: any) {
+  function applyOptimisticLive(update: any, protectFromRefresh = false) {
+    if (protectFromRefresh) {
+      pendingOptimisticLiveRef.current = { ...(pendingOptimisticLiveRef.current || {}), ...update };
+      pendingOptimisticUntilRef.current = Date.now() + 1500;
+      if (pendingOptimisticClearTimerRef.current) window.clearTimeout(pendingOptimisticClearTimerRef.current);
+    }
     setData((current: any) => {
       if (!current?.live) return current;
       const next = {
@@ -734,6 +746,8 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     return () => {
       if (drawingsPersistTimerRef.current) window.clearTimeout(drawingsPersistTimerRef.current);
       if (pendingOptimisticClearTimerRef.current) window.clearTimeout(pendingOptimisticClearTimerRef.current);
+      if (navigationPersistTimerRef.current) window.clearTimeout(navigationPersistTimerRef.current);
+      if (coachMovePersistTimerRef.current) window.clearTimeout(coachMovePersistTimerRef.current);
     };
   }, []);
 
@@ -826,6 +840,12 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   }, [pgnLibrary, activePgnFolder, pgnFolderQuery]);
   const chatMessages = data?.chatMessages || [];
   const pgnMoves = useMemo(() => live?.pgnMoves || [], [live?.pgnMoves]);
+  const pgnVariations = useMemo<LivePgnVariation[]>(() => Array.isArray(live?.pgnVariations) ? live.pgnVariations : [], [live?.pgnVariations]);
+  const activePgnVariation = useMemo(
+    () => pgnVariations.find((variation) => variation.id === live?.activePgnVariationId) || null,
+    [live?.activePgnVariationId, pgnVariations]
+  );
+  const activePgnMoves = activePgnVariation?.moves || pgnMoves;
   const currentMoveIndex = live?.pgnMoveIndex || 0;
   const boardFen = live?.fen === "start" || !live?.fen ? "start" : live.fen;
   const boardPosition = boardFen;
@@ -843,6 +863,18 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const classroomName = classroom?.title || "Live Classroom";
   const coachName = classroom?.coach?.name || classroom?.instructor?.name || "Coach";
   const activeStudents = students.filter((student: any) => student?.status !== "inactive");
+
+  useEffect(() => {
+    navigationIndexRef.current = Math.max(0, Math.min(activePgnMoves.length, currentMoveIndex));
+  }, [activePgnMoves.length, currentMoveIndex, live?.activePgnVariationId]);
+
+  useEffect(() => {
+    pgnStateRef.current = {
+      mainMoves: pgnMoves,
+      variations: pgnVariations,
+      activeVariationId: live?.activePgnVariationId || "",
+    };
+  }, [live?.activePgnVariationId, pgnMoves, pgnVariations]);
 
   useEffect(() => {
     activePgnTabRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
@@ -935,10 +967,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
 
   const patch = useCallback(async (update: any, options?: { optimistic?: boolean }) => {
     if (options?.optimistic !== false) {
-      pendingOptimisticLiveRef.current = { ...(pendingOptimisticLiveRef.current || {}), ...update };
-      pendingOptimisticUntilRef.current = Date.now() + 1500;
-      if (pendingOptimisticClearTimerRef.current) window.clearTimeout(pendingOptimisticClearTimerRef.current);
-      applyOptimisticLive(update);
+      applyOptimisticLive(update, true);
     }
     const res = await fetch(liveUrl(), {
       method: "PATCH",
@@ -1062,18 +1091,18 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   }
 
   function currentPgnFen() {
-    if (!pgnMoves.length) return live?.fen || "start";
+    if (!activePgnMoves.length) return live?.fen || "start";
     const collectionItem = (Array.isArray(live?.challenge?.pgnCollection) ? live.challenge.pgnCollection : [])
       .find((pgn: any) => pgn.title === live?.pgnTitle || pgn.pgn === live?.pgn);
     const startFen = normalizeBoardResourceFen(collectionItem?.fen || extractFen(live?.pgn || "")) || "start";
-    return applyMoves(startFen, pgnMoves, currentMoveIndex);
+    return applyMoves(startFen, activePgnMoves, currentMoveIndex);
   }
 
   function restoreLoadedPgnPosition() {
     setSelectedMoveSquare(null);
     patch({
       fen: currentPgnFen(),
-      moveHistory: pgnMoves.slice(0, currentMoveIndex),
+      moveHistory: activePgnMoves.slice(0, currentMoveIndex),
       illegalMovesEnabled: false,
       setupMode: false,
       drawings: [],
@@ -1119,6 +1148,77 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     return true;
   }
 
+  function cancelPendingNavigationPersistence() {
+    if (navigationPersistTimerRef.current) window.clearTimeout(navigationPersistTimerRef.current);
+    navigationPersistTimerRef.current = null;
+    pendingNavigationUpdateRef.current = null;
+  }
+
+  function scheduleCoachMovePersistence(update: Record<string, any>) {
+    pendingCoachMoveUpdateRef.current = update;
+    applyOptimisticLive(update, true);
+    if (coachMovePersistTimerRef.current) window.clearTimeout(coachMovePersistTimerRef.current);
+    coachMovePersistTimerRef.current = window.setTimeout(() => {
+      coachMovePersistTimerRef.current = null;
+      const pendingUpdate = pendingCoachMoveUpdateRef.current;
+      pendingCoachMoveUpdateRef.current = null;
+      if (pendingUpdate) void patch(pendingUpdate, { optimistic: false });
+    }, 80);
+  }
+
+  function pgnUpdateForCoachMove(moveSan: string) {
+    const pgnState = pgnStateRef.current;
+    const activeVariation = pgnState.variations.find((variation) => variation.id === pgnState.activeVariationId) || null;
+    const activeMoves = activeVariation?.moves || pgnState.mainMoves;
+    const hasLoadedPgn = Boolean(live?.pgn || pgnState.mainMoves.length || pgnState.variations.length);
+    if (!hasLoadedPgn) return { moveHistory: [...(currentLive()?.moveHistory || []), moveSan] };
+
+    const index = Math.max(0, Math.min(activeMoves.length, navigationIndexRef.current));
+    const expectedMove = activeMoves[index];
+    if (expectedMove === moveSan) {
+      const nextIndex = index + 1;
+      navigationIndexRef.current = nextIndex;
+      return { activePgnVariationId: activeVariation?.id || "", pgnMoveIndex: nextIndex, moveHistory: activeMoves.slice(0, nextIndex) };
+    }
+
+    if (index === activeMoves.length) {
+      const nextMoves = [...activeMoves, moveSan];
+      const nextIndex = nextMoves.length;
+      navigationIndexRef.current = nextIndex;
+      if (activeVariation) {
+        const nextVariations = pgnState.variations.map((variation) => variation.id === activeVariation.id ? { ...variation, moves: nextMoves } : variation);
+        pgnStateRef.current = { ...pgnState, variations: nextVariations };
+        return {
+          pgnVariations: nextVariations,
+          activePgnVariationId: activeVariation.id,
+          pgnMoveIndex: nextIndex,
+          moveHistory: nextMoves,
+        };
+      }
+      pgnStateRef.current = { ...pgnState, mainMoves: nextMoves };
+      return { pgnMoves: nextMoves, pgnMoveIndex: nextIndex, moveHistory: nextMoves };
+    }
+
+    const variationNumber = pgnState.variations.length + 1;
+    const variation: LivePgnVariation = {
+      id: `variation-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      label: `Variation ${variationNumber}`,
+      branchAt: index,
+      moves: [...activeMoves.slice(0, index), moveSan],
+      createdAt: new Date().toISOString(),
+    };
+    const nextIndex = index + 1;
+    navigationIndexRef.current = nextIndex;
+    const nextVariations = [...pgnState.variations, variation];
+    pgnStateRef.current = { ...pgnState, variations: nextVariations, activeVariationId: variation.id };
+    return {
+      pgnVariations: nextVariations,
+      activePgnVariationId: variation.id,
+      pgnMoveIndex: nextIndex,
+      moveHistory: variation.moves,
+    };
+  }
+
   function onDrop(source: string, target: string, piece: string, promotion: PromotionPiece = "q") {
     setSelectedMoveSquare(null);
     if (live?.locked || (!canMove && !coach)) return false;
@@ -1160,15 +1260,16 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       return true;
     }
     try {
+      cancelPendingNavigationPersistence();
       const move = game.move({ from: source, to: target, promotion });
       if (!move) return collectGamifiedWithPiece(source, target, piece);
       const collectedObjectId = liveGamifiedObjects[target] as GamifiedObjectId | undefined;
       const nextGamifiedObjects = collectedObjectId ? { ...liveGamifiedObjects } : liveGamifiedObjects;
       if (collectedObjectId && nextGamifiedObjects) delete nextGamifiedObjects[target];
-      patch({
+      scheduleCoachMovePersistence({
         fen: game.fen(),
         gamifiedObjects: nextGamifiedObjects,
-        moveHistory: [...(live?.moveHistory || []), move.san],
+        ...pgnUpdateForCoachMove(move.san),
         mode: live?.mode === "one_move_challenge" ? "teaching" : live?.mode,
         boardControlStudents: live?.mode === "one_move_challenge" ? [] : live?.boardControlStudents?.map((s: any) => s._id || s),
         challenge: live?.mode === "one_move_challenge" ? { active: false } : live?.challenge,
@@ -1254,7 +1355,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
 
   function loadSetupIntoClassroom() {
     const fen = positionToFen(setupPosition, setupSideToMove());
-    patch({ fen, gamifiedObjects: removeObjectsOnPieceSquares(gamifiedSetup, setupPosition), setupMode: false, illegalMovesEnabled: setupMovementMode === "free", pgn: "", pgnTitle: "Custom Position", pgnMoves: [], pgnMoveIndex: 0, moveHistory: [], drawings: [], usedResources: resourceHistory({ type: "position", title: "Custom Position", fen }) });
+    patch({ fen, gamifiedObjects: removeObjectsOnPieceSquares(gamifiedSetup, setupPosition), setupMode: false, illegalMovesEnabled: setupMovementMode === "free", pgn: "", pgnTitle: "Custom Position", pgnMoves: [], pgnMoveIndex: 0, pgnVariations: [], activePgnVariationId: "", moveHistory: [], drawings: [], usedResources: resourceHistory({ type: "position", title: "Custom Position", fen }) });
     setSetupOpen(false);
   }
 
@@ -1638,6 +1739,8 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
         pgnTitle: first.pgnTitle || first.title,
         pgnMoves: first.solution || [],
         pgnMoveIndex: 0,
+        pgnVariations: [],
+        activePgnVariationId: "",
         moveHistory: [],
         mode: "one_move_challenge",
         studentMovesEnabled: true,
@@ -1793,14 +1896,48 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     patch({ fen: "start", pgnMoveIndex: 0, moveHistory: [], drawings: [], gamifiedObjects: {}, setupMode: false, illegalMovesEnabled: false });
   }
 
-  const navigateMove = useCallback((nextIndex: number) => {
-    if (!pgnMoves.length) return;
-    const boundedIndex = Math.max(0, Math.min(pgnMoves.length, nextIndex));
+  function navigateMove(nextIndex: number, moves = activePgnMoves, variationId = live?.activePgnVariationId || "") {
+    if (!moves.length) return;
+    const boundedIndex = Math.max(0, Math.min(moves.length, nextIndex));
     const collectionItem = (Array.isArray(live?.challenge?.pgnCollection) ? live.challenge.pgnCollection : [])
       .find((pgn: any) => pgn.title === live?.pgnTitle || pgn.pgn === live?.pgn);
     const startFen = normalizeBoardResourceFen(collectionItem?.fen || extractFen(live?.pgn || "")) || "start";
-    patch({ fen: applyMoves(startFen, pgnMoves, boundedIndex), pgnMoveIndex: boundedIndex, moveHistory: pgnMoves.slice(0, boundedIndex) });
-  }, [live?.challenge?.pgnCollection, live?.pgn, live?.pgnTitle, patch, pgnMoves]);
+    const navigationUpdate = {
+      fen: applyMoves(startFen, moves, boundedIndex),
+      pgnMoveIndex: boundedIndex,
+      moveHistory: moves.slice(0, boundedIndex),
+      activePgnVariationId: variationId,
+    };
+    if (coachMovePersistTimerRef.current) window.clearTimeout(coachMovePersistTimerRef.current);
+    coachMovePersistTimerRef.current = null;
+    const update = {
+      ...(pendingCoachMoveUpdateRef.current || {}),
+      ...navigationUpdate,
+    };
+    pendingCoachMoveUpdateRef.current = null;
+    navigationIndexRef.current = boundedIndex;
+    pgnStateRef.current = { ...pgnStateRef.current, activeVariationId: variationId };
+    pendingNavigationUpdateRef.current = update;
+    applyOptimisticLive(update, true);
+    if (navigationPersistTimerRef.current) window.clearTimeout(navigationPersistTimerRef.current);
+    navigationPersistTimerRef.current = window.setTimeout(() => {
+      navigationPersistTimerRef.current = null;
+      const pendingUpdate = pendingNavigationUpdateRef.current;
+      pendingNavigationUpdateRef.current = null;
+      if (pendingUpdate) void patch(pendingUpdate, { optimistic: false });
+    }, 90);
+  }
+
+  function stepPgnMove(delta: number) {
+    navigateMove(navigationIndexRef.current + delta);
+  }
+
+  function selectPgnLine(variationId: string) {
+    const variation = pgnVariations.find((item) => item.id === variationId);
+    const moves = variation?.moves || pgnMoves;
+    const targetIndex = variation ? Math.min(moves.length, Math.max(variation.branchAt + 1, navigationIndexRef.current)) : Math.min(moves.length, navigationIndexRef.current);
+    navigateMove(targetIndex, moves, variation?.id || "");
+  }
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -1812,12 +1949,12 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       if (event.key === "ArrowLeft") {
         event.preventDefault();
         if (event.shiftKey) loadAdjacentPgn(-1);
-        else navigateMove(currentMoveIndex - 1);
+        else stepPgnMove(-1);
       }
       if (event.key === "ArrowRight") {
         event.preventDefault();
         if (event.shiftKey) loadAdjacentPgn(1);
-        else navigateMove(currentMoveIndex + 1);
+        else stepPgnMove(1);
       }
     }
     function onKeyUp(event: KeyboardEvent) {
@@ -1874,6 +2011,8 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
         pgnTitle: pgn.title,
         pgnMoves: moves,
         pgnMoveIndex: 0,
+        pgnVariations: [],
+        activePgnVariationId: "",
         fen: startFen,
         moveHistory: [],
         setupMode: false,
@@ -1899,6 +2038,8 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
         pgnTitle: pgn.title,
         pgnMoves: [],
         pgnMoveIndex: 0,
+        pgnVariations: [],
+        activePgnVariationId: "",
         fen: startFen,
         moveHistory: [],
         setupMode: false,
@@ -1923,7 +2064,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     if (!value) return;
     try {
       const fenGame = new Chess(value);
-      patch({ fen: fenGame.fen(), pgn: "", pgnTitle: "Custom FEN", pgnMoves: [], pgnMoveIndex: 0, moveHistory: [], setupMode: false, drawings: [], usedResources: resourceHistory({ type: "position", title: "Custom FEN", fen: fenGame.fen() }) });
+      patch({ fen: fenGame.fen(), pgn: "", pgnTitle: "Custom FEN", pgnMoves: [], pgnMoveIndex: 0, pgnVariations: [], activePgnVariationId: "", moveHistory: [], setupMode: false, drawings: [], usedResources: resourceHistory({ type: "position", title: "Custom FEN", fen: fenGame.fen() }) });
       setManualLoadText("");
       setPgnOpen(false);
       toast.success("FEN loaded into classroom");
@@ -1939,6 +2080,8 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
         pgnTitle: "Custom Board",
         pgnMoves: [],
         pgnMoveIndex: 0,
+        pgnVariations: [],
+        activePgnVariationId: "",
         moveHistory: [],
         setupMode: false,
         illegalMovesEnabled: true,
@@ -2421,14 +2564,15 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                     <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto rounded-lg border border-slate-200 bg-white px-2 py-1.5">
                       <div className="flex min-w-0 flex-1 items-center gap-2 px-1 text-xs font-semibold text-slate-500">
                         <span className="min-w-0 truncate text-slate-900">{live?.pgnTitle || "Classroom board"}</span>
-                        <span className="flex-none rounded-md bg-slate-100 px-2 py-1 font-bold tabular-nums text-slate-600">{currentMoveIndex}/{pgnMoves.length || (live?.moveHistory || []).length}</span>
+                        <span className="flex-none rounded-md bg-slate-100 px-2 py-1 font-bold tabular-nums text-slate-600">{currentMoveIndex}/{activePgnMoves.length || (live?.moveHistory || []).length}</span>
+                        {activePgnVariation && <span className="flex-none rounded-md bg-amber-100 px-2 py-1 font-bold text-amber-800">{activePgnVariation.label}</span>}
                       </div>
                       <div className="flex flex-none items-center justify-end gap-1">
                         <div className="flex flex-none items-center gap-1 rounded-md bg-slate-50 p-0.5 ring-1 ring-inset ring-slate-200/70">
-                          <ToolbarIconButton label="First move" disabled={!pgnMoves.length} onClick={() => navigateMove(0)}><SkipBack size={14} /></ToolbarIconButton>
-                          <ToolbarIconButton label="Previous move" disabled={!pgnMoves.length} onClick={() => navigateMove(currentMoveIndex - 1)}><ChevronLeft size={14} /></ToolbarIconButton>
-                          <ToolbarIconButton label="Next move" disabled={!pgnMoves.length} onClick={() => navigateMove(currentMoveIndex + 1)}><ChevronRight size={14} /></ToolbarIconButton>
-                          <ToolbarIconButton label="Last move" disabled={!pgnMoves.length} onClick={() => navigateMove(pgnMoves.length)}><SkipForward size={14} /></ToolbarIconButton>
+                          <ToolbarIconButton label="First move" disabled={!activePgnMoves.length} onClick={() => navigateMove(0)}><SkipBack size={14} /></ToolbarIconButton>
+                          <ToolbarIconButton label="Previous move" disabled={!activePgnMoves.length || currentMoveIndex <= 0} onClick={() => stepPgnMove(-1)}><ChevronLeft size={14} /></ToolbarIconButton>
+                          <ToolbarIconButton label="Next move" disabled={!activePgnMoves.length || currentMoveIndex >= activePgnMoves.length} onClick={() => stepPgnMove(1)}><ChevronRight size={14} /></ToolbarIconButton>
+                          <ToolbarIconButton label="Last move" disabled={!activePgnMoves.length} onClick={() => navigateMove(activePgnMoves.length)}><SkipForward size={14} /></ToolbarIconButton>
                         </div>
                         <span aria-hidden="true" className="mx-0.5 h-5 w-px flex-none bg-slate-200" />
                         <div className="flex flex-none items-center gap-1 rounded-md bg-purple-50/60 p-0.5 ring-1 ring-inset ring-purple-100">
@@ -2672,11 +2816,33 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                   <p className="mt-2 text-xs text-slate-500">{live?.pgnTitle || "Current classroom game"}</p>
                 </div>
                 <div className="overflow-hidden rounded-lg border border-slate-200 text-sm">
+                  {(pgnMoves.length || pgnVariations.length) ? (
+                    <div className="flex flex-wrap gap-1.5 border-b border-slate-200 bg-white p-2">
+                      <button
+                        type="button"
+                        onClick={() => selectPgnLine("")}
+                        className={`rounded-md px-2.5 py-1.5 text-xs font-bold ${!activePgnVariation ? "bg-purple-700 text-white" : "bg-slate-100 text-slate-600"}`}
+                      >
+                        Main line
+                      </button>
+                      {pgnVariations.map((variation) => (
+                        <button
+                          key={variation.id}
+                          type="button"
+                          onClick={() => selectPgnLine(variation.id)}
+                          className={`rounded-md px-2.5 py-1.5 text-xs font-bold ${activePgnVariation?.id === variation.id ? "bg-amber-500 text-white" : "bg-amber-50 text-amber-800"}`}
+                          title={`Branches after ply ${variation.branchAt}`}
+                        >
+                          {variation.label}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
                   <div className="grid grid-cols-[48px_1fr_1fr] bg-slate-50 px-2 py-2 text-xs font-semibold text-slate-500">
                     <span>No.</span><span>White</span><span>Black</span>
                   </div>
-                  {(pgnMoves.length ? pgnMoves : live?.moveHistory || []).length ? Array.from({ length: Math.ceil((pgnMoves.length ? pgnMoves : live?.moveHistory || []).length / 2) }).map((_, row) => {
-                    const moves = pgnMoves.length ? pgnMoves : live?.moveHistory || [];
+                  {(activePgnMoves.length ? activePgnMoves : live?.moveHistory || []).length ? Array.from({ length: Math.ceil((activePgnMoves.length ? activePgnMoves : live?.moveHistory || []).length / 2) }).map((_, row) => {
+                    const moves = activePgnMoves.length ? activePgnMoves : live?.moveHistory || [];
                     const whiteIndex = row * 2;
                     const blackIndex = whiteIndex + 1;
                     const whiteMove = moves[whiteIndex];
@@ -2685,14 +2851,14 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                       <div key={row} className="grid grid-cols-[48px_1fr_1fr] items-center border-t border-slate-100 px-2 py-1">
                         <span className="text-xs font-semibold text-slate-400">{row + 1}.</span>
                         <button
-                          disabled={!pgnMoves.length}
+                          disabled={!activePgnMoves.length}
                           onClick={() => navigateMove(whiteIndex + 1)}
                           className={`min-h-9 rounded-md px-2 text-left font-medium ${currentMoveIndex === whiteIndex + 1 ? "bg-purple-700 text-white" : "text-slate-800 hover:bg-slate-50 disabled:hover:bg-transparent"}`}
                         >
                           {whiteMove || ""}
                         </button>
                         <button
-                          disabled={!pgnMoves.length || !blackMove}
+                          disabled={!activePgnMoves.length || !blackMove}
                           onClick={() => navigateMove(blackIndex + 1)}
                           className={`min-h-9 rounded-md px-2 text-left font-medium ${currentMoveIndex === blackIndex + 1 ? "bg-purple-700 text-white" : "text-slate-800 hover:bg-slate-50 disabled:hover:bg-transparent"}`}
                         >

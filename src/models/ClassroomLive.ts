@@ -18,6 +18,16 @@ const ClassroomSessionSchema = new Schema(
     pgnTitle: { type: String, default: "" },
     pgnMoves: [{ type: String }],
     pgnMoveIndex: { type: Number, default: 0 },
+    pgnVariations: [
+      {
+        id: String,
+        label: String,
+        branchAt: { type: Number, default: 0 },
+        moves: [String],
+        createdAt: Date,
+      },
+    ],
+    activePgnVariationId: { type: String, default: "" },
     moveHistory: [{ type: String }],
     orientation: { type: String, enum: ["white", "black"], default: "white" },
     showCoordinates: { type: Boolean, default: true },

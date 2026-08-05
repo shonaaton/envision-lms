@@ -158,7 +158,12 @@ export const FEATURE_DEFINITIONS: FeatureDefinition[] = [
     routes: ["/analysis"],
     permissions: [view, share],
     defaultStatus: "enabled",
-    defaultRolePermissions: { instructor: ["view", "share"], admin: ["view", "share"] },
+    defaultRolePermissions: {
+      student: ["view", "share"],
+      instructor: ["view", "share"],
+      admin: ["view", "share"],
+      "sub-admin": ["view", "share"],
+    },
   },
   {
     key: "tacticsTrainer",

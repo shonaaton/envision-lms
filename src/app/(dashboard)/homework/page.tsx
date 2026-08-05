@@ -4,6 +4,7 @@ import { Homework, Submission } from "@/models/Homework";
 import { Classroom } from "@/models/Classroom";
 import { Batch } from "@/models/Batch";
 import { User } from "@/models/User";
+import { getCoachAssignedStudentIds } from "@/lib/coachStudentAccess";
 import Link from "next/link";
 import { BarChart3, CheckCircle2, Clock, FileText } from "lucide-react";
 import HomeworkActions from "@/components/homework/HomeworkActions";
@@ -34,22 +35,24 @@ function HomeworkCard({ item, submission }: { item: any; submission?: any }) {
   );
 }
 
-function assignedStudentCount(homework: any) {
+function assignedStudentCount(homework: any, allowedStudentIds?: Set<string>) {
   const recipients = new Set<string>();
+  function addRecipient(value: any) {
+    const id = String(value?._id || value || "");
+    if (id && (!allowedStudentIds || allowedStudentIds.has(id))) recipients.add(id);
+  }
   (homework.assignedStudents || []).forEach((student: any) => {
-    const id = String(student?._id || student || "");
-    if (id) recipients.add(id);
+    addRecipient(student);
   });
   (homework.assignedBatches || []).forEach((batch: any) => {
     (batch?.students || []).forEach((student: any) => {
-      const id = String(student?._id || student || "");
-      if (id) recipients.add(id);
+      addRecipient(student);
     });
   });
-  if (homework.assignAllStudents || (!recipients.size && (!homework.assignedBatches || !homework.assignedBatches.length))) {
+  const hasSpecificRecipients = Boolean((homework.assignedStudents || []).length || (homework.assignedBatches || []).length);
+  if (homework.assignAllStudents || !hasSpecificRecipients) {
     (homework.classroom?.students || []).forEach((student: any) => {
-      const id = String(student?._id || student || "");
-      if (id) recipients.add(id);
+      addRecipient(student);
     });
   }
   return recipients.size;
@@ -82,7 +85,7 @@ export default async function HomeworkListPage() {
   } else if (role === "instructor") {
     filter.instructor = userId;
   }
-  const [list, submissions] = await Promise.all([
+  const [list, coachStudentIds] = await Promise.all([
     Homework.find(filter)
       .populate("instructor", "name")
       .populate("classroom", "students")
@@ -90,8 +93,18 @@ export default async function HomeworkListPage() {
       .populate("assignedBatches", "students")
       .sort({ createdAt: -1 })
       .lean(),
-    Submission.find(role === "student" ? { student: userId } : {}).populate("student", "name").lean(),
+    role === "instructor" ? getCoachAssignedStudentIds(userId) : Promise.resolve([]),
   ]);
+  const homeworkIds = list.map((item: any) => item._id);
+  const submissionFilter = role === "student"
+    ? { student: userId, homework: { $in: homeworkIds } }
+    : role === "instructor"
+      ? { student: { $in: coachStudentIds }, homework: { $in: homeworkIds } }
+      : { homework: { $in: homeworkIds } };
+  const submissions = homeworkIds.length
+    ? await Submission.find(submissionFilter).populate("student", "name").lean()
+    : [];
+  const visibleStudentIds = role === "instructor" ? new Set(coachStudentIds) : undefined;
   const byHomework = new Map(submissions.map((submission: any) => [submission.homework.toString(), submission]));
   const pending = list.filter((item: any) => !byHomework.has(item._id.toString()) && (!item.dueAt || new Date(item.dueAt) >= new Date()));
   const late = list.filter((item: any) => !byHomework.has(item._id.toString()) && item.dueAt && new Date(item.dueAt) < new Date());
@@ -128,7 +141,7 @@ export default async function HomeworkListPage() {
           <div className="grid gap-3 md:hidden">
             {list.map((h: any) => {
               const rows = submissions.filter((s: any) => s.homework.toString() === h._id.toString());
-              const recipientCount = assignedStudentCount(h);
+              const recipientCount = assignedStudentCount(h, visibleStudentIds);
               return (
                 <article key={h._id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                   <div className="flex items-start justify-between gap-3">
@@ -157,7 +170,7 @@ export default async function HomeworkListPage() {
               <thead className="text-xs uppercase text-slate-500"><tr className="border-b"><th className="px-3 py-3">Homework</th><th>Type</th><th>Due</th><th>Submissions</th><th>Completion Rate</th><th>Average Score</th><th>Status</th><th>Actions</th></tr></thead>
               <tbody>{list.map((h: any) => {
                 const rows = submissions.filter((s: any) => s.homework.toString() === h._id.toString());
-                const recipientCount = assignedStudentCount(h);
+                const recipientCount = assignedStudentCount(h, visibleStudentIds);
                 return <tr key={h._id} className="border-b last:border-0"><td className="px-3 py-3 font-medium">{h.title}</td><td>{h.type}</td><td>{h.dueAt ? new Date(h.dueAt).toLocaleDateString("en-IN") : "-"}</td><td>{rows.length}</td><td>{percent(rows.length, recipientCount)}%</td><td>{rows.length ? Math.round(rows.reduce((s: number, x: any) => s + (x.totalScore || 0), 0) / rows.length) : 0}</td><td>{h.dueAt && new Date(h.dueAt) < new Date() ? "Due passed" : "Active"}</td><td><HomeworkActions homework={JSON.parse(JSON.stringify(h))} /></td></tr>;
               })}</tbody>
             </table>

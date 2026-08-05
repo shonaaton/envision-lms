@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { Homework, Submission } from "@/models/Homework";
 import { User } from "@/models/User";
+import { getCoachAssignedStudentIds } from "@/lib/coachStudentAccess";
 import { ChevronLeft, Clock, FileText, Trophy, User2 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -36,7 +37,11 @@ export default async function HomeworkReviewPage({ params }: { params: { id: str
     return <div className="rounded-2xl border bg-white p-6 text-sm text-slate-600">Forbidden</div>;
   }
 
-  const submissions: any[] = await Submission.find({ homework: homework._id }).populate("student", "name email username").sort({ submittedAt: -1 }).lean();
+  const coachStudentIds = role === "instructor" ? await getCoachAssignedStudentIds(userId) : [];
+  const submissionFilter = role === "instructor"
+    ? { homework: homework._id, student: { $in: coachStudentIds } }
+    : { homework: homework._id };
+  const submissions: any[] = await Submission.find(submissionFilter).populate("student", "name email username").sort({ submittedAt: -1 }).lean();
   const studentIds = submissions.map((item: any) => objectId(item.student)).filter(Boolean);
   const students: any[] = studentIds.length ? await User.find({ _id: { $in: studentIds } }).populate("batches", "name").lean() : [];
   const batchByStudent = new Map(students.map((student: any) => [objectId(student._id), (student.batches || []).map((batch: any) => batch.name).join(", ")]));
@@ -58,7 +63,7 @@ export default async function HomeworkReviewPage({ params }: { params: { id: str
       </section>
 
       <div className="space-y-4">
-        {submissions.length === 0 && <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500">No submissions yet.</div>}
+        {submissions.length === 0 && <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500">{role === "instructor" ? "No submissions from your assigned students yet." : "No submissions yet."}</div>}
         {submissions.map((submission: any) => (
           <section key={objectId(submission._id)} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="mb-4 flex flex-wrap items-start justify-between gap-4">

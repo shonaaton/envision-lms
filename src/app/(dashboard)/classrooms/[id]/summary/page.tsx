@@ -8,6 +8,7 @@ import { Classroom } from "@/models/Classroom";
 import { ClassroomSession, LiveQuestion, LiveQuestionResponse } from "@/models/ClassroomLive";
 import CsvDownloadButton from "@/components/common/CsvDownloadButton";
 import SessionResourceReview from "@/components/classroom/SessionResourceReview";
+import JoinScheduledSessionButton from "@/components/classroom/JoinScheduledSessionButton";
 import { formatAcademyDateTime } from "@/lib/academyTime";
 import { getSessionStart } from "@/lib/classroomSessions";
 import { coachCanAccessClassroomSession } from "@/lib/classroomCoachAccess";
@@ -244,7 +245,13 @@ export default async function ClassroomSummaryPage({
               </>
             ) : null}
             {["admin", "instructor"].includes(role) && !["completed", "cancelled", "rescheduled", "missed"].includes(String(selectedSession.status || "").toLowerCase()) ? (
-              <Link href={`/classrooms/${params.id}/live?session=${scheduledSessionId}`} className="rounded-xl bg-purple-700 px-4 py-2 text-sm font-bold text-white">Open Scheduled Classroom</Link>
+              <JoinScheduledSessionButton
+                classroomId={params.id}
+                sessionId={scheduledSessionId}
+                meetingUrl={classroom.meetingUrl}
+                className="rounded-xl bg-purple-700 px-4 py-2 text-sm font-bold text-white"
+                label="Open Scheduled Classroom"
+              />
             ) : null}
           </div>
         </div>

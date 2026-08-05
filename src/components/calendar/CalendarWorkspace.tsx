@@ -37,6 +37,7 @@ import {
   subWeeks,
 } from "date-fns";
 import { cn } from "@/lib/utils";
+import { normalizeGoogleMeetUrl } from "@/lib/meetingUrl";
 
 type CalendarRole = "student" | "instructor" | "admin" | "sub-admin";
 type CalendarView = "monthly" | "weekly" | "daily" | "agenda";
@@ -363,6 +364,8 @@ function EventDetails({ event, role }: { event?: CalendarEvent; role: CalendarRo
     );
   }
 
+  const googleMeetUrl = normalizeGoogleMeetUrl(event.meetingUrl);
+
   return (
     <div className="rounded-lg border border-brand/10 bg-white p-4 shadow-[0_12px_28px_rgba(90,19,114,0.08)] sm:p-5 xl:sticky xl:top-24">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -389,15 +392,21 @@ function EventDetails({ event, role }: { event?: CalendarEvent; role: CalendarRo
         {event.description && <DetailRow icon={<ListTodo size={15} />} label="Details" value={event.description} />}
       </div>
 
-      {(event.href || event.meetingUrl) && (
+      {(event.href || googleMeetUrl) && (
         <div className="mt-6 flex flex-wrap gap-2">
           {event.href && (
-            <Link href={event.href} className="inline-flex items-center gap-2 rounded-2xl bg-brand px-4 py-3 text-sm font-bold text-white shadow-lg shadow-brand/20">
+            <Link
+              href={event.href}
+              onClick={() => {
+                if (googleMeetUrl) window.open(googleMeetUrl, "_blank", "noopener,noreferrer");
+              }}
+              className="inline-flex items-center gap-2 rounded-2xl bg-brand px-4 py-3 text-sm font-bold text-white shadow-lg shadow-brand/20"
+            >
               {event.hrefLabel || "Open"}
             </Link>
           )}
-          {event.meetingUrl && (
-            <a href={event.meetingUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-900">
+          {googleMeetUrl && (
+            <a href={googleMeetUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-900">
               <ExternalLink size={15} />
               Join Google Meet
             </a>

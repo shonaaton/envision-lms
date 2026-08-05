@@ -775,19 +775,6 @@ async function StudentDashboard({ userId, joinAllowed }: { userId: string; joinA
   const bookingFeatureName = bookingFeatureNameForAccount((student as any)?.accountStatus);
   const demoUsage = (student as any)?.demoUsage || {};
   const demoLimits = (student as any)?.demoLimits || {};
-  const primaryStudentAction = nextSession && heroSessionOpen
-    ? {
-        label: "Join Class",
-        href: `/classrooms/${objectId(nextSession.classroom._id)}/live?session=${String(nextSession.session._id)}`,
-        icon: PlayCircle,
-      }
-    : {
-        label: "Continue Practice",
-        href: "/play/computer",
-        icon: PlayCircle,
-      };
-  const PrimaryStudentActionIcon = primaryStudentAction.icon;
-
   if (isDemoAccount) {
     return (
       <DemoStudentDashboard
@@ -831,10 +818,21 @@ async function StudentDashboard({ userId, joinAllowed }: { userId: string; joinA
             <InfoTile label="Practice" value={currentStreak ? `${currentStreak} day streak` : "Ready"} />
             <InfoTile label="Fees Due" value={feesDue ? money(feesDue) : "Clear"} />
           </div>
-          <Link href={primaryStudentAction.href} className="btn-primary w-full shrink-0 justify-center sm:w-auto">
-            <PrimaryStudentActionIcon size={17} />
-            {primaryStudentAction.label}
-          </Link>
+          {nextSession && heroSessionOpen ? (
+            <JoinScheduledSessionButton
+              classroomId={objectId(nextSession.classroom._id)}
+              sessionId={String(nextSession.session._id)}
+              meetingUrl={nextSession.classroom.meetingUrl}
+              className="btn-primary w-full shrink-0 justify-center sm:w-auto"
+              label="Join Class"
+              icon={<PlayCircle size={17} />}
+            />
+          ) : (
+            <Link href="/play/computer" className="btn-primary w-full shrink-0 justify-center sm:w-auto">
+              <PlayCircle size={17} />
+              Continue Practice
+            </Link>
+          )}
         </div>
       </section>
 

@@ -118,7 +118,7 @@ async function getPreview(params: Record<string, string | string[] | undefined>)
       payment.invoiceNumber,
     ]);
   } else if (type === "gst") {
-    headers = ["Invoice", "Student", "Student ID", "Taxable", "GST %", "CGST", "SGST", "GST Total", "Status"];
+    headers = ["Invoice", "Student", "Student ID", "Taxable", "GST %", "CGST", "SGST", "GST Total", "Total Amount", "Invoice Date", "Status"];
     rows = filteredInvoices.filter((invoice: any) => invoice.invoiceMode === "included").map((invoice: any) => [
       invoice.invoiceNumber,
       invoice.student?.name,
@@ -128,6 +128,8 @@ async function getPreview(params: Record<string, string | string[] | undefined>)
       formatINR(invoice.cgstAmount || 0),
       formatINR(invoice.sgstAmount || 0),
       formatINR(invoice.gstAmount || 0),
+      formatINR(invoice.totalAmount || 0),
+      new Date(invoice.issueDate || invoice.createdAt).toLocaleDateString("en-IN"),
       invoice.status,
     ]);
   } else if (type === "collection") {

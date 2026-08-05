@@ -80,10 +80,10 @@ export async function GET(req: Request) {
     rows = payments.map((p: any) => [p._id, p.user?.name, p.user?.username || p.user?._id?.toString?.() || "-", p.purpose, formatINR(p.amount), p.status, p.paidAt ? new Date(p.paidAt).toLocaleString("en-IN") : "", p.invoiceNumber]);
   } else if (type === "gst") {
     title = "GST Report";
-    headers = ["Invoice", "Student", "Student ID", "Taxable", "GST %", "CGST", "SGST", "GST Total", "Status"];
+    headers = ["Invoice", "Student", "Student ID", "Taxable", "GST %", "CGST", "SGST", "GST Total", "Total Amount", "Invoice Date", "Status"];
     rows = filteredInvoices
       .filter((i: any) => i.invoiceMode === "included")
-      .map((i: any) => [i.invoiceNumber, i.student?.name, i.student?.username || i.student?._id?.toString?.() || "-", formatINR(i.taxableAmount || 0), i.gstPercentage, formatINR(i.cgstAmount || 0), formatINR(i.sgstAmount || 0), formatINR(i.gstAmount || 0), i.status]);
+      .map((i: any) => [i.invoiceNumber, i.student?.name, i.student?.username || i.student?._id?.toString?.() || "-", formatINR(i.taxableAmount || 0), i.gstPercentage, formatINR(i.cgstAmount || 0), formatINR(i.sgstAmount || 0), formatINR(i.gstAmount || 0), formatINR(i.totalAmount || 0), new Date(i.issueDate || i.createdAt).toLocaleDateString("en-IN"), i.status]);
   } else if (type === "collection") {
     title = "Collection Report";
     headers = ["Type", "Student", "Student ID", "Credits", "Balance After", "Invoice", "Date", "Note"];

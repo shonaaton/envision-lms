@@ -1,6 +1,5 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { Chess } from "chess.js";
@@ -9,8 +8,7 @@ import { BookOpen, CheckCircle2, ChevronLeft, ChevronRight, Clock, FileQuestion,
 import { buildMoveHintStyles, legalTargetsFromGame } from "@/lib/chessboardUi";
 import { isPromotionMove, promotionFromBoardPiece, type PendingPromotion, type PromotionPiece } from "@/lib/chessPromotion";
 import { normalizePermissiveFen } from "@/lib/pgnLibrary";
-
-const Chessboard = dynamic(() => import("react-chessboard").then((m) => m.Chessboard), { ssr: false });
+import AssignmentChessboard from "@/components/homework/AssignmentChessboard";
 
 const startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
@@ -83,19 +81,6 @@ function previewFen(fen: string) {
     }
   }
   return "";
-}
-
-function useBoardWidth(maxWidth: number, minWidth = 220) {
-  const [width, setWidth] = useState(maxWidth);
-  useEffect(() => {
-    function updateWidth() {
-      setWidth(Math.max(minWidth, Math.min(maxWidth, window.innerWidth - 40)));
-    }
-    updateWidth();
-    window.addEventListener("resize", updateWidth);
-    return () => window.removeEventListener("resize", updateWidth);
-  }, [maxWidth, minWidth]);
-  return width;
 }
 
 function parsePgnPuzzle(pgn: string) {
@@ -369,7 +354,6 @@ function ReportPgnBoards({ activity, submission }: { activity: any; submission: 
 function ReviewPgnBoard({ pgn }: { pgn: string }) {
   const parsed = useMemo(() => parsePgnPuzzle(pgn), [pgn]);
   const [ply, setPly] = useState(0);
-  const boardWidth = useBoardWidth(360, 220);
   const position = useMemo(() => {
     if (!parsed.moves.length) return parsed.start;
     const game = buildGame(parsed.start);
@@ -379,7 +363,7 @@ function ReviewPgnBoard({ pgn }: { pgn: string }) {
 
   return (
     <div>
-      <Chessboard position={position} arePiecesDraggable={false} boardWidth={boardWidth} customDarkSquareStyle={{ backgroundColor: "#b58863" }} customLightSquareStyle={{ backgroundColor: "#f0d9b5" }} />
+      <AssignmentChessboard maxWidth={360} position={position} arePiecesDraggable={false} customDarkSquareStyle={{ backgroundColor: "#b58863" }} customLightSquareStyle={{ backgroundColor: "#f0d9b5" }} />
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <button type="button" className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold" onClick={() => setPly((value) => Math.max(0, value - 1))}>Previous</button>
         <span className="text-sm font-bold text-slate-600">{ply}/{parsed.moves.length}</span>
@@ -535,7 +519,7 @@ function McqQuestion({ item, index, value, onChange, onSubmitAnswer, locked, isL
         <b className="text-sm text-brand">Question {index + 1}</b>
         <span className="rounded-full bg-accent/30 px-2 py-1 text-xs font-bold text-brand">{item.points || 1} pts</span>
       </div>
-      <div className={`grid gap-3 ${fen ? "lg:grid-cols-[280px_minmax(0,1fr)] lg:items-start" : ""}`}>
+      <div className={`grid gap-3 ${fen ? "lg:grid-cols-[298px_minmax(0,1fr)] lg:items-start" : ""}`}>
         {fen && <FenBox fen={fen} />}
         <div className="min-w-0">
           <div className="rounded-lg bg-slate-50 p-3 text-sm font-semibold text-slate-900">{item.question}</div>
@@ -588,7 +572,6 @@ function WrittenQuestion({ item, index, value, onChange, locked }: any) {
 
 function PgnBoardTask({ activityId, item, index, locked, onResult, onSolved }: any) {
   const parsed = useMemo(() => parsePgnPuzzle(item.pgn || ""), [item.pgn]);
-  const boardWidth = useBoardWidth(440, 220);
   const [game, setGame] = useState(() => buildGame(parsed.start));
   const [position, setPosition] = useState(parsed.start);
   const [ply, setPly] = useState(0);
@@ -732,7 +715,9 @@ function PgnBoardTask({ activityId, item, index, locked, onResult, onSolved }: a
         {solved && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-xs font-bold text-emerald-700"><CheckCircle2 size={13} /> Solved</span>}
       </div>
       <div className="rounded-lg bg-[#31210f] p-1.5 shadow-inner sm:p-3">
-        <Chessboard
+        <AssignmentChessboard
+          maxWidth={440}
+          coordinatesClassName="text-[#f0d9b5]"
           position={position}
           onPieceDrop={onDrop}
           onSquareClick={onSquareClick as any}
@@ -740,7 +725,6 @@ function PgnBoardTask({ activityId, item, index, locked, onResult, onSolved }: a
           showPromotionDialog={!!pendingPromotion}
           promotionToSquare={pendingPromotion?.to as any}
           promotionDialogVariant="modal"
-          boardWidth={boardWidth}
           customSquareStyles={moveHintStyles as any}
           customDarkSquareStyle={{ backgroundColor: "#b58863" }}
           customLightSquareStyle={{ backgroundColor: "#f0d9b5" }}
@@ -789,17 +773,16 @@ function MoveHistoryTrace({ history }: { history: MoveTrace[] }) {
 
 function FenBox({ fen }: { fen: string }) {
   const boardFen = previewFen(fen);
-  const boardWidth = useBoardWidth(260, 200);
   if (!boardFen) {
     return <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-800">This position could not be shown on the board.</div>;
   }
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-2 shadow-sm">
-      <div className="mx-auto max-w-full overflow-hidden rounded-lg border border-slate-200" style={{ width: boardWidth }}>
-        <Chessboard
+      <div className="mx-auto w-full max-w-[278px]">
+        <AssignmentChessboard
+          maxWidth={260}
           position={boardFen}
           arePiecesDraggable={false}
-          boardWidth={boardWidth}
           customDarkSquareStyle={{ backgroundColor: "#b58863" }}
           customLightSquareStyle={{ backgroundColor: "#f0d9b5" }}
         />

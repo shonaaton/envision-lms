@@ -1,13 +1,11 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Chess } from "chess.js";
 import { CheckCircle2, ChevronLeft, ChevronRight, Edit3, FileQuestion, FileText, Gamepad2 } from "lucide-react";
 import { normalizePermissiveFen } from "@/lib/pgnLibrary";
-
-const Chessboard = dynamic(() => import("react-chessboard").then((m) => m.Chessboard), { ssr: false });
+import AssignmentChessboard from "@/components/homework/AssignmentChessboard";
 const startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
 function key(activityId: string, itemId: string) {
@@ -136,8 +134,8 @@ function FenBox({ fen }: { fen: string }) {
   if (!boardFen) return <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-800">This position could not be shown on the board.</div>;
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-2 shadow-sm">
-      <div className="mx-auto max-w-full overflow-hidden rounded-lg border border-slate-200" style={{ width: 260 }}>
-        <Chessboard position={boardFen} arePiecesDraggable={false} boardWidth={260} customDarkSquareStyle={{ backgroundColor: "#b58863" }} customLightSquareStyle={{ backgroundColor: "#f0d9b5" }} />
+      <div className="mx-auto w-full max-w-[278px]">
+        <AssignmentChessboard maxWidth={260} position={boardFen} arePiecesDraggable={false} customDarkSquareStyle={{ backgroundColor: "#b58863" }} customLightSquareStyle={{ backgroundColor: "#f0d9b5" }} />
       </div>
     </div>
   );
@@ -174,7 +172,7 @@ function QuizPreview({ activity, answers, setAnswers, checked }: { activity: any
           <button type="button" className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-bold text-slate-600 disabled:cursor-not-allowed disabled:text-slate-300" onClick={() => setActiveIndex((value) => Math.max(0, value - 1))} disabled={activeIndex === 0}>Previous</button>
         </div>
       </div>
-      <div className={`grid gap-3 ${itemFen(item) ? "lg:grid-cols-[280px_minmax(0,1fr)] lg:items-start" : ""}`}>
+      <div className={`grid gap-3 ${itemFen(item) ? "lg:grid-cols-[298px_minmax(0,1fr)] lg:items-start" : ""}`}>
         {itemFen(item) && <FenBox fen={itemFen(item)} />}
         <div className="min-w-0">
           <div className="rounded-lg bg-slate-50 p-3 text-sm font-semibold text-slate-900">{item.question}</div>
@@ -237,8 +235,8 @@ function PgnBoard({ item, index }: { item: any; index: number }) {
   return (
     <div className="rounded-xl border border-slate-200 p-3">
       <b className="text-brand">{item.title || item.pgnTitle || `PGN ${index + 1}`}</b>
-      <div className="mt-3 max-w-[360px]">
-        <Chessboard position={position} arePiecesDraggable={false} boardWidth={320} customDarkSquareStyle={{ backgroundColor: "#b58863" }} customLightSquareStyle={{ backgroundColor: "#f0d9b5" }} />
+      <div className="mt-3 w-full max-w-[338px]">
+        <AssignmentChessboard maxWidth={320} position={position} arePiecesDraggable={false} customDarkSquareStyle={{ backgroundColor: "#b58863" }} customLightSquareStyle={{ backgroundColor: "#f0d9b5" }} />
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <button type="button" className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold" onClick={() => setPly((value) => Math.max(0, value - 1))}><ChevronLeft size={15} /> Previous</button>

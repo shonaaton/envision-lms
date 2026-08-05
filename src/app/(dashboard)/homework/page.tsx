@@ -35,7 +35,7 @@ function HomeworkCard({ item, submission }: { item: any; submission?: any }) {
   );
 }
 
-function assignedStudentCount(homework: any, allowedStudentIds?: Set<string>) {
+function assignedStudentIds(homework: any, allowedStudentIds?: Set<string>) {
   const recipients = new Set<string>();
   function addRecipient(value: any) {
     const id = String(value?._id || value || "");
@@ -55,10 +55,12 @@ function assignedStudentCount(homework: any, allowedStudentIds?: Set<string>) {
       addRecipient(student);
     });
   }
-  return recipients.size;
+  return recipients;
 }
 
-export default async function HomeworkListPage() {
+type TrackingTab = "all" | "pending" | "submitted" | "late";
+
+export default async function HomeworkListPage({ searchParams }: { searchParams?: { status?: string } }) {
   const session = await auth();
   const userId = (session?.user as any).id;
   const role = (session?.user as any).role;
@@ -102,13 +104,51 @@ export default async function HomeworkListPage() {
       ? { student: { $in: coachStudentIds }, homework: { $in: homeworkIds } }
       : { homework: { $in: homeworkIds } };
   const submissions = homeworkIds.length
-    ? await Submission.find(submissionFilter).populate("student", "name").lean()
+    ? await Submission.find(submissionFilter).populate("student", "name username email").lean()
     : [];
-  const visibleStudentIds = role === "instructor" ? new Set(coachStudentIds) : undefined;
+  const visibleStudentIds = role === "instructor" ? new Set(coachStudentIds.map(String)) : undefined;
   const byHomework = new Map(submissions.map((submission: any) => [submission.homework.toString(), submission]));
   const pending = list.filter((item: any) => !byHomework.has(item._id.toString()) && (!item.dueAt || new Date(item.dueAt) >= new Date()));
   const late = list.filter((item: any) => !byHomework.has(item._id.toString()) && item.dueAt && new Date(item.dueAt) < new Date());
   const completed = list.filter((item: any) => byHomework.has(item._id.toString()));
+  const recipientIdsByHomework = new Map(list.map((item: any) => [item._id.toString(), assignedStudentIds(item, visibleStudentIds)]));
+  const allRecipientIds = Array.from(new Set(Array.from(recipientIdsByHomework.values()).flatMap((ids) => Array.from(ids))));
+  const recipientUsers = allRecipientIds.length
+    ? await User.find({ _id: { $in: allRecipientIds } }, { name: 1, username: 1, email: 1 }).lean()
+    : [];
+  const recipientNameById = new Map(recipientUsers.map((student: any) => [
+    student._id.toString(),
+    student.name || student.username || student.email || "Student",
+  ]));
+  const submissionsByHomework = new Map<string, any[]>();
+  submissions.forEach((submission: any) => {
+    const homeworkId = submission.homework.toString();
+    submissionsByHomework.set(homeworkId, [...(submissionsByHomework.get(homeworkId) || []), submission]);
+  });
+  const requestedTab = String(searchParams?.status || "all").toLowerCase();
+  const trackingTab: TrackingTab = (["pending", "submitted", "late"].includes(requestedTab) ? requestedTab : "all") as TrackingTab;
+  const trackingState = (homework: any) => {
+    const homeworkId = homework._id.toString();
+    const rows = submissionsByHomework.get(homeworkId) || [];
+    const recipientCount = recipientIdsByHomework.get(homeworkId)?.size || 0;
+    const incomplete = recipientCount > 0 ? rows.length < recipientCount : rows.length === 0;
+    const overdue = Boolean(incomplete && homework.dueAt && new Date(homework.dueAt) < new Date());
+    return { rows, recipientCount, incomplete, overdue };
+  };
+  const pendingTracking = list.filter((homework: any) => {
+    const state = trackingState(homework);
+    return state.incomplete && !state.overdue;
+  });
+  const lateTracking = list.filter((homework: any) => trackingState(homework).overdue);
+  const submittedTracking = list.filter((homework: any) => trackingState(homework).rows.length > 0);
+  const visibleTracking = list.filter((homework: any) => {
+    const state = trackingState(homework);
+    if (trackingTab === "pending") return state.incomplete && !state.overdue;
+    if (trackingTab === "late") return state.overdue;
+    if (trackingTab === "submitted") return state.rows.length > 0;
+    return true;
+  });
+  const expectedSubmissions = list.reduce((sum: number, homework: any) => sum + trackingState(homework).recipientCount, 0);
 
   return (
     <div className="min-h-screen bg-slate-50 px-2 py-4 text-slate-950 sm:px-6 sm:py-5 lg:px-8">
@@ -122,9 +162,9 @@ export default async function HomeworkListPage() {
 
       {role !== "student" && (
         <section className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-4">
-          <div className="rounded-lg border bg-white p-4 shadow-sm"><Clock className="text-amber-600" size={18} /><div className="mt-2 text-2xl font-semibold">{pending.length}</div><div className="text-xs text-slate-500">Not Started</div></div>
-          <div className="rounded-lg border bg-white p-4 shadow-sm"><CheckCircle2 className="text-emerald-600" size={18} /><div className="mt-2 text-2xl font-semibold">{submissions.length}</div><div className="text-xs text-slate-500">Submitted</div></div>
-          <div className="rounded-lg border bg-white p-4 shadow-sm"><BarChart3 className="text-purple-600" size={18} /><div className="mt-2 text-2xl font-semibold">{percent(submissions.length, list.length)}</div><div className="text-xs text-slate-500">Completion Rate</div></div>
+          <Link href="/homework?status=pending#homework-tracking" className={`rounded-lg border bg-white p-4 shadow-sm transition hover:border-amber-300 hover:shadow-md ${trackingTab === "pending" ? "border-amber-400 ring-2 ring-amber-100" : ""}`}><Clock className="text-amber-600" size={18} /><div className="mt-2 text-2xl font-semibold">{pendingTracking.length}</div><div className="text-xs text-slate-500">Pending</div></Link>
+          <Link href="/homework?status=submitted#homework-tracking" className={`rounded-lg border bg-white p-4 shadow-sm transition hover:border-emerald-300 hover:shadow-md ${trackingTab === "submitted" ? "border-emerald-400 ring-2 ring-emerald-100" : ""}`}><CheckCircle2 className="text-emerald-600" size={18} /><div className="mt-2 text-2xl font-semibold">{submissions.length}</div><div className="text-xs text-slate-500">Submitted</div></Link>
+          <div className="rounded-lg border bg-white p-4 shadow-sm"><BarChart3 className="text-purple-600" size={18} /><div className="mt-2 text-2xl font-semibold">{percent(submissions.length, expectedSubmissions)}</div><div className="text-xs text-slate-500">Completion Rate</div></div>
           <div className="rounded-lg border bg-white p-4 shadow-sm"><BarChart3 className="text-sky-600" size={18} /><div className="mt-2 text-2xl font-semibold">{submissions.length ? Math.round(submissions.reduce((s: number, x: any) => s + (x.totalScore || 0), 0) / submissions.length) : 0}</div><div className="text-xs text-slate-500">Average Score</div></div>
         </section>
       )}
@@ -136,12 +176,35 @@ export default async function HomeworkListPage() {
           <section><h2 className="mb-3 font-semibold">Completed Homework</h2><div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">{completed.map((h: any) => <HomeworkCard key={h._id} item={h} submission={byHomework.get(h._id.toString())} />)}{completed.length === 0 && <div className="rounded-lg border bg-white p-5 text-sm text-slate-500">No completed homework yet.</div>}</div></section>
         </div>
       ) : (
-        <section className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm sm:p-5">
-          <h2 className="mb-3 font-semibold">Homework Tracking</h2>
+        <section id="homework-tracking" className="scroll-mt-4 rounded-lg border border-slate-200 bg-white p-3 shadow-sm sm:p-5">
+          <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <h2 className="font-semibold">Homework Tracking</h2>
+              <p className="mt-1 text-xs text-slate-500">Select a section to view its assignments and student statuses.</p>
+            </div>
+            <nav aria-label="Homework status filters" className="flex max-w-full gap-1 overflow-x-auto rounded-lg bg-slate-100 p-1">
+              {([
+                ["all", "All", list.length],
+                ["pending", "Pending", pendingTracking.length],
+                ["submitted", "Submitted", submittedTracking.length],
+                ["late", "Late", lateTracking.length],
+              ] as Array<[TrackingTab, string, number]>).map(([key, label, count]) => (
+                <Link
+                  key={key}
+                  href={key === "all" ? "/homework#homework-tracking" : `/homework?status=${key}#homework-tracking`}
+                  className={`inline-flex h-9 flex-none items-center gap-2 rounded-md px-3 text-xs font-semibold transition ${trackingTab === key ? "bg-white text-purple-700 shadow-sm" : "text-slate-600 hover:bg-white/70 hover:text-slate-950"}`}
+                  aria-current={trackingTab === key ? "page" : undefined}
+                >
+                  {label}<span className="rounded-full bg-slate-200 px-1.5 py-0.5 text-[10px] tabular-nums text-slate-700">{count}</span>
+                </Link>
+              ))}
+            </nav>
+          </div>
           <div className="grid gap-3 md:hidden">
-            {list.map((h: any) => {
-              const rows = submissions.filter((s: any) => s.homework.toString() === h._id.toString());
-              const recipientCount = assignedStudentCount(h, visibleStudentIds);
+            {visibleTracking.map((h: any) => {
+              const { rows, recipientCount, incomplete, overdue } = trackingState(h);
+              const submittedStudentIds = new Set(rows.map((submission: any) => String(submission.student?._id || submission.student || "")));
+              const recipientIds = Array.from(recipientIdsByHomework.get(h._id.toString()) || []);
               return (
                 <article key={h._id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                   <div className="flex items-start justify-between gap-3">
@@ -149,7 +212,7 @@ export default async function HomeworkListPage() {
                       <h3 className="truncate font-semibold text-slate-950">{h.title}</h3>
                       <p className="mt-1 text-xs text-slate-500">{h.type} - {h.dueAt ? new Date(h.dueAt).toLocaleDateString("en-IN") : "No due date"}</p>
                     </div>
-                    <span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-xs font-bold text-slate-700 shadow-sm">{h.dueAt && new Date(h.dueAt) < new Date() ? "Due passed" : "Active"}</span>
+                    <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold shadow-sm ${overdue ? "bg-rose-50 text-rose-700" : incomplete ? "bg-amber-50 text-amber-700" : "bg-emerald-50 text-emerald-700"}`}>{overdue ? "Late" : incomplete ? (rows.length ? "Partially submitted" : "Pending") : "Submitted"}</span>
                   </div>
                   <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                     <InfoTile label="Submissions" value={String(rows.length)} />
@@ -157,23 +220,26 @@ export default async function HomeworkListPage() {
                     <InfoTile label="Avg Score" value={String(rows.length ? Math.round(rows.reduce((s: number, x: any) => s + (x.totalScore || 0), 0) / rows.length) : 0)} />
                     <InfoTile label="Recipients" value={String(recipientCount)} />
                   </div>
+                  <StudentStatusList recipientIds={recipientIds} submittedStudentIds={submittedStudentIds} recipientNameById={recipientNameById} overdue={overdue} />
                   <div className="mt-3">
                     <HomeworkActions homework={JSON.parse(JSON.stringify(h))} />
                   </div>
                 </article>
               );
             })}
-            {list.length === 0 && <div className="rounded-lg border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">No homework yet.</div>}
+            {visibleTracking.length === 0 && <EmptyTrackingState tab={trackingTab} />}
           </div>
           <div className="hidden overflow-x-auto md:block">
-            <table className="min-w-full text-left text-sm">
-              <thead className="text-xs uppercase text-slate-500"><tr className="border-b"><th className="px-3 py-3">Homework</th><th>Type</th><th>Due</th><th>Submissions</th><th>Completion Rate</th><th>Average Score</th><th>Status</th><th>Actions</th></tr></thead>
-              <tbody>{list.map((h: any) => {
-                const rows = submissions.filter((s: any) => s.homework.toString() === h._id.toString());
-                const recipientCount = assignedStudentCount(h, visibleStudentIds);
-                return <tr key={h._id} className="border-b last:border-0"><td className="px-3 py-3 font-medium">{h.title}</td><td>{h.type}</td><td>{h.dueAt ? new Date(h.dueAt).toLocaleDateString("en-IN") : "-"}</td><td>{rows.length}</td><td>{percent(rows.length, recipientCount)}%</td><td>{rows.length ? Math.round(rows.reduce((s: number, x: any) => s + (x.totalScore || 0), 0) / rows.length) : 0}</td><td>{h.dueAt && new Date(h.dueAt) < new Date() ? "Due passed" : "Active"}</td><td><HomeworkActions homework={JSON.parse(JSON.stringify(h))} /></td></tr>;
+            <table className="min-w-[1180px] text-left text-sm">
+              <thead className="text-xs uppercase text-slate-500"><tr className="border-b"><th className="px-3 py-3">Homework</th><th className="px-3 py-3">Students</th><th className="px-3 py-3">Type</th><th className="px-3 py-3">Due</th><th className="px-3 py-3">Submissions</th><th className="px-3 py-3">Completion Rate</th><th className="px-3 py-3">Average Score</th><th className="px-3 py-3">Status</th><th className="px-3 py-3">Actions</th></tr></thead>
+              <tbody>{visibleTracking.map((h: any) => {
+                const { rows, recipientCount, incomplete, overdue } = trackingState(h);
+                const submittedStudentIds = new Set(rows.map((submission: any) => String(submission.student?._id || submission.student || "")));
+                const recipientIds = Array.from(recipientIdsByHomework.get(h._id.toString()) || []);
+                return <tr key={h._id} className="border-b align-top last:border-0"><td className="max-w-[300px] px-3 py-3 font-medium">{h.title}</td><td className="min-w-[210px] px-3 py-3"><StudentStatusList recipientIds={recipientIds} submittedStudentIds={submittedStudentIds} recipientNameById={recipientNameById} overdue={overdue} compact /></td><td className="px-3 py-3">{h.type}</td><td className="whitespace-nowrap px-3 py-3">{h.dueAt ? new Date(h.dueAt).toLocaleDateString("en-IN") : "-"}</td><td className="px-3 py-3">{rows.length}/{recipientCount}</td><td className="px-3 py-3">{percent(rows.length, recipientCount)}%</td><td className="px-3 py-3">{rows.length ? Math.round(rows.reduce((s: number, x: any) => s + (x.totalScore || 0), 0) / rows.length) : 0}</td><td className="px-3 py-3"><span className={`whitespace-nowrap rounded-full px-2 py-1 text-xs font-semibold ${overdue ? "bg-rose-50 text-rose-700" : incomplete ? "bg-amber-50 text-amber-700" : "bg-emerald-50 text-emerald-700"}`}>{overdue ? "Late" : incomplete ? (rows.length ? "Partially submitted" : "Pending") : "Submitted"}</span></td><td className="px-3 py-3"><HomeworkActions homework={JSON.parse(JSON.stringify(h))} /></td></tr>;
               })}</tbody>
             </table>
+            {visibleTracking.length === 0 && <EmptyTrackingState tab={trackingTab} />}
           </div>
         </section>
       )}
@@ -188,4 +254,42 @@ function InfoTile({ label, value }: { label: string; value: string }) {
       <div className="mt-1 text-sm font-semibold text-slate-950">{value}</div>
     </div>
   );
+}
+
+function StudentStatusList({
+  recipientIds,
+  submittedStudentIds,
+  recipientNameById,
+  overdue,
+  compact = false,
+}: {
+  recipientIds: string[];
+  submittedStudentIds: Set<string>;
+  recipientNameById: Map<string, string>;
+  overdue: boolean;
+  compact?: boolean;
+}) {
+  if (!recipientIds.length) {
+    return <div className={`${compact ? "" : "mt-3"} text-xs text-slate-500`}>No assigned students.</div>;
+  }
+
+  return (
+    <div className={`${compact ? "max-h-28" : "mt-3 max-h-36 rounded-lg border border-slate-200 bg-white p-2"} space-y-1 overflow-y-auto pr-1`}>
+      {recipientIds.map((studentId) => {
+        const submitted = submittedStudentIds.has(studentId);
+        const label = submitted ? "Submitted" : overdue ? "Late" : "Pending";
+        return (
+          <div key={studentId} className="flex min-w-0 items-center justify-between gap-2 text-xs">
+            <span className="min-w-0 truncate font-medium text-slate-800" title={recipientNameById.get(studentId) || "Student"}>{recipientNameById.get(studentId) || "Student"}</span>
+            <span className={`flex-none rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${submitted ? "bg-emerald-50 text-emerald-700" : overdue ? "bg-rose-50 text-rose-700" : "bg-amber-50 text-amber-700"}`}>{label}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function EmptyTrackingState({ tab }: { tab: TrackingTab }) {
+  const label = tab === "all" ? "homework" : `${tab} homework`;
+  return <div className="rounded-lg border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">No {label} found.</div>;
 }

@@ -26,7 +26,6 @@ import {
   FileQuestion,
   Folder,
   Grid2X2,
-  HelpCircle,
   Highlighter,
   Home,
   Library,
@@ -4072,12 +4071,6 @@ function LiveBoardQuiz({
     setSelectedSquare(null);
   }
 
-  function hint() {
-    if (locked || solved || ply >= parsed.moves.length) return;
-    setHintsUsed((value) => value + 1);
-    setFeedback(`Hint: try ${parsed.moves[ply].san}`);
-  }
-
   function reset() {
     const next = buildGame(parsed.start);
     setGame(next);
@@ -4221,7 +4214,6 @@ function LiveBoardQuiz({
         </div>
       ) : (
       <div className="mt-3 flex flex-wrap gap-2">
-        {question.hintsEnabled && <button type="button" className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold" onClick={hint}><HelpCircle size={14} className="mr-1 inline" /> Hint</button>}
         <button type="button" className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold" onClick={reset}><RotateCcw size={14} className="mr-1 inline" /> Reset</button>
         <button type="button" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-700" onClick={skipCurrent}>Skip</button>
       </div>)}

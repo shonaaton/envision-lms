@@ -82,6 +82,7 @@ type SetupSelection = string | "erase" | GamifiedObjectId;
 type QuizComposerMode = "current" | "pgn_collection";
 type QuizComposerItem = { id: string; title: string; fen: string; pgn?: string; pgnTitle?: string; solution: string[] };
 type LivePgnVariation = { id: string; label: string; branchAt: number; moves: string[]; createdAt?: string };
+type LivePgnVariationPreview = { id: string; label: string; branchAt: number; display: string; firstNode?: LichessPgnNode };
 type NotationRow = { number: number; white?: string; black?: string; whiteIndex?: number; blackIndex?: number };
 
 function fenMoveContext(fen?: string | null) {
@@ -154,6 +155,34 @@ function NotationMoveText({ move, note, active }: { move?: string; note?: PgnMov
         </span>
       )}
     </span>
+  );
+}
+
+function InlineVariationButton({ variation, active, onClick }: { variation: LivePgnVariationPreview; active: boolean; onClick: () => void }) {
+  const comments = [...(variation.firstNode?.startingComments || []), ...(variation.firstNode?.comments || [])];
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={variation.label}
+      className={`ml-5 mt-1 block w-[calc(100%-1.25rem)] rounded-md border-l-2 px-3 py-2 text-left text-xs transition ${active
+        ? "border-blue-400 bg-blue-600 text-white"
+        : "border-blue-300 bg-slate-100 text-slate-700 hover:bg-blue-50"
+      }`}
+    >
+      <span className="flex flex-wrap items-center gap-1.5">
+        <span className={`font-bold ${active ? "text-white" : "text-blue-600"}`}>{variation.display}</span>
+        {variation.firstNode?.nags.map((nag, index) => (
+          <span key={`${nag}-${index}`} className={`rounded px-1 py-0.5 text-[10px] font-black ${active ? "bg-white/20 text-white" : "bg-amber-100 text-amber-800"}`}>{nagLabel(nag)}</span>
+        ))}
+      </span>
+      {comments.map((comment, index) => (
+        <span key={`variation-comment-${index}`} className={`mt-1 block whitespace-pre-wrap break-words text-[11px] leading-4 ${active ? "text-blue-50" : "text-slate-500"}`}>
+          {comment.text && <span className="block italic">{comment.text}</span>}
+          {commentMetaLabel(comment) && <span className="block font-semibold not-italic">{commentMetaLabel(comment)}</span>}
+        </span>
+      ))}
+    </button>
   );
 }
 
@@ -2464,6 +2493,24 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const notationStartFen = navigationStartFen();
   const notationMoves = activePgnMoves.length ? activePgnMoves : live?.moveHistory || [];
   const notationRows = buildNotationRows(notationMoves, notationStartFen);
+  const notationVariationPreviews = pgnVariations.map((variation) => {
+    const parsedLine = sourcePgnLines.find((line) => line.id === variation.id);
+    const moves = parsedLine?.nodes.map((node) => node.san) || variation.moves;
+    const branchMoves = moves.slice(variation.branchAt);
+    const prefix = notationPlyPrefix(variation.branchAt, notationStartFen);
+    return {
+      id: variation.id,
+      label: variation.label,
+      branchAt: variation.branchAt,
+      display: `${prefix}${branchMoves.length ? ` ${branchMoves.join(" ")}` : ""}`,
+      firstNode: parsedLine?.nodes[variation.branchAt],
+    };
+  });
+  const notationVariationGroups = notationVariationPreviews.reduce<Record<number, LivePgnVariationPreview[]>>((groups, variation) => {
+    if (!groups[variation.branchAt]) groups[variation.branchAt] = [];
+    groups[variation.branchAt].push(variation);
+    return groups;
+  }, {});
   const notationNotes = {
     intro: {
       comments: (sourcePgnTree?.comments || []).map(displayComment).filter(Boolean),
@@ -2996,26 +3043,15 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                   <p className="mt-2 text-xs text-slate-500">{live?.pgnTitle || "Current classroom game"}</p>
                 </div>
                 <div className="overflow-hidden rounded-lg border border-slate-200 text-sm">
-                  {(pgnMoves.length || pgnVariations.length) ? (
-                    <div className="flex flex-wrap gap-1.5 border-b border-slate-200 bg-white p-2">
+                  {(pgnMoves.length || pgnVariations.length) && activePgnVariation ? (
+                    <div className="border-b border-slate-200 bg-white p-2">
                       <button
                         type="button"
                         onClick={() => selectPgnLine("")}
-                        className={`rounded-md px-2.5 py-1.5 text-xs font-bold ${!activePgnVariation ? "bg-purple-700 text-white" : "bg-slate-100 text-slate-600"}`}
+                        className="rounded-md bg-slate-100 px-2.5 py-1.5 text-xs font-bold text-slate-600"
                       >
-                        Main line
+                        Back to main line
                       </button>
-                      {pgnVariations.map((variation) => (
-                        <button
-                          key={variation.id}
-                          type="button"
-                          onClick={() => selectPgnLine(variation.id)}
-                          className={`rounded-md px-2.5 py-1.5 text-xs font-bold ${activePgnVariation?.id === variation.id ? "bg-amber-500 text-white" : "bg-amber-50 text-amber-800"}`}
-                          title={`${variationDisplayLabel(variation, notationStartFen)} — branches after ply ${variation.branchAt}`}
-                        >
-                          {variationDisplayLabel(variation, notationStartFen)}
-                        </button>
-                      ))}
                     </div>
                   ) : null}
                   {(notationNotes.intro.comments.length || notationNotes.intro.variations.length) ? (
@@ -3031,22 +3067,30 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                     const whiteMove = row.white;
                     const blackMove = row.black;
                     return (
-                      <div key={row.number} className="grid grid-cols-[48px_1fr_1fr] items-center border-t border-slate-100 px-2 py-1">
-                        <span className="text-xs font-semibold text-slate-400">{row.number}.</span>
-                        <button
-                          disabled={!activePgnMoves.length || row.whiteIndex === undefined}
-                          onClick={() => row.whiteIndex !== undefined && navigateMove(row.whiteIndex + 1)}
-                          className={`min-h-9 rounded-md px-2 text-left font-medium ${row.whiteIndex !== undefined && currentMoveIndex === row.whiteIndex + 1 ? "bg-purple-700 text-white" : "text-slate-800 hover:bg-slate-50 disabled:hover:bg-transparent"}`}
-                        >
-                          <NotationMoveText move={whiteMove} note={row.whiteIndex === undefined ? undefined : notationNotes.moves[row.whiteIndex]} active={row.whiteIndex !== undefined && currentMoveIndex === row.whiteIndex + 1} />
-                        </button>
-                        <button
-                          disabled={!activePgnMoves.length || row.blackIndex === undefined}
-                          onClick={() => row.blackIndex !== undefined && navigateMove(row.blackIndex + 1)}
-                          className={`min-h-9 rounded-md px-2 text-left font-medium ${row.blackIndex !== undefined && currentMoveIndex === row.blackIndex + 1 ? "bg-purple-700 text-white" : "text-slate-800 hover:bg-slate-50 disabled:hover:bg-transparent"}`}
-                        >
-                          <NotationMoveText move={blackMove} note={row.blackIndex === undefined ? undefined : notationNotes.moves[row.blackIndex]} active={row.blackIndex !== undefined && currentMoveIndex === row.blackIndex + 1} />
-                        </button>
+                      <div key={row.number} className="border-t border-slate-100 px-2 py-1">
+                        <div className="grid grid-cols-[48px_1fr_1fr] items-center">
+                          <span className="text-xs font-semibold text-slate-400">{row.number}.</span>
+                          <button
+                            disabled={!activePgnMoves.length || row.whiteIndex === undefined}
+                            onClick={() => row.whiteIndex !== undefined && navigateMove(row.whiteIndex + 1)}
+                            className={`min-h-9 rounded-md px-2 text-left font-medium ${row.whiteIndex !== undefined && currentMoveIndex === row.whiteIndex + 1 && !activePgnVariation ? "bg-purple-700 text-white" : "text-slate-800 hover:bg-slate-50 disabled:hover:bg-transparent"}`}
+                          >
+                            <NotationMoveText move={whiteMove} note={row.whiteIndex === undefined ? undefined : notationNotes.moves[row.whiteIndex]} active={row.whiteIndex !== undefined && currentMoveIndex === row.whiteIndex + 1 && !activePgnVariation} />
+                          </button>
+                          <button
+                            disabled={!activePgnMoves.length || row.blackIndex === undefined}
+                            onClick={() => row.blackIndex !== undefined && navigateMove(row.blackIndex + 1)}
+                            className={`min-h-9 rounded-md px-2 text-left font-medium ${row.blackIndex !== undefined && currentMoveIndex === row.blackIndex + 1 && !activePgnVariation ? "bg-purple-700 text-white" : "text-slate-800 hover:bg-slate-50 disabled:hover:bg-transparent"}`}
+                          >
+                            <NotationMoveText move={blackMove} note={row.blackIndex === undefined ? undefined : notationNotes.moves[row.blackIndex]} active={row.blackIndex !== undefined && currentMoveIndex === row.blackIndex + 1 && !activePgnVariation} />
+                          </button>
+                        </div>
+                        {row.whiteIndex !== undefined && (notationVariationGroups[row.whiteIndex + 1] || []).map((variation) => (
+                          <InlineVariationButton key={variation.id} variation={variation} active={activePgnVariation?.id === variation.id} onClick={() => selectPgnLine(variation.id)} />
+                        ))}
+                        {row.blackIndex !== undefined && (notationVariationGroups[row.blackIndex + 1] || []).map((variation) => (
+                          <InlineVariationButton key={variation.id} variation={variation} active={activePgnVariation?.id === variation.id} onClick={() => selectPgnLine(variation.id)} />
+                        ))}
                       </div>
                     );
                   }) : <div className="p-6 text-center text-sm text-slate-500">No moves loaded yet.</div>}

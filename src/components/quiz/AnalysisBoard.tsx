@@ -77,6 +77,14 @@ type AnalysisVariation = {
   moves: AnalysisMove[];
 };
 
+type AnalysisVariationPreview = {
+  id: string;
+  label: string;
+  branchAt: number;
+  display: string;
+  firstNode?: LichessPgnNode;
+};
+
 type EngineLine = {
   multipv: number;
   eval: string;
@@ -99,6 +107,28 @@ type GamifiedObject = {
 const files = ["a", "b", "c", "d", "e", "f", "g", "h"];
 const ranks = ["8", "7", "6", "5", "4", "3", "2", "1"];
 const startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
+function analysisFenMoveContext(fen?: string | null) {
+  const parts = String(fen || "").trim().split(/\s+/);
+  return {
+    side: parts[1] === "b" ? "b" as const : "w" as const,
+    fullmove: Math.max(1, Number(parts[5]) || 1),
+  };
+}
+
+function analysisPlyPrefix(plyIndex: number, fen?: string | null) {
+  let { side, fullmove } = analysisFenMoveContext(fen);
+  for (let index = 0; index < plyIndex; index += 1) {
+    if (side === "b") {
+      side = "w";
+      fullmove += 1;
+    } else {
+      side = "b";
+    }
+  }
+  return side === "w" ? `${fullmove}.` : `${fullmove}...`;
+}
+
 const boardThemes: Record<BoardTheme, { name: string; light: string; dark: string }> = {
   walnut: { name: "Walnut", light: "#efd6a8", dark: "#bd8d62" },
   green: { name: "Tournament", light: "#eeeed2", dark: "#769656" },
@@ -288,6 +318,19 @@ export default function AnalysisBoard({ initialFen, withEngine = true, canUseLib
   const activeLineMoves = activeVariation?.moves || mainLineMoves;
   const activeParsedLine = useMemo(() => parsedPgnLines.find((line) => line.id === activeLineId) || (!activeLineId ? parsedPgnLines[0] : null) || null, [activeLineId, parsedPgnLines]);
   const activePgnNode = selectedPly > 0 ? activeParsedLine?.nodes[selectedPly - 1] : undefined;
+  const variationPreviews = useMemo<AnalysisVariationPreview[]>(() => variations.map((variation) => {
+    const parsedLine = parsedPgnLines.find((line) => line.id === variation.id);
+    const moves = parsedLine?.nodes.map((node) => node.san) || variation.moves.map((move) => move.san);
+    const branchMoves = moves.slice(variation.branchAt);
+    const prefix = analysisPlyPrefix(variation.branchAt, baseFenRef.current);
+    return {
+      id: variation.id,
+      label: variation.label,
+      branchAt: variation.branchAt,
+      display: `${prefix}${branchMoves.length ? ` ${branchMoves.join(" ")}` : ""}`,
+      firstNode: parsedLine?.nodes[variation.branchAt],
+    };
+  }), [parsedPgnLines, variations]);
 
   const moveRows: MoveRow[] = useMemo(() => {
     const rows: MoveRow[] = [];
@@ -804,6 +847,7 @@ export default function AnalysisBoard({ initialFen, withEngine = true, canUseLib
             <MovesPanel
               rows={moveRows}
               variations={variations}
+              variationPreviews={variationPreviews}
               activeLineId={activeLineId}
               isDark={isDark}
               selectedPly={selectedPly}
@@ -988,6 +1032,7 @@ function TabBar({ active, isDark, onChange }: { active: SideTab; isDark: boolean
 function MovesPanel({
   rows,
   variations,
+  variationPreviews,
   activeLineId,
   isDark,
   selectedPly,
@@ -1001,6 +1046,7 @@ function MovesPanel({
 }: {
   rows: MoveRow[];
   variations: AnalysisVariation[];
+  variationPreviews: AnalysisVariationPreview[];
   activeLineId: string;
   isDark: boolean;
   selectedPly: number;
@@ -1012,32 +1058,29 @@ function MovesPanel({
   canPrevious: boolean;
   canNext: boolean;
 }) {
+  const variationGroups = useMemo(() => {
+    return variationPreviews.reduce<Record<number, AnalysisVariationPreview[]>>((groups, variation) => {
+      if (!groups[variation.branchAt]) groups[variation.branchAt] = [];
+      groups[variation.branchAt].push(variation);
+      return groups;
+    }, {});
+  }, [variationPreviews]);
+
   return (
     <div className={`rounded-lg ${isDark ? "bg-transparent" : "bg-slate-50"}`}>
       <div className={`flex items-center justify-between border-b px-4 py-4 text-lg font-semibold ${isDark ? "border-ink-600 text-white" : "border-slate-100 text-slate-950"}`}>
         <span>Move History{activeLineId ? ` · ${variations.find((variation) => variation.id === activeLineId)?.label || "Variation"}` : ""}</span>
         <Copy size={16} className={isDark ? "text-blue-200/70" : "text-slate-500"} />
       </div>
-      {(rows.length > 0 || variations.length > 0) && (
-        <div className={`flex flex-wrap gap-1.5 border-b p-3 ${isDark ? "border-ink-600" : "border-slate-100 bg-white"}`}>
+      {(rows.length > 0 || variations.length > 0) && activeLineId && (
+        <div className={`border-b p-3 ${isDark ? "border-ink-600" : "border-slate-100 bg-white"}`}>
           <button
             type="button"
             onClick={() => onSelectLine("")}
-            className={`rounded-md px-2.5 py-1.5 text-xs font-bold ${!activeLineId ? "bg-purple-700 text-white" : isDark ? "bg-ink-700 text-blue-100" : "bg-slate-100 text-slate-600"}`}
+            className={`rounded-md px-2.5 py-1.5 text-xs font-bold ${isDark ? "bg-ink-700 text-blue-100" : "bg-slate-100 text-slate-600"}`}
           >
-            Main line
+            Back to main line
           </button>
-          {variations.map((variation) => (
-            <button
-              key={variation.id}
-              type="button"
-              onClick={() => onSelectLine(variation.id)}
-              title={`Branches after ply ${variation.branchAt}`}
-              className={`rounded-md px-2.5 py-1.5 text-xs font-bold ${activeLineId === variation.id ? "bg-amber-500 text-white" : isDark ? "bg-amber-950 text-amber-100" : "bg-amber-50 text-amber-800"}`}
-            >
-              {variation.label}
-            </button>
-          ))}
         </div>
       )}
       {introComments.length > 0 && (
@@ -1053,10 +1096,18 @@ function MovesPanel({
       {rows.length ? (
         <div className="max-h-[360px] overflow-y-auto p-4 text-sm">
           {rows.map((row) => (
-            <div key={row.number} className="grid grid-cols-[28px_1fr_1fr] gap-2 py-1">
-              <span className={isDark ? "pt-2 text-blue-200/70" : "pt-2 text-slate-500"}>{row.number}.</span>
-              <MoveButton label={row.white} node={row.whiteNode} active={selectedPly === row.whitePly} isDark={isDark} onClick={() => onSelect(row.whitePly)} />
-              <MoveButton label={row.black} node={row.blackNode} active={selectedPly === row.blackPly} isDark={isDark} onClick={() => row.blackPly && onSelect(row.blackPly)} />
+            <div key={row.number}>
+              <div className="grid grid-cols-[28px_1fr_1fr] gap-2 py-1">
+                <span className={isDark ? "pt-2 text-blue-200/70" : "pt-2 text-slate-500"}>{row.number}.</span>
+                <MoveButton label={row.white} node={row.whiteNode} active={selectedPly === row.whitePly && !activeLineId} isDark={isDark} onClick={() => onSelect(row.whitePly)} />
+                <MoveButton label={row.black} node={row.blackNode} active={selectedPly === row.blackPly && !activeLineId} isDark={isDark} onClick={() => row.blackPly && onSelect(row.blackPly)} />
+              </div>
+              {(variationGroups[row.whitePly] || []).map((variation) => (
+                <VariationInlineButton key={variation.id} variation={variation} active={activeLineId === variation.id} isDark={isDark} onClick={() => onSelectLine(variation.id)} />
+              ))}
+              {row.blackPly && (variationGroups[row.blackPly] || []).map((variation) => (
+                <VariationInlineButton key={variation.id} variation={variation} active={activeLineId === variation.id} isDark={isDark} onClick={() => onSelectLine(variation.id)} />
+              ))}
             </div>
           ))}
         </div>
@@ -1091,6 +1142,38 @@ function MoveButton({ label, node, active, isDark, onClick }: { label?: string; 
       </span>
       {comments.map((comment, index) => (
         <span key={`comment-${index}`} className={`mt-1 block whitespace-pre-wrap text-[11px] font-normal leading-4 ${active ? "text-purple-50" : "text-slate-500"}`}>
+          {comment.text && <span className="block italic">{comment.text}</span>}
+          {commentMetaLabel(comment) && <span className="block font-semibold not-italic">{commentMetaLabel(comment)}</span>}
+        </span>
+      ))}
+    </button>
+  );
+}
+
+function VariationInlineButton({ variation, active, isDark, onClick }: { variation: AnalysisVariationPreview; active: boolean; isDark: boolean; onClick: () => void }) {
+  const comments = [...(variation.firstNode?.startingComments || []), ...(variation.firstNode?.comments || [])];
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={variation.label}
+      className={[
+        "ml-8 mt-1 block w-[calc(100%-2rem)] rounded-md border-l-2 px-3 py-2 text-left text-xs transition",
+        active
+          ? "border-blue-400 bg-blue-600 text-white"
+          : isDark
+            ? "border-blue-500/60 bg-ink-800 text-blue-100 hover:bg-ink-700"
+            : "border-blue-300 bg-slate-100 text-slate-700 hover:bg-blue-50",
+      ].join(" ")}
+    >
+      <span className="flex flex-wrap items-center gap-1.5">
+        <span className={active ? "font-bold text-white" : "font-bold text-blue-600"}>{variation.display}</span>
+        {variation.firstNode?.nags.map((nag, index) => (
+          <span key={`${nag}-${index}`} className={`rounded px-1 py-0.5 text-[10px] font-black ${active ? "bg-white/20 text-white" : "bg-amber-100 text-amber-800"}`}>{nagLabel(nag)}</span>
+        ))}
+      </span>
+      {comments.map((comment, index) => (
+        <span key={`variation-comment-${index}`} className={`mt-1 block whitespace-pre-wrap break-words text-[11px] leading-4 ${active ? "text-blue-50" : "text-slate-500"}`}>
           {comment.text && <span className="block italic">{comment.text}</span>}
           {commentMetaLabel(comment) && <span className="block font-semibold not-italic">{commentMetaLabel(comment)}</span>}
         </span>

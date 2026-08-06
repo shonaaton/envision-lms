@@ -131,16 +131,6 @@ export default function AdminUsersPage() {
     loadDirectory();
   }, [loadBatches, loadDirectory, loadUsers]);
 
-  useEffect(() => {
-    const refresh = () => loadUsers();
-    window.addEventListener("focus", refresh);
-    const timer = window.setInterval(refresh, 20_000);
-    return () => {
-      window.removeEventListener("focus", refresh);
-      window.clearInterval(timer);
-    };
-  }, [loadUsers]);
-
   const counts = useMemo(() => {
     const active = users.filter((u) => u.isActive).length;
     return { active, inactive: users.length - active };

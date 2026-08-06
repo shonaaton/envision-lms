@@ -1,7 +1,7 @@
 "use client";
 
 import { RefreshCw } from "lucide-react";
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 
 declare global {
@@ -11,7 +11,6 @@ declare global {
 }
 
 type RefreshDetail = {
-  silent?: boolean;
   source?: string;
 };
 
@@ -105,15 +104,10 @@ function patchFetchOnce() {
 
 export default function LiveDataRefresher() {
   const router = useRouter();
-  const pathname = usePathname();
-  const isLiveClassroomRoute = /^\/classrooms\/[^/]+(?:\/live)?$/.test(pathname || "");
-  const isAssignmentAttemptRoute = /^\/homework\/[^/]+$/.test(pathname || "");
-  const isQuietRefreshRoute = isLiveClassroomRoute || isAssignmentAttemptRoute || (pathname || "").startsWith("/pgn");
   const [showSync, setShowSync] = useState(false);
   const [, startTransition] = useTransition();
   const refreshTimerRef = useRef<number | null>(null);
   const hideTimerRef = useRef<number | null>(null);
-  const lastRefreshRef = useRef(Date.now());
 
   const clearTimers = useCallback(() => {
     if (refreshTimerRef.current) window.clearTimeout(refreshTimerRef.current);
@@ -123,82 +117,42 @@ export default function LiveDataRefresher() {
   }, []);
 
   const refreshNow = useCallback(
-    ({ silent = false }: RefreshDetail = {}) => {
+    (_detail: RefreshDetail = {}) => {
       if (typeof document !== "undefined" && document.hidden) return;
-      if (isQuietRefreshRoute) return;
       if (refreshTimerRef.current) window.clearTimeout(refreshTimerRef.current);
 
       refreshTimerRef.current = window.setTimeout(() => {
-        lastRefreshRef.current = Date.now();
-        if (!silent) setShowSync(true);
+        setShowSync(true);
 
         startTransition(() => {
           router.refresh();
         });
 
-        if (!silent) {
-          if (hideTimerRef.current) window.clearTimeout(hideTimerRef.current);
-          hideTimerRef.current = window.setTimeout(() => setShowSync(false), 950);
-        }
-      }, silent ? 0 : 450);
+        if (hideTimerRef.current) window.clearTimeout(hideTimerRef.current);
+        hideTimerRef.current = window.setTimeout(() => setShowSync(false), 950);
+      }, 450);
     },
-    [isQuietRefreshRoute, router],
+    [router],
   );
 
   useEffect(() => {
-    if (isQuietRefreshRoute) return;
     patchFetchOnce();
-  }, [isQuietRefreshRoute]);
+  }, []);
 
   useEffect(() => {
-    if (isQuietRefreshRoute) return;
     const onDataChanged = (event: Event) => {
       const detail = (event as CustomEvent<RefreshDetail>).detail || {};
       refreshNow(detail);
     };
 
-    const onFocus = () => {
-      if (Date.now() - lastRefreshRef.current > 6000) refreshNow();
-    };
-
-    const onVisibilityChange = () => {
-      if (!document.hidden && Date.now() - lastRefreshRef.current > 6000) refreshNow();
-    };
-
-    const onPageShow = (event: PageTransitionEvent) => {
-      if (event.persisted || Date.now() - lastRefreshRef.current > 6000) refreshNow({ silent: true });
-    };
-
     window.addEventListener("lms:data-changed", onDataChanged);
-    window.addEventListener("focus", onFocus);
-    window.addEventListener("pageshow", onPageShow);
-    document.addEventListener("visibilitychange", onVisibilityChange);
 
     return () => {
       window.removeEventListener("lms:data-changed", onDataChanged);
-      window.removeEventListener("focus", onFocus);
-      window.removeEventListener("pageshow", onPageShow);
-      document.removeEventListener("visibilitychange", onVisibilityChange);
       clearTimers();
     };
-  }, [clearTimers, isQuietRefreshRoute, refreshNow]);
+  }, [clearTimers, refreshNow]);
 
-  useEffect(() => {
-    if (isQuietRefreshRoute) return;
-    const interval = window.setInterval(() => {
-      if (!document.hidden && Date.now() - lastRefreshRef.current > 25000) {
-        refreshNow({ silent: true });
-      }
-    }, 30000);
-
-    return () => window.clearInterval(interval);
-  }, [isQuietRefreshRoute, refreshNow]);
-
-  useEffect(() => {
-    setShowSync(false);
-  }, [pathname]);
-
-  if (isQuietRefreshRoute) return null;
   // A router refresh can remain pending when a client-only page has no new
   // server payload to commit. The indicator has its own bounded display time,
   // so it must never depend on the transition's pending state.

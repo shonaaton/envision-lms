@@ -289,16 +289,6 @@ export default function ClassroomManagementClient({
     load();
   }, [load]);
 
-  useEffect(() => {
-    const refresh = () => load();
-    const timer = window.setInterval(refresh, 30000);
-    window.addEventListener("focus", refresh);
-    return () => {
-      window.clearInterval(timer);
-      window.removeEventListener("focus", refresh);
-    };
-  }, [load]);
-
   const selectedCourse = useMemo(() => targets.courses.find((course) => course._id === form.course), [targets.courses, form.course]);
   const selectedLevel = useMemo(
     () => selectedCourse?.levels?.find((level) => level.name === form.levelName) || null,

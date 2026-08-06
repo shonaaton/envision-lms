@@ -55,7 +55,18 @@ import {
 } from "lucide-react";
 import PageLoadingOverlay from "@/components/feedback/PageLoadingOverlay";
 import MiniFenBoard, { previewFenFromPgn } from "@/components/pgn/MiniFenBoard";
-import { normalizePermissiveFen, parsePgnNotes, sortPgnCollection, type PgnMoveNote } from "@/lib/pgnLibrary";
+import { normalizePermissiveFen, sortPgnCollection, type PgnMoveNote } from "@/lib/pgnLibrary";
+import {
+  commentMetaLabel,
+  lichessPgnHasInvalidMoves,
+  lichessPgnLines,
+  nagLabel,
+  parseLichessPgn,
+  pgnShapeHex,
+  type LichessPgnLine,
+  type LichessPgnNode,
+  type ParsedPgnComment,
+} from "@/lib/lichessPgn";
 import { cn } from "@/lib/utils";
 
 const Chessboard = dynamic(() => import("react-chessboard").then((m) => m.Chessboard), { ssr: false });
@@ -145,6 +156,19 @@ function NotationMoveText({ move, note, active }: { move?: string; note?: PgnMov
       )}
     </span>
   );
+}
+
+function displayComment(comment: ParsedPgnComment) {
+  return [comment.text, commentMetaLabel(comment)].filter(Boolean).join("\n");
+}
+
+function noteFromPgnNode(node?: LichessPgnNode): PgnMoveNote {
+  if (!node) return { comments: [], glyphs: [], variations: [] };
+  return {
+    comments: [...node.startingComments, ...node.comments].map(displayComment).filter(Boolean),
+    glyphs: node.nags.map(nagLabel),
+    variations: node.children.slice(1).map((child) => child.san),
+  };
 }
 
 function variationDisplayLabel(variation: LivePgnVariation, startFen?: string | null) {
@@ -933,7 +957,8 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   }, [pgnLibrary, activePgnFolder, pgnFolderQuery]);
   const chatMessages = data?.chatMessages || [];
   const pgnMoves = useMemo(() => live?.pgnMoves || [], [live?.pgnMoves]);
-  const sourcePgnNotes = useMemo(() => parsePgnNotes(live?.pgn, pgnMoves.length), [live?.pgn, pgnMoves.length]);
+  const sourcePgnTree = useMemo(() => live?.pgn ? parseLichessPgn(live.pgn) : null, [live?.pgn]);
+  const sourcePgnLines = useMemo<LichessPgnLine[]>(() => sourcePgnTree ? lichessPgnLines(sourcePgnTree) : [], [sourcePgnTree]);
   const pgnVariations = useMemo<LivePgnVariation[]>(() => Array.isArray(live?.pgnVariations) ? live.pgnVariations : [], [live?.pgnVariations]);
   const activePgnVariation = useMemo(
     () => pgnVariations.find((variation) => variation.id === live?.activePgnVariationId) || null,
@@ -941,6 +966,15 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   );
   const activePgnMoves = activePgnVariation?.moves || pgnMoves;
   const currentMoveIndex = live?.pgnMoveIndex || 0;
+  const activeSourcePgnLine = useMemo(
+    () => sourcePgnLines.find((line) => line.id === (live?.activePgnVariationId || "")) || (!live?.activePgnVariationId ? sourcePgnLines[0] : null) || null,
+    [live?.activePgnVariationId, sourcePgnLines]
+  );
+  const activeSourcePgnNode = currentMoveIndex > 0 ? activeSourcePgnLine?.nodes[currentMoveIndex - 1] : undefined;
+  const sourcePgnShapes = useMemo(
+    () => [...(activeSourcePgnNode?.startingComments || []), ...(activeSourcePgnNode?.comments || [])].flatMap((comment) => comment.shapes),
+    [activeSourcePgnNode]
+  );
   const boardFen = live?.fen === "start" || !live?.fen ? "start" : live.fen;
   const boardPosition = boardFen;
   const boardPieceMap = useMemo(() => fenToPosition(live?.fen), [live?.fen]);
@@ -2098,6 +2132,8 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   function loadPgn(pgn: any, index: number, collection?: any[]) {
     const chess = new Chess();
     const startFen = pgnStartFen(pgn);
+    const parsedTree = parseLichessPgn(pgn.pgn || "");
+    const parsedLines = lichessPgnLines(parsedTree);
     const currentTabs = collectionItems(Array.isArray(live?.challenge?.pgnCollection) ? live.challenge.pgnCollection : []);
     const requestedItem = collectionItems([pgn])[0];
     const requestedKey = pgnTabKey(requestedItem);
@@ -2109,14 +2145,21 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     }
     try {
       chess.loadPgn(pgn.pgn);
-      const moves = chess.history();
+      if (lichessPgnHasInvalidMoves(parsedTree)) throw new Error("Invalid PGN variation");
+      const moves = parsedLines[0]?.moves || chess.history();
+      const importedVariations: LivePgnVariation[] = parsedLines.slice(1).map((line) => ({
+        id: line.id,
+        label: line.label,
+        branchAt: line.branchAt,
+        moves: line.moves,
+      }));
       patch({
         pgn: pgn.pgn,
         pgnTitle: pgn.title,
         navigationStartFen: startFen,
         pgnMoves: moves,
         pgnMoveIndex: 0,
-        pgnVariations: [],
+        pgnVariations: importedVariations,
         activePgnVariationId: "",
         fen: startFen,
         orientation: orientationForFen(startFen),
@@ -2273,6 +2316,14 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
         };
       }
     }
+    for (const shape of sourcePgnShapes) {
+      if (shape.from === shape.to) {
+        styles[shape.from] = {
+          ...(styles[shape.from] || {}),
+          backgroundImage: `radial-gradient(circle, transparent 0 31%, ${pgnShapeHex[shape.color]}cc 32% 40%, transparent 41%)`,
+        };
+      }
+    }
     if (annotationDrag?.from && (!annotationDrag.to || annotationDrag.to === annotationDrag.from)) {
       styles[annotationDrag.from] = {
         ...(styles[annotationDrag.from] || {}),
@@ -2280,13 +2331,17 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       };
     }
     return mergeSquareStyles(styles as any, moveHintStyles as any) as any;
-  }, [annotationDrag, displayedDrawings, moveHintStyles]);
+  }, [annotationDrag, displayedDrawings, moveHintStyles, sourcePgnShapes]);
 
   const arrows = useMemo(() => {
-    return (displayedDrawings || [])
+    const manualArrows = (displayedDrawings || [])
       .filter((drawing: any) => drawing.type === "arrow" && drawing.from && drawing.to)
       .map((drawing: any) => [drawing.from, drawing.to, drawing.color || "#7c1fa2"]);
-  }, [displayedDrawings]);
+    const importedArrows = sourcePgnShapes
+      .filter((shape) => shape.from !== shape.to)
+      .map((shape) => [shape.from, shape.to, pgnShapeHex[shape.color]]);
+    return [...manualArrows, ...importedArrows];
+  }, [displayedDrawings, sourcePgnShapes]);
 
   const leaderboardRows = useMemo(() => {
     const responseMap = new Map<string, any[]>();
@@ -2410,7 +2465,17 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const notationStartFen = navigationStartFen();
   const notationMoves = activePgnMoves.length ? activePgnMoves : live?.moveHistory || [];
   const notationRows = buildNotationRows(notationMoves, notationStartFen);
-  const notationNotes = activePgnVariation ? { intro: { comments: [], glyphs: [], variations: [] }, moves: {} } : sourcePgnNotes;
+  const notationNotes = {
+    intro: {
+      comments: (sourcePgnTree?.comments || []).map(displayComment).filter(Boolean),
+      glyphs: [],
+      variations: [],
+    },
+    moves: (activeSourcePgnLine?.nodes || []).reduce<Record<number, PgnMoveNote>>((notes, node, index) => {
+      notes[index] = noteFromPgnNode(node);
+      return notes;
+    }, {}),
+  };
   const matchedPgnIndex = activePgnCollection.findIndex((item: any) => isCurrentPgn(item));
   const storedPgnIndex = Number(live?.challenge?.currentIndex || 0);
   const activePgnIndex = activePgnCollection.length

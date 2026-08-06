@@ -79,8 +79,10 @@ const seededHistory: GameRecord[] = [
 export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
   const gameRef = useRef(new Chess());
   const workerRef = useRef<Worker | null>(null);
+  const statusRef = useRef<GameStatus>("idle");
   const boardWrapRef = useRef<HTMLDivElement | null>(null);
   const savedRewardGameIdRef = useRef<number | null>(null);
+  const commitTurnClockRef = useRef<() => void>(() => {});
   const [position, setPosition] = useState(gameRef.current.fen());
   const [boardWidth, setBoardWidth] = useState(460);
   const [status, setStatus] = useState<GameStatus>("idle");
@@ -136,6 +138,7 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
   const isPlayerTurn = gameRef.current.turn() === (playerColor === "white" ? "w" : "b");
   const usesClock = timeControl !== "No Clock";
   const totalDurationSeconds = gameStartedAt ? Math.max(0, Math.floor((Date.now() - gameStartedAt) / 1000)) : 0;
+  const engineMoveTimeMs = Math.min(3200, Math.max(650, 450 + currentDepth * 250));
 
   const beginNextTurn = useCallback(() => {
     setActiveTurnStartedAt(usesClock ? Date.now() : null);
@@ -235,6 +238,18 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
     finishGame(recordResult, finalResult);
   }, [finishGame, playerColor]);
 
+  const beginNextTurnRef = useRef(beginNextTurn);
+  const checkGameOverRef = useRef(checkGameOver);
+
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
+
+  useEffect(() => {
+    beginNextTurnRef.current = beginNextTurn;
+    checkGameOverRef.current = checkGameOver;
+  }, [beginNextTurn, checkGameOver]);
+
   useEffect(() => {
     try {
       const worker = new Worker("/stockfish/stockfish.js");
@@ -244,26 +259,27 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
       worker.onmessage = (event) => {
         const line = typeof event.data === "string" ? event.data : "";
         const bestMove = line.match(/^bestmove\s(\S+)/);
-        if (!bestMove || status !== "playing") return;
+        if (!bestMove || statusRef.current !== "playing") return;
 
         const uci = bestMove[1];
         const move = { from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] || "q" };
         try {
+          commitTurnClockRef.current();
           gameRef.current.move(move);
         } catch {
           // Ignore invalid engine output; the board state remains authoritative.
         }
         setThinking(false);
-        beginNextTurn();
+        beginNextTurnRef.current();
         refreshBoard();
-        checkGameOver();
+        checkGameOverRef.current();
       };
     } catch {
       // The board still works if the engine asset is unavailable.
     }
 
     return () => workerRef.current?.terminate();
-  }, [beginNextTurn, checkGameOver, status]);
+  }, []);
 
   useEffect(() => {
     if (!usesClock || status !== "playing" || activeTurnStartedAt === null) return;
@@ -344,6 +360,10 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
     }
   }
 
+  useEffect(() => {
+    commitTurnClockRef.current = commitTurnClock;
+  });
+
   const displayedWhiteClock =
     usesClock && whiteClockMs !== null && status === "playing" && gameRef.current.turn() === "w" && activeTurnStartedAt !== null
       ? Math.max(0, whiteClockMs - (Date.now() - activeTurnStartedAt) + liveTick * 0)
@@ -377,7 +397,7 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
     }
     worker.postMessage(`setoption name UCI_Elo value ${(selectedBot.elo || 0) + Math.max(0, (levelToElo[level - 1] || 0) - levelToElo[0])}`);
     worker.postMessage(`position fen ${gameRef.current.fen()}`);
-    worker.postMessage(`go depth ${currentDepth}`);
+    worker.postMessage(`go movetime ${engineMoveTimeMs}`);
   }
 
   async function startGame() {

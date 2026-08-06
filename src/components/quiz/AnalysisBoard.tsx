@@ -25,9 +25,20 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Chess } from "chess.js";
 import { toast } from "sonner";
-import { buildMoveHintStyles, legalTargetsFromGame } from "@/lib/chessboardUi";
+import { buildMoveHintStyles, legalTargetsFromGame, mergeSquareStyles } from "@/lib/chessboardUi";
 import { isPromotionMove, promotionFromBoardPiece, type PendingPromotion, type PromotionPiece } from "@/lib/chessPromotion";
 import { normalizePermissiveFen } from "@/lib/pgnLibrary";
+import {
+  commentMetaLabel,
+  lichessPgnHasInvalidMoves,
+  lichessPgnLines,
+  nagLabel,
+  parseLichessPgn,
+  pgnShapeHex,
+  type LichessPgnLine,
+  type LichessPgnNode,
+  type ParsedPgnComment,
+} from "@/lib/lichessPgn";
 import PgnLibraryPicker, { type PgnLibraryGame } from "@/components/pgn/PgnLibraryPicker";
 
 const Chessboard = dynamic(() => import("react-chessboard").then((m) => m.Chessboard), { ssr: false });
@@ -47,6 +58,8 @@ type MoveRow = {
   black: string;
   whitePly: number;
   blackPly?: number;
+  whiteNode?: LichessPgnNode;
+  blackNode?: LichessPgnNode;
 };
 
 type AnalysisMove = {
@@ -233,6 +246,8 @@ export default function AnalysisBoard({ initialFen, withEngine = true, canUseLib
   const mainLineMovesRef = useRef<AnalysisMove[]>([]);
   const variationsRef = useRef<AnalysisVariation[]>([]);
   const activeLineIdRef = useRef("");
+  const loadedPgnRef = useRef("");
+  const pgnDirtyRef = useRef(false);
   const workerRef = useRef<Worker | null>(null);
   const analysisFenRef = useRef(initialPosition || gameRef.current.fen());
   const boardWrapRef = useRef<HTMLDivElement | null>(null);
@@ -242,6 +257,8 @@ export default function AnalysisBoard({ initialFen, withEngine = true, canUseLib
   const [mainLineMoves, setMainLineMoves] = useState<AnalysisMove[]>([]);
   const [variations, setVariations] = useState<AnalysisVariation[]>([]);
   const [activeLineId, setActiveLineId] = useState("");
+  const [parsedPgnLines, setParsedPgnLines] = useState<LichessPgnLine[]>([]);
+  const [introComments, setIntroComments] = useState<ParsedPgnComment[]>([]);
   const [orientation, setOrientation] = useState<"white" | "black">("white");
   const [tab, setTab] = useState<SideTab>("engine");
   const [dialog, setDialog] = useState<DialogName>(null);
@@ -269,6 +286,8 @@ export default function AnalysisBoard({ initialFen, withEngine = true, canUseLib
   const customPieces = useMemo(() => createCustomPieces(pieceTheme), [pieceTheme]);
   const activeVariation = useMemo(() => variations.find((variation) => variation.id === activeLineId) || null, [activeLineId, variations]);
   const activeLineMoves = activeVariation?.moves || mainLineMoves;
+  const activeParsedLine = useMemo(() => parsedPgnLines.find((line) => line.id === activeLineId) || (!activeLineId ? parsedPgnLines[0] : null) || null, [activeLineId, parsedPgnLines]);
+  const activePgnNode = selectedPly > 0 ? activeParsedLine?.nodes[selectedPly - 1] : undefined;
 
   const moveRows: MoveRow[] = useMemo(() => {
     const rows: MoveRow[] = [];
@@ -278,13 +297,15 @@ export default function AnalysisBoard({ initialFen, withEngine = true, canUseLib
       if (move.color === "w") {
         rows[rowIndex].white = move.san;
         rows[rowIndex].whitePly = index + 1;
+        rows[rowIndex].whiteNode = activeParsedLine?.nodes[index];
       } else {
         rows[rowIndex].black = move.san;
         rows[rowIndex].blackPly = index + 1;
+        rows[rowIndex].blackNode = activeParsedLine?.nodes[index];
       }
     });
     return rows;
-  }, [activeLineMoves]);
+  }, [activeLineMoves, activeParsedLine]);
 
   useEffect(() => {
     const element = boardWrapRef.current;
@@ -359,12 +380,12 @@ export default function AnalysisBoard({ initialFen, withEngine = true, canUseLib
     return variationsRef.current.find((variation) => variation.id === activeLineIdRef.current)?.moves || mainLineMovesRef.current;
   }
 
-  function resetAnalysisLines(moves: AnalysisMove[] = []) {
+  function resetAnalysisLines(moves: AnalysisMove[] = [], importedVariations: AnalysisVariation[] = []) {
     mainLineMovesRef.current = moves;
-    variationsRef.current = [];
+    variationsRef.current = importedVariations;
     activeLineIdRef.current = "";
     setMainLineMoves(moves);
-    setVariations([]);
+    setVariations(importedVariations);
     setActiveLineId("");
   }
 
@@ -388,6 +409,7 @@ export default function AnalysisBoard({ initialFen, withEngine = true, canUseLib
         && (expectedMove.promotion || "") === (recordedMove.promotion || "");
 
       if (!followsLine) {
+        pgnDirtyRef.current = true;
         const nextMoves = [...line.slice(0, branchAt), recordedMove];
         if (branchAt === line.length && activeLineIdRef.current) {
           const nextVariations = variationsRef.current.map((variation) => variation.id === activeLineIdRef.current ? { ...variation, moves: nextMoves } : variation);
@@ -446,6 +468,15 @@ export default function AnalysisBoard({ initialFen, withEngine = true, canUseLib
     return legalTargetsFromGame(gameRef.current, selectedSquare);
   }, [selectedSquare]);
   const moveHintStyles = useMemo(() => buildMoveHintStyles(moveTargets, selectedSquare), [moveTargets, selectedSquare]);
+  const pgnShapes = useMemo(() => [...(activePgnNode?.startingComments || []), ...(activePgnNode?.comments || [])].flatMap((comment) => comment.shapes), [activePgnNode]);
+  const analysisSquareStyles = useMemo(() => {
+    const circles = pgnShapes.filter((shape) => shape.from === shape.to).reduce<Record<string, Record<string, string>>>((styles, shape) => {
+      styles[shape.from] = { backgroundImage: `radial-gradient(circle, transparent 0 31%, ${pgnShapeHex[shape.color]}cc 32% 40%, transparent 41%)` };
+      return styles;
+    }, {});
+    return mergeSquareStyles(moveHintStyles as any, circles as any) as any;
+  }, [moveHintStyles, pgnShapes]);
+  const pgnArrows = useMemo(() => pgnShapes.filter((shape) => shape.from !== shape.to).map((shape) => [shape.from, shape.to, pgnShapeHex[shape.color]]), [pgnShapes]);
 
   function onSquareClick(square: string) {
     const clickedPiece = gameRef.current.get(square as any);
@@ -476,6 +507,10 @@ export default function AnalysisBoard({ initialFen, withEngine = true, canUseLib
     setEvalCp(null);
     setEngineLines([]);
     setGamifiedBoardObjects({});
+    loadedPgnRef.current = "";
+    pgnDirtyRef.current = false;
+    setParsedPgnLines([]);
+    setIntroComments([]);
     resetAnalysisLines();
     selectedPlyRef.current = 0;
     setSelectedPly(0);
@@ -491,6 +526,10 @@ export default function AnalysisBoard({ initialFen, withEngine = true, canUseLib
       setEvalCp(null);
       setEngineLines([]);
       setGamifiedBoardObjects(gamifiedObjects || {});
+      loadedPgnRef.current = "";
+      pgnDirtyRef.current = false;
+      setParsedPgnLines([]);
+      setIntroComments([]);
       resetAnalysisLines();
       selectedPlyRef.current = 0;
       setSelectedPly(0);
@@ -507,6 +546,10 @@ export default function AnalysisBoard({ initialFen, withEngine = true, canUseLib
       setEvalCp(null);
       setEngineLines([]);
       setGamifiedBoardObjects(gamifiedObjects || {});
+      loadedPgnRef.current = "";
+      pgnDirtyRef.current = false;
+      setParsedPgnLines([]);
+      setIntroComments([]);
       resetAnalysisLines();
       selectedPlyRef.current = 0;
       setSelectedPly(0);
@@ -519,13 +562,27 @@ export default function AnalysisBoard({ initialFen, withEngine = true, canUseLib
 
   function loadPgn(pgn: string) {
     try {
-      const next = new Chess();
-      (next as unknown as { loadPgn: (value: string) => void }).loadPgn(pgn);
-      const history = next.history({ verbose: true }) as Array<{ before?: string }>;
-      gameRef.current = next;
-      baseFenRef.current = history[0]?.before || normalizeBoardResourceFen(extractFenHeader(pgn)) || startFen;
-      const moves = analysisMoves(next);
-      resetAnalysisLines(moves);
+      const validationGame = new Chess();
+      validationGame.loadPgn(pgn);
+      const tree = parseLichessPgn(pgn);
+      if (lichessPgnHasInvalidMoves(tree)) throw new Error("Invalid PGN variation");
+      const lines = lichessPgnLines(tree);
+      const toMoves = (line?: LichessPgnLine): AnalysisMove[] => (line?.nodes || []).flatMap((node) => node.uci && node.color ? [{
+        from: node.uci.slice(0, 2),
+        to: node.uci.slice(2, 4),
+        promotion: node.uci[4],
+        san: node.san,
+        color: node.color,
+      }] : []);
+      const moves = toMoves(lines[0]);
+      const importedVariations = lines.slice(1).map((line) => ({ id: line.id, label: line.label, branchAt: line.branchAt, moves: toMoves(line) }));
+      baseFenRef.current = tree.initialFen;
+      gameRef.current = playAnalysisLine(tree.initialFen, moves);
+      resetAnalysisLines(moves, importedVariations);
+      loadedPgnRef.current = pgn;
+      pgnDirtyRef.current = false;
+      setParsedPgnLines(lines);
+      setIntroComments(tree.comments);
       selectedPlyRef.current = moves.length;
       setSelectedPly(moves.length);
       setBestMove("");
@@ -632,7 +689,9 @@ export default function AnalysisBoard({ initialFen, withEngine = true, canUseLib
 
   async function saveCurrentPgn(title: string, folder?: string) {
     const lineGame = playAnalysisLine(baseFenRef.current, currentAnalysisLine());
-    const pgn = lineGame.pgn() || `[Event "${title}"]\n[FEN "${lineGame.fen()}"]\n[SetUp "1"]\n\n*`;
+    const pgn = loadedPgnRef.current && !pgnDirtyRef.current
+      ? loadedPgnRef.current
+      : lineGame.pgn() || `[Event "${title}"]\n[FEN "${lineGame.fen()}"]\n[SetUp "1"]\n\n*`;
     try {
       const response = await fetch("/api/pgn", {
         method: "POST",
@@ -682,7 +741,9 @@ export default function AnalysisBoard({ initialFen, withEngine = true, canUseLib
                     boardWidth={boardSize}
                     snapToCursor
                     animationDuration={0}
-                    customSquareStyles={moveHintStyles as any}
+                    customSquareStyles={analysisSquareStyles as any}
+                    customArrows={pgnArrows as any}
+                    areArrowsAllowed={false}
                     customDarkSquareStyle={{ backgroundColor: squareTheme.dark }}
                     customLightSquareStyle={{ backgroundColor: squareTheme.light }}
                     customDropSquareStyle={{ boxShadow: "inset 0 0 0 5px rgba(90, 19, 114, 0.35)" }}
@@ -746,6 +807,7 @@ export default function AnalysisBoard({ initialFen, withEngine = true, canUseLib
               activeLineId={activeLineId}
               isDark={isDark}
               selectedPly={selectedPly}
+              introComments={introComments}
               onSelect={goToPly}
               onSelectLine={selectAnalysisLine}
               onPrevious={goPrevious}
@@ -929,6 +991,7 @@ function MovesPanel({
   activeLineId,
   isDark,
   selectedPly,
+  introComments,
   onSelect,
   onSelectLine,
   onPrevious,
@@ -941,6 +1004,7 @@ function MovesPanel({
   activeLineId: string;
   isDark: boolean;
   selectedPly: number;
+  introComments: ParsedPgnComment[];
   onSelect: (ply: number) => void;
   onSelectLine: (lineId: string) => void;
   onPrevious: () => void;
@@ -976,13 +1040,23 @@ function MovesPanel({
           ))}
         </div>
       )}
+      {introComments.length > 0 && (
+        <div className={`space-y-1 border-b px-4 py-3 text-xs ${isDark ? "border-ink-600 bg-amber-950/40 text-amber-100" : "border-slate-100 bg-amber-50 text-amber-900"}`}>
+          {introComments.map((comment, index) => (
+            <div key={`intro-${index}`}>
+              {comment.text && <p className="whitespace-pre-wrap italic">{comment.text}</p>}
+              {commentMetaLabel(comment) && <p className="mt-0.5 font-semibold">{commentMetaLabel(comment)}</p>}
+            </div>
+          ))}
+        </div>
+      )}
       {rows.length ? (
         <div className="max-h-[360px] overflow-y-auto p-4 text-sm">
           {rows.map((row) => (
             <div key={row.number} className="grid grid-cols-[28px_1fr_1fr] gap-2 py-1">
               <span className={isDark ? "pt-2 text-blue-200/70" : "pt-2 text-slate-500"}>{row.number}.</span>
-              <MoveButton label={row.white} active={selectedPly === row.whitePly} isDark={isDark} onClick={() => onSelect(row.whitePly)} />
-              <MoveButton label={row.black} active={selectedPly === row.blackPly} isDark={isDark} onClick={() => row.blackPly && onSelect(row.blackPly)} />
+              <MoveButton label={row.white} node={row.whiteNode} active={selectedPly === row.whitePly} isDark={isDark} onClick={() => onSelect(row.whitePly)} />
+              <MoveButton label={row.black} node={row.blackNode} active={selectedPly === row.blackPly} isDark={isDark} onClick={() => row.blackPly && onSelect(row.blackPly)} />
             </div>
           ))}
         </div>
@@ -1000,8 +1074,9 @@ function MovesPanel({
   );
 }
 
-function MoveButton({ label, active, isDark, onClick }: { label?: string; active: boolean; isDark: boolean; onClick: () => void }) {
+function MoveButton({ label, node, active, isDark, onClick }: { label?: string; node?: LichessPgnNode; active: boolean; isDark: boolean; onClick: () => void }) {
   if (!label) return <span />;
+  const comments = [...(node?.startingComments || []), ...(node?.comments || [])];
   return (
     <button
       className={[
@@ -1010,7 +1085,16 @@ function MoveButton({ label, active, isDark, onClick }: { label?: string; active
       ].join(" ")}
       onClick={onClick}
     >
-      {label}
+      <span className="flex flex-wrap items-center gap-1">
+        <span>{label}</span>
+        {node?.nags.map((nag, index) => <span key={`${nag}-${index}`} className={`rounded px-1 py-0.5 text-[10px] font-black ${active ? "bg-white/20 text-white" : "bg-amber-100 text-amber-800"}`}>{nagLabel(nag)}</span>)}
+      </span>
+      {comments.map((comment, index) => (
+        <span key={`comment-${index}`} className={`mt-1 block whitespace-pre-wrap text-[11px] font-normal leading-4 ${active ? "text-purple-50" : "text-slate-500"}`}>
+          {comment.text && <span className="block italic">{comment.text}</span>}
+          {commentMetaLabel(comment) && <span className="block font-semibold not-italic">{commentMetaLabel(comment)}</span>}
+        </span>
+      ))}
     </button>
   );
 }

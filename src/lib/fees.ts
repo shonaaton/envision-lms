@@ -142,7 +142,9 @@ export async function createInvoice(input: {
   type: "monthly" | "credits" | "manual";
   title: string;
   amount: number;
+  issueDate?: Date;
   dueDate: Date;
+  referenceNumber?: string;
   credits?: number;
   notes?: string;
   invoiceMode?: "included" | "excluded" | "non_gst";
@@ -155,7 +157,8 @@ export async function createInvoice(input: {
   });
   const payload = {
     ...input,
-    issueDate: new Date(),
+    issueDate: input.issueDate && !Number.isNaN(input.issueDate.getTime()) ? input.issueDate : new Date(),
+    referenceNumber: input.referenceNumber?.trim() || undefined,
     lateFee: 0,
     ...breakup,
     status: "unpaid",

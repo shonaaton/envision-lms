@@ -94,7 +94,9 @@ async function createManualInvoice(formData: FormData) {
     type: plan.type,
     title: String(formData.get("title") || plan.name),
     amount: formData.get("amount") ? paise(formData.get("amount")) : plan.amount,
+    issueDate: new Date(String(formData.get("invoiceDate") || "")),
     dueDate: new Date(String(formData.get("dueDate"))),
+    referenceNumber: String(formData.get("referenceNumber") || ""),
     credits: plan.type === "credits" ? plan.credits : 0,
     notes: String(formData.get("notes") || ""),
     invoiceMode: String(formData.get("invoiceMode") || plan.gstMode || "non_gst") as any,
@@ -536,6 +538,7 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
                           <div className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">Dates</div>
                           <div className="mt-1 text-slate-700">Issued {new Date(invoice.issueDate || invoice.createdAt).toLocaleDateString("en-IN")}</div>
                           <div className="text-slate-700">Due {new Date(invoice.dueDate).toLocaleDateString("en-IN")}</div>
+                          {invoice.referenceNumber && <div className="text-xs font-semibold text-slate-500">Ref {invoice.referenceNumber}</div>}
                         </div>
                         <div>
                           <div className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">Email</div>

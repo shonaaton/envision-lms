@@ -372,8 +372,9 @@ async function makeInvoicePdf(invoice: any, settings: any) {
 
   canvas.line(447, 154, 447, 272, LINE);
   canvas.meta("Invoice Date", date(invoice.issueDate), 464, 162, 80);
-  canvas.meta("Due Date", date(invoice.dueDate), 464, 198, 80);
-  canvas.meta("GSTIN", isGstInvoice ? gstNumber : "Not applicable", 464, 234, 80);
+  canvas.meta("Due Date", date(invoice.dueDate), 464, 194, 80);
+  canvas.meta("GSTIN", isGstInvoice ? gstNumber : "Not applicable", 464, 226, 80);
+  canvas.meta("Reference No", invoice.referenceNumber || "-", 464, 258, 80);
 
   canvas.rect(34, 310, 527, 52, PANEL, LINE);
   canvas.meta("Tax Mode", taxMode, 52, 333, 95);

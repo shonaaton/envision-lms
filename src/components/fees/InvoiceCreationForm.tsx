@@ -50,6 +50,7 @@ export function InvoiceCreationForm({
   const [planId, setPlanId] = useState("");
   const [invoiceDate, setInvoiceDate] = useState(today);
   const [dueDate, setDueDate] = useState(today);
+  const [referenceNumber, setReferenceNumber] = useState("");
   const [title, setTitle] = useState("");
   const [amount, setAmount] = useState("");
   const [invoiceMode, setInvoiceMode] = useState<TaxMode>("non_gst");
@@ -89,6 +90,7 @@ export function InvoiceCreationForm({
       <input type="hidden" name="plan" value={planId} />
       <input type="hidden" name="invoiceDate" value={invoiceDate} />
       <input type="hidden" name="dueDate" value={dueDate} />
+      <input type="hidden" name="referenceNumber" value={referenceNumber} />
       <input type="hidden" name="amount" value={amount} />
       <input type="hidden" name="invoiceMode" value={invoiceMode} />
       <input type="hidden" name="gstPercentage" value={gstPercentage} />
@@ -152,6 +154,9 @@ export function InvoiceCreationForm({
               </Field>
               <Field label="Due Date">
                 <input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none transition focus:border-brand focus:ring-4 focus:ring-brand/10" />
+              </Field>
+              <Field label="Reference Number">
+                <input value={referenceNumber} onChange={(event) => setReferenceNumber(event.target.value)} placeholder="Receipt, transfer, or PO no." className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none transition focus:border-brand focus:ring-4 focus:ring-brand/10" />
               </Field>
               <Field label="Amount">
                 <input type="number" min="0" value={amount} onChange={(event) => setAmount(event.target.value)} className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none transition focus:border-brand focus:ring-4 focus:ring-brand/10" />

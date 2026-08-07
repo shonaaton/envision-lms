@@ -60,6 +60,7 @@ const FeeAssignmentSchema = new Schema(
 const InvoiceSchema = new Schema(
   {
     invoiceNumber: { type: String, unique: true, sparse: true, index: true },
+    referenceNumber: { type: String, trim: true, index: true },
     student: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
     plan: { type: Schema.Types.ObjectId, ref: "FeePlan", index: true },
     assignment: { type: Schema.Types.ObjectId, ref: "FeeAssignment", index: true },

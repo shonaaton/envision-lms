@@ -60,28 +60,59 @@ export function InvoiceCreationForm({
   const availablePlanIds = assignments.filter((assignment) => assignment.studentId === studentId).map((assignment) => assignment.planId);
   const availablePlans = plans.filter((plan) => {
     if (!studentId || !invoiceType) return false;
-    if (invoiceType === "manual") return availablePlanIds.includes(plan.id);
+    if (invoiceType === "manual") return false;
     return availablePlanIds.includes(plan.id) && plan.type === invoiceType;
   });
   const selectedPlan = plans.find((plan) => plan.id === planId);
   const defaultTitle = useMemo(() => {
-    if (!selectedStudent || !selectedPlan) return "";
+    if (!selectedStudent) return "";
     const month = new Date(invoiceDate || today).toLocaleString("en-IN", { month: "long", year: "numeric" });
+    if (invoiceType === "manual") return `${selectedStudent.name} - Custom Invoice - ${month}`;
+    if (!selectedPlan) return "";
     return `${selectedStudent.name} - ${selectedPlan.name} - ${month}`;
-  }, [selectedStudent, selectedPlan, invoiceDate, today]);
+  }, [selectedStudent, selectedPlan, invoiceDate, today, invoiceType]);
 
   useEffect(() => {
+    if (invoiceType === "manual") {
+      setPlanId("");
+      setTitle((current) => current || defaultTitle);
+      setInvoiceMode("non_gst");
+      setGstPercentage("18");
+      return;
+    }
     setTitle(defaultTitle);
     setAmount(selectedPlan ? String(selectedPlan.amount / 100) : "");
     setInvoiceMode((selectedPlan?.gstMode as TaxMode) || "non_gst");
     setGstPercentage(String(selectedPlan?.gstPercentage || 18));
-  }, [defaultTitle, selectedPlan]);
+  }, [defaultTitle, selectedPlan, invoiceType]);
 
   const canContinue =
     (step === 1 && !!studentId) ||
     (step === 2 && !!invoiceType) ||
-    (step === 3 && !!planId) ||
+    (step === 3 && (invoiceType === "manual" || !!planId)) ||
     step === 4;
+
+  function selectStudent(value: string) {
+    setStudentId(value);
+    setPlanId("");
+    setTitle("");
+    setAmount("");
+  }
+
+  function selectInvoiceType(value: InvoiceType) {
+    setInvoiceType(value);
+    setPlanId("");
+    setTitle("");
+    setAmount("");
+  }
+
+  function goBack() {
+    setStep((value) => (value === 4 && invoiceType === "manual" ? 2 : Math.max(1, value - 1)));
+  }
+
+  function goForward() {
+    setStep((value) => (value === 2 && invoiceType === "manual" ? 4 : Math.min(4, value + 1)));
+  }
 
   return (
     <form action={action} className="space-y-4">
@@ -99,7 +130,7 @@ export function InvoiceCreationForm({
       <div className="flex flex-wrap gap-2">
         <StepPill active={step === 1} done={step > 1} label="1 Student" />
         <StepPill active={step === 2} done={step > 2} label="2 Type" />
-        <StepPill active={step === 3} done={step > 3} label="3 Plan" />
+        <StepPill active={step === 3} done={step > 3 || (invoiceType === "manual" && step === 4)} label={invoiceType === "manual" ? "3 Details" : "3 Plan"} />
         <StepPill active={step === 4} done={false} label="4 Review" />
       </div>
 
@@ -108,7 +139,7 @@ export function InvoiceCreationForm({
           <div className="max-w-xl">
             <h3 className="text-lg font-black text-slate-950">Select student</h3>
             <p className="mt-1 text-sm text-slate-500">Choose who this invoice is for.</p>
-            <select value={studentId} onChange={(event) => { setStudentId(event.target.value); setPlanId(""); }} className="mt-4 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-brand focus:ring-4 focus:ring-brand/10">
+            <select value={studentId} onChange={(event) => selectStudent(event.target.value)} className="mt-4 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-brand focus:ring-4 focus:ring-brand/10">
               <option value="">Select Student</option>
               {students.map((student) => <option key={student.id} value={student.id}>{student.name}</option>)}
             </select>
@@ -118,14 +149,14 @@ export function InvoiceCreationForm({
         {step === 2 ? (
           <div>
             <h3 className="text-lg font-black text-slate-950">Select invoice type</h3>
-            <p className="mt-1 text-sm text-slate-500">The type controls which assigned plans are shown next.</p>
+            <p className="mt-1 text-sm text-slate-500">Monthly and credit invoices use assigned plans. Custom invoices let you enter the details directly.</p>
             <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
               {[
                 ["monthly", "Monthly Plan", "For recurring monthly fees."],
                 ["credits", "Credit Plan", "For recharge or credit packs."],
                 ["manual", "Custom Invoice", "For adjustments or offline billing."],
               ].map(([value, label, help]) => (
-                <button key={value} type="button" onClick={() => { setInvoiceType(value as InvoiceType); setPlanId(""); }} className={`rounded-lg border p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${invoiceType === value ? "border-brand bg-white text-brand ring-2 ring-brand/10" : "border-slate-200 bg-white text-slate-950 hover:border-brand/25"}`}>
+                <button key={value} type="button" onClick={() => selectInvoiceType(value as InvoiceType)} className={`rounded-lg border p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${invoiceType === value ? "border-brand bg-white text-brand ring-2 ring-brand/10" : "border-slate-200 bg-white text-slate-950 hover:border-brand/25"}`}>
                   <div className="font-black">{label}</div>
                   <div className="mt-1 text-xs text-slate-500">{help}</div>
                 </button>
@@ -134,7 +165,7 @@ export function InvoiceCreationForm({
           </div>
         ) : null}
 
-        {step === 3 ? (
+        {step === 3 && invoiceType !== "manual" ? (
           <div>
             <h3 className="text-lg font-black text-slate-950">Select assigned plan</h3>
             <p className="mt-1 text-sm text-slate-500">Only plans already assigned to the selected student are shown.</p>
@@ -179,7 +210,7 @@ export function InvoiceCreationForm({
             <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm">
               <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-4">
                 <div><span className="text-slate-500">Student:</span> <b>{selectedStudent?.name || "-"}</b></div>
-                <div><span className="text-slate-500">Plan:</span> <b>{selectedPlan?.name || "-"}</b></div>
+                <div><span className="text-slate-500">{invoiceType === "manual" ? "Type:" : "Plan:"}</span> <b>{invoiceType === "manual" ? "Custom Invoice" : selectedPlan?.name || "-"}</b></div>
                 <div><span className="text-slate-500">Invoice:</span> Auto-numbered</div>
                 <div><span className="text-slate-500">Amount:</span> <b>{amount ? currency(Number(amount) * 100) : "-"}</b></div>
               </div>
@@ -189,15 +220,15 @@ export function InvoiceCreationForm({
       </div>
 
       <div className="flex flex-wrap justify-between gap-2">
-        <button type="button" disabled={step === 1} onClick={() => setStep((value) => Math.max(1, value - 1))} className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 disabled:opacity-40">
+        <button type="button" disabled={step === 1} onClick={goBack} className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 disabled:opacity-40">
           <ArrowLeft size={15} /> Back
         </button>
         {step < 4 ? (
-          <button type="button" disabled={!canContinue} onClick={() => setStep((value) => Math.min(4, value + 1))} className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand px-4 text-sm font-semibold text-white disabled:opacity-40">
+          <button type="button" disabled={!canContinue} onClick={goForward} className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand px-4 text-sm font-semibold text-white disabled:opacity-40">
             Continue <ArrowRight size={15} />
           </button>
         ) : (
-          <button disabled={!studentId || !invoiceType || !planId || !amount} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-brand px-4 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-40">
+          <button disabled={!studentId || !invoiceType || (invoiceType !== "manual" && !planId) || !amount || !title} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-brand px-4 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-40">
             <Plus size={15} /> Generate Invoice
           </button>
         )}

@@ -86,21 +86,24 @@ async function createManualInvoice(formData: FormData) {
   "use server";
   if (!(await requireFeesAccess("invoice"))) throw new Error("Forbidden");
   await dbConnect();
-  const plan: any = await FeePlan.findById(formData.get("plan"));
-  if (!plan) return;
+  const invoiceType = String(formData.get("type") || "manual");
+  const plan: any = invoiceType === "manual" ? null : await FeePlan.findById(formData.get("plan"));
+  if (invoiceType !== "manual" && !plan) return;
+  const amount = formData.get("amount") ? paise(formData.get("amount")) : Number(plan?.amount || 0);
+  if (amount <= 0) return;
   await createInvoice({
     student: String(formData.get("student")),
-    plan: plan._id.toString(),
-    type: plan.type,
-    title: String(formData.get("title") || plan.name),
-    amount: formData.get("amount") ? paise(formData.get("amount")) : plan.amount,
+    plan: plan?._id?.toString(),
+    type: invoiceType === "manual" ? "manual" : plan.type,
+    title: String(formData.get("title") || plan?.name || "Custom Invoice"),
+    amount,
     issueDate: new Date(String(formData.get("invoiceDate") || "")),
     dueDate: new Date(String(formData.get("dueDate"))),
     referenceNumber: String(formData.get("referenceNumber") || ""),
-    credits: plan.type === "credits" ? plan.credits : 0,
+    credits: invoiceType !== "manual" && plan.type === "credits" ? plan.credits : 0,
     notes: String(formData.get("notes") || ""),
-    invoiceMode: String(formData.get("invoiceMode") || plan.gstMode || "non_gst") as any,
-    gstPercentage: Number(formData.get("gstPercentage") || plan.gstPercentage || 0),
+    invoiceMode: String(formData.get("invoiceMode") || plan?.gstMode || "non_gst") as any,
+    gstPercentage: Number(formData.get("gstPercentage") || plan?.gstPercentage || 0),
   });
   revalidatePath("/fees/invoices");
 }

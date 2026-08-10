@@ -6,7 +6,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { CalendarClock, Eye, Mail, Pencil, Trash2 } from "lucide-react";
 
-export default function HomeworkActions({ homework }: { homework: any }) {
+export default function HomeworkActions({ homework, compact = false }: { homework: any; compact?: boolean }) {
   const router = useRouter();
   const [reminderSending, setReminderSending] = useState(false);
 
@@ -59,20 +59,20 @@ export default function HomeworkActions({ homework }: { homework: any }) {
   }
 
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className={`flex flex-wrap gap-2 ${compact ? "justify-end" : ""}`}>
       <Link href={`/homework/${homework._id}/review`} className="rounded-md border border-slate-200 p-2 text-slate-700 hover:bg-slate-50" title="Review submissions">
         <Eye size={14} />
       </Link>
-      <button type="button" className="rounded-md border border-slate-200 p-2 text-slate-700 hover:bg-slate-50" onClick={editTitle} title="Edit title and description">
+      <button type="button" className={`${compact ? "hidden 2xl:inline-flex" : ""} rounded-md border border-slate-200 p-2 text-slate-700 hover:bg-slate-50`} onClick={editTitle} title="Edit title and description">
         <Pencil size={14} />
       </button>
-      <button type="button" className="rounded-md border border-slate-200 p-2 text-purple-700 hover:bg-purple-50" onClick={extendDueDate} title="Extend due date">
+      <button type="button" className={`${compact ? "hidden 2xl:inline-flex" : ""} rounded-md border border-slate-200 p-2 text-purple-700 hover:bg-purple-50`} onClick={extendDueDate} title="Extend due date">
         <CalendarClock size={14} />
       </button>
       <button type="button" disabled={reminderSending} className="rounded-md border border-blue-100 p-2 text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50" onClick={sendReminder} title="Send homework reminder email">
         <Mail size={14} />
       </button>
-      <button type="button" className="rounded-md border border-red-100 p-2 text-red-600 hover:bg-red-50" onClick={deleteHomework} title="Delete homework">
+      <button type="button" className={`${compact ? "hidden 2xl:inline-flex" : ""} rounded-md border border-red-100 p-2 text-red-600 hover:bg-red-50`} onClick={deleteHomework} title="Delete homework">
         <Trash2 size={14} />
       </button>
     </div>

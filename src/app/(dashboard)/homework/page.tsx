@@ -176,9 +176,9 @@ export default async function HomeworkListPage({ searchParams }: { searchParams?
           <section><h2 className="mb-3 font-semibold">Completed Homework</h2><div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">{completed.map((h: any) => <HomeworkCard key={h._id} item={h} submission={byHomework.get(h._id.toString())} />)}{completed.length === 0 && <div className="rounded-lg border bg-white p-5 text-sm text-slate-500">No completed homework yet.</div>}</div></section>
         </div>
       ) : (
-        <section id="homework-tracking" className="scroll-mt-4 rounded-lg border border-slate-200 bg-white p-3 shadow-sm sm:p-5">
-          <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div>
+        <section id="homework-tracking" className="min-w-0 scroll-mt-4 rounded-lg border border-slate-200 bg-white p-3 shadow-sm sm:p-5">
+          <div className="mb-4 flex min-w-0 flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+            <div className="min-w-0">
               <h2 className="font-semibold">Homework Tracking</h2>
               <p className="mt-1 text-xs text-slate-500">Select a section to view its assignments and student statuses.</p>
             </div>
@@ -200,7 +200,7 @@ export default async function HomeworkListPage({ searchParams }: { searchParams?
               ))}
             </nav>
           </div>
-          <div className="grid gap-3 md:hidden">
+          <div className="grid gap-3 xl:hidden">
             {visibleTracking.map((h: any) => {
               const { rows, recipientCount, incomplete, overdue } = trackingState(h);
               const submittedStudentIds = new Set(rows.map((submission: any) => String(submission.student?._id || submission.student || "")));
@@ -229,14 +229,25 @@ export default async function HomeworkListPage({ searchParams }: { searchParams?
             })}
             {visibleTracking.length === 0 && <EmptyTrackingState tab={trackingTab} />}
           </div>
-          <div className="hidden overflow-x-auto md:block">
-            <table className="min-w-[1180px] text-left text-sm">
-              <thead className="text-xs uppercase text-slate-500"><tr className="border-b"><th className="px-3 py-3">Homework</th><th className="px-3 py-3">Students</th><th className="px-3 py-3">Type</th><th className="px-3 py-3">Due</th><th className="px-3 py-3">Submissions</th><th className="px-3 py-3">Completion Rate</th><th className="px-3 py-3">Average Score</th><th className="px-3 py-3">Status</th><th className="px-3 py-3">Actions</th></tr></thead>
+          <div className="hidden min-w-0 xl:block">
+            <table className="w-full table-fixed text-left text-xs 2xl:text-sm">
+              <colgroup>
+                <col className="w-[22%]" />
+                <col className="w-[18%]" />
+                <col className="w-[9%]" />
+                <col className="w-[8%]" />
+                <col className="w-[8%]" />
+                <col className="w-[10%]" />
+                <col className="w-[9%]" />
+                <col className="w-[10%]" />
+                <col className="w-[6%]" />
+              </colgroup>
+              <thead className="text-[11px] uppercase text-slate-500 2xl:text-xs"><tr className="border-b"><th className="px-2 py-3">Homework</th><th className="px-2 py-3">Students</th><th className="px-2 py-3">Type</th><th className="px-2 py-3">Due</th><th className="px-2 py-3">Submissions</th><th className="px-2 py-3">Completion Rate</th><th className="px-2 py-3">Average Score</th><th className="px-2 py-3">Status</th><th className="px-2 py-3 text-right">Actions</th></tr></thead>
               <tbody>{visibleTracking.map((h: any) => {
                 const { rows, recipientCount, incomplete, overdue } = trackingState(h);
                 const submittedStudentIds = new Set(rows.map((submission: any) => String(submission.student?._id || submission.student || "")));
                 const recipientIds = Array.from(recipientIdsByHomework.get(h._id.toString()) || []);
-                return <tr key={h._id} className="border-b align-top last:border-0"><td className="max-w-[300px] px-3 py-3 font-medium">{h.title}</td><td className="min-w-[210px] px-3 py-3"><StudentStatusList recipientIds={recipientIds} submittedStudentIds={submittedStudentIds} recipientNameById={recipientNameById} overdue={overdue} compact /></td><td className="px-3 py-3">{h.type}</td><td className="whitespace-nowrap px-3 py-3">{h.dueAt ? new Date(h.dueAt).toLocaleDateString("en-IN") : "-"}</td><td className="px-3 py-3">{rows.length}/{recipientCount}</td><td className="px-3 py-3">{percent(rows.length, recipientCount)}%</td><td className="px-3 py-3">{rows.length ? Math.round(rows.reduce((s: number, x: any) => s + (x.totalScore || 0), 0) / rows.length) : 0}</td><td className="px-3 py-3"><span className={`whitespace-nowrap rounded-full px-2 py-1 text-xs font-semibold ${overdue ? "bg-rose-50 text-rose-700" : incomplete ? "bg-amber-50 text-amber-700" : "bg-emerald-50 text-emerald-700"}`}>{overdue ? "Late" : incomplete ? (rows.length ? "Partially submitted" : "Pending") : "Submitted"}</span></td><td className="px-3 py-3"><HomeworkActions homework={JSON.parse(JSON.stringify(h))} /></td></tr>;
+                return <tr key={h._id} className="border-b align-top last:border-0"><td className="px-2 py-3 font-medium"><span className="line-clamp-3 break-words">{h.title}</span></td><td className="px-2 py-3"><StudentStatusList recipientIds={recipientIds} submittedStudentIds={submittedStudentIds} recipientNameById={recipientNameById} overdue={overdue} compact /></td><td className="break-words px-2 py-3">{h.type}</td><td className="px-2 py-3">{h.dueAt ? new Date(h.dueAt).toLocaleDateString("en-IN") : "-"}</td><td className="px-2 py-3">{rows.length}/{recipientCount}</td><td className="px-2 py-3">{percent(rows.length, recipientCount)}%</td><td className="px-2 py-3">{rows.length ? Math.round(rows.reduce((s: number, x: any) => s + (x.totalScore || 0), 0) / rows.length) : 0}</td><td className="px-2 py-3"><span className={`inline-flex max-w-full rounded-full px-2 py-1 text-[11px] font-semibold ${overdue ? "bg-rose-50 text-rose-700" : incomplete ? "bg-amber-50 text-amber-700" : "bg-emerald-50 text-emerald-700"}`}>{overdue ? "Late" : incomplete ? (rows.length ? "Partially submitted" : "Pending") : "Submitted"}</span></td><td className="px-2 py-3"><HomeworkActions homework={JSON.parse(JSON.stringify(h))} compact /></td></tr>;
               })}</tbody>
             </table>
             {visibleTracking.length === 0 && <EmptyTrackingState tab={trackingTab} />}

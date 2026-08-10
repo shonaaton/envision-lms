@@ -2,11 +2,13 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { toast } from "sonner";
-import { CalendarClock, Eye, Pencil, Trash2 } from "lucide-react";
+import { CalendarClock, Eye, Mail, Pencil, Trash2 } from "lucide-react";
 
 export default function HomeworkActions({ homework }: { homework: any }) {
   const router = useRouter();
+  const [reminderSending, setReminderSending] = useState(false);
 
   async function update(payload: Record<string, unknown>, message: string) {
     const response = await fetch(`/api/homework/${homework._id}`, {
@@ -43,6 +45,19 @@ export default function HomeworkActions({ homework }: { homework: any }) {
     router.refresh();
   }
 
+  async function sendReminder() {
+    if (reminderSending) return;
+    setReminderSending(true);
+    try {
+      const response = await fetch(`/api/homework/${homework._id}/reminders`, { method: "POST" });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) return toast.error(payload?.error || "Could not send reminder");
+      toast.success(`Reminder sent to ${payload.delivered || 0} student${payload.delivered === 1 ? "" : "s"}`);
+    } finally {
+      setReminderSending(false);
+    }
+  }
+
   return (
     <div className="flex flex-wrap gap-2">
       <Link href={`/homework/${homework._id}/review`} className="rounded-md border border-slate-200 p-2 text-slate-700 hover:bg-slate-50" title="Review submissions">
@@ -53,6 +68,9 @@ export default function HomeworkActions({ homework }: { homework: any }) {
       </button>
       <button type="button" className="rounded-md border border-slate-200 p-2 text-purple-700 hover:bg-purple-50" onClick={extendDueDate} title="Extend due date">
         <CalendarClock size={14} />
+      </button>
+      <button type="button" disabled={reminderSending} className="rounded-md border border-blue-100 p-2 text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50" onClick={sendReminder} title="Send homework reminder email">
+        <Mail size={14} />
       </button>
       <button type="button" className="rounded-md border border-red-100 p-2 text-red-600 hover:bg-red-50" onClick={deleteHomework} title="Delete homework">
         <Trash2 size={14} />

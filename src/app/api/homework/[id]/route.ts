@@ -4,6 +4,7 @@ import { dbConnect } from "@/lib/db";
 import { Homework, Submission } from "@/models/Homework";
 import { homeworkSchema } from "@/lib/validation";
 import { canStudentAccessHomework } from "@/lib/homeworkAccess";
+import { cancelHomeworkDeadlineReminders, queueHomeworkDeadlineReminders } from "@/lib/homeworkEmailReminders";
 
 export const dynamic = "force-dynamic";
 
@@ -50,6 +51,7 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
   };
   const body = homeworkSchema.parse(merged);
   const updated = await Homework.findByIdAndUpdate(params.id, { ...body, dueAt: raw.dueAt === null ? null : body.dueAt }, { new: true });
+  await queueHomeworkDeadlineReminders(updated);
   return NextResponse.json(updated);
 }
 
@@ -63,6 +65,7 @@ export async function DELETE(_: Request, { params }: { params: { id: string } })
   if (role === "instructor" && existing.instructor.toString() !== (session.user as any).id) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
+  await cancelHomeworkDeadlineReminders(params.id);
   await Homework.findByIdAndDelete(params.id);
   return NextResponse.json({ ok: true });
 }

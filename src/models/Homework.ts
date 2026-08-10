@@ -192,7 +192,31 @@ const SubmissionSchema = new Schema(
 );
 SubmissionSchema.index({ homework: 1, student: 1 }, { unique: true });
 
+const HomeworkEmailReminderSchema = new Schema(
+  {
+    homework: { type: Schema.Types.ObjectId, ref: "Homework", required: true, index: true },
+    student: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
+    studentEmail: { type: String, required: true },
+    studentName: { type: String, default: "" },
+    kind: { type: String, enum: ["two_day", "due_day"], required: true, index: true },
+    dueAt: { type: Date, required: true, index: true },
+    homeworkDueAt: { type: Date, required: true },
+    status: { type: String, enum: ["pending", "processing", "sent", "cancelled", "failed", "skipped"], default: "pending", index: true },
+    attempts: { type: Number, default: 0 },
+    processingStartedAt: Date,
+    sentAt: Date,
+    cancelledAt: Date,
+    lastError: String,
+  },
+  { timestamps: true }
+);
+HomeworkEmailReminderSchema.index({ homework: 1, student: 1, kind: 1 }, { unique: true });
+HomeworkEmailReminderSchema.index({ status: 1, dueAt: 1 });
+
 export type HomeworkDoc = InferSchemaType<typeof HomeworkSchema> & { _id: any };
 export type SubmissionDoc = InferSchemaType<typeof SubmissionSchema> & { _id: any };
+export type HomeworkEmailReminderDoc = InferSchemaType<typeof HomeworkEmailReminderSchema> & { _id: any };
 export const Homework = models.Homework || model("Homework", HomeworkSchema);
 export const Submission = models.Submission || model("Submission", SubmissionSchema);
+export const HomeworkEmailReminder =
+  models.HomeworkEmailReminder || model("HomeworkEmailReminder", HomeworkEmailReminderSchema);

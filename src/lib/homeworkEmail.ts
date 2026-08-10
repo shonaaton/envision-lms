@@ -1,6 +1,7 @@
 import { ACADEMY_TIME_ZONE, formatAcademyDateTime } from "@/lib/academyTime";
 import { resolvePublicAppUrl } from "@/lib/appUrl";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
+import { queueHomeworkDeadlineReminders } from "@/lib/homeworkEmailReminders";
 import { Batch } from "@/models/Batch";
 import { Classroom } from "@/models/Classroom";
 import { User } from "@/models/User";
@@ -97,6 +98,7 @@ export async function notifyHomeworkAssigned(homework: any, request?: Request) {
         });
       })
   );
+  await queueHomeworkDeadlineReminders(homework);
 
   return {
     recipients: students.length,

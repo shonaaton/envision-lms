@@ -6,14 +6,14 @@ const AttendanceSchema = new Schema(
     scheduledSessionId: { type: String, index: true },
     sessionDate: { type: Date, required: true, index: true },
     coach: { type: Schema.Types.ObjectId, ref: "User", index: true },
-    coachStatus: { type: String, enum: ["present", "absent", "late", "rescheduled", "cancelled", "pending"], default: "pending" },
+    coachStatus: { type: String, enum: ["present", "absent", "late", "rescheduled", "cancelled", "pending", "coach_no_show", "student_no_show", "technical_issue"], default: "pending" },
     teachingMinutes: { type: Number, default: 0 },
     actualTeachingMinutes: { type: Number, default: 0 },
     punctualityScore: { type: Number, default: 0 },
     records: [
       {
         student: { type: Schema.Types.ObjectId, ref: "User", required: true },
-        status: { type: String, enum: ["present", "absent", "late", "excused"], default: "absent" },
+        status: { type: String, enum: ["present", "absent", "late", "excused", "coach_no_show", "student_no_show", "technical_issue", "not_joined", "coach_no_show_pending"], default: "absent" },
         note: String,
       },
     ],

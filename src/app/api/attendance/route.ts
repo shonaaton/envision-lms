@@ -9,6 +9,14 @@ import { actualSessionMinutes, punctualityBreakdown, scheduledPaymentMinutes } f
 import { canAccessFeature } from "@/lib/featureAccess";
 import { coachCanAccessClassroomSession, coachClassroomQuery, limitClassroomToCoachSessions } from "@/lib/classroomCoachAccess";
 import { academyDateKey } from "@/lib/academyTime";
+import {
+  notifyCoachNoShowIfThreshold,
+  notifyStudentNoShowCreditDeduction,
+  normalizeSessionOutcome,
+  recalculateFutureSessionTopics,
+  studentNoShowCountThisMonth,
+  STUDENT_NO_SHOW_FREE_ALLOWANCE_PER_MONTH,
+} from "@/lib/classroomLifecycle";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +31,7 @@ type AuthSession = {
 
 type AttendanceRecordInput = {
   student?: string;
-  status?: "present" | "absent" | "late";
+  status?: "present" | "absent" | "late" | "excused" | "coach_no_show" | "student_no_show" | "technical_issue" | "not_joined" | "coach_no_show_pending";
   note?: string;
 };
 
@@ -35,9 +43,13 @@ type AttendancePayload = {
   coach?: string;
   coachStatus?: string;
   teachingMinutes?: number;
+  classOutcome?: string;
+  adminOverrideCompletion?: boolean;
   metadata?: {
     summary?: {
       actualTeachingMinutes?: number;
+      classOutcome?: string;
+      adminOverrideCompletion?: boolean;
     };
   };
 };
@@ -85,7 +97,7 @@ export async function POST(req: Request) {
   const role = (session?.user as SessionUser | undefined)?.role;
   if (!session || !role || !["instructor", "admin", "sub-admin"].includes(role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   if (!(await canAccessFeature("classrooms", session.user as any, "attendance"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  const { classroom, sessionDate, sessionId, records, coach, coachStatus, teachingMinutes, metadata } = await req.json() as AttendancePayload;
+  const { classroom, sessionDate, sessionId, records, coach, coachStatus, teachingMinutes, classOutcome, adminOverrideCompletion, metadata } = await req.json() as AttendancePayload;
   if (!classroom || !sessionDate) return NextResponse.json({ error: "missing fields" }, { status: 400 });
   await dbConnect();
   await Attendance.collection.dropIndex("classroom_1_sessionDate_1").catch(() => undefined);
@@ -107,8 +119,10 @@ export async function POST(req: Request) {
   }
   const scheduledMinutes = target ? scheduledPaymentMinutes(target, classroomDoc) : Math.max(0, Number(classroomDoc?.durationMinutes || teachingMinutes || 0));
   const actualMinutes = target
-    ? Number(target.actualTeachingMinutes || actualSessionMinutes(target))
-    : Math.max(0, Number(metadata?.summary?.actualTeachingMinutes || 0));
+    ? Math.max(0, Number(metadata?.summary?.actualTeachingMinutes || teachingMinutes || target.actualTeachingMinutes || actualSessionMinutes(target) || 0))
+    : Math.max(0, Number(metadata?.summary?.actualTeachingMinutes || teachingMinutes || 0));
+  const requestedOutcome = classOutcome || metadata?.summary?.classOutcome;
+  const outcome = normalizeSessionOutcome(requestedOutcome, actualMinutes, Boolean(adminOverrideCompletion || metadata?.summary?.adminOverrideCompletion));
   const punctualityScore = target ? Number(target.punctualityScore || punctualityBreakdown(target, classroomDoc).punctualityScore) : 0;
   const assignedCoach = target?.substituteCoach || classroomDoc.coach || classroomDoc.instructor || coach;
   const doc = await Attendance.findOneAndUpdate(
@@ -118,12 +132,15 @@ export async function POST(req: Request) {
       markedBy: (session.user as SessionUser).id,
       scheduledSessionId: sessionId || "",
       coach: assignedCoach,
-      coachStatus: coachStatus || "pending",
+      coachStatus: coachStatus || (outcome === "coach_no_show" ? "coach_no_show" : "present"),
       teachingMinutes: scheduledMinutes,
       actualTeachingMinutes: actualMinutes,
       punctualityScore,
       metadata: {
         ...(metadata || {}),
+        classOutcome: outcome,
+        topicCompleted: outcome === "completed",
+        creditPolicy: outcome === "completed" ? "charge_present_students" : outcome === "student_no_show" ? "repeat_no_show_policy" : "no_charge",
         scheduledTeachingMinutes: scheduledMinutes,
         actualTeachingMinutes: actualMinutes,
         punctualityScore,
@@ -137,28 +154,44 @@ export async function POST(req: Request) {
     label: `Marked attendance for ${records?.length ?? 0} students`,
     entityType: "Attendance",
     entityId: doc._id.toString(),
-    metadata: { classroom, sessionDate, sessionId, records: records?.length ?? 0 },
+    metadata: { classroom, sessionDate, sessionId, records: records?.length ?? 0, classOutcome: outcome },
   });
   for (const record of records || []) {
-    if (record?.student && (record.status === "present" || record.status === "late")) {
+    if (!record?.student) continue;
+    const recordStatus = String(record.status || "");
+    if (outcome === "completed" && (recordStatus === "present" || recordStatus === "late")) {
       await consumeAttendanceCredit(record.student, doc._id.toString());
+    } else if (outcome === "student_no_show" && recordStatus === "student_no_show") {
+      const count = await studentNoShowCountThisMonth(record.student, normalizedDate);
+      if (count > STUDENT_NO_SHOW_FREE_ALLOWANCE_PER_MONTH) {
+        await consumeAttendanceCredit(record.student, doc._id.toString(), "Credit deducted for repeated student no-show");
+        await notifyStudentNoShowCreditDeduction(record.student, count, { classroom, sessionId, attendance: doc._id.toString() });
+      }
     }
   }
   if (sessionId) {
     if (target) {
       target.attendanceMarkedAt = new Date();
-      target.coachAttendanceStatus = coachStatus || target.coachAttendanceStatus || "present";
+      target.coachAttendanceStatus = coachStatus || (outcome === "coach_no_show" ? "coach_no_show" : target.coachAttendanceStatus || "present");
       target.teachingMinutes = scheduledMinutes;
       target.actualTeachingMinutes = actualMinutes;
       target.punctualityScore = punctualityScore;
+      target.status = outcome;
       target.summary = {
         ...(target.summary || {}),
         ...(metadata?.summary || {}),
+        classOutcome: outcome,
+        topicCompleted: outcome === "completed",
+        creditPolicy: outcome === "completed" ? "charge_present_students" : outcome === "student_no_show" ? "repeat_no_show_policy" : "no_charge",
         scheduledTeachingMinutes: scheduledMinutes,
         actualTeachingMinutes: actualMinutes,
         punctualityScore,
       };
+      await recalculateFutureSessionTopics(classroomDoc, (session.user as SessionUser).id);
       await classroomDoc.save();
+      if (outcome === "coach_no_show") {
+        await notifyCoachNoShowIfThreshold(String(assignedCoach || ""), { classroom, sessionId, attendance: doc._id.toString() });
+      }
     }
   }
   return NextResponse.json(doc);

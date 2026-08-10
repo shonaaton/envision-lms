@@ -1,0 +1,168 @@
+import { Types } from "mongoose";
+import { Attendance } from "@/models/Attendance";
+import { Classroom } from "@/models/Classroom";
+import { Notification } from "@/models/Fee";
+import { User } from "@/models/User";
+import { recordActivity } from "@/lib/activity";
+import { getSessionEnd } from "@/lib/classroomSessions";
+
+export const MIN_COMPLETED_TEACHING_MINUTES = 30;
+export const COACH_NO_SHOW_GRACE_MINUTES = 20;
+export const MONTHLY_NO_SHOW_FLAG_THRESHOLD = 3;
+export const STUDENT_NO_SHOW_FREE_ALLOWANCE_PER_MONTH = 1;
+
+export const NON_TOPIC_CONSUMING_STATUSES = new Set([
+  "scheduled",
+  "ongoing",
+  "in_progress",
+  "rescheduled",
+  "cancelled",
+  "missed",
+  "abandoned",
+  "coach_no_show",
+  "student_no_show",
+  "technical_issue",
+]);
+
+export function normalizeSessionOutcome(value: unknown, actualTeachingMinutes = 0, adminOverride = false) {
+  const requested = String(value || "").toLowerCase();
+  const allowed = new Set([
+    "completed",
+    "cancelled",
+    "missed",
+    "abandoned",
+    "coach_no_show",
+    "student_no_show",
+    "technical_issue",
+    "rescheduled",
+  ]);
+  if (requested === "completed") {
+    return actualTeachingMinutes >= MIN_COMPLETED_TEACHING_MINUTES || adminOverride ? "completed" : "abandoned";
+  }
+  if (allowed.has(requested)) return requested;
+  return actualTeachingMinutes >= MIN_COMPLETED_TEACHING_MINUTES ? "completed" : "abandoned";
+}
+
+export function sessionConsumesTopic(session: any) {
+  return String(session?.status || "").toLowerCase() === "completed" && session?.summary?.topicCompleted !== false;
+}
+
+export function isFutureTopicAssignable(session: any) {
+  const status = String(session?.status || "scheduled").toLowerCase();
+  return !session?.actualEndedAt && !["completed", "cancelled", "missed", "abandoned", "coach_no_show", "student_no_show", "technical_issue"].includes(status);
+}
+
+export function coachNoShowDeadline(session: any) {
+  const end = getSessionEnd(session);
+  if (!end) return null;
+  return new Date(end.getTime() + COACH_NO_SHOW_GRACE_MINUTES * 60000);
+}
+
+export function isCoachNoShowExpired(session: any, now = new Date()) {
+  const deadline = coachNoShowDeadline(session);
+  return Boolean(deadline && now > deadline);
+}
+
+function monthRange(date = new Date()) {
+  return {
+    start: new Date(date.getFullYear(), date.getMonth(), 1),
+    end: new Date(date.getFullYear(), date.getMonth() + 1, 1),
+  };
+}
+
+async function notifyAdminsAndSubAdmins(title: string, message: string, metadata: Record<string, unknown>) {
+  const users = await User.find({ role: { $in: ["admin", "sub-admin"] }, isActive: { $ne: false } }).select("_id").lean();
+  if (!users.length) return;
+  await Notification.insertMany(
+    users.map((user: any) => ({
+      user: user._id,
+      type: String(metadata.type || "classroom_lifecycle"),
+      title,
+      message,
+      metadata,
+    })),
+    { ordered: false }
+  ).catch(() => undefined);
+}
+
+export async function notifyCoachNoShowIfThreshold(coachId: string, context: Record<string, unknown> = {}) {
+  if (!coachId) return 0;
+  const { start, end } = monthRange();
+  const count = await Attendance.countDocuments({
+    coach: coachId,
+    coachStatus: "coach_no_show",
+    sessionDate: { $gte: start, $lt: end },
+  });
+  if (count >= MONTHLY_NO_SHOW_FLAG_THRESHOLD) {
+    await notifyAdminsAndSubAdmins(
+      "Coach no-show threshold reached",
+      `A coach has ${count} coach no-shows this month. Please review the class records.`,
+      { type: "coach_no_show_threshold", coach: coachId, count, ...context }
+    );
+  }
+  return count;
+}
+
+export async function studentNoShowCountThisMonth(studentId: string, date = new Date()) {
+  const { start, end } = monthRange(date);
+  return Attendance.countDocuments({
+    sessionDate: { $gte: start, $lt: end },
+    records: { $elemMatch: { student: new Types.ObjectId(studentId), status: "student_no_show" } },
+  });
+}
+
+export async function notifyStudentNoShowCreditDeduction(studentId: string, count: number, context: Record<string, unknown> = {}) {
+  await notifyAdminsAndSubAdmins(
+    "Repeated student no-show charged",
+    `A student reached ${count} no-shows this month, so the no-show credit rule was applied.`,
+    { type: "student_no_show_credit_deducted", student: studentId, count, ...context }
+  );
+}
+
+export async function recalculateFutureSessionTopics(classroomOrId: any, actorId?: string) {
+  const classroom: any = typeof classroomOrId === "string" ? await Classroom.findById(classroomOrId) : classroomOrId;
+  if (!classroom || !Array.isArray(classroom.generatedSessions) || !classroom.generatedSessions.length) return classroom;
+  const plan = (classroom.sessionPlan || [])
+    .map((topic: any, index: number) => ({
+      topicName: String(topic.topicName || "").trim(),
+      topicOrder: Number(topic.topicOrder ?? index),
+    }))
+    .filter((topic: any) => topic.topicName)
+    .sort((a: any, b: any) => a.topicOrder - b.topicOrder);
+  if (!plan.length) return classroom;
+
+  const consumed = new Set<string>();
+  (classroom.generatedSessions || []).forEach((session: any) => {
+    if (sessionConsumesTopic(session)) consumed.add(String(session.topicName || "").trim().toLowerCase());
+  });
+  const pending = plan.filter((topic: any) => !consumed.has(topic.topicName.toLowerCase()));
+  let pendingIndex = 0;
+  const futureSessions = (classroom.generatedSessions || [])
+    .filter((session: any) => isFutureTopicAssignable(session) && !session.isExtra && !session.topicLocked)
+    .sort((a: any, b: any) => new Date(a.scheduledFor || 0).getTime() - new Date(b.scheduledFor || 0).getTime());
+
+  const changes: Array<{ sessionId: string; from: string; to: string }> = [];
+  futureSessions.forEach((session: any) => {
+    const nextTopic = pending[pendingIndex];
+    if (!nextTopic) return;
+    pendingIndex += 1;
+    const from = String(session.topicName || "");
+    if (from !== nextTopic.topicName || Number(session.topicOrder || 0) !== nextTopic.topicOrder) {
+      session.topicName = nextTopic.topicName;
+      session.topicOrder = nextTopic.topicOrder;
+      changes.push({ sessionId: String(session._id), from, to: nextTopic.topicName });
+    }
+  });
+
+  if (changes.length) {
+    await recordActivity({
+      actor: actorId,
+      type: "classroom.topics.recalculated",
+      label: `Recalculated ${changes.length} future class topic${changes.length === 1 ? "" : "s"}`,
+      entityType: "Classroom",
+      entityId: String(classroom._id),
+      metadata: { classroom: String(classroom._id), changes },
+    });
+  }
+  return classroom;
+}

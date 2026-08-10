@@ -72,9 +72,11 @@ const ClassroomSessionSchema = new Schema(
     participants: [
       {
         user: { type: Schema.Types.ObjectId, ref: "User", required: true },
-        role: { type: String, enum: ["student", "instructor", "admin"], default: "student" },
+        role: { type: String, enum: ["student", "instructor", "admin", "sub-admin"], default: "student" },
         firstSeenAt: { type: Date, default: Date.now },
         lastSeenAt: { type: Date, default: Date.now },
+        leftAt: Date,
+        presenceStatus: { type: String, enum: ["active", "left", "coach_no_show_pending"], default: "active" },
       },
     ],
     activeQuestion: { type: Schema.Types.ObjectId, ref: "LiveQuestion" },

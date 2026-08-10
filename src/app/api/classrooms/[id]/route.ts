@@ -9,6 +9,8 @@ import { deleteClassroomSessionInstances, syncClassroomSessionInstances } from "
 import { canAccessFeature, isSuperAdminSession } from "@/lib/featureAccess";
 import { academyDateTime } from "@/lib/academyTime";
 import { coachCanAccessClassroomSession, isPrimaryClassroomCoach, limitClassroomToCoachSessions } from "@/lib/classroomCoachAccess";
+import { recalculateFutureSessionTopics } from "@/lib/classroomLifecycle";
+import { recordActivity } from "@/lib/activity";
 import { User } from "@/models/User";
 import { Homework, Submission } from "@/models/Homework";
 import { AssignmentAutomationLog } from "@/models/AssignmentTemplate";
@@ -161,17 +163,43 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       if (!session.actualEndedAt && session.status !== "completed") {
         session.status = "cancelled";
         session.coachAttendanceStatus = "cancelled";
+        session.summary = { ...(session.summary || {}), classOutcome: "cancelled", topicCompleted: false, creditPolicy: "no_charge" };
       }
     });
-  } else if (["update_session", "reschedule_session", "cancel_session", "delete_session"].includes(body.action)) {
+  } else if (["update_session", "reschedule_session", "cancel_session", "delete_session", "mark_session_outcome"].includes(body.action)) {
     const sessionId = String(body.sessionId || "");
     const target = existing.generatedSessions?.id?.(sessionId) || (existing.generatedSessions || []).find((session: any) => String(session._id) === sessionId);
     if (!target) return NextResponse.json({ error: "Scheduled class not found" }, { status: 404 });
     const finished = target.status === "completed" || target.status === "ongoing" || Boolean(target.actualStartedAt || target.actualEndedAt);
-    if (finished) return NextResponse.json({ error: "A started or completed class can no longer be changed or deleted" }, { status: 409 });
+    if (finished && body.action !== "mark_session_outcome") return NextResponse.json({ error: "A started or completed class can no longer be changed or deleted" }, { status: 409 });
     if (target.status === "cancelled" && body.action !== "delete_session") return NextResponse.json({ error: "A cancelled class can only be deleted" }, { status: 409 });
 
-    if (body.action === "delete_session") {
+    if (body.action === "mark_session_outcome") {
+      const outcome = String(body.classOutcome || "").trim();
+      if (!["completed", "cancelled", "missed", "abandoned", "coach_no_show", "student_no_show", "technical_issue"].includes(outcome)) {
+        return NextResponse.json({ error: "Select a valid class outcome" }, { status: 400 });
+      }
+      const previousStatus = target.status;
+      target.status = outcome;
+      target.coachAttendanceStatus = outcome === "coach_no_show" ? "coach_no_show" : outcome === "technical_issue" ? "technical_issue" : outcome === "cancelled" ? "cancelled" : target.coachAttendanceStatus || "present";
+      target.attendanceMarkedAt = new Date();
+      target.summary = {
+        ...(target.summary || {}),
+        classOutcome: outcome,
+        topicCompleted: outcome === "completed",
+        creditPolicy: outcome === "completed" ? "charge_present_students" : outcome === "student_no_show" ? "repeat_no_show_policy" : "no_charge",
+        adminCorrection: true,
+        adminCorrectionReason: String(body.reason || ""),
+      };
+      await recordActivity({
+        actor: (session.user as any).id,
+        type: "classroom.session.outcome_corrected",
+        label: `Corrected class outcome to ${outcome}`,
+        entityType: "Classroom",
+        entityId: params.id,
+        metadata: { sessionId, previousStatus, outcome, reason: body.reason || "" },
+      });
+    } else if (body.action === "delete_session") {
       if (existing.classroomType === "series" && (existing.generatedSessions?.length || 0) <= 1) {
         return NextResponse.json({ error: "A series must keep at least one class. Delete the entire series instead." }, { status: 409 });
       }
@@ -183,6 +211,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     } else if (body.action === "cancel_session") {
       target.status = "cancelled";
       target.coachAttendanceStatus = "cancelled";
+      target.summary = { ...(target.summary || {}), classOutcome: "cancelled", topicCompleted: false, creditPolicy: "no_charge" };
     } else {
       const nextStartTime = String(body.startTime || target.startTime || existing.startTime || "00:00");
       if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(nextStartTime)) return NextResponse.json({ error: "Select a valid class time" }, { status: 400 });
@@ -199,7 +228,11 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       }
       target.startTime = nextStartTime;
       target.durationMinutes = Math.max(15, Number(body.durationMinutes || target.durationMinutes || existing.durationMinutes || 60));
-      if (String(body.topicName || "").trim()) target.topicName = String(body.topicName).trim();
+      if (String(body.topicName || "").trim()) {
+        target.topicName = String(body.topicName).trim();
+        target.topicLocked = true;
+        target.topicOverrideReason = "Manual topic edit";
+      }
       if (body.action === "reschedule_session") {
         target.status = "scheduled";
         target.coachAttendanceStatus = "pending";
@@ -207,7 +240,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     }
     const remainingStatuses = (existing.generatedSessions || []).map((item: any) => String(item.status || "scheduled"));
     if (remainingStatuses.length && remainingStatuses.every((status: string) => status === "cancelled")) existing.status = "cancelled";
-    else if (remainingStatuses.length && remainingStatuses.every((status: string) => status === "completed" || status === "cancelled")) existing.status = "completed";
+    else if (remainingStatuses.length && remainingStatuses.every((status: string) => ["completed", "cancelled", "missed", "abandoned", "coach_no_show", "student_no_show", "technical_issue"].includes(status))) existing.status = "completed";
   } else if (body.action === "reschedule_class") {
     if (existing.status === "completed" || existing.status === "cancelled") return NextResponse.json({ error: "This class can no longer be rescheduled" }, { status: 409 });
     if (!String(body.classDate || "").trim() || !/^([01]\d|2[0-3]):[0-5]\d$/.test(String(body.startTime || ""))) {
@@ -350,6 +383,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     }
   }
 
+  await recalculateFutureSessionTopics(existing, (session.user as any).id);
   await existing.save();
   if (reassignedSessionIds.length) {
     await Promise.all([

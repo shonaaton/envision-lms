@@ -17,7 +17,11 @@ export type ScheduledSessionStatus =
   | "completed"
   | "cancelled"
   | "rescheduled"
-  | "missed";
+  | "missed"
+  | "abandoned"
+  | "coach_no_show"
+  | "student_no_show"
+  | "technical_issue";
 
 export function getSessionStart(session: ScheduledSessionLike) {
   const base = session.scheduledFor || session.classDate;
@@ -51,6 +55,11 @@ export function deriveScheduledSessionStatus(
   const attendanceStatus = String(options?.attendanceStatus || "").toLowerCase();
   if (raw === "cancelled") return "cancelled";
   if (raw === "rescheduled") return "rescheduled";
+  if (raw === "abandoned") return "abandoned";
+  if (raw === "coach_no_show") return "coach_no_show";
+  if (raw === "student_no_show") return "student_no_show";
+  if (raw === "technical_issue") return "technical_issue";
+  if (raw === "missed") return "missed";
   if (session?.actualEndedAt) return attendanceStatus === "absent" ? "missed" : "completed";
   if (session?.actualStartedAt && !session?.actualEndedAt) return "ongoing";
   if (raw === "completed") return attendanceStatus === "absent" ? "missed" : "completed";
@@ -108,6 +117,10 @@ export function formatJoinWindowLabel(session: ScheduledSessionLike, now = new D
   if (status === "cancelled") return "Cancelled";
   if (status === "rescheduled") return "Rescheduled";
   if (status === "missed") return "Missed";
+  if (status === "abandoned") return "Not completed";
+  if (status === "coach_no_show") return "Coach no-show";
+  if (status === "student_no_show") return "Student no-show";
+  if (status === "technical_issue") return "Technical issue";
   if (now < start) return `Opens ${formatAcademyDateTime(start, { year: undefined })}`;
   return "Session closed";
 }

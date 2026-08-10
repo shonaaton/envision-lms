@@ -73,6 +73,8 @@ const Chessboard = dynamic(() => import("react-chessboard").then((m) => m.Chessb
 type Role = "student" | "instructor" | "admin" | "sub-admin";
 type BoardPosition = Record<string, string | undefined>;
 type TabKey = "students" | "chat" | "moves" | "engine" | "leaderboard" | "pgns";
+type AttendanceStatus = "present" | "absent" | "late" | "excused" | "student_no_show" | "technical_issue";
+type ClassOutcome = "completed" | "abandoned" | "student_no_show" | "technical_issue" | "cancelled";
 type ToolKey = "move" | "highlight" | "arrow" | "setup";
 type ModifierKey = "default" | "shift" | "ctrl" | "alt";
 type SetupTab = "pieces" | "objects";
@@ -685,8 +687,10 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [coachQuizResults, setCoachQuizResults] = useState<CoachQuizResultsSnapshot | null>(null);
   const [endingClass, setEndingClass] = useState(false);
+  const [leavingClass, setLeavingClass] = useState(false);
   const [hiddenStudentQuizId, setHiddenStudentQuizId] = useState<string | null>(null);
-  const [attendanceDraft, setAttendanceDraft] = useState<Record<string, "present" | "absent" | "late">>({});
+  const [attendanceDraft, setAttendanceDraft] = useState<Record<string, AttendanceStatus>>({});
+  const [classOutcome, setClassOutcome] = useState<ClassOutcome>("completed");
   const [setupPosition, setSetupPosition] = useState<BoardPosition>({});
   const [modifier, setModifier] = useState<ModifierKey>("default");
   const [engineText, setEngineText] = useState("Engine ready");
@@ -1019,6 +1023,13 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const classroomName = classroom?.title || "Live Classroom";
   const coachName = classroom?.coach?.name || classroom?.instructor?.name || "Coach";
   const activeStudents = students.filter((student: any) => student?.status !== "inactive");
+  const activeCoachInRoom = (live?.participants || []).some((participant: any) => {
+    if (!isCoach(participant.role)) return false;
+    if (participant.leftAt || participant.presenceStatus === "left") return false;
+    const lastSeen = participant.lastSeenAt ? new Date(participant.lastSeenAt) : null;
+    return Boolean(lastSeen && Date.now() - lastSeen.getTime() <= 2 * 60000);
+  });
+  const canStudentLeaveWaitingRoom = !coach && !activeCoachInRoom;
 
   useEffect(() => {
     navigationIndexRef.current = Math.max(0, Math.min(activePgnMoves.length, currentMoveIndex));
@@ -2028,13 +2039,37 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     setSummaryOpen(true);
   }
 
+  async function leaveWaitingRoom() {
+    if (!canStudentLeaveWaitingRoom || leavingClass) return;
+    setLeavingClass(true);
+    const res = await fetch(liveUrl(), {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "student_leave" }),
+    });
+    if (!res.ok) {
+      const payload = await res.json().catch(() => null);
+      setLeavingClass(false);
+      toast.error(payload?.error || "Could not leave classroom");
+      return;
+    }
+    toast.success("You left the waiting room. No credit will be used unless the class is later completed.");
+    router.push("/classrooms");
+  }
+
   async function saveAttendanceAndClose() {
     setEndingClass(true);
     const records = students.map((student: any) => ({
       student: student._id,
-      status: attendanceDraft[student._id] || "absent",
-      note: "Marked from live classroom summary",
+      status: classOutcome === "student_no_show" ? "student_no_show" : attendanceDraft[student._id] || "absent",
+      note: classOutcome === "student_no_show" ? "Student no-show marked from live classroom summary" : "Marked from live classroom summary",
     }));
+    const summary = {
+      ...classSummary,
+      classOutcome,
+      topicCompleted: classOutcome === "completed",
+      creditPolicy: classOutcome === "completed" ? "charge_present_students" : classOutcome === "student_no_show" ? "repeat_no_show_policy" : "no_charge",
+    };
     const res = await fetch("/api/attendance", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -2044,9 +2079,10 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
         sessionDate: scheduledSession?.scheduledFor || live?.startedAt || new Date().toISOString(),
         records,
         coach: classroom?.coach?._id || classroom?.instructor?._id,
-        coachStatus: "present",
+        coachStatus: classOutcome === "technical_issue" ? "technical_issue" : "present",
         teachingMinutes: classSummary.durationMinutes || minutesBetween(live?.startedAt, new Date().toISOString()),
-        metadata: { summary: classSummary, liveSessionId: live?._id },
+        classOutcome,
+        metadata: { summary, liveSessionId: live?._id },
       }),
     });
     if (!res.ok) {
@@ -2054,7 +2090,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       toast.error("Could not save attendance");
       return;
     }
-    await patch({ endedAt: new Date().toISOString(), status: "ended", summary: classSummary, participants: [], boardControlStudents: [], selectedStudents: [], challenge: { active: false } });
+    await patch({ endedAt: new Date().toISOString(), status: "ended", summary, participants: [], boardControlStudents: [], selectedStudents: [], challenge: { active: false } });
     toast.success("Class ended and attendance saved");
     setSummaryOpen(false);
     window.location.assign(`/classrooms?updated=${Date.now()}`);
@@ -2423,7 +2459,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       const submissions = studentResponses.length;
       const points = studentResponses.reduce((sum, response) => sum + Number(response.score || 0), 0);
       const timeMinutes = participant ? minutesBetween(participant.firstSeenAt, participant.lastSeenAt || now) : 0;
-      const suggestedStatus: "present" | "absent" | "late" = timeMinutes >= 10 || submissions > 0 ? "present" : timeMinutes > 0 ? "late" : "absent";
+      const suggestedStatus: AttendanceStatus = timeMinutes >= 10 || submissions > 0 ? "present" : timeMinutes > 0 ? "late" : "absent";
       return {
         student,
         timeMinutes,
@@ -2456,10 +2492,11 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
 
   useEffect(() => {
     if (!summaryOpen) return;
-    const draft: Record<string, "present" | "absent" | "late"> = {};
+    const draft: Record<string, AttendanceStatus> = {};
     for (const row of classSummary.rows) draft[row.student._id] = row.suggestedStatus;
     setAttendanceDraft(draft);
-  }, [classSummary.rows, summaryOpen]);
+    setClassOutcome(classSummary.durationMinutes >= 30 ? "completed" : "abandoned");
+  }, [classSummary.durationMinutes, classSummary.rows, summaryOpen]);
 
   if (!data) {
     if (loadError) {
@@ -2575,6 +2612,18 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
           {activeQuestion ? <span className="flex-none rounded-md bg-purple-100 px-2 py-1 text-[11px] font-black text-purple-800">Live quiz</span> : null}
         </div>
         <div className="flex min-w-0 flex-none items-center gap-2">
+          {canStudentLeaveWaitingRoom ? (
+            <button
+              type="button"
+              onClick={leaveWaitingRoom}
+              disabled={leavingClass}
+              className="inline-flex h-8 flex-none items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2.5 text-xs font-bold text-amber-800 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 sm:h-9 sm:px-3"
+            >
+              <X size={15} />
+              <span className="hidden sm:inline">{leavingClass ? "Leaving..." : "Leave waiting room"}</span>
+              <span className="sm:hidden">Leave</span>
+            </button>
+          ) : null}
           {classroom?.meetingUrl ? (
             <a
               href={classroom.meetingUrl}
@@ -3650,28 +3699,62 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
               <SummaryCard label="Points Earned" value={classSummary.totalPoints} icon={<Crown size={16} />} />
               <SummaryCard label="Ended At" value={new Date(classSummary.endedAt).toLocaleTimeString()} icon={<Clock size={16} />} />
             </div>
-            <div className="mt-5 overflow-hidden rounded-lg border border-slate-200">
-              <div className="grid grid-cols-[1.4fr_90px_100px_100px_90px_150px] bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500">
-                <span>Student</span><span>Time</span><span>Submits</span><span>Accuracy</span><span>Points</span><span>Attendance</span>
-              </div>
-              {classSummary.rows.map((row: any) => (
-                <div key={row.student._id} className="grid grid-cols-[1.4fr_90px_100px_100px_90px_150px] items-center border-t border-slate-100 px-3 py-2 text-sm">
-                  <span className="font-semibold text-slate-950">{row.student.name}</span>
-                  <span>{row.timeMinutes} min</span>
-                  <span>{row.submissions}</span>
-                  <span>{row.accuracy}%</span>
-                  <span>{row.points}</span>
-                  <select
-                    value={attendanceDraft[row.student._id] || row.suggestedStatus}
-                    onChange={(event) => setAttendanceDraft((current) => ({ ...current, [row.student._id]: event.target.value as "present" | "absent" | "late" }))}
-                    className="h-9 rounded-md border border-slate-200 px-2 text-sm"
-                  >
-                    <option value="present">Present</option>
-                    <option value="absent">Absent</option>
-                    <option value="late">Late</option>
-                  </select>
+            <div className="mt-5 grid gap-3 lg:grid-cols-[280px_minmax(0,1fr)]">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <div className="text-sm font-black text-slate-950">Class outcome</div>
+                <p className="mt-1 text-xs leading-5 text-slate-500">Only completed classes of 30+ minutes consume the topic and regular student credits.</p>
+                {classSummary.durationMinutes < 30 ? (
+                  <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-semibold leading-5 text-amber-800">
+                    This class is under 30 minutes. It will carry the topic forward unless an admin later overrides it.
+                  </div>
+                ) : null}
+                <select value={classOutcome} onChange={(event) => setClassOutcome(event.target.value as ClassOutcome)} className="mt-3 h-10 w-full rounded-md border border-slate-200 bg-white px-2 text-sm">
+                  <option value="completed">Completed: topic taught</option>
+                  <option value="abandoned">Not completed: carry topic forward</option>
+                  <option value="student_no_show">Student no-show</option>
+                  <option value="technical_issue">Technical issue</option>
+                  <option value="cancelled">Cancel / no class</option>
+                </select>
+                <div className="mt-3 rounded-lg bg-white p-3 text-xs text-slate-600">
+                  {classOutcome === "completed"
+                    ? "Present/late students are charged and the topic is marked taught."
+                    : classOutcome === "student_no_show"
+                      ? "Coach availability is recorded. Student credit is deducted only after repeated no-shows."
+                      : "No regular credit is charged and the topic is carried forward."}
                 </div>
-              ))}
+              </div>
+
+              <div className="overflow-hidden rounded-lg border border-slate-200">
+                <div className="hidden grid-cols-[1.4fr_90px_100px_100px_90px_170px] bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500 lg:grid">
+                  <span>Student</span><span>Time</span><span>Submits</span><span>Accuracy</span><span>Points</span><span>Attendance</span>
+                </div>
+                <div className="divide-y divide-slate-100">
+                  {classSummary.rows.map((row: any) => (
+                    <div key={row.student._id} className="grid gap-3 px-3 py-3 text-sm lg:grid-cols-[1.4fr_90px_100px_100px_90px_170px] lg:items-center lg:gap-0 lg:py-2">
+                      <span className="font-semibold text-slate-950">{row.student.name}</span>
+                      <div className="grid grid-cols-4 gap-2 text-xs text-slate-600 lg:contents lg:text-sm">
+                        <span>{row.timeMinutes} min</span>
+                        <span>{row.submissions} submits</span>
+                        <span>{row.accuracy}%</span>
+                        <span>{row.points} pts</span>
+                      </div>
+                      <select
+                        value={classOutcome === "student_no_show" ? "student_no_show" : attendanceDraft[row.student._id] || row.suggestedStatus}
+                        disabled={classOutcome === "student_no_show"}
+                        onChange={(event) => setAttendanceDraft((current) => ({ ...current, [row.student._id]: event.target.value as AttendanceStatus }))}
+                        className="h-9 rounded-md border border-slate-200 px-2 text-sm disabled:bg-slate-100 disabled:text-slate-500"
+                      >
+                        <option value="present">Present</option>
+                        <option value="absent">Absent</option>
+                        <option value="late">Late</option>
+                        <option value="excused">Excused</option>
+                        <option value="technical_issue">Technical issue</option>
+                        <option value="student_no_show">Student no-show</option>
+                      </select>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
             <div className="mt-5 flex justify-end gap-2">
               <button onClick={saveAttendanceAndClose} className="h-10 rounded-md bg-purple-700 px-4 text-sm font-semibold text-white">Save Attendance and Finalize</button>
@@ -3680,6 +3763,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
         </div>
       )}
       <PageLoadingOverlay visible={endingClass} message="Saving attendance and closing the classroom..." />
+      <PageLoadingOverlay visible={leavingClass} message="Leaving the waiting room..." />
     </div>
   );
 }

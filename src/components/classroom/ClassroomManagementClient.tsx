@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CalendarDays,
+  CheckSquare,
   ChevronLeft,
   ChevronRight,
   Clock3,
@@ -95,7 +96,11 @@ type SessionFilterStatus =
   | "completed"
   | "missed"
   | "cancelled"
-  | "rescheduled";
+  | "rescheduled"
+  | "abandoned"
+  | "coach_no_show"
+  | "student_no_show"
+  | "technical_issue";
 
 type TargetsPayload = {
   students: StudentOption[];
@@ -122,6 +127,10 @@ function sessionStatusTone(status: string) {
   if (status === "missed") return "bg-amber-50 text-amber-700";
   if (status === "cancelled") return "bg-rose-50 text-rose-700";
   if (status === "rescheduled") return "bg-sky-50 text-sky-700";
+  if (status === "abandoned") return "bg-amber-50 text-amber-700";
+  if (status === "coach_no_show") return "bg-red-50 text-red-700";
+  if (status === "student_no_show") return "bg-orange-50 text-orange-700";
+  if (status === "technical_issue") return "bg-slate-100 text-slate-700";
   if (status === "ongoing") return "bg-brand/10 text-brand";
   if (status === "join_available") return "bg-violet-50 text-violet-700";
   return "bg-slate-100 text-slate-600";
@@ -674,7 +683,7 @@ export default function ClassroomManagementClient({
           label="Status"
           value={filters.status}
           onChange={(value) => setFilters((current) => ({ ...current, status: value as SessionFilterStatus }))}
-          options={["upcoming", "join_available", "ongoing", "completed", "missed", "cancelled", "rescheduled"].map((value) => ({ value, label: titleCase(value) }))}
+          options={["upcoming", "join_available", "ongoing", "completed", "missed", "abandoned", "coach_no_show", "student_no_show", "technical_issue", "cancelled", "rescheduled"].map((value) => ({ value, label: titleCase(value) }))}
         />
       </div>
 
@@ -774,6 +783,12 @@ export default function ClassroomManagementClient({
                                           <ActionButton icon={<UserCog size={14} />} label="Substitute Coach" onClick={() => {
                                             setActionModal({ type: "substitute_coach", item, session: scheduledSession });
                                             setActionDraft({ scope: "session", coach: "" });
+                                          }} />
+                                        ) : null}
+                                        {permissions.edit ? (
+                                          <ActionButton icon={<CheckSquare size={14} />} label="Outcome" onClick={() => {
+                                            setActionModal({ type: "mark_session_outcome", item, session: scheduledSession });
+                                            setActionDraft({ classOutcome: scheduledSession.summary?.classOutcome || scheduledSession.status || "completed", reason: "" });
                                           }} />
                                         ) : null}
                                         {permissions.cancel && !isFinished && !isCancelled ? (
@@ -1154,6 +1169,27 @@ export default function ClassroomManagementClient({
                   </div>
                 </div>
               )}
+              {actionModal.type === "mark_session_outcome" && (
+                <div className="grid gap-4">
+                  <Field label="Outcome">
+                    <select className="input h-10" value={actionDraft.classOutcome || "completed"} onChange={(event) => setActionDraft((current: any) => ({ ...current, classOutcome: event.target.value }))}>
+                      <option value="completed">Completed: topic taught</option>
+                      <option value="abandoned">Not completed: carry topic forward</option>
+                      <option value="coach_no_show">Coach no-show</option>
+                      <option value="student_no_show">Student no-show</option>
+                      <option value="technical_issue">Technical issue</option>
+                      <option value="missed">Missed</option>
+                      <option value="cancelled">Cancelled</option>
+                    </select>
+                  </Field>
+                  <Field label="Reason">
+                    <textarea className="input min-h-24 py-2" value={actionDraft.reason || ""} onChange={(event) => setActionDraft((current: any) => ({ ...current, reason: event.target.value }))} placeholder="Optional admin note" />
+                  </Field>
+                  <div className="rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
+                    Completed consumes the topic. Other outcomes carry the topic forward and refresh future class topics.
+                  </div>
+                </div>
+              )}
               {actionModal.type === "cancel_class" && <div className="rounded-xl bg-red-50 p-4 text-sm text-red-700">This will cancel the selected class without deleting its record.</div>}
               {actionModal.type === "cancel_series" && <div className="rounded-xl bg-red-50 p-4 text-sm text-red-700">This will cancel the entire series and all unfinished classes in it. Existing records will be kept.</div>}
               {actionModal.type === "cancel_session" && <div className="rounded-xl bg-red-50 p-4 text-sm text-red-700">This will cancel only this class. The rest of the series will remain scheduled.</div>}
@@ -1405,7 +1441,7 @@ function SimpleClassroomList({ items, loading, role, canJoin }: { items: Classro
   const history = sessions
     .filter((row) => {
       const status = deriveScheduledSessionStatus(row.session, now);
-      return ["completed", "missed", "cancelled", "rescheduled"].includes(status);
+      return ["completed", "missed", "abandoned", "coach_no_show", "student_no_show", "technical_issue", "cancelled", "rescheduled"].includes(status);
     })
     .sort((a, b) => (b.start?.getTime() || 0) - (a.start?.getTime() || 0))
     .slice(0, 12);
@@ -1417,6 +1453,10 @@ function SimpleClassroomList({ items, loading, role, canJoin }: { items: Classro
     if (status === "missed") return "bg-amber-50 text-amber-700";
     if (status === "cancelled") return "bg-rose-50 text-rose-700";
     if (status === "rescheduled") return "bg-sky-50 text-sky-700";
+    if (status === "abandoned") return "bg-amber-50 text-amber-700";
+    if (status === "coach_no_show") return "bg-red-50 text-red-700";
+    if (status === "student_no_show") return "bg-orange-50 text-orange-700";
+    if (status === "technical_issue") return "bg-slate-100 text-slate-700";
     return "bg-slate-100 text-slate-600";
   };
 
@@ -1640,6 +1680,7 @@ function actionTitle(type: string) {
   if (type === "delete_session") return "Delete This Class";
   if (type === "substitute_coach") return "Substitute Coach";
   if (type === "add_extra_class") return "Add Extra Class";
+  if (type === "mark_session_outcome") return "Correct Class Outcome";
   return "Update Class";
 }
 
@@ -1649,6 +1690,7 @@ function actionConfirmLabel(type: string) {
   if (type === "delete_session") return "Delete Class";
   if (type === "reschedule_class" || type === "reschedule_session") return "Reschedule";
   if (type === "update_session") return "Save Class";
+  if (type === "mark_session_outcome") return "Save Outcome";
   return "Apply";
 }
 
@@ -1657,6 +1699,7 @@ function actionCanSubmit(type: string, draft: any) {
   if (type === "reschedule_class" || type === "reschedule_session") return Boolean(draft?.classDate && draft?.startTime);
   if (type === "update_session") return Boolean(String(draft?.topicName || "").trim() && draft?.classDate && draft?.startTime);
   if (type === "add_extra_class") return Boolean(String(draft?.topicName || "").trim() && draft?.classDate && draft?.startTime);
+  if (type === "mark_session_outcome") return Boolean(String(draft?.classOutcome || "").trim());
   return true;
 }
 
@@ -1668,5 +1711,6 @@ function actionSuccessMessage(type: string) {
   if (type === "update_session") return "Class updated";
   if (type === "add_extra_class") return "Extra class added";
   if (type === "substitute_coach") return "Coach assignment updated";
+  if (type === "mark_session_outcome") return "Class outcome updated";
   return "Class updated";
 }

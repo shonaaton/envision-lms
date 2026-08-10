@@ -1,6 +1,7 @@
 import { Classroom } from "@/models/Classroom";
 import { ClassroomSession } from "@/models/ClassroomLive";
 import { autoAssignHomeworkForSession } from "@/lib/assignmentAutomation";
+import { normalizeSessionOutcome, recalculateFutureSessionTopics } from "@/lib/classroomLifecycle";
 import { actualSessionMinutes, punctualityBreakdown, scheduledPaymentMinutes } from "@/lib/teachingStats";
 
 export function getRequestedSessionId(req: Request) {
@@ -57,7 +58,7 @@ export async function markScheduledSessionStarted({
   if (!classroom) return;
   const target = classroom.generatedSessions?.id?.(scheduledSessionId);
   if (!target) return;
-  if (target.status === "cancelled" || target.status === "completed") return;
+  if (["cancelled", "completed", "coach_no_show", "student_no_show"].includes(String(target.status || ""))) return;
   target.status = "ongoing";
   target.actualStartedAt = target.actualStartedAt || new Date();
   target.conductedBy = actorId || target.conductedBy;
@@ -84,30 +85,39 @@ export async function markScheduledSessionFinished({
   const target = classroom.generatedSessions?.id?.(scheduledSessionId);
   if (!target) return;
   const finish = endedAt || new Date();
-  target.status = "completed";
   target.actualStartedAt = target.actualStartedAt || finish;
   target.actualEndedAt = finish;
   target.conductedBy = actorId || target.conductedBy;
-  target.coachAttendanceStatus = "present";
   target.teachingMinutes = scheduledPaymentMinutes(target, classroom);
   target.actualTeachingMinutes = actualSessionMinutes(target);
+  const requestedOutcome = (summary as any)?.classOutcome;
+  const adminOverride = Boolean((summary as any)?.adminOverrideCompletion);
+  const outcome = normalizeSessionOutcome(requestedOutcome, target.actualTeachingMinutes, adminOverride);
+  target.status = outcome;
+  target.coachAttendanceStatus = outcome === "coach_no_show" ? "coach_no_show" : outcome === "technical_issue" ? "technical_issue" : "present";
   target.punctualityScore = punctualityBreakdown(target, classroom).punctualityScore;
   target.attendanceMarkedAt = new Date();
   target.summary = {
     ...(target.summary || {}),
     ...(summary || {}),
+    classOutcome: outcome,
+    topicCompleted: outcome === "completed",
+    creditPolicy: outcome === "completed" ? "charge_present_students" : outcome === "student_no_show" ? "repeat_no_show_policy" : "no_charge",
     scheduledTeachingMinutes: target.teachingMinutes,
     actualTeachingMinutes: target.actualTeachingMinutes,
     punctualityScore: target.punctualityScore,
   };
   const allDone = (classroom.generatedSessions || []).every((session: any) =>
-    ["completed", "cancelled"].includes(String(session.status || "").toLowerCase())
+    ["completed", "cancelled", "missed", "abandoned", "coach_no_show", "student_no_show", "technical_issue"].includes(String(session.status || "").toLowerCase())
   );
   classroom.status = allDone ? "completed" : "scheduled";
+  await recalculateFutureSessionTopics(classroom, actorId);
   await classroom.save();
-  try {
-    await autoAssignHomeworkForSession({ classroomId, scheduledSessionId, actorId, endedAt: finish });
-  } catch (error) {
-    console.error("Homework auto-assignment failed", error);
+  if (outcome === "completed") {
+    try {
+      await autoAssignHomeworkForSession({ classroomId, scheduledSessionId, actorId, endedAt: finish });
+    } catch (error) {
+      console.error("Homework auto-assignment failed", error);
+    }
   }
 }

@@ -60,6 +60,7 @@ export function buildGeneratedSessions(input: ClassroomBuildInput) {
       {
         sessionNumber: 1,
         topicName: input.topicName || input.title,
+        topicOrder: Number(input.topicOrder || 0),
         scheduledFor: academyDateTime(input.classDate, input.startTime),
         startTime: input.startTime,
         durationMinutes: input.durationMinutes,
@@ -89,6 +90,7 @@ export function buildGeneratedSessions(input: ClassroomBuildInput) {
   const sessions: Array<{
     sessionNumber: number;
     topicName: string;
+    topicOrder: number;
     scheduledFor: Date;
     startTime: string;
     durationMinutes: number;
@@ -112,6 +114,7 @@ export function buildGeneratedSessions(input: ClassroomBuildInput) {
         sessions.push({
           sessionNumber: sessions.length + 1,
           topicName: topic?.topicName || input.title,
+          topicOrder: Number(topic?.topicOrder ?? topicIndex),
           scheduledFor: new Date(sessionDate),
           startTime: slot.startTime,
           durationMinutes: slot.durationMinutes || input.durationMinutes,

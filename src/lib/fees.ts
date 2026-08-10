@@ -248,7 +248,7 @@ export async function markInvoicePaid(invoiceId: string, paymentId?: string) {
   return invoice;
 }
 
-export async function consumeAttendanceCredit(studentId: string, attendanceId: string) {
+export async function consumeAttendanceCredit(studentId: string, attendanceId: string, note = "Credit deducted after attendance was marked") {
   const assignment: any = await FeeAssignment.findOne({ student: studentId, type: "credits" });
   if (!assignment) return;
 
@@ -273,7 +273,7 @@ export async function consumeAttendanceCredit(studentId: string, attendanceId: s
     balanceAfter: nextBalance,
     sourceType: "Attendance",
     sourceId: attendanceId,
-    note: "Credit deducted after attendance was marked",
+    note,
   });
   const settings: any = await getAcademySettings();
   if (nextBalance <= Number(settings.lowCreditThreshold ?? 3)) {

@@ -29,12 +29,15 @@ const ScheduledSessionSchema = new Schema(
   {
     sessionNumber: { type: Number, required: true },
     topicName: { type: String, required: true },
+    topicOrder: { type: Number, default: 0 },
+    topicLocked: { type: Boolean, default: false },
+    topicOverrideReason: String,
     scheduledFor: { type: Date, required: true },
     startTime: { type: String, required: true },
     durationMinutes: { type: Number, default: 60 },
     status: {
       type: String,
-      enum: ["scheduled", "ongoing", "completed", "cancelled", "rescheduled"],
+      enum: ["scheduled", "ongoing", "in_progress", "completed", "cancelled", "rescheduled", "missed", "abandoned", "coach_no_show", "student_no_show", "technical_issue"],
       default: "scheduled",
       index: true,
     },
@@ -47,7 +50,7 @@ const ScheduledSessionSchema = new Schema(
     conductedBy: { type: Schema.Types.ObjectId, ref: "User" },
     coachAttendanceStatus: {
       type: String,
-      enum: ["pending", "present", "absent", "late", "rescheduled", "cancelled"],
+      enum: ["pending", "present", "absent", "late", "rescheduled", "cancelled", "coach_no_show", "student_no_show", "technical_issue"],
       default: "pending",
     },
     teachingMinutes: { type: Number, default: 0 },

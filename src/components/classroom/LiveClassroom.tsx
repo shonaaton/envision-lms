@@ -72,7 +72,7 @@ const Chessboard = dynamic(() => import("react-chessboard").then((m) => m.Chessb
 
 type Role = "student" | "instructor" | "admin" | "sub-admin";
 type BoardPosition = Record<string, string | undefined>;
-type TabKey = "students" | "chat" | "moves" | "engine" | "leaderboard";
+type TabKey = "students" | "chat" | "moves" | "engine" | "leaderboard" | "pgns";
 type ToolKey = "move" | "highlight" | "arrow" | "setup";
 type ModifierKey = "default" | "shift" | "ctrl" | "alt";
 type SetupTab = "pieces" | "objects";
@@ -703,7 +703,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const boardShellRef = useRef<HTMLDivElement | null>(null);
   const boardAreaRef = useRef<HTMLDivElement | null>(null);
   const boardControlsRef = useRef<HTMLDivElement | null>(null);
-  const activePgnTabRef = useRef<HTMLDivElement | null>(null);
+  const activeLoadedPgnRef = useRef<HTMLButtonElement | null>(null);
   const engineRef = useRef<Worker | null>(null);
   const engineFenRef = useRef("");
   const loadInFlightRef = useRef(false);
@@ -942,7 +942,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   ];
 
   useEffect(() => {
-    if (!coach && (activeTab === "moves" || activeTab === "engine")) setActiveTab("chat");
+    if (!coach && (activeTab === "moves" || activeTab === "engine" || activeTab === "pgns")) setActiveTab("chat");
   }, [activeTab, coach]);
 
   useEffect(() => {
@@ -1033,7 +1033,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   }, [live?.activePgnVariationId, pgnMoves, pgnVariations]);
 
   useEffect(() => {
-    activePgnTabRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+    activeLoadedPgnRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
   }, [activePgnCollection.length, live?.pgn, live?.pgnTitle]);
 
   function openBoardControl() {
@@ -2157,6 +2157,18 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     return Boolean(item.title && item.title === live?.pgnTitle);
   }
 
+  function currentLoadedPgnIndex(collection: any[]) {
+    if (!collection.length) return -1;
+    const storedIndex = Number(live?.challenge?.currentIndex);
+    if (Number.isFinite(storedIndex) && storedIndex >= 0 && storedIndex < collection.length) {
+      const storedItem = collection[storedIndex];
+      if (isCurrentPgn(storedItem)) return storedIndex;
+    }
+    const matchedIndex = collection.findIndex((item: any) => isCurrentPgn(item));
+    if (matchedIndex >= 0) return matchedIndex;
+    return Number.isFinite(storedIndex) ? Math.max(0, Math.min(collection.length - 1, storedIndex)) : 0;
+  }
+
   function loadPgn(pgn: any, index: number, collection?: any[]) {
     const chess = new Chess();
     const startFen = pgnStartFen(pgn);
@@ -2288,7 +2300,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   function loadAdjacentPgn(direction: 1 | -1) {
     const collection = Array.isArray(live?.challenge?.pgnCollection) ? live.challenge.pgnCollection : [];
     if (!collection.length) return;
-    const current = collection.findIndex((pgn: any) => pgn.title === live?.pgnTitle || pgn.pgn === live?.pgn);
+    const current = currentLoadedPgnIndex(collection);
     const next = current < 0 ? 0 : Math.max(0, Math.min(collection.length - 1, current + direction));
     loadPgn(collection[next], next, collection);
   }
@@ -2540,6 +2552,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     { key: "moves" as TabKey, icon: <ClipboardList size={19} />, label: "Moves" },
     { key: "engine" as TabKey, icon: <Bot size={19} />, label: "Engine" },
     { key: "leaderboard" as TabKey, icon: <Crown size={19} />, label: "Scores" },
+    { key: "pgns" as TabKey, icon: <Library size={19} />, label: "PGNs" },
   ];
   const classroomTabs = coach ? coachSidebarTabs : studentPanelTabs;
   const quizFocusMode = Boolean(studentQuizMode || coachQuizMode);
@@ -2572,38 +2585,6 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
               <ExternalLink size={15} /> Open Google Meet
             </a>
           ) : null}
-          {coach && activePgnCollection.length > 0 && (
-            <div className="flex min-w-0 max-w-[min(48vw,720px)] items-center gap-1.5">
-              <div className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto pb-0.5">
-                {activePgnCollection.map((item: any, index: number) => {
-                  const active = isCurrentPgn(item);
-                  return (
-                    <div
-                      key={pgnTabKey(item)}
-                      ref={active ? activePgnTabRef : undefined}
-                      className={`flex h-8 min-w-[150px] max-w-[260px] flex-none items-center gap-1 rounded-md border pl-2.5 pr-1 shadow-sm transition ${active ? "border-blue-400 bg-blue-50 text-blue-800" : "border-slate-200 bg-white text-slate-600 hover:border-blue-200"}`}
-                    >
-                      <button type="button" onClick={() => loadPgn(item, index, activePgnCollection)} className="min-w-0 flex-1 truncate text-left text-xs font-semibold" title={`Open ${item.title}`}>
-                        {item.title || `PGN ${index + 1}`}
-                      </button>
-                      <button type="button" onClick={() => closeLoadedPgnTab(item, index)} className="grid h-6 w-6 flex-none place-items-center rounded text-slate-500 transition hover:bg-white hover:text-red-600" title={`Close ${item.title || "PGN"}`} aria-label={`Close ${item.title || "PGN"}`}>
-                        <X size={14} />
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-              <button type="button" onClick={clearClassroomLoad} className="grid h-8 w-8 flex-none place-items-center rounded-md border border-slate-200 bg-white text-slate-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600" title="Close all loaded PGNs" aria-label="Close all loaded PGNs">
-                <Trash2 size={14} />
-              </button>
-            </div>
-          )}
-          {coach && activePgnCollection.length === 0 && (live?.pgnTitle || live?.gamifiedObjects && Object.keys(live.gamifiedObjects).length > 0) && (
-            <div className="flex h-7 min-w-0 max-w-[290px] items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-2.5 text-left shadow-sm">
-              <div className="min-w-0 flex-1 truncate text-xs font-semibold text-blue-800">{live?.pgnTitle || "Classroom board"}</div>
-              <button type="button" onClick={clearClassroomLoad} className="grid h-6 w-6 flex-none place-items-center rounded-md text-slate-500 transition hover:bg-white hover:text-red-600" title="Clear classroom board"><X size={14} /></button>
-            </div>
-          )}
         </div>
       </div>
 
@@ -2885,7 +2866,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
         )}
 
         {!quizFocusMode && <aside className="flex min-h-[240px] flex-col border-t border-slate-200 bg-white md:min-h-0 xl:border-l xl:border-t-0">
-          <div className={`grid overflow-x-auto border-b border-slate-200 bg-white text-xs ${coach ? "grid-cols-5" : "grid-cols-2"}`}>
+          <div className={`grid overflow-x-auto border-b border-slate-200 bg-white text-xs ${coach ? "grid-cols-6" : "grid-cols-2"}`}>
             {classroomTabs.map(({ key, icon, label }: any) => (
               <button key={key} onClick={() => setActiveTab(key)} className={`flex h-9 min-w-fit items-center justify-center gap-1 border-b-2 px-2 text-[11px] font-semibold transition ${activeTab === key ? "border-brand text-brand" : "border-transparent text-slate-500 hover:bg-slate-50 hover:text-slate-800"}`} title={label}>
                 {icon}
@@ -3147,6 +3128,54 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                     </div>
                   )) : <div className="p-8 text-center text-sm text-slate-500">No quiz responses yet.</div>}
                 </div>
+              </div>
+            )}
+
+            {coach && activeTab === "pgns" && (
+              <div className="space-y-4">
+                <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+                  <div className="flex items-center gap-3 border-b border-slate-200 px-3 py-2.5">
+                    <div className="inline-flex min-w-0 flex-1 items-center gap-2">
+                      <BookOpen size={16} className="flex-none text-slate-600" />
+                      <h3 className="min-w-0 truncate font-semibold text-slate-950">Loaded PGNs</h3>
+                    </div>
+                    <span className="flex-none text-xs font-semibold tabular-nums text-slate-500">
+                      {activePgnCollection.length ? `${activePgnIndex + 1} / ${activePgnCollection.length}` : "0 / 0"}
+                    </span>
+                    {activePgnCollection.length > 0 && (
+                      <button type="button" onClick={clearClassroomLoad} className="grid h-8 w-8 flex-none place-items-center rounded-md border border-slate-200 bg-white text-slate-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600" title="Close all loaded PGNs" aria-label="Close all loaded PGNs">
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </div>
+                  {activePgnCollection.length ? (
+                    <div className="max-h-[calc(100dvh-260px)] space-y-2 overflow-y-auto bg-slate-50/60 p-2">
+                      {activePgnCollection.map((item: any, index: number) => {
+                        const active = index === activePgnIndex;
+                        return (
+                          <div key={pgnTabKey(item)} className={`flex items-start gap-2 rounded-md border bg-white p-2 transition ${active ? "border-blue-400 ring-2 ring-blue-100" : "border-slate-200 hover:border-blue-200"}`}>
+                            <button
+                              type="button"
+                              ref={active ? activeLoadedPgnRef : undefined}
+                              onClick={() => loadPgn(item, index, activePgnCollection)}
+                              className="min-w-0 flex-1 text-left"
+                              title={`Open ${item.title || `PGN ${index + 1}`}`}
+                            >
+                              <span className={`block truncate text-sm font-semibold ${active ? "text-blue-800" : "text-slate-950"}`}>{index + 1}. {item.title || `PGN ${index + 1}`}</span>
+                              <span className="mt-0.5 block truncate text-xs text-slate-500">{item.sideToMove ? `${item.sideToMove} to move` : "Ready to play"} - {item.pgn ? `${(item.pgn.match(/\d+\./g) || []).length || 1} moves` : "position"}</span>
+                            </button>
+                            <button type="button" onClick={() => closeLoadedPgnTab(item, index)} className="grid h-7 w-7 flex-none place-items-center rounded-md text-slate-500 transition hover:bg-red-50 hover:text-red-600" title={`Close ${item.title || "PGN"}`} aria-label={`Close ${item.title || "PGN"}`}>
+                              <X size={14} />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="p-6 text-center text-sm text-slate-500">No PGNs loaded yet.</div>
+                  )}
+                </div>
+                <button type="button" onClick={() => openPgnLibrary("load")} className="h-9 w-full rounded-md bg-purple-700 text-xs font-semibold text-white">Load PGNs</button>
               </div>
             )}
           </div>

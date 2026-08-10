@@ -1,12 +1,18 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
+import { canAccessFeature } from "@/lib/featureAccess";
 import { Availability } from "@/models/Booking";
 import { User } from "@/models/User";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
+  const session = await auth();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const canViewAvailability = await canAccessFeature("availableTimes", session.user as any, "view");
+  const canViewBooking = await canAccessFeature("booking", session.user as any, "view");
+  if (!canViewAvailability && !canViewBooking) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
   const url = new URL(req.url);
   const instructor = url.searchParams.get("instructor");
@@ -29,6 +35,7 @@ export async function PUT(req: Request) {
   const session = await auth();
   const role = (session?.user as any)?.role;
   if (!session || (role !== "instructor" && role !== "admin")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!(await canAccessFeature("availableTimes", session.user as any, "edit"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
   const body = await req.json();
   const doc = await Availability.findOneAndUpdate(

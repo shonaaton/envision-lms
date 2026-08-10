@@ -30,7 +30,7 @@ const bundledFenMcqSources = [
 async function canManageSession(session: any, permission = "view") {
   const role = (session?.user as any)?.role;
   if (role === "instructor") return true;
-  if (role === "admin" || role === "sub-admin") return canAccessFeature("homework", session.user as any, permission);
+  if (role === "admin" || role === "sub-admin") return canAccessFeature("homeworkTemplates", session.user as any, permission);
   return false;
 }
 

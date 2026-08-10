@@ -14,7 +14,7 @@ function paise(value: FormDataEntryValue | null) {
 
 async function createPlan(formData: FormData) {
   "use server";
-  if (!(await requireFeesAccess("edit"))) throw new Error("Forbidden");
+  if (!(await requireFeesAccess("edit", "feePlans"))) throw new Error("Forbidden");
   await dbConnect();
   const type = String(formData.get("type")) as "monthly" | "credits";
   await FeePlan.create({
@@ -37,7 +37,7 @@ async function createPlan(formData: FormData) {
 
 async function updatePlan(formData: FormData) {
   "use server";
-  if (!(await requireFeesAccess("edit"))) throw new Error("Forbidden");
+  if (!(await requireFeesAccess("edit", "feePlans"))) throw new Error("Forbidden");
   await dbConnect();
   const id = String(formData.get("id"));
   const type = String(formData.get("type")) as "monthly" | "credits";
@@ -68,7 +68,7 @@ async function planIsLinked(id: string) {
 
 async function archivePlan(formData: FormData) {
   "use server";
-  if (!(await requireFeesAccess("edit"))) throw new Error("Forbidden");
+  if (!(await requireFeesAccess("edit", "feePlans"))) throw new Error("Forbidden");
   await dbConnect();
   const id = String(formData.get("id") || "");
   if (await planIsLinked(id)) redirect("/fees/fee-plans?error=linked");
@@ -79,7 +79,7 @@ async function archivePlan(formData: FormData) {
 
 async function deletePlan(formData: FormData) {
   "use server";
-  if (!(await requireFeesAccess("edit"))) throw new Error("Forbidden");
+  if (!(await requireFeesAccess("delete", "feePlans"))) throw new Error("Forbidden");
   await dbConnect();
   const id = String(formData.get("id") || "");
   if (await planIsLinked(id)) redirect("/fees/fee-plans?error=linked");
@@ -89,7 +89,7 @@ async function deletePlan(formData: FormData) {
 }
 
 export default async function FeePlansPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
-  if (!(await requireFeesAccess("edit"))) return <div className="p-6">Forbidden</div>;
+  if (!(await requireFeesAccess("view", "feePlans"))) return <div className="p-6">Forbidden</div>;
   await dbConnect();
   const params = searchParams ? await searchParams : {};
   const success = typeof params.success === "string" ? params.success : "";

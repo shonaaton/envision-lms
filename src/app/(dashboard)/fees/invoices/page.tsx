@@ -84,7 +84,7 @@ function invoiceReminderMessage(invoice: any, invoiceUrl: string) {
 
 async function createManualInvoice(formData: FormData) {
   "use server";
-  if (!(await requireFeesAccess("invoice"))) throw new Error("Forbidden");
+  if (!(await requireFeesAccess("invoice", "invoices"))) throw new Error("Forbidden");
   await dbConnect();
   const invoiceType = String(formData.get("type") || "manual");
   const plan: any = invoiceType === "manual" ? null : await FeePlan.findById(formData.get("plan"));
@@ -110,12 +110,12 @@ async function createManualInvoice(formData: FormData) {
 
 async function markInvoicePaid(formData: FormData) {
   "use server";
-  const session = await requireFeesAccess("payment");
+  const session = await requireFeesAccess("payment", "invoices");
   if (!session) throw new Error("Forbidden");
   await dbConnect();
   const invoiceId = String(formData.get("invoice") || "");
   const invoice: any = await Invoice.findById(invoiceId).select("type").lean();
-  if (invoice?.type === "credits" && !(await canAccessFeature("fees", session.user as any, "credit"))) {
+  if (invoice?.type === "credits" && !(await canAccessFeature("invoices", session.user as any, "credit"))) {
     throw new Error("Forbidden");
   }
   await applyInvoicePayment(invoiceId);
@@ -126,7 +126,7 @@ async function markInvoicePaid(formData: FormData) {
 
 async function cancelInvoice(formData: FormData) {
   "use server";
-  if (!(await requireFeesAccess("edit"))) throw new Error("Forbidden");
+  if (!(await requireFeesAccess("edit", "invoices"))) throw new Error("Forbidden");
   await dbConnect();
   await Invoice.findByIdAndUpdate(formData.get("invoice"), { status: "cancelled" });
   revalidatePath("/fees/invoices");
@@ -134,13 +134,13 @@ async function cancelInvoice(formData: FormData) {
 
 async function deleteInvoice(formData: FormData) {
   "use server";
-  const session = await requireFeesAccess("edit");
+  const session = await requireFeesAccess("edit", "invoices");
   if (!session) throw new Error("Forbidden");
   await dbConnect();
   const invoiceId = String(formData.get("invoice") || "");
   const invoice: any = await Invoice.findById(invoiceId).lean();
   if (!invoice) return;
-  if (invoice.type === "credits" && invoice.status === "paid" && !(await canAccessFeature("fees", session.user as any, "credit"))) {
+  if (invoice.type === "credits" && invoice.status === "paid" && !(await canAccessFeature("invoices", session.user as any, "credit"))) {
     throw new Error("Forbidden");
   }
   if (invoice.type === "credits" && invoice.status === "paid" && invoice.credits) {
@@ -163,7 +163,7 @@ async function deleteInvoice(formData: FormData) {
 
 async function sendInvoiceToStudent(formData: FormData) {
   "use server";
-  if (!(await requireFeesAccess("invoice"))) throw new Error("Forbidden");
+  if (!(await requireFeesAccess("invoice", "invoices"))) throw new Error("Forbidden");
   await dbConnect();
   const invoiceId = String(formData.get("invoice") || "");
   const returnStudent = String(formData.get("studentFilter") || "");
@@ -226,7 +226,7 @@ async function sendInvoiceToStudent(formData: FormData) {
 
 async function sendInvoiceWhatsAppTest(formData: FormData) {
   "use server";
-  if (!(await requireFeesAccess("invoice"))) throw new Error("Forbidden");
+  if (!(await requireFeesAccess("invoice", "invoices"))) throw new Error("Forbidden");
   await dbConnect();
   const invoiceId = String(formData.get("invoice") || "");
   const returnStudent = String(formData.get("studentFilter") || "");
@@ -250,7 +250,7 @@ async function sendInvoiceWhatsAppTest(formData: FormData) {
 
 async function sendBulkInvoiceReminders(formData: FormData) {
   "use server";
-  if (!(await requireFeesAccess("invoice"))) throw new Error("Forbidden");
+  if (!(await requireFeesAccess("invoice", "invoices"))) throw new Error("Forbidden");
   await dbConnect();
   const mode = String(formData.get("invoiceReminderMode") || "due");
   const now = new Date();

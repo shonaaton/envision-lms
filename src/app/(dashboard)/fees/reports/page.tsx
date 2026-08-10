@@ -150,7 +150,7 @@ async function getPreview(params: Record<string, string | string[] | undefined>)
 }
 
 export default async function FeeReportsPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
-  if (!(await requireFeesAccess("export"))) return <div className="p-6">Forbidden</div>;
+  if (!(await requireFeesAccess("export", "feeReports"))) return <div className="p-6">Forbidden</div>;
   await dbConnect();
   const params = searchParams ? await searchParams : {};
   const currentYear = new Date().getMonth() >= 3 ? new Date().getFullYear() : new Date().getFullYear() - 1;

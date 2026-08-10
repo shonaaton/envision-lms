@@ -59,8 +59,15 @@ export default async function FeesDashboardPage() {
   const role = (session?.user as any)?.role;
   const userId = (session?.user as any)?.id;
   if (!userId) redirect("/login");
-  const permissions = await getFeaturePermissionState("fees", session!.user as any, ["view", "invoice", "edit", "payment", "credit", "export"]);
-  if (!permissions.view) redirect("/dashboard");
+  const [dashboardPermissions, feePlanPermissions, studentFeePermissions, creditPermissions, invoicePermissions, reportPermissions] = await Promise.all([
+    getFeaturePermissionState("feeDashboard", session!.user as any, ["view"]),
+    getFeaturePermissionState("feePlans", session!.user as any, ["view", "edit"]),
+    getFeaturePermissionState("studentFees", session!.user as any, ["view", "edit"]),
+    getFeaturePermissionState("creditMonitoring", session!.user as any, ["view", "credit"]),
+    getFeaturePermissionState("invoices", session!.user as any, ["view", "invoice"]),
+    getFeaturePermissionState("feeReports", session!.user as any, ["view", "export"]),
+  ]);
+  if (!dashboardPermissions.view) redirect("/dashboard");
   const manager = isFeesManager(role);
   await dbConnect();
   await ensureMonthlyInvoices();
@@ -212,10 +219,11 @@ export default async function FeesDashboardPage() {
   }
 
   const quickLinks: Array<[string, string]> = [
-    ...(permissions.edit ? [["/fees/fee-plans", "Fee Plans"], ["/fees/student-fees", "Student Fees"]] as Array<[string, string]> : []),
-    ...(permissions.credit ? [["/fees/credit-monitoring", "Credit Monitoring"]] as Array<[string, string]> : []),
-    ["/fees/invoices", "Invoices"],
-    ...(permissions.export ? [["/fees/reports", "Reports"]] as Array<[string, string]> : []),
+    ...(feePlanPermissions.view || feePlanPermissions.edit ? [["/fees/fee-plans", "Fee Plans"]] as Array<[string, string]> : []),
+    ...(studentFeePermissions.view || studentFeePermissions.edit ? [["/fees/student-fees", "Student Fees"]] as Array<[string, string]> : []),
+    ...(creditPermissions.view || creditPermissions.credit ? [["/fees/credit-monitoring", "Credit Monitoring"]] as Array<[string, string]> : []),
+    ...(invoicePermissions.view || invoicePermissions.invoice ? [["/fees/invoices", "Invoices"]] as Array<[string, string]> : []),
+    ...(reportPermissions.view || reportPermissions.export ? [["/fees/reports", "Reports"]] as Array<[string, string]> : []),
     ...(role === "admin" ? [["/admin/settings", "Academy Setup"]] as Array<[string, string]> : []),
   ];
 

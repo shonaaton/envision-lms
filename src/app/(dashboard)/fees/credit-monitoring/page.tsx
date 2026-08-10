@@ -110,7 +110,7 @@ function manualCreditBanner(params: Params) {
 
 async function addManualCredits(formData: FormData) {
   "use server";
-  const session = await requireFeesAccess("credit");
+  const session = await requireFeesAccess("credit", "creditMonitoring");
   const role = String((session?.user as any)?.role || "");
   if (!session?.user || (role !== "admin" && role !== "sub-admin")) throw new Error("Forbidden");
 
@@ -192,7 +192,7 @@ function creditReminderMessage(assignment: any, portalUrl: string) {
 
 async function sendBulkCreditReminders(formData: FormData) {
   "use server";
-  if (!(await requireFeesAccess("credit"))) throw new Error("Forbidden");
+  if (!(await requireFeesAccess("credit", "creditMonitoring"))) throw new Error("Forbidden");
   await dbConnect();
   const mode = String(formData.get("creditReminderMode") || "low");
   const settings: any = await AcademySettings.findOne().lean();
@@ -252,7 +252,7 @@ async function sendBulkCreditReminders(formData: FormData) {
 
 async function sendCreditWhatsAppTest(formData: FormData) {
   "use server";
-  if (!(await requireFeesAccess("credit"))) throw new Error("Forbidden");
+  if (!(await requireFeesAccess("credit", "creditMonitoring"))) throw new Error("Forbidden");
   await dbConnect();
   const assignmentId = String(formData.get("assignment") || "");
   const assignment: any = await FeeAssignment.findById(assignmentId).populate("student plan").lean();

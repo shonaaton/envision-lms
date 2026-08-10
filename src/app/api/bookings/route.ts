@@ -12,6 +12,7 @@ import { ACADEMY_TIME_ZONE } from "@/lib/academyTime";
 import { isBookingWithinAvailability, type AvailabilitySlot } from "@/lib/bookingAvailability";
 import { bookingFeatureNameForType, bookingFeatureNameLowerForType } from "@/lib/bookingLabels";
 import { inactiveStudentMessage } from "@/lib/studentAccess";
+import { canAccessFeature } from "@/lib/featureAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -131,6 +132,9 @@ async function notifyBookingUsers({
 export async function GET() {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const canViewBookings = await canAccessFeature("booking", session.user as any, "view");
+  const canViewAvailability = await canAccessFeature("availableTimes", session.user as any, "view");
+  if (!canViewBookings && !canViewAvailability) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const { id: userId, role } = sessionUser(session as AuthSession);
   await dbConnect();
   const filter = role === "admin" ? {} : { $or: [{ student: userId }, { instructor: userId }] };
@@ -144,6 +148,7 @@ export async function GET() {
 export async function POST(req: Request) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!(await canAccessFeature("booking", session.user as any, "create"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   try {
     const body = bookingSchema.parse(await req.json());
     await dbConnect();
@@ -260,6 +265,7 @@ export async function POST(req: Request) {
 export async function PATCH(req: Request) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!(await canAccessFeature("booking", session.user as any, "approve"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
   const { id: actorId, role } = sessionUser(session as AuthSession);
   const body = await req.json();

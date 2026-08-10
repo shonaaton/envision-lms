@@ -43,7 +43,7 @@ function reportDateFilter(url: URL) {
 }
 
 export async function GET(req: Request) {
-  if (!(await requireFeesAccess("export"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!(await requireFeesAccess("export", "feeReports"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
   const url = new URL(req.url);
   const type = url.searchParams.get("type") || "fee";

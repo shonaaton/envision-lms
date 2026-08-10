@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 
 async function assignPlan(formData: FormData) {
   "use server";
-  if (!(await requireFeesAccess("edit"))) throw new Error("Forbidden");
+  if (!(await requireFeesAccess("edit", "studentFees"))) throw new Error("Forbidden");
   await dbConnect();
   try {
     const student = String(formData.get("student") || "");
@@ -96,7 +96,7 @@ async function assignPlan(formData: FormData) {
 
 async function deleteFeeAssignment(formData: FormData) {
   "use server";
-  if (!(await requireFeesAccess("edit"))) throw new Error("Forbidden");
+  if (!(await requireFeesAccess("edit", "studentFees"))) throw new Error("Forbidden");
   await dbConnect();
   const assignmentId = String(formData.get("assignment") || "");
   if (!Types.ObjectId.isValid(assignmentId)) redirect("/fees/student-fees?error=invalid-selection");
@@ -118,7 +118,7 @@ async function deleteFeeAssignment(formData: FormData) {
 }
 
 export default async function StudentFeesPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
-  if (!(await requireFeesAccess("edit"))) return <div className="p-6">Forbidden</div>;
+  if (!(await requireFeesAccess("view", "studentFees"))) return <div className="p-6">Forbidden</div>;
   await dbConnect();
   await ensureMonthlyInvoices();
   const params = searchParams ? await searchParams : {};

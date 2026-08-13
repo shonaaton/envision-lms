@@ -103,7 +103,20 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     }
 
     if (activity.type === "play_computer") {
-      graded.push({ activityId: activity._id, kind: "play_computer", correct: false, pointsAwarded: 0, needsReview: true });
+      totalAutoChecked += 1;
+      const result = activityResults[answerKey(activity._id.toString(), "play_computer")] || {};
+      const correct = Boolean(result.solved || result.outcome === "victory");
+      const points = correct ? Number(activity.points ?? 1) : 0;
+      if (correct) correctCount += 1;
+      totalScore += points;
+      graded.push({
+        activityId: activity._id,
+        kind: "play_computer",
+        correct,
+        pointsAwarded: points,
+        needsReview: false,
+        moves: Array.isArray(result.moveHistory) ? result.moveHistory.map((move: any) => move.san).filter(Boolean) : [],
+      });
     }
   }
 

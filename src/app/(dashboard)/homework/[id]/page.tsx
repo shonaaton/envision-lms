@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { Chess } from "chess.js";
 import { toast } from "sonner";
-import { BookOpen, CheckCircle2, ChevronLeft, ChevronRight, Clock, FileQuestion, FileText, Gamepad2, HelpCircle, RotateCcw, Trophy } from "lucide-react";
+import { BookOpen, Bot, CheckCircle2, ChevronLeft, ChevronRight, Clock, FileQuestion, FileText, Flag, Gamepad2, HelpCircle, Play, RotateCcw, Trophy } from "lucide-react";
 import { buildMoveHintStyles, legalTargetsFromGame } from "@/lib/chessboardUi";
 import { isPromotionMove, promotionFromBoardPiece, type PendingPromotion, type PromotionPiece } from "@/lib/chessPromotion";
 import { normalizePermissiveFen } from "@/lib/pgnLibrary";
@@ -14,14 +14,14 @@ const startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
 type MoveTrace = {
   moveNumber: number;
-  by: "student" | "auto" | "hint" | "reset" | "skip";
+  by: "student" | "auto" | "computer" | "hint" | "reset" | "skip";
   san?: string;
   from?: string;
   to?: string;
   note?: string;
 };
 
-type BoardResult = { solved: boolean; mistakes: number; hintsUsed: number; timeTakenSeconds: number; skipped?: boolean; moveHistory?: MoveTrace[] };
+type BoardResult = { solved: boolean; mistakes: number; hintsUsed: number; timeTakenSeconds: number; skipped?: boolean; moveHistory?: MoveTrace[]; outcome?: string; failed?: boolean };
 
 function key(activityId: string, itemId: string) {
   return `${activityId}:${itemId}`;
@@ -204,6 +204,7 @@ export default function HomeworkAttemptPage() {
             setWrittenAnswers={setWrittenAnswers}
             boardResults={boardResults}
             setBoardResults={setBoardResults}
+            onAutoSubmit={submit}
           />
         ))}
       </div>
@@ -382,7 +383,7 @@ function ReportStat({ label, value }: { label: string; value: string | number })
   );
 }
 
-function ActivitySection({ activity, index, locked, quizAnswers, setQuizAnswers, writtenAnswers, setWrittenAnswers, boardResults, setBoardResults }: any) {
+function ActivitySection({ activity, index, locked, quizAnswers, setQuizAnswers, writtenAnswers, setWrittenAnswers, boardResults, setBoardResults, onAutoSubmit }: any) {
   const [activeItemIndex, setActiveItemIndex] = useState(0);
   const isPgnQuiz = activity.type === "study_pgn" && activity.source?.kind === "pgn_quiz";
   const isWritten = activity.type === "written_answer";
@@ -482,7 +483,14 @@ function ActivitySection({ activity, index, locked, quizAnswers, setQuizAnswers,
         </div>
       )}
 
-      {activity.type === "play_computer" && <ComputerPlaceholder activity={activity} />}
+      {activity.type === "play_computer" && (
+        <ComputerAssignmentGame
+          activity={activity}
+          locked={locked}
+          onResult={(result) => setBoardResults((current: any) => ({ ...current, [key(activity._id, "play_computer")]: result }))}
+          onAutoSubmit={onAutoSubmit}
+        />
+      )}
     </section>
   );
 }
@@ -737,6 +745,330 @@ function PgnBoardTask({ activityId, item, index, locked, onResult, onSolved }: a
       <div className="mt-3 flex flex-wrap gap-2">
         <button type="button" className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold" onClick={hint}><HelpCircle size={14} className="mr-1 inline" /> Hint</button>
         <button type="button" className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold" onClick={reset}><RotateCcw size={14} className="mr-1 inline" /> Reset</button>
+      </div>
+    </div>
+  );
+}
+
+function ComputerAssignmentGame({
+  activity,
+  locked,
+  onResult,
+  onAutoSubmit,
+}: {
+  activity: any;
+  locked: boolean;
+  onResult: (result: BoardResult) => void;
+  onAutoSubmit: () => void;
+}) {
+  const computer = activity.computer || {};
+  const levelMatch = String(computer.strength || "").match(/(\d+)(?:\D+(\d+))?/);
+  const minLevel = Math.max(1, Number(levelMatch?.[1] || activity.source?.minLevel || 1));
+  const maxLevel = Math.max(minLevel, Number(levelMatch?.[2] || activity.source?.maxLevel || minLevel));
+  const level = Math.min(12, Math.max(1, Math.round((minLevel + maxLevel) / 2)));
+  const depth = Math.max(1, Math.min(4, Math.ceil(level / 3)));
+  const playerSide = computer.side === "black" ? "black" : computer.side === "random" ? "white" : "white";
+  const playerTurn = playerSide === "white" ? "w" : "b";
+  const computerTurn = playerTurn === "w" ? "b" : "w";
+  const timeControl = computer.timeControl || {};
+  const clockEnabled = timeControl.type && timeControl.type !== "untimed" && Number(timeControl.minutes || 0) > 0;
+  const startClockMs = clockEnabled ? Number(timeControl.minutes || 0) * 60_000 : null;
+  const gameRef = useRef(buildGame(computer.fen || activity.fen || startFen));
+  const workerRef = useRef<Worker | null>(null);
+  const fallbackTimerRef = useRef<number | null>(null);
+  const autoSubmittedRef = useRef(false);
+  const [position, setPosition] = useState(gameRef.current.fen());
+  const [started, setStarted] = useState(false);
+  const [thinking, setThinking] = useState(false);
+  const [status, setStatus] = useState("Start the game when you are ready.");
+  const [mistakes, setMistakes] = useState(0);
+  const [moveHistory, setMoveHistory] = useState<MoveTrace[]>([]);
+  const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
+  const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion | null>(null);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [turnStartedAt, setTurnStartedAt] = useState<number | null>(null);
+  const [whiteClockMs, setWhiteClockMs] = useState<number | null>(startClockMs);
+  const [blackClockMs, setBlackClockMs] = useState<number | null>(startClockMs);
+  const [tick, setTick] = useState(0);
+
+  const isPlayerTurn = started && !thinking && gameRef.current.turn() === playerTurn && !gameRef.current.isGameOver();
+  const elapsedSeconds = startedAt ? Math.max(0, Math.round((Date.now() - startedAt) / 1000)) : 0;
+
+  useEffect(() => {
+    try {
+      const worker = new Worker("/stockfish/stockfish.js");
+      workerRef.current = worker;
+      worker.postMessage("uci");
+      worker.onmessage = (event) => {
+        const line = typeof event.data === "string" ? event.data : "";
+        const bestMove = line.match(/^bestmove\s(\S+)/)?.[1];
+        if (!bestMove || gameRef.current.turn() !== computerTurn || gameRef.current.isGameOver()) return;
+        if (fallbackTimerRef.current) window.clearTimeout(fallbackTimerRef.current);
+        applyComputerMove({ from: bestMove.slice(0, 2), to: bestMove.slice(2, 4), promotion: bestMove[4] || "q" });
+      };
+    } catch {
+      workerRef.current = null;
+    }
+    return () => {
+      if (fallbackTimerRef.current) window.clearTimeout(fallbackTimerRef.current);
+      workerRef.current?.terminate();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [started, computerTurn]);
+
+  useEffect(() => {
+    if (!clockEnabled || !started || !turnStartedAt || gameRef.current.isGameOver()) return;
+    const interval = window.setInterval(() => {
+      setTick((value) => value + 1);
+      const remaining = displayedClockForTurn();
+      if (remaining <= 0) finish(gameRef.current.turn() === playerTurn ? "timeout" : "victory");
+    }, 250);
+    return () => window.clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clockEnabled, started, turnStartedAt, whiteClockMs, blackClockMs, playerTurn]);
+
+  function formatClock(ms: number | null) {
+    if (ms === null) return "No clock";
+    const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
+    return `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, "0")}`;
+  }
+
+  function commitClock() {
+    if (!clockEnabled || !turnStartedAt) return;
+    const elapsed = Date.now() - turnStartedAt;
+    const incrementMs = Math.max(0, Number(timeControl.increment || 0)) * 1000;
+    if (gameRef.current.turn() === "w") setWhiteClockMs((value) => value === null ? null : Math.max(0, value - elapsed));
+    else setBlackClockMs((value) => value === null ? null : Math.max(0, value - elapsed));
+    if (incrementMs > 0) {
+      if (gameRef.current.turn() === "w") setWhiteClockMs((value) => value === null ? null : value + incrementMs);
+      else setBlackClockMs((value) => value === null ? null : value + incrementMs);
+    }
+    setTurnStartedAt(Date.now());
+  }
+
+  function displayedClockForTurn() {
+    const base = gameRef.current.turn() === "w" ? whiteClockMs : blackClockMs;
+    if (base === null || !turnStartedAt) return Number.POSITIVE_INFINITY;
+    return Math.max(0, base - (Date.now() - turnStartedAt) + tick * 0);
+  }
+
+  function displayedClock(side: "w" | "b") {
+    const base = side === "w" ? whiteClockMs : blackClockMs;
+    if (base === null) return null;
+    if (started && turnStartedAt && gameRef.current.turn() === side && !gameRef.current.isGameOver()) {
+      return Math.max(0, base - (Date.now() - turnStartedAt) + tick * 0);
+    }
+    return base;
+  }
+
+  function finish(outcome: string, finalMistakes = mistakes) {
+    setStarted(false);
+    setThinking(false);
+    setTurnStartedAt(null);
+    const failed = outcome !== "victory";
+    const label = outcome === "victory" ? "You won. Assignment completed." : outcome === "timeout" ? "Time is over. This attempt failed." : "Computer won. This attempt failed.";
+    setStatus(label);
+    const result = {
+      solved: outcome === "victory",
+      failed,
+      outcome,
+      mistakes: finalMistakes,
+      hintsUsed: 0,
+      timeTakenSeconds: elapsedSeconds,
+      moveHistory,
+    };
+    onResult(result);
+    if (outcome === "victory" && !autoSubmittedRef.current) {
+      autoSubmittedRef.current = true;
+      window.setTimeout(onAutoSubmit, 500);
+    }
+  }
+
+  function checkFinished() {
+    const game = gameRef.current;
+    if (!game.isGameOver()) return false;
+    if (game.isCheckmate()) {
+      const winner = game.turn() === "w" ? "black" : "white";
+      finish(winner === playerSide ? "victory" : "defeat");
+      return true;
+    }
+    finish("draw");
+    return true;
+  }
+
+  function requestComputerMove() {
+    if (gameRef.current.turn() !== computerTurn || gameRef.current.isGameOver()) return;
+    setThinking(true);
+    const legal = gameRef.current.moves({ verbose: true }) as any[];
+    const fallback = () => {
+      if (!legal.length || gameRef.current.turn() !== computerTurn) return;
+      const move = legal[Math.floor(Math.random() * legal.length)];
+      applyComputerMove({ from: move.from, to: move.to, promotion: move.promotion || "q" });
+    };
+    fallbackTimerRef.current = window.setTimeout(fallback, 3500);
+    const worker = workerRef.current;
+    if (!worker) return;
+    worker.postMessage("setoption name UCI_LimitStrength value true");
+    worker.postMessage(`setoption name Skill Level value ${Math.max(0, Math.min(20, level * 2 - 1))}`);
+    worker.postMessage(`position fen ${gameRef.current.fen()}`);
+    worker.postMessage(`go depth ${depth}`);
+  }
+
+  function applyComputerMove(moveInput: { from: string; to: string; promotion?: string }) {
+    try {
+      commitClock();
+      const move = gameRef.current.move(moveInput);
+      if (!move) return;
+      setMoveHistory((current) => [...current, { moveNumber: current.length + 1, by: "computer", san: move.san, from: move.from, to: move.to, note: "Computer move" }]);
+      setPosition(gameRef.current.fen());
+      setThinking(false);
+      setStatus("Your turn.");
+      if (!checkFinished()) setTurnStartedAt(clockEnabled ? Date.now() : null);
+    } catch {
+      setThinking(false);
+    }
+  }
+
+  function startGame() {
+    const game = buildGame(computer.fen || activity.fen || startFen);
+    gameRef.current = game;
+    setPosition(game.fen());
+    setMistakes(0);
+    setMoveHistory([]);
+    setStarted(true);
+    setThinking(false);
+    setStartedAt(Date.now());
+    setTurnStartedAt(clockEnabled ? Date.now() : null);
+    setWhiteClockMs(startClockMs);
+    setBlackClockMs(startClockMs);
+    setStatus(playerSide === "white" ? "Your turn." : "Computer starts.");
+    autoSubmittedRef.current = false;
+    onResult({ solved: false, mistakes: 0, hintsUsed: 0, timeTakenSeconds: 0, moveHistory: [] });
+    if (playerSide === "black") window.setTimeout(requestComputerMove, 250);
+  }
+
+  function commitMove(source: string, target: string, promotion: PromotionPiece = "q") {
+    if (locked || !isPlayerTurn) return false;
+    try {
+      commitClock();
+      const move = gameRef.current.move({ from: source, to: target, promotion });
+      if (!move) throw new Error("Illegal move");
+      setSelectedSquare(null);
+      setMoveHistory((current) => [...current, { moveNumber: current.length + 1, by: "student", san: move.san, from: move.from, to: move.to, note: "Student move" }]);
+      setPosition(gameRef.current.fen());
+      setStatus("Computer thinking...");
+      if (!checkFinished()) {
+        setTurnStartedAt(clockEnabled ? Date.now() : null);
+        window.setTimeout(requestComputerMove, 200);
+      }
+      return true;
+    } catch {
+      const nextMistakes = mistakes + 1;
+      setMistakes(nextMistakes);
+      setStatus(nextMistakes >= 5 ? "5 wrong attempts used. This activity failed." : `Illegal move. ${5 - nextMistakes} wrong attempts left.`);
+      onResult({ solved: false, failed: false, outcome: "in_progress", mistakes: nextMistakes, hintsUsed: 0, timeTakenSeconds: elapsedSeconds, moveHistory });
+      if (nextMistakes >= 5) finish("failed_attempts", nextMistakes);
+      return false;
+    }
+  }
+
+  function onDrop(source: string, target: string) {
+    return commitMove(source, target);
+  }
+
+  function onPromotionPieceSelect(piece?: string, from?: string, to?: string) {
+    const promotion = promotionFromBoardPiece(piece);
+    const move = from && to ? { from, to } : pendingPromotion;
+    setPendingPromotion(null);
+    if (!promotion || !move) return false;
+    return commitMove(move.from, move.to, promotion);
+  }
+
+  function onSquareClick(square: string) {
+    if (locked || !isPlayerTurn) return;
+    const clickedPiece = gameRef.current.get(square as any);
+    if (selectedSquare && selectedSquare !== square) {
+      if (isPromotionMove(gameRef.current, selectedSquare, square)) {
+        setPendingPromotion({ from: selectedSquare, to: square });
+        return;
+      }
+      if (commitMove(selectedSquare, square)) return;
+    }
+    if (selectedSquare === square) return setSelectedSquare(null);
+    if (clickedPiece && clickedPiece.color === playerTurn) setSelectedSquare(square);
+    else setSelectedSquare(null);
+  }
+
+  const moveTargets = useMemo(() => {
+    if (!selectedSquare || !isPlayerTurn) return [];
+    return legalTargetsFromGame(gameRef.current, selectedSquare);
+  }, [selectedSquare, isPlayerTurn, position]);
+  const moveHintStyles = useMemo(() => buildMoveHintStyles(moveTargets, selectedSquare), [moveTargets, selectedSquare]);
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-lg shadow-brand-900/10">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <div className="inline-flex items-center gap-2 rounded-full bg-purple-50 px-3 py-1 text-xs font-black text-purple-700"><Bot size={14} /> Assignment bot</div>
+          <div className="mt-1 text-sm font-semibold text-slate-600">Level {minLevel}-{maxLevel}, you play {playerSide}. {clockEnabled ? `Clock ${timeControl.minutes}+${timeControl.increment || 0}` : "No clock"}.</div>
+        </div>
+        <button type="button" disabled={locked || started} className="inline-flex h-9 items-center gap-2 rounded-lg bg-brand px-3 text-xs font-black text-white disabled:bg-slate-300" onClick={startGame}><Play size={14} /> Start</button>
+      </div>
+      <div className="grid gap-3 lg:grid-cols-[minmax(260px,420px)_minmax(0,1fr)]">
+        <div className="rounded-lg bg-[#31210f] p-2">
+          <AssignmentChessboard
+            maxWidth={400}
+            position={position}
+            boardOrientation={playerSide}
+            arePiecesDraggable={started && isPlayerTurn}
+            onPieceDrop={onDrop}
+            onSquareClick={onSquareClick as any}
+            onPromotionPieceSelect={onPromotionPieceSelect as any}
+            showPromotionDialog={!!pendingPromotion}
+            promotionToSquare={pendingPromotion?.to as any}
+            promotionDialogVariant="modal"
+            customSquareStyles={moveHintStyles as any}
+            customDarkSquareStyle={{ backgroundColor: "#b58863" }}
+            customLightSquareStyle={{ backgroundColor: "#f0d9b5" }}
+          />
+        </div>
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-2">
+            <div className={`rounded-lg border px-3 py-2 ${gameRef.current.turn() === "w" && started ? "border-brand bg-brand/5" : "border-slate-200 bg-slate-50"}`}>
+              <div className="text-xs font-bold uppercase text-slate-500">White</div>
+              <div className="font-black text-slate-950">{playerSide === "white" ? "You" : "Computer"}</div>
+              <div className="text-sm font-bold text-brand">{formatClock(displayedClock("w"))}</div>
+            </div>
+            <div className={`rounded-lg border px-3 py-2 ${gameRef.current.turn() === "b" && started ? "border-brand bg-brand/5" : "border-slate-200 bg-slate-50"}`}>
+              <div className="text-xs font-bold uppercase text-slate-500">Black</div>
+              <div className="font-black text-slate-950">{playerSide === "black" ? "You" : "Computer"}</div>
+              <div className="text-sm font-bold text-brand">{formatClock(displayedClock("b"))}</div>
+            </div>
+          </div>
+          <div className={`rounded-lg px-3 py-2 text-sm font-bold ${status.includes("won") ? "bg-emerald-50 text-emerald-700" : status.includes("failed") || status.includes("over") || status.includes("Computer won") ? "bg-red-50 text-red-700" : "bg-slate-50 text-slate-700"}`}>
+            {thinking ? "Computer thinking..." : status}
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-white p-3">
+            <div className="mb-2 flex items-center justify-between text-xs font-bold uppercase tracking-wide text-slate-500">
+              <span>Wrong attempts</span><span>{mistakes}/5</span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+              <div className="h-full bg-red-500" style={{ width: `${Math.min(100, mistakes * 20)}%` }} />
+            </div>
+          </div>
+          <div className="max-h-44 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-2 text-sm">
+            {!moveHistory.length && <div className="px-2 py-4 text-center text-slate-500">No moves yet.</div>}
+            {moveHistory.map((move) => (
+              <div key={move.moveNumber} className="flex flex-wrap gap-2 rounded-md bg-white px-2 py-1.5">
+                <span className="font-black text-slate-500">{move.moveNumber}</span>
+                <span className="font-semibold text-slate-950">{move.san}</span>
+                <span className="text-xs uppercase text-slate-400">{move.by}</span>
+                <span className="text-xs text-slate-500">{move.from} to {move.to}</span>
+              </div>
+            ))}
+          </div>
+          {started && <button type="button" className="inline-flex h-9 items-center gap-2 rounded-lg border border-red-200 px-3 text-xs font-black text-red-700" onClick={() => finish("resigned")}><Flag size={14} /> Resign</button>}
+        </div>
       </div>
     </div>
   );

@@ -7,6 +7,7 @@ import { User } from "@/models/User";
 import { getCoachAssignedStudentIds } from "@/lib/coachStudentAccess";
 import { ChevronLeft, Clock, FileText, Trophy, User2 } from "lucide-react";
 import HomeworkReviewBoard from "@/components/homework/HomeworkReviewBoard";
+import HomeworkComputerReviewBoard from "@/components/homework/HomeworkComputerReviewBoard";
 
 export const dynamic = "force-dynamic";
 
@@ -37,11 +38,26 @@ function boardReviewItems(homework: any, submission: any) {
   return items;
 }
 
+function computerReviewItems(homework: any, submission: any) {
+  const results = submission.activityResults || {};
+  const items: any[] = [];
+  for (const activity of homework.activities || []) {
+    if (activity.type !== "play_computer") continue;
+    const key = answerKey(objectId(activity._id), "play_computer");
+    items.push({
+      key,
+      activity,
+      result: results[key] || {},
+    });
+  }
+  return items;
+}
+
 export default async function HomeworkReviewPage({ params }: { params: { id: string } }) {
   const session = await auth();
   const role = (session?.user as any)?.role;
   const userId = (session?.user as any)?.id;
-  if (!session || (role !== "instructor" && role !== "admin")) {
+  if (!session || (role !== "instructor" && role !== "admin" && role !== "sub-admin")) {
     return <div className="rounded-2xl border bg-white p-6 text-sm text-slate-600">Forbidden</div>;
   }
 
@@ -131,6 +147,25 @@ export default async function HomeworkReviewPage({ params }: { params: { id: str
                     <span>Time {result?.timeTakenSeconds || 0}s</span>
                   </div>
                   <HomeworkReviewBoard item={item} result={result} />
+                </div>
+              ))}
+              {computerReviewItems(homework, submission).map(({ key, activity, result }) => (
+                <div key={key} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <div>
+                      <div className="font-semibold text-slate-950">{activity.title || "Play vs Computer"}</div>
+                      <div className="text-xs text-slate-500">{activity.computer?.strength || "Computer game"} - color {activity.computer?.side || "white"}</div>
+                    </div>
+                    <span className={`rounded-full px-2 py-1 text-xs font-bold ${result?.solved ? "bg-emerald-50 text-emerald-700" : result?.failed ? "bg-red-50 text-red-700" : "bg-slate-200 text-slate-700"}`}>
+                      {result?.solved ? "Won" : result?.failed ? "0 points" : "Incomplete"}
+                    </span>
+                  </div>
+                  <div className="mb-3 flex flex-wrap gap-2 text-xs text-slate-500">
+                    <span>Wrong attempts {result?.mistakes || 0}</span>
+                    <span>Outcome {result?.outcome ? String(result.outcome).replaceAll("_", " ") : "Not recorded"}</span>
+                    <span>Time {result?.timeTakenSeconds || 0}s</span>
+                  </div>
+                  <HomeworkComputerReviewBoard activity={activity} result={result} />
                 </div>
               ))}
             </div>

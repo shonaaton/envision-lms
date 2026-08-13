@@ -204,7 +204,6 @@ export default function HomeworkAttemptPage() {
             setWrittenAnswers={setWrittenAnswers}
             boardResults={boardResults}
             setBoardResults={setBoardResults}
-            onAutoSubmit={submit}
           />
         ))}
       </div>
@@ -383,7 +382,7 @@ function ReportStat({ label, value }: { label: string; value: string | number })
   );
 }
 
-function ActivitySection({ activity, index, locked, quizAnswers, setQuizAnswers, writtenAnswers, setWrittenAnswers, boardResults, setBoardResults, onAutoSubmit }: any) {
+function ActivitySection({ activity, index, locked, quizAnswers, setQuizAnswers, writtenAnswers, setWrittenAnswers, boardResults, setBoardResults }: any) {
   const [activeItemIndex, setActiveItemIndex] = useState(0);
   const isPgnQuiz = activity.type === "study_pgn" && activity.source?.kind === "pgn_quiz";
   const isWritten = activity.type === "written_answer";
@@ -488,7 +487,6 @@ function ActivitySection({ activity, index, locked, quizAnswers, setQuizAnswers,
           activity={activity}
           locked={locked}
           onResult={(result) => setBoardResults((current: any) => ({ ...current, [key(activity._id, "play_computer")]: result }))}
-          onAutoSubmit={onAutoSubmit}
         />
       )}
     </section>
@@ -754,12 +752,10 @@ function ComputerAssignmentGame({
   activity,
   locked,
   onResult,
-  onAutoSubmit,
 }: {
   activity: any;
   locked: boolean;
   onResult: (result: BoardResult) => void;
-  onAutoSubmit: () => void;
 }) {
   const computer = activity.computer || {};
   const levelMatch = String(computer.strength || "").match(/(\d+)(?:\D+(\d+))?/);
@@ -776,13 +772,13 @@ function ComputerAssignmentGame({
   const gameRef = useRef(buildGame(computer.fen || activity.fen || startFen));
   const workerRef = useRef<Worker | null>(null);
   const fallbackTimerRef = useRef<number | null>(null);
-  const autoSubmittedRef = useRef(false);
   const [position, setPosition] = useState(gameRef.current.fen());
   const [started, setStarted] = useState(false);
   const [thinking, setThinking] = useState(false);
   const [status, setStatus] = useState("Start the game when you are ready.");
   const [mistakes, setMistakes] = useState(0);
   const [moveHistory, setMoveHistory] = useState<MoveTrace[]>([]);
+  const moveHistoryRef = useRef<MoveTrace[]>([]);
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
   const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion | null>(null);
   const [startedAt, setStartedAt] = useState<number | null>(null);
@@ -861,12 +857,17 @@ function ComputerAssignmentGame({
     return base;
   }
 
-  function finish(outcome: string, finalMistakes = mistakes) {
+  function setRecordedHistory(next: MoveTrace[]) {
+    moveHistoryRef.current = next;
+    setMoveHistory(next);
+  }
+
+  function finish(outcome: string, finalMistakes = mistakes, finalHistory = moveHistoryRef.current) {
     setStarted(false);
     setThinking(false);
     setTurnStartedAt(null);
     const failed = outcome !== "victory";
-    const label = outcome === "victory" ? "You won. Assignment completed." : outcome === "timeout" ? "Time is over. This attempt failed." : "Computer won. This attempt failed.";
+    const label = outcome === "victory" ? "You won. Activity completed. Submit the assignment when all activities are done." : outcome === "timeout" ? "Time is over. This activity is 0 points." : outcome === "failed_attempts" ? "5 wrong attempts used. This activity is 0 points." : "Computer won. This activity is 0 points.";
     setStatus(label);
     const result = {
       solved: outcome === "victory",
@@ -875,24 +876,20 @@ function ComputerAssignmentGame({
       mistakes: finalMistakes,
       hintsUsed: 0,
       timeTakenSeconds: elapsedSeconds,
-      moveHistory,
+      moveHistory: finalHistory,
     };
     onResult(result);
-    if (outcome === "victory" && !autoSubmittedRef.current) {
-      autoSubmittedRef.current = true;
-      window.setTimeout(onAutoSubmit, 500);
-    }
   }
 
-  function checkFinished() {
+  function checkFinished(finalHistory = moveHistoryRef.current) {
     const game = gameRef.current;
     if (!game.isGameOver()) return false;
     if (game.isCheckmate()) {
       const winner = game.turn() === "w" ? "black" : "white";
-      finish(winner === playerSide ? "victory" : "defeat");
+      finish(winner === playerSide ? "victory" : "defeat", mistakes, finalHistory);
       return true;
     }
-    finish("draw");
+    finish("draw", mistakes, finalHistory);
     return true;
   }
 
@@ -919,11 +916,12 @@ function ComputerAssignmentGame({
       commitClock();
       const move = gameRef.current.move(moveInput);
       if (!move) return;
-      setMoveHistory((current) => [...current, { moveNumber: current.length + 1, by: "computer", san: move.san, from: move.from, to: move.to, note: "Computer move" }]);
+      const nextHistory: MoveTrace[] = [...moveHistoryRef.current, { moveNumber: moveHistoryRef.current.length + 1, by: "computer", san: move.san, from: move.from, to: move.to, note: "Computer move" }];
+      setRecordedHistory(nextHistory);
       setPosition(gameRef.current.fen());
       setThinking(false);
       setStatus("Your turn.");
-      if (!checkFinished()) setTurnStartedAt(clockEnabled ? Date.now() : null);
+      if (!checkFinished(nextHistory)) setTurnStartedAt(clockEnabled ? Date.now() : null);
     } catch {
       setThinking(false);
     }
@@ -934,7 +932,7 @@ function ComputerAssignmentGame({
     gameRef.current = game;
     setPosition(game.fen());
     setMistakes(0);
-    setMoveHistory([]);
+    setRecordedHistory([]);
     setStarted(true);
     setThinking(false);
     setStartedAt(Date.now());
@@ -942,7 +940,6 @@ function ComputerAssignmentGame({
     setWhiteClockMs(startClockMs);
     setBlackClockMs(startClockMs);
     setStatus(playerSide === "white" ? "Your turn." : "Computer starts.");
-    autoSubmittedRef.current = false;
     onResult({ solved: false, mistakes: 0, hintsUsed: 0, timeTakenSeconds: 0, moveHistory: [] });
     if (playerSide === "black") window.setTimeout(requestComputerMove, 250);
   }
@@ -954,10 +951,11 @@ function ComputerAssignmentGame({
       const move = gameRef.current.move({ from: source, to: target, promotion });
       if (!move) throw new Error("Illegal move");
       setSelectedSquare(null);
-      setMoveHistory((current) => [...current, { moveNumber: current.length + 1, by: "student", san: move.san, from: move.from, to: move.to, note: "Student move" }]);
+      const nextHistory: MoveTrace[] = [...moveHistoryRef.current, { moveNumber: moveHistoryRef.current.length + 1, by: "student", san: move.san, from: move.from, to: move.to, note: "Student move" }];
+      setRecordedHistory(nextHistory);
       setPosition(gameRef.current.fen());
       setStatus("Computer thinking...");
-      if (!checkFinished()) {
+      if (!checkFinished(nextHistory)) {
         setTurnStartedAt(clockEnabled ? Date.now() : null);
         window.setTimeout(requestComputerMove, 200);
       }
@@ -966,8 +964,8 @@ function ComputerAssignmentGame({
       const nextMistakes = mistakes + 1;
       setMistakes(nextMistakes);
       setStatus(nextMistakes >= 5 ? "5 wrong attempts used. This activity failed." : `Illegal move. ${5 - nextMistakes} wrong attempts left.`);
-      onResult({ solved: false, failed: false, outcome: "in_progress", mistakes: nextMistakes, hintsUsed: 0, timeTakenSeconds: elapsedSeconds, moveHistory });
-      if (nextMistakes >= 5) finish("failed_attempts", nextMistakes);
+      onResult({ solved: false, failed: false, outcome: "in_progress", mistakes: nextMistakes, hintsUsed: 0, timeTakenSeconds: elapsedSeconds, moveHistory: moveHistoryRef.current });
+      if (nextMistakes >= 5) finish("failed_attempts", nextMistakes, moveHistoryRef.current);
       return false;
     }
   }

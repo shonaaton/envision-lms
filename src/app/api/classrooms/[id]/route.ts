@@ -7,16 +7,18 @@ import { ClassroomChatMessage, ClassroomSession, LiveQuestion, LiveQuestionRespo
 import { buildGeneratedSessions } from "@/lib/classroomSchedule";
 import { deleteClassroomSessionInstances, syncClassroomSessionInstances } from "@/lib/classroomSessionInstances";
 import { canAccessFeature, isSuperAdminSession } from "@/lib/featureAccess";
-import { academyDateKey, academyDateTime } from "@/lib/academyTime";
+import { academyDateKey, academyDateTime, formatAcademyDateTime } from "@/lib/academyTime";
 import { coachCanAccessClassroomSession, isPrimaryClassroomCoach, limitClassroomToCoachSessions } from "@/lib/classroomCoachAccess";
 import { ensureTopicContinuationSession, recalculateFutureSessionTopics, shouldContinueTopic, topicCompletedForOutcome } from "@/lib/classroomLifecycle";
 import { recordActivity } from "@/lib/activity";
 import { User } from "@/models/User";
+import { Notification } from "@/models/Fee";
 import { Homework, Submission } from "@/models/Homework";
 import { AssignmentAutomationLog } from "@/models/AssignmentTemplate";
 import { PGN } from "@/models/PGN";
 import { Booking } from "@/models/Booking";
 import { DemoBooking } from "@/models/Onboarding";
+import { sendAutomationEmail } from "@/lib/emailAutomation";
 
 export const dynamic = "force-dynamic";
 
@@ -142,6 +144,155 @@ async function canAccessRecord(doc: any, user: any, allowSubstitute = false, sch
   return (doc?.students || []).some((value: any) => recordId(value) === userId);
 }
 
+function classroomHref(classroomId: string, sessionId?: string) {
+  return sessionId ? `/classrooms/${classroomId}?session=${encodeURIComponent(sessionId)}` : `/classrooms/${classroomId}`;
+}
+
+function scheduleTimeLabel(value?: string | Date | null) {
+  if (!value) return "";
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return new Intl.DateTimeFormat("en-IN", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    }).format(new Date(`${value}T00:00:00+05:30`));
+  }
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : formatAcademyDateTime(date);
+}
+
+function scheduleChanged(before: any, after: any) {
+  if (!before || !after) return false;
+  return (
+    scheduleTimeLabel(before.scheduledFor) !== scheduleTimeLabel(after.scheduledFor) ||
+    String(before.startTime || "") !== String(after.startTime || "") ||
+    Number(before.durationMinutes || 0) !== Number(after.durationMinutes || 0)
+  );
+}
+
+function scheduleChangeCopy({
+  action,
+  classroom,
+  previousSession,
+  currentSession,
+  previousClassDate,
+  shiftedCount,
+  restartDate,
+}: {
+  action: string;
+  classroom: any;
+  previousSession?: any;
+  currentSession?: any;
+  previousClassDate?: any;
+  shiftedCount?: number;
+  restartDate?: string;
+}) {
+  const classTitle = String(classroom?.title || "Class");
+  const sessionTitle = String(currentSession?.topicName || previousSession?.topicName || classTitle);
+  const previousTime = scheduleTimeLabel(previousSession?.scheduledFor || previousClassDate);
+  const nextTime = scheduleTimeLabel(currentSession?.scheduledFor || classroom?.classDate);
+
+  if (action === "cancel_series") {
+    return {
+      type: "classroom.series.cancelled",
+      title: "Class series cancelled",
+      message: `${classTitle} has been cancelled. All unfinished classes in this series are cancelled.`,
+    };
+  }
+  if (action === "cancel_class" || action === "cancel_session") {
+    const timeText = previousTime || nextTime ? ` scheduled for ${previousTime || nextTime}` : "";
+    return {
+      type: "classroom.session.cancelled",
+      title: "Class cancelled",
+      message: `${sessionTitle}${timeText} has been cancelled.`,
+    };
+  }
+  if (action === "shift_future_sessions") {
+    const restartText = restartDate ? ` starting from ${scheduleTimeLabel(restartDate) || restartDate}` : "";
+    return {
+      type: "classroom.series.rescheduled",
+      title: "Class schedule updated",
+      message: `${shiftedCount || 0} future class${shiftedCount === 1 ? "" : "es"} in ${classTitle} were rescheduled${restartText}.`,
+    };
+  }
+  const fromText = previousTime ? ` from ${previousTime}` : "";
+  const toText = nextTime ? ` to ${nextTime}` : "";
+  return {
+    type: "classroom.session.rescheduled",
+    title: "Class rescheduled",
+    message: `${sessionTitle} in ${classTitle} has been rescheduled${fromText}${toText}.`,
+  };
+}
+
+async function notifyClassroomScheduleChange({
+  classroom,
+  action,
+  previousSession,
+  currentSession,
+  previousClassDate,
+  shiftedCount,
+  restartDate,
+}: {
+  classroom: any;
+  action: string;
+  previousSession?: any;
+  currentSession?: any;
+  previousClassDate?: any;
+  shiftedCount?: number;
+  restartDate?: string;
+}) {
+  const classroomId = recordId(classroom?._id);
+  if (!classroomId) return;
+  const sessionId = recordId(currentSession?._id || previousSession?._id);
+  const coachIds = [
+    currentSession?.substituteCoach,
+    previousSession?.substituteCoach,
+    classroom?.coach,
+    classroom?.instructor,
+  ].map(recordId).filter(Boolean);
+  const studentIds = (classroom?.students || []).map(recordId).filter(Boolean);
+  const recipientIds = Array.from(new Set([...coachIds.slice(0, 1), ...studentIds]));
+  if (!recipientIds.length) return;
+
+  const recipients = await User.find({ _id: { $in: recipientIds }, isActive: { $ne: false } }).select("_id name email role").lean();
+  if (!recipients.length) return;
+
+  const copy = scheduleChangeCopy({ action, classroom, previousSession, currentSession, previousClassDate, shiftedCount, restartDate });
+  const href = classroomHref(classroomId, sessionId || undefined);
+  const metadata = {
+    classroom: classroomId,
+    sessionId,
+    action,
+    href,
+    previousScheduledFor: previousSession?.scheduledFor || previousClassDate || "",
+    scheduledFor: currentSession?.scheduledFor || classroom?.classDate || "",
+    shiftedCount: shiftedCount || 0,
+  };
+
+  await Notification.insertMany(
+    recipients.map((recipient: any) => ({
+      user: recipient._id,
+      type: copy.type,
+      title: copy.title,
+      message: copy.message,
+      metadata,
+    }))
+  );
+
+  await Promise.all(
+    recipients
+      .filter((recipient: any) => recipient.email)
+      .map((recipient: any) =>
+        sendAutomationEmail({
+          to: String(recipient.email),
+          subject: copy.title,
+          message: `Hello ${recipient.name || ""},\n\n${copy.message}`,
+          metadata: { kind: "classroom_schedule_change", ...metadata, userId: recordId(recipient._id) },
+        })
+      )
+  );
+}
+
 export async function GET(req: Request, { params }: { params: { id: string } }) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -184,6 +335,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const previousClassDate = existing.classDate;
   const previousStartTime = existing.startTime;
   const previousDurationMinutes = existing.durationMinutes;
+  let shiftedSessionCount = 0;
+  let shiftedRestartDate = "";
   const previousSession = body.sessionId
     ? JSON.parse(JSON.stringify(existing.generatedSessions?.id?.(String(body.sessionId || "")) || (existing.generatedSessions || []).find((item: any) => String(item._id) === String(body.sessionId || "")) || null))
     : null;
@@ -328,6 +481,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
         : item.notes;
     });
 
+    shiftedSessionCount = movable.length;
+    shiftedRestartDate = restartKey;
     existing.startDate = new Date(body.restartDate);
     await recordActivity({
       actor: (session.user as any).id,
@@ -486,11 +641,37 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   }
   await syncClassroomSessionInstances(params.id);
   const activityAction = String(body.action || "update_classroom");
-  if (!["mark_session_outcome", "shift_future_sessions"].includes(activityAction)) {
-    const sessionId = String(body.sessionId || "");
-    const currentSession = sessionId
-      ? existing.generatedSessions?.id?.(sessionId) || (existing.generatedSessions || []).find((item: any) => String(item._id) === sessionId)
+  const sessionId = String(body.sessionId || "");
+  const currentSession = sessionId
+    ? existing.generatedSessions?.id?.(sessionId) || (existing.generatedSessions || []).find((item: any) => String(item._id) === sessionId)
+    : Array.isArray(existing.generatedSessions) && existing.generatedSessions.length === 1
+      ? existing.generatedSessions[0]
       : null;
+  const shouldNotifyScheduleChange = (
+    ["cancel_class", "cancel_series", "cancel_session", "reschedule_class", "reschedule_session", "shift_future_sessions"].includes(activityAction) ||
+    (activityAction === "update_session" && scheduleChanged(previousSession, currentSession))
+  );
+  if (shouldNotifyScheduleChange) {
+    const notificationPreviousSession = previousSession || (["cancel_class", "reschedule_class"].includes(activityAction)
+      ? {
+          _id: currentSession?._id,
+          topicName: existing.topicName || existing.title,
+          scheduledFor: previousClassDate ? safeAcademyDateTime(previousClassDate, String(previousStartTime || existing.startTime || "00:00")) : undefined,
+          startTime: previousStartTime,
+          durationMinutes: previousDurationMinutes,
+        }
+      : undefined);
+    await notifyClassroomScheduleChange({
+      classroom: existing,
+      action: activityAction,
+      previousSession: notificationPreviousSession,
+      currentSession,
+      previousClassDate,
+      shiftedCount: shiftedSessionCount,
+      restartDate: shiftedRestartDate,
+    });
+  }
+  if (!["mark_session_outcome", "shift_future_sessions"].includes(activityAction)) {
     const commonMetadata = {
       action: activityAction,
       title: existing.title,

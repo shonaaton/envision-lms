@@ -68,6 +68,7 @@ export default function HomeworkComputerReviewBoard({ activity, result }: { acti
   const start = String(activity?.computer?.fen || activity?.fen || startFen);
   const side = activity?.computer?.side === "black" ? "black" : "white";
   const [step, setStep] = useState(history.length);
+  const won = Boolean(result?.solved || result?.outcome === "victory");
   const activeEntry = step > 0 ? history[step - 1] : undefined;
   const position = useMemo(() => replayPosition(start, history, step), [start, history, step]);
 
@@ -105,9 +106,9 @@ export default function HomeworkComputerReviewBoard({ activity, result }: { acti
           <div className="mt-1 font-semibold text-slate-950">{result?.outcome ? String(result.outcome).replaceAll("_", " ") : "No result recorded"}</div>
           <div className="mt-1 break-words font-mono text-xs text-slate-500">{start}</div>
         </div>
-        <div className="grid grid-cols-3 gap-2 text-center text-xs font-bold">
+        <div className={`grid gap-2 text-center text-xs font-bold ${won ? "grid-cols-2" : "grid-cols-3"}`}>
           <div className="rounded-lg border border-slate-200 bg-white px-2 py-2"><div className="text-brand">{result?.solved ? "Won" : "0 pts"}</div><div className="text-slate-500">Score</div></div>
-          <div className="rounded-lg border border-slate-200 bg-white px-2 py-2"><div className="text-brand">{result?.mistakes || 0}</div><div className="text-slate-500">Wrong</div></div>
+          {!won && <div className="rounded-lg border border-slate-200 bg-white px-2 py-2"><div className="text-brand">{result?.mistakes || 0}</div><div className="text-slate-500">Wrong</div></div>}
           <div className="rounded-lg border border-slate-200 bg-white px-2 py-2"><div className="text-brand">{result?.timeTakenSeconds || 0}s</div><div className="text-slate-500">Time</div></div>
         </div>
         <div className="max-h-72 space-y-2 overflow-y-auto pr-1">

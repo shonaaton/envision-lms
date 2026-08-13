@@ -2,6 +2,7 @@ import { academyDateKey, academyDateTime, ACADEMY_TIME_ZONE, formatAcademyDateTi
 import { resolvePublicAppUrl } from "@/lib/appUrl";
 import { dbConnect } from "@/lib/db";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
+import { notifyFailure } from "@/lib/failureNotifications";
 import { Batch } from "@/models/Batch";
 import { Classroom } from "@/models/Classroom";
 import { Homework, HomeworkEmailReminder, Submission } from "@/models/Homework";
@@ -323,7 +324,23 @@ export async function processHomeworkEmailReminder(reminderId: unknown) {
       $unset: { processingStartedAt: 1 },
     }
   );
-  if (attempts < MAX_ATTEMPTS) scheduleHomeworkReminder(reminder._id, new Date(Date.now() + RETRY_DELAY_MS));
+  if (attempts >= MAX_ATTEMPTS) {
+    void notifyFailure({
+      title: "Homework email reminder exhausted retries",
+      error: "Email automation did not confirm delivery.",
+      metadata: {
+        automation: "homework_email_reminder",
+        reminderId: String(reminder._id || ""),
+        homeworkId: String(reminder.homework || ""),
+        studentId: String(reminder.student || ""),
+        studentEmail: String(reminder.studentEmail || ""),
+        reminderKind: String(reminder.kind || ""),
+        attempts,
+      },
+    });
+  } else {
+    scheduleHomeworkReminder(reminder._id, new Date(Date.now() + RETRY_DELAY_MS));
+  }
   return { processed: true, failed: attempts >= MAX_ATTEMPTS };
 }
 
@@ -332,6 +349,7 @@ function scheduleHomeworkReminder(reminderId: unknown, dueAt: Date) {
   const timer = setTimeout(() => {
     void processHomeworkEmailReminder(reminderId).catch((error) => {
       console.error("Homework email reminder failed", error);
+      void notifyFailure({ title: "Homework email reminder failed", error, metadata: { automation: "homework_email_reminder", reminderId: String(reminderId || "") } });
       scheduleHomeworkReminder(reminderId, new Date(Date.now() + RETRY_DELAY_MS));
     });
   }, waitMs);

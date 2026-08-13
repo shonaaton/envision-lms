@@ -1,5 +1,6 @@
 import { dbConnect } from "@/lib/db";
 import { sendEmailAutomation } from "@/lib/emailAutomation";
+import { notifyFailure } from "@/lib/failureNotifications";
 import { resolvePublicAppUrl } from "@/lib/appUrl";
 import { AskCoachEmailReminder, AskCoachMessage } from "@/models/AskCoach";
 
@@ -147,7 +148,21 @@ export async function processAskCoachEmailReminder(reminderId: unknown) {
       $unset: { processingStartedAt: 1 },
     }
   );
-  if (attempts < MAX_ATTEMPTS) scheduleReminder(reminder._id, new Date(Date.now() + RETRY_DELAY_MS));
+  if (attempts >= MAX_ATTEMPTS) {
+    void notifyFailure({
+      title: "Ask Coach unread email reminder exhausted retries",
+      error: "Email automation did not confirm delivery.",
+      metadata: {
+        automation: "ask_coach_unread_email",
+        reminderId: String(reminder._id || ""),
+        recipientEmail: String(reminder.recipientEmail || ""),
+        messageId: String(reminder.message || ""),
+        attempts,
+      },
+    });
+  } else {
+    scheduleReminder(reminder._id, new Date(Date.now() + RETRY_DELAY_MS));
+  }
   return { processed: true, failed: attempts >= MAX_ATTEMPTS };
 }
 
@@ -156,6 +171,7 @@ function scheduleReminder(reminderId: unknown, dueAt: Date) {
   const timer = setTimeout(() => {
     void processAskCoachEmailReminder(reminderId).catch((error) => {
       console.error("Ask Coach unread email reminder failed", error);
+      void notifyFailure({ title: "Ask Coach unread email reminder failed", error, metadata: { automation: "ask_coach_unread_email", reminderId: String(reminderId || "") } });
       scheduleReminder(reminderId, new Date(Date.now() + RETRY_DELAY_MS));
     });
   }, waitMs);

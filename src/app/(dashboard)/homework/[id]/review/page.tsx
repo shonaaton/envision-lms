@@ -161,7 +161,7 @@ export default async function HomeworkReviewPage({ params }: { params: { id: str
                     </span>
                   </div>
                   <div className="mb-3 flex flex-wrap gap-2 text-xs text-slate-500">
-                    <span>Wrong attempts {result?.mistakes || 0}</span>
+                    {!result?.solved && <span>Wrong attempts {result?.mistakes || 0}</span>}
                     <span>Outcome {result?.outcome ? String(result.outcome).replaceAll("_", " ") : "Not recorded"}</span>
                     <span>Time {result?.timeTakenSeconds || 0}s</span>
                   </div>

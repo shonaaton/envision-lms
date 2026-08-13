@@ -15,7 +15,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body>
         <Providers>{children}</Providers>
-        <Toaster richColors theme="light" position="top-right" />
+        <Toaster
+          richColors
+          theme="light"
+          position="bottom-left"
+          duration={1400}
+          visibleToasts={2}
+          offset={16}
+        />
       </body>
     </html>
   );

@@ -776,6 +776,7 @@ function ComputerAssignmentGame({
   const [started, setStarted] = useState(false);
   const [thinking, setThinking] = useState(false);
   const [status, setStatus] = useState("Start the game when you are ready.");
+  const [outcome, setOutcome] = useState("");
   const [mistakes, setMistakes] = useState(0);
   const [moveHistory, setMoveHistory] = useState<MoveTrace[]>([]);
   const moveHistoryRef = useRef<MoveTrace[]>([]);
@@ -787,7 +788,9 @@ function ComputerAssignmentGame({
   const [blackClockMs, setBlackClockMs] = useState<number | null>(startClockMs);
   const [tick, setTick] = useState(0);
 
-  const isPlayerTurn = started && !thinking && gameRef.current.turn() === playerTurn && !gameRef.current.isGameOver();
+  const activityFinished = Boolean(outcome);
+  const activityWon = outcome === "victory";
+  const isPlayerTurn = started && !thinking && !activityFinished && gameRef.current.turn() === playerTurn && !gameRef.current.isGameOver();
   const elapsedSeconds = startedAt ? Math.max(0, Math.round((Date.now() - startedAt) / 1000)) : 0;
 
   useEffect(() => {
@@ -867,13 +870,16 @@ function ComputerAssignmentGame({
     setThinking(false);
     setTurnStartedAt(null);
     const failed = outcome !== "victory";
+    const reportedMistakes = outcome === "victory" ? 0 : finalMistakes;
     const label = outcome === "victory" ? "You won. Activity completed. Submit the assignment when all activities are done." : outcome === "timeout" ? "Time is over. This activity is 0 points." : outcome === "failed_attempts" ? "5 wrong attempts used. This activity is 0 points." : "Computer won. This activity is 0 points.";
+    setOutcome(outcome);
+    if (outcome === "victory") setMistakes(0);
     setStatus(label);
     const result = {
       solved: outcome === "victory",
       failed,
       outcome,
-      mistakes: finalMistakes,
+      mistakes: reportedMistakes,
       hintsUsed: 0,
       timeTakenSeconds: elapsedSeconds,
       moveHistory: finalHistory,
@@ -928,10 +934,12 @@ function ComputerAssignmentGame({
   }
 
   function startGame() {
+    if (activityFinished) return;
     const game = buildGame(computer.fen || activity.fen || startFen);
     gameRef.current = game;
     setPosition(game.fen());
     setMistakes(0);
+    setOutcome("");
     setRecordedHistory([]);
     setStarted(true);
     setThinking(false);
@@ -1010,7 +1018,13 @@ function ComputerAssignmentGame({
           <div className="inline-flex items-center gap-2 rounded-full bg-purple-50 px-3 py-1 text-xs font-black text-purple-700"><Bot size={14} /> Assignment bot</div>
           <div className="mt-1 text-sm font-semibold text-slate-600">Level {minLevel}-{maxLevel}, you play {playerSide}. {clockEnabled ? `Clock ${timeControl.minutes}+${timeControl.increment || 0}` : "No clock"}.</div>
         </div>
-        <button type="button" disabled={locked || started} className="inline-flex h-9 items-center gap-2 rounded-lg bg-brand px-3 text-xs font-black text-white disabled:bg-slate-300" onClick={startGame}><Play size={14} /> Start</button>
+        {activityFinished ? (
+          <span className={`inline-flex h-9 items-center rounded-lg px-3 text-xs font-black ${activityWon ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>
+            {activityWon ? "Activity complete" : "Activity marked 0"}
+          </span>
+        ) : (
+          <button type="button" disabled={locked || started} className="inline-flex h-9 items-center gap-2 rounded-lg bg-brand px-3 text-xs font-black text-white disabled:bg-slate-300" onClick={startGame}><Play size={14} /> Start</button>
+        )}
       </div>
       <div className="grid gap-3 lg:grid-cols-[minmax(260px,420px)_minmax(0,1fr)]">
         <div className="rounded-lg bg-[#31210f] p-2">
@@ -1046,14 +1060,14 @@ function ComputerAssignmentGame({
           <div className={`rounded-lg px-3 py-2 text-sm font-bold ${status.includes("won") ? "bg-emerald-50 text-emerald-700" : status.includes("failed") || status.includes("over") || status.includes("Computer won") ? "bg-red-50 text-red-700" : "bg-slate-50 text-slate-700"}`}>
             {thinking ? "Computer thinking..." : status}
           </div>
-          <div className="rounded-lg border border-slate-200 bg-white p-3">
+          {!activityWon && <div className="rounded-lg border border-slate-200 bg-white p-3">
             <div className="mb-2 flex items-center justify-between text-xs font-bold uppercase tracking-wide text-slate-500">
-              <span>Wrong attempts</span><span>{mistakes}/5</span>
+              <span>{activityFinished ? "Final wrong attempts" : "Wrong attempts"}</span><span>{mistakes}/5</span>
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-slate-100">
               <div className="h-full bg-red-500" style={{ width: `${Math.min(100, mistakes * 20)}%` }} />
             </div>
-          </div>
+          </div>}
           <div className="max-h-44 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-2 text-sm">
             {!moveHistory.length && <div className="px-2 py-4 text-center text-slate-500">No moves yet.</div>}
             {moveHistory.map((move) => (

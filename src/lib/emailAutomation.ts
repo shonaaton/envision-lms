@@ -1,3 +1,5 @@
+import { notifyFailure } from "@/lib/failureNotifications";
+
 type AutomationEmailInput = {
   to?: string;
   subject: string;
@@ -34,10 +36,16 @@ async function sendEmailToWebhook(input: AutomationEmailInput, webhook?: string)
     const delivered = response.ok && payload?.delivered !== false && payload?.ok !== false;
     if (!delivered) {
       console.error("Email automation rejected delivery", { status: response.status, payload });
+      if (input.metadata?.kind !== "failure_notification") {
+        void notifyFailure({ title: "Email automation rejected delivery", error: `Webhook responded with status ${response.status}`, metadata: { automation: "email_delivery", payload, originalEmail: { to: input.to, subject: input.subject, metadata: input.metadata } } });
+      }
     }
     return { ok: delivered, delivered, status: response.status, skipped: false, payload };
   } catch (error) {
     console.error("Email automation failed", error);
+    if (input.metadata?.kind !== "failure_notification") {
+      void notifyFailure({ title: "Email automation request failed", error, metadata: { automation: "email_delivery", originalEmail: { to: input.to, subject: input.subject, metadata: input.metadata } } });
+    }
     return { ok: false, delivered: false, skipped: false, error: "webhook_failed" };
   }
 }

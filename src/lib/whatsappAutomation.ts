@@ -1,3 +1,5 @@
+import { notifyFailure } from "@/lib/failureNotifications";
+
 type WhatsAppReminderInput = {
   to?: string;
   message: string;
@@ -103,10 +105,12 @@ export async function sendWhatsAppReminder(input: WhatsAppReminderInput) {
     const errorMessage = delivered ? "" : String(payload?.error?.message || payload?.error?.error_user_msg || "");
     if (!delivered) {
       console.error("WhatsApp reminder failed", { status: response.status, payload, metadata: input.metadata });
+      void notifyFailure({ title: "WhatsApp reminder delivery failed", error: errorMessage || "WhatsApp API did not confirm delivery", metadata: { automation: "whatsapp_reminder", status: response.status, payload, reminderMetadata: input.metadata, recipient } });
     }
     return { ok: delivered, delivered, skipped: false, status: response.status, payload, errorMessage, testMode, recipient };
   } catch (error) {
     console.error("WhatsApp reminder request failed", error);
+    void notifyFailure({ title: "WhatsApp reminder request failed", error, metadata: { automation: "whatsapp_reminder", reminderMetadata: input.metadata, recipient } });
     return { ok: false, delivered: false, skipped: false, error: "whatsapp_failed", testMode, recipient };
   }
 }

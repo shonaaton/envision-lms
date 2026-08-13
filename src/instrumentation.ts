@@ -8,12 +8,15 @@ export async function register() {
 
   const { processDueAskCoachEmailReminders } = await import("@/lib/askCoachEmailReminders");
   const { processDueHomeworkEmailReminders } = await import("@/lib/homeworkEmailReminders");
+  const { notifyFailure } = await import("@/lib/failureNotifications");
   const run = () => {
     void processDueAskCoachEmailReminders().catch((error) => {
       console.error("Scheduled Ask Coach unread email processing failed", error);
+      void notifyFailure({ title: "Scheduled Ask Coach unread email processing failed", error, metadata: { automation: "ask_coach_email_reminders" } });
     });
     void processDueHomeworkEmailReminders().catch((error) => {
       console.error("Scheduled homework email reminder processing failed", error);
+      void notifyFailure({ title: "Scheduled homework email reminder processing failed", error, metadata: { automation: "homework_email_reminders" } });
     });
   };
 

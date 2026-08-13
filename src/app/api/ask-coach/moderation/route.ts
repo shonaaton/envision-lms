@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
+import { recordActivity } from "@/lib/activity";
 import { AskCoachMessage } from "@/models/AskCoach";
 import { notifyUser } from "@/lib/askCoach";
 
@@ -38,5 +39,19 @@ export async function PATCH(req: Request) {
     .populate("sender receiver", "name username email role")
     .populate("batch", "name")
     .lean();
+  await recordActivity({
+    actor: adminId,
+    targetUser: message.sender?.toString?.() || String(message.sender || ""),
+    type: "ask_coach.message_moderated",
+    label: `${action} Ask Coach message`,
+    entityType: "AskCoachMessage",
+    entityId: message._id.toString(),
+    metadata: {
+      action,
+      note: note || "",
+      conversation: message.conversation?.toString?.() || "",
+      source: "manual_admin",
+    },
+  });
   return NextResponse.json(updated);
 }

@@ -15,6 +15,7 @@ import { AlertCircle, CheckCircle2, Clock3, Download, FileText, IndianRupee, Mai
 import { InvoiceCreationForm } from "@/components/fees/InvoiceCreationForm";
 import { canAccessFeature, getFeaturePermissionState } from "@/lib/featureAccess";
 import { isFeesManager, requireFeesAccess } from "@/lib/feesAccess";
+import { recordActivity } from "@/lib/activity";
 
 export const dynamic = "force-dynamic";
 
@@ -84,7 +85,8 @@ function invoiceReminderMessage(invoice: any, invoiceUrl: string) {
 
 async function createManualInvoice(formData: FormData) {
   "use server";
-  if (!(await requireFeesAccess("invoice", "invoices"))) throw new Error("Forbidden");
+  const session = await requireFeesAccess("invoice", "invoices");
+  if (!session) throw new Error("Forbidden");
   await dbConnect();
   const invoiceType = String(formData.get("type") || "manual");
   const plan: any = invoiceType === "manual" ? null : await FeePlan.findById(formData.get("plan"));
@@ -104,6 +106,11 @@ async function createManualInvoice(formData: FormData) {
     notes: String(formData.get("notes") || ""),
     invoiceMode: String(formData.get("invoiceMode") || plan?.gstMode || "non_gst") as any,
     gstPercentage: Number(formData.get("gstPercentage") || plan?.gstPercentage || 0),
+    activity: {
+      actor: (session.user as any).id,
+      source: "manual_admin",
+      label: `Created ${invoiceType === "manual" ? "manual" : invoiceType} invoice`,
+    },
   });
   revalidatePath("/fees/invoices");
 }
@@ -118,7 +125,7 @@ async function markInvoicePaid(formData: FormData) {
   if (invoice?.type === "credits" && !(await canAccessFeature("invoices", session.user as any, "credit"))) {
     throw new Error("Forbidden");
   }
-  await applyInvoicePayment(invoiceId);
+  await applyInvoicePayment(invoiceId, undefined, { actor: (session.user as any).id, source: "manual_admin" });
   revalidatePath("/fees/invoices");
   revalidatePath("/fees/student-fees");
   revalidatePath("/fees");
@@ -126,9 +133,21 @@ async function markInvoicePaid(formData: FormData) {
 
 async function cancelInvoice(formData: FormData) {
   "use server";
-  if (!(await requireFeesAccess("edit", "invoices"))) throw new Error("Forbidden");
+  const session = await requireFeesAccess("edit", "invoices");
+  if (!session) throw new Error("Forbidden");
   await dbConnect();
-  await Invoice.findByIdAndUpdate(formData.get("invoice"), { status: "cancelled" });
+  const invoice: any = await Invoice.findByIdAndUpdate(formData.get("invoice"), { status: "cancelled" }, { new: true }).lean();
+  if (invoice) {
+    await recordActivity({
+      actor: (session.user as any).id,
+      targetUser: invoice.student?.toString?.() || String(invoice.student || ""),
+      type: "fees.invoice.cancelled",
+      label: `Cancelled invoice ${invoice.invoiceNumber}`,
+      entityType: "Invoice",
+      entityId: invoice._id.toString(),
+      metadata: { invoiceNumber: invoice.invoiceNumber, amount: invoice.totalAmount, source: "manual_admin" },
+    });
+  }
   revalidatePath("/fees/invoices");
 }
 
@@ -156,6 +175,22 @@ async function deleteInvoice(formData: FormData) {
     CreditLedger.deleteMany({ invoice: invoice._id }),
     Invoice.findByIdAndDelete(invoice._id),
   ]);
+  await recordActivity({
+    actor: (session.user as any).id,
+    targetUser: invoice.student?.toString?.() || String(invoice.student || ""),
+    type: "fees.invoice.deleted",
+    label: `Deleted invoice ${invoice.invoiceNumber}`,
+    entityType: "Invoice",
+    entityId: invoice._id.toString(),
+    metadata: {
+      invoiceNumber: invoice.invoiceNumber,
+      invoiceType: invoice.type,
+      status: invoice.status,
+      amount: invoice.totalAmount,
+      credits: invoice.credits || 0,
+      source: "manual_admin",
+    },
+  });
   revalidatePath("/fees/invoices");
   revalidatePath("/fees/student-fees");
   revalidatePath("/fees");
@@ -163,7 +198,8 @@ async function deleteInvoice(formData: FormData) {
 
 async function sendInvoiceToStudent(formData: FormData) {
   "use server";
-  if (!(await requireFeesAccess("invoice", "invoices"))) throw new Error("Forbidden");
+  const session = await requireFeesAccess("invoice", "invoices");
+  if (!session) throw new Error("Forbidden");
   await dbConnect();
   const invoiceId = String(formData.get("invoice") || "");
   const returnStudent = String(formData.get("studentFilter") || "");
@@ -211,6 +247,15 @@ async function sendInvoiceToStudent(formData: FormData) {
     lastSentTo: invoice.student.email,
     lastEmailStatus: status,
   });
+  await recordActivity({
+    actor: (session.user as any).id,
+    targetUser: invoice.student._id.toString(),
+    type: "fees.invoice.emailed",
+    label: `Sent invoice ${invoice.invoiceNumber} to ${invoice.student.email}`,
+    entityType: "Invoice",
+    entityId: invoice._id.toString(),
+    metadata: { invoiceNumber: invoice.invoiceNumber, email: invoice.student.email, status, source: "manual_admin" },
+  });
   if (delivery.delivered) {
     await Notification.create({
       user: invoice.student._id,
@@ -226,7 +271,8 @@ async function sendInvoiceToStudent(formData: FormData) {
 
 async function sendInvoiceWhatsAppTest(formData: FormData) {
   "use server";
-  if (!(await requireFeesAccess("invoice", "invoices"))) throw new Error("Forbidden");
+  const session = await requireFeesAccess("invoice", "invoices");
+  if (!session) throw new Error("Forbidden");
   await dbConnect();
   const invoiceId = String(formData.get("invoice") || "");
   const returnStudent = String(formData.get("studentFilter") || "");
@@ -245,12 +291,22 @@ async function sendInvoiceWhatsAppTest(formData: FormData) {
       invoiceUrl,
     },
   });
+  await recordActivity({
+    actor: (session.user as any).id,
+    targetUser: invoice.student._id.toString(),
+    type: "fees.invoice.whatsapp_test_sent",
+    label: `Sent WhatsApp test for invoice ${invoice.invoiceNumber}`,
+    entityType: "Invoice",
+    entityId: invoice._id.toString(),
+    metadata: { invoiceNumber: invoice.invoiceNumber, status: whatsappStatus(delivery), source: "manual_admin" },
+  });
   redirect(`${returnPath}whatsapp=${whatsappStatus(delivery)}${whatsappErrorParam(delivery)}`);
 }
 
 async function sendBulkInvoiceReminders(formData: FormData) {
   "use server";
-  if (!(await requireFeesAccess("invoice", "invoices"))) throw new Error("Forbidden");
+  const session = await requireFeesAccess("invoice", "invoices");
+  if (!session) throw new Error("Forbidden");
   await dbConnect();
   const mode = String(formData.get("invoiceReminderMode") || "due");
   const now = new Date();
@@ -302,6 +358,13 @@ async function sendBulkInvoiceReminders(formData: FormData) {
   }
 
   revalidatePath("/fees/invoices");
+  await recordActivity({
+    actor: (session.user as any).id,
+    type: "fees.invoice.bulk_reminders_sent",
+    label: `Sent bulk invoice reminders to ${summary.total} invoice${summary.total === 1 ? "" : "s"}`,
+    entityType: "Invoice",
+    metadata: { ...summary, mode, source: "manual_admin" },
+  });
   bulkReminderRedirect(summary);
 }
 

@@ -3,6 +3,7 @@ import { dbConnect } from "@/lib/db";
 import { getAcademySettings } from "@/lib/fees";
 import { ACADEMY_DEFAULTS, ACADEMY_FAVICON_URL, ACADEMY_LOGO_URL, ACADEMY_SIGNATURE_URL } from "@/lib/branding";
 import { AcademySettings } from "@/models/Fee";
+import { recordActivity } from "@/lib/activity";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { Image as ImageIcon, Save, Settings } from "lucide-react";
@@ -15,7 +16,7 @@ async function saveAcademySetup(formData: FormData) {
   if ((session?.user as any)?.role !== "admin") redirect("/dashboard");
   try {
     await dbConnect();
-    await AcademySettings.findOneAndUpdate(
+    const settings = await AcademySettings.findOneAndUpdate(
       {},
       {
         academyName: String(formData.get("academyName") || "").trim(),
@@ -35,6 +36,17 @@ async function saveAcademySetup(formData: FormData) {
       },
       { upsert: true, new: true }
     );
+    await recordActivity({
+      actor: (session!.user as any).id,
+      type: "academy.settings.updated",
+      label: "Updated academy settings",
+      entityType: "AcademySettings",
+      entityId: settings._id.toString(),
+      metadata: {
+        fields: ["academyName", "registeredAddress", "gstNumber", "email", "phone", "invoiceFooter", "invoiceMode", "gstPercentage", "invoicePrefix", "lowCreditThreshold"],
+        source: "manual_admin",
+      },
+    });
     revalidatePath("/admin/settings");
     revalidatePath("/fees");
     revalidatePath("/fees/invoices");

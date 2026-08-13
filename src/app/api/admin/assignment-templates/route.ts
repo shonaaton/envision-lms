@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { canAccessFeature } from "@/lib/featureAccess";
+import { recordActivity } from "@/lib/activity";
 import { normalizeTopicKey } from "@/lib/assignmentAutomation";
 import { assignmentTemplateSchema } from "@/lib/validation";
 import { AssignmentTemplate } from "@/models/AssignmentTemplate";
@@ -60,6 +61,19 @@ export async function POST(req: Request) {
       topicKey: normalizeTopicKey(body.topicName),
       createdBy: (session.user as any).id,
       updatedBy: (session.user as any).id,
+    });
+    await recordActivity({
+      actor: (session.user as any).id,
+      type: "homework.template.created",
+      label: `Created homework template ${created.title}`,
+      entityType: "AssignmentTemplate",
+      entityId: created._id.toString(),
+      metadata: {
+        topicName: created.topicName,
+        activityCount: Array.isArray(created.activities) ? created.activities.length : 0,
+        puzzleCount: Array.isArray(created.puzzles) ? created.puzzles.length : 0,
+        source: "manual_template",
+      },
     });
     return NextResponse.json(created);
   } catch (error: any) {

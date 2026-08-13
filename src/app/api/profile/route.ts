@@ -6,6 +6,7 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { User } from "@/models/User";
 import { canAccessFeature } from "@/lib/featureAccess";
+import { recordActivity } from "@/lib/activity";
 
 const profileSchema = z
   .object({
@@ -55,6 +56,18 @@ export async function PATCH(request: Request) {
       await unlink(path.join(process.cwd(), "public", "images", "profiles", filename)).catch(() => undefined);
     }
   }
+  await recordActivity({
+    actor: (session.user as any).id,
+    targetUser: (session.user as any).id,
+    type: "profile.updated",
+    label: "Updated profile details",
+    entityType: "User",
+    entityId: (session.user as any).id,
+    metadata: {
+      fields: Object.keys(parsed.data),
+      source: "self_service",
+    },
+  });
 
   return NextResponse.json({
     profile: {

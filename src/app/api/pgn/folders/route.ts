@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
+import { recordActivity } from "@/lib/activity";
 import { PGN } from "@/models/PGN";
 import { PgnFolder } from "@/models/PgnFolder";
 import { buildManageableFolderFilter, buildManageablePgnFilter, buildPgnFolderFilter, buildPgnLibraryFilter, canManageSharedFolder, normalizeFolderPath } from "@/lib/pgnAccess";
@@ -118,6 +119,19 @@ export async function POST(req: Request) {
     uploadedBy: (session.user as any).id,
     visibility,
   });
+  await recordActivity({
+    actor: (session.user as any).id,
+    type: "pgn.folder.created",
+    label: `Created PGN folder ${created.path}`,
+    entityType: "PgnFolder",
+    entityId: created._id.toString(),
+    metadata: {
+      path: created.path,
+      parentPath: created.parentPath,
+      visibility: created.visibility,
+      source: "manual_library",
+    },
+  });
 
   return NextResponse.json(created);
 }
@@ -183,6 +197,21 @@ export async function PATCH(req: Request) {
       return PGN.updateOne({ _id: doc._id }, { $set: { folder: nextFolder } });
     }),
   ]);
+  await recordActivity({
+    actor: (session.user as any).id,
+    type: "pgn.folder.renamed",
+    label: `Renamed PGN folder ${oldPath} to ${newPath}`,
+    entityType: "PgnFolder",
+    entityId: rootFolder?._id?.toString?.() || oldPath,
+    metadata: {
+      oldPath,
+      newPath,
+      updatedFolders: folders.length,
+      updatedPgns: docs.length,
+      visibility: folderVisibility || "mixed",
+      source: "manual_library",
+    },
+  });
 
   return NextResponse.json({ ok: true, name: newPath, updatedFolders: folders.length, updatedPgns: docs.length });
 }
@@ -214,6 +243,20 @@ export async function DELETE(req: Request) {
   if (!rootFolder && !deletedFolders.deletedCount && !deletedPgns.deletedCount) {
     return NextResponse.json({ error: "Folder not found" }, { status: 404 });
   }
+  await recordActivity({
+    actor: (session.user as any).id,
+    type: "pgn.folder.deleted",
+    label: `Deleted PGN folder ${name}`,
+    entityType: "PgnFolder",
+    entityId: rootFolder?._id?.toString?.() || name,
+    metadata: {
+      path: name,
+      deletedFolders: deletedFolders.deletedCount || 0,
+      deletedPgns: deletedPgns.deletedCount || 0,
+      visibility: folderVisibility || "mixed",
+      source: "manual_library",
+    },
+  });
 
   return NextResponse.json({ ok: true, deletedFolders: deletedFolders.deletedCount || 0, deletedPgns: deletedPgns.deletedCount || 0 });
 }

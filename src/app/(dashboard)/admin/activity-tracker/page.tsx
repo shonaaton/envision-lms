@@ -78,10 +78,12 @@ function formatDateTime(value?: Date | string | null) {
 function moduleLabel(type?: string) {
   const safe = String(type || "activity");
   if (safe.includes("attendance")) return "Attendance";
+  if (safe.includes("classroom")) return "Classrooms";
   if (safe.includes("homework")) return "Homework";
   if (safe.includes("pgn")) return "PGN Library";
+  if (safe.includes("tournament") || safe.includes("tactics") || safe.includes("king_hunt") || safe.includes("play_vs_computer") || safe.includes("square_trainer")) return "Chess Practice";
   if (safe.includes("booking")) return "Self Booking";
-  if (safe.includes("payment") || safe.includes("invoice")) return "Fees";
+  if (safe.includes("payment") || safe.includes("invoice") || safe.includes("fees") || safe.includes("credit")) return "Fees";
   if (safe.includes("user")) return "Users";
   if (safe.includes("coach")) return "Ask Coach";
   if (safe.includes("square")) return "Square Trainer";
@@ -93,9 +95,23 @@ function activityContext(item: any, batchNames: string) {
   const parts = [
     metadata.courseName ? `Course: ${metadata.courseName}` : "",
     metadata.batchName && !batchNames.includes(String(metadata.batchName)) ? `Batch: ${metadata.batchName}` : "",
+    metadata.source ? `Source: ${String(metadata.source).replace(/_/g, " ")}` : "",
+    metadata.invoiceNumber ? `Invoice: ${metadata.invoiceNumber}` : "",
+    typeof metadata.amount === "number" ? `Amount: ₹${(metadata.amount / 100).toLocaleString("en-IN")}` : "",
+    typeof metadata.credits === "number" ? `${metadata.credits > 0 ? "+" : ""}${metadata.credits} credits` : "",
+    typeof metadata.balanceAfter === "number" ? `Balance: ${metadata.balanceAfter}` : "",
+    metadata.reason ? `Reason: ${metadata.reason}` : "",
+    typeof metadata.accuracy === "number" ? `Accuracy: ${metadata.accuracy}%` : "",
+    typeof metadata.xp === "number" ? `${metadata.xp} XP` : "",
+    typeof metadata.coins === "number" ? `${metadata.coins} coins` : "",
+    typeof metadata.timeSeconds === "number" ? `Time: ${metadata.timeSeconds}s` : "",
+    typeof metadata.durationSeconds === "number" ? `Duration: ${metadata.durationSeconds}s` : "",
+    metadata.solved !== undefined ? `Solved: ${metadata.solved ? "yes" : "no"}` : "",
+    metadata.outcome ? `Outcome: ${metadata.outcome}` : "",
+    metadata.previousStatus && metadata.status ? `${metadata.previousStatus} -> ${metadata.status}` : "",
+    metadata.previousStartTime && metadata.startTime ? `${metadata.previousStartTime} -> ${metadata.startTime}` : "",
     typeof metadata.records === "number" ? `${metadata.records} records` : "",
     typeof metadata.totalScore === "number" ? `Score: ${metadata.totalScore}` : "",
-    typeof metadata.accuracy === "number" ? `Accuracy: ${metadata.accuracy}%` : "",
     item.entityType ? String(item.entityType) : "",
   ].filter(Boolean);
   return parts.join(" - ") || batchNames || "-";

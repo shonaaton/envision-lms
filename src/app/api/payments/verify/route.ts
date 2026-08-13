@@ -6,6 +6,7 @@ import { Classroom } from "@/models/Classroom";
 import { Booking } from "@/models/Booking";
 import { verifyCheckoutSignature } from "@/lib/payments/razorpay";
 import { markInvoicePaid } from "@/lib/fees";
+import { recordActivity } from "@/lib/activity";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +36,25 @@ export async function POST(req: Request) {
   } else if (pay?.purpose === "booking" && pay.refId) {
     await Booking.findByIdAndUpdate(pay.refId, { status: "confirmed", payment: pay._id });
   } else if (pay?.purpose === "invoice" && pay.refId) {
-    await markInvoicePaid(pay.refId.toString(), pay._id.toString());
+    await markInvoicePaid(pay.refId.toString(), pay._id.toString(), { actor: (session.user as any).id, source: "razorpay_checkout" });
+  }
+  if (pay) {
+    await recordActivity({
+      actor: (session.user as any).id,
+      targetUser: pay.user?.toString?.() || String(pay.user || ""),
+      type: "payment.verified",
+      label: `Verified Razorpay payment for ${pay.purpose}`,
+      entityType: "Payment",
+      entityId: pay._id.toString(),
+      metadata: {
+        purpose: pay.purpose,
+        refId: pay.refId?.toString?.() || "",
+        amount: pay.amount,
+        razorpayOrderId: razorpay_order_id,
+        razorpayPaymentId: razorpay_payment_id,
+        source: "razorpay_checkout",
+      },
+    });
   }
   return NextResponse.json({ ok: true, invoiceNumber: pay?.invoiceNumber });
 }

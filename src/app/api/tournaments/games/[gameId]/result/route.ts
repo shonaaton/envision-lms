@@ -5,6 +5,7 @@ import { TournamentGame } from "@/models/TournamentGame";
 import { Tournament } from "@/models/Tournament";
 import { autoAdvanceSwissTournament, completeGame, enforceTournamentGameTimeouts, finalizeTournamentIfComplete, queueCompletedArenaPlayers, recalculateTournamentStandings, syncArenaPairings } from "@/lib/tournamentEngine";
 import { StudentReward } from "@/models/ClassroomLive";
+import { recordActivity } from "@/lib/activity";
 import { cookies } from "next/headers";
 import { getTournamentGuestUsername } from "@/lib/tournamentGuests";
 import { inactiveStudentMessage, isCurrentStudent } from "@/lib/studentAccess";
@@ -96,6 +97,7 @@ export async function POST(req: Request, { params }: { params: { gameId: string 
   if (!session && !isGuestPlayer) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await req.json();
+  const action = String(body.action || "");
   const isPlayer = [String(game.whiteUser || ""), String(game.blackUser || "")].includes(userId);
   const isGuestWhite = normalizedGuest && String(game.whiteExternalUsername || "").toLowerCase() === normalizedGuest;
   const isGuestBlack = normalizedGuest && String(game.blackExternalUsername || "").toLowerCase() === normalizedGuest;
@@ -111,7 +113,7 @@ export async function POST(req: Request, { params }: { params: { gameId: string 
   }
   if (canActAsPlayer && actorKey) markActionTab(game, actorKey, tabId);
 
-  if (body.action === "resign") {
+  if (action === "resign") {
     if (!canActAsPlayer) return NextResponse.json({ error: "Only an assigned player can resign this game." }, { status: 400 });
     const userIsWhite = isGuestWhite || String(game.whiteUser || "") === userId;
     await completeGame(game, {
@@ -119,26 +121,54 @@ export async function POST(req: Request, { params }: { params: { gameId: string 
       termination: "resign",
       winnerKey: userIsWhite ? game.blackKey : game.whiteKey,
     });
-  } else if (body.action === "draw") {
+  } else if (action === "draw") {
     if (!canActAsPlayer) return NextResponse.json({ error: "Only assigned players can agree a draw." }, { status: 400 });
     if (!game.drawOfferBy || game.drawOfferBy === actorKey) {
       game.drawOfferBy = actorKey;
       await game.save();
+      await recordActivity({
+        actor: userId || undefined,
+        targetUser: userId || undefined,
+        type: "tournament.game.draw_offered",
+        label: "Offered draw in tournament game",
+        entityType: "TournamentGame",
+        entityId: game._id.toString(),
+        metadata: {
+          tournament: tournament._id.toString(),
+          round: game.roundNumber,
+          actorSide: actorKey === game.whiteKey ? "white" : "black",
+          source: userId ? "student_tournament" : "guest_tournament",
+        },
+      });
       return NextResponse.json({ ok: true, drawOffered: true, game });
     }
     await completeGame(game, {
       result: "1/2-1/2",
       termination: "draw_agreement",
     });
-  } else if (body.action === "decline_draw") {
+  } else if (action === "decline_draw") {
     if (!canActAsPlayer) return NextResponse.json({ error: "Only assigned players can decline a draw." }, { status: 400 });
     if (game.drawOfferBy && game.drawOfferBy !== actorKey) {
       game.drawOfferBy = "";
       await game.save();
+      await recordActivity({
+        actor: userId || undefined,
+        targetUser: userId || undefined,
+        type: "tournament.game.draw_declined",
+        label: "Declined draw in tournament game",
+        entityType: "TournamentGame",
+        entityId: game._id.toString(),
+        metadata: {
+          tournament: tournament._id.toString(),
+          round: game.roundNumber,
+          actorSide: actorKey === game.whiteKey ? "white" : "black",
+          source: userId ? "student_tournament" : "guest_tournament",
+        },
+      });
       return NextResponse.json({ ok: true, drawDeclined: true, game });
     }
     return NextResponse.json({ error: "There is no opponent draw offer to decline." }, { status: 400 });
-  } else if (body.action === "berserk") {
+  } else if (action === "berserk") {
     if (!canActAsPlayer) return NextResponse.json({ error: "Only assigned players can berserk." }, { status: 400 });
     if (!tournament.allowBerserk) return NextResponse.json({ error: "Berserk is disabled for this tournament." }, { status: 400 });
     if ((game.moveHistorySAN || []).length > 1) return NextResponse.json({ error: "Berserk is available only before the opening move limit." }, { status: 400 });
@@ -155,6 +185,20 @@ export async function POST(req: Request, { params }: { params: { gameId: string 
       game.berserkBlack = true;
     }
     await game.save();
+    await recordActivity({
+      actor: userId || undefined,
+      targetUser: userId || undefined,
+      type: "tournament.game.berserk",
+      label: "Used berserk in tournament game",
+      entityType: "TournamentGame",
+      entityId: game._id.toString(),
+      metadata: {
+        tournament: tournament._id.toString(),
+        round: game.roundNumber,
+        actorSide: userIsWhite ? "white" : "black",
+        source: userId ? "student_tournament" : "guest_tournament",
+      },
+    });
     return NextResponse.json({ ok: true, berserked: true, game });
   } else if (role === "admin" && body.result) {
     const previousResult = game.result || "*";
@@ -193,6 +237,23 @@ export async function POST(req: Request, { params }: { params: { gameId: string 
   if (tournament.type === "arena") await syncArenaPairings(tournament);
   await finalizeTournamentIfComplete(tournament);
   await tournament.save();
+  await recordActivity({
+    actor: userId || undefined,
+    targetUser: userId || undefined,
+    type: action ? `tournament.game.${action}` : "tournament.game.result_updated",
+    label: action ? `Tournament game ${action}` : "Updated tournament game result",
+    entityType: "TournamentGame",
+    entityId: game._id.toString(),
+    metadata: {
+      tournament: tournament._id.toString(),
+      round: game.roundNumber,
+      status: game.status,
+      result: game.result,
+      termination: game.termination,
+      actorSide: actorKey === game.whiteKey ? "white" : actorKey === game.blackKey ? "black" : role || "admin",
+      source: role === "admin" ? "manual_admin" : userId ? "student_tournament" : "guest_tournament",
+    },
+  });
 
   return NextResponse.json({ ok: true, game });
 }

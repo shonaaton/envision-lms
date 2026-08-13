@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { canAccessFeature } from "@/lib/featureAccess";
+import { recordActivity } from "@/lib/activity";
 import { Availability } from "@/models/Booking";
 import { User } from "@/models/User";
 
@@ -43,5 +44,19 @@ export async function PUT(req: Request) {
     body,
     { upsert: true, new: true }
   );
+  await recordActivity({
+    actor: (session.user as any).id,
+    targetUser: (session.user as any).id,
+    type: "availability.updated",
+    label: "Updated coach availability",
+    entityType: "Availability",
+    entityId: doc._id.toString(),
+    metadata: {
+      slots: Array.isArray(body.slots) ? body.slots.length : 0,
+      feePerSession: body.feePerSession ?? doc.feePerSession ?? 0,
+      timezone: body.timezone || doc.timezone || "Asia/Kolkata",
+      source: role === "instructor" ? "manual_coach" : "manual_admin",
+    },
+  });
   return NextResponse.json(doc);
 }

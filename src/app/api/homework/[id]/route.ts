@@ -5,6 +5,7 @@ import { Homework, Submission } from "@/models/Homework";
 import { homeworkSchema } from "@/lib/validation";
 import { canStudentAccessHomework } from "@/lib/homeworkAccess";
 import { cancelHomeworkDeadlineReminders, queueHomeworkDeadlineReminders } from "@/lib/homeworkEmailReminders";
+import { recordActivity } from "@/lib/activity";
 
 export const dynamic = "force-dynamic";
 
@@ -52,6 +53,23 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
   const body = homeworkSchema.parse(merged);
   const updated = await Homework.findByIdAndUpdate(params.id, { ...body, dueAt: raw.dueAt === null ? null : body.dueAt }, { new: true });
   await queueHomeworkDeadlineReminders(updated);
+  await recordActivity({
+    actor: (session.user as any).id,
+    type: "homework.updated",
+    label: `Updated homework ${updated?.title || existing.title}`,
+    entityType: "Homework",
+    entityId: params.id,
+    metadata: {
+      previousTitle: existing.title,
+      title: updated?.title || "",
+      previousDueAt: existing.dueAt || null,
+      dueAt: updated?.dueAt || null,
+      assignedStudents: Array.isArray(updated?.assignedStudents) ? updated.assignedStudents.length : 0,
+      assignedBatches: Array.isArray(updated?.assignedBatches) ? updated.assignedBatches.length : 0,
+      activities: Array.isArray(updated?.activities) ? updated.activities.length : 0,
+      source: "manual_coach_admin",
+    },
+  });
   return NextResponse.json(updated);
 }
 
@@ -67,5 +85,18 @@ export async function DELETE(_: Request, { params }: { params: { id: string } })
   }
   await cancelHomeworkDeadlineReminders(params.id);
   await Homework.findByIdAndDelete(params.id);
+  await recordActivity({
+    actor: (session.user as any).id,
+    type: "homework.deleted",
+    label: `Deleted homework ${existing.title}`,
+    entityType: "Homework",
+    entityId: params.id,
+    metadata: {
+      classroom: existing.classroom?.toString?.() || "",
+      assignedStudents: Array.isArray(existing.assignedStudents) ? existing.assignedStudents.length : 0,
+      assignedBatches: Array.isArray(existing.assignedBatches) ? existing.assignedBatches.length : 0,
+      source: "manual_coach_admin",
+    },
+  });
   return NextResponse.json({ ok: true });
 }

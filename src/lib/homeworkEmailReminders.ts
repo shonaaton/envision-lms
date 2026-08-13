@@ -8,6 +8,7 @@ import { Homework, HomeworkEmailReminder, Submission } from "@/models/Homework";
 import { User } from "@/models/User";
 
 type ReminderKind = "two_day" | "due_day";
+type ReminderTone = ReminderKind | "manual";
 
 const MAX_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 5 * 60 * 1000;
@@ -48,6 +49,57 @@ function reminderSubject(kind: ReminderKind, homeworkTitle: string) {
   return kind === "two_day"
     ? `Homework reminder: ${homeworkTitle} is due soon`
     : `Homework due today: ${homeworkTitle}`;
+}
+
+function dayKeyToUtcMs(key: string) {
+  const [year, month, day] = key.split("-").map(Number);
+  return Date.UTC(year, month - 1, day);
+}
+
+function academyDayDifference(target: Date, base = new Date()) {
+  return Math.round((dayKeyToUtcMs(academyDateKey(target)) - dayKeyToUtcMs(academyDateKey(base))) / 86_400_000);
+}
+
+function manualReminderCopy(homeworkTitle: string, dueAt?: Date) {
+  if (!dueAt || Number.isNaN(dueAt.getTime())) {
+    return {
+      subject: `Homework reminder: ${homeworkTitle}`,
+      statusText: "pending submission",
+    };
+  }
+
+  const daysUntilDue = academyDayDifference(dueAt);
+  const dueDate = formatAcademyDateTime(dueAt, { hour: undefined, minute: undefined });
+  if (daysUntilDue < 0) {
+    return {
+      subject: `Homework overdue: ${homeworkTitle}`,
+      statusText: `overdue since ${dueDate}`,
+    };
+  }
+  if (daysUntilDue === 0) {
+    return {
+      subject: `Homework due today: ${homeworkTitle}`,
+      statusText: "due today",
+    };
+  }
+  if (daysUntilDue === 1) {
+    return {
+      subject: `Homework reminder: ${homeworkTitle} is due tomorrow`,
+      statusText: "due tomorrow",
+    };
+  }
+  return {
+    subject: `Homework reminder: ${homeworkTitle} is due in ${daysUntilDue} days`,
+    statusText: `due in ${daysUntilDue} days, on ${dueDate}`,
+  };
+}
+
+function reminderCopy(kind: ReminderTone, homeworkTitle: string, dueAt?: Date) {
+  if (kind === "manual") return manualReminderCopy(homeworkTitle, dueAt);
+  return {
+    subject: reminderSubject(kind, homeworkTitle),
+    statusText: reminderLabel(kind),
+  };
 }
 
 async function assignedRecipientIds(homework: any) {
@@ -150,7 +202,7 @@ async function sendHomeworkReminderEmail(input: {
   homework: any;
   classroom: any;
   student: any;
-  kind: ReminderKind;
+  kind: ReminderTone;
   request?: Request;
 }) {
   const appUrl = resolvePublicAppUrl(input.request);
@@ -162,7 +214,8 @@ async function sendHomeworkReminderEmail(input: {
   const studentName = String(input.student.name || input.student.username || "there");
   const title = String(input.homework.title || "Homework");
   const classroomTitle = String(input.classroom?.title || "");
-  const statusText = reminderLabel(input.kind);
+  const copy = reminderCopy(input.kind, title, input.homework.dueAt ? new Date(input.homework.dueAt) : undefined);
+  const statusText = copy.statusText;
   const message = [
     `Hello ${studentName},`,
     "",
@@ -175,7 +228,7 @@ async function sendHomeworkReminderEmail(input: {
 
   return sendAutomationEmail({
     to: String(input.student.email),
-    subject: reminderSubject(input.kind, title),
+    subject: copy.subject,
     message,
     htmlBody: `<p>Hello ${escapeHtml(studentName)},</p>
       <p>This is a reminder that <strong>${escapeHtml(title)}</strong> is ${escapeHtml(statusText)}.</p>
@@ -337,7 +390,7 @@ export async function sendManualHomeworkReminder(homeworkId: unknown, request?: 
     homework,
     classroom,
     student,
-    kind: "due_day",
+    kind: "manual",
     request,
   })));
   return {

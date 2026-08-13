@@ -9,7 +9,7 @@ import { deleteClassroomSessionInstances, syncClassroomSessionInstances } from "
 import { canAccessFeature, isSuperAdminSession } from "@/lib/featureAccess";
 import { academyDateKey, academyDateTime } from "@/lib/academyTime";
 import { coachCanAccessClassroomSession, isPrimaryClassroomCoach, limitClassroomToCoachSessions } from "@/lib/classroomCoachAccess";
-import { recalculateFutureSessionTopics } from "@/lib/classroomLifecycle";
+import { ensureTopicContinuationSession, recalculateFutureSessionTopics, shouldContinueTopic, topicCompletedForOutcome } from "@/lib/classroomLifecycle";
 import { recordActivity } from "@/lib/activity";
 import { User } from "@/models/User";
 import { Homework, Submission } from "@/models/Homework";
@@ -180,6 +180,13 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
   if (!(await canAccessRecord(existing, session.user as any))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const reassignedSessionIds: string[] = [];
+  const previousClassroomStatus = String(existing.status || "");
+  const previousClassDate = existing.classDate;
+  const previousStartTime = existing.startTime;
+  const previousDurationMinutes = existing.durationMinutes;
+  const previousSession = body.sessionId
+    ? JSON.parse(JSON.stringify(existing.generatedSessions?.id?.(String(body.sessionId || "")) || (existing.generatedSessions || []).find((item: any) => String(item._id) === String(body.sessionId || "")) || null))
+    : null;
 
   if (body.action === "cancel_class" || body.action === "cancel_series") {
     if (existing.status === "completed") return NextResponse.json({ error: "A completed classroom cannot be cancelled" }, { status: 409 });
@@ -201,21 +208,25 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
     if (body.action === "mark_session_outcome") {
       const outcome = String(body.classOutcome || "").trim();
-      if (!["completed", "cancelled", "missed", "abandoned", "coach_no_show", "student_no_show", "technical_issue"].includes(outcome)) {
+      if (!["completed", "completed_continue_topic", "cancelled", "missed", "abandoned", "coach_no_show", "student_no_show", "technical_issue"].includes(outcome)) {
         return NextResponse.json({ error: "Select a valid class outcome" }, { status: 400 });
       }
       const previousStatus = target.status;
-      target.status = outcome;
+      const sessionStatus = outcome === "completed_continue_topic" ? "completed" : outcome;
+      target.status = sessionStatus;
       target.coachAttendanceStatus = outcome === "coach_no_show" ? "coach_no_show" : outcome === "technical_issue" ? "technical_issue" : outcome === "cancelled" ? "cancelled" : target.coachAttendanceStatus || "present";
       target.attendanceMarkedAt = new Date();
       target.summary = {
         ...(target.summary || {}),
         classOutcome: outcome,
-        topicCompleted: outcome === "completed",
-        creditPolicy: outcome === "completed" ? "charge_present_students" : outcome === "student_no_show" ? "repeat_no_show_policy" : "no_charge",
+        topicCompleted: topicCompletedForOutcome(sessionStatus, outcome),
+        creditPolicy: sessionStatus === "completed" ? "charge_present_students" : outcome === "student_no_show" ? "repeat_no_show_policy" : "no_charge",
         adminCorrection: true,
         adminCorrectionReason: String(body.reason || ""),
       };
+      if (shouldContinueTopic(outcome)) {
+        await ensureTopicContinuationSession(existing, target, (session.user as any).id);
+      }
       await recordActivity({
         actor: (session.user as any).id,
         type: "classroom.session.outcome_corrected",
@@ -372,6 +383,14 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       },
     ];
   } else if (body.action === "delete_series") {
+    await recordActivity({
+      actor: (session.user as any).id,
+      type: "classroom.series.deleted",
+      label: `Deleted classroom series ${existing.title}`,
+      entityType: "Classroom",
+      entityId: params.id,
+      metadata: { title: existing.title, source: "manual_admin" },
+    });
     await deleteClassroomRecords(params.id);
     await deleteClassroomSessionInstances(params.id);
     await Classroom.findByIdAndDelete(params.id);
@@ -466,6 +485,128 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     ]);
   }
   await syncClassroomSessionInstances(params.id);
+  const activityAction = String(body.action || "update_classroom");
+  if (!["mark_session_outcome", "shift_future_sessions"].includes(activityAction)) {
+    const sessionId = String(body.sessionId || "");
+    const currentSession = sessionId
+      ? existing.generatedSessions?.id?.(sessionId) || (existing.generatedSessions || []).find((item: any) => String(item._id) === sessionId)
+      : null;
+    const commonMetadata = {
+      action: activityAction,
+      title: existing.title,
+      previousClassroomStatus,
+      classroomStatus: existing.status,
+      source: "manual_admin",
+    };
+    if (activityAction === "reschedule_session") {
+      await recordActivity({
+        actor: (session.user as any).id,
+        type: "classroom.session.rescheduled",
+        label: `Rescheduled ${currentSession?.topicName || "class session"} in ${existing.title}`,
+        entityType: "Classroom",
+        entityId: params.id,
+        metadata: {
+          ...commonMetadata,
+          sessionId,
+          previousScheduledFor: previousSession?.scheduledFor || "",
+          scheduledFor: currentSession?.scheduledFor || "",
+          previousStartTime: previousSession?.startTime || "",
+          startTime: currentSession?.startTime || "",
+          previousDurationMinutes: previousSession?.durationMinutes || 0,
+          durationMinutes: currentSession?.durationMinutes || 0,
+        },
+      });
+    } else if (activityAction === "reschedule_class") {
+      await recordActivity({
+        actor: (session.user as any).id,
+        type: "classroom.class.rescheduled",
+        label: `Rescheduled class ${existing.title}`,
+        entityType: "Classroom",
+        entityId: params.id,
+        metadata: {
+          ...commonMetadata,
+          previousClassDate,
+          classDate: existing.classDate,
+          previousStartTime,
+          startTime: existing.startTime,
+          previousDurationMinutes,
+          durationMinutes: existing.durationMinutes,
+        },
+      });
+    } else if (activityAction === "cancel_session") {
+      await recordActivity({
+        actor: (session.user as any).id,
+        type: "classroom.session.cancelled",
+        label: `Cancelled ${currentSession?.topicName || "class session"} in ${existing.title}`,
+        entityType: "Classroom",
+        entityId: params.id,
+        metadata: { ...commonMetadata, sessionId, previousStatus: previousSession?.status || "", status: currentSession?.status || "" },
+      });
+    } else if (activityAction === "delete_session") {
+      await recordActivity({
+        actor: (session.user as any).id,
+        type: "classroom.session.deleted",
+        label: `Deleted ${previousSession?.topicName || "class session"} from ${existing.title}`,
+        entityType: "Classroom",
+        entityId: params.id,
+        metadata: { ...commonMetadata, sessionId, previousScheduledFor: previousSession?.scheduledFor || "" },
+      });
+    } else if (activityAction === "substitute_coach") {
+      await recordActivity({
+        actor: (session.user as any).id,
+        type: "classroom.coach.reassigned",
+        label: `Changed coach assignment for ${existing.title}`,
+        entityType: "Classroom",
+        entityId: params.id,
+        metadata: { ...commonMetadata, coach: body.coach || "", scope: body.scope || "classroom", reassignedSessionIds },
+      });
+    } else if (activityAction === "add_extra_class") {
+      await recordActivity({
+        actor: (session.user as any).id,
+        type: "classroom.session.extra_added",
+        label: `Added extra class to ${existing.title}`,
+        entityType: "Classroom",
+        entityId: params.id,
+        metadata: { ...commonMetadata, classDate: body.classDate || "", startTime: body.startTime || "", topicName: body.topicName || "Extra Class" },
+      });
+    } else if (activityAction === "cancel_class" || activityAction === "cancel_series") {
+      await recordActivity({
+        actor: (session.user as any).id,
+        type: activityAction === "cancel_series" ? "classroom.series.cancelled" : "classroom.class.cancelled",
+        label: `Cancelled ${existing.title}`,
+        entityType: "Classroom",
+        entityId: params.id,
+        metadata: commonMetadata,
+      });
+    } else if (activityAction === "update_session") {
+      await recordActivity({
+        actor: (session.user as any).id,
+        type: "classroom.session.updated",
+        label: `Updated ${currentSession?.topicName || "class session"} in ${existing.title}`,
+        entityType: "Classroom",
+        entityId: params.id,
+        metadata: {
+          ...commonMetadata,
+          sessionId,
+          previousScheduledFor: previousSession?.scheduledFor || "",
+          scheduledFor: currentSession?.scheduledFor || "",
+          previousStartTime: previousSession?.startTime || "",
+          startTime: currentSession?.startTime || "",
+          previousDurationMinutes: previousSession?.durationMinutes || 0,
+          durationMinutes: currentSession?.durationMinutes || 0,
+        },
+      });
+    } else {
+      await recordActivity({
+        actor: (session.user as any).id,
+        type: "classroom.updated",
+        label: `Updated classroom ${existing.title}`,
+        entityType: "Classroom",
+        entityId: params.id,
+        metadata: commonMetadata,
+      });
+    }
+  }
   const updated = await Classroom.findById(params.id)
     .populate("coach instructor", "name email username")
     .populate("generatedSessions.substituteCoach", "name email username")
@@ -487,5 +628,13 @@ export async function DELETE(_: Request, { params }: { params: { id: string } })
   await deleteClassroomRecords(params.id);
   await deleteClassroomSessionInstances(params.id);
   await Classroom.findByIdAndDelete(params.id);
+  await recordActivity({
+    actor: (session.user as any).id,
+    type: "classroom.deleted",
+    label: "Deleted classroom",
+    entityType: "Classroom",
+    entityId: params.id,
+    metadata: { source: "manual_admin" },
+  });
   return NextResponse.json({ ok: true });
 }

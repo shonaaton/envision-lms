@@ -394,5 +394,36 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   } else if (update.status === "live" || update.startedAt) {
     await markScheduledSessionStarted({ classroomId: params.id, scheduledSessionId, actorId: userId });
   }
+  const changedFields = Object.keys(update);
+  const liveActionType =
+    update.status === "ended"
+      ? "classroom.live.ended"
+      : update.status === "live" || update.startedAt
+        ? "classroom.live.started"
+        : changedFields.some((field) => ["fen", "pgn", "pgnMoves", "pgnMoveIndex", "moveHistory", "drawings", "gamifiedObjects", "challenge"].includes(field))
+          ? "classroom.live.board_updated"
+          : "classroom.live.updated";
+  await recordActivity({
+    actor: userId,
+    type: liveActionType,
+    label:
+      liveActionType === "classroom.live.ended"
+        ? "Ended live classroom"
+        : liveActionType === "classroom.live.started"
+          ? "Started live classroom"
+          : liveActionType === "classroom.live.board_updated"
+            ? "Updated live classroom board"
+            : "Updated live classroom settings",
+    entityType: "ClassroomSession",
+    entityId: live._id.toString(),
+    metadata: {
+      classroom: params.id,
+      scheduledSessionId,
+      fields: changedFields,
+      mode: live.mode,
+      status: live.status,
+      source: "live_classroom",
+    },
+  });
   return NextResponse.json(live);
 }

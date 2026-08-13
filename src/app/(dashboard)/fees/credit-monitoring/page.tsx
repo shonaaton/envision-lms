@@ -12,6 +12,7 @@ import { getFeaturePermissionState } from "@/lib/featureAccess";
 import { requireFeesAccess } from "@/lib/feesAccess";
 import ManualCreditForm from "@/components/fees/ManualCreditForm";
 import { isValidObjectId, Types } from "mongoose";
+import { recordActivity } from "@/lib/activity";
 
 export const dynamic = "force-dynamic";
 
@@ -136,7 +137,7 @@ async function addManualCredits(formData: FormData) {
 
   const balanceAfter = Number(updated.creditBalance || 0);
   try {
-    await CreditLedger.create({
+    const ledger = await CreditLedger.create({
       student: updated.student._id,
       assignment: updated._id,
       type: "adjustment",
@@ -147,6 +148,22 @@ async function addManualCredits(formData: FormData) {
       performedBy: (session.user as any).id,
       performedByRole: role,
       note: reason,
+    });
+    await recordActivity({
+      actor: (session.user as any).id,
+      targetUser: updated.student._id.toString(),
+      type: "fees.credits.manual_added",
+      label: `Added ${rawCredits} manual credit${rawCredits === 1 ? "" : "s"} to ${updated.student.name || updated.student.username || "student"}`,
+      entityType: "CreditLedger",
+      entityId: ledger._id.toString(),
+      metadata: {
+        assignment: updated._id.toString(),
+        credits: rawCredits,
+        balanceAfter,
+        reason,
+        source: "manual_admin",
+        performedByRole: role,
+      },
     });
   } catch {
     await FeeAssignment.updateOne(
@@ -192,7 +209,8 @@ function creditReminderMessage(assignment: any, portalUrl: string) {
 
 async function sendBulkCreditReminders(formData: FormData) {
   "use server";
-  if (!(await requireFeesAccess("credit", "creditMonitoring"))) throw new Error("Forbidden");
+  const session = await requireFeesAccess("credit", "creditMonitoring");
+  if (!session) throw new Error("Forbidden");
   await dbConnect();
   const mode = String(formData.get("creditReminderMode") || "low");
   const settings: any = await AcademySettings.findOne().lean();
@@ -247,12 +265,20 @@ async function sendBulkCreditReminders(formData: FormData) {
   }
 
   revalidatePath("/fees/credit-monitoring");
+  await recordActivity({
+    actor: (session.user as any).id,
+    type: "fees.credits.bulk_reminders_sent",
+    label: `Sent bulk credit reminders to ${summary.total} student${summary.total === 1 ? "" : "s"}`,
+    entityType: "FeeAssignment",
+    metadata: { ...summary, mode, threshold, source: "manual_admin" },
+  });
   bulkReminderRedirect(summary);
 }
 
 async function sendCreditWhatsAppTest(formData: FormData) {
   "use server";
-  if (!(await requireFeesAccess("credit", "creditMonitoring"))) throw new Error("Forbidden");
+  const session = await requireFeesAccess("credit", "creditMonitoring");
+  if (!session) throw new Error("Forbidden");
   await dbConnect();
   const assignmentId = String(formData.get("assignment") || "");
   const assignment: any = await FeeAssignment.findById(assignmentId).populate("student plan").lean();
@@ -269,6 +295,15 @@ async function sendCreditWhatsAppTest(formData: FormData) {
       creditBalance: Number(assignment.creditBalance || 0),
       portalUrl,
     },
+  });
+  await recordActivity({
+    actor: (session.user as any).id,
+    targetUser: assignment.student._id.toString(),
+    type: "fees.credits.whatsapp_test_sent",
+    label: `Sent WhatsApp credit reminder test for ${assignment.student.name || "student"}`,
+    entityType: "FeeAssignment",
+    entityId: assignment._id.toString(),
+    metadata: { creditBalance: Number(assignment.creditBalance || 0), status: whatsappStatus(delivery), source: "manual_admin" },
   });
   redirect(`/fees/credit-monitoring?whatsapp=${whatsappStatus(delivery)}${whatsappErrorParam(delivery)}`);
 }

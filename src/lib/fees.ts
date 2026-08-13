@@ -1,6 +1,7 @@
 import { Types } from "mongoose";
 import { AcademySettings, CreditLedger, FeeAssignment, Invoice, Notification } from "@/models/Fee";
 import { ACADEMY_DEFAULTS, ACADEMY_FAVICON_URL, ACADEMY_LOGO_URL, ACADEMY_SIGNATURE_URL } from "@/lib/branding";
+import { recordActivity } from "@/lib/activity";
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -149,6 +150,11 @@ export async function createInvoice(input: {
   notes?: string;
   invoiceMode?: "included" | "excluded" | "non_gst";
   gstPercentage?: number;
+  activity?: {
+    actor?: string;
+    source?: "manual_admin" | "plan_assignment" | "monthly_system" | "backend";
+    label?: string;
+  };
 }) {
   const settings = await getAcademySettings();
   const breakup = invoiceBreakup(input.amount, 0, settings, {
@@ -166,19 +172,55 @@ export async function createInvoice(input: {
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      return await Invoice.create({
+      const invoice = await Invoice.create({
         invoiceNumber: await nextAvailableInvoiceNumber(),
         ...payload,
       });
+      await recordActivity({
+        actor: input.activity?.actor,
+        targetUser: input.student,
+        type: "fees.invoice.created",
+        label: input.activity?.label || `Created invoice ${invoice.invoiceNumber}`,
+        entityType: "Invoice",
+        entityId: invoice._id.toString(),
+        metadata: {
+          invoiceNumber: invoice.invoiceNumber,
+          invoiceType: input.type,
+          amount: invoice.totalAmount,
+          credits: input.credits || 0,
+          source: input.activity?.source || "backend",
+          plan: input.plan || "",
+          assignment: input.assignment || "",
+        },
+      });
+      return invoice;
     } catch (error: any) {
       if (error?.code !== 11000 || !error?.keyPattern?.invoiceNumber) throw error;
     }
   }
 
-  return Invoice.create({
+  const invoice = await Invoice.create({
     invoiceNumber: `${(settings as any).invoicePrefix || "ENV"}/${Date.now()}`,
     ...payload,
   });
+  await recordActivity({
+    actor: input.activity?.actor,
+    targetUser: input.student,
+    type: "fees.invoice.created",
+    label: input.activity?.label || `Created invoice ${invoice.invoiceNumber}`,
+    entityType: "Invoice",
+    entityId: invoice._id.toString(),
+    metadata: {
+      invoiceNumber: invoice.invoiceNumber,
+      invoiceType: input.type,
+      amount: invoice.totalAmount,
+      credits: input.credits || 0,
+      source: input.activity?.source || "backend",
+      plan: input.plan || "",
+      assignment: input.assignment || "",
+    },
+  });
+  return invoice;
 }
 
 export async function ensureMonthlyInvoices(now = new Date()) {
@@ -210,6 +252,7 @@ export async function ensureMonthlyInvoices(now = new Date()) {
           dueDate,
           invoiceMode: assignment.plan.gstMode || "non_gst",
           gstPercentage: assignment.plan.gstPercentage || 0,
+          activity: { source: "monthly_system", label: `System generated monthly invoice for ${assignment.plan.name}` },
         });
       }
     }
@@ -217,13 +260,31 @@ export async function ensureMonthlyInvoices(now = new Date()) {
   await updateLateFees(now);
 }
 
-export async function markInvoicePaid(invoiceId: string, paymentId?: string) {
+export async function markInvoicePaid(invoiceId: string, paymentId?: string, activity?: { actor?: string; source?: "manual_admin" | "razorpay_checkout" | "razorpay_webhook" | "backend"; label?: string }) {
+  const before: any = await Invoice.findById(invoiceId).select("status").lean();
   const invoice: any = await Invoice.findByIdAndUpdate(
     invoiceId,
     { status: "paid", paidAt: new Date(), payment: paymentId },
     { new: true }
   );
-  if (!invoice || invoice.type !== "credits" || !invoice.credits) return invoice;
+  if (!invoice) return invoice;
+  await recordActivity({
+    actor: activity?.actor,
+    targetUser: invoice.student?.toString?.() || String(invoice.student || ""),
+    type: "fees.invoice.paid",
+    label: activity?.label || `Marked invoice ${invoice.invoiceNumber} as paid`,
+    entityType: "Invoice",
+    entityId: invoice._id.toString(),
+    metadata: {
+      invoiceNumber: invoice.invoiceNumber,
+      previousStatus: before?.status || "",
+      source: activity?.source || "backend",
+      payment: paymentId || "",
+      amount: invoice.totalAmount,
+      invoiceType: invoice.type,
+    },
+  });
+  if (invoice.type !== "credits" || !invoice.credits) return invoice;
 
   const assignment: any = await FeeAssignment.findOne({ student: invoice.student, type: "credits" });
   if (!assignment) return invoice;
@@ -232,7 +293,7 @@ export async function markInvoicePaid(invoiceId: string, paymentId?: string) {
   await FeeAssignment.findByIdAndUpdate(assignment._id, {
     $inc: { creditBalance: invoice.credits, totalCreditsPurchased: invoice.credits },
   });
-  await CreditLedger.findOneAndUpdate(
+  const ledger: any = await CreditLedger.findOneAndUpdate(
     { student: invoice.student, type: "purchase", invoice: invoice._id },
     {
       student: invoice.student,
@@ -245,6 +306,23 @@ export async function markInvoicePaid(invoiceId: string, paymentId?: string) {
     },
     { upsert: true, new: true }
   );
+  await recordActivity({
+    actor: activity?.actor,
+    targetUser: invoice.student?.toString?.() || String(invoice.student || ""),
+    type: "fees.credits.purchased",
+    label: `Applied ${invoice.credits} purchased credit${invoice.credits === 1 ? "" : "s"} from ${invoice.invoiceNumber}`,
+    entityType: "CreditLedger",
+    entityId: ledger._id.toString(),
+    metadata: {
+      invoice: invoice._id.toString(),
+      invoiceNumber: invoice.invoiceNumber,
+      assignment: assignment._id.toString(),
+      credits: invoice.credits,
+      balanceAfter,
+      source: activity?.source || "backend",
+      payment: paymentId || "",
+    },
+  });
   return invoice;
 }
 
@@ -265,7 +343,7 @@ export async function consumeAttendanceCredit(studentId: string, attendanceId: s
   await FeeAssignment.findByIdAndUpdate(assignment._id, {
     $inc: { creditBalance: shouldDeduct ? -1 : 0, totalCreditsConsumed: 1 },
   });
-  await CreditLedger.create({
+  const ledger = await CreditLedger.create({
     student: studentId,
     assignment: assignment._id,
     type: "attendance_consumption",
@@ -274,6 +352,14 @@ export async function consumeAttendanceCredit(studentId: string, attendanceId: s
     sourceType: "Attendance",
     sourceId: attendanceId,
     note,
+  });
+  await recordActivity({
+    targetUser: studentId,
+    type: "fees.credits.consumed",
+    label: "Deducted 1 class credit after attendance",
+    entityType: "CreditLedger",
+    entityId: ledger._id.toString(),
+    metadata: { attendance: attendanceId, assignment: assignment._id.toString(), credits: -1, balanceAfter: nextBalance, source: "attendance" },
   });
   const settings: any = await getAcademySettings();
   if (nextBalance <= Number(settings.lowCreditThreshold ?? 3)) {

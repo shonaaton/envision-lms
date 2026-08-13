@@ -74,7 +74,7 @@ type Role = "student" | "instructor" | "admin" | "sub-admin";
 type BoardPosition = Record<string, string | undefined>;
 type TabKey = "students" | "chat" | "moves" | "engine" | "leaderboard" | "pgns";
 type AttendanceStatus = "present" | "absent" | "late" | "excused" | "student_no_show" | "technical_issue";
-type ClassOutcome = "completed" | "abandoned" | "student_no_show" | "technical_issue" | "cancelled";
+type ClassOutcome = "completed" | "completed_continue_topic" | "abandoned" | "student_no_show" | "technical_issue" | "cancelled";
 type ToolKey = "move" | "highlight" | "arrow" | "setup";
 type ModifierKey = "default" | "shift" | "ctrl" | "alt";
 type SetupTab = "pieces" | "objects";
@@ -2068,7 +2068,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       ...classSummary,
       classOutcome,
       topicCompleted: classOutcome === "completed",
-      creditPolicy: classOutcome === "completed" ? "charge_present_students" : classOutcome === "student_no_show" ? "repeat_no_show_policy" : "no_charge",
+      creditPolicy: classOutcome === "completed" || classOutcome === "completed_continue_topic" ? "charge_present_students" : classOutcome === "student_no_show" ? "repeat_no_show_policy" : "no_charge",
     };
     const res = await fetch("/api/attendance", {
       method: "POST",
@@ -3710,6 +3710,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                 ) : null}
                 <select value={classOutcome} onChange={(event) => setClassOutcome(event.target.value as ClassOutcome)} className="mt-3 h-10 w-full rounded-md border border-slate-200 bg-white px-2 text-sm">
                   <option value="completed">Completed: topic taught</option>
+                  <option value="completed_continue_topic">Completed: continue same topic next class</option>
                   <option value="abandoned">Not completed: carry topic forward</option>
                   <option value="student_no_show">Student no-show</option>
                   <option value="technical_issue">Technical issue</option>
@@ -3718,6 +3719,8 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                 <div className="mt-3 rounded-lg bg-white p-3 text-xs text-slate-600">
                   {classOutcome === "completed"
                     ? "Present/late students are charged and the topic is marked taught."
+                    : classOutcome === "completed_continue_topic"
+                      ? "Present/late students are charged. The same topic repeats next class, later topics shift down, and an extra class is added at the end."
                     : classOutcome === "student_no_show"
                       ? "Coach availability is recorded. Student credit is deducted only after repeated no-shows."
                       : "No regular credit is charged and the topic is carried forward."}

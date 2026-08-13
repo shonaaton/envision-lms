@@ -9,12 +9,14 @@ import { StudentFeeAssignmentForm } from "@/components/fees/StudentFeeForms";
 import { Types } from "mongoose";
 import { redirect } from "next/navigation";
 import { requireFeesAccess } from "@/lib/feesAccess";
+import { recordActivity } from "@/lib/activity";
 
 export const dynamic = "force-dynamic";
 
 async function assignPlan(formData: FormData) {
   "use server";
-  if (!(await requireFeesAccess("edit", "studentFees"))) throw new Error("Forbidden");
+  const session = await requireFeesAccess("edit", "studentFees");
+  if (!session) throw new Error("Forbidden");
   await dbConnect();
   try {
     const student = String(formData.get("student") || "");
@@ -78,11 +80,34 @@ async function assignPlan(formData: FormData) {
           notes: "Generated when credit plan was assigned",
           invoiceMode: plan.gstMode || "non_gst",
           gstPercentage: Number(plan.gstPercentage || 0),
+          activity: {
+            actor: (session.user as any).id,
+            source: "plan_assignment",
+            label: `Generated credit invoice after assigning ${plan.name}`,
+          },
         });
       }
     } else {
       await ensureMonthlyInvoices();
     }
+    await recordActivity({
+      actor: (session.user as any).id,
+      targetUser: student,
+      type: existing ? "fees.assignment.updated" : "fees.assignment.created",
+      label: `${existing ? "Changed" : "Assigned"} fee plan ${plan.name} for ${studentDoc.name}`,
+      entityType: "FeeAssignment",
+      entityId: assignment._id.toString(),
+      metadata: {
+        student,
+        studentName: studentDoc.name,
+        plan: plan._id.toString(),
+        planName: plan.name,
+        planType: plan.type,
+        billingStartDate,
+        note,
+        source: "manual_admin",
+      },
+    });
     revalidatePath("/fees/student-fees");
     revalidatePath("/fees");
     revalidatePath("/fees/invoices");
@@ -96,12 +121,13 @@ async function assignPlan(formData: FormData) {
 
 async function deleteFeeAssignment(formData: FormData) {
   "use server";
-  if (!(await requireFeesAccess("edit", "studentFees"))) throw new Error("Forbidden");
+  const session = await requireFeesAccess("edit", "studentFees");
+  if (!session) throw new Error("Forbidden");
   await dbConnect();
   const assignmentId = String(formData.get("assignment") || "");
   if (!Types.ObjectId.isValid(assignmentId)) redirect("/fees/student-fees?error=invalid-selection");
 
-  const assignment: any = await FeeAssignment.findById(assignmentId).lean();
+  const assignment: any = await FeeAssignment.findById(assignmentId).populate("student plan").lean();
   if (!assignment) redirect("/fees/student-fees?error=missing-record");
 
   await Promise.all([
@@ -109,6 +135,20 @@ async function deleteFeeAssignment(formData: FormData) {
     Invoice.deleteMany({ assignment: assignment._id }),
     FeeAssignment.findByIdAndDelete(assignment._id),
   ]);
+  await recordActivity({
+    actor: (session.user as any).id,
+    targetUser: assignment.student?._id?.toString?.() || assignment.student?.toString?.() || "",
+    type: "fees.assignment.deleted",
+    label: `Deleted fee record for ${assignment.student?.name || "student"}`,
+    entityType: "FeeAssignment",
+    entityId: assignment._id.toString(),
+    metadata: {
+      planName: assignment.plan?.name || "",
+      planType: assignment.type,
+      creditBalance: assignment.creditBalance || 0,
+      source: "manual_admin",
+    },
+  });
 
   revalidatePath("/fees/student-fees");
   revalidatePath("/fees/invoices");

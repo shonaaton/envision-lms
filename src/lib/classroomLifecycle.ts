@@ -10,6 +10,7 @@ export const MIN_COMPLETED_TEACHING_MINUTES = 30;
 export const COACH_NO_SHOW_GRACE_MINUTES = 20;
 export const MONTHLY_NO_SHOW_FLAG_THRESHOLD = 3;
 export const STUDENT_NO_SHOW_FREE_ALLOWANCE_PER_MONTH = 1;
+export const CONTINUE_TOPIC_OUTCOME = "completed_continue_topic";
 
 export const NON_TOPIC_CONSUMING_STATUSES = new Set([
   "scheduled",
@@ -28,6 +29,7 @@ export function normalizeSessionOutcome(value: unknown, actualTeachingMinutes = 
   const requested = String(value || "").toLowerCase();
   const allowed = new Set([
     "completed",
+    CONTINUE_TOPIC_OUTCOME,
     "cancelled",
     "missed",
     "abandoned",
@@ -36,7 +38,7 @@ export function normalizeSessionOutcome(value: unknown, actualTeachingMinutes = 
     "technical_issue",
     "rescheduled",
   ]);
-  if (requested === "completed") {
+  if (requested === "completed" || requested === CONTINUE_TOPIC_OUTCOME) {
     return actualTeachingMinutes >= MIN_COMPLETED_TEACHING_MINUTES || adminOverride ? "completed" : "abandoned";
   }
   if (allowed.has(requested)) return requested;
@@ -45,6 +47,14 @@ export function normalizeSessionOutcome(value: unknown, actualTeachingMinutes = 
 
 export function sessionConsumesTopic(session: any) {
   return String(session?.status || "").toLowerCase() === "completed" && session?.summary?.topicCompleted !== false;
+}
+
+export function shouldContinueTopic(value: unknown) {
+  return String(value || "").toLowerCase() === CONTINUE_TOPIC_OUTCOME;
+}
+
+export function topicCompletedForOutcome(status: string, requestedOutcome: unknown) {
+  return status === "completed" && !shouldContinueTopic(requestedOutcome);
 }
 
 export function isFutureTopicAssignable(session: any) {
@@ -138,7 +148,7 @@ export async function recalculateFutureSessionTopics(classroomOrId: any, actorId
   const pending = plan.filter((topic: any) => !consumed.has(topic.topicName.toLowerCase()));
   let pendingIndex = 0;
   const futureSessions = (classroom.generatedSessions || [])
-    .filter((session: any) => isFutureTopicAssignable(session) && !session.isExtra && !session.topicLocked)
+    .filter((session: any) => isFutureTopicAssignable(session) && (!session.isExtra || session.summary?.createdForTopicContinuation) && !session.topicLocked)
     .sort((a: any, b: any) => new Date(a.scheduledFor || 0).getTime() - new Date(b.scheduledFor || 0).getTime());
 
   const changes: Array<{ sessionId: string; from: string; to: string }> = [];
@@ -165,4 +175,55 @@ export async function recalculateFutureSessionTopics(classroomOrId: any, actorId
     });
   }
   return classroom;
+}
+
+function nextSessionDate(classroom: any) {
+  const sessions = [...(classroom.generatedSessions || [])]
+    .filter((session: any) => session?.scheduledFor)
+    .sort((a: any, b: any) => new Date(a.scheduledFor).getTime() - new Date(b.scheduledFor).getTime());
+  const last = sessions.at(-1);
+  if (!last) return null;
+  const previous = sessions.length > 1 ? sessions.at(-2) : null;
+  const fallbackMs = 7 * 24 * 60 * 60 * 1000;
+  const gapMs = previous
+    ? Math.max(24 * 60 * 60 * 1000, new Date(last.scheduledFor).getTime() - new Date(previous.scheduledFor).getTime())
+    : fallbackMs;
+  return new Date(new Date(last.scheduledFor).getTime() + gapMs);
+}
+
+export async function ensureTopicContinuationSession(classroom: any, sourceSession: any, actorId?: string) {
+  if (!classroom || !sourceSession || !Array.isArray(classroom.generatedSessions)) return;
+  const sourceSessionId = String(sourceSession._id || "");
+  if (!sourceSessionId) return;
+  const exists = classroom.generatedSessions.some((session: any) => String(session?.summary?.continuesFromSessionId || "") === sourceSessionId);
+  if (exists) return;
+  const scheduledFor = nextSessionDate(classroom);
+  if (!scheduledFor) return;
+  const sessions = classroom.generatedSessions || [];
+  const last = [...sessions].sort((a: any, b: any) => new Date(a.scheduledFor || 0).getTime() - new Date(b.scheduledFor || 0).getTime()).at(-1);
+  const sessionNumber = Math.max(0, ...sessions.map((session: any) => Number(session.sessionNumber || 0))) + 1;
+  classroom.generatedSessions.push({
+    sessionNumber,
+    topicName: String(last?.topicName || sourceSession.topicName || classroom.topicName || classroom.title || "Continuation"),
+    topicOrder: Number(last?.topicOrder ?? sourceSession.topicOrder ?? 0),
+    scheduledFor,
+    startTime: String(last?.startTime || sourceSession.startTime || classroom.startTime || "16:00"),
+    durationMinutes: Math.max(15, Number(last?.durationMinutes || sourceSession.durationMinutes || classroom.durationMinutes || 60)),
+    status: "scheduled",
+    isExtra: true,
+    notes: `Created because ${sourceSession.topicName || "the topic"} needs one more class.`,
+    summary: {
+      createdForTopicContinuation: true,
+      continuesFromSessionId: sourceSessionId,
+      continuedTopicName: sourceSession.topicName || "",
+    },
+  });
+  await recordActivity({
+    actor: actorId,
+    type: "classroom.topic_continuation.extra_session_created",
+    label: "Created extra class for topic continuation",
+    entityType: "Classroom",
+    entityId: String(classroom._id),
+    metadata: { classroom: String(classroom._id), sourceSessionId, topicName: sourceSession.topicName || "", newSessionNumber: sessionNumber },
+  });
 }

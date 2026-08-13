@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { BookOpen, CalendarClock, Check, ChevronDown, FileQuestion, FileText, Gamepad2, Search, Trash2, Upload, Users } from "lucide-react";
+import { BookOpen, CalendarClock, Check, ChevronDown, FileQuestion, FileText, Gamepad2, Layers, Save, Search, Trash2, Upload, Users } from "lucide-react";
 
 type ActivityKind = "mcq" | "fen_mcq" | "written_answer" | "fen_written_answer" | "play_computer" | "pgn_quiz";
 type PgnSourceMode = "library" | "upload";
@@ -11,6 +11,9 @@ type TargetMode = "all" | "batches" | "students";
 type QuizOption = { id: string; text: string; correct: boolean };
 type AssignmentQuestion = { id: string; text: string; positionFen: string; options: QuizOption[]; explanation: string; expectedAnswer: string };
 type PgnDoc = { _id: string; title: string; pgn: string; folder?: string; white?: string; black?: string; event?: string; initialFen?: string; sideToMove?: "white" | "black" };
+type CourseTopic = { _id?: string; name: string; description?: string; order?: number };
+type CourseLevel = { _id?: string; name: string; topics?: CourseTopic[] };
+type CourseDoc = { _id: string; name: string; level?: "beginner" | "intermediate" | "advanced" | "mixed"; levels?: CourseLevel[] };
 
 type Activity = {
   id: string;
@@ -116,11 +119,17 @@ function splitAssignmentPgns(pgn: string, fallbackTitle: string) {
   });
 }
 
+function homeworkTemplateTitle(topicName: string) {
+  const clean = String(topicName || "").trim();
+  return clean ? `${clean} - HW` : "Daily Chess Assignment";
+}
+
 export default function NewHomeworkPage() {
   const router = useRouter();
   const [classrooms, setClassrooms] = useState<any[]>([]);
   const [targets, setTargets] = useState<{ students: any[]; batches: any[]; classrooms: any[] }>({ students: [], batches: [], classrooms: [] });
   const [pgns, setPgns] = useState<PgnDoc[]>([]);
+  const [courses, setCourses] = useState<CourseDoc[]>([]);
   const [classroom, setClassroom] = useState("");
   const [targetMode, setTargetMode] = useState<TargetMode>("all");
   const [assignedStudents, setAssignedStudents] = useState<string[]>([]);
@@ -129,6 +138,12 @@ export default function NewHomeworkPage() {
   const [title, setTitle] = useState("Daily Chess Assignment");
   const [description, setDescription] = useState("");
   const [dueAt, setDueAt] = useState("");
+  const [saveAsTemplate, setSaveAsTemplate] = useState(false);
+  const [assignNow, setAssignNow] = useState(true);
+  const [autoAssignTemplate, setAutoAssignTemplate] = useState(true);
+  const [templateCourseId, setTemplateCourseId] = useState("");
+  const [templateLevelName, setTemplateLevelName] = useState("");
+  const [templateTopicName, setTemplateTopicName] = useState("");
   const [activities, setActivities] = useState<Activity[]>([makeActivity("mcq", 0)]);
   const [openId, setOpenId] = useState(activities[0].id);
 
@@ -137,8 +152,9 @@ export default function NewHomeworkPage() {
       fetch("/api/classrooms", { cache: "no-store" }).then((r) => r.json()),
       fetch("/api/homework/targets", { cache: "no-store" }).then((r) => r.json()),
       fetch("/api/pgn", { cache: "no-store" }).then((r) => r.json()),
+      fetch("/api/homework/template-options", { cache: "no-store" }).then((r) => r.json()).catch(() => ({ courses: [] })),
     ])
-      .then(([classroomData, targetData, pgnData]) => {
+      .then(([classroomData, targetData, pgnData, templateData]) => {
         setClassrooms(Array.isArray(classroomData) ? classroomData : []);
         setTargets({
           students: Array.isArray(targetData?.students) ? targetData.students : [],
@@ -146,6 +162,7 @@ export default function NewHomeworkPage() {
           classrooms: Array.isArray(targetData?.classrooms) ? targetData.classrooms : [],
         });
         setPgns(Array.isArray(pgnData) ? pgnData : []);
+        setCourses(Array.isArray(templateData?.courses) ? templateData.courses : []);
       })
       .catch(() => toast.error("Could not load assignment data"));
   }, []);
@@ -162,6 +179,16 @@ export default function NewHomeworkPage() {
   const assignableStudents = targets.students
     .filter((student) => !classroom || classroomStudentIds.has(student._id) || batchStudentIds.has(student._id))
     .filter((student) => `${student.name} ${student.email || ""} ${student.username || ""}`.toLowerCase().includes(studentSearch.toLowerCase()));
+  const selectedTemplateCourse = courses.find((course) => course._id === templateCourseId);
+  const templateLevels = selectedTemplateCourse?.levels || [];
+  const selectedTemplateLevel = templateLevels.find((level) => level.name === templateLevelName);
+  const templateTopics = selectedTemplateLevel?.topics || [];
+  const selectedTemplateTopic = templateTopics.find((topic) => topic.name === templateTopicName);
+
+  function applyTemplateTopic(topicName: string) {
+    setTemplateTopicName(topicName);
+    if (topicName) setTitle(homeworkTemplateTitle(topicName));
+  }
 
   function updateActivity(id: string, patch: Partial<Activity>) {
     setActivities((current) => current.map((activity) => (activity.id === id ? { ...activity, ...patch } : activity)));
@@ -183,7 +210,9 @@ export default function NewHomeworkPage() {
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    if (!classroom) return toast.error("Choose a classroom");
+    if (assignNow && !classroom) return toast.error("Choose a classroom");
+    if (!assignNow && !saveAsTemplate) return toast.error("Choose assignment creation or template saving");
+    if (saveAsTemplate && !templateTopicName.trim()) return toast.error("Choose a course topic or enter a template topic");
     if (!activities.length) return toast.error("Add at least one activity");
     const emptyPgnActivity = activities.find((activity) => activity.kind === "pgn_quiz" && activity.selectedPgnIds.length === 0 && splitAssignmentPgns(activity.uploadedPgnText, activity.uploadedPgnTitle).length === 0);
     if (emptyPgnActivity) return toast.error("Add at least one PGN from the library or upload a PGN file.");
@@ -279,25 +308,68 @@ export default function NewHomeworkPage() {
       };
     });
 
-    const response = await fetch("/api/homework", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    const numberOfAttempts = Math.max(1, ...activities.map((activity) => activity.kind === "pgn_quiz" ? activity.maxAttempts : 1));
+    const timeLimitMinutes = Math.max(0, ...activities.map((activity) => activity.timeLimitMinutes || 0));
+    const homeworkPayload = {
         classroom,
         title,
         description,
         dueAt: dueAt ? new Date(dueAt).toISOString() : undefined,
-        numberOfAttempts: Math.max(1, ...activities.map((activity) => activity.kind === "pgn_quiz" ? activity.maxAttempts : 1)),
-        timeLimitMinutes: Math.max(0, ...activities.map((activity) => activity.timeLimitMinutes || 0)),
+        numberOfAttempts,
+        timeLimitMinutes,
         assignAllStudents: targetMode === "all",
         assignedStudents: targetMode === "students" ? assignedStudents : [],
         assignedBatches: targetMode === "batches" ? assignedBatches : [],
         activities: assignmentActivities,
         puzzles: [],
-      }),
-    });
-    if (!response.ok) return toast.error("Failed to create assignment");
-    toast.success("Assignment created");
+    };
+
+    if (saveAsTemplate) {
+      const templateResponse = await fetch("/api/admin/assignment-templates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: homeworkTemplateTitle(templateTopicName),
+          description,
+          course: templateCourseId || undefined,
+          courseName: selectedTemplateCourse?.name || "",
+          level: selectedTemplateCourse?.level || "",
+          levelName: templateLevelName,
+          topicName: templateTopicName.trim(),
+          activities: assignmentActivities,
+          puzzles: [],
+          numberOfAttempts,
+          timeLimitMinutes,
+          targetMode: !assignNow ? "classroom_batches" : targetMode === "all" ? "all_class_students" : targetMode === "batches" ? "specific_batches" : "specific_students",
+          defaultBatches: assignNow && targetMode === "batches" ? assignedBatches : [],
+          defaultStudents: assignNow && targetMode === "students" ? assignedStudents : [],
+          duePolicy: { type: "before_next_class", minutesBefore: 1, noNextClassBehavior: "assign_without_due" },
+          autoAssign: autoAssignTemplate,
+          isActive: true,
+          linkStatus: selectedTemplateTopic ? "linked" : "needs_review",
+          source: {
+            kind: "manual",
+            pgnIds: activities.flatMap((activity) => activity.selectedPgnIds),
+            fileNames: activities.map((activity) => activity.uploadedPgnFileName).filter(Boolean),
+          },
+        }),
+      });
+      if (!templateResponse.ok) {
+        const payload = await templateResponse.json().catch(() => ({}));
+        return toast.error(payload?.error || "Failed to save template");
+      }
+    }
+
+    if (assignNow) {
+      const response = await fetch("/api/homework", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(homeworkPayload),
+      });
+      if (!response.ok) return toast.error("Failed to create assignment");
+    }
+
+    toast.success(saveAsTemplate && assignNow ? "Template saved and assignment created" : saveAsTemplate ? "Template saved" : "Assignment created");
     router.push("/homework");
   }
 
@@ -308,7 +380,10 @@ export default function NewHomeworkPage() {
           <h1 className="text-xl font-black text-brand">Create Assignment</h1>
           <p className="text-xs text-slate-500">Build MCQ, written answer, board-based, PGN, and computer-play homework.</p>
         </div>
-        <button className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-brand px-3 text-xs font-black text-white"><Check size={14} /> Create Assignment</button>
+        <button className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-brand px-3 text-xs font-black text-white">
+          {saveAsTemplate && !assignNow ? <Save size={14} /> : <Check size={14} />}
+          {saveAsTemplate && assignNow ? "Save Template & Assign" : saveAsTemplate ? "Save Template" : "Create Assignment"}
+        </button>
       </header>
 
       <section className="grid gap-2 rounded-lg border border-slate-200 bg-white p-3 shadow-sm lg:grid-cols-[1.2fr_1fr_1fr]">
@@ -318,7 +393,7 @@ export default function NewHomeworkPage() {
         </label>
         <label className="text-xs font-bold text-slate-600">
           Classroom
-          <select className="input mt-1 h-9" value={classroom} onChange={(event) => setClassroom(event.target.value)} required>
+          <select className="input mt-1 h-9" value={classroom} onChange={(event) => setClassroom(event.target.value)} required={assignNow}>
             <option value="">Choose classroom</option>
             {classrooms.map((item) => <option key={item._id} value={item._id}>{item.title}</option>)}
           </select>
@@ -337,6 +412,68 @@ export default function NewHomeworkPage() {
       </section>
 
       <section className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+        <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2 text-sm font-black text-brand"><Layers size={15} /> Reusable Template</div>
+            <p className="mt-1 text-xs text-slate-500">Link this work to a course topic so the class-complete automation can find it later.</p>
+          </div>
+          <div className="flex flex-wrap gap-4 text-sm font-bold text-slate-700">
+            <Toggle label="Save as template" checked={saveAsTemplate} onChange={(checked) => { setSaveAsTemplate(checked); if (!checked) setAssignNow(true); }} />
+            {saveAsTemplate && <Toggle label="Assign now also" checked={assignNow} onChange={setAssignNow} />}
+            {saveAsTemplate && <Toggle label="Auto-share after class" checked={autoAssignTemplate} onChange={setAutoAssignTemplate} />}
+          </div>
+        </div>
+        {saveAsTemplate && (
+          <div className="grid gap-2 lg:grid-cols-4">
+            <label className="text-xs font-bold text-slate-600">
+              Course
+              <select
+                className="input mt-1 h-9"
+                value={templateCourseId}
+                onChange={(event) => {
+                  setTemplateCourseId(event.target.value);
+                  setTemplateLevelName("");
+                  applyTemplateTopic("");
+                }}
+              >
+                <option value="">No course selected</option>
+                {courses.map((course) => <option key={course._id} value={course._id}>{course.name}</option>)}
+              </select>
+            </label>
+            <label className="text-xs font-bold text-slate-600">
+              Level
+              <select
+                className="input mt-1 h-9"
+                value={templateLevelName}
+                onChange={(event) => {
+                  setTemplateLevelName(event.target.value);
+                  applyTemplateTopic("");
+                }}
+                disabled={!templateCourseId}
+              >
+                <option value="">Choose level</option>
+                {templateLevels.map((level) => <option key={level._id || level.name} value={level.name}>{level.name}</option>)}
+              </select>
+            </label>
+            <label className="text-xs font-bold text-slate-600">
+              Topic
+              <select className="input mt-1 h-9" value={templateTopicName} onChange={(event) => applyTemplateTopic(event.target.value)} disabled={!templateLevelName}>
+                <option value="">Choose topic</option>
+                {templateTopics.map((topic) => <option key={topic._id || topic.name} value={topic.name}>{topic.name}</option>)}
+              </select>
+            </label>
+            <label className="text-xs font-bold text-slate-600">
+              Template topic
+              <input className="input mt-1 h-9" value={templateTopicName} onChange={(event) => applyTemplateTopic(event.target.value)} placeholder="Topic name used by class schedule" required={saveAsTemplate} />
+            </label>
+            <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-900 lg:col-span-4">
+              Template name: {homeworkTemplateTitle(templateTopicName)}
+            </div>
+          </div>
+        )}
+      </section>
+
+      {assignNow && <section className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
         <div className="mb-2 flex items-center gap-2 text-sm font-black text-brand"><Users size={15} /> Assign To</div>
         <div className="flex flex-wrap gap-2">
           {(["all", "batches", "students"] as TargetMode[]).map((mode) => (
@@ -361,7 +498,7 @@ export default function NewHomeworkPage() {
             </div>
           </div>
         )}
-      </section>
+      </section>}
 
       <section className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">

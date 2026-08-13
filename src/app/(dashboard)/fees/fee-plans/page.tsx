@@ -5,6 +5,7 @@ import { Banknote } from "lucide-react";
 import { FeePlansWorkspace } from "@/components/fees/FeePlanForms";
 import { requireFeesAccess } from "@/lib/feesAccess";
 import { redirect } from "next/navigation";
+import { recordActivity } from "@/lib/activity";
 
 export const dynamic = "force-dynamic";
 
@@ -14,10 +15,11 @@ function paise(value: FormDataEntryValue | null) {
 
 async function createPlan(formData: FormData) {
   "use server";
-  if (!(await requireFeesAccess("edit", "feePlans"))) throw new Error("Forbidden");
+  const session = await requireFeesAccess("edit", "feePlans");
+  if (!session) throw new Error("Forbidden");
   await dbConnect();
   const type = String(formData.get("type")) as "monthly" | "credits";
-  await FeePlan.create({
+  const plan = await FeePlan.create({
     name: formData.get("name"),
     type,
     amount: paise(formData.get("amount")),
@@ -31,17 +33,27 @@ async function createPlan(formData: FormData) {
     lateFeeAfterDays: Number(formData.get("lateFeeAfterDays") || 10),
     creditValidityDays: Number(formData.get("creditValidityDays") || 0),
   });
+  await recordActivity({
+    actor: (session.user as any).id,
+    type: "fees.plan.created",
+    label: `Created ${type} fee plan ${plan.name}`,
+    entityType: "FeePlan",
+    entityId: plan._id.toString(),
+    metadata: { planName: plan.name, planType: type, amount: plan.amount, credits: plan.credits || 0, source: "manual_admin" },
+  });
   revalidatePath("/fees/fee-plans");
   redirect("/fees/fee-plans?success=created");
 }
 
 async function updatePlan(formData: FormData) {
   "use server";
-  if (!(await requireFeesAccess("edit", "feePlans"))) throw new Error("Forbidden");
+  const session = await requireFeesAccess("edit", "feePlans");
+  if (!session) throw new Error("Forbidden");
   await dbConnect();
   const id = String(formData.get("id"));
   const type = String(formData.get("type")) as "monthly" | "credits";
-  await FeePlan.findByIdAndUpdate(id, {
+  const before: any = await FeePlan.findById(id).lean();
+  const plan: any = await FeePlan.findByIdAndUpdate(id, {
     name: formData.get("name"),
     type,
     amount: paise(formData.get("amount")),
@@ -53,7 +65,25 @@ async function updatePlan(formData: FormData) {
     lateFeeAmount: paise(formData.get("lateFeeAmount") || "500"),
     lateFeeAfterDays: Number(formData.get("lateFeeAfterDays") || 10),
     creditValidityDays: Number(formData.get("creditValidityDays") || 0),
-  });
+  }, { new: true });
+  if (plan) {
+    await recordActivity({
+      actor: (session.user as any).id,
+      type: "fees.plan.updated",
+      label: `Updated fee plan ${plan.name}`,
+      entityType: "FeePlan",
+      entityId: plan._id.toString(),
+      metadata: {
+        planName: plan.name,
+        planType: plan.type,
+        previousAmount: before?.amount,
+        amount: plan.amount,
+        previousCredits: before?.credits || 0,
+        credits: plan.credits || 0,
+        source: "manual_admin",
+      },
+    });
+  }
   revalidatePath("/fees/fee-plans");
   redirect("/fees/fee-plans?success=updated");
 }
@@ -68,22 +98,44 @@ async function planIsLinked(id: string) {
 
 async function archivePlan(formData: FormData) {
   "use server";
-  if (!(await requireFeesAccess("edit", "feePlans"))) throw new Error("Forbidden");
+  const session = await requireFeesAccess("edit", "feePlans");
+  if (!session) throw new Error("Forbidden");
   await dbConnect();
   const id = String(formData.get("id") || "");
   if (await planIsLinked(id)) redirect("/fees/fee-plans?error=linked");
-  await FeePlan.findByIdAndUpdate(id, { isActive: false });
+  const plan: any = await FeePlan.findByIdAndUpdate(id, { isActive: false }, { new: true });
+  if (plan) {
+    await recordActivity({
+      actor: (session.user as any).id,
+      type: "fees.plan.archived",
+      label: `Archived fee plan ${plan.name}`,
+      entityType: "FeePlan",
+      entityId: plan._id.toString(),
+      metadata: { planName: plan.name, planType: plan.type, source: "manual_admin" },
+    });
+  }
   revalidatePath("/fees/fee-plans");
   redirect("/fees/fee-plans?success=archived");
 }
 
 async function deletePlan(formData: FormData) {
   "use server";
-  if (!(await requireFeesAccess("delete", "feePlans"))) throw new Error("Forbidden");
+  const session = await requireFeesAccess("delete", "feePlans");
+  if (!session) throw new Error("Forbidden");
   await dbConnect();
   const id = String(formData.get("id") || "");
   if (await planIsLinked(id)) redirect("/fees/fee-plans?error=linked");
-  await FeePlan.findByIdAndDelete(id);
+  const plan: any = await FeePlan.findByIdAndDelete(id).lean();
+  if (plan) {
+    await recordActivity({
+      actor: (session.user as any).id,
+      type: "fees.plan.deleted",
+      label: `Deleted fee plan ${plan.name}`,
+      entityType: "FeePlan",
+      entityId: plan._id.toString(),
+      metadata: { planName: plan.name, planType: plan.type, amount: plan.amount, credits: plan.credits || 0, source: "manual_admin" },
+    });
+  }
   revalidatePath("/fees/fee-plans");
   redirect("/fees/fee-plans?success=deleted");
 }

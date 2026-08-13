@@ -5,6 +5,7 @@ import { TournamentGame } from "@/models/TournamentGame";
 import { Tournament } from "@/models/Tournament";
 import { applyGameMove, autoAdvanceSwissTournament, enforceTournamentGameTimeouts, finalizeTournamentIfComplete, queueCompletedArenaPlayers, recalculateTournamentStandings, syncArenaPairings } from "@/lib/tournamentEngine";
 import { StudentReward } from "@/models/ClassroomLive";
+import { recordActivity } from "@/lib/activity";
 import { cookies } from "next/headers";
 import { getTournamentGuestUsername } from "@/lib/tournamentGuests";
 import { inactiveStudentMessage, isCurrentStudent } from "@/lib/studentAccess";
@@ -136,6 +137,26 @@ export async function POST(req: Request, { params }: { params: { gameId: string 
   if (tournament.type === "arena") await syncArenaPairings(tournament);
   await finalizeTournamentIfComplete(tournament);
   await tournament.save();
+  await recordActivity({
+    actor: userId || undefined,
+    targetUser: userId || undefined,
+    type: game.status === "completed" ? "tournament.game.completed_by_move" : "tournament.game.move_played",
+    label: game.status === "completed" ? "Completed tournament game by move" : "Played tournament game move",
+    entityType: "TournamentGame",
+    entityId: game._id.toString(),
+    metadata: {
+      tournament: tournament._id.toString(),
+      round: game.roundNumber,
+      moveCount: Array.isArray(game.moveHistorySAN) ? game.moveHistorySAN.length : 0,
+      from: body.from,
+      to: body.to,
+      promotion: body.promotion || "",
+      status: game.status,
+      result: game.result,
+      actorSide: isWhite || isGuestWhite ? "white" : "black",
+      source: userId ? "student_tournament" : "guest_tournament",
+    },
+  });
 
   return NextResponse.json({ ok: true, game });
 }

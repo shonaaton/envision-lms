@@ -11,6 +11,7 @@ import {
   processDueAskCoachEmailReminders,
   queueAskCoachUnreadEmail,
 } from "@/lib/askCoachEmailReminders";
+import { recordActivity } from "@/lib/activity";
 
 export const dynamic = "force-dynamic";
 
@@ -300,6 +301,27 @@ export async function POST(req: Request) {
   }
 
   const created = await createAskCoachMessage({ conversation, sender, receiver, batch: batchId, body: messageText });
+  await recordActivity({
+    actor: sender,
+    targetUser: receiver || sender,
+    type: created.flagged ? "ask_coach.message_flagged" : "ask_coach.message_sent",
+    label: created.flagged
+      ? "Sent Ask Coach message that was flagged for review"
+      : batchId
+        ? "Sent Ask Coach batch message"
+        : "Sent Ask Coach direct message",
+    entityType: "AskCoachMessage",
+    entityId: created._id.toString(),
+    metadata: {
+      conversation: conversation._id.toString(),
+      batch: batchId || "",
+      receiver: receiver || "",
+      messageType: batchId ? "batch" : "direct",
+      flagged: Boolean(created.flagged),
+      flagReasons: created.flagReasons || [],
+      source: "ask_coach",
+    },
+  });
   const href = `/ask-coach?conversation=${conversation._id.toString()}`;
   const senderUser = !created.flagged
     ? await User.findById(sender).select("_id email name username role").lean<PopulatedUserRef | null>()

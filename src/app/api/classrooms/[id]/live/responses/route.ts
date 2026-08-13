@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
+import { recordActivity } from "@/lib/activity";
 import { LiveQuestion, LiveQuestionResponse, StudentReward } from "@/models/ClassroomLive";
 import { getRequestedSessionId } from "@/lib/classroomLiveSession";
 import { getLiveClassroomForUser } from "@/lib/liveClassroomAccess";
@@ -118,5 +119,26 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     },
     { upsert: true, new: true }
   );
+  await recordActivity({
+    actor: userId,
+    targetUser: userId,
+    type: "classroom.live.response_submitted",
+    label: `Submitted live classroom response: ${question.title}`,
+    entityType: "LiveQuestionResponse",
+    entityId: response._id.toString(),
+    metadata: {
+      classroom: params.id,
+      scheduledSessionId,
+      question: question._id.toString(),
+      correct,
+      score,
+      completedItems,
+      totalItems,
+      hintsUsed,
+      attemptsUsed,
+      finalSubmitted: Boolean(existing?.finalSubmitted || body.finalSubmitted),
+      source: "live_classroom",
+    },
+  });
   return NextResponse.json(response);
 }

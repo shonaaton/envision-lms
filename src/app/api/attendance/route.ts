@@ -14,6 +14,9 @@ import {
   notifyStudentNoShowCreditDeduction,
   normalizeSessionOutcome,
   recalculateFutureSessionTopics,
+  ensureTopicContinuationSession,
+  topicCompletedForOutcome,
+  shouldContinueTopic,
   studentNoShowCountThisMonth,
   STUDENT_NO_SHOW_FREE_ALLOWANCE_PER_MONTH,
 } from "@/lib/classroomLifecycle";
@@ -123,6 +126,8 @@ export async function POST(req: Request) {
     : Math.max(0, Number(metadata?.summary?.actualTeachingMinutes || teachingMinutes || 0));
   const requestedOutcome = classOutcome || metadata?.summary?.classOutcome;
   const outcome = normalizeSessionOutcome(requestedOutcome, actualMinutes, Boolean(adminOverrideCompletion || metadata?.summary?.adminOverrideCompletion));
+  const topicCompleted = topicCompletedForOutcome(outcome, requestedOutcome);
+  const storedOutcome = shouldContinueTopic(requestedOutcome) && outcome === "completed" ? "completed_continue_topic" : outcome;
   const punctualityScore = target ? Number(target.punctualityScore || punctualityBreakdown(target, classroomDoc).punctualityScore) : 0;
   const assignedCoach = target?.substituteCoach || classroomDoc.coach || classroomDoc.instructor || coach;
   const doc = await Attendance.findOneAndUpdate(
@@ -138,8 +143,8 @@ export async function POST(req: Request) {
       punctualityScore,
       metadata: {
         ...(metadata || {}),
-        classOutcome: outcome,
-        topicCompleted: outcome === "completed",
+        classOutcome: storedOutcome,
+        topicCompleted,
         creditPolicy: outcome === "completed" ? "charge_present_students" : outcome === "student_no_show" ? "repeat_no_show_policy" : "no_charge",
         scheduledTeachingMinutes: scheduledMinutes,
         actualTeachingMinutes: actualMinutes,
@@ -154,7 +159,7 @@ export async function POST(req: Request) {
     label: `Marked attendance for ${records?.length ?? 0} students`,
     entityType: "Attendance",
     entityId: doc._id.toString(),
-    metadata: { classroom, sessionDate, sessionId, records: records?.length ?? 0, classOutcome: outcome },
+    metadata: { classroom, sessionDate, sessionId, records: records?.length ?? 0, classOutcome: storedOutcome },
   });
   for (const record of records || []) {
     if (!record?.student) continue;
@@ -180,13 +185,16 @@ export async function POST(req: Request) {
       target.summary = {
         ...(target.summary || {}),
         ...(metadata?.summary || {}),
-        classOutcome: outcome,
-        topicCompleted: outcome === "completed",
+        classOutcome: storedOutcome,
+        topicCompleted,
         creditPolicy: outcome === "completed" ? "charge_present_students" : outcome === "student_no_show" ? "repeat_no_show_policy" : "no_charge",
         scheduledTeachingMinutes: scheduledMinutes,
         actualTeachingMinutes: actualMinutes,
         punctualityScore,
       };
+      if (shouldContinueTopic(requestedOutcome) && outcome === "completed") {
+        await ensureTopicContinuationSession(classroomDoc, target, (session.user as SessionUser).id);
+      }
       await recalculateFutureSessionTopics(classroomDoc, (session.user as SessionUser).id);
       await classroomDoc.save();
       if (outcome === "coach_no_show") {

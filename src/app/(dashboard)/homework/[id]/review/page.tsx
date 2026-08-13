@@ -6,6 +6,7 @@ import { Homework, Submission } from "@/models/Homework";
 import { User } from "@/models/User";
 import { getCoachAssignedStudentIds } from "@/lib/coachStudentAccess";
 import { ChevronLeft, Clock, FileText, Trophy, User2 } from "lucide-react";
+import HomeworkReviewBoard from "@/components/homework/HomeworkReviewBoard";
 
 export const dynamic = "force-dynamic";
 
@@ -13,14 +14,28 @@ function objectId(value: any) {
   return value?._id?.toString?.() ?? value?.toString?.() ?? "";
 }
 
-type TraceEntry = {
-  moveNumber: number;
-  by: string;
-  san?: string;
-  from?: string;
-  to?: string;
-  note?: string;
-};
+function answerKey(activityId: string, itemId: string) {
+  return `${activityId}:${itemId}`;
+}
+
+function boardReviewItems(homework: any, submission: any) {
+  const results = submission.activityResults || {};
+  const items: any[] = [];
+  for (const activity of homework.activities || []) {
+    const isPgnHomework = activity.type === "study_pgn" && activity.source?.kind === "pgn_quiz";
+    if (!isPgnHomework) continue;
+    for (const item of activity.items || []) {
+      const key = answerKey(objectId(activity._id), String(item.id || ""));
+      items.push({
+        key,
+        activityTitle: activity.title || "PGN Homework",
+        item,
+        result: results[key] || {},
+      });
+    }
+  }
+  return items;
+}
 
 export default async function HomeworkReviewPage({ params }: { params: { id: string } }) {
   const session = await auth();
@@ -99,47 +114,29 @@ export default async function HomeworkReviewPage({ params }: { params: { id: str
                   )}
                 </div>
               ))}
-              {Object.entries(submission.activityResults || {}).map(([resultKey, resultValue]: [string, any]) => (
-                <div key={resultKey} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              {boardReviewItems(homework, submission).map(({ key, activityTitle, item, result }) => (
+                <div key={key} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                   <div className="mb-2 flex items-center justify-between gap-3">
-                    <div className="font-semibold text-slate-950">{resultKey}</div>
-                    <span className={`rounded-full px-2 py-1 text-xs font-bold ${resultValue?.solved ? "bg-emerald-50 text-emerald-700" : resultValue?.skipped ? "bg-amber-50 text-amber-700" : "bg-slate-200 text-slate-700"}`}>
-                      {resultValue?.solved ? "Solved" : resultValue?.skipped ? "Skipped" : "Incomplete"}
+                    <div>
+                      <div className="font-semibold text-slate-950">{item.title || item.pgnTitle || "Board question"}</div>
+                      <div className="text-xs text-slate-500">{activityTitle}</div>
+                    </div>
+                    <span className={`rounded-full px-2 py-1 text-xs font-bold ${result?.solved ? "bg-emerald-50 text-emerald-700" : result?.skipped ? "bg-amber-50 text-amber-700" : "bg-slate-200 text-slate-700"}`}>
+                      {result?.solved ? "Solved" : result?.skipped ? "Skipped" : "Incomplete"}
                     </span>
                   </div>
                   <div className="mb-3 flex flex-wrap gap-2 text-xs text-slate-500">
-                    <span>Mistakes {resultValue?.mistakes || 0}</span>
-                    <span>Hints {resultValue?.hintsUsed || 0}</span>
-                    <span>Time {resultValue?.timeTakenSeconds || 0}s</span>
+                    <span>Mistakes {result?.mistakes || 0}</span>
+                    <span>Hints {result?.hintsUsed || 0}</span>
+                    <span>Time {result?.timeTakenSeconds || 0}s</span>
                   </div>
-                  <MoveTraceList history={resultValue?.moveHistory || []} />
+                  <HomeworkReviewBoard item={item} result={result} />
                 </div>
               ))}
             </div>
           </section>
         ))}
       </div>
-    </div>
-  );
-}
-
-function MoveTraceList({ history }: { history: TraceEntry[] }) {
-  if (!history.length) {
-    return <div className="rounded-lg bg-white px-3 py-4 text-sm text-slate-500">No move history stored for this attempt.</div>;
-  }
-  return (
-    <div className="space-y-2">
-      {history.map((entry, index) => (
-        <div key={`${entry.by}-${index}`} className="rounded-lg bg-white px-3 py-3 text-sm">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-600">{entry.moveNumber}</span>
-            <span className="font-semibold text-slate-900">{entry.san || entry.note || "Action"}</span>
-            <span className="text-xs uppercase tracking-wide text-slate-400">{entry.by}</span>
-            {entry.from && entry.to && <span className="text-xs text-slate-500">{entry.from} to {entry.to}</span>}
-            {entry.note && entry.san && <span className="text-xs text-slate-500">{entry.note}</span>}
-          </div>
-        </div>
-      ))}
     </div>
   );
 }

@@ -8,6 +8,7 @@ import { syncClassroomSessionInstances } from "@/lib/classroomSessionInstances";
 import { canAccessFeature, isSuperAdminSession } from "@/lib/featureAccess";
 import { coachClassroomQuery, limitClassroomToCoachSessions } from "@/lib/classroomCoachAccess";
 import { User } from "@/models/User";
+import { recordActivity } from "@/lib/activity";
 
 export const dynamic = "force-dynamic";
 
@@ -56,6 +57,22 @@ export async function POST(req: Request) {
     const body = await normalizeClassroomPayload(raw, actorId);
     const created = await Classroom.create(body);
     await syncClassroomSessionInstances(String(created._id));
+    await recordActivity({
+      actor: actorId,
+      type: "classroom.created",
+      label: `Created classroom ${created.title}`,
+      entityType: "Classroom",
+      entityId: created._id.toString(),
+      metadata: {
+        title: created.title,
+        classroomType: created.classroomType,
+        coach: created.coach?.toString?.() || "",
+        students: Array.isArray(created.students) ? created.students.length : 0,
+        sessions: Array.isArray(created.generatedSessions) ? created.generatedSessions.length : 0,
+        courseName: created.courseName || "",
+        source: "manual_admin",
+      },
+    });
     return NextResponse.json(created);
   } catch (err: any) {
     return NextResponse.json({ error: err.message ?? "Bad request" }, { status: 400 });

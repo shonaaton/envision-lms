@@ -4,6 +4,7 @@ import path from "path";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { canAccessFeature } from "@/lib/featureAccess";
+import { recordActivity } from "@/lib/activity";
 import { normalizeTopicKey, topicFromHomeworkFileName } from "@/lib/assignmentAutomation";
 import { AssignmentTemplate } from "@/models/AssignmentTemplate";
 import { Course } from "@/models/Course";
@@ -261,6 +262,19 @@ export async function POST(req: Request) {
     report.push({ topicName: group.topicName, topicKey, templateId: doc?._id, pgnCount: group.pgns.length, linkStatus, courseName: payload.courseName, levelName: payload.levelName });
   }
   const bundledMcqReport = body.includeBundledFenMcq === false ? [] : await importBundledFenMcqTemplates((session.user as any).id);
+  await recordActivity({
+    actor: (session.user as any).id,
+    type: "homework.template.imported_from_pgn",
+    label: `Imported ${report.length + bundledMcqReport.length} homework template${report.length + bundledMcqReport.length === 1 ? "" : "s"} from PGN sources`,
+    entityType: "AssignmentTemplate",
+    metadata: {
+      imported: report.length + bundledMcqReport.length,
+      pgnImported: report.length,
+      bundledFenMcqImported: bundledMcqReport.length,
+      pgnCount: pgns.length,
+      source: "pgn_import",
+    },
+  });
 
   return NextResponse.json({
     imported: report.length + bundledMcqReport.length,

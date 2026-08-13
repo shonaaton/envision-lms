@@ -1188,6 +1188,7 @@ export default function ClassroomManagementClient({
                   <Field label="Outcome">
                     <select className="input h-10" value={actionDraft.classOutcome || "completed"} onChange={(event) => setActionDraft((current: any) => ({ ...current, classOutcome: event.target.value }))}>
                       <option value="completed">Completed: topic taught</option>
+                      <option value="completed_continue_topic">Completed: continue same topic next class</option>
                       <option value="abandoned">Not completed: carry topic forward</option>
                       <option value="coach_no_show">Coach no-show</option>
                       <option value="student_no_show">Student no-show</option>
@@ -1200,7 +1201,7 @@ export default function ClassroomManagementClient({
                     <textarea className="input min-h-24 py-2" value={actionDraft.reason || ""} onChange={(event) => setActionDraft((current: any) => ({ ...current, reason: event.target.value }))} placeholder="Optional admin note" />
                   </Field>
                   <div className="rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
-                    Completed consumes the topic. Other outcomes carry the topic forward and refresh future class topics.
+                    Completed consumes the topic. Continue topic charges the class, repeats the topic next class, shifts later topics, and adds one extra class at the end.
                   </div>
                 </div>
               )}

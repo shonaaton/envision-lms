@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
+import { recordActivity } from "@/lib/activity";
 import { ClassroomSession, LiveQuestion } from "@/models/ClassroomLive";
 import { getRequestedSessionId } from "@/lib/classroomLiveSession";
 import { getLiveClassroomForUser, type AppRole } from "@/lib/liveClassroomAccess";
@@ -50,6 +51,20 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     activeQuestion: question._id,
     mode: "puzzle",
   });
+  await recordActivity({
+    actor: userId,
+    type: "classroom.live.question_launched",
+    label: `Launched live classroom question ${question.title}`,
+    entityType: "LiveQuestion",
+    entityId: question._id.toString(),
+    metadata: {
+      classroom: params.id,
+      scheduledSessionId,
+      questionType: question.type,
+      items: Array.isArray(question.items) ? question.items.length : 0,
+      source: "live_classroom",
+    },
+  });
   return NextResponse.json(question);
 }
 
@@ -77,6 +92,20 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (body.progressionMode) update.progressionMode = body.progressionMode === "manual" ? "manual" : "auto";
   if (typeof body.currentItemIndex === "number") update.currentItemIndex = Math.max(0, Number(body.currentItemIndex || 0));
   const question = await LiveQuestion.findByIdAndUpdate(questionId, { $set: update }, { new: true });
+  await recordActivity({
+    actor: userId,
+    type: body.status && body.status !== "live" ? "classroom.live.question_ended" : "classroom.live.question_updated",
+    label: body.status && body.status !== "live" ? `Ended live classroom question ${question?.title || ""}` : `Updated live classroom question ${question?.title || ""}`,
+    entityType: "LiveQuestion",
+    entityId: questionId,
+    metadata: {
+      classroom: params.id,
+      scheduledSessionId,
+      status: body.status || question?.status || "",
+      currentItemIndex: update.currentItemIndex,
+      source: "live_classroom",
+    },
+  });
   if (body.status && body.status !== "live") {
     await ClassroomSession.findByIdAndUpdate(live._id, {
       $unset: { activeQuestion: 1 },

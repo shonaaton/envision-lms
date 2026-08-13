@@ -324,6 +324,21 @@ export async function PATCH(req: Request) {
       title: `${bookingFeatureNameForType(booking.bookingType)} approved`,
       message: `${coach.name} approved ${student.name}'s ${bookingFeatureNameLowerForType(booking.bookingType)} for ${formatBookingTime(booking.startAt)}. The classroom is now scheduled.`,
     });
+    await recordActivity({
+      actor: actorId,
+      targetUser: student._id?.toString?.() || "",
+      type: "booking.approved",
+      label: `Approved ${bookingFeatureNameLowerForType(booking.bookingType)} booking`,
+      entityType: "Booking",
+      entityId: booking._id.toString(),
+      metadata: {
+        bookingType: booking.bookingType,
+        classroom: classroom._id.toString(),
+        instructor: coach._id?.toString?.() || "",
+        startAt: booking.startAt,
+        source: role === "admin" ? "manual_admin" : "manual_coach",
+      },
+    });
   } else if (action === "cancel") {
     booking.status = "cancelled";
     booking.approvalStatus = "coach_cancelled";
@@ -336,6 +351,21 @@ export async function PATCH(req: Request) {
       admins,
       title: `${bookingFeatureNameForType(booking.bookingType)} cancelled`,
       message: `${coach.name} could not accept the ${bookingFeatureNameLowerForType(booking.bookingType)} requested for ${formatBookingTime(booking.startAt)}.`,
+    });
+    await recordActivity({
+      actor: actorId,
+      targetUser: student._id?.toString?.() || "",
+      type: "booking.cancelled",
+      label: `Cancelled ${bookingFeatureNameLowerForType(booking.bookingType)} booking`,
+      entityType: "Booking",
+      entityId: booking._id.toString(),
+      metadata: {
+        bookingType: booking.bookingType,
+        instructor: coach._id?.toString?.() || "",
+        startAt: booking.startAt,
+        note: booking.coachNote,
+        source: role === "admin" ? "manual_admin" : "manual_coach",
+      },
     });
   } else if (action === "suggest_time") {
     const proposedStart = new Date(body.proposedStartAt);
@@ -355,6 +385,23 @@ export async function PATCH(req: Request) {
       admins,
       title: `Coach suggested a new ${bookingFeatureNameLowerForType(booking.bookingType)} time`,
       message: `${coach.name} suggested ${formatBookingTime(proposedStart)} for ${student.name}'s ${bookingFeatureNameLowerForType(booking.bookingType)}.`,
+    });
+    await recordActivity({
+      actor: actorId,
+      targetUser: student._id?.toString?.() || "",
+      type: "booking.reschedule_suggested",
+      label: `Suggested new ${bookingFeatureNameLowerForType(booking.bookingType)} time`,
+      entityType: "Booking",
+      entityId: booking._id.toString(),
+      metadata: {
+        bookingType: booking.bookingType,
+        instructor: coach._id?.toString?.() || "",
+        previousStartAt: booking.startAt,
+        proposedStartAt: proposedStart,
+        proposedEndAt: proposedEnd,
+        note: booking.coachNote,
+        source: role === "admin" ? "manual_admin" : "manual_coach",
+      },
     });
   } else {
     return NextResponse.json({ error: "Unknown request action." }, { status: 400 });

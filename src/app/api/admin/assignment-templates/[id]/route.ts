@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { canAccessFeature } from "@/lib/featureAccess";
+import { recordActivity } from "@/lib/activity";
 import { normalizeTopicKey } from "@/lib/assignmentAutomation";
 import { assignmentTemplateSchema } from "@/lib/validation";
 import { AssignmentTemplate } from "@/models/AssignmentTemplate";
@@ -46,6 +47,19 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
       updatedBy: (session.user as any).id,
     });
     await existing.save();
+    await recordActivity({
+      actor: (session.user as any).id,
+      type: "homework.template.updated",
+      label: `Updated homework template ${existing.title}`,
+      entityType: "AssignmentTemplate",
+      entityId: existing._id.toString(),
+      metadata: {
+        topicName: existing.topicName,
+        activityCount: Array.isArray(existing.activities) ? existing.activities.length : 0,
+        puzzleCount: Array.isArray(existing.puzzles) ? existing.puzzles.length : 0,
+        source: "manual_template",
+      },
+    });
     return NextResponse.json(existing);
   } catch (error: any) {
     return NextResponse.json({ error: error?.message || "Bad request" }, { status: 400 });
@@ -68,8 +82,24 @@ export async function DELETE(req: Request, { params }: { params: { id: string } 
     existing.autoAssign = false;
     existing.updatedBy = (session.user as any).id;
     await existing.save();
+    await recordActivity({
+      actor: (session.user as any).id,
+      type: "homework.template.deactivated",
+      label: `Deactivated homework template ${existing.title}`,
+      entityType: "AssignmentTemplate",
+      entityId: existing._id.toString(),
+      metadata: { topicName: existing.topicName, source: "manual_template" },
+    });
     return NextResponse.json({ ok: true, deactivated: true });
   }
   await AssignmentTemplate.deleteOne({ _id: existing._id });
+  await recordActivity({
+    actor: (session.user as any).id,
+    type: "homework.template.deleted",
+    label: `Deleted homework template ${existing.title}`,
+    entityType: "AssignmentTemplate",
+    entityId: existing._id.toString(),
+    metadata: { topicName: existing.topicName, source: "manual_template" },
+  });
   return NextResponse.json({ ok: true, deleted: true });
 }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { canAccessFeature } from "@/lib/featureAccess";
+import { recordActivity } from "@/lib/activity";
 import { normalizeTopicKey } from "@/lib/assignmentAutomation";
 import { assignmentTemplateSchema } from "@/lib/validation";
 import { AssignmentTemplate } from "@/models/AssignmentTemplate";
@@ -70,6 +71,18 @@ export async function POST(req: Request) {
         : await AssignmentTemplate.create({ ...payload, createdBy: (session.user as any).id });
       imported.push({ id: String(doc?._id), title: doc?.title, topicName: doc?.topicName, updated: Boolean(existing) });
     }
+    await recordActivity({
+      actor: (session.user as any).id,
+      type: "homework.template.uploaded",
+      label: `Uploaded ${imported.length} homework template${imported.length === 1 ? "" : "s"}`,
+      entityType: "AssignmentTemplate",
+      metadata: {
+        imported: imported.length,
+        updated: imported.filter((item) => item.updated).length,
+        created: imported.filter((item) => !item.updated).length,
+        source: "template_upload",
+      },
+    });
     return NextResponse.json({ imported: imported.length, templates: imported });
   } catch (error: any) {
     return NextResponse.json({ error: error?.message || "Could not upload template" }, { status: 400 });

@@ -1,7 +1,7 @@
 import { Classroom } from "@/models/Classroom";
 import { ClassroomSession } from "@/models/ClassroomLive";
 import { autoAssignHomeworkForSession } from "@/lib/assignmentAutomation";
-import { normalizeSessionOutcome, recalculateFutureSessionTopics } from "@/lib/classroomLifecycle";
+import { ensureTopicContinuationSession, normalizeSessionOutcome, recalculateFutureSessionTopics, shouldContinueTopic, topicCompletedForOutcome } from "@/lib/classroomLifecycle";
 import { actualSessionMinutes, punctualityBreakdown, scheduledPaymentMinutes } from "@/lib/teachingStats";
 
 export function getRequestedSessionId(req: Request) {
@@ -93,6 +93,8 @@ export async function markScheduledSessionFinished({
   const requestedOutcome = (summary as any)?.classOutcome;
   const adminOverride = Boolean((summary as any)?.adminOverrideCompletion);
   const outcome = normalizeSessionOutcome(requestedOutcome, target.actualTeachingMinutes, adminOverride);
+  const topicCompleted = topicCompletedForOutcome(outcome, requestedOutcome);
+  const storedOutcome = shouldContinueTopic(requestedOutcome) && outcome === "completed" ? "completed_continue_topic" : outcome;
   target.status = outcome;
   target.coachAttendanceStatus = outcome === "coach_no_show" ? "coach_no_show" : outcome === "technical_issue" ? "technical_issue" : "present";
   target.punctualityScore = punctualityBreakdown(target, classroom).punctualityScore;
@@ -100,13 +102,16 @@ export async function markScheduledSessionFinished({
   target.summary = {
     ...(target.summary || {}),
     ...(summary || {}),
-    classOutcome: outcome,
-    topicCompleted: outcome === "completed",
+    classOutcome: storedOutcome,
+    topicCompleted,
     creditPolicy: outcome === "completed" ? "charge_present_students" : outcome === "student_no_show" ? "repeat_no_show_policy" : "no_charge",
     scheduledTeachingMinutes: target.teachingMinutes,
     actualTeachingMinutes: target.actualTeachingMinutes,
     punctualityScore: target.punctualityScore,
   };
+  if (shouldContinueTopic(requestedOutcome) && outcome === "completed") {
+    await ensureTopicContinuationSession(classroom, target, actorId);
+  }
   const allDone = (classroom.generatedSessions || []).every((session: any) =>
     ["completed", "cancelled", "missed", "abandoned", "coach_no_show", "student_no_show", "technical_issue"].includes(String(session.status || "").toLowerCase())
   );

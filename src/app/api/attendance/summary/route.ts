@@ -5,11 +5,18 @@ import { Attendance } from "@/models/Attendance";
 import { Classroom } from "@/models/Classroom";
 import { deriveScheduledSessionStatus, getSessionStart } from "@/lib/classroomSessions";
 import { canAccessFeature } from "@/lib/featureAccess";
+import { academyDateKey, academyDayBounds } from "@/lib/academyTime";
 
 export const dynamic = "force-dynamic";
 
+type SummaryKind = "completed" | "missed" | "pending" | "marked";
+
 function objectId(value: any) {
   return value?._id?.toString?.() ?? value?.toString?.() ?? "";
+}
+
+function sameDay(value: Date, target: Date) {
+  return academyDateKey(value) === academyDateKey(target);
 }
 
 function flattenClassroomSessions(classrooms: any[]) {
@@ -35,7 +42,21 @@ function coachForSession(classroom: any, scheduledSession: any) {
   return scheduledSession.substituteCoach || classroom.coach || classroom.instructor || null;
 }
 
-export async function GET() {
+function titleForKind(kind: SummaryKind) {
+  if (kind === "completed") return "Completed Classes";
+  if (kind === "missed") return "Missed Attendance";
+  if (kind === "pending") return "Pending Classes";
+  return "Marked Classes";
+}
+
+function descriptionForKind(kind: SummaryKind) {
+  if (kind === "completed") return "Classes that are over and ready for attendance review.";
+  if (kind === "missed") return "Sessions that are over but still do not have attendance marked.";
+  if (kind === "pending") return "Classes on the selected day where attendance is still pending.";
+  return "Classes where attendance has already been marked.";
+}
+
+export async function GET(req: Request) {
   const session = await auth();
   const role = (session?.user as any)?.role as "student" | "instructor" | "admin" | "sub-admin" | undefined;
   if (!session || !role || !["admin", "sub-admin"].includes(role)) {
@@ -45,9 +66,21 @@ export async function GET() {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  const url = new URL(req.url);
+  const kind = String(url.searchParams.get("kind") || "missed") as SummaryKind;
+  if (!["completed", "missed", "pending", "marked"].includes(kind)) {
+    return NextResponse.json({ error: "Invalid summary type" }, { status: 400 });
+  }
+
   await dbConnect();
   const now = new Date();
-  const lookbackStart = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000);
+  const selectedDateValue = url.searchParams.get("date") || new Date();
+  const { start: selectedDateStart, end: selectedDateEnd } = academyDayBounds(selectedDateValue);
+  const lookbackStart = kind === "pending"
+    ? selectedDateStart
+    : new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000);
+  const attendanceEnd = kind === "pending" ? selectedDateEnd : now;
+
   const classroomDocs: any[] = await Classroom.find({ isSessionInstance: { $ne: true } })
     .populate("coach instructor", "name username email")
     .populate("generatedSessions.substituteCoach", "name username email")
@@ -55,20 +88,24 @@ export async function GET() {
     .sort({ createdAt: -1 })
     .lean();
 
-  const attendanceDocs: any[] = await Attendance.find({ sessionDate: { $gte: lookbackStart, $lte: now } })
-    .select("classroom scheduledSessionId sessionDate")
+  const attendanceDocs: any[] = await Attendance.find({ sessionDate: { $gte: lookbackStart, $lte: attendanceEnd } })
+    .select("classroom scheduledSessionId sessionDate coachStatus records markedBy createdAt")
     .lean();
-  const attendanceKeys = new Set(attendanceDocs.map((doc: any) => `${objectId(doc.classroom)}:${String(doc.scheduledSessionId || "")}`));
+  const attendanceBySession = new Map(attendanceDocs.map((doc: any) => [`${objectId(doc.classroom)}:${String(doc.scheduledSessionId || "")}`, doc]));
 
-  const sessions = flattenClassroomSessions(classroomDocs)
-    .filter(({ scheduledSession }) => {
-      const start = getSessionStart(scheduledSession);
-      if (!start || start < lookbackStart || start > now) return false;
-      const lifecycle = deriveScheduledSessionStatus(scheduledSession, now);
-      return lifecycle === "completed" || lifecycle === "missed";
-    })
-    .filter(({ classroom, scheduledSession }) => !attendanceKeys.has(`${objectId(classroom._id)}:${String(scheduledSession._id || "")}`))
+  const rows = flattenClassroomSessions(classroomDocs)
     .map(({ classroom, scheduledSession }) => {
+      const start = getSessionStart(scheduledSession);
+      const lifecycle = deriveScheduledSessionStatus(scheduledSession, now);
+      const attendance = attendanceBySession.get(`${objectId(classroom._id)}:${String(scheduledSession._id || "")}`) || null;
+      const isPastTrackable = lifecycle === "completed" || lifecycle === "missed";
+      const isSelectedDay = start ? sameDay(start, selectedDateStart) : false;
+
+      if (kind === "completed" && !isPastTrackable) return null;
+      if (kind === "missed" && (!isPastTrackable || attendance)) return null;
+      if (kind === "pending" && (!isSelectedDay || !isPastTrackable || attendance)) return null;
+      if (kind === "marked" && (!isPastTrackable || !attendance)) return null;
+
       const coach = coachForSession(classroom, scheduledSession);
       return {
         id: `${objectId(classroom._id)}:${String(scheduledSession._id || "")}`,
@@ -84,10 +121,21 @@ export async function GET() {
         scheduledFor: scheduledSession.scheduledFor || classroom.classDate,
         startTime: scheduledSession.startTime || classroom.startTime || "",
         durationMinutes: Number(scheduledSession.durationMinutes || classroom.durationMinutes || 60),
-        status: deriveScheduledSessionStatus(scheduledSession, now),
+        status: lifecycle,
+        attendanceState: attendance ? "marked" : "missed",
+        coachStatus: attendance?.coachStatus || scheduledSession.coachAttendanceStatus || "pending",
+        studentRecords: Array.isArray(attendance?.records) ? attendance.records.length : 0,
+        markedAt: attendance?.createdAt || null,
       };
     })
-    .sort((a, b) => new Date(b.scheduledFor).getTime() - new Date(a.scheduledFor).getTime());
+    .filter(Boolean)
+    .sort((a: any, b: any) => new Date(b.scheduledFor).getTime() - new Date(a.scheduledFor).getTime());
 
-  return NextResponse.json({ sessions });
+  return NextResponse.json({
+    kind,
+    title: titleForKind(kind),
+    description: descriptionForKind(kind),
+    selectedDate: selectedDateStart,
+    sessions: rows,
+  });
 }

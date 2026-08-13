@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, BellRing, CalendarDays, Mail, RefreshCw, UserCheck } from "lucide-react";
+import { ArrowLeft, BellRing, CalendarDays, CheckCircle2, Clock3, Mail, RefreshCw, UserCheck } from "lucide-react";
 import { toast } from "sonner";
 import PageLoadingOverlay from "@/components/feedback/PageLoadingOverlay";
 
 type Role = "student" | "instructor" | "admin" | "sub-admin";
-type MissedSessionRow = {
+type SummaryKind = "completed" | "missed" | "pending" | "marked";
+type SessionRow = {
   id: string;
   classroomId: string;
   sessionId: string;
@@ -22,6 +23,10 @@ type MissedSessionRow = {
   startTime: string;
   durationMinutes: number;
   status: string;
+  attendanceState: "marked" | "missed";
+  coachStatus: string;
+  studentRecords: number;
+  markedAt?: string | null;
 };
 
 function formatDateTime(value?: string | Date | null, startTime?: string) {
@@ -40,25 +45,37 @@ function formatDuration(minutes: number) {
 }
 
 function prettyStatus(value: string) {
-  return String(value || "missed").replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+  return String(value || "pending").replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-export default function MissedAttendanceWorkspace({ role }: { role: Role }) {
-  const canSendReminder = role === "admin" || role === "sub-admin";
-  const [data, setData] = useState<{ sessions: MissedSessionRow[] } | null>(null);
+function summaryIcon(kind: SummaryKind) {
+  if (kind === "completed") return <CalendarDays size={16} />;
+  if (kind === "pending") return <Clock3 size={16} />;
+  if (kind === "marked") return <CheckCircle2 size={16} />;
+  return <BellRing size={16} />;
+}
+
+export default function AttendanceSummaryWorkspace({ role, kind }: { role: Role; kind: SummaryKind }) {
+  const canAccess = role === "admin" || role === "sub-admin";
+  const canSendReminder = canAccess && kind === "missed";
+  const [data, setData] = useState<{ title?: string; description?: string; sessions: SessionRow[] } | null>(null);
   const [busyMessage, setBusyMessage] = useState("");
   const [sendingId, setSendingId] = useState("");
 
   const sessions = data?.sessions || [];
-  const coachesMissing = useMemo(() => new Set(sessions.map((session) => session.coachName)).size, [sessions]);
+  const coaches = useMemo(() => new Set(sessions.map((session) => session.coachName)).size, [sessions]);
 
   async function load() {
-    setBusyMessage("Loading missed attendance...");
+    setBusyMessage("Loading attendance summary...");
     try {
-      const response = await fetch("/api/attendance/missed", { cache: "no-store" });
+      const currentParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
+      const params = new URLSearchParams({ kind });
+      const date = currentParams.get("date");
+      if (date) params.set("date", date);
+      const response = await fetch(`/api/attendance/summary?${params.toString()}`, { cache: "no-store" });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        toast.error(payload?.error || "Missed attendance could not be loaded");
+        toast.error(payload?.error || "Attendance summary could not be loaded");
         setData({ sessions: [] });
         return;
       }
@@ -68,7 +85,7 @@ export default function MissedAttendanceWorkspace({ role }: { role: Role }) {
     }
   }
 
-  async function sendReminder(session: MissedSessionRow) {
+  async function sendReminder(session: SessionRow) {
     setSendingId(session.id);
     try {
       const response = await fetch("/api/attendance/reminders", {
@@ -93,9 +110,10 @@ export default function MissedAttendanceWorkspace({ role }: { role: Role }) {
 
   useEffect(() => {
     void load();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kind]);
 
-  if (!canSendReminder) {
+  if (!canAccess) {
     return (
       <div className="rounded-lg border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-500">
         This page is available for admin and sub-admin accounts.
@@ -111,8 +129,8 @@ export default function MissedAttendanceWorkspace({ role }: { role: Role }) {
           <Link href="/attendance" className="mb-2 inline-flex items-center gap-2 text-sm font-bold text-brand">
             <ArrowLeft size={16} /> Attendance
           </Link>
-          <h1 className="font-display text-2xl text-brand sm:text-3xl">Missed Attendance</h1>
-          <p className="mt-1 text-sm text-slate-500">Sessions that are over but still do not have attendance marked.</p>
+          <h1 className="font-display text-2xl text-brand sm:text-3xl">{data?.title || prettyStatus(kind)}</h1>
+          <p className="mt-1 text-sm text-slate-500">{data?.description || "Review attendance sessions."}</p>
         </div>
         <button type="button" onClick={load} className="btn-outline h-11 justify-center">
           <RefreshCw size={16} /> Refresh
@@ -120,20 +138,20 @@ export default function MissedAttendanceWorkspace({ role }: { role: Role }) {
       </div>
 
       <div className="grid gap-3 sm:grid-cols-3">
-        <SummaryCard label="Missed Records" value={sessions.length} icon={<CalendarDays size={16} />} />
-        <SummaryCard label="Coaches To Remind" value={coachesMissing} icon={<UserCheck size={16} />} />
-        <SummaryCard label="Can Email" value={sessions.filter((session) => session.coachEmail).length} icon={<Mail size={16} />} />
+        <SummaryCard label="Sessions" value={sessions.length} icon={summaryIcon(kind)} />
+        <SummaryCard label="Coaches" value={coaches} icon={<UserCheck size={16} />} />
+        <SummaryCard label={kind === "marked" ? "Student Records" : "Can Email"} value={kind === "marked" ? sessions.reduce((sum, session) => sum + Number(session.studentRecords || 0), 0) : sessions.filter((session) => session.coachEmail).length} icon={<Mail size={16} />} />
       </div>
 
       <section className="rounded-lg border border-brand/10 bg-white p-3 shadow-[0_18px_45px_rgba(90,19,114,0.08)] sm:p-5">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-lg font-black text-slate-950">Sessions Missing Attendance</h2>
-          <span className="rounded-full bg-rose-50 px-3 py-1 text-xs font-black uppercase text-rose-700">{sessions.length} open</span>
+          <h2 className="text-lg font-black text-slate-950">{data?.title || "Attendance Sessions"}</h2>
+          <span className="rounded-full bg-brand/10 px-3 py-1 text-xs font-black uppercase text-brand">{sessions.length} total</span>
         </div>
         <div className="space-y-3">
           {sessions.length === 0 && (
             <div className="rounded-lg border border-dashed border-slate-300 p-6 text-sm text-slate-500">
-              No missed attendance records found.
+              No sessions found here.
             </div>
           )}
           {sessions.map((session) => (
@@ -147,22 +165,26 @@ export default function MissedAttendanceWorkspace({ role }: { role: Role }) {
                     <InfoTile label="Schedule" value={formatDateTime(session.scheduledFor, session.startTime)} />
                     <InfoTile label="Duration" value={formatDuration(session.durationMinutes)} />
                     <InfoTile label="Status" value={prettyStatus(session.status)} />
+                    <InfoTile label="Attendance" value={prettyStatus(session.attendanceState)} />
                     <InfoTile label="Batch" value={session.batchNames.join(", ") || "Unassigned"} />
-                    <InfoTile label="Email" value={session.coachEmail || "Not available"} />
+                    {kind === "marked" ? <InfoTile label="Students Marked" value={session.studentRecords || 0} /> : null}
+                    {kind !== "marked" ? <InfoTile label="Email" value={session.coachEmail || "Not available"} /> : null}
                   </div>
                 </div>
                 <div className="flex flex-col gap-2 sm:flex-row lg:flex-col">
                   <Link href={`/classrooms/${session.classroomId}/summary?session=${session.sessionId}`} className="btn-outline justify-center">
                     View Details
                   </Link>
-                  <button
-                    type="button"
-                    onClick={() => sendReminder(session)}
-                    disabled={sendingId === session.id}
-                    className="btn-primary justify-center disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    <BellRing size={16} /> {sendingId === session.id ? "Sending..." : "Send Reminder"}
-                  </button>
+                  {canSendReminder ? (
+                    <button
+                      type="button"
+                      onClick={() => sendReminder(session)}
+                      disabled={sendingId === session.id}
+                      className="btn-primary justify-center disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <BellRing size={16} /> {sendingId === session.id ? "Sending..." : "Send Reminder"}
+                    </button>
+                  ) : null}
                 </div>
               </div>
             </div>

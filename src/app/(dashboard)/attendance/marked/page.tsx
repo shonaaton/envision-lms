@@ -3,8 +3,8 @@ import AttendanceSummaryWorkspace from "@/components/attendance/AttendanceSummar
 
 export const dynamic = "force-dynamic";
 
-export default async function MissedAttendancePage() {
+export default async function MarkedAttendancePage() {
   const session = await auth();
   const role = (session?.user as any)?.role as "student" | "instructor" | "admin" | "sub-admin";
-  return <AttendanceSummaryWorkspace role={role} kind="missed" />;
+  return <AttendanceSummaryWorkspace role={role} kind="marked" />;
 }

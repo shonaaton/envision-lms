@@ -230,21 +230,14 @@ export default function AttendanceWorkspace({ role }: { role: Role }) {
               : "Backup attendance management for your completed classes and pending session records."}
           </p>
         </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          {canManageMissedAttendance ? (
-            <Link href="/attendance/missed" className="btn-outline h-11 justify-center">
-              Missed Attendance
-            </Link>
-          ) : null}
-          <input className="input h-11 w-full sm:w-[220px]" type="date" value={date} onChange={(event) => setDate(event.target.value)} />
-        </div>
+        <input className="input h-11 w-full lg:max-w-[220px]" type="date" value={date} onChange={(event) => setDate(event.target.value)} />
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard label="Completed Classes" value={data?.counts?.completedClasses || 0} icon={<CalendarDays size={16} />} />
-        <SummaryCard label="Missed Attendance" value={data?.counts?.missedAttendanceClasses || 0} icon={<History size={16} />} />
-        <SummaryCard label="Pending Classes" value={data?.counts?.attendancePendingClasses || 0} icon={<Clock3 size={16} />} />
-        <SummaryCard label="Marked Classes" value={data?.counts?.previouslyMarkedClasses || 0} icon={<CheckCircle2 size={16} />} />
+        <SummaryCard label="Completed Classes" value={data?.counts?.completedClasses || 0} icon={<CalendarDays size={16} />} href={canManageMissedAttendance ? "/attendance/completed" : undefined} />
+        <SummaryCard label="Missed Attendance" value={data?.counts?.missedAttendanceClasses || 0} icon={<History size={16} />} href={canManageMissedAttendance ? "/attendance/missed" : undefined} />
+        <SummaryCard label="Pending Classes" value={data?.counts?.attendancePendingClasses || 0} icon={<Clock3 size={16} />} href={canManageMissedAttendance ? `/attendance/pending?date=${encodeURIComponent(date)}` : undefined} />
+        <SummaryCard label="Marked Classes" value={data?.counts?.previouslyMarkedClasses || 0} icon={<CheckCircle2 size={16} />} href={canManageMissedAttendance ? "/attendance/marked" : undefined} />
       </div>
 
       {role === "admin" && (
@@ -367,9 +360,8 @@ export default function AttendanceWorkspace({ role }: { role: Role }) {
   );
 }
 
-function SummaryCard({ label, value, icon }: { label: string; value: string | number; icon: React.ReactNode }) {
-  return (
-    <div className="rounded-lg border border-brand/10 bg-white p-4 shadow-[0_18px_45px_rgba(90,19,114,0.08)]">
+function SummaryCard({ label, value, icon, href }: { label: string; value: string | number; icon: React.ReactNode; href?: string }) {
+  const content = (
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-xs font-bold uppercase tracking-[0.16em] text-slate-500">{label}</div>
@@ -377,6 +369,17 @@ function SummaryCard({ label, value, icon }: { label: string; value: string | nu
         </div>
         <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand/10 text-brand">{icon}</span>
       </div>
+  );
+  if (href) {
+    return (
+      <Link href={href} className="block rounded-lg border border-brand/10 bg-white p-4 shadow-[0_18px_45px_rgba(90,19,114,0.08)] transition hover:-translate-y-0.5 hover:border-brand/25 hover:shadow-[0_22px_50px_rgba(90,19,114,0.12)]">
+        {content}
+      </Link>
+    );
+  }
+  return (
+    <div className="rounded-lg border border-brand/10 bg-white p-4 shadow-[0_18px_45px_rgba(90,19,114,0.08)]">
+      {content}
     </div>
   );
 }

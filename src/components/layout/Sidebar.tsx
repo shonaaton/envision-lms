@@ -75,7 +75,6 @@ const sections: NavSection[] = [
       { href: "/ask-coach", label: "Ask Coach", icon: MessageSquare, featureKey: "askCoach" },
       { href: "/homework", label: "Homework", icon: FileText, featureKey: "homework" },
       { href: "/attendance", label: "Attendance", icon: ClipboardList, featureKey: "attendance" },
-      { href: "/attendance/missed", label: "Missed Attendance", icon: Bell, featureKey: "attendance", roles: ["admin", "sub-admin"] },
       { href: "/calendar", label: "Calendar", icon: CalendarDays, featureKey: "calendar" },
       { href: "/tournaments", label: "Tournaments", icon: Trophy, featureKey: "tournaments" },
       { href: "/leaderboard", label: "Leaderboards", icon: Trophy, featureKey: "leaderboards" },
@@ -159,7 +158,6 @@ function canSee(role: Role, accountStatus: AccountStatus | undefined, isActive: 
 }
 
 function isActive(pathname: string, item: NavItem) {
-  if (item.href === "/attendance") return pathname === item.href;
   return pathname === item.href || pathname.startsWith(`${item.href}/`);
 }
 

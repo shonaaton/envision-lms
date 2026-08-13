@@ -817,6 +817,7 @@ export default function ClassroomManagementClient({
                             {permissions.edit && item.classroomType === "single" && item.status === "scheduled" && <ActionButton icon={<Clock3 size={14} />} label="Reschedule" onClick={() => { setActionModal({ type: "reschedule_class", item }); setActionDraft({ classDate: item.classDate ? formatDateInput(item.classDate) : "", startTime: item.startTime || "", durationMinutes: item.durationMinutes || 60 }); }} />}
                             {permissions.cancel && item.status !== "cancelled" && item.status !== "completed" && <ActionButton icon={<X size={14} />} label={item.classroomType === "series" ? "Cancel Entire Series" : "Cancel Class"} onClick={() => { setActionModal({ type: item.classroomType === "series" ? "cancel_series" : "cancel_class", item }); setActionDraft({}); }} />}
                             {permissions.assign && item.status !== "cancelled" && item.status !== "completed" && <ActionButton icon={<UserCog size={14} />} label="Substitute Coach" onClick={() => { setActionModal({ type: "substitute_coach", item }); setActionDraft({ scope: item.classroomType === "series" ? "future" : "entire", coach: "" }); }} />}
+                            {permissions.edit && item.classroomType === "series" && item.status !== "cancelled" && item.status !== "completed" && <ActionButton icon={<CalendarDays size={14} />} label="Exam Break" onClick={() => { setActionModal({ type: "shift_future_sessions", item }); setActionDraft({ restartDate: "", reason: "Student exam break" }); }} />}
                             {permissions.create && item.classroomType === "series" && item.status !== "cancelled" && item.status !== "completed" && <ActionButton icon={<CopyPlus size={14} />} label="Add Extra Class" onClick={() => { setActionModal({ type: "add_extra_class", item }); setActionDraft({ topicName: "", classDate: "", startTime: item.startTime || "16:00", durationMinutes: item.durationMinutes || 60 }); }} />}
                           </div>
                         </div>
@@ -1135,6 +1136,19 @@ export default function ClassroomManagementClient({
                   <Field label="New Date (IST)"><input type="date" className="input h-10" value={actionDraft.classDate || ""} onChange={(event) => setActionDraft((current: any) => ({ ...current, classDate: event.target.value }))} /></Field>
                   <Field label="New Time (IST)"><input type="time" className="input h-10" value={actionDraft.startTime || ""} onChange={(event) => setActionDraft((current: any) => ({ ...current, startTime: event.target.value }))} /></Field>
                   <Field label="Duration"><select className="input h-10" value={actionDraft.durationMinutes || 60} onChange={(event) => setActionDraft((current: any) => ({ ...current, durationMinutes: Number(event.target.value) }))}>{durationOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field>
+                </div>
+              )}
+              {actionModal.type === "shift_future_sessions" && (
+                <div className="grid gap-4">
+                  <Field label="Class Restart Date (IST)">
+                    <input type="date" className="input h-10" value={actionDraft.restartDate || ""} onChange={(event) => setActionDraft((current: any) => ({ ...current, restartDate: event.target.value }))} />
+                  </Field>
+                  <Field label="Admin Note">
+                    <textarea className="input min-h-24 py-2" value={actionDraft.reason || ""} onChange={(event) => setActionDraft((current: any) => ({ ...current, reason: event.target.value }))} placeholder="Optional reason for the break" />
+                  </Field>
+                  <div className="rounded-xl bg-sky-50 p-4 text-sm font-semibold text-sky-800">
+                    All not-yet-started scheduled classes in this series will move together. The first future class restarts on this date, and the remaining future classes keep the same spacing after it.
+                  </div>
                 </div>
               )}
               {actionModal.type === "substitute_coach" && (
@@ -1672,6 +1686,7 @@ function normalizeDays(item: ClassroomItem) {
 
 function actionTitle(type: string) {
   if (type === "reschedule_class") return "Reschedule Class";
+  if (type === "shift_future_sessions") return "Exam Break";
   if (type === "cancel_class") return "Cancel Class";
   if (type === "cancel_series") return "Cancel Entire Series";
   if (type === "update_session") return "Edit This Class";
@@ -1689,6 +1704,7 @@ function actionConfirmLabel(type: string) {
   if (type === "cancel_class" || type === "cancel_session") return "Cancel Class";
   if (type === "delete_session") return "Delete Class";
   if (type === "reschedule_class" || type === "reschedule_session") return "Reschedule";
+  if (type === "shift_future_sessions") return "Shift Future Classes";
   if (type === "update_session") return "Save Class";
   if (type === "mark_session_outcome") return "Save Outcome";
   return "Apply";
@@ -1697,6 +1713,7 @@ function actionConfirmLabel(type: string) {
 function actionCanSubmit(type: string, draft: any) {
   if (type === "substitute_coach") return Boolean(String(draft?.coach || "").trim());
   if (type === "reschedule_class" || type === "reschedule_session") return Boolean(draft?.classDate && draft?.startTime);
+  if (type === "shift_future_sessions") return Boolean(draft?.restartDate);
   if (type === "update_session") return Boolean(String(draft?.topicName || "").trim() && draft?.classDate && draft?.startTime);
   if (type === "add_extra_class") return Boolean(String(draft?.topicName || "").trim() && draft?.classDate && draft?.startTime);
   if (type === "mark_session_outcome") return Boolean(String(draft?.classOutcome || "").trim());
@@ -1708,6 +1725,7 @@ function actionSuccessMessage(type: string) {
   if (type === "cancel_class" || type === "cancel_session") return "Class cancelled";
   if (type === "delete_session") return "Class deleted from the series";
   if (type === "reschedule_class" || type === "reschedule_session") return "Class rescheduled";
+  if (type === "shift_future_sessions") return "Future classes shifted";
   if (type === "update_session") return "Class updated";
   if (type === "add_extra_class") return "Extra class added";
   if (type === "substitute_coach") return "Coach assignment updated";

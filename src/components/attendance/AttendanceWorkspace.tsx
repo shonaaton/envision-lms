@@ -6,7 +6,7 @@ import { CalendarDays, CheckCircle2, Clock3, History, UserCheck, Users } from "l
 import { toast } from "sonner";
 import PageLoadingOverlay from "@/components/feedback/PageLoadingOverlay";
 
-type Role = "student" | "instructor" | "admin";
+type Role = "student" | "instructor" | "admin" | "sub-admin";
 type StudentRow = { _id: string; name: string; username?: string; email?: string; status: "present" | "absent" | "late"; note?: string };
 type SessionRow = {
   id: string;
@@ -59,6 +59,7 @@ function lifecycleTone(value: string) {
 
 export default function AttendanceWorkspace({ role }: { role: Role }) {
   const canEditAttendance = role === "admin";
+  const canManageMissedAttendance = role === "admin" || role === "sub-admin";
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [data, setData] = useState<any>(null);
   const [selectedSessionId, setSelectedSessionId] = useState("");
@@ -229,7 +230,14 @@ export default function AttendanceWorkspace({ role }: { role: Role }) {
               : "Backup attendance management for your completed classes and pending session records."}
           </p>
         </div>
-        <input className="input h-11 w-full lg:max-w-[220px]" type="date" value={date} onChange={(event) => setDate(event.target.value)} />
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          {canManageMissedAttendance ? (
+            <Link href="/attendance/missed" className="btn-outline h-11 justify-center">
+              Missed Attendance
+            </Link>
+          ) : null}
+          <input className="input h-11 w-full sm:w-[220px]" type="date" value={date} onChange={(event) => setDate(event.target.value)} />
+        </div>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

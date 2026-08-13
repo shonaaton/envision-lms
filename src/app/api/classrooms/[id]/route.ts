@@ -7,7 +7,7 @@ import { ClassroomChatMessage, ClassroomSession, LiveQuestion, LiveQuestionRespo
 import { buildGeneratedSessions } from "@/lib/classroomSchedule";
 import { deleteClassroomSessionInstances, syncClassroomSessionInstances } from "@/lib/classroomSessionInstances";
 import { canAccessFeature, isSuperAdminSession } from "@/lib/featureAccess";
-import { academyDateTime } from "@/lib/academyTime";
+import { academyDateKey, academyDateTime } from "@/lib/academyTime";
 import { coachCanAccessClassroomSession, isPrimaryClassroomCoach, limitClassroomToCoachSessions } from "@/lib/classroomCoachAccess";
 import { recalculateFutureSessionTopics } from "@/lib/classroomLifecycle";
 import { recordActivity } from "@/lib/activity";
@@ -101,6 +101,31 @@ function safeAcademyDateTime(date: string | Date, time: string) {
   } catch {
     return null;
   }
+}
+
+function dateKeyToUtc(key: string) {
+  const match = key.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  return Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+}
+
+function addDaysToDateKey(key: string, days: number) {
+  const start = dateKeyToUtc(key);
+  if (start === null) return "";
+  const next = new Date(start + days * 86400000);
+  return `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, "0")}-${String(next.getUTCDate()).padStart(2, "0")}`;
+}
+
+function academyDayOffset(from: string | Date, to: string | Date) {
+  const fromUtc = dateKeyToUtc(academyDateKey(from));
+  const toUtc = dateKeyToUtc(academyDateKey(to));
+  if (fromUtc === null || toUtc === null) return 0;
+  return Math.round((toUtc - fromUtc) / 86400000);
+}
+
+function isShiftableScheduledSession(session: any) {
+  const status = String(session?.status || "scheduled").toLowerCase();
+  return ["scheduled", "rescheduled"].includes(status) && !session?.actualStartedAt && !session?.actualEndedAt;
 }
 
 async function canAccessRecord(doc: any, user: any, allowSubstitute = false, scheduledSessionId?: string) {
@@ -258,6 +283,49 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       existing.generatedSessions[0].durationMinutes = Math.max(15, Number(body.durationMinutes || existing.generatedSessions[0].durationMinutes || 60));
       existing.generatedSessions[0].status = "scheduled";
     }
+  } else if (body.action === "shift_future_sessions") {
+    if (existing.classroomType !== "series") return NextResponse.json({ error: "Exam break shifting is only available for class series" }, { status: 409 });
+    if (existing.status === "completed" || existing.status === "cancelled") return NextResponse.json({ error: "This series can no longer be shifted" }, { status: 409 });
+    if (!String(body.restartDate || "").trim() || Number.isNaN(new Date(body.restartDate).getTime())) {
+      return NextResponse.json({ error: "Select a valid class restart date" }, { status: 400 });
+    }
+    const restartKey = academyDateKey(String(body.restartDate));
+    if (dateKeyToUtc(restartKey) === null) return NextResponse.json({ error: "Select a valid class restart date" }, { status: 400 });
+    const movable = (existing.generatedSessions || [])
+      .filter(isShiftableScheduledSession)
+      .sort((a: any, b: any) => new Date(a.scheduledFor || 0).getTime() - new Date(b.scheduledFor || 0).getTime());
+    if (!movable.length) return NextResponse.json({ error: "This series has no future scheduled classes to shift" }, { status: 409 });
+
+    const firstOriginalDate = movable[0].scheduledFor;
+    const shiftedDates = movable.map((item: any) => {
+      const offset = academyDayOffset(firstOriginalDate, item.scheduledFor || firstOriginalDate);
+      const shiftedDateKey = addDaysToDateKey(restartKey, offset);
+      const shiftedFor = safeAcademyDateTime(shiftedDateKey, String(item.startTime || existing.startTime || "00:00"));
+      return { item, shiftedFor };
+    });
+    if (shiftedDates.some(({ shiftedFor }: any) => !shiftedFor)) {
+      return NextResponse.json({ error: "One or more future classes has an invalid time. Fix the class time before shifting the series." }, { status: 400 });
+    }
+
+    shiftedDates.forEach(({ item, shiftedFor }: any) => {
+      if (!item.originalDate) item.originalDate = item.scheduledFor;
+      item.scheduledFor = shiftedFor;
+      item.status = "scheduled";
+      item.coachAttendanceStatus = "pending";
+      item.notes = String(body.reason || "").trim()
+        ? [item.notes, `Exam break shift: ${String(body.reason).trim()}`].filter(Boolean).join("\n")
+        : item.notes;
+    });
+
+    existing.startDate = new Date(body.restartDate);
+    await recordActivity({
+      actor: (session.user as any).id,
+      type: "classroom.series.exam_break_shifted",
+      label: `Shifted ${movable.length} future class${movable.length === 1 ? "" : "es"} after exam break`,
+      entityType: "Classroom",
+      entityId: params.id,
+      metadata: { restartDate: restartKey, shiftedSessions: movable.map((item: any) => String(item._id)), reason: body.reason || "" },
+    });
   } else if (body.action === "substitute_coach") {
     if (!String(body.coach || "").trim()) return NextResponse.json({ error: "Select a substitute coach" }, { status: 400 });
     if (!(await User.exists({ _id: body.coach, role: "instructor", isActive: { $ne: false } }))) return NextResponse.json({ error: "The selected coach is not active" }, { status: 400 });

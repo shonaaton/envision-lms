@@ -1,10 +1,10 @@
 import { auth } from "@/lib/auth";
-import AttendanceWorkspace from "@/components/attendance/AttendanceWorkspace";
+import MissedAttendanceWorkspace from "@/components/attendance/MissedAttendanceWorkspace";
 
 export const dynamic = "force-dynamic";
 
-export default async function AttendancePage() {
+export default async function MissedAttendancePage() {
   const session = await auth();
   const role = (session?.user as any)?.role as "student" | "instructor" | "admin" | "sub-admin";
-  return <AttendanceWorkspace role={role} />;
+  return <MissedAttendanceWorkspace role={role} />;
 }

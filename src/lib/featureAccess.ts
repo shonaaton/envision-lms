@@ -75,6 +75,7 @@ function normalizeState(feature: FeatureDefinition, doc?: any): FeatureAccessSta
   const rolePermissions = doc.rolePermissions || {};
   const normalizedRolePermissions = (role: PortalRole) => {
     const configured = Array.isArray(rolePermissions[role]) ? rolePermissions[role].map(String) : [];
+    if (feature.key === "attendance" && role === "sub-admin") return Array.from(new Set([...(base.rolePermissions[role] || []), ...configured]));
     if (feature.key !== "analysisBoard") return configured;
     return Array.from(new Set([...(base.rolePermissions[role] || []), ...configured]));
   };

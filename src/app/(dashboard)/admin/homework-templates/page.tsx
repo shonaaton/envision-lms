@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { AlertTriangle, BookOpenCheck, CheckCircle2, Clock3, FileText, Link2Off, Search } from "lucide-react";
+import { AlertTriangle, BookOpenCheck, CheckCircle2, Clock3, FileText, Link2Off, Plus, Search } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { AssignmentAutomationLog, AssignmentTemplate } from "@/models/AssignmentTemplate";
@@ -123,6 +123,7 @@ export default async function HomeworkTemplatesPage({ searchParams }: { searchPa
           <p className="mt-1 text-sm text-slate-500">Assign a template manually to students or batches, or link it to course topics for automatic assignment.</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Link href="/instructor/homework/templates/new" className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-brand px-4 text-sm font-black text-white"><Plus size={16} /> Create Template</Link>
           <UploadTemplateButton />
           <ImportHomeworkPgnButton />
         </div>

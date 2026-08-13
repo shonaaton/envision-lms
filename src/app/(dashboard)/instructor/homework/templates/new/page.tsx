@@ -1,17 +1,18 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { BookOpen, CalendarClock, Check, ChevronDown, FileQuestion, FileText, Gamepad2, Search, Trash2, Upload, Users } from "lucide-react";
+import { BookOpen, ChevronDown, FileQuestion, FileText, Gamepad2, Layers, Save, Search, Trash2, Upload } from "lucide-react";
 
 type ActivityKind = "mcq" | "fen_mcq" | "written_answer" | "fen_written_answer" | "play_computer" | "pgn_quiz";
 type PgnSourceMode = "library" | "upload";
-type TargetMode = "all" | "batches" | "students";
 type QuizOption = { id: string; text: string; correct: boolean };
 type AssignmentQuestion = { id: string; text: string; positionFen: string; options: QuizOption[]; explanation: string; expectedAnswer: string };
 type PgnDoc = { _id: string; title: string; pgn: string; folder?: string; white?: string; black?: string; event?: string; initialFen?: string; sideToMove?: "white" | "black" };
+type CourseTopic = { _id?: string; name: string; description?: string; order?: number };
+type CourseLevel = { _id?: string; name: string; topics?: CourseTopic[] };
+type CourseDoc = { _id: string; name: string; level?: "beginner" | "intermediate" | "advanced" | "mixed"; levels?: CourseLevel[] };
 
 type Activity = {
   id: string;
@@ -117,36 +118,32 @@ function splitAssignmentPgns(pgn: string, fallbackTitle: string) {
   });
 }
 
-export default function NewHomeworkPage() {
+function homeworkTemplateTitle(topicName: string) {
+  const clean = String(topicName || "").trim();
+  return clean ? `${clean} - HW` : "Daily Chess Assignment";
+}
+
+export default function NewHomeworkTemplatePage() {
   const router = useRouter();
-  const [classrooms, setClassrooms] = useState<any[]>([]);
-  const [targets, setTargets] = useState<{ students: any[]; batches: any[]; classrooms: any[] }>({ students: [], batches: [], classrooms: [] });
   const [pgns, setPgns] = useState<PgnDoc[]>([]);
-  const [classroom, setClassroom] = useState("");
-  const [targetMode, setTargetMode] = useState<TargetMode>("all");
-  const [assignedStudents, setAssignedStudents] = useState<string[]>([]);
-  const [assignedBatches, setAssignedBatches] = useState<string[]>([]);
-  const [studentSearch, setStudentSearch] = useState("");
+  const [courses, setCourses] = useState<CourseDoc[]>([]);
   const [title, setTitle] = useState("Daily Chess Assignment");
   const [description, setDescription] = useState("");
-  const [dueAt, setDueAt] = useState("");
+  const [autoAssignTemplate, setAutoAssignTemplate] = useState(true);
+  const [templateCourseId, setTemplateCourseId] = useState("");
+  const [templateLevelName, setTemplateLevelName] = useState("");
+  const [templateTopicName, setTemplateTopicName] = useState("");
   const [activities, setActivities] = useState<Activity[]>([makeActivity("mcq", 0)]);
   const [openId, setOpenId] = useState(activities[0].id);
 
   useEffect(() => {
     Promise.all([
-      fetch("/api/classrooms", { cache: "no-store" }).then((r) => r.json()),
-      fetch("/api/homework/targets", { cache: "no-store" }).then((r) => r.json()),
       fetch("/api/pgn", { cache: "no-store" }).then((r) => r.json()),
+      fetch("/api/homework/template-options", { cache: "no-store" }).then((r) => r.json()).catch(() => ({ courses: [] })),
     ])
-      .then(([classroomData, targetData, pgnData]) => {
-        setClassrooms(Array.isArray(classroomData) ? classroomData : []);
-        setTargets({
-          students: Array.isArray(targetData?.students) ? targetData.students : [],
-          batches: Array.isArray(targetData?.batches) ? targetData.batches : [],
-          classrooms: Array.isArray(targetData?.classrooms) ? targetData.classrooms : [],
-        });
+      .then(([pgnData, templateData]) => {
         setPgns(Array.isArray(pgnData) ? pgnData : []);
+        setCourses(Array.isArray(templateData?.courses) ? templateData.courses : []);
       })
       .catch(() => toast.error("Could not load assignment data"));
   }, []);
@@ -155,14 +152,17 @@ export default function NewHomeworkPage() {
     const unique = Array.from(new Set(pgns.map((pgn) => normalizeFolderPath(pgn.folder) || "Unfiled"))).sort();
     return [{ value: "all", label: "All folders" }, ...unique.map((folder) => ({ value: folder, label: folder === "Unfiled" ? "Unfiled" : folder.replaceAll("/", " / ") }))];
   }, [pgns]);
-  const selectedClassroomTarget = targets.classrooms.find((item) => item._id === classroom);
-  const classroomStudentIds = new Set((selectedClassroomTarget?.students || []).map((student: any) => student._id));
-  const classroomBatchIds = new Set((selectedClassroomTarget?.batches || []).map((batchId: any) => batchId.toString()));
-  const assignableBatches = targets.batches.filter((batch) => !classroom || classroomBatchIds.size === 0 || classroomBatchIds.has(batch._id));
-  const batchStudentIds = new Set(assignableBatches.flatMap((batch) => (batch.students || []).map((student: any) => student._id)));
-  const assignableStudents = targets.students
-    .filter((student) => !classroom || classroomStudentIds.has(student._id) || batchStudentIds.has(student._id))
-    .filter((student) => `${student.name} ${student.email || ""} ${student.username || ""}`.toLowerCase().includes(studentSearch.toLowerCase()));
+  const selectedTemplateCourse = courses.find((course) => String(course._id) === templateCourseId);
+  const templateLevels = selectedTemplateCourse?.levels || [];
+  const selectedTemplateLevel = templateLevels.find((level) => level.name === templateLevelName);
+  const templateTopics = selectedTemplateLevel?.topics || [];
+  const selectedTemplateTopic = templateTopics.find((topic) => topic.name === templateTopicName);
+
+  function applyTemplateTopic(topicName: string) {
+    setTemplateTopicName(topicName);
+    if (topicName) setTitle(homeworkTemplateTitle(topicName));
+  }
+
   function updateActivity(id: string, patch: Partial<Activity>) {
     setActivities((current) => current.map((activity) => (activity.id === id ? { ...activity, ...patch } : activity)));
   }
@@ -183,7 +183,9 @@ export default function NewHomeworkPage() {
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    if (!classroom) return toast.error("Choose a classroom");
+    if (!templateCourseId) return toast.error("Choose a course");
+    if (!templateLevelName) return toast.error("Choose a level");
+    if (!templateTopicName.trim()) return toast.error("Choose a course topic or enter a template topic");
     if (!activities.length) return toast.error("Add at least one activity");
     const emptyPgnActivity = activities.find((activity) => activity.kind === "pgn_quiz" && activity.selectedPgnIds.length === 0 && splitAssignmentPgns(activity.uploadedPgnText, activity.uploadedPgnTitle).length === 0);
     if (emptyPgnActivity) return toast.error("Add at least one PGN from the library or upload a PGN file.");
@@ -281,25 +283,41 @@ export default function NewHomeworkPage() {
 
     const numberOfAttempts = Math.max(1, ...activities.map((activity) => activity.kind === "pgn_quiz" ? activity.maxAttempts : 1));
     const timeLimitMinutes = Math.max(0, ...activities.map((activity) => activity.timeLimitMinutes || 0));
-    const response = await fetch("/api/homework", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        classroom,
-        title,
-        description,
-        dueAt: dueAt ? new Date(dueAt).toISOString() : undefined,
-        numberOfAttempts,
-        timeLimitMinutes,
-        assignAllStudents: targetMode === "all",
-        assignedStudents: targetMode === "students" ? assignedStudents : [],
-        assignedBatches: targetMode === "batches" ? assignedBatches : [],
-        activities: assignmentActivities,
-        puzzles: [],
-      }),
-    });
-    if (!response.ok) return toast.error("Failed to create assignment");
-    toast.success("Assignment created");
+    const templateResponse = await fetch("/api/admin/assignment-templates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: homeworkTemplateTitle(templateTopicName),
+          description,
+          course: templateCourseId || undefined,
+          courseName: selectedTemplateCourse?.name || "",
+          level: selectedTemplateCourse?.level || "",
+          levelName: templateLevelName,
+          topicName: templateTopicName.trim(),
+          activities: assignmentActivities,
+          puzzles: [],
+          numberOfAttempts,
+          timeLimitMinutes,
+          targetMode: "classroom_batches",
+          defaultBatches: [],
+          defaultStudents: [],
+          duePolicy: { type: "before_next_class", minutesBefore: 1, noNextClassBehavior: "assign_without_due" },
+          autoAssign: autoAssignTemplate,
+          isActive: true,
+          linkStatus: selectedTemplateTopic ? "linked" : "needs_review",
+          source: {
+            kind: "manual",
+            pgnIds: activities.flatMap((activity) => activity.selectedPgnIds),
+            fileNames: activities.map((activity) => activity.uploadedPgnFileName).filter(Boolean),
+          },
+        }),
+      });
+    if (!templateResponse.ok) {
+      const payload = await templateResponse.json().catch(() => ({}));
+      return toast.error(payload?.error || "Failed to save template");
+    }
+
+    toast.success("Template saved");
     router.push("/homework");
   }
 
@@ -307,65 +325,79 @@ export default function NewHomeworkPage() {
     <form onSubmit={submit} className="space-y-3 p-3 text-slate-950 sm:p-4">
       <header className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2.5 shadow-sm lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h1 className="text-xl font-black text-brand">Create Assignment</h1>
-          <p className="text-xs text-slate-500">Build MCQ, written answer, board-based, PGN, and computer-play homework.</p>
+          <h1 className="text-xl font-black text-brand">Create Homework Template</h1>
+          <p className="text-xs text-slate-500">Build reusable MCQ, written answer, board-based, PGN, and computer-play homework.</p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Link href="/instructor/homework/templates/new" className="inline-flex h-9 items-center justify-center rounded-lg border border-brand/20 px-3 text-xs font-black text-brand">Create Template</Link>
-          <button className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-brand px-3 text-xs font-black text-white"><Check size={14} /> Create Assignment</button>
-        </div>
+        <button className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-brand px-3 text-xs font-black text-white">
+          <Save size={14} /> Save Template
+        </button>
       </header>
 
-      <section className="grid gap-2 rounded-lg border border-slate-200 bg-white p-3 shadow-sm lg:grid-cols-[1.2fr_1fr_1fr]">
+      <section className="grid gap-2 rounded-lg border border-slate-200 bg-white p-3 shadow-sm lg:grid-cols-[1.2fr_1fr]">
         <label className="text-xs font-bold text-slate-600">
-          Assignment title
+          Template title
           <input className="input mt-1 h-9" value={title} onChange={(event) => setTitle(event.target.value)} required />
         </label>
         <label className="text-xs font-bold text-slate-600">
-          Classroom
-          <select className="input mt-1 h-9" value={classroom} onChange={(event) => setClassroom(event.target.value)} required>
-            <option value="">Choose classroom</option>
-            {classrooms.map((item) => <option key={item._id} value={item._id}>{item.title}</option>)}
-          </select>
-        </label>
-        <label className="text-xs font-bold text-slate-600">
-          Due date
-          <span className="mt-1 flex h-9 items-center gap-2 rounded-lg border border-slate-200 px-3">
-            <CalendarClock size={14} className="text-brand" />
-            <input className="min-w-0 flex-1 outline-none" type="datetime-local" value={dueAt} onChange={(event) => setDueAt(event.target.value)} />
-          </span>
-        </label>
-        <label className="text-xs font-bold text-slate-600 lg:col-span-3">
           Description
           <textarea className="input mt-1 h-10 resize-none" value={description} onChange={(event) => setDescription(event.target.value)} />
         </label>
       </section>
 
       <section className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-        <div className="mb-2 flex items-center gap-2 text-sm font-black text-brand"><Users size={15} /> Assign To</div>
-        <div className="flex flex-wrap gap-2">
-          {(["all", "batches", "students"] as TargetMode[]).map((mode) => (
-            <button key={mode} type="button" className={`rounded-full px-3 py-1.5 text-xs font-bold ${targetMode === mode ? "bg-brand text-white" : "bg-slate-100 text-slate-600"}`} onClick={() => setTargetMode(mode)}>
-              {mode === "all" ? "Entire class" : mode === "batches" ? "Batches" : "Specific students"}
-            </button>
-          ))}
-        </div>
-        {targetMode === "batches" && (
-          <div className="grid gap-2 md:grid-cols-3">
-            {assignableBatches.map((batch) => <CheckboxRow key={batch._id} label={batch.name} checked={assignedBatches.includes(batch._id)} onChange={() => toggleId(batch._id, assignedBatches, setAssignedBatches)} />)}
-          </div>
-        )}
-        {targetMode === "students" && (
+        <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
           <div>
-            <div className="mb-3 flex max-w-md items-center gap-2 rounded-lg border border-slate-200 px-3">
-              <Search size={15} className="text-slate-400" />
-              <input className="h-10 flex-1 outline-none" placeholder="Search students" value={studentSearch} onChange={(event) => setStudentSearch(event.target.value)} />
-            </div>
-            <div className="grid max-h-56 gap-2 overflow-y-auto md:grid-cols-3">
-              {assignableStudents.map((student) => <CheckboxRow key={student._id} label={student.name} sub={student.username || student.email} checked={assignedStudents.includes(student._id)} onChange={() => toggleId(student._id, assignedStudents, setAssignedStudents)} />)}
-            </div>
+            <div className="flex items-center gap-2 text-sm font-black text-brand"><Layers size={15} /> Reusable Template</div>
+            <p className="mt-1 text-xs text-slate-500">Link this work to a course topic so the class-complete automation can find it later.</p>
           </div>
-        )}
+          <Toggle label="Auto-share after class" checked={autoAssignTemplate} onChange={setAutoAssignTemplate} />
+        </div>
+        <div className="grid gap-2 lg:grid-cols-4">
+            <label className="text-xs font-bold text-slate-600">
+              Course
+              <select
+                className="input mt-1 h-9"
+                value={templateCourseId}
+                onChange={(event) => {
+                  setTemplateCourseId(event.target.value);
+                  setTemplateLevelName("");
+                  applyTemplateTopic("");
+                }}
+              >
+                <option value="">No course selected</option>
+                {courses.map((course) => <option key={String(course._id)} value={String(course._id)}>{course.name}</option>)}
+              </select>
+            </label>
+            <label className="text-xs font-bold text-slate-600">
+              Level
+              <select
+                className="input mt-1 h-9"
+                value={templateLevelName}
+                onChange={(event) => {
+                  setTemplateLevelName(event.target.value);
+                  applyTemplateTopic("");
+                }}
+                disabled={!templateCourseId}
+              >
+                <option value="">Choose level</option>
+                {templateLevels.map((level) => <option key={level._id || level.name} value={level.name}>{level.name}</option>)}
+              </select>
+            </label>
+            <label className="text-xs font-bold text-slate-600">
+              Topic
+              <select className="input mt-1 h-9" value={templateTopicName} onChange={(event) => applyTemplateTopic(event.target.value)} disabled={!templateLevelName}>
+                <option value="">Choose topic</option>
+                {templateTopics.map((topic) => <option key={topic._id || topic.name} value={topic.name}>{topic.name}</option>)}
+              </select>
+            </label>
+            <label className="text-xs font-bold text-slate-600">
+              Template topic
+              <input className="input mt-1 h-9" value={templateTopicName} onChange={(event) => applyTemplateTopic(event.target.value)} placeholder="Topic name used by class schedule" required />
+            </label>
+            <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-900 lg:col-span-4">
+              Template name: {homeworkTemplateTitle(templateTopicName)}
+            </div>
+        </div>
       </section>
 
       <section className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">

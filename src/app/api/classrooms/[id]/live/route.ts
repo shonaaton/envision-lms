@@ -18,7 +18,6 @@ import {
 } from "@/lib/classroomLiveSession";
 import { isJoinWindowOpen } from "@/lib/classroomSessions";
 import { isCoachNoShowExpired, notifyCoachNoShowIfThreshold, recalculateFutureSessionTopics } from "@/lib/classroomLifecycle";
-import { recordActivity } from "@/lib/activity";
 
 export const dynamic = "force-dynamic";
 
@@ -136,13 +135,6 @@ async function autoEndCoachNoShowIfNeeded({
     await classroomDoc.save();
   }
   await notifyCoachNoShowIfThreshold(String(scheduledSession.substituteCoach || classroom.coach || classroom.instructor || ""), { classroom: classroomId, sessionId: scheduledSessionId });
-  await recordActivity({
-    type: "classroom.coach_no_show.auto_closed",
-    label: "Auto-closed classroom as coach no-show",
-    entityType: "Classroom",
-    entityId: classroomId,
-    metadata: { classroom: classroomId, sessionId: scheduledSessionId, joinedStudents: joinedStudents.size },
-  });
   return ClassroomSession.findById(live._id).populate("selectedStudents boardControlStudents challenge.student participants.user", "name username role").lean<LiveSessionRecord | null>();
 }
 
@@ -296,14 +288,6 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
         },
       }
     );
-    await recordActivity({
-      actor: userId,
-      type: "classroom.student.left_waiting_room",
-      label: "Student left classroom while waiting for coach",
-      entityType: "Classroom",
-      entityId: params.id,
-      metadata: { classroom: params.id, sessionId: scheduledSessionId },
-    });
     return NextResponse.json({ ok: true });
   }
 
@@ -394,36 +378,5 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   } else if (update.status === "live" || update.startedAt) {
     await markScheduledSessionStarted({ classroomId: params.id, scheduledSessionId, actorId: userId });
   }
-  const changedFields = Object.keys(update);
-  const liveActionType =
-    update.status === "ended"
-      ? "classroom.live.ended"
-      : update.status === "live" || update.startedAt
-        ? "classroom.live.started"
-        : changedFields.some((field) => ["fen", "pgn", "pgnMoves", "pgnMoveIndex", "moveHistory", "drawings", "gamifiedObjects", "challenge"].includes(field))
-          ? "classroom.live.board_updated"
-          : "classroom.live.updated";
-  await recordActivity({
-    actor: userId,
-    type: liveActionType,
-    label:
-      liveActionType === "classroom.live.ended"
-        ? "Ended live classroom"
-        : liveActionType === "classroom.live.started"
-          ? "Started live classroom"
-          : liveActionType === "classroom.live.board_updated"
-            ? "Updated live classroom board"
-            : "Updated live classroom settings",
-    entityType: "ClassroomSession",
-    entityId: live._id.toString(),
-    metadata: {
-      classroom: params.id,
-      scheduledSessionId,
-      fields: changedFields,
-      mode: live.mode,
-      status: live.status,
-      source: "live_classroom",
-    },
-  });
   return NextResponse.json(live);
 }

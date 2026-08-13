@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
-import { recordActivity } from "@/lib/activity";
 import { ClassroomChatMessage } from "@/models/ClassroomLive";
 import { getRequestedSessionId } from "@/lib/classroomLiveSession";
 import { getLiveClassroomForUser, type AppRole } from "@/lib/liveClassroomAccess";
@@ -39,20 +38,5 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     message: cleanMessage.slice(0, 1000),
   });
   const populated = await ClassroomChatMessage.findById(doc._id).populate("sender recipient", "name username role").lean();
-  await recordActivity({
-    actor: userId,
-    targetUser: recipientId || userId,
-    type: recipientId ? "classroom.live.private_message_sent" : "classroom.live.chat_sent",
-    label: recipientId ? "Sent private live classroom message" : "Sent live classroom chat message",
-    entityType: "ClassroomChatMessage",
-    entityId: doc._id.toString(),
-    metadata: {
-      classroom: params.id,
-      scheduledSessionId,
-      recipient: recipientId,
-      messageLength: cleanMessage.length,
-      source: "live_classroom",
-    },
-  });
   return NextResponse.json(populated);
 }

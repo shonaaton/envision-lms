@@ -120,8 +120,13 @@ const supportTools = [
   { title: "Progress Checks", detail: "Attendance, assignments, tournament results, and leaderboard performance stay visible.", icon: Trophy },
 ];
 
+function randomizeAchievementOrder<T>(items: T[]) {
+  return [...items].sort(() => Math.random() - 0.5);
+}
+
 export default async function Home() {
   const achievements = publicAchievementList(await getLandingAchievements());
+  const featuredAchievements = randomizeAchievementOrder(achievements);
   const reviews = await getLandingReviews();
 
   const schema = {
@@ -190,16 +195,16 @@ export default async function Home() {
         <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-accent/70 to-transparent" />
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_72%_24%,rgba(253,231,90,0.12),transparent_24%),radial-gradient(circle_at_18%_82%,rgba(93,183,156,0.16),transparent_28%)]" />
         <div className="absolute inset-0 opacity-[0.12] [background-image:linear-gradient(rgba(255,255,255,0.075)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.075)_1px,transparent_1px)] [background-size:72px_72px]" />
-        <div className="relative mx-auto grid max-w-7xl gap-10 px-4 py-12 sm:px-6 lg:min-h-[calc(100dvh-74px)] lg:grid-cols-[0.9fr_1.1fr] lg:items-center lg:px-8 lg:py-16">
+        <div className="relative mx-auto grid max-w-7xl gap-10 px-4 py-12 sm:px-6 lg:min-h-[calc(100dvh-74px)] lg:grid-cols-[0.94fr_1.06fr] lg:items-center lg:px-8 lg:py-14">
           <div className="motion-rise">
-            <p className="inline-flex items-center gap-2 border-l-2 border-accent bg-white/[0.04] px-3 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-accent">
+            <p className="inline-flex items-center gap-2 border-l-2 border-accent bg-white/[0.035] px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.14em] text-accent">
               <ShieldCheck size={15} /> Premium Chess Mentorship
             </p>
-            <h1 className="mt-6 max-w-3xl text-4xl font-black leading-[1.03] text-white sm:text-6xl lg:text-[4.35rem]">
-              Build tournament-ready chess players with structured coaching.
+            <h1 className="mt-5 max-w-3xl text-3xl font-black leading-[1.08] text-white sm:text-4xl lg:text-5xl">
+              A calmer way to build confident chess progress.
             </h1>
-            <p className="mt-6 max-w-2xl text-base leading-8 text-white/72 sm:text-lg">
-              Certified mentors, verified student achievements, focused practice systems, and transparent progress tracking inside one premium academy ecosystem.
+            <p className="mt-5 max-w-2xl text-sm leading-7 text-white/68 sm:text-base">
+              Structured coaching, real student achievements, focused practice, and transparent progress tracking inside one thoughtful academy portal.
             </p>
             <div className="mt-7 flex flex-col gap-3 sm:flex-row">
               <Link href={demoHref} className="btn-accent min-h-12 px-5 shadow-lg shadow-accent/10">
@@ -218,7 +223,7 @@ export default async function Home() {
                 ["Mentorship", "Coach-led progress"],
                 ["Tournament Prep", "Practice to performance"],
               ].map(([label, detail]) => (
-                <div key={label} className="border border-white/10 bg-white/[0.045] p-3">
+                <div key={label} className="border-l border-white/16 bg-white/[0.035] p-3">
                   <div className="flex items-center gap-2 text-sm font-black text-white">
                     <CheckCircle2 size={16} className="text-accent" /> {label}
                   </div>
@@ -229,7 +234,7 @@ export default async function Home() {
           </div>
 
           <div className="lg:pl-4">
-            <PortalMockup />
+            <HeroAchievementStage achievements={featuredAchievements} />
           </div>
         </div>
       </section>
@@ -243,7 +248,7 @@ export default async function Home() {
           <div className="mb-10 grid gap-5 lg:grid-cols-[0.9fr_1.1fr] lg:items-end">
             <div>
               <p className="inline-flex border-l-2 border-accent bg-white/[0.045] px-3 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-accent">Student Learning Portal</p>
-              <h2 className="mt-4 text-3xl font-black leading-tight text-white sm:text-5xl">Everything students use to learn, practise, compete, and improve.</h2>
+              <h2 className="mt-4 text-2xl font-black leading-tight text-white sm:text-3xl">Everything students use to learn, practise, compete, and improve.</h2>
             </div>
             <p className="text-sm leading-7 text-white/66 sm:text-base">
               The portal brings live classes, assignments, practice tools, tournaments, progress reports, certificates, leaderboards, Ask Coach, and payments into one student-friendly learning platform.
@@ -258,7 +263,7 @@ export default async function Home() {
               {portalTabs.map((item) => {
                 const Icon = item.icon;
                 return (
-                  <article key={item.title} className="group rounded-lg border border-white/10 bg-white/[0.055] p-4 shadow-2xl shadow-black/10 backdrop-blur transition duration-300 hover:-translate-y-1 hover:border-accent/30 hover:bg-white/[0.075]">
+                  <article key={item.title} className="group border-l border-white/12 bg-white/[0.035] p-4 shadow-xl shadow-black/8 backdrop-blur transition duration-300 hover:-translate-y-0.5 hover:border-accent/40 hover:bg-white/[0.055]">
                     <div className="flex items-start gap-3">
                       <span className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-accent/10 text-accent transition group-hover:bg-accent group-hover:text-brand">
                         <Icon size={20} />
@@ -287,7 +292,7 @@ export default async function Home() {
           <div className="mb-8 flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
             <div>
               <p className="inline-flex border-l-2 border-accent bg-white/[0.045] px-3 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-accent">Practice Tools</p>
-              <h2 className="mt-4 text-3xl font-black text-white sm:text-4xl">Focused training between live classes.</h2>
+              <h2 className="mt-4 text-2xl font-black text-white sm:text-3xl">Focused training between live classes.</h2>
               <p className="mt-3 max-w-2xl text-sm leading-7 text-white/64">Students can solve tactics, learn coordinates, hunt kings, play computer bots, complete assignments, and climb academy leaderboards from the same portal.</p>
             </div>
             <Link href={demoHref} className="btn border border-white/14 bg-white/[0.06] text-white hover:bg-white/[0.1]">Explore Learning Portal</Link>
@@ -296,7 +301,7 @@ export default async function Home() {
             {practiceTools.map((tool) => {
               const Icon = tool.icon;
               return (
-                <article key={tool.title} className="group relative overflow-hidden rounded-lg border border-white/10 bg-white/[0.055] p-5 shadow-2xl shadow-black/12 backdrop-blur transition duration-300 hover:-translate-y-1 hover:border-accent/30 hover:bg-white/[0.075]">
+                <article key={tool.title} className="group relative overflow-hidden border-l border-white/12 bg-white/[0.035] p-5 shadow-xl shadow-black/8 backdrop-blur transition duration-300 hover:-translate-y-0.5 hover:border-accent/40 hover:bg-white/[0.055]">
                   <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-transparent via-accent/70 to-transparent opacity-0 transition group-hover:opacity-100" />
                   <span className="grid h-12 w-12 place-items-center rounded-lg bg-accent/10 text-accent transition group-hover:bg-accent group-hover:text-brand">
                     <Icon size={21} />
@@ -317,7 +322,7 @@ export default async function Home() {
           <div className="mb-8 flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
             <div>
               <p className="inline-flex border-l-2 border-accent bg-white/[0.045] px-3 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-accent">Google Reviews</p>
-              <h2 className="mt-4 text-3xl font-black text-white sm:text-4xl">Reviews from parents and students.</h2>
+              <h2 className="mt-4 text-2xl font-black text-white sm:text-3xl">Reviews from parents and students.</h2>
             </div>
             <Link href={offlineSourceUrl} target="_blank" rel="noreferrer" className="btn border border-white/14 bg-white/[0.06] text-white hover:bg-white/[0.1]">
               Review Source <ArrowRight size={16} />
@@ -339,7 +344,7 @@ export default async function Home() {
           </div>
           <div className="self-center">
             <p className="inline-flex border-l-2 border-accent bg-white/[0.045] px-3 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-accent">Student Journey</p>
-            <h2 className="mt-5 text-3xl font-black leading-tight text-white sm:text-5xl">Meet Anish: A Journey Built Move by Move</h2>
+            <h2 className="mt-5 text-2xl font-black leading-tight text-white sm:text-3xl">Meet Anish: a journey built move by move.</h2>
             <p className="mt-5 max-w-2xl text-base leading-8 text-white/72">
               {anishStory.achievement}
             </p>
@@ -363,35 +368,40 @@ export default async function Home() {
         </div>
       </section>
 
-      <section id="achievements" className="relative overflow-hidden bg-[#17051f] py-16 text-white lg:py-24">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(253,231,90,0.1),transparent_26%),radial-gradient(circle_at_82%_12%,rgba(93,183,156,0.13),transparent_25%),linear-gradient(180deg,#17051f_0%,#10131b_100%)]" />
-        <div className="absolute inset-0 opacity-[0.1] [background-image:linear-gradient(rgba(255,255,255,0.07)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.07)_1px,transparent_1px)] [background-size:84px_84px]" />
+      <section id="achievements" className="relative overflow-hidden bg-[#121722] py-16 text-white lg:py-20">
+        <div className="absolute inset-0 bg-[linear-gradient(180deg,#121722_0%,#17051f_100%)]" />
+        <div className="absolute inset-x-0 top-24 h-px bg-gradient-to-r from-transparent via-white/18 to-transparent" />
+        <div className="absolute inset-0 opacity-[0.08] [background-image:linear-gradient(115deg,rgba(255,255,255,0.08)_1px,transparent_1px)] [background-size:74px_74px]" />
         <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="mb-8 flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
             <div>
-              <p className="inline-flex border-l-2 border-accent bg-white/[0.045] px-3 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-accent">Other Achievers</p>
-              <h2 className="mt-4 text-3xl font-black text-white sm:text-4xl">A curated proof wall of tournament progress.</h2>
-              <p className="mt-3 max-w-2xl text-sm leading-7 text-white/64">Real achievement cards from Envision students, shown after the main portal story and Anish journey.</p>
+              <p className="inline-flex border-l-2 border-accent bg-white/[0.035] px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.14em] text-accent">Achiever Gallery</p>
+              <h2 className="mt-4 text-2xl font-black text-white sm:text-3xl">Real results, shown in a softer moving gallery.</h2>
+              <p className="mt-3 max-w-2xl text-sm leading-7 text-white/60">The wall uses the full achiever image set in a fresh order, so returning students and parents do not see the same sequence every time.</p>
             </div>
             <Link href={cloudinaryCollectionUrl} target="_blank" rel="noreferrer" className="btn border border-white/14 bg-white/[0.06] text-white hover:bg-white/[0.1]">
-              Cloudinary Collection <ArrowRight size={16} />
+              Achievement Collection <ArrowRight size={16} />
             </Link>
           </div>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {achievements.slice(0, 8).map((item, index) => (
-              <article key={`${item.studentName}-${item.displayOrder}`} className="group overflow-hidden rounded-lg border border-white/10 bg-white/[0.055] shadow-2xl shadow-black/18 backdrop-blur transition duration-300 hover:-translate-y-1 hover:border-accent/35 hover:bg-white/[0.075]">
-                <div className="relative aspect-[1.08] overflow-hidden bg-[#090b10]">
+          <div className="grid gap-x-5 gap-y-8 sm:grid-cols-2 lg:grid-cols-4">
+            {featuredAchievements.map((item, index) => (
+              <article
+                key={`${item.studentName}-${item.displayOrder}`}
+                className="group relative border-l border-white/12 bg-white/[0.032] p-2 shadow-xl shadow-black/10 backdrop-blur transition duration-300 hover:-translate-y-1 hover:border-accent/45 hover:bg-white/[0.055]"
+                style={{ transform: `rotate(${[-1.2, 0.7, -0.5, 1][index % 4]}deg)` }}
+              >
+                <div className="relative aspect-[1.08] overflow-hidden bg-[#070b10] shadow-2xl shadow-black/25">
                   <Image src={item.achievementImageUrl} alt="" fill sizes="(min-width: 1024px) 25vw, 50vw" className="scale-110 object-cover opacity-22 blur-2xl transition duration-700" />
                   <Image src={item.achievementImageUrl} alt={`${item.studentName} achievement`} fill sizes="(min-width: 1024px) 25vw, 50vw" className="object-contain p-3 transition duration-700 group-hover:scale-[1.02]" />
-                  <div className="absolute left-3 top-3 border border-accent/30 bg-accent px-2.5 py-1 text-xs font-black text-brand">#{index + 1}</div>
-                  <div className="absolute right-3 top-3 border border-white/15 bg-black/35 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-white/78 backdrop-blur">{item.achievementLevel}</div>
+                  <div className="absolute left-3 top-3 bg-accent px-2.5 py-1 text-xs font-black text-brand">#{index + 1}</div>
+                  <div className="absolute right-3 top-3 bg-black/35 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-white/78 backdrop-blur">{item.achievementLevel}</div>
                   {item.studentPhotoUrl && (
                     <div className="absolute bottom-3 right-3 h-12 w-12 overflow-hidden rounded-lg border-2 border-white bg-white">
                       <Image src={item.studentPhotoUrl} alt={`${item.studentName} profile`} fill sizes="48px" className="object-cover" />
                     </div>
                   )}
                 </div>
-                <div className="p-4">
+                <div className="p-3">
                   <div className="text-xs font-black uppercase tracking-[0.12em] text-accent/80">{item.category}</div>
                   <h3 className="mt-2 line-clamp-1 font-black text-white">{item.studentName}</h3>
                   <p className="mt-1 line-clamp-1 text-xs font-semibold text-white/48">{item.tournamentName}</p>
@@ -414,7 +424,7 @@ export default async function Home() {
           <div className="mb-8 grid gap-5 lg:grid-cols-[0.9fr_1.1fr] lg:items-end">
             <div>
               <p className="inline-flex border-l-2 border-accent bg-white/[0.045] px-3 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-accent">Student Support</p>
-              <h2 className="mt-4 text-3xl font-black text-white sm:text-4xl">The practical tools parents and students need every week.</h2>
+              <h2 className="mt-4 text-2xl font-black text-white sm:text-3xl">The practical tools parents and students need every week.</h2>
             </div>
             <p className="text-sm leading-7 text-white/64">After practice and achievements, the portal still keeps the everyday academy work simple: coach questions, bookings, credits, invoices, fee payments, and progress checks.</p>
           </div>
@@ -422,7 +432,7 @@ export default async function Home() {
             {supportTools.map((item) => {
               const Icon = item.icon;
               return (
-                <article key={item.title} className="rounded-lg border border-white/10 bg-white/[0.055] p-5 shadow-2xl shadow-black/12 backdrop-blur transition hover:-translate-y-1 hover:border-accent/30 hover:bg-white/[0.075]">
+                <article key={item.title} className="border-l border-white/12 bg-white/[0.035] p-5 shadow-xl shadow-black/8 backdrop-blur transition hover:-translate-y-0.5 hover:border-accent/40 hover:bg-white/[0.055]">
                   <span className="grid h-12 w-12 place-items-center rounded-lg bg-accent/10 text-accent">
                     <Icon size={21} />
                   </span>
@@ -439,11 +449,11 @@ export default async function Home() {
         <div className="mx-auto grid max-w-7xl gap-10 px-4 sm:px-6 lg:grid-cols-[0.8fr_1.2fr] lg:px-8">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.16em] text-accent">How it works</p>
-            <h2 className="mt-3 text-3xl font-black sm:text-4xl">A clear learning path parents can follow.</h2>
+            <h2 className="mt-3 text-2xl font-black sm:text-3xl">A clear learning path parents can follow.</h2>
           </div>
           <div className="grid gap-3">
             {learningSteps.map((step, index) => (
-              <div key={step} className="group grid grid-cols-[46px_minmax(0,1fr)] gap-3 rounded-lg border border-white/12 bg-white/[0.07] p-4 transition hover:-translate-y-1 hover:bg-white/[0.1]">
+              <div key={step} className="group grid grid-cols-[46px_minmax(0,1fr)] gap-3 border-l border-white/12 bg-white/[0.045] p-4 transition hover:-translate-y-0.5 hover:border-accent/40 hover:bg-white/[0.07]">
                 <div className="grid h-11 w-11 place-items-center rounded-lg bg-accent text-sm font-black text-brand-900">{index + 1}</div>
                 <div className="self-center font-bold text-white">{step}</div>
               </div>
@@ -459,12 +469,12 @@ export default async function Home() {
           <div className="mb-8 grid gap-6 lg:grid-cols-[0.9fr_1.1fr] lg:items-end">
             <div>
               <p className="inline-flex border-l-2 border-accent bg-white/[0.045] px-3 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-accent">Coaching Advantages</p>
-              <h2 className="mt-4 text-3xl font-black text-white sm:text-4xl">Structured coaching with visible support.</h2>
+              <h2 className="mt-4 text-2xl font-black text-white sm:text-3xl">Structured coaching with visible support.</h2>
               <p className="mt-3 max-w-xl text-sm leading-7 text-white/64">Clear levels, mentor attention, feedback loops, and tournament preparation form the operating system behind every student journey.</p>
             </div>
             <div className="grid gap-2 sm:grid-cols-2">
               {advantages.map((advantage) => (
-                <div key={advantage} className="rounded-lg border border-white/10 bg-white/[0.055] px-4 py-3 text-sm font-bold text-white/74 shadow-2xl shadow-black/10 backdrop-blur transition hover:border-accent/30 hover:bg-white/[0.075]">
+                <div key={advantage} className="border-l border-white/12 bg-white/[0.035] px-4 py-3 text-sm font-bold text-white/70 shadow-xl shadow-black/8 backdrop-blur transition hover:border-accent/40 hover:bg-white/[0.055]">
                   <CheckCircle2 size={17} className="mb-2 text-accent" />
                   {advantage}
                 </div>
@@ -473,7 +483,7 @@ export default async function Home() {
           </div>
           <div className="grid gap-4 lg:grid-cols-3">
             {programs.map((program) => (
-              <article key={program.title} className="group rounded-lg border border-white/10 bg-white/[0.055] p-5 shadow-2xl shadow-black/12 backdrop-blur transition duration-300 hover:-translate-y-1 hover:border-accent/30 hover:bg-white/[0.075]">
+              <article key={program.title} className="group border-l border-white/12 bg-white/[0.035] p-5 shadow-xl shadow-black/8 backdrop-blur transition duration-300 hover:-translate-y-0.5 hover:border-accent/40 hover:bg-white/[0.055]">
                 <div className="flex items-start justify-between gap-3">
                   <h3 className="text-xl font-black text-white">{program.title}</h3>
                   <span className="rounded-full border border-accent/30 bg-accent/12 px-2.5 py-0.5 text-xs font-semibold text-accent">{program.mode}</span>
@@ -492,7 +502,7 @@ export default async function Home() {
         <div className="relative mx-auto grid max-w-7xl gap-8 px-4 sm:px-6 lg:grid-cols-[0.78fr_1.22fr] lg:px-8">
           <div>
             <p className="inline-flex border-l-2 border-accent bg-white/[0.045] px-3 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-accent">Centres and Global Reach</p>
-            <h2 className="mt-4 text-3xl font-black text-white sm:text-4xl">Four Kolkata centres. Online for global students.</h2>
+            <h2 className="mt-4 text-2xl font-black text-white sm:text-3xl">Four Kolkata centres. Online for global students.</h2>
             <p className="mt-4 text-sm leading-7 text-white/64">Branch information now reflects the active four-centre setup.</p>
             <div className="mt-5 flex flex-wrap gap-3">
               <Link href={`tel:${ACADEMY_DEFAULTS.phone}`} className="btn-accent">Call Academy</Link>
@@ -501,7 +511,7 @@ export default async function Home() {
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             {academyBranches.map((centre) => (
-              <div key={centre.name} className="overflow-hidden rounded-lg border border-white/10 bg-white/[0.055] shadow-2xl shadow-black/12 backdrop-blur transition hover:border-accent/30 hover:bg-white/[0.075]">
+              <div key={centre.name} className="overflow-hidden border-l border-white/12 bg-white/[0.035] shadow-xl shadow-black/8 backdrop-blur transition hover:border-accent/40 hover:bg-white/[0.055]">
                 <div className="p-4">
                 <MapPin size={18} className="text-accent" />
                 <div className="mt-3 font-black text-white">{centre.name}</div>
@@ -532,7 +542,7 @@ export default async function Home() {
         <div className="relative mx-auto max-w-7xl rounded-lg border border-white/12 bg-white/[0.055] p-6 shadow-2xl shadow-black/25 backdrop-blur sm:p-8 lg:flex lg:items-center lg:justify-between lg:gap-8">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.16em] text-accent">Start with a free assessment</p>
-            <h2 className="mt-3 text-3xl font-black sm:text-4xl">Your Child&apos;s Next Great Move Starts Here</h2>
+            <h2 className="mt-3 text-2xl font-black sm:text-3xl">Your child&apos;s next great move starts here.</h2>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-white/72">
               No obligation. Level recommendation included. Online and offline options available.
             </p>
@@ -563,6 +573,59 @@ function JourneyStat({ label, value }: { label: string; value: string }) {
     <div className="rounded-lg border border-white/10 bg-white/[0.055] p-4 shadow-lg shadow-black/10 backdrop-blur">
       <div className="text-xs font-black uppercase tracking-[0.12em] text-accent/80">{label}</div>
       <div className="mt-2 text-lg font-black text-white">{value}</div>
+    </div>
+  );
+}
+
+function HeroAchievementStage({ achievements }: { achievements: ReturnType<typeof publicAchievementList> }) {
+  const active = achievements[0];
+  const left = achievements[1] || active;
+  const right = achievements[2] || active;
+  const rail = achievements.slice(0, 5);
+
+  if (!active) return <PortalMockup />;
+
+  return (
+    <div className="relative mx-auto max-w-[620px] py-8 [perspective:1200px]">
+      <div className="absolute left-1/2 top-16 h-[70%] w-[72%] -translate-x-[66%] -rotate-[11deg] border border-teal-200/14 bg-teal-200/[0.055] shadow-2xl shadow-black/30" />
+      <div className="absolute left-1/2 top-10 h-[76%] w-[72%] -translate-x-[26%] rotate-[10deg] border border-accent/16 bg-accent/[0.07] shadow-2xl shadow-black/35" />
+      {left && (
+        <div className="absolute left-0 top-24 hidden h-[54%] w-[38%] -rotate-[13deg] overflow-hidden border border-white/12 bg-black/30 opacity-55 shadow-2xl shadow-black/35 sm:block">
+          <Image src={left.achievementImageUrl} alt="" fill sizes="190px" className="object-cover" />
+        </div>
+      )}
+      {right && (
+        <div className="absolute right-0 top-12 hidden h-[58%] w-[38%] rotate-[12deg] overflow-hidden border border-white/12 bg-black/30 opacity-65 shadow-2xl shadow-black/35 sm:block">
+          <Image src={right.achievementImageUrl} alt="" fill sizes="190px" className="object-cover" />
+        </div>
+      )}
+
+      <div className="relative z-10 rotate-[-2deg] transform-gpu transition duration-700 hover:rotate-0 hover:scale-[1.01]">
+        <div className="absolute -inset-3 translate-y-6 rotate-3 bg-black/35 blur-xl" />
+        <div className="relative overflow-hidden border border-white/18 bg-[#070b10]/88 shadow-[0_34px_90px_rgba(0,0,0,0.55)] backdrop-blur">
+          <div className="relative aspect-[1.02] min-h-[340px]">
+            <Image src={active.achievementImageUrl} alt="" fill priority sizes="(min-width: 1024px) 44vw, 100vw" className="scale-125 object-cover opacity-24 blur-2xl" />
+            <div className="absolute inset-0 bg-[linear-gradient(118deg,rgba(255,255,255,0.18),transparent_22%,transparent_58%,rgba(20,184,166,0.18))]" />
+            <Image src={active.achievementImageUrl} alt={`${active.studentName} achievement`} fill priority sizes="(min-width: 1024px) 44vw, 100vw" className="object-contain p-5 drop-shadow-2xl" />
+            <div className="absolute left-5 top-5 inline-flex items-center gap-2 bg-accent px-3 py-1 text-[11px] font-black uppercase tracking-[0.08em] text-brand-900 shadow-lg shadow-accent/20">
+              <Trophy size={14} /> Achiever spotlight
+            </div>
+            <div className="absolute bottom-0 left-0 right-0 bg-[linear-gradient(180deg,transparent,rgba(0,0,0,0.88))] p-5">
+              <div className="text-[11px] font-black uppercase tracking-[0.13em] text-accent">{active.result}</div>
+              <div className="mt-1 text-2xl font-black leading-tight text-white">{active.studentName}</div>
+              <p className="mt-1 line-clamp-2 text-xs leading-5 text-white/68">{active.tournamentName}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="relative z-20 mx-auto mt-6 grid max-w-[94%] grid-cols-5 gap-2">
+        {rail.map((item, index) => (
+          <div key={`${item.sourceImageName}-hero-rail`} className={`h-16 overflow-hidden border border-white/12 bg-black/25 shadow-lg shadow-black/20 ${index === 0 ? "opacity-100" : "opacity-58"}`}>
+            <Image src={item.achievementImageUrl} alt="" width={120} height={80} className="h-full w-full object-cover" />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

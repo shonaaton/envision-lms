@@ -365,9 +365,30 @@ export default function ClassroomManagementClient({
     return merged;
   }, [activeBatch, targets.students]);
 
+  const groupSummaries = useMemo(() => {
+    return targets.batches
+      .map((batch) => {
+        const batchItems = items.filter((item) => (item.batches || []).some((itemBatch: any) => String(itemBatch?._id || itemBatch || "") === batch._id));
+        const sessions = flattenScheduledSessions(batchItems);
+        const courseNames = uniqueText(batchItems.map((item) => item.courseName || ""));
+        const levelNames = uniqueText(batchItems.map((item) => item.levelName || batch.level || ""));
+        return {
+          batch,
+          classroomCount: batchItems.length,
+          sessionCount: sessions.length,
+          upcomingCount: sessions.filter((row) => isSessionUpcomingLike(deriveScheduledSessionStatus(row.session, new Date()))).length,
+          courseNames,
+          levelNames,
+        };
+      })
+      .filter((row) => row.classroomCount > 0);
+  }, [items, targets.batches]);
+
   const calendarSessions = useMemo(() => {
     return filteredItems.flatMap((item) =>
-      (item.generatedSessions || []).map((session: any) => ({
+      (item.generatedSessions || [])
+      .filter((session: any) => !filters.status || deriveScheduledSessionStatus(session, new Date()) === filters.status)
+      .map((session: any) => ({
         classroomId: item._id,
         title: item.title,
         topicName: session.topicName,
@@ -381,7 +402,7 @@ export default function ClassroomManagementClient({
         studentNames: studentNamesForItem(item),
       }))
     );
-  }, [filteredItems, targets.batches]);
+  }, [filteredItems, filters.status, targets.batches]);
 
   const filteredAssignableStudents = useMemo(() => {
     const query = studentSearch.trim().toLowerCase();
@@ -678,13 +699,13 @@ export default function ClassroomManagementClient({
     <>
     <PageLoadingOverlay visible={!!busyMessage} message={busyMessage} />
     <div className="min-h-full space-y-4 text-slate-950">
-      <div className="flex flex-none flex-col gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex flex-none flex-col gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 shadow-sm lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <div className="inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.14em] text-brand">
-            <GraduationCap size={14} />
+          <div className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-brand">
+            <GraduationCap size={12} />
             {groupFocus ? "Group Classroom" : "Classroom Management"}
           </div>
-          <h1 className="text-xl font-bold text-slate-950">{groupFocus ? groupFocus.name : "Classes"}</h1>
+          <h1 className="text-lg font-bold leading-tight text-slate-950">{groupFocus ? groupFocus.name : "Classes"}</h1>
           {groupFocus ? (
             <div className="mt-1 flex flex-wrap gap-1.5 text-xs text-slate-600">
               <span>{activeBatch?.level ? titleCase(activeBatch.level) : "Level not set"}</span>
@@ -694,34 +715,74 @@ export default function ClassroomManagementClient({
             </div>
           ) : null}
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-1.5">
           {groupFocus ? (
-            <Link href="/classrooms" className="btn-outline">
-              <ArrowLeft size={15} /> All Groups
+            <Link href="/classrooms" className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-50">
+              <ArrowLeft size={13} /> All Groups
             </Link>
           ) : null}
           {isSuperAdmin && (
-            <button className="btn-outline border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100" onClick={openTestClassroom}>
-              <CopyPlus size={15} /> Test Classroom
+            <button className="inline-flex h-8 items-center gap-1.5 rounded-md border border-violet-200 bg-violet-50 px-2.5 text-xs font-bold text-violet-700 shadow-sm hover:bg-violet-100" onClick={openTestClassroom}>
+              <CopyPlus size={13} /> Test Classroom
             </button>
           )}
           {permissions.create && (
             <>
-              <button className="btn-outline" onClick={() => resetModal("single")}>
-                <Plus size={15} /> Single Class
+              <button className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-50" onClick={() => resetModal("single")}>
+                <Plus size={13} /> Single
               </button>
-              <button className="btn-outline" onClick={() => resetModal("series", null, "selected")}>
-                <ListChecks size={15} /> Selected Topics
+              <button className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-50" onClick={() => resetModal("series", null, "selected")}>
+                <ListChecks size={13} /> Topics
               </button>
-              <button className="btn-primary" onClick={() => resetModal("series")}>
-                <CalendarDays size={15} /> Learning Series
+              <button className="inline-flex h-8 items-center gap-1.5 rounded-md bg-brand px-2.5 text-xs font-bold text-white shadow-sm hover:bg-brand/90" onClick={() => resetModal("series")}>
+                <CalendarDays size={13} /> Series
               </button>
             </>
           )}
         </div>
       </div>
 
-      <div className="grid flex-none gap-2 rounded-lg border border-slate-200 bg-white p-3 shadow-sm md:grid-cols-2 xl:grid-cols-[repeat(6,minmax(0,1fr))]">
+      {!groupFocus && (
+        <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+          <div className="mb-2 flex items-center justify-between">
+            <div>
+              <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Groups</div>
+              <div className="text-sm font-semibold text-slate-950">Open a group to see its individual classes.</div>
+            </div>
+          </div>
+          {loading ? (
+            <div className="rounded-md bg-slate-50 px-3 py-3 text-sm text-slate-500">Loading groups...</div>
+          ) : groupSummaries.length === 0 ? (
+            <div className="rounded-md border border-dashed border-slate-300 px-3 py-3 text-sm text-slate-500">No classroom groups found yet.</div>
+          ) : (
+            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+              {groupSummaries.map(({ batch, classroomCount, sessionCount, upcomingCount, courseNames, levelNames }) => (
+                <div key={batch._id} className="flex items-center justify-between gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+                  <div className="min-w-0">
+                    <Link href={`/classrooms/groups/${batch._id}`} className="truncate text-sm font-bold text-slate-950 hover:text-brand" title={batch.name}>
+                      {batch.name}
+                    </Link>
+                    <div className="mt-0.5 truncate text-xs text-slate-500" title={`${courseNames.join(", ") || "Course not set"} - ${levelNames.join(", ") || "Level not set"}`}>
+                      {courseNames.join(", ") || "Course not set"} - {levelNames.join(", ") || "Level not set"}
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-1.5 text-[11px] font-semibold text-slate-600">
+                      <span>{batch.students?.length || 0} students</span>
+                      <span>{classroomCount} classrooms</span>
+                      <span>{sessionCount} classes</span>
+                      <span>{upcomingCount} upcoming</span>
+                    </div>
+                  </div>
+                  <Link href={`/classrooms/groups/${batch._id}`} className="shrink-0 rounded-md bg-brand px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-brand/90">
+                    Open
+                  </Link>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="grid flex-none gap-1.5 rounded-md border border-slate-200 bg-white p-2 shadow-sm md:grid-cols-3 xl:grid-cols-[repeat(6,minmax(0,1fr))]">
         <FilterSelect label="Coach" value={filters.coach} onChange={(value) => setFilters((current) => ({ ...current, coach: value }))} options={targets.coaches.map((coach) => ({ value: coach._id, label: coach.name }))} />
         {!groupFocus && <FilterSelect label="Batch" value={filters.batch} onChange={(value) => setFilters((current) => ({ ...current, batch: value }))} options={targets.batches.map((batch) => ({ value: batch._id, label: batch.name }))} />}
         <FilterSelect label="Student" value={filters.student} onChange={(value) => setFilters((current) => ({ ...current, student: value }))} options={studentFilterOptions.map((student) => ({ value: student._id, label: student.name }))} />
@@ -747,6 +808,12 @@ export default function ClassroomManagementClient({
               <div className="rounded-xl bg-slate-50 p-6 text-sm text-slate-500">Loading classes...</div>
             ) : filteredItems.length === 0 ? (
               <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">No classes match the current filters.</div>
+            ) : groupFocus ? (
+              <GroupClassSessionList
+                items={filteredItems}
+                targets={targets}
+                statusFilter={filters.status}
+              />
             ) : (
               <div className="space-y-2">
                 {filteredItems.map((item) => {
@@ -1347,9 +1414,9 @@ function IconAction({ icon, label, onClick, href, destructive = false }: { icon:
 
 function FilterSelect({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: Array<{ value: string; label: string }> }) {
   return (
-    <label className="rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
-      <div className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}</div>
-      <select className="mt-1 w-full bg-transparent text-sm text-slate-900 outline-none" value={value} onChange={(event) => onChange(event.target.value)}>
+    <label className="flex h-9 min-w-0 items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-2 shadow-sm">
+      <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">{label}</span>
+      <select className="min-w-0 flex-1 bg-transparent text-xs font-semibold text-slate-900 outline-none" value={value} onChange={(event) => onChange(event.target.value)}>
         <option value="">All</option>
         {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
@@ -1543,6 +1610,68 @@ function CalendarView({
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function GroupClassSessionList({
+  items,
+  targets,
+  statusFilter,
+}: {
+  items: ClassroomItem[];
+  targets: TargetsPayload;
+  statusFilter: SessionFilterStatus;
+}) {
+  const now = new Date();
+  const rows = dedupeSessionRows(flattenScheduledSessions(items))
+    .filter((row) => row.start)
+    .filter((row) => !statusFilter || deriveScheduledSessionStatus(row.session, now) === statusFilter)
+    .sort((a, b) => (a.start?.getTime() || 0) - (b.start?.getTime() || 0));
+
+  if (!rows.length) {
+    return <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">No individual classes match the current filters.</div>;
+  }
+
+  return (
+    <div className="space-y-1.5">
+      {rows.map(({ classroom, session }: any, index) => {
+        const status = deriveScheduledSessionStatus(session, now);
+        const sessionId = String(session?._id || "");
+        const summaryHref = sessionId ? `/classrooms/${classroom._id}/summary?session=${sessionId}` : `/classrooms/${classroom._id}/summary`;
+        const batchNames = batchNamesForItem(classroom, targets.batches);
+        const studentNames = studentNamesForItem(classroom);
+        return (
+          <div key={`${classroom._id}-${sessionId || index}`} className="grid gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs shadow-sm lg:grid-cols-[minmax(170px,1.1fr)_minmax(150px,1fr)_minmax(150px,1fr)_minmax(120px,0.8fr)_96px] lg:items-center">
+            <div className="min-w-0">
+              <Link href={summaryHref} className="truncate text-sm font-bold text-slate-950 hover:text-brand" title={classroom.title}>
+                {classroom.title}
+              </Link>
+              <div className="mt-0.5 truncate text-slate-500" title={session.topicName || classroom.topicName || "Topic not set"}>
+                {session.topicName || classroom.topicName || "Topic not set"}
+              </div>
+            </div>
+            <div className="min-w-0">
+              <div className="font-semibold text-slate-700">{formatDate(String(session.scheduledFor || classroom.classDate || classroom.startDate || ""))}</div>
+              <div className="text-slate-500">{session.startTime || classroom.startTime || "--"} IST - {formatDuration(Number(session.durationMinutes || classroom.durationMinutes || 60))}</div>
+            </div>
+            <div className="min-w-0">
+              <div className="truncate font-semibold text-slate-700" title={batchNames || "Unassigned"}>{batchNames || "Unassigned"}</div>
+              <div className="truncate text-slate-500" title={studentNames || ""}>{studentNames || `${classroom.students?.length || 0} students`}</div>
+            </div>
+            <div className="min-w-0">
+              <div className="truncate font-semibold text-slate-700" title={classroom.courseName || "Course not set"}>{classroom.courseName || "Course not set"}</div>
+              <div className="truncate text-slate-500" title={classroom.levelName || "Level not set"}>{classroom.levelName || "Level not set"}</div>
+              <span className={cn("mt-1 inline-flex rounded-full px-2 py-0.5 text-[11px] font-bold", sessionStatusTone(status))}>{titleCase(status)}</span>
+            </div>
+            <div className="flex justify-start lg:justify-end">
+              <Link href={summaryHref} className="inline-flex items-center gap-1 rounded-md bg-brand px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-brand/90">
+                <Eye size={13} /> Open
+              </Link>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -1742,6 +1871,10 @@ function reviewDurationLabel(form: ReturnType<typeof blankForm>) {
 
 function uniqueOptions(values: string[]) {
   return Array.from(new Set(values)).map((value) => ({ value, label: value }));
+}
+
+function uniqueText(values: string[]) {
+  return Array.from(new Set(values.map((value) => String(value || "").trim()).filter(Boolean)));
 }
 
 function batchNamesForItem(item: ClassroomItem, batches: BatchOption[] = []) {

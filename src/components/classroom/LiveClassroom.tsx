@@ -79,6 +79,7 @@ type ToolKey = "move" | "highlight" | "arrow" | "setup";
 type ModifierKey = "default" | "shift" | "ctrl" | "alt";
 type SetupTab = "pieces" | "objects";
 type SetupMovementMode = "white" | "black" | "free";
+type CastlingRights = { K: boolean; Q: boolean; k: boolean; q: boolean };
 type GamifiedObjectId = "star" | "gem" | "coin" | "apple" | "fire" | "trophy" | "gift" | "shield" | "key" | "puzzle" | "rocket" | "monster" | "dragon";
 type SetupSelection = string | "erase" | GamifiedObjectId;
 type QuizComposerMode = "current" | "pgn_collection";
@@ -408,7 +409,28 @@ function fenToPosition(fen?: string): BoardPosition {
   return position;
 }
 
-function positionToFen(position: BoardPosition, sideToMove = "w") {
+const emptyCastlingRights: CastlingRights = { K: false, Q: false, k: false, q: false };
+
+function inferCastlingRights(fen?: string | null): CastlingRights {
+  const rights = String(fen || "").trim().split(/\s+/)[2] || "";
+  return {
+    K: rights.includes("K"),
+    Q: rights.includes("Q"),
+    k: rights.includes("k"),
+    q: rights.includes("q"),
+  };
+}
+
+function legalCastlingText(position: BoardPosition, rights: CastlingRights = emptyCastlingRights) {
+  let text = "";
+  if (rights.K && position.e1 === "wK" && position.h1 === "wR") text += "K";
+  if (rights.Q && position.e1 === "wK" && position.a1 === "wR") text += "Q";
+  if (rights.k && position.e8 === "bK" && position.h8 === "bR") text += "k";
+  if (rights.q && position.e8 === "bK" && position.a8 === "bR") text += "q";
+  return text || "-";
+}
+
+function positionToFen(position: BoardPosition, sideToMove = "w", castlingRights: CastlingRights = emptyCastlingRights) {
   const ranks = [];
   for (let rank = 8; rank >= 1; rank--) {
     let empty = 0;
@@ -429,7 +451,7 @@ function positionToFen(position: BoardPosition, sideToMove = "w") {
     if (empty) row += empty;
     ranks.push(row);
   }
-  return `${ranks.join("/")} ${sideToMove} - - 0 1`;
+  return `${ranks.join("/")} ${sideToMove} ${legalCastlingText(position, castlingRights)} - 0 1`;
 }
 
 function buildGame(fen?: string) {
@@ -751,6 +773,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const [draggedObjectSquare, setDraggedObjectSquare] = useState<string | null>(null);
   const [setupMovementMode, setSetupMovementMode] = useState<SetupMovementMode>("white");
   const [setupPieceColor, setSetupPieceColor] = useState<"white" | "black">("white");
+  const [setupCastlingRights, setSetupCastlingRights] = useState<CastlingRights>(emptyCastlingRights);
   const [setupOpen, setSetupOpen] = useState(false);
   const [pgnOpen, setPgnOpen] = useState(false);
   const [pgnOpenMode, setPgnOpenMode] = useState<"load" | "multiple_quiz">("load");
@@ -1318,6 +1341,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     setGamifiedSetup(liveGamifiedObjects);
     setSetupMovementMode(nextSetupMode);
     setSetupPieceColor(fenSide);
+    setSetupCastlingRights(inferCastlingRights(live?.fen));
     setSelectedPiece(`${fenSide === "white" ? "w" : "b"}Q`);
     setSetupTab("pieces");
     setSetupLoadText("");
@@ -1325,7 +1349,15 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   }
 
   function commitSetup(position = setupPosition, objects = liveGamifiedObjects) {
-    patch({ fen: positionToFen(position, setupSideToMove()), gamifiedObjects: removeObjectsOnPieceSquares(objects, position), setupMode: true, illegalMovesEnabled: setupMovementMode === "free" });
+    patch({ fen: positionToFen(position, setupSideToMove(), setupCastlingRights), gamifiedObjects: removeObjectsOnPieceSquares(objects, position), setupMode: true, illegalMovesEnabled: setupMovementMode === "free" });
+  }
+
+  function updateSetupCastlingRight(key: keyof CastlingRights, checked: boolean) {
+    const nextRights = { ...setupCastlingRights, [key]: checked };
+    setSetupCastlingRights(nextRights);
+    if (live?.setupMode || tool === "setup") {
+      patch({ fen: positionToFen(setupPosition, setupSideToMove(), nextRights), setupMode: true, illegalMovesEnabled: setupMovementMode === "free" });
+    }
   }
 
   function commitFreeMove(position: BoardPosition, objects = liveGamifiedObjects) {
@@ -1611,7 +1643,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   }
 
   function loadSetupIntoClassroom() {
-    const fen = positionToFen(setupPosition, setupSideToMove());
+    const fen = positionToFen(setupPosition, setupSideToMove(), setupCastlingRights);
     patch({ fen, orientation: orientationForFen(fen), gamifiedObjects: removeObjectsOnPieceSquares(gamifiedSetup, setupPosition), setupMode: false, illegalMovesEnabled: setupMovementMode === "free", pgn: "", pgnTitle: "Custom Position", navigationStartFen: fen, pgnMoves: [], pgnMoveIndex: 0, pgnVariations: [], activePgnVariationId: "", moveHistory: [], drawings: [], usedResources: resourceHistory({ type: "position", title: "Custom Position", fen }) });
     setSetupOpen(false);
   }
@@ -1651,6 +1683,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     try {
       const fenGame = new Chess(value);
       setSetupPosition(fenToPosition(fenGame.fen()));
+      setSetupCastlingRights(inferCastlingRights(fenGame.fen()));
       setSetupLoadText("");
       toast.success("FEN loaded into setup board");
       return;
@@ -1660,6 +1693,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     const permissiveFen = normalizeBoardResourceFen(value);
     if (permissiveFen) {
       setSetupPosition(fenToPosition(permissiveFen));
+      setSetupCastlingRights(inferCastlingRights(permissiveFen));
       setSetupLoadText("");
       toast.success("Board position loaded into setup board");
       return;
@@ -1668,6 +1702,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       const pgnGame = new Chess();
       pgnGame.loadPgn(value);
       setSetupPosition(fenToPosition(pgnGame.fen()));
+      setSetupCastlingRights(inferCastlingRights(pgnGame.fen()));
       setSetupLoadText("");
       toast.success("PGN position loaded into setup board");
     } catch {
@@ -2868,7 +2903,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                     <div className="text-xs text-slate-500">Choose a piece, click a square, drag freely, or drag pieces off the board to delete.</div>
                   </div>
                   <button
-                    onClick={() => navigator.clipboard?.writeText(positionToFen(setupPosition, live?.fen?.split(" ")?.[1] || "w")).then(() => toast.success("FEN copied"))}
+                    onClick={() => navigator.clipboard?.writeText(positionToFen(setupPosition, setupSideToMove(), setupCastlingRights)).then(() => toast.success("FEN copied"))}
                     className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 px-3 text-xs font-semibold"
                   >
                     <Download size={14} /> Export FEN
@@ -2889,8 +2924,8 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                     </button>
                   ))}
                   <button onClick={() => setSelectedPiece("erase")} className={`inline-flex h-10 items-center gap-2 rounded-md border px-3 text-sm font-semibold ${selectedPiece === "erase" ? "border-red-500 bg-red-50 text-red-700" : "border-slate-200 bg-white text-slate-800"}`}><X size={15} /> Remove</button>
-                  <button onClick={() => { setSetupPosition({}); commitSetup({}); }} className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-200 px-3 text-sm font-semibold"><Eraser size={15} /> Clear</button>
-                  <button onClick={() => { const start = fenToPosition("start"); setSetupPosition(start); commitSetup(start); }} className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-200 px-3 text-sm font-semibold"><RotateCcw size={15} /> Reset</button>
+                  <button onClick={() => { setSetupPosition({}); setSetupCastlingRights(emptyCastlingRights); commitSetup({}); }} className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-200 px-3 text-sm font-semibold"><Eraser size={15} /> Clear</button>
+                  <button onClick={() => { const start = fenToPosition("start"); const rights = inferCastlingRights(new Chess().fen()); setSetupPosition(start); setSetupCastlingRights(rights); patch({ fen: positionToFen(start, setupSideToMove(), rights), gamifiedObjects: {}, setupMode: true, illegalMovesEnabled: setupMovementMode === "free" }); }} className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-200 px-3 text-sm font-semibold"><RotateCcw size={15} /> Reset</button>
                   <button onClick={() => commitSetup()} className="inline-flex h-10 items-center gap-2 rounded-md bg-purple-700 px-3 text-sm font-semibold text-white"><CheckSquare size={15} /> Save Position</button>
                 </div>
               </div>
@@ -3651,6 +3686,37 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                     White/Black saves whose turn it is. Free move lets the coach move pieces freely for teaching.
                   </p>
                 </div>
+                {setupTab === "pieces" && (
+                  <div className="rounded-xl border border-slate-200 bg-white p-3">
+                    <div className="text-sm font-semibold text-slate-950">Castling</div>
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      {[
+                        ["K", "White 0-0", "Needs Ke1 + Rh1"],
+                        ["Q", "White 0-0-0", "Needs Ke1 + Ra1"],
+                        ["k", "Black 0-0", "Needs Ke8 + Rh8"],
+                        ["q", "Black 0-0-0", "Needs Ke8 + Ra8"],
+                      ].map(([key, label, hint]) => {
+                        const rightKey = key as keyof CastlingRights;
+                        const enabled = setupCastlingRights[rightKey];
+                        const active = legalCastlingText(setupPosition, { ...emptyCastlingRights, [rightKey]: true }) !== "-";
+                        return (
+                          <label key={key} className={`flex min-h-14 cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 ${enabled ? "border-purple-300 bg-purple-50" : "border-slate-200 bg-slate-50"}`}>
+                            <input
+                              type="checkbox"
+                              checked={enabled}
+                              onChange={(event) => updateSetupCastlingRight(rightKey, event.target.checked)}
+                              className="h-4 w-4"
+                            />
+                            <span className="min-w-0">
+                              <span className="block text-xs font-bold text-slate-900">{label}</span>
+                              <span className={`block text-[11px] ${active ? "text-slate-500" : "text-amber-700"}`}>{active ? hint : `${hint} first`}</span>
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
                 {setupTab === "objects" ? (
                   <div>
                     <div className="mb-3 text-sm font-semibold text-slate-950">Gamified Objects</div>
@@ -3691,9 +3757,9 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                 </div>}
                 <div className="grid grid-cols-2 gap-2">
                   <button onClick={() => setSelectedPiece("erase")} className={`inline-flex h-10 items-center justify-center gap-2 rounded-md border px-3 text-sm font-semibold ${selectedPiece === "erase" ? "border-red-500 bg-red-50 text-red-700" : "border-slate-200 bg-white text-slate-800"}`}><X size={15} /> Remove</button>
-                  <button onClick={() => { setSetupPosition({}); setGamifiedSetup({}); }} className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-200 px-3 text-sm font-semibold"><Eraser size={15} /> Clear</button>
-                  <button onClick={() => { setSetupPosition(fenToPosition("start")); setGamifiedSetup({}); }} className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-200 px-3 text-sm font-semibold"><RotateCcw size={15} /> Reset</button>
-                  <button onClick={() => navigator.clipboard?.writeText(positionToFen(setupPosition, live?.fen?.split(" ")?.[1] || "w")).then(() => toast.success("FEN copied"))} className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-200 px-3 text-sm font-semibold"><Download size={15} /> Export</button>
+                  <button onClick={() => { setSetupPosition({}); setGamifiedSetup({}); setSetupCastlingRights(emptyCastlingRights); }} className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-200 px-3 text-sm font-semibold"><Eraser size={15} /> Clear</button>
+                  <button onClick={() => { setSetupPosition(fenToPosition("start")); setGamifiedSetup({}); setSetupCastlingRights(inferCastlingRights(new Chess().fen())); }} className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-200 px-3 text-sm font-semibold"><RotateCcw size={15} /> Reset</button>
+                  <button onClick={() => navigator.clipboard?.writeText(positionToFen(setupPosition, setupSideToMove(), setupCastlingRights)).then(() => toast.success("FEN copied"))} className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-200 px-3 text-sm font-semibold"><Download size={15} /> Export</button>
                 </div>
                 <button onClick={loadSetupIntoClassroom} className="h-11 w-full rounded-md bg-purple-700 text-sm font-semibold text-white">Load Position into Classroom</button>
               </div>

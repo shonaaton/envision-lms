@@ -20,6 +20,12 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const live: any = await ClassroomSession.findOne({ classroom: params.id, scheduledSessionId });
   if (!live) return NextResponse.json({ error: "Live session missing" }, { status: 404 });
+  if (live.activeQuestion) {
+    const activeQuestion = await LiveQuestion.findOne({ _id: live.activeQuestion, status: "live" }).select("_id").lean();
+    if (activeQuestion) return NextResponse.json({ error: "A live quiz is already active. End it before launching another one." }, { status: 409 });
+  }
+  const recentLiveQuestion = await LiveQuestion.findOne({ classroom: params.id, scheduledSessionId, status: "live" }).select("_id").lean();
+  if (recentLiveQuestion) return NextResponse.json({ error: "A live quiz is already active. End it before launching another one." }, { status: 409 });
   const body = await req.json();
   const question = await LiveQuestion.create({
     classroom: params.id,
@@ -46,10 +52,21 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     hintsEnabled: Boolean(body.hintsEnabled),
     status: "live",
   });
-  await ClassroomSession.findByIdAndUpdate(live._id, {
-    activeQuestion: question._id,
-    mode: "puzzle",
-  });
+  const claimedLive = await ClassroomSession.findOneAndUpdate(
+    {
+      _id: live._id,
+      $or: [{ activeQuestion: { $exists: false } }, { activeQuestion: null }],
+    },
+    {
+      activeQuestion: question._id,
+      mode: "puzzle",
+    },
+    { new: true }
+  );
+  if (!claimedLive) {
+    await LiveQuestion.findByIdAndUpdate(question._id, { $set: { status: "closed" } });
+    return NextResponse.json({ error: "A live quiz is already active. End it before launching another one." }, { status: 409 });
+  }
   return NextResponse.json(question);
 }
 

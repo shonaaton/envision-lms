@@ -758,6 +758,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const [quizPoints, setQuizPoints] = useState(5);
   const [quizNegativeMarks, setQuizNegativeMarks] = useState(0);
   const [quizTimePerPosition, setQuizTimePerPosition] = useState(60);
+  const [quizLaunching, setQuizLaunching] = useState(false);
   const [chatText, setChatText] = useState("");
   const [chatRecipient, setChatRecipient] = useState("group");
   const [manualLoadText, setManualLoadText] = useState("");
@@ -1963,6 +1964,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   }
 
   async function launchComposedQuiz() {
+    if (quizLaunching) return;
     const isCurrentPositionQuiz = quizComposerMode === "current";
     if (isCurrentPositionQuiz && !quizSolution.length) {
       toast.error("Play the correct answer on the board first");
@@ -1993,58 +1995,63 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       timerSeconds: quizTimePerPosition,
     }));
     const first = items[0];
-    const res = await fetch(liveUrl("/question"), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        type: isCurrentPositionQuiz ? "best_move" : "move_sequence",
-        title: quizTitle,
-        topic: live?.topic || quizTitle || "Classroom Quiz",
-        difficulty: "medium",
-        instructions: isCurrentPositionQuiz
-          ? "Solve the current classroom position by playing the answer line."
-          : "Solve each PGN position by playing the side-to-move continuation.",
-        fen: first.fen || live?.fen || "start",
-        pgn: isCurrentPositionQuiz ? undefined : first.pgn || live?.pgn,
-        moveHistory: live?.moveHistory || [],
-        solution: first.solution || [],
-        items,
-        timer: { perQuestionSeconds: quizTimePerPosition || undefined },
-        scoring: { correct: quizPoints, wrongPenalty: quizNegativeMarks, hintPenalty: 0, speedBonus: 0, attemptPenalty: 0 },
-        attempts: "multiple",
-        hintsEnabled: true,
-        progressionMode: "auto",
-        currentItemIndex: 0,
-      }),
-    });
-    if (!res.ok) {
-      const payload = await res.json().catch(() => ({}));
-      toast.error(payload.error || "Could not launch quiz");
-      return;
-    }
-    toast.success("Live quiz launched");
-    if (!isCurrentPositionQuiz && first) {
-      await patch({
-        fen: first.fen,
-        orientation: orientationForFen(first.fen),
-        pgn: first.pgn || "",
-        pgnTitle: first.pgnTitle || first.title,
-        navigationStartFen: first.fen,
-        pgnMoves: first.solution || [],
-        pgnMoveIndex: 0,
-        pgnVariations: [],
-        activePgnVariationId: "",
-        moveHistory: [],
-        mode: "one_move_challenge",
-        studentMovesEnabled: true,
-        boardControlStudents: students.map((student: any) => student._id),
-        locked: false,
+    setQuizLaunching(true);
+    try {
+      const res = await fetch(liveUrl("/question"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: isCurrentPositionQuiz ? "best_move" : "move_sequence",
+          title: quizTitle,
+          topic: live?.topic || quizTitle || "Classroom Quiz",
+          difficulty: "medium",
+          instructions: isCurrentPositionQuiz
+            ? "Solve the current classroom position by playing the answer line."
+            : "Solve each PGN position by playing the side-to-move continuation.",
+          fen: first.fen || live?.fen || "start",
+          pgn: isCurrentPositionQuiz ? undefined : first.pgn || live?.pgn,
+          moveHistory: live?.moveHistory || [],
+          solution: first.solution || [],
+          items,
+          timer: { perQuestionSeconds: quizTimePerPosition || undefined },
+          scoring: { correct: quizPoints, wrongPenalty: quizNegativeMarks, hintPenalty: 0, speedBonus: 0, attemptPenalty: 0 },
+          attempts: "multiple",
+          hintsEnabled: true,
+          progressionMode: "auto",
+          currentItemIndex: 0,
+        }),
       });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        toast.error(payload.error || "Could not launch quiz");
+        return;
+      }
+      toast.success("Live quiz launched");
+      if (!isCurrentPositionQuiz && first) {
+        await patch({
+          fen: first.fen,
+          orientation: orientationForFen(first.fen),
+          pgn: first.pgn || "",
+          pgnTitle: first.pgnTitle || first.title,
+          navigationStartFen: first.fen,
+          pgnMoves: first.solution || [],
+          pgnMoveIndex: 0,
+          pgnVariations: [],
+          activePgnVariationId: "",
+          moveHistory: [],
+          mode: "one_move_challenge",
+          studentMovesEnabled: true,
+          boardControlStudents: students.map((student: any) => student._id),
+          locked: false,
+        });
+      }
+      setQuizComposerOpen(false);
+      setPgnOpen(false);
+      setActiveTab("leaderboard");
+      queueRefresh(60);
+    } finally {
+      setQuizLaunching(false);
     }
-    setQuizComposerOpen(false);
-    setPgnOpen(false);
-    setActiveTab("leaderboard");
-    queueRefresh(60);
   }
 
   async function submitResponse() {
@@ -3776,7 +3783,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                 <h3 className="text-xl font-black text-slate-950">{quizComposerMode === "current" ? "Ask Quiz from Current Position" : "Create Multiple-Position Quiz"}</h3>
                 <p className="mt-1 text-sm text-slate-500">{quizComposerMode === "current" ? "Play the correct answer directly on the board, then set the timer and marks." : "Review the questions, then set per-position timing, marks and negative marks before sending the quiz to students."}</p>
               </div>
-              <button onClick={() => setQuizComposerOpen(false)} className="grid h-9 w-9 place-items-center rounded-md border border-slate-200"><X size={16} /></button>
+              <button disabled={quizLaunching} onClick={() => setQuizComposerOpen(false)} className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 disabled:cursor-not-allowed disabled:opacity-40"><X size={16} /></button>
             </div>
             <div className="grid min-h-0 flex-1 gap-5 overflow-y-auto p-4 lg:grid-cols-[minmax(300px,420px)_1fr]">
               {quizComposerMode === "current" ? (
@@ -3824,8 +3831,8 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                       : `${quizComposerItems.length} position${quizComposerItems.length === 1 ? "" : "s"} selected. ${quizTimePerPosition || "Flexible"} seconds per position.`}
                   </div>
                 </div>
-                <button onClick={launchComposedQuiz} disabled={quizComposerMode === "current" && !quizSolution.length} className="btn-primary w-full justify-center disabled:opacity-40">
-                  <Sparkles size={16} /> Launch Quiz
+                <button onClick={launchComposedQuiz} disabled={quizLaunching || (quizComposerMode === "current" && !quizSolution.length)} className="btn-primary w-full justify-center disabled:cursor-not-allowed disabled:opacity-40">
+                  <Sparkles size={16} /> {quizLaunching ? "Launching..." : "Launch Quiz"}
                 </button>
               </div>
             </div>

@@ -660,8 +660,28 @@ type LiveBoardQuizResult = {
   attempts?: string[];
   correctLine?: string[];
   currentPly?: number;
+  currentFen?: string;
 };
 type CoachQuizResultsSnapshot = { question: any; items: any[]; students: any[]; responses: any[]; endedAt?: string };
+
+function formatNumberedNotation(moves: string[] = [], startFen = "start") {
+  const cleanMoves = moves.map((move) => String(move || "").trim()).filter(Boolean);
+  if (!cleanMoves.length) return "";
+  const parts = String(startFen || "").split(/\s+/);
+  let sideToMove: "w" | "b" = parts[1] === "b" ? "b" : "w";
+  let moveNumber = Math.max(1, Number(parts[5] || 1) || 1);
+  const notation: string[] = [];
+  cleanMoves.forEach((move, index) => {
+    if (sideToMove === "w") {
+      notation.push(`${moveNumber}. ${move}`);
+    } else {
+      notation.push(index === 0 ? `${moveNumber}... ${move}` : move);
+      moveNumber += 1;
+    }
+    sideToMove = sideToMove === "w" ? "b" : "w";
+  });
+  return notation.join(" ");
+}
 
 function aggregateLiveResponses(responses: any[]) {
   return responses.reduce(
@@ -4014,7 +4034,7 @@ function LiveBoardQuiz({
 
   const skipCurrent = useCallback(() => {
     if (!activeItem) return;
-    const result = { solved: false, skipped: true, mistakes, hintsUsed, timeTakenSeconds: Math.round((Date.now() - itemStartedAt) / 1000), submittedMove: lastStudentMove, attempts: attemptMoves };
+    const result = { solved: false, skipped: true, mistakes, hintsUsed, timeTakenSeconds: Math.round((Date.now() - itemStartedAt) / 1000), submittedMove: lastStudentMove, attempts: attemptMoves, currentFen: position };
     const nextResults = { ...results, [activeItem.id]: result };
     setResults(nextResults);
     onProgress?.(nextResults, Math.round((Date.now() - quizStartedAt) / 1000));
@@ -4032,7 +4052,7 @@ function LiveBoardQuiz({
       return;
     }
     setCurrentIndex(nextReviewIndex(nextResults, currentIndex));
-  }, [activeItem, answeredCount, attemptMoves, currentIndex, hintsUsed, itemStartedAt, lastStudentMove, mistakes, nextReviewIndex, onProgress, progressionMode, quizFinished, quizStartedAt, results, items.length]);
+  }, [activeItem, answeredCount, attemptMoves, currentIndex, hintsUsed, itemStartedAt, lastStudentMove, mistakes, nextReviewIndex, onProgress, position, progressionMode, quizFinished, quizStartedAt, results, items.length]);
 
   useEffect(() => {
     submittedRef.current = false;
@@ -4161,6 +4181,7 @@ function LiveBoardQuiz({
       attempts: attemptMoves,
       correctLine: correctLineMoves,
       currentPly: correctLineMoves.length,
+      currentFen: position,
     };
     const nextResults = { ...results, [activeItem.id]: result };
     setResults(nextResults);
@@ -4179,7 +4200,7 @@ function LiveBoardQuiz({
       setFeedback("Answer recorded. Waiting for the coach to open the next position.");
       return;
     }
-    window.setTimeout(() => moveNext(nextResults), 650);
+    window.setTimeout(() => moveNext(nextResults), 1100);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [solved]);
 
@@ -4189,17 +4210,15 @@ function LiveBoardQuiz({
 
   function applyAutoReply(nextGame: Chess, nextPly: number) {
     if (nextPly >= parsed.moves.length) {
-      setSolved(true);
-      return nextPly;
+      return { nextPly, finished: true };
     }
     const reply = parsed.moves[nextPly];
     const move = reply.from && reply.to
       ? nextGame.move({ from: reply.from, to: reply.to, promotion: reply.promotion || "q" })
       : nextGame.move(reply.san);
-    if (!move) return nextPly;
+    if (!move) return { nextPly, finished: false };
     const updatedPly = nextPly + 1;
-    if (updatedPly >= parsed.moves.length) setSolved(true);
-    return updatedPly;
+    return { nextPly: updatedPly, finished: updatedPly >= parsed.moves.length };
   }
 
   function commitQuizMove(source: string, target: string, promotion: PromotionPiece = "q") {
@@ -4230,6 +4249,7 @@ function LiveBoardQuiz({
           attempts: nextAttempts,
           correctLine: correctLineMoves,
           currentPly: correctLineMoves.length,
+          currentFen: position,
         },
       };
       setResults(nextResults);
@@ -4240,31 +4260,62 @@ function LiveBoardQuiz({
     const nextAttempts = [...attemptMoves, move.san];
     setAttemptMoves(nextAttempts);
     setLastStudentMove(move.san);
-    let nextPly = ply + 1;
-    nextPly = applyAutoReply(nextGame, nextPly);
-    const nextCorrectLine = parsed.moves.slice(0, nextPly).map((item) => item.san);
-    setCorrectLineMoves(nextCorrectLine);
+    const studentPly = ply + 1;
+    const studentFen = nextGame.fen();
+    const studentCorrectLine = parsed.moves.slice(0, studentPly).map((item) => item.san);
+    const studentFinished = studentPly >= parsed.moves.length;
+    setCorrectLineMoves(studentCorrectLine);
     setGame(nextGame);
-    setPosition(nextGame.fen());
-    setPly(nextPly);
+    setPosition(studentFen);
+    setPly(studentPly);
     setSelectedSquare(null);
-    const nextResults = {
+    const nextResults: Record<string, LiveBoardQuizResult> = {
       ...results,
       [activeItem.id]: {
-        solved: nextPly >= parsed.moves.length,
-        pending: nextPly < parsed.moves.length,
+        solved: false,
+        pending: true,
         mistakes,
         hintsUsed,
         timeTakenSeconds: Math.round((Date.now() - itemStartedAt) / 1000),
         submittedMove: move.san,
         attempts: nextAttempts,
-        correctLine: nextCorrectLine,
-        currentPly: nextPly,
+        correctLine: studentCorrectLine,
+        currentPly: studentPly,
+        currentFen: studentFen,
       },
     };
     setResults(nextResults);
     onProgress?.(nextResults, Math.round((Date.now() - quizStartedAt) / 1000));
-    setFeedback(nextPly >= parsed.moves.length ? "Answer recorded for this position." : "Move recorded. Continue from the new position.");
+    setFeedback(studentFinished ? "Move recorded." : "Move recorded. Updating the reply...");
+    window.setTimeout(() => {
+      const replyState = applyAutoReply(nextGame, studentPly);
+      const replyCorrectLine = parsed.moves.slice(0, replyState.nextPly).map((item) => item.san);
+      const replyFen = nextGame.fen();
+      setCorrectLineMoves(replyCorrectLine);
+      setGame(nextGame);
+      setPosition(replyFen);
+      setPly(replyState.nextPly);
+      const replyResults: Record<string, LiveBoardQuizResult> = {
+        ...nextResults,
+        [activeItem.id]: {
+          ...nextResults[activeItem.id],
+          solved: replyState.finished,
+          pending: !replyState.finished,
+          timeTakenSeconds: Math.round((Date.now() - itemStartedAt) / 1000),
+          correctLine: replyCorrectLine,
+          currentPly: replyState.nextPly,
+          currentFen: replyFen,
+        },
+      };
+      setResults(replyResults);
+      onProgress?.(replyResults, Math.round((Date.now() - quizStartedAt) / 1000));
+      if (replyState.finished) {
+        setSolved(true);
+        setFeedback("Answer recorded for this position.");
+      } else {
+        setFeedback("Continue from the new position.");
+      }
+    }, 520);
     return true;
   }
 
@@ -4592,6 +4643,13 @@ function CoachQuizMonitor({
         return [{ ...row, item, index, result, moves, wrongMoves, correctLine, expectedLineLength, hints, mistakes, score, status }];
       });
     });
+  const livePositionRow = [...positionSubmissionRows]
+    .filter((row: any) => row.index === effectiveIndex && row.result?.currentFen)
+    .sort((a: any, b: any) => new Date(b.response?.updatedAt || b.response?.submittedAt || 0).getTime() - new Date(a.response?.updatedAt || a.response?.submittedAt || 0).getTime())[0];
+  const liveBoardPosition = livePositionRow?.result?.currentFen || position;
+  const liveBoardLabel = livePositionRow
+    ? `${livePositionRow.student.name || livePositionRow.student.username || "Student"} live board`
+    : activeItem?.title || "Current position";
   const allStudentsSubmitted = totalStudents > 0 && submitted === totalStudents;
   const timerSeconds = Number(question?.timer?.perQuestionSeconds || activeItem?.timerSeconds || 0);
   const timerResetKey = `${question?._id || "quiz"}-${effectiveIndex}-${question?.updatedAt || question?.launchedAt || ""}`;
@@ -4670,7 +4728,7 @@ function CoachQuizMonitor({
           </div>
           <div className="mx-auto w-fit overflow-hidden rounded-md border border-slate-200">
             <Chessboard
-              position={position}
+              position={liveBoardPosition}
               boardWidth={260}
               arePiecesDraggable={false}
               showBoardNotation={false}
@@ -4679,7 +4737,7 @@ function CoachQuizMonitor({
             />
           </div>
           <div className="mt-2 rounded-md bg-slate-50 px-2 py-1.5 text-xs text-slate-600">
-            {activeItem?.title || "Current position"} • {activeItem?.points || question?.scoring?.correct || 5} pts
+            {liveBoardLabel} - {activeItem?.points || question?.scoring?.correct || 5} pts
           </div>
           <div className="mt-2 grid gap-2 text-xs sm:grid-cols-2">
             <InfoTile label="Mode" value={manualProgression ? "Coach-controlled" : "Auto progression"} />
@@ -4709,6 +4767,7 @@ function CoachQuizMonitor({
           <div className="grid max-h-[calc(100vh-245px)] gap-2 overflow-auto pr-1 lg:grid-cols-2 2xl:grid-cols-3">
             {positionSubmissionRows.map((row: any) => {
               const updatedAt = row.response?.updatedAt || row.response?.submittedAt;
+              const correctNotation = formatNumberedNotation(row.correctLine, row.item?.fen || question?.fen || "start");
             return (
                 <div key={`${row.student._id}-${row.item.id}`} className="rounded-lg border border-slate-200 bg-slate-50 p-2.5">
                   <div className="flex flex-wrap items-start justify-between gap-2">
@@ -4733,7 +4792,7 @@ function CoachQuizMonitor({
                   </div>
                   <div className="mt-2 space-y-1 rounded-md border border-slate-200 bg-white p-2 text-xs text-slate-600">
                     <div><span className="font-bold text-slate-700">Latest correct move:</span> {row.correctLine.at(-1) || (row.status === "Solved" ? row.result?.submittedMove : "-")}</div>
-                    <div><span className="font-bold text-slate-700">Correct notation:</span> {row.correctLine.length ? row.correctLine.join(", ") : "No correct move yet"}</div>
+                    <div><span className="font-bold text-slate-700">Correct notation:</span> {correctNotation || "No correct move yet"}</div>
                     <div><span className="font-bold text-slate-700">Wrong attempts:</span> {row.wrongMoves.length ? row.wrongMoves.join(", ") : "No wrong move recorded"}</div>
                     <div><span className="font-bold text-slate-700">Student status:</span> {row.response?.finalSubmitted ? "Quiz submitted" : "Quiz in progress"}</div>
                     <div><span className="font-bold text-slate-700">Last update:</span> {updatedAt ? new Date(updatedAt).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", second: "2-digit" }) : "-"}</div>
@@ -4830,6 +4889,7 @@ function CoachQuizResultsDialog({ snapshot, onClose }: { snapshot: CoachQuizResu
                         : [];
                     const wrongMoves = moves.filter((move: string) => !correctLine.includes(move));
                     const status = result?.solved ? "Solved" : result?.skipped ? "Skipped" : result?.pending ? "Attempted" : "Not answered";
+                    const correctNotation = formatNumberedNotation(correctLine, item?.fen || snapshot.question?.fen || "start");
                     return (
                       <div key={item.id} className="rounded-lg border border-slate-200 bg-white p-2.5">
                         <div className="flex items-start justify-between gap-2">
@@ -4846,7 +4906,7 @@ function CoachQuizResultsDialog({ snapshot, onClose }: { snapshot: CoachQuizResu
                           <div>Progress: <b>{correctLine.length}/{Array.isArray(item.solution) ? item.solution.length : "-"}</b></div>
                         </div>
                         <div className="mt-2 space-y-1 break-words rounded-md bg-slate-50 p-2 text-xs text-slate-600">
-                          <div><b>Correct notation:</b> {correctLine.length ? correctLine.join(", ") : "No correct move"}</div>
+                          <div><b>Correct notation:</b> {correctNotation || "No correct move"}</div>
                           <div><b>Wrong attempts:</b> {wrongMoves.length ? wrongMoves.join(", ") : "No wrong move"}</div>
                         </div>
                       </div>

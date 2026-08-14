@@ -30,7 +30,7 @@ const portalBenefits = [
   { label: "Track progress", value: "Attendance, tournaments, credits, and invoices", icon: Trophy },
 ];
 
-const achievementSlides = publicAchievementList().slice(0, 8);
+const achievementSlides = publicAchievementList();
 const rememberedLoginKey = "envision:remembered-login";
 
 export default function LoginPage() {

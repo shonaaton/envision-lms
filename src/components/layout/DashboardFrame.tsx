@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { Menu } from "lucide-react";
+import { usePathname } from "next/navigation";
 import LiveDataRefresher from "@/components/layout/LiveDataRefresher";
 import Sidebar from "@/components/layout/Sidebar";
 
@@ -26,6 +27,8 @@ export default function DashboardFrame({
 }) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [desktopNavCollapsed, setDesktopNavCollapsed] = useState(false);
+  const pathname = usePathname() || "";
+  const useCompactUi = !isProtectedLearningRoute(pathname);
 
   useEffect(() => {
     document.body.style.overflow = mobileNavOpen ? "hidden" : "";
@@ -74,11 +77,30 @@ export default function DashboardFrame({
         >
           <Menu size={19} />
         </button>
-        <main className="min-h-0 flex-1 overflow-y-auto px-2 pb-4 pt-14 sm:px-5 md:py-4 lg:px-6">
+        <main className={`min-h-0 flex-1 overflow-y-auto px-2 pb-4 pt-14 sm:px-5 md:py-4 lg:px-6 ${useCompactUi ? "compact-dashboard-ui" : ""}`}>
           <div className="mx-auto w-full max-w-[1720px]">{children}</div>
         </main>
       </div>
       <LiveDataRefresher />
     </div>
   );
+}
+
+function isProtectedLearningRoute(pathname: string) {
+  const protectedPrefixes = [
+    "/homework",
+    "/instructor/homework",
+    "/admin/homework-templates",
+    "/quizzes",
+    "/instructor/quizzes",
+    "/tournaments",
+    "/play",
+    "/analysis",
+    "/pgn",
+    "/king-hunt",
+    "/square-trainer",
+    "/tactics-trainer",
+  ];
+  if (/^\/classrooms\/[^/]+\/live(?:\/|$)/.test(pathname)) return true;
+  return protectedPrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }

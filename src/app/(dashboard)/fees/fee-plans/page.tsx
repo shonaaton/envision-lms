@@ -172,12 +172,12 @@ export default async function FeePlansPage({ searchParams }: { searchParams?: Pr
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 px-4 py-5 text-slate-950 sm:px-6 lg:px-8">
-      <div className="mb-5 flex items-center gap-2">
-        <span className="flex h-9 w-9 items-center justify-center rounded-md bg-purple-50 text-purple-700"><Banknote size={18} /></span>
+    <div className="min-h-screen bg-slate-50 px-4 py-4 text-slate-950 sm:px-6 lg:px-8">
+      <div className="mb-4 flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <span className="flex h-9 w-9 items-center justify-center rounded-md bg-purple-50 text-purple-700"><Banknote size={17} /></span>
         <div>
-          <h1 className="text-2xl font-semibold">Fee Plans</h1>
-          <p className="text-sm text-slate-500">Create, edit, archive, and prepare plans for assignment.</p>
+          <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-brand/70">Fees</p>
+          <h1 className="text-xl font-bold text-slate-950">Fee Plans</h1>
         </div>
       </div>
 

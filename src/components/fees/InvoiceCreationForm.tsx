@@ -137,7 +137,7 @@ export function InvoiceCreationForm({
       <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
         {step === 1 ? (
           <div className="max-w-xl">
-            <h3 className="text-lg font-black text-slate-950">Select student</h3>
+            <h3 className="text-base font-bold text-slate-950">Select student</h3>
             <p className="mt-1 text-sm text-slate-500">Choose who this invoice is for.</p>
             <select value={studentId} onChange={(event) => selectStudent(event.target.value)} className="mt-4 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-brand focus:ring-4 focus:ring-brand/10">
               <option value="">Select Student</option>
@@ -148,7 +148,7 @@ export function InvoiceCreationForm({
 
         {step === 2 ? (
           <div>
-            <h3 className="text-lg font-black text-slate-950">Select invoice type</h3>
+            <h3 className="text-base font-bold text-slate-950">Select invoice type</h3>
             <p className="mt-1 text-sm text-slate-500">Monthly and credit invoices use assigned plans. Custom invoices let you enter the details directly.</p>
             <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
               {[
@@ -157,7 +157,7 @@ export function InvoiceCreationForm({
                 ["manual", "Custom Invoice", "For adjustments or offline billing."],
               ].map(([value, label, help]) => (
                 <button key={value} type="button" onClick={() => selectInvoiceType(value as InvoiceType)} className={`rounded-lg border p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${invoiceType === value ? "border-brand bg-white text-brand ring-2 ring-brand/10" : "border-slate-200 bg-white text-slate-950 hover:border-brand/25"}`}>
-                  <div className="font-black">{label}</div>
+                  <div className="font-bold">{label}</div>
                   <div className="mt-1 text-xs text-slate-500">{help}</div>
                 </button>
               ))}
@@ -167,7 +167,7 @@ export function InvoiceCreationForm({
 
         {step === 3 && invoiceType !== "manual" ? (
           <div>
-            <h3 className="text-lg font-black text-slate-950">Select assigned plan</h3>
+            <h3 className="text-base font-bold text-slate-950">Select assigned plan</h3>
             <p className="mt-1 text-sm text-slate-500">Only plans already assigned to the selected student are shown.</p>
             <select value={planId} onChange={(event) => setPlanId(event.target.value)} className="mt-4 h-11 w-full max-w-xl rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-brand focus:ring-4 focus:ring-brand/10">
               <option value="">{availablePlans.length ? "Select Assigned Plan" : "No matching assigned plan found"}</option>
@@ -178,7 +178,7 @@ export function InvoiceCreationForm({
 
         {step === 4 ? (
           <div className="space-y-4">
-            <h3 className="text-lg font-black text-slate-950">Review and generate</h3>
+            <h3 className="text-base font-bold text-slate-950">Review and generate</h3>
             <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
               <Field label="Invoice Date">
                 <input type="date" value={invoiceDate} onChange={(event) => setInvoiceDate(event.target.value)} className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none transition focus:border-brand focus:ring-4 focus:ring-brand/10" />

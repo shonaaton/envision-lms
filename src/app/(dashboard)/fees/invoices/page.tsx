@@ -434,11 +434,11 @@ function invoiceModeLabel(mode: string) {
 function MiniMetric({ label, value, icon }: { label: string; value: string | number; icon: React.ReactNode }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-      <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">
+      <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">
         <span className="text-brand">{icon}</span>
         {label}
       </div>
-      <div className="mt-1 text-xl font-black text-slate-950">{value}</div>
+      <div className="mt-1 text-xl font-bold text-slate-950">{value}</div>
     </div>
   );
 }
@@ -473,15 +473,14 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
   const totalValue = invoices.reduce((sum: number, invoice: any) => sum + Number(invoice.totalAmount || 0), 0);
 
   return (
-    <div className="min-h-screen bg-slate-50 px-4 py-5 text-slate-950 sm:px-6 lg:px-8">
-      <section className="mb-4 rounded-lg border border-brand/10 bg-white p-4 shadow-[0_12px_28px_rgba(90,19,114,0.08)]">
+    <div className="min-h-screen bg-slate-50 px-4 py-4 text-slate-950 sm:px-6 lg:px-8">
+      <section className="mb-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex items-start gap-3">
-            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-brand/10 text-brand"><Receipt size={21} /></span>
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-brand/10 text-brand"><Receipt size={18} /></span>
             <div>
-              <p className="text-xs font-black uppercase tracking-[0.16em] text-brand/70">Billing workspace</p>
-              <h1 className="mt-1 text-3xl font-black text-slate-950">Fee Invoices</h1>
-              <p className="mt-1 text-sm leading-6 text-slate-500">Create, review, email, download, print, and settle academy invoices.</p>
+              <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-brand/70">Billing workspace</p>
+              <h1 className="text-xl font-bold text-slate-950">Fee Invoices</h1>
             </div>
           </div>
           <div className="grid gap-2 sm:grid-cols-3">
@@ -516,8 +515,8 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
         <section className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4 shadow-sm">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <h2 className="text-lg font-black text-amber-950">Bulk Invoice Email Reminders</h2>
-              <p className="mt-1 text-sm leading-6 text-amber-800">Choose who should receive a fee reminder, then send emails through the active n8n workflow.</p>
+              <h2 className="text-base font-bold text-amber-950">Bulk Invoice Email Reminders</h2>
+              <p className="mt-1 text-xs leading-5 text-amber-800">Send reminders through the active workflow.</p>
             </div>
             <form action={sendBulkInvoiceReminders} className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <select name="invoiceReminderMode" defaultValue="due" className="h-11 rounded-lg border border-amber-300 bg-white px-3 text-sm font-semibold text-slate-800">
@@ -533,10 +532,10 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
         <section className="mb-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
           <div className="mb-4 flex items-start justify-between gap-3">
             <div>
-              <h2 className="text-xl font-black text-slate-950">Create Manual Invoice</h2>
-              <p className="mt-1 text-sm leading-6 text-slate-500">Use the guided steps only when you need to generate a manual invoice.</p>
+              <h2 className="text-base font-bold text-slate-950">Create Manual Invoice</h2>
+              <p className="mt-1 text-xs leading-5 text-slate-500">Use this when you need a manual invoice.</p>
             </div>
-            <span className="hidden rounded-full bg-brand/10 px-3 py-1 text-xs font-black text-brand sm:inline-flex">4-step flow</span>
+            <span className="hidden rounded-full bg-brand/10 px-3 py-1 text-xs font-bold text-brand sm:inline-flex">4-step flow</span>
           </div>
           <InvoiceCreationForm
             action={createManualInvoice}
@@ -551,7 +550,7 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
       <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-xl font-black text-slate-950">Invoice List</h2>
+            <h2 className="text-base font-bold text-slate-950">Invoice List</h2>
             <p className="mt-1 text-sm text-slate-500">{invoices.length} invoices in the current view.</p>
           </div>
           {manager && (
@@ -566,9 +565,9 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
         </div>
 
         {invoices.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-8 text-center">
+          <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
             <div className="mx-auto grid h-12 w-12 place-items-center rounded-lg bg-white text-brand shadow-sm"><FileText size={22} /></div>
-            <h3 className="mt-4 font-black text-slate-950">No invoices found</h3>
+            <h3 className="mt-4 text-sm font-bold text-slate-950">No invoices found</h3>
             <p className="mt-1 text-sm text-slate-500">Invoices generated through portal payments or manual invoice creation will appear here.</p>
           </div>
         ) : (
@@ -578,11 +577,11 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
               const pdfHref = `/api/fees/invoices/${invoiceId}/pdf`;
               const emailStatus = String(invoice.lastEmailStatus || "");
               return (
-                <article key={invoiceId} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition hover:border-brand/20 hover:shadow-lg hover:shadow-brand-900/8">
+                <article key={invoiceId} className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm transition hover:border-brand/20 hover:bg-slate-50">
                   <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_260px]">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="text-base font-black text-slate-950">{invoice.invoiceNumber}</h3>
+                        <h3 className="text-sm font-bold text-slate-950">{invoice.invoiceNumber}</h3>
                         <span className={`rounded-full px-2.5 py-1 text-xs font-bold ring-1 ${statusTone(invoice.status)}`}>{invoice.status}</span>
                         <span className="rounded-full bg-brand/10 px-2.5 py-1 text-xs font-bold text-brand">{invoiceTypeLabel(invoice.type)}</span>
                       </div>
@@ -590,24 +589,24 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
                       <div className="mt-3 grid gap-3 text-sm md:grid-cols-2 xl:grid-cols-4">
                         {manager && (
                           <div>
-                            <div className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">Student</div>
+                            <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Student</div>
                             <div className="mt-1 font-semibold text-slate-950">{invoice.student?.name || "-"}</div>
                             <div className="text-xs text-slate-500">{invoice.student?.username || invoice.student?.email || "-"}</div>
                           </div>
                         )}
                         <div>
-                          <div className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">Plan</div>
+                          <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Plan</div>
                           <div className="mt-1 font-semibold text-slate-950">{invoice.plan?.name || "-"}</div>
                           <div className="text-xs text-slate-500">{invoiceModeLabel(invoice.invoiceMode)}</div>
                         </div>
                         <div>
-                          <div className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">Dates</div>
+                          <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Dates</div>
                           <div className="mt-1 text-slate-700">Issued {new Date(invoice.issueDate || invoice.createdAt).toLocaleDateString("en-IN")}</div>
                           <div className="text-slate-700">Due {new Date(invoice.dueDate).toLocaleDateString("en-IN")}</div>
                           {invoice.referenceNumber && <div className="text-xs font-semibold text-slate-500">Ref {invoice.referenceNumber}</div>}
                         </div>
                         <div>
-                          <div className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">Email</div>
+                          <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Email</div>
                           <div className="mt-1 flex items-center gap-1.5 font-semibold text-slate-950">
                             {emailStatus === "sent" ? <MailCheck size={15} className="text-emerald-600" /> : <MailWarning size={15} className="text-amber-600" />}
                             {emailStatusCopy(emailStatus)}
@@ -620,8 +619,8 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
                     <div className="rounded-lg bg-slate-50 p-3">
                       <div className="flex items-end justify-between gap-3">
                         <div>
-                          <div className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">Total</div>
-                          <div className="mt-1 text-2xl font-black text-slate-950">{formatINR(invoice.totalAmount)}</div>
+                          <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Total</div>
+                          <div className="mt-1 text-xl font-bold text-slate-950">{formatINR(invoice.totalAmount)}</div>
                         </div>
                         <div className="text-right text-xs text-slate-500">
                           GST {invoice.invoiceMode === "non_gst" ? "-" : formatINR(invoice.gstAmount || 0)}

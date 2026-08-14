@@ -4,7 +4,7 @@ import { formatINR } from "@/lib/utils";
 import { CreditLedger, FeeAssignment, FeePlan, Invoice } from "@/models/Fee";
 import { User } from "@/models/User";
 import { revalidatePath } from "next/cache";
-import { History, Users } from "lucide-react";
+import { History, Receipt, UserPlus, Users, WalletCards } from "lucide-react";
 import { StudentFeeAssignmentForm } from "@/components/fees/StudentFeeForms";
 import { Types } from "mongoose";
 import { redirect } from "next/navigation";
@@ -12,6 +12,41 @@ import { requireFeesAccess } from "@/lib/feesAccess";
 import { recordActivity } from "@/lib/activity";
 
 export const dynamic = "force-dynamic";
+
+type ViewKey = "assign" | "records" | "history";
+
+function selectedView(value?: string): ViewKey {
+  if (value === "assign" || value === "history") return value;
+  return "records";
+}
+
+function toolHref(view: ViewKey) {
+  return `/fees/student-fees?view=${view}`;
+}
+
+function ToolCard({ href, active, label, count, icon, tone }: { href: string; active: boolean; label: string; count?: string | number; icon: React.ReactNode; tone: string }) {
+  return (
+    <a href={href} className={`flex min-h-[76px] items-center gap-3 rounded-lg border bg-white px-3 py-3 shadow-sm transition hover:border-brand/25 hover:bg-slate-50 ${active ? "border-brand/35 ring-2 ring-brand/10" : "border-slate-200"}`}>
+      <span className={`grid h-9 w-9 flex-none place-items-center rounded-md ${tone}`}>{icon}</span>
+      <span className="min-w-0">
+        <span className="block text-sm font-bold text-slate-950">{label}</span>
+        {count !== undefined && <span className="mt-0.5 block text-xs font-semibold text-slate-500">{count}</span>}
+      </span>
+    </a>
+  );
+}
+
+function SectionTitle({ title, note, action }: { title: string; note?: string; action?: React.ReactNode }) {
+  return (
+    <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <h2 className="text-base font-bold text-slate-950">{title}</h2>
+        {note && <p className="mt-1 text-xs leading-5 text-slate-500">{note}</p>}
+      </div>
+      {action}
+    </div>
+  );
+}
 
 async function assignPlan(formData: FormData) {
   "use server";
@@ -164,6 +199,7 @@ export default async function StudentFeesPage({ searchParams }: { searchParams?:
   const params = searchParams ? await searchParams : {};
   const error = typeof params.error === "string" ? params.error : "";
   const success = typeof params.success === "string" ? params.success : "";
+  const view = selectedView(typeof params.view === "string" ? params.view : "");
   const [students, plans, assignments, invoices, credits] = await Promise.all([
     User.find({ role: "student" }, { passwordHash: 0 }).sort({ name: 1 }).lean(),
     FeePlan.find({ isActive: true }).sort({ name: 1 }).lean(),
@@ -171,115 +207,155 @@ export default async function StudentFeesPage({ searchParams }: { searchParams?:
     Invoice.find({}).populate("student plan").sort({ createdAt: -1 }).limit(200).lean(),
     CreditLedger.find({}).populate("student").sort({ createdAt: -1 }).limit(100).lean(),
   ]);
+  const creditAssignments = assignments.filter((assignment: any) => assignment.type === "credits");
+  const monthlyAssignments = assignments.filter((assignment: any) => assignment.type === "monthly");
+  const outstandingRecords = assignments.filter((assignment: any) => {
+    const studentInvoices = invoices.filter((invoice: any) => invoice.student?._id?.toString() === assignment.student?._id?.toString());
+    return studentInvoices.some((invoice: any) => invoice.status !== "paid");
+  });
 
   return (
-    <div className="min-h-screen bg-slate-50 px-4 py-5 text-slate-950 sm:px-6 lg:px-8">
-      <div className="mb-5 flex items-center gap-2">
-        <span className="flex h-9 w-9 items-center justify-center rounded-md bg-purple-50 text-purple-700"><Users size={18} /></span>
-        <div><h1 className="text-2xl font-semibold">Student Fees</h1><p className="text-sm text-slate-500">Assign plans, track outstanding amounts, credit history, recharge history, and late fees.</p></div>
+    <div className="min-h-screen bg-slate-50 px-4 py-4 text-slate-950 sm:px-6 lg:px-8">
+      <div className="mb-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex items-center gap-3">
+          <span className="grid h-9 w-9 place-items-center rounded-md bg-purple-50 text-purple-700"><Users size={17} /></span>
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-brand/70">Fees</p>
+            <h1 className="text-xl font-bold text-slate-950">Student Fees</h1>
+          </div>
+        </div>
       </div>
 
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="mb-4 font-semibold">Assign / Change Fee Structure</h2>
-        {success === "assigned" || success === "deleted" ? (
-          <div className="mb-4 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
-            {success === "deleted" ? "Fee record deleted successfully." : "Fee plan assigned successfully."}
-          </div>
-        ) : null}
-        {error ? (
-          <div className="mb-4 rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-800">
-            {error === "invalid-selection"
-              ? "Please select a valid student and fee plan."
-              : error === "invalid-date"
-                ? "Please choose a valid effective date."
-                : error === "missing-record"
-                  ? "The selected student or fee plan no longer exists."
-                  : "Fee plan could not be assigned. Please check the selected plan and try again."}
-          </div>
-        ) : null}
-        <StudentFeeAssignmentForm
-          action={assignPlan}
-          students={students.map((student: any) => ({
-            id: student._id.toString(),
-            name: student.name,
-            username: student.username,
-            hasAssignment: assignments.some((assignment: any) => assignment.student?._id?.toString() === student._id.toString()),
-          }))}
-          plans={plans.map((plan: any) => ({
-            id: plan._id.toString(),
-            name: plan.name,
-            type: plan.type,
-            amount: plan.amount,
-            credits: plan.credits || 0,
-          }))}
-        />
-      </section>
-
-      <section className="mt-4 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="mb-4 font-semibold">Student Fee Records</h2>
-        {assignments.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-6">
-            <h3 className="font-semibold text-slate-950">No Fee Records Found</h3>
-            <p className="mt-1 text-sm text-slate-500">No students have been assigned a fee structure yet. Click Assign Plan above to assign a Monthly or Credit-Based Plan to a student.</p>
-          </div>
-        ) : (
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-left text-sm">
-            <thead className="text-xs uppercase text-slate-500"><tr className="border-b"><th className="px-3 py-3">Student Name</th><th>Student ID</th><th>Assigned Plan</th><th>Plan Type</th><th>Outstanding Amount</th><th>Late Fees Due</th><th>Remaining Credits</th><th>Payment Status</th><th>Last Payment Date</th><th>Actions</th><th>History</th></tr></thead>
-            <tbody>
-              {assignments.map((a: any) => {
-                const studentInvoices = invoices.filter((i: any) => i.student?._id?.toString() === a.student?._id?.toString());
-                const outstanding = studentInvoices.filter((i: any) => i.status !== "paid").reduce((sum: number, i: any) => sum + i.totalAmount, 0);
-                const lateFees = studentInvoices.reduce((sum: number, i: any) => sum + (i.lateFee || 0), 0);
-                const lastPaid = studentInvoices.filter((i: any) => i.status === "paid" && i.paidAt).sort((x: any, y: any) => new Date(y.paidAt).getTime() - new Date(x.paidAt).getTime())[0];
-                return (
-                  <tr key={a._id} className="border-b last:border-0">
-                    <td className="px-3 py-3 font-medium">{a.student?.name}</td>
-                    <td>{a.student?.username || a.student?._id?.toString?.() || "-"}</td>
-                    <td>{a.plan?.name}</td>
-                    <td>{a.type === "credits" ? "Credit-Based" : "Monthly"}</td>
-                    <td>{formatINR(outstanding)}</td>
-                    <td>{formatINR(lateFees)}</td>
-                    <td>{a.type === "credits" ? `${a.creditBalance} left (${a.totalCreditsConsumed} used)` : "-"}</td>
-                    <td>{outstanding > 0 ? "Outstanding" : "Clear"}</td>
-                    <td>{lastPaid ? new Date(lastPaid.paidAt).toLocaleDateString("en-IN") : "-"}</td>
-                    <td>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <a className="rounded-md border border-purple-200 px-3 py-1.5 text-xs font-semibold text-purple-700" href={`/fees/invoices?student=${a.student?._id}`}>View Invoices</a>
-                        <form action={deleteFeeAssignment}>
-                          <input type="hidden" name="assignment" value={a._id.toString()} />
-                          <button className="rounded-md border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-700">Delete Record</button>
-                        </form>
-                      </div>
-                    </td>
-                    <td><span className="inline-flex items-center gap-1 text-xs text-slate-500"><History size={13} /> {a.history?.length || 0} changes</span></td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+      {(success === "assigned" || success === "deleted") && (
+        <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">
+          {success === "deleted" ? "Fee record deleted successfully." : "Fee plan assigned successfully."}
         </div>
-        )}
-      </section>
+      )}
+      {error && (
+        <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-800">
+          {error === "invalid-selection"
+            ? "Please select a valid student and fee plan."
+            : error === "invalid-date"
+              ? "Please choose a valid effective date."
+              : error === "missing-record"
+                ? "The selected student or fee plan no longer exists."
+                : "Fee plan could not be assigned. Please check the selected plan and try again."}
+        </div>
+      )}
 
-      <section className="mt-4 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="mb-4 font-semibold">Recent Credit / Recharge History</h2>
-        {credits.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-6">
-            <h3 className="font-semibold text-slate-950">No Recharge History Found</h3>
-            <p className="mt-1 text-sm text-slate-500">Recharge transactions will appear here once students purchase or renew credit plans.</p>
+      <nav className="mb-4 grid gap-2 sm:grid-cols-3">
+        <ToolCard href={toolHref("assign")} active={view === "assign"} label="Assign Plan" count={`${students.length} students`} icon={<UserPlus size={17} />} tone="bg-emerald-50 text-emerald-700" />
+        <ToolCard href={toolHref("records")} active={view === "records"} label="Student Records" count={`${assignments.length} assigned`} icon={<Receipt size={17} />} tone="bg-purple-50 text-purple-700" />
+        <ToolCard href={toolHref("history")} active={view === "history"} label="Credit History" count={`${credits.length} recent`} icon={<WalletCards size={17} />} tone="bg-slate-100 text-slate-700" />
+      </nav>
+
+      {view === "assign" && (
+        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <SectionTitle title="Assign / Change Fee Structure" note={`${plans.length} active plans available.`} />
+          <StudentFeeAssignmentForm
+            action={assignPlan}
+            students={students.map((student: any) => ({
+              id: student._id.toString(),
+              name: student.name,
+              username: student.username,
+              hasAssignment: assignments.some((assignment: any) => assignment.student?._id?.toString() === student._id.toString()),
+            }))}
+            plans={plans.map((plan: any) => ({
+              id: plan._id.toString(),
+              name: plan.name,
+              type: plan.type,
+              amount: plan.amount,
+              credits: plan.credits || 0,
+            }))}
+          />
+        </section>
+      )}
+
+      {view === "records" && (
+        <>
+          <div className="mb-4 grid gap-2 sm:grid-cols-3">
+            <ToolCard href="/fees/student-fees?view=records" active={false} label="Credit Plans" count={creditAssignments.length} icon={<WalletCards size={17} />} tone="bg-emerald-50 text-emerald-700" />
+            <ToolCard href="/fees/student-fees?view=records" active={false} label="Monthly Plans" count={monthlyAssignments.length} icon={<Receipt size={17} />} tone="bg-purple-50 text-purple-700" />
+            <ToolCard href="/fees/student-fees?view=records" active={false} label="Outstanding" count={outstandingRecords.length} icon={<History size={17} />} tone="bg-amber-50 text-amber-700" />
           </div>
-        ) : (
-        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-          {credits.map((c: any) => (
-            <div key={c._id} className="flex items-center justify-between rounded-md bg-slate-50 px-3 py-2 text-sm">
-              <span>{c.student?.name} - {c.note || c.type}</span>
-              <b className={c.credits > 0 ? "text-emerald-700" : "text-rose-700"}>{c.credits > 0 ? "+" : ""}{c.credits}</b>
+          <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+            <SectionTitle title="Student Fee Records" note="Student names open their invoice list." />
+            {assignments.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-6">
+                <h3 className="text-sm font-bold text-slate-950">No fee records found</h3>
+                <p className="mt-1 text-xs text-slate-500">Assign a plan to create the first record.</p>
+              </div>
+            ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-left text-sm">
+                <thead className="border-b bg-slate-50 text-xs uppercase tracking-[0.08em] text-slate-500"><tr><th className="px-3 py-3">Student</th><th className="px-3 py-3">Plan</th><th className="px-3 py-3">Type</th><th className="px-3 py-3">Outstanding</th><th className="px-3 py-3">Late Fee</th><th className="px-3 py-3">Credits</th><th className="px-3 py-3">Status</th><th className="px-3 py-3">Last Paid</th><th className="px-3 py-3">Actions</th></tr></thead>
+                <tbody>
+                  {assignments.map((a: any) => {
+                    const studentInvoices = invoices.filter((i: any) => i.student?._id?.toString() === a.student?._id?.toString());
+                    const outstanding = studentInvoices.filter((i: any) => i.status !== "paid").reduce((sum: number, i: any) => sum + i.totalAmount, 0);
+                    const lateFees = studentInvoices.reduce((sum: number, i: any) => sum + (i.lateFee || 0), 0);
+                    const lastPaid = studentInvoices.filter((i: any) => i.status === "paid" && i.paidAt).sort((x: any, y: any) => new Date(y.paidAt).getTime() - new Date(x.paidAt).getTime())[0];
+                    const studentId = a.student?._id?.toString?.() || "";
+                    return (
+                      <tr key={a._id} className="border-b last:border-0 hover:bg-slate-50">
+                        <td className="px-3 py-3">
+                          <a className="font-semibold text-brand hover:underline" href={studentId ? `/fees/invoices?student=${studentId}` : "#"}>{a.student?.name || "Student"}</a>
+                          <div className="text-xs text-slate-500">{a.student?.username || studentId || "-"}</div>
+                        </td>
+                        <td className="px-3 py-3">{a.plan?.name}</td>
+                        <td className="px-3 py-3">{a.type === "credits" ? "Credit" : "Monthly"}</td>
+                        <td className="px-3 py-3 font-semibold">{formatINR(outstanding)}</td>
+                        <td className="px-3 py-3">{formatINR(lateFees)}</td>
+                        <td className="px-3 py-3">{a.type === "credits" ? `${a.creditBalance} left` : "-"}</td>
+                        <td className="px-3 py-3"><span className={`rounded-full px-2 py-1 text-xs font-semibold ${outstanding > 0 ? "bg-amber-50 text-amber-700" : "bg-emerald-50 text-emerald-700"}`}>{outstanding > 0 ? "Outstanding" : "Clear"}</span></td>
+                        <td className="px-3 py-3 text-xs text-slate-500">{lastPaid ? new Date(lastPaid.paidAt).toLocaleDateString("en-IN") : "-"}</td>
+                        <td className="px-3 py-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <a className="rounded-md border border-purple-200 px-3 py-1.5 text-xs font-semibold text-purple-700" href={`/fees/invoices?student=${studentId}`}>Invoices</a>
+                            <form action={deleteFeeAssignment}>
+                              <input type="hidden" name="assignment" value={a._id.toString()} />
+                              <button className="rounded-md border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-700">Delete</button>
+                            </form>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
-          ))}
-        </div>
-        )}
-      </section>
+            )}
+          </section>
+        </>
+      )}
+
+      {view === "history" && (
+        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <SectionTitle title="Recent Credit / Recharge History" note="Recharge and adjustment entries." />
+          {credits.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-6">
+              <h3 className="text-sm font-bold text-slate-950">No recharge history found</h3>
+              <p className="mt-1 text-xs text-slate-500">Recharge transactions will appear here once students purchase or renew credit plans.</p>
+            </div>
+          ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-sm">
+              <thead className="border-b bg-slate-50 text-xs uppercase tracking-[0.08em] text-slate-500"><tr><th className="px-3 py-3">Student</th><th className="px-3 py-3">Reason</th><th className="px-3 py-3">Credits</th><th className="px-3 py-3">Date</th></tr></thead>
+              <tbody>
+                {credits.map((c: any) => (
+                  <tr key={c._id} className="border-b last:border-0 hover:bg-slate-50">
+                    <td className="px-3 py-3 font-semibold text-slate-950">{c.student?.name || "Student"}</td>
+                    <td className="px-3 py-3 text-xs text-slate-600">{c.note || c.type}</td>
+                    <td className={`px-3 py-3 font-bold ${c.credits > 0 ? "text-emerald-700" : "text-rose-700"}`}>{c.credits > 0 ? "+" : ""}{c.credits}</td>
+                    <td className="px-3 py-3 text-xs text-slate-500">{new Date(c.createdAt).toLocaleDateString("en-IN")}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          )}
+        </section>
+      )}
     </div>
   );
 }

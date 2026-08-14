@@ -33,6 +33,10 @@ const portalBenefits = [
 const achievementSlides = publicAchievementList();
 const rememberedLoginKey = "envision:remembered-login";
 
+function shuffledAchievements() {
+  return [...achievementSlides].sort(() => Math.random() - 0.5);
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const { status } = useSession();
@@ -42,8 +46,12 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loginId, setLoginId] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
+  const [randomizedAchievements, setRandomizedAchievements] = useState(achievementSlides);
   const [achievementIndex, setAchievementIndex] = useState(0);
-  const activeAchievement = achievementSlides[achievementIndex] || achievementSlides[0];
+  const activeAchievement = randomizedAchievements[achievementIndex] || randomizedAchievements[0];
+  const previousAchievement =
+    randomizedAchievements[(achievementIndex - 1 + randomizedAchievements.length) % randomizedAchievements.length] || activeAchievement;
+  const nextAchievement = randomizedAchievements[(achievementIndex + 1) % randomizedAchievements.length] || activeAchievement;
 
   useEffect(() => {
     if (status === "authenticated" && !submittedRef.current && !clearedExistingSessionRef.current) {
@@ -58,15 +66,17 @@ export default function LoginPage() {
       setLoginId(rememberedLogin);
       setRememberMe(true);
     }
+    setRandomizedAchievements(shuffledAchievements());
+    setAchievementIndex(0);
   }, []);
 
   useEffect(() => {
-    if (achievementSlides.length < 2) return;
+    if (randomizedAchievements.length < 2) return;
     const timer = window.setInterval(() => {
-      setAchievementIndex((current) => (current + 1) % achievementSlides.length);
+      setAchievementIndex((current) => (current + 1) % randomizedAchievements.length);
     }, 4200);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [randomizedAchievements.length]);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -94,48 +104,73 @@ export default function LoginPage() {
   return (
     <main className="min-h-screen bg-[#f8fafc] text-slate-950">
       <div className="grid min-h-screen lg:grid-cols-[minmax(0,1.05fr)_minmax(420px,0.95fr)]">
-        <section className="order-2 bg-[#17051f] px-5 py-8 text-white sm:px-8 lg:order-1 lg:flex lg:flex-col lg:justify-between lg:p-10 xl:p-14">
+        <section className="relative order-2 overflow-hidden bg-[#120818] px-5 py-8 text-white sm:px-8 lg:order-1 lg:flex lg:flex-col lg:justify-between lg:p-10 xl:p-14">
+          <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(253,231,90,0.14)_0%,transparent_24%,rgba(18,126,112,0.18)_52%,transparent_74%),linear-gradient(180deg,#18051f_0%,#101827_100%)]" />
+          <div className="absolute inset-0 opacity-[0.16] [background-image:linear-gradient(120deg,rgba(255,255,255,0.16)_1px,transparent_1px),linear-gradient(30deg,rgba(255,255,255,0.08)_1px,transparent_1px)] [background-size:76px_76px]" />
+          <div className="absolute -left-20 top-28 h-48 w-[140%] -rotate-6 border-y border-white/10 bg-white/[0.035]" />
           <div className="hidden lg:block">
             <Image src={ACADEMY_LOGO_URL} alt="Envision Chess Academy" width={300} height={98} priority unoptimized className="h-20 w-auto object-contain" />
           </div>
 
-          <div className="grid gap-6 lg:grid-cols-[0.94fr_1.06fr] lg:items-end">
+          <div className="relative grid gap-8 lg:grid-cols-[1.02fr_0.98fr] lg:items-center">
             {activeAchievement && (
-              <div className="overflow-hidden rounded-lg border border-accent/25 bg-white/[0.08] shadow-2xl shadow-black/25">
-                <div className="relative aspect-[0.9] min-h-[300px] bg-[#090b10]">
-                  <Image
-                    key={`${activeAchievement.achievementImageUrl}-login-bg`}
-                    src={activeAchievement.achievementImageUrl}
-                    alt=""
-                    fill
-                    priority
-                    sizes="(min-width: 1024px) 33vw, 100vw"
-                    className="scale-110 object-cover opacity-25 blur-2xl transition duration-700"
-                  />
-                  <Image
-                    key={activeAchievement.achievementImageUrl}
-                    src={activeAchievement.achievementImageUrl}
-                    alt={`${activeAchievement.studentName} achievement`}
-                    fill
-                    priority
-                    sizes="(min-width: 1024px) 33vw, 100vw"
-                    className="object-contain p-4 transition duration-700"
-                  />
-                  <div className="absolute left-4 top-4 inline-flex items-center gap-2 rounded-full bg-accent px-3 py-1 text-xs font-black uppercase text-brand-900">
-                    <Trophy size={14} /> Achievers wall
+              <div className="relative mx-auto w-full max-w-[560px] py-6 [perspective:1200px]">
+                <div className="absolute left-1/2 top-10 h-[78%] w-[70%] -translate-x-[64%] -rotate-[10deg] skew-y-3 border border-cyan-300/18 bg-cyan-300/[0.07] shadow-2xl shadow-cyan-950/40" />
+                <div className="absolute left-1/2 top-12 h-[78%] w-[70%] -translate-x-[28%] rotate-[9deg] skew-y-[-3deg] border border-accent/18 bg-accent/[0.08] shadow-2xl shadow-black/35" />
+                {previousAchievement && (
+                  <div className="absolute left-0 top-16 hidden h-[58%] w-[42%] -rotate-[14deg] overflow-hidden border border-white/12 bg-black/30 opacity-55 shadow-2xl shadow-black/40 sm:block">
+                    <Image src={previousAchievement.achievementImageUrl} alt="" fill sizes="180px" className="object-cover" />
+                  </div>
+                )}
+                {nextAchievement && (
+                  <div className="absolute right-0 top-8 hidden h-[62%] w-[42%] rotate-[13deg] overflow-hidden border border-white/12 bg-black/30 opacity-65 shadow-2xl shadow-black/40 sm:block">
+                    <Image src={nextAchievement.achievementImageUrl} alt="" fill sizes="180px" className="object-cover" />
+                  </div>
+                )}
+
+                <div className="relative z-10 rotate-[-2deg] transform-gpu transition duration-700 hover:rotate-0 hover:scale-[1.015] [transform-style:preserve-3d]">
+                  <div className="absolute -inset-3 translate-y-5 rotate-3 bg-black/35 blur-xl" />
+                  <div className="relative overflow-hidden border border-white/18 bg-[#080b11]/88 shadow-[0_34px_90px_rgba(0,0,0,0.55)] backdrop-blur">
+                    <div className="relative aspect-[0.86] min-h-[330px]">
+                      <Image
+                        key={`${activeAchievement.achievementImageUrl}-login-bg`}
+                        src={activeAchievement.achievementImageUrl}
+                        alt=""
+                        fill
+                        priority
+                        sizes="(min-width: 1024px) 34vw, 100vw"
+                        className="scale-125 object-cover opacity-28 blur-2xl transition duration-700"
+                      />
+                      <div className="absolute inset-0 bg-[linear-gradient(115deg,rgba(255,255,255,0.20)_0%,transparent_18%,transparent_58%,rgba(20,184,166,0.18)_100%)]" />
+                      <Image
+                        key={activeAchievement.achievementImageUrl}
+                        src={activeAchievement.achievementImageUrl}
+                        alt={`${activeAchievement.studentName} achievement`}
+                        fill
+                        priority
+                        sizes="(min-width: 1024px) 34vw, 100vw"
+                        className="object-contain p-4 drop-shadow-2xl transition duration-700"
+                      />
+                      <div className="absolute left-4 top-4 inline-flex items-center gap-2 bg-accent px-3 py-1 text-xs font-black uppercase text-brand-900 shadow-lg shadow-accent/20">
+                        <Trophy size={14} /> Achievers wall
+                      </div>
+                      <div className="absolute bottom-0 left-0 right-0 bg-[linear-gradient(180deg,transparent,rgba(0,0,0,0.86))] p-5">
+                        <div className="text-xs font-black uppercase tracking-[0.14em] text-accent">{activeAchievement.result}</div>
+                        <div className="mt-1 text-2xl font-black leading-tight text-white">{activeAchievement.studentName}</div>
+                        <p className="mt-1 line-clamp-2 text-xs leading-5 text-white/72">{activeAchievement.tournamentName}</p>
+                      </div>
+                    </div>
                   </div>
                 </div>
-                <div className="p-4">
-                  <div className="text-xs font-black uppercase tracking-[0.14em] text-accent">{activeAchievement.result}</div>
-                  <div className="mt-1 text-lg font-black leading-tight">{activeAchievement.studentName}</div>
-                  <p className="mt-1 line-clamp-2 text-xs leading-5 text-white/68">{activeAchievement.tournamentName}</p>
-                  <div className="mt-4 flex gap-1.5" aria-label="Achievement slide selector">
-                    {achievementSlides.map((slide, slideIndex) => (
+
+                <div className="relative z-20 mx-auto mt-5 max-w-[92%]">
+                  <div className="flex flex-wrap justify-center gap-1.5" aria-label="Achievement slide selector">
+                    {randomizedAchievements.map((slide, slideIndex) => (
                       <button
                         key={`${slide.sourceImageName}-dot`}
                         type="button"
                         onClick={() => setAchievementIndex(slideIndex)}
-                        className={`h-2 rounded-full transition ${slideIndex === achievementIndex ? "w-7 bg-accent" : "w-2 bg-white/35 hover:bg-white/60"}`}
+                        className={`h-2 transition ${slideIndex === achievementIndex ? "w-8 bg-accent shadow-lg shadow-accent/30" : "w-2 bg-white/35 hover:bg-white/60"}`}
                         aria-label={`Show ${slide.studentName} achievement`}
                         aria-current={slideIndex === achievementIndex}
                       />
@@ -156,17 +191,17 @@ export default function LoginPage() {
                 Every sign-in now opens with real Envision achievements, so students return to class feeling proud, motivated, and ready for the next milestone.
               </p>
               <div className="mt-5 grid gap-2 sm:grid-cols-2">
-                {achievementSlides.slice(0, 4).map((slide, slideIndex) => (
+                {randomizedAchievements.slice(0, 4).map((slide, slideIndex) => (
                   <button
                     key={`${slide.sourceImageName}-preview`}
                     type="button"
                     onClick={() => setAchievementIndex(slideIndex)}
-                    className={`grid grid-cols-[46px_minmax(0,1fr)] items-center gap-3 rounded-lg border p-2 text-left transition hover:bg-white/[0.12] ${
-                      slideIndex === achievementIndex ? "border-accent/60 bg-white/[0.12]" : "border-white/10 bg-white/[0.06]"
+                    className={`group grid grid-cols-[46px_minmax(0,1fr)] items-center gap-3 border-l-2 p-2 text-left transition hover:-translate-y-0.5 hover:bg-white/[0.10] ${
+                      slideIndex === achievementIndex ? "border-accent bg-white/[0.10]" : "border-white/16 bg-white/[0.045]"
                     }`}
                   >
-                    <span className="relative h-12 w-12 overflow-hidden rounded-md bg-black/30">
-                      <Image src={slide.achievementImageUrl} alt="" fill sizes="48px" className="object-contain p-1" />
+                    <span className="relative h-12 w-12 overflow-hidden bg-black/30 shadow-lg shadow-black/25 transition group-hover:rotate-3">
+                      <Image src={slide.achievementImageUrl} alt="" fill sizes="48px" className="object-cover" />
                     </span>
                     <span className="min-w-0">
                       <span className="block truncate text-sm font-black text-white">{slide.studentName}</span>
@@ -178,11 +213,11 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <div className="mt-8 grid gap-3 sm:grid-cols-3 lg:mt-10">
+          <div className="relative mt-8 grid gap-3 border-y border-white/10 bg-white/[0.035] py-4 sm:grid-cols-3 lg:mt-10">
             {portalBenefits.map((item) => {
               const Icon = item.icon;
               return (
-                <div key={item.label} className="rounded-lg border border-white/12 bg-white/[0.08] p-4">
+                <div key={item.label} className="px-3">
                   <Icon size={19} className="text-accent" />
                   <div className="mt-3 text-sm font-black text-white">{item.label}</div>
                   <div className="mt-1 text-xs leading-5 text-white/65">{item.value}</div>

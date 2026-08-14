@@ -29,7 +29,7 @@ async function saveAcademySetup(formData: FormData) {
         invoiceMode: formData.get("invoiceMode") === "gst" ? "gst" : "non_gst",
         gstPercentage: Number(formData.get("gstPercentage") || 0),
         invoicePrefix: String(formData.get("invoicePrefix") || "ENV").trim() || "ENV",
-        lowCreditThreshold: Number(formData.get("lowCreditThreshold") || 3),
+        lowCreditThreshold: Number(formData.get("lowCreditThreshold") || 1),
         logoUrl: ACADEMY_LOGO_URL,
         signatoryUrl: ACADEMY_SIGNATURE_URL,
         faviconUrl: ACADEMY_FAVICON_URL,

@@ -362,7 +362,8 @@ export async function consumeAttendanceCredit(studentId: string, attendanceId: s
     metadata: { attendance: attendanceId, assignment: assignment._id.toString(), credits: -1, balanceAfter: nextBalance, source: "attendance" },
   });
   const settings: any = await getAcademySettings();
-  if (nextBalance <= Number(settings.lowCreditThreshold ?? 3)) {
+  const lowCreditThreshold = 1;
+  if (nextBalance <= lowCreditThreshold) {
     await Notification.findOneAndUpdate(
       { user: studentId, type: "low_credits", "metadata.balance": nextBalance },
       {
@@ -370,7 +371,7 @@ export async function consumeAttendanceCredit(studentId: string, attendanceId: s
         type: "low_credits",
         title: "Low credit balance",
         message: `Your remaining class credits are low (${nextBalance}). Please recharge to continue classes smoothly.`,
-        metadata: { balance: nextBalance, threshold: settings.lowCreditThreshold ?? 3 },
+        metadata: { balance: nextBalance, threshold: lowCreditThreshold },
       },
       { upsert: true, new: true }
     );

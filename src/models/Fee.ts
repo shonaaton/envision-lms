@@ -16,7 +16,7 @@ const AcademySettingsSchema = new Schema(
     invoiceMode: { type: String, enum: ["gst", "non_gst"], default: "non_gst" },
     gstPercentage: { type: Number, default: 18 },
     invoicePrefix: { type: String, default: "ENV" },
-    lowCreditThreshold: { type: Number, default: 3 },
+    lowCreditThreshold: { type: Number, default: 1 },
   },
   { timestamps: true }
 );

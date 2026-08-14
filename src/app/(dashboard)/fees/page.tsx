@@ -88,7 +88,7 @@ export default async function FeesDashboardPage() {
   const late = currentInvoices.reduce((sum: number, i: any) => sum + (i.lateFee || 0), 0);
   const creditAssignments = assignments.filter((a: any) => a.type === "credits");
   const monthlyAssignments = assignments.filter((a: any) => a.type === "monthly");
-  const lowCredit = creditAssignments.filter((a: any) => a.creditBalance <= 3);
+  const lowCredit = creditAssignments.filter((a: any) => Number(a.creditBalance || 0) === 1);
 
   if (!manager) {
     const creditAssignment: any = creditAssignments[0];

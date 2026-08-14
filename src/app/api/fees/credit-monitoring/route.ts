@@ -22,7 +22,7 @@ function csv(headers: string[], rows: unknown[][]) {
 
 function statusFor(balance: number) {
   if (balance <= 0) return "Recharge required";
-  if (balance <= 3) return "Low credit alert";
+  if (balance === 1) return "Low credit alert";
   return "Healthy";
 }
 
@@ -36,9 +36,9 @@ function filterAssignments(assignments: any[], url: URL) {
   return assignments
     .filter((assignment) => !q || `${assignment.student?.name || ""} ${assignment.student?.username || ""} ${assignment.student?.email || ""}`.toLowerCase().includes(q))
     .filter((assignment) => !plan || assignment.plan?._id?.toString?.() === plan)
-    .filter((assignment) => filter !== "low" || Number(assignment.creditBalance || 0) <= 3)
+    .filter((assignment) => filter !== "low" || Number(assignment.creditBalance || 0) === 1)
     .filter((assignment) => filter !== "empty" || Number(assignment.creditBalance || 0) <= 0)
-    .filter((assignment) => filter !== "healthy" || Number(assignment.creditBalance || 0) > 3)
+    .filter((assignment) => filter !== "healthy" || Number(assignment.creditBalance || 0) > 1)
     .filter((assignment) => min === null || Number(assignment.creditBalance || 0) >= Number(min || 0))
     .filter((assignment) => max === null || Number(assignment.creditBalance || 0) <= Number(max || 0));
 }

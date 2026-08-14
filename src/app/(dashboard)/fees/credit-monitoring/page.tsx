@@ -316,7 +316,7 @@ async function sendBulkCreditReminders(formData: FormData) {
   await dbConnect();
   const mode = String(formData.get("creditReminderMode") || "low");
   const settings: any = await AcademySettings.findOne().lean();
-  const lowCreditThreshold = Math.max(1, Number(settings?.lowCreditThreshold || 3));
+  const lowCreditThreshold = 1;
   const threshold = mode === "empty" ? 0 : lowCreditThreshold;
   const assignments: any[] = await FeeAssignment.find({ type: "credits", creditBalance: { $lte: threshold } }).populate("student plan").sort({ creditBalance: 1 }).limit(500).lean();
   const baseUrl = resolvePublicAppUrl();
@@ -412,7 +412,7 @@ async function sendCreditWhatsAppTest(formData: FormData) {
 
 function statusFor(balance: number) {
   if (balance <= 0) return { label: "Recharge required", tone: "bg-rose-50 text-rose-700 ring-rose-200", icon: XCircle };
-  if (balance <= 3) return { label: "Low credit alert", tone: "bg-amber-50 text-amber-700 ring-amber-200", icon: AlertTriangle };
+  if (balance === 1) return { label: "Low credit alert", tone: "bg-amber-50 text-amber-700 ring-amber-200", icon: AlertTriangle };
   return { label: "Healthy", tone: "bg-emerald-50 text-emerald-700 ring-emerald-200", icon: CheckCircle2 };
 }
 
@@ -498,16 +498,16 @@ export default async function CreditMonitoringPage({ searchParams }: { searchPar
   const assignments = allAssignments
     .filter((assignment: any) => !q || `${assignment.student?.name || ""} ${assignment.student?.username || ""} ${assignment.student?.email || ""}`.toLowerCase().includes(q))
     .filter((assignment: any) => !plan || assignment.plan?._id?.toString?.() === plan)
-    .filter((assignment: any) => filter !== "low" || (Number(assignment.creditBalance || 0) > 0 && Number(assignment.creditBalance || 0) <= 3))
+    .filter((assignment: any) => filter !== "low" || Number(assignment.creditBalance || 0) === 1)
     .filter((assignment: any) => filter !== "empty" || Number(assignment.creditBalance || 0) <= 0)
-    .filter((assignment: any) => filter !== "healthy" || Number(assignment.creditBalance || 0) > 3)
+    .filter((assignment: any) => filter !== "healthy" || Number(assignment.creditBalance || 0) > 1)
     .filter((assignment: any) => !min || Number(assignment.creditBalance || 0) >= Number(min))
     .filter((assignment: any) => !max || Number(assignment.creditBalance || 0) <= Number(max));
 
   const totalStudents = allAssignments.length;
-  const lowCount = allAssignments.filter((assignment: any) => Number(assignment.creditBalance || 0) > 0 && Number(assignment.creditBalance || 0) <= 3).length;
+  const lowCount = allAssignments.filter((assignment: any) => Number(assignment.creditBalance || 0) === 1).length;
   const emptyCount = allAssignments.filter((assignment: any) => Number(assignment.creditBalance || 0) <= 0).length;
-  const healthyCount = allAssignments.filter((assignment: any) => Number(assignment.creditBalance || 0) > 3).length;
+  const healthyCount = allAssignments.filter((assignment: any) => Number(assignment.creditBalance || 0) > 1).length;
   const reminderBanner = creditReminderBanner(params as any);
   const waBanner = whatsappBanner(String((params as any).whatsapp || ""), String((params as any).waError || ""));
   const adjustmentBanner = manualCreditBanner(params);
@@ -689,7 +689,7 @@ export default async function CreditMonitoringPage({ searchParams }: { searchPar
                           <td className="px-3 py-3">{assignment.plan?.name || "-"}</td>
                           <td className="px-3 py-3 font-semibold">{purchased}</td>
                           <td className="px-3 py-3 font-semibold">{consumed}</td>
-                          <td className={`px-3 py-3 font-bold ${balance <= 3 ? "text-rose-600" : "text-emerald-700"}`}>{balance}</td>
+                          <td className={`px-3 py-3 font-bold ${balance <= 1 ? "text-rose-600" : "text-emerald-700"}`}>{balance}</td>
                           <td className="px-3 py-3">
                             <span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-semibold ring-1 ${status.tone}`}>
                               <StatusIcon size={12} /> {status.label}

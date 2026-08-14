@@ -86,6 +86,8 @@ type QuizComposerItem = { id: string; title: string; fen: string; pgn?: string; 
 type LivePgnVariation = { id: string; label: string; branchAt: number; moves: string[]; createdAt?: string };
 type LivePgnVariationPreview = { id: string; label: string; branchAt: number; display: string; firstNode?: LichessPgnNode };
 type NotationRow = { number: number; white?: string; black?: string; whiteIndex?: number; blackIndex?: number };
+type StudentPresence = ReturnType<typeof studentPresenceState>;
+type StudentPresenceRow = { student: any; participant: any; presence: StudentPresence };
 
 function fenMoveContext(fen?: string | null) {
   const parts = String(fen || "").trim().split(/\s+/);
@@ -490,6 +492,46 @@ function initials(name?: string) {
 
 function entityId(value: any) {
   return value?._id?.toString?.() || value?.toString?.() || "";
+}
+
+function studentPresenceState(participant: any) {
+  if (!participant) {
+    return {
+      key: "not_joined",
+      label: "Not joined",
+      detail: "Student has not opened this live classroom.",
+      className: "bg-rose-50 text-rose-700",
+    };
+  }
+  const lastSeen = participant.lastSeenAt ? new Date(participant.lastSeenAt) : null;
+  const minutesAgo = lastSeen && !Number.isNaN(lastSeen.getTime())
+    ? Math.max(0, Math.round((Date.now() - lastSeen.getTime()) / 60000))
+    : null;
+  const detail = participant.firstSeenAt
+    ? `First joined ${new Date(participant.firstSeenAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+    : "";
+  if (participant.leftAt || participant.presenceStatus === "left" || participant.presenceStatus === "coach_no_show_pending") {
+    return {
+      key: "left",
+      label: "Left",
+      detail: participant.leftAt ? `Left at ${new Date(participant.leftAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : detail,
+      className: "bg-amber-50 text-amber-700",
+    };
+  }
+  if (minutesAgo !== null && minutesAgo <= 2) {
+    return {
+      key: "joined",
+      label: "Joined",
+      detail,
+      className: "bg-emerald-50 text-emerald-700",
+    };
+  }
+  return {
+    key: "idle",
+    label: "Idle",
+    detail: minutesAgo === null ? detail : `Last seen ${minutesAgo} min ago`,
+    className: "bg-sky-50 text-sky-700",
+  };
 }
 
 function coordinateFiles(orientation: "white" | "black") {
@@ -1023,6 +1065,14 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const classroomName = classroom?.title || "Live Classroom";
   const coachName = classroom?.coach?.name || classroom?.instructor?.name || "Coach";
   const activeStudents = students.filter((student: any) => student?.status !== "inactive");
+  const studentPresenceRows = useMemo<StudentPresenceRow[]>(
+    () => students.filter((student: any) => student?.status !== "inactive").map((student: any) => {
+      const participant = (live?.participants || []).find((item: any) => item.role === "student" && entityId(item.user) === entityId(student));
+      return { student, participant, presence: studentPresenceState(participant) };
+    }),
+    [students, live?.participants]
+  );
+  const joinedStudentCount = studentPresenceRows.filter((row: StudentPresenceRow) => row.presence.key === "joined" || row.presence.key === "idle").length;
   const activeCoachInRoom = (live?.participants || []).some((participant: any) => {
     if (!isCoach(participant.role)) return false;
     if (participant.leftAt || participant.presenceStatus === "left") return false;
@@ -1068,8 +1118,8 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
 
   useEffect(() => {
     if (chatRecipient === "group") return;
-    if (!activeStudents.some((student: any) => entityId(student) === chatRecipient)) setChatRecipient("group");
-  }, [activeStudents, chatRecipient]);
+    if (!studentPresenceRows.some((row: StudentPresenceRow) => entityId(row.student) === chatRecipient)) setChatRecipient("group");
+  }, [studentPresenceRows, chatRecipient]);
 
   useEffect(() => {
     if (live?.status === "ended") {
@@ -2444,7 +2494,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const classSummary = useMemo(() => {
     const now = live?.endedAt || new Date().toISOString();
     const studentParticipants = (live?.participants || []).filter((participant: any) => participant.role === "student");
-    const participantMap = new Map(studentParticipants.map((participant: any) => [participant.user?._id || participant.user, participant]));
+    const participantMap = new Map(studentParticipants.map((participant: any) => [entityId(participant.user), participant]));
     const responses = data?.sessionResponses || data?.responses || [];
     const responseByStudent = new Map<string, any[]>();
     for (const response of responses) {
@@ -2453,7 +2503,8 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       responseByStudent.set(id, [...(responseByStudent.get(id) || []), response]);
     }
     const rows = students.map((student: any) => {
-      const participant: any = participantMap.get(student._id);
+      const participant: any = participantMap.get(entityId(student));
+      const presence = studentPresenceState(participant);
       const studentResponses = responseByStudent.get(student._id) || [];
       const correct = studentResponses.filter((response) => response.correct).length;
       const submissions = studentResponses.length;
@@ -2469,6 +2520,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
         accuracy: submissions ? Math.round((correct / submissions) * 100) : 0,
         points,
         suggestedStatus,
+        presence,
       };
     });
     const present = rows.filter((row: any) => row.suggestedStatus === "present").length;
@@ -2928,20 +2980,31 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
             {activeTab === "students" && (
               <div className="space-y-2">
                 <div className="rounded-lg border border-slate-200 p-3">
-                  <h3 className="text-sm font-semibold text-slate-950">Classroom Students</h3>
-                  <p className="mt-1 text-xs text-slate-500">{activeStudents.length} students available</p>
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-semibold text-slate-950">Classroom Students</h3>
+                      <p className="mt-1 text-xs text-slate-500">Shows whether each assigned student has actually opened this live classroom.</p>
+                    </div>
+                    <span className="shrink-0 rounded-md bg-purple-50 px-2 py-1 text-[11px] font-bold text-purple-800">
+                      {joinedStudentCount}/{activeStudents.length} joined
+                    </span>
+                  </div>
                 </div>
                 <div className="space-y-2">
-                  {students.map((student: any) => {
+                  {studentPresenceRows.map(({ student, presence }: StudentPresenceRow) => {
                     const studentKey = entityId(student);
                     const hasControl = (live?.boardControlStudents || []).some((s: any) => entityId(s) === studentKey);
                     return (
                       <div key={student._id} className="flex items-center justify-between rounded-lg border border-slate-200 p-2">
-                        <div className="flex items-center gap-3">
+                        <div className="flex min-w-0 items-center gap-3">
                           <div className="grid h-8 w-8 place-items-center rounded-full bg-purple-100 text-[11px] font-bold text-purple-800">{initials(student.name)}</div>
-                          <div>
+                          <div className="min-w-0">
                             <div className="text-xs font-semibold text-slate-950">{student.name}</div>
-                            <div className="text-xs text-slate-500">{student.username || student.email}</div>
+                            <div className="truncate text-xs text-slate-500">{student.username || student.email}</div>
+                            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                              <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold", presence.className)}>{presence.label}</span>
+                              {presence.detail ? <span className="text-[10px] text-slate-400">{presence.detail}</span> : null}
+                            </div>
                           </div>
                         </div>
                         {coach && (
@@ -3728,13 +3791,14 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
               </div>
 
               <div className="overflow-hidden rounded-lg border border-slate-200">
-                <div className="hidden grid-cols-[1.4fr_90px_100px_100px_90px_170px] bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500 lg:grid">
-                  <span>Student</span><span>Time</span><span>Submits</span><span>Accuracy</span><span>Points</span><span>Attendance</span>
+                <div className="hidden grid-cols-[1.35fr_96px_74px_86px_74px_90px_160px] bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500 lg:grid">
+                  <span>Student</span><span>Join</span><span>Time</span><span>Submits</span><span>Accuracy</span><span>Points</span><span>Attendance</span>
                 </div>
                 <div className="divide-y divide-slate-100">
                   {classSummary.rows.map((row: any) => (
-                    <div key={row.student._id} className="grid gap-3 px-3 py-3 text-sm lg:grid-cols-[1.4fr_90px_100px_100px_90px_170px] lg:items-center lg:gap-0 lg:py-2">
+                    <div key={row.student._id} className="grid gap-3 px-3 py-3 text-sm lg:grid-cols-[1.35fr_96px_74px_86px_74px_90px_160px] lg:items-center lg:gap-0 lg:py-2">
                       <span className="font-semibold text-slate-950">{row.student.name}</span>
+                      <span className={cn("w-fit rounded-full px-2 py-0.5 text-[11px] font-bold", row.presence.className)} title={row.presence.detail || row.presence.label}>{row.presence.label}</span>
                       <div className="grid grid-cols-4 gap-2 text-xs text-slate-600 lg:contents lg:text-sm">
                         <span>{row.timeMinutes} min</span>
                         <span>{row.submissions} submits</span>

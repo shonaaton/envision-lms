@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { Chess } from "chess.js";
 import { toast } from "sonner";
-import { BookOpen, Bot, CheckCircle2, ChevronLeft, ChevronRight, Clock, FileQuestion, FileText, Flag, Gamepad2, HelpCircle, Play, RotateCcw, Trophy } from "lucide-react";
+import { BookOpen, Bot, CheckCircle2, ChevronLeft, ChevronRight, Clock, FileQuestion, FileText, Flag, Gamepad2, HelpCircle, Play, Trophy } from "lucide-react";
 import { buildMoveHintStyles, legalTargetsFromGame } from "@/lib/chessboardUi";
 import { isPromotionMove, promotionFromBoardPiece, type PendingPromotion, type PromotionPiece } from "@/lib/chessPromotion";
 import { normalizePermissiveFen } from "@/lib/pgnLibrary";
@@ -670,19 +670,6 @@ function PgnBoardTask({ activityId, item, index, locked, onResult, onSolved }: a
     setFeedback(`Hint: try ${parsed.moves[ply].san}`);
   }
 
-  function reset() {
-    const next = buildGame(parsed.start);
-    setGame(next);
-    setPosition(parsed.start);
-    setPly(0);
-    setMistakes(0);
-    setHintsUsed(0);
-    setMoveHistory((current) => [...current, { moveNumber: current.length + 1, by: "reset", note: "Board reset" }]);
-    setSolved(parsed.moves.length === 0);
-    setFeedback("Make the best move on the board.");
-    setSelectedSquare(null);
-  }
-
   const moveTargets = useMemo(() => {
     if (!selectedSquare || locked || solved || ply >= parsed.moves.length) return [];
     return legalTargetsFromGame(game, selectedSquare);
@@ -742,7 +729,6 @@ function PgnBoardTask({ activityId, item, index, locked, onResult, onSolved }: a
       </div>
       <div className="mt-3 flex flex-wrap gap-2">
         <button type="button" className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold" onClick={hint}><HelpCircle size={14} className="mr-1 inline" /> Hint</button>
-        <button type="button" className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold" onClick={reset}><RotateCcw size={14} className="mr-1 inline" /> Reset</button>
       </div>
     </div>
   );

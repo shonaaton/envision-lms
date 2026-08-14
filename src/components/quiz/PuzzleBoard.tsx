@@ -44,7 +44,7 @@ export default function PuzzleBoard({
   }, []);
 
   function commitMove(source: string, target: string, promotion: PromotionPiece = "q") {
-    if (status !== "playing") return false;
+    if (status === "solved") return false;
     try {
       const move = game.move({ from: source, to: target, promotion });
       if (!move) return false;
@@ -61,6 +61,8 @@ export default function PuzzleBoard({
       if (next.length === solution.length) {
         setStatus("solved");
         onSolved?.();
+      } else {
+        setStatus("playing");
       }
       return true;
     } catch {
@@ -80,22 +82,14 @@ export default function PuzzleBoard({
     return commitMove(move.from, move.to, promotion);
   }
 
-  function reset() {
-    game.load(fen);
-    setPosition(fen);
-    setMoves([]);
-    setStatus("playing");
-    setSelectedSquare(null);
-  }
-
   const moveTargets = useMemo(() => {
-    if (!selectedSquare || status !== "playing") return [];
+    if (!selectedSquare || status === "solved") return [];
     return legalTargetsFromGame(game, selectedSquare);
   }, [selectedSquare, status, game]);
   const moveHintStyles = useMemo(() => buildMoveHintStyles(moveTargets, selectedSquare), [moveTargets, selectedSquare]);
 
   function onSquareClick(square: string) {
-    if (status !== "playing") return;
+    if (status === "solved") return;
     const clickedPiece = game.get(square as any);
     if (selectedSquare && selectedSquare !== square) {
       if (isPromotionMove(game, selectedSquare, square)) {
@@ -129,7 +123,6 @@ export default function PuzzleBoard({
           customLightSquareStyle={{ backgroundColor: "#fde75a" }} />
       </div>
       <div className="flex items-center gap-3">
-        <button className="btn-outline" onClick={reset}>Reset</button>
         {status === "wrong" && <span className="chip text-red-300">Try again</span>}
         {status === "solved" && <span className="chip-accent">Solved!</span>}
       </div>

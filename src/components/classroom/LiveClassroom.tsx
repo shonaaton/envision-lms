@@ -4425,21 +4425,6 @@ function LiveBoardQuiz({
     setSelectedSquare(null);
   }
 
-  function reset() {
-    const next = buildGame(parsed.start);
-    setGame(next);
-    setPosition(parsed.start);
-    setPly(0);
-    setMistakes(0);
-    setHintsUsed(0);
-    setSolved(false);
-    setFeedback("Make your move on the board.");
-    setLastStudentMove("");
-    setAttemptMoves([]);
-    setItemStartedAt(Date.now());
-    setRemaining(Number(question.timer?.perQuestionSeconds || activeItem?.timerSeconds || 0));
-  }
-
   if (!activeItem) return null;
 
   if (quizSubmitted) {
@@ -4567,7 +4552,6 @@ function LiveBoardQuiz({
         </div>
       ) : (
       <div className="mt-3 flex flex-wrap gap-2">
-        <button type="button" className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold" onClick={reset}><RotateCcw size={14} className="mr-1 inline" /> Reset</button>
         <button type="button" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-700" onClick={skipCurrent}>Skip</button>
       </div>)}
       </div>

@@ -10,6 +10,7 @@ import {
   CopyPlus,
   Eye,
   GraduationCap,
+  ArrowLeft,
   Link2,
   ListChecks,
   Pencil,
@@ -44,6 +45,13 @@ type ClassroomPermissions = {
   cancel: boolean;
   assign: boolean;
   attendance: boolean;
+};
+
+type GroupFocus = {
+  id: string;
+  name: string;
+  level?: string;
+  students?: StudentOption[];
 };
 
 type CourseOption = {
@@ -228,10 +236,12 @@ export default function ClassroomManagementClient({
   role,
   isSuperAdmin = false,
   permissions,
+  groupFocus,
 }: {
   role: Role;
   isSuperAdmin?: boolean;
   permissions: ClassroomPermissions;
+  groupFocus?: GroupFocus;
 }) {
   const router = useRouter();
   const [items, setItems] = useState<ClassroomItem[]>([]);
@@ -247,7 +257,7 @@ export default function ClassroomManagementClient({
   const [view, setView] = useState<"list" | "calendar">("list");
   const [filters, setFilters] = useState<{ coach: string; batch: string; student: string; course: string; level: string; status: SessionFilterStatus }>({
     coach: "",
-    batch: "",
+    batch: groupFocus?.id || "",
     student: "",
     course: "",
     level: "",
@@ -333,6 +343,28 @@ export default function ClassroomManagementClient({
     });
   }, [filters, items]);
 
+  const activeBatch = useMemo(() => {
+    if (!groupFocus?.id) return null;
+    return targets.batches.find((batch) => batch._id === groupFocus.id) || groupFocus;
+  }, [groupFocus, targets.batches]);
+
+  const selectedBatchStudentNames = useMemo(() => {
+    const batchStudents = activeBatch?.students || [];
+    return batchStudents.map((student) => student.name).filter(Boolean).join(", ");
+  }, [activeBatch]);
+
+  const groupScopedItems = useMemo(() => {
+    if (!groupFocus?.id) return items;
+    return items.filter((item) => (item.batches || []).some((batch: any) => String(batch?._id || batch || "") === groupFocus.id));
+  }, [groupFocus?.id, items]);
+
+  const studentFilterOptions = useMemo(() => {
+    if (!activeBatch?.students?.length) return targets.students;
+    const activeIds = new Set(activeBatch.students.map((student) => student._id));
+    const merged = [...activeBatch.students, ...targets.students.filter((student) => !activeIds.has(student._id))];
+    return merged;
+  }, [activeBatch, targets.students]);
+
   const calendarSessions = useMemo(() => {
     return filteredItems.flatMap((item) =>
       (item.generatedSessions || []).map((session: any) => ({
@@ -343,9 +375,13 @@ export default function ClassroomManagementClient({
         startTime: session.startTime,
         status: session.status,
         coachName: assignedCoachName(item, session),
+        courseName: item.courseName || "",
+        levelName: item.levelName || "",
+        batchNames: batchNamesForItem(item, targets.batches),
+        studentNames: studentNamesForItem(item),
       }))
     );
-  }, [filteredItems]);
+  }, [filteredItems, targets.batches]);
 
   const filteredAssignableStudents = useMemo(() => {
     const query = studentSearch.trim().toLowerCase();
@@ -642,16 +678,28 @@ export default function ClassroomManagementClient({
     <>
     <PageLoadingOverlay visible={!!busyMessage} message={busyMessage} />
     <div className="min-h-full space-y-4 text-slate-950">
-      <div className="flex flex-none flex-col gap-3 rounded-lg border border-brand/10 bg-white px-4 py-4 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex flex-none flex-col gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <div className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-brand">
+          <div className="inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.14em] text-brand">
             <GraduationCap size={14} />
-            Classroom Management
+            {groupFocus ? "Group Classroom" : "Classroom Management"}
           </div>
-          <h1 className="mt-1 text-2xl font-black text-brand">Classes</h1>
-          <p className="text-sm text-slate-600">Create one-off classes and recurring learning series from one scheduling hub.</p>
+          <h1 className="text-xl font-bold text-slate-950">{groupFocus ? groupFocus.name : "Classes"}</h1>
+          {groupFocus ? (
+            <div className="mt-1 flex flex-wrap gap-1.5 text-xs text-slate-600">
+              <span>{activeBatch?.level ? titleCase(activeBatch.level) : "Level not set"}</span>
+              <span>-</span>
+              <span>{activeBatch?.students?.length || 0} students</span>
+              {selectedBatchStudentNames ? <span className="max-w-xl truncate" title={selectedBatchStudentNames}>- {selectedBatchStudentNames}</span> : null}
+            </div>
+          ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
+          {groupFocus ? (
+            <Link href="/classrooms" className="btn-outline">
+              <ArrowLeft size={15} /> All Groups
+            </Link>
+          ) : null}
           {isSuperAdmin && (
             <button className="btn-outline border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100" onClick={openTestClassroom}>
               <CopyPlus size={15} /> Test Classroom
@@ -675,10 +723,10 @@ export default function ClassroomManagementClient({
 
       <div className="grid flex-none gap-2 rounded-lg border border-slate-200 bg-white p-3 shadow-sm md:grid-cols-2 xl:grid-cols-[repeat(6,minmax(0,1fr))]">
         <FilterSelect label="Coach" value={filters.coach} onChange={(value) => setFilters((current) => ({ ...current, coach: value }))} options={targets.coaches.map((coach) => ({ value: coach._id, label: coach.name }))} />
-        <FilterSelect label="Batch" value={filters.batch} onChange={(value) => setFilters((current) => ({ ...current, batch: value }))} options={targets.batches.map((batch) => ({ value: batch._id, label: batch.name }))} />
-        <FilterSelect label="Student" value={filters.student} onChange={(value) => setFilters((current) => ({ ...current, student: value }))} options={targets.students.map((student) => ({ value: student._id, label: student.name }))} />
-        <FilterSelect label="Course" value={filters.course} onChange={(value) => setFilters((current) => ({ ...current, course: value }))} options={uniqueOptions(items.map((item) => item.courseName).filter(Boolean) as string[])} />
-        <FilterSelect label="Level" value={filters.level} onChange={(value) => setFilters((current) => ({ ...current, level: value }))} options={uniqueOptions(items.map((item) => item.levelName).filter(Boolean) as string[])} />
+        {!groupFocus && <FilterSelect label="Batch" value={filters.batch} onChange={(value) => setFilters((current) => ({ ...current, batch: value }))} options={targets.batches.map((batch) => ({ value: batch._id, label: batch.name }))} />}
+        <FilterSelect label="Student" value={filters.student} onChange={(value) => setFilters((current) => ({ ...current, student: value }))} options={studentFilterOptions.map((student) => ({ value: student._id, label: student.name }))} />
+        <FilterSelect label="Course" value={filters.course} onChange={(value) => setFilters((current) => ({ ...current, course: value }))} options={uniqueOptions(groupScopedItems.map((item) => item.courseName).filter(Boolean) as string[])} />
+        <FilterSelect label="Level" value={filters.level} onChange={(value) => setFilters((current) => ({ ...current, level: value }))} options={uniqueOptions(groupScopedItems.map((item) => item.levelName).filter(Boolean) as string[])} />
         <FilterSelect
           label="Status"
           value={filters.status}
@@ -694,48 +742,65 @@ export default function ClassroomManagementClient({
 
       <div className="rounded-lg border border-brand/10 bg-white shadow-xl shadow-brand/5">
         {view === "list" ? (
-          <div className="p-4">
+          <div className="p-3">
             {loading ? (
               <div className="rounded-xl bg-slate-50 p-6 text-sm text-slate-500">Loading classes...</div>
             ) : filteredItems.length === 0 ? (
               <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">No classes match the current filters.</div>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-2">
                 {filteredItems.map((item) => {
                   const summarySessionId = latestSummarySessionId(item);
                   const summaryHref = summarySessionId ? `/classrooms/${item._id}/summary?session=${summarySessionId}` : `/classrooms/${item._id}/summary`;
                   const lifecycleRollup = classroomLifecycleRollup(item);
+                  const batchNames = batchNamesForItem(item, targets.batches);
+                  const studentNames = studentNamesForItem(item);
                   const timingLabel = item.classroomType === "single"
                     ? `${formatDate(item.classDate)} at ${item.startTime || "--"} for ${formatDuration(item.durationMinutes || 60)}`
-                    : `${item.generatedSessions?.length || 0} scheduled sessions · starts ${formatDate(item.startDate)}`;
+                    : `${item.generatedSessions?.length || 0} sessions - starts ${formatDate(item.startDate)}`;
                   return (
-                    <div key={item._id} className="rounded-lg border border-slate-200 bg-white px-4 py-4 shadow-sm">
-                      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                        <div className="min-w-0 flex-1 space-y-3">
-                          <div className="min-w-0">
-                            <div className="text-lg font-black text-slate-950">{item.title}</div>
-                            <div className="mt-1 flex flex-wrap gap-2 text-xs">
-                              <span className="rounded-full bg-brand/10 px-2.5 py-1 font-bold text-brand">{item.classroomType === "single" ? "Single Class" : "Learning Series"}</span>
+                    <div key={item._id} className="rounded-lg border border-slate-200 bg-white px-3 py-3 shadow-sm transition hover:border-brand/20 hover:bg-slate-50">
+                      <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                        <div className="min-w-0 flex-1 space-y-2">
+                          <div className="flex min-w-0 flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+                            <div className="min-w-0">
+                              <div className="truncate text-base font-bold text-slate-950" title={item.title}>{item.title}</div>
+                              <div className="mt-1 flex flex-wrap gap-1.5 text-xs">
+                              <span className="rounded-full bg-brand/10 px-2 py-0.5 font-semibold text-brand">{item.classroomType === "single" ? "Single" : "Series"}</span>
                               {item.isTestClassroom && <span className="rounded-full bg-violet-50 px-2.5 py-1 font-bold text-violet-700">Test Classroom</span>}
-                              <span className="rounded-full bg-slate-100 px-2.5 py-1 font-semibold text-slate-600">{titleCase(item.status)}</span>
-                              {item.courseName && <span className="rounded-full bg-amber-50 px-2.5 py-1 font-semibold text-amber-700">{item.courseName}</span>}
-                              {item.levelName && <span className="rounded-full bg-sky-50 px-2.5 py-1 font-semibold text-sky-700">{item.levelName}</span>}
+                              <span className="rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-600">{titleCase(item.status)}</span>
+                              {item.courseName && <span className="rounded-full bg-amber-50 px-2 py-0.5 font-semibold text-amber-700">{item.courseName}</span>}
+                              {item.levelName && <span className="rounded-full bg-sky-50 px-2 py-0.5 font-semibold text-sky-700">{item.levelName}</span>}
+                              {(item.batches || []).map((batch: any) => {
+                                const id = String(batch?._id || batch || "");
+                                const name = batch?.name || targets.batches.find((target) => target._id === id)?.name || "Batch";
+                                if (!id) return null;
+                                return <Link key={id} href={`/classrooms/groups/${id}`} className="rounded-full bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700 hover:bg-emerald-100" title={`Open ${name}`}>{name}</Link>;
+                              })}
+                              </div>
+                            </div>
+                            <div className="flex shrink-0 justify-start gap-1 lg:justify-end">
+                              <IconAction href={summaryHref} icon={<Eye size={15} />} label="View details" />
+                              {permissions.edit && <IconAction icon={<Pencil size={15} />} label="Edit classroom" onClick={() => resetModal(item.classroomType, item)} />}
+                              {permissions.cancel && <IconAction destructive icon={<Trash2 size={15} />} label={item.classroomType === "series" ? "Delete entire series" : "Delete class"} onClick={() => deleteItem(item)} />}
                             </div>
                           </div>
 
-                          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-[minmax(240px,1.2fr)_repeat(4,minmax(110px,auto))]">
+                          <div className="grid gap-1.5 md:grid-cols-2 xl:grid-cols-[minmax(160px,1.1fr)_repeat(6,minmax(86px,auto))]">
                             <CompactInfo label="Topic" value={item.topicName || "Not set"} />
                             <CompactInfo label="Coach" value={(item.coach as any)?.name || "Unassigned"} />
-                            <CompactInfo label="Students" value={String(item.students?.length || 0)} />
+                            <CompactInfo label="Batch" value={batchNames || "Unassigned"} />
+                            <CompactInfo label="Students" value={studentNames || `${item.students?.length || 0} assigned`} />
+                            <CompactInfo label="Level" value={item.levelName || "Not set"} />
                             <CompactInfo label="Meeting" value={item.meetingUrl ? "Ready" : "Not added"} />
                             <CompactInfo label="Schedule" value={timingLabel} />
                           </div>
 
                           {lifecycleRollup.length > 0 ? (
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Session Lifecycle</span>
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Lifecycle</span>
                               {lifecycleRollup.map(([status, count]) => (
-                                <span key={`${item._id}-${status}`} className={`rounded-full px-2.5 py-1 text-xs font-bold ${sessionStatusTone(status)}`}>
+                                <span key={`${item._id}-${status}`} className={`rounded-full px-2 py-0.5 text-xs font-semibold ${sessionStatusTone(status)}`}>
                                   {count} {titleCase(status)}
                                 </span>
                               ))}
@@ -743,30 +808,30 @@ export default function ClassroomManagementClient({
                           ) : null}
 
                           {item.classroomType === "series" && (item.generatedSessions?.length || 0) > 0 ? (
-                            <details className="rounded-xl border border-slate-200 bg-slate-50">
-                              <summary className="cursor-pointer select-none px-3 py-3 text-sm font-black text-slate-800">
-                                Manage individual classes ({item.generatedSessions?.length || 0})
+                            <details className="rounded-md border border-slate-200 bg-slate-50">
+                              <summary className="cursor-pointer select-none px-3 py-1.5 text-xs font-bold text-slate-700">
+                                Classes ({item.generatedSessions?.length || 0})
                               </summary>
-                              <div className="space-y-2 border-t border-slate-200 p-3">
+                              <div className="space-y-1.5 border-t border-slate-200 p-2">
                                 {(item.generatedSessions || []).map((scheduledSession: any, sessionIndex: number) => {
                                   const sessionStatus = deriveScheduledSessionStatus(scheduledSession, new Date());
                                   const isFinished = sessionStatus === "completed" || Boolean(scheduledSession.actualEndedAt);
                                   const isCancelled = sessionStatus === "cancelled";
                                   return (
-                                    <div key={String(scheduledSession._id || sessionIndex)} className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-3 lg:flex-row lg:items-center lg:justify-between">
+                                    <div key={String(scheduledSession._id || sessionIndex)} className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white p-2 lg:flex-row lg:items-center lg:justify-between">
                                       <div className="min-w-0">
                                         <div className="flex flex-wrap items-center gap-2">
-                                          <span className="text-xs font-black uppercase tracking-wide text-slate-500">Class {scheduledSession.sessionNumber || sessionIndex + 1}</span>
+                                          <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Class {scheduledSession.sessionNumber || sessionIndex + 1}</span>
                                           <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${sessionStatusTone(sessionStatus)}`}>{titleCase(sessionStatus)}</span>
                                           {scheduledSession.originalDate ? <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-bold text-sky-700">Rescheduled</span> : null}
                                           {scheduledSession.substituteCoach ? <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-bold text-violet-700">Coach: {assignedCoachName(item, scheduledSession)}</span> : null}
                                         </div>
-                                        <div className="mt-1 truncate text-sm font-bold text-slate-900">{scheduledSession.topicName || item.topicName || "Topic not set"}</div>
-                                        <div className="mt-1 text-xs text-slate-600">
-                                          {formatDate(scheduledSession.scheduledFor)} at {scheduledSession.startTime || item.startTime || "--"} IST · {formatDuration(Number(scheduledSession.durationMinutes || item.durationMinutes || 60))}
+                                        <div className="mt-0.5 truncate text-sm font-semibold text-slate-900">{scheduledSession.topicName || item.topicName || "Topic not set"}</div>
+                                        <div className="mt-0.5 text-xs text-slate-600">
+                                          {formatDate(scheduledSession.scheduledFor)} at {scheduledSession.startTime || item.startTime || "--"} IST - {formatDuration(Number(scheduledSession.durationMinutes || item.durationMinutes || 60))}
                                         </div>
                                       </div>
-                                      <div className="flex flex-wrap gap-2">
+                                      <div className="flex flex-wrap gap-1">
                                         {permissions.edit && !isFinished && !isCancelled ? (
                                           <ActionButton icon={<Pencil size={14} />} label="Edit" onClick={() => {
                                             setActionModal({ type: "update_session", item, session: scheduledSession });
@@ -806,14 +871,8 @@ export default function ClassroomManagementClient({
                           ) : null}
                         </div>
 
-                        <div className="flex flex-none flex-col gap-3 xl:min-w-[220px] xl:items-end">
-                          <div className="flex justify-start gap-1 xl:justify-end">
-                            <Link href={summaryHref} className="grid h-9 w-9 place-items-center rounded-lg border border-slate-200 text-slate-700"><Eye size={15} /></Link>
-                            {permissions.edit && <button onClick={() => resetModal(item.classroomType, item)} className="grid h-9 w-9 place-items-center rounded-lg border border-slate-200 text-slate-700"><Pencil size={15} /></button>}
-                            {permissions.cancel && <button title={item.classroomType === "series" ? "Delete entire series" : "Delete class"} onClick={() => deleteItem(item)} className="grid h-9 w-9 place-items-center rounded-lg border border-red-200 bg-red-50 text-red-600"><Trash2 size={15} /></button>}
-                          </div>
-
-                          <div className="flex flex-wrap justify-start gap-2 xl:justify-end">
+                        <div className="flex flex-none flex-col gap-2 xl:max-w-[220px] xl:items-end">
+                          <div className="flex flex-wrap justify-start gap-1 xl:justify-end">
                             {permissions.edit && item.classroomType === "single" && item.status === "scheduled" && <ActionButton icon={<Clock3 size={14} />} label="Reschedule" onClick={() => { setActionModal({ type: "reschedule_class", item }); setActionDraft({ classDate: item.classDate ? formatDateInput(item.classDate) : "", startTime: item.startTime || "", durationMinutes: item.durationMinutes || 60 }); }} />}
                             {permissions.cancel && item.status !== "cancelled" && item.status !== "completed" && <ActionButton icon={<X size={14} />} label={item.classroomType === "series" ? "Cancel Entire Series" : "Cancel Class"} onClick={() => { setActionModal({ type: item.classroomType === "series" ? "cancel_series" : "cancel_class", item }); setActionDraft({}); }} />}
                             {permissions.assign && item.status !== "cancelled" && item.status !== "completed" && <ActionButton icon={<UserCog size={14} />} label="Substitute Coach" onClick={() => { setActionModal({ type: "substitute_coach", item }); setActionDraft({ scope: item.classroomType === "series" ? "future" : "entire", coach: "" }); }} />}
@@ -1253,20 +1312,37 @@ function InfoCard({ label, value }: { label: string; value: string }) {
 
 function CompactInfo({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-      <div className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">{label}</div>
-      <div className="mt-1 truncate text-sm font-semibold text-slate-900" title={value}>{value}</div>
+    <div className="min-w-0 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5">
+      <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">{label}</div>
+      <div className="mt-0.5 truncate text-sm font-semibold text-slate-900" title={value}>{value}</div>
     </div>
   );
 }
 
 function ActionButton({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick: () => void }) {
   return (
-    <button onClick={onClick} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 shadow-sm">
+    <button
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      className="grid h-8 w-8 place-items-center rounded-md border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:border-brand/30 hover:bg-brand/5 hover:text-brand"
+    >
       {icon}
-      {label}
     </button>
   );
+}
+
+function IconAction({ icon, label, onClick, href, destructive = false }: { icon: React.ReactNode; label: string; onClick?: () => void; href?: string; destructive?: boolean }) {
+  const className = cn(
+    "grid h-8 w-8 place-items-center rounded-md border bg-white shadow-sm transition",
+    destructive
+      ? "border-red-200 text-red-600 hover:bg-red-50"
+      : "border-slate-200 text-slate-700 hover:border-brand/30 hover:bg-brand/5 hover:text-brand"
+  );
+  if (href) {
+    return <Link href={href} title={label} aria-label={label} className={className}>{icon}</Link>;
+  }
+  return <button type="button" title={label} aria-label={label} onClick={onClick} className={className}>{icon}</button>;
 }
 
 function FilterSelect({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: Array<{ value: string; label: string }> }) {
@@ -1408,7 +1484,22 @@ function SeriesScheduleEditor({
   );
 }
 
-function CalendarView({ sessions }: { sessions: Array<{ title: string; topicName: string; scheduledFor: string; startTime: string; status: string; coachName: string }> }) {
+function CalendarView({
+  sessions,
+}: {
+  sessions: Array<{
+    title: string;
+    topicName: string;
+    scheduledFor: string;
+    startTime: string;
+    status: string;
+    coachName: string;
+    courseName?: string;
+    levelName?: string;
+    batchNames?: string;
+    studentNames?: string;
+  }>;
+}) {
   const grouped = sessions
     .slice()
     .sort((a, b) => new Date(a.scheduledFor).getTime() - new Date(b.scheduledFor).getTime())
@@ -1420,21 +1511,31 @@ function CalendarView({ sessions }: { sessions: Array<{ title: string; topicName
     }, {} as Record<string, typeof sessions>);
 
   return (
-    <div className="min-h-0 overflow-auto p-4">
+    <div className="min-h-0 overflow-auto p-3">
       {Object.keys(grouped).length === 0 ? (
         <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">No sessions in the current view.</div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-3">
           {Object.entries(grouped).map(([date, rows]) => (
-            <div key={date} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="mb-3 text-sm font-black text-slate-950">{date}</div>
-              <div className="space-y-2">
+            <div key={date} className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+              <div className="mb-2 text-sm font-bold text-slate-950">{date}</div>
+              <div className="space-y-1.5">
                 {rows.map((row, index) => (
-                  <div key={`${date}-${index}`} className="grid gap-2 rounded-xl bg-slate-50 px-3 py-2 md:grid-cols-[100px_1fr_1fr_120px]">
-                    <div className="font-semibold text-slate-800">{row.startTime}</div>
-                    <div className="font-semibold text-slate-900">{row.title}</div>
-                    <div className="text-slate-600">{row.topicName}</div>
-                    <div className="text-slate-500">{row.coachName}</div>
+                  <div key={`${date}-${index}`} className="grid gap-2 rounded-md bg-slate-50 px-3 py-2 text-xs md:grid-cols-[72px_minmax(150px,1.1fr)_minmax(130px,1fr)_minmax(110px,0.8fr)_minmax(120px,0.9fr)]">
+                    <div className="font-bold text-slate-800">{row.startTime}</div>
+                    <div className="min-w-0">
+                      <div className="truncate font-bold text-slate-950" title={row.title}>{row.title}</div>
+                      <div className="truncate text-slate-500" title={row.topicName}>{row.topicName}</div>
+                    </div>
+                    <div className="min-w-0">
+                      <div className="truncate font-semibold text-slate-700" title={row.batchNames || "Unassigned"}>{row.batchNames || "Unassigned"}</div>
+                      <div className="truncate text-slate-500" title={row.studentNames || ""}>{row.studentNames || "No students"}</div>
+                    </div>
+                    <div className="min-w-0">
+                      <div className="truncate font-semibold text-slate-700" title={row.courseName || "Course not set"}>{row.courseName || "Course not set"}</div>
+                      <div className="truncate text-slate-500" title={row.levelName || "Level not set"}>{row.levelName || "Level not set"}</div>
+                    </div>
+                    <div className="truncate text-slate-600" title={row.coachName}>{row.coachName}</div>
                   </div>
                 ))}
               </div>
@@ -1641,6 +1742,23 @@ function reviewDurationLabel(form: ReturnType<typeof blankForm>) {
 
 function uniqueOptions(values: string[]) {
   return Array.from(new Set(values)).map((value) => ({ value, label: value }));
+}
+
+function batchNamesForItem(item: ClassroomItem, batches: BatchOption[] = []) {
+  return (item.batches || [])
+    .map((batch: any) => {
+      const id = String(batch?._id || batch || "");
+      return batch?.name || batches.find((target) => target._id === id)?.name || "";
+    })
+    .filter(Boolean)
+    .join(", ");
+}
+
+function studentNamesForItem(item: ClassroomItem) {
+  return (item.students || [])
+    .map((student: any) => student?.name || "")
+    .filter(Boolean)
+    .join(", ");
 }
 
 function normalizeClassroomItem(item: any): ClassroomItem {

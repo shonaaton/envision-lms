@@ -1029,10 +1029,21 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   );
   const students = useMemo(() => classroom?.students || [], [classroom?.students]);
   const pgnLibrary = useMemo(() => data?.pgnLibrary || [], [data?.pgnLibrary]);
-  const activePgnCollection = useMemo(
-    () => Array.isArray(live?.challenge?.pgnCollection) ? live.challenge.pgnCollection : [],
-    [live?.challenge?.pgnCollection]
-  );
+  const defaultClassroomPgn = useMemo(() => {
+    const fen = normalizeBoardResourceFen(live?.navigationStartFen || live?.fen) || "start";
+    return {
+      id: "__default_classroom_pgn",
+      title: "Default Classroom PGN",
+      pgn: "",
+      fen,
+      sideToMove: fenMoveContext(fen).side === "b" ? "black" : "white",
+      defaultClassroom: true,
+    };
+  }, [live?.fen, live?.navigationStartFen]);
+  const activePgnCollection = useMemo(() => {
+    const loaded = Array.isArray(live?.challenge?.pgnCollection) ? live.challenge.pgnCollection : [];
+    return [defaultClassroomPgn, ...loaded.filter((item: any) => !item?.defaultClassroom && pgnTabKey(item) !== defaultClassroomPgn.id)];
+  }, [defaultClassroomPgn, live?.challenge?.pgnCollection]);
   const questionUsesBoardFlow = Boolean((Array.isArray(activeQuestion?.items) && activeQuestion.items.length > 0) || activeQuestion?.solution?.length);
   const studentQuizMode = Boolean(activeQuestion) && !coach && hiddenStudentQuizId !== String(activeQuestion?._id || "") && ((Array.isArray(activeQuestion?.items) && activeQuestion.items.length > 0) || activeQuestion?.solution?.length);
   const coachQuizMode = Boolean(activeQuestion) && coach;
@@ -1445,12 +1456,9 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     pendingCoachMoveUpdateRef.current = update;
     applyOptimisticLive(update, true);
     if (coachMovePersistTimerRef.current) window.clearTimeout(coachMovePersistTimerRef.current);
-    coachMovePersistTimerRef.current = window.setTimeout(() => {
-      coachMovePersistTimerRef.current = null;
-      const pendingUpdate = pendingCoachMoveUpdateRef.current;
-      pendingCoachMoveUpdateRef.current = null;
-      if (pendingUpdate) void patch(pendingUpdate, { optimistic: false });
-    }, 80);
+    coachMovePersistTimerRef.current = null;
+    pendingCoachMoveUpdateRef.current = null;
+    void patch(update, { optimistic: false });
   }
 
   function pgnUpdateForCoachMove(moveSan: string, moveStartFen: string) {
@@ -2327,6 +2335,28 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   }
 
   function loadPgn(pgn: any, index: number, collection?: any[]) {
+    if (pgn?.defaultClassroom) {
+      const fen = normalizeBoardResourceFen(live?.navigationStartFen || live?.fen) || "start";
+      patch({
+        fen,
+        pgn: "",
+        pgnTitle: "Default Classroom PGN",
+        navigationStartFen: fen,
+        pgnMoves,
+        pgnMoveIndex: Math.max(0, Math.min(pgnMoves.length, live?.pgnMoveIndex || 0)),
+        pgnVariations,
+        activePgnVariationId: live?.activePgnVariationId || "",
+        setupMode: false,
+        illegalMovesEnabled: false,
+        challenge: {
+          ...(live?.challenge || {}),
+          active: false,
+          currentIndex: 0,
+        },
+      });
+      setActiveTab("moves");
+      return;
+    }
     const chess = new Chess();
     const startFen = pgnStartFen(pgn);
     const parsedTree = parseLichessPgn(pgn.pgn || "");
@@ -2463,6 +2493,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   }
 
   function closeLoadedPgnTab(item: any, index: number) {
+    if (item?.defaultClassroom) return;
     const collection = Array.isArray(live?.challenge?.pgnCollection) ? live.challenge.pgnCollection : [];
     const closingKey = pgnTabKey(item);
     const remaining = collection.filter((entry: any) => pgnTabKey(entry) !== closingKey);
@@ -2701,6 +2732,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       ? matchedPgnIndex
       : Math.max(0, Math.min(activePgnCollection.length - 1, storedPgnIndex))
     : -1;
+  const closablePgnCount = activePgnCollection.filter((item: any) => !item?.defaultClassroom).length;
   const canLoadPreviousPgn = activePgnIndex > 0;
   const canLoadNextPgn = activePgnIndex >= 0 && activePgnIndex < activePgnCollection.length - 1;
   const setupBoardSize = Math.min(340, Math.max(220, boardWidth));
@@ -3325,7 +3357,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                     <span className="flex-none text-xs font-semibold tabular-nums text-slate-500">
                       {activePgnCollection.length ? `${activePgnIndex + 1} / ${activePgnCollection.length}` : "0 / 0"}
                     </span>
-                    {activePgnCollection.length > 0 && (
+                    {closablePgnCount > 0 && (
                       <button type="button" onClick={clearClassroomLoad} className="grid h-8 w-8 flex-none place-items-center rounded-md border border-slate-200 bg-white text-slate-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600" title="Close all loaded PGNs" aria-label="Close all loaded PGNs">
                         <Trash2 size={14} />
                       </button>
@@ -3345,11 +3377,15 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                               title={`Open ${item.title || `PGN ${index + 1}`}`}
                             >
                               <span className={`block truncate text-sm font-semibold ${active ? "text-blue-800" : "text-slate-950"}`}>{index + 1}. {item.title || `PGN ${index + 1}`}</span>
-                              <span className="mt-0.5 block truncate text-xs text-slate-500">{item.sideToMove ? `${item.sideToMove} to move` : "Ready to play"} - {item.pgn ? `${(item.pgn.match(/\d+\./g) || []).length || 1} moves` : "position"}</span>
+                              <span className="mt-0.5 block truncate text-xs text-slate-500">{item.sideToMove ? `${item.sideToMove} to move` : "Ready to play"} - {item.defaultClassroom ? "always available" : item.pgn ? `${(item.pgn.match(/\d+\./g) || []).length || 1} moves` : "position"}</span>
                             </button>
-                            <button type="button" onClick={() => closeLoadedPgnTab(item, index)} className="grid h-7 w-7 flex-none place-items-center rounded-md text-slate-500 transition hover:bg-red-50 hover:text-red-600" title={`Close ${item.title || "PGN"}`} aria-label={`Close ${item.title || "PGN"}`}>
-                              <X size={14} />
-                            </button>
+                            {item.defaultClassroom ? (
+                              <span className="rounded bg-slate-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">Default</span>
+                            ) : (
+                              <button type="button" onClick={() => closeLoadedPgnTab(item, index)} className="grid h-7 w-7 flex-none place-items-center rounded-md text-slate-500 transition hover:bg-red-50 hover:text-red-600" title={`Close ${item.title || "PGN"}`} aria-label={`Close ${item.title || "PGN"}`}>
+                                <X size={14} />
+                              </button>
+                            )}
                           </div>
                         );
                       })}

@@ -17,10 +17,12 @@ import {
   LockKeyhole,
   Receipt,
   ShieldCheck,
+  Sparkles,
   Target,
   Trophy,
 } from "lucide-react";
 import { ACADEMY_LOGO_URL } from "@/lib/branding";
+import { publicAchievementList } from "@/lib/achievementData";
 
 const portalBenefits = [
   { label: "Join upcoming classes", value: "Live classroom links and schedule reminders", icon: CalendarDays },
@@ -28,6 +30,7 @@ const portalBenefits = [
   { label: "Track progress", value: "Attendance, tournaments, credits, and invoices", icon: Trophy },
 ];
 
+const achievementSlides = publicAchievementList().slice(0, 8);
 const rememberedLoginKey = "envision:remembered-login";
 
 export default function LoginPage() {
@@ -39,6 +42,8 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loginId, setLoginId] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
+  const [achievementIndex, setAchievementIndex] = useState(0);
+  const activeAchievement = achievementSlides[achievementIndex] || achievementSlides[0];
 
   useEffect(() => {
     if (status === "authenticated" && !submittedRef.current && !clearedExistingSessionRef.current) {
@@ -53,6 +58,14 @@ export default function LoginPage() {
       setLoginId(rememberedLogin);
       setRememberMe(true);
     }
+  }, []);
+
+  useEffect(() => {
+    if (achievementSlides.length < 2) return;
+    const timer = window.setInterval(() => {
+      setAchievementIndex((current) => (current + 1) % achievementSlides.length);
+    }, 4200);
+    return () => window.clearInterval(timer);
   }, []);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -86,25 +99,82 @@ export default function LoginPage() {
             <Image src={ACADEMY_LOGO_URL} alt="Envision Chess Academy" width={300} height={98} priority unoptimized className="h-20 w-auto object-contain" />
           </div>
 
-          <div className="grid gap-6 lg:grid-cols-[0.86fr_1.14fr] lg:items-end">
-            <div className="overflow-hidden rounded-lg border border-accent/25 bg-white/[0.08] shadow-2xl shadow-black/25">
-              <div className="relative aspect-[0.86] min-h-[260px]">
-                <Image src="/images/landing/anish-bijibilla.jpg" alt="Envision Chess Academy student achievement" fill priority sizes="(min-width: 1024px) 31vw, 100vw" className="object-cover object-top" />
+          <div className="grid gap-6 lg:grid-cols-[0.94fr_1.06fr] lg:items-end">
+            {activeAchievement && (
+              <div className="overflow-hidden rounded-lg border border-accent/25 bg-white/[0.08] shadow-2xl shadow-black/25">
+                <div className="relative aspect-[0.9] min-h-[300px] bg-[#090b10]">
+                  <Image
+                    key={`${activeAchievement.achievementImageUrl}-login-bg`}
+                    src={activeAchievement.achievementImageUrl}
+                    alt=""
+                    fill
+                    priority
+                    sizes="(min-width: 1024px) 33vw, 100vw"
+                    className="scale-110 object-cover opacity-25 blur-2xl transition duration-700"
+                  />
+                  <Image
+                    key={activeAchievement.achievementImageUrl}
+                    src={activeAchievement.achievementImageUrl}
+                    alt={`${activeAchievement.studentName} achievement`}
+                    fill
+                    priority
+                    sizes="(min-width: 1024px) 33vw, 100vw"
+                    className="object-contain p-4 transition duration-700"
+                  />
+                  <div className="absolute left-4 top-4 inline-flex items-center gap-2 rounded-full bg-accent px-3 py-1 text-xs font-black uppercase text-brand-900">
+                    <Trophy size={14} /> Achievers wall
+                  </div>
+                </div>
+                <div className="p-4">
+                  <div className="text-xs font-black uppercase tracking-[0.14em] text-accent">{activeAchievement.result}</div>
+                  <div className="mt-1 text-lg font-black leading-tight">{activeAchievement.studentName}</div>
+                  <p className="mt-1 line-clamp-2 text-xs leading-5 text-white/68">{activeAchievement.tournamentName}</p>
+                  <div className="mt-4 flex gap-1.5" aria-label="Achievement slide selector">
+                    {achievementSlides.map((slide, slideIndex) => (
+                      <button
+                        key={`${slide.sourceImageName}-dot`}
+                        type="button"
+                        onClick={() => setAchievementIndex(slideIndex)}
+                        className={`h-2 rounded-full transition ${slideIndex === achievementIndex ? "w-7 bg-accent" : "w-2 bg-white/35 hover:bg-white/60"}`}
+                        aria-label={`Show ${slide.studentName} achievement`}
+                        aria-current={slideIndex === achievementIndex}
+                      />
+                    ))}
+                  </div>
+                </div>
               </div>
-              <div className="p-4">
-                <div className="text-xs font-black uppercase tracking-[0.14em] text-accent">Achievement Access</div>
-                <div className="mt-1 font-black">Welcome Back to Your Chess Journey</div>
-              </div>
-            </div>
+            )}
 
             <div>
-              <p className="text-xs font-black uppercase tracking-[0.16em] text-accent">Student, coach, and admin portal</p>
+              <p className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-[0.16em] text-accent">
+                <Sparkles size={15} /> Student achievers on every login
+              </p>
               <h1 className="mt-3 text-4xl font-black leading-tight text-white xl:text-5xl">
-                Continue classes, homework, practice, and progress in one place.
+                See what focused practice can become.
               </h1>
               <p className="mt-4 text-base leading-7 text-white/72">
-                Log in to reach live classrooms, assignments, tournaments, communication, credits, payment history, and academy updates.
+                Every sign-in now opens with real Envision achievements, so students return to class feeling proud, motivated, and ready for the next milestone.
               </p>
+              <div className="mt-5 grid gap-2 sm:grid-cols-2">
+                {achievementSlides.slice(0, 4).map((slide, slideIndex) => (
+                  <button
+                    key={`${slide.sourceImageName}-preview`}
+                    type="button"
+                    onClick={() => setAchievementIndex(slideIndex)}
+                    className={`grid grid-cols-[46px_minmax(0,1fr)] items-center gap-3 rounded-lg border p-2 text-left transition hover:bg-white/[0.12] ${
+                      slideIndex === achievementIndex ? "border-accent/60 bg-white/[0.12]" : "border-white/10 bg-white/[0.06]"
+                    }`}
+                  >
+                    <span className="relative h-12 w-12 overflow-hidden rounded-md bg-black/30">
+                      <Image src={slide.achievementImageUrl} alt="" fill sizes="48px" className="object-contain p-1" />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-black text-white">{slide.studentName}</span>
+                      <span className="block truncate text-xs text-white/60">{slide.achievementLevel}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -128,17 +198,19 @@ export default function LoginPage() {
               <Image src={ACADEMY_LOGO_URL} alt="Envision Chess Academy" width={240} height={84} priority unoptimized className="h-16 w-auto object-contain" />
             </div>
 
-            <div className="mb-4 rounded-lg border border-brand/10 bg-white p-3 shadow-sm lg:hidden">
+            {activeAchievement && (
+              <div className="mb-4 rounded-lg border border-brand/10 bg-white p-3 shadow-sm lg:hidden">
               <div className="flex items-center gap-3">
-                <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-lg">
-                  <Image src="/images/landing/anish-bijibilla.jpg" alt="Student achievement preview" fill sizes="64px" className="object-cover object-top" />
+                <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-slate-950">
+                  <Image src={activeAchievement.achievementImageUrl} alt={`${activeAchievement.studentName} achievement preview`} fill sizes="64px" className="object-contain p-1" />
                 </div>
                 <div>
-                  <div className="text-xs font-black uppercase tracking-[0.14em] text-brand">Portal preview</div>
-                  <p className="mt-1 text-sm font-semibold leading-5 text-slate-700">Classes, homework, practice, tournaments, and payments after login.</p>
+                  <div className="text-xs font-black uppercase tracking-[0.14em] text-brand">Today&apos;s achiever</div>
+                  <p className="mt-1 text-sm font-semibold leading-5 text-slate-700">{activeAchievement.studentName}: {activeAchievement.result}</p>
                 </div>
               </div>
-            </div>
+              </div>
+            )}
 
             <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-2xl shadow-brand-900/10 sm:p-8">
               <div className="mb-7">

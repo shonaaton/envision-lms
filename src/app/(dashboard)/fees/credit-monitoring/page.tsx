@@ -104,7 +104,14 @@ function manualCreditBanner(params: Params) {
       text: `${params.added || "Credits"} credit${params.added === "1" ? "" : "s"} added to ${params.student || "the student"}. The adjustment has been recorded in the credit ledger.`,
     };
   }
-  if (params.creditAdjustment === "invalid") return { tone: "border-rose-200 bg-rose-50 text-rose-800", text: "Credits could not be added. Select a valid student, enter a whole number of credits, and provide a reason." };
+  if (params.creditAdjustment === "removed") {
+    return {
+      tone: "border-emerald-200 bg-emerald-50 text-emerald-800",
+      text: `${params.added || "Credits"} credit${params.added === "1" ? "" : "s"} removed from ${params.student || "the student"}. The correction has been recorded in the credit ledger.`,
+    };
+  }
+  if (params.creditAdjustment === "invalid") return { tone: "border-rose-200 bg-rose-50 text-rose-800", text: "Credit adjustment could not be completed. Select a valid student, enter a whole number of credits, and provide a reason." };
+  if (params.creditAdjustment === "insufficient") return { tone: "border-rose-200 bg-rose-50 text-rose-800", text: "Credits could not be removed because the student does not have enough remaining balance." };
   if (params.creditAdjustment === "failed") return { tone: "border-rose-200 bg-rose-50 text-rose-800", text: "The manual credit adjustment could not be completed. No unrecorded credit change was kept." };
   return null;
 }
@@ -188,6 +195,98 @@ async function addManualCredits(formData: FormData) {
     creditAdjustment: "added",
     added: String(rawCredits),
     student: updated.student.name || updated.student.username || "student",
+  });
+  redirect(`/fees/credit-monitoring?${params.toString()}`);
+}
+
+async function removeManualCredits(formData: FormData) {
+  "use server";
+  const session = await requireFeesAccess("credit", "creditMonitoring");
+  const role = String((session?.user as any)?.role || "");
+  if (!session?.user || (role !== "admin" && role !== "sub-admin")) throw new Error("Forbidden");
+
+  const assignmentId = String(formData.get("assignment") || "").trim();
+  const rawCredits = Number(formData.get("credits"));
+  const reason = String(formData.get("reason") || "").trim();
+  if (!isValidObjectId(assignmentId) || !Number.isInteger(rawCredits) || rawCredits < 1 || rawCredits > 1000 || reason.length < 5 || reason.length > 500) {
+    redirect("/fees/credit-monitoring?creditAdjustment=invalid");
+  }
+
+  await dbConnect();
+  const existing: any = await FeeAssignment.findOne({ _id: assignmentId, type: "credits" }).populate("student", "name username email");
+  if (!existing?.student?._id) redirect("/fees/credit-monitoring?creditAdjustment=invalid");
+
+  const balanceBefore = Number(existing.creditBalance || 0);
+  if (balanceBefore < rawCredits) redirect("/fees/credit-monitoring?creditAdjustment=insufficient");
+
+  const purchasedBefore = Number(existing.totalCreditsPurchased || 0);
+  const balanceAfter = balanceBefore - rawCredits;
+  const totalCreditsPurchased = Math.max(0, purchasedBefore - rawCredits);
+
+  let modified = false;
+  try {
+    const update = await FeeAssignment.updateOne(
+      { _id: existing._id, type: "credits", creditBalance: balanceBefore },
+      { $set: { creditBalance: balanceAfter, totalCreditsPurchased } }
+    );
+    modified = Boolean(update.modifiedCount);
+  } catch {
+    redirect("/fees/credit-monitoring?creditAdjustment=failed");
+  }
+  if (!modified) redirect("/fees/credit-monitoring?creditAdjustment=failed");
+
+  try {
+    const ledger = await CreditLedger.create({
+      student: existing.student._id,
+      assignment: existing._id,
+      type: "adjustment",
+      credits: -rawCredits,
+      balanceAfter,
+      sourceType: "manual_credit_reversal",
+      sourceId: new Types.ObjectId(),
+      performedBy: (session.user as any).id,
+      performedByRole: role,
+      note: reason,
+    });
+    await recordActivity({
+      actor: (session.user as any).id,
+      targetUser: existing.student._id.toString(),
+      type: "fees.credits.manual_removed",
+      label: `Removed ${rawCredits} manual credit${rawCredits === 1 ? "" : "s"} from ${existing.student.name || existing.student.username || "student"}`,
+      entityType: "CreditLedger",
+      entityId: ledger._id.toString(),
+      metadata: {
+        assignment: existing._id.toString(),
+        credits: -rawCredits,
+        balanceAfter,
+        reason,
+        source: "manual_admin",
+        performedByRole: role,
+      },
+    });
+  } catch {
+    await FeeAssignment.updateOne(
+      { _id: existing._id, creditBalance: balanceAfter },
+      { $set: { creditBalance: balanceBefore, totalCreditsPurchased: purchasedBefore } }
+    ).catch(() => null);
+    redirect("/fees/credit-monitoring?creditAdjustment=failed");
+  }
+
+  await Notification.create({
+    user: existing.student._id,
+    type: "credits.manual_removal",
+    title: "Class credits corrected",
+    message: `${rawCredits} class credit${rawCredits === 1 ? "" : "s"} ${rawCredits === 1 ? "has" : "have"} been removed from your account. Reason: ${reason}`,
+    metadata: { assignment: existing._id.toString(), credits: -rawCredits, balanceAfter, reason },
+  }).catch(() => null);
+
+  revalidatePath("/fees");
+  revalidatePath("/fees/credit-history");
+  revalidatePath("/fees/credit-monitoring");
+  const params = new URLSearchParams({
+    creditAdjustment: "removed",
+    added: String(rawCredits),
+    student: existing.student.name || existing.student.username || "student",
   });
   redirect(`/fees/credit-monitoring?${params.toString()}`);
 }
@@ -418,13 +517,23 @@ export default async function CreditMonitoringPage({ searchParams }: { searchPar
       )}
 
       {canAddManualCredits && (
-        <section className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50/70 p-4 shadow-sm">
-          <div className="mb-4">
-            <h2 className="text-lg font-black text-emerald-950">Add Credits Manually</h2>
-            <p className="mt-1 text-sm leading-6 text-emerald-800">Search for a credit-plan student, enter the complimentary credits, and record the required reason. The balance and audit history update immediately.</p>
-          </div>
-          <ManualCreditForm students={creditStudents} action={addManualCredits} />
-        </section>
+        <div className="mb-4 grid gap-4 xl:grid-cols-2">
+          <section className="rounded-lg border border-emerald-200 bg-emerald-50/70 p-4 shadow-sm">
+            <div className="mb-4">
+              <h2 className="text-lg font-black text-emerald-950">Add Credits Manually</h2>
+              <p className="mt-1 text-sm leading-6 text-emerald-800">Search for a credit-plan student, enter the complimentary credits, and record the required reason. The balance and audit history update immediately.</p>
+            </div>
+            <ManualCreditForm students={creditStudents} action={addManualCredits} />
+          </section>
+
+          <section className="rounded-lg border border-rose-200 bg-rose-50/70 p-4 shadow-sm">
+            <div className="mb-4">
+              <h2 className="text-lg font-black text-rose-950">Remove Credits Manually</h2>
+              <p className="mt-1 text-sm leading-6 text-rose-800">Use this only to correct mistaken credit additions. The student balance is reduced and the correction remains visible in the audit history.</p>
+            </div>
+            <ManualCreditForm students={creditStudents} action={removeManualCredits} mode="remove" />
+          </section>
+        </div>
       )}
 
       <section className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4 shadow-sm">

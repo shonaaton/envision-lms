@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useFormStatus } from "react-dom";
-import { Check, Gift, Search, UserRound, X } from "lucide-react";
+import { Check, Gift, MinusCircle, Search, UserRound, X } from "lucide-react";
 
 type CreditStudentOption = {
   assignmentId: string;
@@ -16,9 +16,11 @@ type CreditStudentOption = {
 export default function ManualCreditForm({
   students,
   action,
+  mode = "add",
 }: {
   students: CreditStudentOption[];
   action: (formData: FormData) => void | Promise<void>;
+  mode?: "add" | "remove";
 }) {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<CreditStudentOption | null>(null);
@@ -39,7 +41,7 @@ export default function ManualCreditForm({
   }
 
   return (
-    <form action={action} className="grid gap-4 lg:grid-cols-[minmax(260px,1.2fr)_150px_minmax(280px,1.4fr)_auto] lg:items-end">
+    <form action={action} className="grid gap-4 2xl:grid-cols-[minmax(260px,1.2fr)_150px_minmax(280px,1.4fr)_auto] 2xl:items-end">
       <input type="hidden" name="assignment" value={selected?.assignmentId || ""} />
       <div className="relative space-y-1.5">
         <span className="text-xs font-black uppercase tracking-[0.1em] text-slate-600">Student</span>
@@ -102,29 +104,38 @@ export default function ManualCreditForm({
       </div>
 
       <label className="space-y-1.5">
-        <span className="text-xs font-black uppercase tracking-[0.1em] text-slate-600">Credits to add</span>
+        <span className="text-xs font-black uppercase tracking-[0.1em] text-slate-600">Credits to {mode === "remove" ? "remove" : "add"}</span>
         <input name="credits" type="number" min="1" max="1000" step="1" required className="input h-11" placeholder="1" />
       </label>
 
       <label className="space-y-1.5">
         <span className="text-xs font-black uppercase tracking-[0.1em] text-slate-600">Reason <span className="text-rose-600">*</span></span>
-        <input name="reason" minLength={5} maxLength={500} required className="input h-11" placeholder="Example: Complimentary class after a scheduling issue" />
+        <input
+          name="reason"
+          minLength={5}
+          maxLength={500}
+          required
+          className="input h-11"
+          placeholder={mode === "remove" ? "Example: Reversing mistaken manual credit addition" : "Example: Complimentary class after a scheduling issue"}
+        />
       </label>
 
-      <SubmitButton studentSelected={Boolean(selected)} />
+      <SubmitButton studentSelected={Boolean(selected)} mode={mode} />
     </form>
   );
 }
 
-function SubmitButton({ studentSelected }: { studentSelected: boolean }) {
+function SubmitButton({ studentSelected, mode }: { studentSelected: boolean; mode: "add" | "remove" }) {
   const { pending } = useFormStatus();
+  const removing = mode === "remove";
   return (
     <button
       type="submit"
       disabled={!studentSelected || pending}
-      className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-5 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
+      className={`inline-flex h-11 items-center justify-center gap-2 rounded-lg px-5 text-sm font-bold text-white shadow-sm transition disabled:cursor-not-allowed disabled:opacity-40 ${removing ? "bg-rose-600 hover:bg-rose-700" : "bg-emerald-600 hover:bg-emerald-700"}`}
     >
-      <Gift size={16} /> {pending ? "Adding…" : "Add Credits"}
+      {removing ? <MinusCircle size={16} /> : <Gift size={16} />}
+      {pending ? (removing ? "Removing..." : "Adding...") : (removing ? "Remove Credits" : "Add Credits")}
     </button>
   );
 }

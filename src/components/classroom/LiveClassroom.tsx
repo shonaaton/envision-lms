@@ -649,7 +649,18 @@ function minutesBetween(start?: string | Date, end?: string | Date) {
   return Math.max(0, Math.round((new Date(end).getTime() - new Date(start).getTime()) / 60000));
 }
 
-type LiveBoardQuizResult = { solved: boolean; mistakes: number; hintsUsed: number; timeTakenSeconds: number; skipped?: boolean; submittedMove?: string; attempts?: string[] };
+type LiveBoardQuizResult = {
+  solved: boolean;
+  mistakes: number;
+  hintsUsed: number;
+  timeTakenSeconds: number;
+  skipped?: boolean;
+  pending?: boolean;
+  submittedMove?: string;
+  attempts?: string[];
+  correctLine?: string[];
+  currentPly?: number;
+};
 type CoachQuizResultsSnapshot = { question: any; items: any[]; students: any[]; responses: any[]; endedAt?: string };
 
 function aggregateLiveResponses(responses: any[]) {
@@ -704,7 +715,6 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const [quizSolution, setQuizSolution] = useState<string[]>([]);
   const [quizPoints, setQuizPoints] = useState(5);
   const [quizNegativeMarks, setQuizNegativeMarks] = useState(0);
-  const [quizTotalTime, setQuizTotalTime] = useState(0);
   const [quizTimePerPosition, setQuizTimePerPosition] = useState(60);
   const [chatText, setChatText] = useState("");
   const [chatRecipient, setChatRecipient] = useState("group");
@@ -1893,7 +1903,6 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     setQuizTitle(selected.length === 1 ? `One Move Challenge: ${selected[0].title}` : `Classroom Quiz: ${selected.length} PGNs`);
     setQuizSolution([]);
     setQuizNegativeMarks(0);
-    setQuizTotalTime(0);
     setPgnOpen(false);
     setQuizComposerOpen(true);
   }
@@ -1945,7 +1954,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
         moveHistory: live?.moveHistory || [],
         solution: first.solution || [],
         items,
-        timer: { overallSeconds: quizTotalTime || undefined, perQuestionSeconds: quizTimePerPosition || undefined },
+        timer: { perQuestionSeconds: quizTimePerPosition || undefined },
         scoring: { correct: quizPoints, wrongPenalty: quizNegativeMarks, hintPenalty: 0, speedBonus: 0, attemptPenalty: 0 },
         attempts: "multiple",
         hintsEnabled: true,
@@ -3709,10 +3718,6 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                 </label>
                 <div className="grid grid-cols-2 gap-3">
                   <label>
-                    <span className="text-xs font-black uppercase tracking-wide text-slate-500">Total time</span>
-                    <input type="number" min={0} value={quizTotalTime} onChange={(event) => setQuizTotalTime(Math.max(0, Number(event.target.value || 0)))} className="input mt-1 h-11" />
-                  </label>
-                  <label>
                     <span className="text-xs font-black uppercase tracking-wide text-slate-500">Time per position</span>
                     <input type="number" min={0} value={quizTimePerPosition} onChange={(event) => setQuizTimePerPosition(Math.max(0, Number(event.target.value || 0)))} className="input mt-1 h-11" />
                   </label>
@@ -3929,7 +3934,7 @@ function LiveBoardQuiz({
           pgn: question.pgn,
           solution: question.solution || [],
           points: question.scoring?.correct ?? 5,
-          timerSeconds: question.timer?.perQuestionSeconds || question.timer?.overallSeconds || 0,
+          timerSeconds: question.timer?.perQuestionSeconds || 0,
         }]),
     [question]
   );
@@ -3938,7 +3943,6 @@ function LiveBoardQuiz({
   const [quizStartedAt] = useState(Date.now());
   const [itemStartedAt, setItemStartedAt] = useState(Date.now());
   const [remaining, setRemaining] = useState(Number(question.timer?.perQuestionSeconds || items[0]?.timerSeconds || 0));
-  const [totalRemaining, setTotalRemaining] = useState(Number(question.timer?.overallSeconds || 0));
   const submittedRef = useRef(false);
 
   const activeItem = items[currentIndex];
@@ -3966,6 +3970,7 @@ function LiveBoardQuiz({
   const [feedback, setFeedback] = useState("Make the best move on the board.");
   const [lastStudentMove, setLastStudentMove] = useState("");
   const [attemptMoves, setAttemptMoves] = useState<string[]>([]);
+  const [correctLineMoves, setCorrectLineMoves] = useState<string[]>([]);
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
   const [quizPendingPromotion, setQuizPendingPromotion] = useState<PendingPromotion | null>(null);
   const advancedRef = useRef(false);
@@ -4035,8 +4040,7 @@ function LiveBoardQuiz({
     setResults(existingItemResults || {});
     setQuizFinished(false);
     setQuizSubmitted(false);
-    setTotalRemaining(Number(question.timer?.overallSeconds || 0));
-  }, [question._id, question.timer?.overallSeconds, existingItemResults, serverIndex]);
+  }, [question._id, existingItemResults, serverIndex]);
 
   useEffect(() => {
     submitPromptedRef.current = false;
@@ -4112,6 +4116,7 @@ function LiveBoardQuiz({
     setFeedback(parsed.moves.length === 0 ? "No answer line was provided for this position." : quizFinished ? "Review this position and update your answer if needed." : "Make your move on the board.");
     setLastStudentMove("");
     setAttemptMoves([]);
+    setCorrectLineMoves([]);
     setItemStartedAt(Date.now());
     setRemaining(Number(question.timer?.perQuestionSeconds || activeItem?.timerSeconds || 0));
     setSelectedSquare(null);
@@ -4146,30 +4151,17 @@ function LiveBoardQuiz({
   }, [onComplete, onSubmitted, quizStartedAt, results]);
 
   useEffect(() => {
-    if (!totalRemaining || quizSubmitted) return;
-    const timer = window.setInterval(() => {
-      setTotalRemaining((value) => {
-        if (value <= 1) {
-          window.clearInterval(timer);
-          if (!submittedRef.current) {
-            const timedOutResults = items.reduce((acc: Record<string, LiveBoardQuizResult>, item: any) => {
-              if (acc[item.id]) return acc;
-              acc[item.id] = { solved: false, skipped: true, mistakes: 0, hintsUsed: 0, timeTakenSeconds: 0, submittedMove: "", attempts: [] };
-              return acc;
-            }, { ...results });
-            queueMicrotask(() => submitQuiz(timedOutResults, "Time is up. Your quiz has been submitted."));
-          }
-          return 0;
-        }
-        return value - 1;
-      });
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, [items, quizSubmitted, results, submitQuiz, totalRemaining]);
-
-  useEffect(() => {
     if (!solved || advancedRef.current || !activeItem) return;
-    const result = { solved: true, mistakes, hintsUsed, timeTakenSeconds: Math.round((Date.now() - itemStartedAt) / 1000), submittedMove: lastStudentMove || parsed.moves[0]?.san || "", attempts: attemptMoves };
+    const result = {
+      solved: true,
+      mistakes,
+      hintsUsed,
+      timeTakenSeconds: Math.round((Date.now() - itemStartedAt) / 1000),
+      submittedMove: lastStudentMove || correctLineMoves.at(-1) || parsed.moves[0]?.san || "",
+      attempts: attemptMoves,
+      correctLine: correctLineMoves,
+      currentPly: correctLineMoves.length,
+    };
     const nextResults = { ...results, [activeItem.id]: result };
     setResults(nextResults);
     advancedRef.current = true;
@@ -4236,6 +4228,8 @@ function LiveBoardQuiz({
           timeTakenSeconds: Math.round((Date.now() - itemStartedAt) / 1000),
           submittedMove: move.san,
           attempts: nextAttempts,
+          correctLine: correctLineMoves,
+          currentPly: correctLineMoves.length,
         },
       };
       setResults(nextResults);
@@ -4243,14 +4237,33 @@ function LiveBoardQuiz({
       setFeedback("Move not accepted. Try another continuation.");
       return false;
     }
-    setAttemptMoves((current) => [...current, move.san]);
+    const nextAttempts = [...attemptMoves, move.san];
+    setAttemptMoves(nextAttempts);
     setLastStudentMove(move.san);
     let nextPly = ply + 1;
     nextPly = applyAutoReply(nextGame, nextPly);
+    const nextCorrectLine = parsed.moves.slice(0, nextPly).map((item) => item.san);
+    setCorrectLineMoves(nextCorrectLine);
     setGame(nextGame);
     setPosition(nextGame.fen());
     setPly(nextPly);
     setSelectedSquare(null);
+    const nextResults = {
+      ...results,
+      [activeItem.id]: {
+        solved: nextPly >= parsed.moves.length,
+        pending: nextPly < parsed.moves.length,
+        mistakes,
+        hintsUsed,
+        timeTakenSeconds: Math.round((Date.now() - itemStartedAt) / 1000),
+        submittedMove: move.san,
+        attempts: nextAttempts,
+        correctLine: nextCorrectLine,
+        currentPly: nextPly,
+      },
+    };
+    setResults(nextResults);
+    onProgress?.(nextResults, Math.round((Date.now() - quizStartedAt) / 1000));
     setFeedback(nextPly >= parsed.moves.length ? "Answer recorded for this position." : "Move recorded. Continue from the new position.");
     return true;
   }
@@ -4322,7 +4335,7 @@ function LiveBoardQuiz({
         </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <SummaryCard label="Positions Attempted" value={`${summary.completedCount}/${items.length}`} icon={<CheckSquare size={16} />} />
-          <SummaryCard label="Time Taken" value={`${summary.timeTakenSeconds}s`} icon={<Clock size={16} />} />
+          <SummaryCard label="Time per Position" value={Number(question.timer?.perQuestionSeconds || activeItem?.timerSeconds || 0) ? `${Number(question.timer?.perQuestionSeconds || activeItem?.timerSeconds || 0)}s` : "No timer"} icon={<Clock size={16} />} />
         </div>
       </div>
     );
@@ -4338,7 +4351,6 @@ function LiveBoardQuiz({
         </div>
         <div className="flex items-center gap-2">
           <span className="rounded-full bg-purple-100 px-3 py-1 text-xs font-bold text-purple-800"><Clock size={12} className="mr-1 inline" /> {remaining ? `${remaining}s left` : "No timer"}</span>
-          {Number(question.timer?.overallSeconds || 0) ? <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-slate-700"><Clock size={12} className="mr-1 inline" /> Total {totalRemaining}s</span> : null}
           <span className={`rounded-full px-3 py-1 text-xs font-bold ${quizFinished ? "bg-amber-100 text-amber-800" : "bg-slate-200 text-slate-700"}`}>{quizFinished ? "Ready to submit" : "Not submitted"}</span>
         </div>
       </div>
@@ -4430,7 +4442,7 @@ function LiveBoardQuiz({
           <p className="mt-2 text-sm text-slate-600">You have completed all positions. Review your answers and submit when ready.</p>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <InfoTile label="Positions Answered" value={`${summary.completedCount}/${items.length}`} />
-            <InfoTile label="Time Taken" value={`${summary.timeTakenSeconds}s`} />
+            <InfoTile label="Time per Position" value={remaining ? `${Number(question.timer?.perQuestionSeconds || activeItem?.timerSeconds || 0)}s` : "No timer"} />
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
             <button type="button" className="rounded-lg bg-purple-700 px-4 py-2 text-sm font-bold text-white" onClick={() => setSubmitConfirmationOpen(true)}>Submit Quiz</button>
@@ -4561,6 +4573,13 @@ function CoachQuizMonitor({
         const attempts = Array.isArray(result?.attempts) ? result.attempts : [];
         const submittedMove = String(result?.submittedMove || "").trim();
         const moves = submittedMove && !attempts.includes(submittedMove) ? [...attempts, submittedMove] : attempts;
+        const correctLine = Array.isArray(result?.correctLine) && result.correctLine.length
+          ? result.correctLine.filter(Boolean)
+          : result?.solved && Array.isArray(item.solution)
+            ? item.solution.filter(Boolean)
+            : [];
+        const wrongMoves = moves.filter((move: string) => !correctLine.includes(move));
+        const expectedLineLength = Array.isArray(item.solution) ? item.solution.length : 0;
         const basePoints = Number(item.points ?? question?.scoring?.correct ?? 5);
         const hints = Number(result?.hintsUsed || 0);
         const mistakes = Number(result?.mistakes || 0);
@@ -4570,7 +4589,7 @@ function CoachQuizMonitor({
             ? -Number(question?.scoring?.wrongPenalty || 0)
             : 0;
         const status = result?.solved ? "Solved" : result?.skipped ? "Skipped" : result?.pending ? "Attempting" : "In progress";
-        return [{ ...row, item, index, result, moves, hints, mistakes, score, status }];
+        return [{ ...row, item, index, result, moves, wrongMoves, correctLine, expectedLineLength, hints, mistakes, score, status }];
       });
     });
   const allStudentsSubmitted = totalStudents > 0 && submitted === totalStudents;
@@ -4689,9 +4708,8 @@ function CoachQuizMonitor({
           </div>
           <div className="grid max-h-[calc(100vh-245px)] gap-2 overflow-auto pr-1 lg:grid-cols-2 2xl:grid-cols-3">
             {positionSubmissionRows.map((row: any) => {
-              const attemptCount = Math.max(row.moves.length, row.result ? row.mistakes + 1 : 0);
               const updatedAt = row.response?.updatedAt || row.response?.submittedAt;
-              return (
+            return (
                 <div key={`${row.student._id}-${row.item.id}`} className="rounded-lg border border-slate-200 bg-slate-50 p-2.5">
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div className="min-w-0">
@@ -4709,13 +4727,14 @@ function CoachQuizMonitor({
                   </div>
                   <div className="mt-2 grid grid-cols-2 gap-1.5">
                     <InfoTile label="Time" value={`${Number(row.result?.timeTakenSeconds || 0)} sec`} />
-                    <InfoTile label="Attempts" value={attemptCount} />
+                    <InfoTile label="Progress" value={`${row.correctLine.length}/${row.expectedLineLength || "-"}`} />
                     <InfoTile label="Mistakes" value={row.mistakes} />
                     <InfoTile label="Hints" value={row.hints} />
                   </div>
                   <div className="mt-2 space-y-1 rounded-md border border-slate-200 bg-white p-2 text-xs text-slate-600">
-                    <div><span className="font-bold text-slate-700">Submitted move:</span> {row.result?.submittedMove || row.moves.at(-1) || "-"}</div>
-                    <div><span className="font-bold text-slate-700">Moves attempted:</span> {row.moves.length ? row.moves.join(", ") : "No move recorded yet"}</div>
+                    <div><span className="font-bold text-slate-700">Latest correct move:</span> {row.correctLine.at(-1) || (row.status === "Solved" ? row.result?.submittedMove : "-")}</div>
+                    <div><span className="font-bold text-slate-700">Correct notation:</span> {row.correctLine.length ? row.correctLine.join(", ") : "No correct move yet"}</div>
+                    <div><span className="font-bold text-slate-700">Wrong attempts:</span> {row.wrongMoves.length ? row.wrongMoves.join(", ") : "No wrong move recorded"}</div>
                     <div><span className="font-bold text-slate-700">Student status:</span> {row.response?.finalSubmitted ? "Quiz submitted" : "Quiz in progress"}</div>
                     <div><span className="font-bold text-slate-700">Last update:</span> {updatedAt ? new Date(updatedAt).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", second: "2-digit" }) : "-"}</div>
                   </div>
@@ -4793,8 +4812,7 @@ function CoachQuizResultsDialog({ snapshot, onClose }: { snapshot: CoachQuizResu
                     <span className="rounded bg-purple-100 px-2 py-1 text-purple-700">{Number(response?.score || 0)} pts</span>
                   </div>
                 </div>
-                <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                  <InfoTile label="Total time" value={`${Number(response?.timeTakenSeconds || 0)} sec`} />
+                <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
                   <InfoTile label="Attempts" value={Number(response?.attemptsUsed || 0)} />
                   <InfoTile label="Hints" value={Number(response?.hintsUsed || 0)} />
                   <InfoTile label="Submitted" value={response?.submittedAt ? new Date(response.submittedAt).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", second: "2-digit" }) : "-"} />
@@ -4805,6 +4823,12 @@ function CoachQuizResultsDialog({ snapshot, onClose }: { snapshot: CoachQuizResu
                     const attempts = Array.isArray(result?.attempts) ? result.attempts : [];
                     const submittedMove = String(result?.submittedMove || "").trim();
                     const moves = submittedMove && !attempts.includes(submittedMove) ? [...attempts, submittedMove] : attempts;
+                    const correctLine = Array.isArray(result?.correctLine) && result.correctLine.length
+                      ? result.correctLine.filter(Boolean)
+                      : result?.solved && Array.isArray(item.solution)
+                        ? item.solution.filter(Boolean)
+                        : [];
+                    const wrongMoves = moves.filter((move: string) => !correctLine.includes(move));
                     const status = result?.solved ? "Solved" : result?.skipped ? "Skipped" : result?.pending ? "Attempted" : "Not answered";
                     return (
                       <div key={item.id} className="rounded-lg border border-slate-200 bg-white p-2.5">
@@ -4819,9 +4843,12 @@ function CoachQuizResultsDialog({ snapshot, onClose }: { snapshot: CoachQuizResu
                           <div>Time: <b>{Number(result?.timeTakenSeconds || 0)}s</b></div>
                           <div>Mistakes: <b>{Number(result?.mistakes || 0)}</b></div>
                           <div>Hints: <b>{Number(result?.hintsUsed || 0)}</b></div>
-                          <div>Move: <b>{result?.submittedMove || moves.at(-1) || "-"}</b></div>
+                          <div>Progress: <b>{correctLine.length}/{Array.isArray(item.solution) ? item.solution.length : "-"}</b></div>
                         </div>
-                        <div className="mt-2 break-words rounded-md bg-slate-50 p-2 text-xs text-slate-600"><b>Moves attempted:</b> {moves.length ? moves.join(", ") : "None"}</div>
+                        <div className="mt-2 space-y-1 break-words rounded-md bg-slate-50 p-2 text-xs text-slate-600">
+                          <div><b>Correct notation:</b> {correctLine.length ? correctLine.join(", ") : "No correct move"}</div>
+                          <div><b>Wrong attempts:</b> {wrongMoves.length ? wrongMoves.join(", ") : "No wrong move"}</div>
+                        </div>
                       </div>
                     );
                   })}

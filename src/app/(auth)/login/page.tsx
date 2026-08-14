@@ -48,7 +48,10 @@ export default function LoginPage() {
   const [rememberMe, setRememberMe] = useState(false);
   const [randomizedAchievements, setRandomizedAchievements] = useState(achievementSlides);
   const [achievementIndex, setAchievementIndex] = useState(0);
+  const [displayedAchievementIndex, setDisplayedAchievementIndex] = useState(0);
+  const [isAchievementFading, setIsAchievementFading] = useState(false);
   const activeAchievement = randomizedAchievements[achievementIndex] || randomizedAchievements[0];
+  const displayedAchievement = randomizedAchievements[displayedAchievementIndex] || activeAchievement;
   const previousAchievement =
     randomizedAchievements[(achievementIndex - 1 + randomizedAchievements.length) % randomizedAchievements.length] || activeAchievement;
   const nextAchievement = randomizedAchievements[(achievementIndex + 1) % randomizedAchievements.length] || activeAchievement;
@@ -68,15 +71,26 @@ export default function LoginPage() {
     }
     setRandomizedAchievements(shuffledAchievements());
     setAchievementIndex(0);
+    setDisplayedAchievementIndex(0);
   }, []);
 
   useEffect(() => {
     if (randomizedAchievements.length < 2) return;
     const timer = window.setInterval(() => {
       setAchievementIndex((current) => (current + 1) % randomizedAchievements.length);
-    }, 4200);
+    }, 6800);
     return () => window.clearInterval(timer);
   }, [randomizedAchievements.length]);
+
+  useEffect(() => {
+    if (achievementIndex === displayedAchievementIndex) return;
+    setIsAchievementFading(true);
+    const timer = window.setTimeout(() => {
+      setDisplayedAchievementIndex(achievementIndex);
+      setIsAchievementFading(false);
+    }, 650);
+    return () => window.clearTimeout(timer);
+  }, [achievementIndex, displayedAchievementIndex]);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -113,7 +127,7 @@ export default function LoginPage() {
           </div>
 
           <div className="relative grid gap-8 lg:grid-cols-[0.95fr_1.05fr] lg:items-center">
-            {activeAchievement && (
+            {activeAchievement && displayedAchievement && (
               <div className="relative mx-auto w-full max-w-[390px] py-2 pr-3 [perspective:1200px]">
                 <div className="absolute left-1/2 top-8 h-[76%] w-[70%] -translate-x-[64%] -rotate-[8deg] skew-y-2 border border-cyan-300/12 bg-cyan-300/[0.04] shadow-xl shadow-cyan-950/30" />
                 <div className="absolute left-1/2 top-9 h-[76%] w-[70%] -translate-x-[28%] rotate-[7deg] skew-y-[-2deg] border border-accent/12 bg-accent/[0.045] shadow-xl shadow-black/25" />
@@ -132,33 +146,48 @@ export default function LoginPage() {
                   <div className="absolute -inset-2 translate-y-4 rotate-3 bg-black/28 blur-xl" />
                   <div className="relative overflow-hidden border border-white/14 bg-[#080b11]/82 shadow-[0_24px_70px_rgba(0,0,0,0.42)] backdrop-blur">
                     <div className="relative aspect-[0.9] min-h-[255px] max-h-[360px]">
-                      <Image
-                        key={`${activeAchievement.achievementImageUrl}-login-bg`}
-                        src={activeAchievement.achievementImageUrl}
-                        alt=""
-                        fill
-                        priority
-                        sizes="(min-width: 1024px) 34vw, 100vw"
-                        className="scale-125 object-cover opacity-22 blur-2xl transition duration-700"
-                      />
+                      {[displayedAchievement, activeAchievement].map((slide, layerIndex) => {
+                        const isIncoming = layerIndex === 1;
+                        const showIncoming = isIncoming && isAchievementFading;
+                        const showBase = !isIncoming;
+
+                        return (
+                          <div
+                            key={`${slide.achievementImageUrl}-${layerIndex}`}
+                            className={`absolute inset-0 transition-all duration-1000 ease-out ${
+                              showIncoming ? "opacity-100 scale-100" : showBase ? "opacity-100 scale-100" : "opacity-0 scale-[1.015]"
+                            }`}
+                          >
+                            <Image
+                              src={slide.achievementImageUrl}
+                              alt=""
+                              fill
+                              priority={layerIndex === 0}
+                              sizes="(min-width: 1024px) 34vw, 100vw"
+                              className="scale-125 object-cover opacity-22 blur-2xl"
+                            />
+                            <Image
+                              src={slide.achievementImageUrl}
+                              alt={`${slide.studentName} achievement`}
+                              fill
+                              priority={layerIndex === 0}
+                              sizes="(min-width: 1024px) 34vw, 100vw"
+                              className="object-contain p-3 drop-shadow-2xl"
+                            />
+                          </div>
+                        );
+                      })}
                       <div className="absolute inset-0 bg-[linear-gradient(115deg,rgba(255,255,255,0.20)_0%,transparent_18%,transparent_58%,rgba(20,184,166,0.18)_100%)]" />
-                      <Image
-                        key={activeAchievement.achievementImageUrl}
-                        src={activeAchievement.achievementImageUrl}
-                        alt={`${activeAchievement.studentName} achievement`}
-                        fill
-                        priority
-                        sizes="(min-width: 1024px) 34vw, 100vw"
-                        className="object-contain p-3 drop-shadow-2xl transition duration-700"
-                      />
                       <div className="absolute left-3 top-3 inline-flex items-center gap-2 bg-accent/95 px-2.5 py-1 text-[10px] font-black uppercase text-brand-900 shadow-lg shadow-accent/10">
                         <Trophy size={14} /> Achievers wall
                       </div>
                     </div>
-                    <div className="border-t border-white/10 bg-[#070b10]/92 px-4 py-3">
-                      <div className="text-[10px] font-black uppercase tracking-[0.12em] text-accent">{activeAchievement.result}</div>
-                      <div className="mt-1 text-lg font-black leading-tight text-white">{activeAchievement.studentName}</div>
-                      <p className="mt-1 line-clamp-1 text-xs leading-5 text-white/62">{activeAchievement.tournamentName}</p>
+                    <div className="border-t border-white/10 bg-[#070b10]/92 px-4 py-3 transition-opacity duration-700 ease-out">
+                      <div className={`transition-opacity duration-700 ${isAchievementFading ? "opacity-35" : "opacity-100"}`}>
+                        <div className="text-[10px] font-black uppercase tracking-[0.12em] text-accent">{displayedAchievement.result}</div>
+                        <div className="mt-1 text-lg font-black leading-tight text-white">{displayedAchievement.studentName}</div>
+                        <p className="mt-1 line-clamp-1 text-xs leading-5 text-white/62">{displayedAchievement.tournamentName}</p>
+                      </div>
                     </div>
                   </div>
                 </div>

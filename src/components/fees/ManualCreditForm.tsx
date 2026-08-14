@@ -41,13 +41,13 @@ export default function ManualCreditForm({
   }
 
   return (
-    <form action={action} className="grid gap-4 2xl:grid-cols-[minmax(260px,1.2fr)_150px_minmax(280px,1.4fr)_auto] 2xl:items-end">
+    <form action={action} className="grid gap-3 lg:grid-cols-[minmax(240px,1.2fr)_140px_minmax(260px,1.4fr)_auto] lg:items-end">
       <input type="hidden" name="assignment" value={selected?.assignmentId || ""} />
       <div className="relative space-y-1.5">
-        <span className="text-xs font-black uppercase tracking-[0.1em] text-slate-600">Student</span>
+        <span className="text-xs font-bold uppercase tracking-[0.1em] text-slate-500">Student</span>
         {selected ? (
-          <span className="flex min-h-11 items-center gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3">
-            <span className="grid h-7 w-7 flex-none place-items-center rounded-full bg-white text-emerald-700"><Check size={15} /></span>
+          <span className={`flex min-h-10 items-center gap-3 rounded-lg border px-3 ${mode === "remove" ? "border-rose-200 bg-rose-50" : "border-emerald-200 bg-emerald-50"}`}>
+            <span className={`grid h-7 w-7 flex-none place-items-center rounded-full bg-white ${mode === "remove" ? "text-rose-700" : "text-emerald-700"}`}><Check size={15} /></span>
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm font-bold text-slate-950">{selected.name}</span>
               <span className="block truncate text-xs text-slate-500">{selected.username || selected.email} · {selected.balance} credits available</span>
@@ -71,7 +71,7 @@ export default function ManualCreditForm({
                 onChange={(event) => { setQuery(event.target.value); setOpen(true); }}
                 onFocus={() => setOpen(true)}
                 onBlur={() => window.setTimeout(() => setOpen(false), 100)}
-                className="input h-11 pl-9"
+                className="input h-10 pl-9 text-sm"
                 placeholder="Search name, student ID, or email"
                 autoComplete="off"
                 aria-label="Search for a student"
@@ -104,18 +104,18 @@ export default function ManualCreditForm({
       </div>
 
       <label className="space-y-1.5">
-        <span className="text-xs font-black uppercase tracking-[0.1em] text-slate-600">Credits to {mode === "remove" ? "remove" : "add"}</span>
-        <input name="credits" type="number" min="1" max="1000" step="1" required className="input h-11" placeholder="1" />
+        <span className="text-xs font-bold uppercase tracking-[0.1em] text-slate-500">Credits to {mode === "remove" ? "remove" : "add"}</span>
+        <input name="credits" type="number" min="1" max="1000" step="1" required className="input h-10 text-sm" placeholder="1" />
       </label>
 
       <label className="space-y-1.5">
-        <span className="text-xs font-black uppercase tracking-[0.1em] text-slate-600">Reason <span className="text-rose-600">*</span></span>
+        <span className="text-xs font-bold uppercase tracking-[0.1em] text-slate-500">Reason <span className="text-rose-600">*</span></span>
         <input
           name="reason"
           minLength={5}
           maxLength={500}
           required
-          className="input h-11"
+          className="input h-10 text-sm"
           placeholder={mode === "remove" ? "Example: Reversing mistaken manual credit addition" : "Example: Complimentary class after a scheduling issue"}
         />
       </label>
@@ -132,7 +132,7 @@ function SubmitButton({ studentSelected, mode }: { studentSelected: boolean; mod
     <button
       type="submit"
       disabled={!studentSelected || pending}
-      className={`inline-flex h-11 items-center justify-center gap-2 rounded-lg px-5 text-sm font-bold text-white shadow-sm transition disabled:cursor-not-allowed disabled:opacity-40 ${removing ? "bg-rose-600 hover:bg-rose-700" : "bg-emerald-600 hover:bg-emerald-700"}`}
+      className={`inline-flex h-10 items-center justify-center gap-2 rounded-lg px-4 text-sm font-bold text-white shadow-sm transition disabled:cursor-not-allowed disabled:opacity-40 ${removing ? "bg-rose-600 hover:bg-rose-700" : "bg-emerald-600 hover:bg-emerald-700"}`}
     >
       {removing ? <MinusCircle size={16} /> : <Gift size={16} />}
       {pending ? (removing ? "Removing..." : "Adding...") : (removing ? "Remove Credits" : "Add Credits")}

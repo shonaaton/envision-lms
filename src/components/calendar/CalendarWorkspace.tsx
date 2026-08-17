@@ -455,29 +455,29 @@ function studentCalendarTypeLabel(type: CalendarType) {
   return "Tournament";
 }
 
-function StudentEventCard({ event }: { event: CalendarEvent }) {
+function StudentEventCard({ event, compact = false }: { event: CalendarEvent; compact?: boolean }) {
   const date = eventDate(event.start);
   return (
-    <article className="rounded-2xl border border-brand/10 bg-white p-4 shadow-[0_12px_32px_rgba(90,19,114,0.08)]">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+    <article className={cn("rounded-xl border border-slate-200 bg-white shadow-sm shadow-brand-900/5 transition hover:-translate-y-0.5 hover:border-brand/30 hover:shadow-md hover:shadow-brand-900/10", compact ? "p-2.5" : "p-3")}>
+      <div className={cn("flex gap-3", compact ? "flex-col" : "flex-col sm:flex-row sm:items-start sm:justify-between")}>
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <span className={cn("rounded-full border px-2.5 py-1 text-[11px] font-black", studentCalendarTypeTone(event.type))}>
+            <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-bold", studentCalendarTypeTone(event.type))}>
               {studentCalendarTypeLabel(event.type)}
             </span>
-            <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-black", statusTone(event.status))}>
+            <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold", statusTone(event.status))}>
               {prettyStatus(event.status)}
             </span>
           </div>
-          <h3 className="mt-3 line-clamp-2 text-lg font-black text-slate-950">{event.title}</h3>
-          {event.subtitle && <p className="mt-1 line-clamp-2 text-sm text-slate-600">{event.subtitle}</p>}
-          <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-slate-500">
-            <span className="rounded-xl bg-slate-50 px-3 py-1.5 font-semibold">{format(date, "h:mm a")}</span>
-            {event.durationLabel && <span className="rounded-xl bg-slate-50 px-3 py-1.5 font-semibold">{event.durationLabel}</span>}
+          <h3 className={cn("mt-2 line-clamp-2 font-semibold text-slate-950", compact ? "text-xs" : "text-sm")}>{event.title}</h3>
+          {event.subtitle && <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500">{event.subtitle}</p>}
+          <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
+            <span className="rounded-lg bg-slate-50 px-2 py-1 font-semibold">{format(date, "h:mm a")}</span>
+            {event.durationLabel && !compact && <span className="rounded-lg bg-slate-50 px-2 py-1 font-semibold">{event.durationLabel}</span>}
           </div>
         </div>
-        {event.href && (
-          <Link href={event.href} className="inline-flex h-10 shrink-0 items-center justify-center rounded-xl bg-brand px-4 text-sm font-bold text-white shadow-lg shadow-brand/20">
+        {event.href && !compact && (
+          <Link href={event.href} className="inline-flex h-10 shrink-0 items-center justify-center rounded-lg bg-brand px-3 text-sm font-bold text-white shadow-sm shadow-brand/20 transition hover:bg-brand-600">
             {event.hrefLabel || "Open"}
           </Link>
         )}
@@ -488,6 +488,7 @@ function StudentEventCard({ event }: { event: CalendarEvent }) {
 
 function StudentCalendarWorkspace({ title, subtitle, events }: { title: string; subtitle: string; events: CalendarEvent[] }) {
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
+  const [view, setView] = useState<"weekly" | "monthly">("weekly");
   const studentEvents = useMemo(
     () =>
       events
@@ -503,118 +504,196 @@ function StudentCalendarWorkspace({ title, subtitle, events }: { title: string; 
       }),
     [currentDate]
   );
-  const dayEvents = studentEvents.filter((event) => sameDate(eventDate(event.start), currentDate));
+  const monthDays = useMemo(
+    () =>
+      eachDayOfInterval({
+        start: startOfWeek(startOfMonth(currentDate), { weekStartsOn: 1 }),
+        end: endOfWeek(endOfMonth(currentDate), { weekStartsOn: 1 }),
+      }),
+    [currentDate]
+  );
+  const selectedEvents = studentEvents.filter((event) => sameDate(eventDate(event.start), currentDate));
   const upcomingEvents = studentEvents.filter((event) => startOfDay(eventDate(event.start)) >= startOfDay(new Date())).slice(0, 8);
   const classCount = studentEvents.filter((event) => event.type === "class").length;
   const homeworkCount = studentEvents.filter((event) => event.type === "homework").length;
   const tournamentCount = studentEvents.filter((event) => event.type === "tournament").length;
+  const visibleDays = view === "weekly" ? weekDays : monthDays;
+  const visibleEvents = studentEvents.filter((event) => visibleDays.some((day) => sameDate(eventDate(event.start), day)));
+  const rangeLabel = view === "weekly" ? formatRangeLabel("weekly", currentDate) : formatRangeLabel("monthly", currentDate);
 
   return (
-    <div className="space-y-4 text-slate-950">
-      <section className="rounded-[26px] border border-brand/10 bg-white p-4 shadow-[0_18px_48px_rgba(90,19,114,0.10)] sm:p-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <div className="text-[11px] font-black uppercase tracking-[0.2em] text-brand/70">Student Calendar</div>
-            <h1 className="mt-1 text-3xl font-black text-brand">{title}</h1>
-            <p className="mt-1 max-w-2xl text-sm leading-relaxed text-slate-600">{subtitle}</p>
+    <div className="space-y-3 text-slate-950">
+      <section className="rounded-xl border border-brand/10 bg-white p-4 shadow-sm shadow-brand-900/5">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0">
+            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-brand/70">Student Calendar</div>
+            <h1 className="mt-1 text-2xl font-semibold text-slate-950">{title}</h1>
+            <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-500">{subtitle}</p>
           </div>
-          <div className="grid grid-cols-3 gap-2">
-            <div className="rounded-2xl border border-sky-100 bg-sky-50 p-3">
-              <div className="text-[10px] font-black uppercase tracking-[0.14em] text-sky-700">Classes</div>
-              <div className="mt-1 text-2xl font-black text-slate-950">{classCount}</div>
+          <div className="grid grid-cols-3 gap-2 lg:min-w-[380px]">
+            <div className="rounded-xl border border-sky-100 bg-sky-50 px-3 py-2.5">
+              <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-sky-700">Classes</div>
+              <div className="mt-1 text-2xl font-black leading-none text-slate-950">{classCount}</div>
             </div>
-            <div className="rounded-2xl border border-amber-100 bg-amber-50 p-3">
-              <div className="text-[10px] font-black uppercase tracking-[0.14em] text-amber-700">Homework</div>
-              <div className="mt-1 text-2xl font-black text-slate-950">{homeworkCount}</div>
+            <div className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2.5">
+              <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-amber-700">Homework</div>
+              <div className="mt-1 text-2xl font-black leading-none text-slate-950">{homeworkCount}</div>
             </div>
-            <div className="rounded-2xl border border-violet-100 bg-violet-50 p-3">
-              <div className="text-[10px] font-black uppercase tracking-[0.14em] text-violet-700">Tournaments</div>
-              <div className="mt-1 text-2xl font-black text-slate-950">{tournamentCount}</div>
+            <div className="rounded-xl border border-violet-100 bg-violet-50 px-3 py-2.5">
+              <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-violet-700">Tournaments</div>
+              <div className="mt-1 text-2xl font-black leading-none text-slate-950">{tournamentCount}</div>
             </div>
           </div>
         </div>
       </section>
 
-      <section className="rounded-[26px] border border-brand/10 bg-white p-3 shadow-[0_14px_34px_rgba(90,19,114,0.08)] sm:p-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <button type="button" onClick={() => setCurrentDate(new Date())} className="h-10 rounded-xl border border-slate-200 bg-white px-4 text-sm font-black text-slate-950 shadow-sm">
+      <section className="rounded-xl border border-brand/10 bg-white p-3 shadow-sm shadow-brand-900/5">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" onClick={() => setCurrentDate(new Date())} className="btn-outline">
               Today
             </button>
-            <button type="button" onClick={() => setCurrentDate((date) => addDays(date, -1))} className="grid h-10 w-10 place-items-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm">
-              <ChevronLeft size={17} />
+            <button type="button" aria-label="Previous range" onClick={() => setCurrentDate((date) => navigateDate(view, date, -1))} className="grid h-9 w-9 place-items-center rounded-lg border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-brand/30">
+              <ChevronLeft size={16} />
             </button>
-            <button type="button" onClick={() => setCurrentDate((date) => addDays(date, 1))} className="grid h-10 w-10 place-items-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm">
-              <ChevronRight size={17} />
+            <button type="button" aria-label="Next range" onClick={() => setCurrentDate((date) => navigateDate(view, date, 1))} className="grid h-9 w-9 place-items-center rounded-lg border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-brand/30">
+              <ChevronRight size={16} />
             </button>
+            <div className="inline-flex items-center gap-2 rounded-lg bg-brand-50 px-3 py-2 text-sm font-semibold text-brand">
+              <CalendarDays size={15} aria-hidden="true" />
+              <span className="truncate">{rangeLabel}</span>
+            </div>
           </div>
-          <div className="inline-flex items-center gap-2 rounded-xl bg-brand/5 px-3 py-2 text-sm font-black text-brand">
-            <CalendarDays size={16} />
-            {format(currentDate, "EEEE, d MMM yyyy")}
-          </div>
-        </div>
 
-        <div className="mt-4 grid grid-cols-7 gap-1.5">
-          {weekDays.map((day) => {
-            const count = studentEvents.filter((event) => sameDate(eventDate(event.start), day)).length;
-            const active = sameDate(day, currentDate);
-            return (
-              <button
-                key={day.toISOString()}
-                type="button"
-                onClick={() => setCurrentDate(day)}
-                className={cn(
-                  "min-h-[64px] rounded-2xl border px-1 py-2 text-center transition",
-                  active ? "border-brand bg-brand text-white shadow-lg shadow-brand/20" : "border-slate-200 bg-white text-slate-700 hover:border-brand/30"
-                )}
-              >
-                <div className={cn("text-[10px] font-black uppercase tracking-[0.12em]", active ? "text-white/80" : "text-slate-400")}>{format(day, "EEE")}</div>
-                <div className="mt-1 text-lg font-black">{format(day, "d")}</div>
-                {count > 0 && <div className={cn("mx-auto mt-1 h-1.5 w-1.5 rounded-full", active ? "bg-accent" : "bg-brand")} />}
-              </button>
-            );
-          })}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex rounded-lg bg-slate-100 p-1">
+              {[
+                { id: "weekly", label: "Week" },
+                { id: "monthly", label: "Month" },
+              ].map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setView(item.id as "weekly" | "monthly")}
+                  className={cn(
+                    "h-8 rounded-md px-3 text-xs font-bold transition",
+                    view === item.id ? "bg-white text-slate-950 shadow-sm" : "text-slate-500 hover:text-slate-950"
+                  )}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+            <input
+              type="date"
+              value={format(currentDate, "yyyy-MM-dd")}
+              onChange={(event) => {
+                const next = event.target.value ? new Date(`${event.target.value}T12:00:00`) : new Date();
+                if (!Number.isNaN(next.getTime())) setCurrentDate(next);
+              }}
+              className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 shadow-sm outline-none focus:border-brand focus:ring-4 focus:ring-brand/10"
+            />
+            <span className="rounded-lg bg-brand/10 px-3 py-2 text-xs font-bold text-brand">{visibleEvents.length} visible</span>
+          </div>
         </div>
       </section>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <section className="rounded-[26px] border border-brand/10 bg-white p-4 shadow-[0_16px_42px_rgba(90,19,114,0.08)]">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div>
-              <div className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">{format(currentDate, "EEE")}</div>
-              <h2 className="text-2xl font-black text-slate-950">{format(currentDate, "d MMM")}</h2>
-            </div>
-            <span className="rounded-full bg-brand/10 px-3 py-1 text-xs font-black text-brand">{dayEvents.length} items</span>
+      <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <section className="min-w-0 rounded-xl border border-brand/10 bg-white p-3 shadow-sm shadow-brand-900/5">
+          <div className="hidden md:grid grid-cols-7 border-b border-slate-200 pb-2">
+            {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day) => (
+              <div key={day} className="px-2 text-center text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">{day}</div>
+            ))}
           </div>
-          <div className="space-y-3">
-            {dayEvents.length ? dayEvents.map((event) => <StudentEventCard key={event.id} event={event} />) : (
-              <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center text-sm text-slate-500">
-                Nothing scheduled for this day.
+
+          <div className={cn("mt-3 grid gap-2", view === "weekly" ? "md:grid-cols-7" : "md:grid-cols-7")}>
+            {visibleDays.map((day) => {
+              const dayEvents = studentEvents.filter((event) => sameDate(eventDate(event.start), day));
+              const active = sameDate(day, currentDate);
+              const inCurrentMonth = isSameMonth(day, currentDate);
+              return (
+                <button
+                  key={day.toISOString()}
+                  type="button"
+                  onClick={() => setCurrentDate(day)}
+                  className={cn(
+                    "min-h-[96px] rounded-xl border p-2 text-left transition hover:-translate-y-0.5 hover:border-brand/30 hover:shadow-md hover:shadow-brand-900/10 md:min-h-[118px]",
+                    view === "weekly" && "xl:min-h-[calc(100dvh-390px)]",
+                    active ? "border-brand bg-brand-50 ring-2 ring-brand/10" : "border-slate-200 bg-white",
+                    view === "monthly" && !inCurrentMonth && "bg-slate-50/70 text-slate-400"
+                  )}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <div className="md:hidden text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">{format(day, "EEE")}</div>
+                      <div className={cn("grid h-8 w-8 place-items-center rounded-full text-sm font-bold", isToday(day) ? "bg-brand text-white" : active ? "bg-white text-brand" : "text-slate-700")}>{format(day, "d")}</div>
+                    </div>
+                    {dayEvents.length > 0 && <span className="rounded-full bg-brand/10 px-2 py-0.5 text-[10px] font-bold text-brand">{dayEvents.length}</span>}
+                  </div>
+                  <div className="mt-2 space-y-1.5">
+                    {dayEvents.slice(0, view === "weekly" ? 4 : 2).map((event) => (
+                      <div key={event.id} className={cn("truncate rounded-md border px-2 py-1 text-[11px] font-semibold", studentCalendarTypeTone(event.type))}>
+                        {format(eventDate(event.start), "h:mm")} {event.title}
+                      </div>
+                    ))}
+                    {dayEvents.length === 0 && view === "weekly" && <div className="rounded-md bg-slate-50 px-2 py-2 text-center text-[11px] text-slate-400">Free</div>}
+                    {dayEvents.length > (view === "weekly" ? 4 : 2) && <div className="text-[11px] font-semibold text-slate-400">+{dayEvents.length - (view === "weekly" ? 4 : 2)} more</div>}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 md:hidden">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">{format(currentDate, "EEE")}</div>
+                <h2 className="text-lg font-semibold text-slate-950">{format(currentDate, "d MMM")}</h2>
               </div>
-            )}
+              <span className="rounded-full bg-brand/10 px-2.5 py-1 text-xs font-bold text-brand">{selectedEvents.length} items</span>
+            </div>
+            <div className="space-y-2">
+              {selectedEvents.length ? selectedEvents.map((event) => <StudentEventCard key={event.id} event={event} />) : <p className="rounded-lg bg-white px-3 py-4 text-center text-sm text-slate-500">Nothing scheduled for this day.</p>}
+            </div>
           </div>
         </section>
 
-        <section className="rounded-[26px] border border-brand/10 bg-white p-4 shadow-[0_16px_42px_rgba(90,19,114,0.08)]">
-          <div className="mb-4">
-            <h2 className="text-lg font-black text-slate-950">Upcoming</h2>
-            <p className="text-sm text-slate-500">Your next classes, homework, and tournaments.</p>
-          </div>
-          <div className="space-y-2">
-            {upcomingEvents.length ? upcomingEvents.map((event) => (
-              <Link key={event.id} href={event.href || "#"} className="block rounded-2xl border border-slate-100 bg-slate-50 p-3 hover:border-brand/20 hover:bg-brand/5">
-                <div className="flex items-center justify-between gap-2">
-                  <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-black", studentCalendarTypeTone(event.type))}>{studentCalendarTypeLabel(event.type)}</span>
-                  <span className="text-xs font-bold text-slate-400">{format(eventDate(event.start), "d MMM")}</span>
-                </div>
-                <div className="mt-2 line-clamp-1 text-sm font-black text-slate-950">{event.title}</div>
-                <div className="mt-1 text-xs text-slate-500">{format(eventDate(event.start), "h:mm a")}</div>
-              </Link>
-            )) : (
-              <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center text-sm text-slate-500">No upcoming items.</div>
-            )}
-          </div>
-        </section>
+        <aside className="space-y-3">
+          <section className="rounded-xl border border-brand/10 bg-white p-4 shadow-sm shadow-brand-900/5">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">{format(currentDate, "EEE")}</div>
+                <h2 className="text-lg font-semibold text-slate-950">{format(currentDate, "d MMM")}</h2>
+              </div>
+              <span className="rounded-full bg-brand/10 px-2.5 py-1 text-xs font-bold text-brand">{selectedEvents.length} items</span>
+            </div>
+            <div className="hidden space-y-2 md:block">
+              {selectedEvents.length ? selectedEvents.map((event) => <StudentEventCard key={event.id} event={event} compact />) : <p className="rounded-lg bg-slate-50 px-3 py-5 text-center text-sm text-slate-500">Nothing scheduled for this day.</p>}
+            </div>
+            <div className="md:hidden text-sm text-slate-500">Tap a day above to review its items.</div>
+          </section>
+
+          <section className="rounded-xl border border-brand/10 bg-white p-4 shadow-sm shadow-brand-900/5">
+            <div className="mb-3">
+              <h2 className="text-lg font-semibold text-slate-950">Upcoming</h2>
+              <p className="text-sm text-slate-500">Your next classes, homework, and tournaments.</p>
+            </div>
+            <div className="space-y-2">
+              {upcomingEvents.length ? upcomingEvents.map((event) => (
+                <Link key={event.id} href={event.href || "#"} className="block rounded-xl border border-slate-200 bg-slate-50 p-3 transition hover:-translate-y-0.5 hover:border-brand/30 hover:bg-white hover:shadow-md hover:shadow-brand-900/10">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-bold", studentCalendarTypeTone(event.type))}>{studentCalendarTypeLabel(event.type)}</span>
+                    <span className="text-xs font-bold text-slate-400">{format(eventDate(event.start), "d MMM")}</span>
+                  </div>
+                  <div className="mt-2 line-clamp-1 text-sm font-semibold text-slate-950">{event.title}</div>
+                  <div className="mt-1 text-xs text-slate-500">{format(eventDate(event.start), "h:mm a")}</div>
+                </Link>
+              )) : (
+                <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center text-sm text-slate-500">No upcoming items.</div>
+              )}
+            </div>
+          </section>
+        </aside>
       </div>
     </div>
   );

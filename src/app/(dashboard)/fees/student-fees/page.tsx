@@ -5,18 +5,19 @@ import { CreditLedger, FeeAssignment, FeePlan, Invoice } from "@/models/Fee";
 import { User } from "@/models/User";
 import { revalidatePath } from "next/cache";
 import { History, Receipt, UserPlus, Users, WalletCards } from "lucide-react";
-import { StudentFeeAssignmentForm } from "@/components/fees/StudentFeeForms";
+import { LegacyStudentImportForm, StudentFeeAssignmentForm } from "@/components/fees/StudentFeeForms";
 import { Types } from "mongoose";
 import { redirect } from "next/navigation";
 import { requireFeesAccess } from "@/lib/feesAccess";
 import { recordActivity } from "@/lib/activity";
+import { importLegacyStudentData } from "@/lib/legacyStudentImport";
 
 export const dynamic = "force-dynamic";
 
-type ViewKey = "assign" | "records" | "history";
+type ViewKey = "assign" | "records" | "history" | "import";
 
 function selectedView(value?: string): ViewKey {
-  if (value === "assign" || value === "history") return value;
+  if (value === "assign" || value === "history" || value === "import") return value;
   return "records";
 }
 
@@ -226,6 +227,43 @@ async function deleteFeeAssignment(formData: FormData) {
   redirect("/fees/student-fees?success=deleted");
 }
 
+async function importLegacyRecords(formData: FormData) {
+  "use server";
+  const session = await requireFeesAccess("edit", "studentFees");
+  if (!session) throw new Error("Forbidden");
+  await dbConnect();
+
+  try {
+    const studentId = String(formData.get("student") || "");
+    const planId = String(formData.get("plan") || "");
+    const file = formData.get("file");
+
+    if (!Types.ObjectId.isValid(studentId)) redirect("/fees/student-fees?view=import&error=invalid-selection");
+    if (planId && !Types.ObjectId.isValid(planId)) redirect("/fees/student-fees?view=import&error=invalid-selection");
+    if (!(file instanceof File) || file.size === 0) redirect("/fees/student-fees?view=import&error=missing-file");
+
+    const result = await importLegacyStudentData({
+      studentId,
+      planId: planId || undefined,
+      actorId: (session.user as any).id,
+      fileName: file.name || "legacy-import.csv",
+      fileBuffer: Buffer.from(await file.arrayBuffer()),
+    });
+
+    revalidatePath("/fees/student-fees");
+    revalidatePath("/fees");
+    revalidatePath("/fees/invoices");
+    revalidatePath("/attendance");
+    redirect(
+      `/fees/student-fees?view=import&success=imported&attendance=${result.attendanceImported}&invoices=${result.invoicesImported}&summaries=${result.summariesApplied}`
+    );
+  } catch (error: any) {
+    if (String(error?.digest || "").startsWith("NEXT_REDIRECT")) throw error;
+    console.error("Legacy import failed", error);
+    redirect(`/fees/student-fees?view=import&error=${encodeURIComponent(error?.message || "legacy-import-failed")}`);
+  }
+}
+
 export default async function StudentFeesPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
   if (!(await requireFeesAccess("view", "studentFees"))) return <div className="p-6">Forbidden</div>;
   await dbConnect();
@@ -233,6 +271,10 @@ export default async function StudentFeesPage({ searchParams }: { searchParams?:
   const params = searchParams ? await searchParams : {};
   const error = typeof params.error === "string" ? params.error : "";
   const success = typeof params.success === "string" ? params.success : "";
+  const attendanceImported = typeof params.attendance === "string" ? Number(params.attendance) || 0 : 0;
+  const invoicesImported = typeof params.invoices === "string" ? Number(params.invoices) || 0 : 0;
+  const summariesApplied = typeof params.summaries === "string" ? Number(params.summaries) || 0 : 0;
+  const decodedError = error ? decodeURIComponent(error) : "";
   const view = selectedView(typeof params.view === "string" ? params.view : "");
   const [students, plans, assignments, invoices, credits] = await Promise.all([
     User.find({ role: "student", isActive: { $ne: false } }, { passwordHash: 0 }).sort({ name: 1 }).lean(),
@@ -260,9 +302,13 @@ export default async function StudentFeesPage({ searchParams }: { searchParams?:
         </div>
       </div>
 
-      {(success === "assigned" || success === "deleted") && (
+      {(success === "assigned" || success === "deleted" || success === "imported") && (
         <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">
-          {success === "deleted" ? "Fee record deleted successfully." : "Fee plan assigned successfully."}
+          {success === "deleted"
+            ? "Fee record deleted successfully."
+            : success === "imported"
+              ? `Legacy data imported successfully. Attendance rows: ${attendanceImported}, invoice rows: ${invoicesImported}, summaries applied: ${summariesApplied}.`
+              : "Fee plan assigned successfully."}
         </div>
       )}
       {error && (
@@ -271,16 +317,21 @@ export default async function StudentFeesPage({ searchParams }: { searchParams?:
             ? "Please select a valid student and fee plan."
             : error === "invalid-date"
               ? "Please choose a valid effective date."
+              : error === "missing-file"
+                ? "Please upload the CSV file for this student."
               : error === "missing-record"
                 ? "The selected student or fee plan no longer exists."
-                : "Fee plan could not be assigned. Please check the selected plan and try again."}
+                : error === "legacy-import-failed"
+                  ? "Legacy import could not be completed. Please check the file and try again."
+                  : decodedError || "Fee plan could not be assigned. Please check the selected plan and try again."}
         </div>
       )}
 
-      <nav className="mb-4 grid gap-2 sm:grid-cols-3">
+      <nav className="mb-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
         <ToolCard href={toolHref("assign")} active={view === "assign"} label="Assign Plan" count={`${students.length} students`} icon={<UserPlus size={17} />} tone="bg-emerald-50 text-emerald-700" />
         <ToolCard href={toolHref("records")} active={view === "records"} label="Student Records" count={`${assignments.length} assigned`} icon={<Receipt size={17} />} tone="bg-purple-50 text-purple-700" />
         <ToolCard href={toolHref("history")} active={view === "history"} label="Credit History" count={`${credits.length} recent`} icon={<WalletCards size={17} />} tone="bg-slate-100 text-slate-700" />
+        <ToolCard href={toolHref("import")} active={view === "import"} label="Legacy Import" count="Attendance + fees" icon={<History size={17} />} tone="bg-amber-50 text-amber-700" />
       </nav>
 
       {view === "assign" && (
@@ -388,6 +439,28 @@ export default async function StudentFeesPage({ searchParams }: { searchParams?:
             </table>
           </div>
           )}
+        </section>
+      )}
+
+      {view === "import" && (
+        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <SectionTitle title="Import Legacy Attendance & Fees" note="Upload a CSV, PDF statement, or ZIP statement per student. Attendance can be imported without classroom PGN data. Fee rows can create paid or unpaid history." />
+          <LegacyStudentImportForm
+            action={importLegacyRecords}
+            students={students.map((student: any) => ({
+              id: student._id.toString(),
+              name: student.name,
+              username: student.username,
+              hasAssignment: assignments.some((assignment: any) => assignment.student?._id?.toString() === student._id.toString()),
+            }))}
+            plans={plans.map((plan: any) => ({
+              id: plan._id.toString(),
+              name: plan.name,
+              type: plan.type,
+              amount: plan.amount,
+              credits: plan.credits || 0,
+            }))}
+          />
         </section>
       )}
     </div>

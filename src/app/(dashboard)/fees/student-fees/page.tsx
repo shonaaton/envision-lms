@@ -444,7 +444,7 @@ export default async function StudentFeesPage({ searchParams }: { searchParams?:
 
       {view === "import" && (
         <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-          <SectionTitle title="Import Legacy Attendance & Fees" note="Upload a CSV, PDF statement, or ZIP statement per student. Attendance can be imported without classroom PGN data. Fee rows can create paid or unpaid history." />
+          <SectionTitle title="Import Legacy Attendance & Fees" note="Select a student and upload a CSV, XLSX, PDF statement, or ZIP statement. Attendance can be imported without classroom PGN data. Historical payment files can create invoice history directly." />
           <LegacyStudentImportForm
             action={importLegacyRecords}
             students={students.map((student: any) => ({

@@ -80,12 +80,11 @@ credit_payment,,,,,,,,,4500,,,2026-08-01,,,,,,,10,OLD-CR-001,Imported credit rec
 
 export function LegacyStudentImportForm({ students, plans, action }: { students: StudentOption[]; plans: PlanOption[]; action: ServerAction }) {
   const [studentId, setStudentId] = useState("");
-  const [planId, setPlanId] = useState("");
   const templateHref = `data:text/csv;charset=utf-8,${encodeURIComponent(LEGACY_IMPORT_TEMPLATE)}`;
 
   return (
     <form action={action} className="space-y-4" encType="multipart/form-data">
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
         <Field label="Student" description="Pick the student to migrate.">
           <select name="student" required value={studentId} onChange={(event) => setStudentId(event.target.value)} className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm">
             <option value="">Select Student</option>
@@ -95,19 +94,8 @@ export function LegacyStudentImportForm({ students, plans, action }: { students:
           </select>
         </Field>
 
-        <Field label="Fee Plan (Optional)" description="Pick a plan when the fee history should create or update billing records.">
-          <select name="plan" value={planId} onChange={(event) => setPlanId(event.target.value)} className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm">
-            <option value="">Use Existing Plan</option>
-            {plans.map((plan) => (
-              <option key={plan.id} value={plan.id}>
-                {plan.name} - {plan.type === "monthly" ? "Monthly Plan" : `${plan.credits} Credit Plan`}
-              </option>
-            ))}
-          </select>
-        </Field>
-
         <Field label="Import File" description="Upload a CSV, PDF statement, or ZIP statement for this student.">
-          <input name="file" type="file" accept=".csv,text/csv,.pdf,application/pdf,.zip,application/zip" required className="block h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:font-semibold" />
+          <input name="file" type="file" accept=".csv,text/csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.pdf,application/pdf,.zip,application/zip" required className="block h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:font-semibold" />
         </Field>
 
         <div className="flex items-end">
@@ -125,6 +113,7 @@ export function LegacyStudentImportForm({ students, plans, action }: { students:
         <p>`monthly_summary`: maps the fee statement totals like total fees, paid amount, due amount, and concession.</p>
         <p>`monthly_payment`: creates a paid monthly installment from statement rows.</p>
         <p>`monthly_invoice`: creates an unpaid, overdue, cancelled, or paid installment row from the fee structure.</p>
+        <p>`xlsx` payment-history uploads create paid invoice history directly from receipt data, without needing a fee plan.</p>
         <p>PDF and ZIP uploads are meant for installment fee statements like the one dated August 17, 2026 that you shared.</p>
         <p>If you prefer the statement style you shared, you can omit `row_type` for installment rows and just use columns like `installment_number`, `fee_type`, `paid_amount_inr`, `paid_date`, `amount_inr`, `balance_amount_inr`, `due_date`, and `status`.</p>
       </div>

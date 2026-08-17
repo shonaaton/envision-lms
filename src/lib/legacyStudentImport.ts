@@ -20,6 +20,7 @@ type ImportRow = {
   rowType: SupportedRowType;
   installmentNumber?: number;
   feeType?: string;
+  receiptNumber?: string;
   eventDate?: Date;
   invoiceDate?: Date;
   dueDate?: Date;
@@ -119,6 +120,12 @@ const HEADER_ALIASES: Record<string, string> = {
   concession_amount_rs: "concession_amount_inr",
   referencenumber: "reference_number",
   reference_number: "reference_number",
+  receiptno: "reference_number",
+  receipt_no: "reference_number",
+  receiptnumber: "reference_number",
+  receipt_number: "reference_number",
+  collecteddate: "collected_date",
+  collected_date: "collected_date",
   note: "note",
   notes: "note",
 };
@@ -163,6 +170,88 @@ function parseCsv(text: string) {
 
   row.push(current);
   if (row.some((value) => value.trim().length > 0)) rows.push(row);
+  return rows;
+}
+
+function columnLettersToIndex(value: string) {
+  let total = 0;
+  for (const char of value.toUpperCase()) {
+    total = total * 26 + (char.charCodeAt(0) - 64);
+  }
+  return Math.max(0, total - 1);
+}
+
+function extractZipEntries(buffer: Buffer) {
+  const entries = new Map<string, Buffer>();
+  const eocdSignature = 0x06054b50;
+  const centralSignature = 0x02014b50;
+  const localSignature = 0x04034b50;
+
+  for (let position = buffer.length - 22; position >= 0; position -= 1) {
+    if (buffer.readUInt32LE(position) !== eocdSignature) continue;
+    const centralDirectoryOffset = buffer.readUInt32LE(position + 16);
+    let cursor = centralDirectoryOffset;
+
+    while (cursor + 46 <= buffer.length && buffer.readUInt32LE(cursor) === centralSignature) {
+      const compressionMethod = buffer.readUInt16LE(cursor + 10);
+      const compressedSize = buffer.readUInt32LE(cursor + 20);
+      const fileNameLength = buffer.readUInt16LE(cursor + 28);
+      const extraLength = buffer.readUInt16LE(cursor + 30);
+      const commentLength = buffer.readUInt16LE(cursor + 32);
+      const localHeaderOffset = buffer.readUInt32LE(cursor + 42);
+      const fileName = buffer.toString("utf8", cursor + 46, cursor + 46 + fileNameLength);
+
+      if (buffer.readUInt32LE(localHeaderOffset) !== localSignature) break;
+      const localNameLength = buffer.readUInt16LE(localHeaderOffset + 26);
+      const localExtraLength = buffer.readUInt16LE(localHeaderOffset + 28);
+      const dataStart = localHeaderOffset + 30 + localNameLength + localExtraLength;
+      const payload = buffer.subarray(dataStart, dataStart + compressedSize);
+      const extracted = compressionMethod === 0 ? payload : compressionMethod === 8 ? inflateRawSync(payload) : null;
+      if (extracted) entries.set(fileName, extracted);
+
+      cursor += 46 + fileNameLength + extraLength + commentLength;
+    }
+    break;
+  }
+
+  return entries;
+}
+
+function decodeXmlEntities(value: string) {
+  return value
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+}
+
+function parseSimpleXlsxRows(buffer: Buffer) {
+  const entries = extractZipEntries(buffer);
+  const sharedStringsXml = entries.get("xl/sharedStrings.xml")?.toString("utf8") || "";
+  const sharedStrings = Array.from(sharedStringsXml.matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)).map((match) => decodeXmlEntities(match[1]));
+  const sheetXml = entries.get("xl/worksheets/sheet1.xml")?.toString("utf8");
+  if (!sheetXml) throw new Error("Could not read the first worksheet from the Excel file.");
+
+  const rows: string[][] = [];
+  for (const rowMatch of sheetXml.matchAll(/<row\b[^>]*>([\s\S]*?)<\/row>/g)) {
+    const cells: string[] = [];
+    for (const cellMatch of rowMatch[1].matchAll(/<c\b([^>]*)>([\s\S]*?)<\/c>/g)) {
+      const attrs = cellMatch[1];
+      const body = cellMatch[2];
+      const ref = attrs.match(/\br="([A-Z]+)\d+"/)?.[1] || "A";
+      const type = attrs.match(/\bt="([^"]+)"/)?.[1] || "";
+      const colIndex = columnLettersToIndex(ref);
+      const value = body.match(/<v>([\s\S]*?)<\/v>/)?.[1] || "";
+      const inlineValue = body.match(/<t[^>]*>([\s\S]*?)<\/t>/)?.[1] || "";
+      let resolved = "";
+      if (type === "s") resolved = sharedStrings[Number(value)] || "";
+      else if (type === "inlineStr") resolved = decodeXmlEntities(inlineValue);
+      else resolved = decodeXmlEntities(value);
+      cells[colIndex] = resolved;
+    }
+    if (cells.some((cell) => String(cell || "").trim().length > 0)) rows.push(cells.map((cell) => String(cell || "")));
+  }
   return rows;
 }
 
@@ -358,37 +447,9 @@ function parseStatementRows(tokens: string[]) {
 }
 
 function extractFirstPdfFromZip(buffer: Buffer) {
-  const eocdSignature = 0x06054b50;
-  const centralSignature = 0x02014b50;
-  const localSignature = 0x04034b50;
-
-  for (let position = buffer.length - 22; position >= 0; position -= 1) {
-    if (buffer.readUInt32LE(position) !== eocdSignature) continue;
-    const centralDirectoryOffset = buffer.readUInt32LE(position + 16);
-    let cursor = centralDirectoryOffset;
-
-    while (cursor + 46 <= buffer.length && buffer.readUInt32LE(cursor) === centralSignature) {
-      const compressionMethod = buffer.readUInt16LE(cursor + 10);
-      const compressedSize = buffer.readUInt32LE(cursor + 20);
-      const fileNameLength = buffer.readUInt16LE(cursor + 28);
-      const extraLength = buffer.readUInt16LE(cursor + 30);
-      const commentLength = buffer.readUInt16LE(cursor + 32);
-      const localHeaderOffset = buffer.readUInt32LE(cursor + 42);
-      const fileName = buffer.toString("utf8", cursor + 46, cursor + 46 + fileNameLength);
-
-      if (fileName.toLowerCase().endsWith(".pdf")) {
-        if (buffer.readUInt32LE(localHeaderOffset) !== localSignature) break;
-        const localNameLength = buffer.readUInt16LE(localHeaderOffset + 26);
-        const localExtraLength = buffer.readUInt16LE(localHeaderOffset + 28);
-        const dataStart = localHeaderOffset + 30 + localNameLength + localExtraLength;
-        const payload = buffer.subarray(dataStart, dataStart + compressedSize);
-        if (compressionMethod === 0) return payload;
-        if (compressionMethod === 8) return inflateRawSync(payload);
-        throw new Error("The ZIP file uses an unsupported compression type.");
-      }
-
-      cursor += 46 + fileNameLength + extraLength + commentLength;
-    }
+  const entries = extractZipEntries(buffer);
+  for (const [fileName, payload] of entries.entries()) {
+    if (fileName.toLowerCase().endsWith(".pdf")) return payload;
   }
 
   throw new Error("Could not find a PDF inside the uploaded ZIP file.");
@@ -524,6 +585,41 @@ function parseImportRows(fileText: string) {
   return rows;
 }
 
+function parsePaymentHistoryWorkbook(buffer: Buffer) {
+  const sheetRows = parseSimpleXlsxRows(buffer);
+  if (sheetRows.length < 2) throw new Error("The Excel file must include a header row and at least one payment row.");
+  const headers = sheetRows[0].map(normalizeHeader);
+  const rows: ImportRow[] = [];
+
+  for (let index = 1; index < sheetRows.length; index += 1) {
+    const values = sheetRows[index];
+    const rawRow: Record<string, string> = {};
+    headers.forEach((header, headerIndex) => {
+      rawRow[header] = String(values[headerIndex] || "").trim();
+    });
+    const amountInr = asNumber(rawRow.paid_amount_inr || rawRow.amount_inr);
+    if (!amountInr) continue;
+
+    const paidDate = asDate(rawRow.paid_date);
+    const collectedDate = asDate(rawRow.collected_date);
+    rows.push({
+      lineNumber: index + 1,
+      rowType: "monthly_payment",
+      installmentNumber: asNumber(rawRow.installment_number),
+      feeType: rawRow.fee_type || "Tuition Fees",
+      receiptNumber: rawRow.reference_number || undefined,
+      amountInr,
+      paidDate: paidDate || collectedDate,
+      dueDate: paidDate || collectedDate,
+      status: "paid",
+      note: rawRow.reference_number ? `Imported from payment history ${rawRow.reference_number}` : "Imported from payment history workbook",
+    });
+  }
+
+  if (!rows.length) throw new Error("No payment rows were found in the Excel file.");
+  return rows;
+}
+
 async function ensureLegacyAttendanceClassroom(studentId: string, studentName: string) {
   const title = `${studentName} Legacy Attendance`;
   const existing = await Classroom.findOne({
@@ -555,7 +651,7 @@ async function createImportedInvoice(params: {
   studentId: string;
   assignmentId?: string;
   planId?: string;
-  type: "monthly" | "credits";
+  type: "monthly" | "credits" | "manual";
   title: string;
   amountInr: number;
   dueDate: Date;
@@ -567,6 +663,11 @@ async function createImportedInvoice(params: {
   paidDate?: Date;
   status?: "draft" | "unpaid" | "paid" | "overdue" | "cancelled";
 }) {
+  const existing = params.referenceNumber
+    ? await Invoice.findOne({ student: params.studentId, referenceNumber: params.referenceNumber }).lean()
+    : null;
+  if (existing) return existing;
+
   const invoice = await createInvoice({
     student: params.studentId,
     assignment: params.assignmentId,
@@ -579,6 +680,8 @@ async function createImportedInvoice(params: {
     referenceNumber: params.referenceNumber,
     credits: params.credits,
     notes: params.note ? `Legacy import: ${params.note}` : "Legacy import",
+    invoiceMode: "included",
+    gstPercentage: 18,
     activity: {
       actor: params.actorId,
       source: "manual_admin",
@@ -619,13 +722,16 @@ function parseImportRowsFromBuffer(fileBuffer: Buffer, fileName: string) {
   if (lowerName.endsWith(".csv")) {
     return parseImportRows(fileBuffer.toString("utf8"));
   }
+  if (lowerName.endsWith(".xlsx")) {
+    return parsePaymentHistoryWorkbook(fileBuffer);
+  }
   if (lowerName.endsWith(".pdf")) {
     return parsePdfStatementRows(fileBuffer);
   }
   if (lowerName.endsWith(".zip")) {
     return parsePdfStatementRows(extractFirstPdfFromZip(fileBuffer));
   }
-  throw new Error("Unsupported file type. Upload a CSV, PDF statement, or ZIP containing a PDF statement.");
+  throw new Error("Unsupported file type. Upload a CSV, XLSX, PDF statement, or ZIP containing a PDF statement.");
 }
 
 export async function importLegacyStudentData(input: {
@@ -646,7 +752,8 @@ export async function importLegacyStudentData(input: {
 
   const feeRows = rows.filter((row) => row.rowType !== "attendance");
   const targetPlan: any = selectedPlan || (existingAssignment?.plan ? await FeePlan.findById(existingAssignment.plan) : null);
-  if (feeRows.length > 0 && !targetPlan && !existingAssignment) {
+  const requiresStructuredPlan = feeRows.some((row) => row.rowType === "credit_summary" || row.rowType === "credit_payment");
+  if (requiresStructuredPlan && !targetPlan && !existingAssignment) {
     throw new Error("Choose a fee plan before importing fee history for this student.");
   }
 
@@ -759,23 +866,24 @@ export async function importLegacyStudentData(input: {
     }
 
     if (row.rowType === "monthly_payment" || row.rowType === "monthly_invoice") {
-      if (!assignment || assignment.type !== "monthly") {
-        throw new Error(`Line ${row.lineNumber}: a monthly plan must be assigned before importing monthly fee history.`);
-      }
       const amountInr = requireNumber(row.amountInr, "amount_inr", row.lineNumber);
       const issueDate = row.invoiceDate || row.dueDate || row.paidDate;
       const dueDate = requireDate(row.dueDate || row.invoiceDate || row.paidDate, "due_date", row.lineNumber);
+      const useMonthlyAssignment = assignment && assignment.type === "monthly";
+      const invoiceType = useMonthlyAssignment ? "monthly" as const : "manual" as const;
       await createImportedInvoice({
         studentId: input.studentId,
-        assignmentId: assignment._id.toString(),
-        planId: assignment.plan.toString(),
-        type: "monthly",
-        title: row.note || `Imported monthly fee - ${dueDate.toLocaleString("en-IN", { month: "long", year: "numeric" })}`,
+        assignmentId: useMonthlyAssignment ? assignment._id.toString() : undefined,
+        planId: useMonthlyAssignment ? assignment.plan.toString() : undefined,
+        type: invoiceType,
+        title: row.receiptNumber
+          ? `Imported receipt ${row.receiptNumber}${row.installmentNumber ? ` - Installment ${row.installmentNumber}` : ""}`
+          : row.note || `Imported monthly fee - ${dueDate.toLocaleString("en-IN", { month: "long", year: "numeric" })}`,
         amountInr,
         issueDate,
         dueDate,
         actorId: input.actorId,
-        referenceNumber: row.referenceNumber,
+        referenceNumber: row.receiptNumber || row.referenceNumber,
         note: row.note,
         paidDate: row.rowType === "monthly_payment" ? row.paidDate || dueDate : row.paidDate,
         status: row.rowType === "monthly_payment" ? "paid" : row.status || "unpaid",

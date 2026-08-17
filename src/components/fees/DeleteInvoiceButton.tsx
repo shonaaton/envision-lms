@@ -28,8 +28,14 @@ export function DeleteInvoiceButton({
 
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} className="inline-flex h-9 items-center gap-1 rounded-lg border border-rose-200 px-3 text-xs font-bold text-rose-700">
-        <Trash2 size={14} /> Delete
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        title="Delete invoice"
+        aria-label="Delete invoice"
+        className="grid h-8 w-8 place-items-center rounded-lg border border-rose-200 bg-white text-rose-700 shadow-sm transition hover:-translate-y-0.5 hover:bg-rose-50 hover:shadow-md"
+      >
+        <Trash2 size={14} />
       </button>
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4 py-6">

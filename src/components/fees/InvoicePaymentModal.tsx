@@ -77,8 +77,14 @@ export function InvoicePaymentModal({
 
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} className="inline-flex h-9 items-center gap-1 rounded-lg border border-emerald-200 px-3 text-xs font-bold text-emerald-700">
-        <CheckCircle2 size={14} /> Mark Paid
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        title="Mark paid"
+        aria-label="Mark invoice paid"
+        className="grid h-8 w-8 place-items-center rounded-lg border border-emerald-200 bg-white text-emerald-700 shadow-sm transition hover:-translate-y-0.5 hover:bg-emerald-50 hover:shadow-md"
+      >
+        <CheckCircle2 size={14} />
       </button>
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4 py-6">

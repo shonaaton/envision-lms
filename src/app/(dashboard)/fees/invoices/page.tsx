@@ -12,7 +12,7 @@ import { createHash, randomBytes } from "crypto";
 import PayButton from "@/components/PayButton";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { AlertCircle, CheckCircle2, Clock3, Download, FileText, IndianRupee, MailCheck, MailWarning, MessageCircle, Printer, Receipt, Send, XCircle } from "lucide-react";
+import { AlertCircle, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Download, Eye, FileText, IndianRupee, MailCheck, MailWarning, MessageCircle, Printer, Receipt, Send, XCircle } from "lucide-react";
 import { InvoiceCreationForm } from "@/components/fees/InvoiceCreationForm";
 import { InvoicePaymentModal } from "@/components/fees/InvoicePaymentModal";
 import { DeleteInvoiceButton } from "@/components/fees/DeleteInvoiceButton";
@@ -589,14 +589,67 @@ function invoiceModeLabel(mode: string) {
   return "Non-GST";
 }
 
+function invoiceFilterLabel(value: string) {
+  if (value === "paid") return "Paid";
+  if (value === "due") return "Due";
+  if (value === "upcoming") return "Upcoming";
+  return "All";
+}
+
+function invoiceMatchesStatus(invoice: any, filter: string, now = new Date()) {
+  if (!filter || filter === "all") return true;
+  const status = String(invoice.status || "").toLowerCase();
+  const dueDate = invoice.dueDate ? new Date(invoice.dueDate) : null;
+  if (filter === "paid") return status === "paid";
+  if (filter === "due") return status !== "paid" && status !== "cancelled" && (!dueDate || dueDate.getTime() <= now.getTime() || status === "overdue");
+  if (filter === "upcoming") return status !== "paid" && status !== "cancelled" && !!dueDate && dueDate.getTime() > now.getTime();
+  return true;
+}
+
+function pageHref(page: number, selectedStudent: string, status: string) {
+  const params = new URLSearchParams();
+  if (selectedStudent) params.set("student", selectedStudent);
+  if (status && status !== "all") params.set("status", status);
+  if (page > 1) params.set("page", String(page));
+  const query = params.toString();
+  return `/fees/invoices${query ? `?${query}` : ""}`;
+}
+
+function IconAction({
+  href,
+  title,
+  icon,
+  tone = "neutral",
+  download,
+}: {
+  href: string;
+  title: string;
+  icon: React.ReactNode;
+  tone?: "neutral" | "brand";
+  download?: boolean;
+}) {
+  return (
+    <a
+      href={href}
+      target={download ? undefined : "_blank"}
+      download={download}
+      title={title}
+      aria-label={title}
+      className={`grid h-8 w-8 place-items-center rounded-lg border bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${tone === "brand" ? "border-brand/20 text-brand hover:bg-brand-50" : "border-slate-200 text-slate-600 hover:border-brand/30 hover:text-brand"}`}
+    >
+      {icon}
+    </a>
+  );
+}
+
 function MiniMetric({ label, value, icon }: { label: string; value: string | number; icon: React.ReactNode }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+    <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
       <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">
         <span className="text-brand">{icon}</span>
         {label}
       </div>
-      <div className="mt-1 text-xl font-bold text-slate-950">{value}</div>
+      <div className="mt-1 text-lg font-bold text-slate-950">{value}</div>
     </div>
   );
 }
@@ -613,6 +666,9 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
   await ensureMonthlyInvoices();
   const params = searchParams ? await searchParams : {};
   const selectedStudent = queryValue(params, "student");
+  const selectedStatus = queryValue(params, "status") || "all";
+  const currentPage = Math.max(1, Number(queryValue(params, "page") || 1) || 1);
+  const perPage = 10;
   const invoiceFilter = manager
     ? selectedStudent ? { student: selectedStudent } : {}
     : { student: userId };
@@ -628,24 +684,30 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
   const paidBanner = paymentBanner(queryValue(params, "payment"));
   const deletedBanner = deleteBanner(queryValue(params, "delete"));
   const waBanner = whatsappBanner(queryValue(params, "whatsapp"), queryValue(params, "waError"));
+  const filteredInvoices = invoices.filter((invoice: any) => invoiceMatchesStatus(invoice, selectedStatus));
+  const totalPages = Math.max(1, Math.ceil(filteredInvoices.length / perPage));
+  const safePage = Math.min(currentPage, totalPages);
+  const pageInvoices = filteredInvoices.slice((safePage - 1) * perPage, safePage * perPage);
   const paidCount = invoices.filter((invoice: any) => invoice.status === "paid").length;
-  const unpaidCount = invoices.filter((invoice: any) => invoice.status === "unpaid" || invoice.status === "overdue").length;
-  const totalValue = invoices.reduce((sum: number, invoice: any) => sum + Number(invoice.totalAmount || 0), 0);
+  const dueCount = invoices.filter((invoice: any) => invoiceMatchesStatus(invoice, "due")).length;
+  const upcomingCount = invoices.filter((invoice: any) => invoiceMatchesStatus(invoice, "upcoming")).length;
+  const totalValue = filteredInvoices.reduce((sum: number, invoice: any) => sum + Number(invoice.totalAmount || 0), 0);
 
   return (
-    <div className="min-h-screen bg-slate-50 px-4 py-4 text-slate-950 sm:px-6 lg:px-8">
-      <section className="mb-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="space-y-4 text-slate-950">
+      <section className="rounded-xl border border-brand/10 bg-white p-4 shadow-sm shadow-brand-900/5">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex items-start gap-3">
             <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-brand/10 text-brand"><Receipt size={18} /></span>
             <div>
               <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-brand/70">Billing workspace</p>
-              <h1 className="text-xl font-bold text-slate-950">Fee Invoices</h1>
+              <h1 className="text-2xl font-semibold text-slate-950">Fee Invoices</h1>
+              <p className="mt-1 text-sm text-slate-500">Create, filter, send, and reconcile invoices from one compact workspace.</p>
             </div>
           </div>
           <div className="grid gap-2 sm:grid-cols-3">
             <MiniMetric label="Total Value" value={formatINR(totalValue)} icon={<IndianRupee size={15} />} />
-            <MiniMetric label="Unpaid" value={unpaidCount} icon={<Clock3 size={15} />} />
+            <MiniMetric label="Due" value={dueCount} icon={<Clock3 size={15} />} />
             <MiniMetric label="Paid" value={paidCount} icon={<CheckCircle2 size={15} />} />
           </div>
         </div>
@@ -683,145 +745,149 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
       )}
 
       {permissions.invoice && (
-        <>
-        <section className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4 shadow-sm">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <h2 className="text-base font-bold text-amber-950">Bulk Invoice Email Reminders</h2>
-              <p className="mt-1 text-xs leading-5 text-amber-800">Send reminders through the active workflow.</p>
+        <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm shadow-brand-900/5">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-base font-semibold text-slate-950">Create Manual Invoice</h2>
+                <p className="mt-1 text-xs leading-5 text-slate-500">Choose a student, plan, invoice type, and due date.</p>
+              </div>
+              <span className="hidden rounded-full bg-brand/10 px-3 py-1 text-xs font-bold text-brand sm:inline-flex">Card flow</span>
             </div>
-            <form action={sendBulkInvoiceReminders} className="flex flex-col gap-2 sm:flex-row sm:items-center">
-              <select name="invoiceReminderMode" defaultValue="due" className="h-11 rounded-lg border border-amber-300 bg-white px-3 text-sm font-semibold text-slate-800">
+            <InvoiceCreationForm
+              action={createManualInvoice}
+              students={students.map((student: any) => ({ id: student._id.toString(), name: student.name }))}
+              plans={plans.map((plan: any) => ({ id: plan._id.toString(), name: plan.name, type: plan.type, amount: plan.amount, credits: plan.credits || 0, gstMode: plan.gstMode || "non_gst", gstPercentage: plan.gstPercentage || 0 }))}
+              assignments={assignments.map((assignment: any) => ({ studentId: assignment.student?.toString(), planId: assignment.plan?.toString() }))}
+            />
+          </div>
+
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
+            <div className="flex items-start gap-3">
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-white text-amber-700 shadow-sm"><MailWarning size={17} /></span>
+              <div>
+                <h2 className="text-base font-semibold text-amber-950">Bulk reminders</h2>
+                <p className="mt-1 text-xs leading-5 text-amber-800">Send invoice emails through the active workflow.</p>
+              </div>
+            </div>
+            <form action={sendBulkInvoiceReminders} className="mt-4 grid gap-2">
+              <select name="invoiceReminderMode" defaultValue="due" className="h-10 rounded-lg border border-amber-300 bg-white px-3 text-sm font-semibold text-slate-800">
                 <option value="due">Due or overdue invoices</option>
                 <option value="pending">All pending invoices</option>
               </select>
-              <button className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-brand px-4 text-sm font-bold text-white shadow-sm hover:bg-brand-700">
-                <Send size={16} /> Send Reminders
+              <button className="btn-primary w-full" title="Send bulk reminders">
+                <Send size={15} /> Send Reminders
               </button>
             </form>
           </div>
         </section>
-        <section className="mb-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="mb-4 flex items-start justify-between gap-3">
-            <div>
-              <h2 className="text-base font-bold text-slate-950">Create Manual Invoice</h2>
-              <p className="mt-1 text-xs leading-5 text-slate-500">Use this when you need a manual invoice.</p>
-            </div>
-            <span className="hidden rounded-full bg-brand/10 px-3 py-1 text-xs font-bold text-brand sm:inline-flex">4-step flow</span>
-          </div>
-          <InvoiceCreationForm
-            action={createManualInvoice}
-            students={students.map((student: any) => ({ id: student._id.toString(), name: student.name }))}
-            plans={plans.map((plan: any) => ({ id: plan._id.toString(), name: plan.name, type: plan.type, amount: plan.amount, credits: plan.credits || 0, gstMode: plan.gstMode || "non_gst", gstPercentage: plan.gstPercentage || 0 }))}
-            assignments={assignments.map((assignment: any) => ({ studentId: assignment.student?.toString(), planId: assignment.plan?.toString() }))}
-          />
-        </section>
-        </>
       )}
 
-      <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+      <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm shadow-brand-900/5">
+        <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
           <div>
-            <h2 className="text-base font-bold text-slate-950">Invoice List</h2>
-            <p className="mt-1 text-sm text-slate-500">{invoices.length} invoices in the current view.</p>
+            <h2 className="text-base font-semibold text-slate-950">Invoice List</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Showing {pageInvoices.length ? (safePage - 1) * perPage + 1 : 0}-{Math.min(safePage * perPage, filteredInvoices.length)} of {filteredInvoices.length} {invoiceFilterLabel(selectedStatus).toLowerCase()} invoices.
+            </p>
           </div>
-          {manager && (
-            <form className="flex min-w-[260px] items-center gap-2">
+          <form className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_180px_auto] xl:min-w-[680px]">
+            {manager && (
               <select name="student" defaultValue={selectedStudent} className="input h-10">
                 <option value="">All students</option>
                 {students.map((student: any) => <option key={student._id.toString()} value={student._id.toString()}>{student.name}{student.username ? ` (${student.username})` : ""}</option>)}
               </select>
-              <button className="btn-primary h-10">Filter</button>
-            </form>
-          )}
+            )}
+            {!manager && <input type="hidden" name="student" value={selectedStudent} />}
+            <select name="status" defaultValue={selectedStatus} className="input h-10">
+              <option value="all">All invoices</option>
+              <option value="paid">Paid</option>
+              <option value="due">Due / overdue</option>
+              <option value="upcoming">Upcoming</option>
+            </select>
+            <button className="btn-primary h-10">Apply</button>
+          </form>
         </div>
 
-        {invoices.length === 0 ? (
+        <div className="mb-4 grid gap-2 sm:grid-cols-4">
+          {[
+            { id: "all", label: "All", count: invoices.length },
+            { id: "due", label: "Due", count: dueCount },
+            { id: "upcoming", label: "Upcoming", count: upcomingCount },
+            { id: "paid", label: "Paid", count: paidCount },
+          ].map((item) => (
+            <a
+              key={item.id}
+              href={pageHref(1, selectedStudent, item.id)}
+              className={`rounded-lg border px-3 py-2 text-sm transition hover:-translate-y-0.5 hover:shadow-md ${selectedStatus === item.id || (!selectedStatus && item.id === "all") ? "border-brand bg-brand-50 text-brand shadow-sm" : "border-slate-200 bg-slate-50 text-slate-700 hover:border-brand/30"}`}
+            >
+              <span className="font-semibold">{item.label}</span>
+              <span className="float-right font-black">{item.count}</span>
+            </a>
+          ))}
+        </div>
+
+        {filteredInvoices.length === 0 ? (
           <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
             <div className="mx-auto grid h-12 w-12 place-items-center rounded-lg bg-white text-brand shadow-sm"><FileText size={22} /></div>
             <h3 className="mt-4 text-sm font-bold text-slate-950">No invoices found</h3>
-            <p className="mt-1 text-sm text-slate-500">Invoices generated through portal payments or manual invoice creation will appear here.</p>
+            <p className="mt-1 text-sm text-slate-500">Try a different status or student filter.</p>
           </div>
         ) : (
-          <div className="space-y-3">
-            {invoices.map((invoice: any) => {
+          <div className="space-y-2">
+            {pageInvoices.map((invoice: any) => {
               const invoiceId = invoice._id.toString();
               const pdfHref = `/api/fees/invoices/${invoiceId}/pdf`;
               const emailStatus = String(invoice.lastEmailStatus || "");
               return (
-                <article key={invoiceId} className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm transition hover:border-brand/20 hover:bg-slate-50">
-                  <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_260px]">
+                <article key={invoiceId} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm transition hover:-translate-y-0.5 hover:border-brand/30 hover:shadow-md hover:shadow-brand-900/10">
+                  <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-center">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="text-sm font-bold text-slate-950">{invoice.invoiceNumber}</h3>
-                        <span className={`rounded-full px-2.5 py-1 text-xs font-bold ring-1 ${statusTone(invoice.status)}`}>{invoice.status}</span>
-                        <span className="rounded-full bg-brand/10 px-2.5 py-1 text-xs font-bold text-brand">{invoiceTypeLabel(invoice.type)}</span>
+                        <h3 className="text-sm font-semibold text-slate-950">{invoice.invoiceNumber}</h3>
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ${statusTone(invoice.status)}`}>{invoice.status}</span>
+                        <span className="rounded-full bg-brand/10 px-2 py-0.5 text-[10px] font-bold text-brand">{invoiceTypeLabel(invoice.type)}</span>
+                        {Array.isArray(invoice.paymentTransactions) && invoice.paymentTransactions.length > 0 && <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">{invoice.paymentTransactions.length} payments</span>}
                       </div>
-                      <p className="mt-2 text-sm font-semibold text-slate-900">{invoice.title}</p>
-                      <div className="mt-3 grid gap-3 text-sm md:grid-cols-2 xl:grid-cols-4">
-                        {manager && (
-                          <div>
-                            <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Student</div>
-                            <div className="mt-1 font-semibold text-slate-950">{invoice.student?.name || "-"}</div>
-                            <div className="text-xs text-slate-500">{invoice.student?.username || invoice.student?.email || "-"}</div>
-                          </div>
-                        )}
-                        <div>
-                          <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Plan</div>
-                          <div className="mt-1 font-semibold text-slate-950">{invoice.plan?.name || "-"}</div>
-                          <div className="text-xs text-slate-500">{invoiceModeLabel(invoice.invoiceMode)}</div>
+                      <div className="mt-1 grid gap-x-4 gap-y-1 text-xs text-slate-500 md:grid-cols-[1.2fr_1fr_1fr_1fr]">
+                        <div className="min-w-0">
+                          <span className="font-semibold text-slate-950">{invoice.title}</span>
+                          {manager && <span className="block truncate">{invoice.student?.name || "-"} {invoice.student?.username ? `• ${invoice.student.username}` : ""}</span>}
                         </div>
-                        <div>
-                          <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Dates</div>
-                          <div className="mt-1 text-slate-700">Issued {new Date(invoice.issueDate || invoice.createdAt).toLocaleDateString("en-IN")}</div>
-                          <div className="text-slate-700">Due {new Date(invoice.dueDate).toLocaleDateString("en-IN")}</div>
-                          {invoice.nextDueDate && <div className="text-slate-700">Next {new Date(invoice.nextDueDate).toLocaleDateString("en-IN")}</div>}
-                          {invoice.referenceNumber && <div className="text-xs font-semibold text-slate-500">Ref {invoice.referenceNumber}</div>}
-                          {Array.isArray(invoice.paymentTransactions) && invoice.paymentTransactions.length > 0 && <div className="text-xs font-semibold text-emerald-700">{invoice.paymentTransactions.length} payment transaction{invoice.paymentTransactions.length === 1 ? "" : "s"}</div>}
-                        </div>
-                        <div>
-                          <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Email</div>
-                          <div className="mt-1 flex items-center gap-1.5 font-semibold text-slate-950">
-                            {emailStatus === "sent" ? <MailCheck size={15} className="text-emerald-600" /> : <MailWarning size={15} className="text-amber-600" />}
-                            {emailStatusCopy(emailStatus)}
-                          </div>
-                          {invoice.lastSentAt && <div className="text-xs text-slate-500">{new Date(invoice.lastSentAt).toLocaleString("en-IN")}</div>}
+                        <div className="truncate"><span className="font-semibold text-slate-700">Plan:</span> {invoice.plan?.name || "-"} • {invoiceModeLabel(invoice.invoiceMode)}</div>
+                        <div><span className="font-semibold text-slate-700">Issued:</span> {new Date(invoice.issueDate || invoice.createdAt).toLocaleDateString("en-IN")} <span className="mx-1">•</span> <span className="font-semibold text-slate-700">Due:</span> {new Date(invoice.dueDate).toLocaleDateString("en-IN")}</div>
+                        <div className="flex items-center gap-1.5">
+                          {emailStatus === "sent" ? <MailCheck size={14} className="text-emerald-600" /> : <MailWarning size={14} className="text-amber-600" />}
+                          <span>{emailStatusCopy(emailStatus)}</span>
+                          {invoice.referenceNumber && <span className="truncate">• Ref {invoice.referenceNumber}</span>}
                         </div>
                       </div>
                     </div>
 
-                    <div className="rounded-lg bg-slate-50 p-3">
-                      <div className="flex items-end justify-between gap-3">
-                        <div>
-                          <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Total</div>
-                          <div className="mt-1 text-xl font-bold text-slate-950">{formatINR(invoice.totalAmount)}</div>
-                        </div>
-                        <div className="text-right text-xs text-slate-500">
-                          GST {invoice.invoiceMode === "non_gst" ? "-" : formatINR(invoice.gstAmount || 0)}
-                        </div>
+                    <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+                      <div className="mr-1 min-w-28 rounded-lg bg-slate-50 px-3 py-2 text-right">
+                        <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Total</div>
+                        <div className="text-sm font-black text-slate-950">{formatINR(invoice.totalAmount)}</div>
                       </div>
-                      <div className="mt-3 grid grid-cols-2 gap-2">
-                        <a href={pdfHref} target="_blank" className="inline-flex h-9 items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 hover:text-brand">View</a>
-                        <a href={pdfHref} className="inline-flex h-9 items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 hover:text-brand"><Download size={14} /> PDF</a>
-                        <a href={pdfHref} target="_blank" className="inline-flex h-9 items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 hover:text-brand"><Printer size={14} /> Print</a>
-                        {!manager && invoice.status !== "paid" && <PayButton amount={invoice.totalAmount} purpose="invoice" refId={invoiceId} label="Pay" />}
-                      </div>
-                    </div>
-                  </div>
-
-                  {manager && (permissions.invoice || permissions.payment || permissions.edit) && (
-                    <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-200 pt-3">
-                      {permissions.invoice && <form action={sendInvoiceToStudent}>
+                      <IconAction href={pdfHref} title="View invoice" icon={<Eye size={14} />} tone="brand" />
+                      <IconAction href={pdfHref} title="Download PDF" icon={<Download size={14} />} download />
+                      <IconAction href={pdfHref} title="Print invoice" icon={<Printer size={14} />} />
+                      {!manager && invoice.status !== "paid" && <PayButton amount={invoice.totalAmount} purpose="invoice" refId={invoiceId} label="Pay" />}
+                      {manager && permissions.invoice && (
+                        <form action={sendInvoiceToStudent}>
                           <input type="hidden" name="invoice" value={invoiceId} />
                           <input type="hidden" name="studentFilter" value={selectedStudent} />
-                          <button className="inline-flex h-9 items-center gap-1 rounded-lg bg-brand px-3 text-xs font-bold text-white shadow-sm hover:bg-brand-700"><Send size={14} /> Send to Student</button>
-                        </form>}
-                      {permissions.invoice && <form action={sendInvoiceWhatsAppTest}>
+                          <button title="Send to student" aria-label="Send invoice to student" className="grid h-8 w-8 place-items-center rounded-lg border border-brand/20 bg-brand text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-brand-700 hover:shadow-md"><Send size={14} /></button>
+                        </form>
+                      )}
+                      {manager && permissions.invoice && (
+                        <form action={sendInvoiceWhatsAppTest}>
                           <input type="hidden" name="invoice" value={invoiceId} />
                           <input type="hidden" name="studentFilter" value={selectedStudent} />
-                          <button className="inline-flex h-9 items-center gap-1 rounded-lg border border-emerald-200 px-3 text-xs font-bold text-emerald-700"><MessageCircle size={14} /> WhatsApp Test</button>
-                        </form>}
-                      {permissions.payment && (invoice.type !== "credits" || permissions.credit) && invoice.status !== "paid" && invoice.status !== "cancelled" && (
+                          <button title="Send WhatsApp test" aria-label="Send WhatsApp test" className="grid h-8 w-8 place-items-center rounded-lg border border-emerald-200 bg-white text-emerald-700 shadow-sm transition hover:-translate-y-0.5 hover:bg-emerald-50 hover:shadow-md"><MessageCircle size={14} /></button>
+                        </form>
+                      )}
+                      {manager && permissions.payment && (invoice.type !== "credits" || permissions.credit) && invoice.status !== "paid" && invoice.status !== "cancelled" && (
                         <InvoicePaymentModal
                           invoiceId={invoiceId}
                           amount={invoice.amount || 0}
@@ -832,10 +898,13 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
                           action={markInvoicePaid}
                         />
                       )}
-                      {permissions.edit && invoice.status !== "cancelled" && (
-                        <form action={cancelInvoice}><input type="hidden" name="invoice" value={invoiceId} /><button className="inline-flex h-9 items-center gap-1 rounded-lg border border-amber-200 px-3 text-xs font-bold text-amber-700"><XCircle size={14} /> Cancel</button></form>
+                      {manager && permissions.edit && invoice.status !== "cancelled" && (
+                        <form action={cancelInvoice}>
+                          <input type="hidden" name="invoice" value={invoiceId} />
+                          <button title="Cancel invoice" aria-label="Cancel invoice" className="grid h-8 w-8 place-items-center rounded-lg border border-amber-200 bg-white text-amber-700 shadow-sm transition hover:-translate-y-0.5 hover:bg-amber-50 hover:shadow-md"><XCircle size={14} /></button>
+                        </form>
                       )}
-                      {permissions.edit && (invoice.type !== "credits" || invoice.status !== "paid" || permissions.credit) && (
+                      {manager && permissions.edit && (invoice.type !== "credits" || invoice.status !== "paid" || permissions.credit) && (
                         <DeleteInvoiceButton
                           invoiceId={invoiceId}
                           invoiceNumber={invoice.invoiceNumber || ""}
@@ -847,10 +916,41 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
                         />
                       )}
                     </div>
-                  )}
+                  </div>
                 </article>
               );
             })}
+          </div>
+        )}
+
+        {filteredInvoices.length > perPage && (
+          <div className="mt-4 flex flex-col gap-3 border-t border-slate-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-slate-500">Page {safePage} of {totalPages}</p>
+            <div className="flex items-center gap-2">
+              <a
+                href={pageHref(Math.max(1, safePage - 1), selectedStudent, selectedStatus)}
+                aria-disabled={safePage <= 1}
+                className={`grid h-9 w-9 place-items-center rounded-lg border text-slate-700 transition ${safePage <= 1 ? "pointer-events-none border-slate-200 bg-slate-50 opacity-50" : "border-slate-200 bg-white hover:-translate-y-0.5 hover:border-brand/30 hover:text-brand"}`}
+              >
+                <ChevronLeft size={16} />
+              </a>
+              {Array.from({ length: totalPages }).slice(Math.max(0, safePage - 3), Math.min(totalPages, safePage + 2)).map((_, index, pages) => {
+                const first = Math.max(1, safePage - 2);
+                const page = first + index;
+                return (
+                  <a key={page} href={pageHref(page, selectedStudent, selectedStatus)} className={`grid h-9 min-w-9 place-items-center rounded-lg border px-3 text-sm font-bold transition ${page === safePage ? "border-brand bg-brand text-white" : "border-slate-200 bg-white text-slate-700 hover:-translate-y-0.5 hover:border-brand/30 hover:text-brand"}`}>
+                    {page}
+                  </a>
+                );
+              })}
+              <a
+                href={pageHref(Math.min(totalPages, safePage + 1), selectedStudent, selectedStatus)}
+                aria-disabled={safePage >= totalPages}
+                className={`grid h-9 w-9 place-items-center rounded-lg border text-slate-700 transition ${safePage >= totalPages ? "pointer-events-none border-slate-200 bg-slate-50 opacity-50" : "border-slate-200 bg-white hover:-translate-y-0.5 hover:border-brand/30 hover:text-brand"}`}
+              >
+                <ChevronRight size={16} />
+              </a>
+            </div>
           </div>
         )}
       </section>

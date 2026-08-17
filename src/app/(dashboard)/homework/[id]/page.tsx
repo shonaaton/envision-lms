@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useParams } from "next/navigation";
 import { Chess } from "chess.js";
 import { toast } from "sonner";
-import { BookOpen, Bot, CheckCircle2, ChevronLeft, ChevronRight, Clock, FileQuestion, FileText, Flag, Gamepad2, HelpCircle, Play, Trophy } from "lucide-react";
+import { Award, BookOpen, Bot, CheckCircle2, ChevronLeft, ChevronRight, Clock, Coins, FileQuestion, FileText, Flag, Gamepad2, HelpCircle, Play, Trophy, Zap } from "lucide-react";
 import { buildMoveHintStyles, legalTargetsFromGame } from "@/lib/chessboardUi";
 import { isPromotionMove, promotionFromBoardPiece, type PendingPromotion, type PromotionPiece } from "@/lib/chessPromotion";
 import { normalizePermissiveFen } from "@/lib/pgnLibrary";
@@ -31,6 +31,13 @@ function formatTime(seconds: number) {
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
   return `${mins}:${String(secs).padStart(2, "0")}`;
+}
+
+function rewardMessage(reward: { xp?: number; coins?: number; badge?: string } | undefined) {
+  if (!reward) return "";
+  const parts = [`+${reward.xp || 0} XP`, `+${reward.coins || 0} coins`];
+  if (reward.badge) parts.push(`Badge unlocked: ${reward.badge}`);
+  return parts.join(", ");
 }
 
 function extractHeader(pgn: string, name: string) {
@@ -166,7 +173,8 @@ export default function HomeworkAttemptPage() {
     }
     const submission = await response.json();
     setHw((current: any) => ({ ...current, mySubmission: submission }));
-    toast.success(`Submitted. Score: ${submission.totalScore}, accuracy: ${submission.accuracy}%`);
+    const rewardText = rewardMessage(submission.rewardSummary);
+    toast.success(`Submitted. Score: ${submission.totalScore}, accuracy: ${submission.accuracy}%${rewardText ? `. ${rewardText}` : ""}`);
   }
 
   return (
@@ -235,6 +243,14 @@ function CompletedReport({ hw, activities, submission }: { hw: any; activities: 
           </div>
         </div>
       </header>
+
+      {submission.rewardSummary && (
+        <section className="mb-4 grid gap-3 md:grid-cols-3">
+          <ReportStat icon={<Zap size={16} className="text-purple-600" />} label="XP Earned" value={submission.rewardSummary.xp || 0} />
+          <ReportStat icon={<Coins size={16} className="text-amber-600" />} label="Coins Earned" value={submission.rewardSummary.coins || 0} />
+          <ReportStat icon={<Award size={16} className="text-emerald-600" />} label="Badge" value={submission.rewardSummary.badge || "-"} />
+        </section>
+      )}
 
       <section className="mb-4 grid gap-3 md:grid-cols-4">
         <ReportStat label="Mistakes" value={submission.metrics?.mistakes || 0} />
@@ -373,9 +389,10 @@ function ReviewPgnBoard({ pgn }: { pgn: string }) {
   );
 }
 
-function ReportStat({ label, value }: { label: string; value: string | number }) {
+function ReportStat({ label, value, icon }: { label: string; value: string | number; icon?: ReactNode }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
+      {icon ? <div className="mb-2">{icon}</div> : null}
       <div className="text-2xl font-black text-brand">{value}</div>
       <div className="text-xs font-bold uppercase tracking-wide text-slate-500">{label}</div>
     </div>

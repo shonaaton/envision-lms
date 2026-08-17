@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { Homework, Submission } from "@/models/Homework";
+import { StudentReward } from "@/models/ClassroomLive";
 import { homeworkSchema } from "@/lib/validation";
 import { canStudentAccessHomework } from "@/lib/homeworkAccess";
 import { cancelHomeworkDeadlineReminders, queueHomeworkDeadlineReminders } from "@/lib/homeworkEmailReminders";
@@ -20,8 +21,23 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
   if (role === "student" && !(await canStudentAccessHomework(hw, userId))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  const submission = role === "student" ? await Submission.findOne({ homework: params.id, student: userId }).lean() : null;
-  return NextResponse.json({ ...hw, mySubmission: submission });
+  const [submission, reward]: [any, any] = role === "student"
+    ? await Promise.all([
+        Submission.findOne({ homework: params.id, student: userId }).lean(),
+        StudentReward.findOne({ student: userId, sourceType: "homework_submission", sourceId: params.id }).lean(),
+      ])
+    : [null, null];
+  const mySubmission = submission ? {
+    ...submission,
+    rewardSummary: reward
+      ? {
+          xp: Number(reward.xp || 0),
+          coins: Number(reward.coins || 0),
+          badge: String(reward.badge || ""),
+        }
+      : undefined,
+  } : null;
+  return NextResponse.json({ ...hw, mySubmission });
 }
 
 export async function PUT(req: Request, { params }: { params: { id: string } }) {

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { Homework, Submission } from "@/models/Homework";
+import { StudentReward } from "@/models/ClassroomLive";
 import { recordActivity } from "@/lib/activity";
 import { canStudentAccessHomework } from "@/lib/homeworkAccess";
 
@@ -9,6 +10,12 @@ export const dynamic = "force-dynamic";
 
 function answerKey(activityId: string, itemId: string) {
   return `${activityId}:${itemId}`;
+}
+
+function homeworkBadge(totalAutoChecked: number, accuracy: number, hintsUsed: number, mistakes: number) {
+  if (totalAutoChecked >= 5 && accuracy === 100 && hintsUsed === 0 && mistakes === 0) return "Homework Hero";
+  if (totalAutoChecked >= 3 && accuracy >= 90) return "Homework Ace";
+  return undefined;
 }
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
@@ -164,5 +171,29 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     metadata: { totalScore, accuracy, attemptsUsed: attemptsUsed + 1, mistakes, hintsUsed },
   });
 
-  return NextResponse.json(sub);
+  const xp = Math.max(1, Math.round(totalScore));
+  const coins = accuracy >= 90 ? 3 : accuracy >= 60 ? 2 : 1;
+  const badge = homeworkBadge(totalAutoChecked, accuracy, hintsUsed, mistakes);
+  const reward: any = await StudentReward.findOneAndUpdate(
+    { student, sourceType: "homework_submission", sourceId: hw._id },
+    {
+      student,
+      sourceType: "homework_submission",
+      sourceId: hw._id,
+      xp,
+      coins,
+      badge,
+      reason: `Homework submitted: ${hw.title}`,
+    },
+    { upsert: true, new: true }
+  ).lean();
+
+  return NextResponse.json({
+    ...sub.toObject(),
+    rewardSummary: {
+      xp: reward?.xp || xp,
+      coins: reward?.coins || coins,
+      badge: reward?.badge || "",
+    },
+  });
 }

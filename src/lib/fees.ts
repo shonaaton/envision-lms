@@ -234,9 +234,11 @@ export async function ensureMonthlyInvoices(now = new Date()) {
   const horizon = new Date(now.getTime() + 3 * DAY);
   for (const assignment of monthlyAssignments as any[]) {
     const student = assignment.student;
-    if (!student || student.isActive === false || student.role !== "student") continue;
+    const studentId = student?._id?.toString?.() || student?.toString?.() || "";
+    if (!studentId || !student || student.isActive === false || student.role !== "student") continue;
     const start = new Date(assignment.firstDueDate || assignment.billingStartDate);
     if (start > horizon || !assignment.plan || assignment.plan.isActive === false) continue;
+    const deletedDueDateKeys = new Set((assignment.deletedMonthlyDueDates || []).map((date: any) => new Date(date).getTime()));
 
     const months =
       (horizon.getFullYear() - start.getFullYear()) * 12 +
@@ -245,6 +247,7 @@ export async function ensureMonthlyInvoices(now = new Date()) {
     for (let offset = 0; offset <= months; offset += 1) {
       const dueDate = monthlyDueDate(start, offset);
       if (dueDate > horizon) continue;
+      if (deletedDueDateKeys.has(dueDate.getTime())) continue;
       const exists = await Invoice.exists({
         assignment: assignment._id,
         type: "monthly",
@@ -252,7 +255,7 @@ export async function ensureMonthlyInvoices(now = new Date()) {
       });
       if (!exists) {
         await createInvoice({
-          student: assignment.student.toString(),
+          student: studentId,
           plan: assignment.plan._id.toString(),
           assignment: assignment._id.toString(),
           type: "monthly",

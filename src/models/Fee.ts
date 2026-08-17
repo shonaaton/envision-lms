@@ -50,6 +50,7 @@ const FeeAssignmentSchema = new Schema(
     creditBalance: { type: Number, default: 0 },
     totalCreditsPurchased: { type: Number, default: 0 },
     totalCreditsConsumed: { type: Number, default: 0 },
+    deletedMonthlyDueDates: [{ type: Date }],
     lastCreditReminderAt: Date,
     lastCreditReminderTo: String,
     lastCreditReminderStatus: { type: String, enum: ["sent", "failed", "skipped", "missing_email", "not_configured"], default: undefined },

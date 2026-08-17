@@ -211,8 +211,10 @@ async function deleteInvoice(formData: FormData) {
   if (!session) throw new Error("Forbidden");
   await dbConnect();
   const invoiceId = String(formData.get("invoice") || "");
+  const returnStudent = String(formData.get("studentFilter") || "");
+  const returnPath = `/fees/invoices${returnStudent ? `?student=${encodeURIComponent(returnStudent)}&` : "?"}`;
   const invoice: any = await Invoice.findById(invoiceId).lean();
-  if (!invoice) return;
+  if (!invoice) redirect(`${returnPath}delete=missing`);
   if (invoice.type === "credits" && invoice.status === "paid" && !(await canAccessFeature("invoices", session.user as any, "credit"))) {
     throw new Error("Forbidden");
   }
@@ -225,9 +227,14 @@ async function deleteInvoice(formData: FormData) {
       });
     }
   }
+  if (invoice.type === "monthly" && invoice.assignment && invoice.dueDate) {
+    await FeeAssignment.findByIdAndUpdate(invoice.assignment, {
+      $addToSet: { deletedMonthlyDueDates: new Date(invoice.dueDate) },
+    });
+  }
+  await Payment.deleteMany({ purpose: "invoice", refId: invoice._id }).catch(() => null);
   await Promise.all([
     CreditLedger.deleteMany({ invoice: invoice._id }),
-    Payment.deleteMany({ purpose: "invoice", refId: invoice._id }),
     Invoice.findByIdAndDelete(invoice._id),
   ]);
   await recordActivity({
@@ -249,6 +256,7 @@ async function deleteInvoice(formData: FormData) {
   revalidatePath("/fees/invoices");
   revalidatePath("/fees/student-fees");
   revalidatePath("/fees");
+  redirect(`${returnPath}delete=deleted`);
 }
 
 async function sendInvoiceToStudent(formData: FormData) {
@@ -502,6 +510,12 @@ function paymentBanner(status: string) {
   return null;
 }
 
+function deleteBanner(status: string) {
+  if (status === "deleted") return { tone: "border-emerald-200 bg-emerald-50 text-emerald-800", icon: CheckCircle2, text: "Invoice deleted successfully." };
+  if (status === "missing") return { tone: "border-amber-200 bg-amber-50 text-amber-900", icon: MailWarning, text: "That invoice was already removed." };
+  return null;
+}
+
 function invoiceTypeLabel(type: string) {
   if (type === "credits") return "Credit Plan Invoice";
   if (type === "monthly") return "Monthly Plan Invoice";
@@ -551,6 +565,7 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
   const banner = sendBanner(sendStatus);
   const reminderBanner = bulkBanner(params);
   const paidBanner = paymentBanner(queryValue(params, "payment"));
+  const deletedBanner = deleteBanner(queryValue(params, "delete"));
   const waBanner = whatsappBanner(queryValue(params, "whatsapp"), queryValue(params, "waError"));
   const paidCount = invoices.filter((invoice: any) => invoice.status === "paid").length;
   const unpaidCount = invoices.filter((invoice: any) => invoice.status === "unpaid" || invoice.status === "overdue").length;
@@ -591,6 +606,12 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
         <div className={`mb-4 flex items-center gap-3 rounded-lg border px-4 py-3 text-sm font-semibold ${paidBanner.tone}`}>
           <paidBanner.icon size={18} />
           {paidBanner.text}
+        </div>
+      )}
+      {deletedBanner && (
+        <div className={`mb-4 flex items-center gap-3 rounded-lg border px-4 py-3 text-sm font-semibold ${deletedBanner.tone}`}>
+          <deletedBanner.icon size={18} />
+          {deletedBanner.text}
         </div>
       )}
       {waBanner && (
@@ -745,7 +766,7 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
                       {permissions.edit && invoice.status !== "cancelled" && (
                         <form action={cancelInvoice}><input type="hidden" name="invoice" value={invoiceId} /><button className="inline-flex h-9 items-center gap-1 rounded-lg border border-amber-200 px-3 text-xs font-bold text-amber-700"><XCircle size={14} /> Cancel</button></form>
                       )}
-                      {permissions.edit && (invoice.type !== "credits" || invoice.status !== "paid" || permissions.credit) && <form action={deleteInvoice}><input type="hidden" name="invoice" value={invoiceId} /><button className="inline-flex h-9 items-center gap-1 rounded-lg border border-rose-200 px-3 text-xs font-bold text-rose-700"><Trash2 size={14} /> Delete</button></form>}
+                      {permissions.edit && (invoice.type !== "credits" || invoice.status !== "paid" || permissions.credit) && <form action={deleteInvoice}><input type="hidden" name="invoice" value={invoiceId} /><input type="hidden" name="studentFilter" value={selectedStudent} /><button className="inline-flex h-9 items-center gap-1 rounded-lg border border-rose-200 px-3 text-xs font-bold text-rose-700"><Trash2 size={14} /> Delete</button></form>}
                     </div>
                   )}
                 </article>

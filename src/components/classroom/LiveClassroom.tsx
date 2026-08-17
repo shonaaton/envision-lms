@@ -516,6 +516,16 @@ function entityId(value: any) {
   return value?._id?.toString?.() || value?.toString?.() || "";
 }
 
+function publicUserLabel(user: any) {
+  const username = String(user?.username || "").trim();
+  if (username) return username;
+  const name = String(user?.name || "").trim();
+  if (name) return name;
+  const email = String(user?.email || "").trim();
+  if (!email) return "Student";
+  return email.includes("@") ? email.split("@")[0] : email;
+}
+
 function studentPresenceState(participant: any) {
   if (!participant) {
     return {
@@ -1144,6 +1154,20 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     const lastSeen = participant.lastSeenAt ? new Date(participant.lastSeenAt) : null;
     return Boolean(lastSeen && Date.now() - lastSeen.getTime() <= 2 * 60000);
   });
+  const activeCoachParticipants = useMemo(
+    () =>
+      (live?.participants || []).filter((participant: any) => {
+        if (!isCoach(participant.role)) return false;
+        if (participant.leftAt || participant.presenceStatus === "left") return false;
+        const lastSeen = participant.lastSeenAt ? new Date(participant.lastSeenAt) : null;
+        return Boolean(lastSeen && Date.now() - lastSeen.getTime() <= 2 * 60000);
+      }),
+    [live?.participants]
+  );
+  const joinedStudentRowsForStudents = useMemo(
+    () => studentPresenceRows.filter((row: StudentPresenceRow) => row.presence.key === "joined" || row.presence.key === "idle"),
+    [studentPresenceRows]
+  );
   const canStudentLeaveWaitingRoom = !coach && !activeCoachInRoom;
 
   useEffect(() => {
@@ -2592,6 +2616,11 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       })
       .sort((a: any, b: any) => b.points - a.points);
   }, [students, data?.responses]);
+  const privilegedLeaderboardViewer = role === "admin" || role === "sub-admin";
+  const visibleLeaderboardRows = privilegedLeaderboardViewer ? leaderboardRows : leaderboardRows.slice(0, 5);
+  const viewerLeaderboardRank = !coach
+    ? leaderboardRows.findIndex((row: any) => entityId(row) === userId || entityId(row._id) === userId) + 1
+    : 0;
 
   const classSummary = useMemo(() => {
     const now = live?.endedAt || new Date().toISOString();
@@ -3082,53 +3111,103 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
           <div className="min-h-0 flex-1 overflow-auto p-2">
             {activeTab === "students" && (
               <div className="space-y-2">
-                <div className="rounded-lg border border-slate-200 p-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <h3 className="text-sm font-semibold text-slate-950">Classroom Students</h3>
-                      <p className="mt-1 text-xs text-slate-500">Shows whether each assigned student has actually opened this live classroom.</p>
+                {coach ? (
+                  <>
+                    <div className="rounded-lg border border-slate-200 p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <h3 className="text-sm font-semibold text-slate-950">Classroom Students</h3>
+                          <p className="mt-1 text-xs text-slate-500">Shows whether each assigned student has actually opened this live classroom.</p>
+                        </div>
+                        <span className="shrink-0 rounded-md bg-purple-50 px-2 py-1 text-[11px] font-bold text-purple-800">
+                          {joinedStudentCount}/{activeStudents.length} joined
+                        </span>
+                      </div>
                     </div>
-                    <span className="shrink-0 rounded-md bg-purple-50 px-2 py-1 text-[11px] font-bold text-purple-800">
-                      {joinedStudentCount}/{activeStudents.length} joined
-                    </span>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  {studentPresenceRows.map(({ student, presence }: StudentPresenceRow) => {
-                    const studentKey = entityId(student);
-                    const hasControl = (live?.boardControlStudents || []).some((s: any) => entityId(s) === studentKey);
-                    return (
-                      <div key={student._id} className="flex items-center justify-between rounded-lg border border-slate-200 p-2">
-                        <div className="flex min-w-0 items-center gap-3">
-                          <div className="grid h-8 w-8 place-items-center rounded-full bg-purple-100 text-[11px] font-bold text-purple-800">{initials(student.name)}</div>
-                          <div className="min-w-0">
-                            <div className="text-xs font-semibold text-slate-950">{student.name}</div>
-                            <div className="truncate text-xs text-slate-500">{student.username || student.email}</div>
-                            <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                              <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold", presence.className)}>{presence.label}</span>
-                              {presence.detail ? <span className="text-[10px] text-slate-400">{presence.detail}</span> : null}
+                    <div className="space-y-2">
+                      {studentPresenceRows.map(({ student, presence }: StudentPresenceRow) => {
+                        const studentKey = entityId(student);
+                        const hasControl = (live?.boardControlStudents || []).some((s: any) => entityId(s) === studentKey);
+                        return (
+                          <div key={student._id} className="flex items-center justify-between rounded-lg border border-slate-200 p-2">
+                            <div className="flex min-w-0 items-center gap-3">
+                              <div className="grid h-8 w-8 place-items-center rounded-full bg-purple-100 text-[11px] font-bold text-purple-800">{initials(student.name)}</div>
+                              <div className="min-w-0">
+                                <div className="text-xs font-semibold text-slate-950">{student.name}</div>
+                                <div className="truncate text-xs text-slate-500">{student.username || student.email}</div>
+                                <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                                  <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold", presence.className)}>{presence.label}</span>
+                                  {presence.detail ? <span className="text-[10px] text-slate-400">{presence.detail}</span> : null}
+                                </div>
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => {
+                                const current = Array.from(new Set((live?.boardControlStudents || []).map((s: any) => entityId(s)).filter(Boolean)));
+                                patch({
+                                  boardControlStudents: hasControl ? current.filter((id: any) => id !== studentKey) : [...current, studentKey],
+                                  studentMovesEnabled: true,
+                                  mode: "student_move",
+                                });
+                              }}
+                              className={`rounded-md px-3 py-2 text-xs font-semibold ${hasControl ? "bg-purple-700 text-white" : "bg-slate-100 text-slate-700"}`}
+                            >
+                              {hasControl ? "Control on" : "Give move"}
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="rounded-lg border border-slate-200 p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <h3 className="text-sm font-semibold text-slate-950">Live Classroom Status</h3>
+                          <p className="mt-1 text-xs text-slate-500">See whether the coach is online and which participants have joined the room.</p>
+                        </div>
+                        <span className={`shrink-0 rounded-md px-2 py-1 text-[11px] font-bold ${activeCoachInRoom ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+                          {activeCoachInRoom ? "Coach online" : "Coach offline"}
+                        </span>
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                        <div className="rounded-md bg-slate-50 p-2">
+                          <div className="font-semibold text-slate-900">Coach status</div>
+                          <div className="mt-1 text-slate-500">
+                            {activeCoachParticipants.length
+                              ? activeCoachParticipants.map((participant: any) => publicUserLabel(participant.user)).join(", ")
+                              : "No coach is active in the room right now."}
+                          </div>
+                        </div>
+                        <div className="rounded-md bg-slate-50 p-2">
+                          <div className="font-semibold text-slate-900">Students joined</div>
+                          <div className="mt-1 text-slate-500">{joinedStudentRowsForStudents.length}/{activeStudents.length} currently active</div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      {joinedStudentRowsForStudents.length ? joinedStudentRowsForStudents.map(({ student, presence }: StudentPresenceRow) => (
+                        <div key={student._id} className="flex items-center justify-between rounded-lg border border-slate-200 p-2">
+                          <div className="flex min-w-0 items-center gap-3">
+                            <div className="grid h-8 w-8 place-items-center rounded-full bg-purple-100 text-[11px] font-bold text-purple-800">{initials(publicUserLabel(student))}</div>
+                            <div className="min-w-0">
+                              <div className="text-xs font-semibold text-slate-950">{publicUserLabel(student)}</div>
+                              <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                                <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold", presence.className)}>{presence.label}</span>
+                                {presence.detail ? <span className="text-[10px] text-slate-400">{presence.detail}</span> : null}
+                              </div>
                             </div>
                           </div>
                         </div>
-                        {coach && (
-                          <button
-                            onClick={() => {
-                              const current = Array.from(new Set((live?.boardControlStudents || []).map((s: any) => entityId(s)).filter(Boolean)));
-                              patch({
-                                boardControlStudents: hasControl ? current.filter((id: any) => id !== studentKey) : [...current, studentKey],
-                                studentMovesEnabled: true,
-                                mode: "student_move",
-                              });
-                            }}
-                            className={`rounded-md px-3 py-2 text-xs font-semibold ${hasControl ? "bg-purple-700 text-white" : "bg-slate-100 text-slate-700"}`}
-                          >
-                            {hasControl ? "Control on" : "Give move"}
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+                      )) : (
+                        <div className="rounded-lg border border-dashed border-slate-200 p-5 text-center text-sm text-slate-500">
+                          No students have joined yet.
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
             )}
 
@@ -3328,20 +3407,31 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
               <div className="space-y-4">
                 <div className="rounded-lg border border-slate-200 p-4">
                   <h3 className="font-semibold text-slate-950">Live Leaderboard</h3>
-                  <p className="mt-1 text-sm text-slate-500">Quiz and Ask Everyone results update here.</p>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Quiz and Ask Everyone results update here.
+                    {!privilegedLeaderboardViewer ? " Only the top 5 students are shown in this view." : ""}
+                  </p>
+                  {!coach && viewerLeaderboardRank > 0 ? (
+                    <div className="mt-3 inline-flex rounded-md bg-purple-50 px-3 py-1 text-xs font-semibold text-purple-800">
+                      Your rank: #{viewerLeaderboardRank}
+                    </div>
+                  ) : null}
                 </div>
                 <div className="overflow-hidden rounded-lg border border-slate-200">
                   <div className="grid grid-cols-[60px_1fr_86px_88px] border-b bg-slate-50 px-3 py-3 text-xs font-semibold text-slate-500">
                     <span>Rank</span><span>Student</span><span>Points</span><span>Done</span>
                   </div>
-                  {leaderboardRows.length ? leaderboardRows.map((row: any, index: number) => (
+                  {visibleLeaderboardRows.length ? visibleLeaderboardRows.map((row: any) => {
+                    const rank = leaderboardRows.findIndex((entry: any) => entityId(entry) === entityId(row)) + 1;
+                    return (
                     <div key={row._id} className="grid grid-cols-[60px_1fr_86px_88px] items-center border-b px-3 py-3 text-sm last:border-b-0">
-                      <span className="font-semibold text-slate-500">#{index + 1}</span>
-                      <span className="font-semibold text-slate-950">{row.name}<span className="block text-xs font-normal text-slate-500">{row.move || "No response yet"}</span></span>
+                      <span className="font-semibold text-slate-500">#{rank}</span>
+                      <span className="font-semibold text-slate-950">{publicUserLabel(row)}<span className="block text-xs font-normal text-slate-500">{row.move || "No response yet"}</span></span>
                       <span>{row.points}</span>
                       <span>{row.completed ? "Yes" : "No"}</span>
                     </div>
-                  )) : <div className="p-8 text-center text-sm text-slate-500">No quiz responses yet.</div>}
+                    );
+                  }) : <div className="p-8 text-center text-sm text-slate-500">No quiz responses yet.</div>}
                 </div>
               </div>
             )}

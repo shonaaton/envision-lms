@@ -1,3 +1,4 @@
+import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { Submission } from "@/models/Homework";
 import { Attendance } from "@/models/Attendance";
@@ -6,6 +7,7 @@ import { User } from "@/models/User";
 import { Batch } from "@/models/Batch";
 import { Classroom } from "@/models/Classroom";
 import { Award, Coins, Trophy, Zap } from "lucide-react";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -17,11 +19,27 @@ function objectId(value: any) {
   return value?._id?.toString?.() ?? value?.toString?.() ?? "";
 }
 
+function publicUserLabel(user: any) {
+  const username = String(user?.username || "").trim();
+  if (username) return username;
+  const name = String(user?.name || "").trim();
+  if (name) return name;
+  const email = String(user?.email || "").trim();
+  if (!email) return "Student";
+  return email.includes("@") ? email.split("@")[0] : email;
+}
+
 export default async function LeaderboardPage({
   searchParams,
 }: {
   searchParams: { scope?: string; rankBy?: string; batch?: string; course?: string; level?: string; classroom?: string };
 }) {
+  const session = await auth();
+  if (!session) redirect("/login");
+  const role = (session.user as any).role as "student" | "instructor" | "admin" | "sub-admin";
+  const userId = (session.user as any).id as string;
+  const privilegedViewer = role === "admin" || role === "sub-admin";
+
   await dbConnect();
   const [students, submissions, attendance, liveResponses, rewards, batches, classrooms] = await Promise.all([
     User.find({ role: "student", isActive: { $ne: false } }, { passwordHash: 0 }).populate("batches", "name").lean(),
@@ -120,6 +138,8 @@ export default async function LeaderboardPage({
     return {
       id,
       name: student.name,
+      username: student.username || "",
+      email: student.email || "",
       batchNames: (student.batches || []).map((batch: any) => batch.name).join(", "),
       totalPoints,
       homeworkCompleted: hw.length,
@@ -136,6 +156,9 @@ export default async function LeaderboardPage({
   });
 
   rows.sort((a: any, b: any) => (Number(b[rankBy as keyof typeof b] || 0) - Number(a[rankBy as keyof typeof a] || 0)));
+  const visibleRows = privilegedViewer ? rows : rows.slice(0, 5);
+  const currentStudentRank = role === "student" ? rows.findIndex((row: any) => row.id === userId) + 1 : 0;
+  const currentStudentRow = currentStudentRank > 0 ? rows[currentStudentRank - 1] : null;
   const title =
     scope === "batch"
       ? "Batch Leaderboard"
@@ -196,31 +219,47 @@ export default async function LeaderboardPage({
         <div className="rounded-lg border bg-white p-4 shadow-sm"><Zap className="text-purple-600" size={18} /><div className="mt-2 text-2xl font-semibold">{rows.reduce((s, r) => s + r.xp, 0)}</div><div className="text-xs text-slate-500">Total XP</div></div>
         <div className="rounded-lg border bg-white p-4 shadow-sm"><Coins className="text-amber-600" size={18} /><div className="mt-2 text-2xl font-semibold">{rows.reduce((s, r) => s + r.coins, 0)}</div><div className="text-xs text-slate-500">Coins Earned</div></div>
         <div className="rounded-lg border bg-white p-4 shadow-sm"><Award className="text-emerald-600" size={18} /><div className="mt-2 text-2xl font-semibold">{rows.reduce((s, r) => s + r.badges, 0)}</div><div className="text-xs text-slate-500">Badges Earned</div></div>
-        <div className="rounded-lg border bg-white p-4 shadow-sm"><Trophy className="text-sky-600" size={18} /><div className="mt-2 text-2xl font-semibold">{rows.length}</div><div className="text-xs text-slate-500">Ranked Students</div></div>
+        <div className="rounded-lg border bg-white p-4 shadow-sm"><Trophy className="text-sky-600" size={18} /><div className="mt-2 text-2xl font-semibold">{privilegedViewer ? rows.length : visibleRows.length}</div><div className="text-xs text-slate-500">{privilegedViewer ? "Ranked Students" : "Visible Students"}</div></div>
       </div>
 
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        {!privilegedViewer && (
+          <div className="mb-4 flex flex-col gap-3 rounded-lg border border-purple-100 bg-purple-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-950">Top 5 student leaderboard</h2>
+              <p className="mt-1 text-xs text-slate-600">Coach and student views show usernames only and limit the leaderboard to the top 5 students.</p>
+            </div>
+            {role === "student" && currentStudentRow ? (
+              <div className="rounded-md bg-white px-3 py-2 text-sm font-semibold text-purple-800 shadow-sm">
+                Your rank: #{currentStudentRank}
+              </div>
+            ) : null}
+          </div>
+        )}
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
             <thead className="text-xs uppercase text-slate-500"><tr className="border-b"><th className="px-3 py-3">Rank</th><th>Student</th><th>Batch</th><th>Total Points</th><th>Quiz Score</th><th>Tournament</th><th>Homework Completed</th><th>Accuracy</th><th>Attendance</th><th>XP</th><th>Coins</th><th>Badges</th></tr></thead>
             <tbody>
-              {rows.map((row, index) => (
-                <tr key={row.id} className="border-b last:border-0">
-                  <td className="px-3 py-3 font-semibold text-purple-700">#{index + 1}</td>
-                  <td className="font-medium">{row.name}</td>
-                  <td className="text-slate-500">{row.batchNames || "-"}</td>
-                  <td>{row.totalPoints}</td>
-                  <td>{row.quizScore}</td>
-                  <td>{row.tournamentPoints}</td>
-                  <td>{row.homeworkCompleted}</td>
-                  <td>{row.accuracy}%</td>
-                  <td>{row.attendance}%</td>
-                  <td>{row.xp}</td>
-                  <td>{row.coins}</td>
-                  <td>{row.badges}</td>
-                </tr>
-              ))}
-              {rows.length === 0 && (
+              {visibleRows.map((row) => {
+                const rank = rows.findIndex((entry: any) => entry.id === row.id) + 1;
+                return (
+                  <tr key={row.id} className="border-b last:border-0">
+                    <td className="px-3 py-3 font-semibold text-purple-700">#{rank}</td>
+                    <td className="font-medium">{publicUserLabel(row)}</td>
+                    <td className="text-slate-500">{row.batchNames || "-"}</td>
+                    <td>{row.totalPoints}</td>
+                    <td>{row.quizScore}</td>
+                    <td>{row.tournamentPoints}</td>
+                    <td>{row.homeworkCompleted}</td>
+                    <td>{row.accuracy}%</td>
+                    <td>{row.attendance}%</td>
+                    <td>{row.xp}</td>
+                    <td>{row.coins}</td>
+                    <td>{row.badges}</td>
+                  </tr>
+                );
+              })}
+              {visibleRows.length === 0 && (
                 <tr>
                   <td colSpan={12} className="px-3 py-10 text-center text-sm text-slate-500">No students match the selected leaderboard scope yet.</td>
                 </tr>

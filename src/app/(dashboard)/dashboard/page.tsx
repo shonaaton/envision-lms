@@ -1457,6 +1457,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
     payments,
     allPayments,
     invoices,
+    collectedFeeInvoices,
     pgns,
     loggedActivities,
   ] = await Promise.all([
@@ -1471,6 +1472,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
     Payment.find({ status: "paid", $or: [dateFilter("paidAt", from, to), dateFilter("createdAt", from, to)] }).populate("user", "name username").lean(),
     Payment.find({ status: "paid", $or: [dateFilter("paidAt", academicFrom, academicTo), dateFilter("createdAt", academicFrom, academicTo)] }).lean(),
     Invoice.find(dateFilter("createdAt", academicFrom, academicTo)).lean(),
+    Invoice.find({ status: "paid", paidAt: { $gte: academicFrom, $lte: academicTo } }).lean(),
     PGN.find(dateFilter("createdAt", from, to)).populate("uploadedBy", "name username").lean(),
     Activity.find(dateFilter("occurredAt", from, to))
       .populate("actor targetUser", "name username role")
@@ -1497,7 +1499,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
   const todayDue = invoices
     .filter((invoice: any) => invoice.status !== "paid" && invoice.status !== "cancelled" && new Date(invoice.dueDate) >= focusFrom && new Date(invoice.dueDate) <= focusTo)
     .reduce((sum: number, invoice: any) => sum + (invoice.totalAmount || 0), 0);
-  const collectedFees = invoices.filter((invoice: any) => invoice.status === "paid").reduce((sum: number, invoice: any) => sum + (invoice.totalAmount || 0), 0);
+  const collectedFees = collectedFeeInvoices.reduce((sum: number, invoice: any) => sum + (invoice.totalAmount || 0), 0);
   const pastDues = invoices.filter((invoice: any) => invoice.status !== "paid" && invoice.status !== "cancelled" && new Date(invoice.dueDate) < new Date()).reduce((sum: number, invoice: any) => sum + (invoice.totalAmount || 0), 0);
   const futureDues = invoices.filter((invoice: any) => invoice.status !== "paid" && invoice.status !== "cancelled" && new Date(invoice.dueDate) >= new Date()).reduce((sum: number, invoice: any) => sum + (invoice.totalAmount || 0), 0);
   const badDebt = invoices.filter((invoice: any) => invoice.status === "overdue" && new Date(invoice.dueDate) < new Date(Date.now() - 60 * DAY)).reduce((sum: number, invoice: any) => sum + (invoice.totalAmount || 0), 0);

@@ -22,24 +22,44 @@ function value(params: Record<string, string | string[] | undefined>, key: strin
   return typeof raw === "string" ? raw : fallback;
 }
 
-function dateFilter(params: Record<string, string | string[] | undefined>) {
-  const filter: any = {};
+function withinRange(dateValue: unknown, params: Record<string, string | string[] | undefined>) {
+  if (!dateValue) return false;
+  const date = new Date(dateValue as string | number | Date);
+  if (Number.isNaN(date.getTime())) return false;
   const from = value(params, "from");
   const to = value(params, "to");
   const month = value(params, "month");
   const fy = value(params, "fy");
   if (month) {
-    const date = new Date(`${month}-01`);
-    filter.createdAt = { $gte: new Date(date.getFullYear(), date.getMonth(), 1), $lte: new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999) };
-  } else if (from || to) {
-    filter.createdAt = {};
-    if (from) filter.createdAt.$gte = new Date(from);
-    if (to) filter.createdAt.$lte = new Date(`${to}T23:59:59.999`);
-  } else if (fy) {
-    const startYear = Number(fy);
-    filter.createdAt = { $gte: new Date(startYear, 3, 1), $lte: new Date(startYear + 1, 2, 31, 23, 59, 59, 999) };
+    const monthDate = new Date(`${month}-01`);
+    const rangeStart = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
+    const rangeEnd = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0, 23, 59, 59, 999);
+    return date >= rangeStart && date <= rangeEnd;
   }
-  return filter;
+  if (from || to) {
+    const rangeStart = from ? new Date(from) : new Date(-8640000000000000);
+    const rangeEnd = to ? new Date(`${to}T23:59:59.999`) : new Date(8640000000000000);
+    return date >= rangeStart && date <= rangeEnd;
+  }
+  if (fy) {
+    const startYear = Number(fy);
+    const rangeStart = new Date(startYear, 3, 1);
+    const rangeEnd = new Date(startYear + 1, 2, 31, 23, 59, 59, 999);
+    return date >= rangeStart && date <= rangeEnd;
+  }
+  return true;
+}
+
+function invoiceReportDate(invoice: any) {
+  return invoice.issueDate || invoice.dueDate || invoice.createdAt;
+}
+
+function paymentReportDate(payment: any) {
+  return payment.paidAt || payment.createdAt;
+}
+
+function isGstInvoice(invoice: any) {
+  return invoice.invoiceMode !== "non_gst" && (Number(invoice.gstAmount || 0) > 0 || Number(invoice.gstPercentage || 0) > 0);
 }
 
 function downloadHref(params: Record<string, string>, format: "xls" | "csv") {
@@ -82,15 +102,15 @@ async function getPreview(params: Record<string, string | string[] | undefined>)
   const type = value(params, "type", "fee");
   const planType = value(params, "planType");
   const student = value(params, "student");
-  const filter = dateFilter(params);
 
   const [invoices, payments, credits] = await Promise.all([
-    Invoice.find({ ...filter, ...(student ? { student } : {}) }).populate("student plan").sort({ createdAt: -1 }).limit(300).lean(),
-    Payment.find({ ...filter, ...(student ? { user: student } : {}) }).populate("user").sort({ createdAt: -1 }).limit(300).lean(),
-    CreditLedger.find({ ...filter, ...(student ? { student } : {}) }).populate("student invoice").sort({ createdAt: -1 }).limit(300).lean(),
+    Invoice.find(student ? { student } : {}).populate("student plan").sort({ createdAt: -1 }).lean(),
+    Payment.find(student ? { user: student } : {}).populate("user").sort({ createdAt: -1 }).lean(),
+    CreditLedger.find(student ? { student } : {}).populate("student invoice").sort({ createdAt: -1 }).lean(),
   ]);
 
-  const filteredInvoices = planType ? invoices.filter((invoice: any) => invoice.type === planType) : invoices;
+  const filteredInvoices = (planType ? invoices.filter((invoice: any) => invoice.type === planType) : invoices)
+    .filter((invoice: any) => withinRange(invoiceReportDate(invoice), params));
   let headers = ["Invoice", "Student", "Student ID", "Plan", "Status", "Amount", "Late Fee", "GST", "Total", "Due Date"];
   let rows = filteredInvoices.map((invoice: any) => [
     invoice.invoiceNumber,
@@ -107,7 +127,7 @@ async function getPreview(params: Record<string, string | string[] | undefined>)
 
   if (type === "transaction" || type === "payment") {
     headers = ["Payment ID", "User", "User ID", "Purpose", "Amount", "Status", "Paid At", "Invoice"];
-    rows = payments.map((payment: any) => [
+    rows = payments.filter((payment: any) => withinRange(paymentReportDate(payment), params)).map((payment: any) => [
       payment._id?.toString(),
       payment.user?.name,
       payment.user?.username || payment.user?._id?.toString?.() || "-",
@@ -119,7 +139,7 @@ async function getPreview(params: Record<string, string | string[] | undefined>)
     ]);
   } else if (type === "gst") {
     headers = ["Invoice", "Student", "Student ID", "Taxable", "GST %", "CGST", "SGST", "GST Total", "Total Amount", "Invoice Date", "Status"];
-    rows = filteredInvoices.filter((invoice: any) => invoice.invoiceMode === "included").map((invoice: any) => [
+    rows = filteredInvoices.filter((invoice: any) => isGstInvoice(invoice)).map((invoice: any) => [
       invoice.invoiceNumber,
       invoice.student?.name,
       invoice.student?.username || invoice.student?._id?.toString?.() || "-",
@@ -134,7 +154,7 @@ async function getPreview(params: Record<string, string | string[] | undefined>)
     ]);
   } else if (type === "collection") {
     headers = ["Type", "Student", "Student ID", "Credits", "Balance After", "Invoice", "Date", "Note"];
-    rows = credits.map((credit: any) => [
+    rows = credits.filter((credit: any) => withinRange(credit.createdAt, params)).map((credit: any) => [
       credit.type,
       credit.student?.name,
       credit.student?.username || credit.student?._id?.toString?.() || "-",

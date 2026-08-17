@@ -20,6 +20,17 @@ function monthRange() {
   };
 }
 
+function isWithinRange(value: unknown, from: Date, to: Date) {
+  if (!value) return false;
+  const date = new Date(value as string | number | Date);
+  const time = date.getTime();
+  return !Number.isNaN(time) && time >= from.getTime() && time <= to.getTime();
+}
+
+function invoiceIssuedAt(invoice: any) {
+  return invoice.issueDate || invoice.createdAt;
+}
+
 function Card({ label, value, note, icon: Icon }: { label: string; value: string | number; note: string; icon: any }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
@@ -75,21 +86,36 @@ export default async function FeesDashboardPage() {
   const { from, to } = monthRange();
   const invoiceFilter = manager ? {} : { student: userId };
   const [invoices, assignments, students, recentCredits, deletedInvoiceCount] = await Promise.all([
-    Invoice.find(invoiceFilter).populate("student plan").sort({ createdAt: -1 }).limit(80).lean(),
+    Invoice.find(invoiceFilter).populate("student plan").sort({ createdAt: -1 }).lean(),
     FeeAssignment.find(manager ? {} : { student: userId }).populate("student plan").sort({ creditBalance: 1 }).lean(),
     User.countDocuments({ role: "student", isActive: { $ne: false } }),
     CreditLedger.find(manager ? {} : { student: userId }).populate("student").sort({ createdAt: -1 }).limit(10).lean(),
     manager ? DeletedInvoice.countDocuments({}) : Promise.resolve(0),
   ]);
 
-  const currentInvoices = invoices.filter((i: any) => new Date(i.createdAt) >= from && new Date(i.createdAt) <= to);
-  const collected = currentInvoices.filter((i: any) => i.status === "paid").reduce((sum: number, i: any) => sum + i.totalAmount, 0);
-  const outstanding = currentInvoices.filter((i: any) => i.status !== "paid").reduce((sum: number, i: any) => sum + i.totalAmount, 0);
-  const gst = currentInvoices.reduce((sum: number, i: any) => sum + (i.gstAmount || 0), 0);
-  const late = currentInvoices.reduce((sum: number, i: any) => sum + (i.lateFee || 0), 0);
+  const now = new Date();
+  const next7Days = new Date(now);
+  next7Days.setDate(next7Days.getDate() + 7);
+  const currentMonthPaidInvoices = invoices.filter((invoice: any) => invoice.status === "paid" && isWithinRange(invoice.paidAt, from, to));
+  const currentMonthIssuedInvoices = invoices.filter((invoice: any) => isWithinRange(invoiceIssuedAt(invoice), from, to));
+  const outstandingInvoices = invoices.filter((invoice: any) => {
+    if (invoice.status === "paid" || invoice.status === "cancelled") return false;
+    return isWithinRange(invoice.dueDate, new Date(0), now);
+  });
+  const upcomingInvoices = invoices.filter((invoice: any) => {
+    if (invoice.status === "paid" || invoice.status === "cancelled") return false;
+    return isWithinRange(invoice.dueDate, now, next7Days) && new Date(invoice.dueDate).getTime() > now.getTime();
+  });
+  const collected = currentMonthPaidInvoices.reduce((sum: number, invoice: any) => sum + invoice.totalAmount, 0);
+  const outstanding = outstandingInvoices.reduce((sum: number, invoice: any) => sum + invoice.totalAmount, 0);
+  const upcoming = upcomingInvoices.reduce((sum: number, invoice: any) => sum + invoice.totalAmount, 0);
+  const gst = currentMonthPaidInvoices.reduce((sum: number, invoice: any) => sum + (invoice.gstAmount || 0), 0);
+  const late = currentMonthPaidInvoices.reduce((sum: number, invoice: any) => sum + (invoice.lateFee || 0), 0);
   const creditAssignments = assignments.filter((a: any) => a.type === "credits");
   const monthlyAssignments = assignments.filter((a: any) => a.type === "monthly");
   const lowCredit = creditAssignments.filter((a: any) => Number(a.creditBalance || 0) === 1);
+  const currentMonthLabel = from.toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+  const next7DaysLabel = next7Days.toLocaleDateString("en-IN");
 
   if (!manager) {
     const creditAssignment: any = creditAssignments[0];
@@ -236,14 +262,15 @@ export default async function FeesDashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <Card label="Outstanding Fees" value={formatINR(outstanding)} note="Current month" icon={AlertTriangle} />
-        <Card label="Fees Collected" value={formatINR(collected)} note="Current month" icon={Banknote} />
-        <Card label="GST Collected" value={formatINR(gst)} note="Current month" icon={Receipt} />
-        <Card label="Late Fees" value={formatINR(late)} note="Current month" icon={FileText} />
+        <Card label="Outstanding Fees" value={formatINR(outstanding)} note="Due on or before today" icon={AlertTriangle} />
+        <Card label="Fees Collected" value={formatINR(collected)} note={`Paid in ${currentMonthLabel}`} icon={Banknote} />
+        <Card label="GST Collected" value={formatINR(gst)} note={`Paid in ${currentMonthLabel}`} icon={Receipt} />
+        <Card label="Late Fees" value={formatINR(late)} note={`Collected in ${currentMonthLabel}`} icon={FileText} />
         <Card label="Active Students" value={students} note="Total active students" icon={Users} />
         <Card label="Credit Students" value={creditAssignments.length} note={`${lowCredit.length} low credit`} icon={WalletCards} />
         <Card label="Monthly Students" value={monthlyAssignments.length} note="Monthly plan assigned" icon={Banknote} />
-        <Card label="Recent Invoices" value={invoices.length} note="Latest 80 records" icon={Receipt} />
+        <Card label="Due In Next 7 Days" value={formatINR(upcoming)} note={`Unpaid invoices due by ${next7DaysLabel}`} icon={CalendarClock} />
+        <Card label="Recent Invoices" value={currentMonthIssuedInvoices.length} note={`Issued in ${currentMonthLabel}`} icon={Receipt} />
         <Card label="Deleted Invoices" value={deletedInvoiceCount} note="Audit trail with reasons" icon={FileX2} />
       </div>
 

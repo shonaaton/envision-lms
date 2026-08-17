@@ -285,9 +285,25 @@ export default async function StudentFeesPage({ searchParams }: { searchParams?:
   ]);
   const creditAssignments = assignments.filter((assignment: any) => assignment.type === "credits");
   const monthlyAssignments = assignments.filter((assignment: any) => assignment.type === "monthly");
+  const now = new Date();
   const outstandingRecords = assignments.filter((assignment: any) => {
     const studentInvoices = invoices.filter((invoice: any) => invoice.student?._id?.toString() === assignment.student?._id?.toString());
-    return studentInvoices.some((invoice: any) => invoice.status !== "paid");
+    return studentInvoices.some((invoice: any) => {
+      if (invoice.status === "paid" || invoice.status === "cancelled") return false;
+      return new Date(invoice.dueDate).getTime() <= now.getTime();
+    });
+  });
+  const upcomingRecords = assignments.filter((assignment: any) => {
+    const studentInvoices = invoices.filter((invoice: any) => invoice.student?._id?.toString() === assignment.student?._id?.toString());
+    const hasOutstanding = studentInvoices.some((invoice: any) => {
+      if (invoice.status === "paid" || invoice.status === "cancelled") return false;
+      return new Date(invoice.dueDate).getTime() <= now.getTime();
+    });
+    if (hasOutstanding) return false;
+    return studentInvoices.some((invoice: any) => {
+      if (invoice.status === "paid" || invoice.status === "cancelled") return false;
+      return new Date(invoice.dueDate).getTime() > now.getTime();
+    });
   });
 
   return (
@@ -358,10 +374,11 @@ export default async function StudentFeesPage({ searchParams }: { searchParams?:
 
       {view === "records" && (
         <>
-          <div className="mb-4 grid gap-2 sm:grid-cols-3">
+          <div className="mb-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
             <ToolCard href="/fees/student-fees?view=records" active={false} label="Credit Plans" count={creditAssignments.length} icon={<WalletCards size={17} />} tone="bg-emerald-50 text-emerald-700" />
             <ToolCard href="/fees/student-fees?view=records" active={false} label="Monthly Plans" count={monthlyAssignments.length} icon={<Receipt size={17} />} tone="bg-purple-50 text-purple-700" />
             <ToolCard href="/fees/student-fees?view=records" active={false} label="Outstanding" count={outstandingRecords.length} icon={<History size={17} />} tone="bg-amber-50 text-amber-700" />
+            <ToolCard href="/fees/student-fees?view=records" active={false} label="Upcoming" count={upcomingRecords.length} icon={<History size={17} />} tone="bg-sky-50 text-sky-700" />
           </div>
           <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
             <SectionTitle title="Student Fee Records" note="Student names open their invoice list." />
@@ -373,12 +390,16 @@ export default async function StudentFeesPage({ searchParams }: { searchParams?:
             ) : (
             <div className="overflow-x-auto">
               <table className="min-w-full text-left text-sm">
-                <thead className="border-b bg-slate-50 text-xs uppercase tracking-[0.08em] text-slate-500"><tr><th className="px-3 py-3">Student</th><th className="px-3 py-3">Plan</th><th className="px-3 py-3">Type</th><th className="px-3 py-3">Outstanding</th><th className="px-3 py-3">Late Fee</th><th className="px-3 py-3">Credits</th><th className="px-3 py-3">Status</th><th className="px-3 py-3">Last Paid</th><th className="px-3 py-3">Actions</th></tr></thead>
+                <thead className="border-b bg-slate-50 text-xs uppercase tracking-[0.08em] text-slate-500"><tr><th className="px-3 py-3">Student</th><th className="px-3 py-3">Plan</th><th className="px-3 py-3">Type</th><th className="px-3 py-3">Outstanding</th><th className="px-3 py-3">Upcoming</th><th className="px-3 py-3">Late Fee</th><th className="px-3 py-3">Credits</th><th className="px-3 py-3">Status</th><th className="px-3 py-3">Last Paid</th><th className="px-3 py-3">Actions</th></tr></thead>
                 <tbody>
                   {assignments.map((a: any) => {
                     const studentInvoices = invoices.filter((i: any) => i.student?._id?.toString() === a.student?._id?.toString());
-                    const outstanding = studentInvoices.filter((i: any) => i.status !== "paid").reduce((sum: number, i: any) => sum + i.totalAmount, 0);
-                    const lateFees = studentInvoices.reduce((sum: number, i: any) => sum + (i.lateFee || 0), 0);
+                    const unpaidInvoices = studentInvoices.filter((i: any) => i.status !== "paid" && i.status !== "cancelled");
+                    const outstandingInvoices = unpaidInvoices.filter((i: any) => new Date(i.dueDate).getTime() <= now.getTime());
+                    const upcomingInvoices = unpaidInvoices.filter((i: any) => new Date(i.dueDate).getTime() > now.getTime());
+                    const outstanding = outstandingInvoices.reduce((sum: number, i: any) => sum + i.totalAmount, 0);
+                    const upcoming = upcomingInvoices.reduce((sum: number, i: any) => sum + i.totalAmount, 0);
+                    const lateFees = outstandingInvoices.reduce((sum: number, i: any) => sum + (i.lateFee || 0), 0);
                     const lastPaid = studentInvoices.filter((i: any) => i.status === "paid" && i.paidAt).sort((x: any, y: any) => new Date(y.paidAt).getTime() - new Date(x.paidAt).getTime())[0];
                     const studentId = a.student?._id?.toString?.() || "";
                     return (
@@ -390,9 +411,10 @@ export default async function StudentFeesPage({ searchParams }: { searchParams?:
                         <td className="px-3 py-3">{a.plan?.name}</td>
                         <td className="px-3 py-3">{a.type === "credits" ? "Credit" : "Monthly"}</td>
                         <td className="px-3 py-3 font-semibold">{formatINR(outstanding)}</td>
+                        <td className="px-3 py-3 font-semibold text-sky-700">{formatINR(upcoming)}</td>
                         <td className="px-3 py-3">{formatINR(lateFees)}</td>
                         <td className="px-3 py-3">{a.type === "credits" ? `${a.creditBalance} left` : "-"}</td>
-                        <td className="px-3 py-3"><span className={`rounded-full px-2 py-1 text-xs font-semibold ${outstanding > 0 ? "bg-amber-50 text-amber-700" : "bg-emerald-50 text-emerald-700"}`}>{outstanding > 0 ? "Outstanding" : "Clear"}</span></td>
+                        <td className="px-3 py-3"><span className={`rounded-full px-2 py-1 text-xs font-semibold ${outstanding > 0 ? "bg-amber-50 text-amber-700" : upcoming > 0 ? "bg-sky-50 text-sky-700" : "bg-emerald-50 text-emerald-700"}`}>{outstanding > 0 ? "Outstanding" : upcoming > 0 ? "Upcoming" : "Clear"}</span></td>
                         <td className="px-3 py-3 text-xs text-slate-500">{lastPaid ? new Date(lastPaid.paidAt).toLocaleDateString("en-IN") : "-"}</td>
                         <td className="px-3 py-3">
                           <div className="flex flex-wrap items-center gap-2">

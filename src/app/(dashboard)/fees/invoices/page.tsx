@@ -16,6 +16,7 @@ import { AlertCircle, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Download,
 import { InvoiceCreationForm } from "@/components/fees/InvoiceCreationForm";
 import { InvoicePaymentModal } from "@/components/fees/InvoicePaymentModal";
 import { DeleteInvoiceButton } from "@/components/fees/DeleteInvoiceButton";
+import { UpdateIssueDateButton } from "@/components/fees/UpdateIssueDateButton";
 import { canAccessFeature, getFeaturePermissionState } from "@/lib/featureAccess";
 import { isFeesManager, requireFeesAccess } from "@/lib/feesAccess";
 import { recordActivity } from "@/lib/activity";
@@ -199,6 +200,41 @@ async function markInvoicePaid(formData: FormData) {
   revalidatePath("/fees/student-fees");
   revalidatePath("/fees");
   redirect(`${returnPath}payment=paid`);
+}
+
+async function updateInvoiceIssueDate(formData: FormData) {
+  "use server";
+  const session = await requireFeesAccess("edit", "invoices");
+  if (!session) throw new Error("Forbidden");
+  await dbConnect();
+  const invoiceId = String(formData.get("invoice") || "");
+  const returnStudent = String(formData.get("studentFilter") || "");
+  const returnPath = `/fees/invoices${returnStudent ? `?student=${encodeURIComponent(returnStudent)}&` : "?"}`;
+  const issueDateValue = String(formData.get("issueDate") || "");
+  const issueDate = issueDateValue ? new Date(issueDateValue) : null;
+  if (!invoiceId || !issueDate || Number.isNaN(issueDate.getTime())) {
+    redirect(`${returnPath}issueDate=invalid`);
+  }
+  issueDate.setHours(0, 0, 0, 0);
+  const invoice: any = await Invoice.findByIdAndUpdate(invoiceId, { issueDate }, { new: true }).lean();
+  if (!invoice) redirect(`${returnPath}issueDate=missing`);
+  await recordActivity({
+    actor: (session.user as any).id,
+    targetUser: invoice.student?.toString?.() || String(invoice.student || ""),
+    type: "fees.invoice.issue_date_updated",
+    label: `Updated issue date for ${invoice.invoiceNumber}`,
+    entityType: "Invoice",
+    entityId: invoice._id.toString(),
+    metadata: {
+      invoiceNumber: invoice.invoiceNumber,
+      issueDate,
+      dueDate: invoice.dueDate || "",
+      source: "manual_admin",
+    },
+  });
+  revalidatePath("/fees/invoices");
+  revalidatePath("/fees");
+  redirect(`${returnPath}issueDate=updated`);
 }
 
 async function cancelInvoice(formData: FormData) {
@@ -581,6 +617,13 @@ function deleteBanner(status: string) {
   return null;
 }
 
+function issueDateBanner(status: string) {
+  if (status === "updated") return { tone: "border-emerald-200 bg-emerald-50 text-emerald-800", icon: CheckCircle2, text: "Invoice issue date updated successfully." };
+  if (status === "invalid") return { tone: "border-rose-200 bg-rose-50 text-rose-800", icon: AlertCircle, text: "Please enter a valid issue date." };
+  if (status === "missing") return { tone: "border-amber-200 bg-amber-50 text-amber-900", icon: MailWarning, text: "That invoice could not be found." };
+  return null;
+}
+
 function invoiceTypeLabel(type: string) {
   if (type === "credits") return "Credit Plan Invoice";
   if (type === "monthly") return "Monthly Plan Invoice";
@@ -687,6 +730,7 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
   const reminderBanner = bulkBanner(params);
   const paidBanner = paymentBanner(queryValue(params, "payment"));
   const deletedBanner = deleteBanner(queryValue(params, "delete"));
+  const issueDateUpdateBanner = issueDateBanner(queryValue(params, "issueDate"));
   const waBanner = whatsappBanner(queryValue(params, "whatsapp"), queryValue(params, "waError"));
   const filteredInvoices = invoices.filter((invoice: any) => invoiceMatchesStatus(invoice, selectedStatus));
   const totalPages = Math.max(1, Math.ceil(filteredInvoices.length / perPage));
@@ -739,6 +783,12 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
         <div className={`mb-4 flex items-center gap-3 rounded-lg border px-4 py-3 text-sm font-semibold ${deletedBanner.tone}`}>
           <deletedBanner.icon size={18} />
           {deletedBanner.text}
+        </div>
+      )}
+      {issueDateUpdateBanner && (
+        <div className={`mb-4 flex items-center gap-3 rounded-lg border px-4 py-3 text-sm font-semibold ${issueDateUpdateBanner.tone}`}>
+          <issueDateUpdateBanner.icon size={18} />
+          {issueDateUpdateBanner.text}
         </div>
       )}
       {waBanner && (
@@ -890,6 +940,16 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
                           <input type="hidden" name="studentFilter" value={selectedStudent} />
                           <button title="Send WhatsApp test" aria-label="Send WhatsApp test" className="grid h-8 w-8 place-items-center rounded-lg border border-emerald-200 bg-white text-emerald-700 shadow-sm transition hover:-translate-y-0.5 hover:bg-emerald-50 hover:shadow-md"><MessageCircle size={14} /></button>
                         </form>
+                      )}
+                      {manager && permissions.edit && (
+                        <UpdateIssueDateButton
+                          invoiceId={invoiceId}
+                          invoiceNumber={invoice.invoiceNumber || ""}
+                          studentFilter={selectedStudent}
+                          currentIssueDate={invoice.issueDate ? new Date(invoice.issueDate).toISOString() : invoice.createdAt ? new Date(invoice.createdAt).toISOString() : ""}
+                          dueDate={invoice.dueDate ? new Date(invoice.dueDate).toISOString() : ""}
+                          action={updateInvoiceIssueDate}
+                        />
                       )}
                       {manager && permissions.payment && (invoice.type !== "credits" || permissions.credit) && invoice.status !== "paid" && invoice.status !== "cancelled" && (
                         <InvoicePaymentModal

@@ -305,7 +305,7 @@ export default function Sidebar({
           const expanded = openSection === section.id;
           const sectionActive = section.items.some((item) => isActive(pathname, item));
           return (
-            <div key={section.id} className={cn("rounded-lg border transition", sectionActive ? "border-accent/25 bg-white/[0.08]" : "border-transparent")}>
+            <div key={section.id} className={cn("rounded-lg border transition", sectionActive ? "border-accent/30 bg-white/[0.11]" : "border-transparent")}>
               <button
                 type="button"
                 onClick={() => toggleSection(section.id)}
@@ -335,15 +335,15 @@ export default function Sidebar({
                           className={cn(
                             "group relative flex min-h-8 items-center gap-2 rounded-lg px-2.5 py-1.5 text-[12px] font-semibold transition",
                             desktopCollapsed ? "md:justify-center md:px-2" : "",
-                            active ? "bg-white text-brand shadow-sm" : comingSoon ? "cursor-not-allowed text-white/35" : "text-white/78 hover:bg-white/10 hover:text-white"
+                            active ? "bg-white text-brand shadow-sm" : comingSoon ? "cursor-not-allowed text-white/60" : "text-white/92 hover:bg-white/12 hover:text-white"
                           )}
                           aria-disabled={comingSoon}
                         >
-                          <span className={cn("flex h-6 w-6 flex-none items-center justify-center rounded-md transition", active ? "bg-accent text-brand" : "bg-white/10 text-accent group-hover:bg-accent group-hover:text-brand")}>
+                          <span className={cn("flex h-6 w-6 flex-none items-center justify-center rounded-md transition", active ? "bg-accent text-brand" : comingSoon ? "bg-white/10 text-accent/70" : "bg-white/14 text-accent group-hover:bg-accent group-hover:text-brand")}>
                             <Icon size={15} />
                           </span>
                           <span className={cn("truncate", desktopCollapsed ? "md:hidden" : "")}>{item.href === "/booking" ? bookingFeatureNameForAccount(accountStatus) : item.label}</span>
-                          {comingSoon && <span className={cn("ml-auto rounded bg-accent/20 px-1.5 py-0.5 text-[9px] font-black uppercase text-accent", desktopCollapsed ? "md:hidden" : "")}>Soon</span>}
+                          {comingSoon && <span className={cn("ml-auto rounded bg-accent px-1.5 py-0.5 text-[9px] font-black uppercase text-brand shadow-sm", desktopCollapsed ? "md:hidden" : "")}>Soon</span>}
                           {item.href === "/ask-coach" && askCoachUnreadCount > 0 && (
                             <span className={cn(
                               "ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1.5 text-[10px] font-black text-brand shadow-sm",

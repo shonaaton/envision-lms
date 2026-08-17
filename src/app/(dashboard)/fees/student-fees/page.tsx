@@ -57,6 +57,7 @@ async function assignPlan(formData: FormData) {
     const student = String(formData.get("student") || "");
     const planId = String(formData.get("plan") || "");
     const rawStartDate = String(formData.get("billingStartDate") || "");
+    const rawDueDate = String(formData.get("firstDueDate") || rawStartDate);
     if (!Types.ObjectId.isValid(student) || !Types.ObjectId.isValid(planId)) {
       redirect("/fees/student-fees?error=invalid-selection");
     }
@@ -64,6 +65,11 @@ async function assignPlan(formData: FormData) {
     if (Number.isNaN(billingStartDate.getTime())) {
       redirect("/fees/student-fees?error=invalid-date");
     }
+    const firstDueDate = rawDueDate ? new Date(rawDueDate) : billingStartDate;
+    if (Number.isNaN(firstDueDate.getTime())) {
+      redirect("/fees/student-fees?error=invalid-date");
+    }
+    firstDueDate.setHours(23, 59, 59, 999);
     const [plan, studentDoc]: any[] = await Promise.all([
       FeePlan.findById(planId),
       User.findOne({ _id: student, role: "student" }).lean(),
@@ -84,6 +90,7 @@ async function assignPlan(formData: FormData) {
           plan: plan._id,
           type: plan.type,
           billingStartDate,
+          firstDueDate,
           creditBalance: existing?.creditBalance ?? 0,
           totalCreditsPurchased: existing?.totalCreditsPurchased ?? 0,
           totalCreditsConsumed: existing?.totalCreditsConsumed ?? 0,
@@ -110,7 +117,7 @@ async function assignPlan(formData: FormData) {
           type: "credits",
           title: `${plan.name} credit recharge`,
           amount: Number(plan.amount || 0),
-          dueDate: billingStartDate,
+          dueDate: firstDueDate,
           credits: Number(plan.credits || 0),
           notes: "Generated when credit plan was assigned",
           invoiceMode: plan.gstMode || "non_gst",
@@ -123,6 +130,32 @@ async function assignPlan(formData: FormData) {
         });
       }
     } else {
+      const existingMonthlyInvoice = await Invoice.exists({
+        student: new Types.ObjectId(student),
+        assignment: assignment._id,
+        type: "monthly",
+        dueDate: firstDueDate,
+        status: { $ne: "cancelled" },
+      });
+      if (!existingMonthlyInvoice) {
+        await createInvoice({
+          student,
+          plan: plan._id.toString(),
+          assignment: assignment._id.toString(),
+          type: "monthly",
+          title: `${plan.name} - ${firstDueDate.toLocaleString("en-IN", { month: "long", year: "numeric" })}`,
+          amount: Number(plan.amount || 0),
+          dueDate: firstDueDate,
+          notes: "Generated when monthly plan was assigned",
+          invoiceMode: plan.gstMode || "non_gst",
+          gstPercentage: Number(plan.gstPercentage || 0),
+          activity: {
+            actor: (session.user as any).id,
+            source: "plan_assignment",
+            label: `Generated monthly invoice after assigning ${plan.name}`,
+          },
+        });
+      }
       await ensureMonthlyInvoices();
     }
     await recordActivity({
@@ -139,6 +172,7 @@ async function assignPlan(formData: FormData) {
         planName: plan.name,
         planType: plan.type,
         billingStartDate,
+        firstDueDate,
         note,
         source: "manual_admin",
       },
@@ -201,7 +235,7 @@ export default async function StudentFeesPage({ searchParams }: { searchParams?:
   const success = typeof params.success === "string" ? params.success : "";
   const view = selectedView(typeof params.view === "string" ? params.view : "");
   const [students, plans, assignments, invoices, credits] = await Promise.all([
-    User.find({ role: "student" }, { passwordHash: 0 }).sort({ name: 1 }).lean(),
+    User.find({ role: "student", isActive: { $ne: false } }, { passwordHash: 0 }).sort({ name: 1 }).lean(),
     FeePlan.find({ isActive: true }).sort({ name: 1 }).lean(),
     FeeAssignment.find({}).populate("student plan").sort({ updatedAt: -1 }).lean(),
     Invoice.find({}).populate("student plan").sort({ createdAt: -1 }).limit(200).lean(),

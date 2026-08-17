@@ -13,6 +13,10 @@ function paise(value: FormDataEntryValue | null) {
   return Math.round(Number(value || 0) * 100);
 }
 
+function overdueDays(value: FormDataEntryValue | null) {
+  return Math.min(7, Math.max(0, Number(value || 7)));
+}
+
 async function createPlan(formData: FormData) {
   "use server";
   const session = await requireFeesAccess("edit", "feePlans");
@@ -30,7 +34,7 @@ async function createPlan(formData: FormData) {
     billingDay: Number(formData.get("billingDay") || 1),
     dueAfterDays: Number(formData.get("dueAfterDays") || 0),
     lateFeeAmount: paise(formData.get("lateFeeAmount") || "500"),
-    lateFeeAfterDays: Number(formData.get("lateFeeAfterDays") || 10),
+    lateFeeAfterDays: overdueDays(formData.get("lateFeeAfterDays")),
     creditValidityDays: Number(formData.get("creditValidityDays") || 0),
   });
   await recordActivity({
@@ -63,7 +67,7 @@ async function updatePlan(formData: FormData) {
     billingDay: Number(formData.get("billingDay") || 1),
     dueAfterDays: Number(formData.get("dueAfterDays") || 0),
     lateFeeAmount: paise(formData.get("lateFeeAmount") || "500"),
-    lateFeeAfterDays: Number(formData.get("lateFeeAfterDays") || 10),
+    lateFeeAfterDays: overdueDays(formData.get("lateFeeAfterDays")),
     creditValidityDays: Number(formData.get("creditValidityDays") || 0),
   }, { new: true });
   if (plan) {
@@ -165,7 +169,7 @@ export default async function FeePlansPage({ searchParams }: { searchParams?: Pr
       gstPercentage: plan.gstPercentage || 0,
       credits: plan.credits || 0,
       lateFeeAmount: plan.lateFeeAmount || 50000,
-      lateFeeAfterDays: plan.lateFeeAfterDays || 10,
+      lateFeeAfterDays: Math.min(plan.lateFeeAfterDays || 7, 7),
       isActive: plan.isActive !== false,
       isLinked: linkedPlanIds.has(plan._id.toString()),
     };

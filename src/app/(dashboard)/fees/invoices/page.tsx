@@ -1,11 +1,12 @@
 import { auth } from "@/lib/auth";
 import { resolvePublicAppUrl } from "@/lib/appUrl";
 import { dbConnect } from "@/lib/db";
-import { createInvoice, ensureMonthlyInvoices, markInvoicePaid as applyInvoicePayment } from "@/lib/fees";
+import { createInvoice, createNextMonthlyInvoiceAfterPayment, ensureMonthlyInvoices, markInvoicePaid as applyInvoicePayment } from "@/lib/fees";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
 import { sendWhatsAppReminder } from "@/lib/whatsappAutomation";
 import { formatINR } from "@/lib/utils";
 import { CreditLedger, FeeAssignment, FeePlan, Invoice, Notification } from "@/models/Fee";
+import { Payment } from "@/models/Payment";
 import { User } from "@/models/User";
 import { createHash, randomBytes } from "crypto";
 import PayButton from "@/components/PayButton";
@@ -13,6 +14,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { AlertCircle, CheckCircle2, Clock3, Download, FileText, IndianRupee, MailCheck, MailWarning, MessageCircle, Printer, Receipt, Send, Trash2, XCircle } from "lucide-react";
 import { InvoiceCreationForm } from "@/components/fees/InvoiceCreationForm";
+import { InvoicePaymentModal } from "@/components/fees/InvoicePaymentModal";
 import { canAccessFeature, getFeaturePermissionState } from "@/lib/featureAccess";
 import { isFeesManager, requireFeesAccess } from "@/lib/feesAccess";
 import { recordActivity } from "@/lib/activity";
@@ -121,11 +123,63 @@ async function markInvoicePaid(formData: FormData) {
   if (!session) throw new Error("Forbidden");
   await dbConnect();
   const invoiceId = String(formData.get("invoice") || "");
-  const invoice: any = await Invoice.findById(invoiceId).select("type").lean();
+  const invoice: any = await Invoice.findById(invoiceId).select("type totalAmount").lean();
   if (invoice?.type === "credits" && !(await canAccessFeature("invoices", session.user as any, "credit"))) {
     throw new Error("Forbidden");
   }
-  await applyInvoicePayment(invoiceId, undefined, { actor: (session.user as any).id, source: "manual_admin" });
+  const modes = formData.getAll("paymentMode").map((value) => String(value || "other"));
+  const amounts = formData.getAll("paymentAmount").map((value) => paise(value));
+  const dates = formData.getAll("paymentDate").map((value) => new Date(String(value || "")));
+  const refs = formData.getAll("paymentReference").map((value) => String(value || "").trim());
+  const transactions = amounts
+    .map((amount, index) => ({
+      mode: modes[index] === "upi" || modes[index] === "bank_transfer" ? modes[index] as "upi" | "bank_transfer" : "other" as const,
+      amount,
+      paidAt: dates[index] && !Number.isNaN(dates[index].getTime()) ? dates[index] : new Date(),
+      referenceNumber: refs[index] || undefined,
+    }))
+    .filter((transaction) => transaction.amount > 0);
+  const totalPaid = transactions.reduce((sum, transaction) => sum + transaction.amount, 0);
+  if (!transactions.length || totalPaid !== Number(invoice?.totalAmount || 0)) {
+    redirect("/fees/invoices?payment=amount-mismatch");
+  }
+  await applyInvoicePayment(invoiceId, undefined, { actor: (session.user as any).id, source: "manual_admin" }, transactions);
+  if (invoice?.type === "monthly") await createNextMonthlyInvoiceAfterPayment(invoiceId);
+  const paidInvoice: any = await Invoice.findById(invoiceId).populate("student").lean();
+  if (paidInvoice?.student?._id) {
+    const transactionSummary = transactions
+      .map((transaction) => `${formatINR(transaction.amount)} by ${transaction.mode === "bank_transfer" ? "Bank Transfer" : transaction.mode.toUpperCase()}${transaction.referenceNumber ? `, ref ${transaction.referenceNumber}` : ""}`)
+      .join("\n");
+    const message = [
+      `Hello ${paidInvoice.student.name},`,
+      `Payment has been recorded for invoice ${paidInvoice.invoiceNumber}.`,
+      `Amount: ${formatINR(paidInvoice.totalAmount)}.`,
+      transactionSummary ? `Transactions:\n${transactionSummary}` : "",
+    ].filter(Boolean).join("\n\n");
+    await Notification.create({
+      user: paidInvoice.student._id,
+      type: "invoice.paid",
+      title: "Invoice marked paid",
+      message: `${paidInvoice.invoiceNumber} has been marked as paid.`,
+      metadata: { invoice: paidInvoice._id.toString(), transactionCount: transactions.length },
+    });
+    if (paidInvoice.student.email) {
+      await sendAutomationEmail({
+        to: paidInvoice.student.email,
+        subject: `Payment received for ${paidInvoice.invoiceNumber}`,
+        message,
+        metadata: { kind: "invoice_paid", invoiceId, invoiceNumber: paidInvoice.invoiceNumber },
+      });
+    }
+    if (paidInvoice.student.parentEmail) {
+      await sendAutomationEmail({
+        to: paidInvoice.student.parentEmail,
+        subject: `Payment recorded for ${paidInvoice.student.name}`,
+        message: message.replace(`Hello ${paidInvoice.student.name},`, `Hello ${paidInvoice.student.parentName || "Parent"},`),
+        metadata: { kind: "invoice_paid_parent", invoiceId, invoiceNumber: paidInvoice.invoiceNumber },
+      });
+    }
+  }
   revalidatePath("/fees/invoices");
   revalidatePath("/fees/student-fees");
   revalidatePath("/fees");
@@ -173,6 +227,7 @@ async function deleteInvoice(formData: FormData) {
   }
   await Promise.all([
     CreditLedger.deleteMany({ invoice: invoice._id }),
+    Payment.deleteMany({ purpose: "invoice", refId: invoice._id }),
     Invoice.findByIdAndDelete(invoice._id),
   ]);
   await recordActivity({
@@ -241,10 +296,32 @@ async function sendInvoiceToStudent(formData: FormData) {
       previewText: "Your academy invoice is ready.",
     },
   });
+  const parentEmail = String(invoice.student.parentEmail || "").trim();
+  const parentDelivery = parentEmail
+    ? await sendAutomationEmail({
+        to: parentEmail,
+        subject: `Invoice ${invoice.invoiceNumber} for ${invoice.student.name}`,
+        message: [
+          `Hello ${invoice.student.parentName || "Parent"},`,
+          `Invoice ${invoice.invoiceNumber} for ${invoice.student.name} is now available.`,
+          `Total amount: ${formatINR(invoice.totalAmount)}.`,
+          invoiceUrl ? `Download invoice: ${invoiceUrl}` : "Please ask the student to log in to the portal to download the invoice.",
+        ].join("\n\n"),
+        metadata: {
+          kind: "invoice_parent",
+          invoiceId: invoice._id.toString(),
+          invoiceNumber: invoice.invoiceNumber,
+          studentObjectId: invoice.student._id.toString(),
+          invoiceUrl,
+          previewText: "A student fee invoice is ready.",
+        },
+      })
+    : null;
   const status = delivery.delivered ? "sent" : delivery.skipped ? "not_configured" : "failed";
+  const finalStatus = status === "sent" && parentDelivery?.delivered ? "sent_with_parent" : status;
   await Invoice.findByIdAndUpdate(invoice._id, {
     lastSentAt: new Date(),
-    lastSentTo: invoice.student.email,
+    lastSentTo: parentDelivery?.delivered ? `${invoice.student.email}, ${parentEmail}` : invoice.student.email,
     lastEmailStatus: status,
   });
   await recordActivity({
@@ -254,7 +331,7 @@ async function sendInvoiceToStudent(formData: FormData) {
     label: `Sent invoice ${invoice.invoiceNumber} to ${invoice.student.email}`,
     entityType: "Invoice",
     entityId: invoice._id.toString(),
-    metadata: { invoiceNumber: invoice.invoiceNumber, email: invoice.student.email, status, source: "manual_admin" },
+    metadata: { invoiceNumber: invoice.invoiceNumber, email: invoice.student.email, parentEmail, status: finalStatus, source: "manual_admin" },
   });
   if (delivery.delivered) {
     await Notification.create({
@@ -266,7 +343,7 @@ async function sendInvoiceToStudent(formData: FormData) {
     });
   }
   revalidatePath("/fees/invoices");
-  redirect(`${returnPath}send=${status}`);
+  redirect(`${returnPath}send=${finalStatus}`);
 }
 
 async function sendInvoiceWhatsAppTest(formData: FormData) {
@@ -391,6 +468,7 @@ function emailStatusCopy(status?: string) {
 
 function sendBanner(status: string) {
   if (status === "sent") return { tone: "border-emerald-200 bg-emerald-50 text-emerald-800", icon: CheckCircle2, text: "Invoice email sent to the student." };
+  if (status === "sent_with_parent") return { tone: "border-emerald-200 bg-emerald-50 text-emerald-800", icon: CheckCircle2, text: "Invoice email sent to the student and parent." };
   if (status === "not_configured") return { tone: "border-amber-200 bg-amber-50 text-amber-800", icon: MailWarning, text: "Invoice was not emailed because EMAIL_AUTOMATION_WEBHOOK_URL is not configured." };
   if (status === "missing_email") return { tone: "border-amber-200 bg-amber-50 text-amber-800", icon: MailWarning, text: "Invoice was not emailed because the student does not have an email address." };
   if (status === "failed") return { tone: "border-rose-200 bg-rose-50 text-rose-800", icon: AlertCircle, text: "Invoice email failed. Please check the email automation webhook." };
@@ -417,6 +495,11 @@ function bulkBanner(params: Record<string, string | string[] | undefined>) {
     icon: hasProblems ? MailWarning : MailCheck,
     text: `Invoice reminders processed: ${sent} sent, ${failed} failed, ${missing} missing email, ${skipped} not configured, ${total} total.`,
   };
+}
+
+function paymentBanner(status: string) {
+  if (status === "amount-mismatch") return { tone: "border-rose-200 bg-rose-50 text-rose-800", icon: AlertCircle, text: "Payment transactions must exactly match the invoice amount." };
+  return null;
 }
 
 function invoiceTypeLabel(type: string) {
@@ -467,6 +550,7 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
   const sendStatus = queryValue(params, "send");
   const banner = sendBanner(sendStatus);
   const reminderBanner = bulkBanner(params);
+  const paidBanner = paymentBanner(queryValue(params, "payment"));
   const waBanner = whatsappBanner(queryValue(params, "whatsapp"), queryValue(params, "waError"));
   const paidCount = invoices.filter((invoice: any) => invoice.status === "paid").length;
   const unpaidCount = invoices.filter((invoice: any) => invoice.status === "unpaid" || invoice.status === "overdue").length;
@@ -501,6 +585,12 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
         <div className={`mb-4 flex items-center gap-3 rounded-lg border px-4 py-3 text-sm font-semibold ${reminderBanner.tone}`}>
           <reminderBanner.icon size={18} />
           {reminderBanner.text}
+        </div>
+      )}
+      {paidBanner && (
+        <div className={`mb-4 flex items-center gap-3 rounded-lg border px-4 py-3 text-sm font-semibold ${paidBanner.tone}`}>
+          <paidBanner.icon size={18} />
+          {paidBanner.text}
         </div>
       )}
       {waBanner && (
@@ -603,7 +693,9 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
                           <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Dates</div>
                           <div className="mt-1 text-slate-700">Issued {new Date(invoice.issueDate || invoice.createdAt).toLocaleDateString("en-IN")}</div>
                           <div className="text-slate-700">Due {new Date(invoice.dueDate).toLocaleDateString("en-IN")}</div>
+                          {invoice.nextDueDate && <div className="text-slate-700">Next {new Date(invoice.nextDueDate).toLocaleDateString("en-IN")}</div>}
                           {invoice.referenceNumber && <div className="text-xs font-semibold text-slate-500">Ref {invoice.referenceNumber}</div>}
+                          {Array.isArray(invoice.paymentTransactions) && invoice.paymentTransactions.length > 0 && <div className="text-xs font-semibold text-emerald-700">{invoice.paymentTransactions.length} payment transaction{invoice.paymentTransactions.length === 1 ? "" : "s"}</div>}
                         </div>
                         <div>
                           <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Email</div>
@@ -647,9 +739,8 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
                           <input type="hidden" name="studentFilter" value={selectedStudent} />
                           <button className="inline-flex h-9 items-center gap-1 rounded-lg border border-emerald-200 px-3 text-xs font-bold text-emerald-700"><MessageCircle size={14} /> WhatsApp Test</button>
                         </form>}
-                      {permissions.invoice && <button disabled title="Parent profile is not linked yet" className="inline-flex h-9 items-center gap-1 rounded-lg border border-slate-200 px-3 text-xs font-bold text-slate-400">Send to Parent</button>}
                       {permissions.payment && (invoice.type !== "credits" || permissions.credit) && invoice.status !== "paid" && invoice.status !== "cancelled" && (
-                        <form action={markInvoicePaid}><input type="hidden" name="invoice" value={invoiceId} /><button className="inline-flex h-9 items-center gap-1 rounded-lg border border-emerald-200 px-3 text-xs font-bold text-emerald-700"><CheckCircle2 size={14} /> Mark Paid</button></form>
+                        <InvoicePaymentModal invoiceId={invoiceId} totalAmount={invoice.totalAmount} action={markInvoicePaid} />
                       )}
                       {permissions.edit && invoice.status !== "cancelled" && (
                         <form action={cancelInvoice}><input type="hidden" name="invoice" value={invoiceId} /><button className="inline-flex h-9 items-center gap-1 rounded-lg border border-amber-200 px-3 text-xs font-bold text-amber-700"><XCircle size={14} /> Cancel</button></form>

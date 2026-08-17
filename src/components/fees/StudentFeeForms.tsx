@@ -19,7 +19,9 @@ function Field({ label, description, children }: { label: string; description: s
 
 export function StudentFeeAssignmentForm({ students, plans, action }: { students: StudentOption[]; plans: PlanOption[]; action: ServerAction }) {
   const [studentId, setStudentId] = useState("");
+  const [planId, setPlanId] = useState("");
   const selectedStudent = useMemo(() => students.find((student) => student.id === studentId), [students, studentId]);
+  const selectedPlan = useMemo(() => plans.find((plan) => plan.id === planId), [plans, planId]);
   const buttonText = selectedStudent?.hasAssignment ? "Update Plan" : "Assign Plan";
 
   return (
@@ -35,7 +37,7 @@ export function StudentFeeAssignmentForm({ students, plans, action }: { students
         </Field>
 
         <Field label="Fee Plan" description="Monthly or credit plan.">
-          <select name="plan" required className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm">
+          <select name="plan" required value={planId} onChange={(event) => setPlanId(event.target.value)} className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm">
             <option value="">Select Fee Plan</option>
             {plans.map((plan) => (
               <option key={plan.id} value={plan.id}>
@@ -49,6 +51,12 @@ export function StudentFeeAssignmentForm({ students, plans, action }: { students
           <input name="billingStartDate" type="date" required className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm" />
         </Field>
 
+        <Field label={selectedPlan?.type === "monthly" ? "First Due Date" : "Invoice Due Date"} description={selectedPlan?.type === "monthly" ? "The monthly invoice will use this due date." : "Payment due date for the credit invoice."}>
+          <input name="firstDueDate" type="date" required className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm" />
+        </Field>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
         <Field label="Reason (Optional)" description="Internal note.">
           <input name="note" placeholder="Example: Shifted from Monthly Plan to Credit Plan" className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm" />
         </Field>

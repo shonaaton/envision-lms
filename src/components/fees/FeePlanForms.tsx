@@ -120,7 +120,7 @@ export function CreateFeePlanForm({ action }: { action: ServerAction }) {
               <Input value="30 days" readOnly className="bg-slate-50 text-slate-500" />
             </Field>
             <Field label="Late Fee After">
-              <Input name="lateFeeAfterDays" type="number" min="0" defaultValue={10} />
+              <Input name="lateFeeAfterDays" type="number" min="0" max="7" defaultValue={7} />
             </Field>
             <Field label="Late Fee Amount">
               <Input name="lateFeeAmount" type="number" min="0" defaultValue={500} />
@@ -195,7 +195,7 @@ export function FeePlanEditor({ plan, updateAction, archiveAction, deleteAction 
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
             <Field label="Plan Name"><Input name="name" defaultValue={plan.name} /></Field>
             <Field label="Monthly Fee"><Input name="amount" type="number" defaultValue={plan.amount / 100} /></Field>
-            <Field label="Late Fee After"><Input name="lateFeeAfterDays" type="number" defaultValue={plan.lateFeeAfterDays || 10} /></Field>
+            <Field label="Late Fee After"><Input name="lateFeeAfterDays" type="number" min="0" max="7" defaultValue={Math.min(plan.lateFeeAfterDays || 7, 7)} /></Field>
             <Field label="Late Fee Amount"><Input name="lateFeeAmount" type="number" defaultValue={(plan.lateFeeAmount || 50000) / 100} /></Field>
             <Field label="GST Percentage"><Input name="gstPercentage" type="number" defaultValue={plan.gstPercentage || 18} disabled={gstMode === "non_gst"} /></Field>
             <input type="hidden" name="credits" value="0" />

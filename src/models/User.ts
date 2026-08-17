@@ -32,6 +32,7 @@ const UserSchema = new Schema(
       analysisBoard: { type: Number, default: 0 },
     },
     parentName: { type: String },
+    parentEmail: { type: String, lowercase: true, index: true },
     city: { type: String },
     country: { type: String },
     countryCode: { type: String },

@@ -205,7 +205,7 @@ export default function Sidebar({
     [role, accountStatus, user.isActive, isSuperAdmin, featureState]
   );
   const activeSection = visibleSections.find((section) => section.items.some((item) => isActive(pathname, item)))?.id || "academy";
-  const [openSections, setOpenSections] = useState<string[]>([activeSection]);
+  const [openSection, setOpenSection] = useState(activeSection);
 
   async function loadNotifications() {
     const response = await fetch("/api/notifications", { cache: "no-store" }).catch(() => null);
@@ -250,26 +250,20 @@ export default function Sidebar({
 
   useEffect(() => {
     try {
-      const saved = window.localStorage.getItem("sidebar-open-sections");
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          setOpenSections(Array.from(new Set([...parsed, activeSection])));
-          return;
-        }
-      }
+      const saved = window.localStorage.getItem("sidebar-open-section");
+      if (saved && visibleSections.some((section) => section.id === saved)) return setOpenSection(activeSection || saved);
     } catch {
       // Remembering sidebar state is optional.
     }
-    setOpenSections([activeSection]);
-  }, [activeSection]);
+    setOpenSection(activeSection);
+  }, [activeSection, visibleSections]);
 
   useEffect(() => {
-    window.localStorage.setItem("sidebar-open-sections", JSON.stringify(openSections));
-  }, [openSections]);
+    window.localStorage.setItem("sidebar-open-section", openSection);
+  }, [openSection]);
 
   function toggleSection(id: string) {
-    setOpenSections((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
+    setOpenSection((current) => (current === id ? "" : id));
   }
 
   return (
@@ -282,53 +276,53 @@ export default function Sidebar({
       />
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex h-dvh w-[min(88vw,20rem)] flex-shrink-0 flex-col border-r border-white/10 bg-[linear-gradient(180deg,#451059_0%,#2a0936_58%,#14051c_100%)] px-3 py-4 shadow-2xl shadow-brand-900/30 transition-[width,transform] duration-300 ease-out will-change-transform md:sticky md:top-0 md:z-20 md:h-dvh md:translate-x-0",
-          desktopCollapsed ? "md:w-[5.5rem]" : "md:w-[16.5rem] lg:w-72",
+          "fixed inset-y-0 left-0 z-50 flex h-dvh w-[min(86vw,13rem)] flex-shrink-0 flex-col border-r border-slate-200 bg-white px-2 py-3 shadow-2xl shadow-slate-900/10 transition-[width,transform] duration-300 ease-out will-change-transform md:sticky md:top-0 md:z-20 md:h-dvh md:translate-x-0",
+          desktopCollapsed ? "md:w-[4.75rem]" : "md:w-[12rem]",
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
-      <div className={cn("mb-4 flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.08] px-3 py-3 shadow-lg shadow-black/10 backdrop-blur", desktopCollapsed ? "md:justify-center md:px-2" : "")}>
+      <div className={cn("mb-3 flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-2 shadow-sm", desktopCollapsed ? "md:justify-center md:px-1" : "")}>
         <div className={cn("min-w-0 flex-1", desktopCollapsed ? "md:hidden" : "")}><Logo /></div>
         <button
           type="button"
           onClick={onToggleDesktop}
-          className="hidden h-10 w-10 flex-none place-items-center rounded-lg bg-white/10 text-white transition hover:bg-white/20 md:grid"
+          className="hidden h-8 w-8 flex-none place-items-center rounded-md bg-slate-100 text-slate-600 transition hover:bg-brand/10 hover:text-brand md:grid"
           aria-label={desktopCollapsed ? "Expand navigation" : "Collapse navigation"}
           title={desktopCollapsed ? "Expand navigation" : "Collapse navigation"}
         >
-          {desktopCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+          {desktopCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
         </button>
         <button
           type="button"
           onClick={onCloseMobile}
-          className="grid h-10 w-10 flex-none place-items-center rounded-lg bg-white/10 text-white transition hover:bg-white/20 md:hidden"
+          className="grid h-8 w-8 flex-none place-items-center rounded-md bg-slate-100 text-slate-600 transition hover:bg-brand/10 hover:text-brand md:hidden"
           aria-label="Close navigation"
         >
-          <X size={18} />
+          <X size={16} />
         </button>
       </div>
-      <nav className="flex-1 space-y-2 overflow-y-auto pr-1" aria-label="Dashboard navigation">
+      <nav className="flex-1 space-y-1.5 overflow-y-auto pr-1" aria-label="Dashboard navigation">
         {visibleSections.map((section) => {
-          const expanded = openSections.includes(section.id);
+          const expanded = openSection === section.id;
           const sectionActive = section.items.some((item) => isActive(pathname, item));
           return (
-            <div key={section.id} className={cn("rounded-lg border transition", sectionActive ? "border-accent/30 bg-white/[0.08]" : "border-transparent")}>
+            <div key={section.id} className={cn("rounded-lg border transition", sectionActive ? "border-brand/20 bg-brand/5" : "border-transparent")}>
               <button
                 type="button"
                 onClick={() => toggleSection(section.id)}
                 aria-expanded={expanded}
                 title={desktopCollapsed ? section.title : undefined}
                 className={cn(
-                  "flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[10px] font-bold uppercase tracking-[0.16em] transition",
+                  "flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-left text-[9px] font-bold uppercase tracking-[0.12em] transition",
                   desktopCollapsed ? "md:justify-center md:px-2" : "",
-                  sectionActive ? "text-accent" : "text-accent/80 hover:bg-white/10 hover:text-accent"
+                  sectionActive ? "text-brand" : "text-slate-500 hover:bg-slate-50 hover:text-brand"
                 )}
               >
                 <span className={cn(desktopCollapsed ? "md:hidden" : "")}>{section.title}</span>
-                <ChevronDown size={15} className={cn("transition", expanded ? "rotate-180" : "", desktopCollapsed ? "md:hidden" : "")} />
+                <ChevronDown size={13} className={cn("transition", expanded ? "rotate-180" : "", desktopCollapsed ? "md:hidden" : "")} />
               </button>
               {expanded && (
-                <ul className="space-y-1 px-1 pb-2">
+                <ul className="space-y-1 px-1 pb-1.5">
                   {section.items.map((item) => {
                     const Icon = item.icon;
                     const active = isActive(pathname, item);
@@ -340,20 +334,20 @@ export default function Sidebar({
                           onClick={onCloseMobile}
                           title={desktopCollapsed ? (item.href === "/booking" ? bookingFeatureNameForAccount(accountStatus) : item.label) : undefined}
                           className={cn(
-                            "group relative flex min-h-10 items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-semibold transition",
+                            "group relative flex min-h-8 items-center gap-2 rounded-lg px-2.5 py-1.5 text-[12px] font-semibold transition",
                             desktopCollapsed ? "md:justify-center md:px-2" : "",
-                            active ? "bg-white text-brand shadow-lg shadow-black/10" : comingSoon ? "cursor-not-allowed text-white/45" : "text-white/75 hover:bg-white/10 hover:text-white"
+                            active ? "border border-sky-200 bg-sky-100 text-blue-700 shadow-sm" : comingSoon ? "cursor-not-allowed text-slate-300" : "text-slate-600 hover:bg-slate-50 hover:text-brand"
                           )}
                           aria-disabled={comingSoon}
                         >
-                          <span className={cn("flex h-7 w-7 flex-none items-center justify-center rounded-md transition", active ? "bg-accent text-brand" : "bg-white/10 text-accent group-hover:bg-accent group-hover:text-brand")}>
-                            <Icon size={16} />
+                          <span className={cn("flex h-6 w-6 flex-none items-center justify-center rounded-md transition", active ? "bg-white text-blue-700" : "bg-transparent text-slate-500 group-hover:text-brand")}>
+                            <Icon size={15} />
                           </span>
                           <span className={cn("truncate", desktopCollapsed ? "md:hidden" : "")}>{item.href === "/booking" ? bookingFeatureNameForAccount(accountStatus) : item.label}</span>
-                          {comingSoon && <span className={cn("ml-auto rounded bg-accent/20 px-1.5 py-0.5 text-[10px] font-black uppercase text-accent", desktopCollapsed ? "md:hidden" : "")}>Soon</span>}
+                          {comingSoon && <span className={cn("ml-auto rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-black uppercase text-slate-500", desktopCollapsed ? "md:hidden" : "")}>Soon</span>}
                           {item.href === "/ask-coach" && askCoachUnreadCount > 0 && (
                             <span className={cn(
-                              "ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1.5 text-[11px] font-black text-brand shadow-sm",
+                              "ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-brand px-1.5 text-[10px] font-black text-white shadow-sm",
                               desktopCollapsed ? "md:absolute md:right-1.5 md:top-1.5 md:h-4 md:min-w-4 md:px-1 md:text-[9px]" : ""
                             )}>
                               {askCoachUnreadCount > 9 ? "9+" : askCoachUnreadCount}
@@ -370,46 +364,46 @@ export default function Sidebar({
         })}
       </nav>
       <div className="relative mt-4">
-        <div className={cn("rounded-lg border border-white/10 bg-white/[0.08] p-3 text-sm text-white/80", desktopCollapsed ? "md:p-2" : "")}>
+        <div className={cn("rounded-lg border border-slate-200 bg-white p-2 text-sm text-slate-700 shadow-sm", desktopCollapsed ? "md:p-1.5" : "")}>
           <div className={cn("flex items-start gap-2", desktopCollapsed ? "md:flex-col md:items-center" : "")}>
             <div className={cn("min-w-0 flex-1", desktopCollapsed ? "md:hidden" : "")}>
-              <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-accent">
+              <div className="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-[0.1em] text-brand">
                 <Sparkles size={13} />
                 Academy Workspace
               </div>
-              <div className="mt-1 truncate text-sm font-semibold text-white">{user.name || "Player"}</div>
-              <div className="mt-1 inline-flex rounded-full bg-white/10 px-2 py-0.5 text-[11px] font-bold capitalize text-white/70 ring-1 ring-white/10">{user.role}</div>
+              <div className="mt-1 truncate text-xs font-semibold text-slate-950">{user.name || "Player"}</div>
+              <div className="mt-1 inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold capitalize text-slate-500 ring-1 ring-slate-200">{user.role}</div>
             </div>
             <div className={cn("flex flex-none items-center gap-2", desktopCollapsed ? "md:flex-col" : "")}>
               <button
                 type="button"
                 onClick={openBell}
-                className="relative inline-flex h-10 w-10 items-center justify-center rounded-lg bg-accent text-brand shadow-sm ring-1 ring-accent-600/20 transition hover:-translate-y-0.5 hover:shadow-md"
+                className="relative inline-flex h-8 w-8 items-center justify-center rounded-md bg-brand text-white shadow-sm transition hover:bg-brand-700"
                 aria-label="Notifications"
                 aria-expanded={openNotifications}
                 title="Notifications"
               >
-                <Bell size={18} />
+                <Bell size={16} />
                 {unreadCount > 0 && (
-                  <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-white px-1 text-[10px] font-black text-brand">
+                  <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[9px] font-black text-white">
                     {unreadCount > 9 ? "9+" : unreadCount}
                   </span>
                 )}
               </button>
               <button
                 type="button"
-                className={cn("inline-flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 bg-white/10 text-white shadow-sm transition hover:bg-white/20", desktopCollapsed ? "md:inline-flex" : "md:hidden")}
+                className={cn("inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-slate-100 text-slate-600 shadow-sm transition hover:bg-brand/10 hover:text-brand", desktopCollapsed ? "md:inline-flex" : "md:hidden")}
                 onClick={() => signOut({ callbackUrl: "/" })}
                 aria-label="Sign out"
                 title="Sign out"
               >
-                <LogOut size={17} />
+                <LogOut size={15} />
               </button>
             </div>
           </div>
           <button
             type="button"
-            className={cn("mt-3 hidden h-9 w-full items-center justify-center gap-2 rounded-lg border border-white/10 bg-white text-sm font-bold text-brand shadow-sm transition hover:bg-accent", desktopCollapsed ? "" : "sm:inline-flex")}
+            className={cn("mt-2 hidden h-9 w-full items-center justify-center gap-2 rounded-lg bg-rose-600 text-xs font-bold text-white shadow-sm transition hover:bg-rose-700", desktopCollapsed ? "" : "sm:inline-flex")}
             onClick={() => signOut({ callbackUrl: "/" })}
           >
             <LogOut size={16} /> Sign out

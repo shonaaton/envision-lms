@@ -34,6 +34,7 @@ export function InvoicePaymentModal({
   totalAmount,
   invoiceMode,
   gstPercentage,
+  studentFilter,
   action,
 }: {
   invoiceId: string;
@@ -42,6 +43,7 @@ export function InvoicePaymentModal({
   totalAmount: number;
   invoiceMode: "included" | "excluded" | "non_gst";
   gstPercentage: number;
+  studentFilter: string;
   action: ServerAction;
 }) {
   const [open, setOpen] = useState(false);
@@ -90,6 +92,7 @@ export function InvoicePaymentModal({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4 py-6">
           <form action={action} className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white p-4 shadow-2xl">
             <input type="hidden" name="invoice" value={invoiceId} />
+            <input type="hidden" name="studentFilter" value={studentFilter} />
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
                 <h3 className="text-base font-bold text-slate-950">Record Payment</h3>

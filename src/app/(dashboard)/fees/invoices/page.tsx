@@ -124,6 +124,8 @@ async function markInvoicePaid(formData: FormData) {
   if (!session) throw new Error("Forbidden");
   await dbConnect();
   const invoiceId = String(formData.get("invoice") || "");
+  const returnStudent = String(formData.get("studentFilter") || "");
+  const returnPath = `/fees/invoices${returnStudent ? `?student=${encodeURIComponent(returnStudent)}&` : "?"}`;
   const invoice: any = await Invoice.findById(invoiceId).select("type amount lateFee totalAmount invoiceMode gstPercentage").lean();
   if (invoice?.type === "credits" && !(await canAccessFeature("invoices", session.user as any, "credit"))) {
     throw new Error("Forbidden");
@@ -152,7 +154,7 @@ async function markInvoicePaid(formData: FormData) {
   }, { waiveLateFee, discountAmount, note: adjustmentNote });
   const totalPaid = transactions.reduce((sum, transaction) => sum + transaction.amount, 0);
   if (!transactions.length || totalPaid !== Number(adjusted.totalAmount || 0)) {
-    redirect("/fees/invoices?payment=amount-mismatch");
+    redirect(`${returnPath}payment=amount-mismatch`);
   }
   await applyInvoicePayment(invoiceId, undefined, { actor: (session.user as any).id, source: "manual_admin" }, transactions, { waiveLateFee, discountAmount, note: adjustmentNote });
   if (invoice?.type === "monthly") await createNextMonthlyInvoiceAfterPayment(invoiceId);
@@ -196,6 +198,7 @@ async function markInvoicePaid(formData: FormData) {
   revalidatePath("/fees/invoices");
   revalidatePath("/fees/student-fees");
   revalidatePath("/fees");
+  redirect(`${returnPath}payment=paid`);
 }
 
 async function cancelInvoice(formData: FormData) {
@@ -566,6 +569,7 @@ function bulkBanner(params: Record<string, string | string[] | undefined>) {
 }
 
 function paymentBanner(status: string) {
+  if (status === "paid") return { tone: "border-emerald-200 bg-emerald-50 text-emerald-800", icon: CheckCircle2, text: "Invoice marked as paid successfully." };
   if (status === "amount-mismatch") return { tone: "border-rose-200 bg-rose-50 text-rose-800", icon: AlertCircle, text: "Payment transactions must exactly match the invoice amount." };
   return null;
 }
@@ -895,6 +899,7 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
                           totalAmount={invoice.totalAmount || 0}
                           invoiceMode={invoice.invoiceMode || "non_gst"}
                           gstPercentage={invoice.gstPercentage || 0}
+                          studentFilter={selectedStudent}
                           action={markInvoicePaid}
                         />
                       )}

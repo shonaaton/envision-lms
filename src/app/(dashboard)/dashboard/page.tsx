@@ -1055,7 +1055,7 @@ async function StudentDashboard({ userId, joinAllowed }: { userId: string; joinA
             <StudentSectionHeader icon={ClipboardList} title="Homework" action={<StudentTextLink href="/homework">View All Homework</StudentTextLink>} />
             <div className="space-y-2">
               {homeworkItems.length === 0 ? (
-                <p className="rounded-lg bg-slate-50 px-3 py-3 text-sm text-slate-600">No homework right now. You're all caught up!</p>
+                <p className="rounded-lg bg-slate-50 px-3 py-3 text-sm text-slate-600">No homework right now. You&apos;re all caught up!</p>
               ) : homeworkItems.map((item: any) => {
                 const submission = submissions.find((row: any) => objectId(row.homework) === objectId(item._id));
                 const status = homeworkStatus(item, submission, now);
@@ -1139,7 +1139,7 @@ async function StudentDashboard({ userId, joinAllowed }: { userId: string; joinA
                 <Link href={`/tournaments/${objectId(nextTournament._id)}`} className="btn-outline mt-3 w-full">View Tournament</Link>
               </div>
             ) : (
-              <p className="rounded-lg bg-slate-50 px-3 py-3 text-sm text-slate-600">No tournaments scheduled. We'll let you know when registration opens.</p>
+              <p className="rounded-lg bg-slate-50 px-3 py-3 text-sm text-slate-600">No tournaments scheduled. We&apos;ll let you know when registration opens.</p>
             )}
           </StudentCard>
 

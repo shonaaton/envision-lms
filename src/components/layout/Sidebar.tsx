@@ -35,7 +35,6 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   LogOut,
-  Sparkles,
   X,
 } from "lucide-react";
 import Logo from "./Logo";
@@ -276,17 +275,17 @@ export default function Sidebar({
       />
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex h-dvh w-[min(86vw,13rem)] flex-shrink-0 flex-col border-r border-slate-200 bg-white px-2 py-3 shadow-2xl shadow-slate-900/10 transition-[width,transform] duration-300 ease-out will-change-transform md:sticky md:top-0 md:z-20 md:h-dvh md:translate-x-0",
+          "fixed inset-y-0 left-0 z-50 flex h-dvh w-[min(86vw,13rem)] flex-shrink-0 flex-col border-r border-brand-900/20 bg-[linear-gradient(180deg,#5a1372_0%,#3a0c4a_62%,#1a0622_100%)] px-2 py-3 shadow-2xl shadow-brand-900/25 transition-[width,transform] duration-300 ease-out will-change-transform md:sticky md:top-0 md:z-20 md:h-dvh md:translate-x-0",
           desktopCollapsed ? "md:w-[4.75rem]" : "md:w-[12rem]",
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
-      <div className={cn("mb-3 flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-2 shadow-sm", desktopCollapsed ? "md:justify-center md:px-1" : "")}>
+      <div className={cn("mb-3 flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.08] px-2 py-2 shadow-lg shadow-black/10 backdrop-blur", desktopCollapsed ? "md:justify-center md:px-1" : "")}>
         <div className={cn("min-w-0 flex-1", desktopCollapsed ? "md:hidden" : "")}><Logo /></div>
         <button
           type="button"
           onClick={onToggleDesktop}
-          className="hidden h-8 w-8 flex-none place-items-center rounded-md bg-slate-100 text-slate-600 transition hover:bg-brand/10 hover:text-brand md:grid"
+          className="hidden h-8 w-8 flex-none place-items-center rounded-md bg-white/10 text-white transition hover:bg-accent hover:text-brand md:grid"
           aria-label={desktopCollapsed ? "Expand navigation" : "Collapse navigation"}
           title={desktopCollapsed ? "Expand navigation" : "Collapse navigation"}
         >
@@ -295,7 +294,7 @@ export default function Sidebar({
         <button
           type="button"
           onClick={onCloseMobile}
-          className="grid h-8 w-8 flex-none place-items-center rounded-md bg-slate-100 text-slate-600 transition hover:bg-brand/10 hover:text-brand md:hidden"
+          className="grid h-8 w-8 flex-none place-items-center rounded-md bg-white/10 text-white transition hover:bg-accent hover:text-brand md:hidden"
           aria-label="Close navigation"
         >
           <X size={16} />
@@ -306,7 +305,7 @@ export default function Sidebar({
           const expanded = openSection === section.id;
           const sectionActive = section.items.some((item) => isActive(pathname, item));
           return (
-            <div key={section.id} className={cn("rounded-lg border transition", sectionActive ? "border-brand/20 bg-brand/5" : "border-transparent")}>
+            <div key={section.id} className={cn("rounded-lg border transition", sectionActive ? "border-accent/25 bg-white/[0.08]" : "border-transparent")}>
               <button
                 type="button"
                 onClick={() => toggleSection(section.id)}
@@ -315,7 +314,7 @@ export default function Sidebar({
                 className={cn(
                   "flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-left text-[9px] font-bold uppercase tracking-[0.12em] transition",
                   desktopCollapsed ? "md:justify-center md:px-2" : "",
-                  sectionActive ? "text-brand" : "text-slate-500 hover:bg-slate-50 hover:text-brand"
+                  sectionActive ? "text-accent" : "text-accent/70 hover:bg-white/10 hover:text-accent"
                 )}
               >
                 <span className={cn(desktopCollapsed ? "md:hidden" : "")}>{section.title}</span>
@@ -336,18 +335,18 @@ export default function Sidebar({
                           className={cn(
                             "group relative flex min-h-8 items-center gap-2 rounded-lg px-2.5 py-1.5 text-[12px] font-semibold transition",
                             desktopCollapsed ? "md:justify-center md:px-2" : "",
-                            active ? "border border-sky-200 bg-sky-100 text-blue-700 shadow-sm" : comingSoon ? "cursor-not-allowed text-slate-300" : "text-slate-600 hover:bg-slate-50 hover:text-brand"
+                            active ? "bg-white text-brand shadow-sm" : comingSoon ? "cursor-not-allowed text-white/35" : "text-white/78 hover:bg-white/10 hover:text-white"
                           )}
                           aria-disabled={comingSoon}
                         >
-                          <span className={cn("flex h-6 w-6 flex-none items-center justify-center rounded-md transition", active ? "bg-white text-blue-700" : "bg-transparent text-slate-500 group-hover:text-brand")}>
+                          <span className={cn("flex h-6 w-6 flex-none items-center justify-center rounded-md transition", active ? "bg-accent text-brand" : "bg-white/10 text-accent group-hover:bg-accent group-hover:text-brand")}>
                             <Icon size={15} />
                           </span>
                           <span className={cn("truncate", desktopCollapsed ? "md:hidden" : "")}>{item.href === "/booking" ? bookingFeatureNameForAccount(accountStatus) : item.label}</span>
-                          {comingSoon && <span className={cn("ml-auto rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-black uppercase text-slate-500", desktopCollapsed ? "md:hidden" : "")}>Soon</span>}
+                          {comingSoon && <span className={cn("ml-auto rounded bg-accent/20 px-1.5 py-0.5 text-[9px] font-black uppercase text-accent", desktopCollapsed ? "md:hidden" : "")}>Soon</span>}
                           {item.href === "/ask-coach" && askCoachUnreadCount > 0 && (
                             <span className={cn(
-                              "ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-brand px-1.5 text-[10px] font-black text-white shadow-sm",
+                              "ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1.5 text-[10px] font-black text-brand shadow-sm",
                               desktopCollapsed ? "md:absolute md:right-1.5 md:top-1.5 md:h-4 md:min-w-4 md:px-1 md:text-[9px]" : ""
                             )}>
                               {askCoachUnreadCount > 9 ? "9+" : askCoachUnreadCount}
@@ -364,21 +363,16 @@ export default function Sidebar({
         })}
       </nav>
       <div className="relative mt-4">
-        <div className={cn("rounded-lg border border-slate-200 bg-white p-2 text-sm text-slate-700 shadow-sm", desktopCollapsed ? "md:p-1.5" : "")}>
-          <div className={cn("flex items-start gap-2", desktopCollapsed ? "md:flex-col md:items-center" : "")}>
-            <div className={cn("min-w-0 flex-1", desktopCollapsed ? "md:hidden" : "")}>
-              <div className="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-[0.1em] text-brand">
-                <Sparkles size={13} />
-                Academy Workspace
-              </div>
-              <div className="mt-1 truncate text-xs font-semibold text-slate-950">{user.name || "Player"}</div>
-              <div className="mt-1 inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold capitalize text-slate-500 ring-1 ring-slate-200">{user.role}</div>
+        <div className={cn("rounded-lg border border-white/10 bg-white/[0.08] p-2 text-sm text-white shadow-lg shadow-black/10 backdrop-blur", desktopCollapsed ? "md:p-1.5" : "")}>
+          <div className={cn("flex items-center gap-2", desktopCollapsed ? "md:flex-col md:items-center" : "")}>
+            <div className={cn("min-w-0 flex-1 rounded-md bg-white/10 px-2 py-1.5", desktopCollapsed ? "md:hidden" : "")}>
+              <div className="truncate text-xs font-bold text-white">{user.name || "Player"}</div>
             </div>
             <div className={cn("flex flex-none items-center gap-2", desktopCollapsed ? "md:flex-col" : "")}>
               <button
                 type="button"
                 onClick={openBell}
-                className="relative inline-flex h-8 w-8 items-center justify-center rounded-md bg-brand text-white shadow-sm transition hover:bg-brand-700"
+                className="relative inline-flex h-8 w-8 items-center justify-center rounded-md bg-accent text-brand shadow-sm transition hover:bg-accent-300"
                 aria-label="Notifications"
                 aria-expanded={openNotifications}
                 title="Notifications"
@@ -392,7 +386,7 @@ export default function Sidebar({
               </button>
               <button
                 type="button"
-                className={cn("inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-slate-100 text-slate-600 shadow-sm transition hover:bg-brand/10 hover:text-brand", desktopCollapsed ? "md:inline-flex" : "md:hidden")}
+                className={cn("inline-flex h-8 w-8 items-center justify-center rounded-md border border-white/10 bg-white/10 text-white shadow-sm transition hover:bg-white/20", desktopCollapsed ? "md:inline-flex" : "md:hidden")}
                 onClick={() => signOut({ callbackUrl: "/" })}
                 aria-label="Sign out"
                 title="Sign out"

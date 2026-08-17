@@ -481,6 +481,25 @@ function asNumber(raw: string | undefined) {
 function asDate(raw: string | undefined) {
   const value = String(raw || "").trim();
   if (!value) return undefined;
+  const ddMmYyyy = value.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  if (ddMmYyyy) {
+    const [, day, month, year] = ddMmYyyy;
+    const date = new Date(Number(year), Number(month) - 1, Number(day));
+    if (!Number.isNaN(date.getTime())) return date;
+  }
+  const ddMonYyyy = value.match(/^(\d{2})-([A-Za-z]{3})-(\d{4})(?:\s+(\d{1,2}):(\d{2}):(\d{2})\s*(AM|PM)?)?$/i);
+  if (ddMonYyyy) {
+    const [, day, mon, year, hh, mm, ss, meridiem] = ddMonYyyy;
+    const monthNames = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+    const monthIndex = monthNames.indexOf(mon.toLowerCase());
+    if (monthIndex >= 0) {
+      let hours = Number(hh || 0);
+      if ((meridiem || "").toUpperCase() === "PM" && hours < 12) hours += 12;
+      if ((meridiem || "").toUpperCase() === "AM" && hours === 12) hours = 0;
+      const date = new Date(Number(year), monthIndex, Number(day), hours, Number(mm || 0), Number(ss || 0));
+      if (!Number.isNaN(date.getTime())) return date;
+    }
+  }
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return undefined;
   return date;
@@ -606,6 +625,11 @@ function parsePaymentHistoryWorkbook(buffer: Buffer) {
 
     const paidDate = asDate(rawRow.paid_date);
     const collectedDate = asDate(rawRow.collected_date);
+    const hasReceipt = Boolean(rawRow.reference_number);
+    const hasInstallment = Boolean(rawRow.installment_number);
+    const hasStudentName = Boolean(rawRow.name);
+    const hasAnyDate = Boolean(paidDate || collectedDate);
+    if (!hasAnyDate || (!hasReceipt && !hasInstallment && !hasStudentName)) continue;
     rows.push({
       lineNumber: index + 1,
       rowType: "monthly_payment",

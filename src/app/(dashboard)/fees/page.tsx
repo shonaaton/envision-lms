@@ -2,10 +2,10 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { ensureMonthlyInvoices } from "@/lib/fees";
 import { formatINR } from "@/lib/utils";
-import { CreditLedger, FeeAssignment, Invoice } from "@/models/Fee";
+import { CreditLedger, DeletedInvoice, FeeAssignment, Invoice } from "@/models/Fee";
 import { User } from "@/models/User";
 import Link from "next/link";
-import { AlertTriangle, Banknote, CalendarClock, Download, FileText, Receipt, Users, WalletCards } from "lucide-react";
+import { AlertTriangle, Banknote, CalendarClock, Download, FileText, FileX2, Receipt, Users, WalletCards } from "lucide-react";
 import { redirect } from "next/navigation";
 import { getFeaturePermissionState } from "@/lib/featureAccess";
 import { isFeesManager } from "@/lib/feesAccess";
@@ -74,11 +74,12 @@ export default async function FeesDashboardPage() {
 
   const { from, to } = monthRange();
   const invoiceFilter = manager ? {} : { student: userId };
-  const [invoices, assignments, students, recentCredits] = await Promise.all([
+  const [invoices, assignments, students, recentCredits, deletedInvoiceCount] = await Promise.all([
     Invoice.find(invoiceFilter).populate("student plan").sort({ createdAt: -1 }).limit(80).lean(),
     FeeAssignment.find(manager ? {} : { student: userId }).populate("student plan").sort({ creditBalance: 1 }).lean(),
     User.countDocuments({ role: "student", isActive: { $ne: false } }),
     CreditLedger.find(manager ? {} : { student: userId }).populate("student").sort({ createdAt: -1 }).limit(10).lean(),
+    manager ? DeletedInvoice.countDocuments({}) : Promise.resolve(0),
   ]);
 
   const currentInvoices = invoices.filter((i: any) => new Date(i.createdAt) >= from && new Date(i.createdAt) <= to);
@@ -222,6 +223,7 @@ export default async function FeesDashboardPage() {
     ...(studentFeePermissions.view || studentFeePermissions.edit ? [["/fees/student-fees", "Student Fees"]] as Array<[string, string]> : []),
     ...(creditPermissions.view || creditPermissions.credit ? [["/fees/credit-monitoring", "Credit Monitoring"]] as Array<[string, string]> : []),
     ...(invoicePermissions.view || invoicePermissions.invoice ? [["/fees/invoices", "Invoices"]] as Array<[string, string]> : []),
+    ...(invoicePermissions.view ? [["/fees/deleted-invoices", "Deleted Invoices"]] as Array<[string, string]> : []),
     ...(reportPermissions.view || reportPermissions.export ? [["/fees/reports", "Reports"]] as Array<[string, string]> : []),
     ...(role === "admin" ? [["/admin/settings", "Academy Setup"]] as Array<[string, string]> : []),
   ];
@@ -242,6 +244,7 @@ export default async function FeesDashboardPage() {
         <Card label="Credit Students" value={creditAssignments.length} note={`${lowCredit.length} low credit`} icon={WalletCards} />
         <Card label="Monthly Students" value={monthlyAssignments.length} note="Monthly plan assigned" icon={Banknote} />
         <Card label="Recent Invoices" value={invoices.length} note="Latest 80 records" icon={Receipt} />
+        <Card label="Deleted Invoices" value={deletedInvoiceCount} note="Audit trail with reasons" icon={FileX2} />
       </div>
 
       <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-3">

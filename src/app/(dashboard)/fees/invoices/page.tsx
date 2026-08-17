@@ -1,20 +1,21 @@
 import { auth } from "@/lib/auth";
 import { resolvePublicAppUrl } from "@/lib/appUrl";
 import { dbConnect } from "@/lib/db";
-import { createInvoice, createNextMonthlyInvoiceAfterPayment, ensureMonthlyInvoices, markInvoicePaid as applyInvoicePayment } from "@/lib/fees";
+import { adjustedInvoicePayment, createInvoice, createNextMonthlyInvoiceAfterPayment, ensureMonthlyInvoices, markInvoicePaid as applyInvoicePayment } from "@/lib/fees";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
 import { sendWhatsAppReminder } from "@/lib/whatsappAutomation";
 import { formatINR } from "@/lib/utils";
-import { CreditLedger, FeeAssignment, FeePlan, Invoice, Notification } from "@/models/Fee";
+import { CreditLedger, DeletedInvoice, FeeAssignment, FeePlan, Invoice, Notification } from "@/models/Fee";
 import { Payment } from "@/models/Payment";
 import { User } from "@/models/User";
 import { createHash, randomBytes } from "crypto";
 import PayButton from "@/components/PayButton";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { AlertCircle, CheckCircle2, Clock3, Download, FileText, IndianRupee, MailCheck, MailWarning, MessageCircle, Printer, Receipt, Send, Trash2, XCircle } from "lucide-react";
+import { AlertCircle, CheckCircle2, Clock3, Download, FileText, IndianRupee, MailCheck, MailWarning, MessageCircle, Printer, Receipt, Send, XCircle } from "lucide-react";
 import { InvoiceCreationForm } from "@/components/fees/InvoiceCreationForm";
 import { InvoicePaymentModal } from "@/components/fees/InvoicePaymentModal";
+import { DeleteInvoiceButton } from "@/components/fees/DeleteInvoiceButton";
 import { canAccessFeature, getFeaturePermissionState } from "@/lib/featureAccess";
 import { isFeesManager, requireFeesAccess } from "@/lib/feesAccess";
 import { recordActivity } from "@/lib/activity";
@@ -123,7 +124,7 @@ async function markInvoicePaid(formData: FormData) {
   if (!session) throw new Error("Forbidden");
   await dbConnect();
   const invoiceId = String(formData.get("invoice") || "");
-  const invoice: any = await Invoice.findById(invoiceId).select("type totalAmount").lean();
+  const invoice: any = await Invoice.findById(invoiceId).select("type amount lateFee totalAmount invoiceMode gstPercentage").lean();
   if (invoice?.type === "credits" && !(await canAccessFeature("invoices", session.user as any, "credit"))) {
     throw new Error("Forbidden");
   }
@@ -139,11 +140,21 @@ async function markInvoicePaid(formData: FormData) {
       referenceNumber: refs[index] || undefined,
     }))
     .filter((transaction) => transaction.amount > 0);
+  const waiveLateFee = String(formData.get("waiveLateFee") || "") === "on";
+  const discountAmount = paise(formData.get("discountAmount"));
+  const adjustmentNote = String(formData.get("paymentAdjustmentNote") || "").trim();
+  const adjusted = adjustedInvoicePayment({
+    amount: Number(invoice?.amount || 0),
+    lateFee: Number(invoice?.lateFee || 0),
+    totalAmount: Number(invoice?.totalAmount || 0),
+    invoiceMode: invoice?.invoiceMode || "non_gst",
+    gstPercentage: Number(invoice?.gstPercentage || 0),
+  }, { waiveLateFee, discountAmount, note: adjustmentNote });
   const totalPaid = transactions.reduce((sum, transaction) => sum + transaction.amount, 0);
-  if (!transactions.length || totalPaid !== Number(invoice?.totalAmount || 0)) {
+  if (!transactions.length || totalPaid !== Number(adjusted.totalAmount || 0)) {
     redirect("/fees/invoices?payment=amount-mismatch");
   }
-  await applyInvoicePayment(invoiceId, undefined, { actor: (session.user as any).id, source: "manual_admin" }, transactions);
+  await applyInvoicePayment(invoiceId, undefined, { actor: (session.user as any).id, source: "manual_admin" }, transactions, { waiveLateFee, discountAmount, note: adjustmentNote });
   if (invoice?.type === "monthly") await createNextMonthlyInvoiceAfterPayment(invoiceId);
   const paidInvoice: any = await Invoice.findById(invoiceId).populate("student").lean();
   if (paidInvoice?.student?._id) {
@@ -154,6 +165,8 @@ async function markInvoicePaid(formData: FormData) {
       `Hello ${paidInvoice.student.name},`,
       `Payment has been recorded for invoice ${paidInvoice.invoiceNumber}.`,
       `Amount: ${formatINR(paidInvoice.totalAmount)}.`,
+      paidInvoice.lateFeeWaivedAmount ? `Late fee waived: ${formatINR(paidInvoice.lateFeeWaivedAmount)}.` : "",
+      paidInvoice.discountAmount ? `Discount applied: ${formatINR(paidInvoice.discountAmount)}.` : "",
       transactionSummary ? `Transactions:\n${transactionSummary}` : "",
     ].filter(Boolean).join("\n\n");
     await Notification.create({
@@ -213,18 +226,33 @@ async function deleteInvoice(formData: FormData) {
   const invoiceId = String(formData.get("invoice") || "");
   const returnStudent = String(formData.get("studentFilter") || "");
   const returnPath = `/fees/invoices${returnStudent ? `?student=${encodeURIComponent(returnStudent)}&` : "?"}`;
-  const invoice: any = await Invoice.findById(invoiceId).lean();
+  const deleteReason = String(formData.get("deleteReason") || "").trim();
+  if (deleteReason.length < 3) redirect(`${returnPath}delete=reason-required`);
+  const invoice: any = await Invoice.findById(invoiceId).populate("student plan").lean();
   if (!invoice) redirect(`${returnPath}delete=missing`);
   if (invoice.type === "credits" && invoice.status === "paid" && !(await canAccessFeature("invoices", session.user as any, "credit"))) {
     throw new Error("Forbidden");
   }
+  let creditReversal: Record<string, unknown> = {};
   if (invoice.type === "credits" && invoice.status === "paid" && invoice.credits) {
-    const assignment: any = await FeeAssignment.findOne({ student: invoice.student, type: "credits" });
+    const studentId = invoice.student?._id || invoice.student;
+    const assignment: any = await FeeAssignment.findOne({ student: studentId, type: "credits" });
     if (assignment) {
+      const previousBalance = Number(assignment.creditBalance || 0);
+      const previousPurchased = Number(assignment.totalCreditsPurchased || 0);
+      const reversedCredits = Number(invoice.credits || 0);
       await FeeAssignment.findByIdAndUpdate(assignment._id, {
-        creditBalance: Math.max(0, Number(assignment.creditBalance || 0) - Number(invoice.credits || 0)),
-        totalCreditsPurchased: Math.max(0, Number(assignment.totalCreditsPurchased || 0) - Number(invoice.credits || 0)),
+        creditBalance: Math.max(0, previousBalance - reversedCredits),
+        totalCreditsPurchased: Math.max(0, previousPurchased - reversedCredits),
       });
+      creditReversal = {
+        assignment: assignment._id.toString(),
+        reversedCredits,
+        previousBalance,
+        balanceAfter: Math.max(0, previousBalance - reversedCredits),
+        previousPurchased,
+        purchasedAfter: Math.max(0, previousPurchased - reversedCredits),
+      };
     }
   }
   if (invoice.type === "monthly" && invoice.assignment && invoice.dueDate) {
@@ -233,6 +261,36 @@ async function deleteInvoice(formData: FormData) {
     });
   }
   await Payment.deleteMany({ purpose: "invoice", refId: invoice._id }).catch(() => null);
+  const actor: any = await User.findById((session.user as any).id).select("name role").lean();
+  await DeletedInvoice.create({
+    originalInvoiceId: invoice._id,
+    invoiceNumber: invoice.invoiceNumber,
+    referenceNumber: invoice.referenceNumber,
+    student: invoice.student?._id || invoice.student,
+    studentName: invoice.student?.name || "",
+    studentEmail: invoice.student?.email || "",
+    studentUsername: invoice.student?.username || "",
+    plan: invoice.plan?._id || invoice.plan,
+    planName: invoice.plan?.name || "",
+    assignment: invoice.assignment,
+    type: invoice.type,
+    title: invoice.title,
+    issueDate: invoice.issueDate,
+    dueDate: invoice.dueDate,
+    amount: invoice.amount,
+    totalAmount: invoice.totalAmount,
+    credits: invoice.credits || 0,
+    status: invoice.status,
+    paidAt: invoice.paidAt,
+    paymentTransactions: invoice.paymentTransactions || [],
+    deletionReason: deleteReason,
+    deletedBy: (session.user as any).id,
+    deletedByName: actor?.name || (session.user as any).name || "",
+    deletedByRole: actor?.role || (session.user as any).role || "",
+    deletedAt: new Date(),
+    creditReversal,
+    invoiceSnapshot: invoice,
+  });
   await Promise.all([
     CreditLedger.deleteMany({ invoice: invoice._id }),
     Invoice.findByIdAndDelete(invoice._id),
@@ -250,6 +308,8 @@ async function deleteInvoice(formData: FormData) {
       status: invoice.status,
       amount: invoice.totalAmount,
       credits: invoice.credits || 0,
+      deleteReason,
+      creditReversal,
       source: "manual_admin",
     },
   });
@@ -513,6 +573,7 @@ function paymentBanner(status: string) {
 function deleteBanner(status: string) {
   if (status === "deleted") return { tone: "border-emerald-200 bg-emerald-50 text-emerald-800", icon: CheckCircle2, text: "Invoice deleted successfully." };
   if (status === "missing") return { tone: "border-amber-200 bg-amber-50 text-amber-900", icon: MailWarning, text: "That invoice was already removed." };
+  if (status === "reason-required") return { tone: "border-rose-200 bg-rose-50 text-rose-800", icon: AlertCircle, text: "Please enter a reason before deleting an invoice." };
   return null;
 }
 
@@ -761,12 +822,30 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
                           <button className="inline-flex h-9 items-center gap-1 rounded-lg border border-emerald-200 px-3 text-xs font-bold text-emerald-700"><MessageCircle size={14} /> WhatsApp Test</button>
                         </form>}
                       {permissions.payment && (invoice.type !== "credits" || permissions.credit) && invoice.status !== "paid" && invoice.status !== "cancelled" && (
-                        <InvoicePaymentModal invoiceId={invoiceId} totalAmount={invoice.totalAmount} action={markInvoicePaid} />
+                        <InvoicePaymentModal
+                          invoiceId={invoiceId}
+                          amount={invoice.amount || 0}
+                          lateFee={invoice.lateFee || 0}
+                          totalAmount={invoice.totalAmount || 0}
+                          invoiceMode={invoice.invoiceMode || "non_gst"}
+                          gstPercentage={invoice.gstPercentage || 0}
+                          action={markInvoicePaid}
+                        />
                       )}
                       {permissions.edit && invoice.status !== "cancelled" && (
                         <form action={cancelInvoice}><input type="hidden" name="invoice" value={invoiceId} /><button className="inline-flex h-9 items-center gap-1 rounded-lg border border-amber-200 px-3 text-xs font-bold text-amber-700"><XCircle size={14} /> Cancel</button></form>
                       )}
-                      {permissions.edit && (invoice.type !== "credits" || invoice.status !== "paid" || permissions.credit) && <form action={deleteInvoice}><input type="hidden" name="invoice" value={invoiceId} /><input type="hidden" name="studentFilter" value={selectedStudent} /><button className="inline-flex h-9 items-center gap-1 rounded-lg border border-rose-200 px-3 text-xs font-bold text-rose-700"><Trash2 size={14} /> Delete</button></form>}
+                      {permissions.edit && (invoice.type !== "credits" || invoice.status !== "paid" || permissions.credit) && (
+                        <DeleteInvoiceButton
+                          invoiceId={invoiceId}
+                          invoiceNumber={invoice.invoiceNumber || ""}
+                          studentFilter={selectedStudent}
+                          totalAmount={invoice.totalAmount || 0}
+                          credits={invoice.credits || 0}
+                          invoiceType={invoice.type}
+                          action={deleteInvoice}
+                        />
+                      )}
                     </div>
                   )}
                 </article>

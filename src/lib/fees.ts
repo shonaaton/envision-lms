@@ -279,17 +279,60 @@ type ManualPaymentTransaction = {
   referenceNumber?: string;
 };
 
+type InvoicePaymentAdjustment = {
+  waiveLateFee?: boolean;
+  discountAmount?: number;
+  note?: string;
+};
+
+export function adjustedInvoicePayment(input: {
+  amount: number;
+  lateFee?: number;
+  totalAmount: number;
+  invoiceMode?: "included" | "excluded" | "non_gst";
+  gstPercentage?: number;
+}, adjustment: InvoicePaymentAdjustment = {}) {
+  const lateFee = Math.max(0, Number(input.lateFee || 0));
+  const discountAmount = Math.max(0, Number(adjustment.discountAmount || 0));
+  const lateFeeWaivedAmount = adjustment.waiveLateFee ? lateFee : 0;
+  const taxableBaseAmount = Math.max(0, Number(input.amount || 0) - discountAmount);
+  const settings = {
+    invoiceMode: input.invoiceMode === "non_gst" ? "non_gst" : "gst",
+    gstPercentage: Number(input.gstPercentage || 0),
+  };
+  const breakup = invoiceBreakup(taxableBaseAmount, lateFee - lateFeeWaivedAmount, settings, {
+    gstMode: input.invoiceMode || "non_gst",
+    gstPercentage: Number(input.gstPercentage || 0),
+  });
+  return {
+    ...breakup,
+    amount: taxableBaseAmount,
+    lateFee: lateFee - lateFeeWaivedAmount,
+    lateFeeWaivedAmount,
+    discountAmount,
+    originalTotalAmount: Number(input.totalAmount || 0),
+  };
+}
+
 export async function markInvoicePaid(
   invoiceId: string,
   paymentId?: string,
   activity?: { actor?: string; source?: "manual_admin" | "razorpay_checkout" | "razorpay_webhook" | "backend"; label?: string },
-  transactions: ManualPaymentTransaction[] = []
+  transactions: ManualPaymentTransaction[] = [],
+  adjustment: InvoicePaymentAdjustment = {}
 ) {
   const before: any = await Invoice.findById(invoiceId).select("status").lean();
   const existing: any = await Invoice.findById(invoiceId).populate("plan").lean();
   if (!existing) return existing;
+  const adjusted = adjustedInvoicePayment({
+    amount: existing.amount,
+    lateFee: existing.lateFee,
+    totalAmount: existing.totalAmount,
+    invoiceMode: existing.invoiceMode,
+    gstPercentage: existing.gstPercentage,
+  }, adjustment);
   const paymentTotal = transactions.reduce((sum, transaction) => sum + Number(transaction.amount || 0), 0);
-  if (transactions.length && paymentTotal !== Number(existing.totalAmount || 0)) {
+  if (transactions.length && paymentTotal !== Number(adjusted.totalAmount || 0)) {
     throw new Error("Payment transactions must match the invoice total.");
   }
   let finalPaymentId = paymentId;
@@ -315,6 +358,18 @@ export async function markInvoicePaid(
   const invoice: any = await Invoice.findByIdAndUpdate(
     invoiceId,
     {
+      amount: adjusted.amount,
+      lateFee: adjusted.lateFee,
+      taxableAmount: adjusted.taxableAmount,
+      gstPercentage: adjusted.gstPercentage,
+      gstAmount: adjusted.gstAmount,
+      cgstAmount: adjusted.cgstAmount,
+      sgstAmount: adjusted.sgstAmount,
+      totalAmount: adjusted.totalAmount,
+      originalTotalAmount: adjusted.originalTotalAmount,
+      lateFeeWaivedAmount: adjusted.lateFeeWaivedAmount,
+      discountAmount: adjusted.discountAmount,
+      paymentAdjustmentNote: adjustment.note?.trim() || undefined,
       status: "paid",
       paidAt,
       payment: finalPaymentId,
@@ -339,6 +394,9 @@ export async function markInvoicePaid(
       amount: invoice.totalAmount,
       invoiceType: invoice.type,
       transactionCount: transactions.length,
+      lateFeeWaivedAmount: adjusted.lateFeeWaivedAmount,
+      discountAmount: adjusted.discountAmount,
+      originalTotalAmount: adjusted.originalTotalAmount,
       nextDueDate: nextDueDate || "",
     },
   });

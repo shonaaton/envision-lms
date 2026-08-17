@@ -27,14 +27,44 @@ function newTransaction(amount = ""): TransactionDraft {
   };
 }
 
-export function InvoicePaymentModal({ invoiceId, totalAmount, action }: { invoiceId: string; totalAmount: number; action: ServerAction }) {
+export function InvoicePaymentModal({
+  invoiceId,
+  amount,
+  lateFee,
+  totalAmount,
+  invoiceMode,
+  gstPercentage,
+  action,
+}: {
+  invoiceId: string;
+  amount: number;
+  lateFee: number;
+  totalAmount: number;
+  invoiceMode: "included" | "excluded" | "non_gst";
+  gstPercentage: number;
+  action: ServerAction;
+}) {
   const [open, setOpen] = useState(false);
+  const [waiveLateFee, setWaiveLateFee] = useState(false);
+  const [discountAmount, setDiscountAmount] = useState("");
   const [transactions, setTransactions] = useState<TransactionDraft[]>(() => [newTransaction(String((totalAmount || 0) / 100))]);
+  const discountPaise = Math.max(0, Math.round(Number(discountAmount || 0) * 100));
+  const adjustedTotal = useMemo(() => {
+    const adjustedBase = Math.max(0, Number(amount || 0) - discountPaise);
+    const adjustedLateFee = waiveLateFee ? 0 : Math.max(0, Number(lateFee || 0));
+    const gross = adjustedBase + adjustedLateFee;
+    const gst = invoiceMode === "non_gst" || !gstPercentage
+      ? 0
+      : invoiceMode === "included"
+        ? gross - Math.round((gross * 100) / (100 + gstPercentage))
+        : Math.round((gross * gstPercentage) / 100);
+    return invoiceMode === "excluded" ? gross + gst : gross;
+  }, [amount, discountPaise, gstPercentage, invoiceMode, lateFee, waiveLateFee]);
   const enteredPaise = useMemo(
     () => transactions.reduce((sum, transaction) => sum + Math.round(Number(transaction.amount || 0) * 100), 0),
     [transactions]
   );
-  const remaining = totalAmount - enteredPaise;
+  const remaining = adjustedTotal - enteredPaise;
   const matches = remaining === 0;
 
   const update = (id: string, patch: Partial<TransactionDraft>) => {
@@ -64,10 +94,27 @@ export function InvoicePaymentModal({ invoiceId, totalAmount, action }: { invoic
               </button>
             </div>
 
-            <div className="mb-4 grid gap-2 sm:grid-cols-3">
+            <div className="mb-4 grid gap-2 sm:grid-cols-4">
               <Summary label="Invoice Total" value={formatINR(totalAmount)} />
+              <Summary label="Payable" value={formatINR(adjustedTotal)} tone={adjustedTotal < totalAmount ? "good" : "neutral"} />
               <Summary label="Entered" value={formatINR(enteredPaise)} />
               <Summary label={remaining >= 0 ? "Remaining" : "Extra"} value={formatINR(Math.abs(remaining))} tone={matches ? "good" : "warn"} />
+            </div>
+
+            <div className="mb-4 grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 md:grid-cols-[0.75fr_1fr_1fr]">
+              <label className="flex items-center gap-2 text-sm font-bold text-slate-700">
+                <input name="waiveLateFee" type="checkbox" checked={waiveLateFee} onChange={(event) => setWaiveLateFee(event.target.checked)} className="h-4 w-4 rounded border-slate-300" />
+                Remove late fees
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs font-bold text-slate-500">Discount Amount</span>
+                <input name="discountAmount" type="number" min="0" step="0.01" value={discountAmount} onChange={(event) => setDiscountAmount(event.target.value)} className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm" />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs font-bold text-slate-500">Adjustment Note</span>
+                <input name="paymentAdjustmentNote" placeholder="Optional" className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm" />
+              </label>
+              {lateFee > 0 && <div className="md:col-span-3 text-xs font-semibold text-slate-500">Current late fee: {formatINR(lateFee)}</div>}
             </div>
 
             <div className="space-y-3">

@@ -79,6 +79,10 @@ const InvoiceSchema = new Schema(
     cgstAmount: { type: Number, default: 0 },
     sgstAmount: { type: Number, default: 0 },
     totalAmount: { type: Number, required: true },
+    originalTotalAmount: Number,
+    lateFeeWaivedAmount: { type: Number, default: 0 },
+    discountAmount: { type: Number, default: 0 },
+    paymentAdjustmentNote: String,
     credits: { type: Number, default: 0 },
     status: { type: String, enum: ["draft", "unpaid", "paid", "overdue", "cancelled"], default: "unpaid", index: true },
     paidAt: Date,
@@ -98,6 +102,39 @@ const InvoiceSchema = new Schema(
     lastSentAt: Date,
     lastSentTo: String,
     lastEmailStatus: { type: String, enum: ["sent", "failed", "skipped", "missing_email", "not_configured"], default: undefined },
+  },
+  { timestamps: true }
+);
+
+const DeletedInvoiceSchema = new Schema(
+  {
+    originalInvoiceId: { type: Schema.Types.ObjectId, index: true },
+    invoiceNumber: { type: String, index: true },
+    referenceNumber: { type: String, trim: true, index: true },
+    student: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
+    studentName: { type: String, index: true },
+    studentEmail: String,
+    studentUsername: String,
+    plan: { type: Schema.Types.ObjectId, ref: "FeePlan", index: true },
+    planName: String,
+    assignment: { type: Schema.Types.ObjectId, ref: "FeeAssignment", index: true },
+    type: { type: String, enum: ["monthly", "credits", "manual"], required: true, index: true },
+    title: { type: String, required: true },
+    issueDate: Date,
+    dueDate: Date,
+    amount: Number,
+    totalAmount: Number,
+    credits: { type: Number, default: 0 },
+    status: { type: String, index: true },
+    paidAt: Date,
+    paymentTransactions: [{ type: Schema.Types.Mixed }],
+    deletionReason: { type: String, required: true },
+    deletedBy: { type: Schema.Types.ObjectId, ref: "User", index: true },
+    deletedByName: String,
+    deletedByRole: String,
+    deletedAt: { type: Date, default: Date.now, index: true },
+    creditReversal: { type: Schema.Types.Mixed },
+    invoiceSnapshot: { type: Schema.Types.Mixed },
   },
   { timestamps: true }
 );
@@ -137,6 +174,7 @@ export type AcademySettingsDoc = InferSchemaType<typeof AcademySettingsSchema> &
 export type FeePlanDoc = InferSchemaType<typeof FeePlanSchema> & { _id: any };
 export type FeeAssignmentDoc = InferSchemaType<typeof FeeAssignmentSchema> & { _id: any };
 export type InvoiceDoc = InferSchemaType<typeof InvoiceSchema> & { _id: any };
+export type DeletedInvoiceDoc = InferSchemaType<typeof DeletedInvoiceSchema> & { _id: any };
 export type CreditLedgerDoc = InferSchemaType<typeof CreditLedgerSchema> & { _id: any };
 export type NotificationDoc = InferSchemaType<typeof NotificationSchema> & { _id: any };
 
@@ -144,5 +182,6 @@ export const AcademySettings = models.AcademySettings || model("AcademySettings"
 export const FeePlan = models.FeePlan || model("FeePlan", FeePlanSchema);
 export const FeeAssignment = models.FeeAssignment || model("FeeAssignment", FeeAssignmentSchema);
 export const Invoice = models.Invoice || model("Invoice", InvoiceSchema);
+export const DeletedInvoice = models.DeletedInvoice || model("DeletedInvoice", DeletedInvoiceSchema);
 export const CreditLedger = models.CreditLedger || model("CreditLedger", CreditLedgerSchema);
 export const Notification = models.Notification || model("Notification", NotificationSchema);

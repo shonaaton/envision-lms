@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { Chess } from "chess.js";
 
@@ -20,14 +20,6 @@ type PgnMove = {
   promotion?: string;
   flags?: string;
   before?: string;
-};
-
-type MoveRow = {
-  number: number;
-  white?: PgnMove;
-  black?: PgnMove;
-  whitePly?: number;
-  blackPly?: number;
 };
 
 function pgnFen(pgn?: string) {
@@ -80,22 +72,6 @@ function replayPosition(start: string, moves: PgnMove[], ply: number) {
   }
 }
 
-function buildRows(moves: PgnMove[]) {
-  const rows: MoveRow[] = [];
-  moves.forEach((move, index) => {
-    const rowIndex = Math.floor(index / 2);
-    if (!rows[rowIndex]) rows[rowIndex] = { number: rowIndex + 1 };
-    if (index % 2 === 0) {
-      rows[rowIndex].white = move;
-      rows[rowIndex].whitePly = index + 1;
-    } else {
-      rows[rowIndex].black = move;
-      rows[rowIndex].blackPly = index + 1;
-    }
-  });
-  return rows;
-}
-
 export default function SessionResourceReview({ resources }: { resources: any[] }) {
   const normalized = useMemo(
     () => resources.map((resource, index) => ({
@@ -111,36 +87,77 @@ export default function SessionResourceReview({ resources }: { resources: any[] 
     setPly(0);
   }, [active]);
 
-  if (!normalized.length) {
-    return <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">No PGN or custom board was recorded for this session.</div>;
-  }
-  const selected = normalized[Math.min(active, normalized.length - 1)];
-  const parsed = parsePgn(selected.pgn, selected.fen === "start" ? "" : selected.fen);
-  const moveRows = buildRows(parsed.moves);
+  const selected = normalized[Math.min(active, Math.max(normalized.length - 1, 0))];
+  const parsed = selected ? parsePgn(selected.pgn, selected.fen === "start" ? "" : selected.fen) : { valid: true, start: startFen, final: startFen, moves: [] as PgnMove[] };
   const boardPosition = parsed.moves.length ? replayPosition(parsed.start, parsed.moves, ply) : selected.fen || parsed.final || "start";
   const activeMove = ply > 0 ? parsed.moves[ply - 1] : null;
+  const previousMove = ply > 1 ? parsed.moves[ply - 2] : null;
+  const nextMove = ply < parsed.moves.length ? parsed.moves[ply] : null;
   const headers = [
     ["Event", pgnHeader(selected.pgn, "Event")],
     ["Date", pgnHeader(selected.pgn, "Date")],
     ["Result", pgnHeader(selected.pgn, "Result")],
     ["Opening", pgnHeader(selected.pgn, "Opening")],
   ].filter(([, value]) => value);
-  const goTo = (nextPly: number) => setPly(Math.max(0, Math.min(parsed.moves.length, nextPly)));
+  const goTo = useCallback((nextPly: number) => setPly(Math.max(0, Math.min(parsed.moves.length, nextPly))), [parsed.moves.length]);
+  const goToPgn = useCallback((nextIndex: number) => setActive(Math.max(0, Math.min(normalized.length - 1, nextIndex))), [normalized.length]);
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || target?.isContentEditable) return;
+
+      if (event.key === "ArrowLeft" && parsed.moves.length) {
+        event.preventDefault();
+        goTo(ply - 1);
+      }
+      if (event.key === "ArrowRight" && parsed.moves.length) {
+        event.preventDefault();
+        goTo(ply + 1);
+      }
+      if (event.key === "ArrowUp" && normalized.length > 1) {
+        event.preventDefault();
+        goToPgn(active - 1);
+      }
+      if (event.key === "ArrowDown" && normalized.length > 1) {
+        event.preventDefault();
+        goToPgn(active + 1);
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [active, goTo, goToPgn, normalized.length, parsed.moves.length, ply]);
+
+  if (!normalized.length || !selected) {
+    return <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">No PGN or custom board was recorded for this session.</div>;
+  }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
-      <div className="space-y-2">
-        {normalized.map((resource, index) => (
-          <button
-            key={resource.key}
-            type="button"
-            onClick={() => setActive(index)}
-            className={`w-full rounded-xl border px-3 py-2 text-left text-sm transition ${index === active ? "border-brand bg-brand/5 text-brand" : "border-slate-200 bg-white text-slate-700"}`}
-          >
-            <div className="truncate font-bold">{resource.title || `Board ${index + 1}`}</div>
-            <div className="mt-0.5 text-xs capitalize text-slate-500">{resource.type || "position"}</div>
-          </button>
-        ))}
+    <div className="space-y-4">
+      <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <div className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">PGN Navigation</div>
+            <div className="mt-1 truncate text-sm font-black text-slate-950">{selected.title || `Board ${active + 1}`}</div>
+            <div className="mt-1 text-xs text-slate-500">
+              PGN {active + 1} of {normalized.length} · {selected.type || "position"}
+            </div>
+          </div>
+          {normalized.length > 1 ? (
+            <div className="flex items-center gap-2 self-start sm:self-auto">
+              <PagerButton onClick={() => goToPgn(active - 1)} disabled={active === 0} label="Previous PGN">
+                <ChevronLeft size={15} />
+                <span>Previous PGN</span>
+              </PagerButton>
+              <PagerButton onClick={() => goToPgn(active + 1)} disabled={active === normalized.length - 1} label="Next PGN">
+                <span>Next PGN</span>
+                <ChevronRight size={15} />
+              </PagerButton>
+            </div>
+          ) : null}
+        </div>
       </div>
       <div className="grid gap-4 xl:grid-cols-[minmax(280px,420px)_minmax(0,1fr)]">
         <div className="mx-auto w-full max-w-[420px] space-y-3">
@@ -158,6 +175,11 @@ export default function SessionResourceReview({ resources }: { resources: any[] 
               <span className="min-w-20 text-center text-xs font-bold text-slate-500">{ply}/{parsed.moves.length}</span>
               <MoveNavButton onClick={() => goTo(ply + 1)} disabled={ply === parsed.moves.length} label="Next"><ChevronRight size={15} /></MoveNavButton>
               <MoveNavButton onClick={() => goTo(parsed.moves.length)} disabled={ply === parsed.moves.length} label="Last"><ChevronsRight size={15} /></MoveNavButton>
+            </div>
+          ) : null}
+          {parsed.moves.length ? (
+            <div className="rounded-2xl border border-slate-200 bg-white p-3 text-xs text-slate-500 shadow-sm">
+              Use left/right arrows to move through the position. Use up/down arrows to switch PGNs.
             </div>
           ) : null}
         </div>
@@ -186,16 +208,24 @@ export default function SessionResourceReview({ resources }: { resources: any[] 
               <div className="mt-4 rounded-xl bg-slate-50 px-3 py-2">
                 <div className="text-[10px] font-black uppercase tracking-wide text-slate-400">Selected Move</div>
                 <div className="mt-1 text-sm font-bold text-slate-800">{activeMove ? moveNote(activeMove) : "Starting position"}</div>
+                <div className="mt-1 text-xs text-slate-500">
+                  {activeMove ? `Move ${ply} of ${parsed.moves.length}` : `Move 0 of ${parsed.moves.length}`}
+                </div>
               </div>
-              <div className="mt-4 max-h-72 overflow-y-auto pr-1">
-                <div className="grid gap-1 text-sm">
-                  {moveRows.map((row) => (
-                    <div key={row.number} className="grid grid-cols-[32px_minmax(0,1fr)_minmax(0,1fr)] items-start gap-1">
-                      <span className="pt-1 text-xs font-bold text-slate-400">{row.number}.</span>
-                      <MoveButton move={row.white} active={ply === row.whitePly} onClick={() => row.whitePly && goTo(row.whitePly)} />
-                      <MoveButton move={row.black} active={ply === row.blackPly} onClick={() => row.blackPly && goTo(row.blackPly)} />
-                    </div>
-                  ))}
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-white/70 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-[10px] font-black uppercase tracking-wide text-slate-400">Move Navigator</div>
+                    <div className="mt-1 text-sm font-bold text-slate-900">{activeMove?.san || "Starting position"}</div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <MoveNavButton onClick={() => goTo(ply - 1)} disabled={ply === 0} label="Previous move"><ChevronLeft size={15} /></MoveNavButton>
+                    <MoveNavButton onClick={() => goTo(ply + 1)} disabled={ply === parsed.moves.length} label="Next move"><ChevronRight size={15} /></MoveNavButton>
+                  </div>
+                </div>
+                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  <MoveSummaryCard label="Previous" move={previousMove} emptyText="You are at the starting position." />
+                  <MoveSummaryCard label="Next" move={nextMove} emptyText="You are at the final position." />
                 </div>
               </div>
             </>
@@ -226,25 +256,36 @@ function MoveNavButton({ children, disabled, label, onClick }: { children: React
   );
 }
 
-function MoveButton({ move, active, onClick }: { move?: PgnMove; active: boolean; onClick: () => void }) {
+function PagerButton({ children, disabled, label, onClick }: { children: ReactNode; disabled: boolean; label: string; onClick: () => void }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      disabled={!move}
-      title={move ? moveNote(move) : undefined}
+      disabled={disabled}
+      aria-label={label}
+      title={label}
       className={[
-        "min-h-10 rounded-lg px-2 py-1 text-left transition",
-        move ? "hover:bg-purple-50" : "cursor-default",
-        active ? "bg-purple-700 text-white hover:bg-purple-700" : "text-slate-800",
+        "inline-flex h-10 items-center gap-2 rounded-xl border px-3 text-sm font-bold transition",
+        disabled ? "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-300" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
       ].join(" ")}
     >
+      {children}
+    </button>
+  );
+}
+
+function MoveSummaryCard({ emptyText, label, move }: { emptyText: string; label: string; move?: PgnMove | null }) {
+  return (
+    <div className="rounded-xl bg-slate-50 px-3 py-3">
+      <div className="text-[10px] font-black uppercase tracking-wide text-slate-400">{label}</div>
       {move ? (
         <>
-          <span className="block truncate text-xs font-black">{move.san}</span>
-          <span className={`block truncate text-[10px] ${active ? "text-purple-100" : "text-slate-500"}`}>{pieceName(move.piece)} · {move.from}-{move.to}</span>
+          <div className="mt-1 text-sm font-bold text-slate-900">{move.san}</div>
+          <div className="mt-1 text-xs text-slate-500">{moveNote(move)}</div>
         </>
-      ) : null}
-    </button>
+      ) : (
+        <div className="mt-1 text-xs text-slate-500">{emptyText}</div>
+      )}
+    </div>
   );
 }

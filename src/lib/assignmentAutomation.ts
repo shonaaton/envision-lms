@@ -34,6 +34,25 @@ function normalized(value: any) {
   return String(value || "").toLowerCase().trim();
 }
 
+function normalizedName(value: any) {
+  return normalizeTopicKey(String(value || ""));
+}
+
+function levelNumber(value: any) {
+  const match = normalizedName(value).match(/\blevel\s*(\d+)\b/);
+  return match ? match[1] : "";
+}
+
+function sameLevelName(templateLevel: any, classroomLevel: any) {
+  const templateName = normalizedName(templateLevel);
+  const classroomName = normalizedName(classroomLevel);
+  if (!templateName || !classroomName) return true;
+  if (templateName === classroomName) return true;
+  const templateNumber = levelNumber(templateName);
+  const classroomNumber = levelNumber(classroomName);
+  return Boolean(templateNumber && classroomNumber && templateNumber === classroomNumber);
+}
+
 function scheduledSessionsFor(classroom: any) {
   if (Array.isArray(classroom?.generatedSessions) && classroom.generatedSessions.length) return classroom.generatedSessions;
   if (!classroom?.classDate) return [];
@@ -57,18 +76,19 @@ function findSession(classroom: any, scheduledSessionId: string) {
 function compatible(template: any, classroom: any) {
   const templateCourse = objectId(template.course);
   const classroomCourse = objectId(classroom.course);
-  if (templateCourse && templateCourse !== classroomCourse) return false;
-  if (template.courseName && normalizeTopicKey(template.courseName) !== normalizeTopicKey(classroom.courseName)) return false;
-  if (template.levelName && normalized(template.levelName) !== normalized(classroom.levelName)) return false;
-  if (template.level && template.level !== "mixed" && template.level !== classroom.level) return false;
+  if (templateCourse && classroomCourse && templateCourse !== classroomCourse) return false;
+  if (template.courseName && classroom.courseName && normalizedName(template.courseName) !== normalizedName(classroom.courseName)) return false;
+  if (template.levelName && classroom.levelName && !sameLevelName(template.levelName, classroom.levelName)) return false;
+  if (template.level && template.level !== "mixed" && classroom.level && template.level !== classroom.level) return false;
   return true;
 }
 
 function matchScore(template: any, classroom: any) {
   let score = 0;
   if (objectId(template.course) && objectId(template.course) === objectId(classroom.course)) score += 8;
-  if (template.courseName && normalizeTopicKey(template.courseName) === normalizeTopicKey(classroom.courseName)) score += 4;
-  if (template.levelName && normalized(template.levelName) === normalized(classroom.levelName)) score += 2;
+  if (template.courseName && normalizedName(template.courseName) === normalizedName(classroom.courseName)) score += 4;
+  if (template.levelName && normalizedName(template.levelName) === normalizedName(classroom.levelName)) score += 2;
+  else if (template.levelName && sameLevelName(template.levelName, classroom.levelName)) score += 1;
   if (template.level && template.level === classroom.level) score += 1;
   return score;
 }

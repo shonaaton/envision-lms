@@ -676,13 +676,21 @@ function invoiceFilterLabel(value: string) {
   return "All";
 }
 
+function endOfDay(value: Date) {
+  const next = new Date(value);
+  next.setHours(23, 59, 59, 999);
+  return next;
+}
+
 function invoiceMatchesStatus(invoice: any, filter: string, now = new Date()) {
   if (!filter || filter === "all") return true;
   const status = String(invoice.status || "").toLowerCase();
   const dueDate = invoice.dueDate ? new Date(invoice.dueDate) : null;
+  const todayEnd = endOfDay(now).getTime();
+  const dueTime = dueDate ? endOfDay(dueDate).getTime() : null;
   if (filter === "paid") return status === "paid";
-  if (filter === "due") return status !== "paid" && status !== "cancelled" && (!dueDate || dueDate.getTime() <= now.getTime() || status === "overdue");
-  if (filter === "upcoming") return status !== "paid" && status !== "cancelled" && !!dueDate && dueDate.getTime() > now.getTime();
+  if (filter === "due") return status !== "paid" && status !== "cancelled" && (!dueDate || dueTime === null || dueTime <= todayEnd || status === "overdue");
+  if (filter === "upcoming") return status !== "paid" && status !== "cancelled" && dueTime !== null && dueTime > todayEnd;
   return true;
 }
 

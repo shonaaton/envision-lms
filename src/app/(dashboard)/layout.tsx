@@ -5,6 +5,8 @@ import { getNavigationFeatureState, isSuperAdminSession } from "@/lib/featureAcc
 import { findFeatureByPath } from "@/lib/featureRegistry";
 import { headers } from "next/headers";
 import { isInactiveRestrictedPath } from "@/lib/inactiveAccess";
+import { dbConnect } from "@/lib/db";
+import { FeeAssignment } from "@/models/Fee";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +19,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const featureState = await getNavigationFeatureState({ ...(session.user as any), isSuperAdmin });
   const pathname = headers().get("x-pathname") || "";
   const isActive = (session.user as any).isActive !== false;
+  let hasCreditPlan = true;
+  if (role === "student") {
+    await dbConnect();
+    hasCreditPlan = Boolean(await FeeAssignment.exists({ student: (session.user as any).id, type: "credits" }));
+  }
   if (!isActive && isInactiveRestrictedPath(pathname)) redirect("/dashboard?inactive=1");
   const currentFeature = findFeatureByPath(pathname);
   const currentFeatureState = currentFeature ? featureState[currentFeature.key] : null;
@@ -24,7 +31,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     redirect("/dashboard?restricted=1");
   }
   return (
-    <DashboardFrame role={role} accountStatus={accountStatus} isSuperAdmin={isSuperAdmin} featureState={featureState} user={{ name: session.user.name, role, isActive }}>
+    <DashboardFrame role={role} accountStatus={accountStatus} isSuperAdmin={isSuperAdmin} featureState={featureState} hasCreditPlan={hasCreditPlan} user={{ name: session.user.name, role, isActive }}>
       {children}
     </DashboardFrame>
   );

@@ -175,6 +175,7 @@ export default function Sidebar({
   accountStatus,
   isSuperAdmin,
   featureState,
+  hasCreditPlan = true,
   user,
   mobileOpen = false,
   desktopCollapsed = false,
@@ -185,6 +186,7 @@ export default function Sidebar({
   accountStatus?: AccountStatus;
   isSuperAdmin?: boolean;
   featureState?: FeatureState;
+  hasCreditPlan?: boolean;
   user: { name?: string | null; role: string; isActive?: boolean };
   mobileOpen?: boolean;
   desktopCollapsed?: boolean;
@@ -200,9 +202,15 @@ export default function Sidebar({
     () =>
       sections
         .filter((section) => canSee(role, accountStatus, user.isActive, isSuperAdmin, featureState, section))
-        .map((section) => ({ ...section, items: section.items.filter((item) => canSee(role, accountStatus, user.isActive, isSuperAdmin, featureState, item)) }))
+        .map((section) => ({
+          ...section,
+          items: section.items.filter((item) => {
+            if (role === "student" && item.href === "/fees/credit-history" && !hasCreditPlan) return false;
+            return canSee(role, accountStatus, user.isActive, isSuperAdmin, featureState, item);
+          }),
+        }))
         .filter((section) => section.items.length > 0),
-    [role, accountStatus, user.isActive, isSuperAdmin, featureState]
+    [role, accountStatus, user.isActive, isSuperAdmin, featureState, hasCreditPlan]
   );
   const activeSection = visibleSections.find((section) => section.items.some((item) => isActive(pathname, item)))?.id || "academy";
   const [openSection, setOpenSection] = useState(activeSection);

@@ -70,7 +70,7 @@ export default async function CreditHistoryPage() {
   const role = (session?.user as any)?.role;
   const userId = (session?.user as any)?.id;
   if (!userId) redirect("/login");
-  if (!(await canAccessFeature("fees", session!.user as any, "view"))) redirect("/dashboard");
+  if (!(await canAccessFeature("studentFees", session!.user as any, "view"))) redirect("/dashboard");
   const manager = isFeesManager(role);
 
   await dbConnect();
@@ -86,6 +86,7 @@ export default async function CreditHistoryPage() {
       .lean(),
     manager ? null : FeeAssignment.findOne({ student: userId, type: "credits" }).populate("plan").lean(),
   ]);
+  if (!manager && !assignment) redirect("/fees");
 
   const added = ledgers.filter((item: any) => Number(item.credits || 0) > 0).reduce((sum: number, item: any) => sum + Number(item.credits || 0), 0);
   const deducted = ledgers.filter((item: any) => Number(item.credits || 0) < 0).reduce((sum: number, item: any) => sum + Math.abs(Number(item.credits || 0)), 0);

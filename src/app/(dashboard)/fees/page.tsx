@@ -149,34 +149,46 @@ export default async function FeesDashboardPage() {
         </div>
 
         <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[0.95fr_1.05fr]">
-          <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h2 className="text-base font-bold text-slate-950">Credit Usage History</h2>
-                <p className="text-xs text-slate-500">Recent credit movement.</p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-full bg-brand/10 px-3 py-1 text-xs font-bold text-brand">{recentCredits.length} recent</span>
-                <Link href="/fees/credit-history" className="rounded-full border border-brand/15 px-3 py-1 text-xs font-bold text-brand hover:bg-brand hover:text-white">View all</Link>
-              </div>
-            </div>
-            <div className="space-y-2">
-              {recentCredits.length ? recentCredits.map((item: any) => (
-                <div key={item._id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-sm">
-                  <div>
-                    <div className="font-bold text-slate-950">{item.type === "purchase" ? "Credits added" : item.type === "attendance_consumption" ? "Class credit used" : "Credit adjustment"}</div>
-                    <div className="text-xs text-slate-500">{item.note || "Credit ledger entry"} - {new Date(item.createdAt).toLocaleString("en-IN")}</div>
-                  </div>
-                  <div className="text-right">
-                    <div className={item.credits > 0 ? "font-bold text-emerald-700" : "font-bold text-rose-700"}>{item.credits > 0 ? "+" : ""}{item.credits}</div>
-                    <div className="text-xs text-slate-500">Balance {item.balanceAfter}</div>
-                  </div>
+          {creditAssignment ? (
+            <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="text-base font-bold text-slate-950">Credit Usage History</h2>
+                  <p className="text-xs text-slate-500">Recent credit movement.</p>
                 </div>
-              )) : (
-                <div className="rounded-lg border border-dashed border-slate-300 p-5 text-sm text-slate-500">No credit usage has been recorded yet.</div>
-              )}
-            </div>
-          </section>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full bg-brand/10 px-3 py-1 text-xs font-bold text-brand">{recentCredits.length} recent</span>
+                  <Link href="/fees/credit-history" className="rounded-full border border-brand/15 px-3 py-1 text-xs font-bold text-brand hover:bg-brand hover:text-white">View all</Link>
+                </div>
+              </div>
+              <div className="space-y-2">
+                {recentCredits.length ? recentCredits.map((item: any) => (
+                  <div key={item._id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-sm">
+                    <div>
+                      <div className="font-bold text-slate-950">{item.type === "purchase" ? "Credits added" : item.type === "attendance_consumption" ? "Class credit used" : "Credit adjustment"}</div>
+                      <div className="text-xs text-slate-500">{item.note || "Credit ledger entry"} - {new Date(item.createdAt).toLocaleString("en-IN")}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className={item.credits > 0 ? "font-bold text-emerald-700" : "font-bold text-rose-700"}>{item.credits > 0 ? "+" : ""}{item.credits}</div>
+                      <div className="text-xs text-slate-500">Balance {item.balanceAfter}</div>
+                    </div>
+                  </div>
+                )) : (
+                  <div className="rounded-lg border border-dashed border-slate-300 p-5 text-sm text-slate-500">No credit usage has been recorded yet.</div>
+                )}
+              </div>
+            </section>
+          ) : (
+            <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="mb-2">
+                <h2 className="text-base font-bold text-slate-950">Monthly Plan Billing</h2>
+                <p className="text-xs text-slate-500">This account is on a monthly fee plan, so credit history is not applicable.</p>
+              </div>
+              <div className="rounded-lg border border-dashed border-slate-300 p-5 text-sm text-slate-500">
+                Your invoices and payment schedule are available in the billing history section on the right.
+              </div>
+            </section>
+          )}
 
           <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
             <div className="mb-4">

@@ -86,7 +86,9 @@ export default function AttendanceWorkspace({ role }: { role: Role }) {
   async function load() {
     setBusyMessage("Loading attendance...");
     try {
-      const response = await fetch(`/api/attendance/workspace?date=${encodeURIComponent(date)}`, { cache: "no-store" });
+      const params = new URLSearchParams({ date });
+      if (requestedSessionId) params.set("session", requestedSessionId);
+      const response = await fetch(`/api/attendance/workspace?${params.toString()}`, { cache: "no-store" });
       const next = await response.json();
       setData(next);
       const first = next?.sessions?.[0];

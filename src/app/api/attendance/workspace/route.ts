@@ -18,6 +18,10 @@ function objectId(value: any) {
   return value?.toString?.() || String(value || "");
 }
 
+function attendanceSessionKey(classroomId: any, sessionId: any) {
+  return `${objectId(classroomId)}:${String(sessionId || "")}`;
+}
+
 function flattenClassroomSessions(classrooms: any[]) {
   return classrooms.flatMap((classroom: any) => {
     const sessions = Array.isArray(classroom.generatedSessions) && classroom.generatedSessions.length
@@ -181,18 +185,19 @@ export async function GET(req: Request) {
 
   const attendanceDocs: any[] = await Attendance.find({ sessionDate: { $gte: new Date(from.getTime() - 120 * 24 * 60 * 60 * 1000), $lte: to } }).lean();
   const attendanceMap = new Map(attendanceDocs.map((doc: any) => [`${objectId(doc.classroom)}:${String(doc.scheduledSessionId || "")}:${new Date(doc.sessionDate).toISOString()}`, doc]));
+  const attendanceBySession = new Map(attendanceDocs.map((doc: any) => [attendanceSessionKey(doc.classroom, doc.scheduledSessionId), doc]));
 
   const sessionRows = flattenClassroomSessions(classrooms)
     .filter(({ classroom, session }) => {
       const start = getSessionStart(session);
       if (requestedSessionId) {
-        return `${objectId(classroom._id)}:${String(session?._id || "")}` === requestedSessionId || (start ? sameDay(start, selectedDate) : false);
+        return attendanceSessionKey(classroom._id, session?._id) === requestedSessionId || (start ? sameDay(start, selectedDate) : false);
       }
       return start ? sameDay(start, selectedDate) : false;
     })
     .map(({ classroom, session }) => {
       const attendanceKey = `${objectId(classroom._id)}:${String(session._id || "")}:${new Date(session.scheduledFor || classroom.classDate).toISOString()}`;
-      const attendance = attendanceMap.get(attendanceKey) || null;
+      const attendance = attendanceMap.get(attendanceKey) || attendanceBySession.get(attendanceSessionKey(classroom._id, session._id)) || null;
       return {
         id: `${objectId(classroom._id)}:${String(session._id)}`,
         classroomId: objectId(classroom._id),

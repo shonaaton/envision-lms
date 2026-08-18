@@ -131,7 +131,7 @@ async function markInvoicePaid(formData: FormData) {
   if (invoice?.type === "credits" && !(await canAccessFeature("invoices", session.user as any, "credit"))) {
     throw new Error("Forbidden");
   }
-  const rawTransactions = (() => {
+  const rawTransactionsFromJson = (() => {
     const json = String(formData.get("transactionsJson") || "").trim();
     if (!json) return [];
     try {
@@ -141,6 +141,19 @@ async function markInvoicePaid(formData: FormData) {
       return [];
     }
   })();
+  const rawTransactionsFromFields = (() => {
+    const modes = formData.getAll("paymentMode").map((value) => String(value || "other"));
+    const amounts = formData.getAll("paymentAmount").map((value) => String(value || ""));
+    const dates = formData.getAll("paymentDate").map((value) => String(value || ""));
+    const refs = formData.getAll("paymentReference").map((value) => String(value || "").trim());
+    return amounts.map((amount, index) => ({
+      mode: modes[index] || "other",
+      amount,
+      paidAt: dates[index] || "",
+      referenceNumber: refs[index] || "",
+    }));
+  })();
+  const rawTransactions = rawTransactionsFromJson.length ? rawTransactionsFromJson : rawTransactionsFromFields;
   const transactions = rawTransactions
     .map((transaction: any) => {
       const mode = transaction?.mode === "upi" || transaction?.mode === "bank_transfer" ? transaction.mode : "other";
@@ -170,43 +183,51 @@ async function markInvoicePaid(formData: FormData) {
     redirect(`${returnPath}payment=amount-mismatch`);
   }
   await applyInvoicePayment(invoiceId, undefined, { actor: (session.user as any).id, source: "manual_admin" }, transactions, { waiveLateFee, discountAmount, note: adjustmentNote });
-  if (invoice?.type === "monthly") await createNextMonthlyInvoiceAfterPayment(invoiceId);
-  const paidInvoice: any = await Invoice.findById(invoiceId).populate("student").lean();
-  if (paidInvoice?.student?._id) {
-    const transactionSummary = transactions
-      .map((transaction) => `${formatINR(transaction.amount)} by ${transaction.mode === "bank_transfer" ? "Bank Transfer" : transaction.mode.toUpperCase()}${transaction.referenceNumber ? `, ref ${transaction.referenceNumber}` : ""}`)
-      .join("\n");
-    const message = [
-      `Hello ${paidInvoice.student.name},`,
-      `Payment has been recorded for invoice ${paidInvoice.invoiceNumber}.`,
-      `Amount: ${formatINR(paidInvoice.totalAmount)}.`,
-      paidInvoice.lateFeeWaivedAmount ? `Late fee waived: ${formatINR(paidInvoice.lateFeeWaivedAmount)}.` : "",
-      paidInvoice.discountAmount ? `Discount applied: ${formatINR(paidInvoice.discountAmount)}.` : "",
-      transactionSummary ? `Transactions:\n${transactionSummary}` : "",
-    ].filter(Boolean).join("\n\n");
-    await Notification.create({
-      user: paidInvoice.student._id,
-      type: "invoice.paid",
-      title: "Invoice marked paid",
-      message: `${paidInvoice.invoiceNumber} has been marked as paid.`,
-      metadata: { invoice: paidInvoice._id.toString(), transactionCount: transactions.length },
-    });
-    if (paidInvoice.student.email) {
-      await sendAutomationEmail({
-        to: paidInvoice.student.email,
-        subject: `Payment received for ${paidInvoice.invoiceNumber}`,
-        message,
-        metadata: { kind: "invoice_paid", invoiceId, invoiceNumber: paidInvoice.invoiceNumber },
+  try {
+    if (invoice?.type === "monthly") await createNextMonthlyInvoiceAfterPayment(invoiceId);
+  } catch (error) {
+    console.error("Could not generate next monthly invoice after payment", error);
+  }
+  try {
+    const paidInvoice: any = await Invoice.findById(invoiceId).populate("student").lean();
+    if (paidInvoice?.student?._id) {
+      const transactionSummary = transactions
+        .map((transaction) => `${formatINR(transaction.amount)} by ${transaction.mode === "bank_transfer" ? "Bank Transfer" : transaction.mode.toUpperCase()}${transaction.referenceNumber ? `, ref ${transaction.referenceNumber}` : ""}`)
+        .join("\n");
+      const message = [
+        `Hello ${paidInvoice.student.name},`,
+        `Payment has been recorded for invoice ${paidInvoice.invoiceNumber}.`,
+        `Amount: ${formatINR(paidInvoice.totalAmount)}.`,
+        paidInvoice.lateFeeWaivedAmount ? `Late fee waived: ${formatINR(paidInvoice.lateFeeWaivedAmount)}.` : "",
+        paidInvoice.discountAmount ? `Discount applied: ${formatINR(paidInvoice.discountAmount)}.` : "",
+        transactionSummary ? `Transactions:\n${transactionSummary}` : "",
+      ].filter(Boolean).join("\n\n");
+      await Notification.create({
+        user: paidInvoice.student._id,
+        type: "invoice.paid",
+        title: "Invoice marked paid",
+        message: `${paidInvoice.invoiceNumber} has been marked as paid.`,
+        metadata: { invoice: paidInvoice._id.toString(), transactionCount: transactions.length },
       });
+      if (paidInvoice.student.email) {
+        await sendAutomationEmail({
+          to: paidInvoice.student.email,
+          subject: `Payment received for ${paidInvoice.invoiceNumber}`,
+          message,
+          metadata: { kind: "invoice_paid", invoiceId, invoiceNumber: paidInvoice.invoiceNumber },
+        });
+      }
+      if (paidInvoice.student.parentEmail) {
+        await sendAutomationEmail({
+          to: paidInvoice.student.parentEmail,
+          subject: `Payment recorded for ${paidInvoice.student.name}`,
+          message: message.replace(`Hello ${paidInvoice.student.name},`, `Hello ${paidInvoice.student.parentName || "Parent"},`),
+          metadata: { kind: "invoice_paid_parent", invoiceId, invoiceNumber: paidInvoice.invoiceNumber },
+        });
+      }
     }
-    if (paidInvoice.student.parentEmail) {
-      await sendAutomationEmail({
-        to: paidInvoice.student.parentEmail,
-        subject: `Payment recorded for ${paidInvoice.student.name}`,
-        message: message.replace(`Hello ${paidInvoice.student.name},`, `Hello ${paidInvoice.student.parentName || "Parent"},`),
-        metadata: { kind: "invoice_paid_parent", invoiceId, invoiceNumber: paidInvoice.invoiceNumber },
-      });
-    }
+  } catch (error) {
+    console.error("Post-payment notifications failed", error);
   }
   revalidatePath("/fees/invoices");
   revalidatePath("/fees/student-fees");

@@ -1437,6 +1437,25 @@ function SelectedSeriesTopicPicker({
 }) {
   const topics = selectedLevel?.topics || [];
   const selectedSet = new Set(form.selectedTopicNames);
+  const [classCountDraft, setClassCountDraft] = useState(String(form.classCount || 1));
+
+  useEffect(() => {
+    setClassCountDraft(String(form.classCount || 1));
+  }, [form.classCount]);
+
+  function commitClassCountDraft(rawValue: string) {
+    const trimmed = rawValue.trim();
+    if (!trimmed) {
+      setClassCountDraft(String(form.classCount || 1));
+      return;
+    }
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed)) {
+      setClassCountDraft(String(form.classCount || 1));
+      return;
+    }
+    setClassCount(parsed);
+  }
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -1447,8 +1466,18 @@ function SelectedSeriesTopicPicker({
             className="input h-10"
             min={1}
             max={Math.max(topics.length, 1)}
-            value={form.classCount}
-            onChange={(event) => setClassCount(Number(event.target.value || 1))}
+            inputMode="numeric"
+            value={classCountDraft}
+            onFocus={(event) => event.currentTarget.select()}
+            onChange={(event) => setClassCountDraft(event.target.value)}
+            onBlur={(event) => commitClassCountDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                commitClassCountDraft(event.currentTarget.value);
+                event.currentTarget.blur();
+              }
+            }}
           />
         </Field>
         <div className="rounded-xl border border-white bg-white px-3 py-2 text-sm text-slate-600">

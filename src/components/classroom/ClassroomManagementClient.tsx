@@ -1457,19 +1457,29 @@ function SelectedSeriesTopicPicker({
     setClassCount(parsed);
   }
 
+  function handleClassCountChange(rawValue: string) {
+    if (!/^\d*$/.test(rawValue)) return;
+    setClassCountDraft(rawValue);
+    const trimmed = rawValue.trim();
+    if (!trimmed) return;
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed)) return;
+    setClassCount(parsed);
+  }
+
   return (
     <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
       <div className="grid gap-3 sm:grid-cols-[180px_1fr]">
         <Field label="Number of Classes">
           <input
-            type="number"
+            type="text"
             className="input h-10"
-            min={1}
-            max={Math.max(topics.length, 1)}
             inputMode="numeric"
+            pattern="[0-9]*"
+            autoComplete="off"
             value={classCountDraft}
             onFocus={(event) => event.currentTarget.select()}
-            onChange={(event) => setClassCountDraft(event.target.value)}
+            onChange={(event) => handleClassCountChange(event.target.value)}
             onBlur={(event) => commitClassCountDraft(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter") {

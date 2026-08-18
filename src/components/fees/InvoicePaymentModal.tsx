@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Plus, Trash2, X } from "lucide-react";
 import { formatINR } from "@/lib/utils";
 
@@ -69,6 +69,13 @@ export function InvoicePaymentModal({
   const remaining = adjustedTotal - enteredPaise;
   const matches = remaining === 0;
 
+  useEffect(() => {
+    if (!open) return;
+    setWaiveLateFee(false);
+    setDiscountAmount("");
+    setTransactions([newTransaction(String((totalAmount || 0) / 100))]);
+  }, [open, totalAmount, invoiceId]);
+
   const update = (id: string, patch: Partial<TransactionDraft>) => {
     setTransactions((current) => current.map((transaction) => transaction.id === id ? { ...transaction, ...patch } : transaction));
   };
@@ -76,6 +83,16 @@ export function InvoicePaymentModal({
   const remove = (id: string) => {
     setTransactions((current) => current.length <= 1 ? current : current.filter((transaction) => transaction.id !== id));
   };
+
+  useEffect(() => {
+    setTransactions((current) => {
+      if (current.length !== 1) return current;
+      const only = current[0];
+      const currentPaise = Math.round(Number(only.amount || 0) * 100);
+      if (currentPaise === adjustedTotal) return current;
+      return [{ ...only, amount: String(adjustedTotal / 100) }];
+    });
+  }, [adjustedTotal]);
 
   return (
     <>
@@ -93,6 +110,12 @@ export function InvoicePaymentModal({
           <form action={action} className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white p-4 shadow-2xl">
             <input type="hidden" name="invoice" value={invoiceId} />
             <input type="hidden" name="studentFilter" value={studentFilter} />
+            <input type="hidden" name="transactionsJson" value={JSON.stringify(transactions.map((transaction) => ({
+              mode: transaction.mode,
+              amount: transaction.amount,
+              paidAt: transaction.paidAt,
+              referenceNumber: transaction.referenceNumber,
+            })))} />
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
                 <h3 className="text-base font-bold text-slate-950">Record Payment</h3>
@@ -138,7 +161,7 @@ export function InvoicePaymentModal({
                   <div className="grid gap-3 md:grid-cols-4">
                     <label className="space-y-1">
                       <span className="text-xs font-bold text-slate-500">Mode</span>
-                      <select name="paymentMode" value={transaction.mode} onChange={(event) => update(transaction.id, { mode: event.target.value as TransactionDraft["mode"] })} className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm">
+                      <select value={transaction.mode} onChange={(event) => update(transaction.id, { mode: event.target.value as TransactionDraft["mode"] })} className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm">
                         <option value="upi">UPI</option>
                         <option value="bank_transfer">Bank Transfer</option>
                         <option value="other">Others</option>
@@ -146,15 +169,15 @@ export function InvoicePaymentModal({
                     </label>
                     <label className="space-y-1">
                       <span className="text-xs font-bold text-slate-500">Amount</span>
-                      <input name="paymentAmount" type="number" min="0" step="0.01" required value={transaction.amount} onChange={(event) => update(transaction.id, { amount: event.target.value })} className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm" />
+                      <input type="number" min="0" step="0.01" required value={transaction.amount} onChange={(event) => update(transaction.id, { amount: event.target.value })} className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm" />
                     </label>
                     <label className="space-y-1">
                       <span className="text-xs font-bold text-slate-500">Date</span>
-                      <input name="paymentDate" type="date" required value={transaction.paidAt} onChange={(event) => update(transaction.id, { paidAt: event.target.value })} className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm" />
+                      <input type="date" required value={transaction.paidAt} onChange={(event) => update(transaction.id, { paidAt: event.target.value })} className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm" />
                     </label>
                     <label className="space-y-1">
                       <span className="text-xs font-bold text-slate-500">Reference ID</span>
-                      <input name="paymentReference" value={transaction.referenceNumber} onChange={(event) => update(transaction.id, { referenceNumber: event.target.value })} className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm" />
+                      <input value={transaction.referenceNumber} onChange={(event) => update(transaction.id, { referenceNumber: event.target.value })} className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm" />
                     </label>
                   </div>
                 </div>

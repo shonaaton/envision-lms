@@ -131,18 +131,30 @@ async function markInvoicePaid(formData: FormData) {
   if (invoice?.type === "credits" && !(await canAccessFeature("invoices", session.user as any, "credit"))) {
     throw new Error("Forbidden");
   }
-  const modes = formData.getAll("paymentMode").map((value) => String(value || "other"));
-  const amounts = formData.getAll("paymentAmount").map((value) => paise(value));
-  const dates = formData.getAll("paymentDate").map((value) => new Date(String(value || "")));
-  const refs = formData.getAll("paymentReference").map((value) => String(value || "").trim());
-  const transactions = amounts
-    .map((amount, index) => ({
-      mode: modes[index] === "upi" || modes[index] === "bank_transfer" ? modes[index] as "upi" | "bank_transfer" : "other" as const,
-      amount,
-      paidAt: dates[index] && !Number.isNaN(dates[index].getTime()) ? dates[index] : new Date(),
-      referenceNumber: refs[index] || undefined,
-    }))
-    .filter((transaction) => transaction.amount > 0);
+  const rawTransactions = (() => {
+    const json = String(formData.get("transactionsJson") || "").trim();
+    if (!json) return [];
+    try {
+      const parsed = JSON.parse(json);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  })();
+  const transactions = rawTransactions
+    .map((transaction: any) => {
+      const mode = transaction?.mode === "upi" || transaction?.mode === "bank_transfer" ? transaction.mode : "other";
+      const amount = paise(transaction?.amount ?? 0);
+      const paidAt = new Date(String(transaction?.paidAt || ""));
+      const referenceNumber = String(transaction?.referenceNumber || "").trim();
+      return {
+        mode,
+        amount,
+        paidAt: !Number.isNaN(paidAt.getTime()) ? paidAt : new Date(),
+        referenceNumber: referenceNumber || undefined,
+      };
+    })
+    .filter((transaction: any) => transaction.amount > 0);
   const waiveLateFee = String(formData.get("waiveLateFee") || "") === "on";
   const discountAmount = paise(formData.get("discountAmount"));
   const adjustmentNote = String(formData.get("paymentAdjustmentNote") || "").trim();

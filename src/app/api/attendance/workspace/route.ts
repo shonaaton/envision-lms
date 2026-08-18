@@ -82,6 +82,7 @@ export async function GET(req: Request) {
   }
   const url = new URL(req.url);
   const selectedDateValue = url.searchParams.get("date") || new Date();
+  const requestedSessionId = String(url.searchParams.get("session") || "");
   const { start: from, end: to } = academyDayBounds(selectedDateValue);
   const selectedDate = from;
   const now = new Date();
@@ -182,8 +183,11 @@ export async function GET(req: Request) {
   const attendanceMap = new Map(attendanceDocs.map((doc: any) => [`${objectId(doc.classroom)}:${String(doc.scheduledSessionId || "")}:${new Date(doc.sessionDate).toISOString()}`, doc]));
 
   const sessionRows = flattenClassroomSessions(classrooms)
-    .filter(({ session }) => {
+    .filter(({ classroom, session }) => {
       const start = getSessionStart(session);
+      if (requestedSessionId) {
+        return `${objectId(classroom._id)}:${String(session?._id || "")}` === requestedSessionId || (start ? sameDay(start, selectedDate) : false);
+      }
       return start ? sameDay(start, selectedDate) : false;
     })
     .map(({ classroom, session }) => {

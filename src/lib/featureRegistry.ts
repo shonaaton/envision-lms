@@ -123,7 +123,7 @@ export const FEATURE_DEFINITIONS: FeatureDefinition[] = [
     apiPrefixes: ["/api/attendance"],
     permissions: [view, edit, exportRecords],
     defaultStatus: "enabled",
-    defaultRolePermissions: { student: ["view"], instructor: ["view"], admin: all(view, edit, exportRecords), "sub-admin": ["view"] },
+    defaultRolePermissions: { student: ["view"], instructor: ["view"], admin: all(view, edit, exportRecords), "sub-admin": ["view", "edit"] },
   },
   {
     key: "askCoach",

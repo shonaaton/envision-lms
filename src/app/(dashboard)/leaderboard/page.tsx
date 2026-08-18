@@ -177,42 +177,44 @@ export default async function LeaderboardPage({
           <span className="flex h-9 w-9 items-center justify-center rounded-md bg-purple-50 text-purple-700"><Trophy size={18} /></span>
           <div><h1 className="text-2xl font-semibold">{title}</h1><p className="text-sm text-slate-500">Academy-wide, batch-wise, and course-specific student rankings.</p></div>
         </div>
-        <form className="flex flex-wrap gap-2 rounded-lg border bg-white p-2 shadow-sm">
-          <select name="scope" defaultValue={scope} className="h-10 rounded-md border px-3 text-sm">
-            <option value="academy">Academy Leaderboard</option>
-            <option value="batch">Batch Leaderboard</option>
-            <option value="course">Course Leaderboard</option>
-            <option value="level">Level Leaderboard</option>
-            <option value="class">Class Leaderboard</option>
-          </select>
-          <select name="batch" defaultValue={selectedBatch} className="h-10 rounded-md border px-3 text-sm">
-            <option value="">All batches</option>
-            {batches.map((batch: any) => <option key={objectId(batch._id)} value={objectId(batch._id)}>{batch.name}</option>)}
-          </select>
-          <select name="course" defaultValue={selectedCourse} className="h-10 rounded-md border px-3 text-sm">
-            <option value="">All courses</option>
-            {availableCourses.map((course) => <option key={course} value={course}>{course}</option>)}
-          </select>
-          <select name="level" defaultValue={selectedLevel} className="h-10 rounded-md border px-3 text-sm">
-            <option value="">All levels</option>
-            {availableLevels.map((level) => <option key={level} value={level}>{level}</option>)}
-          </select>
-          <select name="classroom" defaultValue={selectedClassroom} className="h-10 rounded-md border px-3 text-sm">
-            <option value="">All classes</option>
-            {classrooms.map((classroom: any) => <option key={objectId(classroom._id)} value={objectId(classroom._id)}>{classroom.title}</option>)}
-          </select>
-          <select name="rankBy" defaultValue={rankBy} className="h-10 rounded-md border px-3 text-sm">
-            <option value="totalPoints">Total Points</option>
-            <option value="accuracy">Highest Accuracy</option>
-            <option value="homeworkCompleted">Most Homework Completed</option>
-            <option value="quizScore">Classroom Quiz Score</option>
-            <option value="tournamentPoints">Tournament Points</option>
-            <option value="attendance">Attendance Percentage</option>
-            <option value="xp">XP</option>
-            <option value="coins">Coins</option>
-          </select>
-          <button className="rounded-md bg-purple-700 px-4 text-sm font-semibold text-white">Apply</button>
-        </form>
+        {privilegedViewer && (
+          <form className="flex flex-wrap gap-2 rounded-lg border bg-white p-2 shadow-sm">
+            <select name="scope" defaultValue={scope} className="h-10 rounded-md border px-3 text-sm">
+              <option value="academy">Academy Leaderboard</option>
+              <option value="batch">Batch Leaderboard</option>
+              <option value="course">Course Leaderboard</option>
+              <option value="level">Level Leaderboard</option>
+              <option value="class">Class Leaderboard</option>
+            </select>
+            <select name="batch" defaultValue={selectedBatch} className="h-10 rounded-md border px-3 text-sm">
+              <option value="">All batches</option>
+              {batches.map((batch: any) => <option key={objectId(batch._id)} value={objectId(batch._id)}>{batch.name}</option>)}
+            </select>
+            <select name="course" defaultValue={selectedCourse} className="h-10 rounded-md border px-3 text-sm">
+              <option value="">All courses</option>
+              {availableCourses.map((course) => <option key={course} value={course}>{course}</option>)}
+            </select>
+            <select name="level" defaultValue={selectedLevel} className="h-10 rounded-md border px-3 text-sm">
+              <option value="">All levels</option>
+              {availableLevels.map((level) => <option key={level} value={level}>{level}</option>)}
+            </select>
+            <select name="classroom" defaultValue={selectedClassroom} className="h-10 rounded-md border px-3 text-sm">
+              <option value="">All classes</option>
+              {classrooms.map((classroom: any) => <option key={objectId(classroom._id)} value={objectId(classroom._id)}>{classroom.title}</option>)}
+            </select>
+            <select name="rankBy" defaultValue={rankBy} className="h-10 rounded-md border px-3 text-sm">
+              <option value="totalPoints">Total Points</option>
+              <option value="accuracy">Highest Accuracy</option>
+              <option value="homeworkCompleted">Most Homework Completed</option>
+              <option value="quizScore">Classroom Quiz Score</option>
+              <option value="tournamentPoints">Tournament Points</option>
+              <option value="attendance">Attendance Percentage</option>
+              <option value="xp">XP</option>
+              <option value="coins">Coins</option>
+            </select>
+            <button className="rounded-md bg-purple-700 px-4 text-sm font-semibold text-white">Apply</button>
+          </form>
+        )}
       </div>
 
       <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-4">

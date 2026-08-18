@@ -58,13 +58,14 @@ function lifecycleTone(value: string) {
 }
 
 export default function AttendanceWorkspace({ role }: { role: Role }) {
-  const canEditAttendance = role === "admin";
+  const canEditAttendance = role === "admin" || role === "sub-admin";
   const canManageMissedAttendance = role === "admin" || role === "sub-admin";
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [data, setData] = useState<any>(null);
   const [selectedSessionId, setSelectedSessionId] = useState("");
   const [draft, setDraft] = useState<Record<string, "present" | "absent" | "late">>({});
   const [coachStatus, setCoachStatus] = useState<"present" | "absent" | "late">("present");
+  const [overrideReason, setOverrideReason] = useState("");
   const [busyMessage, setBusyMessage] = useState("");
 
   const selectedSession: SessionRow | null = useMemo(
@@ -87,6 +88,7 @@ export default function AttendanceWorkspace({ role }: { role: Role }) {
       });
       setDraft(nextDraft);
       setCoachStatus((picked?.coachStatus === "absent" || picked?.coachStatus === "late") ? picked.coachStatus : "present");
+      setOverrideReason("");
     } finally {
       setBusyMessage("");
     }
@@ -105,10 +107,17 @@ export default function AttendanceWorkspace({ role }: { role: Role }) {
     });
     setDraft(nextDraft);
     setCoachStatus((selectedSession.coachStatus === "absent" || selectedSession.coachStatus === "late") ? selectedSession.coachStatus : "present");
+    setOverrideReason("");
   }, [selectedSessionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function saveAttendance() {
     if (!selectedSession) return;
+    const isOverride = selectedSession.attendanceState === "marked";
+    const trimmedReason = overrideReason.trim();
+    if (isOverride && !trimmedReason) {
+      toast.error("Please add a reason before overriding attendance");
+      return;
+    }
     setBusyMessage("Saving attendance...");
     try {
       const response = await fetch("/api/attendance", {
@@ -120,10 +129,11 @@ export default function AttendanceWorkspace({ role }: { role: Role }) {
           sessionDate: selectedSession.scheduledFor,
           coachStatus,
           teachingMinutes: selectedSession.teachingMinutes || selectedSession.durationMinutes,
+          overrideReason: isOverride ? trimmedReason : "",
           records: selectedSession.students.map((student) => ({
             student: student._id,
             status: draft[student._id] || "present",
-            note: "Marked from attendance workspace",
+            note: isOverride ? "Corrected from attendance workspace" : "Marked from attendance workspace",
           })),
         }),
       });
@@ -131,7 +141,7 @@ export default function AttendanceWorkspace({ role }: { role: Role }) {
         toast.error("Attendance could not be saved");
         return;
       }
-      toast.success("Attendance saved");
+      toast.success(isOverride ? "Attendance override saved" : "Attendance saved");
       await load();
     } finally {
       setBusyMessage("");
@@ -296,7 +306,7 @@ export default function AttendanceWorkspace({ role }: { role: Role }) {
                       View Details
                     </Link>
                   ) : null}
-                  {canEditAttendance ? <button className="btn-primary w-full sm:w-auto" onClick={saveAttendance}>Save Attendance</button> : null}
+                  {canEditAttendance ? <button className="btn-primary w-full sm:w-auto" onClick={saveAttendance}>{selectedSession.attendanceState === "marked" ? "Save Override" : "Save Attendance"}</button> : null}
                 </div>
               </div>
 
@@ -311,6 +321,11 @@ export default function AttendanceWorkspace({ role }: { role: Role }) {
               </div>
 
               <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                {selectedSession.attendanceState === "marked" ? (
+                  <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-800">
+                    This class was already marked by the coach. Saving here will override that attendance record.
+                  </div>
+                ) : null}
                 <div className="mb-3 text-sm font-black text-slate-950">Coach Attendance</div>
                 <div className="flex flex-wrap gap-2">
                   {(["present", "absent", "late"] as const).map((value) => (
@@ -326,6 +341,20 @@ export default function AttendanceWorkspace({ role }: { role: Role }) {
                   ))}
                 </div>
               </div>
+
+              {canEditAttendance && selectedSession.attendanceState === "marked" ? (
+                <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <label className="block text-sm font-black text-slate-950" htmlFor="attendance-override-reason">Override reason</label>
+                  <p className="mt-1 text-xs text-slate-500">Explain why this attendance is being corrected.</p>
+                  <textarea
+                    id="attendance-override-reason"
+                    value={overrideReason}
+                    onChange={(event) => setOverrideReason(event.target.value)}
+                    className="mt-3 min-h-[96px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                    placeholder="Example: Coach marked the student absent by mistake even though they attended."
+                  />
+                </div>
+              ) : null}
 
               <div className="mt-5 space-y-3">
                 {selectedSession.students.map((student) => (

@@ -2213,8 +2213,8 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   async function saveAttendanceAndClose() {
     setEndingClass(true);
     const records = students.map((student: any) => ({
-      student: student._id,
-      status: classOutcome === "student_no_show" ? "student_no_show" : attendanceDraft[student._id] || "absent",
+      student: entityId(student),
+      status: classOutcome === "student_no_show" ? "student_no_show" : attendanceDraft[entityId(student)] || "absent",
       note: classOutcome === "student_no_show" ? "Student no-show marked from live classroom summary" : "Marked from live classroom summary",
     }));
     const summary = {
@@ -2634,9 +2634,10 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       responseByStudent.set(id, [...(responseByStudent.get(id) || []), response]);
     }
     const rows = students.map((student: any) => {
+      const studentId = entityId(student);
       const participant: any = participantMap.get(entityId(student));
       const presence = studentPresenceState(participant);
-      const studentResponses = responseByStudent.get(student._id) || [];
+      const studentResponses = responseByStudent.get(studentId) || [];
       const correct = studentResponses.filter((response) => response.correct).length;
       const submissions = studentResponses.length;
       const points = studentResponses.reduce((sum, response) => sum + Number(response.score || 0), 0);
@@ -2676,7 +2677,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   useEffect(() => {
     if (!summaryOpen) return;
     const draft: Record<string, AttendanceStatus> = {};
-    for (const row of classSummary.rows) draft[row.student._id] = row.suggestedStatus;
+    for (const row of classSummary.rows) draft[entityId(row.student)] = row.suggestedStatus;
     setAttendanceDraft(draft);
     setClassOutcome(classSummary.durationMinutes >= 30 ? "completed" : "abandoned");
   }, [classSummary.durationMinutes, classSummary.rows, summaryOpen]);
@@ -4020,7 +4021,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                 </div>
                 <div className="divide-y divide-slate-100">
                   {classSummary.rows.map((row: any) => (
-                    <div key={row.student._id} className="grid gap-3 px-3 py-3 text-sm lg:grid-cols-[1.35fr_96px_74px_86px_74px_90px_160px] lg:items-center lg:gap-0 lg:py-2">
+                    <div key={entityId(row.student)} className="grid gap-3 px-3 py-3 text-sm lg:grid-cols-[1.35fr_96px_74px_86px_74px_90px_160px] lg:items-center lg:gap-0 lg:py-2">
                       <span className="font-semibold text-slate-950">{row.student.name}</span>
                       <span className={cn("w-fit rounded-full px-2 py-0.5 text-[11px] font-bold", row.presence.className)} title={row.presence.detail || row.presence.label}>{row.presence.label}</span>
                       <div className="grid grid-cols-4 gap-2 text-xs text-slate-600 lg:contents lg:text-sm">
@@ -4030,9 +4031,9 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                         <span>{row.points} pts</span>
                       </div>
                       <select
-                        value={classOutcome === "student_no_show" ? "student_no_show" : attendanceDraft[row.student._id] || row.suggestedStatus}
+                        value={classOutcome === "student_no_show" ? "student_no_show" : attendanceDraft[entityId(row.student)] || row.suggestedStatus}
                         disabled={classOutcome === "student_no_show"}
-                        onChange={(event) => setAttendanceDraft((current) => ({ ...current, [row.student._id]: event.target.value as AttendanceStatus }))}
+                        onChange={(event) => setAttendanceDraft((current) => ({ ...current, [entityId(row.student)]: event.target.value as AttendanceStatus }))}
                         className="h-9 rounded-md border border-slate-200 px-2 text-sm disabled:bg-slate-100 disabled:text-slate-500"
                       >
                         <option value="present">Present</option>

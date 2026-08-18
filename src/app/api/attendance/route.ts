@@ -48,6 +48,7 @@ type AttendancePayload = {
   teachingMinutes?: number;
   classOutcome?: string;
   adminOverrideCompletion?: boolean;
+  overrideReason?: string;
   metadata?: {
     summary?: {
       actualTeachingMinutes?: number;
@@ -99,8 +100,10 @@ export async function POST(req: Request) {
   const session = await auth();
   const role = (session?.user as SessionUser | undefined)?.role;
   if (!session || !role || !["instructor", "admin", "sub-admin"].includes(role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  if (!(await canAccessFeature("classrooms", session.user as any, "attendance"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  const { classroom, sessionDate, sessionId, records, coach, coachStatus, teachingMinutes, classOutcome, adminOverrideCompletion, metadata } = await req.json() as AttendancePayload;
+  const classroomAttendanceAccess = await canAccessFeature("classrooms", session.user as any, "attendance");
+  const attendanceOverrideAccess = (role === "admin" || role === "sub-admin") && await canAccessFeature("attendance", session.user as any, "edit");
+  if (!classroomAttendanceAccess && !attendanceOverrideAccess) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const { classroom, sessionDate, sessionId, records, coach, coachStatus, teachingMinutes, classOutcome, adminOverrideCompletion, overrideReason, metadata } = await req.json() as AttendancePayload;
   if (!classroom || !sessionDate) return NextResponse.json({ error: "missing fields" }, { status: 400 });
   await dbConnect();
   await Attendance.collection.dropIndex("classroom_1_sessionDate_1").catch(() => undefined);
@@ -130,6 +133,37 @@ export async function POST(req: Request) {
   const storedOutcome = shouldContinueTopic(requestedOutcome) && outcome === "completed" ? "completed_continue_topic" : outcome;
   const punctualityScore = target ? Number(target.punctualityScore || punctualityBreakdown(target, classroomDoc).punctualityScore) : 0;
   const assignedCoach = target?.substituteCoach || classroomDoc.coach || classroomDoc.instructor || coach;
+  const existingAttendance: any = await Attendance.findOne({ classroom, scheduledSessionId: sessionId || "", sessionDate: normalizedDate }).lean();
+  const overrideReasonText = String(overrideReason || "").trim();
+  const overrideEntry = existingAttendance && attendanceOverrideAccess
+    ? {
+        at: new Date(),
+        actor: (session.user as SessionUser).id,
+        role,
+        reason: overrideReasonText || "Attendance corrected from attendance workspace",
+      }
+    : null;
+  const nextMetadata = {
+    ...(existingAttendance?.metadata || {}),
+    ...(metadata || {}),
+    classOutcome: storedOutcome,
+    topicCompleted,
+    creditPolicy: outcome === "completed" ? "charge_present_students" : outcome === "student_no_show" ? "repeat_no_show_policy" : "no_charge",
+    scheduledTeachingMinutes: scheduledMinutes,
+    actualTeachingMinutes: actualMinutes,
+    punctualityScore,
+    ...(overrideEntry
+      ? {
+          attendanceOverride: {
+            lastUpdatedAt: overrideEntry.at,
+            lastUpdatedBy: overrideEntry.actor,
+            lastUpdatedRole: overrideEntry.role,
+            reason: overrideEntry.reason,
+          },
+          overrideHistory: [...(Array.isArray(existingAttendance?.metadata?.overrideHistory) ? existingAttendance.metadata.overrideHistory : []), overrideEntry],
+        }
+      : {}),
+  };
   const doc = await Attendance.findOneAndUpdate(
     { classroom, scheduledSessionId: sessionId || "", sessionDate: normalizedDate },
     {
@@ -141,25 +175,17 @@ export async function POST(req: Request) {
       teachingMinutes: scheduledMinutes,
       actualTeachingMinutes: actualMinutes,
       punctualityScore,
-      metadata: {
-        ...(metadata || {}),
-        classOutcome: storedOutcome,
-        topicCompleted,
-        creditPolicy: outcome === "completed" ? "charge_present_students" : outcome === "student_no_show" ? "repeat_no_show_policy" : "no_charge",
-        scheduledTeachingMinutes: scheduledMinutes,
-        actualTeachingMinutes: actualMinutes,
-        punctualityScore,
-      },
+      metadata: nextMetadata,
     },
     { upsert: true, new: true }
   );
   await recordActivity({
     actor: (session.user as SessionUser).id,
-    type: "attendance.marked",
-    label: `Marked attendance for ${records?.length ?? 0} students`,
+    type: overrideEntry ? "attendance.overridden" : "attendance.marked",
+    label: `${overrideEntry ? "Corrected" : "Marked"} attendance for ${records?.length ?? 0} students`,
     entityType: "Attendance",
     entityId: doc._id.toString(),
-    metadata: { classroom, sessionDate, sessionId, records: records?.length ?? 0, classOutcome: storedOutcome },
+    metadata: { classroom, sessionDate, sessionId, records: records?.length ?? 0, classOutcome: storedOutcome, overrideReason: overrideEntry?.reason || "" },
   });
   for (const record of records || []) {
     if (!record?.student) continue;

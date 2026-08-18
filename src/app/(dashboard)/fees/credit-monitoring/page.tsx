@@ -476,10 +476,12 @@ function StatusLink({ href, active, label, value }: { href: string; active: bool
 export default async function CreditMonitoringPage({ searchParams }: { searchParams?: Promise<Params> }) {
   const session = await auth();
   const role = String((session?.user as any)?.role || "");
+  const userId = String((session?.user as any)?.id || "");
   const permissions = session?.user
-    ? await getFeaturePermissionState("fees", session.user as any, ["credit", "export"])
-    : { credit: false, export: false };
-  if (!permissions.credit) return <div className="p-6">Forbidden</div>;
+    ? await getFeaturePermissionState("creditMonitoring", session.user as any, ["view", "credit", "export"])
+    : { view: false, credit: false, export: false };
+  if (!permissions.view || !userId) return <div className="p-6">Forbidden</div>;
+  const manager = role === "admin" || role === "sub-admin";
   await dbConnect();
   const params = searchParams ? await searchParams : {};
   const q = value(params, "q").toLowerCase();
@@ -490,9 +492,9 @@ export default async function CreditMonitoringPage({ searchParams }: { searchPar
   const view = selectedView(value(params, "view"));
 
   const [allAssignments, plans, ledgers] = await Promise.all([
-    FeeAssignment.find({ type: "credits" }).populate("student plan").sort({ creditBalance: 1 }).lean(),
-    FeePlan.find({ type: "credits" }).sort({ name: 1 }).lean(),
-    CreditLedger.find({}).populate("student invoice performedBy").sort({ createdAt: -1 }).limit(120).lean(),
+    FeeAssignment.find(manager ? { type: "credits" } : { type: "credits", student: userId }).populate("student plan").sort({ creditBalance: 1 }).lean(),
+    FeePlan.find(manager ? { type: "credits" } : { type: "credits", isActive: true }).sort({ name: 1 }).lean(),
+    CreditLedger.find(manager ? {} : { student: userId }).populate("student invoice performedBy").sort({ createdAt: -1 }).limit(120).lean(),
   ]);
 
   const assignments = allAssignments
@@ -511,7 +513,7 @@ export default async function CreditMonitoringPage({ searchParams }: { searchPar
   const reminderBanner = creditReminderBanner(params as any);
   const waBanner = whatsappBanner(String((params as any).whatsapp || ""), String((params as any).waError || ""));
   const adjustmentBanner = manualCreditBanner(params);
-  const canAddManualCredits = role === "admin" || role === "sub-admin";
+  const canAddManualCredits = manager && permissions.credit;
   const creditStudents = allAssignments
     .filter((assignment: any) => assignment.student?._id)
     .map((assignment: any) => ({
@@ -648,8 +650,8 @@ export default async function CreditMonitoringPage({ searchParams }: { searchPar
 
           <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
             <SectionTitle
-              title="Students by Credit Balance"
-              note="Student names open their invoices."
+              title={manager ? "Students by Credit Balance" : "Your Credit Balance"}
+              note={manager ? "Student names open their invoices." : "Track your purchased, used, and remaining class credits."}
               action={<span className="rounded-full bg-brand/10 px-3 py-1 text-xs font-bold text-brand">{assignments.length} visible</span>}
             />
 
@@ -683,7 +685,11 @@ export default async function CreditMonitoringPage({ searchParams }: { searchPar
                       return (
                         <tr key={assignment._id.toString()} className="border-b last:border-0 hover:bg-slate-50">
                           <td className="px-3 py-3">
-                            <a href={studentId ? `/fees/invoices?student=${studentId}` : "#"} className="font-semibold text-brand hover:underline">{assignment.student?.name || "Student"}</a>
+                            {manager ? (
+                              <a href={studentId ? `/fees/invoices?student=${studentId}` : "#"} className="font-semibold text-brand hover:underline">{assignment.student?.name || "Student"}</a>
+                            ) : (
+                              <span className="font-semibold text-slate-950">{assignment.student?.name || "Student"}</span>
+                            )}
                             <div className="mt-0.5 text-xs text-slate-500">{assignment.student?.username || assignment.student?.email || "-"}</div>
                           </td>
                           <td className="px-3 py-3">{assignment.plan?.name || "-"}</td>
@@ -735,7 +741,11 @@ export default async function CreditMonitoringPage({ searchParams }: { searchPar
                   return (
                     <tr key={ledger._id.toString()} className="border-b last:border-0 hover:bg-slate-50">
                       <td className="px-3 py-3">
-                        <a href={studentId ? `/fees/invoices?student=${studentId}` : "#"} className="font-semibold text-brand hover:underline">{ledger.student?.name || "Student"}</a>
+                        {manager ? (
+                          <a href={studentId ? `/fees/invoices?student=${studentId}` : "#"} className="font-semibold text-brand hover:underline">{ledger.student?.name || "Student"}</a>
+                        ) : (
+                          <span className="font-semibold text-slate-950">{ledger.student?.name || "Student"}</span>
+                        )}
                       </td>
                       <td className={`px-3 py-3 font-bold ${credits >= 0 ? "text-emerald-700" : "text-rose-700"}`}>{credits >= 0 ? `+${credits}` : credits}</td>
                       <td className="max-w-md px-3 py-3 text-xs text-slate-600">{ledger.note || ledger.type}</td>

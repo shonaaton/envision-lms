@@ -110,6 +110,7 @@ const sections: NavSection[] = [
     roles: ["student"],
     items: [
       { href: "/fees", label: "Credits & Payments", icon: WalletCards, featureKey: "feeDashboard" },
+      { href: "/fees/credit-monitoring", label: "Credit Monitoring", icon: WalletCards, featureKey: "creditMonitoring" },
       { href: "/fees/credit-history", label: "Credit History", icon: WalletCards, featureKey: "studentFees" },
       { href: "/fees/invoices", label: "My Invoices", icon: Receipt, featureKey: "invoices" },
     ],

@@ -108,6 +108,12 @@ function dataUrlToBuffer(value: unknown) {
   return { mime: match[1], buffer: Buffer.from(match[2], "base64") };
 }
 
+function sniffImageMime(buffer: Buffer) {
+  if (buffer.length >= 8 && buffer.toString("hex", 0, 8) === "89504e470d0a1a0a") return "image/png";
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return "image/jpeg";
+  return "";
+}
+
 function readUInt32(buffer: Buffer, offset: number) {
   return buffer.readUInt32BE(offset);
 }
@@ -226,8 +232,9 @@ async function resolveImageSource(value: unknown, fallback?: string) {
   try {
     const response = await fetch(source, { cache: "force-cache" });
     if (!response.ok) throw new Error(`Image request failed: ${response.status}`);
-    const contentType = response.headers.get("content-type") || "image/png";
+    const declaredContentType = response.headers.get("content-type") || "";
     const buffer = Buffer.from(await response.arrayBuffer());
+    const contentType = declaredContentType.startsWith("image/") ? declaredContentType : sniffImageMime(buffer) || "image/png";
     return `data:${contentType};base64,${buffer.toString("base64")}`;
   } catch {
     if (fallback && fallback !== source) return resolveImageSource(fallback);
@@ -437,6 +444,8 @@ async function makeInvoicePdf(invoice: any, settings: any) {
   if (signatory) {
     const fitted = fitImage(signatory, 128, 40);
     canvas.image(signatory.name, 339, 694, fitted.width, fitted.height);
+  } else {
+    canvas.text(ACADEMY_DEFAULTS.authorizedSignatory, 342, 712, { size: 16, font: "italic", color: BRAND, maxWidth: 150 });
   }
   canvas.line(339, 725, 526, 725, BRAND, 1.1);
   canvas.text(ACADEMY_DEFAULTS.authorizedSignatory, 339, 739, { size: 8, font: "bold", color: INK, maxWidth: 180 });

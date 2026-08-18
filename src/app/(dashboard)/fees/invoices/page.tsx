@@ -739,7 +739,7 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
   const role = (session?.user as any)?.role;
   const userId = (session?.user as any)?.id;
   if (!userId) redirect("/login");
-  const permissions = await getFeaturePermissionState("fees", session!.user as any, ["view", "invoice", "edit", "payment", "credit", "export"]);
+  const permissions = await getFeaturePermissionState("invoices", session!.user as any, ["view", "invoice", "edit", "payment", "credit", "export"]);
   if (!permissions.view) redirect("/dashboard");
   const manager = isFeesManager(role);
   await dbConnect();

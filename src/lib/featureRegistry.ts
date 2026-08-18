@@ -289,7 +289,7 @@ export const FEATURE_DEFINITIONS: FeatureDefinition[] = [
     routes: ["/fees/credit-monitoring"],
     permissions: [view, { id: "credit", label: "Issue Credit", critical: true }, exportRecords],
     defaultStatus: "enabled",
-    defaultRolePermissions: { admin: ["view", "credit", "export"] },
+    defaultRolePermissions: { student: ["view"], admin: ["view", "credit", "export"] },
   },
   {
     key: "invoices",

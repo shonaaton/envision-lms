@@ -36,6 +36,16 @@ function formatDateTime(value?: string | Date | null, startTime?: string) {
   return startTime ? `${dateText}, ${startTime}` : dateText;
 }
 
+function dateParam(value?: string | Date | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function formatDuration(minutes: number) {
   if (!minutes) return "0 min";
   if (minutes < 60) return `${minutes} min`;
@@ -175,6 +185,14 @@ export default function AttendanceSummaryWorkspace({ role, kind }: { role: Role;
                   <Link href={`/classrooms/${session.classroomId}/summary?session=${session.sessionId}`} className="btn-outline justify-center">
                     View Details
                   </Link>
+                  {kind === "marked" ? (
+                    <Link
+                      href={`/attendance?date=${encodeURIComponent(dateParam(session.scheduledFor))}&session=${encodeURIComponent(session.id)}`}
+                      className="btn-primary justify-center"
+                    >
+                      Edit Attendance
+                    </Link>
+                  ) : null}
                   {canSendReminder ? (
                     <button
                       type="button"

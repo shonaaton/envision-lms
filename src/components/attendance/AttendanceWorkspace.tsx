@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { CalendarDays, CheckCircle2, Clock3, History, UserCheck, Users } from "lucide-react";
 import { toast } from "sonner";
 import PageLoadingOverlay from "@/components/feedback/PageLoadingOverlay";
@@ -58,9 +59,12 @@ function lifecycleTone(value: string) {
 }
 
 export default function AttendanceWorkspace({ role }: { role: Role }) {
+  const searchParams = useSearchParams();
   const canEditAttendance = role === "admin" || role === "sub-admin";
   const canManageMissedAttendance = role === "admin" || role === "sub-admin";
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const requestedDate = searchParams?.get("date") || "";
+  const requestedSessionId = searchParams?.get("session") || "";
+  const [date, setDate] = useState(requestedDate || new Date().toISOString().slice(0, 10));
   const [data, setData] = useState<any>(null);
   const [selectedSessionId, setSelectedSessionId] = useState("");
   const [draft, setDraft] = useState<Record<string, "present" | "absent" | "late">>({});
@@ -73,6 +77,12 @@ export default function AttendanceWorkspace({ role }: { role: Role }) {
     [data, selectedSessionId]
   );
 
+  useEffect(() => {
+    if (requestedDate && requestedDate !== date) {
+      setDate(requestedDate);
+    }
+  }, [requestedDate, date]);
+
   async function load() {
     setBusyMessage("Loading attendance...");
     try {
@@ -80,7 +90,9 @@ export default function AttendanceWorkspace({ role }: { role: Role }) {
       const next = await response.json();
       setData(next);
       const first = next?.sessions?.[0];
-      const picked = next?.sessions?.find((session: SessionRow) => session.id === selectedSessionId) || first;
+      const picked = next?.sessions?.find((session: SessionRow) => session.id === requestedSessionId)
+        || next?.sessions?.find((session: SessionRow) => session.id === selectedSessionId)
+        || first;
       setSelectedSessionId(picked?.id || "");
       const nextDraft: Record<string, "present" | "absent" | "late"> = {};
       (picked?.students || []).forEach((student: StudentRow) => {
@@ -97,7 +109,7 @@ export default function AttendanceWorkspace({ role }: { role: Role }) {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [date]);
+  }, [date, requestedSessionId]);
 
   useEffect(() => {
     if (!selectedSession) return;

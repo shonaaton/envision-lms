@@ -5,34 +5,66 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
+log() {
+  echo "==> $*"
+}
+
+fail() {
+  echo "!! $*" >&2
+  exit 1
+}
+
+trap 'echo "!! Deploy failed near line ${LINENO}: ${BASH_COMMAND}" >&2' ERR
+
+log "LMS deploy started from $(pwd)"
+
+run_node_script() {
+  local script="$1"
+  if command -v node >/dev/null 2>&1; then
+    timeout 30 node "$script"
+    return
+  fi
+
+  log "Node.js not found on host; running ${script} inside Docker..."
+  timeout 90 docker run --rm \
+    --env-file .env \
+    -v "$PWD:/app:ro" \
+    -w /tmp/lms-check \
+    node:20-alpine \
+    sh -lc "cp /app/package.json /app/package-lock.json ./ && npm ci --omit=dev --ignore-scripts >/tmp/npm-ci.log && node /app/${script}"
+}
+
 # 1. .env check
 if [ ! -f .env ]; then
-  echo "!! .env not found. Copy and fill it first:"
+  echo "!! .env not found. Copy and fill it first:" >&2
   echo "   cp .env.example .env && nano .env"
   exit 1
 fi
 
+command -v docker >/dev/null 2>&1 || fail "Docker is not installed or not available in PATH."
+docker compose version >/dev/null 2>&1 || fail "Docker Compose is not available."
+
 # 2. Pull Stockfish if missing
 if [ ! -s public/stockfish/stockfish.js ] || [ ! -s public/stockfish/stockfish.wasm ]; then
-  echo "==> Stockfish not found, fetching..."
-  bash scripts/setup-assets.sh
+  log "Stockfish not found, fetching..."
+  timeout 180 bash scripts/setup-assets.sh || fail "Stockfish setup did not finish within 3 minutes."
 fi
 
 # 3. Check MongoDB Atlas access before rebuilding
-node scripts/check-mongodb-access.cjs
+run_node_script scripts/check-mongodb-access.cjs || fail "MongoDB Atlas check failed or timed out."
 
 # 4. Ensure shared docker network exists (Traefik / n8n network)
 if ! docker network ls --format '{{.Name}}' | grep -qx root_default; then
-  echo "==> Creating 'root_default' docker network (shared with n8n + Traefik)"
+  log "Creating 'root_default' docker network (shared with n8n + Traefik)"
   docker network create root_default
 fi
 
 # 5. Build & start
-echo "==> Building and starting envision-lms..."
+log "Building and starting envision-lms..."
 docker compose up -d --build
 
 # 6. Tail logs briefly to confirm boot
-echo "==> Tailing logs for 15s..."
+log "Tailing logs for 15s..."
 ( timeout 15 docker compose logs -f envision-lms || true )
 
 APP_URL="$(grep -E '^NEXT_PUBLIC_APP_URL=' .env | tail -1 | cut -d= -f2- | tr -d '\"')"
@@ -43,5 +75,5 @@ if [ -z "$APP_URL" ]; then
   fi
 fi
 
-echo "==> Done. Visit ${APP_URL:-your configured LMS domain}"
+log "Done. Visit ${APP_URL:-your configured LMS domain}"
 echo "   (DNS A record must point at this VPS, Traefik will issue TLS automatically)"

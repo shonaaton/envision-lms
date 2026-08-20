@@ -4,6 +4,7 @@ type Cached = { conn: typeof mongoose | null; promise: Promise<typeof mongoose> 
 const MONGO_SERVER_SELECTION_TIMEOUT_MS = 5_000;
 const MONGO_CONNECT_TIMEOUT_MS = 5_000;
 const MONGO_SOCKET_TIMEOUT_MS = 15_000;
+const MONGO_DNS_FAMILY = 4;
 declare global {
   var _mongo: Cached | undefined;
 }
@@ -40,6 +41,7 @@ export async function dbConnect() {
       serverSelectionTimeoutMS: MONGO_SERVER_SELECTION_TIMEOUT_MS,
       connectTimeoutMS: MONGO_CONNECT_TIMEOUT_MS,
       socketTimeoutMS: MONGO_SOCKET_TIMEOUT_MS,
+      family: MONGO_DNS_FAMILY,
     }).catch((error) => {
       resetCachedConnection();
       throw error;

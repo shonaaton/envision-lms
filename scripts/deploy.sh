@@ -18,17 +18,20 @@ if [ ! -s public/stockfish/stockfish.js ] || [ ! -s public/stockfish/stockfish.w
   bash scripts/setup-assets.sh
 fi
 
-# 3. Ensure shared docker network exists (Traefik / n8n network)
+# 3. Check MongoDB Atlas access before rebuilding
+node scripts/check-mongodb-access.cjs
+
+# 4. Ensure shared docker network exists (Traefik / n8n network)
 if ! docker network ls --format '{{.Name}}' | grep -qx root_default; then
   echo "==> Creating 'root_default' docker network (shared with n8n + Traefik)"
   docker network create root_default
 fi
 
-# 4. Build & start
+# 5. Build & start
 echo "==> Building and starting envision-lms..."
 docker compose up -d --build
 
-# 5. Tail logs briefly to confirm boot
+# 6. Tail logs briefly to confirm boot
 echo "==> Tailing logs for 15s..."
 ( timeout 15 docker compose logs -f envision-lms || true )
 

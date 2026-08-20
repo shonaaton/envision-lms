@@ -5,6 +5,7 @@ import { Tournament } from "@/models/Tournament";
 import { cookies } from "next/headers";
 import { getTournamentGuestUsername } from "@/lib/tournamentGuests";
 import { playerKeyForExternal, playerKeyForUser } from "@/lib/tournamentEngine";
+import { emitTournamentUpdate } from "@/lib/tournamentSocketServer";
 
 export const dynamic = "force-dynamic";
 
@@ -25,5 +26,6 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   if (!senderKey) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   tournament.chatMessages = [...(tournament.chatMessages || []), { senderKey, senderName, message, createdAt: new Date(), hidden: false }].slice(-200);
   await tournament.save();
+  emitTournamentUpdate(tournament._id.toString(), "chat");
   return NextResponse.json({ ok: true });
 }

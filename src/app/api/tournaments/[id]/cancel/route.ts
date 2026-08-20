@@ -5,6 +5,7 @@ import { Tournament } from "@/models/Tournament";
 import { TournamentGame } from "@/models/TournamentGame";
 import { recordActivity } from "@/lib/activity";
 import { notifyTournamentUsers } from "@/lib/tournamentNotifications";
+import { emitTournamentUpdate } from "@/lib/tournamentSocketServer";
 
 export const dynamic = "force-dynamic";
 
@@ -41,5 +42,6 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     entityType: "Tournament",
     entityId: tournament._id.toString(),
   });
+  emitTournamentUpdate(tournament._id.toString(), "cancel");
   return NextResponse.json({ ok: true });
 }

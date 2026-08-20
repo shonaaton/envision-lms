@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { Tournament } from "@/models/Tournament";
 import { recordActivity } from "@/lib/activity";
+import { emitTournamentUpdate } from "@/lib/tournamentSocketServer";
 
 export const dynamic = "force-dynamic";
 
@@ -21,5 +22,6 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
   }];
   await tournament.save();
   await recordActivity({ actor: (session!.user as any).id, type: "tournament.paused", label: `Paused tournament ${tournament.name}`, entityType: "Tournament", entityId: tournament._id.toString() });
+  emitTournamentUpdate(tournament._id.toString(), "admin_pause");
   return NextResponse.json({ ok: true });
 }

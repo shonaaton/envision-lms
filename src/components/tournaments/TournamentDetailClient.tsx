@@ -126,10 +126,7 @@ export function TournamentDetailClient({
     if (!response.ok) return;
     setState(await response.json());
   }, [tournamentId]);
-  const { connected, broadcastTournamentUpdate } = useTournamentSocket({
-    tournamentId,
-    onUpdate: refresh,
-  });
+  const { connected } = useTournamentSocket({ tournamentId, onUpdate: refresh });
 
   useEffect(() => {
     refresh();
@@ -176,7 +173,6 @@ export function TournamentDetailClient({
         return;
       }
       await refresh();
-      broadcastTournamentUpdate(path.split("/").pop() || "action");
       router.refresh();
     });
   }
@@ -194,7 +190,6 @@ export function TournamentDetailClient({
       return false;
     }
     await refresh();
-    broadcastTournamentUpdate("edited");
     return true;
   }
 
@@ -223,7 +218,6 @@ export function TournamentDetailClient({
       return;
     }
     await refresh();
-    broadcastTournamentUpdate("participant_removed");
   }
 
   async function correctResult() {
@@ -240,7 +234,6 @@ export function TournamentDetailClient({
     }
     setCorrectionDraft(null);
     await refresh();
-    broadcastTournamentUpdate("result_corrected");
   }
 
   async function sendAnnouncement() {
@@ -257,7 +250,6 @@ export function TournamentDetailClient({
     setAnnouncementOpen(false);
     setAnnouncementDraft({ title: "Tournament announcement", message: "" });
     await refresh();
-    broadcastTournamentUpdate("announcement");
   }
 
   async function submitChat() {
@@ -276,7 +268,6 @@ export function TournamentDetailClient({
     }
     setChatMessage("");
     await refresh();
-    broadcastTournamentUpdate("chat");
   }
 
   async function shareTournament() {

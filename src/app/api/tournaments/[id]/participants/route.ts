@@ -5,6 +5,7 @@ import { Tournament } from "@/models/Tournament";
 import { TournamentGame } from "@/models/TournamentGame";
 import { playerKeyForExternal, playerKeyForUser, recalculateTournamentStandings, setTournamentPlayerState, syncSwissRoundState } from "@/lib/tournamentEngine";
 import { recordActivity } from "@/lib/activity";
+import { emitTournamentUpdate } from "@/lib/tournamentSocketServer";
 
 export const dynamic = "force-dynamic";
 
@@ -63,5 +64,6 @@ export async function DELETE(req: Request, { params }: { params: { id: string } 
   }];
   await tournament.save();
   await recordActivity({ actor: (session!.user as any).id, type: "tournament.participant_removed", label: `Removed participant from ${tournament.name}`, entityType: "Tournament", entityId: tournament._id.toString(), metadata: { playerKey, abortedGames: activeGames.length, reason } });
+  emitTournamentUpdate(tournament._id.toString(), "participant_removed");
   return NextResponse.json({ ok: true, abortedGames: activeGames.length });
 }

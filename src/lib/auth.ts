@@ -4,8 +4,16 @@ import bcrypt from "bcryptjs";
 import { headers } from "next/headers";
 import { authConfig } from "./auth.config";
 import { isInactiveRestrictedPath } from "./inactiveAccess";
+import { consumeRateLimit, getClientIp } from "./requestSecurity";
 
 const SESSION_USER_STATUS_TTL_MS = 60_000;
+const LOGIN_IP_WINDOW_MS = 5 * 60 * 1000;
+const LOGIN_ID_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_LOCK_WINDOW_MS = 15 * 60 * 1000;
+const MAX_LOGIN_ATTEMPTS_PER_IP = 20;
+const MAX_LOGIN_ATTEMPTS_PER_LOGIN = 10;
+const MAX_FAILED_LOGINS_BEFORE_LOCK = 5;
+const DUMMY_PASSWORD_HASH = "$2a$10$0dHO062F6m6nM0JQ5nM0JeH7GZq4wS6vJzpuG1HsfrN7kYMva9nQG";
 
 type SessionUserStatusCacheEntry = {
   isActive: boolean;
@@ -68,6 +76,11 @@ const nextAuth = NextAuth({
         await dbConnect();
         const loginValue = String(creds.email).trim();
         const normalized = loginValue.toLowerCase();
+        const requestHeaders = headers();
+        const clientIp = getClientIp(requestHeaders);
+        const ipLimit = consumeRateLimit(`login:ip:${clientIp}`, MAX_LOGIN_ATTEMPTS_PER_IP, LOGIN_IP_WINDOW_MS);
+        const loginLimit = consumeRateLimit(`login:identifier:${normalized}`, MAX_LOGIN_ATTEMPTS_PER_LOGIN, LOGIN_ID_WINDOW_MS);
+        if (!ipLimit.allowed || !loginLimit.allowed) return null;
         const user = await User.findOne({
           $or: [
             { email: normalized },
@@ -75,9 +88,28 @@ const nextAuth = NextAuth({
             { username: normalized },
           ],
         });
-        if (!user) return null;
+        if (!user) {
+          await bcrypt.compare(String(creds.password), DUMMY_PASSWORD_HASH);
+          return null;
+        }
+        if (user.loginLockedUntil && new Date(user.loginLockedUntil).getTime() > Date.now()) {
+          await bcrypt.compare(String(creds.password), DUMMY_PASSWORD_HASH);
+          return null;
+        }
         const ok = await bcrypt.compare(String(creds.password), user.passwordHash);
-        if (!ok) return null;
+        if (!ok) {
+          const failedAttempts = Number(user.failedLoginAttempts || 0) + 1;
+          const update: Record<string, unknown> = { failedLoginAttempts: failedAttempts };
+          if (failedAttempts >= MAX_FAILED_LOGINS_BEFORE_LOCK) update.loginLockedUntil = new Date(Date.now() + LOGIN_LOCK_WINDOW_MS);
+          await User.updateOne({ _id: user._id }, { $set: update });
+          return null;
+        }
+        if ((user.failedLoginAttempts || 0) > 0 || user.loginLockedUntil) {
+          await User.updateOne(
+            { _id: user._id },
+            { $set: { failedLoginAttempts: 0 }, $unset: { loginLockedUntil: 1 } }
+          );
+        }
         const explicitSuperAdminExists = await User.exists({ role: "admin", isSuperAdmin: true, isActive: { $ne: false } });
         const isBootstrapSuperAdmin = user.role === "admin" && !explicitSuperAdminExists;
         return {

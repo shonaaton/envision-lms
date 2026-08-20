@@ -13,7 +13,32 @@ function normalizeBaseUrl(value?: string | null) {
   }
 }
 
-export function resolvePublicAppUrl(req?: Request) {
+type ResolvePublicAppUrlOptions = {
+  allowRequestHeaders?: boolean;
+};
+
+function resolveConfiguredPublicAppUrl() {
+  const envCandidates = [
+    process.env.NEXT_PUBLIC_APP_URL,
+    process.env.NEXTAUTH_URL,
+    process.env.LMS_HOST,
+  ];
+
+  for (const candidate of envCandidates) {
+    const normalized = normalizeBaseUrl(candidate);
+    if (normalized) return normalized;
+  }
+
+  return "";
+}
+
+export function resolvePublicAppUrl(req?: Request, options?: ResolvePublicAppUrlOptions) {
+  const configuredUrl = resolveConfiguredPublicAppUrl();
+  if (configuredUrl) return configuredUrl;
+  if (options?.allowRequestHeaders === false) {
+    return process.env.NODE_ENV === "production" ? "" : "http://localhost:3000";
+  }
+
   const origin = normalizeBaseUrl(req?.headers.get("origin"));
   if (origin) return origin;
 
@@ -27,17 +52,6 @@ export function resolvePublicAppUrl(req?: Request) {
 
   const fromHostHeader = host && normalizeBaseUrl(`${forwardedProto || "https"}://${host}`);
   if (fromHostHeader) return fromHostHeader;
-
-  const envCandidates = [
-    process.env.NEXT_PUBLIC_APP_URL,
-    process.env.NEXTAUTH_URL,
-    process.env.LMS_HOST,
-  ];
-
-  for (const candidate of envCandidates) {
-    const normalized = normalizeBaseUrl(candidate);
-    if (normalized) return normalized;
-  }
 
   return process.env.NODE_ENV === "production" ? "" : "http://localhost:3000";
 }

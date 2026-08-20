@@ -4,6 +4,7 @@ import { dbConnect } from "@/lib/db";
 import { Tournament } from "@/models/Tournament";
 import { notifyExternalTournamentParticipant, notifyTournamentUsers } from "@/lib/tournamentNotifications";
 import { recordActivity } from "@/lib/activity";
+import { emitTournamentUpdate } from "@/lib/tournamentSocketServer";
 
 export const dynamic = "force-dynamic";
 
@@ -50,5 +51,6 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     entityType: "Tournament",
     entityId: tournament._id.toString(),
   });
+  emitTournamentUpdate(tournament._id.toString(), "announcement");
   return NextResponse.json({ ok: true });
 }

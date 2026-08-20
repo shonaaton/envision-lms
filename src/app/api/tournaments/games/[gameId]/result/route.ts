@@ -9,6 +9,7 @@ import { recordActivity } from "@/lib/activity";
 import { cookies } from "next/headers";
 import { getTournamentGuestUsername } from "@/lib/tournamentGuests";
 import { inactiveStudentMessage, isCurrentStudent } from "@/lib/studentAccess";
+import { emitTournamentUpdate } from "@/lib/tournamentSocketServer";
 
 export const dynamic = "force-dynamic";
 
@@ -140,6 +141,7 @@ export async function POST(req: Request, { params }: { params: { gameId: string 
           source: userId ? "student_tournament" : "guest_tournament",
         },
       });
+      emitTournamentUpdate(tournament._id.toString(), "draw_offered");
       return NextResponse.json({ ok: true, drawOffered: true, game });
     }
     await completeGame(game, {
@@ -165,6 +167,7 @@ export async function POST(req: Request, { params }: { params: { gameId: string 
           source: userId ? "student_tournament" : "guest_tournament",
         },
       });
+      emitTournamentUpdate(tournament._id.toString(), "draw_declined");
       return NextResponse.json({ ok: true, drawDeclined: true, game });
     }
     return NextResponse.json({ error: "There is no opponent draw offer to decline." }, { status: 400 });
@@ -199,6 +202,7 @@ export async function POST(req: Request, { params }: { params: { gameId: string 
         source: userId ? "student_tournament" : "guest_tournament",
       },
     });
+    emitTournamentUpdate(tournament._id.toString(), "berserk");
     return NextResponse.json({ ok: true, berserked: true, game });
   } else if (role === "admin" && body.result) {
     const previousResult = game.result || "*";
@@ -254,6 +258,7 @@ export async function POST(req: Request, { params }: { params: { gameId: string 
       source: role === "admin" ? "manual_admin" : userId ? "student_tournament" : "guest_tournament",
     },
   });
+  emitTournamentUpdate(tournament._id.toString(), action || "result_updated");
 
   return NextResponse.json({ ok: true, game });
 }

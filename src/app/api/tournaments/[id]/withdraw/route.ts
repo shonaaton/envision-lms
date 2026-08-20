@@ -3,8 +3,9 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { Tournament } from "@/models/Tournament";
 import { cookies } from "next/headers";
-import { getTournamentGuestUsername } from "@/lib/tournamentGuests";
+import { clearTournamentGuestUsername, getTournamentGuestUsername } from "@/lib/tournamentGuests";
 import { playerKeyForExternal, playerKeyForUser, setTournamentPlayerState } from "@/lib/tournamentEngine";
+import { emitTournamentUpdate } from "@/lib/tournamentSocketServer";
 
 export const dynamic = "force-dynamic";
 
@@ -31,10 +32,12 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
   } else if (guestJoined) {
     tournament.externalParticipants = (tournament.externalParticipants || []).filter((player: any) => String(player.username || "").toLowerCase() !== guestUsername.toLowerCase());
     setTournamentPlayerState(tournament, playerKeyForExternal(guestUsername), "withdrawn");
+    clearTournamentGuestUsername(cookieStore, guestToken);
   } else {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   await tournament.save();
+  emitTournamentUpdate(tournament._id.toString(), "withdraw");
   return NextResponse.json({ ok: true });
 }

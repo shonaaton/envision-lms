@@ -10,14 +10,19 @@ import {
   ChevronRight,
   ClipboardCheck,
   Clock3,
+  Eye,
   ExternalLink,
   Filter,
   GraduationCap,
+  LayoutGrid,
   ListTodo,
+  Rows3,
   Sparkles,
+  SlidersHorizontal,
   Swords,
   Trophy,
   Users,
+  X,
 } from "lucide-react";
 import {
   addDays,
@@ -144,6 +149,10 @@ function eventCount(events: CalendarEvent[], type: CalendarType | "all") {
   return type === "all" ? events.length : events.filter((event) => event.type === type).length;
 }
 
+function eventTypeLabel(type: CalendarType) {
+  return type.replace("_", " ").replace(/\b\w/g, (value) => value.toUpperCase());
+}
+
 function EventLegend() {
   return (
     <div className="flex flex-nowrap gap-1.5 overflow-x-auto pb-1">
@@ -184,19 +193,25 @@ function EventChip({
       title={event.title}
       onClick={onClick}
       className={cn(
-        "w-full rounded-lg border px-3 py-2 text-left shadow-sm transition",
-        active ? "border-brand bg-brand/5 shadow-brand/10" : "border-slate-200 bg-white hover:border-brand/20 hover:bg-brand/5"
+        "group relative w-full rounded-xl border px-3 py-2 text-left shadow-sm transition",
+        active
+          ? "border-brand bg-brand/5 shadow-brand/10"
+          : "border-slate-200 bg-white hover:-translate-y-0.5 hover:border-brand/20 hover:bg-brand/5 hover:shadow-md"
       )}
     >
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <div className="text-sm font-semibold text-slate-950 sm:truncate">{event.title}</div>
-          <div className="mt-1 text-xs leading-5 text-slate-500 sm:truncate">{format(eventDate(event.start), "h:mm a")} {event.subtitle ? `- ${event.subtitle}` : ""}</div>
+          <div className="mt-1 text-xs leading-5 text-slate-500 sm:truncate">
+            <span className="font-bold text-slate-700">{format(eventDate(event.start), "h:mm a")}</span>
+            {event.subtitle ? ` - ${event.subtitle}` : ""}
+          </div>
         </div>
         <div className="shrink-0">
           <EventBadge label={prettyStatus(event.status)} className={statusTone(event.status)} />
         </div>
       </div>
+      <EventHoverCard event={event} />
     </button>
   );
 }
@@ -239,11 +254,13 @@ function CalendarMonth({
   events,
   selectedId,
   onSelect,
+  onOpenDay,
 }: {
   currentDate: Date;
   events: CalendarEvent[];
   selectedId?: string;
   onSelect: (event: CalendarEvent) => void;
+  onOpenDay: (day: Date, events: CalendarEvent[]) => void;
 }) {
   const days = eachDayOfInterval({
     start: startOfWeek(startOfMonth(currentDate), { weekStartsOn: 1 }),
@@ -260,12 +277,12 @@ function CalendarMonth({
       <div className="grid grid-cols-1 md:grid-cols-7">
         {days.map((day) => {
           const dayEvents = events.filter((event) => sameDate(eventDate(event.start), day)).sort((a, b) => eventDate(a.start).getTime() - eventDate(b.start).getTime());
-          const visible = dayEvents.slice(0, 3);
+          const visible = dayEvents.slice(0, 2);
           return (
             <div
               key={day.toISOString()}
               className={cn(
-                "min-h-[116px] border-b border-r border-slate-200 p-2 align-top md:min-h-[128px]",
+                "min-h-[112px] border-b border-r border-slate-200 bg-white/90 p-2 align-top md:min-h-[128px]",
                 !isSameMonth(day, currentDate) && "bg-slate-50/80",
                 isToday(day) && "bg-brand/[0.03]"
               )}
@@ -284,18 +301,23 @@ function CalendarMonth({
                     title={event.title}
                     onClick={() => onSelect(event)}
                     className={cn(
-                      "w-full truncate rounded-md border px-2 py-1 text-left text-[11px] font-semibold shadow-sm transition",
+                      "group relative w-full truncate rounded-lg border px-2 py-1.5 text-left text-[11px] font-semibold shadow-sm transition hover:-translate-y-0.5 hover:shadow-md",
                       typeTone(event.type),
                       selectedId === event.id ? "border-brand bg-brand/10 text-brand ring-2 ring-brand/25" : ""
                     )}
                   >
                     {format(eventDate(event.start), "h:mm a")} - {event.title}
+                    <EventHoverCard event={event} compact />
                   </button>
                 ))}
                 {dayEvents.length > visible.length && (
-                  <div className="rounded-md bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-500">
+                  <button
+                    type="button"
+                    onClick={() => onOpenDay(day, dayEvents)}
+                    className="w-full rounded-lg border border-dashed border-slate-300 bg-slate-50 px-2 py-1.5 text-left text-[11px] font-semibold text-slate-600 transition hover:border-brand/30 hover:bg-brand/5 hover:text-brand"
+                  >
                     +{dayEvents.length - visible.length} more
-                  </div>
+                  </button>
                 )}
               </div>
             </div>
@@ -351,27 +373,17 @@ function CalendarAgenda({
 
 function EventDetails({ event, role }: { event?: CalendarEvent; role: CalendarRole }) {
   if (!event) {
-    return (
-      <div className="rounded-lg border border-brand/10 bg-white p-4 shadow-[0_12px_28px_rgba(90,19,114,0.08)] sm:p-5 xl:sticky xl:top-24">
-        <div className="flex items-center gap-2 text-brand">
-          <CalendarDays size={18} />
-          <div className="text-sm font-black uppercase tracking-[0.18em]">Event Details</div>
-        </div>
-        <div className="mt-6 rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">
-          Select an event to see the full class, homework, or tournament details here.
-        </div>
-      </div>
-    );
+    return null;
   }
 
   const googleMeetUrl = normalizeGoogleMeetUrl(event.meetingUrl);
 
   return (
-    <div className="rounded-lg border border-brand/10 bg-white p-4 shadow-[0_12px_28px_rgba(90,19,114,0.08)] sm:p-5 xl:sticky xl:top-24">
+    <div className="rounded-[20px] border border-brand/10 bg-white p-4 shadow-[0_18px_44px_rgba(90,19,114,0.14)] sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <EventBadge label={event.type.replace("_", " ").replace(/\b\w/g, (value) => value.toUpperCase())} className={typeTone(event.type)} />
+            <EventBadge label={eventTypeLabel(event.type)} className={typeTone(event.type)} />
             <EventBadge label={prettyStatus(event.status)} className={statusTone(event.status)} />
           </div>
           <h2 className="mt-3 text-2xl font-black text-slate-950">{event.title}</h2>
@@ -431,13 +443,114 @@ function DetailRow({ icon, label, value }: { icon: ReactNode; label: string; val
 
 function CompactSummary({ label, value, icon: Icon }: { label: string; value: number; icon: any }) {
   return (
-    <div className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 shadow-sm">
-      <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-brand/10 text-brand">
+    <div className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+      <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-brand/10 text-brand">
         <Icon size={15} />
       </span>
       <div className="leading-none">
         <div className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">{label}</div>
         <div className="mt-1 text-lg font-black text-slate-950">{value}</div>
+      </div>
+    </div>
+  );
+}
+
+function EventHoverCard({ event, compact = false }: { event: CalendarEvent; compact?: boolean }) {
+  return (
+    <div
+      className={cn(
+        "pointer-events-none absolute left-0 top-full z-20 mt-2 hidden w-64 rounded-2xl border border-brand/10 bg-white/95 p-3 text-left shadow-[0_16px_40px_rgba(90,19,114,0.18)] backdrop-blur group-hover:xl:block",
+        compact && "w-56"
+      )}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-bold", typeTone(event.type))}>{eventTypeLabel(event.type)}</span>
+        <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">{format(eventDate(event.start), "h:mm a")}</span>
+      </div>
+      <div className="mt-2 text-sm font-bold text-slate-950">{event.topic || event.title}</div>
+      <div className="mt-1 text-xs leading-5 text-slate-500">{event.coachName ? `Coach ${event.coachName}` : event.subtitle || "Open for full details."}</div>
+    </div>
+  );
+}
+
+function FloatingPanel({
+  open,
+  title,
+  onClose,
+  children,
+  mobile,
+}: {
+  open: boolean;
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+  mobile?: boolean;
+}) {
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50">
+      <button type="button" aria-label="Close overlay" onClick={onClose} className="absolute inset-0 bg-slate-950/35 backdrop-blur-[2px]" />
+      <div
+        className={cn(
+          "absolute left-1/2 z-10 w-[min(680px,calc(100vw-1.5rem))] -translate-x-1/2 rounded-[24px] bg-white p-3 shadow-[0_28px_80px_rgba(35,25,55,0.28)]",
+          mobile ? "bottom-0 left-0 right-0 w-full translate-x-0 rounded-b-none rounded-t-[24px] border-t border-slate-200 p-4" : "top-[8vh] max-h-[84vh] overflow-y-auto"
+        )}
+      >
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-[11px] font-black uppercase tracking-[0.16em] text-brand/70">{title}</div>
+          </div>
+          <button type="button" onClick={onClose} className="grid h-9 w-9 place-items-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:border-brand/30 hover:text-brand">
+            <X size={16} />
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function FilterSelect<T extends string>({
+  icon,
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: T;
+  options: Array<{ id: T; label: string }>;
+  onChange: (value: T) => void;
+}) {
+  return (
+    <label className="flex min-w-[150px] items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+      <span className="text-brand">{icon}</span>
+      <div className="min-w-0 flex-1">
+        <div className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">{label}</div>
+        <select value={value} onChange={(event) => onChange(event.target.value as T)} className="w-full bg-transparent text-sm font-semibold text-slate-900 outline-none">
+          {options.map((option) => (
+            <option key={option.id} value={option.id}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </div>
+    </label>
+  );
+}
+
+function EmptyEventPrompt({ visibleEvents }: { visibleEvents: number }) {
+  return (
+    <div className="rounded-[22px] border border-dashed border-slate-300 bg-white/80 p-8 text-center shadow-sm">
+      <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-brand/10 text-brand">
+        <Eye size={18} />
+      </div>
+      <h2 className="mt-4 text-lg font-black text-slate-950">Open an event to inspect the details</h2>
+      <p className="mt-2 text-sm leading-6 text-slate-500">The calendar now keeps the grid clean and opens the coach, batch, and student detail only when you need it.</p>
+      <div className="mt-4 inline-flex rounded-full bg-accent px-3 py-1 text-xs font-black uppercase tracking-[0.12em] text-brand">
+        {visibleEvents} visible in this view
       </div>
     </div>
   );
@@ -728,12 +841,21 @@ function StaffCalendarWorkspace({
   subtitle: string;
   events: CalendarEvent[];
 }) {
-
   const [view, setView] = useState<CalendarView>("monthly");
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [typeFilter, setTypeFilter] = useState<CalendarType | "all">("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [selectedId, setSelectedId] = useState<string>("");
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+  const [isMobileSheet, setIsMobileSheet] = useState(false);
+  const [overflowDay, setOverflowDay] = useState<{ day: Date; events: CalendarEvent[] } | null>(null);
+
+  useEffect(() => {
+    const syncViewport = () => setIsMobileSheet(window.innerWidth < 768);
+    syncViewport();
+    window.addEventListener("resize", syncViewport);
+    return () => window.removeEventListener("resize", syncViewport);
+  }, []);
 
   const filteredEvents = useMemo(() => {
     return events
@@ -764,6 +886,7 @@ function StaffCalendarWorkspace({
   useEffect(() => {
     if (!visibleEvents.length) {
       setSelectedId("");
+      setIsDetailsOpen(false);
       return;
     }
     if (!visibleEvents.some((event) => event.id === selectedId)) {
@@ -777,17 +900,26 @@ function StaffCalendarWorkspace({
   const completedEvents = filteredEvents.filter((event) => statusBucket(event) === "completed").length;
   const currentDateValue = format(currentDate, "yyyy-MM-dd");
   const staffLabel = role === "instructor" ? "Coach Calendar" : "Academy Calendar";
+  const openEvent = (event: CalendarEvent) => {
+    setSelectedId(event.id);
+    setIsDetailsOpen(true);
+  };
+  const summaryHomeworkTasks = filteredEvents.filter((event) => event.type === "homework" || event.type === "task" || event.type === "attendance").length;
+  const summaryCompetition = filteredEvents.filter((event) => event.type === "tournament" || event.type === "simul").length;
+  const shouldUseCompactAdminLayout = role === "admin" || role === "sub-admin";
 
   return (
     <div className="space-y-3 text-slate-950">
-      <section className="rounded-lg border border-brand/10 bg-white p-4 shadow-[0_12px_28px_rgba(90,19,114,0.08)]">
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-          <div>
-            <div className="text-[11px] font-black uppercase tracking-[0.18em] text-brand/70">{staffLabel}</div>
+      <section className="rounded-[22px] border border-brand/10 bg-white p-4 shadow-[0_12px_28px_rgba(90,19,114,0.08)]">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <div className="text-[11px] font-black uppercase tracking-[0.18em] text-brand/70">
+              {shouldUseCompactAdminLayout ? `${staffLabel} Workspace` : staffLabel}
+            </div>
             <h1 className="mt-1 text-2xl font-black text-brand sm:text-3xl">{title}</h1>
             <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600">{subtitle}</p>
           </div>
-          <div className="flex flex-wrap gap-2 xl:justify-end">
+          <div className="flex flex-wrap gap-2 lg:justify-end">
             <CompactSummary label="Today" value={todayEvents} icon={CalendarDays} />
             <CompactSummary label="Upcoming" value={upcomingEvents} icon={Clock3} />
             <CompactSummary label="Completed" value={completedEvents} icon={CheckCircle2} />
@@ -795,28 +927,28 @@ function StaffCalendarWorkspace({
         </div>
       </section>
 
-      <section className="rounded-lg border border-brand/10 bg-white p-3 shadow-[0_12px_28px_rgba(90,19,114,0.07)]">
+      <section className="sticky top-3 z-20 rounded-[22px] border border-brand/10 bg-white/95 p-3 shadow-[0_16px_42px_rgba(90,19,114,0.10)] backdrop-blur">
         <div className="flex flex-col gap-3">
           <div className="flex flex-col gap-2 xl:flex-row xl:items-center">
             <div className="flex shrink-0 items-center gap-1.5">
-              <button type="button" onClick={() => setCurrentDate(new Date())} className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-900 shadow-sm">Today</button>
-              <button type="button" onClick={() => setCurrentDate((current) => navigateDate(view, current, -1))} className="grid h-9 w-9 place-items-center rounded-lg border border-slate-200 bg-white text-slate-700 shadow-sm"><ChevronLeft size={16} /></button>
-              <button type="button" onClick={() => setCurrentDate((current) => navigateDate(view, current, 1))} className="grid h-9 w-9 place-items-center rounded-lg border border-slate-200 bg-white text-slate-700 shadow-sm"><ChevronRight size={16} /></button>
+              <button type="button" onClick={() => setCurrentDate(new Date())} className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-900 shadow-sm">Today</button>
+              <button type="button" onClick={() => setCurrentDate((current) => navigateDate(view, current, -1))} className="grid h-10 w-10 place-items-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm"><ChevronLeft size={16} /></button>
+              <button type="button" onClick={() => setCurrentDate((current) => navigateDate(view, current, 1))} className="grid h-10 w-10 place-items-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm"><ChevronRight size={16} /></button>
             </div>
             <div className="flex min-w-0 flex-1 flex-col gap-2 lg:flex-row lg:items-center">
-              <div className="inline-flex min-w-0 flex-1 items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm font-bold text-slate-900">
+              <div className="inline-flex min-w-0 flex-1 items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-sm font-bold text-slate-900">
                 <CalendarDays size={15} className="shrink-0 text-brand" />
                 <span className="truncate">{formatRangeLabel(view, currentDate)}</span>
               </div>
               <div className="overflow-x-auto pb-1 lg:pb-0">
-                <div className="inline-flex gap-1 rounded-lg bg-slate-100 p-1">
+                <div className="inline-flex gap-1 rounded-xl bg-slate-100 p-1">
                   {viewOptions.map((item) => (
                     <button
                       key={item.id}
                       type="button"
                       onClick={() => setView(item.id)}
                       className={cn(
-                        "h-8 shrink-0 rounded-md px-3 text-xs font-bold whitespace-nowrap transition",
+                        "h-8 shrink-0 rounded-lg px-3 text-xs font-bold whitespace-nowrap transition",
                         view === item.id ? "bg-white text-slate-950 shadow-sm" : "text-slate-500 hover:text-slate-900"
                       )}
                     >
@@ -825,7 +957,7 @@ function StaffCalendarWorkspace({
                   ))}
                 </div>
               </div>
-              <label className="flex shrink-0 items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1 shadow-sm">
+              <label className="flex shrink-0 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
                 <span className="hidden text-[10px] font-black uppercase tracking-[0.12em] text-slate-500 sm:inline">Jump</span>
                 <input
                   type="date"
@@ -834,70 +966,44 @@ function StaffCalendarWorkspace({
                     const next = event.target.value ? new Date(`${event.target.value}T12:00:00`) : new Date();
                     if (!Number.isNaN(next.getTime())) setCurrentDate(next);
                   }}
-                  className="h-7 w-[145px] bg-transparent text-sm font-semibold text-slate-900 outline-none"
+                  className="h-6 w-[145px] bg-transparent text-sm font-semibold text-slate-900 outline-none"
                 />
               </label>
-              <div className="hidden shrink-0 rounded-lg bg-brand/10 px-3 py-2 text-xs font-black uppercase tracking-[0.12em] text-brand xl:block">
+              <div className="hidden shrink-0 rounded-xl bg-brand/10 px-3 py-2 text-xs font-black uppercase tracking-[0.12em] text-brand xl:block">
                 {visibleEvents.length} visible
               </div>
             </div>
           </div>
 
-          <div className="grid gap-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] xl:items-center">
-            <div className="min-w-0 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2">
-              <div className="mb-1 text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">Legend</div>
+          <div className="grid gap-2 xl:grid-cols-[minmax(0,1fr)_auto_auto_auto] xl:items-center">
+            <div className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+              <div className="mb-1 flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">
+                <LayoutGrid size={12} />
+                Legend
+              </div>
               <EventLegend />
             </div>
-            <div className="min-w-0 space-y-2">
-              <div className="overflow-x-auto pb-1">
-                <div className="inline-flex min-w-full items-center gap-1.5">
-                  <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1.5 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">
-                    <Filter size={11} />
-                    Types
-                  </span>
-                  {typeOptions.map((item) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => setTypeFilter(item.id)}
-                      className={cn(
-                        "shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition",
-                        typeFilter === item.id ? "border-brand bg-brand/10 text-brand" : "border-slate-200 bg-white text-slate-600 hover:border-brand/20 hover:text-slate-900"
-                      )}
-                    >
-                      {item.label}
-                      {item.id !== "all" && <span className="ml-1.5 text-[11px] text-slate-400">{eventCount(events, item.id)}</span>}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="overflow-x-auto pb-1">
-                <div className="inline-flex min-w-full items-center gap-1.5">
-                  {statusOptions.map((item) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => setStatusFilter(item.id)}
-                      className={cn(
-                        "shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition",
-                        statusFilter === item.id ? "border-brand bg-brand text-white" : "border-slate-200 bg-white text-slate-600 hover:border-brand/20 hover:text-slate-900"
-                      )}
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-                  <span className="shrink-0 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-500 xl:hidden">{visibleEvents.length} visible</span>
-                </div>
-              </div>
+            <FilterSelect icon={<SlidersHorizontal size={14} />} label="Type" value={typeFilter} options={typeOptions} onChange={setTypeFilter} />
+            <FilterSelect icon={<Filter size={14} />} label="Status" value={statusFilter} options={statusOptions} onChange={setStatusFilter} />
+            <div className="rounded-xl border border-accent/60 bg-accent/35 px-3 py-2">
+              <div className="text-[10px] font-black uppercase tracking-[0.14em] text-brand/70">Visible now</div>
+              <div className="mt-1 text-sm font-black text-brand">{visibleEvents.length} items</div>
             </div>
           </div>
         </div>
       </section>
 
-      <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_300px]">
+      <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_280px]">
         <div className="min-w-0 space-y-3">
-          {view === "monthly" && <CalendarMonth currentDate={currentDate} events={visibleEvents} selectedId={selectedId} onSelect={(event) => setSelectedId(event.id)} />}
+          {view === "monthly" && (
+            <CalendarMonth
+              currentDate={currentDate}
+              events={visibleEvents}
+              selectedId={selectedId}
+              onSelect={openEvent}
+              onOpenDay={(day, dayEvents) => setOverflowDay({ day, events: dayEvents })}
+            />
+          )}
 
           {view === "weekly" && (
             <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-4">
@@ -905,39 +1011,69 @@ function StaffCalendarWorkspace({
                 start: startOfWeek(currentDate, { weekStartsOn: 1 }),
                 end: endOfWeek(currentDate, { weekStartsOn: 1 }),
               }).map((day) => (
-                <DayEvents key={day.toISOString()} day={day} events={visibleEvents} selectedId={selectedId} onSelect={(event) => setSelectedId(event.id)} />
+                <DayEvents key={day.toISOString()} day={day} events={visibleEvents} selectedId={selectedId} onSelect={openEvent} />
               ))}
             </div>
           )}
 
           {view === "daily" && (
             <div className="space-y-4">
-              <DayEvents day={currentDate} events={visibleEvents} selectedId={selectedId} onSelect={(event) => setSelectedId(event.id)} />
+              <DayEvents day={currentDate} events={visibleEvents} selectedId={selectedId} onSelect={openEvent} />
             </div>
           )}
 
-          {view === "agenda" && <CalendarAgenda events={visibleEvents} selectedId={selectedId} onSelect={(event) => setSelectedId(event.id)} />}
+          {view === "agenda" && <CalendarAgenda events={visibleEvents} selectedId={selectedId} onSelect={openEvent} />}
 
           {!visibleEvents.length && <EmptyState label="No events match your current filters." />}
         </div>
 
         <div className="space-y-3">
-          <EventDetails event={selectedEvent} role={role} />
+          <EmptyEventPrompt visibleEvents={visibleEvents.length} />
 
-          <div className="rounded-lg border border-brand/10 bg-white p-5 shadow-[0_12px_28px_rgba(90,19,114,0.08)]">
+          <div className="rounded-[22px] border border-brand/10 bg-white p-5 shadow-[0_12px_28px_rgba(90,19,114,0.08)]">
             <div className="mb-4 flex items-center gap-2 text-brand">
               <ClipboardCheck size={18} />
               <div className="text-sm font-black uppercase tracking-[0.18em]">At a glance</div>
             </div>
             <div className="grid gap-3">
               <SummaryLine icon={<GraduationCap size={16} />} label="Classes" value={filteredEvents.filter((event) => event.type === "class").length} />
-              <SummaryLine icon={<ListTodo size={16} />} label="Homework & tasks" value={filteredEvents.filter((event) => event.type === "homework" || event.type === "task" || event.type === "attendance").length} />
-              <SummaryLine icon={<Trophy size={16} />} label="Tournaments & simuls" value={filteredEvents.filter((event) => event.type === "tournament" || event.type === "simul").length} />
+              <SummaryLine icon={<ListTodo size={16} />} label="Homework & tasks" value={summaryHomeworkTasks} />
+              <SummaryLine icon={<Trophy size={16} />} label="Tournaments & simuls" value={summaryCompetition} />
               <SummaryLine icon={<Swords size={16} />} label="Active view items" value={visibleEvents.length} />
             </div>
+            {(role === "admin" || role === "sub-admin") && (
+              <div className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">
+                Admin and subadmin now review details on demand, which keeps the calendar compact enough to fit at 100% zoom without sacrificing context.
+              </div>
+            )}
           </div>
         </div>
       </div>
+
+      <FloatingPanel open={isDetailsOpen && !!selectedEvent} title={isMobileSheet ? "Event details" : "Selected event"} onClose={() => setIsDetailsOpen(false)} mobile={isMobileSheet}>
+        <EventDetails event={selectedEvent} role={role} />
+      </FloatingPanel>
+
+      <FloatingPanel
+        open={!!overflowDay}
+        title={overflowDay ? `${format(overflowDay.day, "EEE, d MMM")} agenda` : "Daily agenda"}
+        onClose={() => setOverflowDay(null)}
+        mobile={isMobileSheet}
+      >
+        <div className="space-y-3">
+          {overflowDay?.events.map((event) => (
+            <EventChip
+              key={event.id}
+              event={event}
+              active={selectedId === event.id}
+              onClick={() => {
+                setOverflowDay(null);
+                openEvent(event);
+              }}
+            />
+          ))}
+        </div>
+      </FloatingPanel>
     </div>
   );
 }

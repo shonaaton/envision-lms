@@ -6,12 +6,24 @@ import { User, generateUsername } from "@/models/User";
 import { CoachApplication } from "@/models/Onboarding";
 import { registerSchema } from "@/lib/validation";
 import { sendWelcomeEmail } from "@/lib/welcomeEmail";
+import { consumeRateLimit, getClientIp, jsonRateLimitHeaders } from "@/lib/requestSecurity";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
+    const rateIp = getClientIp(req.headers);
+    const ipLimit = consumeRateLimit(`register:ip:${rateIp}`, 8, 15 * 60 * 1000);
+    const emailKey = String(body?.email || "").trim().toLowerCase();
+    const emailLimit = emailKey ? consumeRateLimit(`register:email:${emailKey}`, 3, 60 * 60 * 1000) : null;
+    if (!ipLimit.allowed || (emailLimit && !emailLimit.allowed)) {
+      const limited = !ipLimit.allowed ? ipLimit : emailLimit!;
+      return NextResponse.json(
+        { error: "Too many registration attempts. Please wait a little and try again." },
+        { status: 429, headers: jsonRateLimitHeaders(limited) }
+      );
+    }
     const data = registerSchema.parse(body);
     await dbConnect();
     const exists = await User.findOne({ email: data.email.toLowerCase() });

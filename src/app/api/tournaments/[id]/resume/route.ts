@@ -4,6 +4,7 @@ import { dbConnect } from "@/lib/db";
 import { Tournament } from "@/models/Tournament";
 import { recordActivity } from "@/lib/activity";
 import { syncArenaPairings } from "@/lib/tournamentEngine";
+import { emitTournamentUpdate } from "@/lib/tournamentSocketServer";
 
 export const dynamic = "force-dynamic";
 
@@ -23,5 +24,6 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
   await tournament.save();
   if (tournament.type === "arena" && ["live", "playing"].includes(String(tournament.status || ""))) await syncArenaPairings(tournament);
   await recordActivity({ actor: (session!.user as any).id, type: "tournament.resumed", label: `Resumed tournament ${tournament.name}`, entityType: "Tournament", entityId: tournament._id.toString() });
+  emitTournamentUpdate(tournament._id.toString(), "resume");
   return NextResponse.json({ ok: true });
 }

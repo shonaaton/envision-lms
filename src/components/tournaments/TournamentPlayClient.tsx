@@ -128,11 +128,7 @@ export function TournamentPlayClient({
   const myColor = currentSeat?.color === "black" ? "black" : "white";
   const myPlayerKey = state?.myPlayerKey || (activeGame ? (myColor === "white" ? activeGame.whiteKey : activeGame.blackKey) : "");
   const myTurn = activeGame?.status === "active" && ((activeGame.turn === "w" && myColor === "white") || (activeGame.turn === "b" && myColor === "black"));
-  const { connected, broadcastTournamentUpdate, emitPresence } = useTournamentSocket({
-    tournamentId,
-    playerKey: myPlayerKey,
-    onUpdate: refresh,
-  });
+  const { connected } = useTournamentSocket({ tournamentId, onUpdate: refresh });
   const myStanding = useMemo(() => {
     if (!state?.tournament?.standings || !myPlayerKey) return null;
     return (state.tournament.standings || []).find((entry: any) => entry.playerKey === myPlayerKey) || null;
@@ -200,12 +196,10 @@ export function TournamentPlayClient({
       return false;
     }
     await refresh();
-    broadcastTournamentUpdate("move");
-    emitPresence();
     setSelectedSquare(null);
     setPremove(null);
     return true;
-  }, [activeGame, broadcastTournamentUpdate, emitPresence, refresh]);
+  }, [activeGame, refresh]);
 
   useEffect(() => {
     if (!myTurn || !premove || !activeGame?._id) return;
@@ -334,8 +328,6 @@ export function TournamentPlayClient({
       setError("Berserk activated.");
     }
     await refresh();
-    broadcastTournamentUpdate(action);
-    emitPresence();
   }
 
   async function runTournamentAction(action: "join" | "pause") {
@@ -347,8 +339,6 @@ export function TournamentPlayClient({
       return;
     }
     await refresh();
-    broadcastTournamentUpdate(action);
-    emitPresence();
   }
 
   return (

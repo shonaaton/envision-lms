@@ -4,6 +4,7 @@ import { dbConnect } from "@/lib/db";
 import { Tournament } from "@/models/Tournament";
 import { recordActivity } from "@/lib/activity";
 import { randomBytes } from "crypto";
+import { emitTournamentUpdate } from "@/lib/tournamentSocketServer";
 
 export const dynamic = "force-dynamic";
 
@@ -68,5 +69,6 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     entityId: tournament._id.toString(),
     metadata: { fields: Object.keys(body) },
   });
+  emitTournamentUpdate(tournament._id.toString(), "edited");
   return NextResponse.json({ ok: true, tournament });
 }

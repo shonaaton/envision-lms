@@ -9,6 +9,7 @@ import { playerKeyForExternal, playerKeyForUser, recalculateTournamentStandings,
 import { notifyAdmins, notifyTournamentUsers } from "@/lib/tournamentNotifications";
 import { recordActivity } from "@/lib/activity";
 import { inactiveStudentMessage } from "@/lib/studentAccess";
+import { emitTournamentUpdate } from "@/lib/tournamentSocketServer";
 
 export const dynamic = "force-dynamic";
 
@@ -100,6 +101,7 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
     entityId: tournament._id.toString(),
     metadata: { playerKey },
   });
+  emitTournamentUpdate(tournament._id.toString(), "join");
 
   return NextResponse.json({ ok: true });
 }

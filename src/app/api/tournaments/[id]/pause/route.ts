@@ -5,6 +5,7 @@ import { Tournament } from "@/models/Tournament";
 import { cookies } from "next/headers";
 import { getTournamentGuestUsername } from "@/lib/tournamentGuests";
 import { playerKeyForExternal, playerKeyForUser, setTournamentPlayerState } from "@/lib/tournamentEngine";
+import { emitTournamentUpdate } from "@/lib/tournamentSocketServer";
 
 export const dynamic = "force-dynamic";
 
@@ -28,5 +29,6 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
 
   setTournamentPlayerState(tournament, playerKey, "paused");
   await tournament.save();
+  emitTournamentUpdate(tournament._id.toString(), "pause");
   return NextResponse.json({ ok: true });
 }

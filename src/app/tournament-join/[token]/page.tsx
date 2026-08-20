@@ -2,11 +2,13 @@ import { dbConnect } from "@/lib/db";
 import { Tournament } from "@/models/Tournament";
 import { revalidatePath } from "next/cache";
 import { notFound, redirect } from "next/navigation";
+import Script from "next/script";
 import { Trophy, ArrowRight } from "lucide-react";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { getTournamentGuestUsername, setTournamentGuestUsername } from "@/lib/tournamentGuests";
 import { playerKeyForExternal, recalculateTournamentStandings, setTournamentPlayerState, syncArenaPairings } from "@/lib/tournamentEngine";
 import { notifyAdmins, notifyExternalTournamentParticipant } from "@/lib/tournamentNotifications";
+import { getTurnstileSiteKey, isTurnstileEnabled, verifyTurnstileToken } from "@/lib/humanVerification";
 
 export const dynamic = "force-dynamic";
 
@@ -17,15 +19,24 @@ async function joinExternalTournament(formData: FormData) {
   const displayName = String(formData.get("displayName") || "").trim();
   const email = String(formData.get("email") || "").trim();
   const password = String(formData.get("password") || "").trim();
+  const captchaResponse = String(formData.get("cf-turnstile-response") || "").trim();
   if (!token || !username) return;
+  if (username.length < 3 || username.length > 40) redirect(`/tournament-join/${token}?error=username`);
+
+  if (isTurnstileEnabled()) {
+    const headerStore = await headers();
+    const remoteIp = String(headerStore.get("x-forwarded-for") || "").split(",")[0]?.trim() || headerStore.get("x-real-ip");
+    const verification = await verifyTurnstileToken(captchaResponse, remoteIp);
+    if (!verification.ok) redirect(`/tournament-join/${token}?error=human_verification`);
+  }
 
   await dbConnect();
   const tournament: any = await Tournament.findOne({ "externalInvite.enabled": true, "externalInvite.token": token });
-  if (!tournament) return;
-  if (tournament.externalInvite?.expiresAt && new Date(tournament.externalInvite.expiresAt).getTime() <= Date.now()) return;
+  if (!tournament) redirect(`/tournament-join/${token}?error=invalid_invite`);
+  if (tournament.externalInvite?.expiresAt && new Date(tournament.externalInvite.expiresAt).getTime() <= Date.now()) redirect(`/tournament-join/${token}?error=expired`);
   const mode = String(tournament.externalInvite?.accessMode || "password");
-  if (mode === "password" && tournament.externalInvite?.password !== password) return;
-  if (mode === "entry_code" && tournament.externalInvite?.entryCode !== password) return;
+  if (mode === "password" && tournament.externalInvite?.password !== password) redirect(`/tournament-join/${token}?error=access`);
+  if (mode === "entry_code" && tournament.externalInvite?.entryCode !== password) redirect(`/tournament-join/${token}?error=access`);
 
   const cookieStore = await cookies();
   const alreadyJoined = (tournament.externalParticipants || []).some((player: any) => player.username.toLowerCase() === username.toLowerCase());
@@ -59,12 +70,27 @@ async function joinExternalTournament(formData: FormData) {
     href: `/tournament-join/${token}/play`,
     tournamentId: tournament._id.toString(),
   });
-  setTournamentGuestUsername(cookieStore, token, username);
+  setTournamentGuestUsername(cookieStore, token, username, { expiresAt: tournament.externalInvite?.expiresAt });
   revalidatePath(`/tournament-join/${token}`);
   redirect(`/tournament-join/${token}/play`);
 }
 
-export default async function ExternalTournamentJoinPage({ params }: { params: { token: string } }) {
+function guestJoinErrorMessage(code: string) {
+  if (code === "human_verification") return "Please complete the human verification check and try again.";
+  if (code === "access") return "The invitation password or entry code is not correct.";
+  if (code === "username") return "Please choose a username between 3 and 40 characters.";
+  if (code === "expired") return "This invitation has expired. Please ask the organizer for a fresh link.";
+  if (code === "invalid_invite") return "This invitation link is no longer valid.";
+  return "";
+}
+
+export default async function ExternalTournamentJoinPage({
+  params,
+  searchParams,
+}: {
+  params: { token: string };
+  searchParams?: { error?: string };
+}) {
   await dbConnect();
   const tournament: any = await Tournament.findOne({ "externalInvite.enabled": true, "externalInvite.token": params.token }).lean();
   if (!tournament) notFound();
@@ -87,9 +113,12 @@ export default async function ExternalTournamentJoinPage({ params }: { params: {
   ) {
     redirect(`/tournament-join/${params.token}/play`);
   }
+  const turnstileSiteKey = getTurnstileSiteKey();
+  const errorMessage = guestJoinErrorMessage(String(searchParams?.error || ""));
 
   return (
     <div className="min-h-screen bg-slate-950 px-4 py-10 text-white">
+      {turnstileSiteKey ? <Script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer /> : null}
       <div className="mx-auto max-w-xl rounded-lg border border-white/10 bg-white p-6 text-slate-950 shadow-2xl">
         <div className="mb-6 flex items-start gap-3">
           <span className="flex h-10 w-10 items-center justify-center rounded-md bg-purple-50 text-purple-700"><Trophy size={20} /></span>
@@ -107,6 +136,12 @@ export default async function ExternalTournamentJoinPage({ params }: { params: {
           <div><div className="text-xs text-slate-500">Guests Joined</div><b>{tournament.externalParticipants?.length || 0}</b></div>
           <div><div className="text-xs text-slate-500">Access</div><b>{mode === "entry_code" ? "Entry Code" : mode === "password" ? "Password" : mode === "public" ? "Public Link" : "Private Link"}</b></div>
         </div>
+
+        {errorMessage ? (
+          <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {errorMessage}
+          </div>
+        ) : null}
 
         <form action={joinExternalTournament} className="space-y-4">
           <input type="hidden" name="token" value={params.token} />
@@ -127,6 +162,12 @@ export default async function ExternalTournamentJoinPage({ params }: { params: {
               {mode === "entry_code" ? "Entry Code" : "Password"}
               <input name="password" required className="mt-1 h-10 w-full rounded-md border border-slate-200 px-3 text-sm" placeholder={mode === "entry_code" ? "Enter entry code" : "Enter invite password"} />
             </label>
+          ) : null}
+          {turnstileSiteKey ? (
+            <div className="space-y-2">
+              <div className="cf-turnstile" data-sitekey={turnstileSiteKey} data-theme="light" />
+              <p className="text-xs text-slate-500">Human verification helps keep tournament rooms free from automated registrations and bot flooding.</p>
+            </div>
           ) : null}
           <button className="h-10 w-full rounded-md bg-purple-700 px-4 text-sm font-semibold text-white">Join Tournament</button>
         </form>

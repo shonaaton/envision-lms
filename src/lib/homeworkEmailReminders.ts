@@ -39,8 +39,15 @@ function sleep(ms: number) {
 function isTransientMongoSelectionError(error: unknown) {
   const name = typeof error === "object" && error ? String((error as { name?: unknown }).name || "") : "";
   const message = error instanceof Error ? error.message : String(error || "");
+  const reasonType =
+    typeof error === "object" && error && "reason" in error
+      ? String((error as { reason?: { type?: unknown } }).reason?.type || "")
+      : "";
   return name === "MongoServerSelectionError"
+    || name === "MongooseServerSelectionError"
     || /MongoServerSelectionError/i.test(message)
+    || /server selection timed out/i.test(message)
+    || /ReplicaSetNoPrimary/i.test(reasonType)
     || /connection <monitor> .* closed/i.test(message);
 }
 
@@ -413,7 +420,8 @@ export async function processDueHomeworkEmailReminders(limit = 50) {
         failed: results.filter((result) => result.failed).length,
       };
     } catch (error) {
-      if (attempt >= 2 || !isTransientMongoSelectionError(error)) throw error;
+      if (!isTransientMongoSelectionError(error)) throw error;
+      if (attempt >= 2) return { checked: 0, sent: 0, skipped: 0, cancelled: 0, failed: 0, skippedDbUnavailable: true };
       await sleep(TRANSIENT_DB_RETRY_DELAY_MS);
     }
   }

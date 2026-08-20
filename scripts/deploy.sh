@@ -31,7 +31,7 @@ run_node_script() {
     -v "$PWD:/app:ro" \
     -w /tmp/lms-check \
     node:20-alpine \
-    sh -lc "npm install mongodb@6.8.0 --no-save --omit=dev --ignore-scripts >/tmp/npm-install.log && node /app/${script}"
+    sh -lc "npm install mongodb@6.8.0 --no-save --omit=dev --ignore-scripts >/tmp/npm-install.log && cp /app/${script} ./check-mongodb-access.cjs && node ./check-mongodb-access.cjs"
 }
 
 # 1. .env check

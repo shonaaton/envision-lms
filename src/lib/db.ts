@@ -1,6 +1,9 @@
 import mongoose from "mongoose";
 
 type Cached = { conn: typeof mongoose | null; promise: Promise<typeof mongoose> | null };
+const MONGO_SERVER_SELECTION_TIMEOUT_MS = 5_000;
+const MONGO_CONNECT_TIMEOUT_MS = 5_000;
+const MONGO_SOCKET_TIMEOUT_MS = 15_000;
 declare global {
   var _mongo: Cached | undefined;
 }
@@ -34,7 +37,9 @@ export async function dbConnect() {
     cached.promise = mongoose.connect(MONGODB_URI, {
       dbName: process.env.MONGODB_DB ?? "envision_chess",
       bufferCommands: false,
-      serverSelectionTimeoutMS: 15_000,
+      serverSelectionTimeoutMS: MONGO_SERVER_SELECTION_TIMEOUT_MS,
+      connectTimeoutMS: MONGO_CONNECT_TIMEOUT_MS,
+      socketTimeoutMS: MONGO_SOCKET_TIMEOUT_MS,
     }).catch((error) => {
       resetCachedConnection();
       throw error;

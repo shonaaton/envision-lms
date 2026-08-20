@@ -5,6 +5,13 @@ import { headers } from "next/headers";
 import { authConfig } from "./auth.config";
 import { isInactiveRestrictedPath } from "./inactiveAccess";
 
+const SESSION_USER_STATUS_TTL_MS = 60_000;
+
+type SessionUserStatusCacheEntry = {
+  isActive: boolean;
+  expiresAt: number;
+};
+
 declare module "next-auth" {
   interface Session {
     user: {
@@ -22,6 +29,30 @@ declare module "next-auth" {
     isActive?: boolean;
     accountStatus?: "demo" | "enrolled" | "coach_applicant" | "approved" | "rejected";
   }
+}
+
+declare global {
+  var _sessionUserStatusCache: Map<string, SessionUserStatusCacheEntry> | undefined;
+}
+
+const sessionUserStatusCache = global._sessionUserStatusCache ?? new Map<string, SessionUserStatusCacheEntry>();
+if (!global._sessionUserStatusCache) global._sessionUserStatusCache = sessionUserStatusCache;
+
+function readCachedUserStatus(userId: string) {
+  const cached = sessionUserStatusCache.get(userId);
+  if (!cached) return null;
+  if (cached.expiresAt <= Date.now()) {
+    sessionUserStatusCache.delete(userId);
+    return null;
+  }
+  return cached;
+}
+
+function writeCachedUserStatus(userId: string, isActive: boolean) {
+  sessionUserStatusCache.set(userId, {
+    isActive,
+    expiresAt: Date.now() + SESSION_USER_STATUS_TTL_MS,
+  });
 }
 
 const nextAuth = NextAuth({
@@ -71,16 +102,35 @@ export async function auth() {
   const session = await nextAuth.auth();
   const userId = (session?.user as any)?.id;
   if (!userId) return session;
-
-  const { dbConnect } = await import("./db");
-  const { User } = await import("@/models/User");
-  await dbConnect();
-  const currentUser: any = await User.findById(userId).select("isActive").lean();
-  if (!currentUser) return null;
-
-  const isActive = currentUser.isActive !== false;
-  (session!.user as any).isActive = isActive;
   const pathname = headers().get("x-pathname") || "";
-  if (!isActive && pathname.startsWith("/api/") && isInactiveRestrictedPath(pathname)) return null;
-  return session;
+  const isApiRequest = pathname.startsWith("/api/");
+  const cachedUserStatus = readCachedUserStatus(userId);
+
+  if (cachedUserStatus && !isApiRequest) {
+    (session!.user as any).isActive = cachedUserStatus.isActive;
+    return session;
+  }
+
+  try {
+    const { dbConnect } = await import("./db");
+    const { User } = await import("@/models/User");
+    await dbConnect();
+    const currentUser: any = await User.findById(userId).select("isActive").lean();
+    if (!currentUser) return null;
+
+    const isActive = currentUser.isActive !== false;
+    writeCachedUserStatus(userId, isActive);
+    (session!.user as any).isActive = isActive;
+    if (!isActive && isApiRequest && isInactiveRestrictedPath(pathname)) return null;
+    return session;
+  } catch (error) {
+    if (cachedUserStatus) {
+      (session!.user as any).isActive = cachedUserStatus.isActive;
+      if (!cachedUserStatus.isActive && isApiRequest && isInactiveRestrictedPath(pathname)) return null;
+      return session;
+    }
+    if (isApiRequest && isInactiveRestrictedPath(pathname)) return null;
+    console.error("Auth user status refresh failed; using session token state instead.", error);
+    return session;
+  }
 }

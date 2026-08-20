@@ -73,7 +73,7 @@ export default function AttendanceSummaryWorkspace({ role, kind }: { role: Role;
   const [busyMessage, setBusyMessage] = useState("");
   const [sendingId, setSendingId] = useState("");
 
-  const sessions = data?.sessions || [];
+  const sessions = useMemo(() => data?.sessions || [], [data?.sessions]);
   const coaches = useMemo(() => new Set(sessions.map((session) => session.coachName)).size, [sessions]);
 
   async function load() {

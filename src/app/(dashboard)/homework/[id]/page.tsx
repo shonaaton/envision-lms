@@ -1008,11 +1008,10 @@ function ComputerAssignmentGame({
     else setSelectedSquare(null);
   }
 
-  const moveTargets = useMemo(() => {
-    if (!selectedSquare || !isPlayerTurn) return [];
-    return legalTargetsFromGame(gameRef.current, selectedSquare);
-  }, [selectedSquare, isPlayerTurn, position]);
-  const moveHintStyles = useMemo(() => buildMoveHintStyles(moveTargets, selectedSquare), [moveTargets, selectedSquare]);
+  const moveTargets = !selectedSquare || !isPlayerTurn
+    ? []
+    : legalTargetsFromGame(gameRef.current, selectedSquare);
+  const moveHintStyles = buildMoveHintStyles(moveTargets, selectedSquare);
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-lg shadow-brand-900/10">

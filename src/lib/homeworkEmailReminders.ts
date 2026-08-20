@@ -13,6 +13,7 @@ type ReminderTone = ReminderKind | "manual";
 
 const MAX_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 5 * 60 * 1000;
+const TRANSIENT_DB_RETRY_DELAY_MS = 2_000;
 
 function objectId(value: any) {
   return value?._id?.toString?.() ?? value?.toString?.() ?? "";
@@ -29,6 +30,18 @@ function escapeHtml(value: unknown) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isTransientMongoSelectionError(error: unknown) {
+  const name = typeof error === "object" && error ? String((error as { name?: unknown }).name || "") : "";
+  const message = error instanceof Error ? error.message : String(error || "");
+  return name === "MongoServerSelectionError"
+    || /MongoServerSelectionError/i.test(message)
+    || /connection <monitor> .* closed/i.test(message);
 }
 
 function addDays(date: Date, days: number) {
@@ -372,31 +385,40 @@ async function seedUpcomingHomeworkReminders(limit = 50) {
 }
 
 export async function processDueHomeworkEmailReminders(limit = 50) {
-  await dbConnect();
-  await seedUpcomingHomeworkReminders();
-  const now = new Date();
-  const staleProcessingBefore = new Date(now.getTime() - 2 * 60 * 1000);
-  const due = await HomeworkEmailReminder.find({
-    dueAt: { $lte: now },
-    $or: [
-      { status: "pending" },
-      { status: "processing", processingStartedAt: { $lte: staleProcessingBefore } },
-    ],
-  })
-    .select("_id")
-    .sort({ dueAt: 1 })
-    .limit(Math.min(Math.max(limit, 1), 100))
-    .lean();
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      await dbConnect();
+      await seedUpcomingHomeworkReminders();
+      const now = new Date();
+      const staleProcessingBefore = new Date(now.getTime() - 2 * 60 * 1000);
+      const due = await HomeworkEmailReminder.find({
+        dueAt: { $lte: now },
+        $or: [
+          { status: "pending" },
+          { status: "processing", processingStartedAt: { $lte: staleProcessingBefore } },
+        ],
+      })
+        .select("_id")
+        .sort({ dueAt: 1 })
+        .limit(Math.min(Math.max(limit, 1), 100))
+        .lean();
 
-  const results = [];
-  for (const reminder of due) results.push(await processHomeworkEmailReminder(reminder._id));
-  return {
-    checked: due.length,
-    sent: results.filter((result) => result.sent).length,
-    skipped: results.filter((result) => result.skipped).length,
-    cancelled: results.filter((result) => result.cancelled).length,
-    failed: results.filter((result) => result.failed).length,
-  };
+      const results = [];
+      for (const reminder of due) results.push(await processHomeworkEmailReminder(reminder._id));
+      return {
+        checked: due.length,
+        sent: results.filter((result) => result.sent).length,
+        skipped: results.filter((result) => result.skipped).length,
+        cancelled: results.filter((result) => result.cancelled).length,
+        failed: results.filter((result) => result.failed).length,
+      };
+    } catch (error) {
+      if (attempt >= 2 || !isTransientMongoSelectionError(error)) throw error;
+      await sleep(TRANSIENT_DB_RETRY_DELAY_MS);
+    }
+  }
+
+  return { checked: 0, sent: 0, skipped: 0, cancelled: 0, failed: 0 };
 }
 
 export async function sendManualHomeworkReminder(homeworkId: unknown, request?: Request) {

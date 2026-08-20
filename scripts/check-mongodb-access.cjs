@@ -4,7 +4,11 @@ const fs = require("fs");
 const path = require("path");
 const { MongoClient } = require("mongodb");
 
-const envPath = path.resolve(process.cwd(), ".env");
+const envPath = path.resolve(process.env.ENV_FILE || path.join(process.cwd(), ".env"));
+
+function cleanEnvValue(value) {
+  return String(value || "").trim().replace(/^["']|["']$/g, "");
+}
 
 function loadEnvFile() {
   if (!fs.existsSync(envPath)) return;
@@ -16,7 +20,7 @@ function loadEnvFile() {
     if (!match) continue;
     const [, key, rawValue] = match;
     if (process.env[key] !== undefined) continue;
-    process.env[key] = rawValue.trim().replace(/^["']|["']$/g, "");
+    process.env[key] = cleanEnvValue(rawValue);
   }
 }
 
@@ -40,7 +44,7 @@ async function getPublicIp() {
 
 async function main() {
   loadEnvFile();
-  const uri = process.env.MONGODB_URI;
+  const uri = cleanEnvValue(process.env.MONGODB_URI);
   if (!uri) {
     console.error("!! MONGODB_URI is not set in .env");
     process.exit(1);
@@ -59,7 +63,7 @@ async function main() {
 
   try {
     await client.connect();
-    await client.db(process.env.MONGODB_DB || "envision_chess").command({ ping: 1 });
+    await client.db(cleanEnvValue(process.env.MONGODB_DB) || "envision_chess").command({ ping: 1 });
     console.log("==> MongoDB Atlas connection OK.");
   } catch (error) {
     console.error("!! MongoDB Atlas connection failed.");

@@ -27,7 +27,7 @@ run_node_script() {
 
   log "Node.js not found on host; running ${script} inside Docker..."
   timeout 90 docker run --rm \
-    --env-file .env \
+    -e ENV_FILE=/app/.env \
     -v "$PWD:/app:ro" \
     -w /tmp/lms-check \
     node:20-alpine \

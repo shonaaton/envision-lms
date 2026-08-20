@@ -68,6 +68,7 @@ function summaryIcon(kind: SummaryKind) {
 export default function AttendanceSummaryWorkspace({ role, kind }: { role: Role; kind: SummaryKind }) {
   const canAccess = role === "admin" || role === "sub-admin";
   const canSendReminder = canAccess && kind === "missed";
+  const canOpenAttendance = canAccess && ["completed", "missed", "pending", "marked"].includes(kind);
   const [data, setData] = useState<{ title?: string; description?: string; sessions: SessionRow[] } | null>(null);
   const [busyMessage, setBusyMessage] = useState("");
   const [sendingId, setSendingId] = useState("");
@@ -185,12 +186,12 @@ export default function AttendanceSummaryWorkspace({ role, kind }: { role: Role;
                   <Link href={`/classrooms/${session.classroomId}/summary?session=${session.sessionId}`} className="btn-outline justify-center">
                     View Details
                   </Link>
-                  {kind === "marked" ? (
+                  {canOpenAttendance ? (
                     <Link
                       href={`/attendance?date=${encodeURIComponent(dateParam(session.scheduledFor))}&session=${encodeURIComponent(session.id)}`}
                       className="btn-primary justify-center"
                     >
-                      Edit Attendance
+                      {kind === "marked" || kind === "completed" ? "Edit Attendance" : "Mark Attendance"}
                     </Link>
                   ) : null}
                   {canSendReminder ? (

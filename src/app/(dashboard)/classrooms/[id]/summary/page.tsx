@@ -36,6 +36,16 @@ function formatDateTime(value?: string | Date | null) {
   return formatAcademyDateTime(value);
 }
 
+function dateParam(value?: string | Date | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function formatDuration(minutes?: number | null) {
   const total = Math.max(0, Number(minutes || 0));
   if (!total) return "0 min";
@@ -226,6 +236,14 @@ export default async function ClassroomSummaryPage({
           </div>
           <div className="flex flex-wrap gap-2">
             <Link href="/classrooms" className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700">Back to Classes</Link>
+            {["admin", "sub-admin", "instructor"].includes(role) ? (
+              <Link
+                href={`/attendance?date=${encodeURIComponent(dateParam(selectedSession.scheduledFor || classroom.classDate))}&session=${encodeURIComponent(`${params.id}:${scheduledSessionId}`)}`}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700"
+              >
+                Edit Attendance
+              </Link>
+            ) : null}
             {role === "admin" ? (
               <>
                 <CsvDownloadButton

@@ -2595,10 +2595,12 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     return [...manualArrows, ...importedArrows];
   }, [displayedDrawings, sourcePgnShapes]);
 
+  const leaderboardSourceResponses = data?.sessionResponses || data?.responses || [];
+
   const leaderboardRows = useMemo(() => {
     const responseMap = new Map<string, any[]>();
-    for (const response of data?.responses || []) {
-      const studentId = response.student?._id || response.student;
+    for (const response of leaderboardSourceResponses) {
+      const studentId = entityId(response.student);
       if (!studentId) continue;
       responseMap.set(studentId, [...(responseMap.get(studentId) || []), response]);
     }
@@ -2615,7 +2617,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
         };
       })
       .sort((a: any, b: any) => b.points - a.points);
-  }, [students, data?.responses]);
+  }, [leaderboardSourceResponses, students]);
   const privilegedLeaderboardViewer = role === "admin" || role === "sub-admin";
   const visibleLeaderboardRows = privilegedLeaderboardViewer ? leaderboardRows : leaderboardRows.slice(0, 5);
   const viewerLeaderboardRank = !coach

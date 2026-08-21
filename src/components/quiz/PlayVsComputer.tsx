@@ -337,11 +337,17 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
     if (!element) return;
 
     const resize = () => {
-      const isMobile = window.innerWidth < 768;
+      const viewportWidth = window.innerWidth;
+      const isMobile = viewportWidth < 640;
+      const isDesktopStage = viewportWidth >= 1024;
       const width = element.clientWidth;
-      const heightLimit = isMobile ? window.innerHeight - 300 : window.innerHeight - 245;
-      const clockRail = !isMobile && width >= 520 ? 150 : 0;
-      setBoardWidth(Math.max(isMobile ? 220 : 240, Math.min(isMobile ? window.innerWidth - 36 : 560, width - clockRail, heightLimit)));
+      const height = element.clientHeight || window.innerHeight;
+      const clockRail = isDesktopStage && width >= 620 ? 184 : 0;
+      const widthLimit = isMobile ? viewportWidth - 28 : width - clockRail - 12;
+      const heightLimit = height - 18;
+      const maxBoard = isMobile ? viewportWidth - 28 : viewportWidth < 1280 ? 500 : 540;
+      const minBoard = isMobile ? 240 : 320;
+      setBoardWidth(Math.floor(clamp(Math.min(widthLimit, heightLimit, maxBoard), minBoard, maxBoard)));
     };
     resize();
     const observer = new ResizeObserver(resize);
@@ -582,7 +588,7 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
       </div>
 
       <div className="grid flex-1 gap-2 md:min-h-0 md:gap-3 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <section className="order-1 flex min-h-[360px] flex-col rounded-[28px] border border-[#eadfcb] bg-[linear-gradient(180deg,#fffdfa_0%,#ffffff_42%,#f7f3ff_100%)] p-2 shadow-[0_26px_80px_rgba(74,35,90,0.08)] sm:min-h-[430px] sm:p-4 md:min-h-0 xl:order-1">
+        <section className="order-1 flex min-h-[520px] flex-col overflow-hidden rounded-lg border border-slate-200 bg-white p-2 shadow-lg shadow-brand/5 sm:p-4 md:min-h-0 xl:order-1">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2 md:mb-3">
             <div className="rounded-full border border-[#eadfcb] bg-white/90 px-3 py-1.5 text-xs font-semibold text-slate-700 sm:px-4 sm:py-2 sm:text-sm">
               Status: <span className="font-black text-slate-950">{status === "playing" ? "In Progress" : status === "ended" ? result : "Not Started"}</span>
@@ -597,16 +603,9 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
             </div>
           </div>
 
-          <div className="mb-3 grid gap-2 sm:grid-cols-3">
-            <SurfaceStat label="Strength" value={`${strengthBandLabel} · ${targetElo}`} hint={`${currentDepth} ply target`} />
-            <SurfaceStat label="Engine Pace" value={thinkPaceLabel} hint={`${engineMoveTimeMs} ms search`} />
-            <SurfaceStat label="Bot Style" value={selectedBot.name} hint={selectedBot.subtitle} />
-          </div>
-
-          <div ref={boardWrapRef} className="flex min-h-0 flex-1 items-center justify-center">
-            <div className="grid w-full max-w-[780px] grid-cols-1 items-center gap-3 lg:grid-cols-[minmax(0,1fr)_168px]">
-              <div className="relative">
-                <div className="absolute inset-0 rounded-[26px] bg-[radial-gradient(circle_at_top,#ffffff_0%,rgba(255,255,255,0)_68%)]" />
+          <div ref={boardWrapRef} className="flex min-h-0 flex-1 items-center justify-center overflow-hidden">
+            <div className="grid w-full max-w-[730px] grid-cols-1 items-center justify-center gap-3 lg:grid-cols-[minmax(0,max-content)_156px]">
+              <div className="relative mx-auto overflow-hidden rounded-md shadow-[0_16px_48px_rgba(15,23,42,0.12)]">
                 <Chessboard
                   position={displayedPosition}
                   onPieceDrop={onDrop}
@@ -623,11 +622,11 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
                   customLightSquareStyle={{ backgroundColor: "#f0d9b5" }}
                 />
                 {status === "idle" && (
-                  <div className="pointer-events-none absolute inset-x-3 bottom-3 rounded-2xl border border-white/70 bg-white/88 px-4 py-3 text-center shadow-lg backdrop-blur-md">
+                  <div className="pointer-events-none absolute inset-x-3 bottom-3 rounded-lg border border-white/70 bg-white/90 px-4 py-3 text-center shadow-lg backdrop-blur-md">
                     <div className="inline-flex items-center gap-2 rounded-full bg-amber-100 px-3 py-1 text-[11px] font-black uppercase tracking-[0.16em] text-amber-700">
                       <Bot size={13} /> Ready to Play
                     </div>
-                    <div className="mt-2 text-sm font-semibold text-slate-700">Tune the match on the right, then start when you are ready.</div>
+                    <div className="mt-2 text-sm font-semibold text-slate-700">Tune the match, then start when you are ready.</div>
                   </div>
                 )}
               </div>
@@ -647,11 +646,11 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
                   tone={playerColor === "white" ? "player" : "bot"}
                 />
                 {status !== "playing" ? (
-                  <button type="button" className="col-span-2 rounded-2xl border border-dashed border-purple-200 bg-white/90 px-4 py-4 text-left shadow-sm transition hover:border-purple-300 hover:bg-purple-50/60 lg:col-span-1" onClick={() => setShowSetup(true)}>
+                  <button type="button" className="col-span-2 rounded-lg border border-dashed border-purple-200 bg-white px-3 py-3 text-left shadow-sm transition hover:border-purple-300 hover:bg-purple-50/60 lg:col-span-1" onClick={() => setShowSetup(true)}>
                     <div className="text-[11px] font-black uppercase tracking-[0.16em] text-purple-700">Match Setup</div>
                     <div className="mt-2 text-base font-black text-slate-950">{selectedColor === "random" ? "Random color" : `${selectedColor} pieces`}</div>
                     <div className="mt-1 text-sm text-slate-600">{selectedBot.name} at about {targetElo} Elo with {thinkPaceLabel.toLowerCase()} search.</div>
-                    <div className="mt-3 inline-flex items-center gap-2 rounded-xl bg-purple-700 px-3 py-2 text-sm font-bold text-white">
+                    <div className="mt-3 inline-flex items-center gap-2 rounded-md bg-purple-700 px-3 py-2 text-sm font-bold text-white">
                       <Play size={15} /> Start setup
                     </div>
                   </button>

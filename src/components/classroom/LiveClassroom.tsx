@@ -1114,6 +1114,10 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     [live?.activePgnVariationId, pgnVariations]
   );
   const activePgnMoves = activePgnVariation?.moves || pgnMoves;
+  const navigationMoves = useMemo(
+    () => activePgnMoves.length ? activePgnMoves : (live?.moveHistory || []),
+    [activePgnMoves, live?.moveHistory]
+  );
   const currentMoveIndex = live?.pgnMoveIndex || 0;
   const activeSourcePgnLine = useMemo(
     () => sourcePgnLines.find((line) => line.id === (live?.activePgnVariationId || "")) || (!live?.activePgnVariationId ? sourcePgnLines[0] : null) || null,
@@ -1171,8 +1175,8 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const canStudentLeaveWaitingRoom = !coach && !activeCoachInRoom;
 
   useEffect(() => {
-    navigationIndexRef.current = Math.max(0, Math.min(activePgnMoves.length, currentMoveIndex));
-  }, [activePgnMoves.length, currentMoveIndex, live?.activePgnVariationId]);
+    navigationIndexRef.current = Math.max(0, Math.min(navigationMoves.length, currentMoveIndex));
+  }, [currentMoveIndex, live?.activePgnVariationId, navigationMoves.length]);
 
   useEffect(() => {
     pgnStateRef.current = {
@@ -1416,15 +1420,15 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   }
 
   function currentPgnFen() {
-    if (!activePgnMoves.length) return live?.fen || "start";
-    return applyMoves(navigationStartFen(), activePgnMoves, currentMoveIndex);
+    if (!navigationMoves.length) return live?.fen || "start";
+    return applyMoves(navigationStartFen(), navigationMoves, currentMoveIndex);
   }
 
   function restoreLoadedPgnPosition() {
     setSelectedMoveSquare(null);
     patch({
       fen: currentPgnFen(),
-      moveHistory: activePgnMoves.slice(0, currentMoveIndex),
+      moveHistory: navigationMoves.slice(0, currentMoveIndex),
       illegalMovesEnabled: false,
       setupMode: false,
       drawings: [],
@@ -2262,6 +2266,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       pgnMoveIndex: boundedIndex,
       moveHistory: moves.slice(0, boundedIndex),
       activePgnVariationId: variationId,
+      ...(!activePgnMoves.length && !variationId ? { pgnMoves: moves } : {}),
     };
     if (coachMovePersistTimerRef.current) window.clearTimeout(coachMovePersistTimerRef.current);
     coachMovePersistTimerRef.current = null;
@@ -2361,13 +2366,14 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   function loadPgn(pgn: any, index: number, collection?: any[]) {
     if (pgn?.defaultClassroom) {
       const fen = normalizeBoardResourceFen(live?.navigationStartFen || live?.fen) || "start";
+      const defaultMoves = navigationMoves;
       patch({
         fen,
         pgn: "",
         pgnTitle: "Default Classroom PGN",
         navigationStartFen: fen,
-        pgnMoves,
-        pgnMoveIndex: Math.max(0, Math.min(pgnMoves.length, live?.pgnMoveIndex || 0)),
+        pgnMoves: defaultMoves,
+        pgnMoveIndex: Math.max(0, Math.min(defaultMoves.length, live?.pgnMoveIndex || 0)),
         pgnVariations,
         activePgnVariationId: live?.activePgnVariationId || "",
         setupMode: false,
@@ -2726,7 +2732,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const files = coordinateFiles(orientation);
   const ranks = coordinateRanks(orientation);
   const notationStartFen = navigationStartFen();
-  const notationMoves = activePgnMoves.length ? activePgnMoves : live?.moveHistory || [];
+  const notationMoves = navigationMoves;
   const notationRows = buildNotationRows(notationMoves, notationStartFen);
   const notationVariationPreviews = pgnVariations.map((variation) => {
     const parsedLine = sourcePgnLines.find((line) => line.id === variation.id);
@@ -3007,14 +3013,14 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                     <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto rounded-lg border border-slate-200 bg-white px-2 py-1.5">
                       <div className="hidden min-w-0 flex-1 items-center gap-2 px-1 text-xs font-semibold text-slate-500 lg:flex">
                         <span className="min-w-0 truncate text-slate-900">{live?.pgnTitle || "Classroom board"}</span>
-                        <span className="flex-none rounded-md bg-slate-100 px-2 py-1 font-bold tabular-nums text-slate-600">{currentMoveIndex}/{activePgnMoves.length || (live?.moveHistory || []).length}</span>
+                        <span className="flex-none rounded-md bg-slate-100 px-2 py-1 font-bold tabular-nums text-slate-600">{currentMoveIndex}/{navigationMoves.length}</span>
                       </div>
                       <div className="flex flex-none items-center justify-end gap-1">
                         <div className="flex flex-none items-center gap-1 rounded-md bg-slate-50 p-0.5 ring-1 ring-inset ring-slate-200/70">
-                          <ToolbarIconButton label="First move" disabled={!activePgnMoves.length} onClick={() => navigateMove(0)}><SkipBack size={14} /></ToolbarIconButton>
-                          <ToolbarIconButton label="Previous move" disabled={!activePgnMoves.length || currentMoveIndex <= 0} onClick={() => stepPgnMove(-1)}><ChevronLeft size={14} /></ToolbarIconButton>
-                          <ToolbarIconButton label="Next move" disabled={!activePgnMoves.length || currentMoveIndex >= activePgnMoves.length} onClick={() => stepPgnMove(1)}><ChevronRight size={14} /></ToolbarIconButton>
-                          <ToolbarIconButton label="Last move" disabled={!activePgnMoves.length} onClick={() => navigateMove(activePgnMoves.length)}><SkipForward size={14} /></ToolbarIconButton>
+                          <ToolbarIconButton label="First move" disabled={!navigationMoves.length} onClick={() => navigateMove(0, navigationMoves)}><SkipBack size={14} /></ToolbarIconButton>
+                          <ToolbarIconButton label="Previous move" disabled={!navigationMoves.length || currentMoveIndex <= 0} onClick={() => stepPgnMove(-1)}><ChevronLeft size={14} /></ToolbarIconButton>
+                          <ToolbarIconButton label="Next move" disabled={!navigationMoves.length || currentMoveIndex >= navigationMoves.length} onClick={() => stepPgnMove(1)}><ChevronRight size={14} /></ToolbarIconButton>
+                          <ToolbarIconButton label="Last move" disabled={!navigationMoves.length} onClick={() => navigateMove(navigationMoves.length, navigationMoves)}><SkipForward size={14} /></ToolbarIconButton>
                         </div>
                         <span aria-hidden="true" className="mx-0.5 h-5 w-px flex-none bg-slate-200" />
                         <div className="flex flex-none items-center gap-1 rounded-md bg-purple-50/60 p-0.5 ring-1 ring-inset ring-purple-100">
@@ -3421,16 +3427,19 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                   ) : null}
                 </div>
                 <div className="overflow-hidden rounded-lg border border-slate-200">
-                  <div className="grid grid-cols-[60px_1fr_86px_88px] border-b bg-slate-50 px-3 py-3 text-xs font-semibold text-slate-500">
-                    <span>Rank</span><span>Student</span><span>Points</span><span>Done</span>
+                  <div className="grid grid-cols-[60px_minmax(0,1fr)_86px_88px] border-b bg-slate-50 px-3 py-3 text-xs font-semibold text-slate-500">
+                    <span>Rank</span><span className="min-w-0">Student</span><span className="text-right">Points</span><span>Done</span>
                   </div>
                   {visibleLeaderboardRows.length ? visibleLeaderboardRows.map((row: any) => {
                     const rank = leaderboardRows.findIndex((entry: any) => entityId(entry) === entityId(row)) + 1;
                     return (
-                    <div key={row._id} className="grid grid-cols-[60px_1fr_86px_88px] items-center border-b px-3 py-3 text-sm last:border-b-0">
+                    <div key={row._id} className="grid grid-cols-[60px_minmax(0,1fr)_86px_88px] items-center gap-3 border-b px-3 py-3 text-sm last:border-b-0">
                       <span className="font-semibold text-slate-500">#{rank}</span>
-                      <span className="font-semibold text-slate-950">{publicUserLabel(row)}<span className="block text-xs font-normal text-slate-500">{row.move || "No response yet"}</span></span>
-                      <span>{row.points}</span>
+                      <span className="min-w-0">
+                        <span className="block truncate font-semibold text-slate-950">{publicUserLabel(row)}</span>
+                        <span className="block truncate text-xs font-normal text-slate-500">{row.move || "No response yet"}</span>
+                      </span>
+                      <span className="text-right font-semibold tabular-nums">{row.points}</span>
                       <span>{row.completed ? "Yes" : "No"}</span>
                     </div>
                     );

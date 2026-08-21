@@ -21,8 +21,13 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const isActive = (session.user as any).isActive !== false;
   let hasCreditPlan = true;
   if (role === "student") {
-    await dbConnect();
-    hasCreditPlan = Boolean(await FeeAssignment.exists({ student: (session.user as any).id, type: "credits" }));
+    try {
+      await dbConnect();
+      hasCreditPlan = Boolean(await FeeAssignment.exists({ student: (session.user as any).id, type: "credits" }));
+    } catch (error) {
+      console.error("Dashboard credit-plan lookup failed; continuing without blocking the page.", error);
+      hasCreditPlan = true;
+    }
   }
   if (!isActive && isInactiveRestrictedPath(pathname)) redirect("/dashboard?inactive=1");
   const currentFeature = findFeatureByPath(pathname);

@@ -5,10 +5,25 @@
       "static/chunks/main-app.js",
       "static/chunks/app/global-error.js"
     ],
-    "/(auth)/login/page": [
+    "/(dashboard)/learn/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/(auth)/login/page.js"
+      "static/chunks/app/(dashboard)/learn/page.js"
+    ],
+    "/(dashboard)/layout": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/(dashboard)/layout.js"
+    ],
+    "/(dashboard)/error": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/(dashboard)/error.js"
+    ],
+    "/(dashboard)/loading": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/(dashboard)/loading.js"
     ],
     "/layout": [
       "static/chunks/webpack.js",
@@ -26,25 +41,15 @@
       "static/chunks/main-app.js",
       "static/chunks/app/loading.js"
     ],
-    "/(dashboard)/ask-coach/page": [
+    "/(auth)/login/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/(dashboard)/ask-coach/page.js"
+      "static/chunks/app/(auth)/login/page.js"
     ],
-    "/(dashboard)/layout": [
+    "/(dashboard)/learn/[lessonSlug]/[exerciseKey]/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/(dashboard)/layout.js"
-    ],
-    "/(dashboard)/error": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/(dashboard)/error.js"
-    ],
-    "/(dashboard)/loading": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/(dashboard)/loading.js"
+      "static/chunks/app/(dashboard)/learn/[lessonSlug]/[exerciseKey]/page.js"
     ]
   }
 }

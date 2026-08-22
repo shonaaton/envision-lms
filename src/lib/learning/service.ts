@@ -13,6 +13,7 @@ type LessonExerciseSummary = {
   completed: boolean;
   bestStars: number;
   isLocked: boolean;
+  nextExerciseStableKey?: string;
 };
 
 type LessonSummary = {
@@ -79,6 +80,32 @@ export type LearningLessonDetail = {
   nextLesson?: { slug: string; title: string };
 };
 
+export type LearningExerciseDetail = {
+  id: string;
+  stableKey: string;
+  title: string;
+  description: string;
+  lessonSlug: string;
+  lessonTitle: string;
+  sectionTitle: string;
+  interactionMode: string;
+  rulesMode: string;
+  startingPosition: string;
+  orientation: "white" | "black";
+  sideToMove?: "white" | "black";
+  goalType: string;
+  goalConfig: Record<string, any>;
+  hints: Array<{ text?: string; showAfterErrors?: number }>;
+  explanation: string;
+  successMessage: string;
+  failureMessage: string;
+  difficulty: 1 | 2 | 3;
+  completed: boolean;
+  bestStars: number;
+  isLocked: boolean;
+  nextExerciseStableKey?: string;
+};
+
 function toId(value: any) {
   return value?._id?.toString?.() || value?.toString?.() || "";
 }
@@ -96,7 +123,7 @@ async function loadLearningSnapshot(userId?: string) {
     LearningSection.find({ status: "published" }).sort({ order: 1 }).lean(),
     LearningLesson.find({ status: "published" }).sort({ order: 1 }).lean(),
     LearningExercise.find({ status: "published" })
-      .select("_id lessonId stableKey title order difficulty")
+      .select("_id lessonId stableKey title description order difficulty interactionMode rulesMode startingPosition orientation sideToMove goalType goalConfig hints explanation successMessage failureMessage")
       .sort({ order: 1 })
       .lean(),
     userId
@@ -107,6 +134,52 @@ async function loadLearningSnapshot(userId?: string) {
   ]);
 
   return { sections, lessons, exercises, progress };
+}
+
+export async function getLearningExerciseDetail(
+  lessonSlug: string,
+  stableKey: string,
+  userId?: string
+): Promise<LearningExerciseDetail | null> {
+  const { sections, lessons, exercises, progress } = await loadLearningSnapshot(userId);
+  const lesson = lessons.find((item: any) => String(item.slug) === lessonSlug);
+  if (!lesson) return null;
+  const lessonExercises = exercises
+    .filter((item: any) => toId(item.lessonId) === toId(lesson._id))
+    .sort((a: any, b: any) => Number(a.order || 0) - Number(b.order || 0));
+  const exercise = lessonExercises.find((item: any) => String(item.stableKey) === stableKey);
+  if (!exercise) return null;
+  const section = sections.find((item: any) => toId(item._id) === toId(lesson.sectionId));
+  const progressByExerciseId = new Map(progress.map((item: any) => [toId(item.exerciseId), item]));
+  const index = lessonExercises.findIndex((item: any) => toId(item._id) === toId(exercise._id));
+  const isLocked = lessonExercises.slice(0, index).some((item: any) => !progressByExerciseId.get(toId(item._id))?.completed);
+  const progressItem: any = progressByExerciseId.get(toId(exercise._id));
+
+  return {
+    id: toId(exercise._id),
+    stableKey: String(exercise.stableKey),
+    title: String(exercise.title),
+    description: String(exercise.description || "Practice the lesson goal on the board."),
+    lessonSlug: String(lesson.slug),
+    lessonTitle: String(lesson.name),
+    sectionTitle: String(section?.name || "Learn Chess"),
+    interactionMode: String(exercise.interactionMode),
+    rulesMode: String(exercise.rulesMode),
+    startingPosition: String(exercise.startingPosition || "start"),
+    orientation: exercise.orientation === "black" ? "black" : "white",
+    sideToMove: exercise.sideToMove === "black" ? "black" : "white",
+    goalType: String(exercise.goalType || "PRACTICE"),
+    goalConfig: (exercise.goalConfig || {}) as Record<string, any>,
+    hints: Array.isArray(exercise.hints) ? exercise.hints : [],
+    explanation: String(exercise.explanation || "Review the lesson idea and try the move again."),
+    successMessage: String(exercise.successMessage || "Nice work. Keep going!"),
+    failureMessage: String(exercise.failureMessage || "That move is not the lesson goal yet."),
+    difficulty: Number(exercise.difficulty || 1) as 1 | 2 | 3,
+    completed: Boolean(progressItem?.completed),
+    bestStars: Number(progressItem?.bestStars || 0),
+    isLocked,
+    nextExerciseStableKey: lessonExercises[index + 1] ? String(lessonExercises[index + 1].stableKey) : undefined,
+  };
 }
 
 export async function getLearningCatalog(userId?: string): Promise<LearningCatalog> {

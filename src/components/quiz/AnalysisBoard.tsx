@@ -279,6 +279,7 @@ export default function AnalysisBoard({ initialFen, withEngine = true, canUseLib
   const loadedPgnRef = useRef("");
   const pgnDirtyRef = useRef(false);
   const workerRef = useRef<Worker | null>(null);
+  const engineJobIdRef = useRef<string | null>(null);
   const analysisFenRef = useRef(initialPosition || gameRef.current.fen());
   const boardWrapRef = useRef<HTMLDivElement | null>(null);
   const pdfInputRef = useRef<HTMLInputElement | null>(null);
@@ -407,17 +408,67 @@ export default function AnalysisBoard({ initialFen, withEngine = true, canUseLib
     setPosition(gameRef.current.fen());
   }
 
-  const analyze = useCallback((force = false) => {
+  const analyze = useCallback(async (force = false) => {
     const worker = workerRef.current;
-    if (!worker || (!engineOn && !force)) return;
+    if ((!worker && !withEngine) || (!engineOn && !force)) return;
     analysisFenRef.current = position;
+    const previousJobId = engineJobIdRef.current;
+    engineJobIdRef.current = null;
+    if (previousJobId) {
+      void fetch(`/v1/engine/jobs/${previousJobId}`, { method: "DELETE" }).catch(() => undefined);
+    }
     setEngineRunning(true);
     setBestMove("");
     setEngineLines([]);
+
+    // Use the shared coordinator first; the local worker remains a resilient fallback.
+    try {
+      const response = await fetch("/v1/engine/analyse", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fen: position, multiPv: 3, depth: 16, source: "ANALYSIS_BOARD" }),
+      });
+      const created = await response.json().catch(() => null);
+      let result = response.ok ? created?.result : null;
+      if (!result && response.ok && created?.jobId) {
+        engineJobIdRef.current = String(created.jobId);
+        for (let attempt = 0; attempt < 30; attempt += 1) {
+          await new Promise((resolve) => window.setTimeout(resolve, 800));
+          const jobResponse = await fetch(`/v1/engine/jobs/${created.jobId}`, { cache: "no-store" });
+          const job = await jobResponse.json().catch(() => null);
+          if (job?.status === "COMPLETED") {
+            result = job.result;
+            break;
+          }
+          if (job?.status === "FAILED" || job?.status === "CANCELLED") break;
+        }
+      }
+      if (analysisFenRef.current !== position) return;
+      if (result) {
+        const lines = Array.isArray(result.lines) ? result.lines : [];
+        setEngineLines(lines.map((line: any) => ({
+          multipv: Number(line.multipv || 1),
+          eval: line.evaluation?.type === "mate" ? `M${line.evaluation.value}` : formatEval(Number(line.evaluation?.value || 0)),
+          variation: formatPv(position, Array.isArray(line.pv) ? line.pv.join(" ") : String(line.pv || "")),
+        })).slice(0, 3));
+        if (result.bestMove) setBestMove(String(result.bestMove));
+        if (result.evaluation?.type === "cp") setEvalCp(Number(result.evaluation.value));
+        setEngineRunning(false);
+        engineJobIdRef.current = null;
+        return;
+      }
+    } catch {
+      // Fall through to the local worker when the coordinator is unavailable.
+    }
+
+    if (!worker) {
+      setEngineRunning(false);
+      return;
+    }
     worker.postMessage("ucinewgame");
     worker.postMessage(`position fen ${position}`);
     worker.postMessage("go depth 16");
-  }, [engineOn, position]);
+  }, [engineOn, position, withEngine]);
 
   function currentAnalysisLine() {
     return variationsRef.current.find((variation) => variation.id === activeLineIdRef.current)?.moves || mainLineMovesRef.current;

@@ -440,7 +440,7 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
       ? Math.max(0, blackClockMs - (Date.now() - activeTurnStartedAt) + liveTick * 0)
       : blackClockMs;
 
-  function requestEngineMove() {
+  async function requestEngineMove() {
     const worker = workerRef.current;
     const legalMoves = gameRef.current.moves({ verbose: true }) as Array<{ from: string; to: string; promotion?: string }>;
     if (gameRef.current.isGameOver() || !legalMoves.length) return;
@@ -461,6 +461,48 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
       refreshBoard();
       checkGameOver();
     };
+
+    // Prefer the shared coordinator so browser games and Fishnet workers use the same engine path.
+    try {
+      const response = await fetch("/v1/engine/move", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fen: gameRef.current.fen(),
+          level,
+          source: "PLAY_VS_COMPUTER",
+        }),
+      });
+      const created = await response.json().catch(() => null);
+      if (response.ok) {
+        let result = created?.result;
+        if (!result && created?.jobId) {
+          for (let attempt = 0; attempt < 30; attempt += 1) {
+            await new Promise((resolve) => window.setTimeout(resolve, 800));
+            const jobResponse = await fetch(`/v1/engine/jobs/${created.jobId}`, { cache: "no-store" });
+            const job = await jobResponse.json().catch(() => null);
+            if (job?.status === "COMPLETED") {
+              result = job.result;
+              break;
+            }
+            if (job?.status === "FAILED" || job?.status === "CANCELLED") break;
+          }
+        }
+        const uci = String(result?.bestMove || "").trim();
+        if (uci && uci !== "(none)" && statusRef.current === "playing") {
+          commitTurnClockRef.current();
+          gameRef.current.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] || "q" });
+          setThinking(false);
+          beginNextTurnRef.current();
+          refreshBoard();
+          checkGameOverRef.current();
+          return;
+        }
+      }
+    } catch {
+      // Fall through to the local worker when the coordinator is unavailable.
+    }
+
     if (!worker) {
       window.setTimeout(playFallbackMove, 250);
       return;

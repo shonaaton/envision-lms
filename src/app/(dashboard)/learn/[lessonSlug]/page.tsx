@@ -67,11 +67,13 @@ export default async function LearnLessonPage({ params }: { params: { lessonSlug
         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm shadow-brand/5">
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {detail.exercises.map((exercise) => (
-              <article
+              <Link
                 key={exercise.id}
+                href={exercise.isLocked ? "#" : `/learn/${params.lessonSlug}/${exercise.stableKey}`}
+                aria-disabled={exercise.isLocked}
                 className={`rounded-2xl border p-4 ${
                   exercise.isLocked ? "border-slate-200 bg-slate-50 text-slate-400" : "border-slate-200 bg-white text-slate-900"
-                }`}
+                } ${exercise.isLocked ? "cursor-not-allowed" : "transition hover:-translate-y-0.5 hover:border-brand/30 hover:shadow-md hover:shadow-brand/10"}`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -94,8 +96,10 @@ export default async function LearnLessonPage({ params }: { params: { lessonSlug
                     <Lock size={14} aria-hidden="true" />
                     Finish the previous exercise to unlock this one.
                   </div>
-                ) : null}
-              </article>
+                ) : (
+                  <div className="mt-4 text-xs font-black uppercase tracking-[0.14em] text-brand">{exercise.completed ? "Practice again" : "Start exercise"} <ChevronRight size={14} className="ml-1 inline" /></div>
+                )}
+              </Link>
             ))}
           </div>
         </section>

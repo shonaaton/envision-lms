@@ -5,6 +5,7 @@
 import "dotenv/config";
 import bcrypt from "bcryptjs";
 import { dbConnect } from "../src/lib/db";
+import { ensureLearningSeedData } from "../src/lib/learning/content";
 import { User } from "../src/models/User";
 import { Classroom } from "../src/models/Classroom";
 
@@ -46,6 +47,8 @@ async function main() {
     },
     { upsert: true }
   );
+
+  await ensureLearningSeedData();
 
   console.log("Seeded:", { admin: admin.email, coach: coach.email, s1: s1.email, s2: s2.email });
   process.exit(0);

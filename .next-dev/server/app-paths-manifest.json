@@ -1,4 +1,1 @@
-{
-  "/api/admin/runtime-logs/route": "app/api/admin/runtime-logs/route.js",
-  "/api/client-errors/route": "app/api/client-errors/route.js"
-}
+{}

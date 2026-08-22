@@ -1,3 +1,4 @@
+"use strict";
 /*
  * ATTENTION: An "eval-source-map" devtool has been used.
  * This devtool is neither made for production nor for readable output files.
@@ -6,19 +7,12 @@
  * or disable the default devtool with "devtool: false".
  * If you are looking for production-ready output files, see mode: "production" (https://webpack.js.org/configuration/mode/).
  */
-exports.id = "vendor-chunks/next";
-exports.ids = ["vendor-chunks/next"];
-exports.modules = {
-
-/***/ "(instrument)/./node_modules/next/dist/compiled/server-only/empty.js":
-/*!**************************************************************!*\
-  !*** ./node_modules/next/dist/compiled/server-only/empty.js ***!
-  \**************************************************************/
-/***/ (() => {
-
-
-
-/***/ })
-
-};
-;
+self["webpackHotUpdate_N_E"]("webpack",{},
+/******/ function(__webpack_require__) { // webpackRuntimeModules
+/******/ /* webpack/runtime/getFullHash */
+/******/ !function() {
+/******/ 	__webpack_require__.h = function() { return "883df1b956b38979"; }
+/******/ }();
+/******/ 
+/******/ }
+);

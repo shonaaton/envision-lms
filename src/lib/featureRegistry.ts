@@ -241,6 +241,22 @@ export const FEATURE_DEFINITIONS: FeatureDefinition[] = [
     defaultRolePermissions: { student: ["view", "play"], admin: ["view", "play"] },
   },
   {
+    key: "learnChess",
+    label: "Learn Chess",
+    category: "Training Tools",
+    description: "Structured learn-to-play curriculum, lesson progress, and guided chess practice.",
+    routes: ["/learn"],
+    apiPrefixes: ["/api/learn"],
+    permissions: [view, { id: "practice", label: "Practice" }, create, edit, assign, manage],
+    defaultStatus: "enabled",
+    defaultRolePermissions: {
+      student: ["view", "practice"],
+      instructor: ["view", "assign"],
+      admin: ["view", "practice", "create", "edit", "assign", "manage"],
+      "sub-admin": ["view", "practice"],
+    },
+  },
+  {
     key: "fees",
     label: "Fees Management",
     category: "Payments",

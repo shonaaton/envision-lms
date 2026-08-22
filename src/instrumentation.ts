@@ -29,6 +29,9 @@ export async function register() {
   const { processDueAskCoachEmailReminders } = await import("@/lib/askCoachEmailReminders");
   const { processDueHomeworkEmailReminders } = await import("@/lib/homeworkEmailReminders");
   const { notifyFailure } = await import("@/lib/failureNotifications");
+  const { installRuntimeProcessLogging, installRuntimeStderrCapture, writeRuntimeLog } = await import("@/lib/runtimeLogger");
+  installRuntimeProcessLogging();
+  installRuntimeStderrCapture();
   const runAskCoach = () => {
     void processDueAskCoachEmailReminders().catch((error) => {
       if (isTransientMongoStartupError(error)) {
@@ -36,6 +39,12 @@ export async function register() {
         return;
       }
       console.error("Scheduled Ask Coach unread email processing failed", error);
+      writeRuntimeLog({
+        source: "instrumentation.askCoachReminders",
+        message: "Scheduled Ask Coach unread email processing failed.",
+        error,
+        metadata: { automation: "ask_coach_email_reminders" },
+      });
       void notifyFailure({ title: "Scheduled Ask Coach unread email processing failed", error, metadata: { automation: "ask_coach_email_reminders" } });
     });
   };
@@ -46,6 +55,12 @@ export async function register() {
         return;
       }
       console.error("Scheduled homework email reminder processing failed", error);
+      writeRuntimeLog({
+        source: "instrumentation.homeworkReminders",
+        message: "Scheduled homework email reminder processing failed.",
+        error,
+        metadata: { automation: "homework_email_reminders" },
+      });
       void notifyFailure({ title: "Scheduled homework email reminder processing failed", error, metadata: { automation: "homework_email_reminders" } });
     });
   };

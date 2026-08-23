@@ -14,6 +14,7 @@ import {
 } from "@/lib/featureAccess";
 import { FEATURE_DEFINITIONS, PORTAL_ROLES, type FeatureStatus } from "@/lib/featureRegistry";
 import { FeatureAccess, PermissionAudit } from "@/models/FeatureAccess";
+import { PermissionTemplate } from "@/models/FeatureAccess";
 import { User } from "@/models/User";
 import { Batch } from "@/models/Batch";
 import { Course } from "@/models/Course";
@@ -126,4 +127,57 @@ export async function PATCH(req: Request) {
 
   ["/dashboard", "/admin/feature-access", ...FEATURE_DEFINITIONS.flatMap((feature) => feature.routes)].forEach((path) => revalidatePath(path));
   return NextResponse.json({ ok: true, changedKeys, features: await getFeatureAccessSnapshot(), audit: await getPermissionAudit(50) });
+}
+
+export async function POST(req: Request) {
+  const session = await requireSuper();
+  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const actorId = (session.user as any).id;
+  const body = await req.json().catch(() => ({}));
+  const name = String(body.name || "").trim();
+  const description = String(body.description || "").trim();
+  const role = String(body.role || "") as (typeof PORTAL_ROLES)[number];
+  const featureKeys = Array.isArray(body.featureKeys) ? Array.from(new Set(body.featureKeys.map(String))) : [];
+  const inputFeatures = Array.isArray(body.features) ? body.features : [];
+
+  if (!name) return NextResponse.json({ error: "Template name is required." }, { status: 400 });
+  if (!PORTAL_ROLES.includes(role)) return NextResponse.json({ error: "Choose a role for this template." }, { status: 400 });
+  if (!featureKeys.length) return NextResponse.json({ error: "Select at least one feature to save in the template." }, { status: 400 });
+
+  await dbConnect();
+  const definitions = new Map(FEATURE_DEFINITIONS.map((feature) => [feature.key, feature]));
+  const permissions: Record<string, string[]> = {};
+  for (const input of inputFeatures) {
+    const key = String(input?.key || "");
+    const definition = definitions.get(key);
+    if (!definition || !featureKeys.includes(key)) continue;
+    permissions[key] = sanitizeRolePermissions(input.rolePermissions, definition)[role] || [];
+  }
+
+  if (!Object.keys(permissions).length) return NextResponse.json({ error: "No matching feature permissions were found for this template." }, { status: 400 });
+
+  const template = await PermissionTemplate.findOneAndUpdate(
+    { name },
+    {
+      name,
+      description,
+      role,
+      permissions,
+      isSystem: false,
+      updatedBy: new Types.ObjectId(actorId),
+    },
+    { upsert: true, new: true }
+  ).lean();
+
+  await PermissionAudit.create({
+    featureKey: "featureAccess",
+    featureLabel: "Feature Access & Permissions",
+    actor: actorId,
+    targetType: "template",
+    targetLabel: name,
+    newValue: { name, description, role, featureKeys: Object.keys(permissions) },
+    reason: "Saved permission template",
+  });
+
+  return NextResponse.json({ ok: true, template, templates: await getPermissionTemplates(), audit: await getPermissionAudit(50) });
 }

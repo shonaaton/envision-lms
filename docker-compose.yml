@@ -11,16 +11,29 @@
 # RAZORPAY_* keys, NEXT_PUBLIC_RAZORPAY_KEY_ID.
 
 services:
+  engine-redis:
+    image: redis:7.4.2-alpine
+    container_name: envision-engine-redis
+    restart: always
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - engine_redis_data:/data
+    networks:
+      - engine_internal
+
   envision-lms:
     container_name: envision-lms
     build: .
     restart: always
     env_file:
       - .env
+    environment:
+      REDIS_URL: redis://engine-redis:6379
     expose:
       - "3000"
     networks:
       - root_default
+      - engine_internal
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=root_default"
@@ -39,6 +52,50 @@ services:
       - "traefik.http.middlewares.envision.headers.STSPreload=true"
       - "traefik.http.routers.envision.middlewares=envision@docker"
 
+  fishnet-01:
+    image: niklasf/fishnet:2.14.0
+    container_name: envision-fishnet-01
+    restart: always
+    shm_size: 256m
+    environment:
+      ENDPOINT: http://envision-lms:3000/fishnet
+      KEY: ${FISHNET_1_KEY}
+      CORES: 2
+    depends_on:
+      - envision-lms
+    networks: [engine_internal]
+
+  fishnet-02:
+    image: niklasf/fishnet:2.14.0
+    container_name: envision-fishnet-02
+    restart: always
+    shm_size: 256m
+    environment:
+      ENDPOINT: http://envision-lms:3000/fishnet
+      KEY: ${FISHNET_2_KEY}
+      CORES: 2
+    depends_on:
+      - envision-lms
+    networks: [engine_internal]
+
+  fishnet-03:
+    image: niklasf/fishnet:2.14.0
+    container_name: envision-fishnet-03
+    restart: always
+    shm_size: 256m
+    environment:
+      ENDPOINT: http://envision-lms:3000/fishnet
+      KEY: ${FISHNET_3_KEY}
+      CORES: 2
+    depends_on:
+      - envision-lms
+    networks: [engine_internal]
+
 networks:
   root_default:
     external: true
+  engine_internal:
+    driver: bridge
+
+volumes:
+  engine_redis_data:

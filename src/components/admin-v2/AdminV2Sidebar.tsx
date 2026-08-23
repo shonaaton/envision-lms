@@ -80,6 +80,7 @@ const hubs: NavHub[] = [
     items: [
       { href: "/pgn", label: "PGN Library" },
       { href: "/analysis", label: "Analysis Board" },
+      { href: "/admin-v2/engine", label: "Chess Engine" },
       { href: "/ask-coach", label: "Ask Coach" },
       { href: "/leaderboard", label: "Leaderboard" },
     ],

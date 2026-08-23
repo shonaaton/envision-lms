@@ -503,6 +503,48 @@ export default function ClassroomManagementClient({
     }));
   }
 
+  function updatePermanentScheduleDay(index: number, day: number) {
+    setActionDraft((current: any) => ({
+      ...current,
+      daysOfWeek: (current.daysOfWeek || []).map((item: any, itemIndex: number) =>
+        itemIndex === index ? { ...item, day } : item
+      ),
+    }));
+  }
+
+  function updatePermanentScheduleSlot(dayIndex: number, slotIndex: number, update: any) {
+    setActionDraft((current: any) => ({
+      ...current,
+      daysOfWeek: (current.daysOfWeek || []).map((item: any, itemIndex: number) =>
+        itemIndex === dayIndex
+          ? {
+              ...item,
+              slots: (item.slots || []).map((slot: any, currentSlotIndex: number) =>
+                currentSlotIndex === slotIndex ? { ...slot, ...update } : slot
+              ),
+            }
+          : item
+      ),
+    }));
+  }
+
+  function addPermanentScheduleSlot() {
+    setActionDraft((current: any) => ({
+      ...current,
+      daysOfWeek: [
+        ...(current.daysOfWeek || []),
+        { day: 1, slots: [{ startTime: "16:00", durationMinutes: current.durationMinutes || 60 }] },
+      ],
+    }));
+  }
+
+  function removePermanentScheduleSlot(index: number) {
+    setActionDraft((current: any) => ({
+      ...current,
+      daysOfWeek: (current.daysOfWeek || []).filter((_: any, itemIndex: number) => itemIndex !== index),
+    }));
+  }
+
   function setCourse(courseId: string) {
     const course = targets.courses.find((item) => item._id === courseId);
     updateForm({
@@ -943,6 +985,15 @@ export default function ClassroomManagementClient({
                             {permissions.edit && item.classroomType === "single" && item.status === "scheduled" && <ActionButton icon={<Clock3 size={14} />} label="Reschedule" onClick={() => { setActionModal({ type: "reschedule_class", item }); setActionDraft({ classDate: item.classDate ? formatDateInput(item.classDate) : "", startTime: item.startTime || "", durationMinutes: item.durationMinutes || 60 }); }} />}
                             {permissions.cancel && item.status !== "cancelled" && item.status !== "completed" && <ActionButton icon={<X size={14} />} label={item.classroomType === "series" ? "Cancel Entire Series" : "Cancel Class"} onClick={() => { setActionModal({ type: item.classroomType === "series" ? "cancel_series" : "cancel_class", item }); setActionDraft({}); }} />}
                             {permissions.assign && item.status !== "cancelled" && item.status !== "completed" && <ActionButton icon={<UserCog size={14} />} label="Substitute Coach" onClick={() => { setActionModal({ type: "substitute_coach", item }); setActionDraft({ scope: item.classroomType === "series" ? "future" : "entire", coach: "" }); }} />}
+                            {permissions.edit && item.classroomType === "series" && item.status !== "cancelled" && item.status !== "completed" && <ActionButton icon={<Clock3 size={14} />} label="Permanent Timing" onClick={() => {
+                              const futureSession = (item.generatedSessions || []).find((session: any) => isSessionUpcomingLike(deriveScheduledSessionStatus(session, new Date())));
+                              setActionModal({ type: "permanent_schedule_change", item });
+                              setActionDraft({
+                                effectiveDate: futureSession?.scheduledFor ? formatDateInput(futureSession.scheduledFor) : "",
+                                daysOfWeek: flattenScheduleSlots(normalizeDays(item)),
+                                reason: "",
+                              });
+                            }} />}
                             {permissions.edit && item.classroomType === "series" && item.status !== "cancelled" && item.status !== "completed" && <ActionButton icon={<CalendarDays size={14} />} label="Exam Break" onClick={() => { setActionModal({ type: "shift_future_sessions", item }); setActionDraft({ restartDate: "", reason: "Student exam break" }); }} />}
                             {permissions.create && item.classroomType === "series" && item.status !== "cancelled" && item.status !== "completed" && <ActionButton icon={<CopyPlus size={14} />} label="Add Extra Class" onClick={() => { setActionModal({ type: "add_extra_class", item }); setActionDraft({ topicName: "", classDate: "", startTime: item.startTime || "16:00", durationMinutes: item.durationMinutes || 60 }); }} />}
                           </div>
@@ -1274,6 +1325,50 @@ export default function ClassroomManagementClient({
                   </Field>
                   <div className="rounded-xl bg-sky-50 p-4 text-sm font-semibold text-sky-800">
                     All not-yet-started scheduled classes in this series will move together. The first future class restarts on this date, and the remaining future classes keep the same spacing after it.
+                  </div>
+                </div>
+              )}
+              {actionModal.type === "permanent_schedule_change" && (
+                <div className="grid gap-4">
+                  <Field label="Apply From (IST)">
+                    <input type="date" className="input h-10" value={actionDraft.effectiveDate || ""} onChange={(event) => setActionDraft((current: any) => ({ ...current, effectiveDate: event.target.value }))} />
+                  </Field>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">Weekly Timings</div>
+                      <button type="button" onClick={addPermanentScheduleSlot} className="inline-flex h-9 items-center gap-1 rounded-lg border border-slate-200 px-3 text-xs font-bold text-slate-700 hover:border-brand hover:text-brand">
+                        <Plus size={14} /> Add Timing
+                      </button>
+                    </div>
+                    {(actionDraft.daysOfWeek || []).map((day: any, dayIndex: number) => {
+                      const slot = day.slots?.[0] || { startTime: "", durationMinutes: 60 };
+                      return (
+                        <div key={`permanent-${dayIndex}`} className="grid gap-2 rounded-xl border border-slate-200 p-3 sm:grid-cols-[1fr_1fr_1fr_auto] sm:items-end">
+                          <Field label="Day">
+                            <select className="input h-10" value={day.day} onChange={(event) => updatePermanentScheduleDay(dayIndex, Number(event.target.value))}>
+                              {weekDays.map((option) => <option key={option.day} value={option.day}>{option.label}</option>)}
+                            </select>
+                          </Field>
+                          <Field label="Time (IST)">
+                            <input type="time" className="input h-10" value={slot.startTime || ""} onChange={(event) => updatePermanentScheduleSlot(dayIndex, 0, { startTime: event.target.value })} />
+                          </Field>
+                          <Field label="Duration">
+                            <select className="input h-10" value={slot.durationMinutes || 60} onChange={(event) => updatePermanentScheduleSlot(dayIndex, 0, { durationMinutes: Number(event.target.value) })}>
+                              {durationOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                            </select>
+                          </Field>
+                          <button type="button" onClick={() => removePermanentScheduleSlot(dayIndex)} className="grid h-10 w-10 place-items-center rounded-lg border border-slate-200 text-slate-500 hover:border-red-200 hover:bg-red-50 hover:text-red-600" aria-label="Remove timing">
+                            <X size={16} />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <Field label="Admin Note">
+                    <textarea className="input min-h-20 py-2" value={actionDraft.reason || ""} onChange={(event) => setActionDraft((current: any) => ({ ...current, reason: event.target.value }))} placeholder="Optional reason for the timing change" />
+                  </Field>
+                  <div className="rounded-xl bg-sky-50 p-4 text-sm font-semibold text-sky-800">
+                    Future not-yet-started classes will follow these weekly timings. Completed and already-started classes stay unchanged.
                   </div>
                 </div>
               )}
@@ -1975,9 +2070,19 @@ function normalizeDays(item: ClassroomItem) {
   return raw.length ? raw : [{ day: 1, slots: [{ startTime: item.startTime || "16:00", durationMinutes: item.durationMinutes || 60 }] }];
 }
 
+function flattenScheduleSlots(days: Array<{ day: number; slots: Array<{ startTime: string; durationMinutes: number }> }>) {
+  return days.flatMap((day) =>
+    (day.slots || []).map((slot) => ({
+      day: day.day,
+      slots: [{ startTime: slot.startTime || "16:00", durationMinutes: slot.durationMinutes || 60 }],
+    }))
+  );
+}
+
 function actionTitle(type: string) {
   if (type === "reschedule_class") return "Reschedule Class";
   if (type === "shift_future_sessions") return "Exam Break";
+  if (type === "permanent_schedule_change") return "Permanent Timing Change";
   if (type === "cancel_class") return "Cancel Class";
   if (type === "cancel_series") return "Cancel Entire Series";
   if (type === "update_session") return "Edit This Class";
@@ -1996,6 +2101,7 @@ function actionConfirmLabel(type: string) {
   if (type === "delete_session") return "Delete Class";
   if (type === "reschedule_class" || type === "reschedule_session") return "Reschedule";
   if (type === "shift_future_sessions") return "Shift Future Classes";
+  if (type === "permanent_schedule_change") return "Update Permanent Timing";
   if (type === "update_session") return "Save Class";
   if (type === "mark_session_outcome") return "Save Outcome";
   return "Apply";
@@ -2005,6 +2111,14 @@ function actionCanSubmit(type: string, draft: any) {
   if (type === "substitute_coach") return Boolean(String(draft?.coach || "").trim());
   if (type === "reschedule_class" || type === "reschedule_session") return Boolean(draft?.classDate && draft?.startTime);
   if (type === "shift_future_sessions") return Boolean(draft?.restartDate);
+  if (type === "permanent_schedule_change") {
+    const days = Array.isArray(draft?.daysOfWeek) ? draft.daysOfWeek : [];
+    return Boolean(
+      draft?.effectiveDate &&
+      days.length &&
+      days.every((day: any) => Array.isArray(day?.slots) && day.slots[0]?.startTime)
+    );
+  }
   if (type === "update_session") return Boolean(String(draft?.topicName || "").trim() && draft?.classDate && draft?.startTime);
   if (type === "add_extra_class") return Boolean(String(draft?.topicName || "").trim() && draft?.classDate && draft?.startTime);
   if (type === "mark_session_outcome") return Boolean(String(draft?.classOutcome || "").trim());
@@ -2017,6 +2131,7 @@ function actionSuccessMessage(type: string) {
   if (type === "delete_session") return "Class deleted from the series";
   if (type === "reschedule_class" || type === "reschedule_session") return "Class rescheduled";
   if (type === "shift_future_sessions") return "Future classes shifted";
+  if (type === "permanent_schedule_change") return "Permanent timing updated";
   if (type === "update_session") return "Class updated";
   if (type === "add_extra_class") return "Extra class added";
   if (type === "substitute_coach") return "Coach assignment updated";

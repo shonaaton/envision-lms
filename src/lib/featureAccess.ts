@@ -5,6 +5,7 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { FeatureAccess, PermissionAudit, PermissionTemplate } from "@/models/FeatureAccess";
 import { User } from "@/models/User";
+import { Batch } from "@/models/Batch";
 import {
   FEATURE_DEFINITIONS,
   PORTAL_ROLES,
@@ -75,9 +76,7 @@ function normalizeState(feature: FeatureDefinition, doc?: any): FeatureAccessSta
   const rolePermissions = doc.rolePermissions || {};
   const normalizedRolePermissions = (role: PortalRole) => {
     const configured = Array.isArray(rolePermissions[role]) ? rolePermissions[role].map(String) : [];
-    if (feature.key === "attendance" && role === "sub-admin") return Array.from(new Set([...(base.rolePermissions[role] || []), ...configured]));
-    if (feature.key !== "analysisBoard") return configured;
-    return Array.from(new Set([...(base.rolePermissions[role] || []), ...configured]));
+    return configured;
   };
   return {
     key: feature.key,
@@ -235,6 +234,14 @@ function activeOverride(state: FeatureAccessState, userId?: string) {
   );
 }
 
+async function isPilotBatchMember(state: FeatureAccessState, user: SessionUser) {
+  if (!user.id || !state.pilotBatches.length) return false;
+  const userDoc = await User.findById(user.id, { batches: 1 }).lean();
+  const directBatchIds = ((userDoc as any)?.batches || []).map((value: any) => value?.toString?.() || String(value));
+  if (directBatchIds.some((id: string) => state.pilotBatches.includes(id))) return true;
+  return Boolean(await Batch.exists({ _id: { $in: state.pilotBatches }, $or: [{ students: user.id }, { coach: user.id }] }));
+}
+
 export function evaluateFeatureState({
   feature,
   user,
@@ -258,12 +265,30 @@ export function evaluateFeatureState({
   return hasPermission(feature.rolePermissions[role], permission);
 }
 
+async function evaluateFeatureStateWithPilotCohorts({
+  feature,
+  user,
+  permission = "view",
+  allowComingSoonView = false,
+}: {
+  feature: FeatureAccessSnapshot;
+  user: SessionUser;
+  permission?: string;
+  allowComingSoonView?: boolean;
+}) {
+  if (feature.status !== "testing" || user.isSuperAdmin || feature.pilotRoles.includes(user.role as PortalRole) || feature.pilotUsers.includes(user.id || "")) {
+    return evaluateFeatureState({ feature, user, permission, allowComingSoonView });
+  }
+  if (!(await isPilotBatchMember(feature, user))) return false;
+  return hasPermission(feature.rolePermissions[user.role as PortalRole], permission);
+}
+
 export async function canAccessFeature(featureKey: string, user: SessionUser, permission = "view") {
   const features = await getFeatureAccessMap();
   const feature = features.get(featureKey);
   if (!feature) return false;
   const isSuperAdmin = await isSuperAdminSession(user);
-  return evaluateFeatureState({ feature, user: { ...user, isSuperAdmin }, permission });
+  return evaluateFeatureStateWithPilotCohorts({ feature, user: { ...user, isSuperAdmin }, permission });
 }
 
 export async function getFeaturePermissionState(featureKey: string, user: SessionUser, permissions: readonly string[]) {
@@ -277,9 +302,11 @@ export async function getFeaturePermissionState(featureKey: string, user: Sessio
 
   const isSuperAdmin = await isSuperAdminSession(user);
   const effectiveUser = { ...user, isSuperAdmin };
-  permissions.forEach((permission) => {
-    result[permission] = evaluateFeatureState({ feature, user: effectiveUser, permission });
-  });
+  await Promise.all(
+    permissions.map(async (permission) => {
+      result[permission] = await evaluateFeatureStateWithPilotCohorts({ feature, user: effectiveUser, permission });
+    })
+  );
   return result;
 }
 
@@ -299,14 +326,20 @@ export async function getNavigationFeatureState(user: SessionUser) {
   const snapshot = await getFeatureAccessSnapshot();
   const isSuperAdmin = await isSuperAdminSession(user);
   const effectiveUser = { ...user, isSuperAdmin };
-  return snapshot.reduce<Record<string, { visible: boolean; status: FeatureStatus; permissions: string[] }>>((acc, feature) => {
-    acc[feature.key] = {
-      visible: evaluateFeatureState({ feature, user: effectiveUser, permission: "view", allowComingSoonView: true }),
-      status: feature.status,
-      permissions: feature.permissions
-        .filter((permission) => evaluateFeatureState({ feature, user: effectiveUser, permission: permission.id }))
-        .map((permission) => permission.id),
-    };
+  const entries = await Promise.all(snapshot.map(async (feature) => {
+    const visible = await evaluateFeatureStateWithPilotCohorts({ feature, user: effectiveUser, permission: "view", allowComingSoonView: true });
+    const permissions = (
+      await Promise.all(
+        feature.permissions.map(async (permission) => ({
+          id: permission.id,
+          allowed: await evaluateFeatureStateWithPilotCohorts({ feature, user: effectiveUser, permission: permission.id }),
+        }))
+      )
+    ).filter((permission) => permission.allowed).map((permission) => permission.id);
+    return [feature.key, { visible, status: feature.status, permissions }] as const;
+  }));
+  return entries.reduce<Record<string, { visible: boolean; status: FeatureStatus; permissions: string[] }>>((acc, [key, value]) => {
+    acc[key] = value;
     return acc;
   }, {});
 }

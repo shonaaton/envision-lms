@@ -130,6 +130,59 @@ function isShiftableScheduledSession(session: any) {
   return ["scheduled", "rescheduled"].includes(status) && !session?.actualStartedAt && !session?.actualEndedAt;
 }
 
+function normalizePermanentScheduleSlots(value: any) {
+  if (!Array.isArray(value)) return [];
+  const rows = value
+    .map((day: any) => ({
+      day: Number(day?.day),
+      slots: Array.isArray(day?.slots)
+        ? day.slots
+            .map((slot: any) => ({
+              startTime: String(slot?.startTime || "").trim(),
+              durationMinutes: Math.max(15, Number(slot?.durationMinutes || 60)),
+            }))
+            .filter((slot: any) => /^([01]\d|2[0-3]):[0-5]\d$/.test(slot.startTime))
+        : [],
+    }))
+    .filter((day: any) => Number.isInteger(day.day) && day.day >= 0 && day.day <= 6 && day.slots.length)
+    .sort((a: any, b: any) => a.day - b.day);
+  const byDay = new Map<number, any[]>();
+  rows.forEach((day: any) => byDay.set(day.day, [...(byDay.get(day.day) || []), ...day.slots]));
+  return Array.from(byDay.entries())
+    .map(([day, slots]) => ({
+      day,
+      slots: slots.sort((a: any, b: any) => a.startTime.localeCompare(b.startTime)),
+    }))
+    .sort((a: any, b: any) => a.day - b.day);
+}
+
+function buildPermanentScheduleOccurrences(daysOfWeek: any[], effectiveDate: string, count: number) {
+  const startUtc = dateKeyToUtc(effectiveDate);
+  if (startUtc === null || count <= 0) return [];
+  const slots = daysOfWeek
+    .flatMap((day: any) => (day.slots || []).map((slot: any) => ({ day: Number(day.day), ...slot })))
+    .sort((a: any, b: any) => (a.day - b.day) || String(a.startTime).localeCompare(String(b.startTime)));
+  const occurrences: Array<{ dateKey: string; startTime: string; durationMinutes: number }> = [];
+  let cursor = new Date(startUtc);
+  let guard = 0;
+
+  while (occurrences.length < count && guard < 3700) {
+    const dateKey = academyDateKey(cursor);
+    const weekDay = cursor.getUTCDay();
+    slots
+      .filter((slot: any) => slot.day === weekDay)
+      .forEach((slot: any) => {
+        if (occurrences.length < count) {
+          occurrences.push({ dateKey, startTime: slot.startTime, durationMinutes: slot.durationMinutes });
+        }
+      });
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+    guard += 1;
+  }
+
+  return occurrences;
+}
+
 async function canAccessRecord(doc: any, user: any, allowSubstitute = false, scheduledSessionId?: string) {
   const role = user?.role;
   const userId = String(user?.id || "");
@@ -213,6 +266,14 @@ function scheduleChangeCopy({
       type: "classroom.series.rescheduled",
       title: "Class schedule updated",
       message: `${shiftedCount || 0} future class${shiftedCount === 1 ? "" : "es"} in ${classTitle} were rescheduled${restartText}.`,
+    };
+  }
+  if (action === "permanent_schedule_change") {
+    const restartText = restartDate ? ` from ${scheduleTimeLabel(restartDate) || restartDate}` : "";
+    return {
+      type: "classroom.series.rescheduled",
+      title: "Permanent class timing updated",
+      message: `${classTitle} now follows the new weekly timing${restartText}. Future classes have been updated.`,
     };
   }
   const fromText = previousTime ? ` from ${previousTime}` : "";
@@ -492,6 +553,61 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       entityId: params.id,
       metadata: { restartDate: restartKey, shiftedSessions: movable.map((item: any) => String(item._id)), reason: body.reason || "" },
     });
+  } else if (body.action === "permanent_schedule_change") {
+    if (existing.classroomType !== "series") return NextResponse.json({ error: "Permanent timing changes are only available for class series" }, { status: 409 });
+    if (existing.status === "completed" || existing.status === "cancelled") return NextResponse.json({ error: "This series can no longer be changed" }, { status: 409 });
+    const nextDays = normalizePermanentScheduleSlots(body.daysOfWeek);
+    if (!nextDays.length) return NextResponse.json({ error: "Add at least one weekly day and time slot" }, { status: 400 });
+    if (nextDays.some((day: any) => new Set((day.slots || []).map((slot: any) => slot.startTime)).size !== (day.slots || []).length)) {
+      return NextResponse.json({ error: "Remove duplicate time slots from the same day" }, { status: 400 });
+    }
+    const movable = (existing.generatedSessions || [])
+      .filter(isShiftableScheduledSession)
+      .sort((a: any, b: any) => new Date(a.scheduledFor || 0).getTime() - new Date(b.scheduledFor || 0).getTime());
+    if (!movable.length) return NextResponse.json({ error: "This series has no future scheduled classes available for a permanent timing change" }, { status: 409 });
+    const effectiveKey = String(body.effectiveDate || "").trim()
+      ? academyDateKey(String(body.effectiveDate))
+      : academyDateKey(movable[0].scheduledFor);
+    if (dateKeyToUtc(effectiveKey) === null) return NextResponse.json({ error: "Select a valid effective date" }, { status: 400 });
+    const occurrences = buildPermanentScheduleOccurrences(nextDays, effectiveKey, movable.length);
+    if (occurrences.length !== movable.length) {
+      return NextResponse.json({ error: "The updated weekly timing could not cover all future classes" }, { status: 400 });
+    }
+
+    movable.forEach((item: any, index: number) => {
+      const occurrence = occurrences[index];
+      const scheduledFor = safeAcademyDateTime(occurrence.dateKey, occurrence.startTime);
+      if (!scheduledFor) return;
+      if (!item.originalDate) item.originalDate = item.scheduledFor;
+      item.scheduledFor = scheduledFor;
+      item.startTime = occurrence.startTime;
+      item.durationMinutes = occurrence.durationMinutes;
+      item.status = "scheduled";
+      item.coachAttendanceStatus = "pending";
+      item.notes = String(body.reason || "").trim()
+        ? [item.notes, `Permanent timing change: ${String(body.reason).trim()}`].filter(Boolean).join("\n")
+        : item.notes;
+    });
+
+    existing.daysOfWeek = nextDays;
+    existing.sessionsPerWeek = nextDays.reduce((total: number, day: any) => total + (day.slots?.length || 0), 0);
+    existing.durationMinutes = Math.max(15, Number(nextDays[0]?.slots?.[0]?.durationMinutes || existing.durationMinutes || 60));
+    shiftedSessionCount = movable.length;
+    shiftedRestartDate = effectiveKey;
+    await recordActivity({
+      actor: (session.user as any).id,
+      type: "classroom.series.permanent_timing_changed",
+      label: `Changed permanent timing for ${existing.title}`,
+      entityType: "Classroom",
+      entityId: params.id,
+      metadata: {
+        effectiveDate: effectiveKey,
+        changedSessions: movable.map((item: any) => String(item._id)),
+        sessionsPerWeek: existing.sessionsPerWeek,
+        daysOfWeek: nextDays,
+        reason: body.reason || "",
+      },
+    });
   } else if (body.action === "substitute_coach") {
     if (!String(body.coach || "").trim()) return NextResponse.json({ error: "Select a substitute coach" }, { status: 400 });
     if (!(await User.exists({ _id: body.coach, role: "instructor", isActive: { $ne: false } }))) return NextResponse.json({ error: "The selected coach is not active" }, { status: 400 });
@@ -648,7 +764,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       ? existing.generatedSessions[0]
       : null;
   const shouldNotifyScheduleChange = (
-    ["cancel_class", "cancel_series", "cancel_session", "reschedule_class", "reschedule_session", "shift_future_sessions"].includes(activityAction) ||
+    ["cancel_class", "cancel_series", "cancel_session", "reschedule_class", "reschedule_session", "shift_future_sessions", "permanent_schedule_change"].includes(activityAction) ||
     (activityAction === "update_session" && scheduleChanged(previousSession, currentSession))
   );
   if (shouldNotifyScheduleChange) {
@@ -671,7 +787,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       restartDate: shiftedRestartDate,
     });
   }
-  if (!["mark_session_outcome", "shift_future_sessions"].includes(activityAction)) {
+  if (!["mark_session_outcome", "shift_future_sessions", "permanent_schedule_change"].includes(activityAction)) {
     const commonMetadata = {
       action: activityAction,
       title: existing.title,

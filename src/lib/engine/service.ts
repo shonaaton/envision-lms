@@ -5,6 +5,7 @@ import { EngineWorker } from "@/models/EngineWorker";
 import { dbConnect } from "@/lib/db";
 import { ENGINE_CACHE_TTL_MS, ENGINE_LEASE_TTL_MS, ENGINE_MAX_ATTEMPTS, ENGINE_QUEUE_NAMES, ENGINE_WORKER_STALE_MS } from "@/lib/engine/config";
 import { sha256 } from "@/lib/engine/hash";
+import { claimEngineLease, dequeueEngineJob, enqueueEngineJob, getEngineRedisStatus, isRedisConfigured, readEngineCache, releaseEngineLease, removeEngineJobFromQueues, renewEngineLease, writeEngineCache } from "@/lib/engine/redis";
 import type {
   EngineJobPayload,
   EngineJobStatus,
@@ -23,6 +24,7 @@ type QueueState = {
 
 declare global {
   var _engineQueueState: QueueState | undefined;
+  var _engineMetrics: { cacheHits: number; cacheWrites: number } | undefined;
 }
 
 const queueState: QueueState = global._engineQueueState ?? {
@@ -31,6 +33,8 @@ const queueState: QueueState = global._engineQueueState ?? {
 };
 
 if (!global._engineQueueState) global._engineQueueState = queueState;
+const engineMetrics = global._engineMetrics ?? { cacheHits: 0, cacheWrites: 0 };
+if (!global._engineMetrics) global._engineMetrics = engineMetrics;
 
 function now() {
   return Date.now();
@@ -43,15 +47,25 @@ function pruneCache() {
   }
 }
 
-function ensureQueued(jobId: string, priority: EnginePriority) {
+function ensureQueuedMemory(jobId: string, priority: EnginePriority) {
   const queue = queueState.queues[priority];
   if (!queue.includes(jobId)) queue.push(jobId);
 }
 
-function dequeue(jobId: string) {
+function dequeueMemory(jobId: string) {
   for (const priority of Object.keys(queueState.queues) as Array<`${EnginePriority}`>) {
     queueState.queues[Number(priority) as EnginePriority] = queueState.queues[Number(priority) as EnginePriority].filter((value) => value !== jobId);
   }
+}
+
+async function ensureQueued(jobId: string, priority: EnginePriority) {
+  ensureQueuedMemory(jobId, priority);
+  await enqueueEngineJob(jobId, priority);
+}
+
+async function dequeue(jobId: string) {
+  dequeueMemory(jobId);
+  await removeEngineJobFromQueues(jobId);
 }
 
 function canonicalMoves(moves?: string[]) {
@@ -125,7 +139,7 @@ export async function reapExpiredLeases() {
         $unset: { workerId: 1, workerName: 1, leaseExpiresAt: 1, startedAt: 1 },
       }
     );
-    ensureQueued(job.jobId, Number(job.priority) as EnginePriority);
+    void ensureQueued(job.jobId, Number(job.priority) as EnginePriority);
   }
 
   const staleCutoff = new Date(Date.now() - ENGINE_WORKER_STALE_MS);
@@ -149,7 +163,13 @@ export async function createEngineJob(input: {
   if (input.payload.cacheKey) {
     const cached = queueState.cache.get(input.payload.cacheKey);
     if (cached && cached.expiresAt > now()) {
+      engineMetrics.cacheHits += 1;
       return { fromCache: true as const, result: cached.result };
+    }
+    const redisCached = await readEngineCache(input.payload.cacheKey);
+    if (redisCached) {
+      engineMetrics.cacheHits += 1;
+      return { fromCache: true as const, result: redisCached };
     }
   }
 
@@ -182,7 +202,7 @@ export async function createEngineJob(input: {
     clock: input.payload.clock,
     level: input.payload.level,
   });
-  ensureQueued(jobId, input.priority);
+  await ensureQueued(jobId, input.priority);
   return { created: true as const, job: created.toObject() };
 }
 
@@ -262,13 +282,15 @@ export async function acquireEngineJob(worker: { workerId: string; workerName: s
 
   for (const priority of [0, 1, 2, 3] as EnginePriority[]) {
     const queue = queueState.queues[priority];
-    while (queue.length) {
-      const jobId = queue.shift();
+    while (queue.length || isRedisConfigured()) {
+      const jobId = (isRedisConfigured() ? await dequeueEngineJob(priority) : null) || queue.shift();
       if (!jobId) break;
+      dequeueMemory(jobId);
       const job = await EngineJob.findOne({ jobId }).lean() as any;
       if (!job || job.status !== "QUEUED") continue;
 
       const leaseExpiresAt = new Date(Date.now() + ENGINE_LEASE_TTL_MS);
+      if (!(await claimEngineLease(jobId, worker.workerId))) continue;
       const claim = await EngineJob.findOneAndUpdate(
         { _id: job._id, status: "QUEUED" },
         {
@@ -283,7 +305,10 @@ export async function acquireEngineJob(worker: { workerId: string; workerName: s
         },
         { new: true }
       ).lean() as any;
-      if (!claim) continue;
+      if (!claim) {
+        await releaseEngineLease(jobId, worker.workerId);
+        continue;
+      }
 
       await EngineWorker.updateOne(
         { workerId: worker.workerId },
@@ -325,6 +350,7 @@ export async function touchJobLease(jobId: string, workerId: string) {
     { jobId, workerId, status: { $in: ["ASSIGNED", "RUNNING"] } },
     { $set: { status: "RUNNING", leaseExpiresAt: new Date(Date.now() + ENGINE_LEASE_TTL_MS) } }
   );
+  await renewEngineLease(jobId, workerId);
   await EngineWorker.updateOne({ workerId }, { $set: { lastSeenAt: new Date(), status: "busy" } });
 }
 
@@ -358,13 +384,17 @@ export async function completeEngineJob(jobId: string, workerId: string, payload
       $unset: { currentJobId: 1 },
     }
   );
+  await releaseEngineLease(jobId, workerId);
 
   if (!updated) return { ok: true as const, ignored: true };
 
   if (updated.cacheKey) {
     queueState.cache.set(updated.cacheKey, { expiresAt: Date.now() + ENGINE_CACHE_TTL_MS, result });
+    engineMetrics.cacheWrites += 1;
+    await writeEngineCache(updated.cacheKey, result, Math.ceil(ENGINE_CACHE_TTL_MS / 1000));
   }
-  dequeue(jobId);
+  await dequeue(jobId);
+  await releaseEngineLease(jobId, workerId);
   return { ok: true as const, job: updated };
 }
 
@@ -381,8 +411,9 @@ export async function cancelEngineJob(jobId: string) {
     },
     { new: true }
   ).lean() as any;
-  dequeue(jobId);
+  await dequeue(jobId);
   if (updated?.workerId) {
+    await releaseEngineLease(jobId, updated.workerId);
     await EngineWorker.updateOne(
       { workerId: updated.workerId },
       { $set: { status: "online", lastSeenAt: new Date() }, $unset: { currentJobId: 1 } }
@@ -405,7 +436,8 @@ export async function failEngineJob(jobId: string, workerId: string, error: stri
     },
     { new: true }
   ).lean() as any;
-  dequeue(jobId);
+  await dequeue(jobId);
+  await releaseEngineLease(jobId, workerId);
   await EngineWorker.updateOne(
     { workerId },
     { $set: { status: "online", lastSeenAt: new Date() }, $unset: { currentJobId: 1 } }
@@ -415,7 +447,7 @@ export async function failEngineJob(jobId: string, workerId: string, error: stri
 
 export async function getEngineJob(jobId: string) {
   await dbConnect();
-  return EngineJob.findOne({ jobId }).lean();
+  return EngineJob.findOne({ jobId }).lean() as any;
 }
 
 export async function getEngineStatus() {
@@ -429,6 +461,12 @@ export async function getEngineStatus() {
     }))),
     EngineWorker.countDocuments({ status: "busy" }),
   ]);
+  const [completed, failed, cancelled, total] = await Promise.all([
+    EngineJob.countDocuments({ status: "COMPLETED" }),
+    EngineJob.countDocuments({ status: "FAILED" }),
+    EngineJob.countDocuments({ status: "CANCELLED" }),
+    EngineJob.countDocuments({}),
+  ]);
 
   const workerSnapshots: EngineWorkerSnapshot[] = workers.map((worker: any) => ({
     workerId: worker.workerId,
@@ -440,8 +478,11 @@ export async function getEngineStatus() {
   }));
 
   return {
+    redis: await getEngineRedisStatus(),
     status: "healthy",
     queue: Object.fromEntries(queueCounts.map((item) => [ENGINE_QUEUE_NAMES[item.priority], item.count])),
+    jobs: { total, completed, failed, cancelled },
+    cache: { hits: engineMetrics.cacheHits, writes: engineMetrics.cacheWrites },
     workers: {
       available: workers.filter((worker: any) => worker.status === "online").length,
       busy: activeWorkers,

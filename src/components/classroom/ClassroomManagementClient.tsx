@@ -965,6 +965,12 @@ export default function ClassroomManagementClient({
                                             setActionDraft({ classOutcome: scheduledSession.summary?.classOutcome || scheduledSession.status || "completed", reason: "" });
                                           }} />
                                         ) : null}
+                                        {permissions.edit && (role === "admin" || role === "sub-admin") ? (
+                                          <ActionButton icon={<ListChecks size={14} />} label="Topic" onClick={() => {
+                                            setActionModal({ type: "change_session_topic", item, session: scheduledSession });
+                                            setActionDraft({ topicName: scheduledSession.topicName || item.topicName || "", reason: "" });
+                                          }} />
+                                        ) : null}
                                         {permissions.cancel && !isFinished && !isCancelled ? (
                                           <ActionButton icon={<X size={14} />} label="Cancel" onClick={() => { setActionModal({ type: "cancel_session", item, session: scheduledSession }); setActionDraft({}); }} />
                                         ) : null}
@@ -1423,6 +1429,32 @@ export default function ClassroomManagementClient({
                   </Field>
                   <div className="rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
                     Completed consumes the topic. Continue topic charges the class, repeats the topic next class, shifts later topics, and adds one extra class at the end.
+                  </div>
+                </div>
+              )}
+              {actionModal.type === "change_session_topic" && (
+                <div className="grid gap-4">
+                  <Field label="Correct Topic">
+                    <>
+                      <input
+                        className="input h-10"
+                        list="classroom-topic-options"
+                        value={actionDraft.topicName || ""}
+                        onChange={(event) => setActionDraft((current: any) => ({ ...current, topicName: event.target.value }))}
+                        placeholder="Enter or select the topic"
+                      />
+                      <datalist id="classroom-topic-options">
+                        {(actionModal.item?.sessionPlan || []).map((topic) => (
+                          <option key={`${topic.sessionNumber}-${topic.topicName}`} value={topic.topicName} />
+                        ))}
+                      </datalist>
+                    </>
+                  </Field>
+                  <Field label="Reason">
+                    <textarea className="input min-h-24 py-2" value={actionDraft.reason || ""} onChange={(event) => setActionDraft((current: any) => ({ ...current, reason: event.target.value }))} placeholder="Optional admin note" />
+                  </Field>
+                  <div className="rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
+                    This locks the corrected class topic and recalibrates the remaining unlocked classes so later topics do not duplicate it.
                   </div>
                 </div>
               )}
@@ -2092,6 +2124,7 @@ function actionTitle(type: string) {
   if (type === "substitute_coach") return "Substitute Coach";
   if (type === "add_extra_class") return "Add Extra Class";
   if (type === "mark_session_outcome") return "Correct Class Outcome";
+  if (type === "change_session_topic") return "Change Class Topic";
   return "Update Class";
 }
 
@@ -2104,6 +2137,7 @@ function actionConfirmLabel(type: string) {
   if (type === "permanent_schedule_change") return "Update Permanent Timing";
   if (type === "update_session") return "Save Class";
   if (type === "mark_session_outcome") return "Save Outcome";
+  if (type === "change_session_topic") return "Save Topic";
   return "Apply";
 }
 
@@ -2120,6 +2154,7 @@ function actionCanSubmit(type: string, draft: any) {
     );
   }
   if (type === "update_session") return Boolean(String(draft?.topicName || "").trim() && draft?.classDate && draft?.startTime);
+  if (type === "change_session_topic") return Boolean(String(draft?.topicName || "").trim());
   if (type === "add_extra_class") return Boolean(String(draft?.topicName || "").trim() && draft?.classDate && draft?.startTime);
   if (type === "mark_session_outcome") return Boolean(String(draft?.classOutcome || "").trim());
   return true;
@@ -2136,5 +2171,6 @@ function actionSuccessMessage(type: string) {
   if (type === "add_extra_class") return "Extra class added";
   if (type === "substitute_coach") return "Coach assignment updated";
   if (type === "mark_session_outcome") return "Class outcome updated";
+  if (type === "change_session_topic") return "Class topic updated";
   return "Class updated";
 }

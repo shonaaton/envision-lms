@@ -1,5 +1,6 @@
 import { Classroom } from "@/models/Classroom";
 import { ClassroomSession } from "@/models/ClassroomLive";
+import { Attendance } from "@/models/Attendance";
 import { autoAssignHomeworkForSession } from "@/lib/assignmentAutomation";
 import { notifyFailure } from "@/lib/failureNotifications";
 import { ensureTopicContinuationSession, normalizeSessionOutcome, recalculateFutureSessionTopics, shouldContinueTopic, topicCompletedForOutcome } from "@/lib/classroomLifecycle";
@@ -92,7 +93,9 @@ export async function markScheduledSessionFinished({
   target.teachingMinutes = scheduledPaymentMinutes(target, classroom);
   target.actualTeachingMinutes = actualSessionMinutes(target);
   const requestedOutcome = (summary as any)?.classOutcome;
-  const adminOverride = Boolean((summary as any)?.adminOverrideCompletion);
+  const attendance: any = await Attendance.findOne({ classroom: classroomId, scheduledSessionId }).select("records").lean();
+  const hasAttendingStudent = (attendance?.records || []).some((record: any) => ["present", "late"].includes(String(record?.status || "")));
+  const adminOverride = Boolean((summary as any)?.adminOverrideCompletion || (hasAttendingStudent && requestedOutcome === "completed"));
   const outcome = normalizeSessionOutcome(requestedOutcome, target.actualTeachingMinutes, adminOverride);
   const topicCompleted = topicCompletedForOutcome(outcome, requestedOutcome);
   const storedOutcome = shouldContinueTopic(requestedOutcome) && outcome === "completed" ? "completed_continue_topic" : outcome;

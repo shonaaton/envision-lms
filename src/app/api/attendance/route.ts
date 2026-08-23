@@ -127,8 +127,10 @@ export async function POST(req: Request) {
   const actualMinutes = target
     ? Math.max(0, Number(metadata?.summary?.actualTeachingMinutes || teachingMinutes || target.actualTeachingMinutes || actualSessionMinutes(target) || 0))
     : Math.max(0, Number(metadata?.summary?.actualTeachingMinutes || teachingMinutes || 0));
-  const requestedOutcome = classOutcome || metadata?.summary?.classOutcome;
-  const outcome = normalizeSessionOutcome(requestedOutcome, actualMinutes, Boolean(adminOverrideCompletion || metadata?.summary?.adminOverrideCompletion));
+  const hasAttendingStudent = (records || []).some((record) => ["present", "late"].includes(String(record?.status || "")));
+  const requestedOutcome = classOutcome || metadata?.summary?.classOutcome || (hasAttendingStudent ? "completed" : undefined);
+  const completionOverride = Boolean(adminOverrideCompletion || metadata?.summary?.adminOverrideCompletion || (hasAttendingStudent && requestedOutcome === "completed"));
+  const outcome = normalizeSessionOutcome(requestedOutcome, actualMinutes, completionOverride);
   const topicCompleted = topicCompletedForOutcome(outcome, requestedOutcome);
   const storedOutcome = shouldContinueTopic(requestedOutcome) && outcome === "completed" ? "completed_continue_topic" : outcome;
   const punctualityScore = target ? Number(target.punctualityScore || punctualityBreakdown(target, classroomDoc).punctualityScore) : 0;

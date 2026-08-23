@@ -144,6 +144,7 @@ export async function recalculateFutureSessionTopics(classroomOrId: any, actorId
   const consumed = new Set<string>();
   (classroom.generatedSessions || []).forEach((session: any) => {
     if (sessionConsumesTopic(session)) consumed.add(String(session.topicName || "").trim().toLowerCase());
+    if (session?.topicLocked && isFutureTopicAssignable(session)) consumed.add(String(session.topicName || "").trim().toLowerCase());
   });
   const pending = plan.filter((topic: any) => !consumed.has(topic.topicName.toLowerCase()));
   let pendingIndex = 0;

@@ -130,6 +130,12 @@ function isShiftableScheduledSession(session: any) {
   return ["scheduled", "rescheduled"].includes(status) && !session?.actualStartedAt && !session?.actualEndedAt;
 }
 
+function topicOrderForName(classroom: any, topicName: string, fallback: number) {
+  const normalized = topicName.trim().toLowerCase();
+  const planned = (classroom.sessionPlan || []).find((topic: any) => String(topic?.topicName || "").trim().toLowerCase() === normalized);
+  return Number(planned?.topicOrder ?? fallback ?? 0);
+}
+
 function normalizePermanentScheduleSlots(value: any) {
   if (!Array.isArray(value)) return [];
   const rows = value
@@ -412,12 +418,12 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
         session.summary = { ...(session.summary || {}), classOutcome: "cancelled", topicCompleted: false, creditPolicy: "no_charge" };
       }
     });
-  } else if (["update_session", "reschedule_session", "cancel_session", "delete_session", "mark_session_outcome"].includes(body.action)) {
+  } else if (["update_session", "reschedule_session", "cancel_session", "delete_session", "mark_session_outcome", "change_session_topic"].includes(body.action)) {
     const sessionId = String(body.sessionId || "");
     const target = existing.generatedSessions?.id?.(sessionId) || (existing.generatedSessions || []).find((session: any) => String(session._id) === sessionId);
     if (!target) return NextResponse.json({ error: "Scheduled class not found" }, { status: 404 });
     const finished = target.status === "completed" || target.status === "ongoing" || Boolean(target.actualStartedAt || target.actualEndedAt);
-    if (finished && body.action !== "mark_session_outcome") return NextResponse.json({ error: "A started or completed class can no longer be changed or deleted" }, { status: 409 });
+    if (finished && !["mark_session_outcome", "change_session_topic"].includes(body.action)) return NextResponse.json({ error: "A started or completed class can no longer be changed or deleted" }, { status: 409 });
     if (target.status === "cancelled" && body.action !== "delete_session") return NextResponse.json({ error: "A cancelled class can only be deleted" }, { status: 409 });
 
     if (body.action === "mark_session_outcome") {
@@ -448,6 +454,32 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
         entityType: "Classroom",
         entityId: params.id,
         metadata: { sessionId, previousStatus, outcome, reason: body.reason || "" },
+      });
+    } else if (body.action === "change_session_topic") {
+      const actorRole = String((session.user as any)?.role || "");
+      if (!["admin", "sub-admin"].includes(actorRole)) {
+        return NextResponse.json({ error: "Only admins and sub-admins can recalibrate topics" }, { status: 403 });
+      }
+      const nextTopicName = String(body.topicName || "").trim();
+      if (!nextTopicName) return NextResponse.json({ error: "Enter the corrected topic" }, { status: 400 });
+      const previousTopicName = String(target.topicName || "");
+      target.topicName = nextTopicName;
+      target.topicOrder = topicOrderForName(existing, nextTopicName, target.topicOrder);
+      target.topicLocked = true;
+      target.topicOverrideReason = String(body.reason || "").trim() || "Manual admin topic correction";
+      target.summary = {
+        ...(target.summary || {}),
+        adminTopicCorrection: true,
+        adminTopicCorrectionReason: String(body.reason || ""),
+        previousTopicName,
+      };
+      await recordActivity({
+        actor: (session.user as any).id,
+        type: "classroom.session.topic_corrected",
+        label: `Corrected class topic to ${nextTopicName}`,
+        entityType: "Classroom",
+        entityId: params.id,
+        metadata: { sessionId, previousTopicName, topicName: nextTopicName, reason: body.reason || "" },
       });
     } else if (body.action === "delete_session") {
       if (existing.classroomType === "series" && (existing.generatedSessions?.length || 0) <= 1) {

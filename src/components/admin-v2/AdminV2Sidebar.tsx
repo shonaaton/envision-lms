@@ -45,10 +45,10 @@ const hubs: NavHub[] = [
     icon: BookOpen,
     items: [
       { href: "/admin-v2/academics", label: "Academics Hub" },
-      { href: "/admin/courses", label: "Courses & Curriculum" },
-      { href: "/admin/homework-templates", label: "Homework Templates" },
-      { href: "/classrooms", label: "Classrooms" },
-      { href: "/attendance", label: "Attendance" },
+      { href: "/admin-v2/courses", label: "Courses & Curriculum" },
+      { href: "/admin-v2/homework-templates", label: "Homework Templates" },
+      { href: "/admin-v2/classrooms", label: "Classrooms" },
+      { href: "/admin-v2/attendance", label: "Attendance" },
     ],
   },
   {
@@ -57,8 +57,8 @@ const hubs: NavHub[] = [
     icon: CalendarDays,
     items: [
       { href: "/admin-v2/calendar", label: "Unified Calendar" },
-      { href: "/availability", label: "Available Times" },
-      { href: "/tournaments", label: "Tournaments" },
+      { href: "/admin-v2/availability", label: "Available Times" },
+      { href: "/admin-v2/tournaments", label: "Tournaments" },
     ],
   },
   {
@@ -66,11 +66,11 @@ const hubs: NavHub[] = [
     label: "Financial Hub",
     icon: WalletCards,
     items: [
-      { href: "/fees", label: "Fees Dashboard" },
-      { href: "/fees/fee-plans", label: "Fee Plans" },
-      { href: "/fees/student-fees", label: "Student Billing & Credits" },
-      { href: "/fees/invoices", label: "Invoices" },
-      { href: "/fees/reports", label: "Reports" },
+      { href: "/admin-v2/fees", label: "Fees Dashboard" },
+      { href: "/admin-v2/fees/fee-plans", label: "Fee Plans" },
+      { href: "/admin-v2/fees/student-fees", label: "Student Billing & Credits" },
+      { href: "/admin-v2/fees/invoices", label: "Invoices" },
+      { href: "/admin-v2/fees/reports", label: "Reports" },
     ],
   },
   {
@@ -78,11 +78,11 @@ const hubs: NavHub[] = [
     label: "Chess Tools",
     icon: Trophy,
     items: [
-      { href: "/pgn", label: "PGN Library" },
-      { href: "/analysis", label: "Analysis Board" },
+      { href: "/admin-v2/pgn", label: "PGN Library" },
+      { href: "/admin-v2/analysis", label: "Analysis Board" },
       { href: "/admin-v2/engine", label: "Chess Engine" },
-      { href: "/ask-coach", label: "Ask Coach" },
-      { href: "/leaderboard", label: "Leaderboard" },
+      { href: "/admin-v2/ask-coach", label: "Ask Coach" },
+      { href: "/admin-v2/leaderboard", label: "Leaderboard" },
     ],
   },
   {
@@ -91,16 +91,16 @@ const hubs: NavHub[] = [
     icon: Settings,
     bottom: true,
     items: [
-      { href: "/admin/reports", label: "Reports Center" },
-      { href: "/admin/notifications", label: "Notifications History" },
-      { href: "/admin/feature-access", label: "Feature Access" },
-      { href: "/admin/settings", label: "Academy Setup" },
+      { href: "/admin-v2/reports", label: "Reports Center" },
+      { href: "/admin-v2/notifications", label: "Notifications History" },
+      { href: "/admin-v2/feature-access", label: "Feature Access" },
+      { href: "/admin-v2/settings", label: "Academy Setup" },
     ],
   },
 ];
 
 const quickActions = [
-  { href: "/fees/invoices", label: "Create Invoice", icon: Receipt },
+  { href: "/admin-v2/fees/invoices", label: "Create Invoice", icon: Receipt },
   { href: "/admin-v2/directory", label: "Add Student", icon: Users },
   { href: "/admin-v2/directory", label: "Create Batch", icon: ClipboardList },
   { href: "/admin-v2/comms", label: "Broadcast Announcement", icon: Bell },

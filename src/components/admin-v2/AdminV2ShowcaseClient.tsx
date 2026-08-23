@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { Eye, EyeOff, Image as ImageIcon, Plus, Save, Star, Trash2, UploadCloud } from "lucide-react";
 import { toast } from "sonner";
@@ -172,7 +173,7 @@ export default function AdminV2ShowcaseClient() {
         {items.map((item) => (
           <article key={item._id || `${item.studentName}-${item.displayOrder}`} className="group mb-4 break-inside-avoid overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <button onClick={() => edit(item)} className="relative block aspect-[4/3] w-full bg-slate-100 text-left">
-              {item.achievementImageUrl ? <img src={item.achievementImageUrl} alt={`${item.studentName} achievement`} className="h-full w-full object-cover" /> : <span className="grid h-full place-items-center text-slate-400"><ImageIcon size={26} /></span>}
+              {item.achievementImageUrl ? <Image src={item.achievementImageUrl} alt={`${item.studentName} achievement`} fill sizes="(min-width: 1280px) 33vw, (min-width: 640px) 50vw, 100vw" className="object-cover" /> : <span className="grid h-full place-items-center text-slate-400"><ImageIcon size={26} /></span>}
               <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-slate-950/10 to-transparent opacity-95" />
               <div className="absolute bottom-0 left-0 right-0 p-4 text-white">
                 <div className="font-black">{item.studentName}</div>
@@ -231,4 +232,3 @@ export default function AdminV2ShowcaseClient() {
     </div>
   );
 }
-

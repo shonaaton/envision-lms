@@ -6,6 +6,7 @@ import { dbConnect } from "@/lib/db";
 import { FeatureAccess, PermissionAudit, PermissionTemplate } from "@/models/FeatureAccess";
 import { User } from "@/models/User";
 import { Batch } from "@/models/Batch";
+import { Classroom } from "@/models/Classroom";
 import {
   FEATURE_DEFINITIONS,
   PORTAL_ROLES,
@@ -242,6 +243,17 @@ async function isPilotBatchMember(state: FeatureAccessState, user: SessionUser) 
   return Boolean(await Batch.exists({ _id: { $in: state.pilotBatches }, $or: [{ students: user.id }, { coach: user.id }] }));
 }
 
+async function isPilotCourseMember(state: FeatureAccessState, user: SessionUser) {
+  if (!user.id || !state.pilotCourses.length) return false;
+  return Boolean(
+    await Classroom.exists({
+      course: { $in: state.pilotCourses },
+      isActive: { $ne: false },
+      $or: [{ students: user.id }, { coach: user.id }, { instructor: user.id }],
+    })
+  );
+}
+
 export function evaluateFeatureState({
   feature,
   user,
@@ -279,7 +291,7 @@ async function evaluateFeatureStateWithPilotCohorts({
   if (feature.status !== "testing" || user.isSuperAdmin || feature.pilotRoles.includes(user.role as PortalRole) || feature.pilotUsers.includes(user.id || "")) {
     return evaluateFeatureState({ feature, user, permission, allowComingSoonView });
   }
-  if (!(await isPilotBatchMember(feature, user))) return false;
+  if (!(await isPilotBatchMember(feature, user)) && !(await isPilotCourseMember(feature, user))) return false;
   return hasPermission(feature.rolePermissions[user.role as PortalRole], permission);
 }
 

@@ -62,6 +62,19 @@ export default function LearningExercisePlayer({ exercise }: { exercise: Learnin
     try {
       const move = game.move({ from: source, to: target, promotion: "q" });
       if (!move) return false;
+      const moveKey = `${move.from}${move.to}${move.promotion || ""}`;
+      const acceptedMoves = exercise.acceptedSolutions.flatMap((solution) => solution.moves).map((value) => value.replace(/[+#?!]/g, ""));
+      const accepted = acceptedMoves.length === 0
+        ? Boolean(exercise.goalConfig?.targetSquare && move.to === exercise.goalConfig.targetSquare)
+        : acceptedMoves.includes(moveKey) || acceptedMoves.includes(move.san.replace(/[+#?!]/g, ""));
+      const checkmateGoal = exercise.goalType === "CHECKMATE" ? game.isCheckmate() : true;
+      if (!accepted || !checkmateGoal) {
+        game.undo();
+        setIncorrectMoves((value) => value + 1);
+        setSelected(null);
+        setFeedback({ type: "error", text: exercise.failureMessage });
+        return false;
+      }
       setMoveCount((value) => value + 1);
       setFen(game.fen());
       setSelected(null);

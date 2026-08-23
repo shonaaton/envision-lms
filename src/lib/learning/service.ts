@@ -95,6 +95,7 @@ export type LearningExerciseDetail = {
   sideToMove?: "white" | "black";
   goalType: string;
   goalConfig: Record<string, any>;
+  acceptedSolutions: Array<{ moves: string[] }>;
   hints: Array<{ text?: string; showAfterErrors?: number }>;
   explanation: string;
   successMessage: string;
@@ -123,7 +124,7 @@ async function loadLearningSnapshot(userId?: string) {
     LearningSection.find({ status: "published" }).sort({ order: 1 }).lean(),
     LearningLesson.find({ status: "published" }).sort({ order: 1 }).lean(),
     LearningExercise.find({ status: "published" })
-      .select("_id lessonId stableKey title description order difficulty interactionMode rulesMode startingPosition orientation sideToMove goalType goalConfig hints explanation successMessage failureMessage")
+      .select("_id lessonId stableKey title description order difficulty interactionMode rulesMode startingPosition orientation sideToMove goalType goalConfig acceptedSolutions hints explanation successMessage failureMessage")
       .sort({ order: 1 })
       .lean(),
     userId
@@ -170,6 +171,7 @@ export async function getLearningExerciseDetail(
     sideToMove: exercise.sideToMove === "black" ? "black" : "white",
     goalType: String(exercise.goalType || "PRACTICE"),
     goalConfig: (exercise.goalConfig || {}) as Record<string, any>,
+    acceptedSolutions: Array.isArray(exercise.acceptedSolutions) ? exercise.acceptedSolutions.map((solution: any) => ({ moves: Array.isArray(solution.moves) ? solution.moves.map(String) : [] })) : [],
     hints: Array.isArray(exercise.hints) ? exercise.hints : [],
     explanation: String(exercise.explanation || "Review the lesson idea and try the move again."),
     successMessage: String(exercise.successMessage || "Nice work. Keep going!"),

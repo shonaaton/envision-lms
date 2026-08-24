@@ -51,6 +51,12 @@ type StatementSummary = {
   concessionAmountInr?: number;
 };
 
+type ImportParseOptions = {
+  planType?: "monthly" | "credits";
+  creditPlanAmountInr?: number;
+  creditPlanCredits?: number;
+};
+
 const HEADER_ALIASES: Record<string, string> = {
   rowtype: "row_type",
   row_type: "row_type",
@@ -608,11 +614,24 @@ function parseImportRows(fileText: string) {
   return rows;
 }
 
-function parsePaymentHistoryWorkbook(buffer: Buffer) {
+function inferCreditCount(amountInr: number, options: ImportParseOptions, lineNumber: number) {
+  if (!options.creditPlanAmountInr || !options.creditPlanCredits) {
+    throw new Error(`Line ${lineNumber}: credits is required for a credit payment unless the selected credit plan has an amount and credit count.`);
+  }
+  const credits = (amountInr / options.creditPlanAmountInr) * options.creditPlanCredits;
+  const rounded = Math.round(credits);
+  if (!Number.isFinite(credits) || Math.abs(credits - rounded) > 0.001 || rounded <= 0) {
+    throw new Error(`Line ${lineNumber}: amount_inr does not match the selected credit plan pricing, so credits could not be inferred.`);
+  }
+  return rounded;
+}
+
+function parsePaymentHistoryWorkbook(buffer: Buffer, options: ImportParseOptions = {}) {
   const sheetRows = parseSimpleXlsxRows(buffer);
   if (sheetRows.length < 2) throw new Error("The Excel file must include a header row and at least one payment row.");
   const headers = sheetRows[0].map(normalizeHeader);
   const rows: ImportRow[] = [];
+  const rowType: SupportedRowType = options.planType === "credits" ? "credit_payment" : "monthly_payment";
 
   for (let index = 1; index < sheetRows.length; index += 1) {
     const values = sheetRows[index];
@@ -632,14 +651,16 @@ function parsePaymentHistoryWorkbook(buffer: Buffer) {
     if (!hasAnyDate || (!hasReceipt && !hasInstallment && !hasStudentName)) continue;
     rows.push({
       lineNumber: index + 1,
-      rowType: "monthly_payment",
+      rowType,
       installmentNumber: asNumber(rawRow.installment_number),
       feeType: rawRow.fee_type || "Tuition Fees",
       receiptNumber: rawRow.reference_number || undefined,
       amountInr,
+      credits: rowType === "credit_payment" ? inferCreditCount(amountInr, options, index + 1) : undefined,
       paidDate: paidDate || collectedDate,
       dueDate: paidDate || collectedDate,
       status: "paid",
+      referenceNumber: rawRow.reference_number || undefined,
       note: rawRow.reference_number ? `Imported from payment history ${rawRow.reference_number}` : "Imported from payment history workbook",
     });
   }
@@ -745,13 +766,13 @@ async function createImportedInvoice(params: {
   return invoice;
 }
 
-function parseImportRowsFromBuffer(fileBuffer: Buffer, fileName: string) {
+function parseImportRowsFromBuffer(fileBuffer: Buffer, fileName: string, options: ImportParseOptions = {}) {
   const lowerName = fileName.toLowerCase();
   if (lowerName.endsWith(".csv")) {
     return parseImportRows(fileBuffer.toString("utf8"));
   }
   if (lowerName.endsWith(".xlsx")) {
-    return parsePaymentHistoryWorkbook(fileBuffer);
+    return parsePaymentHistoryWorkbook(fileBuffer, options);
   }
   if (lowerName.endsWith(".pdf")) {
     return parsePdfStatementRows(fileBuffer);
@@ -769,7 +790,6 @@ export async function importLegacyStudentData(input: {
   fileBuffer: Buffer;
   fileName: string;
 }) {
-  const rows = parseImportRowsFromBuffer(input.fileBuffer, input.fileName);
   const student: any = await User.findOne({ _id: input.studentId, role: "student" }).lean();
   if (!student) throw new Error("Selected student could not be found.");
 
@@ -778,8 +798,13 @@ export async function importLegacyStudentData(input: {
     input.planId && Types.ObjectId.isValid(input.planId) ? FeePlan.findById(input.planId) : Promise.resolve(null),
   ]);
 
-  const feeRows = rows.filter((row) => row.rowType !== "attendance");
   const targetPlan: any = selectedPlan || (existingAssignment?.plan ? await FeePlan.findById(existingAssignment.plan) : null);
+  const rows = parseImportRowsFromBuffer(input.fileBuffer, input.fileName, {
+    planType: targetPlan?.type || existingAssignment?.type,
+    creditPlanAmountInr: targetPlan?.amount ? Number(targetPlan.amount) / 100 : undefined,
+    creditPlanCredits: targetPlan?.credits ? Number(targetPlan.credits) : undefined,
+  });
+  const feeRows = rows.filter((row) => row.rowType !== "attendance");
   const requiresStructuredPlan = feeRows.some((row) => row.rowType === "credit_summary" || row.rowType === "credit_payment");
   if (requiresStructuredPlan && !targetPlan && !existingAssignment) {
     throw new Error("Choose a fee plan before importing fee history for this student.");

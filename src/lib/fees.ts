@@ -406,12 +406,31 @@ export async function markInvoicePaid(
   const assignment: any = await FeeAssignment.findOne({ student: invoice.student, type: "credits" });
   if (!assignment) return invoice;
 
+  const existingLedger: any = await CreditLedger.findOne({
+    student: invoice.student,
+    type: "purchase",
+    $or: [
+      { invoice: invoice._id },
+      { sourceType: "Invoice", sourceId: invoice._id },
+    ],
+  });
+  if (existingLedger) {
+    if (!existingLedger.sourceType || !existingLedger.sourceId) {
+      await CreditLedger.findByIdAndUpdate(existingLedger._id, {
+        sourceType: "Invoice",
+        sourceId: invoice._id,
+        invoice: invoice._id,
+      });
+    }
+    return invoice;
+  }
+
   const balanceAfter = (assignment.creditBalance || 0) + invoice.credits;
   await FeeAssignment.findByIdAndUpdate(assignment._id, {
     $inc: { creditBalance: invoice.credits, totalCreditsPurchased: invoice.credits },
   });
   const ledger: any = await CreditLedger.findOneAndUpdate(
-    { student: invoice.student, type: "purchase", invoice: invoice._id },
+    { student: invoice.student, type: "purchase", sourceType: "Invoice", sourceId: invoice._id },
     {
       student: invoice.student,
       assignment: assignment._id,
@@ -419,6 +438,8 @@ export async function markInvoicePaid(
       type: "purchase",
       credits: invoice.credits,
       balanceAfter,
+      sourceType: "Invoice",
+      sourceId: invoice._id,
       note: `Credit purchase via ${invoice.invoiceNumber}`,
     },
     { upsert: true, new: true }

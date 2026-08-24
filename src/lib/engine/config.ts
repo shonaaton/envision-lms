@@ -22,6 +22,7 @@ export const ENGINE_LEVELS: Record<number, { skillLevel: number; moveTime: numbe
   6: { skillLevel: 16, moveTime: 600, depth: 10 },
   7: { skillLevel: 19, moveTime: 900, depth: 12 },
   8: { skillLevel: 20, moveTime: 1_500, depth: 14 },
+  9: { skillLevel: 20, moveTime: 3_500, depth: 16 },
 };
 
 export const ENGINE_LEASE_TTL_MS = 20_000;

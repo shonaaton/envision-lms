@@ -16,7 +16,7 @@ export const engineAnalyseRequestSchema = z.object({
 
 export const engineMoveRequestSchema = z.object({
   fen: z.string().min(1),
-  level: z.number().int().min(1).max(8).default(5),
+  level: z.number().int().min(1).max(9).default(5),
   clock: z.object({
     white: z.number().int().min(0),
     black: z.number().int().min(0),

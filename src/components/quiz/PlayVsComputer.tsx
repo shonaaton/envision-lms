@@ -59,6 +59,7 @@ type BotPreset = {
   subtitle: string;
   elo: number;
   depth: number;
+  moveTimeMs: number;
   blunderChance: number;
 };
 
@@ -66,24 +67,23 @@ type LevelPreset = BotPreset & {
   level: number;
 };
 
+const MAX_ENGINE_LEVEL = 9;
+
 const levelPresets: LevelPreset[] = [
-  { level: 1, id: "sprout", name: "Sprout", subtitle: "First-game friendly", elo: 50, depth: 1, blunderChance: 0.72 },
-  { level: 2, id: "poppy", name: "Poppy", subtitle: "Gentle beginner", elo: 120, depth: 2, blunderChance: 0.55 },
-  { level: 3, id: "rookie", name: "Rookie", subtitle: "Learning tactics", elo: 300, depth: 3, blunderChance: 0.36 },
-  { level: 4, id: "scout", name: "Scout", subtitle: "Developing player", elo: 600, depth: 4, blunderChance: 0.22 },
-  { level: 5, id: "maple", name: "Maple", subtitle: "Club practice", elo: 900, depth: 5, blunderChance: 0.12 },
-  { level: 6, id: "ember", name: "Ember", subtitle: "Tactical pressure", elo: 1250, depth: 6, blunderChance: 0.06 },
-  { level: 7, id: "noir", name: "Noir", subtitle: "Tournament sharp", elo: 1600, depth: 7, blunderChance: 0.025 },
-  { level: 8, id: "atlas", name: "Atlas", subtitle: "Deep calculation", elo: 1900, depth: 8, blunderChance: 0 },
+  { level: 1, id: "sprout", name: "Sprout", subtitle: "First-game friendly", elo: 50, depth: 1, moveTimeMs: 120, blunderChance: 0.72 },
+  { level: 2, id: "poppy", name: "Poppy", subtitle: "Gentle beginner", elo: 120, depth: 2, moveTimeMs: 180, blunderChance: 0.55 },
+  { level: 3, id: "rookie", name: "Rookie", subtitle: "Learning tactics", elo: 300, depth: 3, moveTimeMs: 260, blunderChance: 0.36 },
+  { level: 4, id: "scout", name: "Scout", subtitle: "Developing player", elo: 600, depth: 4, moveTimeMs: 400, blunderChance: 0.22 },
+  { level: 5, id: "maple", name: "Maple", subtitle: "Club practice", elo: 900, depth: 6, moveTimeMs: 650, blunderChance: 0.12 },
+  { level: 6, id: "ember", name: "Ember", subtitle: "Tactical pressure", elo: 1250, depth: 8, moveTimeMs: 950, blunderChance: 0.06 },
+  { level: 7, id: "noir", name: "Noir", subtitle: "Tournament sharp", elo: 1600, depth: 10, moveTimeMs: 1400, blunderChance: 0.025 },
+  { level: 8, id: "atlas", name: "Atlas", subtitle: "Deep calculation", elo: 1900, depth: 12, moveTimeMs: 2200, blunderChance: 0 },
+  { level: 9, id: "maestro", name: "Maestro", subtitle: "Serious engine test", elo: 2300, depth: 16, moveTimeMs: 3500, blunderChance: 0 },
 ];
 const quickTimeControls = ["1+0", "2+1", "3+0", "3+2", "5+0", "5+3", "10+0", "10+5", "15+10", "30+0", "30+20"];
 
-function lichessSkillForLevel(level: number) {
-  return Math.round((clamp(level, 1, 8) - 1) * (20 / 7));
-}
-
-function lichessMoveTimeMsForLevel(level: number) {
-  return Math.round((0.4 / (9 - clamp(level, 1, 8))) * 1000);
+function stockfishSkillForLevel(level: number) {
+  return Math.round((clamp(level, 1, MAX_ENGINE_LEVEL) - 1) * (20 / (MAX_ENGINE_LEVEL - 1)));
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -104,6 +104,39 @@ function paceLabelForMoveTime(ms: number) {
   if (ms < 1800) return "Balanced";
   if (ms < 3200) return "Thoughtful";
   return "Deep think";
+}
+
+function engineTimingForClock(input: {
+  baseMoveTimeMs: number;
+  baseDepth: number;
+  level: number;
+  timeControl: string;
+  turn: "w" | "b";
+  whiteClockMs: number | null;
+  blackClockMs: number | null;
+}) {
+  if (input.timeControl === "No Clock") {
+    return { moveTimeMs: input.baseMoveTimeMs, depth: input.baseDepth };
+  }
+
+  const remainingMs = input.turn === "w" ? input.whiteClockMs : input.blackClockMs;
+  const { incrementSeconds } = parseTimeControlValue(input.timeControl);
+  const incrementMs = incrementSeconds * 1000;
+  const safeRemainingMs = Math.max(1_000, remainingMs ?? 60_000);
+  const clockBudgetMs = Math.floor((safeRemainingMs / 32) + (incrementMs * 0.65));
+  const minThinkMs = input.level >= 8 ? 180 : input.level >= 5 ? 120 : 80;
+  const maxThinkMs = safeRemainingMs <= 20_000 ? 450 : safeRemainingMs <= 60_000 ? 800 : safeRemainingMs <= 180_000 ? 1_500 : 3_500;
+  const moveTimeMs = clamp(Math.min(input.baseMoveTimeMs, clockBudgetMs), minThinkMs, maxThinkMs);
+  const depthPenalty = moveTimeMs < input.baseMoveTimeMs * 0.45 ? 3 : moveTimeMs < input.baseMoveTimeMs * 0.7 ? 2 : moveTimeMs < input.baseMoveTimeMs * 0.9 ? 1 : 0;
+  return { moveTimeMs, depth: clamp(input.baseDepth - depthPenalty, 1, input.baseDepth) };
+}
+
+function parseTimeControlValue(value: string) {
+  const match = value.match(/^(\d+)(?:\+(\d+))?$/);
+  return {
+    minutes: match ? Number(match[1]) : 0,
+    incrementSeconds: match ? Number(match[2] || 0) : 0,
+  };
 }
 
 const seededHistory: GameRecord[] = [
@@ -169,10 +202,10 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
 
   const selectedBot = useMemo(() => levelPresets.find((preset) => preset.level === level) || levelPresets[0], [level]);
   const targetElo = selectedBot.elo;
-  const currentDepth = clamp(selectedBot.depth || depth, 1, 8);
-  const engineSkillLevel = lichessSkillForLevel(level);
+  const currentDepth = clamp(selectedBot.depth || depth, 1, 18);
+  const engineSkillLevel = stockfishSkillForLevel(level);
   const effectiveBlunderChance = selectedBot.blunderChance;
-  const engineMoveTimeMs = lichessMoveTimeMsForLevel(level);
+  const engineMoveTimeMs = selectedBot.moveTimeMs;
   const strengthBandLabel = strengthBandForElo(targetElo);
   const thinkPaceLabel = paceLabelForMoveTime(engineMoveTimeMs);
   const difficultyLabel = `${strengthBandLabel}`;
@@ -402,11 +435,7 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
   }
 
   function parseTimeControl(value: string) {
-    const match = value.match(/^(\d+)(?:\+(\d+))?$/);
-    return {
-      minutes: match ? Number(match[1]) : 0,
-      incrementSeconds: match ? Number(match[2] || 0) : 0,
-    };
+    return parseTimeControlValue(value);
   }
 
   function formatDuration(totalSeconds: number) {
@@ -462,6 +491,23 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
       checkGameOver();
     };
 
+    const engineTiming = engineTimingForClock({
+      baseMoveTimeMs: engineMoveTimeMs,
+      baseDepth: currentDepth,
+      level,
+      timeControl,
+      turn: gameRef.current.turn(),
+      whiteClockMs,
+      blackClockMs,
+    });
+    const clock = usesClock
+      ? {
+          white: Math.max(0, Math.round(displayedWhiteClock ?? whiteClockMs ?? 0)),
+          black: Math.max(0, Math.round(displayedBlackClock ?? blackClockMs ?? 0)),
+          increment: parseTimeControl(timeControl).incrementSeconds * 1000,
+        }
+      : undefined;
+
     // Prefer the shared coordinator so browser games and Fishnet workers use the same engine path.
     try {
       const response = await fetch("/v1/engine/move", {
@@ -470,6 +516,7 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
         body: JSON.stringify({
           fen: gameRef.current.fen(),
           level,
+          clock,
           source: "PLAY_VS_COMPUTER",
         }),
       });
@@ -516,11 +563,11 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
     engineFallbackTimerRef.current = window.setTimeout(() => {
       engineFallbackTimerRef.current = null;
       playFallbackMove();
-    }, engineMoveTimeMs + 1600);
+    }, engineTiming.moveTimeMs + 1600);
     worker.postMessage("setoption name Threads value 1");
     worker.postMessage(`setoption name Skill Level value ${engineSkillLevel}`);
     worker.postMessage(`position fen ${gameRef.current.fen()}`);
-    worker.postMessage(`go movetime ${engineMoveTimeMs} depth ${currentDepth}`);
+    worker.postMessage(`go movetime ${engineTiming.moveTimeMs} depth ${engineTiming.depth}`);
   }
 
   async function startGame() {
@@ -643,33 +690,33 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
   }
 
   return (
-    <div className="flex min-h-[calc(100dvh-72px)] flex-col overflow-y-auto bg-[#1f1e1b] p-3 text-slate-100 sm:p-4 md:h-[calc(100vh-92px)] md:min-h-[620px] md:overflow-hidden">
+    <div className="flex min-h-[calc(100dvh-72px)] flex-col overflow-y-auto bg-[linear-gradient(180deg,#f9fafb_0%,#f6f3fa_48%,#f8fafc_100%)] p-3 text-slate-950 sm:p-4 md:h-[calc(100vh-92px)] md:min-h-[620px] md:overflow-hidden">
       <div className="mx-auto mb-3 flex w-full max-w-[1280px] flex-none flex-wrap items-end justify-between gap-3">
         <div>
-          <div className="inline-flex items-center gap-2 rounded bg-[#312f2a] px-3 py-1 text-xs font-black uppercase tracking-[0.18em] text-[#8fca32]">
+          <div className="inline-flex items-center gap-2 rounded bg-brand-50 px-3 py-1 text-xs font-black uppercase tracking-[0.18em] text-brand ring-1 ring-brand/10">
             <Bot size={14} />
             Play vs Computer
           </div>
-          <h1 className="mt-1.5 text-xl font-black text-white sm:text-2xl">Play with Computer</h1>
-          <p className="mt-0.5 max-w-xl text-xs leading-5 text-[#b8b5ae] sm:text-sm">{selectedBot.name} · Level {level} · {timeControl === "No Clock" ? "Unlimited" : timeControl}</p>
+          <h1 className="mt-1.5 text-xl font-black text-slate-950 sm:text-2xl">Play with Computer</h1>
+          <p className="mt-0.5 max-w-xl text-xs leading-5 text-slate-600 sm:text-sm">{selectedBot.name} · Level {level} · {timeControl === "No Clock" ? "Unlimited" : timeControl}</p>
         </div>
 
         <div className="flex flex-wrap gap-1.5 sm:gap-2">
           {status === "playing" ? (
             <>
-              <button className="inline-flex h-11 items-center justify-center gap-2 rounded bg-[#3a3732] px-4 text-sm font-bold text-red-200 transition hover:bg-[#4a332f]" onClick={() => setShowResignConfirm(true)}>
+              <button className="inline-flex h-11 items-center justify-center gap-2 rounded border border-rose-200 bg-white px-4 text-sm font-bold text-rose-700 shadow-sm transition hover:bg-rose-50" onClick={() => setShowResignConfirm(true)}>
                 <Flag size={16} /> Resign
               </button>
-              <button className="inline-flex h-11 items-center justify-center gap-2 rounded bg-[#3a3732] px-4 text-sm font-bold text-slate-100 transition hover:bg-[#48453f]" onClick={restartGame}>
+              <button className="inline-flex h-11 items-center justify-center gap-2 rounded border border-brand/20 bg-white px-4 text-sm font-bold text-brand shadow-sm transition hover:bg-brand-50" onClick={restartGame}>
                 <RotateCcw size={16} /> Restart
               </button>
             </>
           ) : (
-            <button className="inline-flex h-11 items-center justify-center gap-2 rounded bg-[#5da31d] px-4 text-sm font-bold text-white shadow-lg shadow-black/20 transition hover:bg-[#6bbd23]" onClick={() => setShowSetup(true)}>
+            <button className="inline-flex h-11 items-center justify-center gap-2 rounded bg-brand px-4 text-sm font-bold text-white shadow-lg shadow-brand-900/20 transition hover:bg-brand-600" onClick={() => setShowSetup(true)}>
               <Play size={16} /> Start Game
             </button>
           )}
-          <button className="inline-flex h-11 items-center justify-center gap-2 rounded bg-[#3a3732] px-4 text-sm font-bold text-slate-100 transition hover:bg-[#48453f]" onClick={() => setShowHistory(true)}>
+          <button className="inline-flex h-11 items-center justify-center gap-2 rounded border border-brand/20 bg-white px-4 text-sm font-bold text-brand shadow-sm transition hover:bg-brand-50" onClick={() => setShowHistory(true)}>
             <History size={16} /> View History
           </button>
         </div>
@@ -679,7 +726,7 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
         <section className="order-1 flex min-h-[420px] min-w-0 flex-col overflow-hidden md:min-h-[560px] lg:min-h-0">
           <div ref={boardWrapRef} className="flex min-h-0 flex-1 items-center justify-center overflow-hidden">
             <div className="grid w-full grid-cols-1 items-center justify-center gap-3">
-              <div className="relative mx-auto overflow-hidden rounded shadow-[0_20px_60px_rgba(0,0,0,0.32)]">
+              <div className="relative mx-auto overflow-hidden rounded border border-brand/15 bg-white shadow-[0_20px_60px_rgba(35,25,55,0.18)]">
                 <Chessboard
                   position={displayedPosition}
                   onPieceDrop={onDrop}
@@ -692,15 +739,15 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
                   boardOrientation={playerColor}
                   boardWidth={boardWidth}
                   customSquareStyles={moveHintStyles as any}
-                  customDarkSquareStyle={{ backgroundColor: "#b58863" }}
-                  customLightSquareStyle={{ backgroundColor: "#f0d9b5" }}
+                  customDarkSquareStyle={{ backgroundColor: "#9b65ad" }}
+                  customLightSquareStyle={{ backgroundColor: "#f5edf8" }}
                 />
                 {status === "idle" && (
-                  <div className="pointer-events-none absolute inset-x-3 bottom-3 rounded bg-[#2f2d29]/92 px-4 py-3 text-center shadow-lg backdrop-blur">
-                    <div className="inline-flex items-center gap-2 rounded bg-[#5da31d] px-3 py-1 text-[11px] font-black uppercase tracking-[0.16em] text-white">
+                  <div className="pointer-events-none absolute inset-x-3 bottom-3 rounded bg-white/95 px-4 py-3 text-center shadow-lg shadow-brand-900/10 backdrop-blur">
+                    <div className="inline-flex items-center gap-2 rounded bg-brand px-3 py-1 text-[11px] font-black uppercase tracking-[0.16em] text-white">
                       <Bot size={13} /> Ready
                     </div>
-                    <div className="mt-2 text-sm font-semibold text-slate-100">Open setup and start the game.</div>
+                    <div className="mt-2 text-sm font-semibold text-slate-800">Open setup and start the game.</div>
                   </div>
                 )}
               </div>
@@ -708,31 +755,31 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
           </div>
         </section>
 
-        <aside className="order-2 flex min-h-[360px] min-w-0 flex-col overflow-hidden rounded bg-[#26231f] shadow-[0_12px_40px_rgba(0,0,0,0.22)] md:min-h-[420px] lg:min-h-0">
-          <div className="border-b border-[#37332e]">
+        <aside className="order-2 flex min-h-[360px] min-w-0 flex-col overflow-hidden rounded border border-brand/10 bg-white shadow-[0_12px_40px_rgba(35,25,55,0.10)] md:min-h-[420px] lg:min-h-0">
+          <div className="border-b border-brand/10">
             <div className="flex items-center gap-3 px-4 py-4">
-              <span className="h-3 w-3 rounded-full bg-[#5da31d]" />
-              <div className="min-w-0 flex-1 text-xl text-[#d5d2cc]">{selectedBot.name}</div>
-              <div className="text-sm text-[#a9a49b]">{targetElo}?</div>
+              <span className="h-3 w-3 rounded-full bg-accent ring-2 ring-brand/15" />
+              <div className="min-w-0 flex-1 text-xl font-semibold text-slate-950">{selectedBot.name}</div>
+              <div className="text-sm text-slate-500">{targetElo}?</div>
             </div>
-            <div className="flex items-center justify-between bg-[#34302b] px-4 py-3 text-[#a9a49b]">
-              <button type="button" className="rounded p-1 hover:bg-[#454039]" onClick={() => setShowSetup(true)} aria-label="Game setup"><Bot size={18} /></button>
-              <button type="button" className="rounded p-1 hover:bg-[#454039]" onClick={() => setViewPly(0)} aria-label="First move"><ChevronsLeft size={18} /></button>
-              <button type="button" className="rounded p-1 hover:bg-[#454039]" onClick={() => setViewPly(Math.max(0, (viewPly ?? verboseHistory.length) - 1))} aria-label="Previous move"><ChevronLeft size={18} /></button>
-              <button type="button" className="rounded p-1 hover:bg-[#454039]" onClick={() => setViewPly((viewPly ?? verboseHistory.length) >= verboseHistory.length ? null : (viewPly ?? verboseHistory.length) + 1)} aria-label="Next move"><ChevronRight size={18} /></button>
-              <button type="button" className="rounded p-1 hover:bg-[#454039]" onClick={() => setViewPly(null)} aria-label="Latest move"><ChevronsRight size={18} /></button>
-              <button type="button" className="rounded p-1 hover:bg-[#454039]" onClick={() => setShowHistory(true)} aria-label="History"><History size={18} /></button>
+            <div className="flex items-center justify-between bg-brand-50 px-4 py-3 text-brand">
+              <button type="button" className="rounded p-1 hover:bg-white hover:shadow-sm" onClick={() => setShowSetup(true)} aria-label="Game setup"><Bot size={18} /></button>
+              <button type="button" className="rounded p-1 hover:bg-white hover:shadow-sm" onClick={() => setViewPly(0)} aria-label="First move"><ChevronsLeft size={18} /></button>
+              <button type="button" className="rounded p-1 hover:bg-white hover:shadow-sm" onClick={() => setViewPly(Math.max(0, (viewPly ?? verboseHistory.length) - 1))} aria-label="Previous move"><ChevronLeft size={18} /></button>
+              <button type="button" className="rounded p-1 hover:bg-white hover:shadow-sm" onClick={() => setViewPly((viewPly ?? verboseHistory.length) >= verboseHistory.length ? null : (viewPly ?? verboseHistory.length) + 1)} aria-label="Next move"><ChevronRight size={18} /></button>
+              <button type="button" className="rounded p-1 hover:bg-white hover:shadow-sm" onClick={() => setViewPly(null)} aria-label="Latest move"><ChevronsRight size={18} /></button>
+              <button type="button" className="rounded p-1 hover:bg-white hover:shadow-sm" onClick={() => setShowHistory(true)} aria-label="History"><History size={18} /></button>
             </div>
           </div>
 
           <div className="flex flex-none flex-col gap-3 px-4 py-5">
             <div className="flex items-start gap-3">
-              <div className="grid h-12 w-12 place-items-center rounded-full bg-[#8a8882] text-[#23211e]">
+              <div className="grid h-12 w-12 place-items-center rounded-full bg-brand-50 text-brand ring-1 ring-brand/10">
                 <Bot size={28} />
               </div>
               <div className="min-w-0">
-                <div className="text-lg text-[#d8d5cf]">{playerColor === "white" ? "You play the white pieces" : "You play the black pieces"}</div>
-                <div className="font-bold text-[#e6e2dc]">{status === "playing" ? (thinking ? `${selectedBot.name} is thinking` : isPlayerTurn ? "It's your turn!" : `${selectedBot.name} to move`) : status === "ended" ? result : "Ready to start"}</div>
+                <div className="text-lg text-slate-700">{playerColor === "white" ? "You play the white pieces" : "You play the black pieces"}</div>
+                <div className="font-bold text-slate-950">{status === "playing" ? (thinking ? `${selectedBot.name} is thinking` : isPlayerTurn ? "It's your turn!" : `${selectedBot.name} to move`) : status === "ended" ? result : "Ready to start"}</div>
               </div>
             </div>
 
@@ -754,11 +801,11 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
             </div>
 
             {status === "playing" ? (
-              <button className="inline-flex h-11 items-center justify-center gap-2 rounded bg-[#423d36] px-4 text-sm font-bold text-slate-100 transition hover:bg-[#514b43]" onClick={() => setShowResignConfirm(true)}>
+              <button className="inline-flex h-11 items-center justify-center gap-2 rounded border border-rose-200 bg-white px-4 text-sm font-bold text-rose-700 transition hover:bg-rose-50" onClick={() => setShowResignConfirm(true)}>
                 <Flag size={16} /> Resign
               </button>
             ) : (
-              <button className="inline-flex h-12 items-center justify-center gap-2 rounded bg-[#5da31d] px-4 text-base font-bold text-white transition hover:bg-[#6bbd23]" onClick={() => setShowSetup(true)}>
+              <button className="inline-flex h-12 items-center justify-center gap-2 rounded bg-brand px-4 text-base font-bold text-white transition hover:bg-brand-600" onClick={() => setShowSetup(true)}>
                 <Play size={18} /> Play against computer
               </button>
             )}
@@ -903,35 +950,35 @@ function SetupModal({
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-2 backdrop-blur-sm sm:p-4">
-      <div className="max-h-[calc(100dvh-16px)] w-full max-w-[800px] overflow-y-auto rounded bg-[#2f2d29] text-[#cfcac1] shadow-2xl">
-        <div className="relative border-b border-[#444039] px-4 py-5 text-center sm:px-6">
-          <h2 className="text-3xl font-light text-[#d5d1ca] sm:text-4xl">Game setup</h2>
-          <button className="absolute right-3 top-3 rounded p-2 text-[#9d988f] hover:bg-[#3f3b35] hover:text-white" onClick={onClose} aria-label="Close">
+      <div className="max-h-[calc(100dvh-16px)] w-full max-w-[800px] overflow-y-auto rounded border border-brand/10 bg-white text-slate-700 shadow-2xl shadow-brand-900/20">
+        <div className="relative border-b border-brand/10 bg-brand-50 px-4 py-5 text-center sm:px-6">
+          <h2 className="text-3xl font-light text-brand sm:text-4xl">Game setup</h2>
+          <button className="absolute right-3 top-3 rounded p-2 text-brand/70 hover:bg-white hover:text-brand" onClick={onClose} aria-label="Close">
             <X size={20} />
           </button>
         </div>
 
         <div className="space-y-7 px-2 py-5 sm:px-6">
-          <button type="button" className="flex h-12 w-full items-center gap-3 rounded border border-[#49453e] bg-[#3a3732] px-4 text-left text-[#d5d1ca]">
-            <Trophy size={22} className="text-[#bdb7ad]" />
+          <button type="button" className="flex h-12 w-full items-center gap-3 rounded border border-brand/15 bg-white px-4 text-left text-slate-950 shadow-sm">
+            <Trophy size={22} className="text-brand" />
             <span className="text-xl">Standard</span>
-            <span className="min-w-0 flex-1 truncate text-sm text-[#aaa49a]">Standard rules of chess (FIDE)</span>
-            <ChevronDown size={16} className="text-[#5ea6e8]" />
+            <span className="min-w-0 flex-1 truncate text-sm text-slate-500">Standard rules of chess (FIDE)</span>
+            <ChevronDown size={16} className="text-brand" />
           </button>
 
-          <div className="grid grid-cols-3 border-b border-[#444039] text-center text-lg">
-            <button type="button" className={["h-12 border-b-2", timeControl === "No Clock" ? "border-transparent text-[#aaa49a]" : "border-[#5da31d] text-[#79b82a]"].join(" ")} onClick={() => onTimeControlChange("5+3")}>Real time</button>
-            <button type="button" className="h-12 border-b-2 border-transparent text-[#aaa49a]">Correspondence</button>
-            <button type="button" className={["h-12 border-b-2", timeControl === "No Clock" ? "border-[#5da31d] text-[#79b82a]" : "border-transparent text-[#aaa49a]"].join(" ")} onClick={() => onTimeControlChange("No Clock")}>Unlimited</button>
+          <div className="grid grid-cols-3 border-b border-brand/10 text-center text-lg">
+            <button type="button" className={["h-12 border-b-2", timeControl === "No Clock" ? "border-transparent text-slate-500" : "border-brand text-brand"].join(" ")} onClick={() => onTimeControlChange("5+3")}>Real time</button>
+            <button type="button" className="h-12 border-b-2 border-transparent text-slate-400">Correspondence</button>
+            <button type="button" className={["h-12 border-b-2", timeControl === "No Clock" ? "border-brand text-brand" : "border-transparent text-slate-500"].join(" ")} onClick={() => onTimeControlChange("No Clock")}>Unlimited</button>
           </div>
 
           {timeControl === "No Clock" ? (
-            <div className="py-2 text-center text-xl text-[#c8c3ba]">Take all the time you need</div>
+            <div className="py-2 text-center text-xl text-slate-700">Take all the time you need</div>
           ) : (
             <div className="space-y-3">
-              <div className="flex items-center justify-between gap-4 text-lg text-[#c8c3ba]">
+              <div className="flex items-center justify-between gap-4 text-lg text-slate-700">
                 <span>Time control</span>
-                <span className="rounded bg-[#c3c0ba] px-2 py-1 text-base font-bold text-[#34312d]">{timeControl}</span>
+                <span className="rounded bg-accent px-2 py-1 text-base font-bold text-brand-900">{timeControl}</span>
               </div>
               <div className="flex flex-wrap gap-2">
                 {quickTimeControls.map((control) => (
@@ -940,7 +987,7 @@ function SetupModal({
                     type="button"
                     className={[
                       "h-9 rounded px-3 text-base font-bold transition",
-                      timeControl === control ? "bg-[#5da31d] text-white" : "bg-[#3d3933] text-[#aaa49a] hover:bg-[#49453e]",
+                      timeControl === control ? "bg-brand text-white" : "border border-brand/10 bg-brand-50 text-brand hover:bg-brand-100",
                     ].join(" ")}
                     onClick={() => onTimeControlChange(control)}
                   >
@@ -952,15 +999,15 @@ function SetupModal({
           )}
 
           <div>
-            <div className="mb-3 text-center text-lg font-bold text-[#c8c3ba]">Strength</div>
-            <div className="grid grid-cols-8 overflow-hidden rounded bg-[#36332e] shadow-inner">
+            <div className="mb-3 text-center text-lg font-bold text-slate-800">Strength</div>
+            <div className="grid overflow-hidden rounded border border-brand/10 bg-brand-50 shadow-inner" style={{ gridTemplateColumns: `repeat(${levelPresets.length}, minmax(0, 1fr))` }}>
               {levelPresets.map((preset) => (
                 <button
                   key={preset.level}
                   type="button"
                   className={[
-                    "min-h-14 border-r border-[#413d36] px-1 text-center text-lg transition last:border-r-0",
-                    level === preset.level ? "bg-[#5da31d] text-white shadow-[inset_0_0_16px_rgba(0,0,0,0.18)]" : "text-[#beb8ae] hover:bg-[#403c35]",
+                    "min-h-14 border-r border-brand/10 px-1 text-center text-lg transition last:border-r-0",
+                    level === preset.level ? "bg-brand text-white shadow-[inset_0_0_16px_rgba(0,0,0,0.14)]" : "text-brand hover:bg-white",
                   ].join(" ")}
                   onClick={() => onLevelChange(preset.level)}
                   title={preset.name}
@@ -969,14 +1016,14 @@ function SetupModal({
                 </button>
               ))}
             </div>
-            <div className="mt-3 text-center text-sm text-[#aaa49a]">
-              <span className="font-bold text-[#d5d1ca]">{selectedBot.name}</span> · {selectedBot.subtitle} · depth {level}
+            <div className="mt-3 text-center text-sm text-slate-500">
+              <span className="font-bold text-slate-950">{selectedBot.name}</span> · {selectedBot.subtitle} · depth {selectedBot.depth}
             </div>
           </div>
 
           <div>
-            <div className="mb-3 text-center text-lg font-bold text-[#c8c3ba]">Side</div>
-            <div className="grid grid-cols-3 overflow-hidden rounded border border-[#444039] bg-[#36332e]">
+            <div className="mb-3 text-center text-lg font-bold text-slate-800">Side</div>
+            <div className="grid grid-cols-3 overflow-hidden rounded border border-brand/10 bg-brand-50">
               <SideOption active={selectedColor === "black"} label="Black" symbol="♚" onClick={() => onColorChange("black")} />
               <SideOption active={selectedColor === "random"} label="Random side" symbol="♔" onClick={() => onColorChange("random")} />
               <SideOption active={selectedColor === "white"} label="White" symbol="♔" onClick={() => onColorChange("white")} />
@@ -984,9 +1031,9 @@ function SetupModal({
           </div>
         </div>
 
-        <div className="border-t border-[#444039] bg-[#24221f] px-4 py-5 text-center">
-          <button className="inline-flex h-14 min-w-[300px] items-center justify-center gap-3 rounded bg-[#3d3933] px-6 text-xl font-bold text-[#d5d1ca] transition hover:bg-[#464139] disabled:cursor-not-allowed disabled:opacity-60" onClick={onStart} disabled={starting}>
-            <Bot size={28} className="text-[#5da31d]" /> {starting ? "Checking..." : "Play against computer"}
+        <div className="border-t border-brand/10 bg-brand-50 px-4 py-5 text-center">
+          <button className="inline-flex h-14 min-w-[300px] items-center justify-center gap-3 rounded bg-brand px-6 text-xl font-bold text-white transition hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-60" onClick={onStart} disabled={starting}>
+            <Bot size={28} className="text-accent" /> {starting ? "Checking..." : "Play against computer"}
           </button>
         </div>
       </div>
@@ -1000,7 +1047,7 @@ function SideOption({ active, label, symbol, onClick }: { active: boolean; label
       type="button"
       className={[
         "flex min-h-[104px] flex-col items-center justify-center gap-2 px-2 text-center transition",
-        active ? "bg-[#5da31d] text-white shadow-[inset_0_0_18px_rgba(0,0,0,0.22)]" : "text-[#c8c3ba] hover:bg-[#403c35]",
+        active ? "bg-brand text-white shadow-[inset_0_0_18px_rgba(0,0,0,0.14)]" : "text-brand hover:bg-white",
       ].join(" ")}
       onClick={onClick}
     >
@@ -1206,17 +1253,17 @@ function PlayerClockCard({
   return (
     <div className={[
       "rounded border px-2.5 py-2 shadow-sm transition sm:px-3",
-      active ? "border-[#5da31d] bg-[#302f28] shadow-[#5da31d]/10" : "border-[#403c35] bg-[#302d28]",
+      active ? "border-brand bg-brand-50 shadow-brand/10" : "border-slate-200 bg-slate-50",
     ].join(" ")}>
       <div className="grid gap-1">
         <div>
-          <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#9f998f] sm:text-[11px] sm:tracking-[0.16em]">{side}</div>
-          <div className="mt-1 flex items-center gap-1.5 truncate text-xs font-semibold text-[#dedad2]">
-            {tone === "player" ? <User size={14} className="text-[#8fca32]" /> : <Bot size={14} className="text-[#c6c0b6]" />}
+          <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500 sm:text-[11px] sm:tracking-[0.16em]">{side}</div>
+          <div className="mt-1 flex items-center gap-1.5 truncate text-xs font-semibold text-slate-700">
+            {tone === "player" ? <User size={14} className="text-brand" /> : <Bot size={14} className="text-slate-500" />}
             {name}
           </div>
         </div>
-        <div className="text-lg font-black tabular-nums text-white sm:text-xl">{clock}</div>
+        <div className="text-lg font-black tabular-nums text-slate-950 sm:text-xl">{clock}</div>
       </div>
     </div>
   );

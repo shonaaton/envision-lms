@@ -25,9 +25,23 @@ export async function POST(req: Request) {
   if (!fenValidation.ok) return NextResponse.json({ error: fenValidation.error }, { status: 400 });
 
   const level = ENGINE_LEVELS[parsed.data.level] || ENGINE_LEVELS[5];
+  const sideToMove = fenValidation.normalizedFen.split(" ")[1] === "b" ? "black" : "white";
+  const remainingMs = parsed.data.clock ? parsed.data.clock[sideToMove] : null;
+  const incrementMs = parsed.data.clock?.increment ?? 0;
+  const clockMoveTime = remainingMs === null
+    ? level.moveTime
+    : Math.max(
+        parsed.data.level >= 8 ? 180 : parsed.data.level >= 5 ? 120 : 80,
+        Math.min(
+          level.moveTime,
+          Math.floor(Math.max(1_000, remainingMs) / 32 + incrementMs * 0.65),
+          remainingMs <= 20_000 ? 450 : remainingMs <= 60_000 ? 800 : remainingMs <= 180_000 ? 1_500 : 3_500
+        )
+      );
+  const depthPenalty = clockMoveTime < level.moveTime * 0.45 ? 3 : clockMoveTime < level.moveTime * 0.7 ? 2 : clockMoveTime < level.moveTime * 0.9 ? 1 : 0;
   const engine = {
-    moveTime: level.moveTime,
-    depth: level.depth,
+    moveTime: clockMoveTime,
+    depth: Math.max(1, level.depth - depthPenalty),
     skillLevel: level.skillLevel,
   };
   const positionHash = buildPositionHash(fenValidation.normalizedFen);

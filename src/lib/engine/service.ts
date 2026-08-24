@@ -256,6 +256,9 @@ function toFishnetWork(job: any) {
   };
   if (job.workType === "move") {
     payload.level = Number(job.level || 5);
+    payload.skillLevel = Number(job.engine?.skillLevel || 0) || undefined;
+    payload.moveTime = Number(job.engine?.moveTime || 0) || undefined;
+    payload.depth = Number(job.engine?.depth || 0) || undefined;
     if (job.clock?.white !== undefined && job.clock?.black !== undefined) {
       payload.clock = {
         wtime: Number(job.clock.white || 0),

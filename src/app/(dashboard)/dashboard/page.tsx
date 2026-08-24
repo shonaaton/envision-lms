@@ -27,7 +27,6 @@ import { bookingFeatureNameForAccount } from "@/lib/bookingLabels";
 import { demoStudentExperience } from "@/lib/demoStudentExperience";
 import { inactiveStudentMessage } from "@/lib/studentAccess";
 import { coachClassroomQuery, limitClassroomToCoachSessions } from "@/lib/classroomCoachAccess";
-import { getLearningCatalog } from "@/lib/learning/service";
 import { unstable_noStore as noStore } from "next/cache";
 import {
   Activity as ActivityIcon,
@@ -35,7 +34,6 @@ import {
   BarChart3,
   BellRing,
   BookOpen,
-  BookOpenCheck,
   Calendar,
   CheckCircle2,
   Clock3,
@@ -907,8 +905,6 @@ async function StudentDashboard({ userId, joinAllowed }: { userId: string; joinA
   const pendingDueSoon = pendingHomework.find((item: any) => item.dueAt && new Date(item.dueAt).getTime() - now.getTime() <= DAY);
   const tournamentSoon = nextTournament?.startAt ? new Date(nextTournament.startAt).getTime() - now.getTime() <= 3 * DAY : false;
   const levelProgress = Math.min(100, Math.max(18, totalXp % 1000 ? Math.round((totalXp % 1000) / 10) : totalXp ? 100 : 18));
-  const learningCatalog = await getLearningCatalog(userId);
-
   const continueLearning =
     nextSession && (heroSessionOpen || classSoon)
       ? {
@@ -936,15 +932,6 @@ async function StudentDashboard({ userId, joinAllowed }: { userId: string; joinA
               kind: "tournament" as const,
               href: `/tournaments/${objectId(nextTournament._id)}`,
             }
-          : learningCatalog.continueLesson
-            ? {
-                tone: "Learn Chess",
-                title: learningCatalog.continueLesson.lessonTitle,
-                text: `Pick up where you left off in ${learningCatalog.continueLesson.sectionTitle}.`,
-                meta: `${learningCatalog.continueLesson.completedExercises} / ${learningCatalog.continueLesson.totalExercises} completed`,
-                kind: "learn" as const,
-                href: `/learn/${learningCatalog.continueLesson.lessonSlug}`,
-              }
           : {
               tone: "Practice",
               title: "Practice Tactics",
@@ -1014,8 +1001,8 @@ async function StudentDashboard({ userId, joinAllowed }: { userId: string; joinA
                   />
                 ) : (
                   <Link href={continueLearning.href || "/play/tactics-trainer"} className="btn-accent w-full justify-center sm:w-auto">
-                    {continueLearning.kind === "homework" ? <ClipboardList size={16} aria-hidden="true" /> : continueLearning.kind === "tournament" ? <Trophy size={16} aria-hidden="true" /> : continueLearning.kind === "learn" ? <BookOpen size={16} aria-hidden="true" /> : <Target size={16} aria-hidden="true" />}
-                    {continueLearning.kind === "homework" ? "Continue Homework" : continueLearning.kind === "tournament" ? "View Tournament" : continueLearning.kind === "learn" ? "Continue Lesson" : "Practice Tactics"}
+                    {continueLearning.kind === "homework" ? <ClipboardList size={16} aria-hidden="true" /> : continueLearning.kind === "tournament" ? <Trophy size={16} aria-hidden="true" /> : <Target size={16} aria-hidden="true" />}
+                    {continueLearning.kind === "homework" ? "Continue Homework" : continueLearning.kind === "tournament" ? "View Tournament" : "Practice Tactics"}
                   </Link>
                 )}
               </div>
@@ -1113,40 +1100,9 @@ async function StudentDashboard({ userId, joinAllowed }: { userId: string; joinA
           </StudentCard>
 
           <StudentCard>
-            <StudentSectionHeader icon={BookOpen} title="Learn Chess" action={<StudentTextLink href="/learn">Open Curriculum</StudentTextLink>} />
-            <div className="rounded-2xl border border-brand/10 bg-brand px-4 py-4 text-white">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-[11px] font-black uppercase tracking-[0.14em] text-accent">Overall Progress</div>
-                  <div className="mt-1 text-2xl font-black">{learningCatalog.totals.overallProgressPercent}%</div>
-                  <div className="mt-2 text-sm text-white/80">
-                    {learningCatalog.totals.completedExercises} / {learningCatalog.totals.totalExercises} exercises completed
-                  </div>
-                </div>
-                <div className="rounded-xl bg-white/10 px-3 py-2 text-right text-sm">
-                  <div className="font-semibold">{learningCatalog.totals.earnedStars} stars</div>
-                  <div className="mt-1 text-xs text-white/70">{learningCatalog.totals.totalStars} available</div>
-                </div>
-              </div>
-              <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/15">
-                <div className="h-full rounded-full bg-accent transition-all duration-500" style={{ width: `${learningCatalog.totals.overallProgressPercent}%` }} />
-              </div>
-              <div className="mt-4 flex items-center justify-between gap-3">
-                <div className="text-sm text-white/80">
-                  {learningCatalog.continueLesson ? `Continue ${learningCatalog.continueLesson.lessonTitle}` : "Start with the first lesson"}
-                </div>
-                <Link href={learningCatalog.continueLesson ? `/learn/${learningCatalog.continueLesson.lessonSlug}` : "/learn"} className="btn-accent">
-                  Open Learn Chess
-                </Link>
-              </div>
-            </div>
-          </StudentCard>
-
-          <StudentCard>
             <StudentSectionHeader icon={Gamepad2} title="Practice & Improve" />
             <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
               {[
-                { href: "/learn", title: "Learn Chess", subtitle: "Follow the guided curriculum", icon: BookOpenCheck },
                 { href: "/play/tactics-trainer", title: "Tactics", subtitle: "Sharpen your calculation", icon: Target },
                 { href: "/play/square-trainer", title: "Square Trainer", subtitle: "Improve board vision", icon: Crosshair },
                 { href: "/play/king-hunt", title: "King Hunt", subtitle: "Build pattern recognition", icon: Crown },

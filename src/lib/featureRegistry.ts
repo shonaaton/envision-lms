@@ -339,6 +339,17 @@ export const FEATURE_DEFINITIONS: FeatureDefinition[] = [
     defaultRolePermissions: { student: ["view"], instructor: ["view"], admin: all(view, create, manage) },
   },
   {
+    key: "whatsapp",
+    label: "WhatsApp",
+    category: "Communication",
+    description: "WhatsApp Business API inbox, active 24-hour conversations, template sends, replies, and Meta webhooks.",
+    routes: ["/admin/whatsapp"],
+    apiPrefixes: ["/api/admin/whatsapp"],
+    permissions: [view, create, manage],
+    defaultStatus: "enabled",
+    defaultRolePermissions: { admin: all(view, create, manage), "sub-admin": ["view", "create"] },
+  },
+  {
     key: "userManagement",
     label: "Student, Coach, and Admin Management",
     category: "Administration",

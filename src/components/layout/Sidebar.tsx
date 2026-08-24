@@ -23,6 +23,7 @@ import {
   ListChecks,
   Megaphone,
   MessageSquare,
+  MessageCircle,
   Receipt,
   Settings,
   ShieldCheck,
@@ -129,6 +130,7 @@ const sections: NavSection[] = [
       { href: "/admin/reports", label: "Reports Center", icon: BarChart3, featureKey: "reportsCenter" },
       { href: "/admin/announcements", label: "Announcements", icon: Megaphone, featureKey: "announcements" },
       { href: "/admin/notifications", label: "Notifications", icon: Bell, featureKey: "notifications" },
+      { href: "/admin/whatsapp", label: "WhatsApp", icon: MessageCircle, featureKey: "whatsapp" },
     ],
   },
   {

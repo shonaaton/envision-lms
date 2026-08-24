@@ -1,0 +1,359 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lms-email-automation",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "71233ac0-1482-4ccd-b33f-97a47d6889a5",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        672,
+        -96
+      ],
+      "webhookId": "5b4182bc-418c-4d82-a33d-4061d2a0aadf"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || $json || {};\nconst metadata = body.metadata || {};\nconst to = String(body.to || '').trim();\nconst subject = String(body.subject || '').trim();\nconst message = String(body.message || '').trim();\n\nif (!to) throw new Error('Missing \"to\" email address');\nif (!subject) throw new Error('Missing \"subject\"');\nif (!message) throw new Error('Missing \"message\"');\n\nconst replyTo = String(body.replyTo || 'support@envisionchessacademy.com').trim();\nconst preview = String(metadata.previewText || subject).trim();\nconst kind = String(metadata.kind || '').trim();\nconst rawActionUrl = String(body.actionUrl || metadata.actionUrl || '').trim();\nconst actionUrl = /^https?:\\/\\//i.test(rawActionUrl) ? rawActionUrl : '';\nconst actionLabel = String(body.actionLabel || metadata.actionLabel || 'Open in LMS').trim();\n\nconst escapeHtml = (value) => String(value || '')\n  .replace(/&/g, '&amp;')\n  .replace(/</g, '&lt;')\n  .replace(/>/g, '&gt;')\n  .replace(/\\\"/g, '&quot;')\n  .replace(/'/g, '&#39;');\n\nconst paragraphs = message\n  .split(/\\n+/)\n  .map((line) => line.trim())\n  .filter(Boolean)\n  .map((line) => `<p style=\"margin:0 0 14px;font-size:15px;line-height:1.7;color:#334155;\">${escapeHtml(line)}</p>`)\n  .join('');\n\nconst actionButton = actionUrl\n  ? `<div style=\"margin:22px 0 6px;\"><a href=\"${escapeHtml(actionUrl)}\" style=\"display:inline-block;background:#5a1372;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-weight:700;font-size:15px;\">${escapeHtml(actionLabel)}</a></div>`\n  : '';\n\nconst headerLabel = kind === 'invoice_reminder'\n  ? 'Invoice Reminder'\n  : kind === 'credit_reminder'\n    ? 'Credit Reminder'\n    : kind === 'password_reset'\n      ? 'Password Reset'\n      : 'Academy Notification';\n\nconst htmlBody = `<!doctype html><html><body style=\"margin:0;padding:24px;background:#f8fafc;font-family:Arial,sans-serif;\"><div style=\"max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:22px;overflow:hidden;box-shadow:0 14px 40px rgba(15,23,42,0.08);\"><div style=\"padding:22px 28px;background:linear-gradient(135deg,#5a1372 0%,#7d22a3 100%);color:#ffffff;\"><div style=\"font-size:12px;font-weight:700;letter-spacing:0.16em;text-transform:uppercase;color:#fde75a;\">${escapeHtml(headerLabel)}</div><h1 style=\"margin:10px 0 0;font-size:28px;line-height:1.2;font-weight:800;\">${escapeHtml(subject)}</h1><p style=\"margin:10px 0 0;font-size:13px;line-height:1.6;color:#f5e9ff;\">${escapeHtml(preview)}</p></div><div style=\"padding:28px;\">${paragraphs}${actionButton}<div style=\"margin-top:28px;padding-top:18px;border-top:1px solid #e2e8f0;font-size:12px;line-height:1.6;color:#64748b;\">Envision Chess Academy<br/>This is an automated message from your academy platform.</div></div></div></body></html>`;\n\nreturn [{ json: { to, subject, htmlBody, replyTo, metadata } }];"
+      },
+      "id": "3f8a2145-8d82-40c0-9978-0a3ab1879fb3",
+      "name": "Prepare Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        -96
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "message": "={{ $json.htmlBody }}",
+        "options": {
+          "attachmentsUi": {
+            "attachmentsBinary": [
+              {}
+            ]
+          },
+          "senderName": "Envision Chess Academy",
+          "replyTo": "={{ $json.replyTo }}"
+        }
+      },
+      "id": "5a5e91ae-741b-42f7-bfbb-51fe13594912",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1232,
+        -96
+      ],
+      "webhookId": "6af4816e-7582-4898-90ab-9c72ef96b632",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "nvjf7DitzZ9YdiRX",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true, delivered: true, to: $('Prepare Email').item.json.to, subject: $('Prepare Email').item.json.subject }) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "fd75dc3a-18bb-4ccb-a2dc-e616c01bc5eb",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1504,
+        -96
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lms-password-reset",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "e0c4e2ad-1899-435e-a939-dcf5359438ed",
+      "name": "Password Reset Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        640,
+        160
+      ],
+      "webhookId": "f7ed355f-03f0-49a4-9a47-59f8b28c4b98"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || $json || {};\nconst metadata = body.metadata || {};\nconst to = String(body.to || '').trim();\nconst subject = String(body.subject || 'Reset your Envision Chess Academy password').trim();\nconst message = String(body.message || '').trim();\nconst resetUrl = String(metadata.resetUrl || '').trim();\nconst replyTo = String(body.replyTo || 'support@envisionchessacademy.com').trim();\n\nif (!to) throw new Error('Missing recipient email address');\nif (!resetUrl || !/^https:\\/\\//i.test(resetUrl)) throw new Error('Missing secure password reset URL');\n\nconst escapeHtml = (value) => String(value || '')\n  .replace(/&/g, '&amp;')\n  .replace(/</g, '&lt;')\n  .replace(/>/g, '&gt;')\n  .replace(/\\\"/g, '&quot;')\n  .replace(/'/g, '&#39;');\n\nconst paragraphs = message.split(/\\n+/).map((line) => line.trim()).filter(Boolean)\n  .map((line) => `<p style=\"margin:0 0 14px;font-size:15px;line-height:1.7;color:#334155;\">${escapeHtml(line)}</p>`).join('');\n\nconst safeUrl = escapeHtml(resetUrl);\nconst htmlBody = `<!doctype html><html><body style=\"margin:0;padding:24px;background:#f8fafc;font-family:Arial,sans-serif;\"><div style=\"max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:22px;overflow:hidden;box-shadow:0 14px 40px rgba(15,23,42,0.08);\"><div style=\"padding:24px 28px;background:#5a1372;color:#ffffff;border-bottom:8px solid #fde75a;\"><div style=\"font-size:12px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:#fde75a;\">Password Reset</div><h1 style=\"margin:10px 0 0;font-size:28px;line-height:1.2;font-weight:800;\">${escapeHtml(subject)}</h1></div><div style=\"padding:28px;\">${paragraphs}<div style=\"margin:26px 0 22px;\"><a href=\"${safeUrl}\" style=\"display:inline-block;background:#5a1372;color:#ffffff;text-decoration:none;padding:14px 24px;border-radius:12px;font-weight:700;font-size:15px;\">Reset Password</a></div><div style=\"margin-top:28px;padding-top:18px;border-top:1px solid #e2e8f0;font-size:12px;line-height:1.6;color:#64748b;\">Envisions Chess Academy LLP<br/>This secure link can only be used once.</div></div></div></body></html>`;\n\nreturn [{ json: { to, subject, htmlBody, replyTo } }];"
+      },
+      "id": "2d1b1744-e1d0-4ff0-beee-eaa17cead9dd",
+      "name": "Prepare Password Reset Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        928,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "message": "={{ $json.htmlBody }}",
+        "options": {
+          "senderName": "Envision Chess Academy",
+          "replyTo": "={{ $json.replyTo }}"
+        }
+      },
+      "id": "ed5f95a6-28a1-45cc-9319-7846a63e9140",
+      "name": "Send Password Reset Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1232,
+        160
+      ],
+      "webhookId": "48ecbef2-114d-4f8a-9d08-e504213575b4",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "nvjf7DitzZ9YdiRX",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true, delivered: true, to: $('Prepare Password Reset Email').item.json.to }) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "87153a21-e064-4efb-9452-98a228375191",
+      "name": "Respond Success1",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1520,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lms-email-automation",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "46e0b6fc-4e6a-43ab-9e50-4a45150fb1cb",
+      "name": "Webhook1",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        672,
+        -320
+      ],
+      "webhookId": "dfbeff09-5bbb-472c-9d43-11fe781d50e6"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || $json || {};\nconst metadata = body.metadata || {};\nconst to = String(body.to || '').trim();\nconst subject = String(body.subject || '').trim();\nconst message = String(body.message || '').trim();\n\nif (!to) throw new Error('Missing \"to\" email address');\nif (!subject) throw new Error('Missing \"subject\"');\nif (!message) throw new Error('Missing \"message\"');\n\nconst replyTo = String(body.replyTo || 'support@envisionchessacademy.com').trim();\nconst preview = String(metadata.previewText || subject).trim();\nconst kind = String(metadata.kind || '').trim();\nconst rawActionUrl = String(body.actionUrl || metadata.actionUrl || '').trim();\nconst actionUrl = /^https?:\\/\\//i.test(rawActionUrl) ? rawActionUrl : '';\nconst actionLabel = String(body.actionLabel || metadata.actionLabel || 'Open in LMS').trim();\n\nconst escapeHtml = (value) => String(value || '')\n  .replace(/&/g, '&amp;')\n  .replace(/</g, '&lt;')\n  .replace(/>/g, '&gt;')\n  .replace(/\\\"/g, '&quot;')\n  .replace(/'/g, '&#39;');\n\nconst paragraphs = message\n  .split(/\\n+/)\n  .map((line) => line.trim())\n  .filter(Boolean)\n  .map((line) => `<p style=\"margin:0 0 14px;font-size:15px;line-height:1.7;color:#334155;\">${escapeHtml(line)}</p>`)\n  .join('');\n\nconst actionButton = actionUrl\n  ? `<div style=\"margin:22px 0 6px;\"><a href=\"${escapeHtml(actionUrl)}\" style=\"display:inline-block;background:#5a1372;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-weight:700;font-size:15px;\">${escapeHtml(actionLabel)}</a></div>`\n  : '';\n\nconst headerLabel = kind === 'invoice_reminder'\n  ? 'Invoice Reminder'\n  : kind === 'credit_reminder'\n    ? 'Credit Reminder'\n    : kind === 'password_reset'\n      ? 'Password Reset'\n      : 'Academy Notification';\n\nconst htmlBody = `<!doctype html><html><body style=\"margin:0;padding:24px;background:#f8fafc;font-family:Arial,sans-serif;\"><div style=\"max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:22px;overflow:hidden;box-shadow:0 14px 40px rgba(15,23,42,0.08);\"><div style=\"padding:22px 28px;background:linear-gradient(135deg,#5a1372 0%,#7d22a3 100%);color:#ffffff;\"><div style=\"font-size:12px;font-weight:700;letter-spacing:0.16em;text-transform:uppercase;color:#fde75a;\">${escapeHtml(headerLabel)}</div><h1 style=\"margin:10px 0 0;font-size:28px;line-height:1.2;font-weight:800;\">${escapeHtml(subject)}</h1><p style=\"margin:10px 0 0;font-size:13px;line-height:1.6;color:#f5e9ff;\">${escapeHtml(preview)}</p></div><div style=\"padding:28px;\">${paragraphs}${actionButton}<div style=\"margin-top:28px;padding-top:18px;border-top:1px solid #e2e8f0;font-size:12px;line-height:1.6;color:#64748b;\">Envision Chess Academy<br/>This is an automated message from your academy platform.</div></div></div></body></html>`;\n\nreturn [{ json: { to, subject, htmlBody, replyTo, metadata } }];"
+      },
+      "id": "25b6e399-6a18-4f05-81f2-8d2041f94536",
+      "name": "Prepare Email1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        -320
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "message": "={{ $json.htmlBody }}",
+        "options": {
+          "senderName": "Envision Chess Academy",
+          "replyTo": "={{ $json.replyTo }}"
+        }
+      },
+      "id": "ce38320b-cd08-4027-9e97-37b7431939e0",
+      "name": "Send Email1",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1232,
+        -320
+      ],
+      "webhookId": "b40f2b73-4a9f-426a-8498-38c709a0401e",
+      "alwaysOutputData": true,
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "nvjf7DitzZ9YdiRX",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true, delivered: true, to: $('Prepare Email1').item.json.to, subject: $('Prepare Email1').item.json.subject }) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "12f61dfe-acca-48d7-be12-de61e18a13cb",
+      "name": "Respond Success2",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1504,
+        -320
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Prepare Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Email": {
+      "main": [
+        [
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Email": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Password Reset Webhook": {
+      "main": [
+        [
+          {
+            "node": "Prepare Password Reset Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Password Reset Email": {
+      "main": [
+        [
+          {
+            "node": "Send Password Reset Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Password Reset Email": {
+      "main": [
+        [
+          {
+            "node": "Respond Success1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook1": {
+      "main": [
+        [
+          {
+            "node": "Prepare Email1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Email1": {
+      "main": [
+        [
+          {
+            "node": "Send Email1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Email1": {
+      "main": [
+        [
+          {
+            "node": "Respond Success2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "aefcf4acf7d9b8d370cbf20957eec9d310494c9c0914ff36c3c4ce6b2e5298c8"
+  }
+}

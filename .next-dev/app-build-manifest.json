@@ -5,10 +5,10 @@
       "static/chunks/main-app.js",
       "static/chunks/app/global-error.js"
     ],
-    "/(dashboard)/learn/page": [
+    "/(dashboard)/admin/whatsapp/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/(dashboard)/learn/page.js"
+      "static/chunks/app/(dashboard)/admin/whatsapp/page.js"
     ],
     "/(dashboard)/layout": [
       "static/chunks/webpack.js",
@@ -40,16 +40,6 @@
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
       "static/chunks/app/loading.js"
-    ],
-    "/(auth)/login/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/(auth)/login/page.js"
-    ],
-    "/(dashboard)/learn/[lessonSlug]/[exerciseKey]/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/(dashboard)/learn/[lessonSlug]/[exerciseKey]/page.js"
     ]
   }
 }

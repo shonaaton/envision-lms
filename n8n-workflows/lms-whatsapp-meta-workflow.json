@@ -1,0 +1,262 @@
+{
+  "name": "Envision LMS - WhatsApp Meta Inbox",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "8b9f62d4-1b6e-4e5c-b31f-8c28106cf101",
+      "name": "Send hello_world Now",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [220, 260]
+    },
+    {
+      "parameters": {
+        "jsCode": "const recipients = ['918017996184', '916290349998'];\nreturn recipients.map((to) => ({ json: { to, templateName: 'hello_world', language: 'en_US' } }));"
+      },
+      "id": "877925e6-d331-40e6-b0c6-1565fed0d5e6",
+      "name": "Two Test Recipients",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 260]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://graph.facebook.com/v25.0/1203164092890708/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.WHATSAPP_ACCESS_TOKEN}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"recipient_type\": \"individual\",\n  \"to\": $json.to,\n  \"type\": \"template\",\n  \"template\": {\n    \"name\": $json.templateName,\n    \"language\": {\n      \"code\": $json.language\n    }\n  }\n}",
+        "options": {}
+      },
+      "id": "f7c36305-f843-4691-8c45-f7b439b9ae44",
+      "name": "Send Template via Meta",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [740, 260]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.LMS_PUBLIC_URL}}/api/webhooks/whatsapp",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-lms-whatsapp-secret",
+              "value": "={{$env.WHATSAPP_N8N_FORWARD_SECRET || ''}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"entry\": [\n    {\n      \"changes\": [\n        {\n          \"value\": {\n            \"statuses\": [\n              {\n                \"id\": $json.messages?.[0]?.id,\n                \"status\": $json.messages?.[0]?.message_status || 'sent',\n                \"recipient_id\": $json.contacts?.[0]?.wa_id,\n                \"timestamp\": Math.floor(Date.now() / 1000)\n              }\n            ]\n          }\n        }\n      ]\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "b7ca1f7f-1149-45e5-bbfc-dc33d6f37c07",
+      "name": "Log Template Status to LMS",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1000, 260]
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "lms-whatsapp-meta",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "78c03fbb-8a48-4ead-ae1a-141950514a79",
+      "name": "Meta Verify Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [220, -180]
+    },
+    {
+      "parameters": {
+        "jsCode": "const query = $json.query || {};\nconst mode = query['hub.mode'];\nconst token = query['hub.verify_token'];\nconst challenge = query['hub.challenge'] || '';\nconst ok = mode === 'subscribe' && token === $env.WHATSAPP_WEBHOOK_VERIFY_TOKEN;\nreturn [{ json: { ok, statusCode: ok ? 200 : 403, challenge: ok ? challenge : 'Forbidden' } }];"
+      },
+      "id": "3958504b-cbfe-42ca-aebc-5ea8e5f95a09",
+      "name": "Check Verify Token",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, -180]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{$json.challenge}}",
+        "options": {
+          "responseCode": "={{$json.statusCode}}"
+        }
+      },
+      "id": "c1ba7370-3779-4705-a47a-053157b0f44d",
+      "name": "Return Meta Challenge",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [740, -180]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lms-whatsapp-meta",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "ad91096b-3b8c-48e4-aa20-c828ab3fc058",
+      "name": "Meta Incoming Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [220, 20]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.LMS_PUBLIC_URL}}/api/webhooks/whatsapp",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-lms-whatsapp-secret",
+              "value": "={{$env.WHATSAPP_N8N_FORWARD_SECRET || ''}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json.body}}",
+        "options": {}
+      },
+      "id": "22ef4871-10cd-43f9-956b-a8e87d907aa6",
+      "name": "Forward Incoming to LMS",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 20]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{JSON.stringify({ ok: true })}}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "619d6505-0f80-496b-a995-2b70f478ea9e",
+      "name": "Acknowledge Meta",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [740, 20]
+    }
+  ],
+  "connections": {
+    "Send hello_world Now": {
+      "main": [
+        [
+          {
+            "node": "Two Test Recipients",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Two Test Recipients": {
+      "main": [
+        [
+          {
+            "node": "Send Template via Meta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Template via Meta": {
+      "main": [
+        [
+          {
+            "node": "Log Template Status to LMS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Meta Verify Webhook": {
+      "main": [
+        [
+          {
+            "node": "Check Verify Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Verify Token": {
+      "main": [
+        [
+          {
+            "node": "Return Meta Challenge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Meta Incoming Webhook": {
+      "main": [
+        [
+          {
+            "node": "Forward Incoming to LMS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Forward Incoming to LMS": {
+      "main": [
+        [
+          {
+            "node": "Acknowledge Meta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true
+  }
+}

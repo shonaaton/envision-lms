@@ -6,6 +6,7 @@ import { ensureMonthlyInvoices } from "@/lib/fees";
 import { formatINR } from "@/lib/utils";
 import { Invoice, Notification } from "@/models/Fee";
 import { User } from "@/models/User";
+import { sendInvoiceOverdueEscalationEmail } from "@/lib/studentCommunicationEmails";
 
 export const dynamic = "force-dynamic";
 
@@ -127,6 +128,13 @@ async function processReminders(req: Request) {
         subject: days < 0 ? `Overdue invoice for ${invoice.student.name}` : `Invoice reminder for ${invoice.student.name}`,
         message: studentMessage(invoice, invoiceUrl, days).replace(`Hello ${invoice.student.name},`, `Hello ${invoice.student.parentName || "Parent"},`),
         metadata: { kind: "monthly_invoice_parent_reminder", invoiceId: invoice._id.toString(), days },
+      });
+    }
+    if (days === -3 || days === -7) {
+      await sendInvoiceOverdueEscalationEmail({
+        invoice,
+        invoiceUrl,
+        daysOverdue: Math.abs(days),
       });
     }
     adminNotifications += await notifyAdmins(invoice, days, invoiceUrl);

@@ -13,6 +13,7 @@ import { requireFeesAccess } from "@/lib/feesAccess";
 import ManualCreditForm from "@/components/fees/ManualCreditForm";
 import { isValidObjectId, Types } from "mongoose";
 import { recordActivity } from "@/lib/activity";
+import { sendCreditAdjustmentEmail } from "@/lib/studentCommunicationEmails";
 
 export const dynamic = "force-dynamic";
 
@@ -137,7 +138,7 @@ async function addManualCredits(formData: FormData) {
       { _id: assignmentId, type: "credits" },
       { $inc: { creditBalance: rawCredits, totalCreditsPurchased: rawCredits } },
       { new: true }
-    ).populate("student", "name username email");
+    ).populate("student", "name username email parentName parentEmail");
   } catch {
     redirect("/fees/credit-monitoring?view=add&creditAdjustment=failed");
   }
@@ -188,6 +189,13 @@ async function addManualCredits(formData: FormData) {
     message: `${rawCredits} class credit${rawCredits === 1 ? "" : "s"} ${rawCredits === 1 ? "has" : "have"} been added to your account. Reason: ${reason}`,
     metadata: { assignment: updated._id.toString(), credits: rawCredits, balanceAfter, reason },
   }).catch(() => null);
+  await sendCreditAdjustmentEmail({
+    student: updated.student,
+    credits: rawCredits,
+    balanceAfter,
+    reason,
+    adjustment: "added",
+  }).catch((error) => console.error("Credit added email failed", error));
 
   revalidatePath("/fees");
   revalidatePath("/fees/credit-history");
@@ -215,7 +223,7 @@ async function removeManualCredits(formData: FormData) {
   }
 
   await dbConnect();
-  const existing: any = await FeeAssignment.findOne({ _id: assignmentId, type: "credits" }).populate("student", "name username email");
+  const existing: any = await FeeAssignment.findOne({ _id: assignmentId, type: "credits" }).populate("student", "name username email parentName parentEmail");
   if (!existing?.student?._id) redirect("/fees/credit-monitoring?view=deduct&creditAdjustment=invalid");
 
   const balanceBefore = Number(existing.creditBalance || 0);
@@ -281,6 +289,13 @@ async function removeManualCredits(formData: FormData) {
     message: `${rawCredits} class credit${rawCredits === 1 ? "" : "s"} ${rawCredits === 1 ? "has" : "have"} been removed from your account. Reason: ${reason}`,
     metadata: { assignment: existing._id.toString(), credits: -rawCredits, balanceAfter, reason },
   }).catch(() => null);
+  await sendCreditAdjustmentEmail({
+    student: existing.student,
+    credits: rawCredits,
+    balanceAfter,
+    reason,
+    adjustment: "removed",
+  }).catch((error) => console.error("Credit removed email failed", error));
 
   revalidatePath("/fees");
   revalidatePath("/fees/credit-history");

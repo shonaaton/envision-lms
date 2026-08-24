@@ -20,6 +20,7 @@ import {
   studentNoShowCountThisMonth,
   STUDENT_NO_SHOW_FREE_ALLOWANCE_PER_MONTH,
 } from "@/lib/classroomLifecycle";
+import { sendClassCompletedSummaryEmail, sendStudentNoShowWarningEmail } from "@/lib/studentCommunicationEmails";
 
 export const dynamic = "force-dynamic";
 
@@ -200,6 +201,17 @@ export async function POST(req: Request) {
         await consumeAttendanceCredit(record.student, doc._id.toString(), "Credit deducted for repeated student no-show");
         await notifyStudentNoShowCreditDeduction(record.student, count, { classroom, sessionId, attendance: doc._id.toString() });
       }
+      if (!existingAttendance) {
+        await sendStudentNoShowWarningEmail({
+          studentId: record.student,
+          classroom: classroomDoc,
+          session: target,
+          attendanceId: doc._id.toString(),
+          noShowCount: count,
+          creditsDeducted: count > STUDENT_NO_SHOW_FREE_ALLOWANCE_PER_MONTH,
+          request: req,
+        }).catch((error) => console.error("Student no-show email failed", error));
+      }
     }
   }
   if (sessionId) {
@@ -227,6 +239,15 @@ export async function POST(req: Request) {
       await classroomDoc.save();
       if (outcome === "coach_no_show") {
         await notifyCoachNoShowIfThreshold(String(assignedCoach || ""), { classroom, sessionId, attendance: doc._id.toString() });
+      }
+      if (outcome === "completed" && !existingAttendance) {
+        await sendClassCompletedSummaryEmail({
+          classroom: classroomDoc,
+          session: target,
+          attendance: doc,
+          records: records || [],
+          request: req,
+        }).catch((error) => console.error("Class completed summary email failed", error));
       }
     }
   }

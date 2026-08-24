@@ -9,6 +9,7 @@ import { canAccessFeature, isSuperAdminSession } from "@/lib/featureAccess";
 import { coachClassroomQuery, limitClassroomToCoachSessions } from "@/lib/classroomCoachAccess";
 import { User } from "@/models/User";
 import { recordActivity } from "@/lib/activity";
+import { sendCourseAssignedEmail } from "@/lib/studentCommunicationEmails";
 
 export const dynamic = "force-dynamic";
 
@@ -73,6 +74,7 @@ export async function POST(req: Request) {
         source: "manual_admin",
       },
     });
+    await sendCourseAssignedEmail(created, req).catch((error) => console.error("Course assignment email failed", error));
     return NextResponse.json(created);
   } catch (err: any) {
     return NextResponse.json({ error: err.message ?? "Bad request" }, { status: 400 });

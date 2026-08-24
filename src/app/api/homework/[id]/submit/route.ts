@@ -5,6 +5,7 @@ import { Homework, Submission } from "@/models/Homework";
 import { StudentReward } from "@/models/ClassroomLive";
 import { recordActivity } from "@/lib/activity";
 import { canStudentAccessHomework } from "@/lib/homeworkAccess";
+import { sendHomeworkSubmittedConfirmationEmail } from "@/lib/studentCommunicationEmails";
 
 export const dynamic = "force-dynamic";
 
@@ -187,6 +188,14 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     },
     { upsert: true, new: true }
   ).lean();
+
+  await sendHomeworkSubmittedConfirmationEmail({
+    homework: hw,
+    studentId: student,
+    submission: sub,
+    reward,
+    request: req,
+  }).catch((error) => console.error("Homework submitted email failed", error));
 
   return NextResponse.json({
     ...sub.toObject(),

@@ -4,6 +4,7 @@ import { recordActivity } from "@/lib/activity";
 import { requireAdminApiAccess } from "@/lib/adminApiAccess";
 import { normalizeAchievement, seedVerifiedAchievements, serializeAchievement } from "@/lib/achievements";
 import { Achievement } from "@/models/Achievement";
+import { sendAchievementEarnedEmail } from "@/lib/studentCommunicationEmails";
 
 export const dynamic = "force-dynamic";
 
@@ -74,5 +75,6 @@ export async function POST(req: Request) {
     entityId: created._id.toString(),
     metadata: { tournamentName: created.tournamentName, result: created.result },
   });
+  await sendAchievementEarnedEmail(created, req).catch((error) => console.error("Achievement email failed", error));
   return NextResponse.json(serializeAchievement(created));
 }

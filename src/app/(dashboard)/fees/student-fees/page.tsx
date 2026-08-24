@@ -367,6 +367,7 @@ export default async function StudentFeesPage({ searchParams }: { searchParams?:
               type: plan.type,
               amount: plan.amount,
               credits: plan.credits || 0,
+              gstMode: plan.gstMode || "non_gst",
             }))}
           />
         </section>

@@ -17,18 +17,28 @@ function overdueDays(value: FormDataEntryValue | null) {
   return Math.min(7, Math.max(0, Number(value || 7)));
 }
 
+function taxDetails(formData: FormData) {
+  const gstMode = String(formData.get("gstMode") || "non_gst");
+  const normalizedMode = gstMode === "included" || gstMode === "excluded" ? gstMode : "non_gst";
+  return {
+    gstMode: normalizedMode,
+    gstPercentage: normalizedMode === "non_gst" ? 0 : Math.max(0, Number(formData.get("gstPercentage") || 0)),
+  };
+}
+
 async function createPlan(formData: FormData) {
   "use server";
   const session = await requireFeesAccess("edit", "feePlans");
   if (!session) throw new Error("Forbidden");
   await dbConnect();
   const type = String(formData.get("type")) as "monthly" | "credits";
+  const tax = taxDetails(formData);
   const plan = await FeePlan.create({
     name: formData.get("name"),
     type,
     amount: paise(formData.get("amount")),
-    gstMode: formData.get("gstMode") || "non_gst",
-    gstPercentage: Number(formData.get("gstPercentage") || 0),
+    gstMode: tax.gstMode,
+    gstPercentage: tax.gstPercentage,
     credits: type === "credits" ? Number(formData.get("credits") || 0) : 0,
     billingCycle: "monthly",
     billingDay: Number(formData.get("billingDay") || 1),
@@ -56,13 +66,14 @@ async function updatePlan(formData: FormData) {
   await dbConnect();
   const id = String(formData.get("id"));
   const type = String(formData.get("type")) as "monthly" | "credits";
+  const tax = taxDetails(formData);
   const before: any = await FeePlan.findById(id).lean();
   const plan: any = await FeePlan.findByIdAndUpdate(id, {
     name: formData.get("name"),
     type,
     amount: paise(formData.get("amount")),
-    gstMode: formData.get("gstMode") || "non_gst",
-    gstPercentage: Number(formData.get("gstPercentage") || 0),
+    gstMode: tax.gstMode,
+    gstPercentage: tax.gstPercentage,
     credits: type === "credits" ? Number(formData.get("credits") || 0) : 0,
     billingDay: Number(formData.get("billingDay") || 1),
     dueAfterDays: Number(formData.get("dueAfterDays") || 0),

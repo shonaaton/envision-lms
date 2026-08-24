@@ -696,6 +696,14 @@ function toPaise(amountInr: number) {
   return Math.round(amountInr * 100);
 }
 
+function planTaxDetails(plan: any) {
+  const mode = plan?.gstMode === "included" || plan?.gstMode === "excluded" ? plan.gstMode : "non_gst";
+  return {
+    invoiceMode: mode as "included" | "excluded" | "non_gst",
+    gstPercentage: mode === "non_gst" ? 0 : Math.max(0, Number(plan?.gstPercentage || 0)),
+  };
+}
+
 async function createImportedInvoice(params: {
   studentId: string;
   assignmentId?: string;
@@ -711,6 +719,8 @@ async function createImportedInvoice(params: {
   note?: string;
   paidDate?: Date;
   status?: "draft" | "unpaid" | "paid" | "overdue" | "cancelled";
+  invoiceMode?: "included" | "excluded" | "non_gst";
+  gstPercentage?: number;
 }) {
   const existing = params.referenceNumber
     ? await Invoice.findOne({ student: params.studentId, referenceNumber: params.referenceNumber }).lean()
@@ -729,8 +739,8 @@ async function createImportedInvoice(params: {
     referenceNumber: params.referenceNumber,
     credits: params.credits,
     notes: params.note ? `Legacy import: ${params.note}` : "Legacy import",
-    invoiceMode: "included",
-    gstPercentage: 18,
+    invoiceMode: params.invoiceMode || "non_gst",
+    gstPercentage: params.invoiceMode === "non_gst" ? 0 : Number(params.gstPercentage || 0),
     activity: {
       actor: params.actorId,
       source: "manual_admin",
@@ -799,6 +809,7 @@ export async function importLegacyStudentData(input: {
   ]);
 
   const targetPlan: any = selectedPlan || (existingAssignment?.plan ? await FeePlan.findById(existingAssignment.plan) : null);
+  const tax = planTaxDetails(targetPlan);
   const rows = parseImportRowsFromBuffer(input.fileBuffer, input.fileName, {
     planType: targetPlan?.type || existingAssignment?.type,
     creditPlanAmountInr: targetPlan?.amount ? Number(targetPlan.amount) / 100 : undefined,
@@ -913,6 +924,8 @@ export async function importLegacyStudentData(input: {
         note: row.note,
         paidDate: row.paidDate || dueDate,
         status: "paid",
+        invoiceMode: tax.invoiceMode,
+        gstPercentage: tax.gstPercentage,
       });
       invoicesImported += 1;
       continue;
@@ -940,6 +953,8 @@ export async function importLegacyStudentData(input: {
         note: row.note,
         paidDate: row.rowType === "monthly_payment" ? row.paidDate || dueDate : row.paidDate,
         status: row.rowType === "monthly_payment" ? "paid" : row.status || "unpaid",
+        invoiceMode: useMonthlyAssignment ? tax.invoiceMode : "non_gst",
+        gstPercentage: useMonthlyAssignment ? tax.gstPercentage : 0,
       });
       invoicesImported += 1;
       continue;

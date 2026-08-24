@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { UserPlus } from "lucide-react";
 
 type StudentOption = { id: string; name: string; username?: string; hasAssignment: boolean };
-type PlanOption = { id: string; name: string; type: "monthly" | "credits"; amount: number; credits: number };
+type PlanOption = { id: string; name: string; type: "monthly" | "credits"; amount: number; credits: number; gstMode?: "included" | "excluded" | "non_gst" };
 type ServerAction = (formData: FormData) => Promise<void>;
 
 function Field({ label, description, children }: { label: string; description: string; children: React.ReactNode }) {
@@ -80,6 +80,8 @@ credit_payment,,,,,,,,,4500,,,2026-08-01,,,,,,,10,OLD-CR-001,Imported credit rec
 
 export function LegacyStudentImportForm({ students, plans, action }: { students: StudentOption[]; plans: PlanOption[]; action: ServerAction }) {
   const [studentId, setStudentId] = useState("");
+  const [planId, setPlanId] = useState("");
+  const selectedPlan = useMemo(() => plans.find((plan) => plan.id === planId), [plans, planId]);
   const templateHref = `data:text/csv;charset=utf-8,${encodeURIComponent(LEGACY_IMPORT_TEMPLATE)}`;
 
   return (
@@ -94,11 +96,22 @@ export function LegacyStudentImportForm({ students, plans, action }: { students:
           </select>
         </Field>
 
+        <Field label="Fee Plan (Optional)" description={selectedPlan ? `${selectedPlan.type === "monthly" ? "Monthly" : "Credit"} import as ${selectedPlan.gstMode === "included" ? "GST included" : selectedPlan.gstMode === "excluded" ? "GST excluded" : "Non-GST"}.` : "Use this to import against a Non-GST or GST plan."}>
+          <select name="plan" value={planId} onChange={(event) => setPlanId(event.target.value)} className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm">
+            <option value="">Use existing record or Non-GST manual import</option>
+            {plans.map((plan) => (
+              <option key={plan.id} value={plan.id}>
+                {plan.name} - {plan.type === "monthly" ? "Monthly" : `${plan.credits} Credit`} - {plan.gstMode === "included" ? "GST Included" : plan.gstMode === "excluded" ? "GST Excluded" : "Non-GST"}
+              </option>
+            ))}
+          </select>
+        </Field>
+
         <Field label="Import File" description="Upload a CSV, PDF statement, or ZIP statement for this student.">
           <input name="file" type="file" accept=".csv,text/csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.pdf,application/pdf,.zip,application/zip" required className="block h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:font-semibold" />
         </Field>
 
-        <div className="flex items-end">
+        <div className="flex items-end md:col-span-2 xl:col-span-3">
           <a href={templateHref} download="legacy-student-import-template.csv" className="inline-flex h-10 w-full items-center justify-center rounded-md border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-100">
             Download Template
           </a>

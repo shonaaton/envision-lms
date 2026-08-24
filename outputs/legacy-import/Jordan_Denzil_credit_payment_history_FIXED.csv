@@ -1,0 +1,15 @@
+row_type,total_fees_inr,fees_paid_inr,due_amount_inr,concession_amount_inr,installment_number,fee_type,paid_amount_inr,paid_date,amount_inr,balance_amount_inr,due_date,status,event_date,attendance_status,duration_minutes,credit_balance,total_credits_purchased,total_credits_consumed,credits,reference_number,note
+credit_payment,,,,,1,,,2025-01-26,6400,,2025-01-26,Paid,,,,,,,8,FY 24-25/111,Imported credit recharge; source due date 2025-01-26; installment 1
+credit_payment,,,,,2,,,2025-03-07,6400,,2025-03-07,Paid,,,,,,,8,FY 24-25/146,Imported credit recharge; source due date 2025-03-07; installment 2
+credit_payment,,,,,1,,,2025-04-28,6400,,2025-04-25,Paid,,,,,,,8,FY 25-26/30,Imported credit recharge; source due date 2025-04-25; installment 1
+credit_payment,,,,,2,,,2025-06-08,6400,,2025-06-07,Paid,,,,,,,8,FY 25-26/66,Imported credit recharge; source due date 2025-06-07; installment 2
+credit_payment,,,,,3,,,2025-07-27,6400,,2025-07-27,Paid,,,,,,,8,FY 25-26/117,Imported credit recharge; source due date 2025-07-27; installment 3
+credit_payment,,,,,4,,,2025-09-09,6400,,2025-09-09,Paid,,,,,,,8,FY 25-26/169,Imported credit recharge; source due date 2025-09-09; installment 4
+credit_payment,,,,,5,,,2025-10-17,6400,,2025-10-17,Paid,,,,,,,8,FY 25-26/205,Imported credit recharge; source due date 2025-10-17; installment 5
+credit_payment,,,,,6,,,2025-11-24,6400,,2025-11-24,Paid,,,,,,,8,FY 25-26/255,Imported credit recharge; source due date 2025-11-24; installment 6
+credit_payment,,,,,7,,,2026-01-18,6400,,2026-01-18,Paid,,,,,,,8,FY 25-26/345,Imported credit recharge; source due date 2026-01-18; installment 7
+credit_payment,,,,,8,,,2026-02-19,6400,,2026-02-18,Paid,,,,,,,8,FY 25-26/383,Imported credit recharge; source due date 2026-02-18; installment 8
+credit_payment,,,,,1,,,2026-04-10,6400,,2026-04-10,Paid,,,,,,,8,FY 26-27/18,Imported credit recharge; source due date 2026-04-10; installment 1
+credit_payment,,,,,2,,,2026-05-20,7500,,2026-05-17,Paid,,,,,,,8,FY 26-27/53,Imported credit recharge; source due date 2026-05-17; installment 2
+credit_payment,,,,,3,,,2026-07-10,7500,,2026-07-10,Paid,,,,,,,8,FY 26-27/121,Imported credit recharge; source due date 2026-07-10; installment 3
+credit_payment,,,,,4,,,2026-08-17,7500,,2026-08-16,Paid,,,,,,,8,FY 26-27/164,Imported credit recharge; source due date 2026-08-16; installment 4

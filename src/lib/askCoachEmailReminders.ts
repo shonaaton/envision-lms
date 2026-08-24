@@ -31,12 +31,6 @@ function unreadEmailDelayMs() {
   return Math.round(minutes * 60 * 1000);
 }
 
-function roleLabel(role: string) {
-  if (role === "instructor") return "Coach";
-  if (role === "student") return "Student";
-  return "Admin";
-}
-
 function escapeHtml(value: unknown) {
   return String(value || "")
     .replace(/&/g, "&amp;")
@@ -115,11 +109,7 @@ export async function processAskCoachEmailReminder(reminderId: unknown) {
     return { processed: true, cancelled: true };
   }
 
-  const senderName = String(reminder.senderName || "A platform user");
-  const senderEmail = String(reminder.senderEmail || "");
-  const senderType = roleLabel(String(reminder.senderRole || ""));
   const recipientName = String(reminder.recipientName || "there");
-  const messageBody = String(reminder.messageBody || "");
   const messageUrl = `${resolvePublicAppUrl()}${String(reminder.href || "/ask-coach")}`;
 
   // Recheck immediately before delivery in case the read receipt arrived while this reminder was being prepared.
@@ -128,26 +118,24 @@ export async function processAskCoachEmailReminder(reminderId: unknown) {
     await cancelReminder(reminder._id, "Message was read on the platform before email delivery.");
     return { processed: true, cancelled: true };
   }
+  await AskCoachEmailReminder.updateOne(
+    { _id: reminder._id },
+    { $set: { senderEmail: "", senderName: "", messageBody: "[redacted]" } }
+  );
 
-  const senderDetails = `${senderType}: ${senderName}${senderEmail ? `\nSender email: ${senderEmail}` : ""}`;
   const result = await sendEmailAutomation({
     to: String(reminder.recipientEmail),
-    subject: `Unread Ask Coach message from ${senderName}`,
-    message: `Hello ${recipientName},\n\nYou have an unread message on the academy platform.\n\nMessage:\n${messageBody}\n\n${senderDetails}\n\nOpen the conversation: ${messageUrl}`,
+    subject: "Unread Ask Coach message",
+    message: `Hello ${recipientName},\n\nYou have an unread Ask Coach message on the academy platform.\n\nFor privacy, message details are only shown inside the LMS.\n\nOpen the conversation: ${messageUrl}`,
     htmlBody: `<p>Hello ${escapeHtml(recipientName)},</p>
-      <p>You have an unread message on the academy platform.</p>
-      <p><strong>Message:</strong></p>
-      <blockquote style="margin:12px 0;padding:12px 16px;border-left:4px solid #5a1372;background:#f8f5fa;white-space:pre-wrap">${escapeHtml(messageBody)}</blockquote>
-      <p><strong>${escapeHtml(senderType)}:</strong> ${escapeHtml(senderName)}<br />
-      ${senderEmail ? `<strong>Sender email:</strong> ${escapeHtml(senderEmail)}` : ""}</p>
+      <p>You have an unread Ask Coach message on the academy platform.</p>
+      <p>For privacy, message details are only shown inside the LMS.</p>
       <p><a href="${escapeHtml(messageUrl)}">Open the conversation</a></p>`,
-    replyTo: senderEmail || undefined,
     metadata: {
       kind: "ask_coach_unread_message",
       messageId: String(reminder.message),
       conversationId: String(reminder.conversation),
       senderRole: reminder.senderRole,
-      senderEmail,
     },
   });
 
@@ -214,10 +202,10 @@ export async function queueAskCoachUnreadEmail(input: QueueReminderInput) {
         recipientEmail,
         recipientName: input.recipient.name || input.recipient.username || "",
         sender: input.sender._id,
-        senderEmail: input.sender.email || "",
-        senderName: input.sender.name || input.sender.username || "",
+        senderEmail: "",
+        senderName: "",
         senderRole: input.sender.role || "admin",
-        messageBody: input.messageBody,
+        messageBody: "[redacted]",
         href: input.href,
         dueAt,
         status: "pending",

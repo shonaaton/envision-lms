@@ -1603,6 +1603,12 @@ main .rounded-xl.card.bg-white {
 .h-px {
   height: 1px;
 }
+.h-\[calc\(100\%-3rem\)\] {
+  height: calc(100% - 3rem);
+}
+.h-\[calc\(100dvh-190px\)\] {
+  height: calc(100dvh - 190px);
+}
 .max-h-24 {
   max-height: 6rem;
 }
@@ -1884,6 +1890,9 @@ main .rounded-xl.card.bg-white {
 }
 .min-h-screen {
   min-height: 100vh;
+}
+.min-h-\[500px\] {
+  min-height: 500px;
 }
 .\!w-\[min\(420px\2c calc\(100vw-2rem\)\)\] {
   width: min(420px,calc(100vw - 2rem)) !important;
@@ -3771,6 +3780,11 @@ main .rounded-xl.card.bg-white {
   --tw-gradient-to: rgb(0 0 0 / 0) var(--tw-gradient-to-position);
   --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
 }
+.from-emerald-50 {
+  --tw-gradient-from: #ecfdf5 var(--tw-gradient-from-position);
+  --tw-gradient-to: rgb(236 253 245 / 0) var(--tw-gradient-to-position);
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+}
 .via-accent\/70 {
   --tw-gradient-to: rgb(253 231 90 / 0)  var(--tw-gradient-to-position);
   --tw-gradient-stops: var(--tw-gradient-from), rgb(253 231 90 / 0.7) var(--tw-gradient-via-position), var(--tw-gradient-to);
@@ -4926,6 +4940,22 @@ main .rounded-xl.card.bg-white {
   --tw-shadow-color: #fff;
   --tw-shadow: var(--tw-shadow-colored);
 }
+.shadow-slate-100 {
+  --tw-shadow-color: #f1f5f9;
+  --tw-shadow: var(--tw-shadow-colored);
+}
+.shadow-slate-300\/50 {
+  --tw-shadow-color: rgb(203 213 225 / 0.5);
+  --tw-shadow: var(--tw-shadow-colored);
+}
+.shadow-teal-950\/15 {
+  --tw-shadow-color: rgb(4 47 46 / 0.15);
+  --tw-shadow: var(--tw-shadow-colored);
+}
+.shadow-teal-950\/20 {
+  --tw-shadow-color: rgb(4 47 46 / 0.2);
+  --tw-shadow: var(--tw-shadow-colored);
+}
 .outline-none {
   outline: 2px solid transparent;
   outline-offset: 2px;
@@ -5706,6 +5736,11 @@ main td {
   border-color: rgb(203 213 225 / var(--tw-border-opacity));
 }
 
+.hover\:border-emerald-200:hover {
+  --tw-border-opacity: 1;
+  border-color: rgb(167 243 208 / var(--tw-border-opacity));
+}
+
 .hover\:bg-\[\#fffdf0\]:hover {
   --tw-bg-opacity: 1;
   background-color: rgb(255 253 240 / var(--tw-bg-opacity));
@@ -6022,6 +6057,11 @@ main td {
 .hover\:text-white:hover {
   --tw-text-opacity: 1;
   color: rgb(255 255 255 / var(--tw-text-opacity));
+}
+
+.hover\:text-emerald-700:hover {
+  --tw-text-opacity: 1;
+  color: rgb(4 120 87 / var(--tw-text-opacity));
 }
 
 .hover\:underline:hover {
@@ -7878,6 +7918,10 @@ main td {
     grid-template-columns: repeat(6,minmax(0,1fr));
   }
 
+  .xl\:grid-cols-\[330px_minmax\(0\2c 1fr\)_300px\] {
+    grid-template-columns: 330px minmax(0,1fr) 300px;
+  }
+
   .xl\:flex-row {
     flex-direction: row;
   }
@@ -7993,6 +8037,10 @@ main td {
 
   .\32xl\:grid-cols-\[minmax\(0\2c 1fr\)_440px\] {
     grid-template-columns: minmax(0,1fr) 440px;
+  }
+
+  .\32xl\:grid-cols-\[360px_minmax\(0\2c 1fr\)_320px\] {
+    grid-template-columns: 360px minmax(0,1fr) 320px;
   }
 
   .\32xl\:flex-row {

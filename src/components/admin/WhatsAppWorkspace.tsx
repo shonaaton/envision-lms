@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Bot, CheckCircle2, Clock3, MessageCircle, RefreshCw, Send, UserRound } from "lucide-react";
+import { Bot, CheckCircle2, Clock3, MessageCircle, RefreshCw, Send, Sparkles, UserRound } from "lucide-react";
 
 type WaMessage = {
   id: string;
@@ -110,33 +110,44 @@ export default function WhatsAppWorkspace() {
   }
 
   return (
-    <div className="min-h-screen min-w-0 text-slate-950">
-      <div className="mb-5 flex min-w-0 flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <div className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold uppercase tracking-[0.18em] text-emerald-700">
-            <MessageCircle size={14} />
-            WhatsApp
+    <div className="min-h-0 min-w-0 text-slate-950">
+      <div className="mb-3 flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-teal-900 text-white shadow-lg shadow-teal-950/15">
+              <MessageCircle size={20} />
+            </div>
+            <div className="min-w-0">
+              <div className="text-xs font-black uppercase tracking-[0.18em] text-emerald-700">WhatsApp</div>
+              <h1 className="truncate text-2xl font-black text-slate-950">WhatsApp Inbox</h1>
+            </div>
           </div>
-          <h1 className="mt-3 text-3xl font-black text-slate-950">WhatsApp Inbox</h1>
-          <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">Review active 24-hour conversations, track sent templates, and launch approved template messages.</p>
         </div>
-        <button onClick={loadInbox} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm">
+        <button onClick={loadInbox} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm shadow-slate-200/70 transition hover:border-emerald-200 hover:text-emerald-700">
           <RefreshCw size={15} />
           Refresh
         </button>
       </div>
 
-      <div className="mb-4 flex flex-wrap gap-2">
+      <div className="mb-3 flex flex-wrap gap-2">
         <TabButton active={tab === "active"} onClick={() => setTab("active")} icon={<Clock3 size={15} />} label={`Active (${data.active.length})`} />
         <TabButton active={tab === "sent"} onClick={() => setTab("sent")} icon={<CheckCircle2 size={15} />} label={`Sent Templates (${data.sentTemplates.length})`} />
         <TabButton active={tab === "automation"} onClick={() => setTab("automation")} icon={<Bot size={15} />} label="Template Automation" />
       </div>
 
-      {notice ? <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">{notice}</div> : null}
+      {notice ? <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">{notice}</div> : null}
 
       {tab === "automation" ? (
-        <section className="max-w-3xl rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-black text-slate-950">Send Template</h2>
+        <section className="max-w-3xl rounded-lg border border-slate-200 bg-white p-5 shadow-xl shadow-slate-200/70">
+          <div className="flex items-center gap-3">
+            <div className="grid h-10 w-10 place-items-center rounded-lg bg-emerald-50 text-emerald-700">
+              <Sparkles size={18} />
+            </div>
+            <div>
+              <h2 className="text-lg font-black text-slate-950">Send Template</h2>
+              <p className="text-sm text-slate-500">Business-initiated messages use approved Meta templates.</p>
+            </div>
+          </div>
           <div className="mt-5 grid gap-4 sm:grid-cols-2">
             <Field label="Template name" value={templateName} onChange={setTemplateName} />
             <Field label="Language" value={language} onChange={setLanguage} />
@@ -150,14 +161,20 @@ export default function WhatsAppWorkspace() {
           </button>
         </section>
       ) : (
-        <section className="grid min-h-[640px] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm xl:grid-cols-[360px_minmax(0,1fr)_320px]">
-          <aside className="border-r border-slate-200">
-            <div className="border-b border-slate-200 px-4 py-3 text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
+        <section className="grid h-[calc(100dvh-190px)] min-h-[500px] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl shadow-slate-200/70 xl:grid-cols-[330px_minmax(0,1fr)_300px] 2xl:grid-cols-[360px_minmax(0,1fr)_320px]">
+          <aside className="min-h-0 border-r border-slate-200 bg-white">
+            <div className="flex h-12 items-center justify-between border-b border-slate-200 bg-slate-50 px-4 text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
               {tab === "active" ? "Active conversations" : "Template sends"}
+              <span className="rounded-full bg-white px-2 py-1 text-[11px] text-slate-500 shadow-sm">{conversations.length}</span>
             </div>
-            <div className="max-h-[640px] overflow-y-auto">
+            <div className="h-[calc(100%-3rem)] overflow-y-auto">
               {loading ? <div className="p-5 text-sm text-slate-500">Loading WhatsApp inbox...</div> : null}
-              {!loading && conversations.length === 0 ? <div className="p-5 text-sm text-slate-500">No records yet.</div> : null}
+              {!loading && conversations.length === 0 ? (
+                <EmptyPanel
+                  title={tab === "active" ? "No active chats" : "No templates sent"}
+                  text={tab === "active" ? "Replies will appear here after a contact messages the business." : "Template messages you send will appear in this tab."}
+                />
+              ) : null}
               {conversations.map((conversation) => (
                 <button
                   key={conversation.phoneNumber}
@@ -175,25 +192,37 @@ export default function WhatsAppWorkspace() {
             </div>
           </aside>
 
-          <main className="flex min-w-0 flex-col bg-[#f7f3e7]">
-            <div className="flex min-h-16 items-center justify-between border-b border-teal-900/10 bg-teal-900 px-5 text-white">
+          <main className="flex min-h-0 min-w-0 flex-col bg-[#f7f3e7]">
+            <div className="flex h-16 shrink-0 items-center justify-between border-b border-teal-900/10 bg-teal-900 px-5 text-white">
               <div className="min-w-0">
                 <div className="truncate text-lg font-black">{selected?.contactName || "No conversation selected"}</div>
                 {selected ? <div className="text-xs font-semibold text-emerald-100">+{selected.phoneNumber}</div> : null}
               </div>
               {selected?.canReply ? <Badge text="24h active" tone="green" /> : <Badge text="Template required" tone="amber" />}
             </div>
-            <div className="flex-1 space-y-3 overflow-y-auto p-5">
-              {(selected?.messages || []).map((message) => (
-                <div key={message.id} className={`flex ${message.direction === "outbound" ? "justify-end" : "justify-start"}`}>
-                  <div className={`max-w-[78%] rounded-lg px-4 py-3 text-sm leading-6 shadow-sm ${message.direction === "outbound" ? "bg-white text-slate-800" : "bg-teal-900 text-white"}`}>
-                    <div>{message.messageType === "template" ? `Template: ${message.templateName || message.text}` : message.text}</div>
-                    <div className={`mt-1 text-[11px] ${message.direction === "outbound" ? "text-slate-400" : "text-teal-100"}`}>{message.status} · {new Date(message.createdAt).toLocaleString()}</div>
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-5">
+              {!selected ? (
+                <div className="grid h-full place-items-center">
+                  <div className="max-w-sm text-center">
+                    <div className="mx-auto grid h-14 w-14 place-items-center rounded-lg bg-white text-emerald-700 shadow-sm">
+                      <MessageCircle size={24} />
+                    </div>
+                    <div className="mt-4 text-lg font-black text-slate-950">No conversation selected</div>
+                    <p className="mt-1 text-sm leading-6 text-slate-500">Incoming WhatsApp replies and sent template records will show here after the webhook starts receiving events.</p>
                   </div>
                 </div>
-              ))}
+              ) : (
+                selected.messages.map((message) => (
+                  <div key={message.id} className={`flex ${message.direction === "outbound" ? "justify-end" : "justify-start"}`}>
+                    <div className={`max-w-[78%] rounded-lg px-4 py-3 text-sm leading-6 shadow-md ${message.direction === "outbound" ? "bg-white text-slate-800 shadow-slate-300/50" : "bg-teal-900 text-white shadow-teal-950/20"}`}>
+                      <div>{message.messageType === "template" ? `Template: ${message.templateName || message.text}` : message.text}</div>
+                      <div className={`mt-1 text-[11px] ${message.direction === "outbound" ? "text-slate-400" : "text-teal-100"}`}>{message.status} · {new Date(message.createdAt).toLocaleString()}</div>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
-            <div className="border-t border-slate-200 bg-white p-4">
+            <div className="shrink-0 border-t border-slate-200 bg-white p-3">
               <div className="flex gap-2">
                 <input
                   value={reply}
@@ -210,15 +239,15 @@ export default function WhatsAppWorkspace() {
             </div>
           </main>
 
-          <aside className="hidden border-l border-slate-200 bg-white p-5 xl:block">
-            <div className="text-center">
-              <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-emerald-50 text-2xl font-black text-emerald-700">
+          <aside className="hidden min-h-0 overflow-y-auto border-l border-slate-200 bg-white p-4 xl:block">
+            <div className="rounded-lg bg-gradient-to-b from-emerald-50 to-white p-4 text-center">
+              <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-white text-xl font-black text-emerald-700 shadow-sm">
                 {initials(selected?.contactName || "?")}
               </div>
-              <div className="mt-3 text-xl font-black text-slate-950">{selected?.contactName || "Contact"}</div>
+              <div className="mt-3 text-lg font-black text-slate-950">{selected?.contactName || "Contact"}</div>
               <div className="mt-1 text-sm font-semibold text-slate-500">{selected ? `+${selected.phoneNumber}` : "-"}</div>
             </div>
-            <div className="mt-6 space-y-3 text-sm">
+            <div className="mt-4 space-y-2 text-sm">
               <ProfileRow label="Status" value={selected?.canReply ? "Active 24-hour window" : "Template only"} />
               <ProfileRow label="Matched LMS user" value={selected?.matchedUser?.name || "Not matched"} />
               <ProfileRow label="Role" value={selected?.matchedUser?.role || "-"} />
@@ -228,6 +257,20 @@ export default function WhatsAppWorkspace() {
           </aside>
         </section>
       )}
+    </div>
+  );
+}
+
+function EmptyPanel({ title, text }: { title: string; text: string }) {
+  return (
+    <div className="p-4">
+      <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center">
+        <div className="mx-auto grid h-10 w-10 place-items-center rounded-lg bg-white text-slate-400 shadow-sm">
+          <MessageCircle size={18} />
+        </div>
+        <div className="mt-3 text-sm font-black text-slate-800">{title}</div>
+        <p className="mt-1 text-xs leading-5 text-slate-500">{text}</p>
+      </div>
     </div>
   );
 }
@@ -264,7 +307,7 @@ function Badge({ text, tone }: { text: string; tone: "green" | "amber" }) {
 
 function ProfileRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-slate-200 px-4 py-3">
+    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 shadow-sm shadow-slate-100">
       <div className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">{label}</div>
       <div className="mt-1 break-words font-bold text-slate-800">{value}</div>
     </div>

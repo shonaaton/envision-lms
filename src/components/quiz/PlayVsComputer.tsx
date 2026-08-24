@@ -131,6 +131,11 @@ function engineTimingForClock(input: {
   return { moveTimeMs, depth: clamp(input.baseDepth - depthPenalty, 1, input.baseDepth) };
 }
 
+function engineNodesForTiming(moveTimeMs: number, level: number) {
+  const levelMultiplier = level >= 9 ? 1_450 : level >= 8 ? 1_050 : level >= 6 ? 760 : 480;
+  return Math.round(clamp(moveTimeMs * levelMultiplier, 40_000, level >= 9 ? 5_000_000 : 2_500_000));
+}
+
 function parseTimeControlValue(value: string) {
   const match = value.match(/^(\d+)(?:\+(\d+))?$/);
   return {
@@ -508,17 +513,27 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
         }
       : undefined;
 
-    // Prefer the shared coordinator so browser games and Fishnet workers use the same engine path.
+    // Level 9 is a true search job because Lichess-style bot levels are commonly capped at 8.
     try {
-      const response = await fetch("/v1/engine/move", {
+      const response = await fetch(level >= 9 ? "/v1/engine/analyse" : "/v1/engine/move", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fen: gameRef.current.fen(),
-          level,
-          clock,
-          source: "PLAY_VS_COMPUTER",
-        }),
+        body: JSON.stringify(
+          level >= 9
+            ? {
+                fen: gameRef.current.fen(),
+                depth: engineTiming.depth,
+                nodes: engineNodesForTiming(engineTiming.moveTimeMs, level),
+                multiPv: 1,
+                source: "ANALYSIS_BOARD",
+              }
+            : {
+                fen: gameRef.current.fen(),
+                level,
+                clock,
+                source: "PLAY_VS_COMPUTER",
+              }
+        ),
       });
       const created = await response.json().catch(() => null);
       if (response.ok) {
@@ -535,7 +550,7 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
             if (job?.status === "FAILED" || job?.status === "CANCELLED") break;
           }
         }
-        const uci = String(result?.bestMove || "").trim();
+        const uci = String(result?.bestMove || result?.lines?.[0]?.pv?.[0] || "").trim();
         if (uci && uci !== "(none)" && statusRef.current === "playing") {
           commitTurnClockRef.current();
           gameRef.current.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] || "q" });
@@ -565,7 +580,8 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
       playFallbackMove();
     }, engineTiming.moveTimeMs + 1600);
     worker.postMessage("setoption name Threads value 1");
-    worker.postMessage(`setoption name Skill Level value ${engineSkillLevel}`);
+    worker.postMessage(`setoption name UCI_LimitStrength value ${level >= 9 ? "false" : "true"}`);
+    if (level < 9) worker.postMessage(`setoption name Skill Level value ${engineSkillLevel}`);
     worker.postMessage(`position fen ${gameRef.current.fen()}`);
     worker.postMessage(`go movetime ${engineTiming.moveTimeMs} depth ${engineTiming.depth}`);
   }
@@ -950,33 +966,33 @@ function SetupModal({
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-2 backdrop-blur-sm sm:p-4">
-      <div className="max-h-[calc(100dvh-16px)] w-full max-w-[800px] overflow-y-auto rounded border border-brand/10 bg-white text-slate-700 shadow-2xl shadow-brand-900/20">
-        <div className="relative border-b border-brand/10 bg-brand-50 px-4 py-5 text-center sm:px-6">
-          <h2 className="text-3xl font-light text-brand sm:text-4xl">Game setup</h2>
+      <div className="flex max-h-[calc(100dvh-16px)] w-full max-w-[760px] flex-col overflow-hidden rounded border border-brand/10 bg-white text-slate-700 shadow-2xl shadow-brand-900/20 sm:max-h-[calc(100dvh-32px)]">
+        <div className="relative flex-none border-b border-brand/10 bg-brand-50 px-4 py-3 text-center sm:px-6 sm:py-4">
+          <h2 className="text-2xl font-light text-brand sm:text-3xl">Game setup</h2>
           <button className="absolute right-3 top-3 rounded p-2 text-brand/70 hover:bg-white hover:text-brand" onClick={onClose} aria-label="Close">
             <X size={20} />
           </button>
         </div>
 
-        <div className="space-y-7 px-2 py-5 sm:px-6">
-          <button type="button" className="flex h-12 w-full items-center gap-3 rounded border border-brand/15 bg-white px-4 text-left text-slate-950 shadow-sm">
-            <Trophy size={22} className="text-brand" />
-            <span className="text-xl">Standard</span>
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-3 py-4 sm:space-y-5 sm:px-6">
+          <button type="button" className="flex min-h-11 w-full items-center gap-3 rounded border border-brand/15 bg-white px-3 py-2 text-left text-slate-950 shadow-sm sm:px-4">
+            <Trophy size={20} className="shrink-0 text-brand" />
+            <span className="text-lg sm:text-xl">Standard</span>
             <span className="min-w-0 flex-1 truncate text-sm text-slate-500">Standard rules of chess (FIDE)</span>
-            <ChevronDown size={16} className="text-brand" />
+            <ChevronDown size={16} className="shrink-0 text-brand" />
           </button>
 
-          <div className="grid grid-cols-3 border-b border-brand/10 text-center text-lg">
-            <button type="button" className={["h-12 border-b-2", timeControl === "No Clock" ? "border-transparent text-slate-500" : "border-brand text-brand"].join(" ")} onClick={() => onTimeControlChange("5+3")}>Real time</button>
-            <button type="button" className="h-12 border-b-2 border-transparent text-slate-400">Correspondence</button>
-            <button type="button" className={["h-12 border-b-2", timeControl === "No Clock" ? "border-brand text-brand" : "border-transparent text-slate-500"].join(" ")} onClick={() => onTimeControlChange("No Clock")}>Unlimited</button>
+          <div className="grid grid-cols-3 border-b border-brand/10 text-center text-sm sm:text-base">
+            <button type="button" className={["h-10 border-b-2 sm:h-11", timeControl === "No Clock" ? "border-transparent text-slate-500" : "border-brand text-brand"].join(" ")} onClick={() => onTimeControlChange("5+3")}>Real time</button>
+            <button type="button" className="h-10 border-b-2 border-transparent text-slate-400 sm:h-11">Correspondence</button>
+            <button type="button" className={["h-10 border-b-2 sm:h-11", timeControl === "No Clock" ? "border-brand text-brand" : "border-transparent text-slate-500"].join(" ")} onClick={() => onTimeControlChange("No Clock")}>Unlimited</button>
           </div>
 
           {timeControl === "No Clock" ? (
-            <div className="py-2 text-center text-xl text-slate-700">Take all the time you need</div>
+            <div className="py-1 text-center text-base text-slate-700 sm:text-lg">Take all the time you need</div>
           ) : (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between gap-4 text-lg text-slate-700">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-4 text-base text-slate-700 sm:text-lg">
                 <span>Time control</span>
                 <span className="rounded bg-accent px-2 py-1 text-base font-bold text-brand-900">{timeControl}</span>
               </div>
@@ -986,7 +1002,7 @@ function SetupModal({
                     key={control}
                     type="button"
                     className={[
-                      "h-9 rounded px-3 text-base font-bold transition",
+                      "h-9 rounded px-3 text-sm font-bold transition sm:text-base",
                       timeControl === control ? "bg-brand text-white" : "border border-brand/10 bg-brand-50 text-brand hover:bg-brand-100",
                     ].join(" ")}
                     onClick={() => onTimeControlChange(control)}
@@ -999,14 +1015,14 @@ function SetupModal({
           )}
 
           <div>
-            <div className="mb-3 text-center text-lg font-bold text-slate-800">Strength</div>
+            <div className="mb-2 text-center text-base font-bold text-slate-800 sm:text-lg">Strength</div>
             <div className="grid overflow-hidden rounded border border-brand/10 bg-brand-50 shadow-inner" style={{ gridTemplateColumns: `repeat(${levelPresets.length}, minmax(0, 1fr))` }}>
               {levelPresets.map((preset) => (
                 <button
                   key={preset.level}
                   type="button"
                   className={[
-                    "min-h-14 border-r border-brand/10 px-1 text-center text-lg transition last:border-r-0",
+                    "min-h-11 border-r border-brand/10 px-1 text-center text-base transition last:border-r-0 sm:min-h-12 sm:text-lg",
                     level === preset.level ? "bg-brand text-white shadow-[inset_0_0_16px_rgba(0,0,0,0.14)]" : "text-brand hover:bg-white",
                   ].join(" ")}
                   onClick={() => onLevelChange(preset.level)}
@@ -1016,13 +1032,13 @@ function SetupModal({
                 </button>
               ))}
             </div>
-            <div className="mt-3 text-center text-sm text-slate-500">
+            <div className="mt-2 text-center text-xs text-slate-500 sm:text-sm">
               <span className="font-bold text-slate-950">{selectedBot.name}</span> · {selectedBot.subtitle} · depth {selectedBot.depth}
             </div>
           </div>
 
           <div>
-            <div className="mb-3 text-center text-lg font-bold text-slate-800">Side</div>
+            <div className="mb-2 text-center text-base font-bold text-slate-800 sm:text-lg">Side</div>
             <div className="grid grid-cols-3 overflow-hidden rounded border border-brand/10 bg-brand-50">
               <SideOption active={selectedColor === "black"} label="Black" symbol="♚" onClick={() => onColorChange("black")} />
               <SideOption active={selectedColor === "random"} label="Random side" symbol="♔" onClick={() => onColorChange("random")} />
@@ -1031,9 +1047,9 @@ function SetupModal({
           </div>
         </div>
 
-        <div className="border-t border-brand/10 bg-brand-50 px-4 py-5 text-center">
-          <button className="inline-flex h-14 min-w-[300px] items-center justify-center gap-3 rounded bg-brand px-6 text-xl font-bold text-white transition hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-60" onClick={onStart} disabled={starting}>
-            <Bot size={28} className="text-accent" /> {starting ? "Checking..." : "Play against computer"}
+        <div className="flex-none border-t border-brand/10 bg-brand-50 px-4 py-3 text-center sm:py-4">
+          <button className="inline-flex h-12 w-full items-center justify-center gap-3 rounded bg-brand px-5 text-base font-bold text-white transition hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:min-w-[300px] sm:text-lg" onClick={onStart} disabled={starting}>
+            <Bot size={24} className="text-accent" /> {starting ? "Checking..." : "Play against computer"}
           </button>
         </div>
       </div>
@@ -1046,12 +1062,12 @@ function SideOption({ active, label, symbol, onClick }: { active: boolean; label
     <button
       type="button"
       className={[
-        "flex min-h-[104px] flex-col items-center justify-center gap-2 px-2 text-center transition",
+        "flex min-h-[78px] flex-col items-center justify-center gap-1.5 px-2 text-center transition sm:min-h-[88px]",
         active ? "bg-brand text-white shadow-[inset_0_0_18px_rgba(0,0,0,0.14)]" : "text-brand hover:bg-white",
       ].join(" ")}
       onClick={onClick}
     >
-      <span className="text-4xl leading-none text-black drop-shadow-[0_1px_0_rgba(255,255,255,0.8)]">{symbol}</span>
+      <span className="text-3xl leading-none text-black drop-shadow-[0_1px_0_rgba(255,255,255,0.8)] sm:text-4xl">{symbol}</span>
       <span className="text-sm font-bold">{label}</span>
     </button>
   );
@@ -1198,8 +1214,8 @@ function GameHistory({ records, onBack, onSelectRecord }: { records: GameRecord[
 
 function HistoryDetailsModal({ record, onClose }: { record: GameRecord; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-4">
-      <div className="w-full max-w-[440px] rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-3 sm:p-4">
+      <div className="max-h-[calc(100dvh-24px)] w-full max-w-[440px] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl sm:max-h-[calc(100dvh-32px)] sm:p-5">
         <div className="mb-5 flex items-center justify-between">
           <h2 className="text-xl font-semibold text-slate-950">Game Details</h2>
           <button className="text-slate-500 hover:text-slate-900" onClick={onClose} aria-label="Close">
@@ -1287,8 +1303,8 @@ function ResultModal({
   onOpenSetup: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
-      <div className="w-full max-w-[560px] rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-3 sm:p-4">
+      <div className="max-h-[calc(100dvh-24px)] w-full max-w-[560px] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl sm:max-h-[calc(100dvh-32px)] sm:p-6">
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="inline-flex items-center gap-2 rounded-full bg-purple-50 px-3 py-1 text-xs font-black uppercase tracking-[0.18em] text-purple-700">

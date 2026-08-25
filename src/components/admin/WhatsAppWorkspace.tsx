@@ -38,7 +38,7 @@ type InboxPayload = {
   windowHours: number;
 };
 
-const DEFAULT_NUMBERS = "8017996184, 6290349998";
+const DEFAULT_NUMBERS = "918017996184, 916290349998";
 
 export default function WhatsAppWorkspace() {
   const [tab, setTab] = useState<"active" | "sent" | "automation">("active");

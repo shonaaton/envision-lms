@@ -45,9 +45,7 @@ type WhatsAppTextInput = {
 };
 
 export function normalizeWhatsAppNumber(value?: string) {
-  const digits = String(value || "").replace(/[^\d]/g, "");
-  if (digits.length === 10 && /^[6-9]/.test(digits)) return `91${digits}`;
-  return digits;
+  return String(value || "").replace(/[^\d]/g, "");
 }
 
 function configuredGraphVersion() {

@@ -8,7 +8,7 @@ import { User } from "@/models/User";
 
 export const dynamic = "force-dynamic";
 
-const DEFAULT_RECIPIENTS = ["8017996184", "6290349998"];
+const DEFAULT_RECIPIENTS = ["918017996184", "916290349998"];
 
 function canManageWhatsApp(session: any) {
   return ["admin", "sub-admin"].includes(String(session?.user?.role || ""));

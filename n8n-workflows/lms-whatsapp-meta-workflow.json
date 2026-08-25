@@ -21,8 +21,18 @@
     },
     {
       "parameters": {
+        "jsCode": "const phoneNumberId = '1203164092890708';\nconst graphVersion = 'v25.0';\nconst endpoint = `https://graph.facebook.com/${graphVersion}/${phoneNumberId}/messages`;\nreturn [{ json: { ...$json, endpoint, debug: { endpoint, graphVersion, phoneNumberId, to: $json.to, templateName: $json.templateName, language: $json.language, accessTokenPresent: Boolean($env.WHATSAPP_ACCESS_TOKEN) } } }];"
+      },
+      "id": "3c91305f-9a1a-45c0-9afb-b2f3287956fb",
+      "name": "Prepare WhatsApp Debug",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [304, 260]
+    },
+    {
+      "parameters": {
         "method": "POST",
-        "url": "https://graph.facebook.com/v25.0/1203164092890708/messages",
+        "url": "={{$json.endpoint}}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -45,7 +55,7 @@
       "name": "Send Template via Meta",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [740, 260]
+      "position": [560, 260]
     },
     {
       "parameters": {
@@ -73,7 +83,7 @@
       "name": "Log Template Status to LMS",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1000, 260]
+      "position": [820, 260]
     },
     {
       "parameters": {
@@ -189,6 +199,17 @@
       ]
     },
     "Two Test Recipients": {
+      "main": [
+        [
+          {
+            "node": "Prepare WhatsApp Debug",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare WhatsApp Debug": {
       "main": [
         [
           {

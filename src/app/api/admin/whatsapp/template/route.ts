@@ -60,7 +60,16 @@ export async function POST(req: Request) {
       rawPayload: result.payload,
       sentAt: new Date(),
     });
-    results.push({ phoneNumber, name: matchedUser?.name || "", ok: result.ok, skipped: result.skipped, error: result.errorMessage || result.error || "" });
+    results.push({
+      phoneNumber,
+      name: matchedUser?.name || "",
+      ok: result.ok,
+      skipped: result.skipped,
+      status: result.status,
+      error: result.errorMessage || result.error || "",
+      metaError: result.payload?.error || null,
+      debug: result.debug || {},
+    });
   }
 
   return NextResponse.json({ ok: results.every((item) => item.ok), templateName, language, results });

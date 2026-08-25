@@ -6,6 +6,7 @@ export type WhatsAppSendResult = {
   skipped: boolean;
   status?: number;
   payload?: any;
+  debug?: Record<string, unknown>;
   error?: string;
   errorMessage?: string;
   testMode?: boolean;
@@ -44,7 +45,8 @@ export function normalizeWhatsAppNumber(value?: string) {
 }
 
 function configuredGraphVersion() {
-  return process.env.WHATSAPP_GRAPH_VERSION || "v25.0";
+  const value = String(process.env.WHATSAPP_GRAPH_VERSION || "v25.0").trim().replace(/^["']|["']$/g, "");
+  return value.startsWith("v") ? value : `v${value}`;
 }
 
 function resolveRecipient(inputTo?: string, testModeOverride?: boolean) {
@@ -56,20 +58,32 @@ function resolveRecipient(inputTo?: string, testModeOverride?: boolean) {
 
 function whatsappConfig() {
   return {
-    accessToken: process.env.WHATSAPP_ACCESS_TOKEN,
-    phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID,
+    accessToken: String(process.env.WHATSAPP_ACCESS_TOKEN || "").trim().replace(/^["']|["']$/g, ""),
+    phoneNumberId: String(process.env.WHATSAPP_PHONE_NUMBER_ID || "").trim().replace(/^["']|["']$/g, ""),
   };
 }
 
 async function postWhatsAppMessage(body: Record<string, unknown>, metadata?: Record<string, unknown>): Promise<WhatsAppSendResult> {
   const { accessToken, phoneNumberId } = whatsappConfig();
   const recipient = String(body.to || "");
+  const graphVersion = configuredGraphVersion();
+  const endpoint = `https://graph.facebook.com/${graphVersion}/${phoneNumberId || "[missing-phone-number-id]"}/messages`;
+  const debug = {
+    endpoint,
+    graphVersion,
+    phoneNumberIdPresent: Boolean(phoneNumberId),
+    accessTokenPresent: Boolean(accessToken),
+    recipient,
+    messageType: body.type,
+    templateName: typeof body.template === "object" && body.template ? (body.template as any).name : undefined,
+    templateLanguage: typeof body.template === "object" && body.template ? (body.template as any).language?.code : undefined,
+  };
   if (!accessToken || !phoneNumberId || !recipient) {
-    return { ok: false, delivered: false, skipped: true, recipient };
+    return { ok: false, delivered: false, skipped: true, recipient, debug };
   }
 
   try {
-    const response = await fetch(`https://graph.facebook.com/${configuredGraphVersion()}/${phoneNumberId}/messages`, {
+    const response = await fetch(endpoint, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -83,18 +97,18 @@ async function postWhatsAppMessage(body: Record<string, unknown>, metadata?: Rec
     const delivered = response.ok && Boolean(metaMessageId);
     const errorMessage = delivered ? "" : String(payload?.error?.message || payload?.error?.error_user_msg || "");
     if (!delivered) {
-      console.error("WhatsApp delivery failed", { status: response.status, payload, metadata });
+      console.error("WhatsApp delivery failed", { status: response.status, payload, metadata, debug });
       void notifyFailure({
         title: "WhatsApp delivery failed",
         error: errorMessage || "WhatsApp API did not confirm delivery",
-        metadata: { automation: "whatsapp", status: response.status, payload, reminderMetadata: metadata, recipient },
+        metadata: { automation: "whatsapp", status: response.status, payload, reminderMetadata: metadata, debug },
       });
     }
-    return { ok: delivered, delivered, skipped: false, status: response.status, payload, errorMessage, recipient, metaMessageId };
+    return { ok: delivered, delivered, skipped: false, status: response.status, payload, debug, errorMessage, recipient, metaMessageId };
   } catch (error) {
-    console.error("WhatsApp request failed", error);
-    void notifyFailure({ title: "WhatsApp request failed", error, metadata: { automation: "whatsapp", reminderMetadata: metadata, recipient } });
-    return { ok: false, delivered: false, skipped: false, error: "whatsapp_failed", recipient };
+    console.error("WhatsApp request failed", { error, debug });
+    void notifyFailure({ title: "WhatsApp request failed", error, metadata: { automation: "whatsapp", reminderMetadata: metadata, debug } });
+    return { ok: false, delivered: false, skipped: false, error: "whatsapp_failed", recipient, debug };
   }
 }
 

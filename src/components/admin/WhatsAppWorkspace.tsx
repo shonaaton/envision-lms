@@ -50,6 +50,7 @@ export default function WhatsAppWorkspace() {
   const [language, setLanguage] = useState("en_US");
   const [recipients, setRecipients] = useState(DEFAULT_NUMBERS);
   const [notice, setNotice] = useState("");
+  const [templateResults, setTemplateResults] = useState<any[]>([]);
 
   async function loadInbox() {
     setLoading(true);
@@ -102,8 +103,10 @@ export default function WhatsAppWorkspace() {
       }),
     });
     const payload = await res.json().catch(() => ({}));
-    const sent = (payload.results || []).filter((item: any) => item.ok).length;
-    const failed = (payload.results || []).filter((item: any) => !item.ok).length;
+    const results = payload.results || [];
+    setTemplateResults(results);
+    const sent = results.filter((item: any) => item.ok).length;
+    const failed = results.filter((item: any) => !item.ok).length;
     setNotice(res.ok ? `Template sent to ${sent} contact${sent === 1 ? "" : "s"}${failed ? `, ${failed} failed` : ""}.` : payload.error || "Template send failed.");
     await loadInbox();
     setTab("sent");
@@ -159,6 +162,30 @@ export default function WhatsAppWorkspace() {
             <Send size={16} />
             Send Template Now
           </button>
+          {templateResults.length ? (
+            <div className="mt-5 overflow-hidden rounded-lg border border-slate-200">
+              <div className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-xs font-black uppercase tracking-[0.14em] text-slate-500">Last send debug</div>
+              <div className="divide-y divide-slate-100">
+                {templateResults.map((result, index) => (
+                  <div key={`${result.phoneNumber}-${index}`} className="grid gap-2 p-4 text-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="font-black text-slate-950">+{result.phoneNumber}{result.name ? ` · ${result.name}` : ""}</div>
+                      <span className={`rounded-full px-2.5 py-1 text-xs font-black ${result.ok ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>
+                        {result.ok ? "Sent" : `Failed${result.status ? ` ${result.status}` : ""}`}
+                      </span>
+                    </div>
+                    {result.error ? <div className="rounded-lg bg-rose-50 px-3 py-2 text-rose-700">{result.error}</div> : null}
+                    <div className="grid gap-1 text-xs leading-5 text-slate-500">
+                      <div><span className="font-bold text-slate-700">Endpoint:</span> {result.debug?.endpoint || "-"}</div>
+                      <div><span className="font-bold text-slate-700">Template:</span> {result.debug?.templateName || "-"} / {result.debug?.templateLanguage || "-"}</div>
+                      <div><span className="font-bold text-slate-700">Meta code:</span> {result.metaError?.code || "-"} {result.metaError?.type ? `(${result.metaError.type})` : ""}</div>
+                      <div><span className="font-bold text-slate-700">Trace:</span> {result.metaError?.fbtrace_id || "-"}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </section>
       ) : (
         <section className="grid h-[calc(100dvh-190px)] min-h-[500px] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl shadow-slate-200/70 xl:grid-cols-[330px_minmax(0,1fr)_300px] 2xl:grid-cols-[360px_minmax(0,1fr)_320px]">

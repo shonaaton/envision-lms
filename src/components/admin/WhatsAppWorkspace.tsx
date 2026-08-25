@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Bot, CheckCircle2, Clock3, MessageCircle, RefreshCw, Send, Sparkles, UserRound } from "lucide-react";
+import { WHATSAPP_TEMPLATE_DEFINITIONS, getWhatsAppTemplateDefinition, templateSampleValues } from "@/lib/whatsappTemplateRegistry";
 
 type WaMessage = {
   id: string;
@@ -46,9 +47,10 @@ export default function WhatsAppWorkspace() {
   const [loading, setLoading] = useState(true);
   const [reply, setReply] = useState("");
   const [sendingReply, setSendingReply] = useState(false);
-  const [templateName, setTemplateName] = useState("hello_world");
+  const [templateName, setTemplateName] = useState("hello_world_2");
   const [language, setLanguage] = useState("en_US");
   const [recipients, setRecipients] = useState(DEFAULT_NUMBERS);
+  const [templateVariables, setTemplateVariables] = useState("");
   const [notice, setNotice] = useState("");
   const [templateResults, setTemplateResults] = useState<any[]>([]);
 
@@ -70,6 +72,19 @@ export default function WhatsAppWorkspace() {
     () => data.conversations.find((conversation) => conversation.phoneNumber === selectedPhone) || conversations[0],
     [conversations, data.conversations, selectedPhone]
   );
+  const selectedTemplateDefinition = useMemo(() => getWhatsAppTemplateDefinition(templateName), [templateName]);
+  const orderedTemplateVariables = useMemo(
+    () => templateVariables.split(/\r?\n/).map((item) => item.trim()).filter(Boolean),
+    [templateVariables]
+  );
+
+  function updateTemplateName(value: string) {
+    setTemplateName(value);
+    const definition = getWhatsAppTemplateDefinition(value);
+    if (!definition) return;
+    setLanguage(definition.language);
+    setTemplateVariables(templateSampleValues(value).join("\n"));
+  }
 
   async function sendReply() {
     if (!selected || !reply.trim()) return;
@@ -100,6 +115,7 @@ export default function WhatsAppWorkspace() {
         templateName,
         language,
         recipients: recipients.split(/[\s,]+/).map((item) => item.trim()).filter(Boolean),
+        templateVariables: orderedTemplateVariables,
       }),
     });
     const payload = await res.json().catch(() => ({}));
@@ -109,7 +125,7 @@ export default function WhatsAppWorkspace() {
     const failed = results.filter((item: any) => !item.ok).length;
     setNotice(res.ok ? `Template sent to ${sent} contact${sent === 1 ? "" : "s"}${failed ? `, ${failed} failed` : ""}.` : payload.error || "Template send failed.");
     await loadInbox();
-    setTab("sent");
+    if (sent > 0 && failed === 0) setTab("sent");
   }
 
   return (
@@ -152,11 +168,41 @@ export default function WhatsAppWorkspace() {
             </div>
           </div>
           <div className="mt-5 grid gap-4 sm:grid-cols-2">
-            <Field label="Template name" value={templateName} onChange={setTemplateName} />
+            <Field label="Template name" value={templateName} onChange={updateTemplateName} listId="whatsapp-template-options" />
             <Field label="Language" value={language} onChange={setLanguage} />
           </div>
+          <datalist id="whatsapp-template-options">
+            {WHATSAPP_TEMPLATE_DEFINITIONS.map((template) => (
+              <option key={template.name} value={template.name}>
+                {template.sourceAutomation}
+              </option>
+            ))}
+          </datalist>
           <div className="mt-4">
             <Field label="Recipients" value={recipients} onChange={setRecipients} />
+          </div>
+          <div className="mt-4">
+            <label className="block">
+              <span className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Body variables in Meta order</span>
+              <textarea
+                value={templateVariables}
+                onChange={(event) => setTemplateVariables(event.target.value)}
+                rows={Math.max(4, selectedTemplateDefinition?.variables.length || 0)}
+                placeholder="One value per line. Leave blank for hello_world_2."
+                className="mt-2 min-h-28 w-full resize-y rounded-lg border border-slate-200 px-3 py-3 text-sm outline-none focus:border-emerald-500"
+              />
+            </label>
+            {selectedTemplateDefinition?.variables.length ? (
+              <div className="mt-3 grid gap-2 rounded-lg border border-emerald-100 bg-emerald-50 p-3 text-xs text-emerald-900">
+                {selectedTemplateDefinition.variables.map((variable) => (
+                  <div key={`${selectedTemplateDefinition.name}-${variable.position}`} className="flex flex-wrap gap-2">
+                    <span className="font-black">{`{{${variable.position}}}`}</span>
+                    <span>{variable.key}</span>
+                    {variable.sample ? <span className="text-emerald-700">Sample: {variable.sample}</span> : null}
+                  </div>
+                ))}
+              </div>
+            ) : null}
           </div>
           <button onClick={sendTemplate} className="mt-5 inline-flex h-11 items-center gap-2 rounded-lg bg-emerald-600 px-5 text-sm font-bold text-white shadow-sm">
             <Send size={16} />
@@ -311,11 +357,11 @@ function TabButton({ active, onClick, icon, label }: { active: boolean; onClick:
   );
 }
 
-function Field({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+function Field({ label, value, onChange, listId }: { label: string; value: string; onChange: (value: string) => void; listId?: string }) {
   return (
     <label className="block">
       <span className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">{label}</span>
-      <input value={value} onChange={(event) => onChange(event.target.value)} className="mt-2 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-emerald-500" />
+      <input list={listId} value={value} onChange={(event) => onChange(event.target.value)} className="mt-2 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-emerald-500" />
     </label>
   );
 }

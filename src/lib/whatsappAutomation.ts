@@ -18,6 +18,9 @@ type WhatsAppReminderInput = {
   to?: string;
   message: string;
   templateText?: string;
+  templateName?: string;
+  language?: string;
+  templateVariables?: string[];
   metadata?: Record<string, unknown>;
 };
 
@@ -26,8 +29,10 @@ type WhatsAppTemplateInput = {
   templateName: string;
   language?: string;
   bodyParameters?: string[];
+  templateVariables?: string[];
   metadata?: Record<string, unknown>;
   testMode?: boolean;
+  bypassN8n?: boolean;
 };
 
 type WhatsAppTextInput = {
@@ -36,6 +41,7 @@ type WhatsAppTextInput = {
   previewUrl?: boolean;
   metadata?: Record<string, unknown>;
   testMode?: boolean;
+  bypassN8n?: boolean;
 };
 
 export function normalizeWhatsAppNumber(value?: string) {
@@ -61,6 +67,96 @@ function whatsappConfig() {
     accessToken: String(process.env.WHATSAPP_ACCESS_TOKEN || "").trim().replace(/^["']|["']$/g, ""),
     phoneNumberId: String(process.env.WHATSAPP_PHONE_NUMBER_ID || "").trim().replace(/^["']|["']$/g, ""),
   };
+}
+
+function cleanEnv(value?: string) {
+  return String(value || "").trim().replace(/^["']|["']$/g, "");
+}
+
+function n8nWebhookUrl() {
+  return cleanEnv(process.env.WHATSAPP_N8N_SEND_TEMPLATE_WEBHOOK_URL || process.env.WHATSAPP_N8N_SEND_WEBHOOK_URL);
+}
+
+async function sendViaN8n(input: {
+  to?: string;
+  type?: "template" | "text";
+  templateName: string;
+  language: string;
+  bodyParameters?: string[];
+  templateVariables?: string[];
+  message?: string;
+  metadata?: Record<string, unknown>;
+  testMode?: boolean;
+}): Promise<WhatsAppSendResult | null> {
+  const webhookUrl = n8nWebhookUrl();
+  if (!webhookUrl) return null;
+  const { testMode, recipient } = resolveRecipient(input.to, input.testMode);
+  if (!recipient) {
+    return {
+      ok: false,
+      delivered: false,
+      skipped: true,
+      testMode,
+      recipient,
+      debug: { sender: "n8n", webhookUrlConfigured: true, reason: "missing_recipient" },
+    };
+  }
+
+  try {
+    const response = await fetch(webhookUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-lms-whatsapp-secret": cleanEnv(process.env.WHATSAPP_N8N_FORWARD_SECRET),
+      },
+      signal: AbortSignal.timeout(30_000),
+      body: JSON.stringify({
+        type: input.type || "template",
+        templateName: input.templateName,
+        language: input.language,
+        recipients: [recipient],
+        bodyParameters: input.bodyParameters || input.templateVariables || [],
+        templateVariables: input.templateVariables || input.bodyParameters || [],
+        message: input.message || "",
+        metadata: input.metadata || {},
+      }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    const first = Array.isArray(payload?.results) ? payload.results[0] : null;
+    const ok = Boolean(response.ok && (payload?.ok !== false) && (first ? first.ok !== false : true));
+    return {
+      ok,
+      delivered: ok,
+      skipped: false,
+      status: response.status,
+      payload,
+      testMode,
+      recipient,
+      metaMessageId: first?.metaMessageId || "",
+      errorMessage: first?.error || payload?.error || "",
+      debug: {
+        sender: "n8n",
+        webhookUrlConfigured: true,
+        type: input.type || "template",
+        templateName: input.templateName,
+        templateLanguage: input.language,
+        recipient,
+        n8nStatus: response.status,
+      },
+    };
+  } catch (error) {
+    console.error("WhatsApp n8n request failed", { error, metadata: input.metadata });
+    void notifyFailure({ title: "WhatsApp n8n request failed", error, metadata: { automation: "whatsapp_n8n", reminderMetadata: input.metadata, recipient } });
+    return {
+      ok: false,
+      delivered: false,
+      skipped: false,
+      error: "whatsapp_n8n_failed",
+      testMode,
+      recipient,
+      debug: { sender: "n8n", webhookUrlConfigured: true, error: error instanceof Error ? error.message : String(error || "") },
+    };
+  }
 }
 
 async function postWhatsAppMessage(body: Record<string, unknown>, metadata?: Record<string, unknown>): Promise<WhatsAppSendResult> {
@@ -146,7 +242,20 @@ function templateBodyParameters(input: WhatsAppReminderInput, message: string, t
 
 export async function sendWhatsAppTemplateMessage(input: WhatsAppTemplateInput) {
   const { testMode, recipient } = resolveRecipient(input.to, input.testMode);
-  const bodyParameters = (input.bodyParameters || []).map((text) => String(text || "").slice(0, 1024)).filter(Boolean);
+  const bodyParameters = (input.bodyParameters || input.templateVariables || []).map((text) => String(text || "").slice(0, 1024)).filter(Boolean);
+  if (!input.bypassN8n) {
+    const n8nResult = await sendViaN8n({
+      to: input.to,
+      templateName: input.templateName,
+      language: input.language || "en_US",
+      bodyParameters,
+      templateVariables: bodyParameters,
+      metadata: input.metadata,
+      testMode: input.testMode,
+    });
+    if (n8nResult) return n8nResult;
+  }
+
   const body = {
     messaging_product: "whatsapp",
     to: recipient,
@@ -172,6 +281,19 @@ export async function sendWhatsAppTemplateMessage(input: WhatsAppTemplateInput) 
 
 export async function sendWhatsAppTextMessage(input: WhatsAppTextInput) {
   const { testMode, recipient } = resolveRecipient(input.to, input.testMode);
+  if (!input.bypassN8n) {
+    const n8nResult = await sendViaN8n({
+      to: input.to,
+      type: "text",
+      templateName: "",
+      language: "",
+      message: String(input.text || "").trim().slice(0, 4000),
+      metadata: input.metadata,
+      testMode: input.testMode,
+    });
+    if (n8nResult) return n8nResult;
+  }
+
   const body = {
     messaging_product: "whatsapp",
     to: recipient,
@@ -192,9 +314,10 @@ export async function sendWhatsAppReminder(input: WhatsAppReminderInput) {
   const templateText = String(input.templateText || message || "Student").trim().slice(0, 1024);
   return sendWhatsAppTemplateMessage({
     to: input.to,
-    templateName: process.env.WHATSAPP_TEMPLATE_NAME || "jaspers_market_plain_text_v1",
-    language: process.env.WHATSAPP_TEMPLATE_LANGUAGE || "en_US",
-    bodyParameters: templateBodyParameters(input, message, templateText),
+    templateName: input.templateName || process.env.WHATSAPP_TEMPLATE_NAME || "jaspers_market_plain_text_v1",
+    language: input.language || process.env.WHATSAPP_TEMPLATE_LANGUAGE || "en_US",
+    bodyParameters: input.templateVariables || templateBodyParameters(input, message, templateText),
+    templateVariables: input.templateVariables,
     metadata: input.metadata,
   });
 }

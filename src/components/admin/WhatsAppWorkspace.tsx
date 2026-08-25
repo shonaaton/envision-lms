@@ -77,11 +77,13 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
 
   useEffect(() => {
     void loadInbox();
+    const interval = window.setInterval(() => void loadInbox(), 30000);
+    return () => window.clearInterval(interval);
   }, []);
 
   const conversations = tab === "sent" ? data.sentTemplates : tab === "all" ? data.conversations : data.active;
   const selected = useMemo(
-    () => data.conversations.find((conversation) => conversation.phoneNumber === selectedPhone) || conversations[0],
+    () => data.conversations.find((conversation) => conversation.phoneNumber === selectedPhone) || (!selectedPhone ? conversations[0] : undefined),
     [conversations, data.conversations, selectedPhone]
   );
   const selectedTemplateDefinition = useMemo(() => getWhatsAppTemplateDefinition(templateName), [templateName]);
@@ -144,6 +146,12 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
     setNotice(res.ok ? `Template sent to ${sent} contact${sent === 1 ? "" : "s"}${failed ? `, ${failed} failed` : ""}.` : payload.error || "Template send failed.");
     await loadInbox();
     if (sent > 0 && failed === 0) setTab("sent");
+  }
+
+  function prepareTemplateForSelectedContact() {
+    if (!selected) return;
+    setRecipients(selected.phoneNumber);
+    setTab("automation");
   }
 
   return (
@@ -263,8 +271,8 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
               {loading ? <div className="p-5 text-sm text-slate-500">Loading WhatsApp inbox...</div> : null}
               {!loading && conversations.length === 0 ? (
                 <EmptyPanel
-                  title={tab === "active" ? "No active chats" : "No templates sent"}
-                  text={tab === "active" ? "Replies will appear here after a contact messages the business." : "Template messages you send will appear in this tab."}
+                  title={tab === "active" ? "No active chats" : tab === "all" ? "No WhatsApp chats" : "No templates sent"}
+                  text={tab === "active" ? "Replies will appear here after a contact messages the business." : tab === "all" ? "Inbound replies and sent messages will appear here." : "Template messages you send will appear in this tab."}
                 />
               ) : null}
               {conversations.map((conversation) => (
@@ -331,6 +339,12 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
                   <Send size={16} />
                   Reply
                 </button>
+                {selected && !selected.canReply ? (
+                  <button onClick={prepareTemplateForSelectedContact} className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 text-sm font-bold text-white">
+                    <Bot size={16} />
+                    Template
+                  </button>
+                ) : null}
               </div>
             </div>
           </main>

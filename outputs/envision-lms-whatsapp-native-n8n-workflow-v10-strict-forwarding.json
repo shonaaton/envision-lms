@@ -110,7 +110,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://lms.srv1170212.hstgr.cloud/api/webhooks/whatsapp",
+        "url": "https://classroom.envisionchessacademy.com/api/webhooks/whatsapp",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [

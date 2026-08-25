@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Archive, ArrowLeft, Banknote, CreditCard, Eye, FilePenLine, Plus, Save, Settings2, Trash2 } from "lucide-react";
+import { Archive, ArrowLeft, Banknote, CheckCircle2, CreditCard, Eye, FilePenLine, Plus, Save, Settings2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 type PlanType = "monthly" | "credits";
@@ -32,22 +32,49 @@ function gstLabel(mode: GstMode) {
   return "Non-GST";
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <label className="space-y-1">
-      <span className="text-xs font-bold uppercase tracking-[0.1em] text-slate-500">{label}</span>
+      <span className="flex items-center justify-between gap-2 text-xs font-bold uppercase tracking-[0.1em] text-slate-500">
+        {label}
+        {hint && <span className="normal-case tracking-normal text-slate-400">{hint}</span>}
+      </span>
       {children}
     </label>
   );
 }
 
 function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
-  return <input {...props} className={`h-10 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none transition focus:border-brand focus:ring-4 focus:ring-brand/10 ${props.className || ""}`} />;
+  return <input {...props} className={`h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-950 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-brand focus:ring-4 focus:ring-brand/10 disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-500 ${props.className || ""}`} />;
+}
+
+function GstPercentageInput({ gstMode, initialValue = 18 }: { gstMode: GstMode; initialValue?: number }) {
+  const normalizedInitial = Number.isFinite(Number(initialValue)) && Number(initialValue) > 0 ? Number(initialValue) : 18;
+  const [value, setValue] = useState(String(normalizedInitial));
+  const isNonGst = gstMode === "non_gst";
+
+  return (
+    <>
+      <input type="hidden" name="gstPercentage" value={isNonGst ? "0" : value} />
+      <Field label="GST Percentage" hint={isNonGst ? "locked at 0" : undefined}>
+        <Input
+          type="number"
+          min="0"
+          max="100"
+          inputMode="decimal"
+          value={isNonGst ? "0" : value}
+          onChange={(event) => setValue(event.target.value)}
+          disabled={isNonGst}
+          aria-label="GST Percentage"
+        />
+      </Field>
+    </>
+  );
 }
 
 function TypeControl({ value, onChange }: { value: PlanType; onChange: (value: PlanType) => void }) {
   return (
-    <div className="grid grid-cols-2 gap-2 rounded-md bg-slate-100 p-1">
+    <div className="grid grid-cols-2 gap-1 rounded-lg border border-slate-200 bg-slate-100 p-1 shadow-inner">
       {[
         ["monthly", "Monthly"],
         ["credits", "Credit-Based"],
@@ -56,7 +83,7 @@ function TypeControl({ value, onChange }: { value: PlanType; onChange: (value: P
           key={type}
           type="button"
           onClick={() => onChange(type as PlanType)}
-          className={`h-9 rounded px-3 text-sm font-medium ${value === type ? "bg-white text-purple-700 shadow-sm" : "text-slate-600"}`}
+          className={`h-10 rounded-md px-3 text-sm font-bold transition ${value === type ? "bg-white text-brand shadow-sm ring-1 ring-slate-200" : "text-slate-600 hover:bg-white/60 hover:text-slate-950"}`}
         >
           {label}
         </button>
@@ -67,7 +94,7 @@ function TypeControl({ value, onChange }: { value: PlanType; onChange: (value: P
 
 function GstControl({ value, onChange }: { value: GstMode; onChange: (value: GstMode) => void }) {
   return (
-    <div className="grid grid-cols-1 gap-2 rounded-md bg-slate-100 p-1 md:grid-cols-3">
+    <div className="grid grid-cols-1 gap-1 rounded-lg border border-slate-200 bg-slate-100 p-1 shadow-inner md:grid-cols-3">
       {[
         ["included", "GST Included"],
         ["excluded", "GST Excluded"],
@@ -77,8 +104,9 @@ function GstControl({ value, onChange }: { value: GstMode; onChange: (value: Gst
           key={mode}
           type="button"
           onClick={() => onChange(mode as GstMode)}
-          className={`h-9 rounded px-3 text-sm font-medium ${value === mode ? "bg-white text-purple-700 shadow-sm" : "text-slate-600"}`}
+          className={`inline-flex h-10 items-center justify-center gap-2 rounded-md px-3 text-sm font-bold transition ${value === mode ? "bg-white text-brand shadow-sm ring-1 ring-slate-200" : "text-slate-600 hover:bg-white/60 hover:text-slate-950"}`}
         >
+          {value === mode && <CheckCircle2 size={14} />}
           {label}
         </button>
       ))}
@@ -125,9 +153,7 @@ export function CreateFeePlanForm({ action }: { action: ServerAction }) {
             <Field label="Late Fee Amount">
               <Input name="lateFeeAmount" type="number" min="0" defaultValue={500} />
             </Field>
-            <Field label="GST Percentage">
-              <Input name="gstPercentage" type="number" min="0" defaultValue={18} disabled={gstMode === "non_gst"} />
-            </Field>
+            <GstPercentageInput gstMode={gstMode} />
             <input type="hidden" name="credits" value="0" />
           </div>
         ) : (
@@ -144,16 +170,14 @@ export function CreateFeePlanForm({ action }: { action: ServerAction }) {
             <Field label="Validity">
               <Input value="Unlimited until credits are used" readOnly className="bg-slate-50 text-slate-500" />
             </Field>
-            <Field label="GST Percentage">
-              <Input name="gstPercentage" type="number" min="0" defaultValue={18} disabled={gstMode === "non_gst"} />
-            </Field>
+            <GstPercentageInput gstMode={gstMode} />
             <input type="hidden" name="lateFeeAfterDays" value="0" />
             <input type="hidden" name="lateFeeAmount" value="0" />
           </div>
         )}
       </StepPanel>
 
-      <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-purple-700 px-4 text-sm font-semibold text-white hover:bg-purple-800">
+      <button className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-brand px-5 text-sm font-bold text-white shadow-lg shadow-brand/20 transition hover:-translate-y-0.5 hover:bg-brand-600">
         <Plus size={15} /> Create Plan
       </button>
     </form>
@@ -164,7 +188,7 @@ export function FeePlanEditor({ plan, updateAction, archiveAction, deleteAction 
   const [gstMode, setGstMode] = useState<GstMode>(plan.gstMode);
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm shadow-brand-900/5">
       <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
         <div>
           <div className="font-semibold text-slate-950">{plan.name}</div>
@@ -197,7 +221,7 @@ export function FeePlanEditor({ plan, updateAction, archiveAction, deleteAction 
             <Field label="Monthly Fee"><Input name="amount" type="number" defaultValue={plan.amount / 100} /></Field>
             <Field label="Late Fee After"><Input name="lateFeeAfterDays" type="number" min="0" max="7" defaultValue={Math.min(plan.lateFeeAfterDays || 7, 7)} /></Field>
             <Field label="Late Fee Amount"><Input name="lateFeeAmount" type="number" defaultValue={(plan.lateFeeAmount || 50000) / 100} /></Field>
-            <Field label="GST Percentage"><Input name="gstPercentage" type="number" defaultValue={plan.gstPercentage || 18} disabled={gstMode === "non_gst"} /></Field>
+            <GstPercentageInput gstMode={gstMode} initialValue={plan.gstPercentage} />
             <input type="hidden" name="credits" value="0" />
           </div>
         ) : (
@@ -205,14 +229,14 @@ export function FeePlanEditor({ plan, updateAction, archiveAction, deleteAction 
             <Field label="Plan Name"><Input name="name" defaultValue={plan.name} /></Field>
             <Field label="Credits"><Input name="credits" type="number" defaultValue={plan.credits || 0} /></Field>
             <Field label="Fee Amount"><Input name="amount" type="number" defaultValue={plan.amount / 100} /></Field>
-            <Field label="GST Percentage"><Input name="gstPercentage" type="number" defaultValue={plan.gstPercentage || 18} disabled={gstMode === "non_gst"} /></Field>
+            <GstPercentageInput gstMode={gstMode} initialValue={plan.gstPercentage} />
             <input type="hidden" name="lateFeeAfterDays" value="0" />
             <input type="hidden" name="lateFeeAmount" value="0" />
           </div>
         )}
 
         <div className="flex flex-wrap gap-2">
-          <button className="inline-flex h-9 items-center gap-1 rounded-md bg-slate-900 px-3 text-xs font-semibold text-white">
+          <button className="inline-flex h-9 items-center gap-1 rounded-md bg-brand px-3 text-xs font-bold text-white shadow-sm shadow-brand/20 hover:bg-brand-600">
             <Save size={13} /> Save
           </button>
           {plan.isActive && <button formAction={archiveAction} formNoValidate disabled={plan.isLinked} onClick={(event) => { if (!window.confirm(`Archive ${plan.name}?`)) event.preventDefault(); }} title={plan.isLinked ? "This plan is linked to a student or invoice" : "Archive plan"} className="inline-flex h-9 items-center gap-1 rounded-md border border-slate-200 px-3 text-xs font-medium disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400">
@@ -230,11 +254,11 @@ export function FeePlanEditor({ plan, updateAction, archiveAction, deleteAction 
 
 function StepPanel({ step, title, description, children }: { step: string; title: string; description: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+    <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm shadow-brand-900/5">
       <div className="mb-3 flex items-start gap-3">
-        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-brand text-xs font-bold text-white">{step}</span>
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-brand text-xs font-bold text-white shadow-sm shadow-brand/20">{step}</span>
         <div>
-          <h3 className="text-sm font-bold text-slate-950">{title}</h3>
+          <h3 className="text-base font-bold text-slate-950">{title}</h3>
           <p className="mt-1 text-xs leading-5 text-slate-500">{description}</p>
         </div>
       </div>
@@ -260,14 +284,14 @@ function ActionCard({
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-lg border p-3 text-left shadow-sm transition hover:border-brand/25 ${
-        tone === "brand" ? "border-brand bg-brand text-white shadow-brand/15 hover:bg-brand-700" : "border-slate-200 bg-white text-slate-950 hover:bg-slate-50"
+      className={`rounded-lg border p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-brand/30 hover:shadow-lg ${
+        tone === "brand" ? "border-brand bg-brand text-white shadow-brand/20 hover:bg-brand-600" : "border-slate-200 bg-white text-slate-950 shadow-brand-900/5 hover:bg-slate-50"
       }`}
     >
-      <span className={`mb-3 grid h-9 w-9 place-items-center rounded-md ${tone === "brand" ? "bg-accent text-brand" : "bg-brand/10 text-brand"}`}>
+      <span className={`mb-4 grid h-10 w-10 place-items-center rounded-md ${tone === "brand" ? "bg-accent text-brand" : "bg-brand/10 text-brand"}`}>
         {icon}
       </span>
-      <span className="block text-sm font-bold">{title}</span>
+      <span className="block text-base font-bold">{title}</span>
       <span className={`mt-1 block text-xs leading-5 ${tone === "brand" ? "text-white/76" : "text-slate-600"}`}>{description}</span>
     </button>
   );
@@ -289,7 +313,7 @@ function PlanSummaryCard({
   deleteAction: ServerAction;
 }) {
   return (
-    <article className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+    <article className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm shadow-brand-900/5 transition hover:border-brand/20 hover:shadow-lg hover:shadow-brand-900/10">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -305,7 +329,7 @@ function PlanSummaryCard({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <div className="rounded-lg bg-slate-50 px-3 py-2 text-right">
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-right">
             <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Amount</div>
             <div className="text-sm font-bold text-slate-950">{rupees(plan.amount)}</div>
           </div>
@@ -345,7 +369,7 @@ function PlanGroup({
   deleteAction: ServerAction;
 }) {
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+    <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm shadow-brand-900/5">
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-base font-bold text-slate-950">{title}</h2>
@@ -414,11 +438,12 @@ export function FeePlansWorkspace({
 
   return (
     <div className="space-y-4">
-      <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <section className="overflow-hidden rounded-lg border border-brand/15 bg-white shadow-sm shadow-brand-900/5">
+        <div className="border-b border-slate-200 bg-gradient-to-r from-brand-50 via-white to-accent/20 p-4">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-brand/70">Choose an action</p>
-            <h2 className="text-base font-bold text-slate-950">Plan Workspace</h2>
+            <h2 className="text-xl font-bold text-slate-950">Plan Workspace</h2>
           </div>
           {mode !== "home" && (
             <button type="button" onClick={() => setMode("home")} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 hover:text-brand">
@@ -426,6 +451,7 @@ export function FeePlansWorkspace({
               Back to choices
             </button>
           )}
+        </div>
         </div>
       </section>
 
@@ -445,10 +471,11 @@ export function FeePlansWorkspace({
       )}
 
       {mode === "create" && (
-        <section className="rounded-lg border border-slate-200 bg-slate-50 p-4 shadow-sm">
+        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm shadow-brand-900/5">
           <div className="mb-4">
-            <h2 className="text-base font-bold text-slate-950">Create Plan</h2>
-            <p className="mt-1 text-xs text-slate-500">Choose monthly or credit-based in step 1.</p>
+            <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-brand/70">New billing setup</p>
+            <h2 className="text-xl font-bold text-slate-950">Create Plan</h2>
+            <p className="mt-1 text-sm text-slate-500">Choose monthly or credit-based in step 1.</p>
           </div>
           <CreateFeePlanForm action={createAction} />
         </section>
@@ -466,7 +493,7 @@ export function FeePlansWorkspace({
 
 function MiniStat({ label, value, icon }: { label: string; value: number; icon: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm shadow-brand-900/5">
       <span className="grid h-9 w-9 place-items-center rounded-md bg-brand/10 text-brand">{icon}</span>
       <div>
         <div className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">{label}</div>

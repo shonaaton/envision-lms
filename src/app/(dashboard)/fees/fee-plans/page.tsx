@@ -20,9 +20,10 @@ function overdueDays(value: FormDataEntryValue | null) {
 function taxDetails(formData: FormData) {
   const gstMode = String(formData.get("gstMode") || "non_gst");
   const normalizedMode = gstMode === "included" || gstMode === "excluded" ? gstMode : "non_gst";
+  const gstPercentage = Math.min(100, Math.max(0, Number(formData.get("gstPercentage") || 0)));
   return {
     gstMode: normalizedMode,
-    gstPercentage: normalizedMode === "non_gst" ? 0 : Math.max(0, Number(formData.get("gstPercentage") || 0)),
+    gstPercentage: normalizedMode === "non_gst" ? 0 : gstPercentage,
   };
 }
 
@@ -177,7 +178,7 @@ export default async function FeePlansPage({ searchParams }: { searchParams?: Pr
       type: plan.type,
       amount: plan.amount,
       gstMode: plan.gstMode || "non_gst",
-      gstPercentage: plan.gstPercentage || 0,
+      gstPercentage: plan.gstMode === "non_gst" ? 0 : plan.gstPercentage || 0,
       credits: plan.credits || 0,
       lateFeeAmount: plan.lateFeeAmount || 50000,
       lateFeeAfterDays: Math.min(plan.lateFeeAfterDays || 7, 7),
@@ -187,12 +188,30 @@ export default async function FeePlansPage({ searchParams }: { searchParams?: Pr
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 px-4 py-4 text-slate-950 sm:px-6 lg:px-8">
-      <div className="mb-4 flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-        <span className="flex h-9 w-9 items-center justify-center rounded-md bg-purple-50 text-purple-700"><Banknote size={17} /></span>
-        <div>
-          <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-brand/70">Fees</p>
-          <h1 className="text-xl font-bold text-slate-950">Fee Plans</h1>
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(253,231,90,0.22),transparent_28%),linear-gradient(180deg,#fff_0%,#f8fafc_46%,#f5f3f8_100%)] px-4 py-5 text-slate-950 sm:px-6 lg:px-8">
+      <div className="mb-4 overflow-hidden rounded-lg border border-brand/15 bg-white shadow-sm shadow-brand-900/5">
+        <div className="flex flex-col gap-4 border-b border-slate-200 bg-gradient-to-r from-brand-50 via-white to-accent/20 p-5 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-3">
+            <span className="flex h-11 w-11 items-center justify-center rounded-md bg-brand text-white shadow-sm shadow-brand/20"><Banknote size={19} /></span>
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-brand/70">Fees</p>
+              <h1 className="text-2xl font-bold text-slate-950">Fee Plans</h1>
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-2 text-right">
+            <div className="rounded-lg border border-slate-200 bg-white/80 px-3 py-2">
+              <div className="text-[11px] font-bold uppercase tracking-[0.1em] text-slate-500">Monthly</div>
+              <div className="text-lg font-bold text-slate-950">{monthlyPlans.length}</div>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-white/80 px-3 py-2">
+              <div className="text-[11px] font-bold uppercase tracking-[0.1em] text-slate-500">Credits</div>
+              <div className="text-lg font-bold text-slate-950">{creditPlans.length}</div>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-white/80 px-3 py-2">
+              <div className="text-[11px] font-bold uppercase tracking-[0.1em] text-slate-500">Active</div>
+              <div className="text-lg font-bold text-slate-950">{plans.filter((plan: any) => plan.isActive !== false).length}</div>
+            </div>
+          </div>
         </div>
       </div>
 

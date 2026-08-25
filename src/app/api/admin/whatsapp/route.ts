@@ -31,6 +31,23 @@ function serializeMessage(message: any) {
   };
 }
 
+function windowState(lastInboundAt: Date | string | null) {
+  const lastCustomerMessageAt = lastInboundAt ? new Date(lastInboundAt) : null;
+  const windowExpiresAt = lastCustomerMessageAt ? new Date(lastCustomerMessageAt.getTime() + CUSTOMER_SERVICE_WINDOW_MS) : null;
+  const remainingSeconds = windowExpiresAt ? Math.max(0, Math.floor((windowExpiresAt.getTime() - Date.now()) / 1000)) : 0;
+  const windowOpen = remainingSeconds > 0;
+  const expiringSoon = windowOpen && remainingSeconds <= 2 * 60 * 60;
+  return {
+    last_customer_message_at: lastCustomerMessageAt,
+    window_expires_at: windowExpiresAt,
+    window_open: windowOpen,
+    expiring_soon: expiringSoon,
+    remaining_seconds: remainingSeconds,
+    free_form_allowed: windowOpen,
+    template_required: !windowOpen,
+  };
+}
+
 export async function GET() {
   const session = await auth();
   if (!canManageWhatsApp(session)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -61,25 +78,27 @@ export async function GET() {
         : null,
       messages: [],
       lastInboundAt: null,
+      lastBusinessMessageAt: null,
       lastMessageAt: null,
+      lastMessageDirection: null,
       lastMessageText: "",
       sentTemplateCount: 0,
     };
-    current.messages.push(serializeMessage(message));
+    const serialized = serializeMessage(message);
+    current.messages.push(serialized);
     current.lastMessageAt = message.createdAt;
-    current.lastMessageText = serializeMessage(message).text || message.templateName || "";
+    current.lastMessageDirection = message.direction;
+    current.lastMessageText = serialized.text || message.templateName || "";
     if (message.direction === "inbound") current.lastInboundAt = message.receivedAt || message.createdAt;
+    if (message.direction === "outbound") current.lastBusinessMessageAt = message.sentAt || message.createdAt;
     if (message.direction === "outbound" && message.messageType === "template") current.sentTemplateCount += 1;
     conversations.set(phoneNumber, current);
   }
 
-  const now = Date.now();
   const data = Array.from(conversations.values())
     .map((conversation) => {
-      const lastInboundTime = conversation.lastInboundAt ? new Date(conversation.lastInboundAt).getTime() : 0;
-      const activeUntil = lastInboundTime ? new Date(lastInboundTime + CUSTOMER_SERVICE_WINDOW_MS) : null;
-      const canReply = Boolean(activeUntil && activeUntil.getTime() > now);
-      return { ...conversation, activeUntil, canReply };
+      const whatsapp = windowState(conversation.lastInboundAt);
+      return { ...conversation, activeUntil: whatsapp.window_expires_at, canReply: whatsapp.free_form_allowed, whatsapp };
     })
     .sort((a, b) => new Date(b.lastMessageAt || 0).getTime() - new Date(a.lastMessageAt || 0).getTime());
 

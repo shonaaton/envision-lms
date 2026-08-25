@@ -29,6 +29,15 @@ type Conversation = {
   sentTemplateCount: number;
   activeUntil?: string | null;
   canReply: boolean;
+  whatsapp?: {
+    last_customer_message_at?: string | null;
+    window_expires_at?: string | null;
+    window_open: boolean;
+    expiring_soon: boolean;
+    remaining_seconds: number;
+    free_form_allowed: boolean;
+    template_required: boolean;
+  };
 };
 
 type InboxPayload = {
@@ -48,7 +57,7 @@ export default function WhatsAppWorkspace() {
   const [reply, setReply] = useState("");
   const [sendingReply, setSendingReply] = useState(false);
   const [templateName, setTemplateName] = useState("hello_world_2");
-  const [language, setLanguage] = useState("en_US");
+  const [language, setLanguage] = useState("en");
   const [recipients, setRecipients] = useState(DEFAULT_NUMBERS);
   const [templateVariables, setTemplateVariables] = useState("");
   const [notice, setNotice] = useState("");
@@ -98,7 +107,7 @@ export default function WhatsAppWorkspace() {
     const payload = await res.json().catch(() => ({}));
     setSendingReply(false);
     if (!res.ok || payload.error) {
-      setNotice(payload.error || "Reply could not be sent.");
+      setNotice(payload.message || payload.error || "Reply could not be sent.");
       return;
     }
     setReply("");
@@ -259,6 +268,7 @@ export default function WhatsAppWorkspace() {
                     <span className="block truncate text-sm font-black text-slate-950">{conversation.contactName}</span>
                     <span className="mt-0.5 block truncate text-xs font-semibold text-slate-500">+{conversation.phoneNumber}</span>
                     <span className="mt-1 block truncate text-xs text-slate-500">{conversation.lastMessageText || "No message preview"}</span>
+                    {conversation.canReply ? <span className="mt-2 inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-black text-emerald-700">{formatRemaining(conversation.whatsapp?.remaining_seconds || 0)} left</span> : null}
                   </span>
                 </button>
               ))}
@@ -271,7 +281,7 @@ export default function WhatsAppWorkspace() {
                 <div className="truncate text-lg font-black">{selected?.contactName || "No conversation selected"}</div>
                 {selected ? <div className="text-xs font-semibold text-emerald-100">+{selected.phoneNumber}</div> : null}
               </div>
-              {selected?.canReply ? <Badge text="24h active" tone="green" /> : <Badge text="Template required" tone="amber" />}
+              {selected?.canReply ? <Badge text={`Reply allowed · ${formatRemaining(selected.whatsapp?.remaining_seconds || 0)} left`} tone={selected.whatsapp?.expiring_soon ? "amber" : "green"} /> : <Badge text="Template required" tone="amber" />}
             </div>
             <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-5">
               {!selected ? (
@@ -304,7 +314,7 @@ export default function WhatsAppWorkspace() {
                   value={reply}
                   onChange={(event) => setReply(event.target.value)}
                   disabled={!selected?.canReply}
-                  placeholder={selected?.canReply ? "Type a reply..." : "Outside 24-hour window. Send a template instead."}
+                  placeholder={selected?.canReply ? "Type a reply..." : "24-hour window closed. Send a template instead."}
                   className="min-h-11 flex-1 rounded-lg border border-slate-200 px-4 text-sm outline-none focus:border-emerald-500 disabled:bg-slate-50"
                 />
                 <button disabled={!selected?.canReply || sendingReply || !reply.trim()} onClick={sendReply} className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-teal-900 px-4 text-sm font-bold text-white disabled:cursor-not-allowed disabled:bg-slate-300">
@@ -324,11 +334,11 @@ export default function WhatsAppWorkspace() {
               <div className="mt-1 text-sm font-semibold text-slate-500">{selected ? `+${selected.phoneNumber}` : "-"}</div>
             </div>
             <div className="mt-4 space-y-2 text-sm">
-              <ProfileRow label="Status" value={selected?.canReply ? "Active 24-hour window" : "Template only"} />
+              <ProfileRow label="Status" value={selected?.canReply ? `Customer service window open (${formatRemaining(selected.whatsapp?.remaining_seconds || 0)} left)` : "Customer service window closed"} />
               <ProfileRow label="Matched LMS user" value={selected?.matchedUser?.name || "Not matched"} />
               <ProfileRow label="Role" value={selected?.matchedUser?.role || "-"} />
               <ProfileRow label="Templates sent" value={String(selected?.sentTemplateCount || 0)} />
-              <ProfileRow label="Active until" value={selected?.activeUntil ? new Date(selected.activeUntil).toLocaleString() : "-"} />
+              <ProfileRow label="Free-form allowed until" value={selected?.activeUntil ? new Date(selected.activeUntil).toLocaleString() : "-"} />
             </div>
           </aside>
         </section>
@@ -379,6 +389,14 @@ function Avatar({ name }: { name: string }) {
 
 function Badge({ text, tone }: { text: string; tone: "green" | "amber" }) {
   return <span className={`rounded-full px-3 py-1 text-xs font-black ${tone === "green" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>{text}</span>;
+}
+
+function formatRemaining(seconds: number) {
+  const safeSeconds = Math.max(0, Math.floor(seconds || 0));
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
 }
 
 function ProfileRow({ label, value }: { label: string; value: string }) {

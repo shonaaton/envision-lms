@@ -51,6 +51,40 @@ function normalizeWebhookPayload(payload: any) {
       ],
     };
   }
+  if (payload?.from && payload?.id && payload?.type) {
+    return {
+      entry: [
+        {
+          changes: [
+            {
+              value: {
+                contacts: payload.contacts || [],
+                messages: [payload],
+                statuses: [],
+              },
+            },
+          ],
+        },
+      ],
+    };
+  }
+  if (payload?.status && payload?.id) {
+    return {
+      entry: [
+        {
+          changes: [
+            {
+              value: {
+                contacts: payload.contacts || [],
+                messages: [],
+                statuses: [payload],
+              },
+            },
+          ],
+        },
+      ],
+    };
+  }
   return payload;
 }
 

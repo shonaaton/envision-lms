@@ -37,7 +37,13 @@ export async function POST(req: Request) {
   const lastInbound: any = await WhatsAppMessage.findOne({ phoneNumber, direction: "inbound" }).sort({ createdAt: -1 }).lean();
   const activeUntil = lastInbound ? new Date(new Date(lastInbound.receivedAt || lastInbound.createdAt).getTime() + CUSTOMER_SERVICE_WINDOW_MS) : null;
   if (!activeUntil || activeUntil.getTime() <= Date.now()) {
-    return NextResponse.json({ error: "This conversation is outside the 24-hour WhatsApp customer-service window. Send an approved template instead." }, { status: 409 });
+    return NextResponse.json({
+      success: false,
+      error: "WHATSAPP_WINDOW_CLOSED",
+      message: "The 24-hour customer service window has expired.",
+      requires_template: true,
+      window_expired_at: activeUntil?.toISOString() || null,
+    }, { status: 409 });
   }
 
   const matchedUser: any = await findUserByPhone(phoneNumber);

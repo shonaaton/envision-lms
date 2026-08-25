@@ -110,7 +110,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://lms.srv1170212.hstgr.cloud/api/whatsapp-incoming",
+        "url": "https://lms.srv1170212.hstgr.cloud/api/webhooks/whatsapp",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [

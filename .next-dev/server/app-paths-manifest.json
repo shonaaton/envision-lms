@@ -1,5 +1,4 @@
 {
-  "/api/auth/[...nextauth]/route": "app/api/auth/[...nextauth]/route.js",
-  "/(auth)/login/page": "app/(auth)/login/page.js",
-  "/(dashboard)/admin/whatsapp/page": "app/(dashboard)/admin/whatsapp/page.js"
+  "/api/webhooks/whatsapp/route": "app/api/webhooks/whatsapp/route.js",
+  "/(auth)/login/page": "app/(auth)/login/page.js"
 }

@@ -1,0 +1,376 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lms-whatsapp-send-template",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "45fbea51-8e20-4651-b0cb-417067858b50",
+      "name": "LMS Send Template Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        3136,
+        2304
+      ],
+      "webhookId": "c20cbdf6-efd6-4035-b974-03070cf423de"
+    },
+    {
+      "parameters": {
+        "updates": [
+          "messages"
+        ],
+        "options": {
+          "messageStatusUpdates": [
+            "all"
+          ]
+        }
+      },
+      "id": "0216f862-e236-40dd-ab30-8e681145f616",
+      "name": "On WhatsApp Messages",
+      "type": "n8n-nodes-base.whatsAppTrigger",
+      "typeVersion": 1,
+      "position": [
+        3136,
+        2544
+      ],
+      "webhookId": "07480fbe-3fcf-4fc7-bea7-efd04a7aef44",
+      "credentials": {
+        "whatsAppTriggerApi": {
+          "id": "AAKYATAI6pmxHUFx",
+          "name": "WhatsApp OAuth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || {};\nconst headers = $json.headers || {};\nconst expectedSecret = 'O2LwUFK2HvTDhG53';\nconst receivedSecret = headers['x-lms-whatsapp-secret'] || headers['X-Lms-Whatsapp-Secret'] || '';\nif (expectedSecret && receivedSecret !== expectedSecret) throw new Error('Invalid LMS WhatsApp forwarding secret');\n\nconst rawRecipients = Array.isArray(body.recipients) && body.recipients.length\n  ? body.recipients\n  : body.to\n    ? [body.to]\n    : ['918017996184', '916290349998'];\n\nconst normalizeWhatsAppNumber = (value) => String(value || '').replace(/\\D/g, '');\n\nconst bodyComponent = Array.isArray(body.components)\n  ? body.components.find((component) => String(component?.type || '').toLowerCase() === 'body')\n  : null;\n\nconst componentParameters = Array.isArray(bodyComponent?.parameters)\n  ? bodyComponent.parameters\n      .map((parameter) => String(parameter?.text ?? parameter?.value ?? '').slice(0, 1024))\n      .filter(Boolean)\n  : [];\n\nconst rawBodyParameters = Array.isArray(body.bodyParameters)\n  ? body.bodyParameters\n  : Array.isArray(body.templateVariables)\n    ? body.templateVariables\n    : componentParameters;\n\nconst bodyParameters = rawBodyParameters\n  .map((value) => String(value || '').slice(0, 1024))\n  .filter(Boolean);\n\nconst type = String(body.type || 'template').trim().toLowerCase() === 'text' ? 'text' : 'template';\nconst text = String(body.message || body.text || '').trim().slice(0, 4096);\nconst language = String(body.language || body.language_code || 'en').trim();\nconst templateName = String(body.templateName || body.template_name || 'hello_world_2').trim();\nconst recipients = [...new Set(rawRecipients.map(normalizeWhatsAppNumber).filter(Boolean))];\n\nif (type === 'text' && !text) throw new Error('Missing text message body');\n\nreturn recipients.map((to) => ({\n  json: {\n    to,\n    type,\n    text,\n    templateName,\n    language,\n    bodyParameters,\n    metadata: body.metadata || {},\n  },\n}));"
+      },
+      "id": "1486d0f9-bf1c-4292-9e81-cba73bee1d4e",
+      "name": "Expand LMS Template Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3392,
+        2304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const bodyParameters = Array.isArray($json.bodyParameters) ? $json.bodyParameters : [];\nconst components = bodyParameters.length\n  ? {\n      component: [\n        {\n          type: 'body',\n          bodyParameters: {\n            parameter: bodyParameters.map((text) => ({\n              type: 'text',\n              text: String(text),\n            })),\n          },\n        },\n      ],\n    }\n  : {};\n\nconst recipientPhoneNumber = String($json.to || '').replace(/\\D/g, '');\n\nreturn [\n  {\n    json: {\n      ...$json,\n      phoneNumberId: '1203164092890708',\n      recipientPhoneNumber,\n      template: `${$json.templateName}|${$json.language || 'en'}`,\n      components,\n    },\n  },\n];"
+      },
+      "id": "1ea8e6e6-6104-4e31-8d8c-2fefea13c89d",
+      "name": "Prepare Native WhatsApp Send",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3824,
+        2384
+      ]
+    },
+    {
+      "parameters": {
+        "phoneNumberId": "={{$json.phoneNumberId}}",
+        "recipientPhoneNumber": "={{$json.recipientPhoneNumber}}",
+        "template": "={{$json.template}}"
+      },
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1.1,
+      "position": [
+        4080,
+        2384
+      ],
+      "id": "0992d2ab-90e5-4928-ae8b-829ebb6be88b",
+      "name": "Send Template",
+      "webhookId": "e9367897-cad1-4059-bc3e-edea44b44948",
+      "alwaysOutputData": true,
+      "credentials": {
+        "whatsAppApi": {
+          "id": "ozVfoJT4f4xAWXfO",
+          "name": "WhatsApp account"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { lmsWebhookBody: $json } }];"
+      },
+      "id": "1d4a4e86-9257-413d-bdc7-c0363063ec1f",
+      "name": "Prepare LMS Incoming Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3392,
+        2544
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://lms.srv1170212.hstgr.cloud/api/webhooks/whatsapp",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-lms-whatsapp-secret",
+              "value": "O2LwUFK2HvTDhG53"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json.lmsWebhookBody}}",
+        "options": {}
+      },
+      "id": "24b02d81-5e6f-4b97-a3e9-bd8f758c1c54",
+      "name": "Forward Incoming to LMS",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3664,
+        2544
+      ],
+      "continueOnFail": false
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst results = items.map((item) => {\n  const json = item.json || {};\n  const message = Array.isArray(json.messages) ? json.messages[0] : null;\n  const contact = Array.isArray(json.contacts) ? json.contacts[0] : null;\n  const recipient = contact?.wa_id || json.recipientPhoneNumber || json.to || '';\n  const errorMessage = json.error?.message || json.message || json.errorDescription || '';\n  const ok = Boolean(message?.id || json.messaging_product || json.metaMessageId) && !errorMessage;\n  return {\n    phoneNumber: recipient,\n    to: recipient,\n    ok,\n    status: ok ? (message?.message_status || 'accepted') : 'failed',\n    metaMessageId: message?.id || json.metaMessageId || '',\n    templateName: json.templateName || '',\n    messageType: json.type || 'template',\n    error: ok ? '' : errorMessage || 'WhatsApp send failed in n8n',\n    debug: {\n      sender: 'n8n_native_whatsapp_node',\n      messageType: json.type || 'template',\n      templateName: json.templateName || '',\n      templateLanguage: json.language || '',\n      recipient,\n      metaMessageId: message?.id || json.metaMessageId || '',\n      raw: json,\n    },\n  };\n});\nreturn [{ json: { ok: results.every((result) => result.ok), results } }];"
+      },
+      "id": "d1661f55-3d61-4857-9cd4-9fbfbef82f98",
+      "name": "Build LMS Send Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4336,
+        2288
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{JSON.stringify($json)}}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "8711f365-f627-4085-9f0d-53e3192d9665",
+      "name": "Respond to LMS Send Request",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        4576,
+        2288
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "whatsapp-is-text",
+              "leftValue": "={{$json.type}}",
+              "rightValue": "text",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "9939bec1-8172-4f73-ae21-16a647d8bf1c",
+      "name": "Is Free-form Text?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3600,
+        2304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const recipientPhoneNumber = String($json.to || '').replace(/\\D/g, '');\nreturn [\n  {\n    json: {\n      ...$json,\n      phoneNumberId: '1203164092890708',\n      recipientPhoneNumber,\n      textBody: String($json.text || '').slice(0, 4096),\n    },\n  },\n];"
+      },
+      "id": "3d533b4e-c2bd-49c7-943d-ed090c975d3d",
+      "name": "Prepare Native WhatsApp Text Send",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3824,
+        2192
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "={{$json.phoneNumberId}}",
+        "recipientPhoneNumber": "={{$json.recipientPhoneNumber}}",
+        "textBody": "={{$json.textBody}}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1.1,
+      "position": [
+        4080,
+        2192
+      ],
+      "id": "d86bd570-6953-46c7-a55e-8ceff02b7263",
+      "name": "Send Text Message",
+      "webhookId": "aa1f1054-3326-4c51-a5f5-41b5ca4ef2bd",
+      "alwaysOutputData": true,
+      "credentials": {
+        "whatsAppApi": {
+          "id": "ozVfoJT4f4xAWXfO",
+          "name": "WhatsApp account"
+        }
+      },
+      "continueOnFail": true
+    }
+  ],
+  "connections": {
+    "LMS Send Template Webhook": {
+      "main": [
+        [
+          {
+            "node": "Expand LMS Template Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "On WhatsApp Messages": {
+      "main": [
+        [
+          {
+            "node": "Prepare LMS Incoming Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Expand LMS Template Request": {
+      "main": [
+        [
+          {
+            "node": "Is Free-form Text?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Native WhatsApp Send": {
+      "main": [
+        [
+          {
+            "node": "Send Template",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Template": {
+      "main": [
+        [
+          {
+            "node": "Build LMS Send Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare LMS Incoming Payload": {
+      "main": [
+        [
+          {
+            "node": "Forward Incoming to LMS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build LMS Send Response": {
+      "main": [
+        [
+          {
+            "node": "Respond to LMS Send Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Free-form Text?": {
+      "main": [
+        [
+          {
+            "node": "Prepare Native WhatsApp Text Send",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Native WhatsApp Send",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Native WhatsApp Text Send": {
+      "main": [
+        [
+          {
+            "node": "Send Text Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Text Message": {
+      "main": [
+        [
+          {
+            "node": "Build LMS Send Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "instanceId": "aefcf4acf7d9b8d370cbf20957eec9d310494c9c0914ff36c3c4ce6b2e5298c8"
+  }
+}

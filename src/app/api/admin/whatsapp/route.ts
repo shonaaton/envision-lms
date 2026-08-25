@@ -48,6 +48,10 @@ function windowState(lastInboundAt: Date | string | null) {
   };
 }
 
+function chatPath(phoneNumber: string) {
+  return `/admin/whatsapp/${encodeURIComponent(phoneNumber)}`;
+}
+
 export async function GET() {
   const session = await auth();
   if (!canManageWhatsApp(session)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -64,6 +68,7 @@ export async function GET() {
     const phoneNumber = String(message.phoneNumber || "");
     const current = conversations.get(phoneNumber) || {
       phoneNumber,
+      chatPath: chatPath(phoneNumber),
       contactName: message.matchedUser?.name || message.contactName || message.profileName || "Unknown contact",
       profileName: message.profileName || "",
       matchedUser: message.matchedUser

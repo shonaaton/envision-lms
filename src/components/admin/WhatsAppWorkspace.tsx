@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Bot, CheckCircle2, Clock3, MessageCircle, RefreshCw, Send, Sparkles, UserRound } from "lucide-react";
 import { WHATSAPP_TEMPLATE_DEFINITIONS, getWhatsAppTemplateDefinition, templateSampleValues } from "@/lib/whatsappTemplateRegistry";
 
@@ -19,6 +20,7 @@ type WaMessage = {
 
 type Conversation = {
   phoneNumber: string;
+  chatPath?: string;
   contactName: string;
   profileName?: string;
   matchedUser?: { name?: string; email?: string; username?: string; role?: string; phone?: string } | null;
@@ -49,10 +51,11 @@ type InboxPayload = {
 
 const DEFAULT_NUMBERS = "918017996184, 916290349998";
 
-export default function WhatsAppWorkspace() {
-  const [tab, setTab] = useState<"active" | "sent" | "automation">("active");
+export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initialPhoneNumber?: string }) {
+  const router = useRouter();
+  const [tab, setTab] = useState<"all" | "active" | "sent" | "automation">(initialPhoneNumber ? "all" : "active");
   const [data, setData] = useState<InboxPayload>({ active: [], sentTemplates: [], conversations: [], windowHours: 24 });
-  const [selectedPhone, setSelectedPhone] = useState("");
+  const [selectedPhone, setSelectedPhone] = useState(initialPhoneNumber);
   const [loading, setLoading] = useState(true);
   const [reply, setReply] = useState("");
   const [sendingReply, setSendingReply] = useState(false);
@@ -68,7 +71,7 @@ export default function WhatsAppWorkspace() {
     const res = await fetch("/api/admin/whatsapp", { cache: "no-store" });
     const payload = await res.json();
     setData(payload);
-    setSelectedPhone((current) => current || payload.active?.[0]?.phoneNumber || payload.sentTemplates?.[0]?.phoneNumber || "");
+    setSelectedPhone((current) => current || initialPhoneNumber || payload.active?.[0]?.phoneNumber || payload.sentTemplates?.[0]?.phoneNumber || payload.conversations?.[0]?.phoneNumber || "");
     setLoading(false);
   }
 
@@ -76,7 +79,7 @@ export default function WhatsAppWorkspace() {
     void loadInbox();
   }, []);
 
-  const conversations = tab === "sent" ? data.sentTemplates : data.active;
+  const conversations = tab === "sent" ? data.sentTemplates : tab === "all" ? data.conversations : data.active;
   const selected = useMemo(
     () => data.conversations.find((conversation) => conversation.phoneNumber === selectedPhone) || conversations[0],
     [conversations, data.conversations, selectedPhone]
@@ -93,6 +96,12 @@ export default function WhatsAppWorkspace() {
     if (!definition) return;
     setLanguage(definition.language);
     setTemplateVariables(templateSampleValues(value).join("\n"));
+  }
+
+  function openConversation(phoneNumber: string) {
+    const conversation = data.conversations.find((item) => item.phoneNumber === phoneNumber);
+    setSelectedPhone(phoneNumber);
+    router.push(conversation?.chatPath || `/admin/whatsapp/${encodeURIComponent(phoneNumber)}`);
   }
 
   async function sendReply() {
@@ -158,6 +167,7 @@ export default function WhatsAppWorkspace() {
       </div>
 
       <div className="mb-3 flex flex-wrap gap-2">
+        <TabButton active={tab === "all"} onClick={() => setTab("all")} icon={<MessageCircle size={15} />} label={`All Chats (${data.conversations.length})`} />
         <TabButton active={tab === "active"} onClick={() => setTab("active")} icon={<Clock3 size={15} />} label={`Active (${data.active.length})`} />
         <TabButton active={tab === "sent"} onClick={() => setTab("sent")} icon={<CheckCircle2 size={15} />} label={`Sent Templates (${data.sentTemplates.length})`} />
         <TabButton active={tab === "automation"} onClick={() => setTab("automation")} icon={<Bot size={15} />} label="Template Automation" />
@@ -246,7 +256,7 @@ export default function WhatsAppWorkspace() {
         <section className="grid h-[calc(100dvh-190px)] min-h-[500px] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl shadow-slate-200/70 xl:grid-cols-[330px_minmax(0,1fr)_300px] 2xl:grid-cols-[360px_minmax(0,1fr)_320px]">
           <aside className="min-h-0 border-r border-slate-200 bg-white">
             <div className="flex h-12 items-center justify-between border-b border-slate-200 bg-slate-50 px-4 text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
-              {tab === "active" ? "Active conversations" : "Template sends"}
+              {tab === "active" ? "Active conversations" : tab === "all" ? "All chats" : "Template sends"}
               <span className="rounded-full bg-white px-2 py-1 text-[11px] text-slate-500 shadow-sm">{conversations.length}</span>
             </div>
             <div className="h-[calc(100%-3rem)] overflow-y-auto">
@@ -260,7 +270,7 @@ export default function WhatsAppWorkspace() {
               {conversations.map((conversation) => (
                 <button
                   key={conversation.phoneNumber}
-                  onClick={() => setSelectedPhone(conversation.phoneNumber)}
+                  onClick={() => openConversation(conversation.phoneNumber)}
                   className={`flex w-full items-center gap-3 border-b border-slate-100 px-4 py-4 text-left transition hover:bg-slate-50 ${selected?.phoneNumber === conversation.phoneNumber ? "bg-emerald-50" : "bg-white"}`}
                 >
                   <Avatar name={conversation.contactName} />

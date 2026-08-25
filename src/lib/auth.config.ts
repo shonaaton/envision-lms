@@ -47,6 +47,8 @@ export const authConfig = {
         nextUrl.pathname === "/terms" ||
         nextUrl.pathname === "/refund-policy" ||
         nextUrl.pathname.startsWith("/api/auth") ||
+        nextUrl.pathname.startsWith("/api/webhooks") ||
+        nextUrl.pathname.startsWith("/api/webhook") ||
         nextUrl.pathname.startsWith("/api/register") ||
         nextUrl.pathname.startsWith("/api/password") ||
         nextUrl.pathname.startsWith("/api/fees/invoices") ||

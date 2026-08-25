@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
+import { renderWhatsAppTemplatePreview } from "@/lib/whatsappTemplateRegistry";
 import { WhatsAppMessage } from "@/models/WhatsApp";
 
 export const dynamic = "force-dynamic";
@@ -12,11 +13,14 @@ function canManageWhatsApp(session: any) {
 }
 
 function serializeMessage(message: any) {
+  const templateVariables = message.rawPayload?.templateVariables || message.rawPayload?.bodyParameters || [];
+  const templatePreview = message.messageType === "template" ? renderWhatsAppTemplatePreview(message.templateName || message.text, templateVariables) : "";
+  const text = message.messageType === "template" && (!message.text || message.text === message.templateName) ? templatePreview : message.text;
   return {
     id: message._id.toString(),
     phoneNumber: message.phoneNumber,
     direction: message.direction,
-    text: message.text,
+    text,
     messageType: message.messageType,
     templateName: message.templateName,
     status: message.status,
@@ -63,7 +67,7 @@ export async function GET() {
     };
     current.messages.push(serializeMessage(message));
     current.lastMessageAt = message.createdAt;
-    current.lastMessageText = message.text || message.templateName || "";
+    current.lastMessageText = serializeMessage(message).text || message.templateName || "";
     if (message.direction === "inbound") current.lastInboundAt = message.receivedAt || message.createdAt;
     if (message.direction === "outbound" && message.messageType === "template") current.sentTemplateCount += 1;
     conversations.set(phoneNumber, current);

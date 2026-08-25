@@ -30,7 +30,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const body = $json.body || {};\nconst headers = $json.headers || {};\nconst expectedSecret = $env.WHATSAPP_N8N_FORWARD_SECRET || '';\nconst receivedSecret = headers['x-lms-whatsapp-secret'] || headers['X-Lms-Whatsapp-Secret'] || '';\nif (expectedSecret && receivedSecret !== expectedSecret) throw new Error('Invalid LMS WhatsApp forwarding secret');\nconst rawRecipients = Array.isArray(body.recipients) && body.recipients.length ? body.recipients : body.to ? [body.to] : ['8017996184', '6290349998'];\nconst normalize = (value) => {\n  const digits = String(value || '').replace(/\\D/g, '');\n  return digits.length === 10 ? `91${digits}` : digits;\n};\nconst recipients = [...new Set(rawRecipients.map(normalize).filter(Boolean))];\nconst type = String(body.type || 'template').trim() === 'text' ? 'text' : 'template';\nconst templateName = String(body.templateName || body.template_name || 'hello_world_2').trim();\nconst language = String(body.language || body.language_code || 'en_US').trim();\nconst text = String(body.message || body.text || '').trim().slice(0, 4000);\nconst bodyComponent = Array.isArray(body.components) ? body.components.find((component) => String(component?.type || '').toLowerCase() === 'body') : null;\nconst componentParameters = Array.isArray(bodyComponent?.parameters) ? bodyComponent.parameters.map((parameter) => String(parameter?.text ?? parameter?.value ?? '').slice(0, 1024)).filter(Boolean) : [];\nconst rawBodyParameters = Array.isArray(body.bodyParameters) ? body.bodyParameters : Array.isArray(body.templateVariables) ? body.templateVariables : componentParameters;\nconst bodyParameters = rawBodyParameters.map((value) => String(value || '').slice(0, 1024)).filter(Boolean);\nreturn recipients.map((to) => ({ json: { to, type, templateName, language, text, bodyParameters, source: 'lms_webhook', metadata: body.metadata || {} } }));"
+        "jsCode": "const body = $json.body || {};\nconst headers = $json.headers || {};\nconst expectedSecret = 'O2LwUFK2HvTDhG53';\nconst receivedSecret = headers['x-lms-whatsapp-secret'] || headers['X-Lms-Whatsapp-Secret'] || '';\nif (expectedSecret && receivedSecret !== expectedSecret) throw new Error('Invalid LMS WhatsApp forwarding secret');\nconst rawRecipients = Array.isArray(body.recipients) && body.recipients.length ? body.recipients : body.to ? [body.to] : ['8017996184', '6290349998'];\nconst normalize = (value) => {\n  const digits = String(value || '').replace(/\\D/g, '');\n  return digits.length === 10 ? `91${digits}` : digits;\n};\nconst recipients = [...new Set(rawRecipients.map(normalize).filter(Boolean))];\nconst type = String(body.type || 'template').trim() === 'text' ? 'text' : 'template';\nconst templateName = String(body.templateName || body.template_name || 'hello_world_2').trim();\nconst language = String(body.language || body.language_code || 'en_US').trim();\nconst text = String(body.message || body.text || '').trim().slice(0, 4000);\nconst bodyComponent = Array.isArray(body.components) ? body.components.find((component) => String(component?.type || '').toLowerCase() === 'body') : null;\nconst componentParameters = Array.isArray(bodyComponent?.parameters) ? bodyComponent.parameters.map((parameter) => String(parameter?.text ?? parameter?.value ?? '').slice(0, 1024)).filter(Boolean) : [];\nconst rawBodyParameters = Array.isArray(body.bodyParameters) ? body.bodyParameters : Array.isArray(body.templateVariables) ? body.templateVariables : componentParameters;\nconst bodyParameters = rawBodyParameters.map((value) => String(value || '').slice(0, 1024)).filter(Boolean);\nreturn recipients.map((to) => ({ json: { to, type, templateName, language, text, bodyParameters, source: 'lms_webhook', metadata: body.metadata || {} } }));"
       },
       "id": "cf9cc4ce-6718-47a7-a929-0f88a467df31",
       "name": "Expand LMS Template Request",
@@ -56,7 +56,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const phoneNumberId = $env.WHATSAPP_PHONE_NUMBER_ID || '1203164092890708';\nconst graphVersion = $env.WHATSAPP_GRAPH_VERSION || 'v25.0';\nconst endpoint = `https://graph.facebook.com/${graphVersion}/${phoneNumberId}/messages`;\nconst bodyParameters = Array.isArray($json.bodyParameters) ? $json.bodyParameters : [];\nconst components = bodyParameters.length ? [{ type: 'body', parameters: bodyParameters.map((text) => ({ type: 'text', text: String(text) })) }] : undefined;\nconst metaBody = $json.type === 'text'\n  ? {\n      messaging_product: 'whatsapp',\n      recipient_type: 'individual',\n      to: $json.to,\n      type: 'text',\n      text: { preview_url: true, body: $json.text },\n    }\n  : {\n      messaging_product: 'whatsapp',\n      recipient_type: 'individual',\n      to: $json.to,\n      type: 'template',\n      template: {\n        name: $json.templateName,\n        language: { code: $json.language },\n        ...(components ? { components } : {}),\n      },\n    };\nconst lmsStatusBody = {\n  entry: [\n    {\n      changes: [\n        {\n          value: {\n            statuses: [\n              {\n                id: '',\n                status: 'sent',\n                recipient_id: $json.to,\n                timestamp: Math.floor(Date.now() / 1000),\n              },\n            ],\n          },\n        },\n      ],\n    },\n  ],\n};\nreturn [{ json: { ...$json, endpoint, components, metaBody, lmsStatusBody, debug: { endpoint, graphVersion, phoneNumberId, to: $json.to, type: $json.type || 'template', templateName: $json.templateName, language: $json.language, bodyParameterCount: bodyParameters.length, accessTokenPresent: Boolean($env.WHATSAPP_ACCESS_TOKEN) } } }];"
+        "jsCode": "const phoneNumberId = '1203164092890708';\nconst graphVersion = 'v25.0';\nconst endpoint = `https://graph.facebook.com/${graphVersion}/${phoneNumberId}/messages`;\nconst bodyParameters = Array.isArray($json.bodyParameters) ? $json.bodyParameters : [];\nconst components = bodyParameters.length ? [{ type: 'body', parameters: bodyParameters.map((text) => ({ type: 'text', text: String(text) })) }] : undefined;\nconst metaBody = $json.type === 'text'\n  ? {\n      messaging_product: 'whatsapp',\n      recipient_type: 'individual',\n      to: $json.to,\n      type: 'text',\n      text: { preview_url: true, body: $json.text },\n    }\n  : {\n      messaging_product: 'whatsapp',\n      recipient_type: 'individual',\n      to: $json.to,\n      type: 'template',\n      template: {\n        name: $json.templateName,\n        language: { code: $json.language },\n        ...(components ? { components } : {}),\n      },\n    };\nconst lmsStatusBody = {\n  entry: [\n    {\n      changes: [\n        {\n          value: {\n            statuses: [\n              {\n                id: '',\n                status: 'sent',\n                recipient_id: $json.to,\n                timestamp: Math.floor(Date.now() / 1000),\n              },\n            ],\n          },\n        },\n      ],\n    },\n  ],\n};\nreturn [{ json: { ...$json, endpoint, components, metaBody, lmsStatusBody, debug: { endpoint, graphVersion, phoneNumberId, to: $json.to, type: $json.type || 'template', templateName: $json.templateName, language: $json.language, bodyParameterCount: bodyParameters.length, accessTokenPresent: true } } }];"
       },
       "id": "3c91305f-9a1a-45c0-9afb-b2f3287956fb",
       "name": "Prepare WhatsApp Debug",
@@ -76,7 +76,7 @@
           "parameters": [
             {
               "name": "Authorization",
-              "value": "=Bearer {{$env.WHATSAPP_ACCESS_TOKEN}}"
+              "value": "Bearer EAAPKaFlshrcBSUJWh5mKYv3xMCWpSZCJqx98a1Nv0NL6wOlcfD65OTZBNMgV9NUzsihUBmaFWPv79R3wjY7cb1m4i8VGYJPPiDxFUzlYQj9JzvrLNseGoPjzuII5sN9VinPhb6ewQZCepf1rWKk7VwQJLjGFTkMRfQBblaq4jHhR8i9kPzKY86zV8GwcAZDZD"
             },
             {
               "name": "Content-Type",
@@ -87,7 +87,14 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{$json.metaBody}}",
-        "options": {}
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
       },
       "id": "f7c36305-f843-4691-8c45-f7b439b9ae44",
       "name": "Send Template via Meta",
@@ -95,37 +102,6 @@
       "typeVersion": 4.2,
       "position": [
         560,
-        260
-      ]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "={{$env.LMS_PUBLIC_URL}}/api/webhooks/whatsapp",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Content-Type",
-              "value": "application/json"
-            },
-            {
-              "name": "x-lms-whatsapp-secret",
-              "value": "={{$env.WHATSAPP_N8N_FORWARD_SECRET || ''}}"
-            }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{$json.lmsStatusBody}}",
-        "options": {}
-      },
-      "id": "b7ca1f7f-1149-45e5-bbfc-dc33d6f37c07",
-      "name": "Log Template Status to LMS",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        820,
         260
       ]
     },
@@ -147,7 +123,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const query = $json.query || {};\nconst mode = query['hub.mode'];\nconst token = query['hub.verify_token'];\nconst challenge = query['hub.challenge'] || '';\nconst ok = mode === 'subscribe' && token === $env.WHATSAPP_WEBHOOK_VERIFY_TOKEN;\nreturn [{ json: { ok, statusCode: ok ? 200 : 403, challenge: ok ? challenge : 'Forbidden' } }];"
+        "jsCode": "const query = $json.query || {};\nconst mode = query['hub.mode'];\nconst token = query['hub.verify_token'];\nconst challenge = query['hub.challenge'] || '';\nif (mode !== 'subscribe' || token !== 'envision_lms_whatsapp_2026') {\n  throw new Error('Meta verify token did not match');\n}\nreturn [{ json: { challenge } }];"
       },
       "id": "3958504b-cbfe-42ca-aebc-5ea8e5f95a09",
       "name": "Check Verify Token",
@@ -163,7 +139,7 @@
         "respondWith": "text",
         "responseBody": "={{$json.challenge}}",
         "options": {
-          "responseCode": "={{$json.statusCode}}"
+          "responseCode": 200
         }
       },
       "id": "c1ba7370-3779-4705-a47a-053157b0f44d",
@@ -194,7 +170,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{$env.LMS_PUBLIC_URL}}/api/webhooks/whatsapp",
+        "url": "https://lms.srv1170212.hstgr.cloud/api/webhooks/whatsapp",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -204,14 +180,21 @@
             },
             {
               "name": "x-lms-whatsapp-secret",
-              "value": "={{$env.WHATSAPP_N8N_FORWARD_SECRET || ''}}"
+              "value": "O2LwUFK2HvTDhG53"
             }
           ]
         },
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{$json.body}}",
-        "options": {}
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
       },
       "id": "22ef4871-10cd-43f9-956b-a8e87d907aa6",
       "name": "Forward Incoming to LMS",
@@ -306,13 +289,7 @@
     },
     "Send Template via Meta": {
       "main": [
-        [
-          {
-            "node": "Log Template Status to LMS",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        []
       ]
     },
     "Meta Verify Webhook": {

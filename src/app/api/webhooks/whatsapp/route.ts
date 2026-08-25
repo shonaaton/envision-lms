@@ -32,6 +32,28 @@ function messageText(message: any) {
   return `[${message.type || "message"}]`;
 }
 
+function normalizeWebhookPayload(payload: any) {
+  if (Array.isArray(payload?.entry)) return payload;
+  if (Array.isArray(payload?.messages) || Array.isArray(payload?.statuses)) {
+    return {
+      entry: [
+        {
+          changes: [
+            {
+              value: {
+                contacts: payload.contacts || [],
+                messages: payload.messages || [],
+                statuses: payload.statuses || [],
+              },
+            },
+          ],
+        },
+      ],
+    };
+  }
+  return payload;
+}
+
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const mode = url.searchParams.get("hub.mode");
@@ -53,7 +75,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
   }
 
-  const payload = JSON.parse(rawBody || "{}");
+  const payload = normalizeWebhookPayload(JSON.parse(rawBody || "{}"));
   await dbConnect();
 
   for (const entry of payload.entry || []) {

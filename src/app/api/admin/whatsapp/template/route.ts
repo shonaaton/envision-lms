@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { normalizeWhatsAppNumber, sendWhatsAppTemplateMessage } from "@/lib/whatsappAutomation";
-import { getWhatsAppTemplateDefinition } from "@/lib/whatsappTemplateRegistry";
+import { getWhatsAppTemplateDefinition, renderWhatsAppTemplatePreview } from "@/lib/whatsappTemplateRegistry";
 import { WhatsAppMessage } from "@/models/WhatsApp";
 import { User } from "@/models/User";
 
@@ -70,6 +70,7 @@ export async function POST(req: Request) {
   const definition = getWhatsAppTemplateDefinition(templateName);
   const language = String(body.language || body.language_code || definition?.language || "en_US").trim();
   const templateVariables = extractTemplateVariables(body);
+  const messagePreview = renderWhatsAppTemplatePreview(templateName, templateVariables);
   const rawRecipients = Array.isArray(body.recipients) && body.recipients.length ? body.recipients : body.to ? [body.to] : DEFAULT_RECIPIENTS;
   const recipients: string[] = rawRecipients
     .map((value: unknown) => normalizeWhatsAppNumber(String(value || "")))
@@ -92,13 +93,13 @@ export async function POST(req: Request) {
         matchedUser: matchedUser?._id,
         direction: "outbound",
         messageType: "template",
-        text: templateName,
+        text: messagePreview,
         templateName,
         templateLanguage: language,
         status: item.ok ? "sent" : "failed",
         metaMessageId: item.metaMessageId || undefined,
         error: item.error || item.metaError?.message || "",
-        rawPayload: item,
+        rawPayload: { ...item, templateVariables, messagePreview },
         sentAt: new Date(),
       });
       results.push({
@@ -123,11 +124,11 @@ export async function POST(req: Request) {
             matchedUser: matchedUser?._id,
             direction: "outbound",
             messageType: "template",
-            text: templateName,
+            text: messagePreview,
             templateName,
             templateLanguage: language,
             status: "queued",
-            rawPayload: { sender: "n8n", response: n8nSend.payload },
+            rawPayload: { sender: "n8n", response: n8nSend.payload, templateVariables, messagePreview },
             sentAt: new Date(),
           });
           queuedResults.push({
@@ -177,13 +178,13 @@ export async function POST(req: Request) {
       matchedUser: matchedUser?._id,
       direction: "outbound",
       messageType: "template",
-      text: templateName,
+      text: messagePreview,
       templateName,
       templateLanguage: language,
       status: result.delivered ? "sent" : result.skipped ? "queued" : "failed",
       metaMessageId: result.metaMessageId || undefined,
       error: result.errorMessage || result.error || "",
-      rawPayload: result.payload,
+      rawPayload: { ...(result.payload || {}), templateVariables, messagePreview },
       sentAt: new Date(),
     });
     results.push({

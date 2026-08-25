@@ -287,8 +287,11 @@ export default function WhatsAppWorkspace() {
               ) : (
                 selected.messages.map((message) => (
                   <div key={message.id} className={`flex ${message.direction === "outbound" ? "justify-end" : "justify-start"}`}>
-                    <div className={`max-w-[78%] rounded-lg px-4 py-3 text-sm leading-6 shadow-md ${message.direction === "outbound" ? "bg-white text-slate-800 shadow-slate-300/50" : "bg-teal-900 text-white shadow-teal-950/20"}`}>
-                      <div>{message.messageType === "template" ? `Template: ${message.templateName || message.text}` : message.text}</div>
+                    <div className={`max-w-[78%] whitespace-pre-line rounded-lg px-4 py-3 text-sm leading-6 shadow-md ${message.direction === "outbound" ? "bg-white text-slate-800 shadow-slate-300/50" : "bg-teal-900 text-white shadow-teal-950/20"}`}>
+                      <div>{message.text}</div>
+                      {message.messageType === "template" && message.templateName ? (
+                        <div className={`mt-2 text-[11px] font-semibold ${message.direction === "outbound" ? "text-emerald-600" : "text-teal-100"}`}>{message.templateName}</div>
+                      ) : null}
                       <div className={`mt-1 text-[11px] ${message.direction === "outbound" ? "text-slate-400" : "text-teal-100"}`}>{message.status} · {new Date(message.createdAt).toLocaleString()}</div>
                     </div>
                   </div>

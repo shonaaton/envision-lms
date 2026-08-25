@@ -14,7 +14,7 @@ const WhatsAppMessageSchema = new Schema(
     templateLanguage: { type: String, default: "" },
     status: {
       type: String,
-      enum: ["received", "queued", "sent", "delivered", "read", "failed"],
+      enum: ["received", "queued", "accepted", "sent", "delivered", "read", "failed"],
       default: "received",
       index: true,
     },

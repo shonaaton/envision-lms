@@ -96,7 +96,7 @@ export async function POST(req: Request) {
         text: messagePreview,
         templateName,
         templateLanguage: language,
-        status: item.ok ? "sent" : "failed",
+        status: item.ok ? String(item.status || "sent") : "failed",
         metaMessageId: item.metaMessageId || undefined,
         error: item.error || item.metaError?.message || "",
         rawPayload: { ...item, templateVariables, messagePreview },

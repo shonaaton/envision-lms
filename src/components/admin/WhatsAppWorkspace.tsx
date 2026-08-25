@@ -44,6 +44,7 @@ type Conversation = {
 
 type InboxPayload = {
   active: Conversation[];
+  closed: Conversation[];
   sentTemplates: Conversation[];
   conversations: Conversation[];
   windowHours: number;
@@ -53,9 +54,10 @@ const DEFAULT_NUMBERS = "918017996184, 916290349998";
 
 export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initialPhoneNumber?: string }) {
   const router = useRouter();
-  const [tab, setTab] = useState<"all" | "active" | "sent" | "automation">(initialPhoneNumber ? "all" : "active");
-  const [data, setData] = useState<InboxPayload>({ active: [], sentTemplates: [], conversations: [], windowHours: 24 });
+  const [tab, setTab] = useState<"all" | "active" | "closed" | "sent" | "automation">("all");
+  const [data, setData] = useState<InboxPayload>({ active: [], closed: [], sentTemplates: [], conversations: [], windowHours: 24 });
   const [selectedPhone, setSelectedPhone] = useState(initialPhoneNumber);
+  const [now, setNow] = useState(() => Date.now());
   const [loading, setLoading] = useState(true);
   const [reply, setReply] = useState("");
   const [sendingReply, setSendingReply] = useState(false);
@@ -71,7 +73,7 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
     const res = await fetch("/api/admin/whatsapp", { cache: "no-store" });
     const payload = await res.json();
     setData(payload);
-    setSelectedPhone((current) => current || initialPhoneNumber || payload.active?.[0]?.phoneNumber || payload.sentTemplates?.[0]?.phoneNumber || payload.conversations?.[0]?.phoneNumber || "");
+    setSelectedPhone((current) => current || initialPhoneNumber || payload.conversations?.[0]?.phoneNumber || payload.sentTemplates?.[0]?.phoneNumber || "");
     setLoading(false);
   }
 
@@ -81,10 +83,22 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
     return () => window.clearInterval(interval);
   }, []);
 
-  const conversations = tab === "sent" ? data.sentTemplates : tab === "all" ? data.conversations : data.active;
+  useEffect(() => {
+    const interval = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(interval);
+  }, []);
+
+  const liveConversations = useMemo(() => data.conversations.map((conversation) => withLiveWindow(conversation, now)), [data.conversations, now]);
+  const conversations = tab === "sent"
+    ? liveConversations.filter((conversation) => conversation.sentTemplateCount > 0)
+    : tab === "closed"
+      ? liveConversations.filter((conversation) => !conversation.canReply)
+      : tab === "active"
+        ? liveConversations.filter((conversation) => conversation.canReply)
+        : liveConversations;
   const selected = useMemo(
-    () => data.conversations.find((conversation) => conversation.phoneNumber === selectedPhone) || (!selectedPhone ? conversations[0] : undefined),
-    [conversations, data.conversations, selectedPhone]
+    () => liveConversations.find((conversation) => conversation.phoneNumber === selectedPhone) || (!selectedPhone ? conversations[0] : undefined),
+    [conversations, liveConversations, selectedPhone]
   );
   const selectedTemplateDefinition = useMemo(() => getWhatsAppTemplateDefinition(templateName), [templateName]);
   const orderedTemplateVariables = useMemo(
@@ -175,9 +189,10 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
       </div>
 
       <div className="mb-3 flex flex-wrap gap-2">
-        <TabButton active={tab === "all"} onClick={() => setTab("all")} icon={<MessageCircle size={15} />} label={`All Chats (${data.conversations.length})`} />
-        <TabButton active={tab === "active"} onClick={() => setTab("active")} icon={<Clock3 size={15} />} label={`Active (${data.active.length})`} />
-        <TabButton active={tab === "sent"} onClick={() => setTab("sent")} icon={<CheckCircle2 size={15} />} label={`Sent Templates (${data.sentTemplates.length})`} />
+        <TabButton active={tab === "all"} onClick={() => setTab("all")} icon={<MessageCircle size={15} />} label={`All Chats (${liveConversations.length})`} />
+        <TabButton active={tab === "active"} onClick={() => setTab("active")} icon={<Clock3 size={15} />} label={`Active (${liveConversations.filter((conversation) => conversation.canReply).length})`} />
+        <TabButton active={tab === "closed"} onClick={() => setTab("closed")} icon={<CheckCircle2 size={15} />} label={`Closed (${liveConversations.filter((conversation) => !conversation.canReply).length})`} />
+        <TabButton active={tab === "sent"} onClick={() => setTab("sent")} icon={<CheckCircle2 size={15} />} label={`Sent Templates (${liveConversations.filter((conversation) => conversation.sentTemplateCount > 0).length})`} />
         <TabButton active={tab === "automation"} onClick={() => setTab("automation")} icon={<Bot size={15} />} label="Template Automation" />
       </div>
 
@@ -264,15 +279,15 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
         <section className="grid h-[calc(100dvh-190px)] min-h-[500px] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl shadow-slate-200/70 xl:grid-cols-[330px_minmax(0,1fr)_300px] 2xl:grid-cols-[360px_minmax(0,1fr)_320px]">
           <aside className="min-h-0 border-r border-slate-200 bg-white">
             <div className="flex h-12 items-center justify-between border-b border-slate-200 bg-slate-50 px-4 text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
-              {tab === "active" ? "Active conversations" : tab === "all" ? "All chats" : "Template sends"}
+              {tab === "active" ? "Active conversations" : tab === "closed" ? "Closed conversations" : tab === "all" ? "All chats" : "Template sends"}
               <span className="rounded-full bg-white px-2 py-1 text-[11px] text-slate-500 shadow-sm">{conversations.length}</span>
             </div>
             <div className="h-[calc(100%-3rem)] overflow-y-auto">
               {loading ? <div className="p-5 text-sm text-slate-500">Loading WhatsApp inbox...</div> : null}
               {!loading && conversations.length === 0 ? (
                 <EmptyPanel
-                  title={tab === "active" ? "No active chats" : tab === "all" ? "No WhatsApp chats" : "No templates sent"}
-                  text={tab === "active" ? "Replies will appear here after a contact messages the business." : tab === "all" ? "Inbound replies and sent messages will appear here." : "Template messages you send will appear in this tab."}
+                  title={tab === "active" ? "No active chats" : tab === "closed" ? "No closed chats" : tab === "all" ? "No WhatsApp chats" : "No templates sent"}
+                  text={tab === "active" ? "Replies will appear here after a contact messages the business." : tab === "closed" ? "Closed chats remain here until the customer replies again." : tab === "all" ? "Inbound replies and sent messages will appear here." : "Template messages you send will appear in this tab."}
                 />
               ) : null}
               {conversations.map((conversation) => (
@@ -286,7 +301,9 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
                     <span className="block truncate text-sm font-black text-slate-950">{conversation.contactName}</span>
                     <span className="mt-0.5 block truncate text-xs font-semibold text-slate-500">+{conversation.phoneNumber}</span>
                     <span className="mt-1 block truncate text-xs text-slate-500">{conversation.lastMessageText || "No message preview"}</span>
-                    {conversation.canReply ? <span className="mt-2 inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-black text-emerald-700">{formatRemaining(conversation.whatsapp?.remaining_seconds || 0)} left</span> : null}
+                    <span className={`mt-2 inline-flex rounded-full px-2 py-0.5 text-[11px] font-black ${conversation.canReply ? (conversation.whatsapp?.expiring_soon ? "bg-amber-50 text-amber-800" : "bg-emerald-50 text-emerald-700") : "bg-slate-100 text-slate-500"}`}>
+                      {windowLabel(conversation)}
+                    </span>
                   </span>
                 </button>
               ))}
@@ -299,7 +316,7 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
                 <div className="truncate text-lg font-black">{selected?.contactName || "No conversation selected"}</div>
                 {selected ? <div className="text-xs font-semibold text-emerald-100">+{selected.phoneNumber}</div> : null}
               </div>
-              {selected?.canReply ? <Badge text={`Reply allowed · ${formatRemaining(selected.whatsapp?.remaining_seconds || 0)} left`} tone={selected.whatsapp?.expiring_soon ? "amber" : "green"} /> : <Badge text="Template required" tone="amber" />}
+              {selected ? <Badge text={windowLabel(selected)} tone={selected.canReply && !selected.whatsapp?.expiring_soon ? "green" : "amber"} /> : null}
             </div>
             <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-5">
               {!selected ? (
@@ -327,6 +344,12 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
               )}
             </div>
             <div className="shrink-0 border-t border-slate-200 bg-white p-3">
+              {selected ? (
+                <div className={`mb-2 flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-bold ${selected.canReply ? (selected.whatsapp?.expiring_soon ? "border-amber-200 bg-amber-50 text-amber-800" : "border-emerald-200 bg-emerald-50 text-emerald-800") : "border-slate-200 bg-slate-50 text-slate-600"}`}>
+                  <Clock3 size={14} />
+                  <span>{windowDescription(selected)}</span>
+                </div>
+              ) : null}
               <div className="flex gap-2">
                 <input
                   value={reply}
@@ -358,11 +381,12 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
               <div className="mt-1 text-sm font-semibold text-slate-500">{selected ? `+${selected.phoneNumber}` : "-"}</div>
             </div>
             <div className="mt-4 space-y-2 text-sm">
-              <ProfileRow label="Status" value={selected?.canReply ? `Customer service window open (${formatRemaining(selected.whatsapp?.remaining_seconds || 0)} left)` : "Customer service window closed"} />
+              <ProfileRow label="WhatsApp window" value={selected ? windowDescription(selected) : "-"} />
               <ProfileRow label="Matched LMS user" value={selected?.matchedUser?.name || "Not matched"} />
               <ProfileRow label="Role" value={selected?.matchedUser?.role || "-"} />
               <ProfileRow label="Templates sent" value={String(selected?.sentTemplateCount || 0)} />
-              <ProfileRow label="Free-form allowed until" value={selected?.activeUntil ? new Date(selected.activeUntil).toLocaleString() : "-"} />
+              <ProfileRow label="Closes at" value={selected?.activeUntil ? new Date(selected.activeUntil).toLocaleString() : "No customer reply recorded"} />
+              <ProfileRow label="Latest customer reply" value={selected?.lastInboundAt ? new Date(selected.lastInboundAt).toLocaleString() : "-"} />
             </div>
           </aside>
         </section>
@@ -417,10 +441,42 @@ function Badge({ text, tone }: { text: string; tone: "green" | "amber" }) {
 
 function formatRemaining(seconds: number) {
   const safeSeconds = Math.max(0, Math.floor(seconds || 0));
+  if (safeSeconds <= 0) return "closed";
+  if (safeSeconds < 60) return `${safeSeconds}s`;
   const hours = Math.floor(safeSeconds / 3600);
-  const minutes = Math.floor((safeSeconds % 3600) / 60);
-  if (hours > 0) return `${hours}h ${minutes}m`;
+  const minutes = Math.ceil((safeSeconds % 3600) / 60);
+  if (hours > 0) return minutes >= 60 ? `${hours + 1}h` : minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
   return `${minutes}m`;
+}
+
+function withLiveWindow(conversation: Conversation, now: number): Conversation {
+  const expiry = conversation.whatsapp?.window_expires_at ? new Date(conversation.whatsapp.window_expires_at).getTime() : 0;
+  const remainingSeconds = expiry ? Math.max(0, Math.floor((expiry - now) / 1000)) : 0;
+  const windowOpen = remainingSeconds > 0;
+  return {
+    ...conversation,
+    canReply: windowOpen,
+    whatsapp: conversation.whatsapp
+      ? {
+          ...conversation.whatsapp,
+          window_open: windowOpen,
+          expiring_soon: windowOpen && remainingSeconds <= 2 * 60 * 60,
+          remaining_seconds: remainingSeconds,
+          free_form_allowed: windowOpen,
+          template_required: !windowOpen,
+        }
+      : conversation.whatsapp,
+  };
+}
+
+function windowLabel(conversation: Conversation) {
+  if (!conversation.canReply) return "Closed · 24h window";
+  return `${conversation.whatsapp?.expiring_soon ? "Closing soon" : "Open"} · ${formatRemaining(conversation.whatsapp?.remaining_seconds || 0)} left`;
+}
+
+function windowDescription(conversation: Conversation) {
+  if (!conversation.canReply) return "Closed · 24-hour window ended. The customer must reply again before a free-form message can be sent.";
+  return `${conversation.whatsapp?.expiring_soon ? "Closing soon" : "Open"} · ${formatRemaining(conversation.whatsapp?.remaining_seconds || 0)} remaining from the latest customer reply.`;
 }
 
 function ProfileRow({ label, value }: { label: string; value: string }) {

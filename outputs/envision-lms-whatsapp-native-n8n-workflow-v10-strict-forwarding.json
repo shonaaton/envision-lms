@@ -96,7 +96,7 @@
     },
     {
       "parameters": {
-        "jsCode": "return [{ json: { lmsWebhookBody: $json } }];"
+        "jsCode": "const input = $json || {};\nconst source = input.body && typeof input.body === 'object' ? input.body : input;\n\nif (Array.isArray(source.entry)) {\n  return [{ json: source }];\n}\n\nconst messages = Array.isArray(source.messages)\n  ? source.messages\n  : source.from && (source.id || source.waMessageId || source.providerMessageId)\n    ? [source]\n    : [];\n\nconst statuses = Array.isArray(source.statuses)\n  ? source.statuses\n  : source.status && source.id\n    ? [source]\n    : [];\n\nif (!messages.length && !statuses.length) {\n  return [{ json: source }];\n}\n\nconst normalizeTimestamp = (value) => {\n  if (value === undefined || value === null || value === '') return new Date().toISOString();\n  const raw = String(value).trim();\n  if (/^\\d+$/.test(raw)) {\n    const numeric = Number(raw);\n    return new Date(numeric < 10000000000 ? numeric * 1000 : numeric).toISOString();\n  }\n  const parsed = new Date(raw);\n  return Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();\n};\n\nreturn [{\n  json: {\n    messaging_product: source.messaging_product || 'whatsapp',\n    metadata: source.metadata || {},\n    contacts: source.contacts || [],\n    messages: messages.map((message) => ({\n      ...message,\n      id: String(message.id || message.waMessageId || message.providerMessageId || ''),\n      from: String(message.from || message.waId || ''),\n      type: message.type || 'text',\n      timestamp: normalizeTimestamp(message.timestamp),\n      text: typeof message.text === 'string' ? { body: message.text } : message.text,\n    })),\n    statuses,\n  },\n}];"
       },
       "id": "1d4a4e86-9257-413d-bdc7-c0363063ec1f",
       "name": "Prepare LMS Incoming Payload",
@@ -110,7 +110,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://lms.srv1170212.hstgr.cloud/api/webhooks/whatsapp",
+        "url": "https://lms.srv1170212.hstgr.cloud/api/whatsapp-incoming",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [

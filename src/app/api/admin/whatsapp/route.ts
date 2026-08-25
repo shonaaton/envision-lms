@@ -52,6 +52,12 @@ function chatPath(phoneNumber: string) {
   return `/admin/whatsapp/${encodeURIComponent(phoneNumber)}`;
 }
 
+function messageActivityAt(message: any) {
+  return message.direction === "inbound"
+    ? message.receivedAt || message.createdAt
+    : message.sentAt || message.createdAt;
+}
+
 export async function GET() {
   const session = await auth();
   if (!canManageWhatsApp(session)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -91,10 +97,18 @@ export async function GET() {
     };
     const serialized = serializeMessage(message);
     current.messages.push(serialized);
-    current.lastMessageAt = message.createdAt;
-    current.lastMessageDirection = message.direction;
-    current.lastMessageText = serialized.text || message.templateName || "";
-    if (message.direction === "inbound") current.lastInboundAt = message.receivedAt || message.createdAt;
+    const activityAt = messageActivityAt(message);
+    if (!current.lastMessageAt || new Date(activityAt).getTime() >= new Date(current.lastMessageAt).getTime()) {
+      current.lastMessageAt = activityAt;
+      current.lastMessageDirection = message.direction;
+      current.lastMessageText = serialized.text || message.templateName || "";
+    }
+    if (message.direction === "inbound") {
+      const inboundAt = message.receivedAt || message.createdAt;
+      if (!current.lastInboundAt || new Date(inboundAt).getTime() >= new Date(current.lastInboundAt).getTime()) {
+        current.lastInboundAt = inboundAt;
+      }
+    }
     if (message.direction === "outbound") current.lastBusinessMessageAt = message.sentAt || message.createdAt;
     if (message.direction === "outbound" && message.messageType === "template") current.sentTemplateCount += 1;
     conversations.set(phoneNumber, current);
@@ -110,6 +124,7 @@ export async function GET() {
   return NextResponse.json({
     conversations: data,
     active: data.filter((conversation) => conversation.canReply),
+    closed: data.filter((conversation) => !conversation.canReply),
     sentTemplates: data.filter((conversation) => conversation.sentTemplateCount > 0),
     windowHours: 24,
   });

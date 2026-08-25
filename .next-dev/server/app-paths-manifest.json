@@ -1,6 +1,5 @@
 {
-  "/manifest.webmanifest/route": "app/manifest.webmanifest/route.js",
   "/api/auth/[...nextauth]/route": "app/api/auth/[...nextauth]/route.js",
-  "/api/branding/route": "app/api/branding/route.js",
-  "/page": "app/page.js"
+  "/(auth)/login/page": "app/(auth)/login/page.js",
+  "/(dashboard)/admin/whatsapp/page": "app/(dashboard)/admin/whatsapp/page.js"
 }

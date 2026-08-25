@@ -34,7 +34,7 @@ export async function POST(req: Request) {
   if (!phoneNumber || !text) return NextResponse.json({ error: "Phone number and message are required." }, { status: 400 });
 
   await dbConnect();
-  const lastInbound: any = await WhatsAppMessage.findOne({ phoneNumber, direction: "inbound" }).sort({ createdAt: -1 }).lean();
+  const lastInbound: any = await WhatsAppMessage.findOne({ phoneNumber, direction: "inbound" }).sort({ receivedAt: -1, createdAt: -1 }).lean();
   const activeUntil = lastInbound ? new Date(new Date(lastInbound.receivedAt || lastInbound.createdAt).getTime() + CUSTOMER_SERVICE_WINDOW_MS) : null;
   if (!activeUntil || activeUntil.getTime() <= Date.now()) {
     return NextResponse.json({

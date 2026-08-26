@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Bot, CheckCircle2, Clock3, MessageCircle, RefreshCw, Send, Sparkles, UserRound } from "lucide-react";
 import { WHATSAPP_TEMPLATE_DEFINITIONS, getWhatsAppTemplateDefinition, templateSampleValues } from "@/lib/whatsappTemplateRegistry";
@@ -68,20 +68,20 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
   const [notice, setNotice] = useState("");
   const [templateResults, setTemplateResults] = useState<any[]>([]);
 
-  async function loadInbox() {
+  const loadInbox = useCallback(async () => {
     setLoading(true);
     const res = await fetch("/api/admin/whatsapp", { cache: "no-store" });
     const payload = await res.json();
     setData(payload);
     setSelectedPhone((current) => current || initialPhoneNumber || payload.conversations?.[0]?.phoneNumber || payload.sentTemplates?.[0]?.phoneNumber || "");
     setLoading(false);
-  }
+  }, [initialPhoneNumber]);
 
   useEffect(() => {
     void loadInbox();
     const interval = window.setInterval(() => void loadInbox(), 30000);
     return () => window.clearInterval(interval);
-  }, []);
+  }, [loadInbox]);
 
   useEffect(() => {
     const interval = window.setInterval(() => setNow(Date.now()), 1000);

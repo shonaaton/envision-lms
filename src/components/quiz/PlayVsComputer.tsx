@@ -83,7 +83,8 @@ const levelPresets: LevelPreset[] = [
 const quickTimeControls = ["1+0", "2+1", "3+0", "3+2", "5+0", "5+3", "10+0", "10+5", "15+10", "30+0", "30+20"];
 
 function stockfishSkillForLevel(level: number) {
-  return Math.round((clamp(level, 1, MAX_ENGINE_LEVEL) - 1) * (20 / (MAX_ENGINE_LEVEL - 1)));
+  if (level >= 9) return 20;
+  return Math.round((clamp(level, 1, 8) - 1) * (20 / 7));
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -513,34 +514,45 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
         }
       : undefined;
 
-    // Level 9 is a true search job because Lichess-style bot levels are commonly capped at 8.
+    const startLocalEngine = () => {
+      if (!worker) return false;
+      if (effectiveBlunderChance > 0 && legalMoves.length && Math.random() < effectiveBlunderChance) {
+        window.setTimeout(() => playFallbackMove(), 260);
+        return true;
+      }
+      if (engineFallbackTimerRef.current) window.clearTimeout(engineFallbackTimerRef.current);
+      engineFallbackTimerRef.current = window.setTimeout(() => {
+        engineFallbackTimerRef.current = null;
+        playFallbackMove();
+      }, engineTiming.moveTimeMs + 1600);
+      worker.postMessage("stop");
+      worker.postMessage("setoption name Threads value 1");
+      worker.postMessage(`setoption name UCI_LimitStrength value ${level >= 9 ? "false" : "true"}`);
+      if (level < 9) worker.postMessage(`setoption name Skill Level value ${engineSkillLevel}`);
+      worker.postMessage(`position fen ${gameRef.current.fen()}`);
+      worker.postMessage(`go movetime ${engineTiming.moveTimeMs}`);
+      return true;
+    };
+
+    if (startLocalEngine()) return;
+
     try {
-      const response = await fetch(level >= 9 ? "/v1/engine/analyse" : "/v1/engine/move", {
+      const response = await fetch("/v1/engine/move", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(
-          level >= 9
-            ? {
-                fen: gameRef.current.fen(),
-                depth: engineTiming.depth,
-                nodes: engineNodesForTiming(engineTiming.moveTimeMs, level),
-                multiPv: 1,
-                source: "ANALYSIS_BOARD",
-              }
-            : {
-                fen: gameRef.current.fen(),
-                level,
-                clock,
-                source: "PLAY_VS_COMPUTER",
-              }
-        ),
+        body: JSON.stringify({
+          fen: gameRef.current.fen(),
+          level,
+          clock,
+          source: "PLAY_VS_COMPUTER",
+        }),
       });
       const created = await response.json().catch(() => null);
       if (response.ok) {
         let result = created?.result;
         if (!result && created?.jobId) {
-          for (let attempt = 0; attempt < 30; attempt += 1) {
-            await new Promise((resolve) => window.setTimeout(resolve, 800));
+          for (let attempt = 0; attempt < 8; attempt += 1) {
+            await new Promise((resolve) => window.setTimeout(resolve, 250));
             const jobResponse = await fetch(`/v1/engine/jobs/${created.jobId}`, { cache: "no-store" });
             const job = await jobResponse.json().catch(() => null);
             if (job?.status === "COMPLETED") {
@@ -565,25 +577,7 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
       // Fall through to the local worker when the coordinator is unavailable.
     }
 
-    if (!worker) {
-      window.setTimeout(playFallbackMove, 250);
-      return;
-    }
-    if (effectiveBlunderChance > 0 && legalMoves.length && Math.random() < effectiveBlunderChance) {
-      const chosenMove = legalMoves[Math.floor(Math.random() * legalMoves.length)];
-      window.setTimeout(() => playFallbackMove(), chosenMove ? 260 : 0);
-      return;
-    }
-    if (engineFallbackTimerRef.current) window.clearTimeout(engineFallbackTimerRef.current);
-    engineFallbackTimerRef.current = window.setTimeout(() => {
-      engineFallbackTimerRef.current = null;
-      playFallbackMove();
-    }, engineTiming.moveTimeMs + 1600);
-    worker.postMessage("setoption name Threads value 1");
-    worker.postMessage(`setoption name UCI_LimitStrength value ${level >= 9 ? "false" : "true"}`);
-    if (level < 9) worker.postMessage(`setoption name Skill Level value ${engineSkillLevel}`);
-    worker.postMessage(`position fen ${gameRef.current.fen()}`);
-    worker.postMessage(`go movetime ${engineTiming.moveTimeMs} depth ${engineTiming.depth}`);
+    window.setTimeout(playFallbackMove, 250);
   }
 
   async function startGame() {

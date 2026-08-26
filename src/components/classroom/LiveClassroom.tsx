@@ -67,6 +67,7 @@ import {
   type ParsedPgnComment,
 } from "@/lib/lichessPgn";
 import { cn } from "@/lib/utils";
+import { normalizeGoogleMeetUrl } from "@/lib/meetingUrl";
 
 const Chessboard = dynamic(() => import("react-chessboard").then((m) => m.Chessboard), { ssr: false });
 
@@ -2775,6 +2776,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const setupBoardSize = Math.min(340, Math.max(220, boardWidth));
   const canLaunchBoardQuiz = Boolean(live?.fen);
   const canLoadPgnLibrary = coach && pgnLibrary.length > 0;
+  const googleMeetUrl = normalizeGoogleMeetUrl(classroom?.meetingUrl);
   const coachSidebarTabs = [
     { key: "students" as TabKey, icon: <Users size={19} />, label: "Class" },
     { key: "chat" as TabKey, icon: <MessageSquare size={19} />, label: "Chat" },
@@ -2816,11 +2818,11 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
               <span className="sm:hidden">Leave</span>
             </button>
           ) : null}
-          {classroom?.meetingUrl ? (
+          {googleMeetUrl ? (
             <a
-              href={classroom.meetingUrl}
+              href={googleMeetUrl}
               target="_blank"
-              rel="noreferrer"
+              rel="noopener noreferrer"
               className="inline-flex h-7 items-center gap-1.5 rounded-md border border-brand/15 bg-white px-2.5 text-xs font-bold text-brand shadow-sm transition hover:bg-brand/5"
             >
               <ExternalLink size={15} /> Open Google Meet

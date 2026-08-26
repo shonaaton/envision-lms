@@ -255,10 +255,7 @@ function toFishnetWork(job: any) {
     id: job.jobId,
   };
   if (job.workType === "move") {
-    payload.level = Number(job.level || 5);
-    payload.skillLevel = Number(job.engine?.skillLevel || 0) || undefined;
-    payload.moveTime = Number(job.engine?.moveTime || 0) || undefined;
-    payload.depth = Number(job.engine?.depth || 0) || undefined;
+    payload.level = Math.min(8, Math.max(1, Number(job.level || 5)));
     if (job.clock?.white !== undefined && job.clock?.black !== undefined) {
       payload.clock = {
         wtime: Number(job.clock.white || 0),
@@ -267,15 +264,23 @@ function toFishnetWork(job: any) {
       };
     }
   } else {
-    payload.nodes = Number(job.engine?.nodes || 0) || undefined;
+    const nodes = Number(job.engine?.nodes || 1_500_000);
+    payload.nodes = {
+      sf15: nodes,
+      sf14: Math.ceil(nodes * 1.4),
+      classical: Math.ceil(nodes * 2.7),
+    };
+    payload.timeout = Number(job.engine?.moveTime || 7_000);
     payload.depth = Number(job.engine?.depth || 0) || undefined;
-    payload.multipv = Number(job.engine?.multiPv || 1);
+    payload.multipv = Math.max(1, Number(job.engine?.multiPv || 1));
   }
   return {
     work: payload,
+    game_id: job.gameId || job.classroomId || job.tournamentId || "",
     position: job.fen,
     variant: "standard",
-    moves: canonicalMoves(job.moves),
+    moves: canonicalMoves(job.moves).join(" "),
+    skipPositions: [],
   };
 }
 

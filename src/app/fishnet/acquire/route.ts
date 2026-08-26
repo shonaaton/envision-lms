@@ -30,5 +30,5 @@ export async function POST(req: Request) {
 
   const job = await acquireEngineJob(worker);
   if (!job) return new NextResponse(null, { status: 204 });
-  return NextResponse.json(job);
+  return NextResponse.json(job, { status: 202 });
 }

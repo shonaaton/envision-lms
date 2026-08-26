@@ -10,6 +10,7 @@ import { coachClassroomQuery, limitClassroomToCoachSessions } from "@/lib/classr
 import { User } from "@/models/User";
 import { recordActivity } from "@/lib/activity";
 import { sendCourseAssignedEmail } from "@/lib/studentCommunicationEmails";
+import { normalizeGoogleMeetUrl } from "@/lib/meetingUrl";
 
 export const dynamic = "force-dynamic";
 
@@ -187,6 +188,10 @@ async function normalizeClassroomPayload(raw: any, actorId: string) {
   });
   if (!generatedSessions.length) throw new Error("The classroom schedule did not create any sessions. Check the dates, topics, days, and times.");
 
+  const meetingUrl = String(raw.meetingUrl || "").trim();
+  const normalizedMeetingUrl = meetingUrl ? normalizeGoogleMeetUrl(meetingUrl) : "";
+  if (meetingUrl && !normalizedMeetingUrl) throw new Error("Add the exact Google Meet room link, not a generic Meet start link.");
+
   return {
     title,
     description: "",
@@ -200,7 +205,7 @@ async function normalizeClassroomPayload(raw: any, actorId: string) {
     courseName,
     useCustomTopic: !!raw.useCustomTopic,
     meetingProvider,
-    meetingUrl: String(raw.meetingUrl || "").trim(),
+    meetingUrl: normalizedMeetingUrl,
     coach: raw.coach || undefined,
     instructor: raw.coach || actorId,
     students: Array.isArray(raw.students) ? raw.students.filter(Boolean) : [],

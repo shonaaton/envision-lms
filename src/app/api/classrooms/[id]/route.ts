@@ -19,6 +19,7 @@ import { PGN } from "@/models/PGN";
 import { Booking } from "@/models/Booking";
 import { DemoBooking } from "@/models/Onboarding";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
+import { normalizeGoogleMeetUrl } from "@/lib/meetingUrl";
 
 export const dynamic = "force-dynamic";
 
@@ -739,6 +740,14 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     delete safeBody.sessionId;
     delete safeBody.generatedSessions;
     delete safeBody._id;
+    if ("meetingUrl" in safeBody) {
+      const meetingUrl = String(safeBody.meetingUrl || "").trim();
+      const normalizedMeetingUrl = meetingUrl ? normalizeGoogleMeetUrl(meetingUrl) : "";
+      if (meetingUrl && !normalizedMeetingUrl) {
+        return NextResponse.json({ error: "Add the exact Google Meet room link, not a generic Meet start link." }, { status: 400 });
+      }
+      safeBody.meetingUrl = normalizedMeetingUrl;
+    }
     existing.set({
       ...safeBody,
       course: body.course ? body.course : undefined,

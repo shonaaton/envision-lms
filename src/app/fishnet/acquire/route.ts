@@ -16,7 +16,6 @@ export async function POST(req: Request) {
     {
       $setOnInsert: {
         workerId: worker.workerId,
-        workerName: worker.workerName,
         keyHash: worker.keyHash,
       },
       $set: {

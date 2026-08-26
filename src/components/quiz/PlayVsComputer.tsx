@@ -150,8 +150,11 @@ function engineTimingForClock(input: {
   const incrementMs = incrementSeconds * 1000;
   const safeRemainingMs = Math.max(1_000, remainingMs ?? 60_000);
   const clockBudgetMs = Math.floor((safeRemainingMs / 32) + (incrementMs * 0.65));
-  const minThinkMs = input.level >= 8 ? 180 : input.level >= 5 ? 120 : 80;
-  const maxThinkMs = safeRemainingMs <= 20_000 ? 450 : safeRemainingMs <= 60_000 ? 800 : safeRemainingMs <= 180_000 ? 1_500 : 3_500;
+  const minThinkMs = input.level >= 9 ? 900 : input.level >= 8 ? 450 : input.level >= 6 ? 250 : input.level >= 5 ? 120 : 80;
+  const maxThinkMs =
+    input.level >= 9
+      ? safeRemainingMs <= 20_000 ? 1_200 : safeRemainingMs <= 60_000 ? 1_800 : 2_800
+      : safeRemainingMs <= 20_000 ? 450 : safeRemainingMs <= 60_000 ? 800 : safeRemainingMs <= 180_000 ? 1_500 : 3_500;
   const moveTimeMs = clamp(Math.min(input.baseMoveTimeMs, clockBudgetMs), minThinkMs, maxThinkMs);
   const depthPenalty = moveTimeMs < input.baseMoveTimeMs * 0.45 ? 3 : moveTimeMs < input.baseMoveTimeMs * 0.7 ? 2 : moveTimeMs < input.baseMoveTimeMs * 0.9 ? 1 : 0;
   return { moveTimeMs, depth: clamp(input.baseDepth - depthPenalty, 1, input.baseDepth) };
@@ -581,6 +584,66 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
       if (bookTimeout !== null) window.clearTimeout(bookTimeout);
     }
 
+    const requestServerEngineMove = async (maxAttempts = 12, delayMs = 250) => {
+      const response = await fetch(level >= 9 ? "/v1/engine/analyse" : "/v1/engine/move", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          level >= 9
+            ? {
+                fen: gameRef.current.fen(),
+                depth: engineTiming.depth,
+                nodes: engineNodesForTiming(engineTiming.moveTimeMs, level),
+                multiPv: 1,
+                source: "ANALYSIS_BOARD",
+              }
+            : {
+                fen: gameRef.current.fen(),
+                level,
+                clock,
+                source: "PLAY_VS_COMPUTER",
+              }
+        ),
+      });
+      const created = await response.json().catch(() => null);
+      if (!response.ok) return false;
+
+      let result = created?.result;
+      if (!result && created?.jobId) {
+        for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+          await new Promise((resolve) => window.setTimeout(resolve, delayMs));
+          const jobResponse = await fetch(`/v1/engine/jobs/${created.jobId}`, { cache: "no-store" });
+          const job = await jobResponse.json().catch(() => null);
+          if (job?.status === "COMPLETED") {
+            result = job.result;
+            break;
+          }
+          if (job?.status === "FAILED" || job?.status === "CANCELLED") break;
+        }
+      }
+
+      const uci = String(result?.bestMove || result?.lines?.[0]?.pv?.[0] || "").trim();
+      const isLegalEngineMove = legalMoves.some((move) => `${move.from}${move.to}${move.promotion || ""}` === uci);
+      if (uci && isLegalEngineMove && statusRef.current === "playing") {
+        commitTurnClockRef.current();
+        gameRef.current.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] || "q" });
+        setThinking(false);
+        beginNextTurnRef.current();
+        refreshBoard();
+        checkGameOverRef.current();
+        return true;
+      }
+      return false;
+    };
+
+    if (level >= 9) {
+      try {
+        if (await requestServerEngineMove(18, 250)) return;
+      } catch {
+        // Fall through to the local worker when the server engine is unavailable.
+      }
+    }
+
     const startLocalEngine = () => {
       if (!worker) return false;
       if (effectiveBlunderChance > 0 && legalMoves.length && Math.random() < effectiveBlunderChance) {
@@ -607,42 +670,7 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
     if (startLocalEngine()) return;
 
     try {
-      const response = await fetch("/v1/engine/move", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fen: gameRef.current.fen(),
-          level,
-          clock,
-          source: "PLAY_VS_COMPUTER",
-        }),
-      });
-      const created = await response.json().catch(() => null);
-      if (response.ok) {
-        let result = created?.result;
-        if (!result && created?.jobId) {
-          for (let attempt = 0; attempt < 8; attempt += 1) {
-            await new Promise((resolve) => window.setTimeout(resolve, 250));
-            const jobResponse = await fetch(`/v1/engine/jobs/${created.jobId}`, { cache: "no-store" });
-            const job = await jobResponse.json().catch(() => null);
-            if (job?.status === "COMPLETED") {
-              result = job.result;
-              break;
-            }
-            if (job?.status === "FAILED" || job?.status === "CANCELLED") break;
-          }
-        }
-        const uci = String(result?.bestMove || result?.lines?.[0]?.pv?.[0] || "").trim();
-        if (uci && uci !== "(none)" && statusRef.current === "playing") {
-          commitTurnClockRef.current();
-          gameRef.current.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] || "q" });
-          setThinking(false);
-          beginNextTurnRef.current();
-          refreshBoard();
-          checkGameOverRef.current();
-          return;
-        }
-      }
+      if (await requestServerEngineMove(8, 250)) return;
     } catch {
       // Fall through to the local worker when the coordinator is unavailable.
     }

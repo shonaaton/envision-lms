@@ -19,10 +19,10 @@ export const ENGINE_LEVELS: Record<number, { skillLevel: number; moveTime: numbe
   3: { skillLevel: 6, moveTime: 150, depth: 6 },
   4: { skillLevel: 10, moveTime: 250, depth: 7 },
   5: { skillLevel: 13, moveTime: 400, depth: 8 },
-  6: { skillLevel: 16, moveTime: 600, depth: 10 },
-  7: { skillLevel: 19, moveTime: 900, depth: 12 },
-  8: { skillLevel: 20, moveTime: 1_500, depth: 14 },
-  9: { skillLevel: 20, moveTime: 3_500, depth: 16 },
+  6: { skillLevel: 14, moveTime: 850, depth: 8 },
+  7: { skillLevel: 17, moveTime: 1_200, depth: 10 },
+  8: { skillLevel: 20, moveTime: 1_800, depth: 12 },
+  9: { skillLevel: 20, moveTime: 2_800, depth: 16 },
 };
 
 export const ENGINE_LEASE_TTL_MS = 20_000;

@@ -75,16 +75,41 @@ const levelPresets: LevelPreset[] = [
   { level: 3, id: "rookie", name: "Rookie", subtitle: "Learning tactics", elo: 300, depth: 3, moveTimeMs: 260, blunderChance: 0.36 },
   { level: 4, id: "scout", name: "Scout", subtitle: "Developing player", elo: 600, depth: 4, moveTimeMs: 400, blunderChance: 0.22 },
   { level: 5, id: "maple", name: "Maple", subtitle: "Club practice", elo: 900, depth: 6, moveTimeMs: 650, blunderChance: 0.12 },
-  { level: 6, id: "ember", name: "Ember", subtitle: "Tactical pressure", elo: 1250, depth: 8, moveTimeMs: 950, blunderChance: 0.06 },
-  { level: 7, id: "noir", name: "Noir", subtitle: "Tournament sharp", elo: 1600, depth: 10, moveTimeMs: 1400, blunderChance: 0.025 },
-  { level: 8, id: "atlas", name: "Atlas", subtitle: "Deep calculation", elo: 1900, depth: 12, moveTimeMs: 2200, blunderChance: 0 },
-  { level: 9, id: "maestro", name: "Maestro", subtitle: "Serious engine test", elo: 2300, depth: 16, moveTimeMs: 3500, blunderChance: 0 },
+  { level: 6, id: "ember", name: "Ember", subtitle: "Tactical pressure", elo: 1350, depth: 8, moveTimeMs: 850, blunderChance: 0 },
+  { level: 7, id: "noir", name: "Noir", subtitle: "Tournament sharp", elo: 1650, depth: 10, moveTimeMs: 1200, blunderChance: 0 },
+  { level: 8, id: "atlas", name: "Atlas", subtitle: "Deep calculation", elo: 2000, depth: 12, moveTimeMs: 1800, blunderChance: 0 },
+  { level: 9, id: "maestro", name: "Maestro", subtitle: "Serious engine test", elo: 2400, depth: 16, moveTimeMs: 2800, blunderChance: 0 },
 ];
 const quickTimeControls = ["1+0", "2+1", "3+0", "3+2", "5+0", "5+3", "10+0", "10+5", "15+10", "30+0", "30+20"];
 
 function stockfishSkillForLevel(level: number) {
-  if (level >= 9) return 20;
-  return Math.round((clamp(level, 1, 8) - 1) * (20 / 7));
+  const skillByLevel: Record<number, number> = {
+    1: 1,
+    2: 3,
+    3: 6,
+    4: 9,
+    5: 12,
+    6: 14,
+    7: 17,
+    8: 20,
+    9: 20,
+  };
+  return skillByLevel[clamp(Math.round(level), 1, MAX_ENGINE_LEVEL)] || 1;
+}
+
+function stockfishEloForLevel(level: number) {
+  const eloByLevel: Record<number, number> = {
+    1: 1320,
+    2: 1320,
+    3: 1320,
+    4: 1350,
+    5: 1450,
+    6: 1650,
+    7: 1900,
+    8: 2200,
+    9: 3200,
+  };
+  return eloByLevel[clamp(Math.round(level), 1, MAX_ENGINE_LEVEL)] || 1320;
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -216,6 +241,7 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
   const targetElo = selectedBot.elo;
   const currentDepth = clamp(selectedBot.depth || depth, 1, 18);
   const engineSkillLevel = stockfishSkillForLevel(level);
+  const engineElo = stockfishEloForLevel(level);
   const effectiveBlunderChance = selectedBot.blunderChance;
   const engineMoveTimeMs = selectedBot.moveTimeMs;
   const strengthBandLabel = strengthBandForElo(targetElo);
@@ -568,8 +594,11 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
       }, engineTiming.moveTimeMs + 1600);
       worker.postMessage("stop");
       worker.postMessage("setoption name Threads value 1");
-      worker.postMessage(`setoption name UCI_LimitStrength value ${level >= 8 ? "false" : "true"}`);
-      if (level < 8) worker.postMessage(`setoption name Skill Level value ${engineSkillLevel}`);
+      worker.postMessage(`setoption name UCI_LimitStrength value ${level >= 9 ? "false" : "true"}`);
+      if (level < 9) {
+        worker.postMessage(`setoption name Skill Level value ${engineSkillLevel}`);
+        worker.postMessage(`setoption name UCI_Elo value ${engineElo}`);
+      }
       worker.postMessage(`position fen ${gameRef.current.fen()}`);
       worker.postMessage(`go movetime ${engineTiming.moveTimeMs}`);
       return true;

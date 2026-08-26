@@ -145,6 +145,12 @@ function parseTimeControlValue(value: string) {
   };
 }
 
+function uciHistory(game: Chess) {
+  return (game.history({ verbose: true }) as Array<{ from: string; to: string; promotion?: string }>).map(
+    (move) => `${move.from}${move.to}${move.promotion || ""}`
+  );
+}
+
 const seededHistory: GameRecord[] = [
   { id: 1, user: "Sayantan Chandra", date: "Jun 4, 2026 2:27 AM", color: "white", difficulty: "Beginner", botName: "Sprout", timeControl: "No Clock", result: "Resigned", moves: 0, durationSeconds: 0, xp: 0, coins: 0 },
   { id: 2, user: "Diya Yashika Janga", date: "Jun 3, 2026 5:00 PM", color: "white", difficulty: "Beginner", botName: "Poppy", timeControl: "5 min", result: "Draw", moves: 13, durationSeconds: 402, xp: 0, coins: 0 },
@@ -511,8 +517,43 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
           white: Math.max(0, Math.round(displayedWhiteClock ?? whiteClockMs ?? 0)),
           black: Math.max(0, Math.round(displayedBlackClock ?? blackClockMs ?? 0)),
           increment: parseTimeControl(timeControl).incrementSeconds * 1000,
-        }
+      }
       : undefined;
+
+    let bookTimeout: number | null = null;
+    try {
+      const controller = new AbortController();
+      bookTimeout = window.setTimeout(() => controller.abort(), 1200);
+      const response = await fetch("/api/play/computer/book", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify({
+          moves: uciHistory(gameRef.current),
+          turn: gameRef.current.turn(),
+          level,
+        }),
+      });
+      if (bookTimeout !== null) window.clearTimeout(bookTimeout);
+      const book = await response.json().catch(() => null);
+      const uci = String(book?.move || "").trim();
+      const isLegalBookMove = legalMoves.some((move) => `${move.from}${move.to}${move.promotion || ""}` === uci);
+      if (uci && isLegalBookMove && statusRef.current === "playing") {
+        commitTurnClockRef.current();
+        const applied = gameRef.current.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] || "q" });
+        if (applied) {
+          setThinking(false);
+          beginNextTurnRef.current();
+          refreshBoard();
+          checkGameOverRef.current();
+          return;
+        }
+      }
+    } catch {
+      // Continue with Stockfish if the opening explorer is unavailable.
+    } finally {
+      if (bookTimeout !== null) window.clearTimeout(bookTimeout);
+    }
 
     const startLocalEngine = () => {
       if (!worker) return false;
@@ -527,8 +568,8 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
       }, engineTiming.moveTimeMs + 1600);
       worker.postMessage("stop");
       worker.postMessage("setoption name Threads value 1");
-      worker.postMessage(`setoption name UCI_LimitStrength value ${level >= 9 ? "false" : "true"}`);
-      if (level < 9) worker.postMessage(`setoption name Skill Level value ${engineSkillLevel}`);
+      worker.postMessage(`setoption name UCI_LimitStrength value ${level >= 8 ? "false" : "true"}`);
+      if (level < 8) worker.postMessage(`setoption name Skill Level value ${engineSkillLevel}`);
       worker.postMessage(`position fen ${gameRef.current.fen()}`);
       worker.postMessage(`go movetime ${engineTiming.moveTimeMs}`);
       return true;

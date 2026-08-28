@@ -238,6 +238,7 @@ function scheduleChangeCopy({
   previousClassDate,
   shiftedCount,
   restartDate,
+  requestSource,
 }: {
   action: string;
   classroom: any;
@@ -246,11 +247,13 @@ function scheduleChangeCopy({
   previousClassDate?: any;
   shiftedCount?: number;
   restartDate?: string;
+  requestSource?: string;
 }) {
   const classTitle = String(classroom?.title || "Class");
   const sessionTitle = String(currentSession?.topicName || previousSession?.topicName || classTitle);
   const previousTime = scheduleTimeLabel(previousSession?.scheduledFor || previousClassDate);
   const nextTime = scheduleTimeLabel(currentSession?.scheduledFor || classroom?.classDate);
+  const sourceText = requestSource ? ` due to a rescheduling request from ${requestSource}` : "";
 
   if (action === "cancel_series") {
     return {
@@ -288,8 +291,17 @@ function scheduleChangeCopy({
   return {
     type: "classroom.session.rescheduled",
     title: "Class rescheduled",
-    message: `${sessionTitle} in ${classTitle} has been rescheduled${fromText}${toText}.`,
+    message: nextTime
+      ? `Your next class is on ${nextTime}${sourceText}.`
+      : `${sessionTitle} in ${classTitle} has been rescheduled${fromText}${toText}${sourceText}.`,
   };
+}
+
+function rescheduleRequestSource(recipient: any, actor?: { id?: string; role?: string }) {
+  if (!actor?.id) return "";
+  if (recordId(recipient?._id) === String(actor.id)) return "you";
+  if (actor.role === "instructor" || actor.role === "coach") return "your coach";
+  return "the academy";
 }
 
 async function notifyClassroomScheduleChange({
@@ -300,6 +312,7 @@ async function notifyClassroomScheduleChange({
   previousClassDate,
   shiftedCount,
   restartDate,
+  actor,
 }: {
   classroom: any;
   action: string;
@@ -308,6 +321,7 @@ async function notifyClassroomScheduleChange({
   previousClassDate?: any;
   shiftedCount?: number;
   restartDate?: string;
+  actor?: { id?: string; role?: string };
 }) {
   const classroomId = recordId(classroom?._id);
   if (!classroomId) return;
@@ -325,7 +339,6 @@ async function notifyClassroomScheduleChange({
   const recipients = await User.find({ _id: { $in: recipientIds }, isActive: { $ne: false } }).select("_id name email role").lean();
   if (!recipients.length) return;
 
-  const copy = scheduleChangeCopy({ action, classroom, previousSession, currentSession, previousClassDate, shiftedCount, restartDate });
   const href = classroomHref(classroomId, sessionId || undefined);
   const metadata = {
     classroom: classroomId,
@@ -338,26 +351,48 @@ async function notifyClassroomScheduleChange({
   };
 
   await Notification.insertMany(
-    recipients.map((recipient: any) => ({
-      user: recipient._id,
-      type: copy.type,
-      title: copy.title,
-      message: copy.message,
-      metadata,
-    }))
+    recipients.map((recipient: any) => {
+      const copy = scheduleChangeCopy({
+        action,
+        classroom,
+        previousSession,
+        currentSession,
+        previousClassDate,
+        shiftedCount,
+        restartDate,
+        requestSource: rescheduleRequestSource(recipient, actor),
+      });
+      return {
+        user: recipient._id,
+        type: copy.type,
+        title: copy.title,
+        message: copy.message,
+        metadata,
+      };
+    })
   );
 
   await Promise.all(
     recipients
       .filter((recipient: any) => recipient.email)
-      .map((recipient: any) =>
-        sendAutomationEmail({
+      .map((recipient: any) => {
+        const copy = scheduleChangeCopy({
+          action,
+          classroom,
+          previousSession,
+          currentSession,
+          previousClassDate,
+          shiftedCount,
+          restartDate,
+          requestSource: rescheduleRequestSource(recipient, actor),
+        });
+        return sendAutomationEmail({
           to: String(recipient.email),
           subject: copy.title,
           message: `Hello ${recipient.name || ""},\n\n${copy.message}`,
           metadata: { kind: "classroom_schedule_change", ...metadata, userId: recordId(recipient._id) },
-        })
-      )
+        });
+      })
   );
 }
 
@@ -542,7 +577,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       existing.generatedSessions[0].status = "scheduled";
     }
   } else if (body.action === "shift_future_sessions") {
-    if (existing.classroomType !== "series") return NextResponse.json({ error: "Exam break shifting is only available for class series" }, { status: 409 });
+    if (existing.classroomType !== "series") return NextResponse.json({ error: "Just break shifting is only available for class series" }, { status: 409 });
     if (existing.status === "completed" || existing.status === "cancelled") return NextResponse.json({ error: "This series can no longer be shifted" }, { status: 409 });
     if (!String(body.restartDate || "").trim() || Number.isNaN(new Date(body.restartDate).getTime())) {
       return NextResponse.json({ error: "Select a valid class restart date" }, { status: 400 });
@@ -571,7 +606,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       item.status = "scheduled";
       item.coachAttendanceStatus = "pending";
       item.notes = String(body.reason || "").trim()
-        ? [item.notes, `Exam break shift: ${String(body.reason).trim()}`].filter(Boolean).join("\n")
+        ? [item.notes, `Just break shift: ${String(body.reason).trim()}`].filter(Boolean).join("\n")
         : item.notes;
     });
 
@@ -581,7 +616,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     await recordActivity({
       actor: (session.user as any).id,
       type: "classroom.series.exam_break_shifted",
-      label: `Shifted ${movable.length} future class${movable.length === 1 ? "" : "es"} after exam break`,
+      label: `Shifted ${movable.length} future class${movable.length === 1 ? "" : "es"} after just break`,
       entityType: "Classroom",
       entityId: params.id,
       metadata: { restartDate: restartKey, shiftedSessions: movable.map((item: any) => String(item._id)), reason: body.reason || "" },
@@ -826,6 +861,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       previousClassDate,
       shiftedCount: shiftedSessionCount,
       restartDate: shiftedRestartDate,
+      actor: { id: String((session.user as any).id || ""), role: String((session.user as any).role || "") },
     });
   }
   if (!["mark_session_outcome", "shift_future_sessions", "permanent_schedule_change"].includes(activityAction)) {

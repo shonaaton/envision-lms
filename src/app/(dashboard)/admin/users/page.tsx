@@ -700,6 +700,12 @@ function BatchDetailsModal({ batch, onClose }: { batch: BatchItem; onClose: () =
 
 function EditBatchModal({ batch, coaches, students, onClose, onSave }: { batch: BatchItem; coaches: AdminUser[]; students: AdminUser[]; onClose: () => void; onSave: (payload: BatchUpdatePayload) => void }) {
   const [selected, setSelected] = useState<string[]>(batch.students?.map((s) => s._id) || []);
+  const [studentQuery, setStudentQuery] = useState("");
+  const filteredStudents = useMemo(() => {
+    const term = studentQuery.trim().toLowerCase();
+    if (!term) return students;
+    return students.filter((student) => [student.name, student.email, student.username].filter(Boolean).join(" ").toLowerCase().includes(term));
+  }, [studentQuery, students]);
   return (
     <ModalShell title="Edit Batch" onClose={onClose}>
       <form className="grid gap-3" onSubmit={(e) => {
@@ -718,8 +724,21 @@ function EditBatchModal({ batch, coaches, students, onClose, onSave }: { batch: 
             <option value="beginner">Beginner</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option>
           </select>
         </div>
-        <div className="max-h-64 overflow-y-auto rounded border border-slate-200 p-3">
-          {students.map((student) => <label key={student._id} className="flex items-center gap-2 py-1 text-sm"><input type="checkbox" checked={selected.includes(student._id)} onChange={() => setSelected((value) => value.includes(student._id) ? value.filter((id) => id !== student._id) : [...value, student._id])} />{student.name}</label>)}
+        <div>
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-slate-950">Students ({selected.length} selected)</div>
+              <div className="text-xs text-slate-500">New students are added to future classrooms for this batch only.</div>
+            </div>
+            <div className="relative w-56 max-w-full">
+              <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input className="input h-9 bg-white pl-8 text-sm text-slate-950" value={studentQuery} onChange={(event) => setStudentQuery(event.target.value)} placeholder="Search students" />
+            </div>
+          </div>
+          <div className="max-h-64 overflow-y-auto rounded border border-slate-200 p-3">
+            {filteredStudents.map((student) => <label key={student._id} className="flex items-center gap-2 py-1 text-sm"><input type="checkbox" checked={selected.includes(student._id)} onChange={() => setSelected((value) => value.includes(student._id) ? value.filter((id) => id !== student._id) : [...value, student._id])} />{student.name}<span className="text-slate-500">{student.email ? `- ${student.email}` : ""}</span></label>)}
+            {!filteredStudents.length && <div className="py-4 text-center text-sm text-slate-500">No matching students.</div>}
+          </div>
         </div>
         <div className="flex justify-end gap-2"><button className="btn border border-slate-200" type="button" onClick={onClose}>Cancel</button><button className="btn-primary">Save Batch</button></div>
       </form>

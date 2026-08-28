@@ -1000,7 +1000,7 @@ export default function ClassroomManagementClient({
                                 reason: "",
                               });
                             }} />}
-                            {permissions.edit && item.classroomType === "series" && item.status !== "cancelled" && item.status !== "completed" && <ActionButton icon={<CalendarDays size={14} />} label="Exam Break" onClick={() => { setActionModal({ type: "shift_future_sessions", item }); setActionDraft({ restartDate: "", reason: "Student exam break" }); }} />}
+                            {permissions.edit && item.classroomType === "series" && item.status !== "cancelled" && item.status !== "completed" && <ActionButton icon={<CalendarDays size={14} />} label="Just break" onClick={() => { setActionModal({ type: "shift_future_sessions", item }); setActionDraft({ restartDate: "", reason: "Just break" }); }} />}
                             {permissions.create && item.classroomType === "series" && item.status !== "cancelled" && item.status !== "completed" && <ActionButton icon={<CopyPlus size={14} />} label="Add Extra Class" onClick={() => { setActionModal({ type: "add_extra_class", item }); setActionDraft({ topicName: "", classDate: "", startTime: item.startTime || "16:00", durationMinutes: item.durationMinutes || 60 }); }} />}
                           </div>
                         </div>
@@ -2113,7 +2113,7 @@ function flattenScheduleSlots(days: Array<{ day: number; slots: Array<{ startTim
 
 function actionTitle(type: string) {
   if (type === "reschedule_class") return "Reschedule Class";
-  if (type === "shift_future_sessions") return "Exam Break";
+  if (type === "shift_future_sessions") return "Just break";
   if (type === "permanent_schedule_change") return "Permanent Timing Change";
   if (type === "cancel_class") return "Cancel Class";
   if (type === "cancel_series") return "Cancel Entire Series";

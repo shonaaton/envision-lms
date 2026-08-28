@@ -1843,6 +1843,7 @@ function GroupClassSessionList({
 }
 
 function SimpleClassroomList({ items, loading, role, canJoin }: { items: ClassroomItem[]; loading: boolean; role: Role; canJoin: boolean }) {
+  const [futureDetails, setFutureDetails] = useState<{ classroom: ClassroomItem; session: any } | null>(null);
   if (loading) return <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500">Loading classrooms...</div>;
   const now = new Date();
   const sessions = dedupeSessionRows(flattenScheduledSessions(items)
@@ -1905,7 +1906,6 @@ function SimpleClassroomList({ items, loading, role, canJoin }: { items: Classro
           {upcoming.map(({ classroom, session }) => {
             const status = deriveScheduledSessionStatus(session, now);
             const joinOpen = canJoinScheduledSession(session, now);
-            const summaryHref = `/classrooms/${classroom._id}/summary?session=${String(session._id)}`;
             return (
               <div key={`${classroom._id}-${session._id}`} className="rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
                 <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
@@ -1931,7 +1931,7 @@ function SimpleClassroomList({ items, loading, role, canJoin }: { items: Classro
                       label={canJoin ? "Join Classroom" : "Join access not granted"}
                       disabled={!canJoin || !joinOpen}
                     />
-                    <Link href={summaryHref} className="btn-outline">View Details</Link>
+                    <button type="button" className="btn-outline" onClick={() => setFutureDetails({ classroom, session })}>View Details</button>
                   </div>
                 </div>
               </div>
@@ -1982,6 +1982,72 @@ function SimpleClassroomList({ items, loading, role, canJoin }: { items: Classro
           </div>
         )}
       </div>
+      {futureDetails ? (
+        <FutureClassDetailsModal
+          classroom={futureDetails.classroom}
+          session={futureDetails.session}
+          onClose={() => setFutureDetails(null)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function FutureClassDetailsModal({
+  classroom,
+  session,
+  onClose,
+}: {
+  classroom: ClassroomItem;
+  session: any;
+  onClose: () => void;
+}) {
+  const studentNames = (classroom.students || []).map((student: any) => student?.name || student?.email || student?.username || "").filter(Boolean);
+  const batchNames = (classroom.batches || []).map((batch: any) => batch?.name || "").filter(Boolean).join(", ") || "Unassigned";
+  const startDate = session?.scheduledFor || classroom.classDate || classroom.startDate;
+  const startTime = String(session?.startTime || classroom.startTime || "");
+  const duration = Number(session?.durationMinutes || classroom.durationMinutes || 60);
+  const endTime = classEndTime(startDate, startTime, duration);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4" onClick={onClose}>
+      <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
+        <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4">
+          <div className="min-w-0">
+            <div className="text-xs font-black uppercase tracking-[0.16em] text-brand">Class Details</div>
+            <h2 className="mt-1 truncate text-2xl font-black text-slate-950">{classroom.title}</h2>
+          </div>
+          <button type="button" className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50" onClick={onClose} aria-label="Close details">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="grid gap-3 px-5 py-5 sm:grid-cols-2">
+          <InfoCard label="Batch" value={batchNames} />
+          <InfoCard label="Course" value={classroom.courseName || "Course not set"} />
+          <InfoCard label="Level" value={classroom.levelName || "Level not set"} />
+          <InfoCard label="Topic" value={session?.topicName || classroom.topicName || "Topic not set"} />
+          <InfoCard label="Start Time" value={`${formatDate(String(startDate || ""))} at ${startTime || "--"}`} />
+          <InfoCard label="End Time" value={endTime || "Not set"} />
+          <InfoCard label="Coach" value={assignedCoachName(classroom, session)} />
+          <InfoCard label="Students" value={`${studentNames.length} assigned`} />
+        </div>
+
+        <div className="border-t border-slate-100 px-5 py-4">
+          <div className="mb-2 text-sm font-black text-slate-950">Students in this classroom</div>
+          {studentNames.length ? (
+            <div className="max-h-44 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <div className="flex flex-wrap gap-2">
+                {studentNames.map((name, index) => (
+                  <span key={`${name}-${index}`} className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700">{name}</span>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-lg border border-dashed border-slate-300 p-4 text-sm text-slate-500">No students assigned yet.</div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -2022,6 +2088,15 @@ function formatDuration(minutes: number) {
   const hours = Math.floor(minutes / 60);
   const rest = minutes % 60;
   return rest ? `${hours}h ${rest}m` : `${hours}h`;
+}
+
+function classEndTime(dateValue: any, startTime: string, durationMinutes: number) {
+  if (!dateValue || !/^([01]\d|2[0-3]):[0-5]\d$/.test(startTime)) return "";
+  const [hours, minutes] = startTime.split(":").map(Number);
+  const end = new Date(dateValue);
+  if (Number.isNaN(end.getTime())) return "";
+  end.setHours(hours, minutes + Math.max(15, durationMinutes), 0, 0);
+  return new Intl.DateTimeFormat("en-IN", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata" }).format(end);
 }
 
 function reviewDurationLabel(form: ReturnType<typeof blankForm>) {

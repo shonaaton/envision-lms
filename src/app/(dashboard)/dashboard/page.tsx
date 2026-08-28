@@ -22,6 +22,7 @@ import {
 } from "@/lib/classroomSessions";
 import { summarizeCoachSessions } from "@/lib/teachingStats";
 import JoinScheduledSessionButton from "@/components/classroom/JoinScheduledSessionButton";
+import FutureClassDetailsButton from "@/components/classroom/FutureClassDetailsButton";
 import { DataPanel, EmptyState as CommonEmptyState, FilterBar } from "@/components/common/PageHeader";
 import { bookingFeatureNameForAccount } from "@/lib/bookingLabels";
 import { demoStudentExperience } from "@/lib/demoStudentExperience";
@@ -1170,7 +1171,9 @@ async function CoachDashboard({ userId, searchParams, joinAllowed }: { userId: s
       isActive: { $ne: false },
       isSessionInstance: { $ne: true },
     })
-      .populate("students", "name")
+      .populate("coach instructor", "name username email")
+      .populate("generatedSessions.substituteCoach", "name username email")
+      .populate("students", "name username email")
       .populate("batches", "name")
       .lean(),
     Homework.find({ instructor: userId }).sort({ dueAt: 1, createdAt: -1 }).limit(6).lean(),
@@ -1334,9 +1337,24 @@ async function CoachDashboard({ userId, searchParams, joinAllowed }: { userId: s
                             label="Join Classroom"
                             disabled={!canJoin}
                           />
-                          <Link href={`/classrooms/${objectId(classroom._id)}/summary?session=${String(session._id)}`} className="btn-outline">
-                            View Details
-                          </Link>
+                          <FutureClassDetailsButton
+                            details={{
+                              title: classroom.title,
+                              courseName: classroom.courseName || "",
+                              levelName: classroom.levelName || "",
+                              topicName: sessionTopic(session, classroom),
+                              startDate: String(session.scheduledFor || classroom.classDate || classroom.startDate || ""),
+                              startTime: session.startTime || classroom.startTime || "",
+                              durationMinutes: Number(session.durationMinutes || classroom.durationMinutes || 60),
+                              coachName: session.substituteCoach?.name || classroom.coach?.name || classroom.instructor?.name || "Assigned coach",
+                              batchNames: targetNames,
+                              students: (classroom.students || []).map((student: any) => ({
+                                name: student?.name || "",
+                                email: student?.email || "",
+                                username: student?.username || "",
+                              })),
+                            }}
+                          />
                         </div>
                       </div>
                     );

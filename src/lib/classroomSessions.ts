@@ -37,7 +37,7 @@ export function getSessionEnd(session: ScheduledSessionLike) {
   return new Date(start.getTime() + Math.max(15, Number(session.durationMinutes || 60)) * 60000);
 }
 
-export function isJoinWindowOpen(session: ScheduledSessionLike, now = new Date(), earlyMinutes = 0, graceMinutes = 120) {
+export function isJoinWindowOpen(session: ScheduledSessionLike, now = new Date(), earlyMinutes = 5, graceMinutes = 120) {
   const start = getSessionStart(session);
   const end = getSessionEnd(session);
   if (!start || !end) return false;
@@ -71,7 +71,8 @@ export function deriveScheduledSessionStatus(
   const end = getSessionEnd(session);
   if (!start || !end) return "upcoming";
 
-  const opensAt = start;
+  const opensAt = new Date(start.getTime() - 5 * 60000);
+  if (now >= opensAt && now < start) return "join_available";
   if (now < opensAt) return "upcoming";
   if (now >= start && now <= end) return "ongoing";
   return "missed";

@@ -995,10 +995,16 @@ async function StudentDashboard({ userId, joinAllowed }: { userId: string; joinA
                     classroomId={objectId(nextSession.classroom._id)}
                     sessionId={String(nextSession.session._id)}
                     meetingUrl={nextSession.classroom.meetingUrl}
-                    className={heroSessionOpen ? "btn-accent w-full justify-center sm:w-auto" : "btn-outline w-full justify-center border-white/20 bg-white/10 text-white hover:bg-white/15 sm:w-auto"}
-                    label={heroSessionOpen ? "Join Classroom" : "View Class"}
-                    disabled={!heroSessionOpen}
+                    className="btn-outline w-full justify-center border-white/20 bg-white/10 text-white hover:bg-white/15 sm:w-auto"
+                    availableClassName="btn-accent w-full justify-center sm:w-auto"
+                    unavailableClassName="btn-outline w-full justify-center border-white/20 bg-white/10 text-white hover:bg-white/15 sm:w-auto"
+                    label="Join Classroom"
+                    unavailableLabel="View Class"
+                    disabled={!joinAllowed}
                     icon={<PlayCircle size={16} />}
+                    scheduledFor={nextSession.session.scheduledFor || nextSession.classroom.classDate || nextSession.classroom.startDate}
+                    startTime={nextSession.session.startTime || nextSession.classroom.startTime}
+                    durationMinutes={nextSession.session.durationMinutes || nextSession.classroom.durationMinutes || 60}
                   />
                 ) : (
                   <Link href={continueLearning.href || "/play/tactics-trainer"} className="btn-accent w-full justify-center sm:w-auto">
@@ -1041,9 +1047,14 @@ async function StudentDashboard({ userId, joinAllowed }: { userId: string; joinA
                   classroomId={objectId(nextSession.classroom._id)}
                   sessionId={String(nextSession.session._id)}
                   meetingUrl={nextSession.classroom.meetingUrl}
-                  className={heroSessionOpen ? "btn-primary w-full justify-center lg:w-auto" : "btn-outline w-full justify-center lg:w-auto"}
+                  className="btn-outline w-full justify-center lg:w-auto"
+                  availableClassName="btn-primary w-full justify-center lg:w-auto"
+                  unavailableClassName="btn-outline w-full justify-center lg:w-auto"
                   label="Join"
-                  disabled={!heroSessionOpen}
+                  disabled={!joinAllowed}
+                  scheduledFor={nextSession.session.scheduledFor || nextSession.classroom.classDate || nextSession.classroom.startDate}
+                  startTime={nextSession.session.startTime || nextSession.classroom.startTime}
+                  durationMinutes={nextSession.session.durationMinutes || nextSession.classroom.durationMinutes || 60}
                 />
               </div>
             ) : (
@@ -1333,9 +1344,14 @@ async function CoachDashboard({ userId, searchParams, joinAllowed }: { userId: s
                             classroomId={objectId(classroom._id)}
                             sessionId={String(session._id)}
                             meetingUrl={classroom.meetingUrl}
-                            className={canJoin ? "btn-primary" : "btn-outline"}
+                            className="btn-outline"
+                            availableClassName="btn-primary"
+                            unavailableClassName="btn-outline"
                             label="Join Classroom"
-                            disabled={!canJoin}
+                            disabled={!joinAllowed}
+                            scheduledFor={session.scheduledFor || classroom.classDate || classroom.startDate}
+                            startTime={session.startTime || classroom.startTime}
+                            durationMinutes={session.durationMinutes || classroom.durationMinutes || 60}
                           />
                           <FutureClassDetailsButton
                             details={{

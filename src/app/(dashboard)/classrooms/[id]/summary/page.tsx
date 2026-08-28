@@ -268,7 +268,11 @@ export default async function ClassroomSummaryPage({
                 sessionId={scheduledSessionId}
                 meetingUrl={classroom.meetingUrl}
                 className="rounded-xl bg-purple-700 px-4 py-2 text-sm font-bold text-white"
+                unavailableClassName="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700"
                 label="Open Scheduled Classroom"
+                scheduledFor={selectedSession.scheduledFor || classroom.classDate || classroom.startDate}
+                startTime={selectedSession.startTime || classroom.startTime}
+                durationMinutes={selectedSession.durationMinutes || classroom.durationMinutes || 60}
               />
             ) : null}
           </div>

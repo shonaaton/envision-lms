@@ -1927,9 +1927,15 @@ function SimpleClassroomList({ items, loading, role, canJoin }: { items: Classro
                       classroomId={String(classroom._id)}
                       sessionId={String(session._id)}
                       meetingUrl={classroom.meetingUrl}
-                      className={joinOpen ? "btn-primary" : "btn-outline"}
-                      label={canJoin ? "Join Classroom" : "Join access not granted"}
-                      disabled={!canJoin || !joinOpen}
+                      className="btn-outline"
+                      availableClassName="btn-primary"
+                      unavailableClassName="btn-outline"
+                      label="Join Classroom"
+                      unavailableLabel={canJoin ? "Join Classroom" : "Join access not granted"}
+                      disabled={!canJoin}
+                      scheduledFor={session.scheduledFor || classroom.classDate || classroom.startDate}
+                      startTime={session.startTime || classroom.startTime}
+                      durationMinutes={session.durationMinutes || classroom.durationMinutes || 60}
                     />
                     <button type="button" className="btn-outline" onClick={() => setFutureDetails({ classroom, session })}>View Details</button>
                   </div>

@@ -1721,6 +1721,88 @@ function CoachActionItem({ href, icon: Icon, label, value, tone }: { href: strin
   );
 }
 
+function AdminMetricCard({ label, value, note, icon: Icon, tone }: { label: string; value: string | number; note: string; icon: any; tone: "purple" | "blue" | "green" | "amber" | "rose" }) {
+  const tones = {
+    purple: "from-violet-600 to-purple-700 text-white",
+    blue: "from-blue-500 to-indigo-600 text-white",
+    green: "from-emerald-500 to-green-600 text-white",
+    amber: "from-amber-400 to-orange-500 text-white",
+    rose: "from-pink-500 to-rose-500 text-white",
+  };
+  return (
+    <div className="min-w-0 rounded-xl border border-slate-200 bg-white p-4 shadow-[0_14px_36px_rgba(15,23,42,0.08)]">
+      <div className="flex items-center gap-3">
+        <span className={`grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-gradient-to-br ${tones[tone]}`}>
+          <Icon size={22} />
+        </span>
+        <div className="min-w-0">
+          <p className="truncate text-xs font-semibold text-slate-500">{label}</p>
+          <p className="mt-1 truncate text-2xl font-black text-slate-950">{value}</p>
+        </div>
+      </div>
+      <p className="mt-3 truncate text-xs font-semibold text-slate-500">{note}</p>
+    </div>
+  );
+}
+
+function AdminPanel({ icon: Icon, title, action, children, className = "" }: { icon: any; title: string; action?: React.ReactNode; children: React.ReactNode; className?: string }) {
+  return (
+    <section className={`rounded-xl border border-slate-200 bg-white p-5 shadow-[0_16px_42px_rgba(15,23,42,0.07)] ${className}`}>
+      <div className="mb-4 flex items-center justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-brand/10 text-brand">
+            <Icon size={20} />
+          </span>
+          <h2 className="truncate text-lg font-black text-slate-950">{title}</h2>
+        </div>
+        {action}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function AdminActionItem({ href, icon: Icon, label, note, value, tone }: { href: string; icon: any; label: string; note: string; value: number; tone: "purple" | "blue" | "amber" | "rose" | "green" }) {
+  const tones = {
+    purple: "bg-violet-50 text-violet-700 border-violet-100",
+    blue: "bg-blue-50 text-blue-700 border-blue-100",
+    amber: "bg-amber-50 text-amber-700 border-amber-100",
+    rose: "bg-rose-50 text-rose-700 border-rose-100",
+    green: "bg-emerald-50 text-emerald-700 border-emerald-100",
+  };
+  return (
+    <Link href={href} className="flex min-h-16 items-center gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 transition hover:border-brand/30 hover:bg-brand/5">
+      <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${tones[tone]}`}>
+        <Icon size={18} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-black text-slate-950">{label}</span>
+        <span className="block truncate text-xs font-semibold text-slate-500">{note}</span>
+      </span>
+      <span className={`grid h-8 min-w-10 place-items-center rounded-lg border px-2 text-sm font-black ${tones[tone]}`}>{value}</span>
+      <ArrowRight size={16} className="text-slate-400" />
+    </Link>
+  );
+}
+
+function AdminQuickAction({ href, icon: Icon, label, tone }: { href: string; icon: any; label: string; tone: "purple" | "blue" | "green" | "amber" | "rose" }) {
+  const tones = {
+    purple: "bg-violet-600",
+    blue: "bg-blue-600",
+    green: "bg-emerald-600",
+    amber: "bg-amber-500",
+    rose: "bg-rose-500",
+  };
+  return (
+    <Link href={href} className="flex min-h-16 items-center justify-center gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-800 transition hover:border-brand/30 hover:bg-brand/5">
+      <span className={`grid h-9 w-9 place-items-center rounded-lg text-white ${tones[tone]}`}>
+        <Icon size={18} />
+      </span>
+      <span className="truncate">{label}</span>
+    </Link>
+  );
+}
+
 function formatTimeLabel(value?: Date | string | null) {
   if (!value) return "Not set";
   return new Intl.DateTimeFormat("en-IN", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata" }).format(new Date(value));
@@ -1779,7 +1861,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
     User.find({ role: "student", ...userSearch }, { passwordHash: 0 }).sort({ createdAt: -1 }).lean(),
     User.find({ role: "instructor" }, { passwordHash: 0 }).sort({ name: 1 }).lean(),
     Batch.find({}).populate("coach", "name").lean(),
-    Classroom.find({ isSessionInstance: { $ne: true } }).lean(),
+    Classroom.find({ isSessionInstance: { $ne: true } })
+      .populate("coach instructor", "name username email")
+      .populate("generatedSessions.substituteCoach", "name username email")
+      .populate("students", "name username email")
+      .populate("batches", "name level course")
+      .lean(),
     Homework.find(dateFilter("createdAt", from, to)).lean(),
     Submission.find(dateFilter("submittedAt", from, to)).populate("student", "name username").lean(),
     Attendance.find(dateFilter("sessionDate", from, to)).populate("classroom", "title").lean(),
@@ -2015,6 +2102,239 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
     params.set("tab", tab);
     return `/dashboard?${params.toString()}`;
   };
+
+  const scheduledRows = flattenScheduledSessions(activeClassrooms).sort((a, b) => a.start.getTime() - b.start.getTime());
+  const todayRows = scheduledRows.filter((row) => row.start >= focusFrom && row.start <= focusTo);
+  const completedRows = scheduledRows
+    .filter((row) => (row.session.status === "completed" || row.start < new Date()) && row.start <= new Date())
+    .sort((a, b) => b.start.getTime() - a.start.getTime())
+    .slice(0, 4);
+  const weekStart = new Date(focusFrom);
+  weekStart.setDate(focusFrom.getDate() - ((focusFrom.getDay() + 6) % 7));
+  const weekDays = Array.from({ length: 7 }, (_, index) => {
+    const day = new Date(weekStart.getTime() + index * DAY);
+    const count = scheduledRows.filter((row) => dateKey(row.start) === dateKey(day)).length;
+    return { day, count };
+  });
+  const attendanceKeys = new Set(
+    attendance.map((item: any) => `${objectId(item.classroom?._id ?? item.classroom)}:${String(item.scheduledSessionId || "")}:${dateKey(new Date(item.sessionDate))}`)
+  );
+  const attendancePending = todayRows.filter((row) => {
+    const status = deriveScheduledSessionStatus(row.session, new Date());
+    const key = `${objectId(row.classroom._id)}:${String(row.session._id || "")}:${dateKey(row.start)}`;
+    return status !== "cancelled" && !attendanceKeys.has(key);
+  }).length;
+  const homeworkToReview = submissions.filter((item: any) => !item.reviewedAt && !item.feedback).length || submissions.length;
+  const unreadAdminMessages = activities.filter((item) => item.type.includes("message") || item.type.includes("ask")).length;
+  const rescheduleRequests = bookings.filter((booking: any) => ["pending", "requested", "reschedule_requested"].includes(String(booking.status || booking.approvalStatus || "").toLowerCase())).length;
+  const overdueInvoices = invoices.filter((invoice: any) => invoice.status !== "paid" && invoice.status !== "cancelled" && new Date(invoice.dueDate) < new Date()).length;
+  const collectionRate = percent(collectedFees, collectedFees + pastDues + futureDues);
+  const activeBatches = batches.filter((batch: any) => batch.isActive !== false);
+  const beginnerCount = activeStudents.filter((student: any) => String(student.level || student.courseLevel || "").toLowerCase().includes("beginner")).length;
+  const intermediateCount = activeStudents.filter((student: any) => String(student.level || student.courseLevel || "").toLowerCase().includes("intermediate")).length;
+  const advancedCount = activeStudents.filter((student: any) => String(student.level || student.courseLevel || "").toLowerCase().includes("advanced")).length;
+  const uncategorizedCount = Math.max(0, activeStudents.length - beginnerCount - intermediateCount - advancedCount);
+  const levelSegments = [
+    { label: "Beginner", value: beginnerCount, className: "bg-indigo-500" },
+    { label: "Intermediate", value: intermediateCount, className: "bg-emerald-500" },
+    { label: "Advanced", value: advancedCount, className: "bg-amber-500" },
+    { label: "Other", value: uncategorizedCount, className: "bg-slate-400" },
+  ].filter((item) => item.value > 0);
+  const levelChart = levelSegments.length
+    ? `conic-gradient(#6366f1 0 ${percent(beginnerCount, activeStudents.length)}%, #10b981 ${percent(beginnerCount, activeStudents.length)}% ${percent(beginnerCount + intermediateCount, activeStudents.length)}%, #f59e0b ${percent(beginnerCount + intermediateCount, activeStudents.length)}% ${percent(beginnerCount + intermediateCount + advancedCount, activeStudents.length)}%, #94a3b8 ${percent(beginnerCount + intermediateCount + advancedCount, activeStudents.length)}% 100%)`
+    : "conic-gradient(#e2e8f0 0 100%)";
+
+  if (activeTab === "today") {
+    return (
+      <div className="space-y-5 text-slate-950">
+        <section className="rounded-xl border border-purple-900/10 bg-[radial-gradient(circle_at_top_left,rgba(126,34,206,0.18),transparent_34%),linear-gradient(135deg,#170032_0%,#4b0d73_58%,#7a1fb2_100%)] px-5 py-6 text-white shadow-[0_24px_60px_rgba(58,8,86,0.25)]">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-sm font-black uppercase tracking-[0.18em] text-amber-200">Envision Chess Academy</p>
+              <h1 className="mt-4 text-3xl font-black sm:text-4xl">Welcome back, Admin</h1>
+              <p className="mt-2 max-w-2xl text-sm font-medium text-white/78">Here is what is happening in your academy today.</p>
+            </div>
+            <FilterBar method="get" className="max-w-xl border-white/10 bg-white/10 shadow-none sm:grid-cols-[1fr_auto]">
+              <input type="hidden" name="tab" value="today" />
+              <label className="flex flex-col gap-1 text-[11px] font-semibold text-white/70">
+                Focus date
+                <input name="date" type="date" defaultValue={dateKey(focusDate)} className="h-10 rounded-lg border border-white/15 bg-white px-3 text-sm text-slate-800 outline-none transition focus:border-amber-300 focus:ring-2 focus:ring-amber-200/40" />
+              </label>
+              <div className="flex items-end">
+                <button className="inline-flex h-10 items-center gap-2 rounded-lg bg-white px-4 text-sm font-black text-brand shadow-sm transition hover:bg-amber-50">
+                  <Calendar size={16} /> Apply
+                </button>
+              </div>
+            </FilterBar>
+          </div>
+        </section>
+
+        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+          <AdminMetricCard label="Total Students" value={activeStudents.length} note={`${newStudents.length} added in range`} icon={Users} tone="purple" />
+          <AdminMetricCard label="Active Batches" value={activeBatches.length} note={`${activeClassrooms.length} active classrooms`} icon={GraduationCap} tone="blue" />
+          <AdminMetricCard label="Classes Today" value={todayRows.length} note="Across all coaches" icon={Calendar} tone="green" />
+          <AdminMetricCard label="Revenue" value={money(collectedFees)} note={`Academic year ${academicYearStart}`} icon={CircleDollarSign} tone="amber" />
+          <AdminMetricCard label="Collection Rate" value={`${collectionRate}%`} note={`${money(pastDues)} overdue`} icon={TrendingUp} tone="rose" />
+        </section>
+
+        <div className="grid gap-5 xl:grid-cols-[1.45fr_0.95fr]">
+          <AdminPanel
+            icon={Calendar}
+            title="Today at a Glance"
+            action={<Link href="/classrooms" className="text-sm font-black text-brand">View full schedule</Link>}
+          >
+            <div className="space-y-1">
+              {todayRows.length ? todayRows.map((row, index) => {
+                const classroom = row.classroom as any;
+                const sessionRow = row.session as any;
+                const canJoinNow = joinAllowed && isJoinWindowOpen(sessionRow, new Date());
+                const batchName = classroom.batches?.[0]?.name || classroom.batchName || "Batch";
+                const coachName = sessionRow.substituteCoach?.name || classroom.coach?.name || classroom.instructor?.name || "Coach";
+                return (
+                  <div key={`admin-today-${objectId(classroom._id)}-${String(sessionRow._id || index)}`} className={index === 0 ? "grid gap-3 rounded-lg border border-amber-200 bg-amber-50/70 p-4 md:grid-cols-[72px_1fr_auto_auto] md:items-center" : "grid gap-3 border-b border-slate-100 p-4 last:border-b-0 md:grid-cols-[72px_1fr_auto_auto] md:items-center"}>
+                    <div className="text-sm font-black text-slate-950">{formatTimeLabel(row.start)}</div>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-black text-slate-950">{classroom.title} <span className="font-medium text-slate-400">|</span> {batchName}</p>
+                      <p className="mt-1 truncate text-xs font-semibold text-slate-500">Topic: {sessionTopic(sessionRow, classroom)} | Coach: {coachName}</p>
+                    </div>
+                    <div className="text-sm font-black text-slate-950">{classroom.students?.length || 0} <span className="block text-xs font-semibold text-slate-500">Students</span></div>
+                    {canJoinNow ? (
+                      <JoinScheduledSessionButton
+                        classroomId={objectId(classroom._id)}
+                        sessionId={String(sessionRow._id)}
+                        meetingUrl={classroom.meetingUrl}
+                        className="inline-flex h-10 items-center justify-center rounded-lg bg-brand px-4 text-sm font-black text-white"
+                        disabled={!joinAllowed}
+                        scheduledFor={sessionRow.scheduledFor || classroom.classDate || classroom.startDate}
+                        startTime={sessionRow.startTime || classroom.startTime}
+                        durationMinutes={sessionRow.durationMinutes || classroom.durationMinutes || 60}
+                      />
+                    ) : (
+                      <FutureClassDetailsButton
+                        details={{
+                          title: classroom.title,
+                          batchNames: batchName,
+                          courseName: classroom.courseName || classroom.course || "Course",
+                          levelName: classroom.levelName || classroom.level || classroom.batches?.[0]?.level || "Level",
+                          topicName: sessionTopic(sessionRow, classroom),
+                          startDate: sessionRow.scheduledFor || classroom.classDate || row.start.toISOString(),
+                          startTime: sessionRow.startTime || classroom.startTime || "",
+                          durationMinutes: sessionRow.durationMinutes || classroom.durationMinutes || 60,
+                          coachName,
+                          students: (classroom.students || []).map((student: any) => ({ name: student.name || student.username || "Student", email: student.email, username: student.username })),
+                        }}
+                        className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-black text-brand transition hover:border-brand/30 hover:bg-brand/5"
+                      />
+                    )}
+                  </div>
+                );
+              }) : (
+                <div className="rounded-lg border border-dashed border-slate-300 p-8 text-center text-sm font-semibold text-slate-500">No classes scheduled for this date.</div>
+              )}
+            </div>
+          </AdminPanel>
+
+          <AdminPanel icon={Zap} title="Action Center" action={<Link href="/dashboard?tab=activity" className="text-sm font-black text-brand">View all</Link>}>
+            <div className="space-y-3">
+              <AdminActionItem href="/attendance/pending" icon={ClipboardList} label="Attendance pending" note="Classes need attendance" value={attendancePending} tone="purple" />
+              <AdminActionItem href="/homework" icon={ClipboardList} label="Homework to review" note="Submissions awaiting review" value={homeworkToReview} tone="amber" />
+              <AdminActionItem href="/ask-coach" icon={MessageSquare} label="Unread messages" note="Students and parents" value={unreadAdminMessages} tone="blue" />
+              <AdminActionItem href="/booking" icon={RotateCcw} label="Reschedule requests" note="Requests needing approval" value={rescheduleRequests} tone="rose" />
+              <AdminActionItem href="/fees" icon={WalletCards} label="Fee reminders overdue" note="Students with pending dues" value={overdueInvoices} tone="green" />
+            </div>
+          </AdminPanel>
+        </div>
+
+        <div className="grid gap-5 xl:grid-cols-[0.9fr_1fr_1.2fr]">
+          <AdminPanel icon={Calendar} title="This Week's Schedule">
+            <div className="overflow-hidden rounded-lg border border-slate-200">
+              {weekDays.map((item) => (
+                <div key={dateKey(item.day)} className={dateKey(item.day) === dateKey(focusDate) ? "flex items-center justify-between bg-brand/10 px-4 py-3 text-sm font-black text-brand" : "flex items-center justify-between border-b border-slate-100 px-4 py-3 text-sm font-semibold text-slate-700 last:border-b-0"}>
+                  <span>{new Intl.DateTimeFormat("en-IN", { weekday: "short", day: "2-digit", month: "short" }).format(item.day)}</span>
+                  <span>{item.count} class{item.count === 1 ? "" : "es"}</span>
+                </div>
+              ))}
+            </div>
+            <Link href="/classrooms" className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 px-4 py-3 text-sm font-black text-brand transition hover:bg-brand/5">
+              View weekly calendar <ArrowRight size={16} />
+            </Link>
+          </AdminPanel>
+
+          <AdminPanel icon={CheckCircle2} title="Recent Completed Classes" action={<Link href="/classrooms" className="text-sm font-black text-brand">View All</Link>}>
+            <div className="space-y-3">
+              {completedRows.length ? completedRows.map((row, index) => {
+                const classroom = row.classroom as any;
+                const sessionRow = row.session as any;
+                return (
+                  <Link key={`admin-completed-${objectId(classroom._id)}-${String(sessionRow._id || index)}`} href={`/classrooms/${objectId(classroom._id)}/summary?session=${String(sessionRow._id)}`} className="grid gap-3 border-b border-slate-100 pb-3 last:border-b-0 md:grid-cols-[1fr_auto] md:items-center">
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-black text-slate-950">{classroom.title} <span className="font-medium text-slate-400">|</span> {classroom.batches?.[0]?.name || "Batch"}</span>
+                      <span className="mt-1 block truncate text-xs font-semibold text-slate-500">{formatDate(row.start)}, {formatTimeLabel(row.start)} | Coach: {classroom.coach?.name || classroom.instructor?.name || "Coach"}</span>
+                    </span>
+                    <span className="text-sm font-black text-slate-950">{classroom.students?.length || 0} / {classroom.students?.length || 0}<span className="block text-xs font-semibold text-slate-500">Present</span></span>
+                  </Link>
+                );
+              }) : (
+                <div className="rounded-lg border border-dashed border-slate-300 p-6 text-center text-sm font-semibold text-slate-500">Completed classes will appear here.</div>
+              )}
+            </div>
+          </AdminPanel>
+
+          <AdminPanel icon={BarChart3} title="Academy Overview">
+            <div className="grid gap-4 lg:grid-cols-2">
+              <div className="rounded-lg border border-slate-200 p-4">
+                <h3 className="text-sm font-black text-slate-950">Students by Level</h3>
+                <div className="mt-4 flex items-center gap-4">
+                  <div className="h-24 w-24 rounded-full p-5" style={{ background: levelChart }}>
+                    <div className="h-full w-full rounded-full bg-white" />
+                  </div>
+                  <div className="min-w-0 flex-1 space-y-2">
+                    {(levelSegments.length ? levelSegments : [{ label: "No level data", value: activeStudents.length, className: "bg-slate-400" }]).map((item) => (
+                      <div key={item.label} className="flex items-center justify-between gap-3 text-xs font-semibold text-slate-600">
+                        <span className="flex min-w-0 items-center gap-2"><span className={`h-2.5 w-2.5 shrink-0 rounded-full ${item.className}`} /> <span className="truncate">{item.label}</span></span>
+                        <span className="font-black text-slate-950">{item.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div className="rounded-lg border border-slate-200 p-4">
+                <h3 className="text-sm font-black text-slate-950">Top Performing Coaches</h3>
+                <div className="mt-4 space-y-2">
+                  {coachRows.slice().sort((a, b) => b.hours - a.hours).slice(0, 5).map((coach) => (
+                    <div key={coach.id} className="flex items-center justify-between gap-3 text-sm">
+                      <span className="truncate font-semibold text-slate-700">{coach.name}</span>
+                      <span className="font-black text-slate-950">{coach.hours.toFixed(1)}h</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="mt-4 rounded-lg border border-slate-200 p-4">
+              <div className="flex items-center justify-between text-sm">
+                <span className="font-black text-slate-950">Attendance Overview</span>
+                <span className="font-black text-emerald-700">{attendanceRate}%</span>
+              </div>
+              <div className="mt-3 h-3 overflow-hidden rounded-full bg-slate-100">
+                <div className="h-full rounded-full bg-emerald-500" style={{ width: `${attendanceRate}%` }} />
+              </div>
+            </div>
+          </AdminPanel>
+        </div>
+
+        <AdminPanel icon={Zap} title="Quick Actions">
+          <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+            <AdminQuickAction href="/admin/users" icon={Users} label="Add Student" tone="purple" />
+            <AdminQuickAction href="/admin/users" icon={GraduationCap} label="Create Batch" tone="blue" />
+            <AdminQuickAction href="/instructor/classrooms/new" icon={Calendar} label="Schedule Class" tone="green" />
+            <AdminQuickAction href="/admin/announcements" icon={BellRing} label="Send Announcement" tone="amber" />
+            <AdminQuickAction href="/dashboard?tab=activity" icon={BarChart3} label="Generate Report" tone="rose" />
+            <AdminQuickAction href="/admin/users" icon={UserCheck} label="Add Coach" tone="blue" />
+          </div>
+        </AdminPanel>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5 text-slate-950">

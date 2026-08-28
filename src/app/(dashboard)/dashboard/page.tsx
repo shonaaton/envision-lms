@@ -1444,6 +1444,288 @@ async function CoachDashboard({ userId, searchParams, joinAllowed }: { userId: s
   );
 }
 
+async function CoachDashboardV2({ userId, searchParams, joinAllowed }: { userId: string; searchParams: DashboardSearchParams; joinAllowed: boolean }) {
+  const now = new Date();
+  const summaryRange = getTeachingSummaryRange(searchParams);
+  const [classroomDocs, homework, unreadMessages] = await Promise.all([
+    Classroom.find({
+      ...coachClassroomQuery(userId),
+      isActive: { $ne: false },
+      isSessionInstance: { $ne: true },
+    })
+      .populate("coach instructor", "name username email")
+      .populate("generatedSessions.substituteCoach", "name username email")
+      .populate("students", "name username email")
+      .populate("batches", "name")
+      .lean(),
+    Homework.find({ instructor: userId }).sort({ dueAt: 1, createdAt: -1 }).limit(6).lean(),
+    AskCoachMessage.countDocuments({ receiver: userId, status: { $ne: "deleted" }, "readBy.user": { $ne: userId } }),
+  ]);
+  const classrooms = classroomDocs.map((classroom: any) => limitClassroomToCoachSessions(classroom, userId));
+  const sessions = buildCoachUpcomingSessions(classrooms, now);
+  const completedSessions = flattenScheduledSessions(classrooms)
+    .filter((row) => row.start && isHistoricalSessionStatus(deriveScheduledSessionStatus(row.session, now)))
+    .sort((a, b) => (b.start?.getTime() || 0) - (a.start?.getTime() || 0));
+  const teaching = summarizeCoachSessions(classrooms, { from: summaryRange.from, to: summaryRange.to });
+  const nextSession = sessions[0] || null;
+  const todayRows = sessions.filter((row) => row.start && startOfDay(row.start).getTime() === startOfDay(now).getTime());
+  const scheduleRows = (todayRows.length ? todayRows : sessions).slice(0, 5);
+  const assignedStudentCount = new Set(classrooms.flatMap((item: any) => (item.students || []).map((student: any) => objectId(student)))).size;
+  const attendanceDueToday = todayRows.length;
+  const weekCounts = Array.from({ length: 7 }).map((_, index) => {
+    const date = startOfDay(new Date(now.getTime() + index * DAY));
+    const count = sessions.filter((row) => row.start && startOfDay(row.start).getTime() === date.getTime()).length;
+    return {
+      label: new Intl.DateTimeFormat("en-IN", { weekday: "short" }).format(date),
+      count,
+    };
+  }).filter((item) => item.count > 0).slice(0, 4);
+  const nextCanJoin = nextSession ? joinAllowed && canJoinScheduledSession(nextSession.session, now) : false;
+
+  function targetNames(classroom: any) {
+    return (classroom.batches || []).map((batch: any) => batch.name).join(", ") || `${classroom.students?.length || 0} students`;
+  }
+
+  function coachName(classroom: any, session: any) {
+    return session?.substituteCoach?.name || classroom?.coach?.name || classroom?.instructor?.name || "Assigned coach";
+  }
+
+  function detailsFor(classroom: any, session: any) {
+    return {
+      title: classroom.title,
+      courseName: classroom.courseName || "",
+      levelName: classroom.levelName || "",
+      topicName: sessionTopic(session, classroom),
+      startDate: String(session.scheduledFor || classroom.classDate || classroom.startDate || ""),
+      startTime: session.startTime || classroom.startTime || "",
+      durationMinutes: Number(session.durationMinutes || classroom.durationMinutes || 60),
+      coachName: coachName(classroom, session),
+      batchNames: targetNames(classroom),
+      students: (classroom.students || []).map((student: any) => ({
+        name: student?.name || "",
+        email: student?.email || "",
+        username: student?.username || "",
+      })),
+    };
+  }
+
+  return (
+    <div className="space-y-6 text-slate-950">
+      <section className="overflow-hidden rounded-[28px] bg-gradient-to-br from-brand via-purple-800 to-brand-900 px-5 py-6 text-white shadow-[0_24px_60px_rgba(90,19,114,0.24)] sm:px-7">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-[11px] font-black uppercase tracking-[0.16em] text-accent">
+              <BookOpen size={14} />
+              Envision Chess Academy
+            </div>
+            <h1 className="mt-4 text-3xl font-black tracking-normal text-white sm:text-4xl">Teaching Dashboard</h1>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-white/80">Track classes, homework, student activity, and upcoming sessions at a glance.</p>
+          </div>
+          <div className="grid grid-cols-3 gap-2 sm:min-w-[360px]">
+            <CoachHeaderMetric label="Upcoming" value={sessions.length} />
+            <CoachHeaderMetric label="Hours" value={teaching.totalHoursConducted} />
+            <CoachHeaderMetric label="Students" value={teaching.totalStudentsTaught || assignedStudentCount} />
+          </div>
+        </div>
+      </section>
+
+      {nextSession ? (
+        <section className="overflow-hidden rounded-[24px] border border-brand/25 bg-white shadow-[0_20px_50px_rgba(90,19,114,0.14)]">
+          <div className="grid lg:grid-cols-[140px_1fr_260px]">
+            <div className="grid min-h-32 place-items-center bg-gradient-to-br from-purple-700 to-brand-900 text-white">
+              <Calendar size={42} />
+            </div>
+            <div className="px-5 py-5">
+              <div className="text-sm font-black text-slate-700">Next Class</div>
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-2xl font-black text-brand">
+                <span>{formatTimeLabel(nextSession.start)}</span>
+                <span className="text-base text-slate-300">•</span>
+                <span className="text-sm font-black">{nextCanJoin ? "Join now" : formatJoinWindowLabel(nextSession.session, now)}</span>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-700">
+                <span className="font-black text-slate-950">{nextSession.classroom.title}</span>
+                <span>{targetNames(nextSession.classroom)}</span>
+                <span>Topic: {sessionTopic(nextSession.session, nextSession.classroom)}</span>
+              </div>
+              <div className="mt-3 flex items-center gap-2 text-sm text-slate-600">
+                <Users size={15} />
+                <span>{nextSession.classroom.students?.length || 0} students</span>
+              </div>
+            </div>
+            <div className="flex flex-col justify-center gap-3 border-t border-slate-100 px-5 py-5 lg:border-l lg:border-t-0">
+              <JoinScheduledSessionButton
+                classroomId={objectId(nextSession.classroom._id)}
+                sessionId={String(nextSession.session._id)}
+                meetingUrl={nextSession.classroom.meetingUrl}
+                className="btn-outline justify-center"
+                availableClassName="btn-primary justify-center"
+                unavailableClassName="btn-outline justify-center"
+                label="Join Classroom"
+                disabled={!joinAllowed}
+                scheduledFor={nextSession.session.scheduledFor || nextSession.classroom.classDate || nextSession.classroom.startDate}
+                startTime={nextSession.session.startTime || nextSession.classroom.startTime}
+                durationMinutes={nextSession.session.durationMinutes || nextSession.classroom.durationMinutes || 60}
+              />
+              <FutureClassDetailsButton details={detailsFor(nextSession.classroom, nextSession.session)} className="btn-outline justify-center" />
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.75fr)]">
+        <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-[0_18px_44px_rgba(15,23,42,0.08)]">
+          <div className="mb-5 flex items-center justify-between gap-3">
+            <SectionTitle icon={Calendar} title={todayRows.length ? "Today's Schedule" : "Upcoming Schedule"} subtitle="Clean timeline of your next teaching sessions" />
+            <Link href="/classrooms" className="text-sm font-black text-brand">View full day</Link>
+          </div>
+          <div className="space-y-1">
+            {scheduleRows.length ? scheduleRows.map(({ classroom, session, start }, index) => {
+              const joinReady = joinAllowed && canJoinScheduledSession(session, now);
+              return (
+                <div key={`coach-v2-${classroom._id}-${session._id}`} className={`grid gap-3 border-l-2 py-3 pl-4 md:grid-cols-[82px_minmax(0,1fr)_minmax(140px,0.75fr)_auto] md:items-center ${index === 0 ? "border-brand bg-brand/5 pr-3" : "border-slate-200"}`}>
+                  <div className="flex items-center gap-3 md:block">
+                    <span className={`inline-block h-3 w-3 rounded-full ${index === 0 ? "bg-brand" : "bg-slate-400"}`} />
+                    <div className="text-sm font-black text-slate-950 md:mt-1">{formatTimeLabel(start)}</div>
+                  </div>
+                  <div className="min-w-0">
+                    <div className="truncate text-base font-black text-slate-950">{classroom.title}</div>
+                    <div className="mt-1 truncate text-sm text-slate-500">{targetNames(classroom)}</div>
+                  </div>
+                  <div className="min-w-0 text-sm text-slate-700">
+                    <div className="truncate">{sessionTopic(session, classroom)}</div>
+                    <div className="mt-1 flex items-center gap-1 text-xs text-slate-500"><Users size={13} /> {classroom.students?.length || 0} students</div>
+                  </div>
+                  <div className="flex flex-wrap gap-2 md:justify-end">
+                    <JoinScheduledSessionButton
+                      classroomId={objectId(classroom._id)}
+                      sessionId={String(session._id)}
+                      meetingUrl={classroom.meetingUrl}
+                      className="btn-outline"
+                      availableClassName="btn-primary"
+                      unavailableClassName="btn-outline"
+                      label="Join"
+                      disabled={!joinAllowed}
+                      scheduledFor={session.scheduledFor || classroom.classDate || classroom.startDate}
+                      startTime={session.startTime || classroom.startTime}
+                      durationMinutes={session.durationMinutes || classroom.durationMinutes || 60}
+                    />
+                    <FutureClassDetailsButton details={detailsFor(classroom, session)} className="btn-outline" />
+                  </div>
+                </div>
+              );
+            }) : (
+              <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">No upcoming classes scheduled.</div>
+            )}
+          </div>
+        </section>
+
+        <aside className="space-y-5">
+          <CoachPanel icon={Zap} title="Action Center">
+            <CoachActionItem href="/attendance/pending" icon={Users} label="Attendance pending" value={attendanceDueToday} tone="yellow" />
+            <CoachActionItem href="/homework" icon={ClipboardList} label="Homework to review" value={homework.length} tone="yellow" />
+            <CoachActionItem href="/ask-coach" icon={MessageSquare} label="Coach messages unread" value={unreadMessages} tone="yellow" />
+            <CoachActionItem href="/classrooms" icon={RotateCcw} label="Reschedule follow-up" value={teaching.classesRescheduled} tone="yellow" />
+          </CoachPanel>
+
+          <CoachPanel icon={Zap} title="Quick Actions">
+            <CoachActionItem href="/attendance/pending" icon={UserCheck} label="Mark Attendance" />
+            <CoachActionItem href="/homework" icon={ClipboardList} label="Review Homework" />
+            <CoachActionItem href="/ask-coach" icon={MessageSquare} label="Ask Coach" />
+          </CoachPanel>
+        </aside>
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
+        <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-[0_18px_44px_rgba(15,23,42,0.08)]">
+          <SectionTitle icon={Calendar} title="This Week" />
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {(weekCounts.length ? weekCounts : [{ label: "This week", count: 0 }]).map((item) => (
+              <div key={item.label} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-5 text-center">
+                <div className="text-sm font-semibold text-slate-700">{item.label}</div>
+                <div className="mt-2 text-3xl font-black text-slate-950">{item.count}</div>
+                <div className="mt-1 text-sm text-slate-500">class{item.count === 1 ? "" : "es"}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-[0_18px_44px_rgba(15,23,42,0.08)]">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <SectionTitle icon={CheckCircle2} title="Recent Completed" />
+            <Link href="/classrooms" className="text-sm font-black text-brand">View all</Link>
+          </div>
+          <div className="space-y-3">
+            {completedSessions.length ? completedSessions.slice(0, 3).map(({ classroom, session }) => (
+              <Link key={`completed-v2-${classroom._id}-${session._id}`} href={`/classrooms/${objectId(classroom._id)}/summary?session=${String(session._id)}`} className="grid gap-3 border-b border-slate-100 pb-3 last:border-0 md:grid-cols-[32px_1fr_auto] md:items-center">
+                <span className="grid h-8 w-8 place-items-center rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700"><CheckCircle2 size={18} /></span>
+                <span className="min-w-0">
+                  <span className="block text-xs text-slate-500">{formatDateTimeLabel(session.actualEndedAt || session.scheduledFor)}</span>
+                  <span className="block truncate text-sm font-black text-slate-950">{classroom.title} <span className="font-medium text-slate-400">|</span> {sessionTopic(session, classroom)}</span>
+                </span>
+                <span className="text-sm font-semibold text-slate-600">{classroom.students?.length || 0} students</span>
+              </Link>
+            )) : (
+              <div className="rounded-2xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">Completed sessions will appear here after class ends.</div>
+            )}
+          </div>
+        </section>
+      </div>
+
+      <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-[0_18px_44px_rgba(15,23,42,0.08)]">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <span className="grid h-14 w-14 place-items-center rounded-full bg-brand/10 text-brand"><BarChart3 size={24} /></span>
+            <div>
+              <h2 className="text-lg font-black text-slate-950">Teaching Hours Insight</h2>
+              <p className="mt-1 text-sm text-slate-500">{teaching.classesConducted ? `${teaching.totalHoursConducted} hours conducted in ${summaryRange.label}.` : "No teaching-hours insights available yet."}</p>
+            </div>
+          </div>
+          <Link href={`/dashboard?summaryMonth=${summaryRange.mode === "current" ? "last" : "current"}`} className="hidden text-sm font-black text-brand sm:inline-flex">
+            {summaryRange.mode === "current" ? "Last month" : "Current month"}
+          </Link>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function CoachHeaderMetric({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-xl bg-white/10 px-3 py-3 text-center ring-1 ring-white/10">
+      <div className="text-[11px] font-semibold text-white/70">{label}</div>
+      <div className="mt-1 text-xl font-black text-white">{value}</div>
+    </div>
+  );
+}
+
+function CoachPanel({ icon: Icon, title, children }: { icon: any; title: string; children: React.ReactNode }) {
+  return (
+    <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-[0_18px_44px_rgba(15,23,42,0.08)]">
+      <div className="mb-4 flex items-center gap-3">
+        <span className="grid h-10 w-10 place-items-center rounded-xl bg-brand/10 text-brand"><Icon size={20} /></span>
+        <h2 className="text-xl font-black text-slate-950">{title}</h2>
+      </div>
+      <div className="space-y-3">{children}</div>
+    </section>
+  );
+}
+
+function CoachActionItem({ href, icon: Icon, label, value, tone }: { href: string; icon: any; label: string; value?: number; tone?: "yellow" }) {
+  return (
+    <Link href={href} className="flex min-h-14 items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 transition hover:border-brand/30 hover:bg-brand/5">
+      <Icon size={20} className="text-brand" />
+      <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-800">{label}</span>
+      {typeof value === "number" ? <span className={tone === "yellow" ? "grid h-8 min-w-8 place-items-center rounded-full bg-amber-100 px-2 text-sm font-black text-amber-800" : "text-sm font-black text-brand"}>{value}</span> : null}
+      <ArrowRight size={17} className="text-slate-400" />
+    </Link>
+  );
+}
+
+function formatTimeLabel(value?: Date | string | null) {
+  if (!value) return "Not set";
+  return new Intl.DateTimeFormat("en-IN", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata" }).format(new Date(value));
+}
+
 export default async function DashboardPage({ searchParams }: { searchParams: DashboardSearchParams }) {
   noStore();
   const session = await auth();
@@ -1458,7 +1740,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
   const joinAllowed = await canAccessFeature("classrooms", session?.user as any, "join");
 
   if (role === "student") return <StudentDashboard userId={userId} joinAllowed={joinAllowed} />;
-  if (role === "instructor") return <CoachDashboard userId={userId} searchParams={searchParams} joinAllowed={joinAllowed} />;
+  if (role === "instructor") return <CoachDashboardV2 userId={userId} searchParams={searchParams} joinAllowed={joinAllowed} />;
 
   const { preset, from, to } = getRange(searchParams);
   const focusDate = parseDate(searchParams.date) || new Date();

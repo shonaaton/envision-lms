@@ -107,7 +107,7 @@ export default async function AcademySettingsPage({ searchParams }: { searchPara
           {[
             ["Academy Logo", "Locked to Cloudinary logo URL.", ACADEMY_LOGO_URL],
             ["Authorised Signatory", "Locked to Cloudinary signature URL.", ACADEMY_SIGNATURE_URL],
-            ["Favicon", "Locked to the Cloudinary logo URL.", ACADEMY_FAVICON_URL],
+            ["Favicon", "Locked to the app favicon asset.", ACADEMY_FAVICON_URL],
           ].map(([label, help, current]) => (
             <div key={label} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
               <div className="flex items-center gap-2 font-medium"><ImageIcon size={16} /> {label}</div>

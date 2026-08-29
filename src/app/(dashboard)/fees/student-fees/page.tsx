@@ -280,7 +280,7 @@ export default async function StudentFeesPage({ searchParams }: { searchParams?:
     User.find({ role: "student", isActive: { $ne: false } }, { passwordHash: 0 }).sort({ name: 1 }).lean(),
     FeePlan.find({ isActive: true }).sort({ name: 1 }).lean(),
     FeeAssignment.find({}).populate("student plan").sort({ updatedAt: -1 }).lean(),
-    Invoice.find({}).populate("student plan").sort({ createdAt: -1 }).limit(200).lean(),
+    Invoice.find({}).populate("student plan").sort({ createdAt: -1 }).limit(2000).lean(),
     CreditLedger.find({}).populate("student").sort({ createdAt: -1 }).limit(100).lean(),
   ]);
   const creditAssignments = assignments.filter((assignment: any) => assignment.type === "credits");

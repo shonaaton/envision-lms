@@ -232,7 +232,12 @@ async function markInvoicePaid(formData: FormData) {
   revalidatePath("/fees/invoices");
   revalidatePath("/fees/student-fees");
   revalidatePath("/fees");
-  redirect(`${returnPath}payment=paid`);
+  const paidParams = new URLSearchParams();
+  if (returnStudent) paidParams.set("student", returnStudent);
+  paidParams.set("status", "paid");
+  paidParams.set("payment", "paid");
+  paidParams.set("highlight", invoiceId);
+  redirect(`/fees/invoices?${paidParams.toString()}`);
 }
 
 async function updateInvoiceIssueDate(formData: FormData) {
@@ -755,13 +760,27 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
   const params = searchParams ? await searchParams : {};
   const selectedStudent = queryValue(params, "student");
   const selectedStatus = queryValue(params, "status") || "all";
+  const highlightedInvoice = queryValue(params, "highlight");
   const currentPage = Math.max(1, Number(queryValue(params, "page") || 1) || 1);
   const perPage = 10;
-  const invoiceFilter = manager
+  const todayEnd = endOfDay(new Date());
+  const statusFilter =
+    selectedStatus === "paid"
+      ? { status: "paid" }
+      : selectedStatus === "due"
+        ? { status: { $nin: ["paid", "cancelled"] }, $or: [{ dueDate: { $lte: todayEnd } }, { status: "overdue" }] }
+        : selectedStatus === "upcoming"
+          ? { status: { $nin: ["paid", "cancelled"] }, dueDate: { $gt: todayEnd } }
+          : {};
+  const invoiceFilter = {
+    ...(manager
     ? selectedStudent ? { student: selectedStudent } : {}
-    : { student: userId };
+    : { student: userId }),
+    ...statusFilter,
+  };
+  const invoiceLimit = selectedStudent || selectedStatus !== "all" ? 1000 : 500;
   const [invoices, students, plans, assignments] = await Promise.all([
-    Invoice.find(invoiceFilter).populate("student plan").sort({ createdAt: -1 }).limit(300).lean(),
+    Invoice.find(invoiceFilter).populate("student plan").sort(selectedStatus === "paid" ? { paidAt: -1, createdAt: -1 } : { createdAt: -1 }).limit(invoiceLimit).lean(),
     manager ? User.find({ role: "student" }, { passwordHash: 0 }).sort({ name: 1 }).lean() : Promise.resolve([]),
     manager ? FeePlan.find({ isActive: true }).sort({ name: 1 }).lean() : Promise.resolve([]),
     manager ? FeeAssignment.find({}).lean() : Promise.resolve([]),
@@ -935,7 +954,7 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
               const pdfHref = `/api/fees/invoices/${invoiceId}/pdf`;
               const emailStatus = String(invoice.lastEmailStatus || "");
               return (
-                <article key={invoiceId} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm transition hover:-translate-y-0.5 hover:border-brand/30 hover:shadow-md hover:shadow-brand-900/10">
+                <article key={invoiceId} className={`rounded-xl border bg-white px-3 py-2.5 shadow-sm transition hover:-translate-y-0.5 hover:border-brand/30 hover:shadow-md hover:shadow-brand-900/10 ${highlightedInvoice === invoiceId ? "border-emerald-300 ring-2 ring-emerald-100" : "border-slate-200"}`}>
                   <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-center">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">

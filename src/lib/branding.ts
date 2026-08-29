@@ -1,4 +1,4 @@
-export const ACADEMY_LOGO_URL = "https://res.cloudinary.com/dlafr6yu3/image/upload/v1787983299/ChatGPT_Image_Aug_29_2026_11_30_37_AM_brktmb.png";
+export const ACADEMY_LOGO_URL = "https://res.cloudinary.com/dlafr6yu3/image/upload/v1781225175/text_logo_yellow_2_jkykvz.png";
 export const ACADEMY_SIGNATURE_URL = "https://res.cloudinary.com/dlafr6yu3/image/upload/v1785307810/sayantan_signature_3_jq2ayo.jpg";
 export const ACADEMY_FAVICON_URL = "/favicon.png";
 

@@ -734,7 +734,7 @@ export default function ClassroomManagementClient({
 
   const canManageClassrooms = role !== "student" && (permissions.create || permissions.edit || permissions.cancel || permissions.assign);
   if (!canManageClassrooms) {
-    return <SimpleClassroomList items={items} loading={loading} role={role} canJoin={permissions.join} />;
+    return <SimpleClassroomList items={items} loading={loading} role={role} canJoin={permissions.join} canManageAttendance={permissions.attendance} />;
   }
 
   return (
@@ -964,6 +964,9 @@ export default function ClassroomManagementClient({
                                             setActionModal({ type: "mark_session_outcome", item, session: scheduledSession });
                                             setActionDraft({ classOutcome: scheduledSession.summary?.classOutcome || scheduledSession.status || "completed", reason: "" });
                                           }} />
+                                        ) : null}
+                                        {permissions.attendance && (role === "admin" || role === "sub-admin") && !isCancelled ? (
+                                          <IconAction href={attendanceHrefForSession(item, scheduledSession)} icon={<CheckSquare size={14} />} label="Mark attendance" />
                                         ) : null}
                                         {permissions.edit && (role === "admin" || role === "sub-admin") ? (
                                           <ActionButton icon={<ListChecks size={14} />} label="Topic" onClick={() => {
@@ -1842,7 +1845,19 @@ function GroupClassSessionList({
   );
 }
 
-function SimpleClassroomList({ items, loading, role, canJoin }: { items: ClassroomItem[]; loading: boolean; role: Role; canJoin: boolean }) {
+function SimpleClassroomList({
+  items,
+  loading,
+  role,
+  canJoin,
+  canManageAttendance,
+}: {
+  items: ClassroomItem[];
+  loading: boolean;
+  role: Role;
+  canJoin: boolean;
+  canManageAttendance: boolean;
+}) {
   const [futureDetails, setFutureDetails] = useState<{ classroom: ClassroomItem; session: any } | null>(null);
   if (loading) return <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500">Loading classrooms...</div>;
   const now = new Date();
@@ -1860,6 +1875,7 @@ function SimpleClassroomList({ items, loading, role, canJoin }: { items: Classro
   const currentRoleLabel = role === "student" ? "Coach" : "Batch / Students";
   const pageTitle = role === "student" ? "My Classes" : "Teaching Schedule";
   const pageSubtitle = role === "student" ? "Join classes only through your scheduled sessions." : "Upcoming sessions, completed class records, and classroom entry points.";
+  const canUseAdminAttendance = canManageAttendance && (role === "admin" || role === "sub-admin");
   const statusTone = (status: string) => {
     if (status === "completed") return "bg-emerald-50 text-emerald-700";
     if (status === "missed") return "bg-amber-50 text-amber-700";
@@ -1937,6 +1953,11 @@ function SimpleClassroomList({ items, loading, role, canJoin }: { items: Classro
                       startTime={session.startTime || classroom.startTime}
                       durationMinutes={session.durationMinutes || classroom.durationMinutes || 60}
                     />
+                    {canUseAdminAttendance ? (
+                      <Link href={attendanceHrefForSession(classroom, session)} className="btn-primary">
+                        Mark Attendance
+                      </Link>
+                    ) : null}
                     <button type="button" className="btn-outline" onClick={() => setFutureDetails({ classroom, session })}>View Details</button>
                   </div>
                 </div>
@@ -2103,6 +2124,14 @@ function classEndTime(dateValue: any, startTime: string, durationMinutes: number
   if (Number.isNaN(end.getTime())) return "";
   end.setHours(hours, minutes + Math.max(15, durationMinutes), 0, 0);
   return new Intl.DateTimeFormat("en-IN", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata" }).format(end);
+}
+
+function attendanceHrefForSession(classroom: ClassroomItem, session: any) {
+  const scheduledFor = session?.scheduledFor || classroom.classDate || classroom.startDate;
+  const date = scheduledFor ? formatDateInput(String(scheduledFor)) : new Date().toISOString().slice(0, 10);
+  const sessionKey = `${String(classroom._id)}:${String(session?._id || "")}`;
+  const params = new URLSearchParams({ date, session: sessionKey });
+  return `/attendance?${params.toString()}`;
 }
 
 function reviewDurationLabel(form: ReturnType<typeof blankForm>) {

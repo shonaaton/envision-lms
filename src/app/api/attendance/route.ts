@@ -5,10 +5,13 @@ import { Attendance } from "@/models/Attendance";
 import { recordActivity } from "@/lib/activity";
 import { consumeAttendanceCredit } from "@/lib/fees";
 import { Classroom } from "@/models/Classroom";
+import { ClassroomSession } from "@/models/ClassroomLive";
 import { actualSessionMinutes, punctualityBreakdown, scheduledPaymentMinutes } from "@/lib/teachingStats";
 import { canAccessFeature } from "@/lib/featureAccess";
 import { coachCanAccessClassroomSession, coachClassroomQuery, limitClassroomToCoachSessions } from "@/lib/classroomCoachAccess";
 import { academyDateKey } from "@/lib/academyTime";
+import { autoAssignHomeworkForSession } from "@/lib/assignmentAutomation";
+import { notifyFailure } from "@/lib/failureNotifications";
 import {
   notifyCoachNoShowIfThreshold,
   notifyStudentNoShowCreditDeduction,
@@ -23,6 +26,8 @@ import {
 import { sendClassCompletedSummaryEmail, sendStudentNoShowWarningEmail } from "@/lib/studentCommunicationEmails";
 
 export const dynamic = "force-dynamic";
+
+const TERMINAL_SESSION_OUTCOMES = new Set(["completed", "cancelled", "missed", "abandoned", "coach_no_show", "student_no_show", "technical_issue"]);
 
 type SessionUser = {
   id: string;
@@ -222,6 +227,16 @@ export async function POST(req: Request) {
       target.actualTeachingMinutes = actualMinutes;
       target.punctualityScore = punctualityScore;
       target.status = outcome;
+      if (TERMINAL_SESSION_OUTCOMES.has(outcome)) {
+        const finishedAt = target.actualEndedAt || new Date();
+        target.actualEndedAt = finishedAt;
+        if (!target.actualStartedAt) {
+          const fallbackStart = actualMinutes > 0
+            ? new Date(finishedAt.getTime() - actualMinutes * 60000)
+            : new Date(target.scheduledFor || normalizedDate);
+          target.actualStartedAt = fallbackStart;
+        }
+      }
       target.summary = {
         ...(target.summary || {}),
         ...(metadata?.summary || {}),
@@ -235,10 +250,45 @@ export async function POST(req: Request) {
       if (shouldContinueTopic(requestedOutcome) && outcome === "completed") {
         await ensureTopicContinuationSession(classroomDoc, target, (session.user as SessionUser).id);
       }
+      if (TERMINAL_SESSION_OUTCOMES.has(outcome)) {
+        const allDone = (classroomDoc.generatedSessions || []).every((item: any) =>
+          TERMINAL_SESSION_OUTCOMES.has(String(item.status || "").toLowerCase())
+        );
+        classroomDoc.status = allDone ? "completed" : "scheduled";
+        await ClassroomSession.updateOne(
+          { classroom, scheduledSessionId: sessionId },
+          {
+            $set: {
+              status: "ended",
+              endedAt: target.actualEndedAt || new Date(),
+              locked: true,
+              selectedStudents: [],
+              boardControlStudents: [],
+              participants: [],
+              challenge: { active: false },
+            },
+          }
+        );
+      }
       await recalculateFutureSessionTopics(classroomDoc, (session.user as SessionUser).id);
       await classroomDoc.save();
       if (outcome === "coach_no_show") {
         await notifyCoachNoShowIfThreshold(String(assignedCoach || ""), { classroom, sessionId, attendance: doc._id.toString() });
+      }
+      if (outcome === "completed") {
+        await autoAssignHomeworkForSession({
+          classroomId: classroom,
+          scheduledSessionId: sessionId,
+          actorId: (session.user as SessionUser).id,
+          endedAt: target.actualEndedAt || new Date(),
+        }).catch((error) => {
+          console.error("Homework auto-assignment failed after attendance save", error);
+          void notifyFailure({
+            title: "Homework auto-assignment failed after attendance save",
+            error,
+            metadata: { automation: "homework_auto_assignment", classroomId: classroom, scheduledSessionId: sessionId, actorId: (session.user as SessionUser).id },
+          });
+        });
       }
       if (outcome === "completed" && !existingAttendance) {
         await sendClassCompletedSummaryEmail({

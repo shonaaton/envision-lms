@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
-import { normalizeWhatsAppNumber, sendWhatsAppTemplateMessage } from "@/lib/whatsappAutomation";
+import { normalizeWhatsAppNumber } from "@/lib/whatsappAutomation";
 import { getWhatsAppTemplateDefinition, renderWhatsAppTemplatePreview } from "@/lib/whatsappTemplateRegistry";
 import { WhatsAppMessage } from "@/models/WhatsApp";
 import { User } from "@/models/User";
@@ -50,7 +50,12 @@ function extractTemplateVariables(body: any) {
 
 async function sendViaN8n(input: { templateName: string; language: string; recipients: string[]; templateVariables: string[] }) {
   const webhookUrl = cleanEnv(process.env.WHATSAPP_N8N_SEND_TEMPLATE_WEBHOOK_URL || process.env.WHATSAPP_N8N_SEND_WEBHOOK_URL);
-  if (!webhookUrl) return null;
+  if (!webhookUrl) {
+    return {
+      response: null,
+      payload: { ok: false, error: "n8n WhatsApp send webhook is not configured." },
+    };
+  }
   const response = await fetch(webhookUrl, {
     method: "POST",
     headers: {
@@ -61,6 +66,7 @@ async function sendViaN8n(input: { templateName: string; language: string; recip
     body: JSON.stringify({
       ...input,
       bodyParameters: input.templateVariables,
+      metadata: { kind: "manual_template_send", source: "whatsapp_admin", templateName: input.templateName },
     }),
   });
   const payload = await response.json().catch(() => ({}));
@@ -87,99 +93,11 @@ export async function POST(req: Request) {
     response: null,
     payload: { ok: false, error: error instanceof Error ? error.message : String(error || "n8n request failed") },
   }));
-  if (n8nSend) {
-    const n8nResults = Array.isArray(n8nSend.payload?.results) ? n8nSend.payload.results : [];
-    const results = [];
-    for (const item of n8nResults) {
-      const phoneNumber = normalizeWhatsAppNumber(String(item.phoneNumber || item.to || ""));
-      const matchedUser: any = await findUserByPhone(phoneNumber);
-      await WhatsAppMessage.create({
-        phoneNumber,
-        contactName: matchedUser?.name || "",
-        matchedUser: matchedUser?._id,
-        direction: "outbound",
-        messageType: "template",
-        text: messagePreview,
-        templateName,
-        templateLanguage: language,
-        status: item.ok ? String(item.status || "sent") : "failed",
-        metaMessageId: item.metaMessageId || undefined,
-        error: item.error || item.metaError?.message || "",
-        rawPayload: { ...item, templateVariables, messagePreview },
-        sentAt: new Date(),
-      });
-      results.push({
-        phoneNumber,
-        name: matchedUser?.name || "",
-        ok: Boolean(item.ok),
-        skipped: false,
-        status: item.status,
-        error: item.error || item.metaError?.message || "",
-        metaError: item.metaError || null,
-        debug: { ...(item.debug || {}), sender: "n8n" },
-      });
-    }
-    if (!results.length) {
-      if (n8nSend.response?.ok) {
-        const queuedResults = [];
-        for (const phoneNumber of Array.from(new Set<string>(recipients))) {
-          const matchedUser: any = await findUserByPhone(phoneNumber);
-          await WhatsAppMessage.create({
-            phoneNumber,
-            contactName: matchedUser?.name || "",
-            matchedUser: matchedUser?._id,
-            direction: "outbound",
-            messageType: "template",
-            text: messagePreview,
-            templateName,
-            templateLanguage: language,
-            status: "queued",
-            rawPayload: { sender: "n8n", response: n8nSend.payload, templateVariables, messagePreview },
-            sentAt: new Date(),
-          });
-          queuedResults.push({
-            phoneNumber,
-            name: matchedUser?.name || "",
-            ok: true,
-            skipped: false,
-            status: n8nSend.response.status,
-            error: "",
-            metaError: null,
-            debug: { sender: "n8n", queued: true, webhookUrlConfigured: true, status: n8nSend.response.status, bodyParameterCount: templateVariables.length },
-          });
-        }
-        return NextResponse.json({ ok: true, templateName, language, sender: "n8n", results: queuedResults });
-      }
-      const errorMessage = errorText(n8nSend.payload?.error || n8nSend.payload?.message) || `n8n returned HTTP ${n8nSend.response?.status || "unknown"}`;
-      return NextResponse.json({
-        ok: false,
-        error: errorMessage,
-        templateName,
-        language,
-        sender: "n8n",
-        results: [{
-          phoneNumber: recipients.join(", "),
-          ok: false,
-          error: errorMessage,
-          debug: { sender: "n8n", webhookUrlConfigured: true, status: n8nSend.response?.status || null, payload: n8nSend.payload },
-        }],
-      }, { status: n8nSend.response?.ok ? 200 : 502 });
-    }
-    return NextResponse.json({ ok: results.every((item) => item.ok), templateName, language, sender: "n8n", results });
-  }
-
+  const n8nResults = Array.isArray(n8nSend.payload?.results) ? n8nSend.payload.results : [];
   const results = [];
-  for (const phoneNumber of Array.from(new Set<string>(recipients))) {
+  for (const item of n8nResults) {
+    const phoneNumber = normalizeWhatsAppNumber(String(item.phoneNumber || item.to || ""));
     const matchedUser: any = await findUserByPhone(phoneNumber);
-    const result = await sendWhatsAppTemplateMessage({
-      to: phoneNumber,
-      templateName,
-      language,
-      templateVariables,
-      testMode: false,
-      bypassN8n: true,
-      metadata: { kind: "manual_template_send", source: "whatsapp_admin", templateName },
-    });
     await WhatsAppMessage.create({
       phoneNumber,
       contactName: matchedUser?.name || "",
@@ -189,23 +107,70 @@ export async function POST(req: Request) {
       text: messagePreview,
       templateName,
       templateLanguage: language,
-      status: result.delivered ? "sent" : result.skipped ? "queued" : "failed",
-      metaMessageId: result.metaMessageId || undefined,
-      error: result.errorMessage || result.error || "",
-      rawPayload: { ...(result.payload || {}), templateVariables, messagePreview },
+      status: item.ok ? String(item.status || "sent") : "failed",
+      metaMessageId: item.metaMessageId || undefined,
+      error: errorText(item.error || item.metaError),
+      rawPayload: { ...item, templateVariables, messagePreview },
       sentAt: new Date(),
     });
     results.push({
       phoneNumber,
       name: matchedUser?.name || "",
-      ok: result.ok,
-      skipped: result.skipped,
-      status: result.status,
-      error: result.errorMessage || result.error || "",
-      metaError: result.payload?.error || null,
-      debug: result.debug || {},
+      ok: Boolean(item.ok),
+      skipped: false,
+      status: item.status,
+      error: errorText(item.error || item.metaError),
+      metaError: item.metaError || null,
+      debug: { ...(item.debug || {}), sender: "n8n" },
     });
   }
 
-  return NextResponse.json({ ok: results.every((item) => item.ok), templateName, language, results });
+  if (!results.length) {
+    if (n8nSend.response?.ok) {
+      const queuedResults = [];
+      for (const phoneNumber of Array.from(new Set<string>(recipients))) {
+        const matchedUser: any = await findUserByPhone(phoneNumber);
+        await WhatsAppMessage.create({
+          phoneNumber,
+          contactName: matchedUser?.name || "",
+          matchedUser: matchedUser?._id,
+          direction: "outbound",
+          messageType: "template",
+          text: messagePreview,
+          templateName,
+          templateLanguage: language,
+          status: "queued",
+          rawPayload: { sender: "n8n", response: n8nSend.payload, templateVariables, messagePreview },
+          sentAt: new Date(),
+        });
+        queuedResults.push({
+          phoneNumber,
+          name: matchedUser?.name || "",
+          ok: true,
+          skipped: false,
+          status: n8nSend.response.status,
+          error: "",
+          metaError: null,
+          debug: { sender: "n8n", queued: true, webhookUrlConfigured: true, status: n8nSend.response.status, bodyParameterCount: templateVariables.length },
+        });
+      }
+      return NextResponse.json({ ok: true, templateName, language, sender: "n8n", results: queuedResults });
+    }
+    const errorMessage = errorText(n8nSend.payload?.error || n8nSend.payload?.message) || `n8n returned HTTP ${n8nSend.response?.status || "unknown"}`;
+    return NextResponse.json({
+      ok: false,
+      error: errorMessage,
+      templateName,
+      language,
+      sender: "n8n",
+      results: [{
+        phoneNumber: recipients.join(", "),
+        ok: false,
+        error: errorMessage,
+        debug: { sender: "n8n", webhookUrlConfigured: Boolean(n8nSend.response), status: n8nSend.response?.status || null, payload: n8nSend.payload },
+      }],
+    }, { status: n8nSend.response?.ok ? 200 : 502 });
+  }
+
+  return NextResponse.json({ ok: results.every((item) => item.ok), templateName, language, sender: "n8n", results });
 }

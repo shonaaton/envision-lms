@@ -296,12 +296,79 @@ main td {
   }
 }
 
+@keyframes landing-progress {
+  from {
+    width: 18%;
+  }
+  to {
+    width: 92%;
+  }
+}
+
+@keyframes landing-soft-pulse {
+  0%,
+  100% {
+    opacity: 0.72;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
 .motion-rise {
   animation: motion-rise 720ms ease-out both;
 }
 
 .motion-float {
   animation: motion-float 8s ease-in-out infinite;
+}
+
+.landing-progress {
+  animation: landing-progress 3.4s ease-in-out both;
+}
+
+.landing-compact {
+  font-size: 0.925rem;
+}
+
+.landing-compact h1,
+.landing-compact h2,
+.landing-compact h3 {
+  letter-spacing: 0;
+}
+
+.landing-compact h2 {
+  line-height: 1.12;
+}
+
+.landing-compact section {
+  scroll-margin-top: 76px;
+}
+
+.landing-compact .btn,
+.landing-compact .btn-accent,
+.landing-compact .btn-primary,
+.landing-compact .btn-outline,
+.landing-compact .btn-ghost {
+  border-radius: 0.45rem;
+  font-weight: 800;
+}
+
+@media (min-width: 1024px) {
+  .landing-compact section.py-16,
+  .landing-compact section.lg\:py-24 {
+    padding-top: 4rem;
+    padding-bottom: 4rem;
+  }
+
+  .landing-compact h2.text-3xl,
+  .landing-compact h2.sm\:text-3xl {
+    font-size: 1.6rem;
+  }
+
+  .landing-compact h3.text-xl {
+    font-size: 1.05rem;
+  }
 }
 
 .counter-card {
@@ -320,7 +387,8 @@ main td {
 
 @media (prefers-reduced-motion: reduce) {
   .motion-rise,
-  .motion-float {
+  .motion-float,
+  .landing-progress {
     animation: none !important;
   }
 }

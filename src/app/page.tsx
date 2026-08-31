@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import Logo from "@/components/layout/Logo";
 import AnimatedImpactCounters from "@/components/marketing/AnimatedImpactCounters";
+import DynamicLandingShowcase from "@/components/marketing/DynamicLandingShowcase";
 import TestimonialCarousel from "@/components/marketing/TestimonialCarousel";
 import { ACADEMY_DEFAULTS } from "@/lib/branding";
 import { MARKETING_BASE_URL, OFFLINE_ACADEMY_URL } from "@/lib/publicLinks";
@@ -147,7 +148,7 @@ export default async function Home() {
   };
 
   return (
-    <main id="home" className="min-h-screen bg-[#f7f8fb] text-slate-950">
+    <main id="home" className="landing-compact min-h-screen bg-[#f7f8fb] text-slate-950">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }} />
 
       <header className="sticky top-0 z-50 border-b border-white/10 bg-[#17051f]/95 text-white backdrop-blur-xl">
@@ -194,18 +195,18 @@ export default async function Home() {
         <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-accent/70 to-transparent" />
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_72%_24%,rgba(253,231,90,0.12),transparent_24%),radial-gradient(circle_at_18%_82%,rgba(93,183,156,0.16),transparent_28%)]" />
         <div className="absolute inset-0 opacity-[0.12] [background-image:linear-gradient(rgba(255,255,255,0.075)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.075)_1px,transparent_1px)] [background-size:72px_72px]" />
-        <div className="relative mx-auto grid max-w-7xl gap-8 px-4 py-10 sm:px-6 lg:min-h-[calc(100dvh-74px)] lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:px-8 lg:py-10">
+        <div className="relative mx-auto grid max-w-7xl gap-7 px-4 py-8 sm:px-6 lg:min-h-[calc(100dvh-64px)] lg:grid-cols-[0.9fr_1.1fr] lg:items-center lg:px-8 lg:py-8">
           <div className="motion-rise">
             <p className="inline-flex items-center gap-2 border-l-2 border-accent bg-white/[0.03] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-accent">
               <ShieldCheck size={15} /> Premium Chess Mentorship
             </p>
-            <h1 className="mt-5 max-w-2xl text-3xl font-black leading-[1.1] text-white sm:text-4xl lg:text-[2.8rem]">
-              Calm, structured chess coaching.
+            <h1 className="mt-4 max-w-xl text-3xl font-black leading-[1.06] text-white sm:text-[2.15rem] lg:text-[2.35rem]">
+              Prepare smarter. Practice better. Improve faster.
             </h1>
-            <p className="mt-4 max-w-xl text-sm leading-7 text-white/64">
-              Live classes, practice, progress tracking, and real student achievements in one focused academy portal.
+            <p className="mt-3 max-w-lg text-sm leading-6 text-white/64">
+              Envision brings classes, assignments, tournaments, coach feedback, payments, and student progress into one live chess-learning portal.
             </p>
-            <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+            <div className="mt-5 flex flex-col gap-3 sm:flex-row">
               <Link href={demoHref} className="btn-accent min-h-11 px-5 shadow-lg shadow-accent/10">
                 Book Free Demo Class <ArrowRight size={18} />
               </Link>
@@ -213,10 +214,18 @@ export default async function Home() {
                 View Achievers
               </Link>
             </div>
+            <div className="mt-6 grid max-w-lg grid-cols-3 gap-2">
+              {["Live batches", "Homework", "Progress"].map((label, index) => (
+                <div key={label} className="border-l border-white/12 bg-white/[0.035] px-3 py-2.5">
+                  <div className="text-base font-black text-accent">{["6", "42", "92%"][index]}</div>
+                  <div className="mt-0.5 text-[11px] font-semibold text-white/50">{label}</div>
+                </div>
+              ))}
+            </div>
           </div>
 
           <div>
-            <HeroAchievementStage achievements={featuredAchievements} />
+            <DynamicLandingShowcase achievements={featuredAchievements} />
           </div>
         </div>
       </section>

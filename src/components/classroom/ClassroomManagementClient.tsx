@@ -23,7 +23,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   deriveScheduledSessionStatus,
@@ -234,7 +233,6 @@ function blankForm() {
 
 export default function ClassroomManagementClient({
   role,
-  isSuperAdmin = false,
   permissions,
   groupFocus,
 }: {
@@ -243,7 +241,6 @@ export default function ClassroomManagementClient({
   permissions: ClassroomPermissions;
   groupFocus?: GroupFocus;
 }) {
-  const router = useRouter();
   const [items, setItems] = useState<ClassroomItem[]>([]);
   const [targets, setTargets] = useState<TargetsPayload>({ students: [], coaches: [], batches: [], courses: [] });
   const [loading, setLoading] = useState(true);
@@ -289,7 +286,7 @@ export default function ClassroomManagementClient({
       ]);
       const classroomPayload = await classroomsRes.json().catch(() => ([]));
       if (!classroomsRes.ok) throw new Error(classroomPayload?.error || "Could not load classrooms");
-      setItems(Array.isArray(classroomPayload) ? classroomPayload.map(normalizeClassroomItem) : []);
+      setItems(Array.isArray(classroomPayload) ? classroomPayload.map(normalizeClassroomItem).filter((item) => !item.isTestClassroom) : []);
       if (targetsRes?.ok) setTargets(await targetsRes.json());
     } catch {
       const now = Date.now();
@@ -696,21 +693,6 @@ export default function ClassroomManagementClient({
     });
   }
 
-  async function openTestClassroom() {
-    await withBusy("Preparing test classroom...", async () => {
-      const response = await fetch("/api/classrooms/test", { method: "POST" });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        toast.error(data.error || "Could not prepare test classroom");
-        return;
-      }
-      toast.success("Test classroom ready");
-      await load();
-      const sessionQuery = data.sessionId ? `?session=${encodeURIComponent(data.sessionId)}` : "";
-      router.push(`/classrooms/${data.classroomId}/live${sessionQuery}`);
-    });
-  }
-
   const canManageClassrooms = role !== "student" && (permissions.create || permissions.edit || permissions.cancel || permissions.assign);
   if (!canManageClassrooms) {
     return <SimpleClassroomList items={items} loading={loading} role={role} canJoin={permissions.join} canManageAttendance={permissions.attendance} />;
@@ -742,11 +724,6 @@ export default function ClassroomManagementClient({
               <ArrowLeft size={13} /> All Groups
             </Link>
           ) : null}
-          {isSuperAdmin && (
-            <button className="inline-flex h-8 items-center gap-1.5 rounded-md border border-violet-200 bg-violet-50 px-2.5 text-xs font-bold text-violet-700 shadow-sm hover:bg-violet-100" onClick={openTestClassroom}>
-              <CopyPlus size={13} /> Test Classroom
-            </button>
-          )}
           {permissions.create && (
             <>
               <button className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-50" onClick={() => resetModal("single")}>
@@ -844,7 +821,6 @@ export default function ClassroomManagementClient({
                               <div className="truncate text-base font-bold text-slate-950" title={item.title}>{item.title}</div>
                               <div className="mt-1 flex flex-wrap gap-1.5 text-xs">
                                 <span className="rounded-full bg-brand/10 px-2 py-0.5 font-semibold text-brand">{item.classroomType === "single" ? "Single" : "Series"}</span>
-                                {item.isTestClassroom && <span className="rounded-full bg-violet-50 px-2.5 py-1 font-bold text-violet-700">Test Classroom</span>}
                                 <span className="rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-600">{titleCase(item.status)}</span>
                                 {item.courseName && <span className="rounded-full bg-amber-50 px-2 py-0.5 font-semibold text-amber-700">{item.courseName}</span>}
                                 {item.levelName && <span className="rounded-full bg-sky-50 px-2 py-0.5 font-semibold text-sky-700">{item.levelName}</span>}

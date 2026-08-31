@@ -12,7 +12,7 @@ import { User } from "@/models/User";
 import { Invoice } from "@/models/Fee";
 import { Tournament } from "@/models/Tournament";
 import { AskCoachConversation, AskCoachMessage } from "@/models/AskCoach";
-import { StudentReward } from "@/models/ClassroomLive";
+import { ClassroomSession, StudentReward } from "@/models/ClassroomLive";
 import {
   deriveScheduledSessionStatus,
   flattenScheduledSessions,
@@ -1803,9 +1803,30 @@ function AdminQuickAction({ href, icon: Icon, label, tone }: { href: string; ico
   );
 }
 
+function readableStatus(value: string) {
+  return value
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
 function formatTimeLabel(value?: Date | string | null) {
   if (!value) return "Not set";
   return new Intl.DateTimeFormat("en-IN", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata" }).format(new Date(value));
+}
+
+function attendanceHrefForDashboard(classroom: any, session: any, start: Date) {
+  const params = new URLSearchParams();
+  params.set("date", dateKey(start));
+  params.set("session", `${objectId(classroom._id)}:${String(session?._id || "")}`);
+  return `/attendance?${params.toString()}`;
+}
+
+function classroomGroupHref(classroom: any) {
+  const batch = classroom?.batches?.[0];
+  const batchId = objectId(batch?._id ?? batch);
+  return batchId ? `/classrooms/groups/${batchId}` : "/classrooms";
 }
 
 export default async function DashboardPage({ searchParams }: { searchParams: DashboardSearchParams }) {
@@ -2105,6 +2126,20 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
 
   const scheduledRows = flattenScheduledSessions(activeClassrooms).sort((a, b) => a.start.getTime() - b.start.getTime());
   const todayRows = scheduledRows.filter((row) => row.start >= focusFrom && row.start <= focusTo);
+  const todaySessionQueries = todayRows.map((row) => ({
+    classroom: row.classroom._id,
+    scheduledSessionId: String(row.session?._id || ""),
+  }));
+  const [todayAttendance, todayLiveSessions] = todaySessionQueries.length ? await Promise.all([
+    Attendance.find({ $or: todaySessionQueries.map((query) => ({ ...query, sessionDate: { $gte: focusFrom, $lte: focusTo } })) }).lean(),
+    ClassroomSession.find({ $or: todaySessionQueries }).select("classroom scheduledSessionId status startedAt endedAt participants").lean(),
+  ]) : [[], []];
+  const todayAttendanceBySession = new Map(
+    todayAttendance.map((item: any) => [`${objectId(item.classroom?._id ?? item.classroom)}:${String(item.scheduledSessionId || "")}`, item])
+  );
+  const todayLiveBySession = new Map(
+    todayLiveSessions.map((item: any) => [`${objectId(item.classroom?._id ?? item.classroom)}:${String(item.scheduledSessionId || "")}`, item])
+  );
   const completedRows = scheduledRows
     .filter((row) => (row.session.status === "completed" || row.start < new Date()) && row.start <= new Date())
     .sort((a, b) => b.start.getTime() - a.start.getTime())
@@ -2181,35 +2216,87 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
           <AdminPanel
             icon={Calendar}
             title="Today at a Glance"
-            action={<Link href="/classrooms" className="text-sm font-black text-brand">View full schedule</Link>}
+            action={
+              <form method="get" className="flex flex-wrap items-end gap-2">
+                <input type="hidden" name="tab" value="today" />
+                <label className="flex flex-col gap-1 text-[11px] font-bold text-slate-500">
+                  Date
+                  <input name="date" type="date" defaultValue={dateKey(focusDate)} className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-bold text-slate-800 outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/15" />
+                </label>
+                <button className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-brand px-3 text-xs font-black text-white shadow-sm transition hover:bg-brand/90">
+                  <Calendar size={14} /> Apply
+                </button>
+              </form>
+            }
           >
-            <div className="space-y-1">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs font-semibold text-slate-500">{formatDate(focusDate)} - {todayRows.length} individual class{todayRows.length === 1 ? "" : "es"}</p>
+              <Link href="/classrooms/groups" className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-brand transition hover:border-brand/30 hover:bg-brand/5">
+                Open all groups <ArrowRight size={14} />
+              </Link>
+            </div>
+            <div className="space-y-3">
               {todayRows.length ? todayRows.map((row, index) => {
                 const classroom = row.classroom as any;
                 const sessionRow = row.session as any;
-                const canJoinNow = joinAllowed && isJoinWindowOpen(sessionRow, new Date());
-                const batchName = classroom.batches?.[0]?.name || classroom.batchName || "Batch";
+                const sessionKey = `${objectId(classroom._id)}:${String(sessionRow._id || "")}`;
+                const attendanceRow = todayAttendanceBySession.get(sessionKey) as any;
+                const liveRow = todayLiveBySession.get(sessionKey) as any;
+                const status = deriveScheduledSessionStatus(sessionRow, new Date());
+                const batchName = (classroom.batches || []).map((batch: any) => batch?.name || "").filter(Boolean).join(", ") || classroom.batchName || "Batch";
                 const coachName = sessionRow.substituteCoach?.name || classroom.coach?.name || classroom.instructor?.name || "Coach";
+                const participants = liveRow?.participants || [];
+                const teacherJoined = Boolean(sessionRow.actualStartedAt || liveRow?.startedAt || participants.some((participant: any) => ["instructor", "admin", "sub-admin"].includes(String(participant.role || ""))));
+                const joinedStudentCount = new Set(
+                  participants
+                    .filter((participant: any) => String(participant.role || "") === "student")
+                    .map((participant: any) => objectId(participant.user))
+                    .filter(Boolean)
+                ).size;
+                const totalStudents = classroom.students?.length || 0;
+                const started = Boolean(sessionRow.actualStartedAt || liveRow?.startedAt);
+                const completed = Boolean(sessionRow.actualEndedAt || liveRow?.endedAt || status === "completed");
+                const attendanceMarked = Boolean(attendanceRow || sessionRow.attendanceMarkedAt);
+                const presentCount = (attendanceRow?.records || []).filter((record: any) => ["present", "late"].includes(String(record.status || ""))).length;
+                const detailsHref = `/classrooms/${objectId(classroom._id)}/summary?session=${encodeURIComponent(String(sessionRow._id || ""))}`;
+                const attendanceHref = attendanceHrefForDashboard(classroom, sessionRow, row.start);
                 return (
-                  <div key={`admin-today-${objectId(classroom._id)}-${String(sessionRow._id || index)}`} className={index === 0 ? "grid gap-3 rounded-lg border border-amber-200 bg-amber-50/70 p-4 md:grid-cols-[72px_1fr_auto_auto] md:items-center" : "grid gap-3 border-b border-slate-100 p-4 last:border-b-0 md:grid-cols-[72px_1fr_auto_auto] md:items-center"}>
-                    <div className="text-sm font-black text-slate-950">{formatTimeLabel(row.start)}</div>
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-black text-slate-950">{classroom.title} <span className="font-medium text-slate-400">|</span> {batchName}</p>
-                      <p className="mt-1 truncate text-xs font-semibold text-slate-500">Topic: {sessionTopic(sessionRow, classroom)} | Coach: {coachName}</p>
+                  <div key={`admin-today-${objectId(classroom._id)}-${String(sessionRow._id || index)}`} className={index === 0 ? "rounded-lg border border-amber-200 bg-amber-50/70 p-4" : "rounded-lg border border-slate-200 bg-white p-4"}>
+                    <div className="grid gap-3 lg:grid-cols-[78px_minmax(0,1fr)_minmax(170px,auto)] lg:items-start">
+                      <div className="text-sm font-black text-slate-950">{formatTimeLabel(row.start)}</div>
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="truncate text-sm font-black text-slate-950">{classroom.title}</p>
+                          <span className={statusChipClass(status)}>{readableStatus(status)}</span>
+                        </div>
+                        <p className="mt-1 truncate text-xs font-semibold text-slate-500">Group: {batchName}</p>
+                        <p className="mt-1 truncate text-xs font-semibold text-slate-500">Topic: {sessionTopic(sessionRow, classroom)} | Coach: {coachName}</p>
+                      </div>
+                      <div className="text-sm font-black text-slate-950">{totalStudents} <span className="block text-xs font-semibold text-slate-500">Students</span></div>
                     </div>
-                    <div className="text-sm font-black text-slate-950">{classroom.students?.length || 0} <span className="block text-xs font-semibold text-slate-500">Students</span></div>
-                    {canJoinNow ? (
+
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+                      <InfoTile label="Started" value={started ? "Yes" : "No"} />
+                      <InfoTile label="Completed" value={completed ? "Yes" : "No"} />
+                      <InfoTile label="Attendance" value={attendanceMarked ? `Marked${presentCount ? ` (${presentCount} present)` : ""}` : "Pending"} />
+                      <InfoTile label="Teacher Joined" value={teacherJoined ? "Yes" : "No"} />
+                      <InfoTile label="Students Joined" value={`${joinedStudentCount}/${totalStudents}`} />
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap gap-2">
                       <JoinScheduledSessionButton
                         classroomId={objectId(classroom._id)}
                         sessionId={String(sessionRow._id)}
                         meetingUrl={classroom.meetingUrl}
-                        className="inline-flex h-10 items-center justify-center rounded-lg bg-brand px-4 text-sm font-black text-white"
+                        className="inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-brand transition hover:border-brand/30 hover:bg-brand/5"
+                        availableClassName="inline-flex h-9 items-center justify-center rounded-lg bg-brand px-3 text-xs font-black text-white shadow-sm transition hover:bg-brand/90"
+                        unavailableClassName="inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-brand transition hover:border-brand/30 hover:bg-brand/5"
+                        label="Join"
                         disabled={!joinAllowed}
                         scheduledFor={sessionRow.scheduledFor || classroom.classDate || classroom.startDate}
                         startTime={sessionRow.startTime || classroom.startTime}
                         durationMinutes={sessionRow.durationMinutes || classroom.durationMinutes || 60}
                       />
-                    ) : (
                       <FutureClassDetailsButton
                         details={{
                           title: classroom.title,
@@ -2223,9 +2310,18 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
                           coachName,
                           students: (classroom.students || []).map((student: any) => ({ name: student.name || student.username || "Student", email: student.email, username: student.username })),
                         }}
-                        className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-black text-brand transition hover:border-brand/30 hover:bg-brand/5"
+                        className="inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-brand transition hover:border-brand/30 hover:bg-brand/5"
                       />
-                    )}
+                      <Link href={detailsHref} className="inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-brand transition hover:border-brand/30 hover:bg-brand/5">
+                        View Details
+                      </Link>
+                      <Link href={attendanceHref} className="inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-brand transition hover:border-brand/30 hover:bg-brand/5">
+                        Attendance
+                      </Link>
+                      <Link href={classroomGroupHref(classroom)} className="inline-flex h-9 items-center justify-center rounded-lg bg-slate-950 px-3 text-xs font-black text-white shadow-sm transition hover:bg-slate-800">
+                        Open Group
+                      </Link>
+                    </div>
                   </div>
                 );
               }) : (

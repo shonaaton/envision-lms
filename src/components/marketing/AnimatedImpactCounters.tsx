@@ -57,7 +57,7 @@ export default function AnimatedImpactCounters({ counters }: { counters: Counter
   }, [counters, started]);
 
   return (
-    <section ref={ref} className="relative z-10 mx-auto -mt-8 max-w-7xl px-4 sm:px-6 lg:px-8">
+    <section ref={ref} className="relative z-10 mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       <div className="grid overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl shadow-brand-900/12 sm:grid-cols-2 lg:grid-cols-5">
         {counters.map((item, index) => (
           <article key={item.label} className="group border-b border-slate-200 p-5 transition duration-300 hover:bg-[#fffdf0] sm:border-r lg:border-b-0">

@@ -254,7 +254,6 @@ export default function ClassroomManagementClient({
   const [form, setForm] = useState(blankForm());
   const [studentSearch, setStudentSearch] = useState("");
   const [coachSearch, setCoachSearch] = useState("");
-  const [calendarDate, setCalendarDate] = useState(() => formatDateInput(new Date().toISOString()));
   const [filters, setFilters] = useState<{ coach: string; batch: string; student: string; course: string; level: string; status: SessionFilterStatus }>({
     coach: "",
     batch: groupFocus?.id || "",
@@ -368,13 +367,12 @@ export default function ClassroomManagementClient({
   const groupSummaries = useMemo(() => {
     return targets.batches
       .map((batch) => {
-        const batchItems = items.filter((item) => (item.batches || []).some((itemBatch: any) => String(itemBatch?._id || itemBatch || "") === batch._id));
+        const batchItems = filteredItems.filter((item) => (item.batches || []).some((itemBatch: any) => String(itemBatch?._id || itemBatch || "") === batch._id));
         const sessions = flattenScheduledSessions(batchItems);
         const courseNames = uniqueText(batchItems.map((item) => item.courseName || ""));
         const levelNames = uniqueText(batchItems.map((item) => item.levelName || batch.level || ""));
         return {
           batch,
-          items: batchItems,
           classroomCount: batchItems.length,
           sessionCount: sessions.length,
           upcomingCount: sessions.filter((row) => isSessionUpcomingLike(deriveScheduledSessionStatus(row.session, new Date()))).length,
@@ -383,26 +381,7 @@ export default function ClassroomManagementClient({
         };
       })
       .filter((row) => row.classroomCount > 0);
-  }, [items, targets.batches]);
-
-  const calendarSessions = useMemo(() => {
-    return dedupeSessionRows(flattenScheduledSessions(filteredItems))
-      .filter((row) => row.start)
-      .filter(({ session }: any) => !filters.status || deriveScheduledSessionStatus(session, new Date()) === filters.status)
-      .map(({ classroom: item, session }: any) => ({
-        classroomId: item._id,
-        title: item.title,
-        topicName: session.topicName,
-        scheduledFor: session.scheduledFor,
-        startTime: session.startTime,
-        status: session.status,
-        coachName: assignedCoachName(item, session),
-        courseName: item.courseName || "",
-        levelName: item.levelName || "",
-        batchNames: batchNamesForItem(item, targets.batches),
-        studentNames: studentNamesForItem(item),
-      }));
-  }, [filteredItems, filters.status, targets.batches]);
+  }, [filteredItems, targets.batches]);
 
   const filteredAssignableStudents = useMemo(() => {
     const query = studentSearch.trim().toLowerCase();
@@ -784,67 +763,9 @@ export default function ClassroomManagementClient({
         </div>
       </div>
 
-      {!groupFocus && (
-        <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-          <div className="mb-2 flex items-center justify-between">
-            <div>
-              <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Groups</div>
-              <div className="text-sm font-semibold text-slate-950">Open a group to see its individual classes.</div>
-            </div>
-          </div>
-          {loading ? (
-            <div className="rounded-md bg-slate-50 px-3 py-3 text-sm text-slate-500">Loading groups...</div>
-          ) : groupSummaries.length === 0 ? (
-            <div className="rounded-md border border-dashed border-slate-300 px-3 py-3 text-sm text-slate-500">No classroom groups found yet.</div>
-          ) : (
-            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-              {groupSummaries.map(({ batch, items: batchItems, classroomCount, sessionCount, upcomingCount, courseNames, levelNames }) => (
-                <div key={batch._id} className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <Link href={`/classrooms/groups/${batch._id}`} className="truncate text-sm font-bold text-slate-950 hover:text-brand" title={batch.name}>
-                        {batch.name}
-                      </Link>
-                      <div className="mt-0.5 truncate text-xs text-slate-500" title={`${courseNames.join(", ") || "Course not set"} - ${levelNames.join(", ") || "Level not set"}`}>
-                        {courseNames.join(", ") || "Course not set"} - {levelNames.join(", ") || "Level not set"}
-                      </div>
-                      <div className="mt-1 flex flex-wrap gap-1.5 text-[11px] font-semibold text-slate-600">
-                        <span>{batch.students?.length || 0} students</span>
-                        <span>{classroomCount} classrooms</span>
-                        <span>{sessionCount} classes</span>
-                        <span>{upcomingCount} upcoming</span>
-                      </div>
-                    </div>
-                    <Link href={`/classrooms/groups/${batch._id}`} className="shrink-0 rounded-md bg-brand px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-brand/90">
-                      Open
-                    </Link>
-                  </div>
-                  <details className="mt-2 rounded-md border border-slate-200 bg-white">
-                    <summary className="cursor-pointer select-none px-3 py-1.5 text-xs font-bold text-slate-700">
-                      Individual classes ({sessionCount})
-                    </summary>
-                    <div className="border-t border-slate-200 p-2">
-                      <GroupClassSessionList
-                        items={batchItems}
-                        targets={targets}
-                        statusFilter={filters.status}
-                        role={role}
-                        permissions={permissions}
-                        setActionModal={setActionModal}
-                        setActionDraft={setActionDraft}
-                      />
-                    </div>
-                  </details>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
       <div className="grid flex-none gap-1.5 rounded-md border border-slate-200 bg-white p-2 shadow-sm md:grid-cols-3 xl:grid-cols-[repeat(6,minmax(0,1fr))]">
         <FilterSelect label="Coach" value={filters.coach} onChange={(value) => setFilters((current) => ({ ...current, coach: value }))} options={targets.coaches.map((coach) => ({ value: coach._id, label: coach.name }))} />
-        {!groupFocus && <FilterSelect label="Batch" value={filters.batch} onChange={(value) => setFilters((current) => ({ ...current, batch: value }))} options={targets.batches.map((batch) => ({ value: batch._id, label: batch.name }))} />}
+        {!groupFocus && <FilterSelect label="Group" value={filters.batch} onChange={(value) => setFilters((current) => ({ ...current, batch: value }))} options={targets.batches.map((batch) => ({ value: batch._id, label: batch.name }))} />}
         <FilterSelect label="Student" value={filters.student} onChange={(value) => setFilters((current) => ({ ...current, student: value }))} options={studentFilterOptions.map((student) => ({ value: student._id, label: student.name }))} />
         <FilterSelect label="Course" value={filters.course} onChange={(value) => setFilters((current) => ({ ...current, course: value }))} options={uniqueOptions(groupScopedItems.map((item) => item.courseName).filter(Boolean) as string[])} />
         <FilterSelect label="Level" value={filters.level} onChange={(value) => setFilters((current) => ({ ...current, level: value }))} options={uniqueOptions(groupScopedItems.map((item) => item.levelName).filter(Boolean) as string[])} />
@@ -856,8 +777,48 @@ export default function ClassroomManagementClient({
         />
       </div>
 
+      {!groupFocus && (
+        <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+          <div className="mb-2 flex items-center justify-between">
+            <div>
+              <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Groups</div>
+              <div className="text-sm font-semibold text-slate-950">Filter groups, then open the group to manage its individual classes.</div>
+            </div>
+          </div>
+          {loading ? (
+            <div className="rounded-md bg-slate-50 px-3 py-3 text-sm text-slate-500">Loading groups...</div>
+          ) : groupSummaries.length === 0 ? (
+            <div className="rounded-md border border-dashed border-slate-300 px-3 py-3 text-sm text-slate-500">No groups match the current filters.</div>
+          ) : (
+            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+              {groupSummaries.map(({ batch, classroomCount, sessionCount, upcomingCount, courseNames, levelNames }) => (
+                <div key={batch._id} className="flex items-center justify-between gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+                  <div className="min-w-0">
+                    <Link href={`/classrooms/groups/${batch._id}`} className="truncate text-sm font-bold text-slate-950 hover:text-brand" title={batch.name}>
+                      {batch.name}
+                    </Link>
+                    <div className="mt-0.5 truncate text-xs text-slate-500" title={`${courseNames.join(", ") || "Course not set"} - ${levelNames.join(", ") || "Level not set"}`}>
+                      {courseNames.join(", ") || "Course not set"} - {levelNames.join(", ") || "Level not set"}
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-1.5 text-[11px] font-semibold text-slate-600">
+                      <span>{batch.students?.length || 0} students</span>
+                      <span>{classroomCount} classrooms</span>
+                      <span>{sessionCount} classes</span>
+                      <span>{upcomingCount} upcoming</span>
+                    </div>
+                  </div>
+                  <Link href={`/classrooms/groups/${batch._id}`} className="shrink-0 rounded-md bg-brand px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-brand/90">
+                    Open
+                  </Link>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {groupFocus ? (
       <div className="rounded-lg border border-brand/10 bg-white shadow-xl shadow-brand/5">
-        {groupFocus ? (
           <div className="p-3">
             {loading ? (
               <div className="rounded-xl bg-slate-50 p-6 text-sm text-slate-500">Loading classes...</div>
@@ -960,10 +921,8 @@ export default function ClassroomManagementClient({
               </div>
             )}
           </div>
-        ) : (
-          <CalendarView sessions={calendarSessions} selectedDate={calendarDate} onSelectedDateChange={setCalendarDate} />
-        )}
       </div>
+      ) : null}
 
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
@@ -1662,73 +1621,6 @@ function SeriesScheduleEditor({
           );
         })}
       </div>
-    </div>
-  );
-}
-
-function CalendarView({
-  sessions,
-  selectedDate,
-  onSelectedDateChange,
-}: {
-  sessions: Array<{
-    title: string;
-    topicName: string;
-    scheduledFor: string;
-    startTime: string;
-    status: string;
-    coachName: string;
-    courseName?: string;
-    levelName?: string;
-    batchNames?: string;
-    studentNames?: string;
-  }>;
-  selectedDate: string;
-  onSelectedDateChange: (value: string) => void;
-}) {
-  const rows = sessions
-    .slice()
-    .sort((a, b) => new Date(a.scheduledFor).getTime() - new Date(b.scheduledFor).getTime())
-    .filter((session) => formatDateInput(session.scheduledFor) === selectedDate);
-
-  return (
-    <div className="min-h-0 overflow-auto p-3">
-      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Calendar</div>
-          <div className="text-sm font-semibold text-slate-950">Classes on {selectedDate ? formatDate(selectedDate) : "selected date"}</div>
-        </div>
-        <label className="block w-full sm:w-56">
-          <span className="mb-1 block text-xs font-bold text-slate-600">Select Date</span>
-          <input type="date" className="input h-10" value={selectedDate} onChange={(event) => onSelectedDateChange(event.target.value)} />
-        </label>
-      </div>
-      {rows.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">No individual classes on this date.</div>
-      ) : (
-        <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-          <div className="space-y-1.5">
-            {rows.map((row, index) => (
-              <div key={`${selectedDate}-${index}`} className="grid gap-2 rounded-md bg-slate-50 px-3 py-2 text-xs md:grid-cols-[72px_minmax(150px,1.1fr)_minmax(130px,1fr)_minmax(110px,0.8fr)_minmax(120px,0.9fr)]">
-                <div className="font-bold text-slate-800">{row.startTime}</div>
-                <div className="min-w-0">
-                  <div className="truncate font-bold text-slate-950" title={row.title}>{row.title}</div>
-                  <div className="truncate text-slate-500" title={row.topicName}>{row.topicName}</div>
-                </div>
-                <div className="min-w-0">
-                  <div className="truncate font-semibold text-slate-700" title={row.batchNames || "Unassigned"}>{row.batchNames || "Unassigned"}</div>
-                  <div className="truncate text-slate-500" title={row.studentNames || ""}>{row.studentNames || "No students"}</div>
-                </div>
-                <div className="min-w-0">
-                  <div className="truncate font-semibold text-slate-700" title={row.courseName || "Course not set"}>{row.courseName || "Course not set"}</div>
-                  <div className="truncate text-slate-500" title={row.levelName || "Level not set"}>{row.levelName || "Level not set"}</div>
-                </div>
-                <div className="truncate text-slate-600" title={row.coachName}>{row.coachName}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

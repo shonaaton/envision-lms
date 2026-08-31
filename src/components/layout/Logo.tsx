@@ -7,6 +7,7 @@ import { ACADEMY_LOGO_URL } from "@/lib/branding";
 export default function Logo({ className = "", tone = "yellow" }: { className?: string; tone?: "yellow" | "purple" }) {
   const fallbackLogo = ACADEMY_LOGO_URL;
   const [branding, setBranding] = useState({ academyName: "Envision Chess Academy", logoUrl: fallbackLogo });
+  const [logoFailed, setLogoFailed] = useState(false);
 
   useEffect(() => {
     fetch("/api/branding", { cache: "no-store" })
@@ -17,7 +18,22 @@ export default function Logo({ className = "", tone = "yellow" }: { className?: 
 
   return (
     <Link href="/" className={`inline-flex items-center ${className}`} aria-label={branding.academyName}>
-      <Image src={branding.logoUrl} alt={branding.academyName} width={192} height={48} className="h-12 w-auto object-contain" unoptimized />
+      {logoFailed ? (
+        <span className={`text-lg font-black uppercase leading-none tracking-normal ${tone === "yellow" ? "text-accent" : "text-brand"}`}>
+          Envision
+          <span className="block text-[0.62em]">Chess Academy</span>
+        </span>
+      ) : (
+        <Image
+          src={branding.logoUrl}
+          alt={branding.academyName}
+          width={192}
+          height={48}
+          className="h-12 w-auto object-contain"
+          unoptimized
+          onError={() => setLogoFailed(true)}
+        />
+      )}
     </Link>
   );
 }

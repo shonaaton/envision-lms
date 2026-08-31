@@ -316,7 +316,8 @@ main td {
 }
 
 .motion-rise {
-  animation: motion-rise 720ms ease-out both;
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .motion-float {

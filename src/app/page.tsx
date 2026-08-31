@@ -153,9 +153,7 @@ export default async function Home() {
 
       <header className="sticky top-0 z-50 border-b border-white/10 bg-[#17051f]/95 text-white backdrop-blur-xl">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
-          <Link href="#home" aria-label="Envision Chess Academy home">
-            <Logo tone="yellow" className="max-w-[178px] sm:max-w-[230px]" />
-          </Link>
+          <Logo tone="yellow" className="max-w-[178px] sm:max-w-[230px]" />
           <nav className="hidden items-center gap-5 xl:flex" aria-label="Main navigation">
             {navItems.map(([label, href]) => (
               <Link key={href} href={href} className="text-sm font-semibold text-white/72 hover:text-accent">
@@ -190,42 +188,53 @@ export default async function Home() {
         </div>
       </header>
 
-      <section className="relative overflow-hidden bg-[#17051f] text-white">
-        <div className="absolute inset-0 bg-[linear-gradient(115deg,#0d1018_0%,#1a0a22_42%,#32103f_100%)]" />
-        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-accent/70 to-transparent" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_72%_24%,rgba(253,231,90,0.12),transparent_24%),radial-gradient(circle_at_18%_82%,rgba(93,183,156,0.16),transparent_28%)]" />
-        <div className="absolute inset-0 opacity-[0.12] [background-image:linear-gradient(rgba(255,255,255,0.075)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.075)_1px,transparent_1px)] [background-size:72px_72px]" />
-        <div className="relative mx-auto grid max-w-7xl gap-7 px-4 py-8 sm:px-6 lg:min-h-[calc(100dvh-64px)] lg:grid-cols-[0.9fr_1.1fr] lg:items-center lg:px-8 lg:py-8">
-          <div className="motion-rise">
-            <p className="inline-flex items-center gap-2 border-l-2 border-accent bg-white/[0.03] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-accent">
+      <section className="relative isolate overflow-hidden bg-[#15051d] text-white">
+        <Image
+          src="/images/achievements/contact_sheet.jpg"
+          alt=""
+          fill
+          priority
+          sizes="100vw"
+          className="z-0 object-cover object-[82%_38%] opacity-100"
+        />
+        <div className="absolute inset-0 z-10 bg-[linear-gradient(90deg,rgba(13,9,18,0.95)_0%,rgba(22,7,31,0.82)_42%,rgba(22,7,31,0.28)_100%)]" />
+        <div className="absolute inset-x-0 bottom-0 z-10 h-24 bg-gradient-to-t from-[#f7f8fb] via-[#f7f8fb]/40 to-transparent" />
+        <div className="pointer-events-none absolute right-[max(2rem,calc((100vw-1280px)/2))] top-24 z-20 hidden h-[620px] w-[520px] overflow-hidden opacity-95 shadow-2xl shadow-black/30 lg:block [mask-image:linear-gradient(90deg,transparent_0%,black_18%,black_88%,transparent_100%)]">
+          <Image
+            src="/images/achievements/contact_sheet.jpg"
+            alt=""
+            fill
+            sizes="520px"
+            className="object-cover object-[76%_38%]"
+          />
+        </div>
+        <div className="relative z-30 mx-auto flex min-h-[calc(100dvh-112px)] max-w-7xl items-center px-4 py-12 sm:px-6 lg:px-8">
+          <div className="motion-rise max-w-3xl">
+            <p className="inline-flex items-center gap-2 border-l-2 border-accent bg-black/24 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-accent backdrop-blur">
               <ShieldCheck size={15} /> Premium Chess Mentorship
             </p>
-            <h1 className="mt-4 max-w-xl text-3xl font-black leading-[1.06] text-white sm:text-[2.15rem] lg:text-[2.35rem]">
-              Prepare smarter. Practice better. Improve faster.
+            <h1 className="mt-5 max-w-2xl text-4xl font-black leading-[1.04] text-white sm:text-5xl lg:text-6xl">
+              Envision Chess Academy
             </h1>
-            <p className="mt-3 max-w-lg text-sm leading-6 text-white/64">
-              Envision brings classes, assignments, tournaments, coach feedback, payments, and student progress into one live chess-learning portal.
+            <p className="mt-4 max-w-xl text-base leading-7 text-white/78 sm:text-lg">
+              Structured online and offline chess coaching with live classes, assignments, tournaments, coach feedback, payments, and student progress in one portal.
             </p>
-            <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-              <Link href={demoHref} className="btn-accent min-h-11 px-5 shadow-lg shadow-accent/10">
+            <div className="mt-7 flex flex-col gap-3 sm:flex-row">
+              <Link href={demoHref} className="btn-accent min-h-12 px-6 shadow-lg shadow-accent/10">
                 Book Free Demo Class <ArrowRight size={18} />
               </Link>
-              <Link href="#achievements" className="btn min-h-11 border border-white/14 bg-white/[0.045] px-5 text-white hover:bg-white/[0.08]">
+              <Link href="#achievements" className="btn min-h-12 border border-white/18 bg-white/[0.08] px-6 text-white backdrop-blur hover:bg-white/[0.14]">
                 View Achievers
               </Link>
             </div>
-            <div className="mt-6 grid max-w-lg grid-cols-3 gap-2">
+            <div className="mt-8 grid max-w-2xl gap-3 sm:grid-cols-3">
               {["Live batches", "Homework", "Progress"].map((label, index) => (
-                <div key={label} className="border-l border-white/12 bg-white/[0.035] px-3 py-2.5">
-                  <div className="text-base font-black text-accent">{["6", "42", "92%"][index]}</div>
-                  <div className="mt-0.5 text-[11px] font-semibold text-white/50">{label}</div>
+                <div key={label} className="border-l border-accent/70 bg-black/26 px-4 py-3 backdrop-blur">
+                  <div className="text-xl font-black text-accent">{["6", "42", "92%"][index]}</div>
+                  <div className="mt-1 text-xs font-semibold text-white/64">{label}</div>
                 </div>
               ))}
             </div>
-          </div>
-
-          <div>
-            <DynamicLandingShowcase achievements={featuredAchievements} />
           </div>
         </div>
       </section>
@@ -256,6 +265,9 @@ export default async function Home() {
                   </article>
                 );
               })}
+          </div>
+          <div className="mt-8">
+            <DynamicLandingShowcase achievements={featuredAchievements} />
           </div>
         </div>
       </section>

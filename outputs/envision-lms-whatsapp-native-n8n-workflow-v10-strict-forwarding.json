@@ -72,9 +72,11 @@
     },
     {
       "parameters": {
+        "operation": "sendTemplate",
         "phoneNumberId": "={{$json.phoneNumberId}}",
         "recipientPhoneNumber": "={{$json.recipientPhoneNumber}}",
-        "template": "={{$json.template}}"
+        "template": "={{$json.template}}",
+        "components": "={{$json.components}}"
       },
       "type": "n8n-nodes-base.whatsApp",
       "typeVersion": 1.1,
@@ -141,7 +143,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const items = $input.all();\nconst results = items.map((item) => {\n  const json = item.json || {};\n  const message = Array.isArray(json.messages) ? json.messages[0] : null;\n  const contact = Array.isArray(json.contacts) ? json.contacts[0] : null;\n  const recipient = contact?.wa_id || json.recipientPhoneNumber || json.to || '';\n  const errorMessage = json.error?.message || json.message || json.errorDescription || '';\n  const ok = Boolean(message?.id || json.messaging_product || json.metaMessageId) && !errorMessage;\n  return {\n    phoneNumber: recipient,\n    to: recipient,\n    ok,\n    status: ok ? (message?.message_status || 'accepted') : 'failed',\n    metaMessageId: message?.id || json.metaMessageId || '',\n    templateName: json.templateName || '',\n    messageType: json.type || 'template',\n    error: ok ? '' : errorMessage || 'WhatsApp send failed in n8n',\n    debug: {\n      sender: 'n8n_native_whatsapp_node',\n      messageType: json.type || 'template',\n      templateName: json.templateName || '',\n      templateLanguage: json.language || '',\n      recipient,\n      metaMessageId: message?.id || json.metaMessageId || '',\n      raw: json,\n    },\n  };\n});\nreturn [{ json: { ok: results.every((result) => result.ok), results } }];"
+        "jsCode": "const items = $input.all();\nconst results = items.map((item) => {\n  const json = item.json || {};\n  const itemError = item.error || {};\n  const nestedError = json.body?.error || json.data?.error || json.error || {};\n  const message = json.messages?.[0] || json.body?.messages?.[0] || json.data?.messages?.[0] || null;\n  const contact = json.contacts?.[0] || json.body?.contacts?.[0] || json.data?.contacts?.[0] || null;\n  const recipient = contact?.wa_id || json.recipientPhoneNumber || json.to || '';\n  const errorMessage = String(\n    nestedError?.message ||\n    nestedError?.error_user_msg ||\n    itemError?.message ||\n    json.message ||\n    json.errorDescription ||\n    ''\n  );\n  const metaError = nestedError && typeof nestedError === 'object' ? {\n    message: nestedError.message || nestedError.error_user_msg || '',\n    type: nestedError.type || '',\n    code: nestedError.code || '',\n    errorSubcode: nestedError.error_subcode || '',\n    fbtrace_id: nestedError.fbtrace_id || '',\n  } : null;\n  const ok = Boolean(message?.id || json.metaMessageId) && !errorMessage;\n  return {\n    phoneNumber: recipient,\n    to: recipient,\n    ok,\n    status: ok ? (message?.message_status || 'accepted') : 'failed',\n    metaMessageId: message?.id || json.metaMessageId || '',\n    templateName: json.templateName || '',\n    messageType: json.type || 'template',\n    error: ok ? '' : errorMessage || 'WhatsApp send failed in n8n; open Send Template to see the Meta response.',\n    metaError: ok ? null : metaError,\n    debug: {\n      sender: 'n8n_native_whatsapp_node',\n      messageType: json.type || 'template',\n      templateName: json.templateName || '',\n      templateLanguage: json.language || '',\n      recipient,\n      metaMessageId: message?.id || json.metaMessageId || '',\n      raw: json,\n      itemError,\n    },\n  };\n});\nreturn [{ json: { ok: results.length > 0 && results.every((result) => result.ok), results } }];"
       },
       "id": "d1661f55-3d61-4857-9cd4-9fbfbef82f98",
       "name": "Build LMS Send Response",

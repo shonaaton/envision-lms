@@ -18,6 +18,12 @@ function cleanEnv(value?: string) {
   return String(value || "").trim().replace(/^["']|["']$/g, "");
 }
 
+function errorText(value: any) {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  return String(value.message || value.error_user_msg || value.error || JSON.stringify(value));
+}
+
 async function findUserByPhone(phoneNumber: string) {
   const variants = Array.from(new Set([
     phoneNumber,
@@ -144,15 +150,17 @@ export async function POST(req: Request) {
         }
         return NextResponse.json({ ok: true, templateName, language, sender: "n8n", results: queuedResults });
       }
+      const errorMessage = errorText(n8nSend.payload?.error || n8nSend.payload?.message) || `n8n returned HTTP ${n8nSend.response?.status || "unknown"}`;
       return NextResponse.json({
         ok: false,
+        error: errorMessage,
         templateName,
         language,
         sender: "n8n",
         results: [{
           phoneNumber: recipients.join(", "),
           ok: false,
-          error: n8nSend.payload?.error || `n8n returned HTTP ${n8nSend.response?.status || "unknown"}`,
+          error: errorMessage,
           debug: { sender: "n8n", webhookUrlConfigured: true, status: n8nSend.response?.status || null, payload: n8nSend.payload },
         }],
       }, { status: n8nSend.response?.ok ? 200 : 502 });

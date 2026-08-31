@@ -52,6 +52,12 @@ type InboxPayload = {
 
 const DEFAULT_NUMBERS = "918017996184, 916290349998";
 
+function sendErrorText(value: any) {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  return String(value.message || value.error_user_msg || value.error || JSON.stringify(value));
+}
+
 export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initialPhoneNumber?: string }) {
   const router = useRouter();
   const [tab, setTab] = useState<"all" | "active" | "closed" | "sent" | "automation">("all");
@@ -178,7 +184,13 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
     setTemplateResults(results);
     const sent = results.filter((item: any) => item.ok).length;
     const failed = results.filter((item: any) => !item.ok).length;
-    setNotice(res.ok ? `${nextTemplateName} sent to ${sent} contact${sent === 1 ? "" : "s"}${failed ? `, ${failed} failed` : ""}.` : payload.error || "Template send failed.");
+    const firstFailure = results.find((item: any) => !item.ok);
+    const failureMessage = sendErrorText(firstFailure?.error || firstFailure?.metaError || payload.error || payload.message);
+    setNotice(
+      res.ok && failed === 0
+        ? `${nextTemplateName} sent to ${sent} contact${sent === 1 ? "" : "s"}.`
+        : `${nextTemplateName} failed${failureMessage ? `: ${failureMessage}` : "."}`
+    );
     await loadInbox();
     if (sent > 0 && failed === 0) setTab("sent");
   }

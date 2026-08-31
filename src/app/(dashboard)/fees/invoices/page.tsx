@@ -1,14 +1,13 @@
 import { auth } from "@/lib/auth";
 import { resolvePublicAppUrl } from "@/lib/appUrl";
 import { dbConnect } from "@/lib/db";
-import { adjustedInvoicePayment, createInvoice, createNextMonthlyInvoiceAfterPayment, ensureMonthlyInvoices, markInvoicePaid as applyInvoicePayment } from "@/lib/fees";
+import { adjustedInvoicePayment, createInvoice, createNextMonthlyInvoiceAfterPayment, createPublicInvoiceUrl, ensureMonthlyInvoices, markInvoicePaid as applyInvoicePayment } from "@/lib/fees";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
 import { sendWhatsAppReminder } from "@/lib/whatsappAutomation";
 import { formatINR } from "@/lib/utils";
 import { CreditLedger, DeletedInvoice, FeeAssignment, FeePlan, Invoice, Notification } from "@/models/Fee";
 import { Payment } from "@/models/Payment";
 import { User } from "@/models/User";
-import { createHash, randomBytes } from "crypto";
 import PayButton from "@/components/PayButton";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -29,21 +28,6 @@ type ReminderSummary = { sent: number; failed: number; missing: number; skipped:
 
 function paise(value: FormDataEntryValue | null) {
   return Math.round(Number(value || 0) * 100);
-}
-
-function hashInvoiceToken(token: string) {
-  return createHash("sha256").update(token).digest("hex");
-}
-
-async function createPublicInvoiceUrl(invoiceId: string) {
-  const baseUrl = resolvePublicAppUrl();
-  if (!baseUrl) return "";
-  const token = randomBytes(32).toString("base64url");
-  await Invoice.findByIdAndUpdate(invoiceId, {
-    publicDownloadTokenHash: hashInvoiceToken(token),
-    publicDownloadTokenExpiresAt: new Date(Date.now() + 45 * 24 * 60 * 60 * 1000),
-  });
-  return `${baseUrl}/api/fees/invoices/${invoiceId}/pdf?token=${encodeURIComponent(token)}`;
 }
 
 function deliveryStatus(delivery: ReminderDelivery) {

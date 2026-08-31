@@ -105,6 +105,14 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
     () => templateVariables.split(/\r?\n/).map((item) => item.trim()).filter(Boolean),
     [templateVariables]
   );
+  const templateGroups = useMemo(() => {
+    return WHATSAPP_TEMPLATE_DEFINITIONS.reduce<Record<string, typeof WHATSAPP_TEMPLATE_DEFINITIONS[number][]>>((groups, template) => {
+      const key = template.sourceAutomation || "Manual";
+      groups[key] = groups[key] || [];
+      groups[key].push(template);
+      return groups;
+    }, {});
+  }, []);
 
   function updateTemplateName(value: string) {
     setTemplateName(value);
@@ -112,6 +120,15 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
     if (!definition) return;
     setLanguage(definition.language);
     setTemplateVariables(templateSampleValues(value).join("\n"));
+  }
+
+  function selectAutomationTemplate(name: string) {
+    const definition = getWhatsAppTemplateDefinition(name);
+    if (!definition) return;
+    const variables = templateSampleValues(name);
+    setTemplateName(definition.name);
+    setLanguage(definition.language);
+    setTemplateVariables(variables.join("\n"));
   }
 
   function openConversation(phoneNumber: string) {
@@ -141,15 +158,19 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
   }
 
   async function sendTemplate() {
+    await sendTemplateRequest(templateName, language, orderedTemplateVariables);
+  }
+
+  async function sendTemplateRequest(nextTemplateName: string, nextLanguage: string, nextTemplateVariables: string[]) {
     setNotice("");
     const res = await fetch("/api/admin/whatsapp/template", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        templateName,
-        language,
+        templateName: nextTemplateName,
+        language: nextLanguage,
         recipients: recipients.split(/[\s,]+/).map((item) => item.trim()).filter(Boolean),
-        templateVariables: orderedTemplateVariables,
+        templateVariables: nextTemplateVariables,
       }),
     });
     const payload = await res.json().catch(() => ({}));
@@ -157,7 +178,7 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
     setTemplateResults(results);
     const sent = results.filter((item: any) => item.ok).length;
     const failed = results.filter((item: any) => !item.ok).length;
-    setNotice(res.ok ? `Template sent to ${sent} contact${sent === 1 ? "" : "s"}${failed ? `, ${failed} failed` : ""}.` : payload.error || "Template send failed.");
+    setNotice(res.ok ? `${nextTemplateName} sent to ${sent} contact${sent === 1 ? "" : "s"}${failed ? `, ${failed} failed` : ""}.` : payload.error || "Template send failed.");
     await loadInbox();
     if (sent > 0 && failed === 0) setTab("sent");
   }
@@ -205,8 +226,8 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
               <Sparkles size={18} />
             </div>
             <div>
-              <h2 className="text-lg font-black text-slate-950">Send Template</h2>
-              <p className="text-sm text-slate-500">Business-initiated messages use approved Meta templates.</p>
+              <h2 className="text-lg font-black text-slate-950">Manual Automation Sender</h2>
+              <p className="text-sm text-slate-500">Choose an approved automation, review the details, then send it manually.</p>
             </div>
           </div>
           <div className="mt-5 grid gap-4 sm:grid-cols-2">
@@ -222,6 +243,40 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
           </datalist>
           <div className="mt-4">
             <Field label="Recipients" value={recipients} onChange={setRecipients} />
+          </div>
+          <div className="mt-5">
+            <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-black uppercase tracking-[0.14em] text-slate-500">Manual automation controls</h3>
+                <p className="mt-1 text-sm text-slate-500">Pick an automation to load its approved template and sample variables.</p>
+              </div>
+              <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">{WHATSAPP_TEMPLATE_DEFINITIONS.length} templates</span>
+            </div>
+            <div className="max-h-[430px] space-y-3 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-3">
+              {Object.entries(templateGroups).map(([groupName, templates]) => (
+                <div key={groupName} className="rounded-lg border border-slate-200 bg-white p-3">
+                  <div className="mb-2 text-xs font-black uppercase tracking-[0.12em] text-slate-500">{groupName}</div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {templates.map((template) => (
+                      <button
+                        key={template.name}
+                        onClick={() => selectAutomationTemplate(template.name)}
+                        className={`flex min-h-12 items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left text-sm font-bold transition ${templateName === template.name ? "border-emerald-300 bg-emerald-50 text-emerald-900" : "border-slate-200 bg-white text-slate-800 hover:border-emerald-200 hover:bg-emerald-50"}`}
+                        title={`Load ${template.name}`}
+                      >
+                        <span className="min-w-0">
+                          <span className="block truncate">{template.name}</span>
+                          <span className="mt-0.5 block text-xs font-semibold text-slate-500">{template.variables.length} variable{template.variables.length === 1 ? "" : "s"}</span>
+                        </span>
+                        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-emerald-600 text-white">
+                          <Bot size={14} />
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
           <div className="mt-4">
             <label className="block">
@@ -248,7 +303,7 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
           </div>
           <button onClick={sendTemplate} className="mt-5 inline-flex h-11 items-center gap-2 rounded-lg bg-emerald-600 px-5 text-sm font-bold text-white shadow-sm">
             <Send size={16} />
-            Send Template Now
+            Fire Automation Now
           </button>
           {templateResults.length ? (
             <div className="mt-5 overflow-hidden rounded-lg border border-slate-200">

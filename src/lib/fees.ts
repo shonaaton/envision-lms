@@ -1,9 +1,16 @@
 import { Types } from "mongoose";
 import { AcademySettings, CreditLedger, FeeAssignment, Invoice, Notification } from "@/models/Fee";
+import { Attendance } from "@/models/Attendance";
+import { Classroom } from "@/models/Classroom";
 import { Payment } from "@/models/Payment";
 import { User } from "@/models/User";
+import { sendAutomationEmail } from "@/lib/emailAutomation";
+import { academyDateKey, academyDateTime, formatAcademyDateTime } from "@/lib/academyTime";
+import { resolvePublicAppUrl } from "@/lib/appUrl";
 import { ACADEMY_DEFAULTS, ACADEMY_FAVICON_URL, ACADEMY_LOGO_URL, ACADEMY_SIGNATURE_URL } from "@/lib/branding";
 import { recordActivity } from "@/lib/activity";
+import { formatINR } from "@/lib/utils";
+import { createHash, randomBytes } from "crypto";
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -112,6 +119,21 @@ export function monthlyDueDate(startDate: Date, monthOffset = 0) {
 
 export function nextMonthlyDueDate(dueDate: Date) {
   return monthlyDueDate(dueDate, 1);
+}
+
+function hashInvoiceToken(token: string) {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+export async function createPublicInvoiceUrl(invoiceId: string) {
+  const baseUrl = resolvePublicAppUrl();
+  if (!baseUrl) return "";
+  const token = randomBytes(32).toString("base64url");
+  await Invoice.findByIdAndUpdate(invoiceId, {
+    publicDownloadTokenHash: hashInvoiceToken(token),
+    publicDownloadTokenExpiresAt: new Date(Date.now() + 45 * DAY),
+  });
+  return `${baseUrl}/api/fees/invoices/${invoiceId}/pdf?token=${encodeURIComponent(token)}`;
 }
 
 export async function updateLateFees(now = new Date()) {
@@ -487,6 +509,219 @@ export async function createNextMonthlyInvoiceAfterPayment(invoiceId: string) {
   });
 }
 
+function objectId(value: any) {
+  return value?._id?.toString?.() ?? value?.toString?.() ?? "";
+}
+
+function isOpenInvoice(invoice: any) {
+  return invoice && !["paid", "cancelled"].includes(String(invoice.status || ""));
+}
+
+function creditInvoiceDueDate(nextClassDate?: Date | null) {
+  const base = nextClassDate && !Number.isNaN(nextClassDate.getTime())
+    ? new Date(nextClassDate.getTime() - DAY)
+    : new Date();
+  const due = academyDateTime(academyDateKey(base), "23:59");
+  due.setSeconds(59, 999);
+  return due;
+}
+
+function sessionStartTime(session: any, classroom: any) {
+  const scheduledFor = session?.scheduledFor || classroom?.classDate || classroom?.startDate;
+  if (!scheduledFor) return null;
+  const date = new Date(scheduledFor);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+async function nextScheduledClassForStudent(
+  studentId: string,
+  afterDate?: Date | null,
+  exclude?: { classroomId?: string; sessionId?: string }
+) {
+  const afterTime = afterDate && !Number.isNaN(afterDate.getTime()) ? afterDate.getTime() : Date.now();
+  const classrooms: any[] = await Classroom.find({
+    students: new Types.ObjectId(studentId),
+    isActive: { $ne: false },
+    status: { $ne: "cancelled" },
+    isSessionInstance: { $ne: true },
+  }).select("title classDate startDate generatedSessions").lean();
+
+  return classrooms
+    .flatMap((classroom) => {
+      const sessions = Array.isArray(classroom.generatedSessions) && classroom.generatedSessions.length
+        ? classroom.generatedSessions
+        : [{ scheduledFor: classroom.classDate || classroom.startDate, status: classroom.status }];
+      return sessions.map((session: any) => ({ classroom, session, startsAt: sessionStartTime(session, classroom) }));
+    })
+    .filter(({ classroom, session, startsAt }) => {
+      const status = String(session?.status || "scheduled").toLowerCase();
+      const sessionId = objectId(session?._id);
+      const classroomId = objectId(classroom?._id);
+      if (exclude?.sessionId && sessionId === exclude.sessionId) return false;
+      if (!exclude?.sessionId && exclude?.classroomId && classroomId === exclude.classroomId && startsAt?.getTime() === afterTime) return false;
+      return startsAt && startsAt.getTime() > afterTime && !["cancelled", "completed", "student_no_show", "coach_no_show", "missed", "abandoned", "technical_issue"].includes(status);
+    })
+    .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime())[0] || null;
+}
+
+async function notifyCreditRechargeInvoice(input: {
+  student: any;
+  subAdmins: any[];
+  invoice: any;
+  invoiceUrl: string;
+  nextClass?: { classroom: any; session: any; startsAt: Date } | null;
+  created: boolean;
+}) {
+  const dueDateText = input.invoice.dueDate ? new Date(input.invoice.dueDate).toLocaleDateString("en-IN") : "Not set";
+  const nextClassText = input.nextClass?.startsAt
+    ? `${formatAcademyDateTime(input.nextClass.startsAt)} (${input.nextClass.classroom?.title || "Class"})`
+    : "Please check the academy dashboard for the next scheduled class.";
+  const studentMessage = [
+    `Hello ${input.student.name || "there"},`,
+    "",
+    "Your class credits are finished.",
+    input.created
+      ? `A new recharge invoice ${input.invoice.invoiceNumber} has been generated.`
+      : `Recharge invoice ${input.invoice.invoiceNumber} is already pending.`,
+    `Amount: ${formatINR(input.invoice.totalAmount)}.`,
+    `Due date: ${dueDateText}.`,
+    `Next class: ${nextClassText}`,
+    input.invoiceUrl ? `Invoice link: ${input.invoiceUrl}` : "Please log in to your student portal to view and pay the invoice.",
+  ].join("\n");
+  const parentMessage = studentMessage.replace(`Hello ${input.student.name || "there"},`, `Hello ${input.student.parentName || "Parent"},`);
+
+  await Notification.findOneAndUpdate(
+    { user: input.student._id, type: "credit_recharge_invoice", "metadata.invoice": input.invoice._id.toString() },
+    {
+      user: input.student._id,
+      type: "credit_recharge_invoice",
+      title: "Credit recharge invoice generated",
+      message: `Your class credits are finished. Invoice ${input.invoice.invoiceNumber} is due on ${dueDateText}.`,
+      metadata: { invoice: input.invoice._id.toString(), invoiceNumber: input.invoice.invoiceNumber, dueDate: input.invoice.dueDate, href: `/fees/invoices` },
+    },
+    { upsert: true, new: true }
+  );
+
+  const studentDeliveries = [];
+  if (input.student.email) {
+    studentDeliveries.push(sendAutomationEmail({
+      to: input.student.email,
+      subject: `Credit recharge invoice ${input.invoice.invoiceNumber}`,
+      message: studentMessage,
+      metadata: { kind: "credit_recharge_invoice", invoiceId: input.invoice._id.toString(), invoiceNumber: input.invoice.invoiceNumber, invoiceUrl: input.invoiceUrl, href: "/fees/invoices" },
+    }));
+  }
+  if (input.student.parentEmail) {
+    studentDeliveries.push(sendAutomationEmail({
+      to: input.student.parentEmail,
+      subject: `Credit recharge invoice for ${input.student.name || "student"}`,
+      message: parentMessage,
+      metadata: { kind: "credit_recharge_invoice_parent", invoiceId: input.invoice._id.toString(), invoiceNumber: input.invoice.invoiceNumber, invoiceUrl: input.invoiceUrl, href: "/fees/invoices" },
+    }));
+  }
+  await Promise.all(studentDeliveries);
+
+  await Promise.all(input.subAdmins.map(async (subAdmin) => {
+    const adminMessage = [
+      `Hello ${subAdmin.name || "there"},`,
+      "",
+      `${input.student.name || "A student"} has finished their class credits.`,
+      input.created
+        ? `A new recharge invoice ${input.invoice.invoiceNumber} has been generated.`
+        : `Recharge invoice ${input.invoice.invoiceNumber} is already pending.`,
+      `Amount: ${formatINR(input.invoice.totalAmount)}.`,
+      `Due date: ${dueDateText}.`,
+      `Next class: ${nextClassText}`,
+      input.invoiceUrl ? `Invoice link: ${input.invoiceUrl}` : "",
+    ].filter(Boolean).join("\n");
+    await Notification.create({
+      user: subAdmin._id,
+      type: "credit_recharge_invoice_admin",
+      title: "Student credits finished",
+      message: `${input.student.name || "A student"} needs a credit recharge before the next class.`,
+      metadata: { student: input.student._id.toString(), invoice: input.invoice._id.toString(), invoiceNumber: input.invoice.invoiceNumber, dueDate: input.invoice.dueDate, href: "/fees/invoices" },
+    });
+    if (subAdmin.email) {
+      await sendAutomationEmail({
+        to: subAdmin.email,
+        subject: `Credit recharge needed: ${input.student.name || "Student"}`,
+        message: adminMessage,
+        metadata: { kind: "credit_recharge_invoice_admin", studentId: input.student._id.toString(), invoiceId: input.invoice._id.toString(), invoiceNumber: input.invoice.invoiceNumber, invoiceUrl: input.invoiceUrl, href: "/fees/invoices" },
+      });
+    }
+  }));
+}
+
+async function createCreditRechargeInvoiceIfNeeded(input: {
+  studentId: string;
+  assignment: any;
+  attendanceId: string;
+}) {
+  const [student, plan, attendance]: any[] = await Promise.all([
+    User.findById(input.studentId).select("name email parentName parentEmail role isActive").lean(),
+    input.assignment?.plan ? FeeAssignment.findById(input.assignment._id).populate("plan").then((item: any) => item?.plan || null) : null,
+    Attendance.findById(input.attendanceId).select("classroom scheduledSessionId sessionDate").lean(),
+  ]);
+  if (!student || student.role !== "student" || student.isActive === false || !plan || plan.isActive === false) return null;
+
+  const afterDate = attendance?.sessionDate ? new Date(attendance.sessionDate) : new Date();
+  const nextClass = await nextScheduledClassForStudent(input.studentId, afterDate, {
+    classroomId: objectId(attendance?.classroom),
+    sessionId: String(attendance?.scheduledSessionId || ""),
+  });
+  const dueDate = creditInvoiceDueDate(nextClass?.startsAt || null);
+  const openInvoice: any = await Invoice.findOne({
+    student: input.studentId,
+    assignment: input.assignment._id,
+    type: "credits",
+    status: { $nin: ["paid", "cancelled"] },
+  }).sort({ createdAt: -1 });
+
+  const invoice = isOpenInvoice(openInvoice)
+    ? openInvoice
+    : await createInvoice({
+        student: input.studentId,
+        plan: plan._id.toString(),
+        assignment: input.assignment._id.toString(),
+        type: "credits",
+        title: `${plan.name} - Credit recharge`,
+        amount: plan.amount,
+        issueDate: new Date(),
+        dueDate,
+        credits: Number(plan.credits || 0),
+        invoiceMode: plan.gstMode || "non_gst",
+        gstPercentage: plan.gstPercentage || 0,
+        activity: { source: "backend", label: `Generated credit recharge invoice for ${student.name || "student"}` },
+      });
+
+  if (!isOpenInvoice(openInvoice) && invoice.dueDate?.getTime?.() !== dueDate.getTime()) {
+    invoice.dueDate = dueDate;
+    await invoice.save();
+  }
+
+  const invoiceUrl = await createPublicInvoiceUrl(invoice._id.toString());
+  const subAdmins: any[] = await User.find({ role: "sub-admin", isActive: { $ne: false } }).select("name email").lean();
+  await notifyCreditRechargeInvoice({ student, subAdmins, invoice, invoiceUrl, nextClass, created: !isOpenInvoice(openInvoice) });
+
+  await recordActivity({
+    targetUser: input.studentId,
+    type: "fees.credits.recharge_invoice",
+    label: `${isOpenInvoice(openInvoice) ? "Reused" : "Generated"} credit recharge invoice ${invoice.invoiceNumber}`,
+    entityType: "Invoice",
+    entityId: invoice._id.toString(),
+    metadata: {
+      invoiceNumber: invoice.invoiceNumber,
+      assignment: input.assignment._id.toString(),
+      attendance: input.attendanceId,
+      dueDate,
+      nextClassAt: nextClass?.startsAt || "",
+      nextClassroom: objectId(nextClass?.classroom?._id),
+    },
+  });
+
+  return invoice;
+}
+
 export async function consumeAttendanceCredit(studentId: string, attendanceId: string, note = "Credit deducted after attendance was marked") {
   const assignment: any = await FeeAssignment.findOne({ student: studentId, type: "credits" });
   if (!assignment) return;
@@ -536,5 +771,10 @@ export async function consumeAttendanceCredit(studentId: string, attendanceId: s
       },
       { upsert: true, new: true }
     );
+  }
+  if (shouldDeduct && nextBalance === 0) {
+    await createCreditRechargeInvoiceIfNeeded({ studentId, assignment, attendanceId }).catch((error) => {
+      console.error("Credit recharge invoice automation failed", error);
+    });
   }
 }

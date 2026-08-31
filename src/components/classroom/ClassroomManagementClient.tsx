@@ -251,6 +251,9 @@ export default function ClassroomManagementClient({
   const [form, setForm] = useState(blankForm());
   const [studentSearch, setStudentSearch] = useState("");
   const [coachSearch, setCoachSearch] = useState("");
+  const [overviewTab, setOverviewTab] = useState<"groups" | "calendar">("groups");
+  const [groupSearch, setGroupSearch] = useState("");
+  const [calendarDate, setCalendarDate] = useState(() => formatDateInput(new Date().toISOString()));
   const [filters, setFilters] = useState<{ coach: string; batch: string; student: string; course: string; level: string; status: SessionFilterStatus }>({
     coach: "",
     batch: groupFocus?.id || "",
@@ -379,6 +382,59 @@ export default function ClassroomManagementClient({
       })
       .filter((row) => row.classroomCount > 0);
   }, [filteredItems, targets.batches]);
+
+  const visibleGroupSummaries = useMemo(() => {
+    const query = groupSearch.trim().toLowerCase();
+    if (!query) return groupSummaries;
+    return groupSummaries.filter(({ batch, courseNames, levelNames }) =>
+      [batch.name, batch.level, ...courseNames, ...levelNames]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(query))
+    );
+  }, [groupSearch, groupSummaries]);
+
+  const overviewRows = useMemo(() => {
+    return dedupeSessionRows(flattenScheduledSessions(filteredItems))
+      .filter((row) => row.start)
+      .sort((a, b) => (a.start?.getTime() || 0) - (b.start?.getTime() || 0));
+  }, [filteredItems]);
+
+  const selectedDateRows = useMemo(() => {
+    return overviewRows.filter((row) => row.start && formatDateInput(row.start.toISOString()) === calendarDate);
+  }, [calendarDate, overviewRows]);
+
+  const upcomingRows = useMemo(() => {
+    const now = new Date();
+    return overviewRows
+      .filter((row) => isSessionUpcomingLike(deriveScheduledSessionStatus(row.session, now)))
+      .slice(0, 5);
+  }, [overviewRows]);
+
+  const overviewMetrics = useMemo(() => {
+    const now = new Date();
+    const oneWeekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const ongoingCount = overviewRows.filter((row) => deriveScheduledSessionStatus(row.session, now) === "ongoing").length;
+    const upcomingCount = overviewRows.filter((row) => row.start && row.start >= now && row.start <= oneWeekFromNow).length;
+    const weekCount = overviewRows.filter((row) => row.start && row.start >= startOfWeek(now) && row.start <= endOfWeek(now)).length;
+    return {
+      groups: groupSummaries.length,
+      students: new Set(filteredItems.flatMap((item) => (item.students || []).map((student) => student._id))).size,
+      week: weekCount,
+      ongoing: ongoingCount,
+      upcoming: upcomingCount,
+    };
+  }, [filteredItems, groupSummaries.length, overviewRows]);
+
+  const weekOverview = useMemo(() => {
+    const start = startOfWeek(new Date());
+    return Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(start.getTime() + index * 24 * 60 * 60 * 1000);
+      const rows = overviewRows.filter((row) => row.start && formatDateInput(row.start.toISOString()) === formatDateInput(date.toISOString()));
+      const live = rows.filter((row) => ["ongoing", "join_available"].includes(deriveScheduledSessionStatus(row.session, new Date()))).length;
+      const upcoming = rows.filter((row) => isSessionUpcomingLike(deriveScheduledSessionStatus(row.session, new Date()))).length;
+      return { date, rows, live, upcoming };
+    });
+  }, [overviewRows]);
 
   const filteredAssignableStudents = useMemo(() => {
     const query = studentSearch.trim().toLowerCase();
@@ -1974,6 +2030,21 @@ function formatDateInput(value?: string) {
   }).formatToParts(new Date(value));
   const get = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value || "";
   return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
+function startOfWeek(date: Date) {
+  const copy = new Date(date);
+  const diff = (copy.getDay() + 6) % 7;
+  copy.setDate(copy.getDate() - diff);
+  copy.setHours(0, 0, 0, 0);
+  return copy;
+}
+
+function endOfWeek(date: Date) {
+  const copy = startOfWeek(date);
+  copy.setDate(copy.getDate() + 6);
+  copy.setHours(23, 59, 59, 999);
+  return copy;
 }
 
 function formatDuration(minutes: number) {

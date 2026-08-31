@@ -254,7 +254,7 @@ export default function ClassroomManagementClient({
   const [form, setForm] = useState(blankForm());
   const [studentSearch, setStudentSearch] = useState("");
   const [coachSearch, setCoachSearch] = useState("");
-  const [view, setView] = useState<"list" | "calendar">("list");
+  const [calendarDate, setCalendarDate] = useState(() => formatDateInput(new Date().toISOString()));
   const [filters, setFilters] = useState<{ coach: string; batch: string; student: string; course: string; level: string; status: SessionFilterStatus }>({
     coach: "",
     batch: groupFocus?.id || "",
@@ -374,6 +374,7 @@ export default function ClassroomManagementClient({
         const levelNames = uniqueText(batchItems.map((item) => item.levelName || batch.level || ""));
         return {
           batch,
+          items: batchItems,
           classroomCount: batchItems.length,
           sessionCount: sessions.length,
           upcomingCount: sessions.filter((row) => isSessionUpcomingLike(deriveScheduledSessionStatus(row.session, new Date()))).length,
@@ -385,10 +386,10 @@ export default function ClassroomManagementClient({
   }, [items, targets.batches]);
 
   const calendarSessions = useMemo(() => {
-    return filteredItems.flatMap((item) =>
-      (item.generatedSessions || [])
-      .filter((session: any) => !filters.status || deriveScheduledSessionStatus(session, new Date()) === filters.status)
-      .map((session: any) => ({
+    return dedupeSessionRows(flattenScheduledSessions(filteredItems))
+      .filter((row) => row.start)
+      .filter(({ session }: any) => !filters.status || deriveScheduledSessionStatus(session, new Date()) === filters.status)
+      .map(({ classroom: item, session }: any) => ({
         classroomId: item._id,
         title: item.title,
         topicName: session.topicName,
@@ -400,8 +401,7 @@ export default function ClassroomManagementClient({
         levelName: item.levelName || "",
         batchNames: batchNamesForItem(item, targets.batches),
         studentNames: studentNamesForItem(item),
-      }))
-    );
+      }));
   }, [filteredItems, filters.status, targets.batches]);
 
   const filteredAssignableStudents = useMemo(() => {
@@ -798,25 +798,43 @@ export default function ClassroomManagementClient({
             <div className="rounded-md border border-dashed border-slate-300 px-3 py-3 text-sm text-slate-500">No classroom groups found yet.</div>
           ) : (
             <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-              {groupSummaries.map(({ batch, classroomCount, sessionCount, upcomingCount, courseNames, levelNames }) => (
-                <div key={batch._id} className="flex items-center justify-between gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
-                  <div className="min-w-0">
-                    <Link href={`/classrooms/groups/${batch._id}`} className="truncate text-sm font-bold text-slate-950 hover:text-brand" title={batch.name}>
-                      {batch.name}
+              {groupSummaries.map(({ batch, items: batchItems, classroomCount, sessionCount, upcomingCount, courseNames, levelNames }) => (
+                <div key={batch._id} className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <Link href={`/classrooms/groups/${batch._id}`} className="truncate text-sm font-bold text-slate-950 hover:text-brand" title={batch.name}>
+                        {batch.name}
+                      </Link>
+                      <div className="mt-0.5 truncate text-xs text-slate-500" title={`${courseNames.join(", ") || "Course not set"} - ${levelNames.join(", ") || "Level not set"}`}>
+                        {courseNames.join(", ") || "Course not set"} - {levelNames.join(", ") || "Level not set"}
+                      </div>
+                      <div className="mt-1 flex flex-wrap gap-1.5 text-[11px] font-semibold text-slate-600">
+                        <span>{batch.students?.length || 0} students</span>
+                        <span>{classroomCount} classrooms</span>
+                        <span>{sessionCount} classes</span>
+                        <span>{upcomingCount} upcoming</span>
+                      </div>
+                    </div>
+                    <Link href={`/classrooms/groups/${batch._id}`} className="shrink-0 rounded-md bg-brand px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-brand/90">
+                      Open
                     </Link>
-                    <div className="mt-0.5 truncate text-xs text-slate-500" title={`${courseNames.join(", ") || "Course not set"} - ${levelNames.join(", ") || "Level not set"}`}>
-                      {courseNames.join(", ") || "Course not set"} - {levelNames.join(", ") || "Level not set"}
-                    </div>
-                    <div className="mt-1 flex flex-wrap gap-1.5 text-[11px] font-semibold text-slate-600">
-                      <span>{batch.students?.length || 0} students</span>
-                      <span>{classroomCount} classrooms</span>
-                      <span>{sessionCount} classes</span>
-                      <span>{upcomingCount} upcoming</span>
-                    </div>
                   </div>
-                  <Link href={`/classrooms/groups/${batch._id}`} className="shrink-0 rounded-md bg-brand px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-brand/90">
-                    Open
-                  </Link>
+                  <details className="mt-2 rounded-md border border-slate-200 bg-white">
+                    <summary className="cursor-pointer select-none px-3 py-1.5 text-xs font-bold text-slate-700">
+                      Individual classes ({sessionCount})
+                    </summary>
+                    <div className="border-t border-slate-200 p-2">
+                      <GroupClassSessionList
+                        items={batchItems}
+                        targets={targets}
+                        statusFilter={filters.status}
+                        role={role}
+                        permissions={permissions}
+                        setActionModal={setActionModal}
+                        setActionDraft={setActionDraft}
+                      />
+                    </div>
+                  </details>
                 </div>
               ))}
             </div>
@@ -838,24 +856,13 @@ export default function ClassroomManagementClient({
         />
       </div>
 
-      <div className="inline-flex w-fit flex-none rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
-        <button className={cn("rounded-md px-3 py-2 text-sm font-semibold transition", view === "list" ? "bg-brand text-white" : "text-slate-700 hover:bg-slate-50")} onClick={() => setView("list")}>List</button>
-        <button className={cn("rounded-md px-3 py-2 text-sm font-semibold transition", view === "calendar" ? "bg-brand text-white" : "text-slate-700 hover:bg-slate-50")} onClick={() => setView("calendar")}>Calendar</button>
-      </div>
-
       <div className="rounded-lg border border-brand/10 bg-white shadow-xl shadow-brand/5">
-        {view === "list" ? (
+        {groupFocus ? (
           <div className="p-3">
             {loading ? (
               <div className="rounded-xl bg-slate-50 p-6 text-sm text-slate-500">Loading classes...</div>
             ) : filteredItems.length === 0 ? (
               <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">No classes match the current filters.</div>
-            ) : groupFocus ? (
-              <GroupClassSessionList
-                items={filteredItems}
-                targets={targets}
-                statusFilter={filters.status}
-              />
             ) : (
               <div className="space-y-2">
                 {filteredItems.map((item) => {
@@ -875,17 +882,11 @@ export default function ClassroomManagementClient({
                             <div className="min-w-0">
                               <div className="truncate text-base font-bold text-slate-950" title={item.title}>{item.title}</div>
                               <div className="mt-1 flex flex-wrap gap-1.5 text-xs">
-                              <span className="rounded-full bg-brand/10 px-2 py-0.5 font-semibold text-brand">{item.classroomType === "single" ? "Single" : "Series"}</span>
-                              {item.isTestClassroom && <span className="rounded-full bg-violet-50 px-2.5 py-1 font-bold text-violet-700">Test Classroom</span>}
-                              <span className="rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-600">{titleCase(item.status)}</span>
-                              {item.courseName && <span className="rounded-full bg-amber-50 px-2 py-0.5 font-semibold text-amber-700">{item.courseName}</span>}
-                              {item.levelName && <span className="rounded-full bg-sky-50 px-2 py-0.5 font-semibold text-sky-700">{item.levelName}</span>}
-                              {(item.batches || []).map((batch: any) => {
-                                const id = String(batch?._id || batch || "");
-                                const name = batch?.name || targets.batches.find((target) => target._id === id)?.name || "Batch";
-                                if (!id) return null;
-                                return <Link key={id} href={`/classrooms/groups/${id}`} className="rounded-full bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700 hover:bg-emerald-100" title={`Open ${name}`}>{name}</Link>;
-                              })}
+                                <span className="rounded-full bg-brand/10 px-2 py-0.5 font-semibold text-brand">{item.classroomType === "single" ? "Single" : "Series"}</span>
+                                {item.isTestClassroom && <span className="rounded-full bg-violet-50 px-2.5 py-1 font-bold text-violet-700">Test Classroom</span>}
+                                <span className="rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-600">{titleCase(item.status)}</span>
+                                {item.courseName && <span className="rounded-full bg-amber-50 px-2 py-0.5 font-semibold text-amber-700">{item.courseName}</span>}
+                                {item.levelName && <span className="rounded-full bg-sky-50 px-2 py-0.5 font-semibold text-sky-700">{item.levelName}</span>}
                               </div>
                             </div>
                             <div className="flex shrink-0 justify-start gap-1 lg:justify-end">
@@ -916,77 +917,22 @@ export default function ClassroomManagementClient({
                             </div>
                           ) : null}
 
-                          {item.classroomType === "series" && (item.generatedSessions?.length || 0) > 0 ? (
-                            <details className="rounded-md border border-slate-200 bg-slate-50">
-                              <summary className="cursor-pointer select-none px-3 py-1.5 text-xs font-bold text-slate-700">
-                                Classes ({item.generatedSessions?.length || 0})
-                              </summary>
-                              <div className="space-y-1.5 border-t border-slate-200 p-2">
-                                {(item.generatedSessions || []).map((scheduledSession: any, sessionIndex: number) => {
-                                  const sessionStatus = deriveScheduledSessionStatus(scheduledSession, new Date());
-                                  const isFinished = sessionStatus === "completed" || Boolean(scheduledSession.actualEndedAt);
-                                  const isCancelled = sessionStatus === "cancelled";
-                                  return (
-                                    <div key={String(scheduledSession._id || sessionIndex)} className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white p-2 lg:flex-row lg:items-center lg:justify-between">
-                                      <div className="min-w-0">
-                                        <div className="flex flex-wrap items-center gap-2">
-                                          <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Class {scheduledSession.sessionNumber || sessionIndex + 1}</span>
-                                          <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${sessionStatusTone(sessionStatus)}`}>{titleCase(sessionStatus)}</span>
-                                          {scheduledSession.originalDate ? <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-bold text-sky-700">Rescheduled</span> : null}
-                                          {scheduledSession.substituteCoach ? <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-bold text-violet-700">Coach: {assignedCoachName(item, scheduledSession)}</span> : null}
-                                        </div>
-                                        <div className="mt-0.5 truncate text-sm font-semibold text-slate-900">{scheduledSession.topicName || item.topicName || "Topic not set"}</div>
-                                        <div className="mt-0.5 text-xs text-slate-600">
-                                          {formatDate(scheduledSession.scheduledFor)} at {scheduledSession.startTime || item.startTime || "--"} IST - {formatDuration(Number(scheduledSession.durationMinutes || item.durationMinutes || 60))}
-                                        </div>
-                                      </div>
-                                      <div className="flex flex-wrap gap-1">
-                                        {permissions.edit && !isFinished && !isCancelled ? (
-                                          <ActionButton icon={<Pencil size={14} />} label="Edit" onClick={() => {
-                                            setActionModal({ type: "update_session", item, session: scheduledSession });
-                                            setActionDraft({ topicName: scheduledSession.topicName || "", classDate: formatDateInput(scheduledSession.scheduledFor), startTime: scheduledSession.startTime || item.startTime || "", durationMinutes: scheduledSession.durationMinutes || item.durationMinutes || 60 });
-                                          }} />
-                                        ) : null}
-                                        {permissions.edit && !isFinished && !isCancelled ? (
-                                          <ActionButton icon={<Clock3 size={14} />} label="Reschedule" onClick={() => {
-                                            setActionModal({ type: "reschedule_session", item, session: scheduledSession });
-                                            setActionDraft({ classDate: formatDateInput(scheduledSession.scheduledFor), startTime: scheduledSession.startTime || item.startTime || "", durationMinutes: scheduledSession.durationMinutes || item.durationMinutes || 60 });
-                                          }} />
-                                        ) : null}
-                                        {permissions.assign && !isFinished && !isCancelled ? (
-                                          <ActionButton icon={<UserCog size={14} />} label="Substitute Coach" onClick={() => {
-                                            setActionModal({ type: "substitute_coach", item, session: scheduledSession });
-                                            setActionDraft({ scope: "session", coach: "" });
-                                          }} />
-                                        ) : null}
-                                        {permissions.edit ? (
-                                          <ActionButton icon={<CheckSquare size={14} />} label="Outcome" onClick={() => {
-                                            setActionModal({ type: "mark_session_outcome", item, session: scheduledSession });
-                                            setActionDraft({ classOutcome: scheduledSession.summary?.classOutcome || scheduledSession.status || "completed", reason: "" });
-                                          }} />
-                                        ) : null}
-                                        {permissions.attendance && (role === "admin" || role === "sub-admin") && !isCancelled ? (
-                                          <IconAction href={attendanceHrefForSession(item, scheduledSession)} icon={<CheckSquare size={14} />} label="Mark attendance" />
-                                        ) : null}
-                                        {permissions.edit && (role === "admin" || role === "sub-admin") ? (
-                                          <ActionButton icon={<ListChecks size={14} />} label="Topic" onClick={() => {
-                                            setActionModal({ type: "change_session_topic", item, session: scheduledSession });
-                                            setActionDraft({ topicName: scheduledSession.topicName || item.topicName || "", reason: "" });
-                                          }} />
-                                        ) : null}
-                                        {permissions.cancel && !isFinished && !isCancelled ? (
-                                          <ActionButton icon={<X size={14} />} label="Cancel" onClick={() => { setActionModal({ type: "cancel_session", item, session: scheduledSession }); setActionDraft({}); }} />
-                                        ) : null}
-                                        {permissions.cancel && !isFinished ? (
-                                          <ActionButton icon={<Trash2 size={14} />} label="Delete" onClick={() => { setActionModal({ type: "delete_session", item, session: scheduledSession }); setActionDraft({}); }} />
-                                        ) : null}
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </details>
-                          ) : null}
+                          <details className="rounded-md border border-slate-200 bg-slate-50" open>
+                            <summary className="cursor-pointer select-none px-3 py-1.5 text-xs font-bold text-slate-700">
+                              Individual classes ({item.generatedSessions?.length || 0})
+                            </summary>
+                            <div className="border-t border-slate-200 p-2">
+                              <GroupClassSessionList
+                                items={[item]}
+                                targets={targets}
+                                statusFilter={filters.status}
+                                role={role}
+                                permissions={permissions}
+                                setActionModal={setActionModal}
+                                setActionDraft={setActionDraft}
+                              />
+                            </div>
+                          </details>
                         </div>
 
                         <div className="flex flex-none flex-col gap-2 xl:max-w-[220px] xl:items-end">
@@ -1015,7 +961,7 @@ export default function ClassroomManagementClient({
             )}
           </div>
         ) : (
-          <CalendarView sessions={calendarSessions} />
+          <CalendarView sessions={calendarSessions} selectedDate={calendarDate} onSelectedDateChange={setCalendarDate} />
         )}
       </div>
 
@@ -1722,6 +1668,8 @@ function SeriesScheduleEditor({
 
 function CalendarView({
   sessions,
+  selectedDate,
+  onSelectedDateChange,
 }: {
   sessions: Array<{
     title: string;
@@ -1735,48 +1683,50 @@ function CalendarView({
     batchNames?: string;
     studentNames?: string;
   }>;
+  selectedDate: string;
+  onSelectedDateChange: (value: string) => void;
 }) {
-  const grouped = sessions
+  const rows = sessions
     .slice()
     .sort((a, b) => new Date(a.scheduledFor).getTime() - new Date(b.scheduledFor).getTime())
-    .reduce((map, session) => {
-      const key = formatDate(session.scheduledFor);
-      if (!map[key]) map[key] = [];
-      map[key].push(session);
-      return map;
-    }, {} as Record<string, typeof sessions>);
+    .filter((session) => formatDateInput(session.scheduledFor) === selectedDate);
 
   return (
     <div className="min-h-0 overflow-auto p-3">
-      {Object.keys(grouped).length === 0 ? (
-        <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">No sessions in the current view.</div>
+      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Calendar</div>
+          <div className="text-sm font-semibold text-slate-950">Classes on {selectedDate ? formatDate(selectedDate) : "selected date"}</div>
+        </div>
+        <label className="block w-full sm:w-56">
+          <span className="mb-1 block text-xs font-bold text-slate-600">Select Date</span>
+          <input type="date" className="input h-10" value={selectedDate} onChange={(event) => onSelectedDateChange(event.target.value)} />
+        </label>
+      </div>
+      {rows.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">No individual classes on this date.</div>
       ) : (
-        <div className="space-y-3">
-          {Object.entries(grouped).map(([date, rows]) => (
-            <div key={date} className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-              <div className="mb-2 text-sm font-bold text-slate-950">{date}</div>
-              <div className="space-y-1.5">
-                {rows.map((row, index) => (
-                  <div key={`${date}-${index}`} className="grid gap-2 rounded-md bg-slate-50 px-3 py-2 text-xs md:grid-cols-[72px_minmax(150px,1.1fr)_minmax(130px,1fr)_minmax(110px,0.8fr)_minmax(120px,0.9fr)]">
-                    <div className="font-bold text-slate-800">{row.startTime}</div>
-                    <div className="min-w-0">
-                      <div className="truncate font-bold text-slate-950" title={row.title}>{row.title}</div>
-                      <div className="truncate text-slate-500" title={row.topicName}>{row.topicName}</div>
-                    </div>
-                    <div className="min-w-0">
-                      <div className="truncate font-semibold text-slate-700" title={row.batchNames || "Unassigned"}>{row.batchNames || "Unassigned"}</div>
-                      <div className="truncate text-slate-500" title={row.studentNames || ""}>{row.studentNames || "No students"}</div>
-                    </div>
-                    <div className="min-w-0">
-                      <div className="truncate font-semibold text-slate-700" title={row.courseName || "Course not set"}>{row.courseName || "Course not set"}</div>
-                      <div className="truncate text-slate-500" title={row.levelName || "Level not set"}>{row.levelName || "Level not set"}</div>
-                    </div>
-                    <div className="truncate text-slate-600" title={row.coachName}>{row.coachName}</div>
-                  </div>
-                ))}
+        <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+          <div className="space-y-1.5">
+            {rows.map((row, index) => (
+              <div key={`${selectedDate}-${index}`} className="grid gap-2 rounded-md bg-slate-50 px-3 py-2 text-xs md:grid-cols-[72px_minmax(150px,1.1fr)_minmax(130px,1fr)_minmax(110px,0.8fr)_minmax(120px,0.9fr)]">
+                <div className="font-bold text-slate-800">{row.startTime}</div>
+                <div className="min-w-0">
+                  <div className="truncate font-bold text-slate-950" title={row.title}>{row.title}</div>
+                  <div className="truncate text-slate-500" title={row.topicName}>{row.topicName}</div>
+                </div>
+                <div className="min-w-0">
+                  <div className="truncate font-semibold text-slate-700" title={row.batchNames || "Unassigned"}>{row.batchNames || "Unassigned"}</div>
+                  <div className="truncate text-slate-500" title={row.studentNames || ""}>{row.studentNames || "No students"}</div>
+                </div>
+                <div className="min-w-0">
+                  <div className="truncate font-semibold text-slate-700" title={row.courseName || "Course not set"}>{row.courseName || "Course not set"}</div>
+                  <div className="truncate text-slate-500" title={row.levelName || "Level not set"}>{row.levelName || "Level not set"}</div>
+                </div>
+                <div className="truncate text-slate-600" title={row.coachName}>{row.coachName}</div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -1787,10 +1737,18 @@ function GroupClassSessionList({
   items,
   targets,
   statusFilter,
+  role,
+  permissions,
+  setActionModal,
+  setActionDraft,
 }: {
   items: ClassroomItem[];
   targets: TargetsPayload;
   statusFilter: SessionFilterStatus;
+  role?: Role;
+  permissions?: ClassroomPermissions;
+  setActionModal?: React.Dispatch<React.SetStateAction<{ type: string; item: ClassroomItem | null; session?: any }>>;
+  setActionDraft?: React.Dispatch<React.SetStateAction<any>>;
 }) {
   const now = new Date();
   const rows = dedupeSessionRows(flattenScheduledSessions(items))
@@ -1810,8 +1768,11 @@ function GroupClassSessionList({
         const summaryHref = sessionId ? `/classrooms/${classroom._id}/summary?session=${sessionId}` : `/classrooms/${classroom._id}/summary`;
         const batchNames = batchNamesForItem(classroom, targets.batches);
         const studentNames = studentNamesForItem(classroom);
+        const isFinished = status === "completed" || Boolean(session.actualEndedAt);
+        const isCancelled = status === "cancelled";
+        const canOpenActions = permissions && role && setActionModal && setActionDraft;
         return (
-          <div key={`${classroom._id}-${sessionId || index}`} className="grid gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs shadow-sm lg:grid-cols-[minmax(170px,1.1fr)_minmax(150px,1fr)_minmax(150px,1fr)_minmax(120px,0.8fr)_96px] lg:items-center">
+          <div key={`${classroom._id}-${sessionId || index}`} className="grid gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs shadow-sm lg:grid-cols-[minmax(170px,1.1fr)_minmax(150px,1fr)_minmax(150px,1fr)_minmax(120px,0.8fr)_minmax(128px,auto)] lg:items-center">
             <div className="min-w-0">
               <Link href={summaryHref} className="truncate text-sm font-bold text-slate-950 hover:text-brand" title={classroom.title}>
                 {classroom.title}
@@ -1833,10 +1794,47 @@ function GroupClassSessionList({
               <div className="truncate text-slate-500" title={classroom.levelName || "Level not set"}>{classroom.levelName || "Level not set"}</div>
               <span className={cn("mt-1 inline-flex rounded-full px-2 py-0.5 text-[11px] font-bold", sessionStatusTone(status))}>{titleCase(status)}</span>
             </div>
-            <div className="flex justify-start lg:justify-end">
-              <Link href={summaryHref} className="inline-flex items-center gap-1 rounded-md bg-brand px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-brand/90">
-                <Eye size={13} /> Open
-              </Link>
+            <div className="flex flex-wrap justify-start gap-1 lg:justify-end">
+              <IconAction href={summaryHref} icon={<Eye size={14} />} label="Open class details" />
+              {canOpenActions && permissions.edit && !isFinished && !isCancelled ? (
+                <ActionButton icon={<Pencil size={14} />} label="Edit" onClick={() => {
+                  setActionModal({ type: "update_session", item: classroom, session });
+                  setActionDraft({ topicName: session.topicName || "", classDate: formatDateInput(session.scheduledFor), startTime: session.startTime || classroom.startTime || "", durationMinutes: session.durationMinutes || classroom.durationMinutes || 60 });
+                }} />
+              ) : null}
+              {canOpenActions && permissions.edit && !isFinished && !isCancelled ? (
+                <ActionButton icon={<Clock3 size={14} />} label="Reschedule" onClick={() => {
+                  setActionModal({ type: "reschedule_session", item: classroom, session });
+                  setActionDraft({ classDate: formatDateInput(session.scheduledFor), startTime: session.startTime || classroom.startTime || "", durationMinutes: session.durationMinutes || classroom.durationMinutes || 60 });
+                }} />
+              ) : null}
+              {canOpenActions && permissions.assign && !isFinished && !isCancelled ? (
+                <ActionButton icon={<UserCog size={14} />} label="Substitute Coach" onClick={() => {
+                  setActionModal({ type: "substitute_coach", item: classroom, session });
+                  setActionDraft({ scope: "session", coach: "" });
+                }} />
+              ) : null}
+              {canOpenActions && permissions.edit ? (
+                <ActionButton icon={<CheckSquare size={14} />} label="Outcome" onClick={() => {
+                  setActionModal({ type: "mark_session_outcome", item: classroom, session });
+                  setActionDraft({ classOutcome: session.summary?.classOutcome || session.status || "completed", reason: "" });
+                }} />
+              ) : null}
+              {permissions?.attendance && (role === "admin" || role === "sub-admin") && !isCancelled ? (
+                <IconAction href={attendanceHrefForSession(classroom, session)} icon={<CheckSquare size={14} />} label="Mark attendance" />
+              ) : null}
+              {canOpenActions && permissions.edit && (role === "admin" || role === "sub-admin") ? (
+                <ActionButton icon={<ListChecks size={14} />} label="Topic" onClick={() => {
+                  setActionModal({ type: "change_session_topic", item: classroom, session });
+                  setActionDraft({ topicName: session.topicName || classroom.topicName || "", reason: "" });
+                }} />
+              ) : null}
+              {canOpenActions && permissions.cancel && !isFinished && !isCancelled ? (
+                <ActionButton icon={<X size={14} />} label="Cancel" onClick={() => { setActionModal({ type: "cancel_session", item: classroom, session }); setActionDraft({}); }} />
+              ) : null}
+              {canOpenActions && permissions.cancel && !isFinished ? (
+                <ActionButton icon={<Trash2 size={14} />} label="Delete" onClick={() => { setActionModal({ type: "delete_session", item: classroom, session }); setActionDraft({}); }} />
+              ) : null}
             </div>
           </div>
         );

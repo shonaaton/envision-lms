@@ -32,6 +32,7 @@ export function ChessDashboardClient({ initialDashboard, selectedStudentId, view
   const [platform, setPlatform] = useState("ALL");
   const [timeControl, setTimeControl] = useState("all");
   const [loading, setLoading] = useState(false);
+  const [syncingAccountId, setSyncingAccountId] = useState<string | null>(null);
   const [accountForm, setAccountForm] = useState({ chessCom: "", lichess: "" });
   const canManage = viewerMode === "student" || viewerMode === "admin";
 
@@ -63,13 +64,24 @@ export function ChessDashboardClient({ initialDashboard, selectedStudentId, view
 
   async function syncNow(accountId: string) {
     setLoading(true);
+    setSyncingAccountId(accountId);
     const response = await fetch("/api/chess/sync", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ accountId, studentId: selectedStudentId }),
     });
-    if (!response.ok) alert((await response.json().catch(() => ({}))).error || "Could not start sync.");
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      alert(body.error || "Could not sync this chess account.");
+    } else if (body.status === "COMPLETED") {
+      const imported = Number(body.gamesImported || 0);
+      const duplicates = Number(body.duplicatesSkipped || 0);
+      if (imported || duplicates) alert(`Sync completed. Imported ${imported} game${imported === 1 ? "" : "s"} and skipped ${duplicates} duplicate${duplicates === 1 ? "" : "s"}.`);
+    } else if (body.status === "SYNCING") {
+      alert("A sync is already running for this account. Please try refreshing in a minute.");
+    }
     await reload();
+    setSyncingAccountId(null);
     setLoading(false);
   }
 
@@ -125,7 +137,9 @@ export function ChessDashboardClient({ initialDashboard, selectedStudentId, view
                 <div className="mt-2 text-xs text-slate-500">Last sync: {account.lastSyncedAt ? formatRelative(account.lastSyncedAt) : "Not synced yet"}</div>
                 {account.lastError && <div className="mt-2 rounded-md bg-rose-50 px-2 py-1 text-xs text-rose-700">{account.lastError}</div>}
                 <div className="mt-3 flex gap-2">
-                  <button className="btn-outline inline-flex items-center gap-2" onClick={() => syncNow(account.id)} disabled={loading}><RefreshCw size={14} /> Sync</button>
+                  <button className="btn-outline inline-flex items-center gap-2" onClick={() => syncNow(account.id)} disabled={loading}>
+                    <RefreshCw size={14} className={syncingAccountId === account.id ? "animate-spin" : ""} /> {syncingAccountId === account.id ? "Syncing..." : "Sync"}
+                  </button>
                   {canManage && <button className="btn-outline inline-flex items-center gap-2" onClick={() => unlink(account.id)} disabled={loading}><Unlink size={14} /> Remove</button>}
                 </div>
               </div>

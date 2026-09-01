@@ -110,7 +110,6 @@ export class LichessProvider implements ChessPlatformProvider {
       clocks: "false",
       evals: "false",
       opening: "true",
-      pgnInJson: "false",
       sort: "dateAsc",
     });
     if (options?.since) params.set("since", String(options.since.getTime()));
@@ -121,7 +120,7 @@ export class LichessProvider implements ChessPlatformProvider {
     });
     const pgnText = await response.text();
     const games = pgnText
-      .split(/\n\n(?=\[Event\s+")/g)
+      .split(/\n{2,}(?=\[Event\s+")/g)
       .map((pgn) => parseGameFromPgn(pgn, username, "LICHESS"))
       .filter((game): game is NonNullable<ReturnType<typeof parseGameFromPgn>> => Boolean(game))
       .filter((game) => !options?.since || game.playedAt >= options.since);

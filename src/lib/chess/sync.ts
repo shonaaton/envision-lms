@@ -8,6 +8,7 @@ import { getChessProvider } from "./providers";
 
 const SYNC_COOLDOWN_MS = 5 * 60 * 1000;
 const BACKGROUND_SYNC_AFTER_MS = 6 * 60 * 60 * 1000;
+const STALE_SYNC_AFTER_MS = 15 * 60 * 1000;
 
 export async function linkChessAccount(studentId: string, platform: ChessPlatform, username: string) {
   await dbConnect();
@@ -53,6 +54,35 @@ export async function startChessSync(studentId: string, accountId: string) {
   const job = await ChessSyncJob.create({ student: studentId, account: account._id, platform: account.platform, status: "PENDING" });
   void runChessSyncJob(job._id.toString()).catch((error) => console.error("Chess sync job failed", error));
   return job;
+}
+
+export async function syncChessAccountNow(studentId: string, accountId: string) {
+  await dbConnect();
+  const account: any = await ChessAccount.findOne({ _id: accountId, student: studentId, isActive: true });
+  if (!account) throw new Error("Chess account not found.");
+
+  let job: any = await ChessSyncJob.findOne({ account: account._id, status: { $in: ["PENDING", "SYNCING"] } }).sort({ createdAt: -1 });
+  if (job?.status === "SYNCING") {
+    const startedAt = job.startedAt ? new Date(job.startedAt).getTime() : new Date(job.createdAt).getTime();
+    if (Date.now() - startedAt < STALE_SYNC_AFTER_MS) {
+      return {
+        id: job._id.toString(),
+        status: job.status,
+        gamesFound: job.gamesFound || 0,
+        gamesImported: job.gamesImported || 0,
+        duplicatesSkipped: job.duplicatesSkipped || 0,
+      };
+    }
+    await ChessSyncJob.updateOne({ _id: job._id }, { $set: { status: "FAILED", completedAt: new Date(), error: "Previous sync became stale and was replaced." } });
+    job = null;
+  }
+
+  if (!job) {
+    job = await ChessSyncJob.create({ student: studentId, account: account._id, platform: account.platform, status: "PENDING" });
+  }
+
+  const result = await runChessSyncJob(job._id.toString());
+  return { id: job._id.toString(), status: "COMPLETED", ...result };
 }
 
 export async function enqueueDueChessSyncs(limit = 25) {

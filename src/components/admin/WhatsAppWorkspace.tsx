@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Bot, CheckCircle2, Clock3, MessageCircle, RefreshCw, Send, Sparkles, UserRound } from "lucide-react";
-import { WHATSAPP_TEMPLATE_DEFINITIONS, getWhatsAppTemplateDefinition, templateSampleValues } from "@/lib/whatsappTemplateRegistry";
+import { WHATSAPP_TEMPLATE_DEFINITIONS, type WhatsAppTemplateDefinition } from "@/lib/whatsappTemplateRegistry";
 
 type WaMessage = {
   id: string;
@@ -74,6 +74,7 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
   const [recipientMode, setRecipientMode] = useState<RecipientMode>("manual");
   const [recipients, setRecipients] = useState(DEFAULT_NUMBERS);
   const [templateVariables, setTemplateVariables] = useState("");
+  const [templates, setTemplates] = useState<WhatsAppTemplateDefinition[]>([...WHATSAPP_TEMPLATE_DEFINITIONS]);
   const [notice, setNotice] = useState("");
   const [templateResults, setTemplateResults] = useState<any[]>([]);
   const bottomRef = useRef<HTMLDivElement | null>(null);
@@ -95,6 +96,20 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
     const interval = window.setInterval(() => void loadInbox({ quiet: true }), 5000);
     return () => window.clearInterval(interval);
   }, [loadInbox]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadTemplates() {
+      const res = await fetch(`/api/admin/whatsapp/templates?t=${Date.now()}`, { cache: "no-store" });
+      const payload = await res.json().catch(() => ({}));
+      if (cancelled || !Array.isArray(payload.templates) || !payload.templates.length) return;
+      setTemplates(payload.templates);
+    }
+    void loadTemplates();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const refreshWhenVisible = () => {
@@ -126,19 +141,19 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
     [conversations, liveConversations, selectedPhone]
   );
   const selectedMessageKey = selected?.messages.map((message) => `${message.id}:${message.status}`).join("|") || "";
-  const selectedTemplateDefinition = useMemo(() => getWhatsAppTemplateDefinition(templateName), [templateName]);
+  const selectedTemplateDefinition = useMemo(() => findTemplateDefinition(templates, templateName), [templates, templateName]);
   const orderedTemplateVariables = useMemo(
     () => templateVariables.split(/\r?\n/).map((item) => item.trim()).filter(Boolean),
     [templateVariables]
   );
   const templateGroups = useMemo(() => {
-    return WHATSAPP_TEMPLATE_DEFINITIONS.reduce<Record<string, typeof WHATSAPP_TEMPLATE_DEFINITIONS[number][]>>((groups, template) => {
+    return templates.reduce<Record<string, WhatsAppTemplateDefinition[]>>((groups, template) => {
       const key = template.sourceAutomation || "Manual";
       groups[key] = groups[key] || [];
       groups[key].push(template);
       return groups;
     }, {});
-  }, []);
+  }, [templates]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -146,16 +161,16 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
 
   function updateTemplateName(value: string) {
     setTemplateName(value);
-    const definition = getWhatsAppTemplateDefinition(value);
+    const definition = findTemplateDefinition(templates, value);
     if (!definition) return;
     setLanguage(definition.language);
-    setTemplateVariables(templateSampleValues(value).join("\n"));
+    setTemplateVariables(templateSampleValues(definition).join("\n"));
   }
 
   function selectAutomationTemplate(name: string) {
-    const definition = getWhatsAppTemplateDefinition(name);
+    const definition = findTemplateDefinition(templates, name);
     if (!definition) return;
-    const variables = templateSampleValues(name);
+    const variables = templateSampleValues(definition);
     setTemplateName(definition.name);
     setLanguage(definition.language);
     setTemplateVariables(variables.join("\n"));
@@ -273,7 +288,7 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
             <Field label="Language" value={language} onChange={setLanguage} />
           </div>
           <datalist id="whatsapp-template-options">
-            {WHATSAPP_TEMPLATE_DEFINITIONS.map((template) => (
+            {templates.map((template) => (
               <option key={template.name} value={template.name}>
                 {template.sourceAutomation}
               </option>
@@ -300,7 +315,7 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
                 <h3 className="text-sm font-black uppercase tracking-[0.14em] text-slate-500">Manual automation controls</h3>
                 <p className="mt-1 text-sm text-slate-500">Pick an automation to load its approved template and sample variables.</p>
               </div>
-              <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">{WHATSAPP_TEMPLATE_DEFINITIONS.length} templates</span>
+              <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">{templates.length} templates</span>
             </div>
             <div className="max-h-[430px] space-y-3 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-3">
               {Object.entries(templateGroups).map(([groupName, templates]) => (
@@ -549,6 +564,19 @@ function Field({ label, value, onChange, listId }: { label: string; value: strin
       <input list={listId} value={value} onChange={(event) => onChange(event.target.value)} className="mt-2 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-emerald-500" />
     </label>
   );
+}
+
+function findTemplateDefinition(templates: WhatsAppTemplateDefinition[], name?: string) {
+  const cleanName = String(name || "").trim();
+  return templates.find((template) => template.name === cleanName) || null;
+}
+
+function templateSampleValues(template: WhatsAppTemplateDefinition) {
+  return (template.variables || [])
+    .slice()
+    .sort((a, b) => a.position - b.position)
+    .map((variable) => variable.sample)
+    .filter(Boolean);
 }
 
 function Avatar({ name }: { name: string }) {

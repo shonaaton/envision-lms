@@ -3,13 +3,10 @@ import Image from "next/image";
 import Link from "next/link";
 import {
   ArrowRight,
-  BellRing,
-  BookOpen,
   CalendarDays,
   CheckCircle2,
   ClipboardList,
   Crown,
-  CreditCard,
   Gamepad2,
   Globe2,
   MapPin,
@@ -23,7 +20,6 @@ import {
   Trophy,
   WalletCards,
 } from "lucide-react";
-import Logo from "@/components/layout/Logo";
 import AnimatedImpactCounters from "@/components/marketing/AnimatedImpactCounters";
 import DynamicLandingShowcase from "@/components/marketing/DynamicLandingShowcase";
 import TestimonialCarousel from "@/components/marketing/TestimonialCarousel";
@@ -153,7 +149,10 @@ export default async function Home() {
 
       <header className="sticky top-0 z-50 border-b border-white/10 bg-[#17051f]/95 text-white backdrop-blur-xl">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
-          <Logo tone="yellow" className="max-w-[178px] sm:max-w-[230px]" />
+          <Link href="/" className="leading-none text-accent" aria-label="Envision Chess Academy home">
+            <span className="block text-lg font-extrabold tracking-normal sm:text-xl">ENVISION</span>
+            <span className="block text-[0.62rem] font-extrabold tracking-normal sm:text-[0.68rem]">CHESS ACADEMY</span>
+          </Link>
           <nav className="hidden items-center gap-5 xl:flex" aria-label="Main navigation">
             {navItems.map(([label, href]) => (
               <Link key={href} href={href} className="text-sm font-semibold text-white/72 hover:text-accent">
@@ -188,54 +187,39 @@ export default async function Home() {
         </div>
       </header>
 
-      <section className="relative isolate overflow-hidden bg-[#15051d] text-white">
-        <Image
-          src="/images/achievements/contact_sheet.jpg"
-          alt=""
-          fill
-          priority
-          sizes="100vw"
-          className="z-0 object-cover object-[82%_38%] opacity-100"
-        />
-        <div className="absolute inset-0 z-10 bg-[linear-gradient(90deg,rgba(13,9,18,0.95)_0%,rgba(22,7,31,0.82)_42%,rgba(22,7,31,0.28)_100%)]" />
-        <div className="absolute inset-x-0 bottom-0 z-10 h-24 bg-gradient-to-t from-[#f7f8fb] via-[#f7f8fb]/40 to-transparent" />
-        <div className="pointer-events-none absolute right-[max(2rem,calc((100vw-1280px)/2))] top-24 z-20 hidden h-[620px] w-[520px] overflow-hidden opacity-95 shadow-2xl shadow-black/30 lg:block [mask-image:linear-gradient(90deg,transparent_0%,black_18%,black_88%,transparent_100%)]">
-          <Image
-            src="/images/achievements/contact_sheet.jpg"
-            alt=""
-            fill
-            sizes="520px"
-            className="object-cover object-[76%_38%]"
-          />
-        </div>
-        <div className="relative z-30 mx-auto flex min-h-[calc(100dvh-112px)] max-w-7xl items-center px-4 py-12 sm:px-6 lg:px-8">
-          <div className="motion-rise max-w-3xl">
-            <p className="inline-flex items-center gap-2 border-l-2 border-accent bg-black/24 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-accent backdrop-blur">
+      <section className="relative isolate overflow-hidden bg-[#120519] text-white">
+        <div className="absolute inset-0 bg-[linear-gradient(118deg,#0b1018_0%,#16081f_47%,#220b2d_100%)]" />
+        <div className="absolute inset-0 opacity-[0.08] [background-image:linear-gradient(rgba(255,255,255,0.08)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.08)_1px,transparent_1px)] [background-size:64px_64px]" />
+        <div className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-[#f7f8fb] via-[#f7f8fb]/20 to-transparent" />
+        <div className="relative mx-auto grid min-h-[calc(100dvh-82px)] max-w-7xl items-center gap-8 px-4 py-8 sm:px-6 lg:grid-cols-[0.86fr_1.14fr] lg:px-8">
+          <div className="motion-rise max-w-xl">
+            <p className="inline-flex items-center gap-2 border-l-2 border-accent bg-white/[0.045] px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-[0.12em] text-accent backdrop-blur">
               <ShieldCheck size={15} /> Premium Chess Mentorship
             </p>
-            <h1 className="mt-5 max-w-2xl text-4xl font-black leading-[1.04] text-white sm:text-5xl lg:text-6xl">
-              Envision Chess Academy
+            <h1 className="mt-4 max-w-xl text-[1.85rem] font-bold leading-[1.08] text-white sm:text-[2.25rem] lg:text-[2.7rem]">
+              Chess coaching that feels organised from day one.
             </h1>
-            <p className="mt-4 max-w-xl text-base leading-7 text-white/78 sm:text-lg">
-              Structured online and offline chess coaching with live classes, assignments, tournaments, coach feedback, payments, and student progress in one portal.
+            <p className="mt-4 max-w-lg text-sm leading-6 text-white/68 sm:text-[0.95rem]">
+              Live classes, homework, tournaments, coach feedback, payments, and progress tracking in one clear academy portal.
             </p>
-            <div className="mt-7 flex flex-col gap-3 sm:flex-row">
-              <Link href={demoHref} className="btn-accent min-h-12 px-6 shadow-lg shadow-accent/10">
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+              <Link href={demoHref} className="btn-accent min-h-11 px-5 shadow-lg shadow-accent/10">
                 Book Free Demo Class <ArrowRight size={18} />
               </Link>
-              <Link href="#achievements" className="btn min-h-12 border border-white/18 bg-white/[0.08] px-6 text-white backdrop-blur hover:bg-white/[0.14]">
-                View Achievers
+              <Link href="#platform" className="btn min-h-11 border border-white/14 bg-white/[0.055] px-5 text-white backdrop-blur hover:bg-white/[0.1]">
+                See Portal
               </Link>
             </div>
-            <div className="mt-8 grid max-w-2xl gap-3 sm:grid-cols-3">
+            <div className="mt-6 grid max-w-lg grid-cols-3 gap-2">
               {["Live batches", "Homework", "Progress"].map((label, index) => (
-                <div key={label} className="border-l border-accent/70 bg-black/26 px-4 py-3 backdrop-blur">
-                  <div className="text-xl font-black text-accent">{["6", "42", "92%"][index]}</div>
-                  <div className="mt-1 text-xs font-semibold text-white/64">{label}</div>
+                <div key={label} className="border-l border-white/12 bg-white/[0.035] px-3 py-2.5 backdrop-blur">
+                  <div className="text-lg font-extrabold text-accent">{["6", "42", "92%"][index]}</div>
+                  <div className="mt-0.5 text-[11px] font-semibold text-white/54">{label}</div>
                 </div>
               ))}
             </div>
           </div>
+          <DynamicLandingShowcase achievements={featuredAchievements} />
         </div>
       </section>
 
@@ -265,9 +249,6 @@ export default async function Home() {
                   </article>
                 );
               })}
-          </div>
-          <div className="mt-8">
-            <DynamicLandingShowcase achievements={featuredAchievements} />
           </div>
         </div>
       </section>
@@ -547,121 +528,6 @@ function JourneyStat({ label, value }: { label: string; value: string }) {
     <div className="border-l border-white/12 bg-white/[0.035] p-3 shadow-lg shadow-black/5 backdrop-blur">
       <div className="text-[10px] font-black uppercase tracking-[0.1em] text-accent/80">{label}</div>
       <div className="mt-1 text-sm font-black text-white">{value}</div>
-    </div>
-  );
-}
-
-function HeroAchievementStage({ achievements }: { achievements: ReturnType<typeof publicAchievementList> }) {
-  const active = achievements[0];
-  const left = achievements[1] || active;
-  const right = achievements[2] || active;
-
-  if (!active) return <PortalMockup />;
-
-  return (
-    <div className="relative mx-auto max-w-[430px] py-4 [perspective:1200px]">
-      <div className="absolute left-1/2 top-10 h-[72%] w-[66%] -translate-x-[62%] -rotate-[8deg] border border-teal-200/10 bg-teal-200/[0.035] shadow-xl shadow-black/20" />
-      <div className="absolute left-1/2 top-8 h-[74%] w-[66%] -translate-x-[30%] rotate-[7deg] border border-accent/10 bg-accent/[0.04] shadow-xl shadow-black/22" />
-      {left && (
-        <div className="absolute left-0 top-16 hidden h-[48%] w-[34%] -rotate-[9deg] overflow-hidden border border-white/10 bg-black/25 opacity-40 shadow-xl shadow-black/25 sm:block">
-          <Image src={left.achievementImageUrl} alt="" fill sizes="190px" className="object-cover" />
-        </div>
-      )}
-      {right && (
-        <div className="absolute right-0 top-10 hidden h-[50%] w-[34%] rotate-[8deg] overflow-hidden border border-white/10 bg-black/25 opacity-48 shadow-xl shadow-black/25 sm:block">
-          <Image src={right.achievementImageUrl} alt="" fill sizes="190px" className="object-cover" />
-        </div>
-      )}
-
-      <div className="relative z-10 rotate-[-2deg] transform-gpu transition duration-700 hover:rotate-0 hover:scale-[1.01]">
-        <div className="absolute -inset-2 translate-y-4 rotate-3 bg-black/28 blur-xl" />
-        <div className="relative overflow-hidden border border-white/14 bg-[#070b10]/84 shadow-[0_24px_70px_rgba(0,0,0,0.42)] backdrop-blur">
-          <div className="relative aspect-[1.02] min-h-[255px]">
-            <Image src={active.achievementImageUrl} alt="" fill priority sizes="(min-width: 1024px) 34vw, 100vw" className="scale-125 object-cover opacity-18 blur-2xl" />
-            <div className="absolute inset-0 bg-[linear-gradient(118deg,rgba(255,255,255,0.18),transparent_22%,transparent_58%,rgba(20,184,166,0.18))]" />
-            <Image src={active.achievementImageUrl} alt={`${active.studentName} achievement`} fill priority sizes="(min-width: 1024px) 34vw, 100vw" className="object-contain p-3 drop-shadow-2xl" />
-            <div className="absolute left-3 top-3 inline-flex items-center gap-2 bg-accent/95 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.06em] text-brand-900 shadow-lg shadow-accent/10">
-              <Trophy size={14} /> Achiever spotlight
-            </div>
-          </div>
-          <div className="border-t border-white/10 bg-black/18 px-4 py-3">
-            <div className="text-sm font-black leading-tight text-white">{active.studentName}</div>
-            <p className="mt-1 line-clamp-1 text-xs leading-5 text-white/60">{active.result}</p>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function PortalMockup({ light = false }: { light?: boolean }) {
-  const shell = light ? "border-slate-200 bg-white text-slate-950 shadow-xl shadow-brand-900/8" : "border-white/12 bg-[#171820]/78 text-white shadow-2xl shadow-black/35 backdrop-blur-xl";
-  const soft = light ? "bg-slate-50 border-slate-200 text-slate-600" : "bg-white/[0.045] border-white/10 text-white/62";
-  const heading = light ? "text-slate-950" : "text-white";
-
-  return (
-    <div className={`motion-rise rounded-lg border p-4 ${shell}`}>
-      <div className="mb-4 flex items-center justify-between gap-3 border-b border-current/10 pb-3">
-        <div>
-          <div className="text-xs font-black uppercase tracking-[0.14em] text-accent">Learning Portal</div>
-          <div className={`mt-1 text-lg font-black ${heading}`}>Progress Command Centre</div>
-        </div>
-        <span className="grid h-10 w-10 place-items-center rounded-lg bg-accent text-brand-900 shadow-lg shadow-accent/10">
-          <Trophy size={18} />
-        </span>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2">
-        {[
-          ["Next Class", "Today 6:30 PM", CalendarDays],
-          ["Assignments", "2 pending", ClipboardList],
-          ["Attendance", "92% this month", CheckCircle2],
-          ["Credits", "8 classes left", CreditCard],
-        ].map(([label, value, Icon]) => (
-          <div key={String(label)} className={`rounded-lg border p-3 ${soft}`}>
-            <Icon size={17} className={light ? "text-brand" : "text-accent"} />
-            <div className={`mt-2 text-sm font-black ${heading}`}>{value as string}</div>
-            <div className="mt-1 text-xs">{label as string}</div>
-          </div>
-        ))}
-      </div>
-      <div className="mt-3 grid gap-3 md:grid-cols-[0.9fr_1.1fr]">
-        <div className="grid gap-3">
-          {[
-            [CalendarDays, "Live Classes", "Join scheduled rooms"],
-            [ClipboardList, "Assignments", "Submit and review work"],
-            [Trophy, "Leaderboards", "Compete with academy students"],
-            [ShieldCheck, "Certificates", "Track milestones"],
-          ].map(([Icon, title, note]) => (
-            <div key={String(title)} className={`flex items-center gap-3 rounded-lg border p-3 ${soft}`}>
-              <span className={`grid h-9 w-9 place-items-center rounded-lg ${light ? "bg-brand/10 text-brand" : "bg-accent/10 text-accent"}`}>
-                <Icon size={17} />
-              </span>
-              <span>
-                <span className={`block text-sm font-black ${heading}`}>{title as string}</span>
-                <span className="block text-xs">{note as string}</span>
-              </span>
-            </div>
-          ))}
-        </div>
-        <div className="grid gap-3">
-          {[
-            [MessageSquare, "Ask Coach", "1 unread reply"],
-            [BellRing, "Notifications", "Tournament reminder"],
-            [Receipt, "Invoices", "PDF ready"],
-            [BookOpen, "Practice", "Tactics, King Hunt, Computer"],
-          ].map(([Icon, title, note]) => (
-            <div key={String(title)} className={`flex items-center gap-3 rounded-lg border p-3 ${soft}`}>
-              <span className={`grid h-9 w-9 place-items-center rounded-lg ${light ? "bg-brand/10 text-brand" : "bg-accent/10 text-accent"}`}>
-                <Icon size={17} />
-              </span>
-              <span>
-                <span className={`block text-sm font-black ${heading}`}>{title as string}</span>
-                <span className="block text-xs">{note as string}</span>
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
     </div>
   );
 }

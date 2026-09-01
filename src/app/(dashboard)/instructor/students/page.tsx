@@ -15,7 +15,7 @@ export default async function InstructorStudentsPage({ searchParams }: { searchP
   if (searchParams.studentId) {
     const access = await resolveAuthorizedChessStudent(searchParams.studentId, "view");
     if (!access) redirect("/instructor/students?forbidden=1");
-    const dashboard = await getChessDashboard(access.studentId, { period: "30d" });
+    const dashboard = await getChessDashboard(access.studentId, { period: "all" });
     return <ChessDashboardClient initialDashboard={dashboard} selectedStudentId={access.studentId} viewerMode="teacher" />;
   }
   const students = await getTeacherChessStudents((session.user as any).id);

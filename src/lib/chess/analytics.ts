@@ -46,30 +46,31 @@ export async function getChessDashboard(studentId: string, filters: ChessAnalyti
     };
   }
 
-  const range = dateRange(filters.period || "30d");
-  const gameFilter: Record<string, any> = { student: new Types.ObjectId(studentId), chessAccount: { $in: accountIds } };
-  if (range.from) gameFilter.playedAt = { $gte: range.from, $lte: range.to };
-  if (filters.platform && filters.platform !== "ALL") gameFilter.platform = filters.platform;
-  if (filters.timeControl && filters.timeControl !== "all") gameFilter.timeControlCategory = filters.timeControl;
-  if (filters.color && filters.color !== "all") gameFilter.studentColor = filters.color;
+  const range = dateRange(filters.period || "all");
+  const baseGameFilter: Record<string, any> = { student: new Types.ObjectId(studentId), chessAccount: { $in: accountIds } };
+  if (filters.platform && filters.platform !== "ALL") baseGameFilter.platform = filters.platform;
+  if (filters.timeControl && filters.timeControl !== "all") baseGameFilter.timeControlCategory = filters.timeControl;
+  if (filters.color && filters.color !== "all") baseGameFilter.studentColor = filters.color;
+  const periodGameFilter = range.from ? { ...baseGameFilter, playedAt: { $gte: range.from, $lte: range.to } } : baseGameFilter;
 
-  const [summary, byColor, ratingSeries, heatmap, recentGames, openings, opponentAnalytics, form, latestJobs] = await Promise.all([
-    resultSummary(gameFilter),
-    colorSummary(gameFilter),
+  const [summary, byColor, ratingSeries, heatmap, recentGames, openings, opponentAnalytics, form, latestJobs, totalImportedGames] = await Promise.all([
+    resultSummary(periodGameFilter),
+    colorSummary(periodGameFilter),
     getRatingSeries(studentId, accountIds, range.from),
-    getActivityHeatmap(studentId, accountIds),
-    getRecentGames(gameFilter),
-    getOpeningStats(gameFilter),
-    getOpponentAnalytics(gameFilter),
-    getForm(gameFilter),
+    getActivityHeatmap(baseGameFilter),
+    getRecentGames(baseGameFilter),
+    getOpeningStats(baseGameFilter),
+    getOpponentAnalytics(baseGameFilter),
+    getForm(baseGameFilter),
     ChessSyncJob.find({ account: { $in: accountIds } }).sort({ createdAt: -1 }).limit(8).lean(),
+    ChessGame.countDocuments(baseGameFilter),
   ]);
 
   return {
     connected: true,
     student: serializeStudent(student, studentId),
     accounts: accounts.map(serializeAccount),
-    summary: { ...summary, byColor },
+    summary: { ...summary, byColor, totalImportedGames },
     ratingSeries,
     heatmap: heatmap.days,
     heatmapSummary: heatmap.summary,
@@ -205,10 +206,10 @@ async function getRatingSeries(studentId: string, accountIds: any[], from?: Date
   });
 }
 
-async function getActivityHeatmap(studentId: string, accountIds: any[]) {
+async function getActivityHeatmap(baseFilter: Record<string, any>) {
   const from = new Date(Date.now() - 365 * DAY_MS);
   const rows = await ChessGame.aggregate([
-    { $match: { student: new Types.ObjectId(studentId), chessAccount: { $in: accountIds }, playedAt: { $gte: from } } },
+    { $match: { ...baseFilter, playedAt: { $gte: from } } },
     { $group: { _id: { $dateToString: { format: "%Y-%m-%d", date: "$playedAt" } }, count: { $sum: 1 }, wins: { $sum: { $cond: [{ $eq: ["$result", "win"] }, 1, 0] } } } },
     { $sort: { _id: 1 } },
   ]);

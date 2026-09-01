@@ -11,6 +11,6 @@ export default async function StudentChessProfilePage() {
   if (!session?.user) redirect("/login");
   if ((session.user as any).role !== "student") redirect("/dashboard");
   if (!(await canAccessFeature("playerAnalytics", session.user as any, "view"))) redirect("/dashboard?restricted=1");
-  const dashboard = await getChessDashboard((session.user as any).id, { period: "30d" });
+  const dashboard = await getChessDashboard((session.user as any).id, { period: "all" });
   return <ChessDashboardClient initialDashboard={dashboard} viewerMode="student" />;
 }

@@ -14,7 +14,7 @@ export default async function AdminPlayerAnalyticsPage({ searchParams }: { searc
   if (searchParams.studentId) {
     const access = await resolveAuthorizedChessStudent(searchParams.studentId, "view");
     if (!access) redirect("/admin/player-analytics?forbidden=1");
-    const dashboard = await getChessDashboard(access.studentId, { period: "30d" });
+    const dashboard = await getChessDashboard(access.studentId, { period: "all" });
     return <ChessDashboardClient initialDashboard={dashboard} selectedStudentId={access.studentId} viewerMode="admin" />;
   }
   const students = await getAdminChessStudents(searchParams.q, searchParams.status);

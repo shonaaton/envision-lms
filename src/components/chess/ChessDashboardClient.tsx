@@ -28,7 +28,7 @@ const timeControls = ["all", "rapid", "blitz", "bullet", "classical", "correspon
 
 export function ChessDashboardClient({ initialDashboard, selectedStudentId, viewerMode }: { initialDashboard: Dashboard; selectedStudentId?: string; viewerMode: "student" | "teacher" | "admin" }) {
   const [dashboard, setDashboard] = useState<Dashboard>(initialDashboard);
-  const [period, setPeriod] = useState("30d");
+  const [period, setPeriod] = useState("all");
   const [platform, setPlatform] = useState("ALL");
   const [timeControl, setTimeControl] = useState("all");
   const [loading, setLoading] = useState(false);
@@ -160,7 +160,7 @@ export function ChessDashboardClient({ initialDashboard, selectedStudentId, view
       </DataPanel>
 
       <div className="grid gap-3 md:grid-cols-4">
-        <StatCard label="Games" value={dashboard.summary.gamesPlayed} note={`${dashboard.summary.wins}W / ${dashboard.summary.draws}D / ${dashboard.summary.losses}L`} icon={CalendarDays} />
+        <StatCard label="Games" value={dashboard.summary.gamesPlayed} note={gamesNote(dashboard.summary, period)} icon={CalendarDays} />
         <StatCard label="Win Rate" value={`${dashboard.summary.winPercentage}%`} note="Selected range" icon={TrendingUp} tone="green" />
         <StatCard label="Active Days" value={dashboard.heatmapSummary.activeDays} note={`${dashboard.heatmapSummary.gamesThisMonth} games this month`} icon={BarChart3} tone="blue" />
         <StatCard label="Current Form" value={dashboard.form.last10.join(" ") || "-"} note={dashboard.form.currentStreak || "No streak"} icon={RefreshCw} tone="amber" />
@@ -377,6 +377,15 @@ function RecentGames({ games }: { games: any[] }) {
 
 function Metric({ label, value }: { label: string; value: any }) {
   return <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"><div className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">{label}</div><div className="mt-1 font-semibold text-slate-950">{value}</div></div>;
+}
+
+function gamesNote(summary: any, period: string) {
+  const resultText = `${summary.wins}W / ${summary.draws}D / ${summary.losses}L`;
+  const total = Number(summary.totalImportedGames || 0);
+  if (period !== "all" && total > Number(summary.gamesPlayed || 0)) {
+    return `${resultText} · ${total} imported all time`;
+  }
+  return resultText;
 }
 
 function latestRatings(series: any[]) {

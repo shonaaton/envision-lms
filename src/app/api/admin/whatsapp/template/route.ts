@@ -24,6 +24,40 @@ function errorText(value: any) {
   return String(value.message || value.error_user_msg || value.error || JSON.stringify(value));
 }
 
+function firstMetaMessageId(...values: any[]) {
+  for (const value of values) {
+    const messageId = String(
+      value?.metaMessageId ||
+        value?.messages?.[0]?.id ||
+        value?.body?.messages?.[0]?.id ||
+        value?.data?.messages?.[0]?.id ||
+        value?.debug?.rawResponse?.messages?.[0]?.id ||
+        value?.debug?.rawResponse?.body?.messages?.[0]?.id ||
+        value?.debug?.rawResponse?.data?.messages?.[0]?.id ||
+        ""
+    ).trim();
+    if (messageId) return messageId;
+  }
+  return "";
+}
+
+function n8nResultAccepted(item: any) {
+  const rawResponse = item?.debug?.rawResponse || {};
+  const explicitOk = item?.ok === true;
+  const hasMetaMessageId = Boolean(firstMetaMessageId(item, rawResponse));
+  const status = String(item?.status || rawResponse?.messages?.[0]?.message_status || "").toLowerCase();
+  const acceptedStatus = ["accepted", "sent", "queued", "delivered", "read"].includes(status);
+  return explicitOk || hasMetaMessageId || acceptedStatus;
+}
+
+function displayStatusForN8nResult(item: any) {
+  const rawResponse = item?.debug?.rawResponse || {};
+  const rawStatus = String(item?.status || rawResponse?.messages?.[0]?.message_status || "").toLowerCase();
+  if (["accepted", "sent", "queued", "delivered", "read", "failed"].includes(rawStatus)) return rawStatus;
+  if (firstMetaMessageId(item, rawResponse)) return "accepted";
+  return item?.ok ? "accepted" : "failed";
+}
+
 async function findUserByPhone(phoneNumber: string) {
   const variants = Array.from(new Set([
     phoneNumber,
@@ -98,6 +132,8 @@ export async function POST(req: Request) {
   for (const item of n8nResults) {
     const phoneNumber = normalizeWhatsAppNumber(String(item.phoneNumber || item.to || ""));
     const matchedUser: any = await findUserByPhone(phoneNumber);
+    const accepted = n8nResultAccepted(item);
+    const metaMessageId = firstMetaMessageId(item);
     await WhatsAppMessage.create({
       phoneNumber,
       contactName: matchedUser?.name || "",
@@ -107,20 +143,20 @@ export async function POST(req: Request) {
       text: messagePreview,
       templateName,
       templateLanguage: language,
-      status: item.ok ? String(item.status || "sent") : "failed",
-      metaMessageId: item.metaMessageId || undefined,
-      error: errorText(item.error || item.metaError),
+      status: accepted ? displayStatusForN8nResult(item) : "failed",
+      metaMessageId: metaMessageId || undefined,
+      error: accepted ? "" : errorText(item.error || item.metaError),
       rawPayload: { ...item, templateVariables, messagePreview },
       sentAt: new Date(),
     });
     results.push({
       phoneNumber,
       name: matchedUser?.name || "",
-      ok: Boolean(item.ok),
+      ok: accepted,
       skipped: false,
-      status: item.status,
-      error: errorText(item.error || item.metaError),
-      metaError: item.metaError || null,
+      status: accepted ? displayStatusForN8nResult(item) : item.status,
+      error: accepted ? "" : errorText(item.error || item.metaError),
+      metaError: accepted ? null : item.metaError || null,
       debug: { ...(item.debug || {}), sender: "n8n" },
     });
   }

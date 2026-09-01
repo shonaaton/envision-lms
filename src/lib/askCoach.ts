@@ -5,6 +5,7 @@ import { Notification } from "@/models/Fee";
 import { User } from "@/models/User";
 import { sendEmailAutomation } from "@/lib/emailAutomation";
 import { resolvePublicAppUrl } from "@/lib/appUrl";
+import { sendWhatsAppAutomationTemplate } from "@/lib/whatsappAutomationEvents";
 
 const badWords = ["abuse", "idiot", "stupid", "shut up", "bloody", "damn"];
 
@@ -36,9 +37,9 @@ export async function notifyUser(
   if (!user) return;
   const notification = await Notification.create({ user, type: "ask_coach", title, message, metadata });
   if (options.sendEmail === false) return notification;
-  const recipient: { email?: string; name?: string } | null = metadata?.email
-    ? { email: String(metadata.email), name: String(metadata.recipientName || "") }
-    : await User.findById(user).select("email name").lean<{ email?: string; name?: string } | null>();
+  const recipient: { email?: string; name?: string; phone?: string } | null = metadata?.email
+    ? { email: String(metadata.email), name: String(metadata.recipientName || ""), phone: String(metadata.phone || "") }
+    : await User.findById(user).select("email name phone").lean<{ email?: string; name?: string; phone?: string } | null>();
   if (recipient?.email) {
     await sendEmailAutomation({
       to: String(recipient.email),
@@ -51,6 +52,12 @@ export async function notifyUser(
       },
     });
   }
+  await sendWhatsAppAutomationTemplate({
+    user: { _id: user, name: recipient?.name || metadata?.recipientName || "", phone: recipient?.phone || metadata?.phone || "" },
+    templateName: "ask_coach_unread",
+    bodyParameters: [recipient?.name || metadata?.recipientName || "there", metadata?.senderName || metadata?.flaggedBy || "the academy"],
+    metadata: { ...metadata, notificationId: notification._id.toString(), kind: "ask_coach_notification" },
+  });
   return notification;
 }
 

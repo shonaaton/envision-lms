@@ -7,6 +7,7 @@ import { dbConnect } from "@/lib/db";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
 import { canAccessFeature } from "@/lib/featureAccess";
 import { recordActivity } from "@/lib/activity";
+import { sendWhatsAppAutomationTemplate } from "@/lib/whatsappAutomationEvents";
 import { Classroom } from "@/models/Classroom";
 import { Attendance } from "@/models/Attendance";
 import { Notification } from "@/models/Fee";
@@ -60,8 +61,8 @@ export async function POST(req: Request) {
 
   await dbConnect();
   const classroom: any = await Classroom.findById(classroomId)
-    .populate("coach instructor", "name username email")
-    .populate("generatedSessions.substituteCoach", "name username email")
+    .populate("coach instructor", "name username email phone")
+    .populate("generatedSessions.substituteCoach", "name username email phone")
     .lean();
   if (!classroom) return NextResponse.json({ error: "Classroom not found" }, { status: 404 });
 
@@ -128,6 +129,12 @@ export async function POST(req: Request) {
         metadata: { kind: "attendance_reminder", classroomId, sessionId, href },
       })
     : { delivered: false, skipped: true };
+  const whatsappResult = await sendWhatsAppAutomationTemplate({
+    user: coach,
+    templateName: "attendance_pending_coach",
+    bodyParameters: [coachName, classTitle, scheduleText],
+    metadata: { kind: "attendance_reminder", classroomId, sessionId, href },
+  });
 
   await recordActivity({
     actor: (session.user as any).id,
@@ -135,7 +142,7 @@ export async function POST(req: Request) {
     label: `Sent attendance reminder to ${coachName}`,
     entityType: "Classroom",
     entityId: classroomId,
-    metadata: { classroomId, sessionId, coachId, emailDelivered: Boolean((emailResult as any).delivered) },
+    metadata: { classroomId, sessionId, coachId, emailDelivered: Boolean((emailResult as any).delivered), whatsappDelivered: Boolean((whatsappResult as any).delivered) },
   });
 
   return NextResponse.json({
@@ -143,5 +150,7 @@ export async function POST(req: Request) {
     notified: true,
     emailDelivered: Boolean((emailResult as any).delivered),
     emailSkipped: Boolean((emailResult as any).skipped),
+    whatsappDelivered: Boolean((whatsappResult as any).delivered),
+    whatsappSkipped: Boolean((whatsappResult as any).skipped),
   });
 }

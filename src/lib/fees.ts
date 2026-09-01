@@ -11,6 +11,7 @@ import { ACADEMY_DEFAULTS, ACADEMY_FAVICON_URL, ACADEMY_LOGO_URL, ACADEMY_SIGNAT
 import { recordActivity } from "@/lib/activity";
 import { formatINR } from "@/lib/utils";
 import { createHash, randomBytes } from "crypto";
+import { sendWhatsAppAutomationTemplate, whatsappRecipientName } from "@/lib/whatsappAutomationEvents";
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -423,6 +424,18 @@ export async function markInvoicePaid(
       nextDueDate: nextDueDate || "",
     },
   });
+  const studentForPayment: any = await User.findById(invoice.student).select("name username phone").lean();
+  await sendWhatsAppAutomationTemplate({
+    user: studentForPayment,
+    templateName: "payment_recorded_student",
+    bodyParameters: [
+      whatsappRecipientName(studentForPayment || {}),
+      formatINR(invoice.totalAmount),
+      invoice.invoiceNumber,
+      finalPaymentId || transactions.map((transaction) => transaction.referenceNumber).filter(Boolean).join(", ") || "Recorded",
+    ],
+    metadata: { kind: "payment_recorded", invoiceId: invoice._id.toString(), invoiceNumber: invoice.invoiceNumber, payment: finalPaymentId || "" },
+  });
   if (invoice.type !== "credits" || !invoice.credits) return invoice;
 
   const assignment: any = await FeeAssignment.findOne({ student: invoice.student, type: "credits" });
@@ -620,6 +633,18 @@ async function notifyCreditRechargeInvoice(input: {
     }));
   }
   await Promise.all(studentDeliveries);
+  await sendWhatsAppAutomationTemplate({
+    user: input.student,
+    templateName: "invoice_available_student",
+    bodyParameters: [
+      whatsappRecipientName(input.student),
+      input.invoice.invoiceNumber,
+      input.invoice.title || "Credit recharge",
+      formatINR(input.invoice.totalAmount),
+      dueDateText,
+    ],
+    metadata: { kind: "credit_recharge_invoice", invoiceId: input.invoice._id.toString(), invoiceNumber: input.invoice.invoiceNumber, invoiceUrl: input.invoiceUrl, href: "/fees/invoices" },
+  });
 
   await Promise.all(input.subAdmins.map(async (subAdmin) => {
     const adminMessage = [
@@ -649,6 +674,12 @@ async function notifyCreditRechargeInvoice(input: {
         metadata: { kind: "credit_recharge_invoice_admin", studentId: input.student._id.toString(), invoiceId: input.invoice._id.toString(), invoiceNumber: input.invoice.invoiceNumber, invoiceUrl: input.invoiceUrl, href: "/fees/invoices" },
       });
     }
+    await sendWhatsAppAutomationTemplate({
+      user: subAdmin,
+      templateName: "invoice_due_admin_alert",
+      bodyParameters: [subAdmin.name || "Admin", input.invoice.invoiceNumber, input.student.name || "Student", "credit recharge needed", formatINR(input.invoice.totalAmount)],
+      metadata: { kind: "credit_recharge_invoice_admin", studentId: input.student._id.toString(), invoiceId: input.invoice._id.toString(), invoiceNumber: input.invoice.invoiceNumber, href: "/fees/invoices" },
+    });
   }));
 }
 
@@ -658,7 +689,7 @@ async function createCreditRechargeInvoiceIfNeeded(input: {
   attendanceId: string;
 }) {
   const [student, plan, attendance]: any[] = await Promise.all([
-    User.findById(input.studentId).select("name email parentName parentEmail role isActive").lean(),
+    User.findById(input.studentId).select("name email phone parentName parentEmail role isActive").lean(),
     input.assignment?.plan ? FeeAssignment.findById(input.assignment._id).populate("plan").then((item: any) => item?.plan || null) : null,
     Attendance.findById(input.attendanceId).select("classroom scheduledSessionId sessionDate").lean(),
   ]);
@@ -700,7 +731,7 @@ async function createCreditRechargeInvoiceIfNeeded(input: {
   }
 
   const invoiceUrl = await createPublicInvoiceUrl(invoice._id.toString());
-  const subAdmins: any[] = await User.find({ role: "sub-admin", isActive: { $ne: false } }).select("name email").lean();
+  const subAdmins: any[] = await User.find({ role: "sub-admin", isActive: { $ne: false } }).select("name email phone").lean();
   await notifyCreditRechargeInvoice({ student, subAdmins, invoice, invoiceUrl, nextClass, created: !isOpenInvoice(openInvoice) });
 
   await recordActivity({
@@ -771,6 +802,13 @@ export async function consumeAttendanceCredit(studentId: string, attendanceId: s
       },
       { upsert: true, new: true }
     );
+    const studentForCredits: any = await User.findById(studentId).select("name username phone").lean();
+    await sendWhatsAppAutomationTemplate({
+      user: studentForCredits,
+      templateName: nextBalance <= 0 ? "class_credit_empty" : "class_credit_low",
+      bodyParameters: nextBalance <= 0 ? [whatsappRecipientName(studentForCredits || {})] : [whatsappRecipientName(studentForCredits || {}), String(nextBalance)],
+      metadata: { kind: "low_credits", balance: nextBalance, threshold: lowCreditThreshold },
+    });
   }
   if (shouldDeduct && nextBalance === 0) {
     await createCreditRechargeInvoiceIfNeeded({ studentId, assignment, attendanceId }).catch((error) => {

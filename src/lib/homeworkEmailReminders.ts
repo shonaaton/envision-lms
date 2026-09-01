@@ -3,6 +3,7 @@ import { resolvePublicAppUrl } from "@/lib/appUrl";
 import { dbConnect } from "@/lib/db";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
 import { notifyFailure } from "@/lib/failureNotifications";
+import { sendWhatsAppAutomationTemplate } from "@/lib/whatsappAutomationEvents";
 import { Batch } from "@/models/Batch";
 import { Classroom } from "@/models/Classroom";
 import { Homework, HomeworkEmailReminder, Submission } from "@/models/Homework";
@@ -152,10 +153,10 @@ async function pendingStudentsForHomework(homework: any) {
   const pendingIds = recipientIds.filter((id) => !submittedIds.has(id));
   const students = pendingIds.length
     ? await User.find({ _id: { $in: pendingIds }, role: "student", isActive: { $ne: false } })
-      .select("name username email")
+      .select("name username email phone")
       .lean()
     : [];
-  return { classroom, students: students.filter((student: any) => Boolean(student.email)) };
+  return { classroom, students: students.filter((student: any) => Boolean(student.email || student.phone)) };
 }
 
 export async function queueHomeworkDeadlineReminders(homeworkInput: any) {
@@ -247,24 +248,41 @@ async function sendHomeworkReminderEmail(input: {
     assignmentUrl ? `Open homework: ${assignmentUrl}` : "Please sign in to your academy dashboard to complete the homework.",
   ].filter((line) => line !== "").join("\n");
 
-  return sendAutomationEmail({
-    to: String(input.student.email),
-    subject: copy.subject,
-    message,
-    htmlBody: `<p>Hello ${escapeHtml(studentName)},</p>
+  const email = input.student.email
+    ? await sendAutomationEmail({
+        to: String(input.student.email),
+        subject: copy.subject,
+        message,
+        htmlBody: `<p>Hello ${escapeHtml(studentName)},</p>
       <p>This is a reminder that <strong>${escapeHtml(title)}</strong> is ${escapeHtml(statusText)}.</p>
       ${classroomTitle ? `<p><strong>Classroom:</strong> ${escapeHtml(classroomTitle)}</p>` : ""}
       <p><strong>Submission deadline:</strong> ${escapeHtml(dueText)} (${escapeHtml(timeZoneLabel)})</p>
       ${assignmentUrl ? `<p><a href="${escapeHtml(assignmentUrl)}">Open homework</a></p>` : "<p>Please sign in to your academy dashboard to complete the homework.</p>"}`,
+        metadata: {
+          kind: "homework_reminder",
+          reminderKind: input.kind,
+          homeworkId,
+          classroomId: objectId(input.homework.classroom),
+          dueAt: input.homework.dueAt ? new Date(input.homework.dueAt).toISOString() : null,
+          href,
+        },
+      })
+    : { delivered: false, skipped: true };
+  const whatsapp = await sendWhatsAppAutomationTemplate({
+    user: input.student,
+    templateName: input.kind === "manual" && input.homework.dueAt && new Date(input.homework.dueAt).getTime() < Date.now()
+      ? "homework_overdue_reminder"
+      : "homework_due_reminder",
+    bodyParameters: [studentName, title, `${dueText} (${timeZoneLabel})`],
     metadata: {
       kind: "homework_reminder",
       reminderKind: input.kind,
       homeworkId,
       classroomId: objectId(input.homework.classroom),
-      dueAt: input.homework.dueAt ? new Date(input.homework.dueAt).toISOString() : null,
       href,
     },
   });
+  return { ...email, delivered: Boolean((email as any).delivered || whatsapp.delivered), whatsapp };
 }
 
 export async function processHomeworkEmailReminder(reminderId: unknown) {
@@ -308,14 +326,14 @@ export async function processHomeworkEmailReminder(reminderId: unknown) {
   }
 
   const [studentRecord, classroom] = await Promise.all([
-    User.findById(reminder.student).select("name username email isActive role").lean(),
+    User.findById(reminder.student).select("name username email phone isActive role").lean(),
     Classroom.findById(homework.classroom).select("title").lean(),
   ]);
   const student = studentRecord as any;
-  if (!student?.email || student.isActive === false || student.role !== "student") {
+  if ((!student?.email && !student?.phone) || student.isActive === false || student.role !== "student") {
     await HomeworkEmailReminder.updateOne(
       { _id: reminder._id, status: "processing" },
-      { $set: { status: "cancelled", cancelledAt: new Date(), lastError: "Student email is unavailable." }, $unset: { processingStartedAt: 1 } }
+      { $set: { status: "cancelled", cancelledAt: new Date(), lastError: "Student email or WhatsApp phone is unavailable." }, $unset: { processingStartedAt: 1 } }
     );
     return { processed: true, cancelled: true };
   }

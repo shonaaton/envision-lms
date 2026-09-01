@@ -20,6 +20,7 @@ import { Booking } from "@/models/Booking";
 import { DemoBooking } from "@/models/Onboarding";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
 import { normalizeGoogleMeetUrl } from "@/lib/meetingUrl";
+import { sendWhatsAppAutomationTemplates } from "@/lib/whatsappAutomationEvents";
 
 export const dynamic = "force-dynamic";
 
@@ -304,6 +305,34 @@ function rescheduleRequestSource(recipient: any, actor?: { id?: string; role?: s
   return "the academy";
 }
 
+function scheduleChangeWhatsAppTemplate(action: string) {
+  if (action === "cancel_series") return "class_series_cancelled";
+  if (action === "cancel_class" || action === "cancel_session") return "class_session_cancelled";
+  if (action === "shift_future_sessions") return "class_schedule_updated";
+  if (action === "permanent_schedule_change") return "class_permanent_timing_updated";
+  return "class_rescheduled";
+}
+
+function scheduleChangeWhatsAppParameters(input: {
+  action: string;
+  recipient: any;
+  classroom: any;
+  previousSession?: any;
+  currentSession?: any;
+  previousClassDate?: any;
+  restartDate?: string;
+}) {
+  const name = String(input.recipient?.name || input.recipient?.username || "there");
+  const classTitle = String(input.classroom?.title || "Class");
+  const previousTime = scheduleTimeLabel(input.previousSession?.scheduledFor || input.previousClassDate);
+  const nextTime = scheduleTimeLabel(input.currentSession?.scheduledFor || input.classroom?.classDate);
+  if (input.action === "cancel_series") return [name, classTitle];
+  if (input.action === "cancel_class" || input.action === "cancel_session") return [name, classTitle, previousTime || nextTime || "the scheduled class time"];
+  if (input.action === "shift_future_sessions") return [name, classTitle, nextTime || "the next scheduled class"];
+  if (input.action === "permanent_schedule_change") return [name, classTitle, nextTime || String(input.classroom?.startTime || "the new class time"), input.restartDate ? scheduleTimeLabel(input.restartDate) || input.restartDate : "now"];
+  return [name, classTitle, previousTime || "the previous class time", nextTime || "the new class time"];
+}
+
 async function notifyClassroomScheduleChange({
   classroom,
   action,
@@ -336,7 +365,7 @@ async function notifyClassroomScheduleChange({
   const recipientIds = Array.from(new Set([...coachIds.slice(0, 1), ...studentIds]));
   if (!recipientIds.length) return;
 
-  const recipients = await User.find({ _id: { $in: recipientIds }, isActive: { $ne: false } }).select("_id name email role").lean();
+  const recipients = await User.find({ _id: { $in: recipientIds }, isActive: { $ne: false } }).select("_id name email phone username role").lean();
   if (!recipients.length) return;
 
   const href = classroomHref(classroomId, sessionId || undefined);
@@ -393,6 +422,22 @@ async function notifyClassroomScheduleChange({
           metadata: { kind: "classroom_schedule_change", ...metadata, userId: recordId(recipient._id) },
         });
       })
+  );
+  await sendWhatsAppAutomationTemplates(
+    recipients.map((recipient: any) => ({
+      user: recipient,
+      templateName: scheduleChangeWhatsAppTemplate(action),
+      bodyParameters: scheduleChangeWhatsAppParameters({
+        action,
+        recipient,
+        classroom,
+        previousSession,
+        currentSession,
+        previousClassDate,
+        restartDate,
+      }),
+      metadata: { kind: "classroom_schedule_change", ...metadata, userId: recordId(recipient._id) },
+    }))
   );
 }
 

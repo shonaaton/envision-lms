@@ -2,6 +2,7 @@ import { ACADEMY_TIME_ZONE, formatAcademyDateTime } from "@/lib/academyTime";
 import { resolvePublicAppUrl } from "@/lib/appUrl";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
 import { queueHomeworkDeadlineReminders } from "@/lib/homeworkEmailReminders";
+import { sendWhatsAppAutomationTemplates, whatsappRecipientName } from "@/lib/whatsappAutomationEvents";
 import { Batch } from "@/models/Batch";
 import { Classroom } from "@/models/Classroom";
 import { User } from "@/models/User";
@@ -68,7 +69,7 @@ export async function notifyHomeworkAssigned(homework: any, request?: Request) {
     _id: { $in: recipientIds },
     role: "student",
     isActive: { $ne: false },
-  }).select("name email").lean();
+  }).select("name email phone username").lean();
   const appUrl = resolvePublicAppUrl(request);
   const assignmentId = objectId(homework._id);
   const href = assignmentId ? `/homework/${assignmentId}` : "/homework";
@@ -97,6 +98,25 @@ export async function notifyHomeworkAssigned(homework: any, request?: Request) {
           },
         });
       })
+  );
+  await sendWhatsAppAutomationTemplates(
+    students.map((student) => ({
+      user: student,
+      templateName: "homework_assigned",
+      bodyParameters: [
+        whatsappRecipientName(student),
+        String(homework.title || "Assignment"),
+        String((classroom as any)?.title || "Classroom"),
+        deadlineText(homework.dueAt),
+      ],
+      metadata: {
+        kind: "homework_assigned",
+        homeworkId: assignmentId,
+        classroomId,
+        dueAt: homework.dueAt ? new Date(homework.dueAt).toISOString() : null,
+        href,
+      },
+    }))
   );
   await queueHomeworkDeadlineReminders(homework);
 

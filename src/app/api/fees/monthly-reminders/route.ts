@@ -7,6 +7,7 @@ import { formatINR } from "@/lib/utils";
 import { Invoice, Notification } from "@/models/Fee";
 import { User } from "@/models/User";
 import { sendInvoiceOverdueEscalationEmail } from "@/lib/studentCommunicationEmails";
+import { sendWhatsAppAutomationTemplate } from "@/lib/whatsappAutomationEvents";
 
 export const dynamic = "force-dynamic";
 
@@ -47,7 +48,7 @@ function studentMessage(invoice: any, invoiceUrl: string, days: number) {
 
 async function notifyAdmins(invoice: any, days: number, invoiceUrl: string) {
   if (days !== 3 && days !== 0) return 0;
-  const admins: any[] = await User.find({ role: { $in: ["admin", "sub-admin"] }, isActive: { $ne: false } }).select("_id name email role").lean();
+  const admins: any[] = await User.find({ role: { $in: ["admin", "sub-admin"] }, isActive: { $ne: false } }).select("_id name email phone role").lean();
   const timing = days === 3 ? "is due in 3 days" : "is due today";
   await Notification.insertMany(admins.map((admin) => ({
     user: admin._id,
@@ -57,17 +58,24 @@ async function notifyAdmins(invoice: any, days: number, invoiceUrl: string) {
     metadata: { invoice: invoice._id.toString(), student: invoice.student._id.toString(), days, href: "/fees/invoices" },
   })), { ordered: false }).catch(() => null);
   for (const admin of admins) {
-    if (!admin.email) continue;
-    await sendAutomationEmail({
-      to: admin.email,
-      subject: `Monthly invoice ${timing}: ${invoice.student.name}`,
-      message: [
-        `Hello ${admin.name || "Admin"},`,
-        `Invoice ${invoice.invoiceNumber} for ${invoice.student.name} ${timing}.`,
-        `Amount: ${formatINR(invoice.totalAmount)}.`,
-        invoiceUrl ? `Invoice link: ${invoiceUrl}` : "Open the Fees > Invoices page to review it.",
-      ].join("\n\n"),
-      metadata: { kind: "monthly_invoice_admin_reminder", invoiceId: invoice._id.toString(), days },
+    if (admin.email) {
+      await sendAutomationEmail({
+        to: admin.email,
+        subject: `Monthly invoice ${timing}: ${invoice.student.name}`,
+        message: [
+          `Hello ${admin.name || "Admin"},`,
+          `Invoice ${invoice.invoiceNumber} for ${invoice.student.name} ${timing}.`,
+          `Amount: ${formatINR(invoice.totalAmount)}.`,
+          invoiceUrl ? `Invoice link: ${invoiceUrl}` : "Open the Fees > Invoices page to review it.",
+        ].join("\n\n"),
+        metadata: { kind: "monthly_invoice_admin_reminder", invoiceId: invoice._id.toString(), days },
+      });
+    }
+    await sendWhatsAppAutomationTemplate({
+      user: admin,
+      templateName: "invoice_due_admin_alert",
+      bodyParameters: [admin.name || "Admin", invoice.invoiceNumber, invoice.student.name || "Student", timing, formatINR(invoice.totalAmount)],
+      metadata: { kind: "monthly_invoice_admin_reminder", invoiceId: invoice._id.toString(), days, href: "/fees/invoices" },
     });
   }
   return admins.length;
@@ -130,6 +138,18 @@ async function processReminders(req: Request) {
         metadata: { kind: "monthly_invoice_parent_reminder", invoiceId: invoice._id.toString(), days },
       });
     }
+    await sendWhatsAppAutomationTemplate({
+      user: invoice.student,
+      templateName: days < 0 ? "invoice_overdue_reminder" : days === 0 ? "invoice_due_today" : "invoice_due_soon",
+      bodyParameters: [
+        invoice.student.name || "there",
+        invoice.invoiceNumber,
+        invoice.title || "Invoice",
+        new Date(invoice.dueDate).toLocaleDateString("en-IN"),
+        formatINR(invoice.totalAmount),
+      ],
+      metadata: { kind: "monthly_invoice_student_reminder", invoiceId: invoice._id.toString(), days, href: "/fees/invoices" },
+    });
     if (days === -3 || days === -7) {
       await sendInvoiceOverdueEscalationEmail({
         invoice,

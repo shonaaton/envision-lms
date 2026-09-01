@@ -18,6 +18,12 @@ function cleanEnv(value?: string) {
   return String(value || "").trim().replace(/^["']|["']$/g, "");
 }
 
+function normalizeTemplateLanguage(value?: string) {
+  const clean = cleanEnv(value || "en");
+  if (!clean || clean === "en_US" || clean === "en_GB" || clean === "en_UK") return "en";
+  return clean;
+}
+
 function errorText(value: any) {
   if (!value) return "";
   if (typeof value === "string") return value;
@@ -114,7 +120,7 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   const templateName = String(body.templateName || body.template_name || "hello_world_2").trim();
   const definition = getWhatsAppTemplateDefinition(templateName);
-  const language = String(body.language || body.language_code || definition?.language || "en_US").trim();
+  const language = normalizeTemplateLanguage(body.language || body.language_code || definition?.language || "en");
   const templateVariables = extractTemplateVariables(body);
   const messagePreview = renderWhatsAppTemplatePreview(templateName, templateVariables);
   const rawRecipients = Array.isArray(body.recipients) && body.recipients.length ? body.recipients : body.to ? [body.to] : DEFAULT_RECIPIENTS;

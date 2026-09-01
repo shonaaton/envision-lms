@@ -93,6 +93,7 @@ export async function POST(req: Request) {
     const welcomeEmail = await sendWelcomeEmail({
       name: u.name,
       email: u.email,
+      phone: u.phone,
       username,
       role: body.role,
       temporaryPassword: tempPassword,

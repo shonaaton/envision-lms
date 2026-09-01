@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Bot, CheckCircle2, Clock3, MessageCircle, RefreshCw, Send, Sparkles, UserRound } from "lucide-react";
 import { WHATSAPP_TEMPLATE_DEFINITIONS, getWhatsAppTemplateDefinition, templateSampleValues } from "@/lib/whatsappTemplateRegistry";
@@ -73,20 +73,36 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
   const [templateVariables, setTemplateVariables] = useState("");
   const [notice, setNotice] = useState("");
   const [templateResults, setTemplateResults] = useState<any[]>([]);
+  const bottomRef = useRef<HTMLDivElement | null>(null);
 
-  const loadInbox = useCallback(async () => {
-    setLoading(true);
-    const res = await fetch("/api/admin/whatsapp", { cache: "no-store" });
-    const payload = await res.json();
-    setData(payload);
-    setSelectedPhone((current) => current || initialPhoneNumber || payload.conversations?.[0]?.phoneNumber || payload.sentTemplates?.[0]?.phoneNumber || "");
-    setLoading(false);
+  const loadInbox = useCallback(async (options: { quiet?: boolean } = {}) => {
+    if (!options.quiet) setLoading(true);
+    try {
+      const res = await fetch(`/api/admin/whatsapp?t=${Date.now()}`, { cache: "no-store" });
+      const payload = await res.json();
+      setData(payload);
+      setSelectedPhone((current) => current || initialPhoneNumber || payload.conversations?.[0]?.phoneNumber || payload.sentTemplates?.[0]?.phoneNumber || "");
+    } finally {
+      if (!options.quiet) setLoading(false);
+    }
   }, [initialPhoneNumber]);
 
   useEffect(() => {
     void loadInbox();
-    const interval = window.setInterval(() => void loadInbox(), 30000);
+    const interval = window.setInterval(() => void loadInbox({ quiet: true }), 5000);
     return () => window.clearInterval(interval);
+  }, [loadInbox]);
+
+  useEffect(() => {
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") void loadInbox({ quiet: true });
+    };
+    window.addEventListener("focus", refreshWhenVisible);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      window.removeEventListener("focus", refreshWhenVisible);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
   }, [loadInbox]);
 
   useEffect(() => {
@@ -106,6 +122,7 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
     () => liveConversations.find((conversation) => conversation.phoneNumber === selectedPhone) || (!selectedPhone ? conversations[0] : undefined),
     [conversations, liveConversations, selectedPhone]
   );
+  const selectedMessageKey = selected?.messages.map((message) => `${message.id}:${message.status}`).join("|") || "";
   const selectedTemplateDefinition = useMemo(() => getWhatsAppTemplateDefinition(templateName), [templateName]);
   const orderedTemplateVariables = useMemo(
     () => templateVariables.split(/\r?\n/).map((item) => item.trim()).filter(Boolean),
@@ -119,6 +136,10 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
       return groups;
     }, {});
   }, []);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [selectedPhone, selectedMessageKey, tab]);
 
   function updateTemplateName(value: string) {
     setTemplateName(value);
@@ -160,7 +181,7 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
     }
     setReply("");
     setNotice("Reply sent.");
-    await loadInbox();
+    await loadInbox({ quiet: true });
   }
 
   async function sendTemplate() {
@@ -191,7 +212,7 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
         ? `${nextTemplateName} sent to ${sent} contact${sent === 1 ? "" : "s"}.`
         : `${nextTemplateName} failed${failureMessage ? `: ${failureMessage}` : "."}`
     );
-    await loadInbox();
+    await loadInbox({ quiet: true });
     if (sent > 0 && failed === 0) setTab("sent");
   }
 
@@ -215,7 +236,7 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
             </div>
           </div>
         </div>
-        <button onClick={loadInbox} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm shadow-slate-200/70 transition hover:border-emerald-200 hover:text-emerald-700">
+        <button onClick={() => void loadInbox()} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm shadow-slate-200/70 transition hover:border-emerald-200 hover:text-emerald-700">
           <RefreshCw size={15} />
           Refresh
         </button>
@@ -397,17 +418,20 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
                   </div>
                 </div>
               ) : (
-                selected.messages.map((message) => (
-                  <div key={message.id} className={`flex ${message.direction === "outbound" ? "justify-end" : "justify-start"}`}>
-                    <div className={`max-w-[78%] whitespace-pre-line rounded-lg px-4 py-3 text-sm leading-6 shadow-md ${message.direction === "outbound" ? "bg-white text-slate-800 shadow-slate-300/50" : "bg-teal-900 text-white shadow-teal-950/20"}`}>
-                      <div>{message.text}</div>
-                      {message.messageType === "template" && message.templateName ? (
-                        <div className={`mt-2 text-[11px] font-semibold ${message.direction === "outbound" ? "text-emerald-600" : "text-teal-100"}`}>{message.templateName}</div>
-                      ) : null}
-                      <div className={`mt-1 text-[11px] ${message.direction === "outbound" ? "text-slate-400" : "text-teal-100"}`}>{message.status} · {new Date(message.createdAt).toLocaleString()}</div>
+                <>
+                  {selected.messages.map((message) => (
+                    <div key={message.id} className={`flex ${message.direction === "outbound" ? "justify-end" : "justify-start"}`}>
+                      <div className={`max-w-[78%] whitespace-pre-line rounded-lg px-4 py-3 text-sm leading-6 shadow-md ${message.direction === "outbound" ? "bg-white text-slate-800 shadow-slate-300/50" : "bg-teal-900 text-white shadow-teal-950/20"}`}>
+                        <div>{message.text}</div>
+                        {message.messageType === "template" && message.templateName ? (
+                          <div className={`mt-2 text-[11px] font-semibold ${message.direction === "outbound" ? "text-emerald-600" : "text-teal-100"}`}>{message.templateName}</div>
+                        ) : null}
+                        <div className={`mt-1 text-[11px] ${message.direction === "outbound" ? "text-slate-400" : "text-teal-100"}`}>{message.status} · {new Date(message.createdAt).toLocaleString()}</div>
+                      </div>
                     </div>
-                  </div>
-                ))
+                  ))}
+                  <div ref={bottomRef} />
+                </>
               )}
             </div>
             <div className="shrink-0 border-t border-slate-200 bg-white p-3">

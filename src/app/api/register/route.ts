@@ -79,6 +79,7 @@ export async function POST(req: Request) {
     const welcomeEmail = await sendWelcomeEmail({
       name: user.name,
       email: user.email,
+      phone: user.phone,
       username,
       role: "student",
       request: req,

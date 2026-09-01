@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
 import { sendWelcomeEmail } from "@/lib/welcomeEmail";
+import { sendWhatsAppAutomationTemplates } from "@/lib/whatsappAutomationEvents";
 import { Booking } from "@/models/Booking";
 import { Classroom } from "@/models/Classroom";
 import { Notification } from "@/models/Fee";
@@ -101,6 +102,20 @@ export async function POST(req: Request) {
       booking.student?.email && sendAutomationEmail({ to: booking.student.email, subject: "Your demo class is approved", message: `Your demo class is scheduled for ${start.toLocaleString("en-IN")}. Please join from your academy dashboard.` }),
       booking.instructor?.email && sendAutomationEmail({ to: booking.instructor.email, subject: "Demo class assigned", message: `A demo class with ${booking.student?.name || "a student"} is scheduled for ${start.toLocaleString("en-IN")}.` }),
     ]);
+    await sendWhatsAppAutomationTemplates([
+      {
+        user: booking.student,
+        templateName: "demo_class_approved_student",
+        bodyParameters: [booking.student?.name || "there", start.toLocaleString("en-IN")],
+        metadata: { kind: "demo_class_approved", bookingId: booking._id.toString(), classroomId: classroom._id.toString() },
+      },
+      {
+        user: booking.instructor,
+        templateName: "demo_class_assigned_coach",
+        bodyParameters: [booking.instructor?.name || "Coach", booking.student?.name || "student", start.toLocaleString("en-IN")],
+        metadata: { kind: "demo_class_assigned", bookingId: booking._id.toString(), classroomId: classroom._id.toString() },
+      },
+    ]);
     return NextResponse.json({ ok: true, classroom: classroom._id.toString() });
   }
 
@@ -136,7 +151,7 @@ export async function POST(req: Request) {
       notes: application.experience,
     });
     await CoachApplication.findByIdAndUpdate(application._id, { status: "approved", convertedUser: user._id, reviewedBy: actorId, reviewedAt: new Date() });
-    await sendWelcomeEmail({ name: user.name, email: user.email, username: user.username, role: "instructor", temporaryPassword: password });
+    await sendWelcomeEmail({ name: user.name, email: user.email, phone: user.phone, username: user.username, role: "instructor", temporaryPassword: password });
     return NextResponse.json({ ok: true, username: user.username, tempPassword: password });
   }
 
@@ -152,4 +167,3 @@ export async function POST(req: Request) {
 
   return NextResponse.json({ error: "Unknown action." }, { status: 400 });
 }
-

@@ -1,6 +1,7 @@
 import { resolvePublicAppUrl } from "@/lib/appUrl";
 import { ACADEMY_TIME_ZONE, formatAcademyDateTime } from "@/lib/academyTime";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
+import { sendWhatsAppAutomationTemplate, whatsappRecipientName } from "@/lib/whatsappAutomationEvents";
 import { formatINR } from "@/lib/utils";
 import { Classroom } from "@/models/Classroom";
 import { Homework } from "@/models/Homework";
@@ -69,7 +70,7 @@ export async function sendCourseAssignedEmail(classroomInput: any, request?: Req
   if (!studentIds.length) return { sent: 0 };
 
   const students: any[] = await User.find({ _id: { $in: studentIds }, role: "student", isActive: { $ne: false } })
-    .select("name email parentName parentEmail")
+    .select("name email phone parentName parentEmail")
     .lean();
   const appUrl = resolvePublicAppUrl(request);
   const classroomUrl = appUrl ? `${appUrl}/classrooms/${classroomId}` : "";
@@ -93,14 +94,23 @@ export async function sendCourseAssignedEmail(classroomInput: any, request?: Req
       classroomUrl ? `Open your classroom: ${classroomUrl}` : "Please sign in to your academy dashboard to view it.",
     ].filter(Boolean).join("\n");
     const parentMessage = message.replace(`Hello ${student.name || "there"},`, `Hello ${student.parentName || "Parent"},`);
-    return sendToStudentAndParent(student, "New course assigned", message, parentMessage, {
+    const metadata = {
       kind: "course_assigned",
       classroomId,
       courseName,
       levelName,
       firstLesson,
       href: `/classrooms/${classroomId}`,
-    });
+    };
+    return Promise.all([
+      sendToStudentAndParent(student, "New course assigned", message, parentMessage, metadata),
+      sendWhatsAppAutomationTemplate({
+        user: student,
+        templateName: "course_assigned_student",
+        bodyParameters: [whatsappRecipientName(student), courseName, levelName, firstLessonTime || "Please check the academy portal"],
+        metadata,
+      }),
+    ]);
   }));
   return { sent: deliveries.length };
 }
@@ -111,8 +121,8 @@ export async function sendAchievementEarnedEmail(achievement: any, request?: Req
     role: "student",
     isActive: { $ne: false },
     name: exactNameRegex(String(achievement.studentName).trim()),
-  }).select("name email parentName parentEmail").lean();
-  if (!student?.email && !student?.parentEmail) return { sent: 0, skipped: true };
+  }).select("name email phone parentName parentEmail").lean();
+  if (!student?.email && !student?.parentEmail && !student?.phone) return { sent: 0, skipped: true };
 
   const appUrl = resolvePublicAppUrl(request);
   const leaderboardUrl = appUrl ? `${appUrl}/leaderboard` : "";
@@ -137,6 +147,12 @@ export async function sendAchievementEarnedEmail(achievement: any, request?: Req
     reason,
     href: "/leaderboard",
   });
+  await sendWhatsAppAutomationTemplate({
+    user: student,
+    templateName: "achievement_earned_student",
+    bodyParameters: [whatsappRecipientName(student, achievement.studentName), achievementName],
+    metadata: { kind: "achievement_unlocked", achievementId: objectId(achievement._id), href: "/leaderboard" },
+  });
   return { sent: 1 };
 }
 
@@ -149,8 +165,8 @@ export async function sendStudentNoShowWarningEmail(input: {
   creditsDeducted?: boolean;
   request?: Request;
 }) {
-  const student: any = await User.findById(input.studentId).select("name email parentName parentEmail").lean();
-  if (!student?.email && !student?.parentEmail) return { sent: 0, skipped: true };
+  const student: any = await User.findById(input.studentId).select("name email phone parentName parentEmail").lean();
+  if (!student?.email && !student?.parentEmail && !student?.phone) return { sent: 0, skipped: true };
   const appUrl = resolvePublicAppUrl(input.request);
   const attendanceUrl = appUrl ? `${appUrl}/attendance` : "";
   const classTitle = input.classroom?.title || "your class";
@@ -179,6 +195,18 @@ export async function sendStudentNoShowWarningEmail(input: {
     noShowCount: input.noShowCount || 0,
     href: "/attendance",
   });
+  await sendWhatsAppAutomationTemplate({
+    user: student,
+    templateName: "student_no_show_notice",
+    bodyParameters: [
+      whatsappRecipientName(student),
+      whatsappRecipientName(student),
+      classTitle,
+      missedAt || "the scheduled class time",
+      input.creditsDeducted ? "1 credit deducted" : "No credit deducted",
+    ],
+    metadata: { kind: "student_no_show_warning", classroomId: objectId(input.classroom?._id || input.classroom), href: "/attendance" },
+  });
   return { sent: 1 };
 }
 
@@ -190,7 +218,7 @@ export async function sendCreditAdjustmentEmail(input: {
   adjustment: "added" | "removed";
 }) {
   const student = input.student;
-  if (!student?.email && !student?.parentEmail) return { sent: 0, skipped: true };
+  if (!student?.email && !student?.parentEmail && !student?.phone) return { sent: 0, skipped: true };
   const added = input.adjustment === "added";
   const subject = added ? "Class credits added to your account" : "Class credits removed from your account";
   const message = [
@@ -209,6 +237,12 @@ export async function sendCreditAdjustmentEmail(input: {
     credits: input.credits,
     balanceAfter: input.balanceAfter,
   });
+  await sendWhatsAppAutomationTemplate({
+    user: student,
+    templateName: added ? "class_credits_added" : "class_credits_removed",
+    bodyParameters: [whatsappRecipientName(student), String(input.credits), whatsappRecipientName(student), String(input.balanceAfter)],
+    metadata: { kind: added ? "credits_added" : "credits_removed", studentId: objectId(student._id || student), balanceAfter: input.balanceAfter },
+  });
   return { sent: 1 };
 }
 
@@ -222,7 +256,7 @@ export async function sendClassCompletedSummaryEmail(input: {
   const studentIds = (input.records || []).map((record) => objectId(record.student)).filter(Boolean);
   if (!studentIds.length) return { sent: 0 };
   const students: any[] = await User.find({ _id: { $in: studentIds }, role: "student", isActive: { $ne: false } })
-    .select("name email parentName parentEmail")
+    .select("name email phone parentName parentEmail")
     .lean();
   if (!students.length) return { sent: 0 };
   const recordByStudent = new Map((input.records || []).map((record) => [objectId(record.student), record]));
@@ -252,14 +286,23 @@ export async function sendClassCompletedSummaryEmail(input: {
       nextClassText ? `Next class: ${nextClassText}` : "Next class: Please check your dashboard for the latest schedule.",
     ].filter(Boolean).join("\n");
     const parentMessage = message.replace(`Hello ${student.name || "there"},`, `Hello ${student.parentName || "Parent"},`);
-    return sendToStudentAndParent(student, `Class summary: ${topicName}`, message, parentMessage, {
+    const metadata = {
       kind: "class_completed_summary",
       classroomId: objectId(input.classroom?._id || input.classroom),
       sessionId: objectId(input.session?._id || input.session),
       attendanceId: objectId(input.attendance?._id || input.attendance),
       homeworkId: objectId(homework?._id),
       href: homework ? `/homework/${homework._id}` : "/classrooms",
-    });
+    };
+    return Promise.all([
+      sendToStudentAndParent(student, `Class summary: ${topicName}`, message, parentMessage, metadata),
+      sendWhatsAppAutomationTemplate({
+        user: student,
+        templateName: "class_completed_summary",
+        bodyParameters: [whatsappRecipientName(student), classTitle, topicName, homework ? `Homework assigned: ${homework.title}` : "No homework linked"],
+        metadata,
+      }),
+    ]);
   }));
   return { sent: deliveries.length };
 }
@@ -271,8 +314,8 @@ export async function sendHomeworkSubmittedConfirmationEmail(input: {
   reward?: any;
   request?: Request;
 }) {
-  const student: any = await User.findById(input.studentId).select("name email parentName parentEmail").lean();
-  if (!student?.email && !student?.parentEmail) return { sent: 0, skipped: true };
+  const student: any = await User.findById(input.studentId).select("name email phone parentName parentEmail").lean();
+  if (!student?.email && !student?.parentEmail && !student?.phone) return { sent: 0, skipped: true };
   const appUrl = resolvePublicAppUrl(input.request);
   const homeworkId = objectId(input.homework?._id || input.homework);
   const homeworkUrl = appUrl && homeworkId ? `${appUrl}/homework/${homeworkId}` : "";
@@ -298,6 +341,12 @@ export async function sendHomeworkSubmittedConfirmationEmail(input: {
     submissionId: objectId(input.submission?._id),
     href: homeworkId ? `/homework/${homeworkId}` : "/homework",
   });
+  await sendWhatsAppAutomationTemplate({
+    user: student,
+    templateName: "homework_submitted",
+    bodyParameters: [whatsappRecipientName(student), input.homework?.title || "Homework", whatsappRecipientName(student), submittedAt || new Date().toLocaleString("en-IN")],
+    metadata: { kind: "homework_submitted_confirmation", homeworkId, submissionId: objectId(input.submission?._id) },
+  });
   return { sent: 1 };
 }
 
@@ -308,7 +357,7 @@ export async function sendInvoiceOverdueEscalationEmail(input: {
 }) {
   const invoice = input.invoice;
   const student = invoice.student;
-  if (!student?.email && !student?.parentEmail) return { sent: 0, skipped: true };
+  if (!student?.email && !student?.parentEmail && !student?.phone) return { sent: 0, skipped: true };
   const dueDate = invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString("en-IN") : "Not set";
   const message = [
     `Hello ${student.name || "there"},`,
@@ -330,6 +379,12 @@ export async function sendInvoiceOverdueEscalationEmail(input: {
     invoiceNumber: invoice.invoiceNumber,
     daysOverdue: input.daysOverdue,
     invoiceUrl: input.invoiceUrl,
+  });
+  await sendWhatsAppAutomationTemplate({
+    user: student,
+    templateName: "invoice_overdue_action_required",
+    bodyParameters: [whatsappRecipientName(student), invoice.invoiceNumber, invoice.title || "Invoice", String(input.daysOverdue), formatINR(invoice.totalAmount)],
+    metadata: { kind: "invoice_overdue_escalation", invoiceId: objectId(invoice._id), invoiceNumber: invoice.invoiceNumber },
   });
   return { sent: 1 };
 }

@@ -71,6 +71,12 @@ function cleanEnv(value?: string) {
   return String(value || "").trim().replace(/^["']|["']$/g, "");
 }
 
+function normalizeTemplateLanguage(value?: string) {
+  const clean = cleanEnv(value || "en");
+  if (!clean || clean === "en_US" || clean === "en_GB" || clean === "en_UK") return "en";
+  return clean;
+}
+
 function n8nWebhookUrl() {
   return cleanEnv(process.env.WHATSAPP_N8N_SEND_TEMPLATE_WEBHOOK_URL || process.env.WHATSAPP_N8N_SEND_WEBHOOK_URL);
 }
@@ -111,7 +117,7 @@ async function sendViaN8n(input: {
       body: JSON.stringify({
         type: input.type || "template",
         templateName: input.templateName,
-        language: input.language,
+        language: normalizeTemplateLanguage(input.language),
         recipients: [recipient],
         bodyParameters: input.bodyParameters || input.templateVariables || [],
         templateVariables: input.templateVariables || input.bodyParameters || [],
@@ -137,7 +143,7 @@ async function sendViaN8n(input: {
         webhookUrlConfigured: true,
         type: input.type || "template",
         templateName: input.templateName,
-        templateLanguage: input.language,
+        templateLanguage: normalizeTemplateLanguage(input.language),
         recipient,
         n8nStatus: response.status,
       },
@@ -245,7 +251,7 @@ export async function sendWhatsAppTemplateMessage(input: WhatsAppTemplateInput) 
     const n8nResult = await sendViaN8n({
       to: input.to,
       templateName: input.templateName,
-      language: input.language || "en_US",
+      language: normalizeTemplateLanguage(input.language),
       bodyParameters,
       templateVariables: bodyParameters,
       metadata: input.metadata,
@@ -260,7 +266,7 @@ export async function sendWhatsAppTemplateMessage(input: WhatsAppTemplateInput) 
     type: "template",
     template: {
       name: input.templateName,
-      language: { code: input.language || "en_US" },
+      language: { code: normalizeTemplateLanguage(input.language) },
       ...(bodyParameters.length
         ? {
             components: [
@@ -313,7 +319,7 @@ export async function sendWhatsAppReminder(input: WhatsAppReminderInput) {
   return sendWhatsAppTemplateMessage({
     to: input.to,
     templateName: input.templateName || process.env.WHATSAPP_TEMPLATE_NAME || "jaspers_market_plain_text_v1",
-    language: input.language || process.env.WHATSAPP_TEMPLATE_LANGUAGE || "en_US",
+    language: normalizeTemplateLanguage(input.language || process.env.WHATSAPP_TEMPLATE_LANGUAGE),
     bodyParameters: input.templateVariables || templateBodyParameters(input, message, templateText),
     templateVariables: input.templateVariables,
     metadata: input.metadata,

@@ -1,9 +1,19 @@
 import { Notification } from "@/models/Fee";
 import { User } from "@/models/User";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
+import { sendWhatsAppAutomationTemplates } from "@/lib/whatsappAutomationEvents";
 
 function objectId(value: any) {
   return value?._id?.toString?.() ?? value?.toString?.() ?? "";
+}
+
+function tournamentTemplateForType(type: string) {
+  const clean = String(type || "").toLowerCase();
+  if (clean.includes("complete") || clean.includes("finish") || clean.includes("result")) return "tournament_completed";
+  if (clean.includes("start")) return "tournament_started";
+  if (clean.includes("soon")) return "tournament_starting_soon";
+  if (clean.includes("register") || clean.includes("join")) return "tournament_registration_confirmed";
+  return "";
 }
 
 export async function notifyTournamentUsers(tournament: any, input: {
@@ -30,6 +40,18 @@ export async function notifyTournamentUsers(tournament: any, input: {
       })),
       { ordered: false }
     );
+    const templateName = tournamentTemplateForType(input.type);
+    if (templateName) {
+      const recipients: any[] = await User.find({ _id: { $in: users }, isActive: { $ne: false } }).select("_id name username phone").lean();
+      await sendWhatsAppAutomationTemplates(recipients.map((recipient) => ({
+        user: recipient,
+        templateName,
+        bodyParameters: templateName === "tournament_registration_confirmed" || templateName === "tournament_starting_soon"
+          ? [recipient.name || recipient.username || "there", tournament.name || tournament.title || "Tournament", tournament.startsAt ? new Date(tournament.startsAt).toLocaleString("en-IN") : "the scheduled time"]
+          : [recipient.name || recipient.username || "there", tournament.name || tournament.title || "Tournament"],
+        metadata: { kind: "tournament_notification", tournament: objectId(tournament), href: input.href || `/tournaments/${objectId(tournament)}` },
+      })));
+    }
   } catch {
     // Notifications should never block tournament flow.
   }

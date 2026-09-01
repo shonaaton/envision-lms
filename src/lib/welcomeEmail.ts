@@ -1,11 +1,13 @@
 import { resolvePublicAppUrl } from "@/lib/appUrl";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
+import { sendWhatsAppAutomationTemplate } from "@/lib/whatsappAutomationEvents";
 
 export type WelcomeEmailRole = "student" | "instructor" | "admin" | "sub-admin";
 
 type WelcomeEmailInput = {
   name: string;
   email: string;
+  phone?: string;
   username: string;
   role: WelcomeEmailRole;
   temporaryPassword?: string;
@@ -57,5 +59,13 @@ export function buildWelcomeEmail(input: WelcomeEmailInput) {
 }
 
 export async function sendWelcomeEmail(input: WelcomeEmailInput) {
-  return sendAutomationEmail(buildWelcomeEmail(input));
+  const email = await sendAutomationEmail(buildWelcomeEmail(input));
+  await sendWhatsAppAutomationTemplate({
+    to: input.phone,
+    user: input,
+    templateName: "account_welcome",
+    bodyParameters: [input.name, ROLE_LABELS[input.role], input.username],
+    metadata: { kind: "welcome", role: input.role, username: input.username },
+  });
+  return email;
 }

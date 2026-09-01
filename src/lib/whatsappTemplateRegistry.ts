@@ -22,7 +22,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "account_welcome",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Welcome Email",
     "body": "Hello {{1}}, your Envision Chess Academy {{2}} account is ready. Your username is {{3}}. Use the button below to sign in and set your password. If you were not expecting this account, please contact academy support.",
     "variables": [
@@ -45,7 +45,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "password_reset_link",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Password Reset",
     "body": "Hello {{1}}, a password reset was requested for your Envision Chess Academy account. Use the secure button below within {{2}} minutes. If you did not request this, you can ignore this message.",
     "variables": [
@@ -63,7 +63,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "homework_assigned",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "New Homework Assignment",
     "body": "Hello {{1}}, a new homework assignment, \u201c{{2}}\u201d, has been added to {{3}}. The submission deadline is {{4}}. Open the academy portal to view and complete it.",
     "variables": [
@@ -91,7 +91,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "homework_due_reminder",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Homework Reminder",
     "body": "Hello {{1}}, your homework \u201c{{2}}\u201d is still pending. The submission deadline is {{3}}. Please complete it from the Envision Chess Academy portal.",
     "variables": [
@@ -114,7 +114,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "homework_overdue_reminder",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Homework Reminder",
     "body": "Hello {{1}}, your homework \u201c{{2}}\u201d is overdue. The deadline was {{3}}. Please open the academy portal to complete the pending assignment.",
     "variables": [
@@ -137,7 +137,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "ask_coach_unread",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Unread Ask Coach Message",
     "body": "Hello {{1}}, you have an unread Ask Coach message from {{2}}. Open the academy portal to read the conversation and reply.",
     "variables": [
@@ -155,7 +155,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "ask_coach_action_required",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Ask Coach Notification",
     "body": "Hello {{1}}, an Ask Coach conversation requires your attention. Reference: {{2}}. Open the academy portal to review the details.",
     "variables": [
@@ -173,7 +173,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "demo_class_approved_student",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Demo Class Approved - Student",
     "body": "Hello {{1}}, your Envision Chess Academy demo class is confirmed for {{2}}. Please join from your academy dashboard at the scheduled time.",
     "variables": [
@@ -191,7 +191,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "demo_class_assigned_coach",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Demo Class Assigned - Coach",
     "body": "Hello {{1}}, a demo class with {{2}} has been assigned to you for {{3}}. Please open the academy portal to review the class details.",
     "variables": [
@@ -214,7 +214,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "demo_booking_received_student",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Booking Created - Student",
     "body": "Hello {{1}}, we received your demo class booking request for {{2}}. It is awaiting academy approval. We will update you once the booking is confirmed.",
     "variables": [
@@ -232,7 +232,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "class_booking_confirmed_student",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Booking Created - Student",
     "body": "Hello {{1}}, your class booking is confirmed for {{2}}. Open the academy portal to view the class details.",
     "variables": [
@@ -250,7 +250,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "class_booking_pending_coach_student",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Booking Created - Student",
     "body": "Hello {{1}}, your class booking request for {{2}} has been sent to the coach for approval. We will update you when the coach responds.",
     "variables": [
@@ -268,7 +268,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "demo_booking_pending_approval_coach",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Booking Created - Coach",
     "body": "Hello {{1}}, a demo booking for {{2}} is awaiting academy approval for {{3}}. Open the portal to review the booking.",
     "variables": [
@@ -291,7 +291,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "class_booking_confirmed_coach",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Booking Created - Coach",
     "body": "Hello {{1}}, a class with {{2}} is confirmed for {{3}}. Open the academy portal to view the booking details.",
     "variables": [
@@ -314,7 +314,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "class_booking_response_required_coach",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Booking Created - Coach",
     "body": "Hello {{1}}, {{2}} requested a class for {{3}}. Your response is required. Open the academy portal to approve the request or suggest another time.",
     "variables": [
@@ -337,7 +337,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "demo_booking_approval_required_admin",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Booking Created - Admin",
     "body": "Hello {{1}}, a demo booking for {{2}} with {{3}} requires academy approval. The requested time is {{4}}. Open the admin portal to review it.",
     "variables": [
@@ -365,7 +365,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "class_booking_created_admin",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Booking Created - Admin",
     "body": "Hello {{1}}, a class booking for {{2}} with {{3}} has been created for {{4}}. Open the admin portal to review the booking details.",
     "variables": [
@@ -393,7 +393,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "booking_approved",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Booking Updated",
     "body": "Hello {{1}}, the {{2}} booking for {{3}} at {{4}} has been approved. The classroom is now scheduled on the academy platform.",
     "variables": [
@@ -421,7 +421,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "booking_cancelled",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Booking Updated",
     "body": "Hello {{1}}, the {{2}} booking for {{3}} at {{4}} has been cancelled. Open the academy portal if you need to review the booking details.",
     "variables": [
@@ -449,7 +449,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "booking_new_time_suggested",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Booking Updated",
     "body": "Hello {{1}}, a new time has been suggested for {{2}}\u2019s {{3}} booking: {{4}}. Open the academy portal to review the proposed time.",
     "variables": [
@@ -477,7 +477,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "class_series_cancelled",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Classroom Schedule Change",
     "body": "Hello {{1}}, the class series \u201c{{2}}\u201d has been cancelled. All unfinished sessions in this series are cancelled on the academy platform.",
     "variables": [
@@ -495,7 +495,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "class_session_cancelled",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Classroom Schedule Change",
     "body": "Hello {{1}}, the session for \u201c{{2}}\u201d scheduled on {{3}} has been cancelled. Open the academy portal to view the updated classroom schedule.",
     "variables": [
@@ -518,7 +518,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "class_rescheduled",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Classroom Schedule Change",
     "body": "Hello {{1}}, the session for \u201c{{2}}\u201d has been rescheduled from {{3}} to {{4}}. The updated timing is now available on the academy portal.",
     "variables": [
@@ -546,7 +546,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "class_schedule_updated",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Classroom Schedule Change",
     "body": "Hello {{1}}, the schedule for \u201c{{2}}\u201d has been updated. Your next scheduled class is {{3}}. Please check the academy portal for the latest schedule.",
     "variables": [
@@ -569,7 +569,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "class_permanent_timing_updated",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Classroom Schedule Change",
     "body": "Hello {{1}}, the regular timing for \u201c{{2}}\u201d has been changed to {{3}} from {{4}} onward. The updated schedule is available on the academy portal.",
     "variables": [
@@ -597,7 +597,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "attendance_pending_coach",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Attendance Reminder",
     "body": "Hello {{1}}, attendance is still pending for \u201c{{2}}\u201d, held on {{3}}. Please open the academy portal and complete the attendance record.",
     "variables": [
@@ -620,7 +620,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "invoice_available_student",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Invoice Sent - Student",
     "body": "Hello {{1}}, invoice {{2}} for {{3}} is now available. The amount due is {{4}}, with a due date of {{5}}. Use the button below to view the invoice.",
     "variables": [
@@ -653,7 +653,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "invoice_available_parent",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Invoice Sent - Parent",
     "body": "Hello {{1}}, invoice {{2}} for {{3}} is now available. The amount due is {{4}}, with a due date of {{5}}. Use the button below to view the invoice.",
     "variables": [
@@ -686,7 +686,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "payment_recorded_student",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Payment Recorded",
     "body": "Hello {{1}}, we have recorded your payment of {{2}} for invoice {{3}}. The payment reference is {{4}}. Thank you for completing the payment.",
     "variables": [
@@ -714,7 +714,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "payment_recorded_parent",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Payment Recorded",
     "body": "Hello {{1}}, we have recorded a payment of {{2}} for {{3}} against invoice {{4}}. The payment reference is {{5}}. Thank you.",
     "variables": [
@@ -747,7 +747,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "invoice_pending_reminder",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Invoice Reminder",
     "body": "Hello {{1}}, this is a reminder that invoice {{2}} for {{3}} remains unpaid. The amount due is {{4}} and the due date is {{5}}. Please use the button below to review the invoice.",
     "variables": [
@@ -780,7 +780,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "invoice_due_soon",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Monthly Invoice Reminder",
     "body": "Hello {{1}}, invoice {{2}} for {{3}} is due on {{4}}. The amount due is {{5}}. This is a reminder before the due date.",
     "variables": [
@@ -813,7 +813,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "invoice_due_today",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Monthly Invoice Reminder",
     "body": "Hello {{1}}, invoice {{2}} for {{3}} is due today, {{4}}. The amount due is {{5}}. Please review the invoice from the academy portal.",
     "variables": [
@@ -846,7 +846,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "invoice_overdue_reminder",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Monthly Invoice Reminder",
     "body": "Hello {{1}}, invoice {{2}} for {{3}} is overdue. The amount due is {{4}} and the original due date was {{5}}. Please review the pending invoice.",
     "variables": [
@@ -879,7 +879,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "invoice_due_admin_alert",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Monthly Invoice Reminder",
     "body": "Hello {{1}}, invoice {{2}} for {{3}} is {{4}}. The amount due is {{5}}. Open the admin portal to review the invoice.",
     "variables": [
@@ -912,7 +912,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "class_credit_low",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Credit Balance Reminder",
     "body": "Hello {{1}}, your Envision Chess Academy class credit balance is {{2}}. Please review your account before booking or attending additional credit-based classes.",
     "variables": [
@@ -930,7 +930,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "class_credit_empty",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Credit Balance Reminder",
     "body": "Hello {{1}}, your Envision Chess Academy class credit balance is now 0. Please update your credits before booking or attending additional credit-based classes.",
     "variables": [
@@ -943,7 +943,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "tournament_registration_confirmed",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Tournament External Registration",
     "body": "Hello {{1}}, your registration for \u201c{{2}}\u201d is confirmed. The tournament is scheduled for {{3}}. Use the button below to view the tournament details.",
     "variables": [
@@ -966,7 +966,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "tournament_starting_soon",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Tournament Lifecycle",
     "body": "Hello {{1}}, \u201c{{2}}\u201d starts soon at {{3}}. Please open the tournament page and be ready before the start time.",
     "variables": [
@@ -989,7 +989,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "tournament_started",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Tournament Lifecycle",
     "body": "Hello {{1}}, \u201c{{2}}\u201d has started. Open the tournament page to join or follow the event.",
     "variables": [
@@ -1007,7 +1007,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "tournament_completed",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Tournament Lifecycle",
     "body": "Hello {{1}}, \u201c{{2}}\u201d has been completed. Results are now available on the tournament page.",
     "variables": [
@@ -1025,7 +1025,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "tournament_final_result",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Tournament Lifecycle",
     "body": "Hello {{1}}, the final result for \u201c{{2}}\u201d is available. Your final rank is {{3}}. Open the tournament page to view the standings.",
     "variables": [
@@ -1048,7 +1048,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "course_assigned_student",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "New Course / Level Assigned",
     "body": "Hello {{1}}, a new course has been assigned to your Envision Chess Academy account: {{2}}, level {{3}}. Your first scheduled class is {{4}}.",
     "variables": [
@@ -1076,7 +1076,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "course_assigned_parent",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "New Course / Level Assigned",
     "body": "Hello {{1}}, a new course has been assigned to {{2}}: {{3}}, level {{4}}. The first scheduled class is {{5}}.",
     "variables": [
@@ -1109,7 +1109,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "achievement_earned_student",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Achievement / Badge Earned",
     "body": "Hello {{1}}, a new achievement has been added to your Envision Chess Academy profile: \u201c{{2}}\u201d. Open your profile to view the achievement details.",
     "variables": [
@@ -1127,7 +1127,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "achievement_earned_parent",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Achievement / Badge Earned",
     "body": "Hello {{1}}, a new achievement has been added to {{2}}\u2019s Envision Chess Academy profile: \u201c{{3}}\u201d. Open the portal to view the achievement details.",
     "variables": [
@@ -1150,7 +1150,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "student_no_show_notice",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Student No-Show Warning",
     "body": "Hello {{1}}, our records show that {{2}} did not join \u201c{{3}}\u201d on {{4}}. Credit status: {{5}}. Please review the class record on the academy portal.",
     "variables": [
@@ -1183,7 +1183,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "invoice_overdue_action_required",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Invoice Overdue Escalation",
     "body": "Hello {{1}}, action is required for invoice {{2}} for {{3}}. It is {{4}} days overdue and the outstanding amount is {{5}}. Please review the invoice from the academy portal.",
     "variables": [
@@ -1216,7 +1216,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "class_credits_added",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Credit Added / Credit Removed",
     "body": "Hello {{1}}, {{2}} class credit(s) have been added to {{3}}\u2019s Envision Chess Academy account. The updated balance is {{4}} credits.",
     "variables": [
@@ -1244,7 +1244,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "class_credits_removed",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Credit Added / Credit Removed",
     "body": "Hello {{1}}, {{2}} class credit(s) have been removed from {{3}}\u2019s Envision Chess Academy account. The updated balance is {{4}} credits.",
     "variables": [
@@ -1272,7 +1272,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "class_completed_summary",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Class Completed Summary",
     "body": "Hello {{1}}, the class \u201c{{2}}\u201d has been completed. Topic covered: {{3}}. Homework/status: {{4}}. Open the academy portal to view the full class summary.",
     "variables": [
@@ -1300,7 +1300,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "homework_submitted",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "Homework Submitted Confirmation",
     "body": "Hello {{1}}, the homework submission for \u201c{{2}}\u201d has been received. Student: {{3}}. Submission time: {{4}}. Open the academy portal to view the submission details.",
     "variables": [
@@ -1328,7 +1328,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   {
     "name": "lms_failure_alert_admin",
-    "language": "en_US",
+    "language": "en",
     "sourceAutomation": "System Failure Alert",
     "body": "Hello {{1}}, an LMS automation failure requires attention. Failure: {{2}}. Environment: {{3}}. Time: {{4}}. Please review the system logs or admin alert details.",
     "variables": [
@@ -1377,3 +1377,4 @@ export function renderWhatsAppTemplatePreview(name?: string, values: unknown[] =
     return value === undefined || value === null || value === "" ? `{{${index}}}` : String(value);
   });
 }
+

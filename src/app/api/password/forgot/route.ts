@@ -5,6 +5,7 @@ import { createPasswordResetToken, PASSWORD_RESET_WINDOW_MINUTES } from "@/lib/p
 import { sendPasswordResetEmail } from "@/lib/emailAutomation";
 import { resolvePublicAppUrl } from "@/lib/appUrl";
 import { consumeRateLimit, getClientIp, jsonRateLimitHeaders } from "@/lib/requestSecurity";
+import { sendWhatsAppAutomationTemplate } from "@/lib/whatsappAutomationEvents";
 
 export const dynamic = "force-dynamic";
 const PASSWORD_RESET_COOLDOWN_MS = 2 * 60 * 1000;
@@ -92,6 +93,12 @@ export async function POST(req: Request) {
         previewText: `Reset your password within ${PASSWORD_RESET_WINDOW_MINUTES} minutes.`,
         userId: String(user._id),
       },
+    });
+    await sendWhatsAppAutomationTemplate({
+      user,
+      templateName: "password_reset_link",
+      bodyParameters: [user.name || "Player", String(PASSWORD_RESET_WINDOW_MINUTES)],
+      metadata: { kind: "password_reset", userId: String(user._id) },
     });
 
     if (delivery.skipped || !delivery.delivered) {

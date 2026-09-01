@@ -8,6 +8,7 @@ import { Classroom } from "@/models/Classroom";
 import { FeeAssignment, Notification } from "@/models/Fee";
 import { User } from "@/models/User";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
+import { sendWhatsAppAutomationTemplates } from "@/lib/whatsappAutomationEvents";
 import { ACADEMY_TIME_ZONE } from "@/lib/academyTime";
 import { isBookingWithinAvailability, type AvailabilitySlot } from "@/lib/bookingAvailability";
 import { bookingFeatureNameForType, bookingFeatureNameLowerForType } from "@/lib/bookingLabels";
@@ -102,9 +103,9 @@ async function notifyBookingUsers({
   message: string;
 }) {
   const recipients = [
-    student?._id ? { user: student._id, email: student.email, name: student.name, href: bookingNotificationPath("student") } : null,
-    coach?._id ? { user: coach._id, email: coach.email, name: coach.name, href: bookingNotificationPath("instructor") } : null,
-    ...admins.map((admin: any) => ({ user: admin._id, email: admin.email, name: admin.name, href: bookingNotificationPath("admin") })),
+    student?._id ? { user: student._id, email: student.email, phone: student.phone, name: student.name, role: "student", href: bookingNotificationPath("student") } : null,
+    coach?._id ? { user: coach._id, email: coach.email, phone: coach.phone, name: coach.name, role: "instructor", href: bookingNotificationPath("instructor") } : null,
+    ...admins.map((admin: any) => ({ user: admin._id, email: admin.email, phone: admin.phone, name: admin.name, role: "admin", href: bookingNotificationPath("admin") })),
   ].filter(Boolean) as any[];
   await Notification.insertMany(
     recipients.map((recipient) => ({
@@ -126,6 +127,25 @@ async function notifyBookingUsers({
           metadata: { bookingId: booking._id.toString(), href: recipient.href },
         })
       )
+  );
+  await sendWhatsAppAutomationTemplates(
+    recipients.map((recipient) => {
+      const bookingType = bookingFeatureNameLowerForType(booking.bookingType || "regular");
+      const bookingTime = formatBookingTime(booking.proposedStartAt || booking.startAt);
+      const templateName = title.toLowerCase().includes("cancel")
+        ? "booking_cancelled"
+        : title.toLowerCase().includes("suggest")
+          ? "booking_new_time_suggested"
+          : "booking_approved";
+      return {
+        user: { _id: recipient.user, name: recipient.name, phone: recipient.phone, role: recipient.role },
+        templateName,
+        bodyParameters: templateName === "booking_new_time_suggested"
+          ? [recipient.name || "there", student?.name || "student", bookingType, bookingTime]
+          : [recipient.name || "there", bookingType, student?.name || "student", bookingTime],
+        metadata: { kind: "booking_updated", bookingId: booking._id.toString(), href: recipient.href },
+      };
+    })
   );
 }
 
@@ -156,7 +176,7 @@ export async function POST(req: Request) {
     const student = await User.findById(studentUserId).select("name email phone parentName city country studentLevel accountStatus isActive").lean<BasicUser | null>();
     if (!student || role !== "student") return NextResponse.json({ error: "Only students can book sessions." }, { status: 403 });
     if (student.isActive === false) return NextResponse.json({ error: inactiveStudentMessage }, { status: 403 });
-    const instructor = await User.findOne({ _id: body.instructor, role: "instructor", isActive: true }).select("name email").lean<BasicUser | null>();
+    const instructor = await User.findOne({ _id: body.instructor, role: "instructor", isActive: true }).select("name email phone").lean<BasicUser | null>();
     if (!instructor) return NextResponse.json({ error: "That coach is no longer available for booking." }, { status: 404 });
 
     const startAt = new Date(body.startAt);
@@ -223,7 +243,7 @@ export async function POST(req: Request) {
       notes: body.notes,
     });
     const coach = instructor;
-    const admins = await User.find({ role: "admin", isActive: true }).select("_id email name").lean<AdminUser[]>();
+    const admins = await User.find({ role: "admin", isActive: true }).select("_id email phone name").lean<AdminUser[]>();
     const bookingLabel = bookingFeatureNameForType(decision.bookingType);
     const bookingLabelLower = bookingFeatureNameLowerForType(decision.bookingType);
     const adminTitle = isDemo
@@ -245,6 +265,26 @@ export async function POST(req: Request) {
       student.email && sendAutomationEmail({ to: student.email, subject: isDemo ? "Demo booking received" : decision.status === "confirmed" ? "Class booking confirmed" : "Class booking sent", message: `Hello ${student.name},\n\n${isDemo ? "Your demo booking has been received and is waiting for academy approval." : decision.status === "confirmed" ? "Your class booking has been confirmed." : "Your class booking has been sent to the coach for approval."}\n\nTime: ${formatBookingTime(startAt)}` }),
       coach?.email && sendAutomationEmail({ to: coach.email, subject: isDemo ? "Demo booking pending approval" : decision.status === "confirmed" ? "Class booking confirmed" : "New class booking awaiting your response", message: `${student.name} requested a ${bookingLabelLower}.\n\nTime: ${formatBookingTime(startAt)}` }),
       ...admins.filter((admin) => admin.email).map((admin) => sendAutomationEmail({ to: String(admin.email), subject: adminTitle, message: `${adminMessage}\n\nTime: ${formatBookingTime(startAt)}` })),
+    ]);
+    await sendWhatsAppAutomationTemplates([
+      {
+        user: student,
+        templateName: isDemo ? "demo_booking_received_student" : decision.status === "confirmed" ? "class_booking_confirmed_student" : "class_booking_pending_coach_student",
+        bodyParameters: [student.name || "there", formatBookingTime(startAt)],
+        metadata: { kind: "booking_created", bookingId: created._id.toString(), href: bookingNotificationPath("student") },
+      },
+      ...(coach ? [{
+        user: coach,
+        templateName: isDemo ? "demo_booking_pending_approval_coach" : decision.status === "confirmed" ? "class_booking_confirmed_coach" : "class_booking_response_required_coach",
+        bodyParameters: [coach.name || "Coach", student.name || "student", formatBookingTime(startAt)],
+        metadata: { kind: "booking_created", bookingId: created._id.toString(), href: bookingNotificationPath("instructor") },
+      }] : []),
+      ...admins.map((admin) => ({
+        user: admin,
+        templateName: isDemo ? "demo_booking_approval_required_admin" : "class_booking_created_admin",
+        bodyParameters: [admin.name || "Admin", student.name || "student", coach?.name || "coach", formatBookingTime(startAt)],
+        metadata: { kind: "booking_created_admin", bookingId: created._id.toString(), href: bookingNotificationPath("admin") },
+      })),
     ]);
     await recordActivity({
       actor: studentUserId,
@@ -269,13 +309,13 @@ export async function PATCH(req: Request) {
   await dbConnect();
   const { id: actorId, role } = sessionUser(session as AuthSession);
   const body = await req.json();
-  const booking = await Booking.findById(body.bookingId).populate("student instructor", "name email studentLevel isActive");
+  const booking = await Booking.findById(body.bookingId).populate("student instructor", "name email phone studentLevel isActive");
   if (!booking) return NextResponse.json({ error: "Request not found" }, { status: 404 });
   const isAssignedCoach = booking.instructor?._id?.toString() === actorId;
   if (role !== "admin" && !isAssignedCoach) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   if (booking.status !== "pending") return NextResponse.json({ error: "This request has already been handled." }, { status: 409 });
 
-  const admins = await User.find({ role: "admin", isActive: true }).select("_id email name").lean<AdminUser[]>();
+  const admins = await User.find({ role: "admin", isActive: true }).select("_id email phone name").lean<AdminUser[]>();
   const student = booking.student;
   const coach = booking.instructor;
   const action = String(body.action || "");

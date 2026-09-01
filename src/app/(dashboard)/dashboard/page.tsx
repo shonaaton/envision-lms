@@ -249,9 +249,9 @@ function MiniBarChart({ points, barClassName }: { points: Array<{ label: string;
 
 function InfoTile({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+    <div className="rounded-lg border border-slate-200/80 bg-white/75 px-3 py-2 shadow-sm shadow-slate-950/5">
       <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">{label}</div>
-      <div className="mt-1 text-sm font-semibold text-slate-950">{value}</div>
+      <div className="mt-1 truncate text-sm font-black text-slate-950" title={String(value)}>{value}</div>
     </div>
   );
 }
@@ -270,7 +270,7 @@ function QuickLinkCard({ href, title, subtitle, icon: Icon }: { href: string; ti
 
 function StudentCard({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
-    <section className={`rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm shadow-brand-900/5 transition sm:p-5 ${className}`}>
+    <section className={`rounded-lg border border-slate-200/80 bg-white/95 p-4 shadow-[0_18px_48px_rgba(15,23,42,0.07)] transition sm:p-5 ${className}`}>
       {children}
     </section>
   );
@@ -288,10 +288,10 @@ function StudentSectionHeader({
   return (
     <div className="mb-3 flex items-center justify-between gap-3">
       <div className="flex min-w-0 items-center gap-2">
-        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-brand-50 text-brand">
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-brand-50 text-brand ring-1 ring-brand/10">
           <Icon size={16} aria-hidden="true" />
         </span>
-        <h2 className="truncate text-base font-semibold text-slate-950">{title}</h2>
+        <h2 className="truncate text-sm font-black text-slate-950 sm:text-base">{title}</h2>
       </div>
       {action}
     </div>
@@ -321,13 +321,13 @@ function StudentStatLink({
   icon: any;
 }) {
   return (
-    <Link href={href} className="group flex min-h-[82px] items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm shadow-brand-900/5 transition hover:-translate-y-0.5 hover:border-brand/30 hover:shadow-lg hover:shadow-brand-900/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
+    <Link href={href} className="group flex min-h-[76px] items-center justify-between gap-3 rounded-lg border border-slate-200/80 bg-white/95 p-3 shadow-[0_14px_36px_rgba(15,23,42,0.06)] transition hover:-translate-y-0.5 hover:border-brand/30 hover:shadow-lg hover:shadow-brand-900/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
       <div className="min-w-0">
-        <p className="truncate text-[11px] font-semibold text-slate-500">{label}</p>
-        <p className="mt-1 text-2xl font-black leading-none text-slate-950">{value}</p>
+        <p className="truncate text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">{label}</p>
+        <p className="mt-1 text-xl font-black leading-none text-slate-950">{value}</p>
         <p className="mt-1 truncate text-[11px] text-slate-500">{note}</p>
       </div>
-      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-brand-50 text-brand transition group-hover:bg-brand group-hover:text-white">
+      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-brand-50 text-brand ring-1 ring-brand/10 transition group-hover:bg-brand group-hover:text-white">
         <Icon size={17} aria-hidden="true" />
       </span>
     </Link>
@@ -941,52 +941,75 @@ async function StudentDashboard({ userId, joinAllowed }: { userId: string; joinA
               kind: "practice" as const,
               href: "/play/tactics-trainer",
             };
+  const nextMilestone = totalXp ? Math.ceil(totalXp / 1000) * 1000 : 1000;
+  const xpToNext = Math.max(0, nextMilestone - totalXp);
+  const engagementScore = Math.round((homeworkCompletion + quizAccuracy + attendancePct) / 3);
+  const coachName = nextSession?.session?.substituteCoach?.name || (nextSession?.classroom?.coach as any)?.name || "Assigned coach";
 
   return (
-    <div className="space-y-4 text-slate-950">
-      <header className="flex flex-col gap-3 rounded-xl border border-brand/10 bg-white px-4 py-4 shadow-sm shadow-brand-900/5 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-        <div className="min-w-0">
-          <h1 className="truncate text-2xl font-semibold tracking-normal text-slate-950">Welcome back, {studentName}</h1>
-          <p className="mt-1 text-sm text-slate-500">{currentLevel} • {batchName} • {currentCourse}</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-          <div className="min-w-40 rounded-lg bg-brand-50 px-3 py-2">
-            <div className="flex items-center justify-between gap-3 text-[11px] font-semibold text-brand">
-              <span>Level progress</span>
-              <span>{levelProgress}%</span>
+    <div className="space-y-5 text-slate-950">
+      <section className="overflow-hidden rounded-lg border border-brand/10 bg-[linear-gradient(135deg,#ffffff_0%,#faf8ff_48%,#f5f1ff_100%)] shadow-[0_24px_70px_rgba(37,24,73,0.10)]">
+        <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_360px] lg:p-5 xl:p-6">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2 text-[11px] font-black uppercase tracking-[0.14em] text-brand">
+              <span className="rounded-lg bg-white px-3 py-1 shadow-sm ring-1 ring-brand/10">Student Dashboard</span>
+              <span className="rounded-lg bg-accent/30 px-3 py-1 text-brand-900 ring-1 ring-accent/40">{currentCourse}</span>
             </div>
-            <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white">
-              <div className="h-full rounded-full bg-brand" style={{ width: `${levelProgress}%` }} />
+            <h1 className="mt-4 max-w-3xl text-2xl font-black leading-tight tracking-normal text-slate-950 sm:text-3xl">
+              Welcome back, {studentName}
+            </h1>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">{currentLevel} • {batchName} • Coach {coachName}</p>
+
+            <div className="mt-5 grid gap-3 sm:grid-cols-3">
+              <StudentStatLink href="/classrooms" label="Classes" value={upcomingSessions.length} note={nextSession ? formatJoinWindowLabel(nextSession.session, now) : "Calendar clear"} icon={Calendar} />
+              <StudentStatLink href="/homework" label="Pending" value={pendingHomework.length} note={`${homeworkCompletion}% homework done`} icon={ClipboardList} />
+              <StudentStatLink href="/leaderboard" label="Rewards" value={totalXp} note={`${totalCoins} coins • ${totalBadges} badges`} icon={Zap} />
             </div>
           </div>
-          <Link href="/ask-coach" className="btn-outline">
-            <MessageSquare size={15} aria-hidden="true" />
-            Ask Coach{unreadCoachReplies ? ` (${unreadCoachReplies})` : ""}
-          </Link>
-        </div>
-      </header>
 
-      <section aria-label="At a glance" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StudentStatLink href="/classrooms" label="Upcoming Classes" value={upcomingSessions.length} note={nextSession ? formatJoinWindowLabel(nextSession.session, now) : "Calendar clear"} icon={Calendar} />
-        <StudentStatLink href="/homework" label="Homework Pending" value={pendingHomework.length} note={`${homeworkCompletion}% completed`} icon={ClipboardList} />
-        <StudentStatLink href="/leaderboard" label="XP" value={totalXp} note="Learning points" icon={Zap} />
-        <StudentStatLink href="/leaderboard" label="Coins" value={totalCoins} note="Rewards earned" icon={Coins} />
+          <div className="rounded-lg border border-white/70 bg-white/80 p-4 shadow-[0_18px_46px_rgba(37,24,73,0.10)] backdrop-blur">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Level progress</p>
+                <p className="mt-1 text-2xl font-black text-slate-950">{levelProgress}%</p>
+              </div>
+              <Link href="/ask-coach" className="btn-outline bg-white">
+                <MessageSquare size={15} aria-hidden="true" />
+                Ask Coach{unreadCoachReplies ? ` (${unreadCoachReplies})` : ""}
+              </Link>
+            </div>
+            <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100">
+              <div className="h-full rounded-full bg-brand transition-all duration-500" style={{ width: `${levelProgress}%` }} />
+            </div>
+            <div className="mt-4 grid grid-cols-3 gap-2">
+              <InfoTile label="Rank" value={`#${studentRank.academyRank}`} />
+              <InfoTile label="Streak" value={`${currentStreak}d`} />
+              <InfoTile label="Next" value={`${xpToNext} XP`} />
+            </div>
+          </div>
+        </div>
       </section>
 
-      <div className="grid gap-4 xl:grid-cols-12">
-        <div className="space-y-4 xl:col-span-8">
-          <section className="rounded-xl border border-brand/15 bg-brand p-5 text-white shadow-lg shadow-brand-900/15 sm:p-6">
-            <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.65fr)]">
+        <div className="space-y-5">
+          <section className="overflow-hidden rounded-lg border border-brand/15 bg-[linear-gradient(135deg,#3b0c53_0%,#651587_58%,#2b0a3f_100%)] p-5 text-white shadow-[0_24px_64px_rgba(90,19,114,0.24)] sm:p-6">
+            <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
               <div className="min-w-0">
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-bold text-accent ring-1 ring-white/10">
+                <span className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 px-2.5 py-1 text-[11px] font-black text-accent ring-1 ring-white/10">
                   <BellRing size={13} aria-hidden="true" />
                   {continueLearning.tone}
                 </span>
-                <h2 className="mt-3 text-2xl font-semibold leading-tight text-white">{continueLearning.title}</h2>
+                <h2 className="mt-3 max-w-2xl text-2xl font-black leading-tight text-white sm:text-3xl">{continueLearning.title}</h2>
                 <p className="mt-2 max-w-2xl text-sm leading-6 text-white/80">{continueLearning.text}</p>
-                <div className="mt-3 inline-flex items-center gap-2 text-xs font-semibold text-white/85">
-                  <Clock3 size={14} aria-hidden="true" />
-                  {continueLearning.meta}
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <span className="inline-flex items-center gap-2 rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white/85 ring-1 ring-white/10">
+                    <Clock3 size={14} aria-hidden="true" />
+                    {continueLearning.meta}
+                  </span>
+                  <span className="inline-flex items-center gap-2 rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white/85 ring-1 ring-white/10">
+                    <Flame size={14} aria-hidden="true" />
+                    {engagementScore}% training pulse
+                  </span>
                 </div>
               </div>
               <div className="shrink-0">
@@ -1016,57 +1039,64 @@ async function StudentDashboard({ userId, joinAllowed }: { userId: string; joinA
             </div>
           </section>
 
-          <StudentCard>
-            <StudentSectionHeader icon={Calendar} title="Next Class" action={<StudentTextLink href="/calendar">View Class Calendar</StudentTextLink>} />
-            {nextSession ? (
-              <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="text-base font-semibold text-slate-950">{sessionTopic(nextSession.session, nextSession.classroom)}</h3>
-                    <StatusBadge tone={heroSessionOpen ? "success" : "brand"}>{formatJoinWindowLabel(nextSession.session, now)}</StatusBadge>
+          <div className="grid gap-5 lg:grid-cols-2">
+            <StudentCard className="min-h-[220px]">
+              <StudentSectionHeader icon={Calendar} title="Next Class" action={<StudentTextLink href="/calendar">Calendar</StudentTextLink>} />
+              {nextSession ? (
+                <div className="flex h-full flex-col justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="truncate text-base font-black text-slate-950">{sessionTopic(nextSession.session, nextSession.classroom)}</h3>
+                      <StatusBadge tone={heroSessionOpen ? "success" : "brand"}>{formatJoinWindowLabel(nextSession.session, now)}</StatusBadge>
+                    </div>
+                    <p className="mt-1 text-sm leading-6 text-slate-600">
+                      {nextSession.classroom.courseName || "General"} • {batchName}
+                    </p>
                   </div>
-                  <p className="mt-1 text-sm text-slate-600">
-                    {nextSession.classroom.courseName || "General"} • {batchName} • Coach {nextSession.session?.substituteCoach?.name || (nextSession.classroom.coach as any)?.name || "Assigned coach"}
-                  </p>
-                  <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
-                    <div className="rounded-lg bg-slate-50 px-3 py-2">
-                      <dt className="font-semibold text-slate-500">Date</dt>
-                      <dd className="mt-1 font-semibold text-slate-950">{formatDate(String(nextSession.session.scheduledFor || nextSession.classroom.classDate || nextSession.classroom.startDate || ""))}</dd>
-                    </div>
-                    <div className="rounded-lg bg-slate-50 px-3 py-2">
-                      <dt className="font-semibold text-slate-500">Time</dt>
-                      <dd className="mt-1 font-semibold text-slate-950">{nextSession.session.startTime || nextSession.classroom.startTime || "--"}</dd>
-                    </div>
-                    <div className="rounded-lg bg-slate-50 px-3 py-2">
-                      <dt className="font-semibold text-slate-500">Duration</dt>
-                      <dd className="mt-1 font-semibold text-slate-950">{formatDuration(nextSession.session.durationMinutes || nextSession.classroom.durationMinutes || 60)}</dd>
-                    </div>
+                  <dl className="grid gap-2 text-xs sm:grid-cols-3 lg:grid-cols-1 2xl:grid-cols-3">
+                    <InfoTile label="Date" value={formatDate(String(nextSession.session.scheduledFor || nextSession.classroom.classDate || nextSession.classroom.startDate || ""))} />
+                    <InfoTile label="Time" value={nextSession.session.startTime || nextSession.classroom.startTime || "--"} />
+                    <InfoTile label="Duration" value={formatDuration(nextSession.session.durationMinutes || nextSession.classroom.durationMinutes || 60)} />
                   </dl>
+                  <JoinScheduledSessionButton
+                    classroomId={objectId(nextSession.classroom._id)}
+                    sessionId={String(nextSession.session._id)}
+                    meetingUrl={nextSession.classroom.meetingUrl}
+                    className="btn-outline w-full justify-center"
+                    availableClassName="btn-primary w-full justify-center"
+                    unavailableClassName="btn-outline w-full justify-center"
+                    label="Join Classroom"
+                    disabled={!joinAllowed}
+                    scheduledFor={nextSession.session.scheduledFor || nextSession.classroom.classDate || nextSession.classroom.startDate}
+                    startTime={nextSession.session.startTime || nextSession.classroom.startTime}
+                    durationMinutes={nextSession.session.durationMinutes || nextSession.classroom.durationMinutes || 60}
+                  />
                 </div>
-                <JoinScheduledSessionButton
-                  classroomId={objectId(nextSession.classroom._id)}
-                  sessionId={String(nextSession.session._id)}
-                  meetingUrl={nextSession.classroom.meetingUrl}
-                  className="btn-outline w-full justify-center lg:w-auto"
-                  availableClassName="btn-primary w-full justify-center lg:w-auto"
-                  unavailableClassName="btn-outline w-full justify-center lg:w-auto"
-                  label="Join"
-                  disabled={!joinAllowed}
-                  scheduledFor={nextSession.session.scheduledFor || nextSession.classroom.classDate || nextSession.classroom.startDate}
-                  startTime={nextSession.session.startTime || nextSession.classroom.startTime}
-                  durationMinutes={nextSession.session.durationMinutes || nextSession.classroom.durationMinutes || 60}
-                />
+              ) : (
+                <div className="flex min-h-32 items-center rounded-lg bg-slate-50 px-4 py-4 text-sm text-slate-600">No upcoming classes scheduled.</div>
+              )}
+            </StudentCard>
+
+            <StudentCard className="min-h-[220px]">
+              <StudentSectionHeader icon={Flame} title="Progress Snapshot" action={<StudentTextLink href="/leaderboard">Details</StudentTextLink>} />
+              <div className="grid grid-cols-2 gap-2">
+                <InfoTile label="XP" value={totalXp} />
+                <InfoTile label="Coins" value={totalCoins} />
+                <InfoTile label="Badges" value={totalBadges} />
+                <InfoTile label="Score" value={totalHomeworkScore} />
               </div>
-            ) : (
-              <p className="rounded-lg bg-slate-50 px-3 py-3 text-sm text-slate-600">No upcoming classes scheduled.</p>
-            )}
-          </StudentCard>
+              <div className="mt-4 space-y-3">
+                <StudentProgressBar label="Homework accuracy" value={quizAccuracy} />
+                <StudentProgressBar label="Attendance" value={attendancePct} />
+              </div>
+            </StudentCard>
+          </div>
 
           <StudentCard>
             <StudentSectionHeader icon={ClipboardList} title="Homework" action={<StudentTextLink href="/homework">View All Homework</StudentTextLink>} />
-            <div className="space-y-2">
+            <div className="grid gap-2">
               {homeworkItems.length === 0 ? (
-                <p className="rounded-lg bg-slate-50 px-3 py-3 text-sm text-slate-600">No homework right now. You&apos;re all caught up!</p>
+                <p className="rounded-lg bg-slate-50 px-4 py-4 text-sm text-slate-600">No homework right now. You&apos;re all caught up!</p>
               ) : homeworkItems.map((item: any) => {
                 const submission = submissions.find((row: any) => objectId(row.homework) === objectId(item._id));
                 const status = homeworkStatus(item, submission, now);
@@ -1074,19 +1104,24 @@ async function StudentDashboard({ userId, joinAllowed }: { userId: string; joinA
                 const itemCount = (item.activities || []).length || (item.puzzles || []).length || 1;
                 const progress = submission ? 100 : 0;
                 return (
-                  <Link key={objectId(item._id)} href={`/homework/${objectId(item._id)}`} className="group block rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 transition hover:-translate-y-0.5 hover:border-brand/30 hover:bg-white hover:shadow-md hover:shadow-brand-900/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="min-w-0">
-                        <h3 className="truncate text-sm font-semibold text-slate-950">{item.title}</h3>
-                        <p className="mt-1 text-xs text-slate-500">{classroom?.courseName || currentCourse} • Due {item.dueAt ? formatDate(new Date(item.dueAt)) : "Any time"}</p>
+                  <Link key={objectId(item._id)} href={`/homework/${objectId(item._id)}`} className="group grid gap-3 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-3 transition hover:-translate-y-0.5 hover:border-brand/30 hover:bg-white hover:shadow-md hover:shadow-brand-900/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent sm:grid-cols-[minmax(0,1fr)_120px] sm:items-center">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="min-w-0 flex-1 truncate text-sm font-black text-slate-950">{item.title}</h3>
+                        <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
                       </div>
-                      <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
+                      <p className="mt-1 text-xs text-slate-500">{classroom?.courseName || currentCourse} • Due {item.dueAt ? formatDate(new Date(item.dueAt)) : "Any time"}</p>
+                      <div className="mt-3 flex items-center gap-3">
+                        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white">
+                          <div className="h-full rounded-full bg-brand transition-all duration-500" style={{ width: `${progress}%` }} />
+                        </div>
+                      </div>
                     </div>
-                    <div className="mt-3 flex items-center gap-3">
-                      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white">
+                    <div className="flex items-center justify-between rounded-lg bg-white px-3 py-2 text-xs font-semibold text-slate-600 ring-1 ring-slate-200 sm:block sm:text-center">
+                      <span>{submission ? "Submitted" : `${itemCount} tasks`}</span>
+                      <div className="mt-0 h-1.5 w-20 overflow-hidden rounded-full bg-slate-100 sm:mx-auto sm:mt-2">
                         <div className="h-full rounded-full bg-brand transition-all duration-500" style={{ width: `${progress}%` }} />
                       </div>
-                      <span className="text-[11px] font-semibold text-slate-500">{submission ? "Submitted" : `${itemCount} tasks`}</span>
                     </div>
                   </Link>
                 );
@@ -1095,19 +1130,31 @@ async function StudentDashboard({ userId, joinAllowed }: { userId: string; joinA
           </StudentCard>
         </div>
 
-        <aside className="space-y-4 xl:col-span-4">
+        <aside className="space-y-5">
           <StudentCard>
-            <StudentSectionHeader icon={Flame} title="Progress" action={<StudentTextLink href="/leaderboard">View Detailed Progress</StudentTextLink>} />
-            <div className="grid grid-cols-2 gap-2">
+            <StudentSectionHeader icon={BarChart3} title="Training Pulse" action={<StudentTextLink href="/leaderboard">Leaderboard</StudentTextLink>} />
+            <div className="rounded-lg bg-brand px-4 py-4 text-white">
+              <div className="flex items-end justify-between gap-3">
+                <div>
+                  <p className="text-[11px] font-black uppercase tracking-[0.14em] text-accent">Overall readiness</p>
+                  <p className="mt-2 text-3xl font-black">{engagementScore}%</p>
+                </div>
+                <StatusBadge tone={engagementScore >= 75 ? "success" : engagementScore >= 45 ? "warning" : "brand"}>{engagementScore >= 75 ? "Strong" : engagementScore >= 45 ? "Building" : "Needs focus"}</StatusBadge>
+              </div>
+              <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/15">
+                <div className="h-full rounded-full bg-accent transition-all duration-500" style={{ width: `${engagementScore}%` }} />
+              </div>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2">
               <InfoTile label="Current Level" value={currentLevel} />
               <InfoTile label="Rank" value={`#${studentRank.academyRank}`} />
-              <InfoTile label="XP" value={totalXp} />
               <InfoTile label="Streak" value={`${currentStreak} days`} />
+              <InfoTile label="Coach Chats" value={conversations.length} />
             </div>
             <div className="mt-4 space-y-3">
+              <StudentProgressBar label="Homework completed" value={homeworkCompletion} />
               <StudentProgressBar label="Homework accuracy" value={quizAccuracy} />
               <StudentProgressBar label="Attendance" value={attendancePct} />
-              <StudentProgressBar label="Homework completed" value={homeworkCompletion} />
             </div>
           </StudentCard>
 
@@ -1122,7 +1169,7 @@ async function StudentDashboard({ userId, joinAllowed }: { userId: string; joinA
               ].map((item) => {
                 const Icon = item.icon;
                 return (
-                  <Link key={item.href} href={item.href} className="group flex min-h-16 items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 transition hover:-translate-y-0.5 hover:border-brand/30 hover:bg-white hover:shadow-md hover:shadow-brand-900/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
+                  <Link key={item.href} href={item.href} className="group flex min-h-16 items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 transition hover:-translate-y-0.5 hover:border-brand/30 hover:bg-white hover:shadow-md hover:shadow-brand-900/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
                     <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-white text-brand ring-1 ring-slate-200 transition group-hover:bg-brand group-hover:text-white">
                       <Icon size={17} aria-hidden="true" />
                     </span>
@@ -1139,7 +1186,7 @@ async function StudentDashboard({ userId, joinAllowed }: { userId: string; joinA
           <StudentCard>
             <StudentSectionHeader icon={Trophy} title="Tournaments" action={<StudentTextLink href="/tournaments">View All</StudentTextLink>} />
             {nextTournament ? (
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <h3 className="truncate text-sm font-semibold text-slate-950">{nextTournament.name}</h3>

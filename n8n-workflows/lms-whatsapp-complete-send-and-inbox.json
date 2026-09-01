@@ -1,0 +1,330 @@
+{
+  "name": "Envision LMS - WhatsApp Complete Send and Inbox",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lms-whatsapp-send-template",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "b2d7a552-f197-4c94-9249-9c1a12c4c7e3",
+      "name": "LMS Send Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -1160,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || {};\nconst headers = $json.headers || {};\nconst expectedSecret = 'O2LwUFK2HvTDhG53';\nconst senderPhoneNumberId = '1203164092890708';\nconst receivedSecret = String(headers['x-lms-whatsapp-secret'] || headers['X-Lms-Whatsapp-Secret'] || '').trim();\n\nif (expectedSecret && receivedSecret !== expectedSecret) {\n  throw new Error('Invalid LMS WhatsApp forwarding secret');\n}\n\nconst normalizeWhatsAppNumber = (value) => {\n  const digits = String(value || '').replace(/\\D/g, '');\n  return digits.length === 10 ? `91${digits}` : digits;\n};\n\nconst rawRecipients = Array.isArray(body.recipients) && body.recipients.length\n  ? body.recipients\n  : body.to\n    ? [body.to]\n    : [];\n\nconst recipients = [...new Set(rawRecipients.map(normalizeWhatsAppNumber).filter(Boolean))];\nif (!recipients.length) throw new Error('No WhatsApp recipients provided');\n\nconst bodyComponent = Array.isArray(body.components)\n  ? body.components.find((component) => String(component?.type || '').toLowerCase() === 'body')\n  : null;\n\nconst componentParameters = Array.isArray(bodyComponent?.parameters)\n  ? bodyComponent.parameters\n      .map((parameter) => String(parameter?.text ?? parameter?.value ?? '').slice(0, 1024))\n      .filter(Boolean)\n  : [];\n\nconst rawBodyParameters = Array.isArray(body.bodyParameters)\n  ? body.bodyParameters\n  : Array.isArray(body.templateVariables)\n    ? body.templateVariables\n    : componentParameters;\n\nconst bodyParameters = rawBodyParameters\n  .map((value) => String(value || '').trim().slice(0, 1024))\n  .filter(Boolean);\n\nconst type = String(body.type || 'template').trim().toLowerCase() === 'text' ? 'text' : 'template';\nconst textBody = String(body.message || body.text || '').trim().slice(0, 4096);\nif (type === 'text' && !textBody) throw new Error('Missing text message body');\n\nconst templateName = String(body.templateName || body.template_name || '').trim();\nconst language = String(body.language || body.language_code || 'en_US').trim();\nif (type === 'template' && !templateName) throw new Error('No WhatsApp template name provided');\n\nreturn recipients.map((recipientPhoneNumber) => {\n  const component = bodyParameters.length\n    ? [\n        {\n          type: 'body',\n          bodyParameters: {\n            parameter: bodyParameters.map((text) => ({ type: 'text', text })),\n          },\n        },\n      ]\n    : [];\n\n  return {\n    json: {\n      type,\n      phoneNumberId: senderPhoneNumberId,\n      recipientPhoneNumber,\n      textBody,\n      template: templateName ? `${templateName}|${language}` : '',\n      templateName,\n      language,\n      bodyParameters,\n      components: { component },\n      metadata: body.metadata || {},\n      debug: {\n        sender: 'n8n_whatsapp_node',\n        phoneNumberId: senderPhoneNumberId,\n        recipientPhoneNumber,\n        messageType: type,\n        templateName,\n        templateLanguage: language,\n        bodyParameterCount: bodyParameters.length,\n      },\n    },\n  };\n});"
+      },
+      "id": "887587c5-c4a5-45c3-a963-28c10fd8b687",
+      "name": "Prepare LMS Send Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -900,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "message-is-text",
+              "leftValue": "={{$json.type}}",
+              "rightValue": "text",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "68e46293-4829-4411-bd2e-b08c2aafdb0b",
+      "name": "Is Text Reply?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -640,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "={{$json.phoneNumberId}}",
+        "recipientPhoneNumber": "={{$json.recipientPhoneNumber}}",
+        "textBody": "={{$json.textBody}}",
+        "additionalFields": {}
+      },
+      "id": "77537b22-0c12-4cf1-a186-b6fb18fc3875",
+      "name": "Send Text Reply",
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1.1,
+      "position": [
+        -360,
+        20
+      ],
+      "webhookId": "a49ed7d8-7f89-45b0-9664-a5c18865d521",
+      "alwaysOutputData": true,
+      "continueOnFail": true,
+      "credentials": {
+        "whatsAppApi": {
+          "id": "ozVfoJT4f4xAWXfO",
+          "name": "WhatsApp account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "sendTemplate",
+        "phoneNumberId": "={{$json.phoneNumberId}}",
+        "recipientPhoneNumber": "={{$json.recipientPhoneNumber}}",
+        "template": "={{$json.template}}",
+        "components": "={{$json.components}}"
+      },
+      "id": "ab1fa632-2c09-45f1-b8f7-30e40cfb4459",
+      "name": "Send Template",
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1.1,
+      "position": [
+        -360,
+        220
+      ],
+      "webhookId": "b08b8d52-f359-4a16-bd28-9ad8f46107d1",
+      "alwaysOutputData": true,
+      "continueOnFail": true,
+      "credentials": {
+        "whatsAppApi": {
+          "id": "ozVfoJT4f4xAWXfO",
+          "name": "WhatsApp account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const sentItems = $input.all();\nconst requestItems = $items('Prepare LMS Send Request');\n\nconst errorText = (value) => {\n  if (!value) return '';\n  if (typeof value === 'string') return value;\n  return String(value.message || value.error_user_msg || value.error || JSON.stringify(value));\n};\n\nconst results = sentItems.map((item, index) => {\n  const response = item.json || {};\n  const request = requestItems[index]?.json || {};\n  const itemError = item.error || {};\n  const nestedError = response.body?.error || response.data?.error || response.error || null;\n  const message = response.messages?.[0] || response.body?.messages?.[0] || response.data?.messages?.[0] || null;\n  const error = errorText(nestedError || itemError?.message || response.message || response.errorDescription);\n  const ok = Boolean(message?.id || response.messaging_product || response.metaMessageId) && !error;\n\n  return {\n    phoneNumber: request.recipientPhoneNumber || response.to || '',\n    to: request.recipientPhoneNumber || response.to || '',\n    ok,\n    status: ok ? (message?.message_status || 'accepted') : 'failed',\n    metaMessageId: message?.id || response.metaMessageId || '',\n    templateName: request.templateName || '',\n    messageType: request.type || 'template',\n    error: ok ? '' : error || 'WhatsApp send failed in n8n.',\n    metaError: ok ? null : nestedError,\n    debug: {\n      ...(request.debug || {}),\n      rawResponse: response,\n      itemError,\n    },\n  };\n});\n\nreturn [{ json: { ok: results.length > 0 && results.every((result) => result.ok), results } }];"
+      },
+      "id": "8b102bd0-d34d-49a3-a597-c61c2ee0ca44",
+      "name": "Build LMS Send Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -80,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{JSON.stringify($json)}}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "7920d61d-3b75-4fdc-9632-c95b86a95654",
+      "name": "Respond to LMS",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        200,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "updates": [
+          "messages"
+        ],
+        "options": {
+          "messageStatusUpdates": [
+            "all"
+          ]
+        }
+      },
+      "id": "397446f8-d74e-45f4-9139-c0080ca82b3d",
+      "name": "On WhatsApp Messages",
+      "type": "n8n-nodes-base.whatsAppTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1160,
+        520
+      ],
+      "webhookId": "07480fbe-3fcf-4fc7-bea7-efd04a7aef44",
+      "credentials": {
+        "whatsAppTriggerApi": {
+          "id": "AAKYATAI6pmxHUFx",
+          "name": "WhatsApp OAuth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $json || {};\nconst source = input.body && typeof input.body === 'object' ? input.body : input;\n\nif (Array.isArray(source.entry)) {\n  return [{ json: source }];\n}\n\nconst messages = Array.isArray(source.messages)\n  ? source.messages\n  : source.from && (source.id || source.waMessageId || source.providerMessageId)\n    ? [source]\n    : [];\n\nconst statuses = Array.isArray(source.statuses)\n  ? source.statuses\n  : source.status && source.id\n    ? [source]\n    : [];\n\nif (!messages.length && !statuses.length) {\n  return [{ json: source }];\n}\n\nconst normalizeTimestamp = (value) => {\n  if (value === undefined || value === null || value === '') return new Date().toISOString();\n  const raw = String(value).trim();\n  if (/^\\d+$/.test(raw)) {\n    const numeric = Number(raw);\n    return new Date(numeric < 10000000000 ? numeric * 1000 : numeric).toISOString();\n  }\n  const parsed = new Date(raw);\n  return Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();\n};\n\nreturn [{\n  json: {\n    messaging_product: source.messaging_product || 'whatsapp',\n    metadata: source.metadata || {},\n    contacts: source.contacts || [],\n    messages: messages.map((message) => ({\n      ...message,\n      id: String(message.id || message.waMessageId || message.providerMessageId || ''),\n      from: String(message.from || message.waId || ''),\n      type: message.type || 'text',\n      timestamp: normalizeTimestamp(message.timestamp),\n      text: typeof message.text === 'string' ? { body: message.text } : message.text,\n    })),\n    statuses,\n  },\n}];"
+      },
+      "id": "f19ba049-4159-4a11-b902-53ca2f997ddc",
+      "name": "Prepare LMS Incoming Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -900,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://classroom.envisionchessacademy.com/api/webhooks/whatsapp",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-lms-whatsapp-secret",
+              "value": "O2LwUFK2HvTDhG53"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "bfb3fb60-97b1-46f0-b1b2-17b34a391065",
+      "name": "Forward Incoming to LMS",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -620,
+        520
+      ]
+    }
+  ],
+  "connections": {
+    "LMS Send Webhook": {
+      "main": [
+        [
+          {
+            "node": "Prepare LMS Send Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare LMS Send Request": {
+      "main": [
+        [
+          {
+            "node": "Is Text Reply?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Text Reply?": {
+      "main": [
+        [
+          {
+            "node": "Send Text Reply",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Template",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Text Reply": {
+      "main": [
+        [
+          {
+            "node": "Build LMS Send Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Template": {
+      "main": [
+        [
+          {
+            "node": "Build LMS Send Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build LMS Send Response": {
+      "main": [
+        [
+          {
+            "node": "Respond to LMS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "On WhatsApp Messages": {
+      "main": [
+        [
+          {
+            "node": "Prepare LMS Incoming Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare LMS Incoming Payload": {
+      "main": [
+        [
+          {
+            "node": "Forward Incoming to LMS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "aefcf4acf7d9b8d370cbf20957eec9d310494c9c0914ff36c3c4ce6b2e5298c8"
+  }
+}

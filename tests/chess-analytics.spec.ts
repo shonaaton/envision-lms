@@ -181,3 +181,33 @@ test("imports Lichess games from mocked NDJSON stream", async () => {
     global.fetch = originalFetch;
   }
 });
+
+test("Lichess game import omits since parameter for historical sync", async () => {
+  const requestedUrls: string[] = [];
+  const originalFetch = global.fetch;
+  global.fetch = (async (url: RequestInfo | URL) => {
+    requestedUrls.push(String(url));
+    return new Response("", { status: 200, headers: { "content-type": "application/x-ndjson" } });
+  }) as typeof fetch;
+  try {
+    await new LichessProvider().getGames("Samriddhi2017");
+    expect(requestedUrls[0]).not.toContain("since=");
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test("Lichess game import includes since parameter only for incremental sync", async () => {
+  const requestedUrls: string[] = [];
+  const originalFetch = global.fetch;
+  global.fetch = (async (url: RequestInfo | URL) => {
+    requestedUrls.push(String(url));
+    return new Response("", { status: 200, headers: { "content-type": "application/x-ndjson" } });
+  }) as typeof fetch;
+  try {
+    await new LichessProvider().getGames("Samriddhi2017", { since: new Date(Date.UTC(2026, 7, 31)) });
+    expect(requestedUrls[0]).toContain("since=");
+  } finally {
+    global.fetch = originalFetch;
+  }
+});

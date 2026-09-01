@@ -56,7 +56,7 @@ export async function startChessSync(studentId: string, accountId: string) {
   return job;
 }
 
-export async function syncChessAccountNow(studentId: string, accountId: string) {
+export async function syncChessAccountNow(studentId: string, accountId: string, options?: { full?: boolean }) {
   await dbConnect();
   const account: any = await ChessAccount.findOne({ _id: accountId, student: studentId, isActive: true });
   if (!account) throw new Error("Chess account not found.");
@@ -81,7 +81,7 @@ export async function syncChessAccountNow(studentId: string, accountId: string) 
     job = await ChessSyncJob.create({ student: studentId, account: account._id, platform: account.platform, status: "PENDING" });
   }
 
-  const result = await runChessSyncJob(job._id.toString());
+  const result = await runChessSyncJob(job._id.toString(), options);
   return { id: job._id.toString(), status: "COMPLETED", ...result };
 }
 
@@ -106,7 +106,7 @@ export async function enqueueDueChessSyncs(limit = 25) {
   return jobs;
 }
 
-export async function runChessSyncJob(jobId: string) {
+export async function runChessSyncJob(jobId: string, options?: { full?: boolean }) {
   await dbConnect();
   const job: any = await ChessSyncJob.findById(jobId);
   if (!job) throw new Error("Sync job not found.");
@@ -131,7 +131,9 @@ export async function runChessSyncJob(jobId: string) {
       )
     );
 
-    const games = await provider.getGames(account.username, { since: account.lastSyncedAt || undefined });
+    const existingGameCount = await ChessGame.countDocuments({ chessAccount: account._id });
+    const shouldFetchHistory = options?.full || existingGameCount === 0;
+    const games = await provider.getGames(account.username, { since: shouldFetchHistory ? undefined : account.lastSyncedAt || undefined });
     let imported = 0;
     let duplicates = 0;
     for (const game of games) {

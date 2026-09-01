@@ -62,13 +62,13 @@ export function ChessDashboardClient({ initialDashboard, selectedStudentId, view
     setLoading(false);
   }
 
-  async function syncNow(accountId: string) {
+  async function syncNow(accountId: string, full = false) {
     setLoading(true);
     setSyncingAccountId(accountId);
     const response = await fetch("/api/chess/sync", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ accountId, studentId: selectedStudentId }),
+      body: JSON.stringify({ accountId, studentId: selectedStudentId, full }),
     });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
@@ -76,7 +76,7 @@ export function ChessDashboardClient({ initialDashboard, selectedStudentId, view
     } else if (body.status === "COMPLETED") {
       const imported = Number(body.gamesImported || 0);
       const duplicates = Number(body.duplicatesSkipped || 0);
-      if (imported || duplicates) alert(`Sync completed. Imported ${imported} game${imported === 1 ? "" : "s"} and skipped ${duplicates} duplicate${duplicates === 1 ? "" : "s"}.`);
+      alert(`Sync completed. Imported ${imported} game${imported === 1 ? "" : "s"} and skipped ${duplicates} duplicate${duplicates === 1 ? "" : "s"}.`);
     } else if (body.status === "SYNCING") {
       alert("A sync is already running for this account. Please try refreshing in a minute.");
     }
@@ -139,6 +139,9 @@ export function ChessDashboardClient({ initialDashboard, selectedStudentId, view
                 <div className="mt-3 flex gap-2">
                   <button className="btn-outline inline-flex items-center gap-2" onClick={() => syncNow(account.id)} disabled={loading}>
                     <RefreshCw size={14} className={syncingAccountId === account.id ? "animate-spin" : ""} /> {syncingAccountId === account.id ? "Syncing..." : "Sync"}
+                  </button>
+                  <button className="btn-outline inline-flex items-center gap-2" onClick={() => syncNow(account.id, true)} disabled={loading}>
+                    Full sync
                   </button>
                   {canManage && <button className="btn-outline inline-flex items-center gap-2" onClick={() => unlink(account.id)} disabled={loading}><Unlink size={14} /> Remove</button>}
                 </div>

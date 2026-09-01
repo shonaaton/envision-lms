@@ -8,6 +8,7 @@ export const dynamic = "force-dynamic";
 const syncSchema = z.object({
   accountId: z.string().min(1),
   studentId: z.string().optional(),
+  full: z.boolean().optional(),
 });
 
 export async function POST(req: Request) {
@@ -15,7 +16,7 @@ export async function POST(req: Request) {
   const access = await resolveAuthorizedChessStudent(body.studentId, "sync");
   if (!access) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   try {
-    const job = await syncChessAccountNow(access.studentId, body.accountId);
+    const job = await syncChessAccountNow(access.studentId, body.accountId, { full: body.full });
     return NextResponse.json(job);
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Could not start chess sync." }, { status: 400 });

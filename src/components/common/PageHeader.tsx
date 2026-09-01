@@ -1,7 +1,7 @@
 import type { ComponentType, ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
-type IconComponent = ComponentType<{ size?: number; className?: string }>;
+type IconComponent = ComponentType<{ size?: number | string; className?: string }>;
 type Tone = "purple" | "green" | "amber" | "blue" | "rose";
 
 const statTones: Record<Tone, string> = {

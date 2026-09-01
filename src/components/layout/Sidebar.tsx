@@ -86,6 +86,9 @@ const sections: NavSection[] = [
     items: [
       { href: "/pgn", label: "PGN Library", icon: Library, featureKey: "pgnLibrary", roles: ["instructor", "admin", "sub-admin"] },
       { href: "/analysis", label: "Analysis Board", icon: ListChecks, featureKey: "analysisBoard", roles: ["student", "instructor", "admin", "sub-admin"] },
+      { href: "/chess-profile", label: "My Chess Profile", icon: BarChart3, featureKey: "playerAnalytics", roles: ["student"] },
+      { href: "/instructor/students", label: "My Students", icon: Users, featureKey: "playerAnalytics", permission: "view_assigned", roles: ["instructor"] },
+      { href: "/admin/player-analytics", label: "Player Analytics", icon: BarChart3, featureKey: "playerAnalytics", permission: "view_all", roles: ["admin", "sub-admin"] },
       { href: "/play/tactics-trainer", label: "Tactics Trainer", icon: Target, featureKey: "tacticsTrainer", roles: ["student", "admin", "sub-admin"] },
       { href: "/play/king-hunt", label: "King Hunt", icon: Crown, featureKey: "kingHunt", roles: ["student", "admin", "sub-admin"] },
       { href: "/play/square-trainer", label: "Square Trainer", icon: Crosshair, featureKey: "squareTrainer", roles: ["student", "admin", "sub-admin"] },

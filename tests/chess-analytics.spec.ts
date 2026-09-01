@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { decideChessAccess } from "../src/lib/chess/accessDecision";
 import { createGameHash, normalizeTimeControl, parseGameFromPgn, splitPgnGames } from "../src/lib/chess/pgn";
-import { ChessComProvider, LichessProvider } from "../src/lib/chess/providers";
+import { ChessComProvider, LichessProvider, normalizeLichessGame } from "../src/lib/chess/providers";
 
 const pgn = `[Event "Rated Blitz game"]
 [Site "https://lichess.org/abc123"]
@@ -105,6 +105,78 @@ test("validates Lichess usernames through provider response status", async () =>
     const provider = new LichessProvider();
     await expect(provider.validateUsername("valid-user")).resolves.toBe(true);
     await expect(provider.validateUsername("missing-user")).resolves.toBe(false);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test("normalizes Lichess NDJSON game export into LMS game data", () => {
+  const game = normalizeLichessGame(
+    {
+      id: "abc123",
+      rated: true,
+      speed: "rapid",
+      createdAt: Date.UTC(2026, 7, 31, 14, 12, 0),
+      winner: "black",
+      status: "mate",
+      players: {
+        white: { user: { name: "Opponent42" }, rating: 1010, ratingDiff: -5 },
+        black: { user: { name: "Samriddhi2017" }, rating: 958, ratingDiff: 7 },
+      },
+      clock: { initial: 600, increment: 0 },
+      opening: { eco: "B20", name: "Sicilian Defense" },
+      moves: "e4 c5 Nf3 d6",
+      pgn,
+    },
+    "samriddhi2017"
+  );
+
+  expect(game).toMatchObject({
+    platform: "LICHESS",
+    platformGameId: "abc123",
+    result: "win",
+    studentColor: "black",
+    studentRating: 958,
+    opponentRating: 1010,
+    ratingChange: 7,
+    timeControl: "600+0",
+    timeControlCategory: "rapid",
+    opening: "Sicilian Defense",
+    eco: "B20",
+    gameUrl: "https://lichess.org/abc123",
+  });
+});
+
+test("imports Lichess games from mocked NDJSON stream", async () => {
+  const originalFetch = global.fetch;
+  global.fetch = (async () =>
+    new Response(
+      `${JSON.stringify({
+        id: "abc123",
+        rated: true,
+        speed: "blitz",
+        createdAt: Date.UTC(2026, 7, 31),
+        winner: "white",
+        players: {
+          white: { user: { name: "Samriddhi2017" }, rating: 856, ratingDiff: 8 },
+          black: { user: { name: "Opponent42" }, rating: 860, ratingDiff: -8 },
+        },
+        clock: { initial: 300, increment: 3 },
+        opening: { eco: "C50", name: "Italian Game" },
+        moves: "e4 e5 Nf3 Nc6",
+      })}\n`,
+      { status: 200, headers: { "content-type": "application/x-ndjson" } }
+    )) as typeof fetch;
+  try {
+    const games = await new LichessProvider().getGames("Samriddhi2017");
+    expect(games).toHaveLength(1);
+    expect(games[0]).toMatchObject({
+      result: "win",
+      studentColor: "white",
+      opponentUsername: "Opponent42",
+      opening: "Italian Game",
+      timeControlCategory: "blitz",
+    });
   } finally {
     global.fetch = originalFetch;
   }

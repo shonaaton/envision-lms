@@ -1,5 +1,5 @@
 import type { ChessPlatform, ChessPlatformProvider, GameFetchOptions, NormalizedGame, PlatformProfile, PlatformRating } from "./types";
-import { parseGameFromPgn } from "./pgn";
+import { createGameHash, normalizeTimeControl, parseGameFromPgn } from "./pgn";
 
 const CHESS_COM_BASE = "https://api.chess.com/pub/player";
 const LICHESS_BASE = "https://lichess.org/api";
@@ -110,19 +110,22 @@ export class LichessProvider implements ChessPlatformProvider {
       clocks: "false",
       evals: "false",
       opening: "true",
+      pgnInJson: "true",
       sort: "dateAsc",
     });
     if (options?.since) params.set("since", String(options.since.getTime()));
     if (options?.maxGames) params.set("max", String(options.maxGames));
     const response = await fetchWithRetry(`${LICHESS_BASE}/games/user/${encodeURIComponent(username)}?${params.toString()}`, {
-      headers: { Accept: "application/x-chess-pgn" },
+      headers: { Accept: "application/x-ndjson" },
       timeoutMs: 120_000,
     });
-    const pgnText = await response.text();
-    const games = pgnText
-      .split(/\n{2,}(?=\[Event\s+")/g)
-      .map((pgn) => parseGameFromPgn(pgn, username, "LICHESS"))
-      .filter((game): game is NonNullable<ReturnType<typeof parseGameFromPgn>> => Boolean(game))
+    const ndjson = await response.text();
+    const games = ndjson
+      .split(/\r?\n/g)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => parseLichessGameJson(line, username))
+      .filter((game): game is NormalizedGame => Boolean(game))
       .filter((game) => !options?.since || game.playedAt >= options.since);
     return games;
   }
@@ -142,9 +145,99 @@ function ratingFromLichess(perf: any, ratingType: PlatformRating["ratingType"], 
   return Number.isFinite(rating) ? { ratingType, rating, recordedAt } : null;
 }
 
+export function normalizeLichessGame(raw: any, username: string): NormalizedGame | null {
+  const white = raw?.players?.white;
+  const black = raw?.players?.black;
+  const whiteUsername = String(white?.user?.name || white?.user?.id || "Anonymous");
+  const blackUsername = String(black?.user?.name || black?.user?.id || "Anonymous");
+  const normalizedUser = username.trim().toLowerCase();
+  const studentColor = whiteUsername.toLowerCase() === normalizedUser ? "white" : blackUsername.toLowerCase() === normalizedUser ? "black" : null;
+  if (!studentColor) return null;
+
+  const winner = typeof raw?.winner === "string" ? raw.winner : null;
+  const result = !winner ? "draw" : winner === studentColor ? "win" : "loss";
+  const whiteRating = numberFrom(white?.rating);
+  const blackRating = numberFrom(black?.rating);
+  const timeControl = lichessTimeControl(raw);
+  const playedAt = new Date(Number(raw?.createdAt || raw?.lastMoveAt || Date.now()));
+  const platformGameId = raw?.id ? String(raw.id) : undefined;
+  const pgn = raw?.pgn ? String(raw.pgn) : buildLichessPgn(raw, whiteUsername, blackUsername, result, timeControl);
+
+  return {
+    platform: "LICHESS",
+    platformGameId,
+    playedAt,
+    whiteUsername,
+    blackUsername,
+    whiteRating,
+    blackRating,
+    studentColor,
+    studentRating: studentColor === "white" ? whiteRating : blackRating,
+    opponentUsername: studentColor === "white" ? blackUsername : whiteUsername,
+    opponentRating: studentColor === "white" ? blackRating : whiteRating,
+    ratingChange: numberFrom(studentColor === "white" ? white?.ratingDiff : black?.ratingDiff),
+    result,
+    termination: raw?.status ? String(raw.status) : undefined,
+    timeControl,
+    timeControlCategory: normalizeLichessSpeed(raw?.speed, timeControl),
+    rated: Boolean(raw?.rated),
+    opening: raw?.opening?.name ? String(raw.opening.name) : undefined,
+    eco: raw?.opening?.eco ? String(raw.opening.eco) : undefined,
+    pgn,
+    gameUrl: platformGameId ? `https://lichess.org/${platformGameId}` : undefined,
+    gameHash: createGameHash({ platform: "LICHESS", platformGameId, pgn }),
+    moveCount: typeof raw?.moves === "string" ? raw.moves.split(/\s+/).filter(Boolean).length : undefined,
+  };
+}
+
 async function fetchJson(url: string) {
   const response = await fetchWithRetry(url);
   return response.json();
+}
+
+function parseLichessGameJson(line: string, username: string) {
+  try {
+    return normalizeLichessGame(JSON.parse(line), username);
+  } catch {
+    return null;
+  }
+}
+
+function normalizeLichessSpeed(speed: unknown, timeControl?: string): NormalizedGame["timeControlCategory"] {
+  const value = String(speed || "").toLowerCase();
+  if (["ultrabullet", "bullet", "blitz", "rapid", "classical", "correspondence"].includes(value)) return value as NormalizedGame["timeControlCategory"];
+  return normalizeTimeControl(timeControl);
+}
+
+function lichessTimeControl(raw: any) {
+  const initial = numberFrom(raw?.clock?.initial);
+  const increment = numberFrom(raw?.clock?.increment);
+  if (initial !== undefined) return `${initial}+${increment || 0}`;
+  if (raw?.speed === "correspondence") return "correspondence";
+  return undefined;
+}
+
+function buildLichessPgn(raw: any, white: string, black: string, result: NormalizedGame["result"], timeControl?: string) {
+  const resultTag = raw?.winner === "white" ? "1-0" : raw?.winner === "black" ? "0-1" : "1/2-1/2";
+  const date = new Date(Number(raw?.createdAt || Date.now())).toISOString().slice(0, 10).replace(/-/g, ".");
+  const headers = [
+    `[Event "Lichess game"]`,
+    `[Site "https://lichess.org/${raw?.id || ""}"]`,
+    `[Date "${date}"]`,
+    `[White "${white}"]`,
+    `[Black "${black}"]`,
+    `[Result "${resultTag}"]`,
+    raw?.opening?.eco ? `[ECO "${raw.opening.eco}"]` : "",
+    raw?.opening?.name ? `[Opening "${raw.opening.name}"]` : "",
+    timeControl ? `[TimeControl "${timeControl}"]` : "",
+  ].filter(Boolean);
+  return `${headers.join("\n")}\n\n${raw?.moves || ""} ${resultTag}`.trim();
+}
+
+function numberFrom(value?: string | number) {
+  if (value === undefined || value === null || value === "") return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 async function fetchWithRetry(url: string, options?: { method?: string; headers?: Record<string, string>; timeoutMs?: number }) {

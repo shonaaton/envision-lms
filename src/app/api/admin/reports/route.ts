@@ -6,7 +6,7 @@ import { Classroom } from "@/models/Classroom";
 import { Tournament } from "@/models/Tournament";
 import { TournamentGame } from "@/models/TournamentGame";
 import { deriveScheduledSessionStatus, isSessionUpcomingLike } from "@/lib/classroomSessions";
-import { summarizeCoachSessions } from "@/lib/teachingStats";
+import { effectiveSessionCoachId, summarizeCoachSessions } from "@/lib/teachingStats";
 
 export const dynamic = "force-dynamic";
 
@@ -244,19 +244,29 @@ export async function GET(req: Request) {
   } else if (type === "coaching-hours") {
     const classrooms = await Classroom.find({})
       .populate("coach instructor students batches", "name")
+      .populate("generatedSessions.substituteCoach generatedSessions.conductedBy", "name")
       .sort({ updatedAt: -1 })
       .lean();
 
     const coachGroups = new Map<string, { coachName: string; classrooms: any[] }>();
-    classrooms
-      .filter((classroom: any) => !coachId || [classroom.coach, classroom.instructor].map(objectId).includes(coachId))
-      .forEach((classroom: any) => {
-      const coach = classroom.coach || classroom.instructor || null;
-      if (!coach?._id) return;
-      const key = String(coach._id);
-      const current = coachGroups.get(key) || { coachName: coach.name || "Coach", classrooms: [] as any[] };
-      current.classrooms.push(classroom);
+    const addCoachGroup = (coach: any, classroom: any) => {
+      const key = objectId(coach);
+      if (!key || (coachId && key !== coachId)) return;
+      const current = coachGroups.get(key) || { coachName: coach?.name || "Coach", classrooms: [] as any[] };
+      if (!current.classrooms.some((item) => objectId(item._id) === objectId(classroom._id))) {
+        current.classrooms.push(classroom);
+      }
       coachGroups.set(key, current);
+    };
+
+    classrooms.forEach((classroom: any) => {
+      addCoachGroup(classroom.coach || classroom.instructor, classroom);
+      (classroom.generatedSessions || []).forEach((session: any) => {
+        const effectiveCoachId = effectiveSessionCoachId(session, classroom);
+        const effectiveCoach = [session.conductedBy, session.substituteCoach, classroom.coach, classroom.instructor]
+          .find((candidate: any) => objectId(candidate) === effectiveCoachId);
+        addCoachGroup(effectiveCoach, classroom);
+      });
     });
 
     title = "Coaching Hours Report";
@@ -274,18 +284,18 @@ export async function GET(req: Request) {
       "Cancelled",
       "Rescheduled",
     ];
-    rows = Array.from(coachGroups.values()).flatMap((group) => {
+    rows = Array.from(coachGroups.entries()).flatMap(([groupCoachId, group]) => {
       const summary = summarizeCoachSessions(group.classrooms, {
         from: range.from || new Date("2000-01-01"),
         to: range.to || new Date("2100-12-31"),
-      });
+      }, { coachId: groupCoachId });
       if (!summary.batchRows.length) {
         return [[
           group.coachName,
           "Unassigned",
           summary.classesConducted,
-          summary.totalHoursConducted,
-          summary.actualHoursConducted,
+          summary.totalHoursConducted.toFixed(2),
+          summary.actualHoursConducted.toFixed(2),
           summary.averageClassDuration,
           summary.averageActualDuration,
           `${summary.punctualityScore}%`,
@@ -299,8 +309,8 @@ export async function GET(req: Request) {
         group.coachName,
         batchRow.batchName,
         batchRow.classesConducted,
-        Number(batchRow.hoursConducted.toFixed(1)),
-        Number((batchRow.actualHours || 0).toFixed(1)),
+        batchRow.hoursConducted.toFixed(2),
+        (batchRow.actualHours || 0).toFixed(2),
         summary.averageClassDuration,
         summary.averageActualDuration,
         `${summary.punctualityScore}%`,

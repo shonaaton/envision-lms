@@ -1,4 +1,5 @@
 type RangeLike = { from: Date; to: Date };
+type CoachSessionSummaryOptions = { coachId?: string };
 
 function objectId(value: any) {
   return value?._id?.toString?.() ?? value?.toString?.() ?? "";
@@ -29,6 +30,10 @@ export function scheduledStartDate(session: any, classroom?: any) {
   return base;
 }
 
+export function effectiveSessionCoachId(session: any, classroom?: any) {
+  return objectId(session?.conductedBy || session?.substituteCoach || classroom?.coach || classroom?.instructor);
+}
+
 export function punctualityBreakdown(session: any, classroom?: any) {
   const scheduledStart = scheduledStartDate(session, classroom);
   const actualStart = session?.actualStartedAt ? new Date(session.actualStartedAt) : null;
@@ -56,13 +61,17 @@ export function punctualityBreakdown(session: any, classroom?: any) {
   };
 }
 
-export function summarizeCoachSessions(classrooms: any[], range: RangeLike) {
+export function summarizeCoachSessions(classrooms: any[], range: RangeLike, options: CoachSessionSummaryOptions = {}) {
+  const coachId = options.coachId ? objectId(options.coachId) : "";
   const rows = classrooms.flatMap((classroom: any) =>
     (classroom.generatedSessions || []).map((session: any) => ({
       classroom,
       session,
     }))
-  ).filter(({ session }) => overlapsRange(session.actualStartedAt || session.scheduledFor, session.actualEndedAt || session.scheduledFor, range));
+  ).filter(({ classroom, session }) => {
+    if (!overlapsRange(session.actualStartedAt || session.scheduledFor, session.actualEndedAt || session.scheduledFor, range)) return false;
+    return !coachId || effectiveSessionCoachId(session, classroom) === coachId;
+  });
 
   const completed = rows.filter(({ session }) => session.status === "completed");
   const cancelled = rows.filter(({ session }) => session.status === "cancelled");
@@ -92,8 +101,8 @@ export function summarizeCoachSessions(classrooms: any[], range: RangeLike) {
     classesConducted: completed.length,
     classesCancelled: cancelled.length,
     classesRescheduled: rescheduled.length,
-    totalHoursConducted: Number((conductedMinutes / 60).toFixed(1)),
-    actualHoursConducted: Number((actualMinutes / 60).toFixed(1)),
+    totalHoursConducted: Number((conductedMinutes / 60).toFixed(2)),
+    actualHoursConducted: Number((actualMinutes / 60).toFixed(2)),
     averageClassDuration: completed.length ? Math.round(conductedMinutes / completed.length) : 0,
     averageActualDuration: completed.length ? Math.round(actualMinutes / completed.length) : 0,
     punctualityScore: punctualityScores.length ? Math.round(punctualityScores.reduce((sum, value) => sum + value, 0) / punctualityScores.length) : 0,

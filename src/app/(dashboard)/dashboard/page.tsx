@@ -20,7 +20,7 @@ import {
   isJoinWindowOpen,
   isSessionUpcomingLike,
 } from "@/lib/classroomSessions";
-import { summarizeCoachSessions } from "@/lib/teachingStats";
+import { effectiveSessionCoachId, summarizeCoachSessions } from "@/lib/teachingStats";
 import JoinScheduledSessionButton from "@/components/classroom/JoinScheduledSessionButton";
 import FutureClassDetailsButton from "@/components/classroom/FutureClassDetailsButton";
 import { DataPanel, EmptyState as CommonEmptyState, FilterBar } from "@/components/common/PageHeader";
@@ -1220,7 +1220,7 @@ async function CoachDashboard({ userId, searchParams, joinAllowed }: { userId: s
       >
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <StatCard label="Next Sessions" value={sessions.length} note="Today, tomorrow, and upcoming" icon={Calendar} tone="purple" />
-            <StatCard label="Teaching Hours" value={teaching.totalHoursConducted} note={summaryRange.label} icon={BookOpen} tone="blue" />
+            <StatCard label="Teaching Hours" value={teaching.totalHoursConducted.toFixed(2)} note={summaryRange.label} icon={BookOpen} tone="blue" />
             <StatCard label="Classes Conducted" value={teaching.classesConducted} note={`${teaching.classesCancelled} cancelled`} icon={ClipboardList} tone="amber" />
             <StatCard label="Students" value={teaching.totalStudentsTaught || new Set(classrooms.flatMap((item: any) => (item.students || []).map((student: any) => objectId(student)))).size} note={`${teaching.attendancePercentage}% completion`} icon={Users} tone="green" />
           </div>
@@ -1265,8 +1265,8 @@ async function CoachDashboard({ userId, searchParams, joinAllowed }: { userId: s
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <InfoTile label="Total Hours" value={teaching.totalHoursConducted} />
-            <InfoTile label="Actual Time" value={`${teaching.actualHoursConducted || 0}h`} />
+            <InfoTile label="Total Hours" value={teaching.totalHoursConducted.toFixed(2)} />
+            <InfoTile label="Actual Time" value={`${teaching.actualHoursConducted.toFixed(2)}h`} />
             <InfoTile label="Avg Paid Duration" value={formatDuration(teaching.averageClassDuration || 0)} />
             <InfoTile label="Avg Actual Duration" value={formatDuration(teaching.averageActualDuration || 0)} />
             <InfoTile label="Punctuality" value={`${teaching.punctualityScore || 0}%`} />
@@ -1293,8 +1293,8 @@ async function CoachDashboard({ userId, searchParams, joinAllowed }: { userId: s
                   <tr key={row.batchName} className="border-b border-slate-100 last:border-0">
                     <td className="px-3 py-3 font-medium text-slate-950">{row.batchName}</td>
                     <td className="px-3 py-3">{row.classesConducted}</td>
-                    <td className="px-3 py-3">{row.hoursConducted.toFixed(1)}</td>
-                    <td className="px-3 py-3">{(row.actualHours || 0).toFixed(1)}</td>
+                    <td className="px-3 py-3">{row.hoursConducted.toFixed(2)}</td>
+                    <td className="px-3 py-3">{(row.actualHours || 0).toFixed(2)}</td>
                     <td className="px-3 py-3">{row.students}</td>
                   </tr>
                 )) : (
@@ -1523,7 +1523,7 @@ async function CoachDashboardV2({ userId, searchParams, joinAllowed }: { userId:
           </div>
           <div className="grid grid-cols-3 gap-2 sm:min-w-[360px]">
             <CoachHeaderMetric label="Upcoming" value={sessions.length} />
-            <CoachHeaderMetric label="Hours" value={teaching.totalHoursConducted} />
+            <CoachHeaderMetric label="Hours" value={teaching.totalHoursConducted.toFixed(2)} />
             <CoachHeaderMetric label="Students" value={teaching.totalStudentsTaught || assignedStudentCount} />
           </div>
         </div>
@@ -1677,7 +1677,7 @@ async function CoachDashboardV2({ userId, searchParams, joinAllowed }: { userId:
             <span className="grid h-14 w-14 place-items-center rounded-full bg-brand/10 text-brand"><BarChart3 size={24} /></span>
             <div>
               <h2 className="text-lg font-black text-slate-950">Teaching Hours Insight</h2>
-              <p className="mt-1 text-sm text-slate-500">{teaching.classesConducted ? `${teaching.totalHoursConducted} hours conducted in ${summaryRange.label}.` : "No teaching-hours insights available yet."}</p>
+              <p className="mt-1 text-sm text-slate-500">{teaching.classesConducted ? `${teaching.totalHoursConducted.toFixed(2)} hours conducted in ${summaryRange.label}.` : "No teaching-hours insights available yet."}</p>
             </div>
           </div>
           <Link href={`/dashboard?summaryMonth=${summaryRange.mode === "current" ? "last" : "current"}`} className="hidden text-sm font-black text-brand sm:inline-flex">
@@ -2005,11 +2005,14 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
 
   const coachRows = coaches.map((coach: any) => {
     const cid = objectId(coach._id);
-    const coachClasses = classrooms.filter((classroom: any) => objectId(classroom.coach || classroom.instructor) === cid);
+    const coachClasses = classrooms.filter((classroom: any) =>
+      objectId(classroom.coach || classroom.instructor) === cid ||
+      (classroom.generatedSessions || []).some((session: any) => effectiveSessionCoachId(session, classroom) === cid)
+    );
     const studentIds = new Set(coachClasses.flatMap((classroom: any) => (classroom.students || []).map(objectId)));
     const coachHomework = homework.filter((item: any) => objectId(item.instructor) === cid);
     const coachAttendance = attendance.filter((item: any) => coachClasses.some((classroom: any) => objectId(classroom._id) === objectId(item.classroom?._id ?? item.classroom)));
-    const teaching = summarizeCoachSessions(coachClasses, { from, to });
+    const teaching = summarizeCoachSessions(classrooms, { from, to }, { coachId: cid });
     return {
       id: cid,
       name: coach.name,
@@ -2400,7 +2403,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
                   {coachRows.slice().sort((a, b) => b.hours - a.hours).slice(0, 5).map((coach) => (
                     <div key={coach.id} className="flex items-center justify-between gap-3 text-sm">
                       <span className="truncate font-semibold text-slate-700">{coach.name}</span>
-                      <span className="font-black text-slate-950">{coach.hours.toFixed(1)}h</span>
+                      <span className="font-black text-slate-950">{coach.hours.toFixed(2)}h</span>
                     </div>
                   ))}
                 </div>
@@ -2528,10 +2531,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
           <StatCard label="Today's Due Amount" value={money(todayDue)} note="Invoices due on selected date" icon={Calendar} tone="amber" />
         </div>
         <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-4">
-          <StatCard label="Teaching Hours" value={totalTeachingHours.toFixed(1)} note="Selected date range" icon={BookOpen} tone="blue" />
-          <StatCard label="Top Coach" value={topCoach?.name || "-"} note={`${topCoach?.hours?.toFixed?.(1) || 0} hours`} icon={GraduationCap} tone="purple" />
-          <StatCard label="Top Batch" value={topBatch?.batchName || "-"} note={`${topBatch?.hoursConducted?.toFixed?.(1) || 0} hours`} icon={Users} tone="green" />
-          <StatCard label="Avg / Coach" value={averageTeachingHours.toFixed(1)} note="Average teaching hours" icon={BarChart3} tone="amber" />
+          <StatCard label="Teaching Hours" value={totalTeachingHours.toFixed(2)} note="Selected date range" icon={BookOpen} tone="blue" />
+          <StatCard label="Top Coach" value={topCoach?.name || "-"} note={`${topCoach?.hours?.toFixed?.(2) || "0.00"} hours`} icon={GraduationCap} tone="purple" />
+          <StatCard label="Top Batch" value={topBatch?.batchName || "-"} note={`${topBatch?.hoursConducted?.toFixed?.(2) || "0.00"} hours`} icon={Users} tone="green" />
+          <StatCard label="Avg / Coach" value={averageTeachingHours.toFixed(2)} note="Average teaching hours" icon={BarChart3} tone="amber" />
         </div>
         <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-3">
           <div className="rounded-lg bg-slate-50 p-3 shadow-inner shadow-slate-200/70">
@@ -2726,7 +2729,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
             <article key={row.id} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
               <div className="flex items-start justify-between gap-3">
                 <h3 className="font-semibold text-slate-950">{row.name}</h3>
-                <span className="rounded-full bg-brand/10 px-3 py-1 text-xs font-bold text-brand">{row.hours.toFixed(1)} hrs</span>
+                <span className="rounded-full bg-brand/10 px-3 py-1 text-xs font-bold text-brand">{row.hours.toFixed(2)} hrs</span>
               </div>
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <InfoTile label="Students" value={compactNumber(row.students)} />
@@ -2762,8 +2765,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
                   <td className="px-3 py-3 font-medium text-slate-950">{row.name}</td>
                   <td className="px-3 py-3">{compactNumber(row.students)}</td>
                   <td className="px-3 py-3">{compactNumber(row.classes)}</td>
-                  <td className="px-3 py-3">{row.hours.toFixed(1)}</td>
-                  <td className="px-3 py-3">{row.actualHours.toFixed(1)}</td>
+                  <td className="px-3 py-3">{row.hours.toFixed(2)}</td>
+                  <td className="px-3 py-3">{row.actualHours.toFixed(2)}</td>
                   <td className="px-3 py-3">{row.punctualityScore}%</td>
                   <td className="px-3 py-3">{compactNumber(row.activeBatches)}</td>
                   <td className="px-3 py-3">{row.attendancePercentage}%</td>
@@ -2786,7 +2789,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
                   <h3 className="font-semibold text-slate-950">{row.batchName}</h3>
                   <p className="text-xs text-slate-500">Coach: {row.coachName || "-"}</p>
                 </div>
-                <span className="rounded-full bg-brand/10 px-3 py-1 text-xs font-bold text-brand">{row.hoursConducted.toFixed(1)} hrs</span>
+                <span className="rounded-full bg-brand/10 px-3 py-1 text-xs font-bold text-brand">{row.hoursConducted.toFixed(2)} hrs</span>
               </div>
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <InfoTile label="Classes" value={row.classesConducted} />
@@ -2814,7 +2817,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
                   <td className="px-3 py-3 font-medium text-slate-950">{row.batchName}</td>
                   <td className="px-3 py-3">{row.coachName || "-"}</td>
                   <td className="px-3 py-3">{row.classesConducted}</td>
-                  <td className="px-3 py-3">{row.hoursConducted.toFixed(1)}</td>
+                  <td className="px-3 py-3">{row.hoursConducted.toFixed(2)}</td>
                   <td className="px-3 py-3">{row.students}</td>
                 </tr>
               )) : (

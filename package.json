@@ -11,6 +11,7 @@
     "lint": "next lint",
     "typecheck": "tsc -p tsconfig.typecheck.json --noEmit",
     "engine:smoke": "tsx scripts/engine-worker-smoke.ts",
+    "rewards:rebalance": "tsx scripts/rebalance-student-rewards.ts",
     "seed": "tsx scripts/seed.ts",
     "import:puzzles": "tsx scripts/import-lichess-puzzles.ts",
     "import:puzzles:prod": "node scripts/import-lichess-puzzles.cjs"

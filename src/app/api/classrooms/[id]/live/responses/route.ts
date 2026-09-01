@@ -4,6 +4,7 @@ import { dbConnect } from "@/lib/db";
 import { LiveQuestion, LiveQuestionResponse, StudentReward } from "@/models/ClassroomLive";
 import { getRequestedSessionId } from "@/lib/classroomLiveSession";
 import { getLiveClassroomForUser } from "@/lib/liveClassroomAccess";
+import { calculateLiveQuestionReward } from "@/lib/rewards";
 
 export const dynamic = "force-dynamic";
 
@@ -106,14 +107,16 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     },
     { upsert: true, new: true }
   );
+  const reward = calculateLiveQuestionReward({ completedItems, totalItems, correct, score, hintsUsed, attemptsUsed });
   await StudentReward.findOneAndUpdate(
     { student: userId, sourceType: "live_question", sourceId: question._id },
     {
       student: userId,
       sourceType: "live_question",
       sourceId: question._id,
-      xp: Math.max(1, score),
-      coins: correct ? 2 : 1,
+      xp: reward.xp,
+      coins: reward.coins,
+      badge: reward.badge || "",
       reason: `Live classroom response: ${question.title}`,
     },
     { upsert: true, new: true }

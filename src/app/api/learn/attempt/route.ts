@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
+import { calculateLearningReward } from "@/lib/rewards";
+import { StudentReward } from "@/models/ClassroomLive";
 import { LearningAttempt, LearningExercise, LearningExerciseProgress } from "@/models/Learning";
 
 export async function POST(request: Request) {
@@ -22,7 +24,15 @@ export async function POST(request: Request) {
   const incorrectMoves = Math.max(0, Number(body?.incorrectMoves || 0));
   const hintsUsed = Math.max(0, Number(body?.hintsUsed || 0));
 
-  await LearningAttempt.create({
+  const reward = calculateLearningReward({
+    completed,
+    stars,
+    difficulty: exercise.difficulty,
+    incorrectMoves,
+    hintsUsed,
+  });
+
+  const attempt = await LearningAttempt.create({
     studentId,
     exerciseId: exercise._id,
     exerciseVersion: exercise.version || 1,
@@ -36,6 +46,20 @@ export async function POST(request: Request) {
     moveCount,
     durationSeconds: Math.max(0, Number(body?.durationSeconds || 0)),
   });
+
+  await StudentReward.findOneAndUpdate(
+    { student: studentId, sourceType: "learning_exercise", sourceId: attempt._id },
+    {
+      student: studentId,
+      sourceType: "learning_exercise",
+      sourceId: attempt._id,
+      xp: reward.xp,
+      coins: reward.coins,
+      badge: reward.badge || "",
+      reason: `Learning exercise: ${exercise.title}`,
+    },
+    { upsert: true, new: true }
+  );
 
   const now = new Date();
   const progress: any = await LearningExerciseProgress.findOneAndUpdate(
@@ -52,5 +76,10 @@ export async function POST(request: Request) {
     { upsert: true, new: true }
   ).lean();
 
-  return NextResponse.json({ ok: true, completed: Boolean(progress.completed), bestStars: progress.bestStars || 0 });
+  return NextResponse.json({
+    ok: true,
+    completed: Boolean(progress.completed),
+    bestStars: progress.bestStars || 0,
+    rewardSummary: reward,
+  });
 }

@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { recordActivity } from "@/lib/activity";
 import { consumeDemoUsage, demoUsageState } from "@/lib/demoAccess";
+import { calculateSquareTrainerReward } from "@/lib/rewards";
 import { StudentReward } from "@/models/ClassroomLive";
 
 export const dynamic = "force-dynamic";
@@ -46,8 +47,7 @@ export async function POST(req: Request) {
   const orientation = body.orientation === "black" ? "black" : "white";
   const attempts = correct + mistakes;
   const accuracy = attempts ? Math.round((correct / attempts) * 100) : 0;
-  const xp = Math.max(1, correct * 2 + Math.floor(bestStreak / 2) - Math.floor(mistakes / 2));
-  const coins = Math.max(0, Math.floor(correct / 5));
+  const { xp, coins, badge } = calculateSquareTrainerReward({ correct, mistakes, bestStreak, durationSeconds });
 
   await dbConnect();
   const demoState = await consumeDemoUsage((session.user as any).id, "squareTrainer");
@@ -60,7 +60,7 @@ export async function POST(req: Request) {
     sourceType: "square_trainer",
     xp,
     coins,
-    badge: correct >= 30 && accuracy >= 85 ? "Coordinate Sharp Shooter" : undefined,
+    badge,
     reason: `Square Trainer: ${correct}/${attempts} in ${durationSeconds}s (${accuracy}% accuracy)`,
   });
 

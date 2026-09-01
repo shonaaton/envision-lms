@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { recordActivity } from "@/lib/activity";
 import { consumeDemoUsage, demoUsageState } from "@/lib/demoAccess";
+import { calculateTacticsReward } from "@/lib/rewards";
 import { StudentReward } from "@/models/ClassroomLive";
 import { TacticAttempt, TacticPuzzle } from "@/models/TacticPuzzle";
 import { User } from "@/models/User";
@@ -73,16 +74,6 @@ function cleanMoves(value: unknown) {
   return Array.isArray(value)
     ? value.map((move) => String(move || "").trim().toLowerCase()).filter(Boolean)
     : [];
-}
-
-function calculateReward(input: { solved: boolean; rating: number; mistakes: number; hintsUsed: number; timeSeconds: number }) {
-  if (!input.solved) return { xp: 1, coins: 0 };
-  const ratingBonus = Math.max(0, Math.floor((input.rating - 500) / 200));
-  const speedBonus = input.timeSeconds <= 30 ? 3 : input.timeSeconds <= 60 ? 2 : 0;
-  const penalty = Math.min(6, input.mistakes * 2 + input.hintsUsed);
-  const xp = Math.max(2, 8 + ratingBonus + speedBonus - penalty);
-  const coins = Math.max(1, Math.floor(xp / 5));
-  return { xp, coins };
 }
 
 export async function GET(req: Request) {
@@ -183,7 +174,14 @@ export async function POST(req: Request) {
   const expectedMoves = cleanMoves(puzzle.moves);
   const playerMoves = expectedMoves.filter((_, index) => index % 2 === 1);
   const solved = playerMoves.length > 0 && playerMoves.every((move, index) => submittedMoves[index] === move);
-  const reward = calculateReward({ solved, rating: Number(puzzle.rating || 1000), mistakes, hintsUsed, timeSeconds });
+  const reward = calculateTacticsReward({
+    solved,
+    rating: Number(puzzle.rating || 1000),
+    mistakes,
+    hintsUsed,
+    timeSeconds,
+    trainerType: isKingHunt ? "king_hunt" : "tactics",
+  });
 
   const demoState = await consumeDemoUsage((session.user as any).id, isKingHunt ? "kingHunt" : "tacticsTrainer");
   if (!demoState.allowed) {
@@ -215,9 +213,7 @@ export async function POST(req: Request) {
     sourceId: attempt._id,
     xp: reward.xp,
     coins: reward.coins,
-    badge: solved && mistakes === 0 && Number(puzzle.rating || 0) >= 1000
-      ? isKingHunt ? "King Hunter" : "Clean Tactician"
-      : undefined,
+    badge: reward.badge,
     reason: `${isKingHunt ? "King Hunt" : "Tactics Trainer"}: ${solved ? "solved" : "attempted"} ${puzzle.externalId || puzzle._id} (${reward.xp} XP)`,
   });
 

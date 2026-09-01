@@ -6,6 +6,7 @@ import { Tournament } from "@/models/Tournament";
 import { autoAdvanceSwissTournament, completeGame, enforceTournamentGameTimeouts, finalizeTournamentIfComplete, queueCompletedArenaPlayers, recalculateTournamentStandings, syncArenaPairings } from "@/lib/tournamentEngine";
 import { StudentReward } from "@/models/ClassroomLive";
 import { recordActivity } from "@/lib/activity";
+import { calculateTournamentGameReward } from "@/lib/rewards";
 import { cookies } from "next/headers";
 import { getTournamentGuestUsername } from "@/lib/tournamentGuests";
 import { inactiveStudentMessage, isCurrentStudent } from "@/lib/studentAccess";
@@ -42,27 +43,35 @@ async function awardForGame(game: any) {
   if (game.status !== "completed" || game.result === "*") return;
   const items = [
     game.whiteUser
-      ? {
-          student: game.whiteUser,
-          xp: game.result === "1-0" ? 10 : game.result === "1/2-1/2" ? 5 : 2,
-          coins: game.result === "1-0" ? 5 : game.result === "1/2-1/2" ? 2 : 1,
-          reason: `Tournament game vs ${game.blackName || "bye"}`,
-        }
+      ? (() => {
+          const reward = calculateTournamentGameReward(game.result, "white");
+          return {
+            student: game.whiteUser,
+            xp: reward.xp,
+            coins: reward.coins,
+            badge: reward.badge,
+            reason: `Tournament game vs ${game.blackName || "bye"}`,
+          };
+        })()
       : null,
     game.blackUser
-      ? {
-          student: game.blackUser,
-          xp: game.result === "0-1" ? 10 : game.result === "1/2-1/2" ? 5 : 2,
-          coins: game.result === "0-1" ? 5 : game.result === "1/2-1/2" ? 2 : 1,
-          reason: `Tournament game vs ${game.whiteName}`,
-        }
+      ? (() => {
+          const reward = calculateTournamentGameReward(game.result, "black");
+          return {
+            student: game.blackUser,
+            xp: reward.xp,
+            coins: reward.coins,
+            badge: reward.badge,
+            reason: `Tournament game vs ${game.whiteName}`,
+          };
+        })()
       : null,
   ].filter(Boolean) as any[];
   await Promise.all(
     items.map((reward) =>
       StudentReward.findOneAndUpdate(
         { student: reward.student, sourceType: "tournament_game", sourceId: game._id },
-        { student: reward.student, sourceType: "tournament_game", sourceId: game._id, xp: reward.xp, coins: reward.coins, reason: reward.reason },
+        { student: reward.student, sourceType: "tournament_game", sourceId: game._id, xp: reward.xp, coins: reward.coins, badge: reward.badge || "", reason: reward.reason },
         { upsert: true, new: true }
       )
     )

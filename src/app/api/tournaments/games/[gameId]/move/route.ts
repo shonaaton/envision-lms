@@ -6,6 +6,7 @@ import { Tournament } from "@/models/Tournament";
 import { applyGameMove, autoAdvanceSwissTournament, enforceTournamentGameTimeouts, finalizeTournamentIfComplete, queueCompletedArenaPlayers, recalculateTournamentStandings, syncArenaPairings } from "@/lib/tournamentEngine";
 import { StudentReward } from "@/models/ClassroomLive";
 import { recordActivity } from "@/lib/activity";
+import { calculateTournamentGameReward } from "@/lib/rewards";
 import { cookies } from "next/headers";
 import { getTournamentGuestUsername } from "@/lib/tournamentGuests";
 import { inactiveStudentMessage, isCurrentStudent } from "@/lib/studentAccess";
@@ -40,20 +41,24 @@ function markActionTab(game: any, playerKey: string, tabId: string) {
 
 async function awardForGame(game: any) {
   if (game.status !== "completed" || !game.result || game.result === "*") return;
-  const rewards: Array<{ student: any; xp: number; coins: number; reason: string }> = [];
+  const rewards: Array<{ student: any; xp: number; coins: number; badge?: string; reason: string }> = [];
   if (game.whiteUser) {
+    const reward = calculateTournamentGameReward(game.result, "white");
     rewards.push({
       student: game.whiteUser,
-      xp: game.result === "1-0" ? 10 : game.result === "1/2-1/2" ? 5 : 2,
-      coins: game.result === "1-0" ? 5 : game.result === "1/2-1/2" ? 2 : 1,
+      xp: reward.xp,
+      coins: reward.coins,
+      badge: reward.badge,
       reason: `Tournament game vs ${game.blackName || "bye"}`,
     });
   }
   if (game.blackUser) {
+    const reward = calculateTournamentGameReward(game.result, "black");
     rewards.push({
       student: game.blackUser,
-      xp: game.result === "0-1" ? 10 : game.result === "1/2-1/2" ? 5 : 2,
-      coins: game.result === "0-1" ? 5 : game.result === "1/2-1/2" ? 2 : 1,
+      xp: reward.xp,
+      coins: reward.coins,
+      badge: reward.badge,
       reason: `Tournament game vs ${game.whiteName}`,
     });
   }
@@ -61,7 +66,7 @@ async function awardForGame(game: any) {
     rewards.map((reward) =>
       StudentReward.findOneAndUpdate(
         { student: reward.student, sourceType: "tournament_game", sourceId: game._id },
-        { student: reward.student, sourceType: "tournament_game", sourceId: game._id, xp: reward.xp, coins: reward.coins, reason: reward.reason },
+        { student: reward.student, sourceType: "tournament_game", sourceId: game._id, xp: reward.xp, coins: reward.coins, badge: reward.badge || "", reason: reward.reason },
         { upsert: true, new: true }
       )
     )

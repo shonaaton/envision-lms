@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { recordActivity } from "@/lib/activity";
 import { consumeDemoUsage, demoUsageState } from "@/lib/demoAccess";
+import { calculatePlayComputerReward } from "@/lib/rewards";
 import { StudentReward } from "@/models/ClassroomLive";
 
 export const dynamic = "force-dynamic";
@@ -45,20 +46,7 @@ export async function POST(req: Request) {
   const durationSeconds = Math.max(0, Math.floor(clampNumber(body.durationSeconds)));
   const difficultyLevel = Math.max(1, Math.floor(clampNumber(body.level, 1)));
 
-  const xp =
-    outcome === "victory"
-      ? 14 + Math.min(10, difficultyLevel)
-      : outcome === "draw"
-        ? 8 + Math.min(4, Math.floor(difficultyLevel / 2))
-        : outcome === "resigned"
-          ? 2
-          : 3;
-  const coins =
-    outcome === "victory"
-      ? 6 + Math.min(4, Math.floor(difficultyLevel / 3))
-      : outcome === "draw"
-        ? 3
-        : 1;
+  const { xp, coins, badge } = calculatePlayComputerReward({ outcome, difficultyLevel });
 
   await dbConnect();
   const demoState = await consumeDemoUsage((session.user as any).id, "playComputer");
@@ -71,7 +59,7 @@ export async function POST(req: Request) {
     sourceType: "play_vs_computer",
     xp,
     coins,
-    badge: outcome === "victory" && difficultyLevel >= 8 ? "Bot Breaker" : undefined,
+    badge,
     reason: `Play vs Computer: ${outcome} against ${botName} in ${moveCount} moves`,
   });
 

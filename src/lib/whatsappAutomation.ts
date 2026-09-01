@@ -1,4 +1,8 @@
 import { notifyFailure } from "@/lib/failureNotifications";
+import { dbConnect } from "@/lib/db";
+import { renderWhatsAppTemplatePreview } from "@/lib/whatsappTemplateRegistry";
+import { WhatsAppMessage } from "@/models/WhatsApp";
+import { User } from "@/models/User";
 
 export type WhatsAppSendResult = {
   ok: boolean;
@@ -79,6 +83,87 @@ function normalizeTemplateLanguage(value?: string) {
 
 function n8nWebhookUrl() {
   return cleanEnv(process.env.WHATSAPP_N8N_SEND_TEMPLATE_WEBHOOK_URL || process.env.WHATSAPP_N8N_SEND_WEBHOOK_URL);
+}
+
+function firstMetaMessageId(...values: any[]) {
+  for (const value of values) {
+    const messageId = String(
+      value?.metaMessageId ||
+        value?.messages?.[0]?.id ||
+        value?.body?.messages?.[0]?.id ||
+        value?.data?.messages?.[0]?.id ||
+        value?.payload?.messages?.[0]?.id ||
+        value?.payload?.results?.[0]?.metaMessageId ||
+        value?.payload?.results?.[0]?.messages?.[0]?.id ||
+        ""
+    ).trim();
+    if (messageId) return messageId;
+  }
+  return "";
+}
+
+function outboundStatus(result: WhatsAppSendResult) {
+  const rawStatus = String((result.payload?.results?.[0]?.status || result.payload?.messages?.[0]?.message_status || "")).toLowerCase();
+  if (["accepted", "sent", "queued", "delivered", "read", "failed"].includes(rawStatus)) return rawStatus;
+  return result.ok ? "accepted" : "failed";
+}
+
+function contactNameFromMetadata(metadata?: Record<string, unknown>) {
+  return String(
+    metadata?.recipientName ||
+      metadata?.studentName ||
+      metadata?.coachName ||
+      metadata?.adminName ||
+      metadata?.name ||
+      ""
+  ).trim();
+}
+
+async function findMatchedUser(input: { userId?: unknown; phoneNumber: string }) {
+  const userId = String(input.userId || "").trim();
+  if (userId) {
+    const user = await User.findById(userId).select("_id name phone email username role").lean();
+    if (user) return user;
+  }
+  const variants = Array.from(new Set([
+    input.phoneNumber,
+    input.phoneNumber.replace(/^91/, ""),
+    `+${input.phoneNumber}`,
+    `+${input.phoneNumber.replace(/^91/, "")}`,
+  ]));
+  return User.findOne({ phone: { $in: variants } }).select("_id name phone email username role").lean();
+}
+
+async function recordOutboundTemplateMessage(input: WhatsAppTemplateInput, result: WhatsAppSendResult, bodyParameters: string[]) {
+  const phoneNumber = normalizeWhatsAppNumber(result.recipient || input.to);
+  if (!phoneNumber || result.skipped) return;
+  try {
+    await dbConnect();
+    const matchedUser: any = await findMatchedUser({ userId: input.metadata?.userId, phoneNumber });
+    await WhatsAppMessage.create({
+      phoneNumber,
+      contactName: matchedUser?.name || contactNameFromMetadata(input.metadata),
+      matchedUser: matchedUser?._id,
+      direction: "outbound",
+      messageType: "template",
+      text: renderWhatsAppTemplatePreview(input.templateName, bodyParameters),
+      templateName: input.templateName,
+      templateLanguage: normalizeTemplateLanguage(input.language),
+      status: outboundStatus(result),
+      metaMessageId: firstMetaMessageId(result) || undefined,
+      error: result.ok ? "" : String(result.errorMessage || result.error || ""),
+      rawPayload: {
+        sender: result.debug?.sender || (input.bypassN8n ? "meta" : "whatsapp"),
+        metadata: input.metadata || {},
+        response: result.payload || null,
+        templateVariables: bodyParameters,
+        testMode: result.testMode,
+      },
+      sentAt: new Date(),
+    });
+  } catch (error) {
+    console.error("WhatsApp outbound template log failed", { error, templateName: input.templateName, phoneNumber });
+  }
 }
 
 async function sendViaN8n(input: {
@@ -257,7 +342,10 @@ export async function sendWhatsAppTemplateMessage(input: WhatsAppTemplateInput) 
       metadata: input.metadata,
       testMode: input.testMode,
     });
-    if (n8nResult) return n8nResult;
+    if (n8nResult) {
+      await recordOutboundTemplateMessage(input, n8nResult, bodyParameters);
+      return n8nResult;
+    }
   }
 
   const body = {
@@ -280,7 +368,9 @@ export async function sendWhatsAppTemplateMessage(input: WhatsAppTemplateInput) 
     },
   };
   const result = await postWhatsAppMessage(body, input.metadata);
-  return { ...result, testMode, recipient };
+  const output = { ...result, testMode, recipient };
+  await recordOutboundTemplateMessage(input, output, bodyParameters);
+  return output;
 }
 
 export async function sendWhatsAppTextMessage(input: WhatsAppTextInput) {

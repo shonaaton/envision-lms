@@ -9,6 +9,9 @@ import { User } from "@/models/User";
 export const dynamic = "force-dynamic";
 
 const DEFAULT_RECIPIENTS = ["918017996184", "916290349998"];
+const USER_RECIPIENT_ROLES = ["student", "instructor", "admin", "sub-admin"];
+
+type RecipientGroup = "manual" | "coaches" | "students" | "users";
 
 function canManageWhatsApp(session: any) {
   return ["admin", "sub-admin"].includes(String(session?.user?.role || ""));
@@ -22,6 +25,22 @@ function normalizeTemplateLanguage(value?: string) {
   const clean = cleanEnv(value || "en");
   if (!clean || clean === "en_US" || clean === "en_GB" || clean === "en_UK") return "en";
   return clean;
+}
+
+function uniquePhoneNumbers(values: unknown[]) {
+  return Array.from(new Set(
+    values
+      .map((value) => normalizeWhatsAppNumber(String(value || "")))
+      .filter(Boolean)
+  ));
+}
+
+function normalizeRecipientGroup(value: unknown): RecipientGroup {
+  const clean = String(value || "manual").trim().toLowerCase();
+  if (["coach", "coaches", "all_coaches"].includes(clean)) return "coaches";
+  if (["student", "students", "all_students"].includes(clean)) return "students";
+  if (["user", "users", "all", "all_users"].includes(clean)) return "users";
+  return "manual";
 }
 
 function errorText(value: any) {
@@ -88,6 +107,25 @@ function extractTemplateVariables(body: any) {
     .filter(Boolean);
 }
 
+async function resolveRecipients(body: any, recipientGroup: RecipientGroup) {
+  if (recipientGroup !== "manual") {
+    const roles = recipientGroup === "coaches"
+      ? ["instructor"]
+      : recipientGroup === "students"
+        ? ["student"]
+        : USER_RECIPIENT_ROLES;
+    const users = await User.find({
+      role: { $in: roles },
+      isActive: { $ne: false },
+      phone: { $exists: true, $nin: ["", null] },
+    }).select("phone").lean();
+    return uniquePhoneNumbers(users.map((user: any) => user.phone));
+  }
+
+  const rawRecipients = Array.isArray(body.recipients) && body.recipients.length ? body.recipients : body.to ? [body.to] : DEFAULT_RECIPIENTS;
+  return uniquePhoneNumbers(rawRecipients);
+}
+
 async function sendViaN8n(input: { templateName: string; language: string; recipients: string[]; templateVariables: string[] }) {
   const webhookUrl = cleanEnv(process.env.WHATSAPP_N8N_SEND_TEMPLATE_WEBHOOK_URL || process.env.WHATSAPP_N8N_SEND_WEBHOOK_URL);
   if (!webhookUrl) {
@@ -123,13 +161,22 @@ export async function POST(req: Request) {
   const language = normalizeTemplateLanguage(body.language || body.language_code || definition?.language || "en");
   const templateVariables = extractTemplateVariables(body);
   const messagePreview = renderWhatsAppTemplatePreview(templateName, templateVariables);
-  const rawRecipients = Array.isArray(body.recipients) && body.recipients.length ? body.recipients : body.to ? [body.to] : DEFAULT_RECIPIENTS;
-  const recipients: string[] = rawRecipients
-    .map((value: unknown) => normalizeWhatsAppNumber(String(value || "")))
-    .filter(Boolean);
+  const recipientGroup = normalizeRecipientGroup(body.recipientGroup || body.recipientMode);
 
   await dbConnect();
-  const n8nSend = await sendViaN8n({ templateName, language, recipients: Array.from(new Set<string>(recipients)), templateVariables }).catch((error) => ({
+  const recipients = await resolveRecipients(body, recipientGroup);
+  if (!recipients.length) {
+    return NextResponse.json({
+      ok: false,
+      error: "No WhatsApp recipients found for this selection.",
+      templateName,
+      language,
+      recipientGroup,
+      results: [],
+    }, { status: 400 });
+  }
+
+  const n8nSend = await sendViaN8n({ templateName, language, recipients, templateVariables }).catch((error) => ({
     response: null,
     payload: { ok: false, error: error instanceof Error ? error.message : String(error || "n8n request failed") },
   }));
@@ -196,7 +243,7 @@ export async function POST(req: Request) {
           debug: { sender: "n8n", queued: true, webhookUrlConfigured: true, status: n8nSend.response.status, bodyParameterCount: templateVariables.length },
         });
       }
-      return NextResponse.json({ ok: true, templateName, language, sender: "n8n", results: queuedResults });
+      return NextResponse.json({ ok: true, templateName, language, recipientGroup, recipientCount: recipients.length, sender: "n8n", results: queuedResults });
     }
     const errorMessage = errorText(n8nSend.payload?.error || n8nSend.payload?.message) || `n8n returned HTTP ${n8nSend.response?.status || "unknown"}`;
     return NextResponse.json({
@@ -204,6 +251,8 @@ export async function POST(req: Request) {
       error: errorMessage,
       templateName,
       language,
+      recipientGroup,
+      recipientCount: recipients.length,
       sender: "n8n",
       results: [{
         phoneNumber: recipients.join(", "),
@@ -214,5 +263,5 @@ export async function POST(req: Request) {
     }, { status: n8nSend.response?.ok ? 200 : 502 });
   }
 
-  return NextResponse.json({ ok: results.every((item) => item.ok), templateName, language, sender: "n8n", results });
+  return NextResponse.json({ ok: results.every((item) => item.ok), templateName, language, recipientGroup, recipientCount: recipients.length, sender: "n8n", results });
 }

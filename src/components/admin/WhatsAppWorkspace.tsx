@@ -50,6 +50,8 @@ type InboxPayload = {
   windowHours: number;
 };
 
+type RecipientMode = "manual" | "coaches" | "students" | "users";
+
 const DEFAULT_NUMBERS = "918017996184, 916290349998";
 
 function sendErrorText(value: any) {
@@ -69,6 +71,7 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
   const [sendingReply, setSendingReply] = useState(false);
   const [templateName, setTemplateName] = useState("hello_world_2");
   const [language, setLanguage] = useState("en");
+  const [recipientMode, setRecipientMode] = useState<RecipientMode>("manual");
   const [recipients, setRecipients] = useState(DEFAULT_NUMBERS);
   const [templateVariables, setTemplateVariables] = useState("");
   const [notice, setNotice] = useState("");
@@ -196,7 +199,8 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
       body: JSON.stringify({
         templateName: nextTemplateName,
         language: nextLanguage,
-        recipients: recipients.split(/[\s,]+/).map((item) => item.trim()).filter(Boolean),
+        recipientGroup: recipientMode,
+        recipients: recipientMode === "manual" ? recipients.split(/[\s,]+/).map((item) => item.trim()).filter(Boolean) : [],
         templateVariables: nextTemplateVariables,
       }),
     });
@@ -218,6 +222,7 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
 
   function prepareTemplateForSelectedContact() {
     if (!selected) return;
+    setRecipientMode("manual");
     setRecipients(selected.phoneNumber);
     setTab("automation");
   }
@@ -275,7 +280,19 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
             ))}
           </datalist>
           <div className="mt-4">
-            <Field label="Recipients" value={recipients} onChange={setRecipients} />
+            <div className="mb-3 flex flex-wrap gap-2">
+              <RecipientModeButton active={recipientMode === "manual"} label="Enter numbers" onClick={() => setRecipientMode("manual")} />
+              <RecipientModeButton active={recipientMode === "coaches"} label="All coaches" onClick={() => setRecipientMode("coaches")} />
+              <RecipientModeButton active={recipientMode === "students"} label="All students" onClick={() => setRecipientMode("students")} />
+              <RecipientModeButton active={recipientMode === "users"} label="All users" onClick={() => setRecipientMode("users")} />
+            </div>
+            {recipientMode === "manual" ? (
+              <Field label="Recipients" value={recipients} onChange={setRecipients} />
+            ) : (
+              <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">
+                This send will go to every active {recipientMode === "users" ? "user" : recipientMode.slice(0, -1)} with a saved phone number.
+              </div>
+            )}
           </div>
           <div className="mt-5">
             <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
@@ -504,6 +521,22 @@ function TabButton({ active, onClick, icon, label }: { active: boolean; onClick:
   return (
     <button onClick={onClick} className={`inline-flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-bold transition ${active ? "bg-emerald-600 text-white shadow-sm" : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}>
       {icon}
+      {label}
+    </button>
+  );
+}
+
+function RecipientModeButton({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex h-9 items-center rounded-lg px-3 text-xs font-black transition ${
+        active
+          ? "bg-emerald-600 text-white shadow-sm"
+          : "border border-slate-200 bg-white text-slate-600 hover:border-emerald-200 hover:text-emerald-700"
+      }`}
+    >
       {label}
     </button>
   );

@@ -14,6 +14,7 @@ import {
   Menu,
   MessageSquare,
   MonitorSmartphone,
+  PlayCircle,
   Receipt,
   ShieldCheck,
   Sparkles,
@@ -74,6 +75,29 @@ const portalTabs = [
   { title: "Tournaments", icon: Trophy, points: ["Tournament lobby", "Pairings", "Live games", "Results", "Academy leaderboards"] },
   { title: "Progress and Certificates", icon: ShieldCheck, points: ["Attendance", "Reports", "Milestones", "Certificates", "Learning history"] },
   { title: "Fees and Invoices", icon: WalletCards, points: ["Class credits", "Usage history", "Monthly dues", "Invoice PDF", "Online payments"] },
+];
+
+const portalTutorials = [
+  {
+    title: "Before Your First Class",
+    detail: "Log in, enter your classroom, and attend your first online class.",
+    videoId: "OQ7RMzfbsoc",
+  },
+  {
+    title: "Homework Tutorial",
+    detail: "Access assignments, complete homework, and submit your work.",
+    videoId: "jkhZnurcl10",
+  },
+  {
+    title: "Class Tools",
+    detail: "Review what was covered, use Ask Coach, and explore class features.",
+    videoId: "JCOrhFkyXas",
+  },
+  {
+    title: "Practice Tools",
+    detail: "Use Tactics Trainer, King Hunt, Square Trainer, and Play vs Computer.",
+    videoId: "sLUjlm4Y350",
+  },
 ];
 
 const practiceTools = [
@@ -337,6 +361,40 @@ export default async function Home() {
                   </article>
                 );
               })}
+          </div>
+          <div className="mt-10 border-t border-white/10 pt-8">
+            <div className="mb-6 grid gap-4 lg:grid-cols-[0.8fr_1.2fr] lg:items-end">
+              <div>
+                <p className="inline-flex border-l-2 border-accent bg-white/[0.035] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-accent">Platform Tutorials</p>
+                <h3 className="mt-4 text-2xl font-black leading-tight text-white">See how the learning platform works.</h3>
+              </div>
+              <p className="max-w-2xl text-sm leading-6 text-white/58">
+                New students can watch these quick walkthroughs before their first class and understand the main tools available in the portal.
+              </p>
+            </div>
+            <div className="grid gap-4 lg:grid-cols-2">
+              {portalTutorials.map((tutorial) => (
+                <article key={tutorial.videoId} className="overflow-hidden border-l border-white/12 bg-white/[0.035] shadow-xl shadow-black/10 backdrop-blur transition hover:-translate-y-0.5 hover:border-accent/40 hover:bg-white/[0.055]">
+                  <div className="aspect-video bg-[#070b10]">
+                    <iframe
+                      title={`${tutorial.title} tutorial`}
+                      src={`https://www.youtube.com/embed/${tutorial.videoId}`}
+                      className="h-full w-full border-0"
+                      loading="lazy"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                      allowFullScreen
+                    />
+                  </div>
+                  <div className="p-4">
+                    <div className="flex items-center gap-2 text-sm font-black text-white">
+                      <PlayCircle size={18} className="shrink-0 text-accent" />
+                      {tutorial.title}
+                    </div>
+                    <p className="mt-2 text-sm leading-6 text-white/58">{tutorial.detail}</p>
+                  </div>
+                </article>
+              ))}
+            </div>
           </div>
         </div>
       </section>

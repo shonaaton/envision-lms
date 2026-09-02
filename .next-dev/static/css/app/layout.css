@@ -1444,6 +1444,9 @@ main .rounded-xl.card.bg-white {
 .mt-auto {
   margin-top: auto;
 }
+.mt-10 {
+  margin-top: 2.5rem;
+}
 .line-clamp-1 {
   overflow: hidden;
   display: -webkit-box;
@@ -1512,6 +1515,9 @@ main .rounded-xl.card.bg-white {
 }
 .aspect-square {
   aspect-ratio: 1 / 1;
+}
+.aspect-video {
+  aspect-ratio: 16 / 9;
 }
 .h-0\.5 {
   height: 0.125rem;
@@ -4259,6 +4265,9 @@ main .rounded-xl.card.bg-white {
 }
 .pt-6 {
   padding-top: 1.5rem;
+}
+.pt-8 {
+  padding-top: 2rem;
 }
 .text-left {
   text-align: left;

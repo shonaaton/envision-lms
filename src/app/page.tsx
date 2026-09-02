@@ -23,7 +23,7 @@ import {
 import AnimatedImpactCounters from "@/components/marketing/AnimatedImpactCounters";
 import DynamicLandingShowcase from "@/components/marketing/DynamicLandingShowcase";
 import TestimonialCarousel from "@/components/marketing/TestimonialCarousel";
-import { ACADEMY_DEFAULTS } from "@/lib/branding";
+import { ACADEMY_DEFAULTS, ACADEMY_LOGO_URL } from "@/lib/branding";
 import { MARKETING_BASE_URL, OFFLINE_ACADEMY_URL } from "@/lib/publicLinks";
 import { academyBranches, anishStory, impactCounters, publicAchievementList, studentSlug } from "@/lib/achievementData";
 import { getLandingAchievements } from "@/lib/achievements";
@@ -59,11 +59,11 @@ const offlineSourceUrl = OFFLINE_ACADEMY_URL;
 
 const navItems = [
   ["Home", "#home"],
+  ["Programs", "#programs"],
   ["Portal", "#platform"],
   ["Reviews", "#reviews"],
   ["Anish", "#anish"],
   ["Achievements", "#achievements"],
-  ["Programs", "#programs"],
   ["Centres", "#centres"],
 ];
 
@@ -84,21 +84,35 @@ const practiceTools = [
   { title: "Play vs Computer", detail: "Guided practice games against a friendly engine opponent.", icon: Gamepad2 },
 ];
 
-const programs = [
-  { title: "Group Classes", detail: "Level-based batches for structured progress and healthy competition.", mode: "Beginner to advanced" },
-  { title: "Individual Coaching", detail: "Personal mentoring for students who need deeper attention and tournament planning.", mode: "Custom plan" },
-  { title: "Rated-Player Training", detail: "Opening preparation, game analysis, calculation routines, and event readiness.", mode: "Advanced track" },
+const groupClassHighlights = [
+  { label: "2 classes per week", detail: "Steady learning rhythm" },
+  { label: "16 classes per level", detail: "Structured progression" },
+  { label: "2 months per level", detail: "Clear completion timeline" },
+  { label: "Weekly tournaments", detail: "Regular competitive exposure" },
 ];
 
-const advantages = [
-  "FIDE-certified and FIDE-rated coaches",
-  "Structured level-based pedagogy",
-  "Small group sizes",
-  "Monthly feedback and PTMs",
-  "Regular practice tournaments",
-  "Personalised assignments",
-  "Online and offline learning",
-  "Dedicated mentorship",
+const groupClassTracks = [
+  {
+    title: "Beginner Level",
+    subtitle: "Building strong foundations",
+    levels: ["B1", "B2", "B3"],
+    accent: "Foundation",
+    detail: "Rules, board vision, piece safety, checkmates, opening habits, and confidence in real games.",
+  },
+  {
+    title: "Intermediate Level",
+    subtitle: "Developing skills and strategy",
+    levels: ["I1", "I2", "I3", "I4", "I5", "I6", "I7", "I8"],
+    accent: "Strategy",
+    detail: "Tactics, calculation, positional ideas, endgames, tournament decisions, and practical game review.",
+  },
+  {
+    title: "Advanced Level",
+    subtitle: "Mastering the game",
+    levels: ["A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8"],
+    accent: "Mastery",
+    detail: "Deeper preparation, complex middlegames, advanced endings, annotated games, and event readiness.",
+  },
 ];
 
 const learningSteps = [
@@ -149,9 +163,16 @@ export default async function Home() {
 
       <header className="sticky top-0 z-50 border-b border-white/10 bg-[#17051f]/95 text-white backdrop-blur-xl">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
-          <Link href="/" className="leading-none text-accent" aria-label="Envision Chess Academy home">
-            <span className="block text-lg font-extrabold tracking-normal sm:text-xl">ENVISION</span>
-            <span className="block text-[0.62rem] font-extrabold tracking-normal sm:text-[0.68rem]">CHESS ACADEMY</span>
+          <Link href="/" className="flex shrink-0 items-center" aria-label="Envision Chess Academy home">
+            <Image
+              src={ACADEMY_LOGO_URL}
+              alt="Envision Chess Academy"
+              width={190}
+              height={64}
+              priority
+              unoptimized
+              className="h-12 w-auto max-w-[150px] object-contain sm:h-14 sm:max-w-[190px]"
+            />
           </Link>
           <nav className="hidden items-center gap-5 xl:flex" aria-label="Main navigation">
             {navItems.map(([label, href]) => (
@@ -224,6 +245,75 @@ export default async function Home() {
       </section>
 
       <AnimatedImpactCounters counters={impactCounters} />
+
+      <section id="programs" className="relative overflow-hidden bg-[#10131b] py-16 text-white lg:py-24">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_14%_18%,rgba(253,231,90,0.12),transparent_25%),radial-gradient(circle_at_82%_24%,rgba(93,183,156,0.13),transparent_28%),linear-gradient(180deg,#10131b_0%,#17051f_100%)]" />
+        <div className="absolute inset-0 opacity-[0.1] [background-image:linear-gradient(rgba(255,255,255,0.07)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.07)_1px,transparent_1px)] [background-size:84px_84px]" />
+        <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="mb-8 grid gap-6 lg:grid-cols-[0.88fr_1.12fr] lg:items-end">
+            <div>
+              <p className="inline-flex border-l-2 border-accent bg-white/[0.045] px-3 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-accent">Group Chess Classes</p>
+              <h2 className="mt-4 text-2xl font-black text-white sm:text-3xl">A complete level-wise academy path.</h2>
+              <p className="mt-3 max-w-2xl text-sm leading-7 text-white/64">
+                Students learn in a structured batch environment with regular practice, guided feedback, and continuous competitive exposure.
+              </p>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {groupClassHighlights.map((item) => (
+                <div key={item.label} className="border-l border-white/12 bg-white/[0.035] px-4 py-3 shadow-xl shadow-black/10 backdrop-blur">
+                  <div className="flex items-center gap-2 text-sm font-black text-white">
+                    <CheckCircle2 size={17} className="shrink-0 text-accent" />
+                    {item.label}
+                  </div>
+                  <div className="mt-1 pl-6 text-xs font-semibold text-white/52">{item.detail}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="mb-5 border-l border-accent bg-accent/12 px-4 py-3 text-sm font-bold leading-6 text-white shadow-xl shadow-black/10 backdrop-blur">
+            Every level includes 16 classes across 2 months. <strong className="font-black text-accent">Students attend 2 classes per week.</strong>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-3">
+            {groupClassTracks.map((track) => (
+              <article key={track.title} className="group flex min-h-full flex-col border-l border-white/12 bg-white/[0.035] p-5 shadow-xl shadow-black/10 backdrop-blur transition duration-300 hover:-translate-y-0.5 hover:border-accent/40 hover:bg-white/[0.055]">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.14em] text-accent/80">{track.accent}</p>
+                    <h3 className="mt-2 text-xl font-black text-white">{track.title}</h3>
+                    <p className="mt-1 text-sm font-bold text-white/58">{track.subtitle}</p>
+                  </div>
+                  <Trophy size={22} className="shrink-0 text-accent" />
+                </div>
+                <p className="mt-4 text-sm leading-6 text-white/62">{track.detail}</p>
+                <div className="mt-5 grid grid-cols-3 gap-2">
+                  {track.levels.map((level) => (
+                    <div key={level} className="rounded-lg border border-white/10 bg-[#0d1018]/60 px-2 py-2 text-center">
+                      <div className="text-sm font-black text-accent">{level}</div>
+                      <div className="mt-0.5 text-[10px] font-semibold text-white/48">16 classes</div>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-auto pt-5">
+                  <Link href={demoHref} className="inline-flex items-center gap-1 text-sm font-black text-accent">
+                    Book Free Demo Class <ArrowRight size={16} />
+                  </Link>
+                </div>
+              </article>
+            ))}
+          </div>
+
+          <div className="mt-6 grid gap-3 border-t border-white/10 pt-6 sm:grid-cols-3">
+            {["Learn", "Practice", "Compete and grow"].map((step) => (
+              <div key={step} className="border-l border-white/12 bg-white/[0.03] px-4 py-3 text-sm font-black text-white/76">
+                <Sparkles size={16} className="mb-2 text-accent" />
+                {step}
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
 
       <section id="platform" className="relative overflow-hidden bg-[#10131b] py-12 text-white lg:py-16">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_20%,rgba(93,183,156,0.16),transparent_28%),radial-gradient(circle_at_82%_12%,rgba(253,231,90,0.1),transparent_24%),linear-gradient(180deg,#10131b_0%,#17051f_100%)]" />
@@ -412,40 +502,6 @@ export default async function Home() {
                 <div className="grid h-11 w-11 place-items-center rounded-lg bg-accent text-sm font-black text-brand-900">{index + 1}</div>
                 <div className="self-center font-bold text-white">{step}</div>
               </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section id="programs" className="relative overflow-hidden bg-[#10131b] py-16 text-white lg:py-24">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_16%,rgba(253,231,90,0.1),transparent_24%),radial-gradient(circle_at_76%_38%,rgba(90,19,114,0.36),transparent_30%),linear-gradient(180deg,#10131b_0%,#17051f_100%)]" />
-        <div className="absolute inset-0 opacity-[0.1] [background-image:linear-gradient(rgba(255,255,255,0.07)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.07)_1px,transparent_1px)] [background-size:84px_84px]" />
-        <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="mb-8 grid gap-6 lg:grid-cols-[0.9fr_1.1fr] lg:items-end">
-            <div>
-              <p className="inline-flex border-l-2 border-accent bg-white/[0.045] px-3 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-accent">Coaching Advantages</p>
-              <h2 className="mt-4 text-2xl font-black text-white sm:text-3xl">Structured coaching with visible support.</h2>
-              <p className="mt-3 max-w-xl text-sm leading-7 text-white/64">Clear levels, mentor attention, feedback loops, and tournament preparation form the operating system behind every student journey.</p>
-            </div>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {advantages.map((advantage) => (
-                <div key={advantage} className="border-l border-white/12 bg-white/[0.035] px-4 py-3 text-sm font-bold text-white/70 shadow-xl shadow-black/10 backdrop-blur transition hover:border-accent/40 hover:bg-white/[0.055]">
-                  <CheckCircle2 size={17} className="mb-2 text-accent" />
-                  {advantage}
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="grid gap-4 lg:grid-cols-3">
-            {programs.map((program) => (
-              <article key={program.title} className="group border-l border-white/12 bg-white/[0.035] p-5 shadow-xl shadow-black/10 backdrop-blur transition duration-300 hover:-translate-y-0.5 hover:border-accent/40 hover:bg-white/[0.055]">
-                <div className="flex items-start justify-between gap-3">
-                  <h3 className="text-xl font-black text-white">{program.title}</h3>
-                  <span className="rounded-full border border-accent/30 bg-accent/12 px-2.5 py-0.5 text-xs font-semibold text-accent">{program.mode}</span>
-                </div>
-                <p className="mt-4 text-sm leading-6 text-white/62">{program.detail}</p>
-                <Link href={demoHref} className="mt-5 inline-flex items-center gap-1 text-sm font-black text-accent">Book Free Demo Class <ArrowRight size={16} /></Link>
-              </article>
             ))}
           </div>
         </div>

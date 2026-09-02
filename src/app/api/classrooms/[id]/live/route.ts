@@ -63,6 +63,24 @@ function activeCoachParticipants(live: any, now = new Date()) {
   });
 }
 
+async function loadPgnLibrary(session: any, role: AppRole, userId: string, classroomId: string) {
+  const pgnFilter = canCoach(role)
+    ? buildPgnLibraryFilter(session)
+    : {
+        $or: [
+          { uploadedBy: userId },
+          { visibility: "classroom", classroom: classroomId },
+          { visibility: "classroom" },
+        ],
+      };
+
+  return PGN.find(pgnFilter)
+    .select("title white black event result date eco opening moveCount sideToMove initialFen hasAnnotations hasVariations folder pgn")
+    .sort({ folder: 1, createdAt: -1 })
+    .limit(5000)
+    .lean();
+}
+
 async function autoEndCoachNoShowIfNeeded({
   classroomId,
   classroom,
@@ -155,6 +173,11 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     const scheduledSession = resolveScheduledSession(classroomDoc, requestedSessionId);
     if (!scheduledSession) return NextResponse.json({ error: "Scheduled session not found" }, { status: 404 });
     const scheduledSessionId = String(scheduledSession._id);
+    const searchParams = new URL(_.url).searchParams;
+    if (searchParams.get("libraryOnly") === "true") {
+      const pgnLibrary = await loadPgnLibrary(session, role, userId, params.id);
+      return NextResponse.json({ pgnLibrary, serverTime: new Date() });
+    }
     let live = await ClassroomSession.findOne({ classroom: params.id, scheduledSessionId })
       .populate("selectedStudents boardControlStudents challenge.student participants.user", "name username role")
       .lean<LiveSessionRecord | null>();
@@ -202,22 +225,9 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     const responses = activeQuestionId
       ? sessionResponses.filter((response: any) => String(response.question || "") === activeQuestionId)
       : [];
-    const includeLibrary = new URL(_.url).searchParams.get("includeLibrary") !== "false";
-    const pgnFilter = canCoach(role)
-      ? buildPgnLibraryFilter(session)
-      : {
-          $or: [
-            { uploadedBy: userId },
-            { visibility: "classroom", classroom: params.id },
-            { visibility: "classroom" },
-          ],
-        };
+    const includeLibrary = searchParams.get("includeLibrary") !== "false";
     const pgnLibrary = includeLibrary
-      ? await PGN.find(pgnFilter)
-          .select("title white black event result date eco opening moveCount sideToMove initialFen hasAnnotations hasVariations folder pgn")
-          .sort({ folder: 1, createdAt: -1 })
-          .limit(5000)
-          .lean()
+      ? await loadPgnLibrary(session, role, userId, params.id)
       : undefined;
     const chatFilter: Record<string, any> = { classroom: params.id, scheduledSessionId };
     if (!canCoach(role)) {

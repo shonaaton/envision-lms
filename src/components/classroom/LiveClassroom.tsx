@@ -830,6 +830,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const coachMovePersistTimerRef = useRef<number | null>(null);
   const pendingCoachMoveUpdateRef = useRef<Record<string, any> | null>(null);
   const pgnStateRef = useRef<{ mainMoves: string[]; variations: LivePgnVariation[]; activeVariationId: string }>({ mainMoves: [], variations: [], activeVariationId: "" });
+  const pgnLibraryLoadRef = useRef<"idle" | "loading" | "loaded">("idle");
   const pendingDrawingsHashRef = useRef("");
   const dataRef = useRef<any>(null);
   const loadedOnceRef = useRef(false);
@@ -855,8 +856,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 12000);
     try {
-      const refreshing = loadedOnceRef.current;
-      const res = await fetch(refreshing ? liveUrl("?includeLibrary=false") : liveUrl(), { cache: "no-store", signal: controller.signal });
+      const res = await fetch(liveUrl("?includeLibrary=false"), { cache: "no-store", signal: controller.signal });
       const nextData = await res.json().catch(() => null);
       if (!res.ok) {
         throw new Error(nextData?.error || "Classroom could not be loaded");
@@ -864,7 +864,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       if (!nextData?.classroom || !nextData?.live) {
         throw new Error("Classroom data is incomplete. Please try again.");
       }
-      if (refreshing && !("pgnLibrary" in nextData)) {
+      if (!("pgnLibrary" in nextData)) {
         nextData.pgnLibrary = dataRef.current?.pgnLibrary || [];
       }
       const pending = pendingOptimisticLiveRef.current;
@@ -891,6 +891,29 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       }
     }
   }, [liveUrl]);
+
+  const loadPgnLibrary = useCallback(async () => {
+    if (!coach || pgnLibraryLoadRef.current !== "idle") return;
+    pgnLibraryLoadRef.current = "loading";
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 45000);
+    try {
+      const res = await fetch(liveUrl("?libraryOnly=true"), { cache: "no-store", signal: controller.signal });
+      const payload = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(payload?.error || "PGN library could not be loaded");
+      pgnLibraryLoadRef.current = "loaded";
+      setData((current: any) => {
+        if (!current) return current;
+        const next = { ...current, pgnLibrary: Array.isArray(payload?.pgnLibrary) ? payload.pgnLibrary : [] };
+        dataRef.current = next;
+        return next;
+      });
+    } catch {
+      pgnLibraryLoadRef.current = "loaded";
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  }, [coach, liveUrl]);
 
   const queueRefresh = useCallback((delay = 60) => {
     if (typeof window === "undefined") return;
@@ -961,6 +984,10 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       if (refreshTimerRef.current) window.clearTimeout(refreshTimerRef.current);
     };
   }, [load]);
+
+  useEffect(() => {
+    if (data && coach) void loadPgnLibrary();
+  }, [coach, data, loadPgnLibrary]);
 
   useEffect(() => {
     dataRef.current = data;

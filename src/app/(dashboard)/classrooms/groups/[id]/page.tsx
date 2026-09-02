@@ -7,6 +7,9 @@ import ClassroomManagementClient from "@/components/classroom/ClassroomManagemen
 
 export const dynamic = "force-dynamic";
 
+const UNASSIGNED_GROUP_ID = "unassigned";
+const UNASSIGNED_GROUP_NAME = "Unassigned Batches";
+
 export default async function ClassroomGroupPage({ params }: { params: { id: string } }) {
   const session = await auth();
   if (!session) redirect("/login");
@@ -29,10 +32,13 @@ export default async function ClassroomGroupPage({ params }: { params: { id: str
   if (!allowed("view")) notFound();
 
   await dbConnect();
-  const batch: any = await Batch.findById(params.id)
-    .populate("students", "name email username isActive")
-    .lean();
-  if (!batch) notFound();
+  const isUnassignedGroup = params.id === UNASSIGNED_GROUP_ID;
+  const batch: any = isUnassignedGroup
+    ? null
+    : await Batch.findById(params.id)
+        .populate("students", "name email username isActive")
+        .lean();
+  if (!isUnassignedGroup && !batch) notFound();
 
   return (
     <ClassroomManagementClient
@@ -48,10 +54,10 @@ export default async function ClassroomGroupPage({ params }: { params: { id: str
         attendance: allowed("attendance"),
       }}
       groupFocus={{
-        id: String(batch._id),
-        name: String(batch.name || "Group"),
-        level: batch.level ? String(batch.level) : "",
-        students: Array.isArray(batch.students)
+        id: isUnassignedGroup ? UNASSIGNED_GROUP_ID : String(batch._id),
+        name: isUnassignedGroup ? UNASSIGNED_GROUP_NAME : String(batch.name || "Group"),
+        level: isUnassignedGroup ? "" : batch.level ? String(batch.level) : "",
+        students: !isUnassignedGroup && Array.isArray(batch.students)
           ? batch.students.map((student: any) => ({
               _id: String(student._id),
               name: String(student.name || "Student"),

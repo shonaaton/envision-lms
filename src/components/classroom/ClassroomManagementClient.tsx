@@ -120,6 +120,9 @@ type CreateMode = "single" | "series";
 type SeriesTopicMode = "all" | "selected";
 type EndCondition = "on_date" | "after_n_sessions" | "course_complete" | "never";
 
+const UNASSIGNED_GROUP_ID = "unassigned";
+const UNASSIGNED_GROUP_NAME = "Unassigned Batches";
+
 function latestSummarySessionId(item: ClassroomItem) {
   const sessions = Array.isArray(item.generatedSessions) ? item.generatedSessions : [];
   if (!sessions.length) return "";
@@ -337,7 +340,8 @@ export default function ClassroomManagementClient({
         if (!hasMatchingSession) return false;
       }
       if (filters.student && !(item.students || []).some((student) => student._id === filters.student)) return false;
-      if (filters.batch && !(item.batches || []).some((batch: any) => (batch._id || batch) === filters.batch)) return false;
+      if (filters.batch === UNASSIGNED_GROUP_ID && hasAssignedBatch(item)) return false;
+      if (filters.batch && filters.batch !== UNASSIGNED_GROUP_ID && !(item.batches || []).some((batch: any) => (batch._id || batch) === filters.batch)) return false;
       return true;
     });
   }, [filters, items]);
@@ -354,6 +358,7 @@ export default function ClassroomManagementClient({
 
   const groupScopedItems = useMemo(() => {
     if (!groupFocus?.id) return items;
+    if (groupFocus.id === UNASSIGNED_GROUP_ID) return items.filter((item) => !hasAssignedBatch(item));
     return items.filter((item) => (item.batches || []).some((batch: any) => String(batch?._id || batch || "") === groupFocus.id));
   }, [groupFocus?.id, items]);
 
@@ -365,7 +370,7 @@ export default function ClassroomManagementClient({
   }, [activeBatch, targets.students]);
 
   const groupSummaries = useMemo(() => {
-    return targets.batches
+    const summaries = targets.batches
       .map((batch) => {
         const batchItems = filteredItems.filter((item) => (item.batches || []).some((itemBatch: any) => String(itemBatch?._id || itemBatch || "") === batch._id));
         const sessions = flattenScheduledSessions(batchItems);
@@ -381,6 +386,26 @@ export default function ClassroomManagementClient({
         };
       })
       .filter((row) => row.classroomCount > 0);
+
+    const unassignedItems = filteredItems.filter((item) => !hasAssignedBatch(item));
+    if (unassignedItems.length) {
+      const sessions = flattenScheduledSessions(unassignedItems);
+      summaries.unshift({
+        batch: {
+          _id: UNASSIGNED_GROUP_ID,
+          name: UNASSIGNED_GROUP_NAME,
+          level: "",
+          students: [],
+        },
+        classroomCount: unassignedItems.length,
+        sessionCount: sessions.length,
+        upcomingCount: sessions.filter((row) => isSessionUpcomingLike(deriveScheduledSessionStatus(row.session, new Date()))).length,
+        courseNames: uniqueText(unassignedItems.map((item) => item.courseName || "")),
+        levelNames: uniqueText(unassignedItems.map((item) => item.levelName || "")),
+      });
+    }
+
+    return summaries;
   }, [filteredItems, targets.batches]);
 
   const visibleGroupSummaries = useMemo(() => {
@@ -801,7 +826,7 @@ export default function ClassroomManagementClient({
 
       <div className="grid flex-none gap-1.5 rounded-md border border-slate-200 bg-white p-2 shadow-sm md:grid-cols-3 xl:grid-cols-[repeat(6,minmax(0,1fr))]">
         <FilterSelect label="Coach" value={filters.coach} onChange={(value) => setFilters((current) => ({ ...current, coach: value }))} options={targets.coaches.map((coach) => ({ value: coach._id, label: coach.name }))} />
-        {!groupFocus && <FilterSelect label="Group" value={filters.batch} onChange={(value) => setFilters((current) => ({ ...current, batch: value }))} options={targets.batches.map((batch) => ({ value: batch._id, label: batch.name }))} />}
+        {!groupFocus && <FilterSelect label="Group" value={filters.batch} onChange={(value) => setFilters((current) => ({ ...current, batch: value }))} options={[{ value: UNASSIGNED_GROUP_ID, label: UNASSIGNED_GROUP_NAME }, ...targets.batches.map((batch) => ({ value: batch._id, label: batch.name }))]} />}
         <FilterSelect label="Student" value={filters.student} onChange={(value) => setFilters((current) => ({ ...current, student: value }))} options={studentFilterOptions.map((student) => ({ value: student._id, label: student.name }))} />
         <FilterSelect label="Course" value={filters.course} onChange={(value) => setFilters((current) => ({ ...current, course: value }))} options={uniqueOptions(groupScopedItems.map((item) => item.courseName).filter(Boolean) as string[])} />
         <FilterSelect label="Level" value={filters.level} onChange={(value) => setFilters((current) => ({ ...current, level: value }))} options={uniqueOptions(groupScopedItems.map((item) => item.levelName).filter(Boolean) as string[])} />
@@ -823,11 +848,11 @@ export default function ClassroomManagementClient({
           </div>
           {loading ? (
             <div className="rounded-md bg-slate-50 px-3 py-3 text-sm text-slate-500">Loading groups...</div>
-          ) : groupSummaries.length === 0 ? (
+          ) : visibleGroupSummaries.length === 0 ? (
             <div className="rounded-md border border-dashed border-slate-300 px-3 py-3 text-sm text-slate-500">No groups match the current filters.</div>
           ) : (
             <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-              {groupSummaries.map(({ batch, classroomCount, sessionCount, upcomingCount, courseNames, levelNames }) => (
+              {visibleGroupSummaries.map(({ batch, classroomCount, sessionCount, upcomingCount, courseNames, levelNames }) => (
                 <div key={batch._id} className="flex items-center justify-between gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
                   <div className="min-w-0">
                     <Link href={`/classrooms/groups/${batch._id}`} className="truncate text-sm font-bold text-slate-950 hover:text-brand" title={batch.name}>
@@ -2101,6 +2126,10 @@ function batchNamesForItem(item: ClassroomItem, batches: BatchOption[] = []) {
     })
     .filter(Boolean)
     .join(", ");
+}
+
+function hasAssignedBatch(item: ClassroomItem) {
+  return (item.batches || []).some((batch: any) => Boolean(String(batch?._id || batch || "").trim()));
 }
 
 function studentNamesForItem(item: ClassroomItem) {

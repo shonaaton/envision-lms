@@ -74,7 +74,7 @@ export function buildGeneratedSessions(input: ClassroomBuildInput) {
   const slots = (input.daysOfWeek || [])
     .flatMap((daySlot) => (daySlot.slots || []).map((slot) => ({ day: daySlot.day, ...slot })))
     .sort((a, b) => (a.day - b.day) || a.startTime.localeCompare(b.startTime));
-  if (!input.startDate || !slots.length || !plan.length) return [];
+  if (!input.startDate || !slots.length) return [];
 
   const start = calendarCursor(input.startDate);
   const end = input.endDate ? calendarCursor(input.endDate) : null;
@@ -82,7 +82,7 @@ export function buildGeneratedSessions(input: ClassroomBuildInput) {
     input.endCondition === "after_n_sessions"
       ? Math.max(1, Number(input.endAfterSessions || 1))
       : input.endCondition === "course_complete"
-        ? plan.length
+        ? plan.length || Math.max(1, Number(input.endAfterSessions || 1))
         : input.endCondition === "never"
           ? 52
           : 1000;
@@ -113,7 +113,7 @@ export function buildGeneratedSessions(input: ClassroomBuildInput) {
         const sessionDate = academyDateTime(calendarDateString(cursor), slot.startTime);
         sessions.push({
           sessionNumber: sessions.length + 1,
-          topicName: topic?.topicName || input.title,
+          topicName: topic?.topicName || input.topicName || input.title,
           topicOrder: Number(topic?.topicOrder ?? topicIndex),
           scheduledFor: new Date(sessionDate),
           startTime: slot.startTime,
@@ -125,7 +125,7 @@ export function buildGeneratedSessions(input: ClassroomBuildInput) {
       }
     }
     cursor.setUTCDate(cursor.getUTCDate() + 1);
-    if (input.endCondition === "course_complete" && sessions.length >= plan.length) break;
+    if (input.endCondition === "course_complete" && plan.length > 0 && sessions.length >= plan.length) break;
   }
 
   return sessions;

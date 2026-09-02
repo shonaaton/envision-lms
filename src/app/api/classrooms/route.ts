@@ -108,12 +108,25 @@ async function normalizeClassroomPayload(raw: any, actorId: string) {
   let courseName = String(raw.courseName || "").trim();
   let level = ["beginner", "intermediate", "advanced"].includes(raw.level) ? raw.level : "beginner";
 
+  if (classroomType === "series" && !courseId) {
+    throw new Error("Select a course and level for this series.");
+  }
+  if (classroomType === "series" && !levelName) {
+    throw new Error("Select a course level for this series.");
+  }
+
   if (courseId) {
     const course: any = await Course.findById(courseId).lean();
+    if (classroomType === "series" && !course) {
+      throw new Error("Select a valid course for this series.");
+    }
     if (course) {
       courseName = course.name;
       level = course.level === "mixed" ? "beginner" : course.level;
-      const selectedLevel = (course.levels || []).find((item: any) => String(item.name) === levelName) || course.levels?.[0];
+      const selectedLevel = (course.levels || []).find((item: any) => String(item.name) === levelName);
+      if (classroomType === "series" && !selectedLevel) {
+        throw new Error("Select a valid course level for this series.");
+      }
       if (selectedLevel && classroomType === "series" && seriesTopicMode === "selected") {
         const namesInOrder = selectedTopicNames.length
           ? selectedTopicNames
@@ -163,7 +176,10 @@ async function normalizeClassroomPayload(raw: any, actorId: string) {
   if (classroomType === "series" && daysOfWeek.some((day: any) => new Set(day.slots.map((slot: any) => slot.startTime)).size !== day.slots.length)) {
     throw new Error("Remove duplicate time slots from the same day.");
   }
-  if (classroomType === "series" && !sessionPlan.length) throw new Error("Select a course level with at least one topic for the series.");
+  if (classroomType === "series" && seriesTopicMode === "selected" && !sessionPlan.length) throw new Error("Select a course level with at least one topic for the series.");
+  if (classroomType === "series" && !sessionPlan.length && raw.endCondition === "course_complete") {
+    raw.endCondition = "after_n_sessions";
+  }
   if (classroomType === "series" && raw.endCondition === "on_date" && !String(raw.endDate || "").trim()) throw new Error("Select the series end date.");
   if (classroomType === "series" && raw.endCondition === "on_date" && Number.isNaN(new Date(raw.endDate).getTime())) throw new Error("Select a valid series end date.");
   if (classroomType === "series" && raw.endCondition === "on_date" && new Date(raw.endDate).getTime() < new Date(raw.startDate).getTime()) {

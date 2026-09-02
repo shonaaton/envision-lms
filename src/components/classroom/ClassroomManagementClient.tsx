@@ -663,10 +663,13 @@ export default function ClassroomManagementClient({
       if (form.classroomType === "single" && (!form.classDate || !form.startTime)) return toast.error("Select the class date and start time.");
       if (form.classroomType === "series" && !form.startDate) return toast.error("Select the series start date.");
       if (form.classroomType === "series" && !form.daysOfWeek.some((day) => day.slots.some((slot) => slot.startTime))) return toast.error("Add at least one day and time slot.");
-      if (form.classroomType === "series" && !selectedSeriesTopics.length) return toast.error("Select a course level with at least one topic.");
+      if (form.classroomType === "series" && (!form.course || !form.levelName)) return toast.error("Select a course and level.");
+      if (form.classroomType === "series" && form.seriesTopicMode === "selected" && !selectedSeriesTopics.length) return toast.error("Select a course level with at least one topic.");
       if (form.classroomType === "series" && form.endCondition === "on_date" && !form.endDate) return toast.error("Select the series end date.");
       const reviewTopicName = form.classroomType === "series" && form.seriesTopicMode === "selected"
         ? `${selectedSeriesTopics.length} selected topics`
+        : form.classroomType === "series" && !selectedSeriesTopics.length
+          ? `${selectedCourse?.name || form.courseName} - ${selectedLevel?.name || form.levelName}`
         : form.useCustomTopic
           ? form.customTopicName
           : form.topicName;
@@ -691,7 +694,7 @@ export default function ClassroomManagementClient({
         ...form,
         sessionsPerWeek: form.daysOfWeek.reduce((total, day) => total + day.slots.filter((slot) => slot.startTime).length, 0),
         topicName: reviewTopicName,
-        endCondition: form.classroomType === "series" && form.seriesTopicMode === "selected" ? "course_complete" : form.endCondition,
+        endCondition: form.classroomType === "series" && (form.seriesTopicMode === "selected" || !selectedSeriesTopics.length) ? "after_n_sessions" : form.endCondition,
         endAfterSessions: form.classroomType === "series" && form.seriesTopicMode === "selected" ? form.classCount : form.endAfterSessions,
         meetingProvider: "meet",
         sessionPlan,

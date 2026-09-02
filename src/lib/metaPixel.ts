@@ -20,6 +20,13 @@ function trackMetaEvent(eventName: string, eventID?: string) {
   fbq("track", eventName);
 }
 
+export function trackMetaPageView() {
+  if (typeof window === "undefined") return;
+  const fbq = (window as FbqWindow).fbq;
+  if (typeof fbq !== "function") return;
+  fbq("track", "PageView");
+}
+
 export function trackMetaCompleteRegistration(metaEventId?: unknown, userId?: unknown) {
   const eventID = typeof metaEventId === "string" && metaEventId
     ? metaEventId

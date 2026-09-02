@@ -26,7 +26,7 @@ import AddBatchModal from "@/components/admin/AddBatchModal";
 
 export const dynamic = "force-dynamic";
 
-type Tab = "students" | "coaches" | "sub-admins" | "batches" | "roles";
+type Tab = "students" | "demo" | "coaches" | "sub-admins" | "batches" | "roles";
 type UserRole = "student" | "instructor" | "admin" | "sub-admin";
 
 type AdminUser = {
@@ -45,6 +45,7 @@ type AdminUser = {
   fideId?: string;
   rating?: number;
   notes?: string;
+  accountStatus?: "demo" | "enrolled" | "coach_applicant" | "approved" | "rejected";
   isActive: boolean;
 };
 
@@ -101,9 +102,10 @@ export default function AdminUsersPage() {
   const [editBatch, setEditBatch] = useState<BatchItem | null>(null);
 
   const loadUsers = useCallback(async () => {
-    if (tab !== "students" && tab !== "coaches" && tab !== "sub-admins") return;
-    const role = tab === "students" ? "student" : tab === "coaches" ? "instructor" : "sub-admin";
+    if (tab !== "students" && tab !== "demo" && tab !== "coaches" && tab !== "sub-admins") return;
+    const role = tab === "students" || tab === "demo" ? "student" : tab === "coaches" ? "instructor" : "sub-admin";
     const params = new URLSearchParams({ role, sort });
+    if (tab === "demo") params.set("accountStatus", "demo");
     if (q) params.set("q", q);
     if (status) params.set("status", status);
     if (tag) params.set("tag", tag);
@@ -144,7 +146,7 @@ export default function AdminUsersPage() {
     });
   }, [batches, q]);
 
-  const tabLabel = tab === "students" ? "Student" : tab === "coaches" ? "Coach" : tab === "sub-admins" ? "Sub Admin" : "Batch";
+  const tabLabel = tab === "students" ? "Student" : tab === "demo" ? "Demo" : tab === "coaches" ? "Coach" : tab === "sub-admins" ? "Sub Admin" : "Batch";
   const openMenuUser = users.find((u) => menu?.type === "user" && menu.id === u._id);
   const openMenuBatch = batches.find((b) => menu?.type === "batch" && menu.id === b._id);
 
@@ -249,14 +251,14 @@ export default function AdminUsersPage() {
       <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm sm:p-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex overflow-x-auto rounded-lg bg-slate-100 p-1">
-            {(["students", "coaches", "sub-admins", "batches", "roles"] as Tab[]).map((t) => (
+            {(["students", "demo", "coaches", "sub-admins", "batches", "roles"] as Tab[]).map((t) => (
               <button key={t} onClick={() => { setTab(t); setMenu(null); }} className={`min-w-fit rounded-md px-4 py-1.5 text-sm capitalize ${tab === t ? "bg-white text-slate-950 shadow" : "text-slate-600"}`}>
                 {t.replace("-", " ")}
               </button>
             ))}
           </div>
           <div className="grid gap-2 sm:grid-cols-2 lg:flex lg:flex-1 lg:flex-wrap lg:justify-end">
-            {(tab === "students" || tab === "coaches" || tab === "sub-admins") && (
+            {(tab === "students" || tab === "demo" || tab === "coaches" || tab === "sub-admins") && (
               <>
                 <select className="input w-full bg-white text-slate-950 lg:max-w-[160px]" value={status} onChange={(e) => setStatus(e.target.value)}>
                   <option value="">Filter by status</option>
@@ -279,7 +281,7 @@ export default function AdminUsersPage() {
           </div>
         </div>
 
-        {(tab === "students" || tab === "coaches" || tab === "sub-admins") && (
+        {(tab === "students" || tab === "demo" || tab === "coaches" || tab === "sub-admins") && (
           <>
             <div className="mt-6 flex gap-2 text-xs">
               <span className="rounded-full bg-emerald-100 px-3 py-1 text-emerald-700">Active {counts.active}</span>
@@ -460,7 +462,7 @@ export default function AdminUsersPage() {
         ]} />
       )}
 
-      <AddUserModal open={openUserModal} onClose={() => setOpenUserModal(false)} onCreated={loadUsers} defaultRole={tab === "coaches" ? "instructor" : tab === "sub-admins" ? "sub-admin" : "student"} />
+      <AddUserModal open={openUserModal} onClose={() => setOpenUserModal(false)} onCreated={loadUsers} defaultRole={tab === "coaches" ? "instructor" : tab === "sub-admins" ? "sub-admin" : "student"} defaultAccountStatus={tab === "demo" ? "demo" : tab === "students" ? "enrolled" : undefined} />
       <AddBatchModal open={openBatchModal} onClose={() => setOpenBatchModal(false)} onCreated={loadBatches} />
       {detailUser && <UserDetailsModal user={detailUser} batches={batches} onClose={() => setDetailUser(null)} onCopy={() => copyCredentials(detailUser)} />}
       {editUser && <EditUserModal user={editUser} onClose={() => setEditUser(null)} onSave={async (payload) => { await updateUser(editUser._id, payload); setEditUser(null); }} />}

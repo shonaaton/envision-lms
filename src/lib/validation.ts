@@ -37,6 +37,7 @@ export const addUserSchema = z.object({
   phone: optionalText(40),
   password: z.string().min(8).max(72).optional(), // auto-generated if omitted
   role: z.enum(["student", "instructor", "admin", "sub-admin"]),
+  accountStatus: z.enum(["demo", "enrolled", "coach_applicant", "approved", "rejected"]).optional(),
   tags: z.array(z.string()).default([]),
   batches: z.array(z.string()).default([]),
   fideId: z.string().optional(),

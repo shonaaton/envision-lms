@@ -29,11 +29,18 @@ export async function GET(req: Request) {
   const role = url.searchParams.get("role"); // student | instructor | admin
   const q = url.searchParams.get("q");
   const status = url.searchParams.get("status"); // active | inactive
+  const accountStatus = url.searchParams.get("accountStatus");
+  const includeDemo = url.searchParams.get("includeDemo") === "true";
   const tag = url.searchParams.get("tag");
   const sort = url.searchParams.get("sort") || "newest";
 
   const filter: any = {};
   if (role) filter.role = role;
+  if (accountStatus) {
+    filter.accountStatus = accountStatus;
+  } else if (role === "student" && !includeDemo) {
+    filter.accountStatus = { $ne: "demo" };
+  }
   if (status === "active") filter.isActive = true;
   if (status === "inactive") filter.isActive = false;
   if (tag) filter.tags = tag;
@@ -75,6 +82,7 @@ export async function POST(req: Request) {
     const u = await User.create({
       ...body,
       email: body.email.toLowerCase(),
+      accountStatus: body.role === "student" ? body.accountStatus || "enrolled" : body.accountStatus,
       username,
       passwordHash,
       tempPassword,
@@ -88,7 +96,7 @@ export async function POST(req: Request) {
       label: `Created ${body.role} account for ${u.name}`,
       entityType: "User",
       entityId: u._id.toString(),
-      metadata: { role: body.role, username },
+      metadata: { role: body.role, username, accountStatus: u.accountStatus },
     });
     const welcomeEmail = await sendWelcomeEmail({
       name: u.name,

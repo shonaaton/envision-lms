@@ -1,7 +1,9 @@
 import "./globals.css";
+import { Suspense } from "react";
 import type { Metadata } from "next";
 import Script from "next/script";
 import { Toaster } from "sonner";
+import MetaPageViewTracker from "@/components/MetaPageViewTracker";
 import Providers from "./providers";
 import { ACADEMY_FAVICON_URL } from "@/lib/branding";
 
@@ -42,6 +44,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           />
         </noscript>
         <Providers>{children}</Providers>
+        <Suspense fallback={null}>
+          <MetaPageViewTracker />
+        </Suspense>
         <Toaster
           richColors
           theme="light"

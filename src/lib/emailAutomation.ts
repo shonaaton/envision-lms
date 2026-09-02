@@ -70,6 +70,7 @@ function actionLabelFromKind(kind?: unknown) {
     class_completed_summary: "Open Homework",
     course_assigned: "Open Classroom",
     credit_reminder: "View Credits",
+    demo_welcome: "Sign In",
     homework_assigned: "Open Assignment",
     homework_due_reminder: "Open Homework",
     homework_submitted_confirmation: "Open Homework",

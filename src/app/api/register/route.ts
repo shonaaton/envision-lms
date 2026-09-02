@@ -8,6 +8,7 @@ import { registerSchema } from "@/lib/validation";
 import { sendWelcomeEmail } from "@/lib/welcomeEmail";
 import { consumeRateLimit, getClientIp, jsonRateLimitHeaders } from "@/lib/requestSecurity";
 import { notifyDemoAccountCreated } from "@/lib/demoWorkflow";
+import { sendMetaConversionEvent } from "@/lib/metaConversions";
 
 export const dynamic = "force-dynamic";
 
@@ -83,12 +84,21 @@ export async function POST(req: Request) {
       phone: user.phone,
       username,
       role: "student",
+      accountKind: "demo",
       request: req,
     });
+    const metaEventId = `demo_registration_${user._id.toString()}`;
     await notifyDemoAccountCreated(user).catch((error) => console.error("Demo account notification failed", error));
+    await sendMetaConversionEvent({
+      eventName: "CompleteRegistration",
+      eventId: metaEventId,
+      request: req,
+      userData: { email: user.email, phone: user.phone, name: user.name },
+    }).catch((error) => console.error("Meta CompleteRegistration CAPI failed", error));
     return NextResponse.json({
       id: user._id.toString(),
       type: "demo_student",
+      metaEventId,
       welcomeEmailDelivered: welcomeEmail.delivered,
     });
   } catch (err: any) {

@@ -12,6 +12,8 @@ export const metadata: Metadata = {
   icons: { icon: ACADEMY_FAVICON_URL, apple: ACADEMY_FAVICON_URL },
 };
 
+const metaPixelId = process.env.NEXT_PUBLIC_META_PIXEL_ID || "924225047079586";
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
@@ -26,7 +28,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             t.src=v;s=b.getElementsByTagName(e)[0];
             s.parentNode.insertBefore(t,s)}(window, document,'script',
             'https://connect.facebook.net/en_US/fbevents.js');
-            fbq('init', '924225047079586');
+            fbq('init', '${metaPixelId}');
             fbq('track', 'PageView');
           `}
         </Script>
@@ -35,7 +37,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             height="1"
             width="1"
             style={{ display: "none" }}
-            src="https://www.facebook.com/tr?id=924225047079586&ev=PageView&noscript=1"
+            src={`https://www.facebook.com/tr?id=${metaPixelId}&ev=PageView&noscript=1`}
             alt=""
           />
         </noscript>

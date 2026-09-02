@@ -15,6 +15,7 @@ import { bookingFeatureNameForType, bookingFeatureNameLowerForType } from "@/lib
 import { inactiveStudentMessage } from "@/lib/studentAccess";
 import { canAccessFeature } from "@/lib/featureAccess";
 import { demoManagementUsers, ensureDemoRequestTask, normalizeDemoRequestedTime, notifyDemoRequestCreated } from "@/lib/demoWorkflow";
+import { sendMetaConversionEvent } from "@/lib/metaConversions";
 
 export const dynamic = "force-dynamic";
 
@@ -190,7 +191,12 @@ export async function POST(req: Request) {
       });
       const idempotencyKey = String(body.idempotencyKey || `demo:${studentUserId}:${requested.start.toISOString()}`);
       const existingForKey = await Booking.findOne({ idempotencyKey });
-      if (existingForKey) return NextResponse.json(existingForKey);
+      if (existingForKey) {
+        return NextResponse.json({
+          ...(existingForKey.toObject ? existingForKey.toObject() : existingForKey),
+          metaEventId: `demo_booking_${existingForKey._id.toString()}`,
+        });
+      }
       const existingActive = await Booking.findOne({
         student: studentUserId,
         bookingType: "demo",
@@ -250,7 +256,17 @@ export async function POST(req: Request) {
         entityId: created._id.toString(),
         metadata: { bookingType: "demo", demoStatus: "REQUESTED", timezone: requested.timezone, localTime: requested.localLabel, istTime: requested.istLabel },
       });
-      return NextResponse.json(created);
+      const metaEventId = `demo_booking_${created._id.toString()}`;
+      await sendMetaConversionEvent({
+        eventName: "Schedule",
+        eventId: metaEventId,
+        request: req,
+        userData: { email: student.email, phone: student.phone, name: student.name },
+      }).catch((error) => console.error("Meta Schedule CAPI failed", error));
+      return NextResponse.json({
+        ...(created.toObject ? created.toObject() : created),
+        metaEventId,
+      });
     }
 
     if (!body.instructor) return NextResponse.json({ error: "Please choose a coach." }, { status: 400 });

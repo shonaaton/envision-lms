@@ -30,6 +30,7 @@ import {
   UsersRound,
 } from "lucide-react";
 import { ACADEMY_LOGO_URL } from "@/lib/branding";
+import { trackMetaCompleteRegistration } from "@/lib/metaPixel";
 import { LEGAL_LINKS } from "@/lib/publicLinks";
 
 const countries = [
@@ -63,10 +64,10 @@ const initialForm = {
   preferredStudents: "",
   availabilityNote: "",
   message: "",
-  acceptedPrivacy: false,
-  acceptedTerms: false,
-  acceptedRefund: false,
-  parentConsent: false,
+  acceptedPrivacy: true,
+  acceptedTerms: true,
+  acceptedRefund: true,
+  parentConsent: true,
   academyUpdates: true,
 };
 
@@ -245,6 +246,7 @@ export default function RegisterPage() {
       return;
     }
 
+    trackMetaCompleteRegistration(result.metaEventId, result.id);
     await signIn("credentials", { redirect: false, email: payload.email, password: payload.password });
     setLoading(false);
     router.push("/dashboard");

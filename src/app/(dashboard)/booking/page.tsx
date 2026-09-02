@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { CalendarDays, CheckCircle2, Clock3, LockKeyhole, Sparkles, UserRound } from "lucide-react";
 import { nextOccurrenceForWeeklySlot } from "@/lib/bookingAvailability";
 import { bookingFeatureNameForAccount, bookingFeatureNameForType, isDemoBookingAccount } from "@/lib/bookingLabels";
+import { trackMetaSchedule } from "@/lib/metaPixel";
 import { inactiveStudentMessage } from "@/lib/studentStatus";
 
 const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -101,6 +102,7 @@ export default function BookingPage() {
       const payload = await res.json().catch(() => ({}));
       setLoading(false);
       if (!res.ok) return toast.error(payload.error || "Could not request this demo time.");
+      trackMetaSchedule(payload.metaEventId, payload._id);
       toast.success("Demo request sent for academy review");
       setPreferredDate("");
       setPreferredTime("");

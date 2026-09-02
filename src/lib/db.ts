@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 type Cached = { conn: typeof mongoose | null; promise: Promise<typeof mongoose> | null };
 const MONGO_SERVER_SELECTION_TIMEOUT_MS = 5_000;
 const MONGO_CONNECT_TIMEOUT_MS = 5_000;
-const MONGO_SOCKET_TIMEOUT_MS = 15_000;
+const MONGO_SOCKET_TIMEOUT_MS = 45_000;
 const MONGO_DNS_FAMILY = 4;
 declare global {
   var _mongo: Cached | undefined;

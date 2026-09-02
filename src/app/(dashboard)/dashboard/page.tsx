@@ -1910,6 +1910,23 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
       }
     : {};
 
+  const adminTabs = [
+    { id: "today", label: "Today", icon: Calendar },
+    { id: "students", label: "Students", icon: Users },
+    { id: "fees", label: "Fees", icon: CircleDollarSign },
+    { id: "coaches", label: "Coaches", icon: GraduationCap },
+    { id: "activity", label: "Activity", icon: ActivityIcon },
+  ];
+  const adminTabIds = adminTabs.map((tab) => tab.id);
+  const activeTab = adminTabIds.includes(searchParams.tab || "") ? searchParams.tab || "today" : "today";
+  const needsPeople = activeTab === "today" || activeTab === "students";
+  const needsCoaches = activeTab === "today" || activeTab === "coaches";
+  const needsClassrooms = activeTab === "today" || activeTab === "students" || activeTab === "coaches";
+  const needsClassroomActivity = activeTab === "today" || activeTab === "students" || activeTab === "coaches" || activeTab === "activity";
+  const needsFees = activeTab === "today" || activeTab === "fees";
+  const needsPayments = needsFees || activeTab === "activity";
+  const needsActivityFeed = activeTab === "today" || activeTab === "activity";
+
   const [
     students,
     coaches,
@@ -1926,29 +1943,45 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
     pgns,
     loggedActivities,
   ] = await Promise.all([
-    User.find({ role: "student", ...userSearch }, { passwordHash: 0 }).sort({ createdAt: -1 }).lean(),
-    User.find({ role: "instructor" }, { passwordHash: 0 }).sort({ name: 1 }).lean(),
-    Batch.find({}).populate("coach", "name").lean(),
-    Classroom.find({ isSessionInstance: { $ne: true } })
+    needsPeople
+      ? User.find({ role: "student", ...userSearch })
+          .select("name username email gender isActive level courseLevel studentLevel createdAt")
+          .sort({ createdAt: -1 })
+          .lean()
+      : [],
+    needsCoaches
+      ? User.find({ role: "instructor" })
+          .select("name username email")
+          .sort({ name: 1 })
+          .lean()
+      : [],
+    needsCoaches
+      ? Batch.find({})
+          .select("name level students coach isActive")
+          .populate("coach", "name")
+          .lean()
+      : [],
+    needsClassrooms ? Classroom.find({ isSessionInstance: { $ne: true } })
       .populate("coach instructor", "name username email")
       .populate("generatedSessions.substituteCoach", "name username email")
       .populate("students", "name username email")
       .populate("batches", "name level course")
-      .lean(),
-    Homework.find(dateFilter("createdAt", from, to)).lean(),
-    Submission.find(dateFilter("submittedAt", from, to)).populate("student", "name username").lean(),
-    Attendance.find(dateFilter("sessionDate", from, to)).populate("classroom", "title").lean(),
-    Booking.find(dateFilter("startAt", from, to)).populate("student instructor", "name").lean(),
-    Payment.find({ status: "paid", $or: [dateFilter("paidAt", from, to), dateFilter("createdAt", from, to)] }).populate("user", "name username").lean(),
-    Payment.find({ status: "paid", $or: [dateFilter("paidAt", academicFrom, academicTo), dateFilter("createdAt", academicFrom, academicTo)] }).lean(),
-    Invoice.find(dateFilter("createdAt", academicFrom, academicTo)).lean(),
-    Invoice.find({ status: "paid", paidAt: { $gte: academicFrom, $lte: academicTo } }).lean(),
-    PGN.find(dateFilter("createdAt", from, to)).populate("uploadedBy", "name username").lean(),
-    Activity.find(dateFilter("occurredAt", from, to))
+      .lean() : [],
+    needsClassroomActivity ? Homework.find(dateFilter("createdAt", from, to)).select("title classroom instructor isPublished puzzles createdAt").lean() : [],
+    needsClassroomActivity ? Submission.find(dateFilter("submittedAt", from, to)).select("student homework totalScore submittedAt reviewedAt feedback").populate("student", "name username").lean() : [],
+    needsClassroomActivity ? Attendance.find(dateFilter("sessionDate", from, to)).select("classroom scheduledSessionId sessionDate records").populate("classroom", "title").lean() : [],
+    needsActivityFeed ? Booking.find(dateFilter("startAt", from, to)).select("student instructor startAt status approvalStatus").populate("student instructor", "name").lean() : [],
+    needsPayments ? Payment.find({ status: "paid", $or: [dateFilter("paidAt", from, to), dateFilter("createdAt", from, to)] }).select("user amount method status paidAt createdAt").populate("user", "name username").lean() : [],
+    needsFees ? Payment.find({ status: "paid", $or: [dateFilter("paidAt", academicFrom, academicTo), dateFilter("createdAt", academicFrom, academicTo)] }).select("amount method paidAt createdAt").lean() : [],
+    needsFees ? Invoice.find(dateFilter("createdAt", academicFrom, academicTo)).select("status totalAmount dueDate paidAt updatedAt createdAt").lean() : [],
+    needsFees ? Invoice.find({ status: "paid", paidAt: { $gte: academicFrom, $lte: academicTo } }).select("totalAmount paidAt").lean() : [],
+    needsClassroomActivity ? PGN.find(dateFilter("createdAt", from, to)).select("title uploadedBy createdAt").populate("uploadedBy", "name username").lean() : [],
+    needsActivityFeed ? Activity.find(dateFilter("occurredAt", from, to))
+      .select("actor targetUser type label occurredAt")
       .populate("actor targetUser", "name username role")
       .sort({ occurredAt: -1 })
       .limit(120)
-      .lean(),
+      .lean() : [],
   ]);
 
   const activeStudents = students.filter((student: any) => student.isActive !== false);
@@ -2152,15 +2185,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
   );
 
   const upcomingBookings = bookings.filter((booking: any) => new Date(booking.startAt) >= new Date()).slice(0, 4);
-  const adminTabs = [
-    { id: "today", label: "Today", icon: Calendar },
-    { id: "students", label: "Students", icon: Users },
-    { id: "fees", label: "Fees", icon: CircleDollarSign },
-    { id: "coaches", label: "Coaches", icon: GraduationCap },
-    { id: "activity", label: "Activity", icon: ActivityIcon },
-  ];
-  const adminTabIds = adminTabs.map((tab) => tab.id);
-  const activeTab = adminTabIds.includes(searchParams.tab || "") ? searchParams.tab || "today" : "today";
   const tabHref = (tab: string) => {
     const params = new URLSearchParams();
     if (preset) params.set("preset", preset);

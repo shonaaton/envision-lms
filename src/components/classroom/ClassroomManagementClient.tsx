@@ -1720,6 +1720,8 @@ function GroupClassSessionList({
         const summaryHref = sessionId ? `/classrooms/${classroom._id}/summary?session=${sessionId}` : `/classrooms/${classroom._id}/summary`;
         const batchNames = batchNamesForItem(classroom, targets.batches);
         const studentNames = studentNamesForItem(classroom);
+        const sessionCoachName = assignedCoachName(classroom, session);
+        const isSubstituted = Boolean(session?.substituteCoach);
         const isFinished = status === "completed" || Boolean(session.actualEndedAt);
         const isCancelled = status === "cancelled";
         const canOpenActions = permissions && role && setActionModal && setActionDraft;
@@ -1740,6 +1742,11 @@ function GroupClassSessionList({
             <div className="min-w-0">
               <div className="truncate font-semibold text-slate-700" title={batchNames || "Unassigned"}>{batchNames || "Unassigned"}</div>
               <div className="truncate text-slate-500" title={studentNames || ""}>{studentNames || `${classroom.students?.length || 0} students`}</div>
+              <div className="mt-1 flex min-w-0 items-center gap-1 text-slate-600">
+                <span className="shrink-0 font-semibold">Coach:</span>
+                <span className="truncate" title={sessionCoachName}>{sessionCoachName}</span>
+                {isSubstituted ? <span className="shrink-0 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">Substitute</span> : null}
+              </div>
             </div>
             <div className="min-w-0">
               <div className="truncate font-semibold text-slate-700" title={classroom.courseName || "Course not set"}>{classroom.courseName || "Course not set"}</div>

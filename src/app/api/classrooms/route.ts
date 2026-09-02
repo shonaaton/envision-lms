@@ -84,7 +84,7 @@ export async function POST(req: Request) {
 
 async function normalizeClassroomPayload(raw: any, actorId: string) {
   const classroomType = raw.classroomType === "series" ? "series" : "single";
-  const seriesTopicMode = raw.seriesTopicMode === "selected" ? "selected" : "all";
+  const seriesTopicMode = ["all", "selected", "none"].includes(raw.seriesTopicMode) ? raw.seriesTopicMode : "all";
   const meetingProvider = "meet";
   const title = String(raw.title || "").trim();
   if (!title) throw new Error("Class name is required.");
@@ -144,7 +144,7 @@ async function normalizeClassroomPayload(raw: any, actorId: string) {
           order: index + 1,
         })));
         topicName = `${sessionPlan.length} selected topics`;
-      } else if (selectedLevel && !sessionPlan.length) {
+      } else if (selectedLevel && seriesTopicMode !== "none" && !sessionPlan.length) {
         sessionPlan = buildSessionPlan((selectedLevel.topics || []).map((topic: any, index: number) => ({
           name: topic.name,
           order: Number(topic.order ?? index),
@@ -177,6 +177,10 @@ async function normalizeClassroomPayload(raw: any, actorId: string) {
     throw new Error("Remove duplicate time slots from the same day.");
   }
   if (classroomType === "series" && seriesTopicMode === "selected" && !sessionPlan.length) throw new Error("Select a course level with at least one topic for the series.");
+  if (classroomType === "series" && seriesTopicMode === "none") {
+    sessionPlan = [];
+    topicName = `${courseName} - ${levelName}`;
+  }
   if (classroomType === "series" && !sessionPlan.length && raw.endCondition === "course_complete") {
     raw.endCondition = "after_n_sessions";
   }

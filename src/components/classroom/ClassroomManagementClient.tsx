@@ -117,7 +117,7 @@ type TargetsPayload = {
 };
 
 type CreateMode = "single" | "series";
-type SeriesTopicMode = "all" | "selected";
+type SeriesTopicMode = "all" | "selected" | "none";
 type EndCondition = "on_date" | "after_n_sessions" | "course_complete" | "never";
 
 const UNASSIGNED_GROUP_ID = "unassigned";
@@ -317,6 +317,7 @@ export default function ClassroomManagementClient({
   );
   const selectedSeriesTopics = useMemo(() => {
     if (form.classroomType !== "series") return [];
+    if (form.seriesTopicMode === "none") return [];
     if (form.seriesTopicMode === "selected") {
       return form.selectedTopicNames
         .map((topicName) => (selectedLevel?.topics || []).find((topic) => topic.name === topicName))
@@ -507,7 +508,12 @@ export default function ClassroomManagementClient({
       setEditItem(null);
       setStep(1);
       setOpen(true);
-      setForm((current) => ({ ...current, classroomType: mode, seriesTopicMode, endCondition: mode === "series" ? "course_complete" : current.endCondition }));
+      setForm((current) => ({
+        ...current,
+        classroomType: mode,
+        seriesTopicMode,
+        endCondition: mode === "series" ? (seriesTopicMode === "none" ? "after_n_sessions" : "course_complete") : current.endCondition,
+      }));
       return;
     }
     setEditItem(item);
@@ -521,7 +527,7 @@ export default function ClassroomManagementClient({
       topicOrder: 0,
       useCustomTopic: !item.courseName || !item.topicName,
       customTopicName: item.topicName || "",
-      seriesTopicMode: item.seriesTopicMode || "all",
+      seriesTopicMode: item.seriesTopicMode || (item.sessionPlan?.length ? "all" : "none"),
       classCount: item.sessionPlan?.length || item.generatedSessions?.length || 1,
       selectedTopicNames: item.seriesTopicMode === "selected" ? (item.sessionPlan || []).map((session) => session.topicName) : [],
       classDate: item.classDate ? formatDateInput(item.classDate) : "",
@@ -691,13 +697,13 @@ export default function ClassroomManagementClient({
       if (form.classroomType === "series" && (!form.course || !form.levelName)) return toast.error("Select a course and level.");
       if (form.classroomType === "series" && form.seriesTopicMode === "selected" && !selectedSeriesTopics.length) return toast.error("Select a course level with at least one topic.");
       if (form.classroomType === "series" && form.endCondition === "on_date" && !form.endDate) return toast.error("Select the series end date.");
-      const reviewTopicName = form.classroomType === "series" && form.seriesTopicMode === "selected"
-        ? `${selectedSeriesTopics.length} selected topics`
-        : form.classroomType === "series" && !selectedSeriesTopics.length
-          ? `${selectedCourse?.name || form.courseName} - ${selectedLevel?.name || form.levelName}`
-        : form.useCustomTopic
-          ? form.customTopicName
-          : form.topicName;
+      const reviewTopicName = form.classroomType === "series" && form.seriesTopicMode === "none"
+        ? "No topics linked"
+        : form.classroomType === "series" && form.seriesTopicMode === "selected"
+          ? `${selectedSeriesTopics.length} selected topics`
+          : form.useCustomTopic
+            ? form.customTopicName
+            : form.topicName;
       if (form.classroomType === "series" && form.seriesTopicMode === "selected" && form.selectedTopicNames.length !== form.classCount) {
         toast.error(`Select ${form.classCount} topic${form.classCount > 1 ? "s" : ""} in order.`);
         return;
@@ -719,7 +725,7 @@ export default function ClassroomManagementClient({
         ...form,
         sessionsPerWeek: form.daysOfWeek.reduce((total, day) => total + day.slots.filter((slot) => slot.startTime).length, 0),
         topicName: reviewTopicName,
-        endCondition: form.classroomType === "series" && (form.seriesTopicMode === "selected" || !selectedSeriesTopics.length) ? "after_n_sessions" : form.endCondition,
+        endCondition: form.classroomType === "series" && form.seriesTopicMode === "selected" ? "course_complete" : form.endCondition,
         endAfterSessions: form.classroomType === "series" && form.seriesTopicMode === "selected" ? form.classCount : form.endAfterSessions,
         meetingProvider: "meet",
         sessionPlan,
@@ -818,6 +824,9 @@ export default function ClassroomManagementClient({
               </button>
               <button className="inline-flex h-8 items-center gap-1.5 rounded-md bg-brand px-2.5 text-xs font-bold text-white shadow-sm hover:bg-brand/90" onClick={() => resetModal("series")}>
                 <CalendarDays size={13} /> Series
+              </button>
+              <button className="inline-flex h-8 items-center gap-1.5 rounded-md border border-brand/30 bg-brand/5 px-2.5 text-xs font-bold text-brand hover:bg-brand/10" onClick={() => resetModal("series", null, "none")}>
+                <CalendarDays size={13} /> No-topic Series
               </button>
             </>
           )}
@@ -1049,6 +1058,11 @@ export default function ClassroomManagementClient({
                     {form.classroomType === "series" && form.seriesTopicMode === "selected" && (
                       <SelectedSeriesTopicPicker form={form} selectedLevel={selectedLevel} setClassCount={setClassCount} toggleSeriesTopic={toggleSeriesTopic} />
                     )}
+                    {form.classroomType === "series" && form.seriesTopicMode === "none" && (
+                      <div className="rounded-xl border border-brand/20 bg-brand/5 px-3 py-2 text-sm font-semibold text-brand">
+                        No topics will be linked. Course and level are still required.
+                      </div>
+                    )}
                   </div>
 
                   <div className="space-y-4">
@@ -1205,7 +1219,7 @@ export default function ClassroomManagementClient({
                     <div className="mt-4 grid gap-3 md:grid-cols-2">
                       <ReviewRow label="Course" value={form.courseName || "Not linked"} />
                       <ReviewRow label="Level" value={form.levelName || "Not set"} />
-                      <ReviewRow label="Topic" value={form.classroomType === "series" ? `${selectedSeriesTopics.length} topic${selectedSeriesTopics.length === 1 ? "" : "s"}` : form.useCustomTopic ? form.customTopicName : form.topicName || "Not set"} />
+                      <ReviewRow label="Topic" value={form.classroomType === "series" && form.seriesTopicMode === "none" ? "No topics linked" : form.classroomType === "series" ? `${selectedSeriesTopics.length} topic${selectedSeriesTopics.length === 1 ? "" : "s"}` : form.useCustomTopic ? form.customTopicName : form.topicName || "Not set"} />
                       <ReviewRow label="Coach" value={targets.coaches.find((coach) => coach._id === form.coach)?.name || "Not assigned"} />
                       <ReviewRow label="Students" value={`${form.students.length} selected`} />
                       <ReviewRow label="Meeting" value={form.meetingUrl ? "Meeting ready" : "Not added"} />
@@ -1221,7 +1235,9 @@ export default function ClassroomManagementClient({
                       </div>
                     ) : (
                       <div className="mt-3 space-y-2">
-                        {selectedSeriesTopics.map((topic, index) => (
+                        {form.seriesTopicMode === "none" ? (
+                          <div className="rounded-xl border border-white bg-white p-3 text-sm text-slate-700">Sessions will be created without linked topics.</div>
+                        ) : selectedSeriesTopics.map((topic, index) => (
                           <div key={topic.name} className="rounded-xl border border-white bg-white px-3 py-2 text-sm text-slate-700">
                             Session {index + 1}: {topic.name}
                           </div>
@@ -2047,7 +2063,7 @@ function MiniMetric({ label, value }: { label: string; value: number }) {
 
 function classroomModeLabel(form: ReturnType<typeof blankForm>) {
   if (form.classroomType === "single") return "Single Class";
-  return form.seriesTopicMode === "selected" ? "Selected Topic Series" : "Learning Series";
+  return form.seriesTopicMode === "selected" ? "Selected Topic Series" : form.seriesTopicMode === "none" ? "No-topic Series" : "Learning Series";
 }
 
 function formatDate(value?: string) {
@@ -2166,7 +2182,7 @@ function normalizeClassroomItem(item: any): ClassroomItem {
     daysOfWeek: Array.isArray(item?.daysOfWeek) ? item.daysOfWeek : [],
     endCondition: ["on_date", "after_n_sessions", "course_complete", "never"].includes(item?.endCondition) ? item.endCondition : "course_complete",
     endAfterSessions: Number(item?.endAfterSessions || 0) || undefined,
-    seriesTopicMode: item?.seriesTopicMode === "selected" || /^\d+ selected topics$/i.test(String(item?.topicName || "")) ? "selected" : "all",
+    seriesTopicMode: item?.seriesTopicMode === "none" || String(item?.topicName || "") === "No topics linked" ? "none" : item?.seriesTopicMode === "selected" || /^\d+ selected topics$/i.test(String(item?.topicName || "")) ? "selected" : "all",
     sessionPlan: Array.isArray(item?.sessionPlan) ? item.sessionPlan : [],
     coach: item?.coach || "",
     students: Array.isArray(item?.students) ? item.students : [],

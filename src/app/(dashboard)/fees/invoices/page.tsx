@@ -16,6 +16,7 @@ import { InvoiceCreationForm } from "@/components/fees/InvoiceCreationForm";
 import { InvoicePaymentModal } from "@/components/fees/InvoicePaymentModal";
 import { DeleteInvoiceButton } from "@/components/fees/DeleteInvoiceButton";
 import { UpdateIssueDateButton } from "@/components/fees/UpdateIssueDateButton";
+import { SendInvoiceWhatsAppButton } from "@/components/fees/SendInvoiceWhatsAppButton";
 import { canAccessFeature, getFeaturePermissionState } from "@/lib/featureAccess";
 import { isFeesManager, requireFeesAccess } from "@/lib/feesAccess";
 import { recordActivity } from "@/lib/activity";
@@ -224,7 +225,7 @@ async function markInvoicePaid(formData: FormData) {
   redirect(`/fees/invoices?${paidParams.toString()}`);
 }
 
-async function updateInvoiceIssueDate(formData: FormData) {
+async function updateInvoiceDates(formData: FormData) {
   "use server";
   const session = await requireFeesAccess("edit", "invoices");
   if (!session) throw new Error("Forbidden");
@@ -233,18 +234,25 @@ async function updateInvoiceIssueDate(formData: FormData) {
   const returnStudent = String(formData.get("studentFilter") || "");
   const returnPath = `/fees/invoices${returnStudent ? `?student=${encodeURIComponent(returnStudent)}&` : "?"}`;
   const issueDateValue = String(formData.get("issueDate") || "");
+  const dueDateValue = String(formData.get("dueDate") || "");
   const issueDate = issueDateValue ? new Date(issueDateValue) : null;
-  if (!invoiceId || !issueDate || Number.isNaN(issueDate.getTime())) {
-    redirect(`${returnPath}issueDate=invalid`);
+  const dueDate = dueDateValue ? new Date(dueDateValue) : null;
+  if (!invoiceId || !issueDate || Number.isNaN(issueDate.getTime()) || !dueDate || Number.isNaN(dueDate.getTime())) {
+    redirect(`${returnPath}dates=invalid`);
   }
   issueDate.setHours(0, 0, 0, 0);
-  const invoice: any = await Invoice.findByIdAndUpdate(invoiceId, { issueDate }, { new: true }).lean();
-  if (!invoice) redirect(`${returnPath}issueDate=missing`);
+  dueDate.setHours(0, 0, 0, 0);
+  const existingInvoice: any = await Invoice.findById(invoiceId).select("status").lean();
+  const nextStatus = existingInvoice && !["paid", "cancelled"].includes(String(existingInvoice.status))
+    ? (dueDate > new Date() ? "unpaid" : "overdue")
+    : existingInvoice?.status;
+  const invoice: any = await Invoice.findByIdAndUpdate(invoiceId, { issueDate, dueDate, ...(nextStatus ? { status: nextStatus } : {}) }, { new: true }).lean();
+  if (!invoice) redirect(`${returnPath}dates=missing`);
   await recordActivity({
     actor: (session.user as any).id,
     targetUser: invoice.student?.toString?.() || String(invoice.student || ""),
-    type: "fees.invoice.issue_date_updated",
-    label: `Updated issue date for ${invoice.invoiceNumber}`,
+    type: "fees.invoice.dates_updated",
+    label: `Updated dates for ${invoice.invoiceNumber}`,
     entityType: "Invoice",
     entityId: invoice._id.toString(),
     metadata: {
@@ -256,7 +264,7 @@ async function updateInvoiceIssueDate(formData: FormData) {
   });
   revalidatePath("/fees/invoices");
   revalidatePath("/fees");
-  redirect(`${returnPath}issueDate=updated`);
+  redirect(`${returnPath}dates=updated`);
 }
 
 async function cancelInvoice(formData: FormData) {
@@ -475,7 +483,7 @@ async function sendInvoiceToStudent(formData: FormData) {
   redirect(`${returnPath}send=${finalStatus}`);
 }
 
-async function sendInvoiceWhatsAppTest(formData: FormData) {
+async function sendInvoiceWhatsApp(formData: FormData) {
   "use server";
   const session = await requireFeesAccess("invoice", "invoices");
   if (!session) throw new Error("Forbidden");
@@ -486,11 +494,14 @@ async function sendInvoiceWhatsAppTest(formData: FormData) {
   const invoice: any = await Invoice.findById(invoiceId).populate("student plan").lean();
   if (!invoice?.student?._id) redirect(`${returnPath}whatsapp=failed`);
   const invoiceUrl = await createPublicInvoiceUrl(invoice._id.toString());
+  const message = String(formData.get("message") || invoiceReminderMessage(invoice, invoiceUrl)).trim().slice(0, 4000);
+  const notificationKind = String(formData.get("notificationKind") || "invoice");
   const delivery = await sendWhatsAppReminder({
-    message: invoiceReminderMessage(invoice, invoiceUrl),
+    to: invoice.student.phone,
+    message,
     templateText: invoice.student.name || "Student",
     metadata: {
-      kind: "invoice_whatsapp_test",
+      kind: `invoice_whatsapp_${notificationKind}`,
       invoiceId: invoice._id.toString(),
       invoiceNumber: invoice.invoiceNumber,
       studentId: invoice.student.username || invoice.student._id.toString(),
@@ -500,11 +511,11 @@ async function sendInvoiceWhatsAppTest(formData: FormData) {
   await recordActivity({
     actor: (session.user as any).id,
     targetUser: invoice.student._id.toString(),
-    type: "fees.invoice.whatsapp_test_sent",
-    label: `Sent WhatsApp test for invoice ${invoice.invoiceNumber}`,
+    type: "fees.invoice.whatsapp_sent",
+    label: `Sent WhatsApp ${notificationKind} notification for invoice ${invoice.invoiceNumber}`,
     entityType: "Invoice",
     entityId: invoice._id.toString(),
-    metadata: { invoiceNumber: invoice.invoiceNumber, status: whatsappStatus(delivery), source: "manual_admin" },
+    metadata: { invoiceNumber: invoice.invoiceNumber, notificationKind, status: whatsappStatus(delivery), source: "manual_admin" },
   });
   redirect(`${returnPath}whatsapp=${whatsappStatus(delivery)}${whatsappErrorParam(delivery)}`);
 }
@@ -979,11 +990,7 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
                         </form>
                       )}
                       {manager && permissions.invoice && (
-                        <form action={sendInvoiceWhatsAppTest}>
-                          <input type="hidden" name="invoice" value={invoiceId} />
-                          <input type="hidden" name="studentFilter" value={selectedStudent} />
-                          <button title="Send WhatsApp test" aria-label="Send WhatsApp test" className="grid h-8 w-8 place-items-center rounded-lg border border-emerald-200 bg-white text-emerald-700 shadow-sm transition hover:-translate-y-0.5 hover:bg-emerald-50 hover:shadow-md"><MessageCircle size={14} /></button>
-                        </form>
+                        <SendInvoiceWhatsAppButton invoiceId={invoiceId} invoiceNumber={invoice.invoiceNumber || ""} studentFilter={selectedStudent} defaultMessage={invoiceReminderMessage(invoice, "")} action={sendInvoiceWhatsApp} />
                       )}
                       {manager && permissions.edit && (
                         <UpdateIssueDateButton
@@ -992,7 +999,7 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
                           studentFilter={selectedStudent}
                           currentIssueDate={invoice.issueDate ? new Date(invoice.issueDate).toISOString() : invoice.createdAt ? new Date(invoice.createdAt).toISOString() : ""}
                           dueDate={invoice.dueDate ? new Date(invoice.dueDate).toISOString() : ""}
-                          action={updateInvoiceIssueDate}
+                          action={updateInvoiceDates}
                         />
                       )}
                       {manager && permissions.payment && (invoice.type !== "credits" || permissions.credit) && invoice.status !== "paid" && invoice.status !== "cancelled" && (

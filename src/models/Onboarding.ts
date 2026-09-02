@@ -53,8 +53,42 @@ const DemoBookingSchema = new Schema(
   { timestamps: true }
 );
 
+const DemoFeedbackSchema = new Schema(
+  {
+    booking: { type: Schema.Types.ObjectId, ref: "Booking", required: true, index: true },
+    demoUser: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
+    coach: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
+    classroom: { type: Schema.Types.ObjectId, ref: "Classroom", required: true, index: true },
+    attendance: { type: Schema.Types.ObjectId, ref: "Attendance", index: true },
+    attendanceStatus: { type: String, enum: ["present", "absent", "student_no_show"], default: "present", index: true },
+    chessLevel: String,
+    playingStrength: String,
+    hasFideRating: Boolean,
+    fideRating: Number,
+    chessComRating: Number,
+    lichessRating: Number,
+    assessmentNotes: String,
+    strengths: String,
+    weaknesses: String,
+    recommendedCourseLevel: String,
+    recommendedStartingTopic: String,
+    recommendedCoach: { type: Schema.Types.ObjectId, ref: "User" },
+    coachComments: String,
+    salesAdminNotes: String,
+    status: { type: String, enum: ["draft", "submitted"], default: "draft", index: true },
+    extensibleData: { type: Schema.Types.Mixed, default: {} },
+    submittedAt: Date,
+    submittedBy: { type: Schema.Types.ObjectId, ref: "User" },
+  },
+  { timestamps: true }
+);
+
+DemoFeedbackSchema.index({ booking: 1, classroom: 1 }, { unique: true });
+
 export type CoachApplicationDoc = InferSchemaType<typeof CoachApplicationSchema> & { _id: any };
 export type DemoBookingDoc = InferSchemaType<typeof DemoBookingSchema> & { _id: any };
+export type DemoFeedbackDoc = InferSchemaType<typeof DemoFeedbackSchema> & { _id: any };
 
 export const CoachApplication = models.CoachApplication || model("CoachApplication", CoachApplicationSchema);
 export const DemoBooking = models.DemoBooking || model("DemoBooking", DemoBookingSchema);
+export const DemoFeedback = models.DemoFeedback || model("DemoFeedback", DemoFeedbackSchema);

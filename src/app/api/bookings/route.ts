@@ -14,6 +14,7 @@ import { isBookingWithinAvailability, type AvailabilitySlot } from "@/lib/bookin
 import { bookingFeatureNameForType, bookingFeatureNameLowerForType } from "@/lib/bookingLabels";
 import { inactiveStudentMessage } from "@/lib/studentAccess";
 import { canAccessFeature } from "@/lib/featureAccess";
+import { demoManagementUsers, ensureDemoRequestTask, normalizeDemoRequestedTime, notifyDemoRequestCreated } from "@/lib/demoWorkflow";
 
 export const dynamic = "force-dynamic";
 
@@ -173,14 +174,91 @@ export async function POST(req: Request) {
     const body = bookingSchema.parse(await req.json());
     await dbConnect();
     const { id: studentUserId, role } = sessionUser(session as AuthSession);
-    const student = await User.findById(studentUserId).select("name email phone parentName city country studentLevel accountStatus isActive").lean<BasicUser | null>();
+    const student = await User.findById(studentUserId).select("name email phone countryCode parentName city country studentLevel accountStatus isActive").lean<BasicUser | null>();
     if (!student || role !== "student") return NextResponse.json({ error: "Only students can book sessions." }, { status: 403 });
     if (student.isActive === false) return NextResponse.json({ error: inactiveStudentMessage }, { status: 403 });
+    const isDemo = student.accountStatus === "demo" || body.bookingType === "demo";
+
+    if (isDemo) {
+      if (body.instructor) return NextResponse.json({ error: "Demo users cannot select a coach. The academy team will assign one." }, { status: 403 });
+      const requested = normalizeDemoRequestedTime({
+        startAt: body.startAt,
+        preferredDate: body.preferredDate,
+        preferredTime: body.preferredTime,
+        timezone: body.timezone,
+        durationMinutes: 30,
+      });
+      const idempotencyKey = String(body.idempotencyKey || `demo:${studentUserId}:${requested.start.toISOString()}`);
+      const existingForKey = await Booking.findOne({ idempotencyKey });
+      if (existingForKey) return NextResponse.json(existingForKey);
+      const existingActive = await Booking.findOne({
+        student: studentUserId,
+        bookingType: "demo",
+        status: { $in: ["pending", "confirmed"] },
+        demoStatus: { $nin: ["CANCELLED", "COMPLETED", "STUDENT_NO_SHOW", "ABSENT"] },
+      });
+      if (existingActive) return NextResponse.json({ error: "You already have an active demo request." }, { status: 409 });
+      const created = await Booking.findOneAndUpdate(
+        { idempotencyKey },
+        {
+          $setOnInsert: {
+            student: studentUserId,
+            startAt: requested.start,
+            endAt: requested.end,
+            status: "pending",
+            approvalStatus: "pending_admin",
+            bookingType: "demo",
+            demoStatus: "REQUESTED",
+            requestedByDemo: true,
+            requestedTimezone: requested.timezone,
+            requestedLocalDateTime: requested.localLabel,
+            requestedIstDateTime: requested.istLabel,
+            requestedAt: new Date(),
+            feedbackStatus: "not_required",
+            parentName: student.parentName,
+            city: student.city,
+            country: student.country,
+            level: student.studentLevel,
+            notes: body.notes,
+            idempotencyKey,
+          },
+        },
+        { upsert: true, new: true }
+      );
+      const admins = await demoManagementUsers();
+      await Notification.findOneAndUpdate(
+        { user: student._id, type: "demo.request.created", "metadata.booking": created._id },
+        {
+          $setOnInsert: {
+            user: student._id,
+            type: "demo.request.created",
+            title: "Demo request received",
+            message: "Your demo request is waiting for academy review.",
+            metadata: { booking: created._id, href: bookingNotificationPath("student"), event: "DEMO_CLASS_REQUESTED" },
+          },
+        },
+        { upsert: true }
+      );
+      await notifyDemoRequestCreated({ booking: created, student, admins }).catch((error) => console.error("Demo request notification failed", error));
+      await ensureDemoRequestTask({ booking: created, student, owner: admins.find((admin: any) => admin.role === "sub-admin") || admins[0] }).catch((error) => console.error("Demo task creation failed", error));
+      await recordActivity({
+        actor: studentUserId,
+        targetUser: studentUserId,
+        type: "demo.booking.requested",
+        label: "Requested a demo class",
+        entityType: "Booking",
+        entityId: created._id.toString(),
+        metadata: { bookingType: "demo", demoStatus: "REQUESTED", timezone: requested.timezone, localTime: requested.localLabel, istTime: requested.istLabel },
+      });
+      return NextResponse.json(created);
+    }
+
+    if (!body.instructor) return NextResponse.json({ error: "Please choose a coach." }, { status: 400 });
     const instructor = await User.findOne({ _id: body.instructor, role: "instructor", isActive: true }).select("name email phone").lean<BasicUser | null>();
     if (!instructor) return NextResponse.json({ error: "That coach is no longer available for booking." }, { status: 404 });
 
-    const startAt = new Date(body.startAt);
-    const endAt = new Date(body.endAt);
+    const startAt = new Date(String(body.startAt || ""));
+    const endAt = new Date(String(body.endAt || ""));
     if (Number.isNaN(startAt.getTime()) || Number.isNaN(endAt.getTime()) || endAt <= startAt) {
       return NextResponse.json({ error: "Please choose a valid booking time." }, { status: 400 });
     }
@@ -210,7 +288,6 @@ export async function POST(req: Request) {
     });
     if (!slotValidation.ok) return NextResponse.json({ error: slotValidation.reason }, { status: 400 });
 
-    const isDemo = student.accountStatus === "demo" || body.bookingType === "demo";
     const requestedType = isDemo ? "demo" : body.bookingType === "credit_class" ? "credit_class" : "regular";
     const decision: BookingDecision = isDemo
       ? { bookingType: "demo", status: "pending", approvalStatus: "pending_admin" }

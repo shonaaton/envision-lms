@@ -5,6 +5,8 @@ import { Attendance } from "@/models/Attendance";
 import { recordActivity } from "@/lib/activity";
 import { consumeAttendanceCredit } from "@/lib/fees";
 import { Classroom } from "@/models/Classroom";
+import { Booking } from "@/models/Booking";
+import { DemoFeedback } from "@/models/Onboarding";
 import { ClassroomSession } from "@/models/ClassroomLive";
 import { actualSessionMinutes, punctualityBreakdown, scheduledPaymentMinutes } from "@/lib/teachingStats";
 import { canAccessFeature } from "@/lib/featureAccess";
@@ -117,6 +119,7 @@ export async function POST(req: Request) {
   if (Number.isNaN(normalizedDate.getTime())) return NextResponse.json({ error: "Invalid session date" }, { status: 400 });
   const classroomDoc = await Classroom.findById(classroom);
   if (!classroomDoc) return NextResponse.json({ error: "Classroom not found" }, { status: 404 });
+  const isDemoClassroom = classroomDoc.classroomType === "demo";
   const target = sessionId ? classroomDoc?.generatedSessions?.id?.(sessionId) : null;
   if (sessionId && !target) return NextResponse.json({ error: "Scheduled class not found" }, { status: 404 });
   if (target && academyDateKey(normalizedDate) !== academyDateKey(target.scheduledFor)) {
@@ -136,7 +139,7 @@ export async function POST(req: Request) {
   const hasAttendingStudent = (records || []).some((record) => ["present", "late"].includes(String(record?.status || "")));
   const requestedOutcome = classOutcome || metadata?.summary?.classOutcome || (hasAttendingStudent ? "completed" : undefined);
   const completionOverride = Boolean(adminOverrideCompletion || metadata?.summary?.adminOverrideCompletion || (hasAttendingStudent && requestedOutcome === "completed"));
-  const outcome = normalizeSessionOutcome(requestedOutcome, actualMinutes, completionOverride);
+  const outcome = isDemoClassroom && requestedOutcome === "completed" ? "completed" : normalizeSessionOutcome(requestedOutcome, actualMinutes, completionOverride);
   const topicCompleted = topicCompletedForOutcome(outcome, requestedOutcome);
   const storedOutcome = shouldContinueTopic(requestedOutcome) && outcome === "completed" ? "completed_continue_topic" : outcome;
   const punctualityScore = target ? Number(target.punctualityScore || punctualityBreakdown(target, classroomDoc).punctualityScore) : 0;
@@ -156,7 +159,7 @@ export async function POST(req: Request) {
     ...(metadata || {}),
     classOutcome: storedOutcome,
     topicCompleted,
-    creditPolicy: outcome === "completed" ? "charge_present_students" : outcome === "student_no_show" ? "repeat_no_show_policy" : "no_charge",
+    creditPolicy: isDemoClassroom ? "demo_no_charge" : outcome === "completed" ? "charge_present_students" : outcome === "student_no_show" ? "repeat_no_show_policy" : "no_charge",
     scheduledTeachingMinutes: scheduledMinutes,
     actualTeachingMinutes: actualMinutes,
     punctualityScore,
@@ -197,6 +200,7 @@ export async function POST(req: Request) {
   });
   for (const record of records || []) {
     if (!record?.student) continue;
+    if (isDemoClassroom) continue;
     const recordStatus = String(record.status || "");
     if (outcome === "completed" && (recordStatus === "present" || recordStatus === "late")) {
       await consumeAttendanceCredit(record.student, doc._id.toString());
@@ -242,12 +246,12 @@ export async function POST(req: Request) {
         ...(metadata?.summary || {}),
         classOutcome: storedOutcome,
         topicCompleted,
-        creditPolicy: outcome === "completed" ? "charge_present_students" : outcome === "student_no_show" ? "repeat_no_show_policy" : "no_charge",
+        creditPolicy: isDemoClassroom ? "demo_no_charge" : outcome === "completed" ? "charge_present_students" : outcome === "student_no_show" ? "repeat_no_show_policy" : "no_charge",
         scheduledTeachingMinutes: scheduledMinutes,
         actualTeachingMinutes: actualMinutes,
         punctualityScore,
       };
-      if (shouldContinueTopic(requestedOutcome) && outcome === "completed") {
+      if (!isDemoClassroom && shouldContinueTopic(requestedOutcome) && outcome === "completed") {
         await ensureTopicContinuationSession(classroomDoc, target, (session.user as SessionUser).id);
       }
       if (TERMINAL_SESSION_OUTCOMES.has(outcome)) {
@@ -270,12 +274,12 @@ export async function POST(req: Request) {
           }
         );
       }
-      await recalculateFutureSessionTopics(classroomDoc, (session.user as SessionUser).id);
+      if (!isDemoClassroom) await recalculateFutureSessionTopics(classroomDoc, (session.user as SessionUser).id);
       await classroomDoc.save();
       if (outcome === "coach_no_show") {
         await notifyCoachNoShowIfThreshold(String(assignedCoach || ""), { classroom, sessionId, attendance: doc._id.toString() });
       }
-      if (outcome === "completed") {
+      if (!isDemoClassroom && outcome === "completed") {
         await autoAssignHomeworkForSession({
           classroomId: classroom,
           scheduledSessionId: sessionId,
@@ -291,15 +295,45 @@ export async function POST(req: Request) {
         });
       }
       if (outcome === "completed" && !existingAttendance) {
-        await sendClassCompletedSummaryEmail({
+        if (isDemoClassroom) {
+          const demoBooking: any = classroomDoc.demoBooking
+            ? await Booking.findById(classroomDoc.demoBooking)
+            : await Booking.findOne({ classroom: classroomDoc._id, bookingType: "demo" });
+          if (demoBooking) {
+            await DemoFeedback.findOneAndUpdate(
+              { booking: demoBooking._id, classroom: classroomDoc._id },
+              {
+                $setOnInsert: {
+                  booking: demoBooking._id,
+                  demoUser: recordStudentId(records || [], classroomDoc.students || []),
+                  coach: assignedCoach,
+                  classroom: classroomDoc._id,
+                  attendance: doc._id,
+                  attendanceStatus: "present",
+                  status: "draft",
+                  extensibleData: { createdFrom: "attendance_completion" },
+                },
+              },
+              { upsert: true, new: true }
+            );
+            await Booking.findByIdAndUpdate(demoBooking._id, { demoStatus: "COMPLETED", feedbackStatus: "pending" });
+          }
+        } else {
+          await sendClassCompletedSummaryEmail({
           classroom: classroomDoc,
           session: target,
           attendance: doc,
           records: records || [],
           request: req,
-        }).catch((error) => console.error("Class completed summary email failed", error));
+          }).catch((error) => console.error("Class completed summary email failed", error));
+        }
       }
     }
   }
   return NextResponse.json(doc);
+}
+
+function recordStudentId(records: AttendanceRecordInput[], fallbackStudents: any[]) {
+  const present = records.find((record) => record.status === "present") || records[0];
+  return present?.student || String(fallbackStudents[0]?._id || fallbackStudents[0] || "");
 }

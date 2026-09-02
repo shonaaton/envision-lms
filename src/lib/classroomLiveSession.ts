@@ -1,4 +1,6 @@
 import { Classroom } from "@/models/Classroom";
+import { Booking } from "@/models/Booking";
+import { DemoFeedback } from "@/models/Onboarding";
 import { ClassroomSession } from "@/models/ClassroomLive";
 import { Attendance } from "@/models/Attendance";
 import { autoAssignHomeworkForSession } from "@/lib/assignmentAutomation";
@@ -84,6 +86,7 @@ export async function markScheduledSessionFinished({
 }) {
   const classroom: any = await Classroom.findById(classroomId);
   if (!classroom) return;
+  const isDemoClassroom = classroom.classroomType === "demo";
   const target = classroom.generatedSessions?.id?.(scheduledSessionId);
   if (!target) return;
   const finish = endedAt || new Date();
@@ -96,7 +99,7 @@ export async function markScheduledSessionFinished({
   const attendance: any = await Attendance.findOne({ classroom: classroomId, scheduledSessionId }).select("records").lean();
   const hasAttendingStudent = (attendance?.records || []).some((record: any) => ["present", "late"].includes(String(record?.status || "")));
   const adminOverride = Boolean((summary as any)?.adminOverrideCompletion || (hasAttendingStudent && requestedOutcome === "completed"));
-  const outcome = normalizeSessionOutcome(requestedOutcome, target.actualTeachingMinutes, adminOverride);
+  const outcome = isDemoClassroom && requestedOutcome === "completed" ? "completed" : normalizeSessionOutcome(requestedOutcome, target.actualTeachingMinutes, adminOverride);
   const topicCompleted = topicCompletedForOutcome(outcome, requestedOutcome);
   const storedOutcome = shouldContinueTopic(requestedOutcome) && outcome === "completed" ? "completed_continue_topic" : outcome;
   target.status = outcome;
@@ -108,21 +111,46 @@ export async function markScheduledSessionFinished({
     ...(summary || {}),
     classOutcome: storedOutcome,
     topicCompleted,
-    creditPolicy: outcome === "completed" ? "charge_present_students" : outcome === "student_no_show" ? "repeat_no_show_policy" : "no_charge",
+    creditPolicy: isDemoClassroom ? "demo_no_charge" : outcome === "completed" ? "charge_present_students" : outcome === "student_no_show" ? "repeat_no_show_policy" : "no_charge",
     scheduledTeachingMinutes: target.teachingMinutes,
     actualTeachingMinutes: target.actualTeachingMinutes,
     punctualityScore: target.punctualityScore,
   };
-  if (shouldContinueTopic(requestedOutcome) && outcome === "completed") {
+  if (!isDemoClassroom && shouldContinueTopic(requestedOutcome) && outcome === "completed") {
     await ensureTopicContinuationSession(classroom, target, actorId);
   }
   const allDone = (classroom.generatedSessions || []).every((session: any) =>
     ["completed", "cancelled", "missed", "abandoned", "coach_no_show", "student_no_show", "technical_issue"].includes(String(session.status || "").toLowerCase())
   );
   classroom.status = allDone ? "completed" : "scheduled";
-  await recalculateFutureSessionTopics(classroom, actorId);
+  if (!isDemoClassroom) await recalculateFutureSessionTopics(classroom, actorId);
   await classroom.save();
-  if (outcome === "completed") {
+  if (isDemoClassroom && outcome === "completed") {
+    const attendance: any = await Attendance.findOne({ classroom: classroomId, scheduledSessionId }).select("_id records").lean();
+    const booking: any = classroom.demoBooking
+      ? await Booking.findById(classroom.demoBooking)
+      : await Booking.findOne({ classroom: classroom._id, bookingType: "demo" });
+    if (booking) {
+      const presentRecord = (attendance?.records || []).find((record: any) => record.status === "present") || (attendance?.records || [])[0];
+      await DemoFeedback.findOneAndUpdate(
+        { booking: booking._id, classroom: classroom._id },
+        {
+          $setOnInsert: {
+            booking: booking._id,
+            demoUser: presentRecord?.student || classroom.students?.[0],
+            coach: target.substituteCoach || classroom.coach || classroom.instructor,
+            classroom: classroom._id,
+            attendance: attendance?._id,
+            attendanceStatus: "present",
+            status: "draft",
+            extensibleData: { createdFrom: "live_classroom_completion" },
+          },
+        },
+        { upsert: true }
+      );
+      await Booking.findByIdAndUpdate(booking._id, { demoStatus: "COMPLETED", feedbackStatus: "pending" });
+    }
+  } else if (outcome === "completed") {
     try {
       await autoAssignHomeworkForSession({ classroomId, scheduledSessionId, actorId, endedAt: finish });
     } catch (error) {

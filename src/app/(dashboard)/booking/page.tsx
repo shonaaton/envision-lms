@@ -36,12 +36,16 @@ export default function BookingPage() {
   const [bookings, setBookings] = useState<any[]>([]);
   const [selectedCoach, setSelectedCoach] = useState("");
   const [selectedSlot, setSelectedSlot] = useState("");
+  const [preferredDate, setPreferredDate] = useState("");
+  const [preferredTime, setPreferredTime] = useState("");
+  const [timezone, setTimezone] = useState("Asia/Kolkata");
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     fetch("/api/availability", { cache: "no-store" }).then((r) => r.json()).then((payload) => setCoaches(Array.isArray(payload) ? payload : []));
     fetch("/api/bookings", { cache: "no-store" }).then((r) => r.json()).then((payload) => setBookings(Array.isArray(payload) ? payload : []));
+    setTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kolkata");
   }, []);
 
   const slotOptions = useMemo<SlotOption[]>(() => {
@@ -79,6 +83,31 @@ export default function BookingPage() {
   }, [coaches, selectedCoach]);
 
   async function book() {
+    if (isDemoStudent) {
+      if (!preferredDate || !preferredTime || !timezone) return toast.error("Please choose your preferred date, time, and timezone.");
+      setLoading(true);
+      const res = await fetch("/api/bookings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          preferredDate,
+          preferredTime,
+          timezone,
+          bookingType: "demo",
+          notes,
+          idempotencyKey: `demo-${preferredDate}-${preferredTime}-${timezone}`,
+        }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      setLoading(false);
+      if (!res.ok) return toast.error(payload.error || "Could not request this demo time.");
+      toast.success("Demo request sent for academy review");
+      setPreferredDate("");
+      setPreferredTime("");
+      setNotes("");
+      fetch("/api/bookings", { cache: "no-store" }).then((r) => r.json()).then((next) => setBookings(Array.isArray(next) ? next : []));
+      return;
+    }
     const slot = slotOptions.find((item) => item.id === selectedSlot);
     if (!selectedCoach || !slot) return toast.error("Please choose a coach and available time.");
     setLoading(true);
@@ -124,7 +153,7 @@ export default function BookingPage() {
           <h1 className="mt-2 text-2xl font-black text-brand sm:text-3xl">{featureName}</h1>
           <p className="mt-1 max-w-2xl text-sm text-slate-600">
             {isDemoStudent
-              ? "Choose a coach and send your demo booking for academy approval."
+              ? "Choose your preferred demo time. The academy team will assign the coach after review."
               : "Choose a coach and send your class booking request using available academy time."}
           </p>
         </div>
@@ -132,23 +161,40 @@ export default function BookingPage() {
 
       {!isInactiveStudent && <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_420px]">
         <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-          <h2 className="text-lg font-black text-slate-950">Choose an available time</h2>
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
-            <label className="space-y-2">
-              <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Coach</span>
-              <select value={selectedCoach} onChange={(event) => { setSelectedCoach(event.target.value); setSelectedSlot(""); }} className="h-12 w-full rounded-lg border border-slate-200 px-3 text-sm">
-                <option value="">Select coach</option>
-                {coaches.map((entry) => <option key={entry.coach?._id} value={entry.coach?._id}>{entry.coach?.name}</option>)}
-              </select>
-            </label>
-            <label className="space-y-2">
-              <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Available Time</span>
-              <select value={selectedSlot} onChange={(event) => setSelectedSlot(event.target.value)} className="h-12 w-full rounded-lg border border-slate-200 px-3 text-sm" disabled={!selectedCoach}>
-                <option value="">Select time</option>
-                {slotOptions.map((slot) => <option key={slot.id} value={slot.id}>{slot.label} - {slot.coachLabel}</option>)}
-              </select>
-            </label>
-          </div>
+          <h2 className="text-lg font-black text-slate-950">{isDemoStudent ? "Request Demo Class" : "Choose an available time"}</h2>
+          {isDemoStudent ? (
+            <div className="mt-4 grid gap-4 md:grid-cols-3">
+              <label className="space-y-2">
+                <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Preferred Date</span>
+                <input value={preferredDate} onChange={(event) => setPreferredDate(event.target.value)} type="date" min={new Date().toISOString().slice(0, 10)} className="h-12 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+              </label>
+              <label className="space-y-2">
+                <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Preferred Time</span>
+                <input value={preferredTime} onChange={(event) => setPreferredTime(event.target.value)} type="time" className="h-12 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+              </label>
+              <label className="space-y-2">
+                <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Timezone</span>
+                <input value={timezone} onChange={(event) => setTimezone(event.target.value)} className="h-12 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+              </label>
+            </div>
+          ) : (
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <label className="space-y-2">
+                <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Coach</span>
+                <select value={selectedCoach} onChange={(event) => { setSelectedCoach(event.target.value); setSelectedSlot(""); }} className="h-12 w-full rounded-lg border border-slate-200 px-3 text-sm">
+                  <option value="">Select coach</option>
+                  {coaches.map((entry) => <option key={entry.coach?._id} value={entry.coach?._id}>{entry.coach?.name}</option>)}
+                </select>
+              </label>
+              <label className="space-y-2">
+                <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Available Time</span>
+                <select value={selectedSlot} onChange={(event) => setSelectedSlot(event.target.value)} className="h-12 w-full rounded-lg border border-slate-200 px-3 text-sm" disabled={!selectedCoach}>
+                  <option value="">Select time</option>
+                  {slotOptions.map((slot) => <option key={slot.id} value={slot.id}>{slot.label} - {slot.coachLabel}</option>)}
+                </select>
+              </label>
+            </div>
+          )}
           <label className="mt-4 block space-y-2">
             <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Message for academy</span>
             <textarea value={notes} onChange={(event) => setNotes(event.target.value)} className="min-h-24 w-full rounded-lg border border-slate-200 px-3 py-3 text-sm outline-none focus:border-brand" placeholder="Mention preferred topic, goal, or anything the coach should know." />
@@ -175,7 +221,8 @@ export default function BookingPage() {
             <div key={booking._id} className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">
                 <div className="font-bold text-slate-950">{bookingFeatureNameForType(booking.bookingType)} with {booking.instructor?.name || "Coach"}</div>
-                <div className="text-sm text-slate-500">{new Date(booking.startAt).toLocaleString()}</div>
+                <div className="text-sm text-slate-500">{booking.requestedLocalDateTime || new Date(booking.startAt).toLocaleString()}</div>
+                {booking.requestedIstDateTime ? <div className="text-xs font-semibold text-slate-500">IST: {booking.requestedIstDateTime}</div> : null}
                 {booking.approvalStatus === "reschedule_proposed" && booking.proposedStartAt ? (
                   <div className="mt-1 text-sm font-semibold text-amber-700">Coach suggested {new Date(booking.proposedStartAt).toLocaleString()}</div>
                 ) : null}

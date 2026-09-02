@@ -98,13 +98,18 @@ export function flattenScheduledSessions(classrooms: any[]) {
           }]
         : [];
 
-    return sessions.map((session: any) => ({
-      classroom,
-      session,
-      start: getSessionStart(session),
-      end: getSessionEnd(session),
-      derivedStatus: deriveScheduledSessionStatus(session),
-    }));
+    return sessions.flatMap((session: any) => {
+      const start = getSessionStart(session);
+      const end = getSessionEnd(session);
+      if (!start || !end) return [];
+      return [{
+        classroom,
+        session,
+        start,
+        end,
+        derivedStatus: deriveScheduledSessionStatus(session),
+      }];
+    });
   });
 }
 

@@ -7,6 +7,7 @@ import { CoachApplication } from "@/models/Onboarding";
 import { registerSchema } from "@/lib/validation";
 import { sendWelcomeEmail } from "@/lib/welcomeEmail";
 import { consumeRateLimit, getClientIp, jsonRateLimitHeaders } from "@/lib/requestSecurity";
+import { notifyDemoAccountCreated } from "@/lib/demoWorkflow";
 
 export const dynamic = "force-dynamic";
 
@@ -84,6 +85,7 @@ export async function POST(req: Request) {
       role: "student",
       request: req,
     });
+    await notifyDemoAccountCreated(user).catch((error) => console.error("Demo account notification failed", error));
     return NextResponse.json({
       id: user._id.toString(),
       type: "demo_student",

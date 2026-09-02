@@ -1032,6 +1032,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
 
   const live = data?.live;
   const classroom = data?.classroom;
+  const isDemoClassroom = classroom?.classroomType === "demo";
   const scheduledSession = data?.scheduledSession;
   const activeQuestion = data?.activeQuestion;
   const myLiveResponse = useMemo(
@@ -2226,7 +2227,8 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       ...classSummary,
       classOutcome,
       topicCompleted: classOutcome === "completed",
-      creditPolicy: classOutcome === "completed" || classOutcome === "completed_continue_topic" ? "charge_present_students" : classOutcome === "student_no_show" ? "repeat_no_show_policy" : "no_charge",
+      creditPolicy: isDemoClassroom ? "demo_no_charge" : classOutcome === "completed" || classOutcome === "completed_continue_topic" ? "charge_present_students" : classOutcome === "student_no_show" ? "repeat_no_show_policy" : "no_charge",
+      feedbackRequired: isDemoClassroom && classOutcome === "completed",
     };
     const res = await fetch("/api/attendance", {
       method: "POST",
@@ -2251,6 +2253,10 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     await patch({ endedAt: new Date().toISOString(), status: "ended", summary, participants: [], boardControlStudents: [], selectedStudents: [], challenge: { active: false } });
     toast.success("Class ended and attendance saved");
     setSummaryOpen(false);
+    if (isDemoClassroom && classOutcome === "completed" && classroom?.demoBooking) {
+      window.location.assign(`/demo-feedback/${entityId(classroom.demoBooking)}`);
+      return;
+    }
     window.location.assign(`/classrooms?updated=${Date.now()}`);
   }
 
@@ -2685,10 +2691,13 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   useEffect(() => {
     if (!summaryOpen) return;
     const draft: Record<string, AttendanceStatus> = {};
-    for (const row of classSummary.rows) draft[entityId(row.student)] = row.suggestedStatus;
+    for (const row of classSummary.rows) {
+      const suggested = row.suggestedStatus as AttendanceStatus;
+      draft[entityId(row.student)] = isDemoClassroom && suggested === "late" ? "present" : suggested;
+    }
     setAttendanceDraft(draft);
-    setClassOutcome(classSummary.durationMinutes >= 30 ? "completed" : "abandoned");
-  }, [classSummary.durationMinutes, classSummary.rows, summaryOpen]);
+    setClassOutcome(isDemoClassroom ? "completed" : classSummary.durationMinutes >= 30 ? "completed" : "abandoned");
+  }, [classSummary.durationMinutes, classSummary.rows, isDemoClassroom, summaryOpen]);
 
   if (!data) {
     if (loadError) {
@@ -4002,8 +4011,8 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
             <div className="mt-5 grid gap-3 lg:grid-cols-[280px_minmax(0,1fr)]">
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                 <div className="text-sm font-black text-slate-950">Class outcome</div>
-                <p className="mt-1 text-xs leading-5 text-slate-500">Only completed classes of 30+ minutes consume the topic and regular student credits.</p>
-                {classSummary.durationMinutes < 30 ? (
+                <p className="mt-1 text-xs leading-5 text-slate-500">{isDemoClassroom ? "Demo classes can be completed at any duration and require demo feedback when attended." : "Only completed classes of 30+ minutes consume the topic and regular student credits."}</p>
+                {!isDemoClassroom && classSummary.durationMinutes < 30 ? (
                   <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-semibold leading-5 text-amber-800">
                     This class is under 30 minutes. It will carry the topic forward unless an admin later overrides it.
                   </div>
@@ -4018,7 +4027,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                 </select>
                 <div className="mt-3 rounded-lg bg-white p-3 text-xs text-slate-600">
                   {classOutcome === "completed"
-                    ? "Present/late students are charged and the topic is marked taught."
+                    ? isDemoClassroom ? "The demo is completed without credit deduction. Demo feedback will be opened for follow-up." : "Present/late students are charged and the topic is marked taught."
                     : classOutcome === "completed_continue_topic"
                       ? "Present/late students are charged. The same topic repeats next class, later topics shift down, and an extra class is added at the end."
                     : classOutcome === "student_no_show"
@@ -4050,10 +4059,10 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                       >
                         <option value="present">Present</option>
                         <option value="absent">Absent</option>
-                        <option value="late">Late</option>
-                        <option value="excused">Excused</option>
-                        <option value="technical_issue">Technical issue</option>
                         <option value="student_no_show">Student no-show</option>
+                        {!isDemoClassroom ? <option value="late">Late</option> : null}
+                        {!isDemoClassroom ? <option value="excused">Excused</option> : null}
+                        {!isDemoClassroom ? <option value="technical_issue">Technical issue</option> : null}
                       </select>
                     </div>
                   ))}

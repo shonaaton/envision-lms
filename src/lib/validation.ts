@@ -244,9 +244,13 @@ export const assignmentTemplateSchema = z.object({
 });
 
 export const bookingSchema = z.object({
-  instructor: z.string(),
-  startAt: z.string().datetime(),
-  endAt: z.string().datetime(),
+  instructor: z.string().optional(),
+  startAt: z.string().datetime().optional(),
+  endAt: z.string().datetime().optional(),
+  preferredDate: z.string().optional(),
+  preferredTime: z.string().optional(),
+  timezone: z.string().optional(),
+  idempotencyKey: z.string().max(120).optional(),
   bookingType: z.enum(["demo", "credit_class", "regular"]).default("regular"),
   notes: z.string().max(1000).optional(),
 });

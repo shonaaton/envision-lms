@@ -66,7 +66,8 @@ const ClassroomSchema = new Schema(
   {
     title: { type: String, required: true, index: true },
     description: { type: String },
-    classroomType: { type: String, enum: ["single", "series"], default: "single", index: true },
+    classroomType: { type: String, enum: ["single", "series", "demo"], default: "single", index: true },
+    demoBooking: { type: Schema.Types.ObjectId, ref: "Booking", index: true },
     status: {
       type: String,
       enum: ["scheduled", "ongoing", "completed", "cancelled"],

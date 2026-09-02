@@ -14,6 +14,13 @@ if (!global._mongo) global._mongo = cached;
 const MONGOOSE_READY_STATE_CONNECTED = 1;
 const MONGOOSE_READY_STATE_CONNECTING = 2;
 
+export class DatabaseConfigurationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DatabaseConfigurationError";
+  }
+}
+
 function isConnectionUsable() {
   return mongoose.connection.readyState === MONGOOSE_READY_STATE_CONNECTED;
 }
@@ -27,6 +34,29 @@ function cleanEnvValue(value: string | undefined) {
   return String(value || "").trim().replace(/^["']|["']$/g, "");
 }
 
+function validateMongoUri(uri: string) {
+  if (!uri) throw new DatabaseConfigurationError("MONGODB_URI is not set");
+  if (/[<>]/.test(uri)) {
+    throw new DatabaseConfigurationError("MONGODB_URI still contains placeholder values. Add the real MongoDB username, password, and cluster host.");
+  }
+  if (!uri.startsWith("mongodb://") && !uri.startsWith("mongodb+srv://")) {
+    throw new DatabaseConfigurationError("MONGODB_URI must start with mongodb:// or mongodb+srv://");
+  }
+}
+
+export function getDatabaseConfigStatus() {
+  const uri = cleanEnvValue(process.env.MONGODB_URI);
+  try {
+    validateMongoUri(uri);
+    return { ok: true as const };
+  } catch (error) {
+    return {
+      ok: false as const,
+      message: error instanceof Error ? error.message : "MongoDB is not configured correctly",
+    };
+  }
+}
+
 /**
  * Connect to MongoDB. The env var is checked lazily so the module can be imported
  * during `next build` (when env_file isn't loaded) without throwing.
@@ -34,7 +64,7 @@ function cleanEnvValue(value: string | undefined) {
 export async function dbConnect() {
   if (cached.conn && isConnectionUsable()) return cached.conn;
   const MONGODB_URI = cleanEnvValue(process.env.MONGODB_URI);
-  if (!MONGODB_URI) throw new Error("MONGODB_URI is not set");
+  validateMongoUri(MONGODB_URI);
   if (cached.promise && mongoose.connection.readyState !== MONGOOSE_READY_STATE_CONNECTING) {
     resetCachedConnection();
   }

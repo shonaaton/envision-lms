@@ -11,12 +11,17 @@ type Booking = {
   _id: string;
   student?: { name?: string; email?: string; username?: string };
   instructor?: Coach;
+  assignedCoach?: Coach;
   startAt: string;
   endAt: string;
   approvalStatus: string;
+  demoStatus?: string;
   status: string;
   notes?: string;
   level?: string;
+  requestedTimezone?: string;
+  requestedLocalDateTime?: string;
+  requestedIstDateTime?: string;
 };
 type CoachApplication = {
   _id: string;
@@ -129,8 +134,9 @@ export default function AdminV2OnboardingClient() {
             <button key={booking._id} onClick={() => setSelectedBooking(booking)} className={cn("rounded-2xl border bg-white p-4 text-left shadow-sm transition hover:border-brand/30", booking.approvalStatus === "pending_admin" ? "border-accent shadow-accent/20" : "border-slate-200")}>
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <div className="font-black text-slate-950">{booking.student?.name || "Demo student"} with {booking.instructor?.name || "Unassigned coach"}</div>
-                  <div className="mt-1 text-sm text-slate-500">{new Date(booking.startAt).toLocaleString("en-IN")} - {booking.approvalStatus}</div>
+                  <div className="font-black text-slate-950">{booking.student?.name || "Demo student"} with {booking.assignedCoach?.name || booking.instructor?.name || "Unassigned coach"}</div>
+                  <div className="mt-1 text-sm text-slate-500">{booking.requestedLocalDateTime || new Date(booking.startAt).toLocaleString()} - {booking.demoStatus || booking.approvalStatus}</div>
+                  {booking.requestedIstDateTime ? <div className="mt-1 text-xs font-semibold text-slate-500">IST: {booking.requestedIstDateTime}</div> : null}
                   <div className="mt-1 text-xs text-slate-500">{booking.notes || "No note added"}</div>
                 </div>
                 <span className="inline-flex items-center gap-2 rounded-full bg-accent/25 px-3 py-1 text-xs font-black text-brand"><Clock3 size={14} /> Review</span>
@@ -190,7 +196,7 @@ function DemoApprovalModal({ booking, coaches, onClose, onAction }: { booking: B
   const [startAt, setStartAt] = useState("");
   const [durationMinutes, setDurationMinutes] = useState(60);
   useEffect(() => {
-    setCoach(booking?.instructor?._id || "");
+    setCoach(booking?.assignedCoach?._id || booking?.instructor?._id || "");
     setStartAt(toLocalInput(booking?.startAt));
     setDurationMinutes(booking ? Math.max(15, Math.round((new Date(booking.endAt).getTime() - new Date(booking.startAt).getTime()) / 60000)) : 60);
   }, [booking]);
@@ -198,6 +204,12 @@ function DemoApprovalModal({ booking, coaches, onClose, onAction }: { booking: B
     <AdminV2Modal open={!!booking} title="Approve Demo" description={booking?.student?.name || "Demo request"} onClose={onClose}>
       {booking ? (
         <div className="grid gap-3">
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            <div className="font-black">Create Demo Classroom?</div>
+            <div className="mt-1">Student time: {booking.requestedLocalDateTime || new Date(booking.startAt).toLocaleString()}</div>
+            <div>IST: {booking.requestedIstDateTime || new Date(booking.startAt).toLocaleString("en-IN")}</div>
+            <div>Coach: {coaches.find((item) => item._id === coach)?.name || "Not selected"}</div>
+          </div>
           <select className="input" value={coach} onChange={(event) => setCoach(event.target.value)}>
             <option value="">Select coach</option>
             {coaches.map((item) => <option key={item._id} value={item._id}>{item.name}</option>)}
@@ -205,8 +217,8 @@ function DemoApprovalModal({ booking, coaches, onClose, onAction }: { booking: B
           <input className="input" type="datetime-local" value={startAt} onChange={(event) => setStartAt(event.target.value)} />
           <input className="input" type="number" min={15} step={15} value={durationMinutes} onChange={(event) => setDurationMinutes(Number(event.target.value))} />
           <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-4">
-            <button className="btn-primary" onClick={() => void onAction({ action: "approve_demo", bookingId: booking._id, coach, startAt, durationMinutes }).then(onClose)}><CheckCircle2 size={16} /> Approve</button>
-            <button className="btn-outline" onClick={() => void onAction({ action: "update_demo", bookingId: booking._id, coach, startAt, durationMinutes })}>Save Changes</button>
+            <button className="btn-primary" onClick={() => void onAction({ action: "approve_demo", bookingId: booking._id, coach, startAt, durationMinutes }).then(onClose)}><CheckCircle2 size={16} /> Approve & Create Classroom</button>
+            <button className="btn-outline" onClick={() => void onAction({ action: "update_demo", bookingId: booking._id, coach, startAt, durationMinutes })}>Assign Coach</button>
             <button className="btn-outline border-rose-200 text-rose-700" onClick={() => void onAction({ action: "reject_demo", bookingId: booking._id }).then(onClose)}><XCircle size={16} /> Reject</button>
           </div>
         </div>
@@ -252,4 +264,3 @@ function Info({ label, value }: { label: string; value: string | number }) {
 function Empty({ text }: { text: string }) {
   return <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">{text}</div>;
 }
-

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
+import Script from "next/script";
 import {
   ArrowRight,
   CalendarDays,
@@ -22,12 +23,10 @@ import {
 } from "lucide-react";
 import AnimatedImpactCounters from "@/components/marketing/AnimatedImpactCounters";
 import DynamicLandingShowcase from "@/components/marketing/DynamicLandingShowcase";
-import TestimonialCarousel from "@/components/marketing/TestimonialCarousel";
 import { ACADEMY_DEFAULTS, ACADEMY_LOGO_URL } from "@/lib/branding";
 import { MARKETING_BASE_URL, OFFLINE_ACADEMY_URL } from "@/lib/publicLinks";
 import { academyBranches, anishStory, impactCounters, publicAchievementList, studentSlug } from "@/lib/achievementData";
 import { getLandingAchievements } from "@/lib/achievements";
-import { getLandingReviews } from "@/lib/googleReviews";
 
 export const dynamic = "force-dynamic";
 
@@ -137,7 +136,6 @@ function randomizeAchievementOrder<T>(items: T[]) {
 export default async function Home() {
   const achievements = publicAchievementList(await getLandingAchievements());
   const featuredAchievements = randomizeAchievementOrder(achievements);
-  const reviews = await getLandingReviews();
 
   const schema = {
     "@context": "https://schema.org",
@@ -386,7 +384,10 @@ export default async function Home() {
               Review Source <ArrowRight size={16} />
             </Link>
           </div>
-          <TestimonialCarousel reviews={reviews} />
+          <div className="overflow-hidden rounded-lg border border-white/10 bg-white p-3 shadow-xl shadow-black/10">
+            <div className="sk-ww-google-reviews" data-embed-id="25710479" />
+          </div>
+          <Script src="https://widgets.sociablekit.com/google-reviews/widget.js" strategy="afterInteractive" />
         </div>
       </section>
 

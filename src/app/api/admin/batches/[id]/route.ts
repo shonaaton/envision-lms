@@ -24,14 +24,39 @@ function idOf(value: any) {
   return String(value?._id || value || "");
 }
 
-function classroomStartDate(classroom: any) {
-  const firstGeneratedSession = Array.isArray(classroom?.generatedSessions)
+const FINISHED_SESSION_STATUSES = new Set([
+  "completed",
+  "cancelled",
+  "missed",
+  "abandoned",
+  "absent",
+  "coach_no_show",
+  "student_no_show",
+  "technical_issue",
+]);
+
+function sessionStartsAt(session: any, fallbackDate?: any) {
+  const value = session?.scheduledFor || session?.classDate || fallbackDate;
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function hasAssignableFutureSession(classroom: any, now: Date) {
+  const sessions = Array.isArray(classroom?.generatedSessions) && classroom.generatedSessions.length
     ? classroom.generatedSessions
-        .map((session: any) => session?.scheduledFor ? new Date(session.scheduledFor) : null)
-        .filter((date: Date | null) => date && !Number.isNaN(date.getTime()))
-        .sort((a: Date, b: Date) => a.getTime() - b.getTime())[0]
-    : null;
-  return classroom?.classDate ? new Date(classroom.classDate) : classroom?.startDate ? new Date(classroom.startDate) : firstGeneratedSession;
+    : [{ scheduledFor: classroom?.classDate || classroom?.startDate, status: classroom?.status }];
+
+  return sessions.some((session: any) => {
+    const status = String(session?.status || "scheduled").toLowerCase();
+    const startsAt = sessionStartsAt(session, classroom?.classDate || classroom?.startDate);
+    return Boolean(
+      startsAt &&
+      startsAt >= now &&
+      !session?.actualEndedAt &&
+      !FINISHED_SESSION_STATUSES.has(status)
+    );
+  });
 }
 
 async function enrollAddedStudentsInFutureBatchClassrooms(batchId: string, studentIds: string[]) {
@@ -46,8 +71,7 @@ async function enrollAddedStudentsInFutureBatchClassrooms(batchId: string, stude
   let updated = 0;
 
   for (const classroom of classrooms) {
-    const startsAt = classroomStartDate(classroom);
-    if (!startsAt || Number.isNaN(startsAt.getTime()) || startsAt < now) continue;
+    if (!hasAssignableFutureSession(classroom, now)) continue;
 
     const current = new Set((classroom.students || []).map(idOf));
     const before = current.size;
@@ -87,7 +111,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     const addedIds = nextIds.filter((studentId: string) => !previousIds.includes(studentId));
     if (removedIds.length) await User.updateMany({ _id: { $in: removedIds } }, { $pull: { batches: b?._id } });
     if (nextIds.length) await User.updateMany({ _id: { $in: nextIds } }, { $addToSet: { batches: b?._id } });
-    if (addedIds.length) await enrollAddedStudentsInFutureBatchClassrooms(params.id, addedIds);
+    await enrollAddedStudentsInFutureBatchClassrooms(params.id, addedIds.length ? addedIds : nextIds);
   }
   await recordActivity({
     actor: actorId,

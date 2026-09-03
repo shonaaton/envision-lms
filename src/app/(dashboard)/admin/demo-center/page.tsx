@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { CalendarCheck, CheckCircle2, Clock3, GraduationCap, History, Link as LinkIcon, RotateCcw, UserCheck, XCircle } from "lucide-react";
+import type { ReactNode } from "react";
+import { CalendarCheck, CheckCircle2, Clock3, GraduationCap, History, Link as LinkIcon, MessageSquareText, RotateCcw, UserCheck, X, XCircle } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { formatAcademyDateTime } from "@/lib/academyTime";
@@ -340,17 +341,33 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
         <div className="mt-3 grid gap-3 md:grid-cols-2">
           {demoStudents
             .filter((student: any) => !bookings.some((booking: any) => String(booking.student?._id || booking.student) === String(student._id) && ["pending", "confirmed"].includes(String(booking.status || ""))))
-            .map((student: any) => (
-              <div key={student._id.toString()} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <div className="font-black">{student.name}</div>
-                <div className="text-sm text-slate-500">{student.email} · {contactNumber(student)}</div>
-                <div className="mt-1 text-xs font-semibold text-slate-500">Demo access: {student.demoExpiresAt ? formatAcademyDateTime(student.demoExpiresAt) : "No expiry set"}</div>
-                <form action={extendDemoAccess} className="mt-2">
-                  <input type="hidden" name="student" value={student._id.toString()} />
-                  <button className="btn-outline bg-white"><Clock3 size={15} /> Extend +7 days</button>
-                </form>
-              </div>
-            ))}
+            .map((student: any) => {
+              const extendModalId = `extend-demo-account-${student._id.toString()}`;
+              return (
+                <div key={student._id.toString()} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <div className="font-black">{student.name}</div>
+                  <div className="text-sm text-slate-500">{student.email} · {contactNumber(student)}</div>
+                  <div className="mt-1 text-xs font-semibold text-slate-500">Demo access: {student.demoExpiresAt ? formatAcademyDateTime(student.demoExpiresAt) : "No expiry set"}</div>
+                  <div className="mt-2">
+                    <PopupTrigger id={extendModalId} className="btn-outline bg-white">
+                      <Clock3 size={15} /> Extend Demo Validity
+                    </PopupTrigger>
+                  </div>
+                  <PopupShell id={extendModalId} title="Extend demo account validity" subtitle={`${student.name || "Demo student"} · Current expiry: ${student.demoExpiresAt ? formatAcademyDateTime(student.demoExpiresAt) : "No expiry set"}`}>
+                    <form action={extendDemoAccess} className="grid gap-4">
+                      <input type="hidden" name="student" value={student._id.toString()} />
+                      <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-3 text-sm leading-6 text-emerald-900">
+                        This adds 7 more days to the demo account without moving it into enrolled students.
+                      </div>
+                      <div className="flex justify-end gap-2">
+                        <a href="#" className="btn-outline bg-white">Cancel</a>
+                        <button className="btn-primary"><Clock3 size={15} /> Extend +7 Days</button>
+                      </div>
+                    </form>
+                  </PopupShell>
+                </div>
+              );
+            })}
         </div>
       </section>
     </div>
@@ -362,9 +379,12 @@ function DemoCard({ booking, coaches, courses, batches, feedback }: { booking: a
   const startAt = toLocalInput(booking.startAt);
   const duration = Math.max(15, Math.round((new Date(booking.endAt).getTime() - new Date(booking.startAt).getTime()) / 60000) || 30);
   const isExpired = student.demoExpiresAt && new Date(student.demoExpiresAt).getTime() < Date.now();
+  const cardId = booking._id.toString();
+  const assignModalId = `assign-demo-${cardId}`;
+  const extendModalId = `extend-demo-${cardId}`;
   return (
     <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+      <div className="flex flex-col gap-4">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-lg font-black text-slate-950">{student.name || "Demo student"}</h2>
@@ -381,30 +401,24 @@ function DemoCard({ booking, coaches, courses, batches, feedback }: { booking: a
           <div className={`mt-3 w-fit rounded-full px-3 py-1 text-xs font-bold ${isExpired ? "bg-rose-50 text-rose-700" : "bg-emerald-50 text-emerald-700"}`}>
             Demo access: {student.demoExpiresAt ? formatAcademyDateTime(student.demoExpiresAt) : "No expiry set"}{isExpired ? " (expired)" : ""}
           </div>
-          {booking.notes ? <p className="mt-3 rounded-lg bg-slate-50 p-3 text-sm leading-6 text-slate-700">{booking.notes}</p> : null}
+          {booking.notes ? (
+            <div className="mt-3 rounded-xl border border-brand/10 bg-purple-50/60 p-4">
+              <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-wide text-brand">
+                <MessageSquareText size={15} /> Demo Request Message
+              </div>
+              <p className="whitespace-pre-wrap text-sm leading-6 text-slate-800">{booking.notes}</p>
+            </div>
+          ) : (
+            <div className="mt-3 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
+              No parent message was added with this request.
+            </div>
+          )}
         </div>
-
-        <form action={approveBooking} className="grid min-w-0 gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 xl:w-[520px]">
-          <input type="hidden" name="booking" value={booking._id.toString()} />
-          <select name="coach" defaultValue={booking.assignedCoach?._id?.toString() || booking.instructor?._id?.toString() || ""} className="input bg-white">
-            <option value="">Assign coach</option>
-            {coaches.map((coach: any) => <option key={coach._id.toString()} value={coach._id.toString()}>{coach.name}</option>)}
-          </select>
-          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_110px]">
-            <input name="startAt" type="datetime-local" defaultValue={startAt} className="input bg-white" />
-            <input name="durationMinutes" type="number" min={15} step={15} defaultValue={duration || 30} className="input bg-white" />
-          </div>
-          <div className="relative">
-            <LinkIcon size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input name="meetingUrl" defaultValue={booking.meetingUrl || ""} placeholder="Google Meet link" className="input bg-white pl-9" />
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button formAction={approveBooking} className="btn-primary"><CheckCircle2 size={15} /> Accept Requested Time</button>
-            <button formAction={updateBookingRequest} className="btn-outline bg-white"><RotateCcw size={15} /> Change Time / Assign Coach</button>
-          </div>
-        </form>
       </div>
       <div className="mt-3 flex flex-wrap gap-2 border-t border-slate-100 pt-3">
+        <PopupTrigger id={assignModalId} className="btn-primary">
+          <CheckCircle2 size={15} /> Assign / Confirm Demo
+        </PopupTrigger>
         {booking.classroom ? <Link href={`/classrooms/${booking.classroom}`} className="btn-outline bg-white"><CalendarCheck size={15} /> Open Demo Classroom</Link> : null}
         {booking.feedbackStatus === "pending" && booking.classroom ? <Link href={`/demo-feedback/${booking._id}`} className="btn-outline bg-white"><Clock3 size={15} /> Assessment Pending</Link> : null}
         {booking.feedbackStatus === "submitted" ? (
@@ -439,10 +453,9 @@ function DemoCard({ booking, coaches, courses, batches, feedback }: { booking: a
             <button className="btn-primary w-fit"><UserCheck size={15} /> Confirm Conversion</button>
           </form>
         ) : null}
-        <form action={extendDemoAccess}>
-          <input type="hidden" name="student" value={String(student._id || booking.student)} />
-          <button className="btn-outline bg-white"><Clock3 size={15} /> Extend Demo +7 Days</button>
-        </form>
+        <PopupTrigger id={extendModalId} className="btn-outline bg-white">
+          <Clock3 size={15} /> Extend Demo Validity
+        </PopupTrigger>
         <form action={closeDemo} className="flex flex-wrap gap-2">
           <input type="hidden" name="booking" value={booking._id.toString()} />
           <select name="reason" defaultValue="Not interested" className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm">
@@ -457,7 +470,81 @@ function DemoCard({ booking, coaches, courses, batches, feedback }: { booking: a
           <button className="btn-outline border-rose-200 bg-white text-rose-700"><XCircle size={15} /> Close Demo</button>
         </form>
       </div>
+      <PopupShell id={assignModalId} title="Assign coach and confirm demo" subtitle={`${student.name || "Demo student"} · ${booking.requestedLocalDateTime || formatAcademyDateTime(booking.startAt)}`}>
+        <form action={approveBooking} className="grid gap-3">
+          <input type="hidden" name="booking" value={cardId} />
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-black uppercase tracking-wide text-slate-500">Coach</span>
+            <select name="coach" defaultValue={booking.assignedCoach?._id?.toString() || booking.instructor?._id?.toString() || ""} className="input bg-white" required>
+              <option value="">Assign coach</option>
+              {coaches.map((coach: any) => <option key={coach._id.toString()} value={coach._id.toString()}>{coach.name}</option>)}
+            </select>
+          </label>
+          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_120px]">
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-black uppercase tracking-wide text-slate-500">Final date and time</span>
+              <input name="startAt" type="datetime-local" defaultValue={startAt} className="input bg-white" required />
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-black uppercase tracking-wide text-slate-500">Minutes</span>
+              <input name="durationMinutes" type="number" min={15} step={15} defaultValue={duration || 30} className="input bg-white" />
+            </label>
+          </div>
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-black uppercase tracking-wide text-slate-500">Google Meet link</span>
+            <span className="relative block">
+              <LinkIcon size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input name="meetingUrl" defaultValue={booking.meetingUrl || ""} placeholder="Paste Google Meet link" className="input bg-white pl-9" />
+            </span>
+          </label>
+          <div className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs font-semibold leading-5 text-amber-900">
+            Accept creates the demo classroom. Change Time / Assign Coach keeps it as a pending admin review with the updated details.
+          </div>
+          <div className="flex flex-wrap justify-end gap-2 pt-1">
+            <a href="#" className="btn-outline bg-white">Cancel</a>
+            <button formAction={updateBookingRequest} className="btn-outline bg-white"><RotateCcw size={15} /> Change Time / Assign Coach</button>
+            <button formAction={approveBooking} className="btn-primary"><CheckCircle2 size={15} /> Accept Requested Time</button>
+          </div>
+        </form>
+      </PopupShell>
+      <PopupShell id={extendModalId} title="Extend demo account validity" subtitle={`${student.name || "Demo student"} · Current expiry: ${student.demoExpiresAt ? formatAcademyDateTime(student.demoExpiresAt) : "No expiry set"}`}>
+        <form action={extendDemoAccess} className="grid gap-4">
+          <input type="hidden" name="student" value={String(student._id || booking.student)} />
+          <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-3 text-sm leading-6 text-emerald-900">
+            This adds 7 more days to the demo account. The account stays separate from enrolled students until conversion.
+          </div>
+          <div className="flex justify-end gap-2">
+            <a href="#" className="btn-outline bg-white">Cancel</a>
+            <button className="btn-primary"><Clock3 size={15} /> Extend +7 Days</button>
+          </div>
+        </form>
+      </PopupShell>
     </article>
+  );
+}
+
+function PopupTrigger({ id, className, children }: { id: string; className: string; children: ReactNode }) {
+  return (
+    <a href={`#${id}`} className={className}>{children}</a>
+  );
+}
+
+function PopupShell({ id, title, subtitle, children }: { id: string; title: string; subtitle?: string; children: ReactNode }) {
+  return (
+    <div id={id} className="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/55 p-4 target:flex">
+      <div className="w-full max-w-2xl overflow-hidden rounded-xl bg-white shadow-2xl">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4">
+          <div className="min-w-0">
+            <h2 className="text-lg font-black text-slate-950">{title}</h2>
+            {subtitle ? <p className="mt-1 text-sm text-slate-500">{subtitle}</p> : null}
+          </div>
+          <a href="#" className="grid h-9 w-9 flex-none place-items-center rounded-md border border-slate-200 bg-white text-slate-600 hover:border-purple-200 hover:text-brand">
+            <X size={16} />
+          </a>
+        </div>
+        <div className="p-5">{children}</div>
+      </div>
+    </div>
   );
 }
 

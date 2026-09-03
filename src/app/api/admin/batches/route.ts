@@ -42,7 +42,12 @@ export async function POST(req: Request) {
       const activeStudents = await User.find({ _id: { $in: body.students }, role: "student", isActive: { $ne: false } }).select("_id").lean();
       body.students = activeStudents.map((student: any) => student._id.toString());
     }
-    const b = await Batch.create(body);
+    const now = new Date();
+    const payload = {
+      ...body,
+      studentEnrollments: (body.students || []).map((student: string) => ({ student, enrolledAt: now })),
+    };
+    const b = await Batch.create(payload);
     if (body.students?.length) {
       await User.updateMany({ _id: { $in: body.students } }, { $addToSet: { batches: b._id } });
     }

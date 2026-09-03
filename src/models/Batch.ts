@@ -6,6 +6,12 @@ const BatchSchema = new Schema(
     description: { type: String },
     coach: { type: Schema.Types.ObjectId, ref: "User", index: true },
     students: [{ type: Schema.Types.ObjectId, ref: "User", index: true }],
+    studentEnrollments: [
+      {
+        student: { type: Schema.Types.ObjectId, ref: "User", index: true },
+        enrolledAt: { type: Date, default: Date.now, index: true },
+      },
+    ],
     tags: [{ type: String, index: true }],
     level: { type: String, enum: ["beginner", "intermediate", "advanced"], default: "beginner" },
     isActive: { type: Boolean, default: true, index: true },

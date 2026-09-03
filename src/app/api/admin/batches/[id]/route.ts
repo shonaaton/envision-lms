@@ -106,13 +106,94 @@ async function enrollAddedStudentsInFutureBatchClassrooms(batchId: string, stude
   return updated;
 }
 
+async function enrollmentDateMap(batchId: string, studentIds: string[], existingEnrollments: any[] = []) {
+  const map = new Map<string, Date>();
+  existingEnrollments.forEach((item: any) => {
+    const studentId = idOf(item?.student);
+    const enrolledAt = item?.enrolledAt ? new Date(item.enrolledAt) : null;
+    if (studentId && enrolledAt && !Number.isNaN(enrolledAt.getTime())) map.set(studentId, enrolledAt);
+  });
+
+  const missingIds = studentIds.filter((studentId) => !map.has(studentId));
+  if (missingIds.length) {
+    const users: any[] = await User.find({ _id: { $in: missingIds } })
+      .select("conversionSetup.startingDate conversionSetup.convertedAt conversionSetup.batch createdAt")
+      .lean();
+    users.forEach((user) => {
+      const studentId = idOf(user._id);
+      const conversionBatchId = idOf(user.conversionSetup?.batch);
+      const preferredDate = conversionBatchId === batchId
+        ? user.conversionSetup?.startingDate || user.conversionSetup?.convertedAt || user.createdAt
+        : user.createdAt;
+      const enrolledAt = preferredDate ? new Date(preferredDate) : new Date();
+      map.set(studentId, Number.isNaN(enrolledAt.getTime()) ? new Date() : enrolledAt);
+    });
+  }
+
+  const now = new Date();
+  studentIds.forEach((studentId) => {
+    if (!map.has(studentId)) map.set(studentId, now);
+  });
+  return map;
+}
+
+function sessionRosterForEnrollment(classroom: any, session: any, batchStudentDates: Map<string, Date>) {
+  const startsAt = sessionStartsAt(session, classroom?.classDate || classroom?.startDate);
+  const baseRoster = Array.isArray(session?.students) && session.students.length ? session.students : classroom.students || [];
+  const nextRoster = new Map<string, any>();
+
+  baseRoster.forEach((student: any) => {
+    const studentId = idOf(student);
+    const enrolledAt = batchStudentDates.get(studentId);
+    if (!enrolledAt || !startsAt || enrolledAt.getTime() <= startsAt.getTime()) nextRoster.set(studentId, student);
+  });
+
+  (classroom.students || []).forEach((student: any) => {
+    const studentId = idOf(student);
+    const enrolledAt = batchStudentDates.get(studentId);
+    if (enrolledAt && startsAt && enrolledAt.getTime() <= startsAt.getTime()) nextRoster.set(studentId, student);
+  });
+
+  return Array.from(nextRoster.values());
+}
+
+async function reconcileBatchStudentsInClassrooms(batchId: string, batchStudentDates: Map<string, Date>) {
+  const classrooms: any[] = await Classroom.find({
+    batches: batchId,
+    isActive: { $ne: false },
+    isSessionInstance: { $ne: true },
+  });
+  let updated = 0;
+
+  for (const classroom of classrooms) {
+    let changed = false;
+    classroomSessions(classroom).forEach((session: any) => {
+      const nextRoster = sessionRosterForEnrollment(classroom, session, batchStudentDates);
+      const before = (session.students || []).map(idOf).filter(Boolean).join("|");
+      const after = nextRoster.map(idOf).filter(Boolean).join("|");
+      if (before !== after) {
+        session.students = nextRoster;
+        changed = true;
+      }
+    });
+
+    if (changed) {
+      await classroom.save();
+      await syncClassroomSessionInstances(idOf(classroom._id));
+      updated += 1;
+    }
+  }
+
+  return updated;
+}
+
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   const session = await requireBatchAccess("edit");
   if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const actorId = (session!.user as any).id;
   await dbConnect();
   const body = await req.json();
-  const existing: any = await Batch.findById(params.id).select("students").lean();
+  const existing: any = await Batch.findById(params.id).select("students studentEnrollments").lean();
   if (!existing) return NextResponse.json({ error: "Batch not found" }, { status: 404 });
   if (Array.isArray(body.students)) {
     const activeStudents = body.students.length
@@ -126,9 +207,13 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     const nextIds = body.students.map(String);
     const removedIds = previousIds.filter((studentId: string) => !nextIds.includes(studentId));
     const addedIds = nextIds.filter((studentId: string) => !previousIds.includes(studentId));
+    const dates = await enrollmentDateMap(params.id, nextIds, existing.studentEnrollments || []);
+    b.studentEnrollments = nextIds.map((studentId: string) => ({ student: studentId, enrolledAt: dates.get(studentId) || new Date() }));
+    await b.save();
     if (removedIds.length) await User.updateMany({ _id: { $in: removedIds } }, { $pull: { batches: b?._id } });
     if (nextIds.length) await User.updateMany({ _id: { $in: nextIds } }, { $addToSet: { batches: b?._id } });
     if (addedIds.length) await enrollAddedStudentsInFutureBatchClassrooms(params.id, addedIds);
+    await reconcileBatchStudentsInClassrooms(params.id, dates);
   }
   await recordActivity({
     actor: actorId,

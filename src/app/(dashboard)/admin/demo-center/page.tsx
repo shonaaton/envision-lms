@@ -253,7 +253,14 @@ async function convertDemoStudent(formData: FormData) {
     ...(conversionSetup.recommendedLevel ? { studentLevel: conversionSetup.recommendedLevel } : {}),
     ...(batchId ? { $addToSet: { batches: batchId }, $pull: { tags: "demo" } } : { $pull: { tags: "demo" } }),
   });
-  if (batchId) await Batch.findByIdAndUpdate(batchId, { $addToSet: { students: studentId } });
+  if (batchId) {
+    await Batch.findByIdAndUpdate(batchId, {
+      $addToSet: {
+        students: studentId,
+        studentEnrollments: { student: studentId, enrolledAt: conversionSetup.startingDate || conversionSetup.convertedAt },
+      },
+    });
+  }
   if (bookingId) await Booking.findByIdAndUpdate(bookingId, { demoStatus: "CONVERTED" });
   await recordActivity({ actor: actorId, targetUser: studentId, type: "demo.student.converted", label: "Converted demo user to enrolled student", entityType: "User", entityId: studentId, metadata: { booking: bookingId || undefined, course: courseId || undefined, batch: batchId || undefined, classType: conversionSetup.classType || undefined, event: "DEMO_CONVERTED" } });
   revalidatePath("/admin/demo-center");

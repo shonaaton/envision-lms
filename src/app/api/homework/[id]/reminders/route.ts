@@ -4,13 +4,18 @@ import { dbConnect } from "@/lib/db";
 import { sendManualHomeworkReminder } from "@/lib/homeworkEmailReminders";
 import { Homework } from "@/models/Homework";
 import { recordActivity } from "@/lib/activity";
+import { canAccessFeature } from "@/lib/featureAccess";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   const session = await auth();
   const role = (session?.user as any)?.role;
-  if (!session || (role !== "instructor" && role !== "admin")) {
+  const canSendReminder = role === "instructor" || (session ? (
+    await canAccessFeature("homework", session.user as any, "assign") ||
+    await canAccessFeature("homework", session.user as any, "edit")
+  ) : false);
+  if (!session || !canSendReminder) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

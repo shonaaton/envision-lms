@@ -5,14 +5,46 @@ import { Classroom } from "@/models/Classroom";
 import { Batch } from "@/models/Batch";
 import { User } from "@/models/User";
 import { getCoachAssignedStudentIds } from "@/lib/coachStudentAccess";
+import { canAccessFeature } from "@/lib/featureAccess";
 import Link from "next/link";
-import { BarChart3, CheckCircle2, Clock, FileText } from "lucide-react";
+import { BarChart3, CheckCircle2, ClipboardList, Filter, Plus, Users } from "lucide-react";
 import HomeworkActions from "@/components/homework/HomeworkActions";
+import type { ReactNode } from "react";
 
 export const dynamic = "force-dynamic";
 
 function percent(value: number, total: number) {
   return total ? Math.round((value / total) * 100) : 0;
+}
+
+function average(values: number[]) {
+  return values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length) : 0;
+}
+
+function roleLabel(role: string) {
+  if (role === "instructor") return "Coach Workspace";
+  if (role === "sub-admin") return "Sub Admin Workspace";
+  if (role === "admin") return "Admin Workspace";
+  return "Student Workspace";
+}
+
+function typeLabel(type?: string) {
+  const value = String(type || "puzzle_set").replaceAll("_", " ");
+  return value.replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function dueDetails(dueAt?: string | Date) {
+  if (!dueAt) return { date: "-", note: "No due date", overdue: false };
+  const due = new Date(dueAt);
+  const now = new Date();
+  const diffDays = Math.ceil((due.getTime() - now.getTime()) / 86_400_000);
+  const overdue = diffDays < 0;
+  const note = overdue
+    ? `${Math.abs(diffDays)} day${Math.abs(diffDays) === 1 ? "" : "s"} ago`
+    : diffDays === 0
+      ? "Due today"
+      : `${diffDays} day${diffDays === 1 ? "" : "s"} left`;
+  return { date: due.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }), note, overdue };
 }
 
 function HomeworkCard({ item, submission }: { item: any; submission?: any }) {
@@ -141,6 +173,7 @@ export default async function HomeworkListPage({ searchParams }: { searchParams?
   });
   const lateTracking = list.filter((homework: any) => trackingState(homework).overdue);
   const submittedTracking = list.filter((homework: any) => trackingState(homework).rows.length > 0);
+  const completedTracking = list.filter((homework: any) => !trackingState(homework).incomplete);
   const visibleTracking = list.filter((homework: any) => {
     const state = trackingState(homework);
     if (trackingTab === "pending") return state.incomplete && !state.overdue;
@@ -149,23 +182,36 @@ export default async function HomeworkListPage({ searchParams }: { searchParams?
     return true;
   });
   const expectedSubmissions = list.reduce((sum: number, homework: any) => sum + trackingState(homework).recipientCount, 0);
+  const averageAccuracy = average(submissions.map((submission: any) => Number(submission.accuracy || 0)));
+  const canCreateHomework = role === "instructor" || (await canAccessFeature("homework", session?.user as any, "create"));
+  const canAssignHomework = role === "instructor" || (await canAccessFeature("homework", session?.user as any, "assign"));
+  const canEditHomework = role === "instructor" || (await canAccessFeature("homework", session?.user as any, "edit"));
+  const canDeleteHomework = await canAccessFeature("homework", session?.user as any, "delete");
+  const canSendReminders = canAssignHomework || canEditHomework;
+  const staffActions = { canEdit: canEditHomework, canDelete: canDeleteHomework, canRemind: canSendReminders };
+  const canUseAssignmentFlow = canCreateHomework && canAssignHomework;
 
   return (
-    <div className="min-h-screen bg-slate-50 px-2 py-4 text-slate-950 sm:px-6 sm:py-5 lg:px-8">
+    <div className="min-h-screen px-2 py-4 text-slate-950 sm:px-4 sm:py-5 lg:px-6">
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-2">
-          <span className="flex h-9 w-9 items-center justify-center rounded-md bg-purple-50 text-purple-700"><FileText size={18} /></span>
-          <div><h1 className="text-2xl font-semibold">Homework</h1><p className="text-sm text-slate-500">Pending, completed, late homework and assignment analytics.</p></div>
+        <div>
+          <div className="mb-1 text-xs font-black uppercase text-brand/70">{roleLabel(role)}</div>
+          <h1 className="text-2xl font-black tracking-normal text-[#17104f]">Homework</h1>
+          <p className="mt-1 text-sm text-slate-500">Monitor homework submissions, due dates, reviews, and student performance.</p>
         </div>
-        {(role === "instructor" || role === "admin") && <Link href="/instructor/homework/new" className="inline-flex min-h-11 items-center justify-center rounded-md bg-purple-700 px-4 py-2 text-sm font-semibold text-white">Assign Homework</Link>}
+        {canUseAssignmentFlow && (
+          <Link href="/instructor/homework/new" className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-black text-white shadow-sm shadow-brand/20 hover:bg-brand-700">
+            <Plus size={16} /> Assign Homework
+          </Link>
+        )}
       </div>
 
       {role !== "student" && (
-        <section className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-4">
-          <Link href="/homework?status=pending#homework-tracking" className={`rounded-lg border bg-white p-4 shadow-sm transition hover:border-amber-300 hover:shadow-md ${trackingTab === "pending" ? "border-amber-400 ring-2 ring-amber-100" : ""}`}><Clock className="text-amber-600" size={18} /><div className="mt-2 text-2xl font-semibold">{pendingTracking.length}</div><div className="text-xs text-slate-500">Pending</div></Link>
-          <Link href="/homework?status=submitted#homework-tracking" className={`rounded-lg border bg-white p-4 shadow-sm transition hover:border-emerald-300 hover:shadow-md ${trackingTab === "submitted" ? "border-emerald-400 ring-2 ring-emerald-100" : ""}`}><CheckCircle2 className="text-emerald-600" size={18} /><div className="mt-2 text-2xl font-semibold">{submissions.length}</div><div className="text-xs text-slate-500">Submitted</div></Link>
-          <div className="rounded-lg border bg-white p-4 shadow-sm"><BarChart3 className="text-purple-600" size={18} /><div className="mt-2 text-2xl font-semibold">{percent(submissions.length, expectedSubmissions)}</div><div className="text-xs text-slate-500">Completion Rate</div></div>
-          <div className="rounded-lg border bg-white p-4 shadow-sm"><BarChart3 className="text-sky-600" size={18} /><div className="mt-2 text-2xl font-semibold">{submissions.length ? Math.round(submissions.reduce((s: number, x: any) => s + (x.totalScore || 0), 0) / submissions.length) : 0}</div><div className="text-xs text-slate-500">Average Score</div></div>
+        <section className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <MetricCard href="/homework?status=pending#homework-tracking" active={trackingTab === "pending"} icon={<ClipboardList size={22} />} tone="amber" label="Pending" value={pendingTracking.length} detail="Awaiting submission" />
+          <MetricCard href="/homework?status=submitted#homework-tracking" active={trackingTab === "submitted"} icon={<CheckCircle2 size={22} />} tone="emerald" label="Submitted" value={submissions.length} detail="Attempts received" />
+          <MetricCard href="/homework#homework-tracking" active={trackingTab === "all"} icon={<BarChart3 size={22} />} tone="purple" label="Completed" value={completedTracking.length} detail={`${percent(submissions.length, expectedSubmissions)}% completion rate`} />
+          <MetricCard icon={<Users size={22} />} tone="sky" label="Average Score" value={`${averageAccuracy}%`} detail="Across submissions" />
         </section>
       )}
 
@@ -176,41 +222,62 @@ export default async function HomeworkListPage({ searchParams }: { searchParams?
           <section><h2 className="mb-3 font-semibold">Completed Homework</h2><div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">{completed.map((h: any) => <HomeworkCard key={h._id} item={h} submission={byHomework.get(h._id.toString())} />)}{completed.length === 0 && <div className="rounded-lg border bg-white p-5 text-sm text-slate-500">No completed homework yet.</div>}</div></section>
         </div>
       ) : (
-        <section id="homework-tracking" className="min-w-0 scroll-mt-4 rounded-lg border border-slate-200 bg-white p-3 shadow-sm sm:p-5">
-          <div className="mb-4 flex min-w-0 flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+        <section id="homework-tracking" className="min-w-0 scroll-mt-4 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm shadow-brand-900/5">
+          <div className="flex min-w-0 flex-col gap-3 border-b border-slate-200 px-4 py-4 xl:flex-row xl:items-center xl:justify-between">
             <div className="min-w-0">
-              <h2 className="font-semibold">Homework Tracking</h2>
-              <p className="mt-1 text-xs text-slate-500">Select a section to view its assignments and student statuses.</p>
+              <h2 className="font-black text-[#17104f]">Homework Tracking</h2>
+              <p className="mt-1 text-xs text-slate-500">View and manage homework assignments and student submissions.</p>
             </div>
-            <nav aria-label="Homework status filters" className="flex max-w-full gap-1 overflow-x-auto rounded-lg bg-slate-100 p-1">
-              {([
-                ["all", "All", list.length],
-                ["pending", "Pending", pendingTracking.length],
-                ["submitted", "Submitted", submittedTracking.length],
-                ["late", "Late", lateTracking.length],
-              ] as Array<[TrackingTab, string, number]>).map(([key, label, count]) => (
-                <Link
-                  key={key}
-                  href={key === "all" ? "/homework#homework-tracking" : `/homework?status=${key}#homework-tracking`}
-                  className={`inline-flex h-9 flex-none items-center gap-2 rounded-md px-3 text-xs font-semibold transition ${trackingTab === key ? "bg-white text-purple-700 shadow-sm" : "text-slate-600 hover:bg-white/70 hover:text-slate-950"}`}
-                  aria-current={trackingTab === key ? "page" : undefined}
-                >
-                  {label}<span className="rounded-full bg-slate-200 px-1.5 py-0.5 text-[10px] tabular-nums text-slate-700">{count}</span>
-                </Link>
-              ))}
-            </nav>
+            <div className="flex max-w-full flex-col gap-2 sm:flex-row sm:items-center">
+              <nav aria-label="Homework status filters" className="flex max-w-full gap-2 overflow-x-auto">
+                {([
+                  ["all", "All", list.length, "bg-brand-50 text-brand border-brand/20"],
+                  ["pending", "Pending", pendingTracking.length, "bg-amber-50 text-amber-700 border-amber-200"],
+                  ["submitted", "Submitted", submittedTracking.length, "bg-emerald-50 text-emerald-700 border-emerald-200"],
+                  ["late", "Late", lateTracking.length, "bg-rose-50 text-rose-700 border-rose-200"],
+                ] as Array<[TrackingTab, string, number, string]>).map(([key, label, count, tone]) => (
+                  <Link
+                    key={key}
+                    href={key === "all" ? "/homework#homework-tracking" : `/homework?status=${key}#homework-tracking`}
+                    className={`inline-flex h-9 flex-none items-center gap-2 rounded-md border px-3 text-xs font-black transition ${trackingTab === key ? tone : "border-slate-200 bg-white text-slate-700 hover:border-brand/30 hover:text-brand"}`}
+                    aria-current={trackingTab === key ? "page" : undefined}
+                  >
+                    {label}<span className="h-1.5 w-1.5 rounded-full bg-current" /><span className="tabular-nums">{count}</span>
+                  </Link>
+                ))}
+              </nav>
+              <details className="relative">
+                <summary className="inline-flex h-9 cursor-pointer list-none items-center justify-center gap-2 rounded-md border border-brand/20 bg-white px-3 text-xs font-black text-brand shadow-sm marker:hidden">
+                  <Filter size={14} /> Filter
+                </summary>
+                <div className="absolute right-0 z-10 mt-2 w-44 rounded-lg border border-slate-200 bg-white p-2 text-xs font-bold shadow-xl shadow-brand-900/10">
+                  {([
+                    ["all", "All Homework"],
+                    ["pending", "Pending"],
+                    ["submitted", "Submitted"],
+                    ["late", "Late"],
+                  ] as Array<[TrackingTab, string]>).map(([key, label]) => (
+                    <Link key={key} href={key === "all" ? "/homework#homework-tracking" : `/homework?status=${key}#homework-tracking`} className={`block rounded-md px-3 py-2 ${trackingTab === key ? "bg-brand-50 text-brand" : "text-slate-600 hover:bg-slate-50"}`}>
+                      {label}
+                    </Link>
+                  ))}
+                </div>
+              </details>
+            </div>
           </div>
-          <div className="grid gap-3 xl:hidden">
+          <div className="grid gap-3 p-3 xl:hidden">
             {visibleTracking.map((h: any) => {
               const { rows, recipientCount, incomplete, overdue } = trackingState(h);
               const submittedStudentIds = new Set(rows.map((submission: any) => String(submission.student?._id || submission.student || "")));
               const recipientIds = Array.from(recipientIdsByHomework.get(h._id.toString()) || []);
+              const due = dueDetails(h.dueAt);
               return (
                 <article key={h._id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <h3 className="truncate font-semibold text-slate-950">{h.title}</h3>
-                      <p className="mt-1 text-xs text-slate-500">{h.type} - {h.dueAt ? new Date(h.dueAt).toLocaleDateString("en-IN") : "No due date"}</p>
+                      <p className="mt-1 text-xs text-slate-500">{typeLabel(h.type)} - {due.date}</p>
+                      <p className={`mt-1 text-[11px] font-bold ${due.overdue ? "text-rose-600" : "text-slate-500"}`}>{due.note}</p>
                     </div>
                     <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold shadow-sm ${overdue ? "bg-rose-50 text-rose-700" : incomplete ? "bg-amber-50 text-amber-700" : "bg-emerald-50 text-emerald-700"}`}>{overdue ? "Late" : incomplete ? (rows.length ? "Partially submitted" : "Pending") : "Submitted"}</span>
                   </div>
@@ -222,7 +289,7 @@ export default async function HomeworkListPage({ searchParams }: { searchParams?
                   </div>
                   <StudentStatusList recipientIds={recipientIds} submittedStudentIds={submittedStudentIds} recipientNameById={recipientNameById} overdue={overdue} />
                   <div className="mt-3">
-                    <HomeworkActions homework={JSON.parse(JSON.stringify(h))} />
+                    <HomeworkActions homework={JSON.parse(JSON.stringify(h))} permissions={staffActions} />
                   </div>
                 </article>
               );
@@ -242,12 +309,15 @@ export default async function HomeworkListPage({ searchParams }: { searchParams?
                 <col className="w-[10%]" />
                 <col className="w-[6%]" />
               </colgroup>
-              <thead className="text-[11px] uppercase text-slate-500 2xl:text-xs"><tr className="border-b"><th className="px-2 py-3">Homework</th><th className="px-2 py-3">Students</th><th className="px-2 py-3">Type</th><th className="px-2 py-3">Due</th><th className="px-2 py-3">Submissions</th><th className="px-2 py-3">Completion Rate</th><th className="px-2 py-3">Average Score</th><th className="px-2 py-3">Status</th><th className="px-2 py-3 text-right">Actions</th></tr></thead>
+              <thead className="text-[11px] uppercase text-[#17104f]/70 2xl:text-xs"><tr className="border-b"><th className="px-4 py-3">Homework</th><th className="px-3 py-3">Students</th><th className="px-3 py-3">Type</th><th className="px-3 py-3">Due Date</th><th className="px-3 py-3">Submissions</th><th className="px-3 py-3">Completion Rate</th><th className="px-3 py-3">Average Score</th><th className="px-3 py-3">Status</th><th className="px-4 py-3 text-right">Actions</th></tr></thead>
               <tbody>{visibleTracking.map((h: any) => {
                 const { rows, recipientCount, incomplete, overdue } = trackingState(h);
                 const submittedStudentIds = new Set(rows.map((submission: any) => String(submission.student?._id || submission.student || "")));
                 const recipientIds = Array.from(recipientIdsByHomework.get(h._id.toString()) || []);
-                return <tr key={h._id} className="border-b align-top last:border-0"><td className="px-2 py-3 font-medium"><span className="line-clamp-3 break-words">{h.title}</span></td><td className="px-2 py-3"><StudentStatusList recipientIds={recipientIds} submittedStudentIds={submittedStudentIds} recipientNameById={recipientNameById} overdue={overdue} compact /></td><td className="break-words px-2 py-3">{h.type}</td><td className="px-2 py-3">{h.dueAt ? new Date(h.dueAt).toLocaleDateString("en-IN") : "-"}</td><td className="px-2 py-3">{rows.length}/{recipientCount}</td><td className="px-2 py-3">{percent(rows.length, recipientCount)}%</td><td className="px-2 py-3">{rows.length ? Math.round(rows.reduce((s: number, x: any) => s + (x.totalScore || 0), 0) / rows.length) : 0}</td><td className="px-2 py-3"><span className={`inline-flex max-w-full rounded-full px-2 py-1 text-[11px] font-semibold ${overdue ? "bg-rose-50 text-rose-700" : incomplete ? "bg-amber-50 text-amber-700" : "bg-emerald-50 text-emerald-700"}`}>{overdue ? "Late" : incomplete ? (rows.length ? "Partially submitted" : "Pending") : "Submitted"}</span></td><td className="px-2 py-3"><HomeworkActions homework={JSON.parse(JSON.stringify(h))} compact /></td></tr>;
+                const completion = percent(rows.length, recipientCount);
+                const rowAverageAccuracy = average(rows.map((submission: any) => Number(submission.accuracy || 0)));
+                const due = dueDetails(h.dueAt);
+                return <tr key={h._id} className="border-b align-top last:border-0 hover:bg-brand-50/30"><td className="px-4 py-4 font-medium"><span className="line-clamp-2 break-words font-black text-[#17104f]">{h.title}</span><span className="mt-1 inline-flex rounded bg-brand-50 px-1.5 py-0.5 text-[10px] font-black text-brand">HW</span></td><td className="px-3 py-4"><StudentStatusList recipientIds={recipientIds} submittedStudentIds={submittedStudentIds} recipientNameById={recipientNameById} overdue={overdue} compact /></td><td className="px-3 py-4"><span className="rounded-md bg-amber-50 px-2 py-1 text-[11px] font-black text-amber-700 ring-1 ring-amber-100">{typeLabel(h.type)}</span></td><td className="px-3 py-4"><div className="font-semibold text-[#17104f]">{due.date}</div><div className={`mt-1 text-[11px] font-bold ${due.overdue ? "text-rose-600" : "text-slate-500"}`}>{due.note}</div></td><td className="px-3 py-4 font-black text-[#17104f]">{rows.length} / {recipientCount}</td><td className="px-3 py-4"><div className="font-black text-[#17104f]">{completion}%</div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200"><div className={`h-full rounded-full ${completion >= 70 ? "bg-emerald-500" : completion > 0 ? "bg-amber-500" : "bg-slate-300"}`} style={{ width: `${completion}%` }} /></div></td><td className="px-3 py-4 font-black text-[#17104f]">{rows.length ? `${rowAverageAccuracy}%` : "-"}</td><td className="px-3 py-4"><span className={`inline-flex max-w-full rounded-md px-2 py-1 text-[11px] font-black ${overdue ? "bg-rose-50 text-rose-700" : incomplete ? "bg-amber-50 text-amber-700" : "bg-emerald-50 text-emerald-700"}`}>{overdue ? "Late" : incomplete ? (rows.length ? "Needs review" : "Pending") : "Completed"}</span></td><td className="px-4 py-4"><HomeworkActions homework={JSON.parse(JSON.stringify(h))} compact permissions={staffActions} /></td></tr>;
               })}</tbody>
             </table>
             {visibleTracking.length === 0 && <EmptyTrackingState tab={trackingTab} />}
@@ -265,6 +335,47 @@ function InfoTile({ label, value }: { label: string; value: string }) {
       <div className="mt-1 text-sm font-semibold text-slate-950">{value}</div>
     </div>
   );
+}
+
+function MetricCard({
+  href,
+  active,
+  icon,
+  tone,
+  label,
+  value,
+  detail,
+}: {
+  href?: string;
+  active?: boolean;
+  icon: ReactNode;
+  tone: "amber" | "emerald" | "purple" | "sky";
+  label: string;
+  value: string | number;
+  detail: string;
+}) {
+  const toneClasses = {
+    amber: "bg-amber-50 text-amber-600 ring-amber-100",
+    emerald: "bg-emerald-50 text-emerald-600 ring-emerald-100",
+    purple: "bg-brand-50 text-brand ring-brand/10",
+    sky: "bg-sky-50 text-sky-600 ring-sky-100",
+  }[tone];
+  const content = (
+    <>
+      <div className={`flex h-12 w-12 items-center justify-center rounded-lg ring-1 ${toneClasses}`}>{icon}</div>
+      <div className="min-w-0">
+        <div className="text-xs font-bold text-slate-500">{label}</div>
+        <div className="mt-1 text-2xl font-black leading-none text-[#17104f]">{value}</div>
+        <div className="mt-2 text-xs font-semibold text-slate-500">{detail}</div>
+      </div>
+    </>
+  );
+  const className = `flex min-h-28 items-center gap-4 rounded-lg border bg-white p-4 shadow-sm shadow-brand-900/5 transition ${active ? "border-brand/40 ring-2 ring-brand/10" : "border-slate-200 hover:border-brand/20"}`;
+
+  if (href) {
+    return <Link href={href} className={className}>{content}</Link>;
+  }
+  return <div className={className}>{content}</div>;
 }
 
 function StudentStatusList({

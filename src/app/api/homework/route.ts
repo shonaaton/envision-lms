@@ -8,6 +8,7 @@ import { User } from "@/models/User";
 import { homeworkSchema } from "@/lib/validation";
 import { notifyHomeworkAssigned } from "@/lib/homeworkEmail";
 import { recordActivity } from "@/lib/activity";
+import { canAccessFeature } from "@/lib/featureAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -49,7 +50,9 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const session = await auth();
   const role = (session?.user as any)?.role;
-  if (!session || (role !== "instructor" && role !== "admin")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const canCreate = role === "instructor" || (session ? await canAccessFeature("homework", session.user as any, "create") : false);
+  const canAssign = role === "instructor" || (session ? await canAccessFeature("homework", session.user as any, "assign") : false);
+  if (!session || !canCreate || !canAssign) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   try {
     const body = homeworkSchema.parse(await req.json());
     await dbConnect();

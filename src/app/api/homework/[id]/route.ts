@@ -7,6 +7,7 @@ import { homeworkSchema } from "@/lib/validation";
 import { canStudentAccessHomework } from "@/lib/homeworkAccess";
 import { cancelHomeworkDeadlineReminders, queueHomeworkDeadlineReminders } from "@/lib/homeworkEmailReminders";
 import { recordActivity } from "@/lib/activity";
+import { canAccessFeature } from "@/lib/featureAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -43,7 +44,8 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
 export async function PUT(req: Request, { params }: { params: { id: string } }) {
   const session = await auth();
   const role = (session?.user as any)?.role;
-  if (!session || (role !== "instructor" && role !== "admin")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const canEdit = role === "instructor" || (session ? await canAccessFeature("homework", session.user as any, "edit") : false);
+  if (!session || !canEdit) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
   const existing: any = await Homework.findById(params.id);
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -92,7 +94,8 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
 export async function DELETE(_: Request, { params }: { params: { id: string } }) {
   const session = await auth();
   const role = (session?.user as any)?.role;
-  if (!session || (role !== "instructor" && role !== "admin")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const canDelete = session ? await canAccessFeature("homework", session.user as any, "delete") : false;
+  if (!session || !canDelete) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
   const existing: any = await Homework.findById(params.id);
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });

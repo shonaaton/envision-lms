@@ -1047,7 +1047,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
     ]
   },
   {
-    "name": "course_assigned_student",
+    "name": "course_assigned",
     "language": "en",
     "sourceAutomation": "New Course / Level Assigned",
     "body": "Hello {{1}}, a new course has been assigned to your Envision Chess Academy account: {{2}}, level {{3}}. Your first scheduled class is {{4}}.",
@@ -1069,39 +1069,6 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
       },
       {
         "position": 4,
-        "key": "first_class_datetime",
-        "sample": "29 Aug 2026, 12:30 PM IST"
-      }
-    ]
-  },
-  {
-    "name": "course_assigned_parent",
-    "language": "en",
-    "sourceAutomation": "New Course / Level Assigned",
-    "body": "Hello {{1}}, a new course has been assigned to {{2}}: {{3}}, level {{4}}. The first scheduled class is {{5}}.",
-    "variables": [
-      {
-        "position": 1,
-        "key": "parent_name",
-        "sample": "Mr. Sharma"
-      },
-      {
-        "position": 2,
-        "key": "student_name",
-        "sample": "Aarav"
-      },
-      {
-        "position": 3,
-        "key": "course_name",
-        "sample": "Intermediate Chess"
-      },
-      {
-        "position": 4,
-        "key": "level_name",
-        "sample": "I2"
-      },
-      {
-        "position": 5,
         "key": "first_class_datetime",
         "sample": "29 Aug 2026, 12:30 PM IST"
       }

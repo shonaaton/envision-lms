@@ -106,7 +106,7 @@ export async function sendCourseAssignedEmail(classroomInput: any, request?: Req
       sendToStudentAndParent(student, "New course assigned", message, parentMessage, metadata),
       sendWhatsAppAutomationTemplate({
         user: student,
-        templateName: "course_assigned_student",
+        templateName: "course_assigned",
         bodyParameters: [whatsappRecipientName(student), courseName, levelName, firstLessonTime || "Please check the academy portal"],
         metadata,
       }),
@@ -199,7 +199,7 @@ export async function sendStudentNoShowWarningEmail(input: {
     user: student,
     templateName: "student_no_show_notice",
     bodyParameters: [
-      whatsappRecipientName(student),
+      student.parentName || "Parent",
       whatsappRecipientName(student),
       classTitle,
       missedAt || "the scheduled class time",

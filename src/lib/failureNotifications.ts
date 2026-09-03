@@ -1,3 +1,5 @@
+import { importantContactEmails } from "@/lib/importantContacts";
+
 const FAILURE_EMAIL_TO = "sayantanchandra1999@gmail.com";
 
 type FailureNotificationInput = {
@@ -32,6 +34,7 @@ function safeJson(value: unknown) {
 export async function notifyFailure(input: FailureNotificationInput) {
   const webhook = process.env.EMAIL_AUTOMATION_WEBHOOK_URL || process.env.ASK_COACH_EMAIL_WEBHOOK_URL;
   if (!webhook) return { ok: false, skipped: true, reason: "email_webhook_not_configured" };
+  const failureEmailTo = importantContactEmails("admin")[0] || FAILURE_EMAIL_TO;
 
   const details = errorDetails(input.error);
   const metadata = {
@@ -64,7 +67,7 @@ export async function notifyFailure(input: FailureNotificationInput) {
       headers: { "Content-Type": "application/json" },
       signal: AbortSignal.timeout(20_000),
       body: JSON.stringify({
-        to: FAILURE_EMAIL_TO,
+        to: failureEmailTo,
         subject: `[LMS Failure] ${input.title}`,
         message,
         replyTo: process.env.EMAIL_REPLY_TO || "support@envisionchessacademy.com",

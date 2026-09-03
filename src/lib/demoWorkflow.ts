@@ -1,6 +1,7 @@
 import { Types } from "mongoose";
 import { ACADEMY_TIME_ZONE, formatAcademyDateTime, zonedDateTime } from "@/lib/academyTime";
 import { recordActivity } from "@/lib/activity";
+import { importantContactsFromEnvKeys } from "@/lib/importantContacts";
 import { sendWhatsAppTextMessage } from "@/lib/whatsappAutomation";
 import { sendWhatsAppAutomationTemplates } from "@/lib/whatsappAutomationEvents";
 import { Notification } from "@/models/Fee";
@@ -53,6 +54,14 @@ export async function demoManagementUsers() {
 }
 
 function configuredRecipients(key: string, label: string) {
+  const roleContacts = label === "Salesperson"
+    ? importantContactsFromEnvKeys("DEMO_SALESPERSON_CONTACT_KEYS", "sales")
+    : label === "Sub-Admin"
+      ? importantContactsFromEnvKeys("DEMO_SUB_ADMIN_CONTACT_KEYS", "sub-admin")
+      : [];
+  if (roleContacts.length) {
+    return roleContacts.map((contact) => ({ name: contact.name, phone: contact.phone, role: contact.role, email: contact.email }));
+  }
   return String(process.env[key] || "")
     .split(",")
     .map((phone, index) => phone.trim())

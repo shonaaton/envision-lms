@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { normalizeWhatsAppNumber, normalizeWhatsAppRecipient } from "@/lib/whatsappAutomation";
-import { getWhatsAppTemplateDefinition, renderWhatsAppTemplatePreview } from "@/lib/whatsappTemplateRegistry";
+import { getWhatsAppTemplateDefinition, renderWhatsAppTemplatePreview, resolveWhatsAppMetaTemplateName } from "@/lib/whatsappTemplateRegistry";
 import { WhatsAppMessage } from "@/models/WhatsApp";
 import { User } from "@/models/User";
 
@@ -165,6 +165,7 @@ export async function POST(req: Request) {
 
   const body = await req.json().catch(() => ({}));
   const templateName = String(body.templateName || body.template_name || "hello_world_2").trim();
+  const metaTemplateName = resolveWhatsAppMetaTemplateName(templateName);
   const definition = getWhatsAppTemplateDefinition(templateName);
   const language = normalizeTemplateLanguage(body.language || body.language_code || definition?.language || "en");
   const templateVariables = extractTemplateVariables(body);
@@ -184,7 +185,7 @@ export async function POST(req: Request) {
     }, { status: 400 });
   }
 
-  const n8nSend = await sendViaN8n({ templateName, language, recipients, templateVariables }).catch((error) => ({
+  const n8nSend = await sendViaN8n({ templateName: metaTemplateName, language, recipients, templateVariables }).catch((error) => ({
     response: null,
     payload: { ok: false, error: error instanceof Error ? error.message : String(error || "n8n request failed") },
   }));
@@ -218,7 +219,7 @@ export async function POST(req: Request) {
       status: accepted ? displayStatusForN8nResult(item) : item.status,
       error: accepted ? "" : errorText(item.error || item.metaError),
       metaError: accepted ? null : item.metaError || null,
-      debug: { ...(item.debug || {}), sender: "n8n" },
+      debug: { ...(item.debug || {}), sender: "n8n", lmsTemplateName: templateName, metaTemplateName },
     });
   }
 
@@ -248,7 +249,7 @@ export async function POST(req: Request) {
           status: n8nSend.response.status,
           error: "",
           metaError: null,
-          debug: { sender: "n8n", queued: true, webhookUrlConfigured: true, status: n8nSend.response.status, bodyParameterCount: templateVariables.length },
+          debug: { sender: "n8n", queued: true, webhookUrlConfigured: true, status: n8nSend.response.status, bodyParameterCount: templateVariables.length, lmsTemplateName: templateName, metaTemplateName },
         });
       }
       return NextResponse.json({ ok: true, templateName, language, recipientGroup, recipientCount: recipients.length, sender: "n8n", results: queuedResults });

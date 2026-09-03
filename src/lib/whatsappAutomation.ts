@@ -1,6 +1,6 @@
 import { notifyFailure } from "@/lib/failureNotifications";
 import { dbConnect } from "@/lib/db";
-import { renderWhatsAppTemplatePreview } from "@/lib/whatsappTemplateRegistry";
+import { renderWhatsAppTemplatePreview, resolveWhatsAppMetaTemplateName } from "@/lib/whatsappTemplateRegistry";
 import { isWhatsAppAutomationTemplateEnabled } from "@/lib/whatsappAutomationSettings";
 import { WhatsAppMessage } from "@/models/WhatsApp";
 import { User } from "@/models/User";
@@ -371,14 +371,15 @@ export async function sendWhatsAppTemplateMessage(input: WhatsAppTemplateInput) 
 
   const { testMode, recipient } = resolveRecipient(input.to, input.testMode, countryCode);
   const bodyParameters = (input.bodyParameters || input.templateVariables || []).map((text) => String(text || "").slice(0, 1024)).filter(Boolean);
+  const metaTemplateName = resolveWhatsAppMetaTemplateName(input.templateName);
   if (!input.bypassN8n) {
     const n8nResult = await sendViaN8n({
       to: input.to,
-      templateName: input.templateName,
+      templateName: metaTemplateName,
       language: normalizeTemplateLanguage(input.language),
       bodyParameters,
       templateVariables: bodyParameters,
-      metadata: input.metadata,
+      metadata: { ...(input.metadata || {}), lmsTemplateName: input.templateName, metaTemplateName },
       testMode: input.testMode,
       countryCode,
     });
@@ -393,7 +394,7 @@ export async function sendWhatsAppTemplateMessage(input: WhatsAppTemplateInput) 
     to: recipient,
     type: "template",
     template: {
-      name: input.templateName,
+      name: metaTemplateName,
       language: { code: normalizeTemplateLanguage(input.language) },
       ...(bodyParameters.length
         ? {

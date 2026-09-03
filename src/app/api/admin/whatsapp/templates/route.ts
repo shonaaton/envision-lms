@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
-import { WHATSAPP_TEMPLATE_DEFINITIONS, type WhatsAppTemplateDefinition } from "@/lib/whatsappTemplateRegistry";
+import { resolveWhatsAppMetaTemplateName, WHATSAPP_TEMPLATE_DEFINITIONS, type WhatsAppTemplateDefinition } from "@/lib/whatsappTemplateRegistry";
 import { WhatsAppAutomationSetting } from "@/models/WhatsAppAutomationSetting";
 
 export const dynamic = "force-dynamic";
@@ -10,6 +10,7 @@ type WhatsAppTemplateWithMeta = WhatsAppTemplateDefinition & {
   metaStatus?: string;
   metaCategory?: string;
   metaLanguage?: string;
+  metaTemplateName?: string;
   metaSynced?: boolean;
   requiredByLms?: boolean;
 };
@@ -161,17 +162,19 @@ async function buildMetaAudit(input: { accessToken: string; businessAccountId: s
     .filter(Boolean);
   const metaMap = new Map(metaTemplates.map((template: any) => [metaTemplateKey(template.name, template.language), template]));
   const requiredTemplates = WHATSAPP_TEMPLATE_DEFINITIONS.map((template) => {
-    const metaTemplate = metaMap.get(metaTemplateKey(template.name, template.language)) as WhatsAppTemplateWithMeta | undefined;
+    const metaTemplateName = resolveWhatsAppMetaTemplateName(template.name);
+    const metaTemplate = metaMap.get(metaTemplateKey(metaTemplateName, template.language)) as WhatsAppTemplateWithMeta | undefined;
     return {
       ...template,
       metaStatus: metaTemplate?.metaStatus || "MISSING",
       metaCategory: metaTemplate?.metaCategory || "",
       metaLanguage: metaTemplate?.metaLanguage || template.language,
+      metaTemplateName,
       metaSynced: Boolean(metaTemplate),
       requiredByLms: true,
     };
   });
-  const requiredKeys = new Set(requiredTemplates.map((template) => metaTemplateKey(template.name, template.language)));
+  const requiredKeys = new Set(requiredTemplates.map((template) => metaTemplateKey(template.metaTemplateName || template.name, template.language)));
   const metaOnlyApprovedTemplates = metaTemplates.filter((template: any) => (
     template.metaStatus === "APPROVED" && !requiredKeys.has(metaTemplateKey(template.name, template.language))
   ));

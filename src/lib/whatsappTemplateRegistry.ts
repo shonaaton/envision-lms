@@ -1323,6 +1323,16 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   }
 ] as const satisfies readonly WhatsAppTemplateDefinition[];
 
+export const WHATSAPP_TEMPLATE_META_ALIASES: Record<string, string> = {
+  class_credit_empty: "class_credit_balance",
+  invoice_due_admin_alert: "invoice_followup_alert",
+};
+
+export function resolveWhatsAppMetaTemplateName(name?: string) {
+  const cleanName = String(name || "").trim();
+  return WHATSAPP_TEMPLATE_META_ALIASES[cleanName] || cleanName;
+}
+
 export function getWhatsAppTemplateDefinition(name?: string) {
   const cleanName = String(name || "").trim();
   return WHATSAPP_TEMPLATE_DEFINITIONS.find((template) => template.name === cleanName) || null;

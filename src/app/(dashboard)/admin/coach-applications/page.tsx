@@ -57,6 +57,8 @@ async function approveCoachApplication(formData: FormData) {
   await sendWelcomeEmail({
     name: user.name,
     email: user.email,
+    phone: user.phone,
+    countryCode: user.countryCode,
     username: user.username,
     role: "instructor",
     temporaryPassword: password,

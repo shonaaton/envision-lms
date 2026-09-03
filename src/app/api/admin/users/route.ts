@@ -104,6 +104,7 @@ export async function POST(req: Request) {
       name: u.name,
       email: u.email,
       phone: u.phone,
+      countryCode: u.countryCode,
       username,
       role: body.role,
       temporaryPassword: tempPassword,

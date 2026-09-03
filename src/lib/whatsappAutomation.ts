@@ -1,6 +1,7 @@
 import { notifyFailure } from "@/lib/failureNotifications";
 import { dbConnect } from "@/lib/db";
 import { renderWhatsAppTemplatePreview } from "@/lib/whatsappTemplateRegistry";
+import { isWhatsAppAutomationTemplateEnabled } from "@/lib/whatsappAutomationSettings";
 import { WhatsAppMessage } from "@/models/WhatsApp";
 import { User } from "@/models/User";
 
@@ -30,6 +31,7 @@ type WhatsAppReminderInput = {
 
 type WhatsAppTemplateInput = {
   to?: string;
+  countryCode?: string;
   templateName: string;
   language?: string;
   bodyParameters?: string[];
@@ -41,6 +43,7 @@ type WhatsAppTemplateInput = {
 
 type WhatsAppTextInput = {
   to?: string;
+  countryCode?: string;
   text: string;
   previewUrl?: boolean;
   metadata?: Record<string, unknown>;
@@ -52,15 +55,23 @@ export function normalizeWhatsAppNumber(value?: string) {
   return String(value || "").replace(/[^\d]/g, "");
 }
 
+export function normalizeWhatsAppRecipient(phone?: string, countryCode?: string) {
+  const cleanPhone = normalizeWhatsAppNumber(phone);
+  if (!cleanPhone) return "";
+  if (cleanPhone.length > 10) return cleanPhone;
+  const cleanCountryCode = normalizeWhatsAppNumber(countryCode) || "91";
+  return `${cleanCountryCode}${cleanPhone.replace(/^0+/, "")}`;
+}
+
 function configuredGraphVersion() {
   const value = String(process.env.WHATSAPP_GRAPH_VERSION || "v25.0").trim().replace(/^["']|["']$/g, "");
   return value.startsWith("v") ? value : `v${value}`;
 }
 
-function resolveRecipient(inputTo?: string, testModeOverride?: boolean) {
+function resolveRecipient(inputTo?: string, testModeOverride?: boolean, countryCode?: string) {
   const testMode = testModeOverride ?? process.env.WHATSAPP_TEST_MODE !== "false";
   const testRecipient = normalizeWhatsAppNumber(process.env.WHATSAPP_TEST_RECIPIENT);
-  const recipient = testMode && testRecipient ? testRecipient : normalizeWhatsAppNumber(inputTo);
+  const recipient = testMode && testRecipient ? testRecipient : normalizeWhatsAppRecipient(inputTo, countryCode);
   return { testMode, recipient };
 }
 
@@ -131,11 +142,23 @@ async function findMatchedUser(input: { userId?: unknown; phoneNumber: string })
     `+${input.phoneNumber}`,
     `+${input.phoneNumber.replace(/^91/, "")}`,
   ]));
-  return User.findOne({ phone: { $in: variants } }).select("_id name phone email username role").lean();
+  return User.findOne({ phone: { $in: variants } }).select("_id name phone email username role countryCode").lean();
+}
+
+async function countryCodeForUser(userId?: unknown) {
+  const cleanUserId = String(userId || "").trim();
+  if (!cleanUserId) return "";
+  try {
+    await dbConnect();
+    const user: any = await User.findById(cleanUserId).select("countryCode").lean();
+    return String(user?.countryCode || "");
+  } catch {
+    return "";
+  }
 }
 
 async function recordOutboundTemplateMessage(input: WhatsAppTemplateInput, result: WhatsAppSendResult, bodyParameters: string[]) {
-  const phoneNumber = normalizeWhatsAppNumber(result.recipient || input.to);
+  const phoneNumber = normalizeWhatsAppRecipient(result.recipient || input.to, input.countryCode);
   if (!phoneNumber || result.skipped) return;
   try {
     await dbConnect();
@@ -176,10 +199,11 @@ async function sendViaN8n(input: {
   message?: string;
   metadata?: Record<string, unknown>;
   testMode?: boolean;
+  countryCode?: string;
 }): Promise<WhatsAppSendResult | null> {
   const webhookUrl = n8nWebhookUrl();
   if (!webhookUrl) return null;
-  const { testMode, recipient } = resolveRecipient(input.to, input.testMode);
+  const { testMode, recipient } = resolveRecipient(input.to, input.testMode, input.countryCode);
   if (!recipient) {
     return {
       ok: false,
@@ -330,7 +354,22 @@ function templateBodyParameters(input: WhatsAppReminderInput, message: string, t
 }
 
 export async function sendWhatsAppTemplateMessage(input: WhatsAppTemplateInput) {
-  const { testMode, recipient } = resolveRecipient(input.to, input.testMode);
+  const countryCode = input.countryCode || await countryCodeForUser(input.metadata?.userId);
+  const enabled = await isWhatsAppAutomationTemplateEnabled(input.templateName).catch((error) => {
+    console.error("WhatsApp automation setting lookup failed", { error, templateName: input.templateName });
+    return true;
+  });
+  if (!enabled) {
+    return {
+      ok: true,
+      delivered: false,
+      skipped: true,
+      recipient: normalizeWhatsAppRecipient(input.to, countryCode),
+      debug: { reason: "whatsapp_template_automation_disabled", templateName: input.templateName },
+    };
+  }
+
+  const { testMode, recipient } = resolveRecipient(input.to, input.testMode, countryCode);
   const bodyParameters = (input.bodyParameters || input.templateVariables || []).map((text) => String(text || "").slice(0, 1024)).filter(Boolean);
   if (!input.bypassN8n) {
     const n8nResult = await sendViaN8n({
@@ -341,9 +380,10 @@ export async function sendWhatsAppTemplateMessage(input: WhatsAppTemplateInput) 
       templateVariables: bodyParameters,
       metadata: input.metadata,
       testMode: input.testMode,
+      countryCode,
     });
     if (n8nResult) {
-      await recordOutboundTemplateMessage(input, n8nResult, bodyParameters);
+      await recordOutboundTemplateMessage({ ...input, countryCode }, n8nResult, bodyParameters);
       return n8nResult;
     }
   }
@@ -369,12 +409,13 @@ export async function sendWhatsAppTemplateMessage(input: WhatsAppTemplateInput) 
   };
   const result = await postWhatsAppMessage(body, input.metadata);
   const output = { ...result, testMode, recipient };
-  await recordOutboundTemplateMessage(input, output, bodyParameters);
+  await recordOutboundTemplateMessage({ ...input, countryCode }, output, bodyParameters);
   return output;
 }
 
 export async function sendWhatsAppTextMessage(input: WhatsAppTextInput) {
-  const { testMode, recipient } = resolveRecipient(input.to, input.testMode);
+  const countryCode = input.countryCode || await countryCodeForUser(input.metadata?.userId);
+  const { testMode, recipient } = resolveRecipient(input.to, input.testMode, countryCode);
   if (!input.bypassN8n) {
     const n8nResult = await sendViaN8n({
       to: input.to,
@@ -384,6 +425,7 @@ export async function sendWhatsAppTextMessage(input: WhatsAppTextInput) {
       message: String(input.text || "").trim().slice(0, 4000),
       metadata: input.metadata,
       testMode: input.testMode,
+      countryCode,
     });
     if (n8nResult) return n8nResult;
   }

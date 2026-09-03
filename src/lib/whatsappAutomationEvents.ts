@@ -1,4 +1,4 @@
-import { sendWhatsAppTemplateMessage, type WhatsAppSendResult } from "@/lib/whatsappAutomation";
+import { normalizeWhatsAppRecipient, sendWhatsAppTemplateMessage, type WhatsAppSendResult } from "@/lib/whatsappAutomation";
 import { isWhatsAppAutomationTemplateEnabled } from "@/lib/whatsappAutomationSettings";
 
 export const WHATSAPP_AUTOMATION_LANGUAGE = "en";
@@ -9,6 +9,7 @@ export type WhatsAppAutomationRecipient = {
   name?: string;
   username?: string;
   phone?: string;
+  countryCode?: string;
   role?: string;
 };
 
@@ -40,12 +41,12 @@ export async function sendWhatsAppAutomationTemplate(input: {
       ok: true,
       delivered: false,
       skipped: true,
-      recipient: String(input.to || input.user?.phone || "").trim(),
+      recipient: normalizeWhatsAppRecipient(input.to || input.user?.phone, input.user?.countryCode),
       debug: { reason: "whatsapp_template_automation_disabled", templateName: input.templateName },
     };
   }
 
-  const to = String(input.to || input.user?.phone || "").trim();
+  const to = normalizeWhatsAppRecipient(input.to || input.user?.phone, input.user?.countryCode);
   if (!to) {
     return {
       ok: false,
@@ -58,6 +59,7 @@ export async function sendWhatsAppAutomationTemplate(input: {
 
   return sendWhatsAppTemplateMessage({
     to,
+    countryCode: input.user?.countryCode,
     templateName: input.templateName,
     language: WHATSAPP_AUTOMATION_LANGUAGE,
     bodyParameters: (input.bodyParameters || []).map((value) => String(value || "").trim()).filter(Boolean),

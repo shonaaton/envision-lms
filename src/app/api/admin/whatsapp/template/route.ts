@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
-import { normalizeWhatsAppNumber } from "@/lib/whatsappAutomation";
+import { normalizeWhatsAppNumber, normalizeWhatsAppRecipient } from "@/lib/whatsappAutomation";
 import { getWhatsAppTemplateDefinition, renderWhatsAppTemplatePreview } from "@/lib/whatsappTemplateRegistry";
 import { WhatsAppMessage } from "@/models/WhatsApp";
 import { User } from "@/models/User";
@@ -30,7 +30,15 @@ function normalizeTemplateLanguage(value?: string) {
 function uniquePhoneNumbers(values: unknown[]) {
   return Array.from(new Set(
     values
-      .map((value) => normalizeWhatsAppNumber(String(value || "")))
+      .map((value) => normalizeWhatsAppRecipient(String(value || "")))
+      .filter(Boolean)
+  ));
+}
+
+function uniqueUserPhoneNumbers(users: any[]) {
+  return Array.from(new Set(
+    users
+      .map((user) => normalizeWhatsAppRecipient(user?.phone, user?.countryCode))
       .filter(Boolean)
   ));
 }
@@ -118,8 +126,8 @@ async function resolveRecipients(body: any, recipientGroup: RecipientGroup) {
       role: { $in: roles },
       isActive: { $ne: false },
       phone: { $exists: true, $nin: ["", null] },
-    }).select("phone").lean();
-    return uniquePhoneNumbers(users.map((user: any) => user.phone));
+    }).select("phone countryCode").lean();
+    return uniqueUserPhoneNumbers(users);
   }
 
   const rawRecipients = Array.isArray(body.recipients) && body.recipients.length ? body.recipients : body.to ? [body.to] : DEFAULT_RECIPIENTS;

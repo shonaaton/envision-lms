@@ -9,6 +9,7 @@ type WelcomeEmailInput = {
   name: string;
   email: string;
   phone?: string;
+  countryCode?: string;
   username: string;
   role: WelcomeEmailRole;
   accountKind?: WelcomeAccountKind;

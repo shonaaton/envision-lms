@@ -182,7 +182,7 @@ export async function POST(req: Request) {
       notes: application.experience,
     });
     await CoachApplication.findByIdAndUpdate(application._id, { status: "approved", convertedUser: user._id, reviewedBy: actorId, reviewedAt: new Date() });
-    await sendWelcomeEmail({ name: user.name, email: user.email, phone: user.phone, username: user.username, role: "instructor", temporaryPassword: password });
+    await sendWelcomeEmail({ name: user.name, email: user.email, phone: user.phone, countryCode: user.countryCode, username: user.username, role: "instructor", temporaryPassword: password });
     return NextResponse.json({ ok: true, username: user.username, tempPassword: password });
   }
 

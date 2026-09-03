@@ -51,7 +51,23 @@ type InboxPayload = {
 };
 
 type RecipientMode = "manual" | "coaches" | "students" | "users";
-type WhatsAppAdminTemplateDefinition = WhatsAppTemplateDefinition & { automationEnabled?: boolean };
+type WhatsAppAdminTemplateDefinition = WhatsAppTemplateDefinition & {
+  automationEnabled?: boolean;
+  metaStatus?: string;
+  metaCategory?: string;
+  metaLanguage?: string;
+  metaSynced?: boolean;
+  requiredByLms?: boolean;
+};
+type TemplateAuditPayload = {
+  ok?: boolean;
+  source?: "local" | "meta";
+  message?: string;
+  requiredTemplateCount?: number;
+  approvedRequiredCount?: number;
+  metaTemplateCount?: number;
+  missingApprovedTemplates?: WhatsAppAdminTemplateDefinition[];
+};
 
 const DEFAULT_NUMBERS = "918017996184, 916290349998";
 
@@ -76,6 +92,7 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
   const [recipients, setRecipients] = useState(DEFAULT_NUMBERS);
   const [templateVariables, setTemplateVariables] = useState("");
   const [templates, setTemplates] = useState<WhatsAppAdminTemplateDefinition[]>([...WHATSAPP_TEMPLATE_DEFINITIONS]);
+  const [templateAudit, setTemplateAudit] = useState<TemplateAuditPayload>({});
   const [savingTemplateName, setSavingTemplateName] = useState("");
   const [notice, setNotice] = useState("");
   const [templateResults, setTemplateResults] = useState<any[]>([]);
@@ -106,6 +123,15 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
       const payload = await res.json().catch(() => ({}));
       if (cancelled || !Array.isArray(payload.templates) || !payload.templates.length) return;
       setTemplates(payload.templates);
+      setTemplateAudit({
+        ok: payload.ok,
+        source: payload.source,
+        message: payload.message,
+        requiredTemplateCount: payload.requiredTemplateCount,
+        approvedRequiredCount: payload.approvedRequiredCount,
+        metaTemplateCount: payload.metaTemplateCount,
+        missingApprovedTemplates: Array.isArray(payload.missingApprovedTemplates) ? payload.missingApprovedTemplates : [],
+      });
     }
     void loadTemplates();
     return () => {
@@ -157,6 +183,9 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
     }, {});
   }, [templates]);
   const enabledTemplateCount = useMemo(() => templates.filter((template) => template.automationEnabled !== false).length, [templates]);
+  const missingApprovedTemplates = templateAudit.missingApprovedTemplates || [];
+  const approvedRequiredCount = templateAudit.approvedRequiredCount ?? templates.filter((template) => template.requiredByLms && template.metaStatus === "APPROVED").length;
+  const requiredTemplateCount = templateAudit.requiredTemplateCount ?? templates.filter((template) => template.requiredByLms !== false).length;
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -313,10 +342,37 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
             <Field label="Template name" value={templateName} onChange={updateTemplateName} listId="whatsapp-template-options" />
             <Field label="Language" value={language} onChange={setLanguage} />
           </div>
-          <div className="mt-5 grid gap-3 sm:grid-cols-3">
+          <div className="mt-5 grid gap-3 sm:grid-cols-4">
             <AutomationStat label="Templates" value={String(templates.length)} />
             <AutomationStat label="Automatic on" value={String(enabledTemplateCount)} tone="green" />
             <AutomationStat label="Automatic off" value={String(templates.length - enabledTemplateCount)} tone="slate" />
+            <AutomationStat label="Missing in Meta" value={String(missingApprovedTemplates.length)} tone={missingApprovedTemplates.length ? "amber" : "green"} />
+          </div>
+          <div className={`mt-4 rounded-lg border px-4 py-3 text-sm ${missingApprovedTemplates.length ? "border-amber-200 bg-amber-50 text-amber-900" : "border-emerald-100 bg-emerald-50 text-emerald-900"}`}>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="font-black">
+                {templateAudit.source === "meta"
+                  ? `${approvedRequiredCount}/${requiredTemplateCount} LMS automation templates are approved in Meta.`
+                  : "Meta template approval status is not available from this environment."}
+              </span>
+              {typeof templateAudit.metaTemplateCount === "number" ? <span className="text-xs font-black uppercase tracking-[0.12em]">{templateAudit.metaTemplateCount} Meta templates found</span> : null}
+            </div>
+            {templateAudit.message ? <p className="mt-1 leading-5">{templateAudit.message}</p> : null}
+            {missingApprovedTemplates.length ? (
+              <div className="mt-3 flex max-h-28 flex-wrap gap-2 overflow-y-auto">
+                {missingApprovedTemplates.map((template) => (
+                  <button
+                    key={`${template.name}-${template.language}`}
+                    type="button"
+                    onClick={() => selectAutomationTemplate(template.name)}
+                    className="rounded-full border border-amber-200 bg-white px-3 py-1 text-xs font-black text-amber-800 shadow-sm"
+                    title={`Load ${template.name}`}
+                  >
+                    {template.name} · {template.metaStatus || "MISSING"}
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </div>
           <datalist id="whatsapp-template-options">
             {templates.map((template) => (
@@ -365,6 +421,7 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
                             <span className="mt-1 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500">
                               <span>{template.variables.length} variable{template.variables.length === 1 ? "" : "s"}</span>
                               <span className={`rounded-full px-2 py-0.5 font-black ${enabled ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{enabled ? "Auto on" : "Auto off"}</span>
+                              {template.requiredByLms !== false ? <span className={templateStatusClass(template.metaStatus)}>{templateStatusLabel(template.metaStatus)}</span> : null}
                             </span>
                           </button>
                           <button
@@ -599,13 +656,30 @@ function RecipientModeButton({ active, label, onClick }: { active: boolean; labe
   );
 }
 
-function AutomationStat({ label, value, tone = "slate" }: { label: string; value: string; tone?: "green" | "slate" }) {
+function AutomationStat({ label, value, tone = "slate" }: { label: string; value: string; tone?: "green" | "slate" | "amber" }) {
   return (
-    <div className={`rounded-lg border px-4 py-3 ${tone === "green" ? "border-emerald-100 bg-emerald-50" : "border-slate-200 bg-slate-50"}`}>
+    <div className={`rounded-lg border px-4 py-3 ${tone === "green" ? "border-emerald-100 bg-emerald-50" : tone === "amber" ? "border-amber-200 bg-amber-50" : "border-slate-200 bg-slate-50"}`}>
       <div className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">{label}</div>
-      <div className={`mt-1 text-2xl font-black ${tone === "green" ? "text-emerald-700" : "text-slate-950"}`}>{value}</div>
+      <div className={`mt-1 text-2xl font-black ${tone === "green" ? "text-emerald-700" : tone === "amber" ? "text-amber-700" : "text-slate-950"}`}>{value}</div>
     </div>
   );
+}
+
+function templateStatusLabel(status?: string) {
+  const clean = String(status || "UNKNOWN").toUpperCase();
+  if (clean === "APPROVED") return "Meta approved";
+  if (clean === "MISSING") return "Missing in Meta";
+  if (clean === "NOT_SYNCED") return "Not synced";
+  if (clean === "SYNC_FAILED") return "Sync failed";
+  return `Meta ${clean.toLowerCase()}`;
+}
+
+function templateStatusClass(status?: string) {
+  const clean = String(status || "UNKNOWN").toUpperCase();
+  if (clean === "APPROVED") return "rounded-full bg-emerald-50 px-2 py-0.5 font-black text-emerald-700";
+  if (clean === "PENDING" || clean === "IN_APPEAL") return "rounded-full bg-amber-50 px-2 py-0.5 font-black text-amber-700";
+  if (clean === "MISSING" || clean === "REJECTED" || clean === "PAUSED" || clean === "DISABLED") return "rounded-full bg-rose-50 px-2 py-0.5 font-black text-rose-700";
+  return "rounded-full bg-slate-100 px-2 py-0.5 font-black text-slate-500";
 }
 
 function Field({ label, value, onChange, listId }: { label: string; value: string; onChange: (value: string) => void; listId?: string }) {

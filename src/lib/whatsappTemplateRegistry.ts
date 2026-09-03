@@ -881,7 +881,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
     "name": "invoice_due_admin_alert",
     "language": "en",
     "sourceAutomation": "Monthly Invoice Reminder",
-    "body": "Hello {{1}}, invoice {{2}} for {{3}} is {{4}}. The amount due is {{5}}. Open the admin portal to review the invoice.",
+    "body": "Hello {{1}},\n\nInvoice of {{2}} for {{3}} is {{4}}.\nThe amount due is {{5}}. Please open the admin portal to review the invoice and follow up with the student.\n\n*Team Envision Chess Academy*",
     "variables": [
       {
         "position": 1,

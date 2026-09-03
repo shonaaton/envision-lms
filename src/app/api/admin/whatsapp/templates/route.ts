@@ -6,12 +6,48 @@ import { WhatsAppAutomationSetting } from "@/models/WhatsAppAutomationSetting";
 
 export const dynamic = "force-dynamic";
 
+type WhatsAppTemplateWithMeta = WhatsAppTemplateDefinition & {
+  metaStatus?: string;
+  metaCategory?: string;
+  metaLanguage?: string;
+  metaSynced?: boolean;
+  requiredByLms?: boolean;
+};
+
 function canManageWhatsApp(session: any) {
   return ["admin", "sub-admin"].includes(String(session?.user?.role || ""));
 }
 
 function cleanEnv(value?: string) {
   return String(value || "").trim().replace(/^["']|["']$/g, "");
+}
+
+function timingSafeEqualText(left: string, right: string) {
+  const encoder = new TextEncoder();
+  const leftBytes = encoder.encode(left);
+  const rightBytes = encoder.encode(right);
+  if (leftBytes.length !== rightBytes.length) return false;
+  let diff = 0;
+  for (let index = 0; index < leftBytes.length; index += 1) {
+    diff |= leftBytes[index] ^ rightBytes[index];
+  }
+  return diff === 0;
+}
+
+function isBridgeAuthorized(req: Request) {
+  const expectedSecret = cleanEnv(process.env.WHATSAPP_TEMPLATE_BRIDGE_SECRET);
+  if (!expectedSecret) return false;
+  const authHeader = req.headers.get("authorization") || "";
+  const bearer = authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : "";
+  const headerSecret = req.headers.get("x-lms-whatsapp-template-secret") || "";
+  const receivedSecret = cleanEnv(bearer || headerSecret);
+  return Boolean(receivedSecret) && timingSafeEqualText(receivedSecret, expectedSecret);
+}
+
+async function canUseTemplateEndpoint(req: Request) {
+  if (isBridgeAuthorized(req)) return true;
+  const session = await auth();
+  return canManageWhatsApp(session);
 }
 
 function normalizeTemplateLanguage(value?: string) {
@@ -42,21 +78,31 @@ function templateVariables(component: any) {
     }));
 }
 
-function mapMetaTemplate(template: any): WhatsAppTemplateDefinition | null {
+function metaTemplateKey(name?: string, language?: string) {
+  return `${String(name || "").trim()}::${normalizeTemplateLanguage(language)}`;
+}
+
+function mapMetaTemplate(template: any): WhatsAppTemplateWithMeta | null {
   const name = String(template?.name || "").trim();
   if (!name) return null;
   const components = Array.isArray(template?.components) ? template.components : [];
   const bodyComponent = components.find((component: any) => String(component?.type || "").toUpperCase() === "BODY");
+  const language = normalizeTemplateLanguage(template?.language);
   return {
     name,
-    language: normalizeTemplateLanguage(template?.language),
+    language,
     sourceAutomation: `Meta ${String(template?.category || "Template").toLowerCase()}`,
     body: String(bodyComponent?.text || name.replace(/_/g, " ")),
     variables: templateVariables(bodyComponent),
+    metaStatus: String(template?.status || "UNKNOWN").toUpperCase(),
+    metaCategory: String(template?.category || ""),
+    metaLanguage: language,
+    metaSynced: true,
+    requiredByLms: false,
   };
 }
 
-async function templatesWithSettings(templates: readonly WhatsAppTemplateDefinition[]) {
+async function templatesWithSettings(templates: readonly WhatsAppTemplateWithMeta[]) {
   await dbConnect();
   const settings = await WhatsAppAutomationSetting.find({
     templateName: { $in: templates.map((template) => template.name) },
@@ -68,19 +114,30 @@ async function templatesWithSettings(templates: readonly WhatsAppTemplateDefinit
   }));
 }
 
-export async function GET() {
-  const session = await auth();
-  if (!canManageWhatsApp(session)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+async function buildLocalAudit(metaStatus: "NOT_SYNCED" | "SYNC_FAILED") {
+  const localTemplates = WHATSAPP_TEMPLATE_DEFINITIONS.map((template) => ({
+    ...template,
+    metaStatus,
+    metaSynced: false,
+    requiredByLms: true,
+  }));
+  return {
+    templates: await templatesWithSettings(localTemplates),
+    requiredTemplateCount: WHATSAPP_TEMPLATE_DEFINITIONS.length,
+    approvedRequiredCount: 0,
+    missingApprovedTemplates: localTemplates,
+  };
+}
 
-  const accessToken = cleanEnv(process.env.WHATSAPP_ACCESS_TOKEN);
-  const businessAccountId = cleanEnv(process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || process.env.WHATSAPP_WABA_ID);
-  const graphVersion = cleanEnv(process.env.WHATSAPP_GRAPH_VERSION || "v25.0");
+async function buildMetaAudit(input: { accessToken: string; businessAccountId: string; graphVersion: string }) {
+  const { accessToken, businessAccountId, graphVersion } = input;
   if (!accessToken || !businessAccountId) {
+    const audit = await buildLocalAudit("NOT_SYNCED");
     return NextResponse.json({
       ok: false,
       source: "local",
       message: "Meta template sync needs WHATSAPP_BUSINESS_ACCOUNT_ID and WHATSAPP_ACCESS_TOKEN.",
-      templates: await templatesWithSettings(WHATSAPP_TEMPLATE_DEFINITIONS),
+      ...audit,
     });
   }
 
@@ -89,24 +146,152 @@ export async function GET() {
   const response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(20_000) });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
+    const audit = await buildLocalAudit("SYNC_FAILED");
     return NextResponse.json({
       ok: false,
       source: "local",
       message: payload?.error?.message || "Meta template sync failed. Showing local templates.",
-      templates: await templatesWithSettings(WHATSAPP_TEMPLATE_DEFINITIONS),
+      ...audit,
       metaError: payload?.error || null,
     }, { status: 200 });
   }
 
-  const templates = (Array.isArray(payload?.data) ? payload.data : [])
-    .filter((template: any) => String(template?.status || "").toUpperCase() === "APPROVED")
+  const metaTemplates = (Array.isArray(payload?.data) ? payload.data : [])
     .map(mapMetaTemplate)
     .filter(Boolean);
+  const metaMap = new Map(metaTemplates.map((template: any) => [metaTemplateKey(template.name, template.language), template]));
+  const requiredTemplates = WHATSAPP_TEMPLATE_DEFINITIONS.map((template) => {
+    const metaTemplate = metaMap.get(metaTemplateKey(template.name, template.language)) as WhatsAppTemplateWithMeta | undefined;
+    return {
+      ...template,
+      metaStatus: metaTemplate?.metaStatus || "MISSING",
+      metaCategory: metaTemplate?.metaCategory || "",
+      metaLanguage: metaTemplate?.metaLanguage || template.language,
+      metaSynced: Boolean(metaTemplate),
+      requiredByLms: true,
+    };
+  });
+  const requiredKeys = new Set(requiredTemplates.map((template) => metaTemplateKey(template.name, template.language)));
+  const metaOnlyApprovedTemplates = metaTemplates.filter((template: any) => (
+    template.metaStatus === "APPROVED" && !requiredKeys.has(metaTemplateKey(template.name, template.language))
+  ));
+  const missingApprovedTemplates = requiredTemplates.filter((template) => template.metaStatus !== "APPROVED");
+  const approvedRequiredCount = requiredTemplates.length - missingApprovedTemplates.length;
 
   return NextResponse.json({
     ok: true,
     source: "meta",
-    templates: await templatesWithSettings(templates.length ? templates : WHATSAPP_TEMPLATE_DEFINITIONS),
+    templates: await templatesWithSettings([...requiredTemplates, ...metaOnlyApprovedTemplates]),
+    requiredTemplateCount: requiredTemplates.length,
+    approvedRequiredCount,
+    missingApprovedTemplates,
+    metaTemplateCount: metaTemplates.length,
+  });
+}
+
+function templateCreatePayload(template: WhatsAppTemplateDefinition) {
+  const bodyComponent: any = {
+    type: "BODY",
+    text: template.body,
+  };
+  const samples = template.variables
+    .slice()
+    .sort((a, b) => a.position - b.position)
+    .map((variable) => variable.sample)
+    .filter(Boolean);
+  if (samples.length) {
+    bodyComponent.example = {
+      body_text: [samples],
+    };
+  }
+  return {
+    name: template.name,
+    language: normalizeTemplateLanguage(template.language),
+    category: "UTILITY",
+    components: [bodyComponent],
+  };
+}
+
+async function createMetaTemplate(input: { template: WhatsAppTemplateDefinition; accessToken: string; businessAccountId: string; graphVersion: string }) {
+  const { template, accessToken, businessAccountId, graphVersion } = input;
+  const url = `https://graph.facebook.com/${graphVersion}/${businessAccountId}/message_templates`;
+  const response = await fetch(url, {
+    method: "POST",
+    cache: "no-store",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(templateCreatePayload(template)),
+    signal: AbortSignal.timeout(20_000),
+  });
+  const payload = await response.json().catch(() => ({}));
+  return {
+    ok: response.ok,
+    status: response.status,
+    templateName: template.name,
+    language: normalizeTemplateLanguage(template.language),
+    metaStatus: String(payload?.status || payload?.data?.status || "").toUpperCase(),
+    payload,
+    error: response.ok ? null : payload?.error || { message: "Meta template creation failed." },
+  };
+}
+
+function metaEnv() {
+  return {
+    accessToken: cleanEnv(process.env.WHATSAPP_ACCESS_TOKEN || process.env.META_ACCESS_TOKEN),
+    businessAccountId: cleanEnv(process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || process.env.WHATSAPP_WABA_ID),
+    graphVersion: cleanEnv(process.env.WHATSAPP_GRAPH_VERSION || "v25.0"),
+  };
+}
+
+export async function GET(req: Request) {
+  if (!(await canUseTemplateEndpoint(req))) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  return buildMetaAudit(metaEnv());
+}
+
+export async function POST(req: Request) {
+  if (!isBridgeAuthorized(req)) {
+    return NextResponse.json({ error: "Unauthorized. Set WHATSAPP_TEMPLATE_BRIDGE_SECRET and send it as a Bearer token or x-lms-whatsapp-template-secret." }, { status: 401 });
+  }
+
+  const body = await req.json().catch(() => ({}));
+  const action = String(body.action || "audit").trim();
+  const env = metaEnv();
+  if (action === "audit") return buildMetaAudit(env);
+  if (action !== "create_missing") return NextResponse.json({ error: "Unsupported action." }, { status: 400 });
+
+  const auditResponse = await buildMetaAudit(env);
+  const audit = await auditResponse.json();
+  if (!auditResponse.ok || !audit.ok) return NextResponse.json({ ok: false, message: audit.message || "Template audit failed.", audit }, { status: 200 });
+
+  const missingTemplates = Array.isArray(audit.missingApprovedTemplates)
+    ? audit.missingApprovedTemplates.filter((template: any) => String(template?.metaStatus || "").toUpperCase() === "MISSING")
+    : [];
+  const names = Array.isArray(body.templateNames) && body.templateNames.length ? new Set(body.templateNames.map((name: unknown) => String(name || "").trim())) : null;
+  const selectedTemplates = missingTemplates
+    .filter((template: WhatsAppTemplateDefinition) => !names || names.has(template.name))
+    .slice(0, Math.max(1, Math.min(50, Number(body.limit || 50))));
+
+  if (body.confirm !== true) {
+    return NextResponse.json({
+      ok: true,
+      dryRun: true,
+      message: "Send action=create_missing with confirm=true to submit these templates to Meta.",
+      templates: selectedTemplates.map(templateCreatePayload),
+      missingCount: missingTemplates.length,
+    });
+  }
+
+  const results = [];
+  for (const template of selectedTemplates) {
+    results.push(await createMetaTemplate({ template, ...env }));
+  }
+  return NextResponse.json({
+    ok: results.every((result) => result.ok),
+    submittedCount: results.length,
+    results,
   });
 }
 

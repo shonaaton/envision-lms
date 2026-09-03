@@ -37,7 +37,7 @@ const ScheduledSessionSchema = new Schema(
     durationMinutes: { type: Number, default: 60 },
     status: {
       type: String,
-      enum: ["scheduled", "ongoing", "in_progress", "completed", "cancelled", "rescheduled", "missed", "abandoned", "coach_no_show", "student_no_show", "technical_issue"],
+      enum: ["scheduled", "ongoing", "in_progress", "completed", "cancelled", "rescheduled", "missed", "abandoned", "absent", "coach_no_show", "student_no_show", "technical_issue"],
       default: "scheduled",
       index: true,
     },

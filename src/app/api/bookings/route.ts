@@ -85,7 +85,7 @@ function classroomStartTime(value: string | Date) {
 }
 
 function bookingNotificationPath(role: "student" | "instructor" | "admin") {
-  if (role === "admin") return "/admin/onboarding";
+  if (role === "admin") return "/admin/demo-center";
   return role === "instructor" ? "/availability" : "/booking";
 }
 
@@ -182,6 +182,14 @@ export async function POST(req: Request) {
 
     if (isDemo) {
       if (body.instructor) return NextResponse.json({ error: "Demo users cannot select a coach. The academy team will assign one." }, { status: 403 });
+      const completedDemo = await Booking.exists({
+        student: studentUserId,
+        bookingType: "demo",
+        demoStatus: { $in: ["COMPLETED", "CONVERTED"] },
+      });
+      if (completedDemo) {
+        return NextResponse.json({ error: "One free completed demo is allowed per student. Please contact the academy team to continue." }, { status: 409 });
+      }
       const requested = normalizeDemoRequestedTime({
         startAt: body.startAt,
         preferredDate: body.preferredDate,
@@ -203,7 +211,47 @@ export async function POST(req: Request) {
         status: { $in: ["pending", "confirmed"] },
         demoStatus: { $nin: ["CANCELLED", "COMPLETED", "STUDENT_NO_SHOW", "ABSENT"] },
       });
-      if (existingActive) return NextResponse.json({ error: "You already have an active demo request." }, { status: 409 });
+      if (existingActive) {
+        const previousStartAt = existingActive.startAt;
+        const previousEndAt = existingActive.endAt;
+        existingActive.startAt = requested.start;
+        existingActive.endAt = requested.end;
+        existingActive.status = "pending";
+        existingActive.approvalStatus = "pending_admin";
+        existingActive.demoStatus = "REQUESTED";
+        existingActive.requestedTimezone = requested.timezone;
+        existingActive.requestedLocalDateTime = requested.localLabel;
+        existingActive.requestedIstDateTime = requested.istLabel;
+        existingActive.requestedAt = new Date();
+        existingActive.notes = body.notes;
+        existingActive.rescheduleCount = Number(existingActive.rescheduleCount || 0) + 1;
+        existingActive.rescheduleHistory = [
+          ...(Array.isArray(existingActive.rescheduleHistory) ? existingActive.rescheduleHistory : []),
+          {
+            fromStartAt: previousStartAt,
+            fromEndAt: previousEndAt,
+            toStartAt: requested.start,
+            toEndAt: requested.end,
+            reason: "Parent requested a different demo time",
+            requestedBy: studentUserId,
+            createdAt: new Date(),
+          },
+        ];
+        await existingActive.save();
+        await recordActivity({
+          actor: studentUserId,
+          targetUser: studentUserId,
+          type: "demo.booking.time_changed",
+          label: "Changed requested demo time",
+          entityType: "Booking",
+          entityId: existingActive._id.toString(),
+          metadata: { bookingType: "demo", timezone: requested.timezone, localTime: requested.localLabel, istTime: requested.istLabel, rescheduleCount: existingActive.rescheduleCount },
+        });
+        return NextResponse.json({
+          ...(existingActive.toObject ? existingActive.toObject() : existingActive),
+          metaEventId: `demo_booking_${existingActive._id.toString()}`,
+        });
+      }
       const created = await Booking.findOneAndUpdate(
         { idempotencyKey },
         {

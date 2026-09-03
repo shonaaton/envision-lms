@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { dbConnect } from "@/lib/db";
 import { WHATSAPP_TEMPLATE_DEFINITIONS, type WhatsAppTemplateDefinition } from "@/lib/whatsappTemplateRegistry";
+import { WhatsAppAutomationSetting } from "@/models/WhatsAppAutomationSetting";
 
 export const dynamic = "force-dynamic";
 
@@ -54,6 +56,18 @@ function mapMetaTemplate(template: any): WhatsAppTemplateDefinition | null {
   };
 }
 
+async function templatesWithSettings(templates: readonly WhatsAppTemplateDefinition[]) {
+  await dbConnect();
+  const settings = await WhatsAppAutomationSetting.find({
+    templateName: { $in: templates.map((template) => template.name) },
+  }).select("templateName enabled").lean();
+  const settingMap = new Map(settings.map((setting: any) => [String(setting.templateName), setting.enabled !== false]));
+  return templates.map((template) => ({
+    ...template,
+    automationEnabled: settingMap.get(template.name) ?? true,
+  }));
+}
+
 export async function GET() {
   const session = await auth();
   if (!canManageWhatsApp(session)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -66,7 +80,7 @@ export async function GET() {
       ok: false,
       source: "local",
       message: "Meta template sync needs WHATSAPP_BUSINESS_ACCOUNT_ID and WHATSAPP_ACCESS_TOKEN.",
-      templates: WHATSAPP_TEMPLATE_DEFINITIONS,
+      templates: await templatesWithSettings(WHATSAPP_TEMPLATE_DEFINITIONS),
     });
   }
 
@@ -79,7 +93,7 @@ export async function GET() {
       ok: false,
       source: "local",
       message: payload?.error?.message || "Meta template sync failed. Showing local templates.",
-      templates: WHATSAPP_TEMPLATE_DEFINITIONS,
+      templates: await templatesWithSettings(WHATSAPP_TEMPLATE_DEFINITIONS),
       metaError: payload?.error || null,
     }, { status: 200 });
   }
@@ -92,6 +106,30 @@ export async function GET() {
   return NextResponse.json({
     ok: true,
     source: "meta",
-    templates: templates.length ? templates : WHATSAPP_TEMPLATE_DEFINITIONS,
+    templates: await templatesWithSettings(templates.length ? templates : WHATSAPP_TEMPLATE_DEFINITIONS),
   });
+}
+
+export async function PATCH(req: Request) {
+  const session = await auth();
+  if (!canManageWhatsApp(session)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const userId = (session?.user as any)?.id;
+
+  const body = await req.json().catch(() => ({}));
+  const templateName = String(body.templateName || "").trim();
+  if (!templateName) return NextResponse.json({ error: "Template name is required." }, { status: 400 });
+  const enabled = body.enabled !== false;
+
+  await dbConnect();
+  const setting = await WhatsAppAutomationSetting.findOneAndUpdate(
+    { templateName },
+    {
+      templateName,
+      enabled,
+      updatedBy: userId || undefined,
+    },
+    { new: true, upsert: true, setDefaultsOnInsert: true }
+  ).lean();
+
+  return NextResponse.json({ ok: true, templateName, automationEnabled: (setting as any)?.enabled !== false });
 }

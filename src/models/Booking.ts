@@ -27,7 +27,7 @@ const BookingSchema = new Schema(
     bookingType: { type: String, enum: ["demo", "credit_class", "regular"], default: "regular", index: true },
     demoStatus: {
       type: String,
-      enum: ["REQUESTED", "COACH_ASSIGNED", "APPROVED", "CLASSROOM_CREATED", "COMPLETED", "STUDENT_NO_SHOW", "ABSENT", "CANCELLED", "RESCHEDULE_REQUESTED"],
+      enum: ["REQUESTED", "COACH_ASSIGNED", "APPROVED", "CLASSROOM_CREATED", "ASSESSMENT_PENDING", "COMPLETED", "STUDENT_NO_SHOW", "ABSENT", "CANCELLED", "RESCHEDULE_REQUESTED", "CONVERTED", "CLOSED"],
       index: true,
     },
     approvalStatus: {
@@ -57,6 +57,20 @@ const BookingSchema = new Schema(
     payment: { type: Schema.Types.ObjectId, ref: "Payment" },
     notes: String,
     coachNote: String,
+    adminNote: String,
+    cancellationReason: String,
+    rescheduleCount: { type: Number, default: 0 },
+    rescheduleHistory: [
+      {
+        fromStartAt: Date,
+        fromEndAt: Date,
+        toStartAt: Date,
+        toEndAt: Date,
+        reason: String,
+        requestedBy: { type: Schema.Types.ObjectId, ref: "User" },
+        createdAt: { type: Date, default: Date.now },
+      },
+    ],
     proposedStartAt: Date,
     proposedEndAt: Date,
   },

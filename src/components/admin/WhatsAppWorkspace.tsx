@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Bot, CheckCircle2, Clock3, MessageCircle, RefreshCw, Send, Sparkles, UserRound } from "lucide-react";
+import { Bot, CheckCircle2, Clock3, MessageCircle, RefreshCw, Send, Sparkles, ToggleLeft, ToggleRight, UserRound } from "lucide-react";
 import { WHATSAPP_TEMPLATE_DEFINITIONS, type WhatsAppTemplateDefinition } from "@/lib/whatsappTemplateRegistry";
 
 type WaMessage = {
@@ -51,6 +51,7 @@ type InboxPayload = {
 };
 
 type RecipientMode = "manual" | "coaches" | "students" | "users";
+type WhatsAppAdminTemplateDefinition = WhatsAppTemplateDefinition & { automationEnabled?: boolean };
 
 const DEFAULT_NUMBERS = "918017996184, 916290349998";
 
@@ -74,7 +75,8 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
   const [recipientMode, setRecipientMode] = useState<RecipientMode>("manual");
   const [recipients, setRecipients] = useState(DEFAULT_NUMBERS);
   const [templateVariables, setTemplateVariables] = useState("");
-  const [templates, setTemplates] = useState<WhatsAppTemplateDefinition[]>([...WHATSAPP_TEMPLATE_DEFINITIONS]);
+  const [templates, setTemplates] = useState<WhatsAppAdminTemplateDefinition[]>([...WHATSAPP_TEMPLATE_DEFINITIONS]);
+  const [savingTemplateName, setSavingTemplateName] = useState("");
   const [notice, setNotice] = useState("");
   const [templateResults, setTemplateResults] = useState<any[]>([]);
   const bottomRef = useRef<HTMLDivElement | null>(null);
@@ -147,13 +149,14 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
     [templateVariables]
   );
   const templateGroups = useMemo(() => {
-    return templates.reduce<Record<string, WhatsAppTemplateDefinition[]>>((groups, template) => {
+    return templates.reduce<Record<string, WhatsAppAdminTemplateDefinition[]>>((groups, template) => {
       const key = template.sourceAutomation || "Manual";
       groups[key] = groups[key] || [];
       groups[key].push(template);
       return groups;
     }, {});
   }, [templates]);
+  const enabledTemplateCount = useMemo(() => templates.filter((template) => template.automationEnabled !== false).length, [templates]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -174,6 +177,29 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
     setTemplateName(definition.name);
     setLanguage(definition.language);
     setTemplateVariables(variables.join("\n"));
+  }
+
+  async function toggleTemplateAutomation(templateName: string, enabled: boolean) {
+    const previousTemplates = templates;
+    setNotice("");
+    setSavingTemplateName(templateName);
+    setTemplates((current) => current.map((template) => template.name === templateName ? { ...template, automationEnabled: enabled } : template));
+    try {
+      const res = await fetch("/api/admin/whatsapp/templates", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ templateName, enabled }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok || payload.error) throw new Error(payload.error || "Could not save WhatsApp automation setting.");
+      setTemplates((current) => current.map((template) => template.name === templateName ? { ...template, automationEnabled: payload.automationEnabled !== false } : template));
+      setNotice(`${templateName} automatic WhatsApp trigger switched ${payload.automationEnabled === false ? "off" : "on"}.`);
+    } catch (error) {
+      setTemplates(previousTemplates);
+      setNotice(error instanceof Error ? error.message : "Could not save WhatsApp automation setting.");
+    } finally {
+      setSavingTemplateName("");
+    }
   }
 
   function openConversation(phoneNumber: string) {
@@ -287,6 +313,11 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
             <Field label="Template name" value={templateName} onChange={updateTemplateName} listId="whatsapp-template-options" />
             <Field label="Language" value={language} onChange={setLanguage} />
           </div>
+          <div className="mt-5 grid gap-3 sm:grid-cols-3">
+            <AutomationStat label="Templates" value={String(templates.length)} />
+            <AutomationStat label="Automatic on" value={String(enabledTemplateCount)} tone="green" />
+            <AutomationStat label="Automatic off" value={String(templates.length - enabledTemplateCount)} tone="slate" />
+          </div>
           <datalist id="whatsapp-template-options">
             {templates.map((template) => (
               <option key={template.name} value={template.name}>
@@ -312,32 +343,43 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
           <div className="mt-5">
             <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
               <div>
-                <h3 className="text-sm font-black uppercase tracking-[0.14em] text-slate-500">Manual automation controls</h3>
-                <p className="mt-1 text-sm text-slate-500">Pick an automation to load its approved template and sample variables.</p>
+                <h3 className="text-sm font-black uppercase tracking-[0.14em] text-slate-500">WhatsApp automation controls</h3>
+                <p className="mt-1 text-sm text-slate-500">Switch automatic triggers on or off, then load any template for a manual send.</p>
               </div>
               <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">{templates.length} templates</span>
             </div>
             <div className="max-h-[430px] space-y-3 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-3">
-              {Object.entries(templateGroups).map(([groupName, templates]) => (
+              {Object.entries(templateGroups).map(([groupName, groupedTemplates]) => (
                 <div key={groupName} className="rounded-lg border border-slate-200 bg-white p-3">
                   <div className="mb-2 text-xs font-black uppercase tracking-[0.12em] text-slate-500">{groupName}</div>
                   <div className="grid gap-2 sm:grid-cols-2">
-                    {templates.map((template) => (
-                      <button
-                        key={template.name}
-                        onClick={() => selectAutomationTemplate(template.name)}
-                        className={`flex min-h-12 items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left text-sm font-bold transition ${templateName === template.name ? "border-emerald-300 bg-emerald-50 text-emerald-900" : "border-slate-200 bg-white text-slate-800 hover:border-emerald-200 hover:bg-emerald-50"}`}
-                        title={`Load ${template.name}`}
-                      >
-                        <span className="min-w-0">
-                          <span className="block truncate">{template.name}</span>
-                          <span className="mt-0.5 block text-xs font-semibold text-slate-500">{template.variables.length} variable{template.variables.length === 1 ? "" : "s"}</span>
-                        </span>
-                        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-emerald-600 text-white">
-                          <Bot size={14} />
-                        </span>
-                      </button>
-                    ))}
+                    {groupedTemplates.map((template) => {
+                      const enabled = template.automationEnabled !== false;
+                      return (
+                        <div
+                          key={template.name}
+                          className={`flex min-h-16 items-center justify-between gap-3 rounded-lg border bg-white px-3 py-2 text-sm shadow-sm transition ${templateName === template.name ? "border-emerald-300 ring-2 ring-emerald-100" : "border-slate-200 hover:border-emerald-200"}`}
+                        >
+                          <button type="button" onClick={() => selectAutomationTemplate(template.name)} className="min-w-0 flex-1 text-left" title={`Load ${template.name}`}>
+                            <span className="block truncate font-black text-slate-900">{template.name}</span>
+                            <span className="mt-1 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500">
+                              <span>{template.variables.length} variable{template.variables.length === 1 ? "" : "s"}</span>
+                              <span className={`rounded-full px-2 py-0.5 font-black ${enabled ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{enabled ? "Auto on" : "Auto off"}</span>
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            disabled={savingTemplateName === template.name}
+                            onClick={() => void toggleTemplateAutomation(template.name, !enabled)}
+                            className={`inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg px-3 text-xs font-black transition disabled:cursor-wait disabled:opacity-60 ${enabled ? "bg-emerald-600 text-white" : "border border-slate-200 bg-white text-slate-500 hover:text-emerald-700"}`}
+                            title={`${enabled ? "Switch off" : "Switch on"} automatic WhatsApp trigger`}
+                          >
+                            {enabled ? <ToggleRight size={17} /> : <ToggleLeft size={17} />}
+                            {enabled ? "On" : "Off"}
+                          </button>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               ))}
@@ -557,6 +599,15 @@ function RecipientModeButton({ active, label, onClick }: { active: boolean; labe
   );
 }
 
+function AutomationStat({ label, value, tone = "slate" }: { label: string; value: string; tone?: "green" | "slate" }) {
+  return (
+    <div className={`rounded-lg border px-4 py-3 ${tone === "green" ? "border-emerald-100 bg-emerald-50" : "border-slate-200 bg-slate-50"}`}>
+      <div className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">{label}</div>
+      <div className={`mt-1 text-2xl font-black ${tone === "green" ? "text-emerald-700" : "text-slate-950"}`}>{value}</div>
+    </div>
+  );
+}
+
 function Field({ label, value, onChange, listId }: { label: string; value: string; onChange: (value: string) => void; listId?: string }) {
   return (
     <label className="block">
@@ -566,7 +617,7 @@ function Field({ label, value, onChange, listId }: { label: string; value: strin
   );
 }
 
-function findTemplateDefinition(templates: WhatsAppTemplateDefinition[], name?: string) {
+function findTemplateDefinition(templates: WhatsAppAdminTemplateDefinition[], name?: string) {
   const cleanName = String(name || "").trim();
   return templates.find((template) => template.name === cleanName) || null;
 }

@@ -114,6 +114,7 @@ function plainSessionRows(classrooms: any[], range: RangeLike) {
           classroomId: String(classroom._id),
           sessionId: String(session._id || ""),
           title: classroom.title || "Classroom",
+          classType: classroom.classroomType === "demo" ? "Demo" : "Regular",
           courseName: classroom.courseName || "",
           levelName: classroom.levelName || "",
           topicName: session.topicName || classroom.topicName || "",
@@ -160,9 +161,10 @@ export async function GET(req: Request) {
     const sessionRows = plainSessionRows(selectedClassrooms, range);
 
     title = "Classroom Sessions Report";
-    headers = ["Classroom", "Course", "Level", "Topic", "Coach", "Batches", "Date", "Start Time", "Lifecycle", "Join Access", "Planned Duration", "Teaching Time", "Students", "Meeting"];
+    headers = ["Classroom", "Class Type", "Course", "Level", "Topic", "Coach", "Batches", "Date", "Start Time", "Lifecycle", "Join Access", "Planned Duration", "Teaching Time", "Students", "Meeting"];
     rows = sessionRows.map((row) => [
       row.title,
+      row.classType,
       row.courseName,
       row.levelName,
       row.topicName,
@@ -181,7 +183,7 @@ export async function GET(req: Request) {
     const attendanceDocs = await Attendance.find({
       ...(studentId ? { "records.student": studentId } : {}),
     })
-      .populate("classroom", "title courseName levelName topicName coach instructor")
+      .populate("classroom", "title classroomType courseName levelName topicName coach instructor")
       .populate("records.student coach", "name username email")
       .sort({ sessionDate: -1, createdAt: -1 })
       .lean();
@@ -190,12 +192,13 @@ export async function GET(req: Request) {
       .filter((doc: any) => inRange(doc.sessionDate || doc.createdAt, range))
       .filter((doc: any) => !coachId || [doc.coach, doc.classroom?.coach, doc.classroom?.instructor].map(objectId).includes(coachId));
     title = "Attendance Report";
-    headers = ["Classroom", "Course", "Level", "Topic", "Session Date", "Coach", "Student", "Student ID", "Status", "Coach Status", "Teaching Time", "Note"];
+    headers = ["Classroom", "Class Type", "Course", "Level", "Topic", "Session Date", "Coach", "Student", "Student ID", "Status", "Coach Status", "Teaching Time", "Note"];
     rows = filteredDocs.flatMap((doc: any) =>
       (doc.records || [])
         .filter((record: any) => !studentId || objectId(record.student) === studentId)
         .map((record: any) => [
         doc.classroom?.title || "Classroom",
+        doc.classroom?.classroomType === "demo" ? "Demo" : "Regular",
         doc.classroom?.courseName || "",
         doc.classroom?.levelName || "",
         doc.classroom?.topicName || "",
@@ -276,6 +279,9 @@ export async function GET(req: Request) {
       "Classes Conducted",
       "Paid Scheduled Hours",
       "Actual Classroom Hours",
+      "Demo Classes",
+      "Demo Scheduled Hours",
+      "Demo Actual Hours",
       "Average Paid Duration",
       "Average Actual Duration",
       "Punctuality Score",
@@ -296,6 +302,9 @@ export async function GET(req: Request) {
           summary.classesConducted,
           summary.totalHoursConducted.toFixed(2),
           summary.actualHoursConducted.toFixed(2),
+          summary.demoClassesConducted,
+          summary.demoHoursConducted.toFixed(2),
+          summary.demoActualHoursConducted.toFixed(2),
           summary.averageClassDuration,
           summary.averageActualDuration,
           `${summary.punctualityScore}%`,
@@ -311,6 +320,9 @@ export async function GET(req: Request) {
         batchRow.classesConducted,
         batchRow.hoursConducted.toFixed(2),
         (batchRow.actualHours || 0).toFixed(2),
+        summary.demoClassesConducted,
+        summary.demoHoursConducted.toFixed(2),
+        summary.demoActualHoursConducted.toFixed(2),
         summary.averageClassDuration,
         summary.averageActualDuration,
         `${summary.punctualityScore}%`,

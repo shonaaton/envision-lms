@@ -62,7 +62,7 @@ export async function markScheduledSessionStarted({
   if (!classroom) return;
   const target = classroom.generatedSessions?.id?.(scheduledSessionId);
   if (!target) return;
-  if (["cancelled", "completed", "coach_no_show", "student_no_show"].includes(String(target.status || ""))) return;
+  if (["cancelled", "completed", "absent", "coach_no_show", "student_no_show"].includes(String(target.status || ""))) return;
   target.status = "ongoing";
   target.actualStartedAt = target.actualStartedAt || new Date();
   target.conductedBy = actorId || target.conductedBy;
@@ -120,7 +120,7 @@ export async function markScheduledSessionFinished({
     await ensureTopicContinuationSession(classroom, target, actorId);
   }
   const allDone = (classroom.generatedSessions || []).every((session: any) =>
-    ["completed", "cancelled", "missed", "abandoned", "coach_no_show", "student_no_show", "technical_issue"].includes(String(session.status || "").toLowerCase())
+    ["completed", "cancelled", "missed", "abandoned", "absent", "coach_no_show", "student_no_show", "technical_issue"].includes(String(session.status || "").toLowerCase())
   );
   classroom.status = allDone ? "completed" : "scheduled";
   if (!isDemoClassroom) await recalculateFutureSessionTopics(classroom, actorId);
@@ -148,7 +148,19 @@ export async function markScheduledSessionFinished({
         },
         { upsert: true }
       );
-      await Booking.findByIdAndUpdate(booking._id, { demoStatus: "COMPLETED", feedbackStatus: "pending" });
+      await Booking.findByIdAndUpdate(booking._id, { demoStatus: "ASSESSMENT_PENDING", feedbackStatus: "pending" });
+    }
+  } else if (isDemoClassroom && (outcome === "student_no_show" || outcome === "absent" || outcome === "missed" || outcome === "abandoned")) {
+    const booking: any = classroom.demoBooking
+      ? await Booking.findById(classroom.demoBooking)
+      : await Booking.findOne({ classroom: classroom._id, bookingType: "demo" });
+    if (booking) {
+      await Booking.findByIdAndUpdate(booking._id, {
+        status: "pending",
+        approvalStatus: "pending_admin",
+        demoStatus: outcome === "student_no_show" ? "STUDENT_NO_SHOW" : "ABSENT",
+        feedbackStatus: "not_required",
+      });
     }
   } else if (outcome === "completed") {
     try {

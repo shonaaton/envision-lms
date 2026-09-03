@@ -75,7 +75,7 @@ type Role = "student" | "instructor" | "admin" | "sub-admin";
 type BoardPosition = Record<string, string | undefined>;
 type TabKey = "students" | "chat" | "moves" | "engine" | "leaderboard" | "pgns";
 type AttendanceStatus = "present" | "absent" | "late" | "excused" | "student_no_show" | "technical_issue";
-type ClassOutcome = "completed" | "completed_continue_topic" | "abandoned" | "student_no_show" | "technical_issue" | "cancelled";
+type ClassOutcome = "completed" | "completed_continue_topic" | "abandoned" | "absent" | "student_no_show" | "technical_issue" | "cancelled";
 type ToolKey = "move" | "highlight" | "arrow" | "setup";
 type ModifierKey = "default" | "shift" | "ctrl" | "alt";
 type SetupTab = "pieces" | "objects";
@@ -792,6 +792,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const [boardControlOpen, setBoardControlOpen] = useState(false);
   const [boardControlDraft, setBoardControlDraft] = useState<string[]>([]);
   const [summaryOpen, setSummaryOpen] = useState(false);
+  const [demoExitWarningOpen, setDemoExitWarningOpen] = useState(false);
   const [coachQuizResults, setCoachQuizResults] = useState<CoachQuizResultsSnapshot | null>(null);
   const [endingClass, setEndingClass] = useState(false);
   const [leavingClass, setLeavingClass] = useState(false);
@@ -1060,6 +1061,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const live = data?.live;
   const classroom = data?.classroom;
   const isDemoClassroom = classroom?.classroomType === "demo";
+  const mustFinishDemoResult = Boolean(coach && isDemoClassroom && live?.status !== "ended");
   const scheduledSession = data?.scheduledSession;
   const activeQuestion = data?.activeQuestion;
   const myLiveResponse = useMemo(
@@ -1242,6 +1244,39 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     if (chatRecipient === "group") return;
     if (!studentPresenceRows.some((row: StudentPresenceRow) => entityId(row.student) === chatRecipient)) setChatRecipient("group");
   }, [studentPresenceRows, chatRecipient]);
+
+  useEffect(() => {
+    if (!mustFinishDemoResult) return;
+    function handleBeforeUnload(event: BeforeUnloadEvent) {
+      event.preventDefault();
+      event.returnValue = "";
+    }
+
+    function handleClick(event: MouseEvent) {
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const anchor = (event.target as Element | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
+      if (!anchor || anchor.target === "_blank") return;
+      const href = anchor.getAttribute("href") || "";
+      if (!href || href.startsWith("#") || anchor.href.includes(`/classrooms/${classroomId}`)) return;
+      event.preventDefault();
+      setDemoExitWarningOpen(true);
+    }
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    document.addEventListener("click", handleClick, true);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      document.removeEventListener("click", handleClick, true);
+    };
+  }, [classroomId, mustFinishDemoResult]);
+
+  function requestClassroomExit() {
+    if (mustFinishDemoResult) {
+      setDemoExitWarningOpen(true);
+      return;
+    }
+    router.push("/classrooms");
+  }
 
   useEffect(() => {
     if (live?.status === "ended") {
@@ -2247,8 +2282,8 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     setEndingClass(true);
     const records = students.map((student: any) => ({
       student: entityId(student),
-      status: classOutcome === "student_no_show" ? "student_no_show" : attendanceDraft[entityId(student)] || "absent",
-      note: classOutcome === "student_no_show" ? "Student no-show marked from live classroom summary" : "Marked from live classroom summary",
+      status: classOutcome === "student_no_show" ? "student_no_show" : classOutcome === "absent" ? "absent" : attendanceDraft[entityId(student)] || "absent",
+      note: classOutcome === "student_no_show" ? "Student no-show marked from live classroom summary" : classOutcome === "absent" ? "Student absent from demo summary" : "Marked from live classroom summary",
     }));
     const summary = {
       ...classSummary,
@@ -2278,7 +2313,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       return;
     }
     await patch({ endedAt: new Date().toISOString(), status: "ended", summary, participants: [], boardControlStudents: [], selectedStudents: [], challenge: { active: false } });
-    toast.success("Class ended and attendance saved");
+    toast.success(isDemoClassroom ? "Demo attendance saved" : "Class ended and attendance saved");
     setSummaryOpen(false);
     if (isDemoClassroom && classOutcome === "completed" && classroom?.demoBooking) {
       window.location.assign(`/demo-feedback/${entityId(classroom.demoBooking)}`);
@@ -2744,7 +2779,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
               </button>
               <button
                 type="button"
-                onClick={() => router.push("/classrooms")}
+                onClick={requestClassroomExit}
                 className="inline-flex h-10 items-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:border-purple-200 hover:text-purple-800"
               >
                 Back to classes
@@ -4023,7 +4058,18 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                 <h3 className="text-xl font-semibold text-slate-950">Class Summary</h3>
                 <p className="text-sm text-slate-500">Review the session and confirm attendance before finalizing.</p>
               </div>
-              <button onClick={() => setSummaryOpen(false)} className="grid h-9 w-9 place-items-center rounded-md border border-slate-200"><X size={16} /></button>
+              <button
+                onClick={() => {
+                  if (isDemoClassroom) {
+                    toast.error("Please save the demo result before closing this panel.");
+                    return;
+                  }
+                  setSummaryOpen(false);
+                }}
+                className="grid h-9 w-9 place-items-center rounded-md border border-slate-200"
+              >
+                <X size={16} />
+              </button>
             </div>
             <div className="grid gap-3 md:grid-cols-4">
               <SummaryCard label="Duration" value={`${classSummary.durationMinutes} min`} icon={<Clock size={16} />} />
@@ -4037,28 +4083,40 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
             </div>
             <div className="mt-5 grid gap-3 lg:grid-cols-[280px_minmax(0,1fr)]">
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <div className="text-sm font-black text-slate-950">Class outcome</div>
-                <p className="mt-1 text-xs leading-5 text-slate-500">{isDemoClassroom ? "Demo classes can be completed at any duration and require demo feedback when attended." : "Only completed classes of 30+ minutes consume the topic and regular student credits."}</p>
+                <div className="text-sm font-black text-slate-950">{isDemoClassroom ? "End demo" : "Class outcome"}</div>
+                <p className="mt-1 text-xs leading-5 text-slate-500">{isDemoClassroom ? "Choose the actual demo result. Present opens the assessment; Absent and No Show return the lead to admin for rebooking." : "Only completed classes of 30+ minutes consume the topic and regular student credits."}</p>
                 {!isDemoClassroom && classSummary.durationMinutes < 30 ? (
                   <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-semibold leading-5 text-amber-800">
                     This class is under 30 minutes. It will carry the topic forward unless an admin later overrides it.
                   </div>
                 ) : null}
                 <select value={classOutcome} onChange={(event) => setClassOutcome(event.target.value as ClassOutcome)} className="mt-3 h-10 w-full rounded-md border border-slate-200 bg-white px-2 text-sm">
-                  <option value="completed">Completed: topic taught</option>
-                  <option value="completed_continue_topic">Completed: continue same topic next class</option>
-                  <option value="abandoned">Not completed: carry topic forward</option>
-                  <option value="student_no_show">Student no-show</option>
-                  <option value="technical_issue">Technical issue</option>
-                  <option value="cancelled">Cancel / no class</option>
+                  {isDemoClassroom ? (
+                    <>
+                      <option value="completed">Present</option>
+                      <option value="absent">Absent</option>
+                      <option value="student_no_show">No Show</option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="completed">Completed: topic taught</option>
+                      <option value="completed_continue_topic">Completed: continue same topic next class</option>
+                      <option value="abandoned">Not completed: carry topic forward</option>
+                      <option value="student_no_show">Student no-show</option>
+                      <option value="technical_issue">Technical issue</option>
+                      <option value="cancelled">Cancel / no class</option>
+                    </>
+                  )}
                 </select>
                 <div className="mt-3 rounded-lg bg-white p-3 text-xs text-slate-600">
                   {classOutcome === "completed"
-                    ? isDemoClassroom ? "The demo is completed without credit deduction. Demo feedback will be opened for follow-up." : "Present/late students are charged and the topic is marked taught."
+                    ? isDemoClassroom ? "The demo was attended. The assessment form will open next." : "Present/late students are charged and the topic is marked taught."
                     : classOutcome === "completed_continue_topic"
                       ? "Present/late students are charged. The same topic repeats next class, later topics shift down, and an extra class is added at the end."
                     : classOutcome === "student_no_show"
-                      ? "Coach availability is recorded. Student credit is deducted only after repeated no-shows."
+                      ? isDemoClassroom ? "The lead moves to Demo No Show so admin or sales can rebook." : "Coach availability is recorded. Student credit is deducted only after repeated no-shows."
+                    : classOutcome === "absent"
+                      ? "The lead moves to Demo Missed - Rebooking Required."
                       : "No regular credit is charged and the topic is carried forward."}
                 </div>
               </div>
@@ -4079,8 +4137,8 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                         <span>{row.points} pts</span>
                       </div>
                       <select
-                        value={classOutcome === "student_no_show" ? "student_no_show" : attendanceDraft[entityId(row.student)] || row.suggestedStatus}
-                        disabled={classOutcome === "student_no_show"}
+                        value={classOutcome === "student_no_show" ? "student_no_show" : classOutcome === "absent" ? "absent" : attendanceDraft[entityId(row.student)] || row.suggestedStatus}
+                        disabled={classOutcome === "student_no_show" || classOutcome === "absent"}
                         onChange={(event) => setAttendanceDraft((current) => ({ ...current, [entityId(row.student)]: event.target.value as AttendanceStatus }))}
                         className="h-9 rounded-md border border-slate-200 px-2 text-sm disabled:bg-slate-100 disabled:text-slate-500"
                       >
@@ -4097,7 +4155,30 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
               </div>
             </div>
             <div className="mt-5 flex justify-end gap-2">
-              <button onClick={saveAttendanceAndClose} className="h-10 rounded-md bg-purple-700 px-4 text-sm font-semibold text-white">Save Attendance and Finalize</button>
+              <button onClick={saveAttendanceAndClose} className="h-10 rounded-md bg-purple-700 px-4 text-sm font-semibold text-white">{isDemoClassroom ? "Save Demo Result" : "Save Attendance and Finalize"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {demoExitWarningOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/55 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-2xl">
+            <h2 className="text-lg font-black text-slate-950">Mark demo result first</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              Before leaving this demo classroom, please mark whether the student was Present, Absent, or No Show. If Present is selected, the assessment opens immediately after saving.
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" onClick={() => setDemoExitWarningOpen(false)} className="btn-outline bg-white">Stay Here</button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDemoExitWarningOpen(false);
+                  setSummaryOpen(true);
+                }}
+                className="btn-primary"
+              >
+                Mark Demo Result
+              </button>
             </div>
           </div>
         </div>

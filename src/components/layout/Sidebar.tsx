@@ -18,6 +18,7 @@ import {
   Crosshair,
   Crown,
   FileText,
+  GraduationCap,
   LayoutDashboard,
   Library,
   ListChecks,
@@ -120,20 +121,56 @@ const sections: NavSection[] = [
     ],
   },
   {
-    id: "administration",
-    title: "Administration",
+    id: "user-management",
+    title: "User Management",
     roles: ["admin", "sub-admin"],
     items: [
       { href: "/admin/users", label: "Users", icon: Users, featureKey: "userManagement" },
-      { href: "/admin/onboarding", label: "Onboarding", icon: UserPlus, featureKey: "onboarding" },
+      { href: "/admin/coach-applications", label: "Coach Applications", icon: UserPlus, featureKey: "onboarding" },
+    ],
+  },
+  {
+    id: "demo-center",
+    title: "Demo Center",
+    roles: ["admin", "sub-admin"],
+    items: [
+      { href: "/admin/demo-center", label: "Demo Management", icon: GraduationCap, featureKey: "onboarding" },
+    ],
+  },
+  {
+    id: "academic-setup",
+    title: "Academic Setup",
+    roles: ["admin", "sub-admin"],
+    items: [
       { href: "/admin/courses", label: "Courses", icon: BookOpenCheck, featureKey: "courseManagement" },
       { href: "/admin/homework-templates", label: "HW Templates", icon: FileText, featureKey: "homeworkTemplates" },
+    ],
+  },
+  {
+    id: "engagement",
+    title: "Engagement",
+    roles: ["admin", "sub-admin"],
+    items: [
       { href: "/admin/achievements", label: "Achievements", icon: Trophy, featureKey: "achievements" },
       { href: "/admin/activity-tracker", label: "Activity Tracker", icon: ActivitySquare, featureKey: "activityTracker" },
-      { href: "/admin/reports", label: "Reports Center", icon: BarChart3, featureKey: "reportsCenter" },
+    ],
+  },
+  {
+    id: "communications",
+    title: "Communications",
+    roles: ["admin", "sub-admin"],
+    items: [
       { href: "/admin/announcements", label: "Announcements", icon: Megaphone, featureKey: "announcements" },
       { href: "/admin/notifications", label: "Notifications", icon: Bell, featureKey: "notifications" },
       { href: "/admin/whatsapp", label: "WhatsApp", icon: MessageCircle, featureKey: "whatsapp" },
+    ],
+  },
+  {
+    id: "analytics",
+    title: "Analytics",
+    roles: ["admin", "sub-admin"],
+    items: [
+      { href: "/admin/reports", label: "Reports Center", icon: BarChart3, featureKey: "reportsCenter" },
     ],
   },
   {

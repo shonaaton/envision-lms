@@ -509,7 +509,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
     if (body.action === "mark_session_outcome") {
       const outcome = String(body.classOutcome || "").trim();
-      if (!["completed", "completed_continue_topic", "cancelled", "missed", "abandoned", "coach_no_show", "student_no_show", "technical_issue"].includes(outcome)) {
+      if (!["completed", "completed_continue_topic", "cancelled", "missed", "abandoned", "absent", "coach_no_show", "student_no_show", "technical_issue"].includes(outcome)) {
         return NextResponse.json({ error: "Select a valid class outcome" }, { status: 400 });
       }
       const previousStatus = target.status;
@@ -603,7 +603,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     }
     const remainingStatuses = (existing.generatedSessions || []).map((item: any) => String(item.status || "scheduled"));
     if (remainingStatuses.length && remainingStatuses.every((status: string) => status === "cancelled")) existing.status = "cancelled";
-    else if (remainingStatuses.length && remainingStatuses.every((status: string) => ["completed", "cancelled", "missed", "abandoned", "coach_no_show", "student_no_show", "technical_issue"].includes(status))) existing.status = "completed";
+    else if (remainingStatuses.length && remainingStatuses.every((status: string) => ["completed", "cancelled", "missed", "abandoned", "absent", "coach_no_show", "student_no_show", "technical_issue"].includes(status))) existing.status = "completed";
   } else if (body.action === "reschedule_class") {
     if (existing.status === "completed" || existing.status === "cancelled") return NextResponse.json({ error: "This class can no longer be rescheduled" }, { status: 409 });
     if (!String(body.classDate || "").trim() || !/^([01]\d|2[0-3]):[0-5]\d$/.test(String(body.startTime || ""))) {

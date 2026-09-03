@@ -29,7 +29,7 @@ import { sendClassCompletedSummaryEmail, sendStudentNoShowWarningEmail } from "@
 
 export const dynamic = "force-dynamic";
 
-const TERMINAL_SESSION_OUTCOMES = new Set(["completed", "cancelled", "missed", "abandoned", "coach_no_show", "student_no_show", "technical_issue"]);
+const TERMINAL_SESSION_OUTCOMES = new Set(["completed", "cancelled", "missed", "abandoned", "absent", "coach_no_show", "student_no_show", "technical_issue"]);
 
 type SessionUser = {
   id: string;
@@ -294,12 +294,12 @@ export async function POST(req: Request) {
           });
         });
       }
-      if (outcome === "completed" && !existingAttendance) {
-        if (isDemoClassroom) {
-          const demoBooking: any = classroomDoc.demoBooking
-            ? await Booking.findById(classroomDoc.demoBooking)
-            : await Booking.findOne({ classroom: classroomDoc._id, bookingType: "demo" });
-          if (demoBooking) {
+      if (isDemoClassroom && !existingAttendance) {
+        const demoBooking: any = classroomDoc.demoBooking
+          ? await Booking.findById(classroomDoc.demoBooking)
+          : await Booking.findOne({ classroom: classroomDoc._id, bookingType: "demo" });
+        if (demoBooking) {
+          if (outcome === "completed") {
             await DemoFeedback.findOneAndUpdate(
               { booking: demoBooking._id, classroom: classroomDoc._id },
               {
@@ -316,9 +316,14 @@ export async function POST(req: Request) {
               },
               { upsert: true, new: true }
             );
-            await Booking.findByIdAndUpdate(demoBooking._id, { demoStatus: "COMPLETED", feedbackStatus: "pending" });
+            await Booking.findByIdAndUpdate(demoBooking._id, { demoStatus: "ASSESSMENT_PENDING", feedbackStatus: "pending" });
+          } else if (outcome === "student_no_show") {
+            await Booking.findByIdAndUpdate(demoBooking._id, { status: "pending", approvalStatus: "pending_admin", demoStatus: "STUDENT_NO_SHOW", feedbackStatus: "not_required" });
+          } else if (outcome === "absent" || outcome === "missed" || outcome === "abandoned") {
+            await Booking.findByIdAndUpdate(demoBooking._id, { status: "pending", approvalStatus: "pending_admin", demoStatus: "ABSENT", feedbackStatus: "not_required" });
           }
-        } else {
+        }
+      } else if (!isDemoClassroom && outcome === "completed" && !existingAttendance) {
           await sendClassCompletedSummaryEmail({
           classroom: classroomDoc,
           session: target,
@@ -326,7 +331,6 @@ export async function POST(req: Request) {
           records: records || [],
           request: req,
           }).catch((error) => console.error("Class completed summary email failed", error));
-        }
       }
     }
   }

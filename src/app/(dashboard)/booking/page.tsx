@@ -83,6 +83,15 @@ export default function BookingPage() {
       .filter((slot): slot is SlotOption => Boolean(slot));
   }, [coaches, selectedCoach]);
 
+  const activeDemoBooking = useMemo(() => {
+    if (!isDemoStudent) return null;
+    return bookings.find((booking) =>
+      booking.bookingType === "demo" &&
+      ["pending", "confirmed"].includes(String(booking.status || "")) &&
+      !["CANCELLED", "COMPLETED", "STUDENT_NO_SHOW", "ABSENT", "CONVERTED", "CLOSED"].includes(String(booking.demoStatus || ""))
+    ) || null;
+  }, [bookings, isDemoStudent]);
+
   async function book() {
     if (isDemoStudent) {
       if (!preferredDate || !preferredTime || !timezone) return toast.error("Please choose your preferred date, time, and timezone.");
@@ -103,7 +112,7 @@ export default function BookingPage() {
       setLoading(false);
       if (!res.ok) return toast.error(payload.error || "Could not request this demo time.");
       trackMetaSchedule(payload.metaEventId, payload._id);
-      toast.success("Demo request sent for academy review");
+      toast.success(activeDemoBooking ? "Requested demo time changed" : "Demo request sent for academy review");
       setPreferredDate("");
       setPreferredTime("");
       setNotes("");
@@ -163,7 +172,14 @@ export default function BookingPage() {
 
       {!isInactiveStudent && <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_420px]">
         <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-          <h2 className="text-lg font-black text-slate-950">{isDemoStudent ? "Request Demo Class" : "Choose an available time"}</h2>
+          <h2 className="text-lg font-black text-slate-950">{isDemoStudent ? activeDemoBooking ? "Change Requested Time" : "Request Demo Class" : "Choose an available time"}</h2>
+          {activeDemoBooking ? (
+            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+              <div className="font-black">Demo Requested</div>
+              <div className="mt-1">{activeDemoBooking.requestedLocalDateTime || new Date(activeDemoBooking.startAt).toLocaleString()}</div>
+              <div className="text-xs font-semibold">Waiting for confirmation from Envision Chess Academy.</div>
+            </div>
+          ) : null}
           {isDemoStudent ? (
             <div className="mt-4 grid gap-4 md:grid-cols-3">
               <label className="space-y-2">
@@ -202,7 +218,7 @@ export default function BookingPage() {
             <textarea value={notes} onChange={(event) => setNotes(event.target.value)} className="min-h-24 w-full rounded-lg border border-slate-200 px-3 py-3 text-sm outline-none focus:border-brand" placeholder="Mention preferred topic, goal, or anything the coach should know." />
           </label>
           <button onClick={book} disabled={loading} className="btn-primary mt-4 w-full sm:w-auto">
-            <CalendarDays size={16} /> {loading ? `Sending ${featureName}...` : `Request ${featureName}`}
+            <CalendarDays size={16} /> {loading ? `Sending ${featureName}...` : activeDemoBooking ? "Change Requested Time" : `Request ${featureName}`}
           </button>
         </div>
 

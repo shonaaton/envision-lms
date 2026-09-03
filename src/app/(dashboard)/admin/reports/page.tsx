@@ -8,6 +8,7 @@ import { Tournament } from "@/models/Tournament";
 import { User } from "@/models/User";
 import { deriveScheduledSessionStatus, flattenScheduledSessions, isSessionUpcomingLike } from "@/lib/classroomSessions";
 import { BarChart3, CalendarDays, ClipboardList, Download, ExternalLink, GraduationCap, Trophy } from "lucide-react";
+import { scheduledPaymentMinutes } from "@/lib/teachingStats";
 
 export const dynamic = "force-dynamic";
 
@@ -71,6 +72,8 @@ export default async function AdminReportsPage() {
   const sessionRows = flattenScheduledSessions(classroomDocs);
   const upcomingSessions = sessionRows.filter((row) => isSessionUpcomingLike(deriveScheduledSessionStatus(row.session, new Date()))).length;
   const completedSessions = sessionRows.filter((row) => ["completed", "missed", "cancelled", "rescheduled"].includes(deriveScheduledSessionStatus(row.session, new Date()))).length;
+  const completedDemoRows = sessionRows.filter((row) => row.classroom.classroomType === "demo" && deriveScheduledSessionStatus(row.session, new Date()) === "completed");
+  const demoHours = Number((completedDemoRows.reduce((sum, row) => sum + scheduledPaymentMinutes(row.session, row.classroom), 0) / 60).toFixed(2));
 
   return (
     <div className="space-y-4 text-slate-950">
@@ -97,6 +100,8 @@ export default async function AdminReportsPage() {
           <StatCard label="Active Coaches" value={coachCount} />
           <StatCard label="Upcoming Sessions" value={upcomingSessions} />
           <StatCard label="Completed / Closed Sessions" value={completedSessions} />
+          <StatCard label="Demo Classes" value={completedDemoRows.length} />
+          <StatCard label="Demo Hours" value={demoHours} />
         </div>
       </section>
 

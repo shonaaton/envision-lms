@@ -1,4 +1,5 @@
 import { sendWhatsAppTemplateMessage, type WhatsAppSendResult } from "@/lib/whatsappAutomation";
+import { isWhatsAppAutomationTemplateEnabled } from "@/lib/whatsappAutomationSettings";
 
 export const WHATSAPP_AUTOMATION_LANGUAGE = "en";
 
@@ -30,6 +31,20 @@ export async function sendWhatsAppAutomationTemplate(input: {
   bodyParameters?: unknown[];
   metadata?: Record<string, unknown>;
 }): Promise<WhatsAppSendResult> {
+  const enabled = await isWhatsAppAutomationTemplateEnabled(input.templateName).catch((error) => {
+    console.error("WhatsApp automation setting lookup failed", { error, templateName: input.templateName });
+    return true;
+  });
+  if (!enabled) {
+    return {
+      ok: true,
+      delivered: false,
+      skipped: true,
+      recipient: String(input.to || input.user?.phone || "").trim(),
+      debug: { reason: "whatsapp_template_automation_disabled", templateName: input.templateName },
+    };
+  }
+
   const to = String(input.to || input.user?.phone || "").trim();
   if (!to) {
     return {

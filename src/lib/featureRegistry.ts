@@ -388,7 +388,7 @@ export const FEATURE_DEFINITIONS: FeatureDefinition[] = [
     label: "Onboarding",
     category: "Administration",
     description: "Demo student approvals, coach applications, and onboarding decisions.",
-    routes: ["/admin/onboarding"],
+    routes: ["/admin/onboarding", "/admin/demo-center", "/admin/coach-applications"],
     permissions: [view, approve, edit],
     defaultStatus: "enabled",
     defaultRolePermissions: { admin: all(view, approve, edit) },

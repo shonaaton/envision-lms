@@ -79,10 +79,12 @@ export async function POST(req: Request) {
     const username = await generateUsername(body.name);
     const tempPassword = body.password ?? genPassword();
     const passwordHash = await bcrypt.hash(tempPassword, 10);
+    const isDemoStudent = body.role === "student" && body.accountStatus === "demo";
     const u = await User.create({
       ...body,
       email: body.email.toLowerCase(),
       accountStatus: body.role === "student" ? body.accountStatus || "enrolled" : body.accountStatus,
+      ...(isDemoStudent ? { demoExpiresAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), tags: [...new Set([...(body.tags || []), "demo"])] } : {}),
       username,
       passwordHash,
       tempPassword,

@@ -74,15 +74,19 @@ export function summarizeCoachSessions(classrooms: any[], range: RangeLike, opti
   });
 
   const completed = rows.filter(({ session }) => session.status === "completed");
+  const completedRegular = completed.filter(({ classroom }) => classroom.classroomType !== "demo");
+  const completedDemo = completed.filter(({ classroom }) => classroom.classroomType === "demo");
   const cancelled = rows.filter(({ session }) => session.status === "cancelled");
   const rescheduled = rows.filter(({ session }) => session.status === "rescheduled");
   const conductedMinutes = completed.reduce((sum, { classroom, session }) => sum + scheduledPaymentMinutes(session, classroom), 0);
   const actualMinutes = completed.reduce((sum, { session }) => sum + Number(session.actualTeachingMinutes || actualSessionMinutes(session)), 0);
+  const demoConductedMinutes = completedDemo.reduce((sum, { classroom, session }) => sum + scheduledPaymentMinutes(session, classroom), 0);
+  const demoActualMinutes = completedDemo.reduce((sum, { session }) => sum + Number(session.actualTeachingMinutes || actualSessionMinutes(session)), 0);
   const punctualityScores = completed.map(({ classroom, session }) => Number(session.punctualityScore || punctualityBreakdown(session, classroom).punctualityScore || 0));
   const studentIds = new Set(completed.flatMap(({ classroom }) => (classroom.students || []).map(objectId)));
   const batchMap = new Map<string, { batchName: string; classesConducted: number; hoursConducted: number; actualHours: number; students: number }>();
 
-  completed.forEach(({ classroom, session }) => {
+  completedRegular.forEach(({ classroom, session }) => {
     const batchNames = (classroom.batches || []).map((batch: any) => batch.name || "Unassigned");
     const durationMinutes = scheduledPaymentMinutes(session, classroom);
     const actualMinutesForSession = Number(session.actualTeachingMinutes || actualSessionMinutes(session));
@@ -103,6 +107,12 @@ export function summarizeCoachSessions(classrooms: any[], range: RangeLike, opti
     classesRescheduled: rescheduled.length,
     totalHoursConducted: Number((conductedMinutes / 60).toFixed(2)),
     actualHoursConducted: Number((actualMinutes / 60).toFixed(2)),
+    regularClassesConducted: completedRegular.length,
+    regularHoursConducted: Number(((conductedMinutes - demoConductedMinutes) / 60).toFixed(2)),
+    regularActualHoursConducted: Number(((actualMinutes - demoActualMinutes) / 60).toFixed(2)),
+    demoClassesConducted: completedDemo.length,
+    demoHoursConducted: Number((demoConductedMinutes / 60).toFixed(2)),
+    demoActualHoursConducted: Number((demoActualMinutes / 60).toFixed(2)),
     averageClassDuration: completed.length ? Math.round(conductedMinutes / completed.length) : 0,
     averageActualDuration: completed.length ? Math.round(actualMinutes / completed.length) : 0,
     punctualityScore: punctualityScores.length ? Math.round(punctualityScores.reduce((sum, value) => sum + value, 0) / punctualityScores.length) : 0,

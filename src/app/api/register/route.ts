@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { ZodError } from "zod";
 import { dbConnect } from "@/lib/db";
 import { User, generateUsername } from "@/models/User";
+import { Booking } from "@/models/Booking";
 import { CoachApplication } from "@/models/Onboarding";
 import { registerSchema } from "@/lib/validation";
 import { sendWelcomeEmail } from "@/lib/welcomeEmail";
@@ -30,6 +31,18 @@ export async function POST(req: Request) {
     await dbConnect();
     const exists = await User.findOne({ email: data.email.toLowerCase() });
     if (exists) return NextResponse.json({ error: "Email already registered" }, { status: 409 });
+    const phone = String(data.phone || "").trim();
+    if (phone) {
+      const usersWithPhone = await User.find({ phone }).select("_id").lean();
+      if (usersWithPhone.length) {
+        const usedDemo = await Booking.exists({
+          student: { $in: usersWithPhone.map((user: any) => user._id) },
+          bookingType: "demo",
+          demoStatus: { $in: ["COMPLETED", "CONVERTED"] },
+        });
+        if (usedDemo) return NextResponse.json({ error: "A free demo has already been completed for this phone number. Please contact the academy team." }, { status: 409 });
+      }
+    }
     if (!data.acceptedPrivacy || !data.acceptedTerms || !data.acceptedRefund) {
       return NextResponse.json({ error: "Please accept the academy policies to continue." }, { status: 400 });
     }
@@ -65,6 +78,7 @@ export async function POST(req: Request) {
       passwordHash,
       role: "student",
       accountStatus: "demo",
+      demoExpiresAt: new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000),
       demoLimits: { playComputer: 3, squareTrainer: 3, tacticsTrainer: 3, kingHunt: 3, analysisBoard: 0 },
       demoUsage: { playComputer: 0, squareTrainer: 0, tacticsTrainer: 0, kingHunt: 0, analysisBoard: 0 },
       phone: data.phone,

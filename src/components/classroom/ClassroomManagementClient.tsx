@@ -102,6 +102,7 @@ type SessionFilterStatus =
   | "ongoing"
   | "completed"
   | "missed"
+  | "absent"
   | "cancelled"
   | "rescheduled"
   | "abandoned"
@@ -138,6 +139,7 @@ function sessionStatusTone(status: string) {
   if (status === "cancelled") return "bg-rose-50 text-rose-700";
   if (status === "rescheduled") return "bg-sky-50 text-sky-700";
   if (status === "abandoned") return "bg-amber-50 text-amber-700";
+  if (status === "absent") return "bg-amber-50 text-amber-700";
   if (status === "coach_no_show") return "bg-red-50 text-red-700";
   if (status === "student_no_show") return "bg-orange-50 text-orange-700";
   if (status === "technical_issue") return "bg-slate-100 text-slate-700";
@@ -843,7 +845,7 @@ export default function ClassroomManagementClient({
           label="Status"
           value={filters.status}
           onChange={(value) => setFilters((current) => ({ ...current, status: value as SessionFilterStatus }))}
-          options={["upcoming", "join_available", "ongoing", "completed", "missed", "abandoned", "coach_no_show", "student_no_show", "technical_issue", "cancelled", "rescheduled"].map((value) => ({ value, label: titleCase(value) }))}
+          options={["upcoming", "join_available", "ongoing", "completed", "missed", "abandoned", "absent", "coach_no_show", "student_no_show", "technical_issue", "cancelled", "rescheduled"].map((value) => ({ value, label: titleCase(value) }))}
         />
       </div>
 
@@ -1401,6 +1403,7 @@ export default function ClassroomManagementClient({
                       <option value="completed">Completed: topic taught</option>
                       <option value="completed_continue_topic">Completed: continue same topic next class</option>
                       <option value="abandoned">Not completed: carry topic forward</option>
+                      <option value="absent">Absent</option>
                       <option value="coach_no_show">Coach no-show</option>
                       <option value="student_no_show">Student no-show</option>
                       <option value="technical_issue">Technical issue</option>
@@ -1841,7 +1844,7 @@ function SimpleClassroomList({
   const history = sessions
     .filter((row) => {
       const status = deriveScheduledSessionStatus(row.session, now);
-      return ["completed", "missed", "abandoned", "coach_no_show", "student_no_show", "technical_issue", "cancelled", "rescheduled"].includes(status);
+      return ["completed", "missed", "abandoned", "absent", "coach_no_show", "student_no_show", "technical_issue", "cancelled", "rescheduled"].includes(status);
     })
     .sort((a, b) => (b.start?.getTime() || 0) - (a.start?.getTime() || 0))
     .slice(0, 12);
@@ -1857,6 +1860,7 @@ function SimpleClassroomList({
     if (status === "abandoned") return "bg-amber-50 text-amber-700";
     if (status === "coach_no_show") return "bg-red-50 text-red-700";
     if (status === "student_no_show") return "bg-orange-50 text-orange-700";
+    if (status === "absent") return "bg-amber-50 text-amber-700";
     if (status === "technical_issue") return "bg-slate-100 text-slate-700";
     return "bg-slate-100 text-slate-600";
   };

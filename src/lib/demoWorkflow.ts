@@ -7,7 +7,7 @@ import { Notification } from "@/models/Fee";
 import { InternalTask } from "@/models/InternalTask";
 import { User } from "@/models/User";
 
-export const DEMO_MANAGEMENT_HREF = "/admin-v2/onboarding";
+export const DEMO_MANAGEMENT_HREF = "/admin/demo-center";
 
 export function localDateTimeLabel(value: string | Date, timeZone: string) {
   return new Intl.DateTimeFormat("en-GB", {

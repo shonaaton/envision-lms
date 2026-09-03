@@ -20,6 +20,7 @@ export const NON_TOPIC_CONSUMING_STATUSES = new Set([
   "cancelled",
   "missed",
   "abandoned",
+  "absent",
   "coach_no_show",
   "student_no_show",
   "technical_issue",
@@ -33,6 +34,7 @@ export function normalizeSessionOutcome(value: unknown, actualTeachingMinutes = 
     "cancelled",
     "missed",
     "abandoned",
+    "absent",
     "coach_no_show",
     "student_no_show",
     "technical_issue",
@@ -59,7 +61,7 @@ export function topicCompletedForOutcome(status: string, requestedOutcome: unkno
 
 export function isFutureTopicAssignable(session: any) {
   const status = String(session?.status || "scheduled").toLowerCase();
-  return !session?.actualEndedAt && !["completed", "cancelled", "missed", "abandoned", "coach_no_show", "student_no_show", "technical_issue"].includes(status);
+  return !session?.actualEndedAt && !["completed", "cancelled", "missed", "abandoned", "absent", "coach_no_show", "student_no_show", "technical_issue"].includes(status);
 }
 
 export function coachNoShowDeadline(session: any) {

@@ -5,6 +5,7 @@ import { dbConnect } from "@/lib/db";
 import { Booking } from "@/models/Booking";
 import { DemoFeedback } from "@/models/Onboarding";
 import { recordActivity } from "@/lib/activity";
+import DemoAssessmentLeaveGuard from "@/components/demo/DemoAssessmentLeaveGuard";
 
 export const dynamic = "force-dynamic";
 
@@ -42,7 +43,12 @@ async function submitDemoFeedback(formData: FormData) {
       weaknesses: value(formData, "weaknesses"),
       recommendedCourseLevel: value(formData, "recommendedCourseLevel"),
       recommendedStartingTopic: value(formData, "recommendedStartingTopic"),
+      studentEngagement: value(formData, "studentEngagement"),
+      coachRecommendation: value(formData, "coachRecommendation"),
+      suggestedClassFrequency: value(formData, "suggestedClassFrequency"),
       coachComments: value(formData, "coachComments"),
+      parentFacingSummary: value(formData, "parentFacingSummary"),
+      internalCoachNotes: value(formData, "internalCoachNotes"),
       salesAdminNotes: value(formData, "salesAdminNotes"),
       status: "submitted",
       submittedAt: new Date(),
@@ -50,7 +56,7 @@ async function submitDemoFeedback(formData: FormData) {
     },
     { upsert: true, new: true }
   );
-  await Booking.findByIdAndUpdate(booking._id, { feedbackStatus: "submitted" });
+  await Booking.findByIdAndUpdate(booking._id, { demoStatus: "COMPLETED", feedbackStatus: "submitted" });
   await recordActivity({
     actor: actorId,
     targetUser: String(booking.student?._id || booking.student || ""),
@@ -77,6 +83,7 @@ export default async function DemoFeedbackPage({ params }: { params: { bookingId
 
   return (
     <main className="mx-auto max-w-5xl space-y-5 p-4 sm:p-6">
+      <DemoAssessmentLeaveGuard />
       <section className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-950 shadow-sm">
         <div className="flex items-center gap-2 text-sm font-black uppercase tracking-wide"><ClipboardList size={18} /> Demo Feedback</div>
         <h1 className="mt-2 text-2xl font-black text-slate-950">Initial assessment for {booking.student?.name || "demo student"}</h1>
@@ -86,7 +93,7 @@ export default async function DemoFeedbackPage({ params }: { params: { bookingId
       <form action={submitDemoFeedback} className="grid gap-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
         <input type="hidden" name="bookingId" value={String(booking._id)} />
         <div className="grid gap-4 md:grid-cols-2">
-          <Field name="chessLevel" label="Current chess level" defaultValue={feedback?.chessLevel} />
+          <Field name="chessLevel" label="Current chess level" defaultValue={feedback?.chessLevel} required />
           <Field name="playingStrength" label="Approximate playing strength" defaultValue={feedback?.playingStrength} />
           <label className="block">
             <span className="mb-2 block text-xs font-black uppercase text-slate-500">FIDE rating?</span>
@@ -98,7 +105,7 @@ export default async function DemoFeedbackPage({ params }: { params: { bookingId
           <Field name="fideRating" label="FIDE rating" type="number" defaultValue={feedback?.fideRating} />
           <Field name="chessComRating" label="Chess.com rating" type="number" defaultValue={feedback?.chessComRating} />
           <Field name="lichessRating" label="Lichess rating" type="number" defaultValue={feedback?.lichessRating} />
-          <Field name="recommendedCourseLevel" label="Recommended course level" defaultValue={feedback?.recommendedCourseLevel} />
+          <Field name="recommendedCourseLevel" label="Recommended course level" defaultValue={feedback?.recommendedCourseLevel} required />
           <Field name="recommendedStartingTopic" label="Recommended starting topic" defaultValue={feedback?.recommendedStartingTopic} />
         </div>
         <TextArea name="assessmentNotes" label="Basic assessment notes" defaultValue={feedback?.assessmentNotes} />
@@ -106,7 +113,14 @@ export default async function DemoFeedbackPage({ params }: { params: { bookingId
           <TextArea name="strengths" label="Strengths" defaultValue={feedback?.strengths} />
           <TextArea name="weaknesses" label="Weaknesses" defaultValue={feedback?.weaknesses} />
         </div>
+        <div className="grid gap-4 md:grid-cols-3">
+          <Select name="studentEngagement" label="Student engagement" defaultValue={feedback?.studentEngagement} options={["", "high", "medium", "low"]} required />
+          <Select name="coachRecommendation" label="Coach recommendation" defaultValue={feedback?.coachRecommendation} options={["", "group", "individual", "either"]} required />
+          <Field name="suggestedClassFrequency" label="Suggested class frequency" defaultValue={feedback?.suggestedClassFrequency} />
+        </div>
+        <TextArea name="parentFacingSummary" label="Student assessment summary" defaultValue={feedback?.parentFacingSummary} required />
         <TextArea name="coachComments" label="Coach comments" defaultValue={feedback?.coachComments} />
+        <TextArea name="internalCoachNotes" label="Internal coach notes" defaultValue={feedback?.internalCoachNotes} />
         {role !== "instructor" ? <TextArea name="salesAdminNotes" label="Sales/admin notes" defaultValue={feedback?.salesAdminNotes} /> : null}
         <button className="btn-primary w-fit"><CheckCircle2 size={16} /> Submit Demo Feedback</button>
       </form>
@@ -114,20 +128,31 @@ export default async function DemoFeedbackPage({ params }: { params: { bookingId
   );
 }
 
-function Field({ name, label, type = "text", defaultValue }: { name: string; label: string; type?: string; defaultValue?: string | number }) {
+function Field({ name, label, type = "text", defaultValue, required = false }: { name: string; label: string; type?: string; defaultValue?: string | number; required?: boolean }) {
   return (
     <label className="block">
       <span className="mb-2 block text-xs font-black uppercase text-slate-500">{label}</span>
-      <input name={name} type={type} defaultValue={defaultValue || ""} className="h-11 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+      <input name={name} type={type} defaultValue={defaultValue || ""} required={required} className="h-11 w-full rounded-lg border border-slate-200 px-3 text-sm" />
     </label>
   );
 }
 
-function TextArea({ name, label, defaultValue }: { name: string; label: string; defaultValue?: string }) {
+function Select({ name, label, defaultValue, options, required = false }: { name: string; label: string; defaultValue?: string; options: string[]; required?: boolean }) {
   return (
     <label className="block">
       <span className="mb-2 block text-xs font-black uppercase text-slate-500">{label}</span>
-      <textarea name={name} defaultValue={defaultValue || ""} className="min-h-24 w-full rounded-lg border border-slate-200 px-3 py-3 text-sm" />
+      <select name={name} defaultValue={defaultValue || ""} required={required} className="h-11 w-full rounded-lg border border-slate-200 px-3 text-sm capitalize">
+        {options.map((option) => <option key={option || "blank"} value={option}>{option || "Select"}</option>)}
+      </select>
+    </label>
+  );
+}
+
+function TextArea({ name, label, defaultValue, required = false }: { name: string; label: string; defaultValue?: string; required?: boolean }) {
+  return (
+    <label className="block">
+      <span className="mb-2 block text-xs font-black uppercase text-slate-500">{label}</span>
+      <textarea name={name} defaultValue={defaultValue || ""} required={required} className="min-h-24 w-full rounded-lg border border-slate-200 px-3 py-3 text-sm" />
     </label>
   );
 }

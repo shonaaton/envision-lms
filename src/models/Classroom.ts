@@ -58,6 +58,7 @@ const ScheduledSessionSchema = new Schema(
     punctualityScore: { type: Number, default: 0 },
     attendanceMarkedAt: Date,
     summary: { type: Schema.Types.Mixed, default: {} },
+    students: [{ type: Schema.Types.ObjectId, ref: "User", index: true }],
   },
   { _id: true }
 );

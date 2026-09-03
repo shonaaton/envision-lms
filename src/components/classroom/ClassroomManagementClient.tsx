@@ -1738,7 +1738,8 @@ function GroupClassSessionList({
         const sessionId = String(session?._id || "");
         const summaryHref = sessionId ? `/classrooms/${classroom._id}/summary?session=${sessionId}` : `/classrooms/${classroom._id}/summary`;
         const batchNames = batchNamesForItem(classroom, targets.batches);
-        const studentNames = studentNamesForItem(classroom);
+        const sessionStudents = studentsForSession(classroom, session);
+        const studentNames = studentNamesForList(sessionStudents);
         const sessionCoachName = assignedCoachName(classroom, session);
         const isSubstituted = Boolean(session?.substituteCoach);
         const isFinished = status === "completed" || Boolean(session.actualEndedAt);
@@ -1760,7 +1761,7 @@ function GroupClassSessionList({
             </div>
             <div className="min-w-0">
               <div className="truncate font-semibold text-slate-700" title={batchNames || "Unassigned"}>{batchNames || "Unassigned"}</div>
-              <div className="truncate text-slate-500" title={studentNames || ""}>{studentNames || `${classroom.students?.length || 0} students`}</div>
+              <div className="truncate text-slate-500" title={studentNames || ""}>{studentNames || `${sessionStudents.length} students`}</div>
               <div className="mt-1 flex min-w-0 items-center gap-1 text-slate-600">
                 <span className="shrink-0 font-semibold">Coach:</span>
                 <span className="truncate" title={sessionCoachName}>{sessionCoachName}</span>
@@ -1910,7 +1911,7 @@ function SimpleClassroomList({
                     </div>
                     <div className="mt-2 grid gap-2 md:grid-cols-2 xl:grid-cols-[1.4fr_1fr_1fr_1fr]">
                       <CompactInfo label="Topic" value={session.topicName || classroom.topicName || "Not set"} />
-                      <CompactInfo label={currentRoleLabel} value={role === "student" ? assignedCoachName(classroom, session) : ((classroom.batches || []).map((batch: any) => batch.name).join(", ") || `${classroom.students?.length || 0} assigned`)} />
+                      <CompactInfo label={currentRoleLabel} value={role === "student" ? assignedCoachName(classroom, session) : ((classroom.batches || []).map((batch: any) => batch.name).join(", ") || `${studentsForSession(classroom, session).length} assigned`)} />
                       <CompactInfo label="When" value={`${formatDate(String(session.scheduledFor || classroom.classDate || classroom.startDate || ""))} at ${session.startTime || classroom.startTime || "--"}`} />
                       <CompactInfo label="Duration" value={formatDuration(session.durationMinutes || classroom.durationMinutes || 60)} />
                     </div>
@@ -1971,7 +1972,7 @@ function SimpleClassroomList({
                       </div>
                       <div className="mt-2 grid gap-2 md:grid-cols-2 xl:grid-cols-[1.4fr_1fr_1fr_1fr]">
                         <CompactInfo label="Topic" value={session.topicName || classroom.topicName || "Not set"} />
-                        <CompactInfo label={currentRoleLabel} value={role === "student" ? assignedCoachName(classroom, session) : ((classroom.batches || []).map((batch: any) => batch.name).join(", ") || `${classroom.students?.length || 0} assigned`)} />
+                        <CompactInfo label={currentRoleLabel} value={role === "student" ? assignedCoachName(classroom, session) : ((classroom.batches || []).map((batch: any) => batch.name).join(", ") || `${studentsForSession(classroom, session).length} assigned`)} />
                         <CompactInfo label="When" value={`${formatDate(String(session.scheduledFor || classroom.classDate || classroom.startDate || ""))} at ${session.startTime || classroom.startTime || "--"}`} />
                         <CompactInfo label="Duration" value={formatDuration(session.durationMinutes || classroom.durationMinutes || 60)} />
                       </div>
@@ -2006,7 +2007,7 @@ function FutureClassDetailsModal({
   session: any;
   onClose: () => void;
 }) {
-  const studentNames = (classroom.students || []).map((student: any) => student?.name || student?.email || student?.username || "").filter(Boolean);
+  const studentNames = studentsForSession(classroom, session).map((student: any) => student?.name || student?.email || student?.username || "").filter(Boolean);
   const batchNames = (classroom.batches || []).map((batch: any) => batch?.name || "").filter(Boolean).join(", ") || "Unassigned";
   const startDate = session?.scheduledFor || classroom.classDate || classroom.startDate;
   const startTime = String(session?.startTime || classroom.startTime || "");
@@ -2042,7 +2043,7 @@ function FutureClassDetailsModal({
           {studentNames.length ? (
             <div className="max-h-44 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-3">
               <div className="flex flex-wrap gap-2">
-                {studentNames.map((name, index) => (
+                {studentNames.map((name: string, index: number) => (
                   <span key={`${name}-${index}`} className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700">{name}</span>
                 ))}
               </div>
@@ -2160,7 +2161,15 @@ function hasAssignedBatch(item: ClassroomItem) {
 }
 
 function studentNamesForItem(item: ClassroomItem) {
-  return (item.students || [])
+  return studentNamesForList(item.students || []);
+}
+
+function studentsForSession(classroom: ClassroomItem, session?: any) {
+  return Array.isArray(session?.students) && session.students.length ? session.students : classroom.students || [];
+}
+
+function studentNamesForList(students: any[]) {
+  return students
     .map((student: any) => student?.name || "")
     .filter(Boolean)
     .join(", ");

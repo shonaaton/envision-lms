@@ -36,6 +36,7 @@ export async function GET() {
   const list = await Classroom.find(filter)
     .populate("coach instructor", "name email username")
     .populate("generatedSessions.substituteCoach", "name email username")
+    .populate("generatedSessions.students", "name email username isActive")
     .populate("students", "name email username isActive")
     .populate("batches", "name")
     .populate("course", "name category level")

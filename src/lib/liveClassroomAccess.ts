@@ -31,12 +31,19 @@ function objectId(value: unknown) {
   return String(value);
 }
 
+function studentsForSession(classroom: ClassroomAccessShape, scheduledSessionId?: string) {
+  const session = scheduledSessionId && Array.isArray(classroom.generatedSessions)
+    ? classroom.generatedSessions.find((item: any) => objectId(item?._id) === scheduledSessionId)
+    : null;
+  return Array.isArray((session as any)?.students) && (session as any).students.length ? (session as any).students : classroom.students || [];
+}
+
 export function canAccessLiveClassroom(classroom: ClassroomAccessShape | null | undefined, role: AppRole, userId: string, scheduledSessionId?: string) {
   if (!classroom) return false;
   if (classroom.isTestClassroom) return false;
   if (role === "admin" || role === "sub-admin") return true;
   if (role === "student") {
-    return (classroom.students || []).some((student) => objectId(student) === userId);
+    return studentsForSession(classroom, scheduledSessionId).some((student: unknown) => objectId(student) === userId);
   }
   return coachCanAccessClassroomSession(classroom, userId, scheduledSessionId);
 }
@@ -45,6 +52,7 @@ export async function getLiveClassroomForUser(classroomId: string, role: AppRole
   const canJoin = await canAccessFeature("classrooms", { id: userId, role }, "join");
   const classroom: any = await Classroom.findById(classroomId)
     .populate("coach instructor students", "name email username role")
+    .populate("generatedSessions.students", "name email username role")
     .lean();
 
   if (!classroom) return { classroom: null, allowed: false as const };

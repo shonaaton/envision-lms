@@ -17,7 +17,7 @@ function buildSessionInstancePayload(classroom: any, session: any) {
     meetingUrl: classroom.meetingUrl || "",
     coach: session.substituteCoach || classroom.coach || undefined,
     instructor: session.substituteCoach || classroom.instructor || classroom.coach || undefined,
-    students: classroom.students || [],
+    students: Array.isArray(session.students) && session.students.length ? session.students : classroom.students || [],
     batches: classroom.batches || [],
     classDate: session.scheduledFor ? new Date(session.scheduledFor) : undefined,
     startTime: session.startTime || classroom.startTime || "",

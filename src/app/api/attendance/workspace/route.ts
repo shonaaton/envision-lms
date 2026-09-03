@@ -74,6 +74,10 @@ function isTrackableAttendanceSession(session: any) {
   return lifecycle !== "cancelled" && lifecycle !== "rescheduled";
 }
 
+function studentsForSession(classroom: any, session: any) {
+  return Array.isArray(session?.students) && session.students.length ? session.students : classroom.students || [];
+}
+
 export async function GET(req: Request) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -175,6 +179,7 @@ export async function GET(req: Request) {
   const classroomDocs: any[] = await Classroom.find(classroomFilter)
     .populate("coach instructor", "name username")
     .populate("generatedSessions.substituteCoach", "name username")
+    .populate("generatedSessions.students", "name username email")
     .populate("students", "name username email")
     .populate("batches", "name")
     .sort({ createdAt: -1 })
@@ -217,7 +222,7 @@ export async function GET(req: Request) {
         teachingMinutes: Number(attendance?.teachingMinutes || session.durationMinutes || classroom.durationMinutes || 0),
         actualTeachingMinutes: Number(attendance?.actualTeachingMinutes || session.actualTeachingMinutes || 0),
         punctualityScore: Number(attendance?.punctualityScore || session.punctualityScore || 0),
-        students: (classroom.students || []).map((student: any) => {
+        students: studentsForSession(classroom, session).map((student: any) => {
           const saved = (attendance?.records || []).find((row: any) => objectId(row.student) === objectId(student._id));
           return {
             _id: objectId(student._id),

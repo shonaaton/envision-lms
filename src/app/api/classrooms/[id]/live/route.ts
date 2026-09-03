@@ -63,6 +63,10 @@ function activeCoachParticipants(live: any, now = new Date()) {
   });
 }
 
+function studentsForSession(classroom: any, scheduledSession: any) {
+  return Array.isArray(scheduledSession?.students) && scheduledSession.students.length ? scheduledSession.students : classroom.students || [];
+}
+
 async function loadPgnLibrary(session: any, role: AppRole, userId: string, classroomId: string) {
   const pgnFilter = canCoach(role)
     ? buildPgnLibraryFilter(session)
@@ -115,7 +119,7 @@ async function autoEndCoachNoShowIfNeeded({
       teachingMinutes: 0,
       actualTeachingMinutes: 0,
       punctualityScore: 0,
-      records: (classroom.students || []).map((student: any) => {
+      records: studentsForSession(classroom, scheduledSession).map((student: any) => {
         const studentId = String(student?._id || student);
         return {
           student: studentId,

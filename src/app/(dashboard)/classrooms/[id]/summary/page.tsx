@@ -20,10 +20,14 @@ function objectId(value: any) {
   return value?._id?.toString?.() ?? value?.toString?.() ?? "";
 }
 
-function participantHasAccess(classroom: any, role: string, userId: string, scheduledSessionId?: string) {
+function studentsForSession(classroom: any, scheduledSession?: any) {
+  return Array.isArray(scheduledSession?.students) && scheduledSession.students.length ? scheduledSession.students : classroom.students || [];
+}
+
+function participantHasAccess(classroom: any, role: string, userId: string, scheduledSession?: any) {
   if (role === "admin" || role === "sub-admin") return true;
-  if (role === "student") return (classroom.students || []).some((student: any) => String(student) === userId || String(student?._id || "") === userId);
-  return coachCanAccessClassroomSession(classroom, userId, scheduledSessionId);
+  if (role === "student") return studentsForSession(classroom, scheduledSession).some((student: any) => String(student) === userId || String(student?._id || "") === userId);
+  return coachCanAccessClassroomSession(classroom, userId, String(scheduledSession?._id || ""));
 }
 
 function formatDate(value?: string | Date | null) {
@@ -106,6 +110,7 @@ export default async function ClassroomSummaryPage({
 
   const classroom: any = await Classroom.findById(params.id)
     .populate("coach instructor students batches", "name username email")
+    .populate("generatedSessions.students", "name username email")
     .lean();
   if (!classroom) notFound();
 
@@ -128,7 +133,7 @@ export default async function ClassroomSummaryPage({
       .sort((a: any, b: any) => new Date(b.actualEndedAt || b.scheduledFor || 0).getTime() - new Date(a.actualEndedAt || a.scheduledFor || 0).getTime())[0];
 
   if (!selectedSession) notFound();
-  if (!participantHasAccess(classroom, role, userId, String(selectedSession._id || ""))) redirect("/dashboard");
+  if (!participantHasAccess(classroom, role, userId, selectedSession)) redirect("/dashboard");
 
   const scheduledSessionId = String(selectedSession._id || "");
   const [attendance, liveSession, questions, responses] = await Promise.all([
@@ -151,7 +156,8 @@ export default async function ClassroomSummaryPage({
     responseByStudent.set(key, [...(responseByStudent.get(key) || []), response]);
   });
 
-  const studentRows = (classroom.students || []).map((student: any) => {
+  const assignedStudents = studentsForSession(classroom, selectedSession);
+  const studentRows = assignedStudents.map((student: any) => {
     const studentId = objectId(student);
     const attendanceRecord = attendanceRecords.find((record: any) => objectId(record.student) === studentId);
     const studentResponses = responseByStudent.get(studentId) || [];
@@ -280,7 +286,7 @@ export default async function ClassroomSummaryPage({
         <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           <StatCard label="Status" value={String(selectedSession.status || classroom.status || "scheduled")} />
           <StatCard label="Coach" value={classroom.coach?.name || classroom.instructor?.name || "Not assigned"} />
-          <StatCard label="Students Assigned" value={String((classroom.students || []).length)} />
+          <StatCard label="Students Assigned" value={String(assignedStudents.length)} />
           <StatCard label="Scheduled" value={formatDateTime(getSessionStart(selectedSession))} />
           <StatCard label="Actual Start" value={formatDateTime(selectedSession.actualStartedAt || liveSession?.startedAt)} />
           <StatCard label="End" value={formatDateTime(selectedSession.actualEndedAt || liveSession?.endedAt)} />

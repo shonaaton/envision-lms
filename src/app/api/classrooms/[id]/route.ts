@@ -450,6 +450,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
   await dbConnect();
   const doc = await Classroom.findById(params.id)
     .populate("instructor coach", "name email username")
+    .populate("generatedSessions.students", "name email username isActive")
     .populate("students", "name email username isActive")
     .populate("batches", "name")
     .populate("course", "name category level")
@@ -1029,6 +1030,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const updated = await Classroom.findById(params.id)
     .populate("coach instructor", "name email username")
     .populate("generatedSessions.substituteCoach", "name email username")
+    .populate("generatedSessions.students", "name email username isActive")
     .populate("students", "name email username isActive")
     .populate("batches", "name")
     .populate("course", "name category level");

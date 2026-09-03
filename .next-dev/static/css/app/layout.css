@@ -2097,6 +2097,15 @@ main .rounded-xl.card.bg-white {
 .w-px {
   width: 1px;
 }
+.w-1 {
+  width: 0.25rem;
+}
+.w-36 {
+  width: 9rem;
+}
+.w-\[82\%\] {
+  width: 82%;
+}
 .min-w-0 {
   min-width: 0px;
 }
@@ -2927,6 +2936,9 @@ main .rounded-xl.card.bg-white {
 }
 .border-\[6px\] {
   border-width: 6px;
+}
+.border-\[14px\] {
+  border-width: 14px;
 }
 .border-x {
   border-left-width: 1px;
@@ -3859,6 +3871,12 @@ main .rounded-xl.card.bg-white {
 }
 .bg-gradient-to-t {
   background-image: linear-gradient(to top, var(--tw-gradient-stops));
+}
+.bg-\[linear-gradient\(135deg\2c \#fff8d8_0\%\2c \#fff4c1_42\%\2c \#ffffff_100\%\)\] {
+  background-image: linear-gradient(135deg,#fff8d8 0%,#fff4c1 42%,#ffffff 100%);
+}
+.bg-\[linear-gradient\(135deg\2c \#fff8d8_0\%\2c \#ffffff_58\%\2c \#f8f5ff_100\%\)\] {
+  background-image: linear-gradient(135deg,#fff8d8 0%,#ffffff 58%,#f8f5ff 100%);
 }
 .from-\[\#f7f8fb\] {
   --tw-gradient-from: #f7f8fb var(--tw-gradient-from-position);
@@ -5087,6 +5105,16 @@ main .rounded-xl.card.bg-white {
 .shadow-xl {
   --tw-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
   --tw-shadow-colored: 0 20px 25px -5px var(--tw-shadow-color), 0 8px 10px -6px var(--tw-shadow-color);
+  box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
+}
+.shadow-\[0_16px_42px_rgba\(90\2c 19\2c 114\2c 0\.18\)\] {
+  --tw-shadow: 0 16px 42px rgba(90,19,114,0.18);
+  --tw-shadow-colored: 0 16px 42px var(--tw-shadow-color);
+  box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
+}
+.shadow-\[0_22px_60px_rgba\(90\2c 19\2c 114\2c 0\.10\)\] {
+  --tw-shadow: 0 22px 60px rgba(90,19,114,0.10);
+  --tw-shadow-colored: 0 22px 60px var(--tw-shadow-color);
   box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
 }
 .shadow-accent\/10 {
@@ -7983,6 +8011,14 @@ main td {
     grid-template-columns: minmax(330px,0.85fr) minmax(620px,1.15fr);
   }
 
+  .lg\:grid-cols-\[1fr_340px\] {
+    grid-template-columns: 1fr 340px;
+  }
+
+  .lg\:grid-cols-\[320px_1fr\] {
+    grid-template-columns: 320px 1fr;
+  }
+
   .lg\:flex-row {
     flex-direction: row;
   }
@@ -8371,6 +8407,10 @@ main td {
 
   .xl\:grid-cols-\[repeat\(6\2c minmax\(0\2c 1fr\)\)\] {
     grid-template-columns: repeat(6,minmax(0,1fr));
+  }
+
+  .xl\:grid-cols-\[1fr_420px\] {
+    grid-template-columns: 1fr 420px;
   }
 
   .xl\:flex-row {

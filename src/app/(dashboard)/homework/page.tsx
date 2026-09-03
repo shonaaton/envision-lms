@@ -7,6 +7,7 @@ import { User } from "@/models/User";
 import { getCoachAssignedStudentIds } from "@/lib/coachStudentAccess";
 import { canAccessFeature } from "@/lib/featureAccess";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { BarChart3, CheckCircle2, ClipboardList, Filter, Plus, Users } from "lucide-react";
 import HomeworkActions from "@/components/homework/HomeworkActions";
 import type { ReactNode } from "react";
@@ -94,6 +95,7 @@ type TrackingTab = "all" | "pending" | "submitted" | "late";
 
 export default async function HomeworkListPage({ searchParams }: { searchParams?: { status?: string } }) {
   const session = await auth();
+  if (!session?.user) redirect("/login");
   const userId = (session?.user as any).id;
   const role = (session?.user as any).role;
   await dbConnect();

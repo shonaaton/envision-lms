@@ -66,6 +66,7 @@ export const authConfig = {
       const isTournamentCreateRoute = nextUrl.pathname.startsWith("/tournaments/new");
       const demoAllowed =
         nextUrl.pathname.startsWith("/dashboard") ||
+        nextUrl.pathname.startsWith("/demo-preview") ||
         nextUrl.pathname.startsWith("/profile") ||
         nextUrl.pathname.startsWith("/api/profile") ||
         isBookingRoute ||

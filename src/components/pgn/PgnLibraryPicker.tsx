@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { BookOpen, Check, ChevronLeft, Folder, Search, X } from "lucide-react";
+import { BookOpen, Check, ChevronLeft, ChevronRight, Folder, Search, X } from "lucide-react";
 import { folderBreadcrumbs, folderLabel, getImmediateChildPath, normalizeFolderPath } from "@/lib/pgnLibrary";
 import { cn } from "@/lib/utils";
 import MiniFenBoard, { previewFenFromPgn } from "@/components/pgn/MiniFenBoard";
@@ -64,6 +64,7 @@ export default function PgnLibraryPicker({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [mobilePanel, setMobilePanel] = useState<"folders" | "games">("folders");
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     if (!open) return;
@@ -75,6 +76,10 @@ export default function PgnLibraryPicker({
       .catch((err) => setError(err?.message || "Could not load the PGN library."))
       .finally(() => setLoading(false));
   }, [open]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [activeFolder, query, sort]);
 
   useEffect(() => {
     if (!open) {
@@ -133,6 +138,9 @@ export default function PgnLibraryPicker({
     });
     return sorted;
   }, [activeFolder, games, query, sort]);
+  const pageSize = 60;
+  const pageCount = Math.max(1, Math.ceil(visibleGames.length / pageSize));
+  const pagedGames = useMemo(() => visibleGames.slice((page - 1) * pageSize, page * pageSize), [visibleGames, page]);
 
   function toggleGame(game: PgnLibraryGame) {
     if (mode === "single") {
@@ -253,7 +261,7 @@ export default function PgnLibraryPicker({
                 </div>
               ) : visibleGames.length ? (
                 <div className="grid gap-3 md:grid-cols-2">
-                  {visibleGames.map((game) => {
+                  {pagedGames.map((game) => {
                     const selected = selectedIds.includes(game._id);
                     return (
                       <article key={game._id} className={cn("rounded-lg border p-3 shadow-sm transition", selected ? "border-purple-400 ring-2 ring-purple-100" : "border-slate-200 hover:border-purple-200")}>
@@ -282,6 +290,13 @@ export default function PgnLibraryPicker({
               ) : (
                 <div className="flex min-h-52 items-center justify-center rounded-lg border border-dashed border-slate-200 text-center text-sm text-slate-500">
                   {visibleFolders.length && !activeFolder && !query.trim() ? "Choose a folder to view the PGNs inside." : "No PGNs found in this view."}
+                </div>
+              )}
+              {visibleGames.length > pageSize && (
+                <div className="mt-4 flex items-center justify-center gap-3">
+                  <button type="button" aria-label="Previous page" disabled={page <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))} className="rounded-md border border-slate-200 p-2 disabled:opacity-30"><ChevronLeft size={16} /></button>
+                  <span className="text-xs font-semibold text-slate-500">Page {page} of {pageCount}</span>
+                  <button type="button" aria-label="Next page" disabled={page >= pageCount} onClick={() => setPage((current) => Math.min(pageCount, current + 1))} className="rounded-md border border-slate-200 p-2 disabled:opacity-30"><ChevronRight size={16} /></button>
                 </div>
               )}
             </div>

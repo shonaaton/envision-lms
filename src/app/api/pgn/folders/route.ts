@@ -35,20 +35,30 @@ export async function GET() {
   const currentUserId = String((session.user as any).id);
   const isAdmin = (session.user as any).role === "admin";
   const folders = await PgnFolder.find(buildPgnFolderFilter(session)).sort({ sortOrder: 1, path: 1 }).lean();
-  const games = await PGN.find(buildPgnLibraryFilter(session)).select("folder visibility uploadedBy updatedAt createdAt").lean();
+  const gameStats = await PGN.aggregate([
+    { $match: buildPgnLibraryFilter(session) },
+    {
+      $group: {
+        _id: { path: "$folder", visibility: "$visibility" },
+        gameCount: { $sum: 1 },
+        lastUpdatedAt: { $max: { $ifNull: ["$updatedAt", "$createdAt"] } },
+        uploaderIds: { $addToSet: "$uploadedBy" },
+      },
+    },
+  ]);
   const stats = new Map<string, { gameCount: number; lastUpdatedAt?: Date; uploaderIds: Set<string> }>();
-  games.forEach((game: any) => {
-    const path = normalizeFolderPath(game.folder);
+  gameStats.forEach((game: any) => {
+    const path = normalizeFolderPath(game._id?.path);
     if (!path) return;
-    const scope = game.visibility === "shared" ? "shared" : "personal";
+    const scope = game._id?.visibility === "shared" ? "shared" : "personal";
     const parts = path.split("/");
     for (let index = 0; index < parts.length; index += 1) {
       const folderPath = parts.slice(0, index + 1).join("/");
       const key = `${scope}:${folderPath}`;
       const current = stats.get(key) || { gameCount: 0, uploaderIds: new Set<string>() };
-      current.gameCount += 1;
-      if (game.uploadedBy) current.uploaderIds.add(String(game.uploadedBy));
-      const updatedAt = new Date(game.updatedAt || game.createdAt);
+      current.gameCount += Number(game.gameCount || 0);
+      (game.uploaderIds || []).filter(Boolean).forEach((id: any) => current.uploaderIds.add(String(id)));
+      const updatedAt = new Date(game.lastUpdatedAt);
       if (!current.lastUpdatedAt || updatedAt > current.lastUpdatedAt) current.lastUpdatedAt = updatedAt;
       stats.set(key, current);
     }

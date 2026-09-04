@@ -35,5 +35,7 @@ const PGNSchema = new Schema(
   { timestamps: true }
 );
 PGNSchema.index({ title: "text", white: "text", black: "text", event: "text", opening: "text", eco: "text", tags: "text", commentsText: "text" });
+PGNSchema.index({ uploadedBy: 1, createdAt: -1 });
+PGNSchema.index({ visibility: 1, createdAt: -1 });
 
 export const PGN = models.PGN || model("PGN", PGNSchema);

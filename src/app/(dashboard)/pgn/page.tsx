@@ -79,6 +79,7 @@ export default function PgnLibraryPage() {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState("Newest");
   const [reorder, setReorder] = useState(false);
+  const [page, setPage] = useState(1);
   const role = (session?.user as any)?.role;
   const isAdmin = (session?.user as any)?.role === "admin";
   const currentUserId = String((session?.user as any)?.id || "");
@@ -187,6 +188,11 @@ export default function PgnLibraryPage() {
   const rootPersonalFolders = useMemo(() => visibleFolders.filter((folder) => folder.personal), [visibleFolders]);
   const rootSharedGames = useMemo(() => visibleGames.filter((game) => game.visibility === "shared"), [visibleGames]);
   const rootPersonalGames = useMemo(() => visibleGames.filter((game) => game.visibility !== "shared"), [visibleGames]);
+  const pageSize = 60;
+  const pageCount = Math.max(1, Math.ceil(visibleGames.length / pageSize));
+  const pagedGames = useMemo(() => visibleGames.slice((page - 1) * pageSize, page * pageSize), [visibleGames, page]);
+  const pagedSharedGames = useMemo(() => pagedGames.filter((game) => game.visibility === "shared"), [pagedGames]);
+  const pagedPersonalGames = useMemo(() => pagedGames.filter((game) => game.visibility !== "shared"), [pagedGames]);
   const previewFens = useMemo(() => {
     const map = new Map<string, string>();
     games.forEach((game) => map.set(game._id, previewFen(game)));
@@ -209,6 +215,10 @@ export default function PgnLibraryPage() {
     }
     setCurrentFolder(folder);
   }, [searchParams, allKnownFolders, router]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [activeFolderPath, query, sort]);
 
   function openFolder(folder: FolderDoc) {
     setCurrentFolder(folder);
@@ -519,7 +529,7 @@ export default function PgnLibraryPage() {
                 <div>
                   <div className="mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">PGNs</div>
                   <GameGrid
-                    games={visibleGames}
+                    games={pagedGames}
                     previewFens={previewFens}
                     folder={currentFolder.path}
                     isAdmin={isAdmin}
@@ -538,7 +548,7 @@ export default function PgnLibraryPage() {
               title="Shared Library"
               description="Shared folders and PGNs available across the academy."
               folders={rootSharedFolders}
-              games={rootSharedGames}
+              games={pagedSharedGames}
               previewFens={previewFens}
               isAdmin={isAdmin}
               currentUserId={currentUserId}
@@ -554,7 +564,7 @@ export default function PgnLibraryPage() {
               title="Personal Library"
               description="Private folders and PGNs visible only to you."
               folders={rootPersonalFolders}
-              games={rootPersonalGames}
+              games={pagedPersonalGames}
               previewFens={previewFens}
               isAdmin={isAdmin}
               currentUserId={currentUserId}
@@ -574,8 +584,9 @@ export default function PgnLibraryPage() {
         {!currentFolder && (
           <div className="mt-28 flex items-center justify-end gap-5">
             <ChevronLeft size={18} className="text-slate-700" />
-            <span className="rounded-md border border-brand px-3 py-2 text-brand">1</span>
-            <ChevronRight size={18} className="text-slate-700" />
+            <button type="button" aria-label="Previous page" disabled={page <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))} className="disabled:opacity-30"><ChevronLeft size={18} className="text-slate-700" /></button>
+            <span className="rounded-md border border-brand px-3 py-2 text-brand">{page}</span>
+            <button type="button" aria-label="Next page" disabled={page >= pageCount} onClick={() => setPage((current) => Math.min(pageCount, current + 1))} className="disabled:opacity-30"><ChevronRight size={18} className="text-slate-700" /></button>
             <div className="relative">
               <select className="input w-[112px] appearance-none bg-white pr-8 text-slate-950">
                 <option>18 / page</option>

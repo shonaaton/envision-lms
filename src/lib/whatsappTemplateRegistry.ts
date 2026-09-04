@@ -803,7 +803,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
     "name": "substitute_class_assigned_coach",
     "language": "en",
     "sourceAutomation": "Substitute Coach Assigned - Coach",
-    "body": "Substitute Class For {{1}}\n\nBatch No: {{2}}\nTime: {{3}}\nDay: {{4}}\nDate: {{5}}\nTopic: {{6}}\nLevel: {{7}}\n\nRegards,\n\nTeam Envision",
+    "body": "Hello Coach, you have been assigned to conduct a substitute class for {{1}}.\n\nPlease review the class details below before joining the session through the academy portal.\n\nBatch No: {{2}}\nTime: {{3}}\nDay: {{4}}\nDate: {{5}}\nTopic: {{6}}\nLevel: {{7}}\n\nKindly keep the session aligned with the ongoing curriculum so the student experience remains smooth.\n\nRegards,\nTeam Envision",
     "variables": [
       {
         "position": 1,

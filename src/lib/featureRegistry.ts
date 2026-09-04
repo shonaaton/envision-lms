@@ -284,7 +284,7 @@ export const FEATURE_DEFINITIONS: FeatureDefinition[] = [
     label: "Fees Management",
     category: "Payments",
     description: "Parent access for fee APIs, payment webhooks, and shared billing operations.",
-    routes: [],
+    routes: ["/fees/reminders"],
     apiPrefixes: ["/api/fees", "/api/payments"],
     permissions: [view, { id: "invoice", label: "Create Invoice" }, edit, { id: "payment", label: "Record Payment" }, { id: "credit", label: "Issue Credit", critical: true }, exportRecords],
     defaultStatus: "enabled",

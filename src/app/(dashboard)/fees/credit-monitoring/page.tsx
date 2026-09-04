@@ -1,13 +1,9 @@
 import { auth } from "@/lib/auth";
-import { resolvePublicAppUrl } from "@/lib/appUrl";
 import { dbConnect } from "@/lib/db";
-import { sendAutomationEmail } from "@/lib/emailAutomation";
-import { sendWhatsAppReminder } from "@/lib/whatsappAutomation";
-import { formatINR } from "@/lib/utils";
-import { AcademySettings, CreditLedger, FeeAssignment, FeePlan, Notification } from "@/models/Fee";
+import { CreditLedger, FeeAssignment, FeePlan, Notification } from "@/models/Fee";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { AlertTriangle, CheckCircle2, Download, Filter, MailCheck, MailWarning, MessageCircle, Search, Send, WalletCards, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Download, Filter, Search, WalletCards, XCircle } from "lucide-react";
 import { getFeaturePermissionState } from "@/lib/featureAccess";
 import { requireFeesAccess } from "@/lib/feesAccess";
 import ManualCreditForm from "@/components/fees/ManualCreditForm";
@@ -18,9 +14,6 @@ import { sendCreditAdjustmentEmail } from "@/lib/studentCommunicationEmails";
 export const dynamic = "force-dynamic";
 
 type Params = { q?: string; filter?: string; plan?: string; min?: string; max?: string; view?: string; creditAdjustment?: string; added?: string; student?: string };
-type ReminderDelivery = Awaited<ReturnType<typeof sendAutomationEmail>>;
-type WhatsAppDelivery = Awaited<ReturnType<typeof sendWhatsAppReminder>>;
-type ReminderSummary = { sent: number; failed: number; missing: number; skipped: number; total: number };
 
 function value(params: Params, key: keyof Params) {
   return String(params[key] || "");
@@ -38,65 +31,12 @@ function exportHref(params: Params, format: "csv" | "xls" | "history") {
   return `/api/fees/credit-monitoring?${next.toString()}`;
 }
 
-function deliveryStatus(delivery: ReminderDelivery) {
-  if (delivery.delivered) return "sent";
-  if (delivery.skipped) return "not_configured";
-  return "failed";
-}
-
-function whatsappStatus(delivery: WhatsAppDelivery) {
-  if (delivery.delivered) return "sent";
-  if (delivery.skipped) return "not_configured";
-  return "failed";
-}
-
-function whatsappErrorParam(delivery: WhatsAppDelivery) {
-  if (delivery.delivered || delivery.skipped) return "";
-  const message = "errorMessage" in delivery ? delivery.errorMessage : "";
-  return message ? `&waError=${encodeURIComponent(String(message).slice(0, 180))}` : "";
-}
-
 function reminderStatusCopy(status?: string) {
   if (status === "sent") return "Reminder sent";
   if (status === "not_configured") return "Email not configured";
   if (status === "missing_email") return "No email";
   if (status === "failed") return "Reminder failed";
   return "No reminder yet";
-}
-
-function bulkReminderRedirect(summary: ReminderSummary) {
-  const params = new URLSearchParams({
-    view: "reminders",
-    creditReminder: "sent",
-    sent: String(summary.sent),
-    failed: String(summary.failed),
-    missing: String(summary.missing),
-    skipped: String(summary.skipped),
-    total: String(summary.total),
-  });
-  redirect(`/fees/credit-monitoring?${params.toString()}`);
-}
-
-function creditReminderBanner(params: Params & Record<string, string | string[] | undefined>) {
-  if (String(params.creditReminder || "") !== "sent") return null;
-  const sent = String(params.sent || "0");
-  const failed = String(params.failed || "0");
-  const missing = String(params.missing || "0");
-  const skipped = String(params.skipped || "0");
-  const total = String(params.total || "0");
-  const hasProblems = Number(failed) || Number(missing) || Number(skipped);
-  return {
-    tone: hasProblems ? "border-amber-200 bg-amber-50 text-amber-900" : "border-emerald-200 bg-emerald-50 text-emerald-800",
-    icon: hasProblems ? MailWarning : MailCheck,
-    text: `Credit reminders processed: ${sent} sent, ${failed} failed, ${missing} missing email, ${skipped} not configured, ${total} total.`,
-  };
-}
-
-function whatsappBanner(status?: string, error = "") {
-  if (status === "sent") return { tone: "border-emerald-200 bg-emerald-50 text-emerald-800", icon: MessageCircle, text: "WhatsApp test reminder sent to the configured test number." };
-  if (status === "not_configured") return { tone: "border-amber-200 bg-amber-50 text-amber-800", icon: MailWarning, text: "WhatsApp test was not sent because WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID, or WHATSAPP_TEST_RECIPIENT is missing." };
-  if (status === "failed") return { tone: "border-rose-200 bg-rose-50 text-rose-800", icon: XCircle, text: error ? `WhatsApp test failed: ${error}` : "WhatsApp test failed. Check the Meta token, phone number ID, template name, and recipient allowlist." };
-  return null;
 }
 
 function manualCreditBanner(params: Params) {
@@ -309,132 +249,17 @@ async function removeManualCredits(formData: FormData) {
   redirect(`/fees/credit-monitoring?${params.toString()}`);
 }
 
-function creditReminderMessage(assignment: any, portalUrl: string) {
-  const student = assignment.student;
-  const balance = Number(assignment.creditBalance || 0);
-  return [
-    `Hello ${student.name},`,
-    balance <= 0
-      ? "Your class credit balance is now 0. Please recharge before booking or attending the next credit-based class."
-      : `Your class credit balance is low. You currently have ${balance} credit${balance === 1 ? "" : "s"} remaining.`,
-    assignment.plan?.name ? `Current plan: ${assignment.plan.name}.` : "",
-    assignment.plan?.amount ? `Recharge plan amount: ${formatINR(assignment.plan.amount)}.` : "",
-    portalUrl ? `Open your student billing page: ${portalUrl}` : "Please log in to your student portal to review credits and invoices.",
-    "If you have already recharged, please ignore this message.",
-  ].filter(Boolean).join("\n\n");
-}
-
-async function sendBulkCreditReminders(formData: FormData) {
-  "use server";
-  const session = await requireFeesAccess("credit", "creditMonitoring");
-  if (!session) throw new Error("Forbidden");
-  await dbConnect();
-  const mode = String(formData.get("creditReminderMode") || "low");
-  const settings: any = await AcademySettings.findOne().lean();
-  const lowCreditThreshold = 1;
-  const threshold = mode === "empty" ? 0 : lowCreditThreshold;
-  const assignments: any[] = await FeeAssignment.find({ type: "credits", creditBalance: { $lte: threshold } }).populate("student plan").sort({ creditBalance: 1 }).limit(500).lean();
-  const baseUrl = resolvePublicAppUrl();
-  const portalUrl = baseUrl ? `${baseUrl}/fees` : "";
-  const summary: ReminderSummary = { sent: 0, failed: 0, missing: 0, skipped: 0, total: assignments.length };
-
-  for (const assignment of assignments) {
-    const student = assignment.student;
-    const balance = Number(assignment.creditBalance || 0);
-    if (!student?._id || !student.email) {
-      summary.missing += 1;
-      await FeeAssignment.findByIdAndUpdate(assignment._id, { lastCreditReminderStatus: "missing_email", lastCreditReminderAt: new Date(), lastCreditReminderTo: "" });
-      continue;
-    }
-    const delivery = await sendAutomationEmail({
-      to: student.email,
-      subject: balance <= 0 ? "Recharge required: class credits are finished" : "Low credit reminder from Envision Chess Academy",
-      message: creditReminderMessage(assignment, portalUrl),
-      metadata: {
-        kind: "credit_reminder",
-        studentId: student.username || student._id.toString(),
-        studentObjectId: student._id.toString(),
-        assignmentId: assignment._id.toString(),
-        creditBalance: balance,
-        planName: assignment.plan?.name || "",
-        portalUrl,
-        previewText: "A class credit balance reminder from Envision Chess Academy.",
-      },
-    });
-    const status = deliveryStatus(delivery);
-    if (status === "sent") summary.sent += 1;
-    else if (status === "not_configured") summary.skipped += 1;
-    else summary.failed += 1;
-    await FeeAssignment.findByIdAndUpdate(assignment._id, {
-      lastCreditReminderAt: new Date(),
-      lastCreditReminderTo: student.email,
-      lastCreditReminderStatus: status,
-    });
-    if (status === "sent") {
-      await Notification.create({
-        user: student._id,
-        type: "credits.reminder",
-        title: balance <= 0 ? "Credit recharge required" : "Low credit reminder",
-        message: balance <= 0 ? "Your class credits are finished. Please recharge before your next credit-based class." : `Your remaining class credits are low (${balance}).`,
-        metadata: { assignment: assignment._id.toString(), email: student.email, balance },
-      });
-    }
-  }
-
-  revalidatePath("/fees/credit-monitoring");
-  await recordActivity({
-    actor: (session.user as any).id,
-    type: "fees.credits.bulk_reminders_sent",
-    label: `Sent bulk credit reminders to ${summary.total} student${summary.total === 1 ? "" : "s"}`,
-    entityType: "FeeAssignment",
-    metadata: { ...summary, mode, threshold, source: "manual_admin" },
-  });
-  bulkReminderRedirect(summary);
-}
-
-async function sendCreditWhatsAppTest(formData: FormData) {
-  "use server";
-  const session = await requireFeesAccess("credit", "creditMonitoring");
-  if (!session) throw new Error("Forbidden");
-  await dbConnect();
-  const assignmentId = String(formData.get("assignment") || "");
-  const assignment: any = await FeeAssignment.findById(assignmentId).populate("student plan").lean();
-  if (!assignment?.student?._id) redirect("/fees/credit-monitoring?view=reminders&whatsapp=failed");
-  const baseUrl = resolvePublicAppUrl();
-  const portalUrl = baseUrl ? `${baseUrl}/fees` : "";
-  const delivery = await sendWhatsAppReminder({
-    message: creditReminderMessage(assignment, portalUrl),
-    templateText: assignment.student.name || "Student",
-    metadata: {
-      kind: "credit_whatsapp_test",
-      assignmentId: assignment._id.toString(),
-      studentId: assignment.student.username || assignment.student._id.toString(),
-      creditBalance: Number(assignment.creditBalance || 0),
-      portalUrl,
-    },
-  });
-  await recordActivity({
-    actor: (session.user as any).id,
-    targetUser: assignment.student._id.toString(),
-    type: "fees.credits.whatsapp_test_sent",
-    label: `Sent WhatsApp credit reminder test for ${assignment.student.name || "student"}`,
-    entityType: "FeeAssignment",
-    entityId: assignment._id.toString(),
-    metadata: { creditBalance: Number(assignment.creditBalance || 0), status: whatsappStatus(delivery), source: "manual_admin" },
-  });
-  redirect(`/fees/credit-monitoring?view=reminders&whatsapp=${whatsappStatus(delivery)}${whatsappErrorParam(delivery)}`);
-}
-
 function statusFor(balance: number) {
-  if (balance <= 0) return { label: "Recharge required", tone: "bg-rose-50 text-rose-700 ring-rose-200", icon: XCircle };
+  if (balance <= -1) return { label: "Blocked", tone: "bg-rose-50 text-rose-700 ring-rose-200", icon: XCircle };
+  if (balance === 0) return { label: "Final class available", tone: "bg-violet-50 text-violet-700 ring-violet-200", icon: AlertTriangle };
   if (balance === 1) return { label: "Low credit alert", tone: "bg-amber-50 text-amber-700 ring-amber-200", icon: AlertTriangle };
   return { label: "Healthy", tone: "bg-emerald-50 text-emerald-700 ring-emerald-200", icon: CheckCircle2 };
 }
 
-type ViewKey = "students" | "add" | "deduct" | "reminders" | "history";
+type ViewKey = "students" | "add" | "deduct" | "history";
 
 function selectedView(value?: string): ViewKey {
-  if (value === "add" || value === "deduct" || value === "reminders" || value === "history") return value;
+  if (value === "add" || value === "deduct" || value === "history") return value;
   return "students";
 }
 
@@ -499,6 +324,7 @@ export default async function CreditMonitoringPage({ searchParams }: { searchPar
   const manager = role === "admin" || role === "sub-admin";
   await dbConnect();
   const params = searchParams ? await searchParams : {};
+  if (value(params, "view") === "reminders") redirect("/fees/reminders");
   const q = value(params, "q").toLowerCase();
   const filter = value(params, "filter") || "all";
   const plan = value(params, "plan");
@@ -525,8 +351,6 @@ export default async function CreditMonitoringPage({ searchParams }: { searchPar
   const lowCount = allAssignments.filter((assignment: any) => Number(assignment.creditBalance || 0) === 1).length;
   const emptyCount = allAssignments.filter((assignment: any) => Number(assignment.creditBalance || 0) <= 0).length;
   const healthyCount = allAssignments.filter((assignment: any) => Number(assignment.creditBalance || 0) > 1).length;
-  const reminderBanner = creditReminderBanner(params as any);
-  const waBanner = whatsappBanner(String((params as any).whatsapp || ""), String((params as any).waError || ""));
   const adjustmentBanner = manualCreditBanner(params);
   const canAddManualCredits = manager && permissions.credit;
   const creditStudents = allAssignments
@@ -553,18 +377,6 @@ export default async function CreditMonitoringPage({ searchParams }: { searchPar
         </div>
       </section>
 
-      {reminderBanner && (
-        <div className={`mb-4 flex items-center gap-3 rounded-lg border px-4 py-3 text-sm font-semibold ${reminderBanner.tone}`}>
-          <reminderBanner.icon size={18} />
-          {reminderBanner.text}
-        </div>
-      )}
-      {waBanner && (
-        <div className={`mb-4 flex items-center gap-3 rounded-lg border px-4 py-3 text-sm font-semibold ${waBanner.tone}`}>
-          <waBanner.icon size={18} />
-          {waBanner.text}
-        </div>
-      )}
       {adjustmentBanner && (
         <div className={`mb-4 flex items-center gap-3 rounded-lg border px-4 py-3 text-sm font-semibold ${adjustmentBanner.tone}`}>
           <CheckCircle2 size={18} />
@@ -572,11 +384,10 @@ export default async function CreditMonitoringPage({ searchParams }: { searchPar
         </div>
       )}
 
-      <nav className="mb-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+      <nav className="mb-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
         <ToolCard href={toolHref("students")} active={view === "students"} label="Students" count={`${totalStudents} credit-plan students`} icon={<WalletCards size={17} />} tone="bg-purple-50 text-purple-700" />
         {canAddManualCredits && <ToolCard href={toolHref("add")} active={view === "add"} label="Add Credits" icon={<CheckCircle2 size={17} />} tone="bg-emerald-50 text-emerald-700" />}
         {canAddManualCredits && <ToolCard href={toolHref("deduct")} active={view === "deduct"} label="Deduct Credits" icon={<XCircle size={17} />} tone="bg-rose-50 text-rose-700" />}
-        <ToolCard href={toolHref("reminders")} active={view === "reminders"} label="Email Reminders" count={`${lowCount + emptyCount} need attention`} icon={<Send size={17} />} tone="bg-amber-50 text-amber-700" />
         <ToolCard href={toolHref("history")} active={view === "history"} label="Credit Movement" count={`${ledgers.length} recent entries`} icon={<Download size={17} />} tone="bg-slate-100 text-slate-700" />
       </nav>
 
@@ -594,23 +405,6 @@ export default async function CreditMonitoringPage({ searchParams }: { searchPar
         </section>
       )}
 
-      {view === "reminders" && (
-        <section className="rounded-lg border border-amber-200 bg-white p-4 shadow-sm">
-          <SectionTitle title="Email Reminders" note="Send recharge reminders for low or empty balances." />
-          <form action={sendBulkCreditReminders} className="flex max-w-xl flex-col gap-3 sm:flex-row sm:items-end">
-            <label className="flex-1 space-y-1">
-              <span className="text-xs font-bold uppercase tracking-[0.1em] text-slate-500">Send to</span>
-              <select name="creditReminderMode" defaultValue="low" className="input h-10">
-                <option value="low">Low and zero credits</option>
-                <option value="empty">Zero credits only</option>
-              </select>
-            </label>
-            <button className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-brand px-4 text-sm font-bold text-white shadow-sm hover:bg-brand-700">
-              <Send size={15} /> Send Reminders
-            </button>
-          </form>
-        </section>
-      )}
 
       {view === "students" && (
         <>

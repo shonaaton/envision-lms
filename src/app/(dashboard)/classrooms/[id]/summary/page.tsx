@@ -10,6 +10,7 @@ import CsvDownloadButton from "@/components/common/CsvDownloadButton";
 import SessionResourceReview from "@/components/classroom/SessionResourceReview";
 import JoinScheduledSessionButton from "@/components/classroom/JoinScheduledSessionButton";
 import { formatAcademyDateTime } from "@/lib/academyTime";
+import { LocalTime } from "@/components/common/LocalTime";
 import { getSessionStart } from "@/lib/classroomSessions";
 import { coachCanAccessClassroomSession } from "@/lib/classroomCoachAccess";
 import { canAccessFeature } from "@/lib/featureAccess";
@@ -414,9 +415,9 @@ export default async function ClassroomSummaryPage({
           <StatCard label="Status" value={String(selectedSession.status || classroom.status || "scheduled")} />
           <StatCard label="Coach" value={classroom.coach?.name || classroom.instructor?.name || "Not assigned"} />
           <StatCard label="Students Assigned" value={String(assignedStudents.length)} />
-          <StatCard label="Scheduled" value={formatDateTime(getSessionStart(selectedSession))} />
-          <StatCard label="Actual Start" value={formatDateTime(selectedSession.actualStartedAt || liveSession?.startedAt)} />
-          <StatCard label="End" value={formatDateTime(selectedSession.actualEndedAt || liveSession?.endedAt)} />
+          <StatCard label="Scheduled" value={<LocalTime value={getSessionStart(selectedSession)} role={role} />} />
+          <StatCard label="Actual Start" value={<LocalTime value={selectedSession.actualStartedAt || liveSession?.startedAt} role={role} />} />
+          <StatCard label="End" value={<LocalTime value={selectedSession.actualEndedAt || liveSession?.endedAt} role={role} />} />
         </div>
       </section>
 
@@ -628,7 +629,7 @@ export default async function ClassroomSummaryPage({
   );
 }
 
-function StatCard({ label, value }: { label: string; value: string }) {
+function StatCard({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
       <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">{label}</div>

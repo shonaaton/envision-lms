@@ -260,6 +260,7 @@ export default async function FeesDashboardPage() {
     ...(feePlanPermissions.view || feePlanPermissions.edit ? [["/fees/fee-plans", "Fee Plans"]] as Array<[string, string]> : []),
     ...(studentFeePermissions.view || studentFeePermissions.edit ? [["/fees/student-fees", "Student Fees"]] as Array<[string, string]> : []),
     ...(creditPermissions.view || creditPermissions.credit ? [["/fees/credit-monitoring", "Credit Monitoring"]] as Array<[string, string]> : []),
+    ["/fees/reminders", "Fee Reminders"],
     ...(invoicePermissions.view || invoicePermissions.invoice ? [["/fees/invoices", "Invoices"]] as Array<[string, string]> : []),
     ...(invoicePermissions.view ? [["/fees/deleted-invoices", "Deleted Invoices"]] as Array<[string, string]> : []),
     ...(reportPermissions.view || reportPermissions.export ? [["/fees/reports", "Reports"]] as Array<[string, string]> : []),

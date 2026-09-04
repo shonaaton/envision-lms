@@ -3,6 +3,7 @@ import { dbConnect } from "@/lib/db";
 import { deriveScheduledSessionStatus, isJoinWindowOpen } from "@/lib/classroomSessions";
 import { resolveScheduledSession } from "@/lib/classroomLiveSession";
 import { canAccessFeature, isSuperAdminSession } from "@/lib/featureAccess";
+import { getClassroomCreditEligibility } from "@/lib/classroomCreditAccess";
 import { isCurrentStudent } from "@/lib/studentAccess";
 import { Classroom } from "@/models/Classroom";
 import { ClassroomSession } from "@/models/ClassroomLive";
@@ -52,6 +53,9 @@ export default async function ClassroomLivePage({ params, searchParams }: { para
   const isSuperAdmin = await isSuperAdminSession(session?.user as any);
   if (classroom.isTestClassroom && (!isSuperAdmin || String(classroom.testOwner || "") !== userId)) redirect("/dashboard");
   if (role === "student" && !(await isCurrentStudent(userId))) redirect("/dashboard");
+  // Credit-plan students at -1 or below are blocked until they recharge. This
+  // also catches direct URL entry that bypasses the join button.
+  if ((await getClassroomCreditEligibility(userId, role)).blocked) redirect("/classrooms?credits=blocked");
 
   if (role !== "admin" && role !== "sub-admin") {
     const scheduledSession: any = pickScheduledSession(classroom, searchParams.session, role, userId);

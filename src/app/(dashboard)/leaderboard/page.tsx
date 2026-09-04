@@ -130,7 +130,7 @@ export default async function LeaderboardPage({
     const bonusXp = bonusRewards.reduce((sum: number, item: any) => sum + Number(item.xp || 0), 0);
     const liveRewardXp = liveQuestionRewards.reduce((sum: number, item: any) => sum + Number(item.xp || 0), 0);
     const scopedTournamentPoints = scope === "course" || scope === "level" || scope === "class" ? 0 : tournamentPoints;
-    const totalPoints = homeworkPoints + quizPoints + scopedTournamentPoints + bonusXp;
+    const totalPoints = homeworkPoints + liveRewardXp + scopedTournamentPoints + bonusXp;
     const xp = totalPoints;
     const coins = rewardRows.reduce((sum: number, item: any) => sum + (item.coins || 0), 0);
     const accuracyValues = [...hw.map((h: any) => h.accuracy || 0), ...live.map((r: any) => (r.correct ? 100 : 0))];

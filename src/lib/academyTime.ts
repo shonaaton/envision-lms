@@ -52,7 +52,7 @@ export function academyDateTime(dateValue: string | Date, time = "00:00") {
 
 export function academyDateKey(value: string | Date) {
   if (typeof value === "string") {
-    const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
     if (match) return `${match[1]}-${match[2]}-${match[3]}`;
   }
   const { year, month, day } = dateParts(value, ACADEMY_TIME_ZONE);

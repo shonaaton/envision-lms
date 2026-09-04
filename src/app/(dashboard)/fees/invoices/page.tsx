@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { resolvePublicAppUrl } from "@/lib/appUrl";
 import { dbConnect } from "@/lib/db";
 import { adjustedInvoicePayment, createInvoice, createNextMonthlyInvoiceAfterPayment, createPublicInvoiceUrl, ensureMonthlyInvoices, markInvoicePaid as applyInvoicePayment } from "@/lib/fees";
+import { reverseCreditPurchase } from "@/lib/creditReversal";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
 import { sendWhatsAppReminder } from "@/lib/whatsappAutomation";
 import { formatINR } from "@/lib/utils";
@@ -25,7 +26,6 @@ export const dynamic = "force-dynamic";
 
 type ReminderDelivery = Awaited<ReturnType<typeof sendAutomationEmail>>;
 type WhatsAppDelivery = Awaited<ReturnType<typeof sendWhatsAppReminder>>;
-type ReminderSummary = { sent: number; failed: number; missing: number; skipped: number; total: number };
 
 function paise(value: FormDataEntryValue | null) {
   return Math.round(Number(value || 0) * 100);
@@ -47,18 +47,6 @@ function whatsappErrorParam(delivery: WhatsAppDelivery) {
   if (delivery.delivered || delivery.skipped) return "";
   const message = "errorMessage" in delivery ? delivery.errorMessage : "";
   return message ? `&waError=${encodeURIComponent(String(message).slice(0, 180))}` : "";
-}
-
-function bulkReminderRedirect(summary: ReminderSummary, kind = "invoice_reminders") {
-  const params = new URLSearchParams({
-    bulk: kind,
-    sent: String(summary.sent),
-    failed: String(summary.failed),
-    missing: String(summary.missing),
-    skipped: String(summary.skipped),
-    total: String(summary.total),
-  });
-  redirect(`/fees/invoices?${params.toString()}`);
 }
 
 function invoiceReminderMessage(invoice: any, invoiceUrl: string) {
@@ -307,21 +295,19 @@ async function deleteInvoice(formData: FormData) {
     const studentId = invoice.student?._id || invoice.student;
     const assignment: any = await FeeAssignment.findOne({ student: studentId, type: "credits" });
     if (assignment) {
-      const previousBalance = Number(assignment.creditBalance || 0);
-      const previousPurchased = Number(assignment.totalCreditsPurchased || 0);
-      const reversedCredits = Number(invoice.credits || 0);
-      await FeeAssignment.findByIdAndUpdate(assignment._id, {
-        creditBalance: Math.max(0, previousBalance - reversedCredits),
-        totalCreditsPurchased: Math.max(0, previousPurchased - reversedCredits),
+      const reversal = reverseCreditPurchase({
+        previousBalance: Number(assignment.creditBalance || 0),
+        previousPurchased: Number(assignment.totalCreditsPurchased || 0),
+        reversedCredits: Number(invoice.credits || 0),
       });
-      creditReversal = {
-        assignment: assignment._id.toString(),
-        reversedCredits,
-        previousBalance,
-        balanceAfter: Math.max(0, previousBalance - reversedCredits),
-        previousPurchased,
-        purchasedAfter: Math.max(0, previousPurchased - reversedCredits),
-      };
+      // Absolute assignment (not $inc) is deliberate: if this delete were ever
+      // to run twice concurrently, writing the same computed value twice is
+      // idempotent, whereas $inc would double-deduct.
+      await FeeAssignment.findByIdAndUpdate(assignment._id, {
+        creditBalance: reversal.balanceAfter,
+        totalCreditsPurchased: reversal.purchasedAfter,
+      });
+      creditReversal = { assignment: assignment._id.toString(), ...reversal };
     }
   }
   if (invoice.type === "monthly" && invoice.assignment && invoice.dueDate) {
@@ -520,71 +506,6 @@ async function sendInvoiceWhatsApp(formData: FormData) {
   redirect(`${returnPath}whatsapp=${whatsappStatus(delivery)}${whatsappErrorParam(delivery)}`);
 }
 
-async function sendBulkInvoiceReminders(formData: FormData) {
-  "use server";
-  const session = await requireFeesAccess("invoice", "invoices");
-  if (!session) throw new Error("Forbidden");
-  await dbConnect();
-  const mode = String(formData.get("invoiceReminderMode") || "due");
-  const now = new Date();
-  const filter: any = { status: { $in: ["unpaid", "overdue"] } };
-  if (mode === "due") filter.dueDate = { $lte: now };
-  const invoices: any[] = await Invoice.find(filter).populate("student plan").sort({ dueDate: 1 }).limit(500).lean();
-  const summary: ReminderSummary = { sent: 0, failed: 0, missing: 0, skipped: 0, total: invoices.length };
-
-  for (const invoice of invoices) {
-    if (!invoice?.student?._id || !invoice.student.email) {
-      summary.missing += 1;
-      await Invoice.findByIdAndUpdate(invoice._id, { lastEmailStatus: "missing_email", lastSentAt: new Date(), lastSentTo: "" });
-      continue;
-    }
-    const invoiceUrl = await createPublicInvoiceUrl(invoice._id.toString());
-    const delivery = await sendAutomationEmail({
-      to: invoice.student.email,
-      subject: `Reminder: Invoice ${invoice.invoiceNumber} is pending`,
-      message: invoiceReminderMessage(invoice, invoiceUrl),
-      metadata: {
-        kind: "invoice_reminder",
-        invoiceId: invoice._id.toString(),
-        invoiceNumber: invoice.invoiceNumber,
-        studentId: invoice.student.username || invoice.student._id.toString(),
-        studentObjectId: invoice.student._id.toString(),
-        invoiceUrl,
-        reminderMode: mode,
-        previewText: "A fee invoice reminder from Envision Chess Academy.",
-      },
-    });
-    const status = deliveryStatus(delivery);
-    if (status === "sent") summary.sent += 1;
-    else if (status === "not_configured") summary.skipped += 1;
-    else summary.failed += 1;
-    await Invoice.findByIdAndUpdate(invoice._id, {
-      lastSentAt: new Date(),
-      lastSentTo: invoice.student.email,
-      lastEmailStatus: status,
-    });
-    if (status === "sent") {
-      await Notification.create({
-        user: invoice.student._id,
-        type: "invoice.reminder",
-        title: "Invoice payment reminder",
-        message: `${invoice.invoiceNumber} reminder has been emailed to ${invoice.student.email}.`,
-        metadata: { invoice: invoice._id.toString(), email: invoice.student.email },
-      });
-    }
-  }
-
-  revalidatePath("/fees/invoices");
-  await recordActivity({
-    actor: (session.user as any).id,
-    type: "fees.invoice.bulk_reminders_sent",
-    label: `Sent bulk invoice reminders to ${summary.total} invoice${summary.total === 1 ? "" : "s"}`,
-    entityType: "Invoice",
-    metadata: { ...summary, mode, source: "manual_admin" },
-  });
-  bulkReminderRedirect(summary);
-}
-
 function queryValue(params: Record<string, string | string[] | undefined>, key: string) {
   const raw = params[key];
   return typeof raw === "string" ? raw : "";
@@ -620,21 +541,6 @@ function whatsappBanner(status: string, error = "") {
   if (status === "not_configured") return { tone: "border-amber-200 bg-amber-50 text-amber-800", icon: MailWarning, text: "WhatsApp test was not sent because WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID, or WHATSAPP_TEST_RECIPIENT is missing." };
   if (status === "failed") return { tone: "border-rose-200 bg-rose-50 text-rose-800", icon: AlertCircle, text: error ? `WhatsApp test failed: ${error}` : "WhatsApp test failed. Check the Meta token, phone number ID, template name, and recipient allowlist." };
   return null;
-}
-
-function bulkBanner(params: Record<string, string | string[] | undefined>) {
-  if (queryValue(params, "bulk") !== "invoice_reminders") return null;
-  const sent = queryValue(params, "sent") || "0";
-  const failed = queryValue(params, "failed") || "0";
-  const missing = queryValue(params, "missing") || "0";
-  const skipped = queryValue(params, "skipped") || "0";
-  const total = queryValue(params, "total") || "0";
-  const hasProblems = Number(failed) || Number(missing) || Number(skipped);
-  return {
-    tone: hasProblems ? "border-amber-200 bg-amber-50 text-amber-900" : "border-emerald-200 bg-emerald-50 text-emerald-800",
-    icon: hasProblems ? MailWarning : MailCheck,
-    text: `Invoice reminders processed: ${sent} sent, ${failed} failed, ${missing} missing email, ${skipped} not configured, ${total} total.`,
-  };
 }
 
 function paymentBanner(status: string) {
@@ -782,7 +688,6 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
   ]);
   const sendStatus = queryValue(params, "send");
   const banner = sendBanner(sendStatus);
-  const reminderBanner = bulkBanner(params);
   const paidBanner = paymentBanner(queryValue(params, "payment"));
   const deletedBanner = deleteBanner(queryValue(params, "delete"));
   const issueDateUpdateBanner = issueDateBanner(queryValue(params, "issueDate"));
@@ -820,12 +725,6 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
         <div className={`mb-4 flex items-center gap-3 rounded-lg border px-4 py-3 text-sm font-semibold ${banner.tone}`}>
           <banner.icon size={18} />
           {banner.text}
-        </div>
-      )}
-      {reminderBanner && (
-        <div className={`mb-4 flex items-center gap-3 rounded-lg border px-4 py-3 text-sm font-semibold ${reminderBanner.tone}`}>
-          <reminderBanner.icon size={18} />
-          {reminderBanner.text}
         </div>
       )}
       {paidBanner && (
@@ -879,15 +778,9 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
                 <p className="mt-1 text-xs leading-5 text-amber-800">Send invoice emails through the active workflow.</p>
               </div>
             </div>
-            <form action={sendBulkInvoiceReminders} className="mt-4 grid gap-2">
-              <select name="invoiceReminderMode" defaultValue="due" className="h-10 rounded-lg border border-amber-300 bg-white px-3 text-sm font-semibold text-slate-800">
-                <option value="due">Due or overdue invoices</option>
-                <option value="pending">All pending invoices</option>
-              </select>
-              <button className="btn-primary w-full" title="Send bulk reminders">
-                <Send size={15} /> Send Reminders
-              </button>
-            </form>
+            <a href="/fees/reminders" className="btn-primary mt-4 w-full" title="Open Fee Reminders">
+              <Send size={15} /> Open Fee Reminders
+            </a>
           </div>
         </section>
       )}

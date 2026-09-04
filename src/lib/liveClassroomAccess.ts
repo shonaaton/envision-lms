@@ -2,6 +2,7 @@ import { Classroom } from "@/models/Classroom";
 import { canAccessFeature, isSuperAdminSession } from "@/lib/featureAccess";
 import { User } from "@/models/User";
 import { coachCanAccessClassroomSession } from "@/lib/classroomCoachAccess";
+import { getClassroomCreditEligibility } from "@/lib/classroomCreditAccess";
 import { resolveScheduledSession } from "@/lib/classroomLiveSession";
 import { isJoinWindowOpen } from "@/lib/classroomSessions";
 
@@ -64,6 +65,13 @@ export async function getLiveClassroomForUser(classroomId: string, role: AppRole
   if (role === "student") {
     const student = await User.findById(userId).select("role isActive").lean();
     if ((student as any)?.role !== "student" || (student as any)?.isActive === false) {
+      return { classroom, allowed: false as const };
+    }
+    // Credit-plan students at -1 or below have used their final grace class
+    // and cannot enter any classroom until they recharge. Enforced here so
+    // every live-classroom API route is covered, not just the join button.
+    const creditEligibility = await getClassroomCreditEligibility(userId, role);
+    if (creditEligibility.blocked) {
       return { classroom, allowed: false as const };
     }
   }

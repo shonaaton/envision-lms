@@ -28,10 +28,14 @@ import {
   deriveScheduledSessionStatus,
   flattenScheduledSessions,
   formatJoinWindowLabel,
+  getSessionStart,
   isJoinWindowOpen,
   isSessionUpcomingLike,
 } from "@/lib/classroomSessions";
+import { formatAcademyDateTime } from "@/lib/academyTime";
+import { useViewerTimeZone } from "@/lib/viewerTime";
 import JoinScheduledSessionButton from "@/components/classroom/JoinScheduledSessionButton";
+import CreditGateModal from "@/components/classroom/CreditGateModal";
 import PageLoadingOverlay from "@/components/feedback/PageLoadingOverlay";
 
 type Role = "student" | "instructor" | "admin" | "sub-admin";
@@ -249,6 +253,9 @@ export default function ClassroomManagementClient({
   const [items, setItems] = useState<ClassroomItem[]>([]);
   const [targets, setTargets] = useState<TargetsPayload>({ students: [], coaches: [], batches: [], courses: [] });
   const [loading, setLoading] = useState(true);
+  // Set when a blocked credit-plan student is redirected back here after
+  // trying to open a classroom URL directly, so they see why.
+  const [creditBlockedNotice, setCreditBlockedNotice] = useState(false);
   const [busyMessage, setBusyMessage] = useState("");
   const [open, setOpen] = useState(false);
   const [editItem, setEditItem] = useState<ClassroomItem | null>(null);
@@ -311,6 +318,17 @@ export default function ClassroomManagementClient({
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("credits") !== "blocked") return;
+    setCreditBlockedNotice(true);
+    // Drop the marker so a refresh doesn't reopen the modal.
+    params.delete("credits");
+    const query = params.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
+  }, []);
 
   const selectedCourse = useMemo(() => targets.courses.find((course) => course._id === form.course), [targets.courses, form.course]);
   const selectedLevel = useMemo(
@@ -787,7 +805,12 @@ export default function ClassroomManagementClient({
 
   const canManageClassrooms = role !== "student" && (permissions.create || permissions.edit || permissions.cancel || permissions.assign);
   if (!canManageClassrooms) {
-    return <SimpleClassroomList items={items} loading={loading} role={role} canJoin={permissions.join} canManageAttendance={permissions.attendance} />;
+    return (
+      <>
+        <SimpleClassroomList items={items} loading={loading} role={role} canJoin={permissions.join} canManageAttendance={permissions.attendance} />
+        {creditBlockedNotice ? <CreditGateModal kind="blocked" onClose={() => setCreditBlockedNotice(false)} /> : null}
+      </>
+    );
   }
 
   return (
@@ -1554,11 +1577,11 @@ function InfoCard({ label, value }: { label: string; value: string }) {
   );
 }
 
-function CompactInfo({ label, value }: { label: string; value: string }) {
+function CompactInfo({ label, value, tooltip }: { label: string; value: string; tooltip?: string }) {
   return (
     <div className="min-w-0 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5">
       <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">{label}</div>
-      <div className="mt-0.5 truncate text-sm font-semibold text-slate-900" title={value}>{value}</div>
+      <div className="mt-0.5 truncate text-sm font-semibold text-slate-900" title={tooltip || value}>{value}</div>
     </div>
   );
 }
@@ -1906,8 +1929,24 @@ function SimpleClassroomList({
   canManageAttendance: boolean;
 }) {
   const [futureDetails, setFutureDetails] = useState<{ classroom: ClassroomItem; session: any } | null>(null);
+  // Students/instructors (including demo accounts) see session times in their
+  // own device's timezone; admins/sub-admins keep seeing the academy's IST
+  // schedule, same as every other display in this app.
+  const { timeZone: viewerTimeZone, isAcademyTime } = useViewerTimeZone(role);
   if (loading) return <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500">Loading classrooms...</div>;
   const now = new Date();
+  function formatSessionWhen(session: any, classroom: any): { value: string; tooltip?: string } {
+    const start = getSessionStart(session) || getSessionStart({ scheduledFor: classroom.classDate || classroom.startDate, startTime: classroom.startTime });
+    if (!start) {
+      return { value: `${formatDate(String(session.scheduledFor || classroom.classDate || classroom.startDate || ""))} at ${session.startTime || classroom.startTime || "--"}` };
+    }
+    // Compact list — local time only, with the IST equivalent as a hover
+    // tooltip rather than inline text so this still fits one line.
+    return {
+      value: formatAcademyDateTime(start, {}, viewerTimeZone),
+      tooltip: isAcademyTime ? undefined : `${formatAcademyDateTime(start, {}, "Asia/Kolkata")} IST`,
+    };
+  }
   const sessions = dedupeSessionRows(flattenScheduledSessions(items)
     .filter((row) => row.start)
     .sort((a, b) => (a.start?.getTime() || 0) - (b.start?.getTime() || 0)));
@@ -1976,13 +2015,13 @@ function SimpleClassroomList({
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <h3 className="truncate text-base font-black text-slate-950">{classroom.title}</h3>
-                      <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-bold", sessionStatusTone(status))}>{formatJoinWindowLabel(session, now)}</span>
+                      <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-bold", sessionStatusTone(status))}>{formatJoinWindowLabel(session, now, viewerTimeZone)}</span>
                       {classroom.courseName && <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-700">{classroom.courseName}</span>}
                     </div>
                     <div className="mt-2 grid gap-2 md:grid-cols-2 xl:grid-cols-[1.4fr_1fr_1fr_1fr]">
                       <CompactInfo label="Topic" value={session.topicName || classroom.topicName || "Not set"} />
                       <CompactInfo label={currentRoleLabel} value={role === "student" ? assignedCoachName(classroom, session) : ((classroom.batches || []).map((batch: any) => batch.name).join(", ") || `${studentsForSession(classroom, session).length} assigned`)} />
-                      <CompactInfo label="When" value={`${formatDate(String(session.scheduledFor || classroom.classDate || classroom.startDate || ""))} at ${session.startTime || classroom.startTime || "--"}`} />
+                      <CompactInfo label="When" {...formatSessionWhen(session, classroom)} />
                       <CompactInfo label="Duration" value={formatDuration(session.durationMinutes || classroom.durationMinutes || 60)} />
                     </div>
                   </div>
@@ -2038,12 +2077,12 @@ function SimpleClassroomList({
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <h3 className="truncate text-base font-black text-slate-950">{classroom.title}</h3>
-                        <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-bold", statusTone(status))}>{formatJoinWindowLabel(session, now)}</span>
+                        <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-bold", statusTone(status))}>{formatJoinWindowLabel(session, now, viewerTimeZone)}</span>
                       </div>
                       <div className="mt-2 grid gap-2 md:grid-cols-2 xl:grid-cols-[1.4fr_1fr_1fr_1fr]">
                         <CompactInfo label="Topic" value={session.topicName || classroom.topicName || "Not set"} />
                         <CompactInfo label={currentRoleLabel} value={role === "student" ? assignedCoachName(classroom, session) : ((classroom.batches || []).map((batch: any) => batch.name).join(", ") || `${studentsForSession(classroom, session).length} assigned`)} />
-                        <CompactInfo label="When" value={`${formatDate(String(session.scheduledFor || classroom.classDate || classroom.startDate || ""))} at ${session.startTime || classroom.startTime || "--"}`} />
+                        <CompactInfo label="When" {...formatSessionWhen(session, classroom)} />
                         <CompactInfo label="Duration" value={formatDuration(session.durationMinutes || classroom.durationMinutes || 60)} />
                       </div>
                     </div>

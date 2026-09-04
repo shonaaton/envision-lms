@@ -115,7 +115,13 @@ export function flattenScheduledSessions(classrooms: any[]) {
   });
 }
 
-export function formatJoinWindowLabel(session: ScheduledSessionLike, now = new Date()) {
+/**
+ * `timeZone` defaults to the academy's own zone (IST) so every existing
+ * caller keeps behaving exactly as before. Pass the viewer's own detected
+ * zone from a client component (see useViewerTimeZone in @/lib/viewerTime)
+ * to show "Opens ..." in the student's/instructor's own local time instead.
+ */
+export function formatJoinWindowLabel(session: ScheduledSessionLike, now = new Date(), timeZone: string = ACADEMY_TIME_ZONE) {
   const start = getSessionStart(session);
   if (!start) return "Schedule pending";
   const status = deriveScheduledSessionStatus(session, now);
@@ -130,7 +136,7 @@ export function formatJoinWindowLabel(session: ScheduledSessionLike, now = new D
   if (status === "student_no_show") return "Student no-show";
   if (status === "absent") return "Absent";
   if (status === "technical_issue") return "Technical issue";
-  if (now < start) return `Opens ${formatAcademyDateTime(start, { year: undefined })}`;
+  if (now < start) return `Opens ${formatAcademyDateTime(start, { year: undefined }, timeZone)}`;
   return "Session closed";
 }
-import { academyDateTime, formatAcademyDateTime } from "@/lib/academyTime";
+import { ACADEMY_TIME_ZONE, academyDateTime, formatAcademyDateTime } from "@/lib/academyTime";

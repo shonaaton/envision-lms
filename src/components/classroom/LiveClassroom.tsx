@@ -53,6 +53,7 @@ import {
   X,
 } from "lucide-react";
 import PageLoadingOverlay from "@/components/feedback/PageLoadingOverlay";
+import CreditGatedGoogleMeetLink from "@/components/classroom/CreditGatedGoogleMeetLink";
 import MiniFenBoard, { previewFenFromPgn } from "@/components/pgn/MiniFenBoard";
 import { normalizePermissiveFen, sortPgnCollection, type PgnMoveNote } from "@/lib/pgnLibrary";
 import {
@@ -68,11 +69,29 @@ import {
 } from "@/lib/lichessPgn";
 import { cn } from "@/lib/utils";
 import { normalizeGoogleMeetUrl } from "@/lib/meetingUrl";
+import {
+  applyLegalMoveToGame,
+  boardPositionToFen as positionToFen,
+  canControlLiveBoard,
+  emptyCastlingRights,
+  fenToBoardPosition,
+  inferCastlingRights,
+  isLatestInteraction,
+  legalCastlingText,
+  overlayProtectedPoll,
+  placeSetupPiece,
+  removeObjectsOnPieceSquares,
+  selectionAfterSquareClick,
+  studentMoveMutation,
+  transferBoardPiece,
+  type BoardPosition,
+  type CastlingRights,
+  type GamifiedObjectId,
+} from "@/lib/liveClassroomBoardInteractions";
 
 const Chessboard = dynamic(() => import("react-chessboard").then((m) => m.Chessboard), { ssr: false });
 
 type Role = "student" | "instructor" | "admin" | "sub-admin";
-type BoardPosition = Record<string, string | undefined>;
 type TabKey = "students" | "chat" | "moves" | "engine" | "leaderboard" | "pgns";
 type AttendanceStatus = "present" | "absent" | "late" | "excused" | "student_no_show" | "technical_issue";
 type ClassOutcome = "completed" | "completed_continue_topic" | "abandoned" | "absent" | "student_no_show" | "technical_issue" | "cancelled";
@@ -80,8 +99,6 @@ type ToolKey = "move" | "highlight" | "arrow" | "setup";
 type ModifierKey = "default" | "shift" | "ctrl" | "alt";
 type SetupTab = "pieces" | "objects";
 type SetupMovementMode = "white" | "black" | "free";
-type CastlingRights = { K: boolean; Q: boolean; k: boolean; q: boolean };
-type GamifiedObjectId = "star" | "gem" | "coin" | "apple" | "fire" | "trophy" | "gift" | "shield" | "key" | "puzzle" | "rocket" | "monster" | "dragon";
 type SetupSelection = string | "erase" | GamifiedObjectId;
 type QuizComposerMode = "current" | "pgn_collection";
 type QuizComposerItem = { id: string; title: string; fen: string; pgn?: string; pgnTitle?: string; solution: string[] };
@@ -339,6 +356,10 @@ function normalizeBoardResourceFen(value?: string | null) {
   return normalizePermissiveFen(value) || String(value).trim();
 }
 
+function fenToPosition(fen?: string) {
+  return fenToBoardPosition(normalizeBoardResourceFen(fen) || undefined);
+}
+
 function pgnStartFen(pgn: any) {
   return normalizeBoardResourceFen(pgn?.initialFen || pgn?.fen || extractFen(pgn?.pgn || "")) || "start";
 }
@@ -395,65 +416,6 @@ function parseQuizSolution(startFen: string, solution: string[]) {
   return { start, moves, valid: moves.length === solution.length && moves.length > 0 };
 }
 
-function fenToPosition(fen?: string): BoardPosition {
-  const chess = new Chess();
-  const normalizedFen = normalizeBoardResourceFen(fen);
-  if (normalizedFen) chess.load(normalizedFen, { skipValidation: true });
-  const position: BoardPosition = {};
-  chess.board().forEach((rank, rankIndex) => {
-    rank.forEach((piece, fileIndex) => {
-      if (!piece) return;
-      const square = `${"abcdefgh"[fileIndex]}${8 - rankIndex}`;
-      position[square] = `${piece.color}${piece.type.toUpperCase()}`;
-    });
-  });
-  return position;
-}
-
-const emptyCastlingRights: CastlingRights = { K: false, Q: false, k: false, q: false };
-
-function inferCastlingRights(fen?: string | null): CastlingRights {
-  const rights = String(fen || "").trim().split(/\s+/)[2] || "";
-  return {
-    K: rights.includes("K"),
-    Q: rights.includes("Q"),
-    k: rights.includes("k"),
-    q: rights.includes("q"),
-  };
-}
-
-function legalCastlingText(position: BoardPosition, rights: CastlingRights = emptyCastlingRights) {
-  let text = "";
-  if (rights.K && position.e1 === "wK" && position.h1 === "wR") text += "K";
-  if (rights.Q && position.e1 === "wK" && position.a1 === "wR") text += "Q";
-  if (rights.k && position.e8 === "bK" && position.h8 === "bR") text += "k";
-  if (rights.q && position.e8 === "bK" && position.a8 === "bR") text += "q";
-  return text || "-";
-}
-
-function positionToFen(position: BoardPosition, sideToMove = "w", castlingRights: CastlingRights = emptyCastlingRights) {
-  const ranks = [];
-  for (let rank = 8; rank >= 1; rank--) {
-    let empty = 0;
-    let row = "";
-    for (const file of "abcdefgh") {
-      const piece = position[`${file}${rank}`];
-      if (!piece) {
-        empty++;
-        continue;
-      }
-      if (empty) {
-        row += empty;
-        empty = 0;
-      }
-      const letter = piece[1];
-      row += piece[0] === "w" ? letter : letter.toLowerCase();
-    }
-    if (empty) row += empty;
-    ranks.push(row);
-  }
-  return `${ranks.join("/")} ${sideToMove} ${legalCastlingText(position, castlingRights)} - 0 1`;
-}
 
 function buildGame(fen?: string) {
   try {
@@ -515,6 +477,53 @@ function initials(name?: string) {
 
 function entityId(value: any) {
   return value?._id?.toString?.() || value?.toString?.() || "";
+}
+
+// Presence heartbeats bump every connected participant's `lastSeenAt` on
+// every 1s poll, while `serverTime` and the session's heartbeat-derived
+// `updatedAt` change on every response. Suppress only that noise so all other
+// API fields (including future participant fields) still update immediately.
+const PRESENCE_SNAPSHOT_BUCKET_MS = 20000;
+
+function bucketLastSeenAt(lastSeenAt: unknown) {
+  if (!lastSeenAt) return lastSeenAt;
+  const timestamp = new Date(lastSeenAt as string | Date).getTime();
+  return Number.isNaN(timestamp) ? lastSeenAt : Math.floor(timestamp / PRESENCE_SNAPSHOT_BUCKET_MS);
+}
+
+function stableSnapshot(value: any): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
+  if (Array.isArray(value)) return `[${value.map((item) => stableSnapshot(item)).join(",")}]`;
+  return `{${Object.keys(value)
+    .sort()
+    .filter((key) => value[key] !== undefined)
+    .map((key) => `${JSON.stringify(key)}:${stableSnapshot(value[key])}`)
+    .join(",")}}`;
+}
+
+function buildLiveRenderSnapshot(payload: any) {
+  const { serverTime: _serverTime, live, ...rest } = payload || {};
+  // The GET heartbeat updates the session document, which also advances its
+  // Mongoose `updatedAt`. Every rendered live field is compared below, so this
+  // heartbeat-derived metadata must not by itself cause a render.
+  const { updatedAt: _liveUpdatedAt, ...liveWithoutHeartbeatTimestamp } = live || {};
+  const snapshot = {
+    ...rest,
+    live: live && typeof live === "object"
+      ? {
+          ...liveWithoutHeartbeatTimestamp,
+          ...(Array.isArray(live.participants)
+            ? {
+                participants: live.participants.map((participant: any) => ({
+                  ...participant,
+                  lastSeenAt: bucketLastSeenAt(participant?.lastSeenAt),
+                })),
+              }
+            : {}),
+        }
+      : live,
+  };
+  return stableSnapshot(snapshot);
 }
 
 function publicUserLabel(user: any) {
@@ -669,13 +678,6 @@ function folderBreadcrumbs(path: string) {
   }));
 }
 
-function removeObjectsOnPieceSquares(objects: Record<string, GamifiedObjectId> = {}, position: BoardPosition = {}) {
-  const next = { ...objects };
-  Object.keys(position).forEach((square) => {
-    if (position[square]) delete next[square];
-  });
-  return next;
-}
 
 function minutesBetween(start?: string | Date, end?: string | Date) {
   if (!start || !end) return 0;
@@ -825,6 +827,8 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const pendingOptimisticLiveRef = useRef<any | null>(null);
   const pendingOptimisticUntilRef = useRef(0);
   const pendingOptimisticClearTimerRef = useRef<number | null>(null);
+  const studentMoveSequenceRef = useRef(0);
+  const pendingStudentMoveSequenceRef = useRef<number | null>(null);
   const navigationPersistTimerRef = useRef<number | null>(null);
   const navigationIndexRef = useRef(0);
   const pendingNavigationUpdateRef = useRef<Record<string, any> | null>(null);
@@ -835,6 +839,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const pendingDrawingsHashRef = useRef("");
   const dataRef = useRef<any>(null);
   const loadedOnceRef = useRef(false);
+  const lastRenderedSnapshotRef = useRef<string | null>(null);
   const coach = isCoach(role);
 
   function focusBoard() {
@@ -869,12 +874,21 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
         nextData.pgnLibrary = dataRef.current?.pgnLibrary || [];
       }
       const pending = pendingOptimisticLiveRef.current;
-      if (pending && Date.now() < pendingOptimisticUntilRef.current && nextData?.live) {
-        nextData.live = { ...nextData.live, ...pending };
+      const studentMovePending = pendingStudentMoveSequenceRef.current !== null;
+      if (pending && (studentMovePending || Date.now() < pendingOptimisticUntilRef.current) && nextData?.live) {
+        nextData.live = overlayProtectedPoll(nextData.live, { sequence: studentMoveSequenceRef.current, pending });
       }
       loadedOnceRef.current = true;
-      setLoadError(null);
-      setData(nextData);
+      // Skip the render when this poll carries nothing new — see
+      // buildLiveRenderSnapshot for exactly what "new" means here. The
+      // fetch itself still runs every 1s regardless, so a real move/arrow/
+      // chat message/etc. still reaches the other side within ~1s either way.
+      const nextSnapshot = buildLiveRenderSnapshot(nextData);
+      if (nextSnapshot !== lastRenderedSnapshotRef.current) {
+        lastRenderedSnapshotRef.current = nextSnapshot;
+        setLoadError(null);
+        setData(nextData);
+      }
     } catch (error: any) {
       if (!loadedOnceRef.current) {
         const message =
@@ -973,6 +987,23 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       dataRef.current = next;
       return next;
     });
+  }
+
+  function releaseStudentMoveRefreshProtection(sequence: number, delay = 0) {
+    if (!isLatestInteraction(sequence, studentMoveSequenceRef.current)) return;
+    if (pendingOptimisticClearTimerRef.current) window.clearTimeout(pendingOptimisticClearTimerRef.current);
+    const clear = () => {
+      if (!isLatestInteraction(sequence, studentMoveSequenceRef.current)) return;
+      pendingOptimisticLiveRef.current = null;
+      pendingOptimisticUntilRef.current = 0;
+      pendingOptimisticClearTimerRef.current = null;
+      pendingStudentMoveSequenceRef.current = null;
+    };
+    if (delay) {
+      pendingOptimisticClearTimerRef.current = window.setTimeout(clear, delay);
+      return;
+    }
+    clear();
   }
 
   useEffect(() => {
@@ -1167,10 +1198,12 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     [live?.gamifiedObjects, boardPieceMap]
   );
   const game = useMemo(() => buildGame(live?.fen), [live?.fen]);
-  const canMove =
-    coach ||
-    (live?.studentMovesEnabled &&
-      (live?.boardControlStudents || []).some((student: any) => entityId(student) === userId));
+  const canMove = canControlLiveBoard({
+    role,
+    userId,
+    studentMovesEnabled: live?.studentMovesEnabled,
+    boardControlStudents: live?.boardControlStudents,
+  });
   const duration = live?.startedAt ? Math.max(0, Math.floor((Date.now() - new Date(live.startedAt).getTime()) / 60000)) : 0;
   const classroomName = classroom?.title || "Live Classroom";
   const coachName = classroom?.coach?.name || classroom?.instructor?.name || "Coach";
@@ -1434,36 +1467,50 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     scheduleDrawings(nextDrawings);
   }
 
-  async function submitStudentMove(source: string, target: string, promotion = "q") {
-    const res = await fetch(liveUrl("/move"), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ from: source, to: target, promotion }),
-    });
-    if (!res.ok) {
+  async function submitStudentMove(source: string, target: string, promotion = "q", optimisticSequence?: number) {
+    try {
+      const res = await fetch(liveUrl("/move"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(studentMoveMutation(source, target, promotion)),
+      });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        toast.error(payload?.error || "Move not registered");
+        if (optimisticSequence !== undefined) releaseStudentMoveRefreshProtection(optimisticSequence);
+        queueRefresh(0);
+        return false;
+      }
       const payload = await res.json().catch(() => null);
-      toast.error(payload?.error || "Move not registered");
+      if (optimisticSequence !== undefined && !isLatestInteraction(optimisticSequence, studentMoveSequenceRef.current)) {
+        queueRefresh(0);
+        return true;
+      }
+      playMoveSound(live?.soundEnabled);
+      setData((current: any) => {
+        if (!current?.live || !payload?.ok) return current;
+        return {
+          ...current,
+          live: {
+            ...current.live,
+            fen: payload.fen,
+            gamifiedObjects: payload.gamifiedObjects || current.live.gamifiedObjects,
+            moveHistory: payload.moveHistory || current.live.moveHistory,
+            status: "live",
+            updatedAt: new Date().toISOString(),
+          },
+        };
+      });
+      if (optimisticSequence !== undefined) releaseStudentMoveRefreshProtection(optimisticSequence, 350);
+      queueRefresh(0);
+      return true;
+    } catch (error) {
+      if (optimisticSequence === undefined) throw error;
+      toast.error("Move not registered");
+      releaseStudentMoveRefreshProtection(optimisticSequence);
       queueRefresh(0);
       return false;
     }
-    const payload = await res.json().catch(() => null);
-    playMoveSound(live?.soundEnabled);
-    setData((current: any) => {
-      if (!current?.live || !payload?.ok) return current;
-      return {
-        ...current,
-        live: {
-          ...current.live,
-          fen: payload.fen,
-          gamifiedObjects: payload.gamifiedObjects || current.live.gamifiedObjects,
-          moveHistory: payload.moveHistory || current.live.moveHistory,
-          status: "live",
-          updatedAt: new Date().toISOString(),
-        },
-      };
-    });
-    queueRefresh(0);
-    return true;
   }
 
   function setupSideToMove() {
@@ -1650,34 +1697,29 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     setSelectedMoveSquare(null);
     if (live?.locked || (!canMove && !coach)) return false;
     if (live?.setupMode || tool === "setup") {
-      const next = { ...setupPosition };
-      delete next[source];
-      next[target] = piece;
-      const nextObjects = { ...liveGamifiedObjects };
-      delete nextObjects[target];
-      setSetupPosition(next);
-      commitSetup(next, nextObjects);
+      const next = transferBoardPiece(setupPosition, liveGamifiedObjects, source, target, piece);
+      setSetupPosition(next.position);
+      commitSetup(next.position, next.objects);
       playMoveSound(live?.soundEnabled);
       return true;
     }
     if (live?.illegalMovesEnabled) {
-      const next = { ...boardPieceMap };
-      delete next[source];
-      next[target] = piece;
-      const nextObjects = { ...liveGamifiedObjects };
-      delete nextObjects[target];
-      setSetupPosition(next);
+      const next = transferBoardPiece(boardPieceMap, liveGamifiedObjects, source, target, piece);
+      setSetupPosition(next.position);
       if (!coach) {
         const sideToMove = live?.fen?.split(" ")?.[1] === "b" ? "b" : "w";
+        const optimisticSequence = studentMoveSequenceRef.current + 1;
+        studentMoveSequenceRef.current = optimisticSequence;
+        pendingStudentMoveSequenceRef.current = optimisticSequence;
         applyOptimisticLive({
-          fen: positionToFen(next, sideToMove),
-          gamifiedObjects: removeObjectsOnPieceSquares(nextObjects, next),
+          fen: positionToFen(next.position, sideToMove),
+          gamifiedObjects: next.objects,
           illegalMovesEnabled: true,
           status: "live",
-        });
-        submitStudentMove(source, target).catch(() => undefined);
+        }, true);
+        void submitStudentMove(source, target, "q", optimisticSequence);
       } else {
-        commitFreeMove(next, nextObjects, freeBoardMoveLabel(piece, source, target));
+        commitFreeMove(next.position, next.objects, freeBoardMoveLabel(piece, source, target));
       }
       playMoveSound(live?.soundEnabled);
       return true;
@@ -1689,14 +1731,12 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     try {
       cancelPendingNavigationPersistence();
       const moveStartFen = game.fen();
-      const move = game.move({ from: source, to: target, promotion });
+      const move = applyLegalMoveToGame(game, liveGamifiedObjects, live?.moveHistory || [], source, target, promotion);
       if (!move) return collectGamifiedWithPiece(source, target, piece);
       const collectedObjectId = liveGamifiedObjects[target] as GamifiedObjectId | undefined;
-      const nextGamifiedObjects = collectedObjectId ? { ...liveGamifiedObjects } : liveGamifiedObjects;
-      if (collectedObjectId && nextGamifiedObjects) delete nextGamifiedObjects[target];
       scheduleCoachMovePersistence({
-        fen: game.fen(),
-        gamifiedObjects: nextGamifiedObjects,
+        fen: move.fen,
+        gamifiedObjects: move.objects,
         ...pgnUpdateForCoachMove(move.san, moveStartFen),
         mode: live?.mode === "one_move_challenge" ? "teaching" : live?.mode,
         boardControlStudents: live?.mode === "one_move_challenge" ? [] : live?.boardControlStudents?.map((s: any) => s._id || s),
@@ -1733,15 +1773,9 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   }
 
   function onSetupDrop(source: string, target: string, piece: string) {
-    const next = { ...setupPosition };
-    delete next[source];
-    next[target] = piece;
-    setSetupPosition(next);
-    setGamifiedSetup((current) => {
-      const nextObjects = { ...current };
-      delete nextObjects[target];
-      return nextObjects;
-    });
+    const next = transferBoardPiece(setupPosition, gamifiedSetup, source, target, piece);
+    setSetupPosition(next.position);
+    setGamifiedSetup(next.objects);
     return true;
   }
 
@@ -1768,17 +1802,9 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       });
       return;
     }
-    const next = { ...setupPosition };
-    if (selectedPiece === "erase") delete next[square];
-    else next[square] = selectedPiece;
-    setSetupPosition(next);
-    if (selectedPiece !== "erase") {
-      setGamifiedSetup((current) => {
-        const nextObjects = { ...current };
-        delete nextObjects[square];
-        return nextObjects;
-      });
-    }
+    const next = placeSetupPiece(setupPosition, gamifiedSetup, square, selectedPiece);
+    setSetupPosition(next.position);
+    setGamifiedSetup(next.objects);
   }
 
   function loadSetupIntoClassroom() {
@@ -1954,11 +1980,9 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     const clickedPiece = boardPieceMap[square];
     if (live?.setupMode || tool === "setup") {
       if (!coach) return;
-      const next = { ...setupPosition };
-      if (selectedPiece === "erase") delete next[square];
-      else next[square] = selectedPiece;
-      setSetupPosition(next);
-      commitSetup(next);
+      const next = placeSetupPiece(setupPosition, liveGamifiedObjects, square, selectedPiece);
+      setSetupPosition(next.position);
+      commitSetup(next.position, next.objects);
       return;
     }
     if (coach) {
@@ -1981,19 +2005,13 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
         if (moved) return;
       }
     }
-    if (!clickedPiece) {
-      setSelectedMoveSquare(null);
-      return;
-    }
-    if (live?.illegalMovesEnabled) {
-      setSelectedMoveSquare((current) => (current === square ? null : square));
-      return;
-    }
-    if (canSelectPieceForTurn(clickedPiece, game.turn())) {
-      setSelectedMoveSquare((current) => (current === square ? null : square));
-      return;
-    }
-    setSelectedMoveSquare(null);
+    setSelectedMoveSquare(selectionAfterSquareClick({
+      selectedSquare: selectedMoveSquare,
+      square,
+      clickedPiece,
+      freeMoveMode: Boolean(live?.illegalMovesEnabled),
+      canSelectForTurn: Boolean(clickedPiece && canSelectPieceForTurn(clickedPiece, game.turn())),
+    }));
   }
 
   function onSquareRightClick(square: string) {
@@ -2317,79 +2335,89 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   async function leaveWaitingRoom() {
     if (!canStudentLeaveWaitingRoom || leavingClass) return;
     setLeavingClass(true);
-    const res = await fetch(liveUrl(), {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "student_leave" }),
-    });
-    if (!res.ok) {
-      const payload = await res.json().catch(() => null);
+    try {
+      const res = await fetch(liveUrl(), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "student_leave" }),
+      });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        toast.error(payload?.error || "Could not leave classroom");
+        return;
+      }
+      toast.success("You left the waiting room. No credit will be used unless the class is later completed.");
+      router.push("/classrooms");
+    } catch {
+      toast.error("Could not leave classroom");
+    } finally {
       setLeavingClass(false);
-      toast.error(payload?.error || "Could not leave classroom");
-      return;
     }
-    toast.success("You left the waiting room. No credit will be used unless the class is later completed.");
-    router.push("/classrooms");
   }
 
   async function saveAttendanceAndClose() {
     setEndingClass(true);
-    const summaryRowsByStudent = new Map(classSummary.rows.map((row: any) => [entityId(row.student), row]));
-    const records = students.map((student: any) => {
-      const studentId = entityId(student);
-      const summaryRow: any = summaryRowsByStudent.get(studentId);
-      const suggestedStatus = isDemoClassroom && summaryRow?.suggestedStatus === "late" ? "present" : summaryRow?.suggestedStatus || "absent";
-      const selectedStatus = attendanceDraft[studentId] || suggestedStatus;
-      const hasRecordedActivity = Number(summaryRow?.timeMinutes || 0) > 0 || Number(summaryRow?.submissions || 0) > 0;
-      return {
-        student: studentId,
-        status: classOutcome === "student_no_show"
-          ? hasRecordedActivity ? selectedStatus : "student_no_show"
-          : classOutcome === "absent"
-            ? hasRecordedActivity ? suggestedStatus : "absent"
-            : selectedStatus,
-        note: classOutcome === "student_no_show"
-          ? hasRecordedActivity ? "Recorded from live classroom summary" : "Student no-show marked from live classroom summary"
-          : classOutcome === "absent"
-            ? hasRecordedActivity ? "Recorded from live classroom summary" : "Student absent from demo summary"
-            : "Marked from live classroom summary",
-      };
-    });
-    const summary = {
-      ...classSummary,
-      classOutcome,
-      topicCompleted: classOutcome === "completed",
-      creditPolicy: isDemoClassroom ? "demo_no_charge" : classOutcome === "completed" || classOutcome === "completed_continue_topic" ? "charge_present_students" : classOutcome === "student_no_show" ? "repeat_no_show_policy" : "no_charge",
-      feedbackRequired: isDemoClassroom && classOutcome === "completed",
-    };
-    const res = await fetch("/api/attendance", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        classroom: classroomId,
-        sessionId,
-        sessionDate: scheduledSession?.scheduledFor || live?.startedAt || new Date().toISOString(),
-        records,
-        coach: classroom?.coach?._id || classroom?.instructor?._id,
-        coachStatus: classOutcome === "technical_issue" ? "technical_issue" : "present",
-        teachingMinutes: classSummary.durationMinutes || minutesBetween(live?.startedAt, new Date().toISOString()),
+    try {
+      const summaryRowsByStudent = new Map(classSummary.rows.map((row: any) => [entityId(row.student), row]));
+      const records = students.map((student: any) => {
+        const studentId = entityId(student);
+        const summaryRow: any = summaryRowsByStudent.get(studentId);
+        const suggestedStatus = isDemoClassroom && summaryRow?.suggestedStatus === "late" ? "present" : summaryRow?.suggestedStatus || "absent";
+        const selectedStatus = attendanceDraft[studentId] || suggestedStatus;
+        const hasRecordedActivity = Number(summaryRow?.timeMinutes || 0) > 0 || Number(summaryRow?.submissions || 0) > 0;
+        return {
+          student: studentId,
+          status: classOutcome === "student_no_show"
+            ? hasRecordedActivity ? selectedStatus : "student_no_show"
+            : classOutcome === "absent"
+              ? hasRecordedActivity ? suggestedStatus : "absent"
+              : selectedStatus,
+          note: classOutcome === "student_no_show"
+            ? hasRecordedActivity ? "Recorded from live classroom summary" : "Student no-show marked from live classroom summary"
+            : classOutcome === "absent"
+              ? hasRecordedActivity ? "Recorded from live classroom summary" : "Student absent from demo summary"
+              : "Marked from live classroom summary",
+        };
+      });
+      const summary = {
+        ...classSummary,
         classOutcome,
-        metadata: { summary, liveSessionId: live?._id },
-      }),
-    });
-    if (!res.ok) {
-      setEndingClass(false);
+        topicCompleted: classOutcome === "completed",
+        creditPolicy: isDemoClassroom ? "demo_no_charge" : classOutcome === "completed" || classOutcome === "completed_continue_topic" ? "charge_present_students" : classOutcome === "student_no_show" ? "repeat_no_show_policy" : "no_charge",
+        feedbackRequired: isDemoClassroom && classOutcome === "completed",
+      };
+      const res = await fetch("/api/attendance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          classroom: classroomId,
+          sessionId,
+          sessionDate: scheduledSession?.scheduledFor || live?.startedAt || new Date().toISOString(),
+          records,
+          coach: classroom?.coach?._id || classroom?.instructor?._id,
+          coachStatus: classOutcome === "technical_issue" ? "technical_issue" : "present",
+          teachingMinutes: classSummary.durationMinutes || minutesBetween(live?.startedAt, new Date().toISOString()),
+          classOutcome,
+          metadata: { summary, liveSessionId: live?._id },
+        }),
+      });
+      if (!res.ok) {
+        toast.error("Could not save attendance");
+        return;
+      }
+      await patch({ endedAt: new Date().toISOString(), status: "ended", summary, usedResources: snapshotUsedResources(), boardControlStudents: [], selectedStudents: [], challenge: { active: false } });
+      toast.success(isDemoClassroom ? "Demo attendance saved" : "Class ended and attendance saved");
+      setSummaryOpen(false);
+      if (isDemoClassroom && classOutcome === "completed" && classroom?.demoBooking) {
+        window.location.assign(`/demo-feedback/${entityId(classroom.demoBooking)}`);
+        return;
+      }
+      window.location.assign(`/classrooms?updated=${Date.now()}`);
+    } catch {
       toast.error("Could not save attendance");
-      return;
+    } finally {
+      setEndingClass(false);
     }
-    await patch({ endedAt: new Date().toISOString(), status: "ended", summary, usedResources: snapshotUsedResources(), boardControlStudents: [], selectedStudents: [], challenge: { active: false } });
-    toast.success(isDemoClassroom ? "Demo attendance saved" : "Class ended and attendance saved");
-    setSummaryOpen(false);
-    if (isDemoClassroom && classOutcome === "completed" && classroom?.demoBooking) {
-      window.location.assign(`/demo-feedback/${entityId(classroom.demoBooking)}`);
-      return;
-    }
-    window.location.assign(`/classrooms?updated=${Date.now()}`);
   }
 
   function resetGame() {
@@ -2974,14 +3002,12 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
             </button>
           ) : null}
           {googleMeetUrl ? (
-            <a
+            <CreditGatedGoogleMeetLink
               href={googleMeetUrl}
-              target="_blank"
-              rel="noopener noreferrer"
               className="inline-flex h-7 items-center gap-1.5 rounded-md border border-brand/15 bg-white px-2.5 text-xs font-bold text-brand shadow-sm transition hover:bg-brand/5"
             >
               <ExternalLink size={15} /> Open Google Meet
-            </a>
+            </CreditGatedGoogleMeetLink>
           ) : null}
         </div>
       </div>
@@ -4409,6 +4435,9 @@ function LiveBoardQuiz({
   const advancedRef = useRef(false);
   const submitPromptedRef = useRef(false);
   const quizBoardShellRef = useRef<HTMLDivElement | null>(null);
+  const autoReplyTimerRef = useRef<number | null>(null);
+  const activeQuizItemIdRef = useRef<string | undefined>(activeItem?.id);
+  activeQuizItemIdRef.current = activeItem?.id;
   const startingTurn = useMemo(() => buildGame(parsed.start).turn(), [parsed.start]);
   const quizOrientation = startingTurn === "b" ? "black" : "white";
   const sideToMoveLabel = startingTurn === "b" ? "Black to move" : "White to move";
@@ -4537,6 +4566,13 @@ function LiveBoardQuiz({
       return value === nextValue ? value : nextValue;
     });
   }, [items.length, progressionMode, serverIndex]);
+
+  useEffect(() => {
+    return () => {
+      if (autoReplyTimerRef.current) window.clearTimeout(autoReplyTimerRef.current);
+      autoReplyTimerRef.current = null;
+    };
+  }, [activeItem?.id]);
 
   useEffect(() => {
     const next = buildGame(parsed.start);
@@ -4700,7 +4736,10 @@ function LiveBoardQuiz({
     setResults(nextResults);
     onProgress?.(nextResults, Math.round((Date.now() - quizStartedAt) / 1000));
     setFeedback(studentFinished ? "Move recorded." : "Move recorded. Updating the reply...");
-    window.setTimeout(() => {
+    const quizItemId = activeItem.id;
+    autoReplyTimerRef.current = window.setTimeout(() => {
+      autoReplyTimerRef.current = null;
+      if (activeQuizItemIdRef.current !== quizItemId) return;
       const replyState = applyAutoReply(nextGame, studentPly);
       const replyCorrectLine = parsed.moves.slice(0, replyState.nextPly).map((item) => item.san);
       const replyFen = nextGame.fen();

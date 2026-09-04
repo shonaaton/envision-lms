@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   CalendarDays,
@@ -43,6 +43,10 @@ import {
 } from "date-fns";
 import { cn } from "@/lib/utils";
 import { normalizeGoogleMeetUrl } from "@/lib/meetingUrl";
+import CreditGateModal, { type CreditGateKind } from "@/components/classroom/CreditGateModal";
+import CreditGatedGoogleMeetLink from "@/components/classroom/CreditGatedGoogleMeetLink";
+import { getCachedClassroomEligibility, loadClassroomEligibility, resetJoinEligibilityCache } from "@/components/classroom/classroomCreditEligibilityClient";
+import type { ClassroomCreditEligibility } from "@/lib/classroomCreditAccess";
 
 type CalendarRole = "student" | "instructor" | "admin" | "sub-admin";
 type CalendarView = "monthly" | "weekly" | "daily" | "agenda";
@@ -372,11 +376,76 @@ function CalendarAgenda({
 }
 
 function EventDetails({ event, role }: { event?: CalendarEvent; role: CalendarRole }) {
+  const googleMeetUrl = normalizeGoogleMeetUrl(event?.meetingUrl);
+  const [eligibility, setEligibility] = useState<ClassroomCreditEligibility | null>(getCachedClassroomEligibility());
+  const [gate, setGate] = useState<CreditGateKind | null>(null);
+  const [pendingDestination, setPendingDestination] = useState<string | undefined>();
+  const launchedRef = useRef(false);
+
+  useEffect(() => {
+    let active = true;
+    void loadClassroomEligibility().then((payload) => {
+      if (active && payload) setEligibility(payload);
+    });
+    return () => {
+      active = false;
+    };
+  }, [event?.id]);
+
+  useEffect(() => {
+    launchedRef.current = false;
+    setGate(null);
+    setPendingDestination(undefined);
+  }, [event?.href, googleMeetUrl]);
+
+  function launchGoogleMeet(destination?: string) {
+    if (!googleMeetUrl || launchedRef.current) return;
+    launchedRef.current = true;
+    window.open(googleMeetUrl, "_blank", "noopener,noreferrer");
+    resetJoinEligibilityCache();
+    setEligibility(null);
+    if (destination) window.location.assign(destination);
+  }
+
+  function requestGoogleMeet(destination?: string) {
+    const current = eligibility || getCachedClassroomEligibility();
+    if (current?.blocked) {
+      setPendingDestination(undefined);
+      setGate("blocked");
+      return;
+    }
+    if (current?.requiresWarning) {
+      setPendingDestination(destination);
+      setGate("final_class");
+      return;
+    }
+    if (!current) {
+      // Fail open only when the advisory lookup fails; LMS classroom routes
+      // remain server-gated. Direct Meet URLs cannot be gated after launch.
+      void loadClassroomEligibility().then((payload) => {
+        if (payload?.blocked) {
+          setPendingDestination(undefined);
+          return setGate("blocked");
+        }
+        if (payload?.requiresWarning) {
+          setPendingDestination(destination);
+          return setGate("final_class");
+        }
+        launchGoogleMeet(destination);
+      });
+      return;
+    }
+    launchGoogleMeet(destination);
+  }
+
+  function handleGoogleMeetClick(event: React.MouseEvent<HTMLAnchorElement>, destination?: string) {
+    event.preventDefault();
+    requestGoogleMeet(destination);
+  }
+
   if (!event) {
     return null;
   }
-
-  const googleMeetUrl = normalizeGoogleMeetUrl(event.meetingUrl);
 
   return (
     <div className="rounded-[20px] border border-brand/10 bg-white p-4 shadow-[0_18px_44px_rgba(90,19,114,0.14)] sm:p-5">
@@ -409,22 +478,21 @@ function EventDetails({ event, role }: { event?: CalendarEvent; role: CalendarRo
           {event.href && (
             <Link
               href={event.href}
-              onClick={() => {
-                if (googleMeetUrl) window.open(googleMeetUrl, "_blank", "noopener,noreferrer");
-              }}
+              onClick={googleMeetUrl ? (clickEvent) => handleGoogleMeetClick(clickEvent, event.href) : undefined}
               className="inline-flex items-center gap-2 rounded-2xl bg-brand px-4 py-3 text-sm font-bold text-white shadow-lg shadow-brand/20"
             >
               {event.hrefLabel || "Open"}
             </Link>
           )}
           {googleMeetUrl && (
-            <a href={googleMeetUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-900">
+            <CreditGatedGoogleMeetLink href={googleMeetUrl} className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-900">
               <ExternalLink size={15} />
               Join Google Meet
-            </a>
+            </CreditGatedGoogleMeetLink>
           )}
         </div>
       )}
+      {gate ? <CreditGateModal kind={gate} onClose={() => setGate(null)} onConfirm={() => launchGoogleMeet(pendingDestination)} confirmLabel="Join Classroom" /> : null}
     </div>
   );
 }

@@ -23,7 +23,11 @@ type ClassroomBuildInput = {
 
 function calendarParts(value: string | Date) {
   if (typeof value === "string") {
-    const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    // Anchored at both ends: only a bare "YYYY-MM-DD" (already timezone-less)
+    // takes the fast path. A full ISO timestamp (e.g. "2026-09-04T19:35:00Z")
+    // must fall through to the Intl.DateTimeFormat conversion below, or its
+    // UTC calendar day would be used instead of the academy's Asia/Kolkata day.
+    const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
     if (match) return { year: Number(match[1]), month: Number(match[2]), day: Number(match[3]) };
   }
   const parts = new Intl.DateTimeFormat("en-CA", {

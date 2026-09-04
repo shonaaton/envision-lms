@@ -159,6 +159,13 @@ const LiveQuestionResponseSchema = new Schema(
     submittedMove: String,
     submittedSequence: [String],
     itemResults: { type: Schema.Types.Mixed, default: {} },
+    // Progress through a single flat `solution[]` sequence when the question
+    // has no `items[]` (e.g. answered as one submitted move/line rather than
+    // via the board-quiz item flow). matchedSequenceIndex tracks how many
+    // solution moves have been matched in order; wrongAttempts counts moves
+    // that didn't match the next expected move.
+    matchedSequenceIndex: { type: Number, default: 0 },
+    wrongAttempts: { type: Number, default: 0 },
     timeTakenSeconds: { type: Number, default: 0 },
     attemptsUsed: { type: Number, default: 1 },
     hintsUsed: { type: Number, default: 0 },

@@ -4,7 +4,6 @@ import { dbConnect } from "../src/lib/db";
 import {
   calculateHomeworkReward,
   calculateLearningReward,
-  calculateLiveQuestionReward,
   calculatePlayComputerReward,
   calculateSquareTrainerReward,
   calculateTacticsReward,
@@ -87,16 +86,15 @@ async function rewardPatchForExisting(reward: any): Promise<RewardPatch | null> 
   }
 
   if (sourceType === "live_question" && reward.sourceId) {
-    const response: any = await mongoose.model("LiveQuestionResponse").findOne({ question: reward.sourceId, student: reward.student }).lean();
-    if (!response) return null;
-    return calculateLiveQuestionReward({
-      completedItems: Number(response.completedItems || 0),
-      totalItems: Number(response.totalItems || 0),
-      correct: Boolean(response.correct),
-      score: Number(response.score || 0),
-      hintsUsed: Number(response.hintsUsed || 0),
-      attemptsUsed: Number(response.attemptsUsed || 1),
-    });
+    // A StudentReward is the ledger entry created when this response was
+    // awarded. Keep it authoritative: the current calculator may legitimately
+    // change for new responses, but routine maintenance must not rewrite a
+    // student's historical XP using a newer formula.
+    if (!Number.isFinite(reward.xp) || !Number.isFinite(reward.coins)) {
+      console.warn(`Skipping live_question reward ${reward._id}: stored XP/coins are not recoverable.`);
+      return null;
+    }
+    return { xp: reward.xp, coins: reward.coins, badge: reward.badge || undefined };
   }
 
   if (sourceType === "tournament_game" && reward.sourceId) {

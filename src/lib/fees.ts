@@ -1,4 +1,4 @@
-import { Types } from "mongoose";
+import mongoose, { Types } from "mongoose";
 import { AcademySettings, CreditLedger, FeeAssignment, Invoice, Notification } from "@/models/Fee";
 import { Attendance } from "@/models/Attendance";
 import { Classroom } from "@/models/Classroom";
@@ -758,58 +758,103 @@ export async function consumeAttendanceCredit(studentId: string, attendanceId: s
   const assignment: any = await FeeAssignment.findOne({ student: studentId, type: "credits" });
   if (!assignment) return;
 
-  const existing = await CreditLedger.exists({
-    student: studentId,
-    type: "attendance_consumption",
-    sourceType: "Attendance",
-    sourceId: new Types.ObjectId(attendanceId),
-  });
-  if (existing) return;
+  let nextBalance = Number(assignment.creditBalance || 0);
+  let ledger: any = null;
+  let deductedAssignment: any = null;
+  let alreadyProcessed = false;
+  const creditSession = await mongoose.startSession();
+  try {
+    await creditSession.withTransaction(async () => {
+      const existing = await CreditLedger.exists({
+        student: studentId,
+        type: "attendance_consumption",
+        sourceType: "Attendance",
+        sourceId: new Types.ObjectId(attendanceId),
+      }).session(creditSession);
+      if (existing) {
+        alreadyProcessed = true;
+        return;
+      }
 
-  const shouldDeduct = (assignment.creditBalance || 0) > 0;
-  const nextBalance = Math.max(0, (assignment.creditBalance || 0) - 1);
-  await FeeAssignment.findByIdAndUpdate(assignment._id, {
-    $inc: { creditBalance: shouldDeduct ? -1 : 0, totalCreditsConsumed: 1 },
-  });
-  const ledger = await CreditLedger.create({
-    student: studentId,
-    assignment: assignment._id,
-    type: "attendance_consumption",
-    credits: -1,
-    balanceAfter: nextBalance,
-    sourceType: "Attendance",
-    sourceId: attendanceId,
-    note,
-  });
-  await recordActivity({
-    targetUser: studentId,
-    type: "fees.credits.consumed",
-    label: "Deducted 1 class credit after attendance",
-    entityType: "CreditLedger",
-    entityId: ledger._id.toString(),
-    metadata: { attendance: attendanceId, assignment: assignment._id.toString(), credits: -1, balanceAfter: nextBalance, source: "attendance" },
-  });
+      // Business rule: positive credits -> 0 -> -1 -> blocked. A student
+      // sitting on exactly 0 credits is entitled to ONE final grace class, so
+      // 0 -> -1 is a legitimate consumption and must be recorded like any
+      // other. The predicate is atomic and stays at `$gte: 0`, so it also
+      // guarantees the floor: once the balance is -1 the update matches
+      // nothing and no further movement (-1 -> -2) is possible, even under
+      // concurrent or duplicated attendance saves.
+      deductedAssignment = await FeeAssignment.findOneAndUpdate(
+        { _id: assignment._id, creditBalance: { $gte: 0 } },
+        { $inc: { creditBalance: -1, totalCreditsConsumed: 1 } },
+        { new: true, session: creditSession }
+      ).lean();
+      if (!deductedAssignment) return;
+
+      nextBalance = Number(deductedAssignment.creditBalance || 0);
+      [ledger] = await CreditLedger.create([{
+        student: studentId,
+        assignment: assignment._id,
+        type: "attendance_consumption",
+        credits: -1,
+        balanceAfter: nextBalance,
+        sourceType: "Attendance",
+        sourceId: attendanceId,
+        note,
+      }], { session: creditSession });
+    });
+  } finally {
+    await creditSession.endSession();
+  }
+  if (alreadyProcessed) return;
+  if (!ledger) {
+    const current: any = await FeeAssignment.findById(assignment._id).select("creditBalance").lean();
+    nextBalance = Number(current?.creditBalance || 0);
+  }
+
+  if (ledger) {
+    await recordActivity({
+      targetUser: studentId,
+      type: "fees.credits.consumed",
+      label: "Deducted 1 class credit after attendance",
+      entityType: "CreditLedger",
+      entityId: ledger._id.toString(),
+      metadata: { attendance: attendanceId, assignment: assignment._id.toString(), credits: -1, balanceAfter: nextBalance, source: "attendance" },
+    });
+  }
   const settings: any = await getAcademySettings();
   const lowCreditThreshold = 1;
   if (nextBalance <= lowCreditThreshold) {
+    // balance 0  -> prepaid credits exhausted; the NEXT class is the final
+    //               grace class (still joinable after confirming a warning).
+    // balance -1 -> the grace class has now been consumed and classroom
+    //               access is paused until the student recharges.
+    const accessBlocked = nextBalance <= -1;
     await Notification.findOneAndUpdate(
       { user: studentId, type: "low_credits", "metadata.balance": nextBalance },
       {
         user: studentId,
         type: "low_credits",
-        title: "Low credit balance",
-        message: `Your remaining class credits are low (${nextBalance}). Please recharge to continue classes smoothly.`,
-        metadata: { balance: nextBalance, threshold: lowCreditThreshold },
+        title: accessBlocked ? "Classroom access paused" : nextBalance === 0 ? "Final class remaining" : "Low credit balance",
+        message: accessBlocked
+          ? "Your class credits are exhausted, including your final class allowance. Please recharge to join classes again."
+          : nextBalance === 0
+            ? "You have used all your prepaid class credits. Your next class is your final class - please recharge to continue after it."
+            : `Your remaining class credits are low (${nextBalance}). Please recharge to continue classes smoothly.`,
+        metadata: { balance: nextBalance, threshold: lowCreditThreshold, accessBlocked },
       },
       { upsert: true, new: true }
     );
     const studentForCredits: any = await User.findById(studentId).select("name username phone").lean();
-    await sendWhatsAppAutomationTemplate({
-      user: studentForCredits,
-      templateName: nextBalance <= 0 ? "class_credit_empty" : "class_credit_low",
-      bodyParameters: nextBalance <= 0 ? [whatsappRecipientName(studentForCredits || {})] : [whatsappRecipientName(studentForCredits || {}), String(nextBalance)],
-      metadata: { kind: "low_credits", balance: nextBalance, threshold: lowCreditThreshold },
-    });
+    // The student already received the "credits empty" WhatsApp at balance 0;
+    // the 0 -> -1 transition is surfaced in-app instead of messaging twice.
+    if (!accessBlocked) {
+      await sendWhatsAppAutomationTemplate({
+        user: studentForCredits,
+        templateName: nextBalance <= 0 ? "class_credit_empty" : "class_credit_low",
+        bodyParameters: nextBalance <= 0 ? [whatsappRecipientName(studentForCredits || {})] : [whatsappRecipientName(studentForCredits || {}), String(nextBalance)],
+        metadata: { kind: "low_credits", balance: nextBalance, threshold: lowCreditThreshold },
+      });
+    }
     if (nextBalance <= 0) {
       const creditAlertRecipients = importantContactWhatsAppRecipientsByKeys(["sayan_bose", "saptarshi"]);
       await sendWhatsAppAutomationTemplates(creditAlertRecipients.map((recipient) => ({
@@ -826,8 +871,8 @@ export async function consumeAttendanceCredit(studentId: string, attendanceId: s
       })));
     }
   }
-  if (shouldDeduct && nextBalance === 0) {
-    await createCreditRechargeInvoiceIfNeeded({ studentId, assignment, attendanceId }).catch((error) => {
+  if (ledger && nextBalance === 0) {
+    await createCreditRechargeInvoiceIfNeeded({ studentId, assignment: deductedAssignment, attendanceId }).catch((error) => {
       console.error("Credit recharge invoice automation failed", error);
     });
   }

@@ -6,6 +6,15 @@ export type RewardResult = {
 
 const XP_TO_COIN_RATIO = 4;
 
+// Live-classroom quiz wrong-move policy: a question/position keeps accepting
+// attempts until the student solves it or the coach ends the question — it
+// never auto-closes on a wrong move. Each wrong move costs a flat XP penalty,
+// and once a position has accumulated LIVE_QUESTION_ZERO_REWARD_WRONG_ATTEMPTS
+// wrong moves it stops earning any XP/badge for that position, even if the
+// student eventually solves it.
+export const LIVE_QUESTION_WRONG_MOVE_XP_PENALTY = 1;
+export const LIVE_QUESTION_ZERO_REWARD_WRONG_ATTEMPTS = 5;
+
 function clamp(value: number, min: number, max: number) {
   if (!Number.isFinite(value)) return min;
   return Math.min(max, Math.max(min, value));
@@ -59,14 +68,48 @@ export function calculateLiveQuestionReward(input: {
   score?: number;
   hintsUsed?: number;
   attemptsUsed?: number;
+  /** True if any single position in this quiz hit the wrong-move cutoff — suppresses the badge even on a full solve. */
+  wrongAttemptsExceeded?: boolean;
 }): RewardResult {
   const totalItems = cleanInt(input.totalItems);
   const completedItems = cleanInt(input.completedItems);
-  const completion = totalItems ? completedItems / totalItems : input.correct ? 1 : 0.5;
-  const accuracy = input.correct ? 1 : Math.max(0.35, Math.min(0.75, completion));
-  const penalty = Math.min(4, cleanInt(input.hintsUsed) + Math.max(0, cleanInt(input.attemptsUsed, 1) - 1));
-  const xp = Math.round(clamp(3 + accuracy * 9 - penalty, 2, 12));
-  return { xp, coins: coinsForXp(xp), badge: input.correct ? "Classroom Sharp" : undefined };
+  const scoreValue = Number(input.score);
+  let xp: number;
+  if (Number.isFinite(scoreValue)) {
+    // The route already applies the flat wrong-move XP penalty (and the
+    // per-position zero-reward cutoff) while building `score`, so the
+    // student's actual reward tracks the same number shown on the
+    // leaderboard instead of a disconnected heuristic.
+    xp = Math.round(clamp(scoreValue, 0, 20));
+  } else {
+    const completion = totalItems ? completedItems / totalItems : input.correct ? 1 : 0.5;
+    const accuracy = input.correct ? 1 : Math.max(0.35, Math.min(0.75, completion));
+    const penalty = Math.min(4, cleanInt(input.hintsUsed) + Math.max(0, cleanInt(input.attemptsUsed, 1) - 1));
+    xp = Math.round(clamp(3 + accuracy * 9 - penalty, 2, 12));
+  }
+  const badge = input.correct && xp > 0 && !input.wrongAttemptsExceeded ? "Classroom Sharp" : undefined;
+  return { xp, coins: coinsForXp(xp), badge };
+}
+
+/**
+ * Reward for a single-position live question answered as one submitted move
+ * (or move sequence) rather than through the board-quiz item flow. Mirrors
+ * the same flat wrong-move penalty / zero-reward cutoff policy: the position
+ * stays open until solved or the coach ends it, every wrong move costs
+ * LIVE_QUESTION_WRONG_MOVE_XP_PENALTY XP, and once wrongAttempts reaches the
+ * cutoff the position earns no XP/badge even if solved afterwards.
+ */
+export function calculateLiveSequenceReward(input: {
+  correct: boolean;
+  wrongAttempts?: number;
+  baseXp?: number;
+}): RewardResult {
+  if (!input.correct) return { xp: 0, coins: 0 };
+  const wrongAttempts = cleanInt(input.wrongAttempts);
+  if (wrongAttempts >= LIVE_QUESTION_ZERO_REWARD_WRONG_ATTEMPTS) return { xp: 0, coins: 0 };
+  const baseXp = clamp(cleanInt(input.baseXp, 5), 1, 20);
+  const xp = Math.max(0, baseXp - wrongAttempts * LIVE_QUESTION_WRONG_MOVE_XP_PENALTY);
+  return { xp, coins: coinsForXp(xp), badge: xp > 0 ? "Classroom Sharp" : undefined };
 }
 
 export function calculateLearningReward(input: {

@@ -1272,6 +1272,65 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
     ]
   },
   {
+    "name": "fee_credit_low_reminder",
+    "language": "en",
+    "sourceAutomation": "Fee Reminders",
+    "body": "Hello {{1}}, {{2}} has {{3}} Envision Chess Academy class credit(s) remaining. Recharge is recommended before the balance is exhausted.",
+    "variables": [
+      { "position": 1, "key": "recipient_name", "sample": "Mr. Sharma" },
+      { "position": 2, "key": "student_name", "sample": "Aarav" },
+      { "position": 3, "key": "credit_balance", "sample": "2" }
+    ]
+  },
+  {
+    "name": "fee_credit_zero_final_class",
+    "language": "en",
+    "sourceAutomation": "Fee Reminders",
+    "body": "Hello {{1}}, {{2}} has 0 normal class credits remaining. One final grace class is still available. Please recharge immediately to avoid interruption after that class.",
+    "variables": [
+      { "position": 1, "key": "recipient_name", "sample": "Mr. Sharma" },
+      { "position": 2, "key": "student_name", "sample": "Aarav" }
+    ]
+  },
+  {
+    "name": "fee_credit_blocked",
+    "language": "en",
+    "sourceAutomation": "Fee Reminders",
+    "body": "Hello {{1}}, {{2}} has used the final class allowance. Classroom access is paused until the class credit plan is recharged.",
+    "variables": [
+      { "position": 1, "key": "recipient_name", "sample": "Mr. Sharma" },
+      { "position": 2, "key": "student_name", "sample": "Aarav" }
+    ]
+  },
+  {
+    "name": "fee_invoice_upcoming_reminder",
+    "language": "en",
+    "sourceAutomation": "Fee Reminders",
+    "body": "Hello {{1}}, invoice {{3}} for {{2}} has an outstanding amount of {{4}} and is due on {{5}}. View invoice and payment details: {{6}}",
+    "variables": [
+      { "position": 1, "key": "recipient_name", "sample": "Mr. Sharma" },
+      { "position": 2, "key": "student_name", "sample": "Aarav" },
+      { "position": 3, "key": "invoice_number", "sample": "ENV-1042" },
+      { "position": 4, "key": "amount", "sample": "₹2,500" },
+      { "position": 5, "key": "due_date", "sample": "12 Sep 2026" },
+      { "position": 6, "key": "invoice_url", "sample": "https://envisionchessacademy.com/invoice" }
+    ]
+  },
+  {
+    "name": "fee_invoice_overdue_reminder",
+    "language": "en",
+    "sourceAutomation": "Fee Reminders",
+    "body": "Hello {{1}}, invoice {{3}} for {{2}} is overdue. The outstanding amount is {{4}} and the due date was {{5}}. View invoice and payment details: {{6}}",
+    "variables": [
+      { "position": 1, "key": "recipient_name", "sample": "Mr. Sharma" },
+      { "position": 2, "key": "student_name", "sample": "Aarav" },
+      { "position": 3, "key": "invoice_number", "sample": "ENV-1042" },
+      { "position": 4, "key": "amount", "sample": "₹2,500" },
+      { "position": 5, "key": "due_date", "sample": "31 Aug 2026" },
+      { "position": 6, "key": "invoice_url", "sample": "https://envisionchessacademy.com/invoice" }
+    ]
+  },
+  {
     "name": "class_credit_low",
     "language": "en",
     "sourceAutomation": "Credit Balance Reminder",

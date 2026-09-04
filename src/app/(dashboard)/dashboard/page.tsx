@@ -2239,12 +2239,19 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
                 const coachName = sessionRow.substituteCoach?.name || classroom.coach?.name || classroom.instructor?.name || "Coach";
                 const participants = liveRow?.participants || [];
                 const teacherJoined = Boolean(sessionRow.actualStartedAt || liveRow?.startedAt || participants.some((participant: any) => ["instructor", "admin", "sub-admin"].includes(String(participant.role || ""))));
-                const joinedStudentCount = new Set(
+                const joinedStudentIds = new Set(
                   participants
                     .filter((participant: any) => String(participant.role || "") === "student")
                     .map((participant: any) => objectId(participant.user))
                     .filter(Boolean)
-                ).size;
+                );
+                (attendanceRow?.records || [])
+                  .filter((record: any) => ["present", "late"].includes(String(record.status || "")))
+                  .forEach((record: any) => {
+                    const studentId = objectId(record.student);
+                    if (studentId) joinedStudentIds.add(studentId);
+                  });
+                const joinedStudentCount = joinedStudentIds.size;
                 const totalStudents = classroom.students?.length || 0;
                 const started = Boolean(sessionRow.actualStartedAt || liveRow?.startedAt);
                 const completed = Boolean(sessionRow.actualEndedAt || liveRow?.endedAt || status === "completed");

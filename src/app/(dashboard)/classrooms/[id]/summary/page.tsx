@@ -59,6 +59,134 @@ function formatDuration(minutes?: number | null) {
   return rest ? `${hours}h ${rest}m` : `${hours}h`;
 }
 
+function minutesBetween(start?: string | Date | null, end?: string | Date | null) {
+  if (!start || !end) return 0;
+  const startTime = new Date(start).getTime();
+  const endTime = new Date(end).getTime();
+  if (Number.isNaN(startTime) || Number.isNaN(endTime)) return 0;
+  return Math.max(0, Math.round((endTime - startTime) / 60000));
+}
+
+function resolveAttendanceStatus(savedStatus: string, timePresentMinutes: number, submissions: number) {
+  if (!["absent", "not_joined", "student_no_show"].includes(savedStatus)) return savedStatus;
+  if (timePresentMinutes >= 10 || submissions > 0) return "present";
+  if (timePresentMinutes > 0) return "late";
+  return savedStatus;
+}
+
+function cleanMoveList(value: any) {
+  return Array.isArray(value) ? value.map((move) => String(move || "").trim()).filter(Boolean) : [];
+}
+
+function buildSessionReviewResources(liveSession: any) {
+  const usedResources = Array.isArray(liveSession?.usedResources) ? liveSession.usedResources.filter(Boolean) : [];
+  const loadedCollection = Array.isArray(liveSession?.challenge?.pgnCollection) ? liveSession.challenge.pgnCollection.filter(Boolean) : [];
+  const enrichResource = (resource: any) => {
+    if (!resource || resource.pgn || cleanMoveList(resource.moves).length || cleanMoveList(resource.liveMoves).length) return resource;
+    const match = loadedCollection.find((item: any) =>
+      (resource.id && String(item.id || item._id || "") === String(resource.id))
+      || (resource.title && item.title === resource.title)
+    );
+    if (!match) return resource;
+    return {
+      ...resource,
+      pgn: match.pgn || resource.pgn,
+      startFen: resource.startFen || match.startFen || match.fen,
+      moves: cleanMoveList(match.moves || match.moveHistory),
+      moveCount: resource.moveCount || match.moveCount,
+    };
+  };
+  const fallbackResources = liveSession?.pgn || liveSession?.fen
+    ? [{ type: liveSession?.pgn ? "pgn" : "position", title: liveSession?.pgnTitle || "Classroom board", pgn: liveSession?.pgn, fen: liveSession?.fen }]
+    : [];
+  const resources = usedResources.length ? usedResources.map(enrichResource) : fallbackResources.map(enrichResource);
+  const finalMoves = cleanMoveList(liveSession?.pgnMoves).length ? cleanMoveList(liveSession?.pgnMoves) : cleanMoveList(liveSession?.moveHistory);
+  // Sessions saved after the closeout snapshot already carry these moves on the last used resource.
+  const lastResourceMoves = cleanMoveList(resources[resources.length - 1]?.liveMoves);
+  const alreadyCaptured = lastResourceMoves.length > 0 && lastResourceMoves.join(" ") === finalMoves.join(" ");
+  if (finalMoves.length && !alreadyCaptured) {
+    const loadedStartFen = [...usedResources].reverse().find((resource: any) => resource?.fen)?.fen;
+    resources.push({
+      type: "moves",
+      title: "Final classroom board",
+      fen: liveSession?.fen,
+      startFen: liveSession?.navigationStartFen || loadedStartFen || "start",
+      moves: finalMoves,
+      moveCount: finalMoves.length,
+      loadedAt: liveSession?.endedAt || liveSession?.updatedAt || liveSession?.createdAt || "final-board",
+    });
+  }
+  return resources;
+}
+
+function attemptText(result: any) {
+  const attempts = cleanMoveList(result?.attempts);
+  if (attempts.length) return attempts.join(", ");
+  const single = String(result?.submittedMove || result?.answer || "").trim();
+  return single;
+}
+
+function responseAnswerText(response: any) {
+  const sequence = cleanMoveList(response?.submittedSequence);
+  if (sequence.length) return sequence.join(" ");
+  return String(response?.submittedMove || "").trim();
+}
+
+function buildQuizReview(questions: any[], responses: any[], studentRows: any[]) {
+  const responsesByQuestion = new Map<string, any[]>();
+  responses.forEach((response: any) => {
+    const key = response?.question?._id?.toString?.() ?? response?.question?.toString?.() ?? "";
+    if (!key) return;
+    responsesByQuestion.set(key, [...(responsesByQuestion.get(key) || []), response]);
+  });
+
+  return questions.map((question: any) => {
+    const questionId = question?._id?.toString?.() ?? "";
+    const questionResponses = responsesByQuestion.get(questionId) || [];
+    const responseByStudentId = new Map<string, any>();
+    questionResponses.forEach((response: any) => {
+      const key = response?.student?._id?.toString?.() ?? response?.student?.toString?.() ?? "";
+      if (key && !responseByStudentId.has(key)) responseByStudentId.set(key, response);
+    });
+    const items = Array.isArray(question?.items) && question.items.length ? question.items : [];
+    const answers = studentRows
+      .map((row: any) => {
+        const response = responseByStudentId.get(row.id);
+        if (!response) return { student: row.name, answered: false, answer: "", correct: false, items: [] as any[] };
+        return {
+          student: row.name,
+          answered: true,
+          answer: responseAnswerText(response),
+          correct: Boolean(response?.correct),
+          score: Number(response?.score || 0),
+          items: items.map((item: any) => {
+            const result = response?.itemResults?.[item.id] || {};
+            return {
+              id: item.id,
+              title: item.pgnTitle || item.title || "Position",
+              solution: cleanMoveList(item.solution).join(" "),
+              answer: attemptText(result),
+              solved: Boolean(result?.solved),
+              skipped: Boolean(result?.skipped),
+            };
+          }),
+        };
+      })
+      .filter((answer: any) => answer.answered || items.length === 0);
+    return {
+      id: questionId,
+      title: question?.title || "Question",
+      type: String(question?.type || "ask_everyone").replace(/_/g, " "),
+      startFen: question?.fen || "",
+      solution: cleanMoveList(question?.solution).join(" "),
+      itemCount: items.length,
+      answeredCount: responseByStudentId.size,
+      correctCount: questionResponses.filter((response: any) => response?.correct).length,
+      answers,
+    };
+  });
+}
+
 function initials(name?: string) {
   return (name || "Student").split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase();
 }
@@ -147,9 +275,11 @@ export default async function ClassroomSummaryPage({
   ]);
 
   const attendanceRecords = attendance?.records || [];
-  const presentCount = attendanceRecords.filter((record: any) => record.status === "present").length;
-  const absentCount = attendanceRecords.filter((record: any) => record.status === "absent").length;
-  const lateCount = attendanceRecords.filter((record: any) => record.status === "late").length;
+  const summaryRows = Array.isArray(attendance?.metadata?.summary?.rows)
+    ? attendance.metadata.summary.rows
+    : Array.isArray(selectedSession?.summary?.rows)
+      ? selectedSession.summary.rows
+      : [];
   const responseByStudent = new Map<string, any[]>();
   responses.forEach((response: any) => {
     const key = objectId(response.student);
@@ -162,20 +292,12 @@ export default async function ClassroomSummaryPage({
     const attendanceRecord = attendanceRecords.find((record: any) => objectId(record.student) === studentId);
     const studentResponses = responseByStudent.get(studentId) || [];
     const responseSummary = aggregateStudentResponses(studentResponses);
-    const timePresentMinutes = liveSession?.participants?.find((participant: any) => objectId(participant.user) === studentId)
-      ? Math.max(
-          0,
-          Math.round(
-            (new Date(
-              liveSession.participants.find((participant: any) => objectId(participant.user) === studentId)?.lastSeenAt || 0
-            ).getTime() -
-              new Date(
-                liveSession.participants.find((participant: any) => objectId(participant.user) === studentId)?.firstSeenAt || 0
-              ).getTime()) /
-              60000
-          )
-        )
+    const summaryRow = summaryRows.find((row: any) => objectId(row.student?._id || row.student) === studentId);
+    const liveParticipant = liveSession?.participants?.find((participant: any) => objectId(participant.user) === studentId);
+    const liveTimePresentMinutes = liveParticipant
+      ? minutesBetween(liveParticipant.firstSeenAt, liveParticipant.lastSeenAt || liveSession?.endedAt)
       : 0;
+    const timePresentMinutes = Math.max(Number(summaryRow?.timeMinutes || 0), liveTimePresentMinutes);
     const accuracy = responseSummary.totalItems > 0
       ? Math.round((responseSummary.completedItems / Math.max(1, responseSummary.totalItems)) * 100)
       : studentResponses.length
@@ -185,7 +307,7 @@ export default async function ClassroomSummaryPage({
       id: studentId,
       name: student.name,
       username: student.username || student.email || "",
-      attendance: attendanceRecord?.status || "pending",
+      attendance: resolveAttendanceStatus(attendanceRecord?.status || "pending", timePresentMinutes, studentResponses.length),
       note: attendanceRecord?.note || "",
       timePresentMinutes,
       score: responseSummary.score,
@@ -199,6 +321,11 @@ export default async function ClassroomSummaryPage({
       feedback: responseSummary.feedback,
     };
   });
+  const presentCount = studentRows.filter((row: any) => row.attendance === "present").length;
+  const absentCount = studentRows.filter((row: any) => row.attendance === "absent").length;
+  const lateCount = studentRows.filter((row: any) => row.attendance === "late").length;
+
+  const quizReview = buildQuizReview(questions as any[], responses as any[], studentRows);
 
   const totalQuizPoints = responses.reduce((sum: number, response: any) => sum + Number(response.score || 0), 0);
   const summary = selectedSession.summary || attendance?.metadata?.summary || {};
@@ -298,14 +425,74 @@ export default async function ClassroomSummaryPage({
         <p className="mt-1 text-sm text-slate-500">Review the positions and material that were loaded during this class.</p>
         <div className="mt-4">
           <SessionResourceReview
-            resources={Array.isArray(liveSession?.usedResources) && liveSession.usedResources.length
-              ? liveSession.usedResources
-              : liveSession?.pgn || liveSession?.fen
-                ? [{ type: liveSession?.pgn ? "pgn" : "position", title: liveSession?.pgnTitle || "Classroom board", pgn: liveSession?.pgn, fen: liveSession?.fen }]
-                : []}
+            resources={buildSessionReviewResources(liveSession)}
           />
         </div>
       </section>
+
+      {quizReview.length ? (
+        <section className="rounded-[28px] border border-brand/10 bg-white p-5 shadow-[0_20px_50px_rgba(90,19,114,0.10)]">
+          <h2 className="text-lg font-black text-slate-950">Quiz Questions and Saved Answers</h2>
+          <p className="mt-1 text-sm text-slate-500">Every question launched in this class, its solution, and the moves each student saved.</p>
+          <div className="mt-4 space-y-4">
+            {quizReview.map((question: any) => (
+              <div key={question.id} className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-black text-slate-950">{question.title}</div>
+                    <div className="mt-1 text-xs capitalize text-slate-500">
+                      {question.type}
+                      {question.itemCount ? ` · ${question.itemCount} positions` : ""}
+                      {` · ${question.answeredCount} answered · ${question.correctCount} correct`}
+                    </div>
+                  </div>
+                  {question.solution ? (
+                    <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700">Solution: {question.solution}</span>
+                  ) : null}
+                </div>
+                {question.startFen ? (
+                  <div className="mt-2 truncate font-mono text-[11px] text-slate-400">{question.startFen}</div>
+                ) : null}
+                {question.answers.length ? (
+                  <div className="mt-3 space-y-2">
+                    {question.answers.map((answer: any, answerIndex: number) => (
+                      <div key={`${question.id}-${answerIndex}`} className="rounded-xl border border-slate-200 bg-white p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="text-xs font-black text-slate-900">{answer.student}</div>
+                          {answer.answered ? (
+                            <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${answer.correct ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+                              {answer.correct ? "Correct" : "Attempted"}
+                            </span>
+                          ) : (
+                            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-bold text-slate-500">No answer saved</span>
+                          )}
+                        </div>
+                        {answer.items.length ? (
+                          <div className="mt-2 space-y-1.5">
+                            {answer.items.map((item: any, itemIndex: number) => (
+                              <div key={`${question.id}-${answerIndex}-${item.id || itemIndex}`} className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[11px] text-slate-600">
+                                <span className="font-bold text-slate-800">{item.title}</span>
+                                <span className={item.solved ? "text-emerald-700" : item.skipped ? "text-slate-400" : "text-amber-700"}>
+                                  {item.answer || (item.skipped ? "Skipped" : "Nothing saved")}
+                                </span>
+                                {item.solution ? <span className="text-slate-400">· expected {item.solution}</span> : null}
+                              </div>
+                            ))}
+                          </div>
+                        ) : answer.answer ? (
+                          <div className="mt-2 font-mono text-[11px] text-slate-700">{answer.answer}</div>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-3 rounded-xl border border-dashed border-slate-200 bg-white p-3 text-xs text-slate-500">No student answers were saved for this question.</div>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <section className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
         <div className="rounded-[28px] border border-brand/10 bg-white p-5 shadow-[0_20px_50px_rgba(90,19,114,0.10)]">

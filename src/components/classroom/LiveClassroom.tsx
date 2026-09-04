@@ -1368,10 +1368,42 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     return dataRef.current?.live || live || {};
   }
 
+  function liveBoardSnapshot(snapshot: any) {
+    const rawMoves = Array.isArray(snapshot?.pgnMoves) && snapshot.pgnMoves.length
+      ? snapshot.pgnMoves
+      : Array.isArray(snapshot?.moveHistory) ? snapshot.moveHistory : [];
+    return {
+      liveMoves: rawMoves.map((move: any) => String(move || "").trim()).filter(Boolean),
+      liveVariations: Array.isArray(snapshot?.pgnVariations) ? snapshot.pgnVariations : [],
+      liveStartFen: snapshot?.navigationStartFen || "",
+      liveFinalFen: snapshot?.fen || "",
+      liveUpdatedAt: new Date().toISOString(),
+    };
+  }
+
+  // Captures what actually happened on the board for the resource that is currently loaded,
+  // so the moves survive when the next resource is loaded or the class is closed.
+  function withResourceUsage(resources: any, snapshot: any) {
+    const list = Array.isArray(resources) ? resources : [];
+    if (!list.length) return list;
+    const board = liveBoardSnapshot(snapshot);
+    const lastIndex = list.length - 1;
+    return list.map((resource: any, index: number) => (index === lastIndex ? { ...resource, ...board } : resource));
+  }
+
+  function snapshotUsedResources() {
+    const snapshot = currentLive();
+    return withResourceUsage(snapshot?.usedResources, snapshot);
+  }
+
   function resourceHistory(resource: any) {
-    const current = Array.isArray(currentLive()?.usedResources) ? currentLive().usedResources : [];
+    const snapshot = currentLive();
+    const current = withResourceUsage(snapshot?.usedResources, snapshot);
     const key = `${resource.type}:${resource.title}:${resource.fen || ""}`;
-    const withoutDuplicate = current.filter((item: any) => `${item.type}:${item.title}:${item.fen || ""}` !== key);
+    // Keep an earlier visit to the same resource when moves were recorded on it, otherwise dedupe.
+    const withoutDuplicate = current.filter((item: any) =>
+      `${item.type}:${item.title}:${item.fen || ""}` !== key || (Array.isArray(item.liveMoves) && item.liveMoves.length > 0)
+    );
     return [...withoutDuplicate, { ...resource, loadedAt: new Date().toISOString() }].slice(-30);
   }
 
@@ -1464,11 +1496,17 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     }
   }
 
-  function commitFreeMove(position: BoardPosition, objects = liveGamifiedObjects) {
+  function freeBoardMoveLabel(piece: string, from: string, to: string) {
+    const pieceName = piece?.[1] || "";
+    return `${pieceName}${from}-${to}`;
+  }
+
+  function commitFreeMove(position: BoardPosition, objects = liveGamifiedObjects, moveLabel = "") {
     const sideToMove = live?.fen?.split(" ")?.[1] === "b" ? "b" : "w";
     patch({
       fen: positionToFen(position, sideToMove),
       gamifiedObjects: removeObjectsOnPieceSquares(objects, position),
+      ...(moveLabel ? { moveHistory: [...(live?.moveHistory || []), moveLabel] } : {}),
       setupMode: Boolean(live?.setupMode || tool === "setup"),
       illegalMovesEnabled: true,
     });
@@ -1510,7 +1548,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
 
   async function clearClassroomLoad() {
     setSelectedMoveSquare(null);
-    await patch({ action: "clear_classroom_load" }, { optimistic: false });
+    await patch({ action: "clear_classroom_load", usedResources: snapshotUsedResources() }, { optimistic: false });
   }
 
   function collectGamifiedWithPiece(source: string, target: string, piece: string) {
@@ -1639,7 +1677,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
         });
         submitStudentMove(source, target).catch(() => undefined);
       } else {
-        commitFreeMove(next, nextObjects);
+        commitFreeMove(next, nextObjects, freeBoardMoveLabel(piece, source, target));
       }
       playMoveSound(live?.soundEnabled);
       return true;
@@ -2296,11 +2334,27 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
 
   async function saveAttendanceAndClose() {
     setEndingClass(true);
-    const records = students.map((student: any) => ({
-      student: entityId(student),
-      status: classOutcome === "student_no_show" ? "student_no_show" : classOutcome === "absent" ? "absent" : attendanceDraft[entityId(student)] || "absent",
-      note: classOutcome === "student_no_show" ? "Student no-show marked from live classroom summary" : classOutcome === "absent" ? "Student absent from demo summary" : "Marked from live classroom summary",
-    }));
+    const summaryRowsByStudent = new Map(classSummary.rows.map((row: any) => [entityId(row.student), row]));
+    const records = students.map((student: any) => {
+      const studentId = entityId(student);
+      const summaryRow: any = summaryRowsByStudent.get(studentId);
+      const suggestedStatus = isDemoClassroom && summaryRow?.suggestedStatus === "late" ? "present" : summaryRow?.suggestedStatus || "absent";
+      const selectedStatus = attendanceDraft[studentId] || suggestedStatus;
+      const hasRecordedActivity = Number(summaryRow?.timeMinutes || 0) > 0 || Number(summaryRow?.submissions || 0) > 0;
+      return {
+        student: studentId,
+        status: classOutcome === "student_no_show"
+          ? hasRecordedActivity ? selectedStatus : "student_no_show"
+          : classOutcome === "absent"
+            ? hasRecordedActivity ? suggestedStatus : "absent"
+            : selectedStatus,
+        note: classOutcome === "student_no_show"
+          ? hasRecordedActivity ? "Recorded from live classroom summary" : "Student no-show marked from live classroom summary"
+          : classOutcome === "absent"
+            ? hasRecordedActivity ? "Recorded from live classroom summary" : "Student absent from demo summary"
+            : "Marked from live classroom summary",
+      };
+    });
     const summary = {
       ...classSummary,
       classOutcome,
@@ -2328,7 +2382,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       toast.error("Could not save attendance");
       return;
     }
-    await patch({ endedAt: new Date().toISOString(), status: "ended", summary, participants: [], boardControlStudents: [], selectedStudents: [], challenge: { active: false } });
+    await patch({ endedAt: new Date().toISOString(), status: "ended", summary, usedResources: snapshotUsedResources(), boardControlStudents: [], selectedStudents: [], challenge: { active: false } });
     toast.success(isDemoClassroom ? "Demo attendance saved" : "Class ended and attendance saved");
     setSummaryOpen(false);
     if (isDemoClassroom && classOutcome === "completed" && classroom?.demoBooking) {
@@ -2339,7 +2393,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   }
 
   function resetGame() {
-    patch({ fen: "start", orientation: "white", navigationStartFen: "start", pgnMoves: [], pgnMoveIndex: 0, pgnVariations: [], activePgnVariationId: "", moveHistory: [], drawings: [], gamifiedObjects: {}, setupMode: false, illegalMovesEnabled: false });
+    patch({ usedResources: snapshotUsedResources(), fen: "start", orientation: "white", navigationStartFen: "start", pgnMoves: [], pgnMoveIndex: 0, pgnVariations: [], activePgnVariationId: "", moveHistory: [], drawings: [], gamifiedObjects: {}, setupMode: false, illegalMovesEnabled: false });
   }
 
   function navigateMove(nextIndex: number, moves = activePgnMoves, variationId = live?.activePgnVariationId || "") {

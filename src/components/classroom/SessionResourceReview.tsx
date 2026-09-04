@@ -61,6 +61,46 @@ function parsePgn(pgn?: string, fallbackFen?: string) {
   }
 }
 
+function cleanMoveList(value: any) {
+  return Array.isArray(value) ? value.map((move) => String(move || "").trim()).filter(Boolean) : [];
+}
+
+function parseMoveList(moves: any, fallbackStartFen?: string, fallbackFinalFen?: string) {
+  const rawMoves = cleanMoveList(moves);
+  const start = fallbackStartFen && fallbackStartFen !== "start" ? fallbackStartFen : startFen;
+  const final = fallbackFinalFen && fallbackFinalFen !== "start" ? fallbackFinalFen : start;
+  if (!rawMoves.length) return { valid: true, start, final, moves: [] as PgnMove[], rawMoves };
+
+  try {
+    const game = new Chess(start);
+    const parsedMoves: PgnMove[] = [];
+    for (const moveText of rawMoves) {
+      const move = game.move(moveText as any) as PgnMove | null;
+      if (!move) break;
+      parsedMoves.push(move);
+    }
+    return { valid: parsedMoves.length === rawMoves.length, start, final: parsedMoves.length ? game.fen() : final, moves: parsedMoves, rawMoves };
+  } catch {
+    return { valid: false, start, final, moves: [] as PgnMove[], rawMoves };
+  }
+}
+
+function parseResource(resource: any) {
+  const fallbackStartFen = resource?.startFen || resource?.liveStartFen || (resource?.fen === "start" ? "" : resource?.fen);
+  // Moves that were actually played on this resource during the class win over the file it was loaded from.
+  const liveMoves = cleanMoveList(resource?.liveMoves);
+  if (liveMoves.length) {
+    const played = parseMoveList(
+      liveMoves,
+      resource?.liveStartFen || fallbackStartFen,
+      resource?.liveFinalFen || resource?.fen
+    );
+    if (played.moves.length || !resource?.pgn) return { ...played, classMoves: true };
+  }
+  if (resource?.pgn) return { ...parsePgn(resource.pgn, fallbackStartFen), rawMoves: [] as string[], classMoves: false };
+  return { ...parseMoveList(resource?.moves || resource?.moveHistory, fallbackStartFen, resource?.fen), classMoves: false };
+}
+
 function replayPosition(start: string, moves: PgnMove[], ply: number) {
   if (!moves.length) return start;
   try {
@@ -88,11 +128,13 @@ export default function SessionResourceReview({ resources }: { resources: any[] 
   }, [active]);
 
   const selected = normalized[Math.min(active, Math.max(normalized.length - 1, 0))];
-  const parsed = selected ? parsePgn(selected.pgn, selected.fen === "start" ? "" : selected.fen) : { valid: true, start: startFen, final: startFen, moves: [] as PgnMove[] };
+  const parsed = selected ? parseResource(selected) : { valid: true, start: startFen, final: startFen, moves: [] as PgnMove[], rawMoves: [] as string[], classMoves: false };
   const boardPosition = parsed.moves.length ? replayPosition(parsed.start, parsed.moves, ply) : selected.fen || parsed.final || "start";
   const activeMove = ply > 0 ? parsed.moves[ply - 1] : null;
   const previousMove = ply > 1 ? parsed.moves[ply - 2] : null;
   const nextMove = ply < parsed.moves.length ? parsed.moves[ply] : null;
+  const rawMoves = parsed.rawMoves || [];
+  const recordedMoveCount = rawMoves.length || parsed.moves.length;
   const headers = [
     ["Event", pgnHeader(selected.pgn, "Event")],
     ["Date", pgnHeader(selected.pgn, "Date")],
@@ -187,7 +229,7 @@ export default function SessionResourceReview({ resources }: { resources: any[] 
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="truncate text-sm font-black text-slate-950">{selected.title || "Classroom board"}</div>
-              <div className="mt-1 text-xs capitalize text-slate-500">{selected.type || "position"} · {parsed.moves.length ? `${parsed.moves.length} moves recorded` : "Saved board position"}</div>
+              <div className="mt-1 text-xs capitalize text-slate-500">{selected.type || "position"} · {recordedMoveCount ? `${recordedMoveCount} moves ${parsed.classMoves ? "played in class" : "recorded"}` : "Saved board position"}</div>
             </div>
             {activeMove ? <span className="rounded-full bg-purple-50 px-2.5 py-1 text-xs font-bold text-purple-700">{activeMove.color === "w" ? "White" : "Black"}: {activeMove.san}</span> : null}
           </div>
@@ -229,6 +271,18 @@ export default function SessionResourceReview({ resources }: { resources: any[] 
                 </div>
               </div>
             </>
+          ) : rawMoves.length ? (
+            <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+              <div className="font-bold text-slate-900">Moves were recorded for this item.</div>
+              <div className="mt-1 text-xs leading-5">These classroom moves were saved as raw board moves, so the final position is shown with the recorded list below.</div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {rawMoves.map((move: string, index: number) => (
+                  <span key={`${move}-${index}`} className="rounded-md bg-white px-2.5 py-1 text-xs font-bold text-slate-700 shadow-sm">
+                    {index + 1}. {move}
+                  </span>
+                ))}
+              </div>
+            </div>
           ) : (
             <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
               <div className="font-bold text-slate-900">No move list was saved for this item.</div>

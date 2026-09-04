@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { Types } from "mongoose";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { Attendance } from "@/models/Attendance";
@@ -7,7 +8,7 @@ import { consumeAttendanceCredit } from "@/lib/fees";
 import { Classroom } from "@/models/Classroom";
 import { Booking } from "@/models/Booking";
 import { DemoFeedback } from "@/models/Onboarding";
-import { ClassroomSession } from "@/models/ClassroomLive";
+import { ClassroomSession, LiveQuestionResponse } from "@/models/ClassroomLive";
 import { actualSessionMinutes, punctualityBreakdown, scheduledPaymentMinutes } from "@/lib/teachingStats";
 import { canAccessFeature } from "@/lib/featureAccess";
 import { coachCanAccessClassroomSession, coachClassroomQuery, limitClassroomToCoachSessions } from "@/lib/classroomCoachAccess";
@@ -31,6 +32,7 @@ import { sendClassCompletedSummaryEmail, sendStudentNoShowWarningEmail } from "@
 export const dynamic = "force-dynamic";
 
 const TERMINAL_SESSION_OUTCOMES = new Set(["completed", "cancelled", "missed", "abandoned", "absent", "coach_no_show", "student_no_show", "technical_issue"]);
+const NON_ATTENDING_RECORD_STATUSES = new Set(["absent", "not_joined", "student_no_show"]);
 
 type SessionUser = {
   id: string;
@@ -66,6 +68,106 @@ type AttendancePayload = {
     };
   };
 };
+
+function objectId(value: any) {
+  return value?._id?.toString?.() ?? value?.toString?.() ?? "";
+}
+
+function minutesBetween(start?: string | Date | null, end?: string | Date | null) {
+  if (!start || !end) return 0;
+  const startTime = new Date(start).getTime();
+  const endTime = new Date(end).getTime();
+  if (Number.isNaN(startTime) || Number.isNaN(endTime)) return 0;
+  return Math.max(0, Math.round((endTime - startTime) / 60000));
+}
+
+function statusFromActivity(minutes: number, submissions: number, isDemoClassroom: boolean) {
+  if (isDemoClassroom && (minutes > 0 || submissions > 0)) return "present";
+  if (minutes >= 10 || submissions > 0) return "present";
+  if (minutes > 0) return "late";
+  return "absent";
+}
+
+async function activityByStudent({
+  classroom,
+  sessionId,
+  metadata,
+}: {
+  classroom: string;
+  sessionId?: string;
+  metadata?: AttendancePayload["metadata"];
+}) {
+  const activity = new Map<string, { minutes: number; submissions: number }>();
+  const add = (studentId: string, values: { minutes?: number; submissions?: number }) => {
+    if (!studentId) return;
+    const current = activity.get(studentId) || { minutes: 0, submissions: 0 };
+    activity.set(studentId, {
+      minutes: Math.max(current.minutes, Math.max(0, Number(values.minutes || 0))),
+      submissions: Math.max(current.submissions, Math.max(0, Number(values.submissions || 0))),
+    });
+  };
+
+  const summaryRows = Array.isArray((metadata?.summary as any)?.rows) ? (metadata?.summary as any).rows : [];
+  for (const row of summaryRows) {
+    add(objectId(row.student?._id || row.student), {
+      minutes: Number(row.timeMinutes || 0),
+      submissions: Number(row.submissions || 0),
+    });
+  }
+
+  if (!sessionId) return activity;
+
+  const [liveSession, responseCounts] = await Promise.all([
+    ClassroomSession.findOne({ classroom, scheduledSessionId: sessionId })
+      .select("participants endedAt")
+      .lean<any>(),
+    LiveQuestionResponse.aggregate([
+      {
+        $match: {
+          classroom: new Types.ObjectId(classroom),
+          scheduledSessionId: sessionId,
+        },
+      },
+      { $group: { _id: "$student", submissions: { $sum: 1 } } },
+    ]),
+  ]);
+
+  for (const participant of liveSession?.participants || []) {
+    if (String(participant.role || "student") !== "student") continue;
+    add(objectId(participant.user), {
+      minutes: minutesBetween(participant.firstSeenAt, participant.lastSeenAt || liveSession?.endedAt),
+    });
+  }
+  for (const row of responseCounts || []) {
+    add(objectId(row._id), { submissions: Number(row.submissions || 0) });
+  }
+
+  return activity;
+}
+
+function normalizeAttendanceRecords({
+  records,
+  activity,
+  isDemoClassroom,
+}: {
+  records: AttendanceRecordInput[];
+  activity: Map<string, { minutes: number; submissions: number }>;
+  isDemoClassroom: boolean;
+}) {
+  return records.map((record) => {
+    const studentId = String(record.student || "");
+    const status = String(record.status || "absent") as AttendanceRecordInput["status"];
+    const studentActivity = activity.get(studentId) || { minutes: 0, submissions: 0 };
+    const hasActivity = studentActivity.minutes > 0 || studentActivity.submissions > 0;
+    if (!hasActivity || !NON_ATTENDING_RECORD_STATUSES.has(String(status))) return record;
+    const correctedStatus = statusFromActivity(studentActivity.minutes, studentActivity.submissions, isDemoClassroom) as AttendanceRecordInput["status"];
+    return {
+      ...record,
+      status: correctedStatus,
+      note: record.note || "Auto-corrected from recorded classroom activity",
+    };
+  });
+}
 
 export async function GET(req: Request) {
   const session = await auth();
@@ -130,14 +232,26 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "You are not assigned to this class" }, { status: 403 });
   }
   const assignedStudentIds = new Set((classroomDoc.students || []).map((student: any) => String(student?._id || student)));
-  if ((records || []).some((record) => !record.student || !assignedStudentIds.has(String(record.student)))) {
+  const inputRecords = records || [];
+  if (inputRecords.some((record) => !record.student || !assignedStudentIds.has(String(record.student)))) {
     return NextResponse.json({ error: "Attendance includes a student who is not assigned to this classroom" }, { status: 400 });
   }
+  const recordedActivity = await activityByStudent({ classroom, sessionId, metadata });
+  const normalizedRecords = normalizeAttendanceRecords({
+    records: inputRecords,
+    activity: recordedActivity,
+    isDemoClassroom,
+  });
   const scheduledMinutes = target ? scheduledPaymentMinutes(target, classroomDoc) : Math.max(0, Number(classroomDoc?.durationMinutes || teachingMinutes || 0));
-  const actualMinutes = target
-    ? Math.max(0, Number(metadata?.summary?.actualTeachingMinutes || teachingMinutes || target.actualTeachingMinutes || actualSessionMinutes(target) || 0))
-    : Math.max(0, Number(metadata?.summary?.actualTeachingMinutes || teachingMinutes || 0));
-  const hasAttendingStudent = (records || []).some((record) => ["present", "late"].includes(String(record?.status || "")));
+  const hasAttendingStudent = normalizedRecords.some((record) => ["present", "late"].includes(String(record?.status || "")));
+  const summaryActualMinutes = Math.max(
+    0,
+    Number((metadata?.summary as any)?.actualTeachingMinutes || (metadata?.summary as any)?.durationMinutes || 0)
+  );
+  const storedActualMinutes = target ? Math.max(0, Number(target.actualTeachingMinutes || actualSessionMinutes(target) || 0)) : 0;
+  const submittedActualMinutes = Math.max(0, Number(teachingMinutes || 0));
+  const recordedActualMinutes = summaryActualMinutes || storedActualMinutes || submittedActualMinutes;
+  const actualMinutes = recordedActualMinutes || (hasAttendingStudent ? scheduledMinutes : 0);
   const requestedOutcome = classOutcome || metadata?.summary?.classOutcome || (hasAttendingStudent ? "completed" : undefined);
   const completionOverride = Boolean(adminOverrideCompletion || metadata?.summary?.adminOverrideCompletion || (hasAttendingStudent && requestedOutcome === "completed"));
   const outcome = isDemoClassroom && requestedOutcome === "completed" ? "completed" : normalizeSessionOutcome(requestedOutcome, actualMinutes, completionOverride);
@@ -179,7 +293,7 @@ export async function POST(req: Request) {
   const doc = await Attendance.findOneAndUpdate(
     { classroom, scheduledSessionId: sessionId || "", sessionDate: normalizedDate },
     {
-      records,
+      records: normalizedRecords,
       markedBy: (session.user as SessionUser).id,
       scheduledSessionId: sessionId || "",
       coach: assignedCoach,
@@ -194,12 +308,12 @@ export async function POST(req: Request) {
   await recordActivity({
     actor: (session.user as SessionUser).id,
     type: overrideEntry ? "attendance.overridden" : "attendance.marked",
-    label: `${overrideEntry ? "Corrected" : "Marked"} attendance for ${records?.length ?? 0} students`,
+    label: `${overrideEntry ? "Corrected" : "Marked"} attendance for ${normalizedRecords.length} students`,
     entityType: "Attendance",
     entityId: doc._id.toString(),
-    metadata: { classroom, sessionDate, sessionId, records: records?.length ?? 0, classOutcome: storedOutcome, overrideReason: overrideEntry?.reason || "" },
+    metadata: { classroom, sessionDate, sessionId, records: normalizedRecords.length, classOutcome: storedOutcome, overrideReason: overrideEntry?.reason || "" },
   });
-  for (const record of records || []) {
+  for (const record of normalizedRecords) {
     if (!record?.student) continue;
     if (isDemoClassroom) continue;
     const recordStatus = String(record.status || "");
@@ -269,7 +383,6 @@ export async function POST(req: Request) {
               locked: true,
               selectedStudents: [],
               boardControlStudents: [],
-              participants: [],
               challenge: { active: false },
             },
           }
@@ -306,7 +419,7 @@ export async function POST(req: Request) {
               {
                 $setOnInsert: {
                   booking: demoBooking._id,
-                  demoUser: recordStudentId(records || [], classroomDoc.students || []),
+                  demoUser: recordStudentId(normalizedRecords, classroomDoc.students || []),
                   coach: assignedCoach,
                   classroom: classroomDoc._id,
                   attendance: doc._id,
@@ -331,7 +444,7 @@ export async function POST(req: Request) {
           classroom: classroomDoc,
           session: target,
           attendance: doc,
-          records: records || [],
+          records: normalizedRecords,
           request: req,
           }).catch((error) => console.error("Class completed summary email failed", error));
       }

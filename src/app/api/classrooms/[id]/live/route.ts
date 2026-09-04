@@ -144,7 +144,7 @@ async function autoEndCoachNoShowIfNeeded({
 
   await ClassroomSession.updateOne(
     { _id: live._id },
-    { $set: { status: "ended", endedAt: new Date(), locked: true, participants: [] } }
+    { $set: { status: "ended", endedAt: new Date(), locked: true } }
   );
   const classroomDoc: any = await Classroom.findById(classroomId);
   const target = classroomDoc?.generatedSessions?.id?.(scheduledSessionId);

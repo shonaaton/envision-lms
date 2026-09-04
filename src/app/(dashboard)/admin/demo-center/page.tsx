@@ -6,7 +6,7 @@ import { CalendarCheck, CheckCircle2, Clock3, GraduationCap, History, Link as Li
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { formatAcademyDateTime } from "@/lib/academyTime";
-import { notifyDemoApproved } from "@/lib/demoWorkflow";
+import { notifyDemoApproved, notifyDemoConverted } from "@/lib/demoWorkflow";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
 import { recordActivity } from "@/lib/activity";
 import { Booking } from "@/models/Booking";
@@ -262,6 +262,14 @@ async function convertDemoStudent(formData: FormData) {
     });
   }
   if (bookingId) await Booking.findByIdAndUpdate(bookingId, { demoStatus: "CONVERTED" });
+  const batch: any = batchId ? await Batch.findById(batchId).select("name").lean() : null;
+  await notifyDemoConverted({
+    studentId,
+    bookingId,
+    courseName: conversionSetup.courseName,
+    batchId,
+    batchName: batch?.name,
+  }).catch((error) => console.error("Demo conversion WhatsApp failed", error));
   await recordActivity({ actor: actorId, targetUser: studentId, type: "demo.student.converted", label: "Converted demo user to enrolled student", entityType: "User", entityId: studentId, metadata: { booking: bookingId || undefined, course: courseId || undefined, batch: batchId || undefined, classType: conversionSetup.classType || undefined, event: "DEMO_CONVERTED" } });
   revalidatePath("/admin/demo-center");
   revalidatePath("/admin/users");

@@ -8,6 +8,7 @@ import { Classroom } from "@/models/Classroom";
 import { FeeAssignment, Notification } from "@/models/Fee";
 import { User } from "@/models/User";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
+import { importantContactWhatsAppRecipientsByKeys } from "@/lib/importantContacts";
 import { sendWhatsAppAutomationTemplates } from "@/lib/whatsappAutomationEvents";
 import { ACADEMY_TIME_ZONE } from "@/lib/academyTime";
 import { isBookingWithinAvailability, type AvailabilitySlot } from "@/lib/bookingAvailability";
@@ -414,6 +415,20 @@ export async function POST(req: Request) {
         bodyParameters: [student.name || "there", formatBookingTime(startAt)],
         metadata: { kind: "booking_created", bookingId: created._id.toString(), href: bookingNotificationPath("student") },
       },
+      ...importantContactWhatsAppRecipientsByKeys(["sayandeb"]).map((recipient) => ({
+        user: recipient,
+        templateName: isDemo ? "demo_booking_received_sales_alert" : "class_booking_created_admin",
+        bodyParameters: isDemo
+          ? [recipient.name || "Sales", student.name || "student", formatBookingTime(startAt)]
+          : [recipient.name || "Admin", student.name || "student", coach?.name || "coach", formatBookingTime(startAt)],
+        metadata: {
+          kind: isDemo ? "demo_booking_received_sales" : "class_booking_created_sales",
+          recipientType: "sales",
+          bookingId: created._id.toString(),
+          href: bookingNotificationPath("admin"),
+          notificationDedupKey: `${isDemo ? "demo_booking_received" : "class_booking_created"}:${created._id.toString()}:sales`,
+        },
+      })),
       ...(coach ? [{
         user: coach,
         templateName: isDemo ? "demo_booking_pending_approval_coach" : decision.status === "confirmed" ? "class_booking_confirmed_coach" : "class_booking_response_required_coach",

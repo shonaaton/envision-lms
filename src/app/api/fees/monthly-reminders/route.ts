@@ -7,7 +7,8 @@ import { formatINR } from "@/lib/utils";
 import { Invoice, Notification } from "@/models/Fee";
 import { User } from "@/models/User";
 import { sendInvoiceOverdueEscalationEmail } from "@/lib/studentCommunicationEmails";
-import { sendWhatsAppAutomationTemplate } from "@/lib/whatsappAutomationEvents";
+import { importantContactWhatsAppRecipientsByKeys } from "@/lib/importantContacts";
+import { sendWhatsAppAutomationTemplate, sendWhatsAppAutomationTemplates } from "@/lib/whatsappAutomationEvents";
 
 export const dynamic = "force-dynamic";
 
@@ -71,14 +72,50 @@ async function notifyAdmins(invoice: any, days: number, invoiceUrl: string) {
         metadata: { kind: "monthly_invoice_admin_reminder", invoiceId: invoice._id.toString(), days },
       });
     }
-    await sendWhatsAppAutomationTemplate({
-      user: admin,
-      templateName: "invoice_due_admin_alert",
-      bodyParameters: [admin.name || "Admin", invoice.invoiceNumber, invoice.student.name || "Student", timing, formatINR(invoice.totalAmount)],
-      metadata: { kind: "monthly_invoice_admin_reminder", invoiceId: invoice._id.toString(), days, href: "/fees/invoices" },
-    });
   }
+  const whatsappAdmins = days === 0
+    ? importantContactWhatsAppRecipientsByKeys(["saptarshi"])
+    : admins;
+  await sendWhatsAppAutomationTemplates(whatsappAdmins.map((admin) => ({
+    user: admin,
+    templateName: days === 0 ? "invoice_due_today" : "invoice_due_admin_alert",
+    bodyParameters: days === 0
+      ? [
+          admin.name || "Admin",
+          invoice.invoiceNumber,
+          invoice.student.name || invoice.title || "Student",
+          new Date(invoice.dueDate).toLocaleDateString("en-IN"),
+          formatINR(invoice.totalAmount),
+        ]
+      : [admin.name || "Admin", invoice.invoiceNumber, invoice.student.name || "Student", timing, formatINR(invoice.totalAmount)],
+      metadata: { kind: "monthly_invoice_admin_reminder", invoiceId: invoice._id.toString(), days, href: "/fees/invoices" },
+  })));
   return admins.length;
+}
+
+async function notifyOverdueInvoiceStaff(invoice: any, days: number) {
+  if (days >= 0) return 0;
+  const recipients = importantContactWhatsAppRecipientsByKeys(["sayan_bose", "saptarshi"]);
+  await sendWhatsAppAutomationTemplates(recipients.map((recipient) => ({
+    user: recipient,
+    templateName: "invoice_overdue_reminder",
+    bodyParameters: [
+      recipient.name || "Admin",
+      invoice.invoiceNumber,
+      invoice.student?.name || invoice.title || "Student",
+      formatINR(invoice.totalAmount),
+      new Date(invoice.dueDate).toLocaleDateString("en-IN"),
+    ],
+    metadata: {
+      kind: "monthly_invoice_overdue_staff_reminder",
+      invoiceId: invoice._id.toString(),
+      invoiceNumber: invoice.invoiceNumber,
+      days,
+      href: "/fees/invoices",
+      notificationDedupKey: `invoice_overdue:${invoice._id.toString()}:${Math.abs(days)}`,
+    },
+  })));
+  return recipients.length;
 }
 
 async function processReminders(req: Request) {
@@ -150,6 +187,7 @@ async function processReminders(req: Request) {
       ],
       metadata: { kind: "monthly_invoice_student_reminder", invoiceId: invoice._id.toString(), days, href: "/fees/invoices" },
     });
+    adminNotifications += await notifyOverdueInvoiceStaff(invoice, days);
     if (days === -3 || days === -7) {
       await sendInvoiceOverdueEscalationEmail({
         invoice,

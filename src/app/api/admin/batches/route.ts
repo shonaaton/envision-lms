@@ -6,6 +6,7 @@ import { User } from "@/models/User";
 import { batchSchema } from "@/lib/validation";
 import { recordActivity } from "@/lib/activity";
 import { canAccessFeature } from "@/lib/featureAccess";
+import { notifyBatchCoachAssigned } from "@/lib/batchCoachNotifications";
 
 export const dynamic = "force-dynamic";
 
@@ -59,6 +60,12 @@ export async function POST(req: Request) {
       entityId: b._id.toString(),
       metadata: { students: body.students?.length ?? 0 },
     });
+    if (body.coach) {
+      await notifyBatchCoachAssigned({
+        batchId: b._id.toString(),
+        reason: "new_batch_assigned",
+      }).catch((error) => console.error("New batch coach notification failed", error));
+    }
     return NextResponse.json(b);
   } catch (err: any) {
     return NextResponse.json({ error: err.message ?? "Bad request" }, { status: 400 });

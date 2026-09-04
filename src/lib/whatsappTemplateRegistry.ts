@@ -157,7 +157,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
     "name": "ask_coach_action_required",
     "language": "en",
     "sourceAutomation": "Ask Coach Notification",
-    "body": "Hello {{1}}, an Ask Coach conversation requires your attention. Reference: {{2}}. Open the academy portal to review the details.",
+    "body": "Hello {{1}}, {{2}} sent an Ask Coach message that needs your attention. Open the academy portal to review and reply.",
     "variables": [
       {
         "position": 1,
@@ -166,8 +166,8 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
       },
       {
         "position": 2,
-        "key": "conversation_reference",
-        "sample": "AC-1042"
+        "key": "sender_name",
+        "sample": "Aarav"
       }
     ]
   },
@@ -186,6 +186,159 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
         "position": 2,
         "key": "class_datetime",
         "sample": "27 Aug 2026, 6:00 PM IST"
+      }
+    ]
+  },
+  {
+    "name": "demo_class_approved_staff_alert",
+    "language": "en",
+    "sourceAutomation": "Demo Class Approved - Staff",
+    "body": "Hello {{1}}, demo class for {{2}} has been approved and scheduled for {{3}}. Coach: {{4}}. Please review the demo workflow in the academy portal.",
+    "variables": [
+      {
+        "position": 1,
+        "key": "staff_name",
+        "sample": "Sayandeb"
+      },
+      {
+        "position": 2,
+        "key": "student_name",
+        "sample": "Aarav"
+      },
+      {
+        "position": 3,
+        "key": "class_datetime",
+        "sample": "27 Aug 2026, 6:00 PM IST"
+      },
+      {
+        "position": 4,
+        "key": "coach_name",
+        "sample": "Coach Sanjib"
+      }
+    ]
+  },
+  {
+    "name": "demo_class_reminder_student",
+    "language": "en",
+    "sourceAutomation": "Demo Class Reminder - Student",
+    "body": "Hello {{1}}, reminder: your Envision Chess Academy demo class is {{2}}, scheduled for {{3}}. Please join from your academy dashboard at the scheduled time.",
+    "variables": [
+      {
+        "position": 1,
+        "key": "student_name",
+        "sample": "Aarav"
+      },
+      {
+        "position": 2,
+        "key": "reminder_window",
+        "sample": "in 1 hour"
+      },
+      {
+        "position": 3,
+        "key": "class_datetime",
+        "sample": "27 Aug 2026, 6:00 PM IST"
+      }
+    ]
+  },
+  {
+    "name": "demo_class_reminder_coach",
+    "language": "en",
+    "sourceAutomation": "Demo Class Reminder - Coach",
+    "body": "Hello {{1}}, reminder: your demo class with {{2}} is {{3}}, scheduled for {{4}}. Please open the academy portal and be ready for the session.",
+    "variables": [
+      {
+        "position": 1,
+        "key": "coach_name",
+        "sample": "Coach Sanjib"
+      },
+      {
+        "position": 2,
+        "key": "student_name",
+        "sample": "Aarav"
+      },
+      {
+        "position": 3,
+        "key": "reminder_window",
+        "sample": "in 30 minutes"
+      },
+      {
+        "position": 4,
+        "key": "class_datetime",
+        "sample": "27 Aug 2026, 6:00 PM IST"
+      }
+    ]
+  },
+  {
+    "name": "demo_no_show_reschedule_admin",
+    "language": "en",
+    "sourceAutomation": "Demo No-Show - Admin",
+    "body": "Hello {{1}}, {{2}} missed the assigned demo class scheduled for {{3}}. If this is the first missed demo, please reschedule it from the Demo Center.",
+    "variables": [
+      {
+        "position": 1,
+        "key": "admin_name",
+        "sample": "Saptarshi"
+      },
+      {
+        "position": 2,
+        "key": "student_name",
+        "sample": "Aarav"
+      },
+      {
+        "position": 3,
+        "key": "class_datetime",
+        "sample": "27 Aug 2026, 6:00 PM IST"
+      }
+    ]
+  },
+  {
+    "name": "demo_no_show_sales_alert",
+    "language": "en",
+    "sourceAutomation": "Demo No-Show - Sales",
+    "body": "Hello {{1}}, {{2}} missed the demo class scheduled for {{3}}. Please coordinate with Saptarshi to set a new timing and restart follow-up.",
+    "variables": [
+      {
+        "position": 1,
+        "key": "sales_name",
+        "sample": "Sayandeb"
+      },
+      {
+        "position": 2,
+        "key": "student_name",
+        "sample": "Aarav"
+      },
+      {
+        "position": 3,
+        "key": "class_datetime",
+        "sample": "27 Aug 2026, 6:00 PM IST"
+      }
+    ]
+  },
+  {
+    "name": "demo_converted_staff_alert",
+    "language": "en",
+    "sourceAutomation": "Demo Converted - Staff",
+    "body": "Hello {{1}}, {{2}} has been converted from demo to enrolled student. Course: {{3}}. Batch: {{4}}. Please review the student setup in the academy portal.",
+    "variables": [
+      {
+        "position": 1,
+        "key": "staff_name",
+        "sample": "Sayantan"
+      },
+      {
+        "position": 2,
+        "key": "student_name",
+        "sample": "Aarav"
+      },
+      {
+        "position": 3,
+        "key": "course_name",
+        "sample": "Intermediate Chess"
+      },
+      {
+        "position": 4,
+        "key": "batch_name",
+        "sample": "I2-100"
       }
     ]
   },
@@ -225,6 +378,29 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
       },
       {
         "position": 2,
+        "key": "booking_datetime",
+        "sample": "27 Aug 2026, 6:00 PM IST"
+      }
+    ]
+  },
+  {
+    "name": "demo_booking_received_sales_alert",
+    "language": "en",
+    "sourceAutomation": "Booking Created - Sales",
+    "body": "Hello {{1}}, {{2}} submitted a demo class booking request for {{3}}. Please review and follow up from the academy portal.",
+    "variables": [
+      {
+        "position": 1,
+        "key": "sales_name",
+        "sample": "Sayandeb"
+      },
+      {
+        "position": 2,
+        "key": "student_name",
+        "sample": "Aarav"
+      },
+      {
+        "position": 3,
         "key": "booking_datetime",
         "sample": "27 Aug 2026, 6:00 PM IST"
       }
@@ -596,6 +772,191 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
     ]
   },
   {
+    "name": "substitute_coach_parent_notice",
+    "language": "en",
+    "sourceAutomation": "Substitute Coach Assigned - Parent",
+    "body": "Dear Parents,\n\nWe would like to inform you that for {{1}} class on {{2}}, substitute coach {{3}} will be stepping in for Coach {{4}}, who is unavailable. Rest assured, the curriculum remains well-coordinated, ensuring a smooth learning experience for your child.\n\nThe class will be conducted through our user-friendly portal, providing a seamless and interactive session.\n\nRegards,\nTeam Envision Chess Academy",
+    "variables": [
+      {
+        "position": 1,
+        "key": "class_title",
+        "sample": "I2-100"
+      },
+      {
+        "position": 2,
+        "key": "class_datetime",
+        "sample": "today at 6:00 PM"
+      },
+      {
+        "position": 3,
+        "key": "substitute_coach_name",
+        "sample": "Sanjib"
+      },
+      {
+        "position": 4,
+        "key": "original_coach_name",
+        "sample": "Anirban"
+      }
+    ]
+  },
+  {
+    "name": "substitute_class_assigned_coach",
+    "language": "en",
+    "sourceAutomation": "Substitute Coach Assigned - Coach",
+    "body": "Substitute Class For {{1}}\n\nBatch No: {{2}}\nTime: {{3}}\nDay: {{4}}\nDate: {{5}}\nTopic: {{6}}\nLevel: {{7}}\n\nRegards,\n\nTeam Envision",
+    "variables": [
+      {
+        "position": 1,
+        "key": "date_label",
+        "sample": "Today"
+      },
+      {
+        "position": 2,
+        "key": "batch_no",
+        "sample": "I2-100"
+      },
+      {
+        "position": 3,
+        "key": "time",
+        "sample": "6:00 PM"
+      },
+      {
+        "position": 4,
+        "key": "day",
+        "sample": "Saturday"
+      },
+      {
+        "position": 5,
+        "key": "date",
+        "sample": "5 Sep 2026"
+      },
+      {
+        "position": 6,
+        "key": "topic",
+        "sample": "Knight Forks"
+      },
+      {
+        "position": 7,
+        "key": "level",
+        "sample": "Intermediate"
+      }
+    ]
+  },
+  {
+    "name": "batch_permanent_coach_changed_student",
+    "language": "en",
+    "sourceAutomation": "Batch Permanent Coach Change - Student/Parent",
+    "body": "Hello {{1}}, Coach {{3}} will now be the permanent coach for {{2}}.\n\nCourse: {{4}}\nCourse Level: {{5}}\nTimings:\n{{6}}\n\nThe curriculum remains well-coordinated and classes will continue through the academy portal.\n\nRegards,\nTeam Envision Chess Academy",
+    "variables": [
+      {
+        "position": 1,
+        "key": "recipient_name",
+        "sample": "Mr. Sharma"
+      },
+      {
+        "position": 2,
+        "key": "batch_code",
+        "sample": "I2-100"
+      },
+      {
+        "position": 3,
+        "key": "coach_name",
+        "sample": "Coach Sanjib"
+      },
+      {
+        "position": 4,
+        "key": "course_name",
+        "sample": "Intermediate Chess"
+      },
+      {
+        "position": 5,
+        "key": "course_level",
+        "sample": "I2"
+      },
+      {
+        "position": 6,
+        "key": "timings",
+        "sample": "Saturday at 18:00 (60 min)"
+      }
+    ]
+  },
+  {
+    "name": "batch_permanent_coach_assigned_coach",
+    "language": "en",
+    "sourceAutomation": "Batch Permanent Coach Change - Coach",
+    "body": "Hello {{1}}, an ongoing batch has been permanently assigned to you.\n\nBatch Code: {{2}}\nCourse: {{3}}\nCourse Level: {{4}}\nTimings:\n{{5}}\nFirst Class Date: {{6}}\n\nPlease review the batch and classroom details in the academy portal.",
+    "variables": [
+      {
+        "position": 1,
+        "key": "coach_name",
+        "sample": "Coach Sanjib"
+      },
+      {
+        "position": 2,
+        "key": "batch_code",
+        "sample": "I2-100"
+      },
+      {
+        "position": 3,
+        "key": "course_name",
+        "sample": "Intermediate Chess"
+      },
+      {
+        "position": 4,
+        "key": "course_level",
+        "sample": "I2"
+      },
+      {
+        "position": 5,
+        "key": "timings",
+        "sample": "Saturday at 18:00 (60 min)"
+      },
+      {
+        "position": 6,
+        "key": "first_class_date",
+        "sample": "5 Sep 2026, 6:00 PM IST"
+      }
+    ]
+  },
+  {
+    "name": "batch_new_assigned_coach",
+    "language": "en",
+    "sourceAutomation": "New Batch Assigned - Coach",
+    "body": "Hello {{1}}, a new batch has been assigned to you.\n\nBatch Code: {{2}}\nCourse: {{3}}\nCourse Level: {{4}}\nTimings:\n{{5}}\nFirst Class Date: {{6}}\n\nPlease review the batch and classroom details in the academy portal.",
+    "variables": [
+      {
+        "position": 1,
+        "key": "coach_name",
+        "sample": "Coach Sanjib"
+      },
+      {
+        "position": 2,
+        "key": "batch_code",
+        "sample": "I2-100"
+      },
+      {
+        "position": 3,
+        "key": "course_name",
+        "sample": "Intermediate Chess"
+      },
+      {
+        "position": 4,
+        "key": "course_level",
+        "sample": "I2"
+      },
+      {
+        "position": 5,
+        "key": "timings",
+        "sample": "Saturday at 18:00 (60 min)"
+      },
+      {
+        "position": 6,
+        "key": "first_class_date",
+        "sample": "5 Sep 2026, 6:00 PM IST"
+      }
+    ]
+  },
+  {
     "name": "attendance_pending_coach",
     "language": "en",
     "sourceAutomation": "Attendance Reminder",
@@ -936,6 +1297,24 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
     "variables": [
       {
         "position": 1,
+        "key": "student_name",
+        "sample": "Aarav"
+      }
+    ]
+  },
+  {
+    "name": "class_credit_empty_staff_alert",
+    "language": "en",
+    "sourceAutomation": "Credit Balance Reminder - Staff",
+    "body": "Hello {{1}}, {{2}}'s class credit balance has reached zero. Please review the account and follow up for recharge before the next class.",
+    "variables": [
+      {
+        "position": 1,
+        "key": "staff_name",
+        "sample": "Saptarshi"
+      },
+      {
+        "position": 2,
         "key": "student_name",
         "sample": "Aarav"
       }
@@ -1297,7 +1676,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
     "name": "lms_failure_alert_admin",
     "language": "en",
     "sourceAutomation": "System Failure Alert",
-    "body": "Hello {{1}}, an LMS automation failure requires attention. Failure: {{2}}. Environment: {{3}}. Time: {{4}}. Please review the system logs or admin alert details.",
+    "body": "Hello {{1}}, an LMS automation failure requires attention.\n\nFailure: {{2}}\nReference: {{3}}\nError log: {{4}}\nEnvironment: {{5}}\nTime: {{6}}\n\nPlease review the system logs or admin alert details.",
     "variables": [
       {
         "position": 1,
@@ -1311,11 +1690,21 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
       },
       {
         "position": 3,
+        "key": "reference",
+        "sample": "homework_email_reminders"
+      },
+      {
+        "position": 4,
+        "key": "error_log",
+        "sample": "Webhook responded with status 500"
+      },
+      {
+        "position": 5,
         "key": "environment",
         "sample": "production"
       },
       {
-        "position": 4,
+        "position": 6,
         "key": "timestamp",
         "sample": "25 Aug 2026, 12:05 AM IST"
       }
@@ -1324,7 +1713,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
 ] as const satisfies readonly WhatsAppTemplateDefinition[];
 
 export const WHATSAPP_TEMPLATE_META_ALIASES: Record<string, string> = {
-  class_credit_empty: "class_credit_balance",
+  class_credit_empty: "class_credit_balance_reaches_zero",
   invoice_due_admin_alert: "invoice_followup_alert",
 };
 

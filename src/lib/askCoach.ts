@@ -37,9 +37,9 @@ export async function notifyUser(
   if (!user) return;
   const notification = await Notification.create({ user, type: "ask_coach", title, message, metadata });
   if (options.sendEmail === false) return notification;
-  const recipient: { email?: string; name?: string; phone?: string } | null = metadata?.email
+  const recipient: { email?: string; name?: string; phone?: string; role?: string } | null = metadata?.email
     ? { email: String(metadata.email), name: String(metadata.recipientName || ""), phone: String(metadata.phone || "") }
-    : await User.findById(user).select("email name phone").lean<{ email?: string; name?: string; phone?: string } | null>();
+    : await User.findById(user).select("email name phone role").lean<{ email?: string; name?: string; phone?: string; role?: string } | null>();
   if (recipient?.email) {
     await sendEmailAutomation({
       to: String(recipient.email),
@@ -52,11 +52,13 @@ export async function notifyUser(
       },
     });
   }
+  const recipientRole = String(recipient?.role || metadata?.recipientRole || "");
+  const needsCoachAction = ["instructor", "admin", "sub-admin"].includes(recipientRole);
   await sendWhatsAppAutomationTemplate({
     user: { _id: user, name: recipient?.name || metadata?.recipientName || "", phone: recipient?.phone || metadata?.phone || "" },
-    templateName: "ask_coach_unread",
+    templateName: needsCoachAction ? "ask_coach_action_required" : "ask_coach_unread",
     bodyParameters: [recipient?.name || metadata?.recipientName || "there", metadata?.senderName || metadata?.flaggedBy || "the academy"],
-    metadata: { ...metadata, notificationId: notification._id.toString(), kind: "ask_coach_notification" },
+    metadata: { ...metadata, notificationId: notification._id.toString(), kind: needsCoachAction ? "ask_coach_action_required" : "ask_coach_notification" },
   });
   return notification;
 }

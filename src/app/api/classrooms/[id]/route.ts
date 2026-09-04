@@ -7,7 +7,7 @@ import { ClassroomChatMessage, ClassroomSession, LiveQuestion, LiveQuestionRespo
 import { buildGeneratedSessions } from "@/lib/classroomSchedule";
 import { deleteClassroomSessionInstances, syncClassroomSessionInstances } from "@/lib/classroomSessionInstances";
 import { canAccessFeature, isSuperAdminSession } from "@/lib/featureAccess";
-import { academyDateKey, academyDateTime, formatAcademyDateTime } from "@/lib/academyTime";
+import { ACADEMY_TIME_ZONE, academyDateKey, academyDateTime, formatAcademyDateTime } from "@/lib/academyTime";
 import { coachCanAccessClassroomSession, isPrimaryClassroomCoach, limitClassroomToCoachSessions } from "@/lib/classroomCoachAccess";
 import { ensureTopicContinuationSession, recalculateFutureSessionTopics, shouldContinueTopic, topicCompletedForOutcome } from "@/lib/classroomLifecycle";
 import { recordActivity } from "@/lib/activity";
@@ -18,6 +18,7 @@ import { AssignmentAutomationLog } from "@/models/AssignmentTemplate";
 import { PGN } from "@/models/PGN";
 import { Booking } from "@/models/Booking";
 import { DemoBooking } from "@/models/Onboarding";
+import { Batch } from "@/models/Batch";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
 import { normalizeGoogleMeetUrl } from "@/lib/meetingUrl";
 import { sendWhatsAppAutomationTemplates } from "@/lib/whatsappAutomationEvents";
@@ -222,6 +223,55 @@ function scheduleTimeLabel(value?: string | Date | null) {
   return Number.isNaN(date.getTime()) ? "" : formatAcademyDateTime(date);
 }
 
+function sessionDateLabel(value?: string | Date | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("en-IN", {
+    timeZone: ACADEMY_TIME_ZONE,
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(date);
+}
+
+function sessionDayLabel(value?: string | Date | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("en-IN", {
+    timeZone: ACADEMY_TIME_ZONE,
+    weekday: "long",
+  }).format(date);
+}
+
+function sessionClockLabel(value?: string | Date | null, fallback = "") {
+  if (!value) return fallback;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return fallback;
+  return new Intl.DateTimeFormat("en-IN", {
+    timeZone: ACADEMY_TIME_ZONE,
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function todayAwareClassDateTime(value?: string | Date | null) {
+  if (!value) return "the scheduled date and time";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "the scheduled date and time";
+  const isToday = academyDateKey(date) === academyDateKey(new Date());
+  const time = sessionClockLabel(date);
+  if (isToday) return `today at ${time}`;
+  return `${sessionDateLabel(date)} at ${time}`;
+}
+
+function sessionIsToday(value?: string | Date | null) {
+  if (!value) return false;
+  const date = new Date(value);
+  return !Number.isNaN(date.getTime()) && academyDateKey(date) === academyDateKey(new Date());
+}
+
 function scheduleChanged(before: any, after: any) {
   if (!before || !after) return false;
   return (
@@ -333,6 +383,92 @@ function scheduleChangeWhatsAppParameters(input: {
   return [name, classTitle, previousTime || "the previous class time", nextTime || "the new class time"];
 }
 
+async function notifySubstituteCoachAssignment({
+  classroom,
+  sessionIds,
+  substituteCoachId,
+  originalCoachId,
+}: {
+  classroom: any;
+  sessionIds: string[];
+  substituteCoachId: string;
+  originalCoachId?: string;
+}) {
+  const classroomId = recordId(classroom?._id);
+  const uniqueSessionIds = Array.from(new Set(sessionIds.map(String).filter(Boolean)));
+  if (!classroomId || !uniqueSessionIds.length || !substituteCoachId) return;
+
+  const sessions = (classroom?.generatedSessions || [])
+    .filter((item: any) => uniqueSessionIds.includes(String(item._id)))
+    .sort((a: any, b: any) => new Date(a?.scheduledFor || 0).getTime() - new Date(b?.scheduledFor || 0).getTime())
+    .slice(0, 1);
+  if (!sessions.length) return;
+
+  const [substituteCoach, originalCoach, students, batches] = await Promise.all([
+    User.findById(substituteCoachId).select("_id name email phone username countryCode role").lean(),
+    originalCoachId || recordId(classroom?.coach || classroom?.instructor)
+      ? User.findById(originalCoachId || recordId(classroom?.coach || classroom?.instructor)).select("_id name email phone username countryCode role").lean()
+      : Promise.resolve(null),
+    User.find({ _id: { $in: (classroom?.students || []).map(recordId).filter(Boolean) }, isActive: { $ne: false } }).select("_id name email phone username countryCode parentName role").lean(),
+    Batch.find({ _id: { $in: (classroom?.batches || []).map(recordId).filter(Boolean) } }).select("name").lean(),
+  ]);
+
+  if (!substituteCoach && !students.length) return;
+
+  const classTitle = String(classroom?.title || "Class");
+  const batchLabel = batches.map((batch: any) => batch.name).filter(Boolean).join(", ") || classTitle;
+  const originalCoachName = String((originalCoach as any)?.name || (originalCoach as any)?.username || "the regular coach");
+  const substituteCoachName = String((substituteCoach as any)?.name || (substituteCoach as any)?.username || "the substitute coach");
+  const levelLabel = String(classroom?.levelName || classroom?.level || "Not set");
+
+  await sendWhatsAppAutomationTemplates(
+    sessions.flatMap((scheduledSession: any) => {
+      const sessionId = recordId(scheduledSession?._id);
+      const scheduledFor = scheduledSession?.scheduledFor;
+      const parentNotice = students.map((student: any) => ({
+        user: student,
+        templateName: "substitute_coach_parent_notice",
+        bodyParameters: [
+          classTitle,
+          todayAwareClassDateTime(scheduledFor),
+          substituteCoachName,
+          originalCoachName,
+        ],
+        metadata: {
+          kind: "classroom_substitute_coach",
+          recipientType: "parent",
+          classroomId,
+          sessionId,
+          studentId: recordId(student?._id),
+          notificationDedupKey: `substitute:${classroomId}:${sessionId}:parent`,
+        },
+      }));
+      const coachNotice = substituteCoach ? [{
+        user: substituteCoach as any,
+        templateName: "substitute_class_assigned_coach",
+        bodyParameters: [
+          sessionIsToday(scheduledFor) ? "Today" : sessionDateLabel(scheduledFor) || "the scheduled date",
+          batchLabel,
+          sessionClockLabel(scheduledFor, String(scheduledSession?.startTime || classroom?.startTime || "Time not set")),
+          sessionDayLabel(scheduledFor) || "Day not set",
+          sessionDateLabel(scheduledFor) || "Date not set",
+          String(scheduledSession?.topicName || classroom?.topicName || "Topic not set"),
+          levelLabel,
+        ],
+        metadata: {
+          kind: "classroom_substitute_coach",
+          recipientType: "coach",
+          classroomId,
+          sessionId,
+          coachId: substituteCoachId,
+          notificationDedupKey: `substitute:${classroomId}:${sessionId}:coach`,
+        },
+      }] : [];
+      return [...parentNotice, ...coachNotice];
+    })
+  );
+}
+
 async function notifyClassroomScheduleChange({
   classroom,
   action,
@@ -355,14 +491,20 @@ async function notifyClassroomScheduleChange({
   const classroomId = recordId(classroom?._id);
   if (!classroomId) return;
   const sessionId = recordId(currentSession?._id || previousSession?._id);
+  const batchCoachIds = action === "permanent_schedule_change"
+    ? (await Batch.find({ _id: { $in: (classroom?.batches || []).map(recordId).filter(Boolean) } }).select("coach").lean())
+        .map((batch: any) => recordId(batch.coach))
+        .filter(Boolean)
+    : [];
   const coachIds = [
     currentSession?.substituteCoach,
     previousSession?.substituteCoach,
     classroom?.coach,
     classroom?.instructor,
+    ...batchCoachIds,
   ].map(recordId).filter(Boolean);
   const studentIds = (classroom?.students || []).map(recordId).filter(Boolean);
-  const recipientIds = Array.from(new Set([...coachIds.slice(0, 1), ...studentIds]));
+  const recipientIds = Array.from(new Set([...(action === "permanent_schedule_change" ? coachIds : coachIds.slice(0, 1)), ...studentIds]));
   if (!recipientIds.length) return;
 
   const recipients = await User.find({ _id: { $in: recipientIds }, isActive: { $ne: false } }).select("_id name email phone username role").lean();
@@ -484,6 +626,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const previousClassDate = existing.classDate;
   const previousStartTime = existing.startTime;
   const previousDurationMinutes = existing.durationMinutes;
+  const previousCoachId = recordId(existing.coach || existing.instructor);
   let shiftedSessionCount = 0;
   let shiftedRestartDate = "";
   const previousSession = body.sessionId
@@ -885,6 +1028,14 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     : Array.isArray(existing.generatedSessions) && existing.generatedSessions.length === 1
       ? existing.generatedSessions[0]
       : null;
+  if (activityAction === "substitute_coach" && reassignedSessionIds.length) {
+    await notifySubstituteCoachAssignment({
+      classroom: existing,
+      sessionIds: reassignedSessionIds,
+      substituteCoachId: String(body.coach || ""),
+      originalCoachId: previousCoachId,
+    });
+  }
   const shouldNotifyScheduleChange = (
     ["cancel_class", "cancel_series", "cancel_session", "reschedule_class", "reschedule_session", "shift_future_sessions", "permanent_schedule_change"].includes(activityAction) ||
     (activityAction === "update_session" && scheduleChanged(previousSession, currentSession))

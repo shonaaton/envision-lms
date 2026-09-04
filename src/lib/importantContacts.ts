@@ -8,6 +8,22 @@ export type ImportantContact = {
   email: string;
 };
 
+const DEFAULT_IMPORTANT_CONTACTS = [
+  "admin:primary:Sayantan:918017996184:sayantanchandra12@gmail.com",
+  "sub-admin:saptarshi:Saptarshi:919230534866:saptarshi2856@gmail.com",
+  "sub-admin:dhritabrata:Dhritabrata:918017450090:dhritabratakundu06@gmail.com",
+  "sub-admin:sayan_bose:Sayan Bose:919804470707:sayanthsbose@gmail.com",
+  "sales:sayandeb:Sayandeb:6291780127:sayanenvisionchess@gmail.com",
+];
+
+const CONTACT_KEY_ALIASES: Record<string, string[]> = {
+  primary: ["admin", "admin_1"],
+  saptarshi: ["sub_admin_1"],
+  dhritabrata: ["sub_admin_2"],
+  sayan_bose: ["sayan", "sub_admin_3"],
+  sayandeb: ["sales_1", "salesperson_1"],
+};
+
 function cleanPart(value: unknown) {
   return String(value || "").trim();
 }
@@ -42,8 +58,9 @@ function parseContactRow(row: string): ImportantContact | null {
 }
 
 export function importantContacts() {
-  return String(process.env.LMS_IMPORTANT_CONTACTS || "")
-    .split("|")
+  const configured = String(process.env.LMS_IMPORTANT_CONTACTS || "").trim();
+  const source = configured ? configured.split("|") : DEFAULT_IMPORTANT_CONTACTS;
+  return source
     .map((row) => parseContactRow(row.trim()))
     .filter(Boolean) as ImportantContact[];
 }
@@ -58,7 +75,11 @@ export function importantContactByKey(key: string) {
 }
 
 export function importantContactsByKeys(keys: string[]) {
-  const normalizedKeys = new Set(keys.map(normalizeKey).filter(Boolean));
+  const normalizedKeys = new Set(keys.flatMap((key) => {
+    const normalized = normalizeKey(key);
+    const aliases = CONTACT_KEY_ALIASES[normalized] || [];
+    return [normalized, ...aliases.map(normalizeKey)].filter(Boolean);
+  }));
   if (!normalizedKeys.size) return [];
   return importantContacts().filter((contact) => normalizedKeys.has(contact.key));
 }
@@ -86,4 +107,13 @@ export function importantContactPhonesByKeys(keys: string[]) {
 
 export function importantContactEmailsByKeys(keys: string[]) {
   return Array.from(new Set(importantContactsByKeys(keys).map((contact) => contact.email).filter(Boolean)));
+}
+
+export function importantContactWhatsAppRecipientsByKeys(keys: string[]) {
+  return importantContactsByKeys(keys).map((contact) => ({
+    name: contact.name,
+    phone: contact.phone,
+    email: contact.email,
+    role: contact.role,
+  }));
 }

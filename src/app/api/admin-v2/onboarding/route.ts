@@ -11,7 +11,7 @@ import { Notification } from "@/models/Fee";
 import { InternalTask } from "@/models/InternalTask";
 import { CoachApplication } from "@/models/Onboarding";
 import { User, generateUsername } from "@/models/User";
-import { DEMO_MANAGEMENT_HREF, notifyDemoApproved } from "@/lib/demoWorkflow";
+import { DEMO_MANAGEMENT_HREF, notifyDemoApproved, notifyDemoConverted } from "@/lib/demoWorkflow";
 import { recordActivity } from "@/lib/activity";
 
 export const dynamic = "force-dynamic";
@@ -192,7 +192,15 @@ export async function POST(req: Request) {
   }
 
   if (action === "convert_demo_student") {
-    await User.findByIdAndUpdate(String(body.studentId || ""), { accountStatus: "enrolled", $pull: { tags: "demo" } });
+    const studentId = String(body.studentId || "");
+    await User.findByIdAndUpdate(studentId, { accountStatus: "enrolled", $pull: { tags: "demo" } });
+    await notifyDemoConverted({
+      studentId,
+      bookingId: String(body.bookingId || ""),
+      courseName: String(body.courseName || "Not set"),
+      batchId: String(body.batchId || ""),
+      batchName: String(body.batchName || ""),
+    }).catch((error) => console.error("Demo conversion WhatsApp failed", error));
     return NextResponse.json({ ok: true });
   }
 

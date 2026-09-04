@@ -332,6 +332,7 @@ export async function POST(req: Request) {
       conversation: conversation._id,
       message: created._id,
       href,
+      senderName: senderUser?.name || senderUser?.username || "the academy",
     }, { sendEmail: false });
     if (senderUser && receiverUser) {
       await queueAskCoachUnreadEmail({
@@ -353,6 +354,7 @@ export async function POST(req: Request) {
           conversation: conversation._id,
           message: created._id,
           href,
+          senderName: senderUser?.name || senderUser?.username || "your coach",
         }, { sendEmail: false });
         if (senderUser) {
           await queueAskCoachUnreadEmail({

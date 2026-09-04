@@ -1,5 +1,6 @@
 import { normalizeWhatsAppRecipient, sendWhatsAppTemplateMessage, type WhatsAppSendResult } from "@/lib/whatsappAutomation";
 import { isWhatsAppAutomationTemplateEnabled } from "@/lib/whatsappAutomationSettings";
+import { renderWhatsAppTemplatePreview } from "@/lib/whatsappTemplateRegistry";
 
 export const WHATSAPP_AUTOMATION_LANGUAGE = "en";
 
@@ -23,6 +24,55 @@ export function whatsappRecipientName(user: WhatsAppAutomationRecipient, fallbac
 
 export function canSendWhatsAppTo(user?: WhatsAppAutomationRecipient | null) {
   return Boolean(String(user?.phone || "").replace(/[^\d]/g, ""));
+}
+
+function recipientTypePriority(input: Parameters<typeof sendWhatsAppAutomationTemplate>[0]) {
+  const recipientType = String(input.metadata?.recipientType || input.metadata?.audience || "").toLowerCase();
+  if (recipientType === "parent" || input.templateName.endsWith("_parent")) return 3;
+  if (recipientType === "student" || input.templateName.endsWith("_student")) return 2;
+  return 1;
+}
+
+function automationDedupKey(input: Parameters<typeof sendWhatsAppAutomationTemplate>[0]) {
+  const to = normalizeWhatsAppRecipient(input.to || input.user?.phone, input.user?.countryCode);
+  if (!to) return "";
+  const metadata = input.metadata || {};
+  const explicitKey = String(metadata.notificationDedupKey || metadata.dedupKey || "").trim();
+  if (explicitKey) return `${to}::${explicitKey}`;
+  const identityParts = [
+    metadata.kind,
+    metadata.event,
+    metadata.userId || recipientId(input.user || {}),
+    metadata.studentId,
+    metadata.invoiceId,
+    metadata.invoiceNumber,
+    metadata.bookingId,
+    metadata.classroomId,
+    metadata.sessionId,
+    metadata.homeworkId,
+    metadata.achievementId,
+    metadata.tournamentId,
+  ].map((value) => String(value || "").trim()).filter(Boolean);
+  if (identityParts.length > 1) return `${to}::${identityParts.join(":")}`;
+  const preview = renderWhatsAppTemplatePreview(input.templateName, input.bodyParameters || []);
+  return `${to}::${preview}`;
+}
+
+function dedupeWhatsAppAutomationInputs(inputs: Array<Parameters<typeof sendWhatsAppAutomationTemplate>[0]>) {
+  const deduped = new Map<string, Parameters<typeof sendWhatsAppAutomationTemplate>[0]>();
+  const withoutPhone: Array<Parameters<typeof sendWhatsAppAutomationTemplate>[0]> = [];
+  for (const input of inputs) {
+    const key = automationDedupKey(input);
+    if (!key) {
+      withoutPhone.push(input);
+      continue;
+    }
+    const existing = deduped.get(key);
+    if (!existing || recipientTypePriority(input) > recipientTypePriority(existing)) {
+      deduped.set(key, input);
+    }
+  }
+  return [...Array.from(deduped.values()), ...withoutPhone];
 }
 
 export async function sendWhatsAppAutomationTemplate(input: {
@@ -73,7 +123,8 @@ export async function sendWhatsAppAutomationTemplate(input: {
 }
 
 export async function sendWhatsAppAutomationTemplates(inputs: Array<Parameters<typeof sendWhatsAppAutomationTemplate>[0]>) {
-  return Promise.all(inputs.map((input) => sendWhatsAppAutomationTemplate(input).catch((error) => ({
+  const dedupedInputs = dedupeWhatsAppAutomationInputs(inputs);
+  return Promise.all(dedupedInputs.map((input) => sendWhatsAppAutomationTemplate(input).catch((error) => ({
     ok: false,
     delivered: false,
     skipped: false,

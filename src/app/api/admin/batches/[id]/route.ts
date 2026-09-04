@@ -7,6 +7,7 @@ import { User } from "@/models/User";
 import { recordActivity } from "@/lib/activity";
 import { canAccessFeature } from "@/lib/featureAccess";
 import { syncClassroomSessionInstances } from "@/lib/classroomSessionInstances";
+import { notifyBatchCoachAssigned } from "@/lib/batchCoachNotifications";
 
 export const dynamic = "force-dynamic";
 
@@ -193,7 +194,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const actorId = (session!.user as any).id;
   await dbConnect();
   const body = await req.json();
-  const existing: any = await Batch.findById(params.id).select("students studentEnrollments").lean();
+  const existing: any = await Batch.findById(params.id).select("students studentEnrollments coach").lean();
   if (!existing) return NextResponse.json({ error: "Batch not found" }, { status: 404 });
   if (Array.isArray(body.students)) {
     const activeStudents = body.students.length
@@ -214,6 +215,15 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     if (nextIds.length) await User.updateMany({ _id: { $in: nextIds } }, { $addToSet: { batches: b?._id } });
     if (addedIds.length) await enrollAddedStudentsInFutureBatchClassrooms(params.id, addedIds);
     await reconcileBatchStudentsInClassrooms(params.id, dates);
+  }
+  const previousCoachId = idOf(existing.coach);
+  const nextCoachId = idOf(b?.coach || body.coach);
+  if (body.coach !== undefined && nextCoachId && previousCoachId !== nextCoachId) {
+    await notifyBatchCoachAssigned({
+      batchId: params.id,
+      previousCoachId,
+      reason: previousCoachId ? "permanent_coach_changed" : "new_batch_assigned",
+    }).catch((error) => console.error("Batch coach notification failed", error));
   }
   await recordActivity({
     actor: actorId,

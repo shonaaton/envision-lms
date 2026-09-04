@@ -11,7 +11,8 @@ import { ACADEMY_DEFAULTS, ACADEMY_FAVICON_URL, ACADEMY_LOGO_URL, ACADEMY_SIGNAT
 import { recordActivity } from "@/lib/activity";
 import { formatINR } from "@/lib/utils";
 import { createHash, randomBytes } from "crypto";
-import { sendWhatsAppAutomationTemplate, whatsappRecipientName } from "@/lib/whatsappAutomationEvents";
+import { importantContactWhatsAppRecipientsByKeys } from "@/lib/importantContacts";
+import { sendWhatsAppAutomationTemplate, sendWhatsAppAutomationTemplates, whatsappRecipientName } from "@/lib/whatsappAutomationEvents";
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -809,6 +810,21 @@ export async function consumeAttendanceCredit(studentId: string, attendanceId: s
       bodyParameters: nextBalance <= 0 ? [whatsappRecipientName(studentForCredits || {})] : [whatsappRecipientName(studentForCredits || {}), String(nextBalance)],
       metadata: { kind: "low_credits", balance: nextBalance, threshold: lowCreditThreshold },
     });
+    if (nextBalance <= 0) {
+      const creditAlertRecipients = importantContactWhatsAppRecipientsByKeys(["sayan_bose", "saptarshi"]);
+      await sendWhatsAppAutomationTemplates(creditAlertRecipients.map((recipient) => ({
+        user: recipient,
+        templateName: "class_credit_empty_staff_alert",
+        bodyParameters: [recipient.name || "Admin", whatsappRecipientName(studentForCredits || {}, "Student")],
+        metadata: {
+          kind: "class_credit_empty_staff_alert",
+          studentId,
+          balance: nextBalance,
+          threshold: lowCreditThreshold,
+          notificationDedupKey: `class_credit_empty:${studentId}`,
+        },
+      })));
+    }
   }
   if (shouldDeduct && nextBalance === 0) {
     await createCreditRechargeInvoiceIfNeeded({ studentId, assignment, attendanceId }).catch((error) => {

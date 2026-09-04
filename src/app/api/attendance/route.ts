@@ -13,6 +13,7 @@ import { canAccessFeature } from "@/lib/featureAccess";
 import { coachCanAccessClassroomSession, coachClassroomQuery, limitClassroomToCoachSessions } from "@/lib/classroomCoachAccess";
 import { academyDateKey } from "@/lib/academyTime";
 import { autoAssignHomeworkForSession } from "@/lib/assignmentAutomation";
+import { notifyDemoMissed } from "@/lib/demoWorkflow";
 import { notifyFailure } from "@/lib/failureNotifications";
 import {
   notifyCoachNoShowIfThreshold,
@@ -319,8 +320,10 @@ export async function POST(req: Request) {
             await Booking.findByIdAndUpdate(demoBooking._id, { demoStatus: "ASSESSMENT_PENDING", feedbackStatus: "pending" });
           } else if (outcome === "student_no_show") {
             await Booking.findByIdAndUpdate(demoBooking._id, { status: "pending", approvalStatus: "pending_admin", demoStatus: "STUDENT_NO_SHOW", feedbackStatus: "not_required" });
+            await notifyDemoMissed({ booking: demoBooking, classroom: classroomDoc }).catch((error) => console.error("Demo no-show WhatsApp failed", error));
           } else if (outcome === "absent" || outcome === "missed" || outcome === "abandoned") {
             await Booking.findByIdAndUpdate(demoBooking._id, { status: "pending", approvalStatus: "pending_admin", demoStatus: "ABSENT", feedbackStatus: "not_required" });
+            await notifyDemoMissed({ booking: demoBooking, classroom: classroomDoc }).catch((error) => console.error("Demo missed WhatsApp failed", error));
           }
         }
       } else if (!isDemoClassroom && outcome === "completed" && !existingAttendance) {

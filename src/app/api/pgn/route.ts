@@ -31,6 +31,8 @@ function sortFor(value: string | null): Record<string, 1 | -1> {
   return { createdAt: -1 };
 }
 
+const listFields = "title white black event result date eco opening moveCount sideToMove initialFen hasAnnotations hasVariations folder visibility uploadedBy sourceFileName createdAt updatedAt lastOpenedAt viewedCount";
+
 export async function GET(req: Request) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -46,6 +48,7 @@ export async function GET(req: Request) {
   const annotated = url.searchParams.get("annotated");
   const variations = url.searchParams.get("variations");
   const limit = Math.max(1, Math.min(5000, Number(url.searchParams.get("limit") || 5000)));
+  const summaryOnly = url.searchParams.get("summary") === "1" || url.searchParams.get("includePgn") === "false";
   const extra: Record<string, any> = {};
   if (folder) extra.folder = folder;
   if (scope === "shared") extra.visibility = "shared";
@@ -77,7 +80,9 @@ export async function GET(req: Request) {
       ],
     };
   }
-  const list = await PGN.find(filter).sort(sortFor(url.searchParams.get("sort"))).limit(limit).lean();
+  let queryBuilder = PGN.find(filter).sort(sortFor(url.searchParams.get("sort"))).limit(limit);
+  if (summaryOnly) queryBuilder = queryBuilder.select(listFields);
+  const list = await queryBuilder.lean();
   return NextResponse.json(list);
 }
 

@@ -21,6 +21,21 @@ function manageableFilter(session: any, id: string) {
   return buildManageablePgnFilter(session, { _id: id });
 }
 
+export async function GET(_req: Request, { params }: { params: { id: string } }) {
+  const session = await auth();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!hasPgnAccess(session)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  await dbConnect();
+
+  const doc = await PGN.findOne(manageableFilter(session, params.id)).lean();
+  if (!doc) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  await PGN.updateOne(
+    { _id: (doc as any)._id },
+    { $set: { lastOpenedAt: new Date() }, $inc: { viewedCount: 1 } }
+  );
+  return NextResponse.json(doc);
+}
+
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

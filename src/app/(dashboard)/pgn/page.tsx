@@ -47,7 +47,7 @@ type PgnDoc = {
   sourceFileName?: string;
   createdAt?: string;
   updatedAt?: string;
-  pgn: string;
+  pgn?: string;
   folder?: string;
   uploadedBy?: string;
   visibility?: "private" | "shared" | "classroom";
@@ -90,7 +90,7 @@ export default function PgnLibraryPage() {
   const load = useCallback(async () => {
     if (role === "student") return;
     const [gamesResponse, foldersResponse] = await Promise.all([
-      fetch("/api/pgn?limit=5000", { cache: "no-store" }),
+      fetch("/api/pgn?limit=5000&summary=1", { cache: "no-store" }),
       fetch("/api/pgn/folders", { cache: "no-store" }),
     ]);
     if (gamesResponse.ok) {
@@ -290,6 +290,22 @@ export default function PgnLibraryPage() {
     toast.success("Folder deleted");
   }
 
+  async function fetchFullGame(game: PgnDoc) {
+    if (game.pgn) return game;
+    const response = await fetch(`/api/pgn/${game._id}`, { cache: "no-store" });
+    if (!response.ok) throw new Error("Could not load PGN");
+    return await response.json() as PgnDoc;
+  }
+
+  async function openEditGame(game: PgnDoc) {
+    try {
+      setSelectedGame(await fetchFullGame(game));
+      setModal("edit-pgn");
+    } catch {
+      toast.error("Could not open PGN for editing");
+    }
+  }
+
   async function updateGame(game: PgnDoc, title: string, pgn: string) {
     const response = await fetch(`/api/pgn/${game._id}`, {
       method: "PATCH",
@@ -320,14 +336,27 @@ export default function PgnLibraryPage() {
     URL.revokeObjectURL(url);
   }
 
-  function downloadGame(game: PgnDoc) {
-    downloadText(`${safeFileName(game.title)}.pgn`, game.pgn);
+  async function downloadGame(game: PgnDoc) {
+    try {
+      const fullGame = await fetchFullGame(game);
+      if (!fullGame.pgn) throw new Error("PGN text is missing");
+      downloadText(`${safeFileName(fullGame.title)}.pgn`, fullGame.pgn);
+    } catch {
+      toast.error("Could not download PGN");
+    }
   }
 
-  function downloadFolder(folder: FolderDoc) {
+  async function downloadFolder(folder: FolderDoc) {
     const folderGames = games.filter((game) => (game.folder === folder.path || String(game.folder || "").startsWith(`${folder.path}/`)) && ((game.visibility === "shared") !== folder.personal));
     if (!folderGames.length) return toast.error("No PGNs in this folder");
-    downloadText(`${safeFileName(folder.name)}.pgn`, folderGames.map((game) => game.pgn).join("\n\n"));
+    try {
+      const fullGames = await Promise.all(folderGames.map(fetchFullGame));
+      const pgnText = fullGames.map((game) => game.pgn).filter(Boolean).join("\n\n");
+      if (!pgnText) throw new Error("PGN text is missing");
+      downloadText(`${safeFileName(folder.name)}.pgn`, pgnText);
+    } catch {
+      toast.error("Could not download this folder");
+    }
   }
 
   async function uploadGame(title: string, pgn: string, createFolder: boolean, sourceFileName?: string) {
@@ -495,10 +524,7 @@ export default function PgnLibraryPage() {
                     folder={currentFolder.path}
                     isAdmin={isAdmin}
                     currentUserId={currentUserId}
-                    onEdit={(game) => {
-                      setSelectedGame(game);
-                      setModal("edit-pgn");
-                    }}
+                    onEdit={openEditGame}
                     onDelete={deleteGame}
                     onDownload={downloadGame}
                   />
@@ -520,7 +546,7 @@ export default function PgnLibraryPage() {
               onEditFolder={(folder) => { setSelectedFolder(folder); setModal("edit-folder"); }}
               onDeleteFolder={deleteFolder}
               onDownloadFolder={downloadFolder}
-              onEditGame={(game) => { setSelectedGame(game); setModal("edit-pgn"); }}
+              onEditGame={openEditGame}
               onDeleteGame={deleteGame}
               onDownloadGame={downloadGame}
             />
@@ -536,7 +562,7 @@ export default function PgnLibraryPage() {
               onEditFolder={(folder) => { setSelectedFolder(folder); setModal("edit-folder"); }}
               onDeleteFolder={deleteFolder}
               onDownloadFolder={downloadFolder}
-              onEditGame={(game) => { setSelectedGame(game); setModal("edit-pgn"); }}
+              onEditGame={openEditGame}
               onDeleteGame={deleteGame}
               onDownloadGame={downloadGame}
             />
@@ -601,6 +627,7 @@ function extractHeader(pgn: string, key: string) {
 
 function previewFen(game: PgnDoc) {
   if (game.initialFen) return game.initialFen;
+  if (!game.pgn) return startFen;
   try {
     const chess = new Chess();
     chess.loadPgn(game.pgn);
@@ -1001,7 +1028,7 @@ function EditNameModal({ title, label, initialName, helpText, onClose, onSave }:
 
 function EditPgnModal({ game, onClose, onSave }: { game: PgnDoc; onClose: () => void; onSave: (title: string, pgn: string) => void }) {
   const [title, setTitle] = useState(game.title);
-  const [pgn, setPgn] = useState(game.pgn);
+  const [pgn, setPgn] = useState(game.pgn || "");
   return (
     <ModalFrame title="Edit PGN" onClose={onClose} width="max-w-[560px]">
       <label className="mb-2 block text-sm">PGN Title</label>

@@ -20,7 +20,7 @@ export type PgnLibraryGame = {
   initialFen?: string;
   sideToMove?: "white" | "black";
   folder?: string;
-  pgn: string;
+  pgn?: string;
   visibility?: "private" | "shared" | "classroom";
 };
 
@@ -31,9 +31,16 @@ type FolderItem = {
 };
 
 function sideToMoveLabel(game: PgnLibraryGame) {
-  const fen = game.initialFen || game.pgn.match(/\[FEN\s+"([^"]+)"\]/)?.[1] || "";
+  const fen = game.initialFen || game.pgn?.match(/\[FEN\s+"([^"]+)"\]/)?.[1] || "";
   const side = game.sideToMove || (fen.split(/\s+/)[1] === "b" ? "black" : "white");
   return side === "black" ? "Black to play" : "White to play";
+}
+
+async function fetchFullGame(game: PgnLibraryGame) {
+  if (game.pgn) return game;
+  const response = await fetch(`/api/pgn/${game._id}`, { cache: "no-store" });
+  if (!response.ok) throw new Error("Could not load that PGN.");
+  return await response.json() as PgnLibraryGame;
 }
 
 export default function PgnLibraryPicker({
@@ -62,7 +69,7 @@ export default function PgnLibraryPicker({
     if (!open) return;
     setLoading(true);
     setError("");
-    fetch("/api/pgn?limit=5000&sort=recently-added", { cache: "no-store" })
+    fetch("/api/pgn?limit=5000&sort=recently-added&summary=1", { cache: "no-store" })
       .then((response) => response.ok ? response.json() : Promise.reject(new Error("Could not load the PGN library.")))
       .then((data) => setGames(Array.isArray(data) ? data : []))
       .catch((err) => setError(err?.message || "Could not load the PGN library."))
@@ -140,11 +147,19 @@ export default function PgnLibraryPicker({
     setMobilePanel("games");
   }
 
-  function confirmSelection(game?: PgnLibraryGame) {
+  async function confirmSelection(game?: PgnLibraryGame) {
     const selected = game ? [game] : games.filter((item) => selectedIds.includes(item._id));
     if (!selected.length) return;
-    onSelect(selected);
-    onClose();
+    setLoading(true);
+    setError("");
+    try {
+      onSelect(await Promise.all(selected.map(fetchFullGame)));
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not load the selected PGN.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   if (!open) return null;
@@ -244,7 +259,7 @@ export default function PgnLibraryPicker({
                       <article key={game._id} className={cn("rounded-lg border p-3 shadow-sm transition", selected ? "border-purple-400 ring-2 ring-purple-100" : "border-slate-200 hover:border-purple-200")}>
                         <button type="button" onClick={() => toggleGame(game)} className="block w-full text-left">
                           <div className="grid grid-cols-[112px_minmax(0,1fr)_24px] items-start gap-3">
-                            <MiniFenBoard fen={previewFenFromPgn(game.pgn, game.initialFen)} className="w-[112px]" />
+                            <MiniFenBoard fen={previewFenFromPgn(game.pgn || "", game.initialFen)} className="w-[112px]" />
                             <div className="min-w-0">
                               <h3 className="truncate text-sm font-semibold">{game.title}</h3>
                               <p className="mt-1 truncate text-xs text-slate-500">{game.white || "White"} vs {game.black || "Black"} {game.result ? `- ${game.result}` : ""}</p>

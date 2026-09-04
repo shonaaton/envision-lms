@@ -67,7 +67,7 @@ function studentsForSession(classroom: any, scheduledSession: any) {
   return Array.isArray(scheduledSession?.students) && scheduledSession.students.length ? scheduledSession.students : classroom.students || [];
 }
 
-async function loadPgnLibrary(session: any, role: AppRole, userId: string, classroomId: string) {
+async function loadPgnLibrary(session: any, role: AppRole, userId: string, classroomId: string, summaryOnly = false) {
   const pgnFilter = canCoach(role)
     ? buildPgnLibraryFilter(session)
     : {
@@ -79,7 +79,10 @@ async function loadPgnLibrary(session: any, role: AppRole, userId: string, class
       };
 
   return PGN.find(pgnFilter)
-    .select("title white black event result date eco opening moveCount sideToMove initialFen hasAnnotations hasVariations folder pgn")
+    .select(summaryOnly
+      ? "title white black event result date eco opening moveCount sideToMove initialFen hasAnnotations hasVariations folder visibility"
+      : "title white black event result date eco opening moveCount sideToMove initialFen hasAnnotations hasVariations folder pgn visibility"
+    )
     .sort({ folder: 1, createdAt: -1 })
     .limit(5000)
     .lean();
@@ -179,7 +182,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     const scheduledSessionId = String(scheduledSession._id);
     const searchParams = new URL(_.url).searchParams;
     if (searchParams.get("libraryOnly") === "true") {
-      const pgnLibrary = await loadPgnLibrary(session, role, userId, params.id);
+      const pgnLibrary = await loadPgnLibrary(session, role, userId, params.id, searchParams.get("summary") === "1");
       return NextResponse.json({ pgnLibrary, serverTime: new Date() });
     }
     let live = await ClassroomSession.findOne({ classroom: params.id, scheduledSessionId })
@@ -231,7 +234,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
       : [];
     const includeLibrary = searchParams.get("includeLibrary") !== "false";
     const pgnLibrary = includeLibrary
-      ? await loadPgnLibrary(session, role, userId, params.id)
+      ? await loadPgnLibrary(session, role, userId, params.id, searchParams.get("summary") === "1")
       : undefined;
     const chatFilter: Record<string, any> = { classroom: params.id, scheduledSessionId };
     if (!canCoach(role)) {

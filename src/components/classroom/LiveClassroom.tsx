@@ -899,7 +899,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 45000);
     try {
-      const res = await fetch(liveUrl("?libraryOnly=true"), { cache: "no-store", signal: controller.signal });
+      const res = await fetch(liveUrl("?libraryOnly=true&summary=1"), { cache: "no-store", signal: controller.signal });
       const payload = await res.json().catch(() => null);
       if (!res.ok) throw new Error(payload?.error || "PGN library could not be loaded");
       pgnLibraryLoadRef.current = "loaded";
@@ -2034,12 +2034,26 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     setPgnOpen(true);
   }
 
-  function openSelectedPgnQuizComposer(minimumPositions = 1) {
+  async function fullPgn(item: any) {
+    if (item?.pgn) return item;
+    const response = await fetch(`/api/pgn/${item._id}`, { cache: "no-store" });
+    if (!response.ok) throw new Error("PGN could not be loaded");
+    return await response.json();
+  }
+
+  async function openSelectedPgnQuizComposer(minimumPositions = 1) {
     const selected = pgnLibrary.filter((pgn: any) => selectedPgnIds.includes(pgn._id));
     if (selected.length < minimumPositions) {
       return toast.info(minimumPositions > 1 ? "Select at least two PGNs for a multiple-position quiz" : "Select at least one PGN");
     }
-    const items = selected.map((pgn: any) => {
+    let fullSelected: any[] = [];
+    try {
+      fullSelected = await Promise.all(selected.map(fullPgn));
+    } catch {
+      toast.error("Selected PGNs could not be loaded");
+      return;
+    }
+    const items = fullSelected.map((pgn: any) => {
       const parsed = parsePgnPuzzle(pgn.pgn);
       return {
         id: pgn._id,
@@ -2056,7 +2070,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     }
     setQuizComposerMode("pgn_collection");
     setQuizComposerItems(items);
-    setQuizTitle(selected.length === 1 ? `One Move Challenge: ${selected[0].title}` : `Classroom Quiz: ${selected.length} PGNs`);
+    setQuizTitle(fullSelected.length === 1 ? `One Move Challenge: ${fullSelected[0].title}` : `Classroom Quiz: ${fullSelected.length} PGNs`);
     setQuizSolution([]);
     setQuizNegativeMarks(0);
     setPgnOpen(false);
@@ -2432,7 +2446,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     return Number.isFinite(storedIndex) ? Math.max(0, Math.min(collection.length - 1, storedIndex)) : 0;
   }
 
-  function loadPgn(pgn: any, index: number, collection?: any[]) {
+  async function loadPgn(pgn: any, index: number, collection?: any[]) {
     if (pgn?.defaultClassroom) {
       const fen = normalizeBoardResourceFen(live?.navigationStartFen || live?.fen) || "start";
       const defaultMoves = navigationMoves;
@@ -2456,6 +2470,14 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       setActiveTab("moves");
       return;
     }
+    if (!pgn?.pgn) {
+      try {
+        pgn = await fullPgn(pgn);
+      } catch {
+        toast.error("This PGN could not be loaded");
+        return;
+      }
+    }
     const chess = new Chess();
     const startFen = pgnStartFen(pgn);
     const parsedTree = parseLichessPgn(pgn.pgn || "");
@@ -2464,6 +2486,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     const requestedItem = collectionItems([pgn])[0];
     const requestedKey = pgnTabKey(requestedItem);
     let selectedCollection = collection?.length ? collectionItems(collection) : currentTabs;
+    selectedCollection = selectedCollection.map((item: any) => pgnTabKey(item) === requestedKey ? requestedItem : item);
     let selectedIndex = selectedCollection.findIndex((item: any) => pgnTabKey(item) === requestedKey);
     if (selectedIndex < 0) {
       selectedCollection = [...selectedCollection, requestedItem];
@@ -2576,7 +2599,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       const pgnGame = new Chess();
       pgnGame.loadPgn(value);
       const startFen = extractFen(value) || "start";
-      loadPgn({ title: "Pasted PGN", pgn: value, initialFen: startFen }, 0);
+      void loadPgn({ title: "Pasted PGN", pgn: value, initialFen: startFen }, 0);
       setManualLoadText("");
     } catch {
       toast.error("Paste a valid PGN or FEN");
@@ -2588,7 +2611,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     if (!collection.length) return;
     const current = currentLoadedPgnIndex(collection);
     const next = current < 0 ? 0 : Math.max(0, Math.min(collection.length - 1, current + direction));
-    loadPgn(collection[next], next, collection);
+    void loadPgn(collection[next], next, collection);
   }
 
   function closeLoadedPgnTab(item: any, index: number) {
@@ -2611,7 +2634,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       return;
     }
     const nextIndex = Math.min(index, remaining.length - 1);
-    loadPgn(remaining[nextIndex], nextIndex, remaining);
+    void loadPgn(remaining[nextIndex], nextIndex, remaining);
   }
 
   function togglePgnSelection(id: string) {
@@ -2621,7 +2644,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   function loadSelectedPgns() {
     const selected = sortPgnCollection(pgnLibrary.filter((pgn: any) => selectedPgnIds.includes(pgn._id)));
     if (!selected.length) return toast.info("Select at least one PGN");
-    loadPgn(selected[0], 0, selected);
+    void loadPgn(selected[0], 0, selected);
   }
 
   const displayedDrawings = useMemo(
@@ -3723,7 +3746,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                     {visiblePgnLibrary.length ? visiblePgnLibrary.map((pgn: any, index: number) => (
                       <div key={pgn._id} className={`rounded-lg border bg-white p-3 transition ${selectedPgnIds.includes(pgn._id) ? "border-purple-400 ring-2 ring-purple-100" : "border-slate-200"}`}>
                         <label className="grid cursor-pointer grid-cols-[88px_minmax(0,1fr)_20px] items-start gap-3 sm:grid-cols-[112px_minmax(0,1fr)_20px]">
-                          <MiniFenBoard fen={previewFenFromPgn(pgn.pgn, pgn.initialFen)} className="w-[88px] sm:w-[112px]" />
+                          <MiniFenBoard fen={previewFenFromPgn(pgn.pgn || "", pgn.initialFen)} className="w-[88px] sm:w-[112px]" />
                           <span className="min-w-0">
                             <span className="block truncate text-sm font-semibold text-slate-950">{pgn.title}</span>
                             <span className="mt-1 block truncate text-xs text-slate-500">{pgn.white || "White"} vs {pgn.black || "Black"}{pgn.result ? ` - ${pgn.result}` : ""}</span>
@@ -3752,7 +3775,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                   {visiblePgnLibrary.length ? visiblePgnLibrary.map((pgn: any, index: number) => (
                     <div key={pgn._id} className={`rounded-lg border bg-white p-3 transition ${selectedPgnIds.includes(pgn._id) ? "border-purple-400 ring-2 ring-purple-100" : "border-slate-200"}`}>
                       <label className="grid cursor-pointer grid-cols-[88px_minmax(0,1fr)_20px] items-start gap-3 sm:grid-cols-[112px_minmax(0,1fr)_20px]">
-                        <MiniFenBoard fen={previewFenFromPgn(pgn.pgn, pgn.initialFen)} className="w-[88px] sm:w-[112px]" />
+                        <MiniFenBoard fen={previewFenFromPgn(pgn.pgn || "", pgn.initialFen)} className="w-[88px] sm:w-[112px]" />
                         <span className="min-w-0">
                           <span className="block truncate text-sm font-semibold text-slate-950">{pgn.title}</span>
                           <span className="mt-1 block truncate text-xs text-slate-500">{pgn.white || "White"} vs {pgn.black || "Black"}{pgn.result ? ` - ${pgn.result}` : ""}</span>

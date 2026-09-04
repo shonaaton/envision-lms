@@ -708,6 +708,7 @@ export default function AnalysisBoard({ initialFen, withEngine = true, canUseLib
     const safeIndex = Math.max(0, Math.min(games.length - 1, index));
     const game = games[safeIndex];
     if (!game) return false;
+    if (!game.pgn) return false;
     if (!loadPgn(game.pgn)) return false;
     setLibraryQueue(games);
     setLibraryQueueIndex(safeIndex);
@@ -1294,7 +1295,7 @@ function SaveDialog({ isDark, onClose, onSave }: { isDark: boolean; onClose: () 
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    fetch("/api/pgn", { cache: "no-store" })
+    fetch("/api/pgn?summary=1", { cache: "no-store" })
       .then((response) => response.ok ? response.json() : [])
       .then((data) => setItems(Array.isArray(data) ? data : []))
       .catch(() => setItems([]));

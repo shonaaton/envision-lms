@@ -850,42 +850,105 @@ export default function ClassroomManagementClient({
       </div>
 
       {!groupFocus && (
-        <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-          <div className="mb-2 flex items-center justify-between">
-            <div>
-              <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Groups</div>
-              <div className="text-sm font-semibold text-slate-950">Filter groups, then open the group to manage its individual classes.</div>
+        <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-3 py-2">
+            <div className="inline-flex rounded-md border border-slate-200 bg-slate-50 p-0.5">
+              <button
+                type="button"
+                onClick={() => setOverviewTab("groups")}
+                className={cn("rounded px-3 py-1.5 text-xs font-bold transition", overviewTab === "groups" ? "bg-white text-brand shadow-sm" : "text-slate-500 hover:text-slate-700")}
+              >
+                Groups
+              </button>
+              <button
+                type="button"
+                onClick={() => setOverviewTab("calendar")}
+                className={cn("rounded px-3 py-1.5 text-xs font-bold transition", overviewTab === "calendar" ? "bg-white text-brand shadow-sm" : "text-slate-500 hover:text-slate-700")}
+              >
+                Classes by Date
+              </button>
             </div>
+            {overviewTab === "calendar" && (
+              <div className="flex items-center gap-1.5">
+                <button type="button" onClick={() => setCalendarDate((current) => shiftDateInput(current, -1))} className="grid h-7 w-7 place-items-center rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50" aria-label="Previous day">
+                  <ChevronLeft size={14} />
+                </button>
+                <input
+                  type="date"
+                  value={calendarDate}
+                  onChange={(event) => setCalendarDate(event.target.value)}
+                  className="h-7 rounded-md border border-slate-200 px-2 text-xs font-semibold text-slate-700"
+                />
+                <button type="button" onClick={() => setCalendarDate((current) => shiftDateInput(current, 1))} className="grid h-7 w-7 place-items-center rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50" aria-label="Next day">
+                  <ChevronRight size={14} />
+                </button>
+                <button type="button" onClick={() => setCalendarDate(formatDateInput(new Date().toISOString()))} className="h-7 rounded-md border border-slate-200 px-2.5 text-xs font-bold text-brand hover:bg-brand/5">
+                  Today
+                </button>
+              </div>
+            )}
           </div>
-          {loading ? (
-            <div className="rounded-md bg-slate-50 px-3 py-3 text-sm text-slate-500">Loading groups...</div>
-          ) : visibleGroupSummaries.length === 0 ? (
-            <div className="rounded-md border border-dashed border-slate-300 px-3 py-3 text-sm text-slate-500">No groups match the current filters.</div>
-          ) : (
-            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-              {visibleGroupSummaries.map(({ batch, classroomCount, sessionCount, upcomingCount, courseNames, levelNames }) => (
-                <div key={batch._id} className="flex items-center justify-between gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
-                  <div className="min-w-0">
-                    <Link href={`/classrooms/groups/${batch._id}`} className="truncate text-sm font-bold text-slate-950 hover:text-brand" title={batch.name}>
-                      {batch.name}
-                    </Link>
-                    <div className="mt-0.5 truncate text-xs text-slate-500" title={`${courseNames.join(", ") || "Course not set"} - ${levelNames.join(", ") || "Level not set"}`}>
-                      {courseNames.join(", ") || "Course not set"} - {levelNames.join(", ") || "Level not set"}
-                    </div>
-                    <div className="mt-1 flex flex-wrap gap-1.5 text-[11px] font-semibold text-slate-600">
-                      <span>{batch.students?.length || 0} students</span>
-                      <span>{classroomCount} classrooms</span>
-                      <span>{sessionCount} classes</span>
-                      <span>{upcomingCount} upcoming</span>
-                    </div>
-                  </div>
-                  <Link href={`/classrooms/groups/${batch._id}`} className="shrink-0 rounded-md bg-brand px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-brand/90">
-                    Open
-                  </Link>
+
+          <div className="p-3">
+            {overviewTab === "groups" ? (
+              <>
+                <div className="mb-2">
+                  <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Groups</div>
+                  <div className="text-sm font-semibold text-slate-950">Filter groups, then open the group to manage its individual classes.</div>
                 </div>
-              ))}
-            </div>
-          )}
+                {loading ? (
+                  <div className="rounded-md bg-slate-50 px-3 py-3 text-sm text-slate-500">Loading groups...</div>
+                ) : visibleGroupSummaries.length === 0 ? (
+                  <div className="rounded-md border border-dashed border-slate-300 px-3 py-3 text-sm text-slate-500">No groups match the current filters.</div>
+                ) : (
+                  <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                    {visibleGroupSummaries.map(({ batch, classroomCount, sessionCount, upcomingCount, courseNames, levelNames }) => (
+                      <div key={batch._id} className="flex items-center justify-between gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+                        <div className="min-w-0">
+                          <Link href={`/classrooms/groups/${batch._id}`} className="truncate text-sm font-bold text-slate-950 hover:text-brand" title={batch.name}>
+                            {batch.name}
+                          </Link>
+                          <div className="mt-0.5 truncate text-xs text-slate-500" title={`${courseNames.join(", ") || "Course not set"} - ${levelNames.join(", ") || "Level not set"}`}>
+                            {courseNames.join(", ") || "Course not set"} - {levelNames.join(", ") || "Level not set"}
+                          </div>
+                          <div className="mt-1 flex flex-wrap gap-1.5 text-[11px] font-semibold text-slate-600">
+                            <span>{batch.students?.length || 0} students</span>
+                            <span>{classroomCount} classrooms</span>
+                            <span>{sessionCount} classes</span>
+                            <span>{upcomingCount} upcoming</span>
+                          </div>
+                        </div>
+                        <Link href={`/classrooms/groups/${batch._id}`} className="shrink-0 rounded-md bg-brand px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-brand/90">
+                          Open
+                        </Link>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="mb-2">
+                  <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Classes on {formatDate(calendarDate)}</div>
+                  <div className="text-sm font-semibold text-slate-950">Every individual class scheduled for this date, across all groups. The filters above apply here too.</div>
+                </div>
+                {loading ? (
+                  <div className="rounded-md bg-slate-50 px-3 py-3 text-sm text-slate-500">Loading classes...</div>
+                ) : (
+                  <GroupClassSessionList
+                    items={filteredItems}
+                    targets={targets}
+                    statusFilter={filters.status}
+                    dateFilter={calendarDate}
+                    role={role}
+                    permissions={permissions}
+                    setActionModal={setActionModal}
+                    setActionDraft={setActionDraft}
+                  />
+                )}
+              </>
+            )}
+          </div>
         </div>
       )}
 
@@ -1708,6 +1771,7 @@ function GroupClassSessionList({
   items,
   targets,
   statusFilter,
+  dateFilter,
   role,
   permissions,
   setActionModal,
@@ -1716,6 +1780,7 @@ function GroupClassSessionList({
   items: ClassroomItem[];
   targets: TargetsPayload;
   statusFilter: SessionFilterStatus;
+  dateFilter?: string;
   role?: Role;
   permissions?: ClassroomPermissions;
   setActionModal?: React.Dispatch<React.SetStateAction<{ type: string; item: ClassroomItem | null; session?: any }>>;
@@ -1725,10 +1790,15 @@ function GroupClassSessionList({
   const rows = dedupeSessionRows(flattenScheduledSessions(items))
     .filter((row) => row.start)
     .filter((row) => !statusFilter || deriveScheduledSessionStatus(row.session, now) === statusFilter)
+    .filter((row) => !dateFilter || formatDateInput(row.start!.toISOString()) === dateFilter)
     .sort((a, b) => (a.start?.getTime() || 0) - (b.start?.getTime() || 0));
 
   if (!rows.length) {
-    return <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">No individual classes match the current filters.</div>;
+    return (
+      <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">
+        {dateFilter ? "No individual classes are scheduled for this date." : "No individual classes match the current filters."}
+      </div>
+    );
   }
 
   return (
@@ -2086,6 +2156,14 @@ function formatDateInput(value?: string) {
   }).formatToParts(new Date(value));
   const get = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value || "";
   return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
+function shiftDateInput(value: string, deltaDays: number) {
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return value;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCDate(date.getUTCDate() + deltaDays);
+  return date.toISOString().slice(0, 10);
 }
 
 function startOfWeek(date: Date) {

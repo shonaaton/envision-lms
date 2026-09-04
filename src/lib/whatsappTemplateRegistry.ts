@@ -1306,7 +1306,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
     "name": "fee_invoice_upcoming_reminder",
     "language": "en",
     "sourceAutomation": "Fee Reminders",
-    "body": "Hello {{1}}, invoice {{3}} for {{2}} has an outstanding amount of {{4}} and is due on {{5}}. View invoice and payment details: {{6}}",
+    "body": "Hello {{1}}, invoice {{3}} for {{2}} has an outstanding amount of {{4}} and is due on {{5}}. View invoice and payment details: {{6}}. Please complete payment by the due date.",
     "variables": [
       { "position": 1, "key": "recipient_name", "sample": "Mr. Sharma" },
       { "position": 2, "key": "student_name", "sample": "Aarav" },
@@ -1320,7 +1320,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
     "name": "fee_invoice_overdue_reminder",
     "language": "en",
     "sourceAutomation": "Fee Reminders",
-    "body": "Hello {{1}}, invoice {{3}} for {{2}} is overdue. The outstanding amount is {{4}} and the due date was {{5}}. View invoice and payment details: {{6}}",
+    "body": "Hello {{1}}, invoice {{3}} for {{2}} is overdue. The outstanding amount is {{4}} and the due date was {{5}}. View invoice and payment details: {{6}}. Please complete the outstanding payment promptly.",
     "variables": [
       { "position": 1, "key": "recipient_name", "sample": "Mr. Sharma" },
       { "position": 2, "key": "student_name", "sample": "Aarav" },

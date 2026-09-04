@@ -9,7 +9,7 @@ type ActivityKind = "mcq" | "fen_mcq" | "written_answer" | "fen_written_answer" 
 type PgnSourceMode = "library" | "upload";
 type QuizOption = { id: string; text: string; correct: boolean };
 type AssignmentQuestion = { id: string; text: string; positionFen: string; options: QuizOption[]; explanation: string; expectedAnswer: string };
-type PgnDoc = { _id: string; title: string; pgn: string; folder?: string; white?: string; black?: string; event?: string; initialFen?: string; sideToMove?: "white" | "black" };
+type PgnDoc = { _id: string; title: string; pgn?: string; folder?: string; white?: string; black?: string; event?: string; initialFen?: string; sideToMove?: "white" | "black" };
 type CourseTopic = { _id?: string; name: string; description?: string; order?: number };
 type CourseLevel = { _id?: string; name: string; topics?: CourseTopic[] };
 type CourseDoc = { _id: string; name: string; level?: "beginner" | "intermediate" | "advanced" | "mixed"; levels?: CourseLevel[] };
@@ -102,7 +102,7 @@ function normalizeFolderPath(value?: string | null) {
 }
 
 function pgnSideToMoveLabel(pgn: PgnDoc) {
-  const fen = pgn.initialFen || pgn.pgn.match(/\[FEN\s+"([^"]+)"\]/)?.[1] || "";
+  const fen = pgn.initialFen || (pgn.pgn || "").match(/\[FEN\s+"([^"]+)"\]/)?.[1] || "";
   const side = pgn.sideToMove || (fen.split(/\s+/)[1] === "b" ? "black" : "white");
   return side === "black" ? "Black to play" : "White to play";
 }
@@ -116,6 +116,13 @@ function splitAssignmentPgns(pgn: string, fallbackTitle: string) {
     const title = game.match(/\[(?:ChapterName|Event)\s+"([^"]+)"\]/)?.[1] || fallbackTitle || `Uploaded PGN ${index + 1}`;
     return { id: `uploaded-${Date.now()}-${index}`, title, pgn: game };
   });
+}
+
+async function fetchFullPgn(pgn: PgnDoc): Promise<PgnDoc> {
+  if (pgn.pgn) return pgn;
+  const response = await fetch(`/api/pgn/${pgn._id}`, { cache: "no-store" });
+  if (!response.ok) throw new Error(`Could not load PGN "${pgn.title}"`);
+  return await response.json() as PgnDoc;
 }
 
 function homeworkTemplateTitle(topicName: string) {
@@ -138,7 +145,7 @@ export default function NewHomeworkTemplatePage() {
 
   useEffect(() => {
     Promise.all([
-      fetch("/api/pgn", { cache: "no-store" }).then((r) => r.json()),
+      fetch("/api/pgn?limit=5000&summary=1", { cache: "no-store" }).then((r) => r.json()),
       fetch("/api/homework/template-options", { cache: "no-store" }).then((r) => r.json()).catch(() => ({ courses: [] })),
     ])
       .then(([pgnData, templateData]) => {
@@ -189,6 +196,20 @@ export default function NewHomeworkTemplatePage() {
     if (!activities.length) return toast.error("Add at least one activity");
     const emptyPgnActivity = activities.find((activity) => activity.kind === "pgn_quiz" && activity.selectedPgnIds.length === 0 && splitAssignmentPgns(activity.uploadedPgnText, activity.uploadedPgnTitle).length === 0);
     if (emptyPgnActivity) return toast.error("Add at least one PGN from the library or upload a PGN file.");
+
+    const neededPgnIds = Array.from(new Set(activities.filter((activity) => activity.kind === "pgn_quiz").flatMap((activity) => activity.selectedPgnIds)));
+    let fullPgnById = new Map<string, PgnDoc>();
+    if (neededPgnIds.length) {
+      try {
+        const fullDocs = await Promise.all(
+          neededPgnIds.map((id) => fetchFullPgn(pgns.find((pgn) => pgn._id === id) || { _id: id, title: "PGN" }))
+        );
+        fullPgnById = new Map(fullDocs.map((doc) => [doc._id, doc]));
+      } catch {
+        toast.error("One or more selected PGNs could not be loaded. Please try again.");
+        return;
+      }
+    }
 
     const assignmentActivities = activities.map((activity) => {
       if (activity.kind === "mcq" || activity.kind === "fen_mcq") {
@@ -265,7 +286,7 @@ export default function NewHomeworkTemplatePage() {
           title: pgn.title,
           pgnTitle: pgn.title,
           pgnSourceId: pgn._id,
-          pgn: pgn.pgn,
+          pgn: fullPgnById.get(pgn._id)?.pgn || pgn.pgn || "",
           source: { kind: "pgn", folder: pgn.folder || "Unfiled" },
           points: activity.points,
           })),

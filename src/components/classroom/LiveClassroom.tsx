@@ -2036,7 +2036,9 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
 
   async function fullPgn(item: any) {
     if (item?.pgn) return item;
-    const response = await fetch(`/api/pgn/${item._id}`, { cache: "no-store" });
+    const pgnId = item?._id || item?.id;
+    if (!pgnId) throw new Error("PGN could not be loaded");
+    const response = await fetch(`/api/pgn/${pgnId}`, { cache: "no-store" });
     if (!response.ok) throw new Error("PGN could not be loaded");
     return await response.json();
   }
@@ -2641,10 +2643,15 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     setSelectedPgnIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
   }
 
-  function loadSelectedPgns() {
+  async function loadSelectedPgns() {
     const selected = sortPgnCollection(pgnLibrary.filter((pgn: any) => selectedPgnIds.includes(pgn._id)));
     if (!selected.length) return toast.info("Select at least one PGN");
-    void loadPgn(selected[0], 0, selected);
+    try {
+      const fullSelected = await Promise.all(selected.map(fullPgn));
+      void loadPgn(fullSelected[0], 0, fullSelected);
+    } catch {
+      toast.error("Selected PGNs could not be loaded");
+    }
   }
 
   const displayedDrawings = useMemo(

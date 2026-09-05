@@ -1,71 +1,16 @@
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
-import { inactiveStudentMessage, isCurrentStudent } from "@/lib/studentAccess";
+import { inactiveStudentMessage } from "@/lib/studentAccess";
 import { Tournament } from "@/models/Tournament";
 import { User } from "@/models/User";
-import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { randomBytes } from "crypto";
-import { Link2, RefreshCcw, Trophy } from "lucide-react";
+import { Link2, Trophy } from "lucide-react";
 import { TournamentDetailClient } from "@/components/tournaments/TournamentDetailClient";
 import { TournamentGame } from "@/models/TournamentGame";
-import { playerKeyForUser, setTournamentPlayerState } from "@/lib/tournamentEngine";
+import { playerKeyForUser } from "@/lib/tournamentEngine";
 
 export const dynamic = "force-dynamic";
-
-function prettyStatus(value: string) {
-  return String(value || "draft").replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
-}
-
-function accessState(status: string) {
-  const value = String(status || "").toLowerCase();
-  if (value === "live") return "Joinable";
-  if (value === "upcoming") return "Scheduled";
-  return "Closed";
-}
-
-async function joinTournament(formData: FormData) {
-  "use server";
-  const session = await auth();
-  if (!session) throw new Error("Unauthorized");
-  const id = String(formData.get("id"));
-  await dbConnect();
-  const tournament: any = await Tournament.findById(id);
-  if (!tournament) return;
-  if ((session.user as any).role === "student" && !(await isCurrentStudent(String((session.user as any).id)))) {
-    revalidatePath(`/tournaments/${id}`);
-    return;
-  }
-  if (!(tournament.participants || []).some((participant: any) => participant?.toString?.() === String((session.user as any).id))) {
-    tournament.participants.push((session.user as any).id);
-  }
-  setTournamentPlayerState(tournament, playerKeyForUser(String((session.user as any).id)), tournament.type === "arena" && tournament.status === "live" ? "queued" : "joined");
-  await tournament.save();
-  revalidatePath(`/tournaments/${id}`);
-}
-
-async function leaveTournament(formData: FormData) {
-  "use server";
-  const session = await auth();
-  if (!session) return;
-  const id = String(formData.get("id"));
-  await dbConnect();
-  const tournament: any = await Tournament.findById(id);
-  if (!tournament) return;
-  if (String(tournament.status || "") === "live" || String(tournament.status || "") === "completed") {
-    revalidatePath(`/tournaments/${id}`);
-    return;
-  }
-  tournament.participants = (tournament.participants || []).filter((participant: any) => participant?.toString?.() !== String((session.user as any).id));
-  setTournamentPlayerState(tournament, playerKeyForUser(String((session.user as any).id)), "withdrawn");
-  await tournament.save();
-  revalidatePath(`/tournaments/${id}`);
-}
-
-function makeInvitePassword() {
-  return randomBytes(4).toString("hex").toUpperCase();
-}
 
 function toPlain<T>(value: T): T {
   return JSON.parse(JSON.stringify(value));
@@ -132,23 +77,6 @@ function buildCurrentSeat({
   };
 }
 
-async function createExternalInvite(formData: FormData) {
-  "use server";
-  const session = await auth();
-  if ((session?.user as any)?.role !== "admin") throw new Error("Forbidden");
-  const id = String(formData.get("id"));
-  await dbConnect();
-  await Tournament.findByIdAndUpdate(id, {
-    externalInvite: {
-      enabled: true,
-      token: randomBytes(18).toString("hex"),
-      password: makeInvitePassword(),
-      createdAt: new Date(),
-    },
-  });
-  revalidatePath(`/tournaments/${id}`);
-}
-
 export default async function TournamentDetailPage({ params }: { params: { id: string } }) {
   const session = await auth();
   const role = (session?.user as any)?.role;
@@ -194,88 +122,39 @@ export default async function TournamentDetailPage({ params }: { params: { id: s
     canManage: role === "admin",
     canPlay: (role === "student" && !isInactiveStudent) || role === "admin",
   };
-  const registrationLocked = tournament.status === "live" || tournament.status === "completed";
-
+  /**
+   * The page is a shell: access, the initial payload, and the invite link an
+   * arbiter needs. Everything a player reads - status, their next step,
+   * standings, boards, information - is the client's, which used to duplicate
+   * a header, a join button and a nine-tile stat grid rendered here as well.
+   */
   return (
-    <div className="min-h-screen bg-slate-50 px-4 py-5 text-slate-950 sm:px-6 lg:px-8">
-      <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-          <div className="flex gap-3">
-            <span className="flex h-10 w-10 items-center justify-center rounded-md bg-purple-50 text-purple-700"><Trophy size={20} /></span>
-            <div>
-              <h1 className="text-2xl font-semibold">{tournament.name}</h1>
-              <p className="mt-1 text-sm text-slate-500">{tournament.description || "Tournament details"}</p>
+    <div>
+      {role === "admin" && externalInviteUrl ? (
+        <div className="mx-auto max-w-6xl px-4 pt-5 sm:px-6 lg:px-8">
+          <div className="card border-brand/20 bg-brand-50/50">
+            <h2 className="flex items-center gap-2 text-sm font-semibold text-brand-700">
+              <Link2 size={15} aria-hidden /> External invitation link
+            </h2>
+            <p className="mt-1 text-xs text-brand-700/80">
+              Anyone with this link can enter with a username{tournament.externalInvite?.accessMode === "password" ? " and the password below" : ""}.
+            </p>
+            <div className="mt-3 grid gap-2 md:grid-cols-[1fr_200px]">
+              <label className="block text-xs font-semibold text-brand-700">
+                Link
+                <input readOnly className="input mt-1" value={externalInviteUrl} onFocus={(event) => event.currentTarget.select()} />
+              </label>
+              {tournament.externalInvite?.accessMode === "password" ? (
+                <label className="block text-xs font-semibold text-brand-700">
+                  Password
+                  <input readOnly className="input mt-1 font-semibold" value={tournament.externalInvite.password || ""} />
+                </label>
+              ) : null}
             </div>
           </div>
-          {role === "student" && (
-            <div className="flex flex-wrap gap-2">
-              {!joined ? (
-                <form action={joinTournament}>
-                  <input type="hidden" name="id" value={params.id} />
-                  <button disabled={registrationLocked} className="h-10 rounded-md bg-purple-700 px-4 text-sm font-semibold text-white disabled:bg-slate-300">{registrationLocked ? "Registration Locked" : "Join Tournament"}</button>
-                </form>
-              ) : (
-                <>
-                  <div className="inline-flex h-10 items-center rounded-md bg-emerald-50 px-4 text-sm font-semibold text-emerald-700">Registered</div>
-                  {!registrationLocked ? (
-                    <form action={leaveTournament}>
-                      <input type="hidden" name="id" value={params.id} />
-                      <button className="h-10 rounded-md border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700">Leave Tournament</button>
-                    </form>
-                  ) : null}
-                </>
-              )}
-            </div>
-          )}
-          {role === "admin" && (
-            <form action={createExternalInvite}>
-              <input type="hidden" name="id" value={params.id} />
-              <button className="inline-flex h-10 items-center gap-2 rounded-md bg-purple-700 px-4 text-sm font-semibold text-white">
-                {tournament.externalInvite?.enabled ? <RefreshCcw size={15} /> : <Link2 size={15} />}
-                {tournament.externalInvite?.enabled ? "Regenerate External Link" : "Create External Link"}
-              </button>
-            </form>
-          )}
         </div>
-        {role === "admin" && tournament.externalInvite?.enabled && (
-          <div className="mt-5 rounded-md border border-purple-100 bg-purple-50 p-4">
-            <div className="mb-2 text-sm font-semibold text-purple-900">External tournament invite</div>
-            <div className="grid gap-3 md:grid-cols-[1fr_180px]">
-              <label className="text-xs font-medium text-purple-900">
-                Share link
-                <input readOnly className="mt-1 h-10 w-full rounded-md border border-purple-200 bg-white px-3 text-sm text-slate-950" value={externalInviteUrl} />
-              </label>
-              <label className="text-xs font-medium text-purple-900">
-                Password
-                <input readOnly className="mt-1 h-10 w-full rounded-md border border-purple-200 bg-white px-3 text-sm font-semibold text-slate-950" value={tournament.externalInvite.password || ""} />
-              </label>
-            </div>
-            <p className="mt-2 text-xs text-purple-800">Anyone with this link can join using a username and this password. Regenerating creates a new link and password.</p>
-          </div>
-        )}
-        <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-md bg-slate-50 p-3"><div className="text-xs text-slate-500">Tournament Type</div><b>{tournament.type === "arena" ? "Arena" : "Swiss"}</b></div>
-          <div className="rounded-md bg-slate-50 p-3"><div className="text-xs text-slate-500">Start Date & Time</div><b>{new Date(tournament.startAt).toLocaleString("en-IN")}</b></div>
-          <div className="rounded-md bg-slate-50 p-3"><div className="text-xs text-slate-500">Time Control</div><b>{tournament.timeControlMinutes}+{tournament.incrementSeconds}</b></div>
-          <div className="rounded-md bg-slate-50 p-3"><div className="text-xs text-slate-500">Lifecycle</div><b>{prettyStatus(tournament.status)}</b></div>
-          <div className="rounded-md bg-slate-50 p-3"><div className="text-xs text-slate-500">Play Access</div><b>{accessState(tournament.status)}</b></div>
-          {tournament.type === "arena" && <div className="rounded-md bg-slate-50 p-3"><div className="text-xs text-slate-500">Arena Duration</div><b>{tournament.arenaDurationMinutes} minutes</b></div>}
-          {tournament.type === "swiss" && <div className="rounded-md bg-slate-50 p-3"><div className="text-xs text-slate-500">Rounds</div><b>{tournament.rounds}</b></div>}
-          <div className="rounded-md bg-slate-50 p-3"><div className="text-xs text-slate-500">Starting Position</div><b>{tournament.startingPosition?.type === "custom" ? "Custom Position" : "Normal Starting Position"}</b></div>
-          <div className="rounded-md bg-slate-50 p-3"><div className="text-xs text-slate-500">Participants</div><b>{(tournament.participants?.length || 0) + (tournament.externalParticipants?.length || 0)}</b></div>
-        </div>
-      </div>
-      <div className="mt-4">
-        <TournamentDetailClient tournamentId={params.id} role={role || "student"} initialState={initialState} />
-      </div>
-      <section className="mt-4 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="mb-3 font-semibold">Participants</h2>
-        <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
-          {(tournament.participants || []).map((student: any) => <div key={student._id.toString()} className="rounded-md bg-slate-50 px-3 py-2 text-sm">{student.name}</div>)}
-          {(tournament.externalParticipants || []).map((player: any) => <div key={`external-${player.username}`} className="rounded-md bg-purple-50 px-3 py-2 text-sm">{player.username} <span className="text-xs text-purple-700">(external)</span></div>)}
-        </div>
-        {(!tournament.participants || tournament.participants.length === 0) && (!tournament.externalParticipants || tournament.externalParticipants.length === 0) && <p className="text-sm text-slate-500">No participants have joined yet.</p>}
-      </section>
+      ) : null}
+      <TournamentDetailClient tournamentId={params.id} role={role || "student"} initialState={initialState} />
     </div>
   );
 }

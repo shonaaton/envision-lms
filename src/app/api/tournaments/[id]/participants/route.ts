@@ -52,7 +52,10 @@ export async function DELETE(req: Request, { params }: { params: { id: string } 
       ),
     }));
   }
-  if (tournament.type === "swiss") await syncSwissRoundState(tournament);
+  if (tournament.type === "swiss") {
+    const roundGames = await TournamentGame.find({ tournament: tournament._id }, "_id status result roundNumber").lean();
+    syncSwissRoundState(tournament, roundGames);
+  }
   await recalculateTournamentStandings(tournament);
 
   tournament.adminActions = [...(tournament.adminActions || []), {

@@ -17,6 +17,7 @@ const DUMMY_PASSWORD_HASH = "$2a$10$0dHO062F6m6nM0JQ5nM0JeH7GZq4wS6vJzpuG1HsfrN7
 
 type SessionUserStatusCacheEntry = {
   isActive: boolean;
+  isPaused: boolean;
   expiresAt: number;
 };
 
@@ -27,6 +28,7 @@ declare module "next-auth" {
       role: "student" | "instructor" | "admin";
       isSuperAdmin?: boolean;
       isActive?: boolean;
+      isPaused?: boolean;
       accountStatus?: "demo" | "enrolled" | "coach_applicant" | "approved" | "rejected";
     } & DefaultSession["user"];
   }
@@ -56,9 +58,10 @@ function readCachedUserStatus(userId: string) {
   return cached;
 }
 
-function writeCachedUserStatus(userId: string, isActive: boolean) {
+function writeCachedUserStatus(userId: string, isActive: boolean, isPaused: boolean) {
   sessionUserStatusCache.set(userId, {
     isActive,
+    isPaused,
     expiresAt: Date.now() + SESSION_USER_STATUS_TTL_MS,
   });
 }
@@ -140,6 +143,7 @@ export async function auth() {
 
   if (cachedUserStatus && !isApiRequest) {
     (session!.user as any).isActive = cachedUserStatus.isActive;
+    (session!.user as any).isPaused = cachedUserStatus.isPaused;
     return session;
   }
 
@@ -147,18 +151,23 @@ export async function auth() {
     const { dbConnect } = await import("./db");
     const { User } = await import("@/models/User");
     await dbConnect();
-    const currentUser: any = await User.findById(userId).select("isActive").lean();
+    const currentUser: any = await User.findById(userId).select("isActive isPaused").lean();
     if (!currentUser) return null;
 
     const isActive = currentUser.isActive !== false;
-    writeCachedUserStatus(userId, isActive);
+    // A student paused from their batch keeps their login but loses class,
+    // booking, and homework access for the length of the pause.
+    const isPaused = currentUser.isPaused === true;
+    writeCachedUserStatus(userId, isActive, isPaused);
     (session!.user as any).isActive = isActive;
-    if (!isActive && isApiRequest && isInactiveRestrictedPath(pathname)) return null;
+    (session!.user as any).isPaused = isPaused;
+    if ((!isActive || isPaused) && isApiRequest && isInactiveRestrictedPath(pathname)) return null;
     return session;
   } catch (error) {
     if (cachedUserStatus) {
       (session!.user as any).isActive = cachedUserStatus.isActive;
-      if (!cachedUserStatus.isActive && isApiRequest && isInactiveRestrictedPath(pathname)) return null;
+      (session!.user as any).isPaused = cachedUserStatus.isPaused;
+      if ((!cachedUserStatus.isActive || cachedUserStatus.isPaused) && isApiRequest && isInactiveRestrictedPath(pathname)) return null;
       return session;
     }
     if (isApiRequest && isInactiveRestrictedPath(pathname)) return null;

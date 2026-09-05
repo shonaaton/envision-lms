@@ -3,14 +3,22 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { TournamentGame } from "@/models/TournamentGame";
 import { Tournament } from "@/models/Tournament";
-import { applyGameMove, autoAdvanceSwissTournament, enforceTournamentGameTimeouts, finalizeTournamentIfComplete, queueCompletedArenaPlayers, recalculateTournamentStandings, syncArenaPairings } from "@/lib/tournamentEngine";
-import { StudentReward } from "@/models/ClassroomLive";
+import { applyGameMove, IllegalMoveError, MoveConflictError } from "@/lib/tournamentEngine";
+import { onGameCompleted } from "@/lib/tournamentLifecycle";
 import { recordActivity } from "@/lib/activity";
-import { calculateTournamentGameReward } from "@/lib/rewards";
 import { cookies } from "next/headers";
 import { getTournamentGuestUsername } from "@/lib/tournamentGuests";
 import { inactiveStudentMessage, isCurrentStudent } from "@/lib/studentAccess";
-import { emitTournamentUpdate } from "@/lib/tournamentSocketServer";
+import { consumeTournamentRate, rateIdentity, rateLimitedResponse } from "@/lib/tournamentRateLimit";
+import { awardTournamentGameRewards } from "@/lib/tournamentRewards";
+
+/**
+ * Play one move.
+ *
+ * An ordinary move touches exactly one game document and emits one small event
+ * to that board's room. Tournament-level work — standings, pairings, round
+ * progression — runs only when the move actually ends the game.
+ */
 
 export const dynamic = "force-dynamic";
 
@@ -20,150 +28,119 @@ function hasActiveTabConflict(game: any, playerKey: string, tabId: string) {
   const activeTab = String(isWhite ? game.whiteActiveTabId || "" : game.blackActiveTabId || "");
   const activeAt = isWhite ? game.whiteActiveTabAt : game.blackActiveTabAt;
   if (!activeTab || activeTab === tabId) return false;
-  return activeAt && Date.now() - new Date(activeAt).getTime() <= 15_000;
+  return Boolean(activeAt && Date.now() - new Date(activeAt).getTime() <= 15_000);
 }
 
-function markActionTab(game: any, playerKey: string, tabId: string) {
+async function markActionTab(game: any, playerKey: string, tabId: string) {
   if (!tabId) return;
   const isWhite = game.whiteKey === playerKey;
-  if (isWhite) {
-    game.whiteActiveTabId = tabId;
-    game.whiteActiveTabAt = new Date();
-    game.whiteOnlineAt = new Date();
-    game.whiteDisconnectedAt = undefined;
-  } else {
-    game.blackActiveTabId = tabId;
-    game.blackActiveTabAt = new Date();
-    game.blackOnlineAt = new Date();
-    game.blackDisconnectedAt = undefined;
-  }
-}
-
-async function awardForGame(game: any) {
-  if (game.status !== "completed" || !game.result || game.result === "*") return;
-  const rewards: Array<{ student: any; xp: number; coins: number; badge?: string; reason: string }> = [];
-  if (game.whiteUser) {
-    const reward = calculateTournamentGameReward(game.result, "white");
-    rewards.push({
-      student: game.whiteUser,
-      xp: reward.xp,
-      coins: reward.coins,
-      badge: reward.badge,
-      reason: `Tournament game vs ${game.blackName || "bye"}`,
-    });
-  }
-  if (game.blackUser) {
-    const reward = calculateTournamentGameReward(game.result, "black");
-    rewards.push({
-      student: game.blackUser,
-      xp: reward.xp,
-      coins: reward.coins,
-      badge: reward.badge,
-      reason: `Tournament game vs ${game.whiteName}`,
-    });
-  }
-  await Promise.all(
-    rewards.map((reward) =>
-      StudentReward.findOneAndUpdate(
-        { student: reward.student, sourceType: "tournament_game", sourceId: game._id },
-        { student: reward.student, sourceType: "tournament_game", sourceId: game._id, xp: reward.xp, coins: reward.coins, badge: reward.badge || "", reason: reward.reason },
-        { upsert: true, new: true }
-      )
-    )
+  await TournamentGame.updateOne(
+    { _id: game._id },
+    {
+      $set: isWhite
+        ? { whiteActiveTabId: tabId, whiteActiveTabAt: new Date(), whiteOnlineAt: new Date() }
+        : { blackActiveTabId: tabId, blackActiveTabAt: new Date(), blackOnlineAt: new Date() },
+      $unset: isWhite ? { whiteDisconnectedAt: 1 } : { blackDisconnectedAt: 1 },
+    }
   );
 }
 
 export async function POST(req: Request, { params }: { params: { gameId: string } }) {
   const session = await auth();
-
   await dbConnect();
-  let game: any = await TournamentGame.findById(params.gameId);
+
+  const game: any = await TournamentGame.findById(params.gameId);
   if (!game) return NextResponse.json({ error: "Game not found" }, { status: 404 });
   if (game.status !== "active") return NextResponse.json({ error: "This game is no longer active." }, { status: 400 });
 
-  const tournament: any = await Tournament.findById(game.tournament);
+  const tournament: any = await Tournament.findById(game.tournament).select("name externalInvite type status").lean();
   if (!tournament) return NextResponse.json({ error: "Tournament not found" }, { status: 404 });
-  await enforceTournamentGameTimeouts(tournament);
-  game = await TournamentGame.findById(params.gameId);
-  if (game.status !== "active") return NextResponse.json({ error: "This game is no longer active." }, { status: 400 });
 
   const cookieStore = await cookies();
   const guestUsername = tournament.externalInvite?.token ? getTournamentGuestUsername(cookieStore, tournament.externalInvite.token) : "";
   const normalizedGuest = guestUsername.toLowerCase();
-  const isGuestWhite = normalizedGuest && String(game.whiteExternalUsername || "").toLowerCase() === normalizedGuest;
-  const isGuestBlack = normalizedGuest && String(game.blackExternalUsername || "").toLowerCase() === normalizedGuest;
-  if (!session && !isGuestWhite && !isGuestBlack) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const isGuestWhite = Boolean(normalizedGuest) && String(game.whiteExternalUsername || "").toLowerCase() === normalizedGuest;
+  const isGuestBlack = Boolean(normalizedGuest) && String(game.blackExternalUsername || "").toLowerCase() === normalizedGuest;
+  if (!session && !isGuestWhite && !isGuestBlack) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const userId = session ? String((session.user as any).id) : "";
   const role = session ? (session.user as any).role : "";
+
+  const limit = consumeTournamentRate("move", rateIdentity({ userId, guestUsername, request: req }));
+  if (!limit.allowed) return rateLimitedResponse(limit.retryAfterMs);
+
   if (role === "student" && !(await isCurrentStudent(userId))) {
     return NextResponse.json({ error: inactiveStudentMessage }, { status: 403 });
   }
-  const isWhite = String(game.whiteUser || "") === userId;
-  const isBlack = String(game.blackUser || "") === userId;
-  const isAdmin = session ? (session.user as any).role === "admin" : false;
-  if (!isWhite && !isBlack && !isGuestWhite && !isGuestBlack && !isAdmin) {
+
+  const isWhite = Boolean(userId) && String(game.whiteUser || "") === userId;
+  const isBlack = Boolean(userId) && String(game.blackUser || "") === userId;
+  // Only a player assigned to this board may move on it. An admin observing a
+  // game is a spectator here; correcting a result is a separate, audited path.
+  if (!isWhite && !isBlack && !isGuestWhite && !isGuestBlack) {
     return NextResponse.json({ error: "You are not assigned to this game." }, { status: 403 });
   }
-  if ((game.turn === "w" && !isWhite && !isGuestWhite) || (game.turn === "b" && !isBlack && !isGuestBlack)) {
+  const playsWhite = isWhite || isGuestWhite;
+  const playsBlack = isBlack || isGuestBlack;
+  if ((game.turn === "w" && !playsWhite) || (game.turn === "b" && !playsBlack)) {
     return NextResponse.json({ error: "It is not your turn." }, { status: 400 });
   }
 
-  const body = await req.json();
+  const body = await req.json().catch(() => ({}));
   const tabId = String(body.tabId || "").slice(0, 120);
+  const actorPlayerKey = playsWhite ? game.whiteKey : game.blackKey;
+  if (hasActiveTabConflict(game, actorPlayerKey, tabId)) {
+    return NextResponse.json({ error: "This board is already active in another tab." }, { status: 409 });
+  }
+
+  let updated: any;
   try {
-    const actorPlayerKey = isWhite || isGuestWhite ? game.whiteKey : game.blackKey;
-    if (hasActiveTabConflict(game, actorPlayerKey, tabId)) {
-      return NextResponse.json({ error: "This board is already active in another tab." }, { status: 409 });
-    }
-    markActionTab(game, actorPlayerKey, tabId);
-    await applyGameMove(game, { from: body.from, to: body.to, promotion: body.promotion || "q" });
+    updated = await applyGameMove(
+      game,
+      { from: String(body.from || ""), to: String(body.to || ""), promotion: String(body.promotion || "q") },
+      { expectedPly: body.expectedPly === undefined ? undefined : Number(body.expectedPly) }
+    );
   } catch (error: any) {
+    if (error instanceof MoveConflictError) {
+      const fresh: any = await TournamentGame.findById(params.gameId).lean();
+      return NextResponse.json(
+        { error: error.message, code: "move_conflict", game: fresh },
+        { status: 409 }
+      );
+    }
+    if (error instanceof IllegalMoveError) {
+      return NextResponse.json({ error: "That move is not legal in this position.", code: "illegal_move" }, { status: 400 });
+    }
     return NextResponse.json({ error: error?.message || "Could not register move" }, { status: 400 });
   }
 
-  if (game.status === "completed") {
-    queueCompletedArenaPlayers(tournament, game);
-    const currentRound = (tournament.roundsData || []).find((round: any) => Number(round.roundNumber) === Number(game.roundNumber));
-    if (currentRound) {
-      currentRound.pairings = (currentRound.pairings || []).map((pairing: any) =>
-        String(pairing.gameId) === String(game._id) ? { ...pairing, status: "completed", result: game.result } : pairing
-      );
-      if ((currentRound.pairings || []).every((pairing: any) => pairing.status === "completed")) {
-        currentRound.status = "completed";
-        currentRound.endedAt = new Date();
-      }
-    }
-    await awardForGame(game);
+  await markActionTab(updated, actorPlayerKey, tabId);
+
+  if (updated.status === "completed") {
+    await awardTournamentGameRewards(updated);
+    await onGameCompleted(String(updated.tournament), String(updated._id));
   }
-  if (tournament.type === "swiss") await autoAdvanceSwissTournament(tournament);
-  await recalculateTournamentStandings(tournament);
-  if (tournament.type === "arena") await syncArenaPairings(tournament);
-  await finalizeTournamentIfComplete(tournament);
-  await tournament.save();
+
   await recordActivity({
     actor: userId || undefined,
     targetUser: userId || undefined,
-    type: game.status === "completed" ? "tournament.game.completed_by_move" : "tournament.game.move_played",
-    label: game.status === "completed" ? "Completed tournament game by move" : "Played tournament game move",
+    type: updated.status === "completed" ? "tournament.game.completed_by_move" : "tournament.game.move_played",
+    label: updated.status === "completed" ? "Completed tournament game by move" : "Played tournament game move",
     entityType: "TournamentGame",
-    entityId: game._id.toString(),
+    entityId: String(updated._id),
     metadata: {
-      tournament: tournament._id.toString(),
-      round: game.roundNumber,
-      moveCount: Array.isArray(game.moveHistorySAN) ? game.moveHistorySAN.length : 0,
+      tournament: String(updated.tournament),
+      round: updated.roundNumber,
+      ply: updated.ply,
       from: body.from,
       to: body.to,
       promotion: body.promotion || "",
-      status: game.status,
-      result: game.result,
-      actorSide: isWhite || isGuestWhite ? "white" : "black",
+      status: updated.status,
+      result: updated.result,
+      actorSide: playsWhite ? "white" : "black",
       source: userId ? "student_tournament" : "guest_tournament",
     },
   });
-  emitTournamentUpdate(tournament._id.toString(), "move");
 
-  return NextResponse.json({ ok: true, game });
+  return NextResponse.json({ ok: true, game: updated });
 }

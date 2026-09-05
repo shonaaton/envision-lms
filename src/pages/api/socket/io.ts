@@ -6,7 +6,8 @@ import { Tournament } from "@/models/Tournament";
 import { User } from "@/models/User";
 import { resolvePublicAppUrl } from "@/lib/appUrl";
 import { getTournamentGuestSessionFromCookieHeader } from "@/lib/tournamentGuests";
-import { registerTournamentSocketServer, tournamentRoomName } from "@/lib/tournamentSocketServer";
+import { TournamentGame } from "@/models/TournamentGame";
+import { registerTournamentSocketServer, tournamentGameRoomName, tournamentRoomName } from "@/lib/tournamentSocketServer";
 
 type SocketServerWithIO = NextApiResponse["socket"] & {
   server: {
@@ -168,6 +169,32 @@ export default function handler(_: NextApiRequest, res: NextApiResponse) {
       }
       client.join(tournamentRoomName(tournamentId));
       client.emit("tournament:ready", { tournamentId });
+
+      // Board subscriptions. The handshake already established that this
+      // client may see this tournament; here we only confirm the board it asks
+      // for belongs to that tournament, so a socket cannot listen in on an
+      // event it was never admitted to.
+      client.on("subscribe:game", async (raw: unknown, ack?: (result: { ok: boolean }) => void) => {
+        try {
+          const gameId = String((raw as any)?.gameId || "").trim();
+          if (!/^[a-f0-9]{24}$/i.test(gameId)) return ack?.({ ok: false });
+          await dbConnect();
+          const game: any = await TournamentGame.findById(gameId).select("tournament").lean();
+          if (!game || String(game.tournament) !== tournamentId) return ack?.({ ok: false });
+          for (const room of client.rooms) {
+            if (room.startsWith("tournament-game:")) client.leave(room);
+          }
+          client.join(tournamentGameRoomName(gameId));
+          ack?.({ ok: true });
+        } catch {
+          ack?.({ ok: false });
+        }
+      });
+
+      client.on("unsubscribe:game", (raw: unknown) => {
+        const gameId = String((raw as any)?.gameId || "").trim();
+        if (gameId) client.leave(tournamentGameRoomName(gameId));
+      });
     });
 
     socket.server.io = io;

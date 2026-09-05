@@ -259,7 +259,9 @@ export async function ensureMonthlyInvoices(now = new Date()) {
   for (const assignment of monthlyAssignments as any[]) {
     const student = assignment.student;
     const studentId = student?._id?.toString?.() || student?.toString?.() || "";
-    if (!studentId || !student || student.isActive === false || student.role !== "student") continue;
+    // A paused student is out of billing until they are reinstated, and the
+    // reinstatement itself re-anchors `firstDueDate` to the agreed restart date.
+    if (!studentId || !student || student.isActive === false || student.isPaused === true || student.role !== "student") continue;
     const start = new Date(assignment.firstDueDate || assignment.billingStartDate);
     if (start > horizon || !assignment.plan || assignment.plan.isActive === false) continue;
     const deletedDueDateKeys = new Set((assignment.deletedMonthlyDueDates || []).map((date: any) => new Date(date).getTime()));
@@ -503,8 +505,8 @@ export async function markInvoicePaid(
 export async function createNextMonthlyInvoiceAfterPayment(invoiceId: string) {
   const invoice: any = await Invoice.findById(invoiceId).populate("assignment plan").lean();
   if (!invoice || invoice.type !== "monthly" || !invoice.assignment || !invoice.plan) return null;
-  const student: any = await User.findById(invoice.student).select("role isActive").lean();
-  if (!student || student.role !== "student" || student.isActive === false) return null;
+  const student: any = await User.findById(invoice.student).select("role isActive isPaused").lean();
+  if (!student || student.role !== "student" || student.isActive === false || student.isPaused === true) return null;
   const dueDate = nextMonthlyDueDate(new Date(invoice.dueDate));
   const exists = await Invoice.exists({ assignment: invoice.assignment._id, type: "monthly", dueDate });
   if (exists) return null;
@@ -690,11 +692,11 @@ async function createCreditRechargeInvoiceIfNeeded(input: {
   attendanceId: string;
 }) {
   const [student, plan, attendance]: any[] = await Promise.all([
-    User.findById(input.studentId).select("name email phone parentName parentEmail role isActive").lean(),
+    User.findById(input.studentId).select("name email phone parentName parentEmail role isActive isPaused").lean(),
     input.assignment?.plan ? FeeAssignment.findById(input.assignment._id).populate("plan").then((item: any) => item?.plan || null) : null,
     Attendance.findById(input.attendanceId).select("classroom scheduledSessionId sessionDate").lean(),
   ]);
-  if (!student || student.role !== "student" || student.isActive === false || !plan || plan.isActive === false) return null;
+  if (!student || student.role !== "student" || student.isActive === false || student.isPaused === true || !plan || plan.isActive === false) return null;
 
   const afterDate = attendance?.sessionDate ? new Date(attendance.sessionDate) : new Date();
   const nextClass = await nextScheduledClassForStudent(input.studentId, afterDate, {

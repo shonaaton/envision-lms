@@ -63,6 +63,13 @@ const UserSchema = new Schema(
     classrooms: [{ type: Schema.Types.ObjectId, ref: "Classroom" }],
     notes: { type: String },
     isActive: { type: Boolean, default: true, index: true },
+    // Batch pause — the student stays enrolled but is out of classes and billing
+    // until `pausedUntil`. Full detail (dates, voided invoices, restart plan)
+    // lives on the StudentPause record referenced by `pauseRecord`.
+    isPaused: { type: Boolean, default: false, index: true },
+    pausedUntil: { type: Date, index: true },
+    pauseExpectedRestartDate: { type: Date },
+    pauseRecord: { type: Schema.Types.ObjectId, ref: "StudentPause", index: true },
     failedLoginAttempts: { type: Number, default: 0 },
     loginLockedUntil: { type: Date },
     passwordResetTokenHash: { type: String, index: true },

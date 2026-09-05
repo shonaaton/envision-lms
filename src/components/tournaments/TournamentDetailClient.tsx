@@ -1,97 +1,75 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { BarChart3, Clock3, Crown, Download, MessageSquare, Play, RefreshCcw, Search, Share2, Shield, Swords, Trophy, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import {
+  Clock3,
+  Crown,
+  Eye,
+  Info,
+  Send,
+  Share2,
+  Swords,
+  Timer,
+  Trophy,
+  Users,
+} from "lucide-react";
 import { useTournamentSocket } from "@/lib/useTournamentSocket";
+import { applyLeaderboardRows, rankOf } from "@/lib/tournament/leaderboard";
+import { describeTournament, relativeTime, resolvePlayerAction } from "@/lib/tournament/playerAction";
+import { useNow } from "@/lib/useLiveClock";
+import { TournamentAdminPanel } from "./TournamentAdminPanel";
 
 type DetailState = {
   tournament: any;
   activeGame: any;
   games: any[];
   myGames: any[];
-  featuredGame?: any;
-  topGames?: any[];
+  liveGames?: any[];
   joined: boolean;
   currentSeat: any;
   participantState?: any;
+  roundProgress?: any;
+  nextRoundAt?: number | null;
+  arenaEndsAt?: string | null;
+  tieBreak?: { key: string; label: string } | null;
+  maxRounds?: number | null;
   health?: any;
+  myPlayerKey?: string;
   canManage: boolean;
   canPlay: boolean;
 };
 
-function statusChip(status: string) {
-  if (["live", "playing"].includes(status)) return "bg-emerald-50 text-emerald-700";
-  if (["completed", "finished"].includes(status)) return "bg-slate-100 text-slate-700";
-  return "bg-amber-50 text-amber-700";
-}
-
-function exportCsv(filename: string, headers: string[], rows: Array<Array<string | number | null | undefined>>) {
-  const csv = [headers, ...rows]
-    .map((row) => row.map((cell) => `"${String(cell ?? "").replace(/"/g, '""')}"`).join(","))
-    .join("\n");
-  const link = document.createElement("a");
-  link.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
-  link.download = filename;
-  link.click();
-  URL.revokeObjectURL(link.href);
+function countdown(ms: number) {
+  const safe = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(safe / 3600);
+  const minutes = Math.floor((safe % 3600) / 60);
+  const seconds = safe % 60;
+  return hours
+    ? `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`
+    : `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
 function resultLabel(game: any) {
   if (!game) return "-";
-  if (game.status === "active") return "In progress";
+  if (game.status === "active") return "Playing";
+  if (game.status === "aborted") return "Aborted";
   if (game.termination === "bye") return "Bye";
-  if (game.termination === "resign") return "Resigned";
   if (game.result === "1/2-1/2") return "Draw";
-  return game.result || "-";
+  if (game.result === "1-0") return "1-0";
+  if (game.result === "0-1") return "0-1";
+  return "-";
 }
 
-function pointsEarnedFor(game: any, playerKey: string, tournament: any) {
-  if (!game || game.status !== "completed") return 0;
-  const isWhite = game.whiteKey === playerKey;
-  const won = (isWhite && game.result === "1-0") || (!isWhite && game.result === "0-1");
-  const drew = game.result === "1/2-1/2";
-  if (game.source === "arena") {
-    if (won) return 2 + ((isWhite && game.berserkWhite) || (!isWhite && game.berserkBlack) ? 1 : 0);
-    if (drew) {
-      const earlyLimit = Number(tournament.earlyDrawMoveLimit ?? 10);
-      return earlyLimit > 0 && Number(game.moveHistorySAN?.length || 0) < earlyLimit ? 0 : 1;
-    }
-    return 0;
-  }
-  if (won) return 1;
-  return drew ? 0.5 : 0;
-}
-
-function averageOpponentRating(games: any[], playerKey: string) {
-  const ratings = games
-    .map((game) => game.whiteKey === playerKey ? Number(game.blackRating || 0) : Number(game.whiteRating || 0))
-    .filter((rating) => rating > 0);
-  if (!ratings.length) return "-";
-  return String(Math.round(ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length));
-}
-
-function performanceLabel(entry: any, tournament: any) {
-  const games = Number(entry?.gamesPlayed || 0);
-  if (!games) return "-";
-  const max = tournament.type === "arena" ? games * 2 : games;
-  if (!max) return "-";
-  return `${Math.round((Number(entry.points || 0) / max) * 100)}%`;
-}
-
-function seatStatusLabel(seat: any, tournamentStatus: string) {
-  if (!seat) return "Waiting";
-  if (seat.status === "not_joined") return "Join required";
-  if (seat.status === "active") return "Board live";
-  if (seat.status === "assigned") return "Assigned";
-  if (seat.status === "completed") return ["completed", "finished"].includes(tournamentStatus) ? "Tournament finished" : "Round finished";
-  if (seat.status === "paused") return "Paused";
-  if (seat.status === "waiting") return "Waiting";
-  if (seat.status === "joined") return "Ready";
-  return "Waiting";
-}
-
+/**
+ * The tournament centre.
+ *
+ * Ordered the way a player reads it: what is happening, what I should do about
+ * it, where I stand, what is being played, and only then the details. The
+ * arbiter's controls live in one collapsed panel rather than woven through the
+ * page, so a student is not shown a wall of buttons they cannot press.
+ */
 export function TournamentDetailClient({
   tournamentId,
   role,
@@ -104,34 +82,45 @@ export function TournamentDetailClient({
   const router = useRouter();
   const [state, setState] = useState<DetailState>(initialState);
   const [error, setError] = useState("");
-  const [playerSearch, setPlayerSearch] = useState("");
-  const [selectedPlayerKey, setSelectedPlayerKey] = useState("");
-  const [visibleStandings, setVisibleStandings] = useState(50);
-  const [mobileTab, setMobileTab] = useState("info");
-  const [editOpen, setEditOpen] = useState(false);
-  const [externalOpen, setExternalOpen] = useState(false);
-  const [announcementOpen, setAnnouncementOpen] = useState(false);
-  const [editDraft, setEditDraft] = useState<any>({});
-  const [externalDraft, setExternalDraft] = useState<any>({});
-  const [announcementDraft, setAnnouncementDraft] = useState({ title: "Tournament announcement", message: "" });
-  const [correctionDraft, setCorrectionDraft] = useState<{ gameId: string; label: string; current: string; result: "1-0" | "0-1" | "1/2-1/2"; reason: string } | null>(null);
-  const [selectedPlayerDetail, setSelectedPlayerDetail] = useState<any>(null);
-  const [selectedPlayerLoading, setSelectedPlayerLoading] = useState(false);
   const [chatMessage, setChatMessage] = useState("");
   const [pending, startTransition] = useTransition();
   const autoOpenedGameRef = useRef("");
+  const now = useNow(1000);
 
   const refresh = useCallback(async () => {
     const response = await fetch(`/api/tournaments/${tournamentId}/state`, { cache: "no-store" });
     if (!response.ok) return;
     setState(await response.json());
   }, [tournamentId]);
-  const { connected } = useTournamentSocket({ tournamentId, onUpdate: refresh });
+
+  /* The lobby cares about pairings, standings, rounds and status - never about
+     individual moves - so it subscribes to no game room and a move on any board
+     costs it nothing. */
+  const handlers = useMemo(
+    () => ({
+      onStandings: (payload: any) =>
+        setState((current: any) =>
+          current
+            ? { ...current, tournament: { ...current.tournament, standings: applyLeaderboardRows(current.tournament?.standings || [], payload.rows || []) } }
+            : current
+        ),
+      onPairingCreated: () => void refresh(),
+      onGameEnded: () => void refresh(),
+      onRoundStarted: () => void refresh(),
+      onRoundCompleted: () => void refresh(),
+      onTournamentStatus: () => void refresh(),
+      onTournamentEnded: () => void refresh(),
+      onResync: () => void refresh(),
+    }),
+    [refresh]
+  );
+  const { connected } = useTournamentSocket({ tournamentId, handlers });
 
   useEffect(() => {
-    refresh();
+    void refresh();
   }, [refresh]);
 
+  // A student with a live board belongs at the board, not on this page.
   useEffect(() => {
     const activeGameId = state.activeGame?._id ? String(state.activeGame._id) : "";
     if (role !== "student" || !activeGameId || autoOpenedGameRef.current === activeGameId) return;
@@ -139,118 +128,44 @@ export function TournamentDetailClient({
     router.push(`/tournaments/${tournamentId}/play`);
   }, [role, router, state.activeGame?._id, tournamentId]);
 
-  useEffect(() => {
-    if (!selectedPlayerKey) {
-      setSelectedPlayerDetail(null);
-      return;
-    }
-    let cancelled = false;
-    setSelectedPlayerLoading(true);
-    setSelectedPlayerDetail(null);
-    fetch(`/api/tournaments/${tournamentId}/players/${encodeURIComponent(selectedPlayerKey)}`, { cache: "no-store" })
-      .then((response) => response.ok ? response.json() : null)
-      .then((payload) => {
-        if (!cancelled) setSelectedPlayerDetail(payload);
-      })
-      .catch(() => {
-        if (!cancelled) setSelectedPlayerDetail(null);
-      })
-      .finally(() => {
-        if (!cancelled) setSelectedPlayerLoading(false);
+  const runAction = useCallback(
+    async (path: string, body?: any) => {
+      setError("");
+      startTransition(async () => {
+        const response = await fetch(path, {
+          method: "POST",
+          ...(body ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}),
+        });
+        if (!response.ok) {
+          const payload = await response.json().catch(() => null);
+          setError(payload?.error || "Could not update the tournament.");
+          return;
+        }
+        await refresh();
+        router.refresh();
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedPlayerKey, tournamentId]);
+    },
+    [refresh, router]
+  );
 
-  async function runAction(path: string) {
-    setError("");
-    startTransition(async () => {
-      const response = await fetch(path, { method: "POST" });
+  const patchTournament = useCallback(
+    async (body: any) => {
+      setError("");
+      const response = await fetch(`/api/tournaments/${tournamentId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
       if (!response.ok) {
         const payload = await response.json().catch(() => null);
-        setError(payload?.error || "Could not update tournament.");
-        return;
+        setError(payload?.error || "Could not update the tournament.");
+        return false;
       }
       await refresh();
-      router.refresh();
-    });
-  }
-
-  async function patchTournament(body: any) {
-    setError("");
-    const response = await fetch(`/api/tournaments/${tournamentId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (!response.ok) {
-      const payload = await response.json().catch(() => null);
-      setError(payload?.error || "Could not update tournament.");
-      return false;
-    }
-    await refresh();
-    return true;
-  }
-
-  async function cloneTournament() {
-    setError("");
-    const response = await fetch(`/api/tournaments/${tournamentId}/clone`, { method: "POST" });
-    if (!response.ok) {
-      const payload = await response.json().catch(() => null);
-      setError(payload?.error || "Could not clone tournament.");
-      return;
-    }
-    const payload = await response.json();
-    if (payload?.tournamentId) window.location.href = `/tournaments/${payload.tournamentId}`;
-  }
-
-  async function removeParticipant(playerKey: string) {
-    if (!window.confirm("Remove this participant from the tournament?")) return;
-    const response = await fetch(`/api/tournaments/${tournamentId}/participants`, {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ playerKey }),
-    });
-    if (!response.ok) {
-      const payload = await response.json().catch(() => null);
-      setError(payload?.error || "Could not remove participant.");
-      return;
-    }
-    await refresh();
-  }
-
-  async function correctResult() {
-    if (!correctionDraft) return;
-    const response = await fetch(`/api/tournaments/games/${correctionDraft.gameId}/result`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ result: correctionDraft.result, reason: correctionDraft.reason || `Corrected from ${correctionDraft.current} to ${correctionDraft.result}.` }),
-    });
-    if (!response.ok) {
-      const payload = await response.json().catch(() => null);
-      setError(payload?.error || "Could not correct result.");
-      return;
-    }
-    setCorrectionDraft(null);
-    await refresh();
-  }
-
-  async function sendAnnouncement() {
-    const response = await fetch(`/api/tournaments/${tournamentId}/announce`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(announcementDraft),
-    });
-    if (!response.ok) {
-      const payload = await response.json().catch(() => null);
-      setError(payload?.error || "Could not send announcement.");
-      return;
-    }
-    setAnnouncementOpen(false);
-    setAnnouncementDraft({ title: "Tournament announcement", message: "" });
-    await refresh();
-  }
+      return true;
+    },
+    [refresh, tournamentId]
+  );
 
   async function submitChat() {
     const message = chatMessage.trim();
@@ -263,839 +178,385 @@ export function TournamentDetailClient({
     });
     if (!response.ok) {
       const payload = await response.json().catch(() => null);
-      setError(payload?.error || "Could not send chat message.");
+      setError(payload?.error || "Could not send that message.");
       return;
     }
     setChatMessage("");
     await refresh();
   }
 
-  async function shareTournament() {
-    const title = tournament?.name || "Tournament";
+  async function share() {
     const url = window.location.href;
     if (navigator.share) {
-      await navigator.share({ title, url }).catch(() => null);
+      await navigator.share({ title: tournament?.name || "Tournament", url }).catch(() => null);
       return;
     }
-    await navigator.clipboard?.writeText(url);
+    await navigator.clipboard?.writeText(url).catch(() => null);
   }
 
-  async function analyseMyGames() {
-    const response = await fetch(`/api/tournaments/${tournamentId}/my-games/pgn`, { cache: "no-store" });
-    if (!response.ok) {
-      setError("Could not prepare your games for analysis.");
-      return;
-    }
-    const pgn = await response.text();
-    window.sessionStorage.setItem("tournament-analysis-pgn", pgn);
-    window.location.href = "/analysis?source=tournament";
-  }
-
-  const tournament = state?.tournament || {};
-  const standings = Array.isArray(tournament?.standings) ? tournament.standings : [];
+  // Memoised: a fresh `|| {}` every render would defeat the memos beneath it,
+  // recomputing the summary and the player's next step on every clock tick.
+  const tournament = useMemo(() => state?.tournament || {}, [state?.tournament]);
+  const summary = useMemo(() => describeTournament(tournament), [tournament]);
+  const standings = useMemo(() => (Array.isArray(tournament?.standings) ? tournament.standings : []), [tournament?.standings]);
   const rounds = Array.isArray(tournament?.roundsData) ? tournament.roundsData : [];
-  const activeRound = rounds.find((round: any) => round.status !== "completed");
-  const completedGames = (state.games || []).filter((game: any) => game.status === "completed");
-  const totalGames = (state.games || []).length;
-  const currentSeat = state.currentSeat || null;
-  const participantState = state.participantState || null;
-  const finalSnapshot = tournament.finalSnapshot || null;
-  const podium = finalSnapshot?.podium?.length ? finalSnapshot.podium : standings.slice(0, 3);
-  const selectedPlayer = standings.find((entry: any) => entry.playerKey === selectedPlayerKey) || null;
-  const selectedPlayerGames = selectedPlayerDetail?.games || (selectedPlayer ? (state.games || []).filter((game: any) => [game.whiteKey, game.blackKey].includes(selectedPlayer.playerKey)) : []);
-  const selectedPlayerStats = selectedPlayerDetail?.stats || null;
-  const filteredStandings = standings.filter((entry: any) => String(entry.displayName || "").toLowerCase().includes(playerSearch.toLowerCase()));
-  const visibleStandingsRows = filteredStandings.slice(0, visibleStandings);
+  const activeRound = rounds.find((round: any) => round.status !== "completed") || null;
+  const myPlayerKey = state.myPlayerKey || "";
+  const myStanding = standings.find((entry: any) => entry.playerKey === myPlayerKey) || null;
+  const myRank = rankOf(standings, myPlayerKey);
   const isPlaying = ["live", "playing"].includes(String(tournament.status || ""));
   const isFinished = ["completed", "finished"].includes(String(tournament.status || ""));
-  const countdownLabel = tournament.arenaEndsAt && isPlaying ? formatCountdown(new Date(tournament.arenaEndsAt).getTime() - Date.now()) : "-";
-  const standingsRows = standings.map((entry: any, index: number) => [
-    index + 1,
-    entry.displayName,
-    entry.rating || "",
-    entry.points,
-    entry.wins,
-    entry.draws,
-    entry.losses,
-    entry.buchholz,
-    entry.gamesPlayed,
-  ]);
-  const activeBoards = Number(state.health?.activeGames ?? (state.games || []).filter((game: any) => game.status === "active").length);
-  const queuedPlayers = Number(state.health?.queuedPlayers ?? (tournament.participantStates || []).filter((entry: any) => ["joined", "queued"].includes(entry.status)).length);
-  const staleConnections = Number(state.health?.staleConnections ?? (state.games || []).filter((game: any) => game.status === "active" && [game.whiteOnlineAt, game.blackOnlineAt].some((value: any) => value && Date.now() - new Date(value).getTime() > 30_000)).length);
-  const latestAudit = (tournament.adminActions || []).slice(-1)[0];
-  const registrationLocked = isPlaying || isFinished;
-  const isArenaLive = tournament.type === "arena" && isPlaying;
-  const canJoinNow = (role === "student" || role === "admin") && !state.joined && !["completed", "finished", "cancelled"].includes(String(tournament.status || "")) && (!registrationLocked || isArenaLive);
-  const canWithdrawNow = (role === "student" || role === "admin") && state.joined && !registrationLocked;
-  const canPauseNow = (role === "student" || role === "admin") && state.joined && isArenaLive && participantState?.status !== "paused";
-  const canResumeNow = (role === "student" || role === "admin") && state.joined && isArenaLive && participantState?.status === "paused";
-  const mobileClass = (key: string) => mobileTab === key ? "" : "max-sm:hidden";
+  const liveGames = state.liveGames || (state.games || []).filter((game: any) => game.status === "active");
+  const tieBreak = state.tieBreak || null;
+
+  const action = useMemo(
+    () =>
+      resolvePlayerAction({
+        tournamentId,
+        status: String(tournament.status || ""),
+        type: tournament.type === "arena" ? "arena" : "swiss",
+        joined: Boolean(state.joined),
+        canPlay: Boolean(state.canPlay),
+        hasActiveGame: Boolean(state.activeGame),
+        participantStatus: state.participantState?.status,
+        roundProgress: state.roundProgress,
+        nextRoundAt: state.nextRoundAt,
+        lateJoiningAllowed: tournament.lateJoiningAllowed,
+        now,
+      }),
+    [tournamentId, tournament.status, tournament.type, tournament.lateJoiningAllowed, state, now]
+  );
+
+  const arenaMsLeft = state.arenaEndsAt && isPlaying ? Math.max(0, new Date(state.arenaEndsAt).getTime() - now) : 0;
+  const startsIn = !isPlaying && !isFinished && tournament.startAt ? new Date(tournament.startAt).getTime() - now : 0;
 
   return (
-    <div className="space-y-3 sm:space-y-4">
-      {error ? <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
-      <div className="flex gap-2 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-2 text-xs font-semibold sm:hidden">
-        {[
-          ["info", "Info"],
-          ["standings", "Standings"],
-          ["games", "Games"],
-          ["mine", "My Games"],
-          ["chat", "Chat"],
-        ].map(([key, label]) => (
-          <button key={key} onClick={() => setMobileTab(key)} className={`whitespace-nowrap rounded-xl px-3 py-2 ${mobileTab === key ? "bg-purple-700 text-white" : "bg-slate-100 text-slate-700"}`}>{label}</button>
-        ))}
-      </div>
+    <div className="mx-auto max-w-6xl space-y-4 px-4 py-5 sm:px-6 lg:px-8">
+      {error ? (
+        <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {error}
+        </div>
+      ) : null}
 
-      <div id="info" className={`${mobileClass("info")} grid gap-3 xl:grid-cols-[1.2fr_0.8fr] xl:gap-4`}>
-        <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-5">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <div className="mb-2 flex flex-wrap items-center gap-1.5 sm:gap-2">
-                <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusChip(tournament.status)}`}>{tournament.status}</span>
-                <span className={`rounded-full px-3 py-1 text-xs font-semibold ${connected ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>{connected ? "Live socket" : "Connecting"}</span>
-                <span className="rounded-full bg-purple-50 px-3 py-1 text-xs font-semibold text-purple-700">{tournament.type === "arena" ? "Arena" : "Swiss"}</span>
-                {tournament.currentRound ? (
-                  <span className="rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700">
-                    {tournament.type === "swiss" ? `Round ${tournament.currentRound}` : "Arena Running"}
-                  </span>
-                ) : null}
-              </div>
-              <h2 className="text-lg font-semibold text-slate-950 sm:text-xl">Tournament control room</h2>
-              <p className="mt-1 text-xs text-slate-500 sm:text-sm">Server automation starts events, advances rounds, pairs players, and finalizes results.</p>
+      {/* 1. Status. What is this event, and where is it up to. */}
+      <header className="card">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-xl font-semibold text-slate-950 sm:text-2xl">{tournament.name || "Tournament"}</h1>
+              <span
+                className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ring-1 ${
+                  summary.tone === "live"
+                    ? "bg-emerald-50 text-emerald-700 ring-emerald-600/20"
+                    : summary.tone === "cancelled"
+                      ? "bg-red-50 text-red-600 ring-red-500/20"
+                      : "bg-slate-100 text-slate-600 ring-slate-500/15"
+                }`}
+              >
+                {summary.statusLabel}
+              </span>
+              <span className={`inline-flex items-center gap-1 text-[11px] font-semibold ${connected ? "text-emerald-600" : "text-amber-600"}`}>
+                <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${connected ? "bg-emerald-500" : "bg-amber-500"}`} />
+                <span className="hidden sm:inline">{connected ? "Live" : "Reconnecting"}</span>
+              </span>
             </div>
-            <div className="flex flex-wrap gap-1.5 sm:gap-2">
-              {state.canManage && standings.length ? (
-                <button
-                  type="button"
-                  onClick={() => exportCsv(
-                    `${String(tournament.name || "tournament").replace(/\s+/g, "-").toLowerCase()}-standings.csv`,
-                    ["Rank", "Player", "Rating", "Points", "Wins", "Draws", "Losses", "Buchholz", "Games Played"],
-                    standingsRows
-                  )}
-                  className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 sm:h-10 sm:px-4 sm:text-sm"
-                >
-                  <Download size={15} /> Export Standings
-                </button>
-              ) : null}
-              {state.canManage && state.games?.length ? (
-                <button
-                  type="button"
-                  onClick={() => { window.location.href = `/api/tournaments/${tournamentId}/games/export`; }}
-                  className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 sm:h-10 sm:px-4 sm:text-sm"
-                >
-                  <Download size={15} /> Export Games
-                </button>
-              ) : null}
-              {state.canManage ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditDraft({
-                      name: tournament.name || "",
-                      description: tournament.description || "",
-                      entryRestrictions: tournament.entryRestrictions || "",
-                      timeControlMinutes: tournament.timeControlMinutes || 0,
-                      incrementSeconds: tournament.incrementSeconds || 0,
-                      arenaDurationMinutes: tournament.arenaDurationMinutes || 0,
-                      rounds: tournament.rounds || 0,
-                      lateJoiningAllowed: tournament.lateJoiningAllowed !== false,
-                      chatEnabled: Boolean(tournament.chatEnabled),
-                    });
-                    setEditOpen(true);
-                  }}
-                  className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 sm:h-10 sm:px-4 sm:text-sm"
-                >
-                  Edit
-                </button>
-              ) : null}
-              {state.canManage ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setExternalDraft({
-                      enabled: Boolean(tournament.externalInvite?.enabled),
-                      accessMode: tournament.externalInvite?.accessMode || "private",
-                      password: tournament.externalInvite?.password || "",
-                      entryCode: tournament.externalInvite?.entryCode || "",
-                      expiresAt: tournament.externalInvite?.expiresAt ? new Date(tournament.externalInvite.expiresAt).toISOString().slice(0, 16) : "",
-                    });
-                    setExternalOpen(true);
-                  }}
-                  className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 sm:h-10 sm:px-4 sm:text-sm"
-                >
-                  External Access
-                </button>
-              ) : null}
-              {state.canManage ? (
-                <button type="button" onClick={() => setAnnouncementOpen(true)} className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 sm:h-10 sm:px-4 sm:text-sm">
-                  Announce
-                </button>
-              ) : null}
-              {state.canManage ? (
-                <button type="button" onClick={cloneTournament} className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 sm:h-10 sm:px-4 sm:text-sm">
-                  Clone
-                </button>
-              ) : null}
-              {state.canManage && standings.length ? (
-                <button
-                  type="button"
-                  onClick={() => { window.location.href = `/api/tournaments/${tournamentId}/participation-report`; }}
-                  className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 sm:h-10 sm:px-4 sm:text-sm"
-                >
-                  <BarChart3 size={15} /> Participation
-                </button>
-              ) : null}
-              {state.canManage && state.games?.length ? (
-                <button
-                  type="button"
-                  onClick={() => { window.location.href = `/api/tournaments/${tournamentId}/fair-play-report`; }}
-                  className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 sm:h-10 sm:px-4 sm:text-sm"
-                >
-                  <Shield size={15} /> Fair Play
-                </button>
-              ) : null}
-              {state.canManage ? (
-                <span className="inline-flex h-9 items-center rounded-xl border border-emerald-200 bg-emerald-50 px-3 text-xs font-semibold text-emerald-700 sm:h-10 sm:px-4 sm:text-sm">
-                  Server auto lifecycle
-                </span>
-              ) : null}
-              {state.canManage && isPlaying ? (
-                <button
-                  disabled={pending}
-                  onClick={() => runAction(`/api/tournaments/${tournamentId}/${tournament.pausedByAdmin ? "resume" : "admin-pause"}`)}
-                  className="inline-flex h-9 items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 text-xs font-semibold text-amber-700 sm:h-10 sm:px-4 sm:text-sm"
-                >
-                  <Shield size={15} /> {tournament.pausedByAdmin ? "Resume Pairing" : "Pause Pairing"}
-                </button>
-              ) : null}
-              {state.canManage && !["completed", "finished", "cancelled"].includes(String(tournament.status)) ? (
-                <button
-                  disabled={pending}
-                  onClick={() => runAction(`/api/tournaments/${tournamentId}/cancel`)}
-                  className="inline-flex h-9 items-center gap-2 rounded-xl border border-red-200 bg-white px-3 text-xs font-semibold text-red-700 sm:h-10 sm:px-4 sm:text-sm"
-                >
-                  <Shield size={15} /> Cancel
-                </button>
-              ) : null}
-              {(role === "student" || role === "admin") && (state.activeGame || isPlaying) ? (
-                <Link
-                  href={`/tournaments/${tournamentId}/play`}
-                  className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-slate-950 px-3 text-xs font-semibold text-white sm:h-10 sm:px-4 sm:text-sm"
-                >
-                  <Swords size={15} /> {state.activeGame ? "Resume Game" : "Enter Play Room"}
-                </Link>
-              ) : null}
-              {canJoinNow ? (
-                <button
-                  disabled={pending}
-                  onClick={() => runAction(`/api/tournaments/${tournamentId}/join`)}
-                  className="inline-flex h-9 items-center gap-2 rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white sm:h-10 sm:px-4 sm:text-sm"
-                >
-                  <Play size={15} /> {isArenaLive ? "Join Queue" : "Join Tournament"}
-                </button>
-              ) : null}
-              {canResumeNow ? (
-                <button
-                  disabled={pending}
-                  onClick={() => runAction(`/api/tournaments/${tournamentId}/join`)}
-                  className="inline-flex h-9 items-center gap-2 rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white sm:h-10 sm:px-4 sm:text-sm"
-                >
-                  <Play size={15} /> Resume Arena
-                </button>
-              ) : null}
-              {canPauseNow ? (
-                <button
-                  disabled={pending}
-                  onClick={() => runAction(`/api/tournaments/${tournamentId}/pause`)}
-                  className="inline-flex h-9 items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 text-xs font-semibold text-amber-700 sm:h-10 sm:px-4 sm:text-sm"
-                >
-                  <Shield size={15} /> Pause
-                </button>
-              ) : null}
-              {canWithdrawNow ? (
-                <button
-                  disabled={pending}
-                  onClick={() => runAction(`/api/tournaments/${tournamentId}/withdraw`)}
-                  className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 sm:h-10 sm:px-4 sm:text-sm"
-                >
-                  <Shield size={15} /> Withdraw
-                </button>
-              ) : null}
-            </div>
+            {tournament.description ? <p className="mt-1 max-w-2xl text-sm text-slate-600">{tournament.description}</p> : null}
           </div>
+          <button type="button" onClick={share} className="btn-ghost min-h-11" aria-label="Share this tournament">
+            <Share2 size={15} aria-hidden /> Share
+          </button>
+        </div>
 
-              <div className="mt-4 grid grid-cols-2 gap-2 sm:mt-5 sm:gap-3 xl:grid-cols-4">
-            <StatCard icon={<Trophy size={16} />} label="Participants" value={String((tournament.participants?.length || 0) + (tournament.externalParticipants?.length || 0))} />
-            <StatCard icon={<Clock3 size={16} />} label="Time Control" value={`${tournament.timeControlMinutes}+${tournament.incrementSeconds}`} />
-            <StatCard icon={<Crown size={16} />} label="Live Games" value={String((state.games || []).filter((game: any) => game.status === "active").length)} />
-            <StatCard icon={<RefreshCcw size={16} />} label={tournament.type === "swiss" ? "Rounds" : "Arena Ends"} value={tournament.type === "swiss" ? `${tournament.currentRound || 0}/${tournament.rounds || 0}` : tournament.arenaEndsAt ? new Date(tournament.arenaEndsAt).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" }) : "-"} />
-            {tournament.type === "arena" ? <StatCard icon={<Clock3 size={16} />} label="Countdown" value={countdownLabel} /> : null}
-            <StatCard icon={<Trophy size={16} />} label="Completed Games" value={String(completedGames.length)} />
-            <StatCard icon={<Clock3 size={16} />} label="Recorded Games" value={String(totalGames)} />
-            <StatCard icon={<Shield size={16} />} label="Registration" value={registrationLocked ? "Locked" : "Open"} />
-            <StatCard icon={<Play size={16} />} label="Boards Ready" value={String(activeBoards)} />
-          </div>
-        </section>
+        <dl className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <Stat icon={<Swords size={14} />} label="Format" value={summary.format} />
+          <Stat icon={<Clock3 size={14} />} label="Time control" value={summary.timeControl} />
+          <Stat icon={<Users size={14} />} label="Players" value={String(summary.participants)} />
+          <Stat
+            icon={<Timer size={14} />}
+            label={arenaMsLeft ? "Ends in" : startsIn > 0 ? "Starts" : "Started"}
+            value={
+              arenaMsLeft
+                ? countdown(arenaMsLeft)
+                : startsIn > 0
+                  ? relativeTime(tournament.startAt, now)
+                  : tournament.startAt
+                    ? new Date(tournament.startAt).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })
+                    : "-"
+            }
+          />
+        </dl>
+      </header>
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-5">
-          <h3 className="text-base font-semibold text-slate-950">My tournament seat</h3>
-            <div className="mt-3 space-y-3">
-            {!state.joined && role === "student" ? (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
-                <div className="text-sm font-semibold text-amber-900">Join this tournament to receive your board assignment.</div>
-                <div className="mt-1 text-sm text-amber-800">Once you join, your opponent, color, board number, and round status will appear here automatically.</div>
-              </div>
-            ) : state.activeGame ? (
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
-                <div className="text-sm font-semibold text-emerald-800">You have a live board ready.</div>
-                <div className="mt-1 text-sm text-emerald-700">
-                  {state.activeGame.whiteName} vs {state.activeGame.blackName}
-                </div>
-                <Link href={`/tournaments/${tournamentId}/play`} className="mt-3 inline-flex h-10 items-center gap-2 rounded-xl bg-emerald-600 px-4 text-sm font-semibold text-white">
-                  <Play size={15} /> Open Game Room
-                </Link>
-              </div>
-            ) : currentSeat ? (
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="text-sm font-semibold text-slate-900">My current assignment</div>
-                  <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-slate-700">
-                    {seatStatusLabel(currentSeat, tournament.status)}
-                  </span>
-                </div>
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  <SeatTile label="Round" value={currentSeat.roundNumber || "-"} />
-                  <SeatTile label="Board" value={currentSeat.boardNumber || "-"} />
-                  <SeatTile label="Color" value={currentSeat.color ? `${String(currentSeat.color).charAt(0).toUpperCase()}${String(currentSeat.color).slice(1)}` : "-"} />
-                  <SeatTile label="Opponent" value={currentSeat.opponentName || "-"} />
-                </div>
-                <div className="mt-3 text-sm text-slate-600">
-                  {currentSeat.status === "completed"
-                    ? "Your current round is already finished. Stand by for the next pairing or review your game history below."
-                    : currentSeat.status === "paused"
-                      ? "You are paused. Your completed games and points are preserved, and you can resume when ready."
-                    : currentSeat.status === "waiting"
-                      ? "You are in the tournament and waiting for your next opponent assignment."
-                      : currentSeat.status === "joined"
-                        ? "You are registered and ready. Your board will appear here when the tournament starts."
-                        : "Your seat is ready. Open the play room once the board goes live."}
-                </div>
-                {state.canPlay && isPlaying && currentSeat.status !== "paused" ? (
-                  <Link
-                    href={`/tournaments/${tournamentId}/play`}
-                    className="mt-3 inline-flex h-10 items-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white"
-                  >
-                    <Play size={15} /> {state.activeGame ? "Resume board" : currentSeat.status === "assigned" ? "Open play room" : "Check pairing room"}
-                  </Link>
-                ) : null}
-              </div>
-            ) : isPlaying ? (
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-                No active board is assigned right now. If this is an arena event, the next pairing appears here automatically.
-              </div>
-            ) : (
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-                The tournament is not live yet. Once it starts, your pairing and game room will appear here.
-              </div>
-            )}
-            <div id="my-games" className="rounded-xl border border-slate-200 p-4">
-              <div className="mb-2 text-sm font-semibold text-slate-900">Recent games</div>
-              <div className="space-y-2">
-                {(state.myGames || []).slice(0, 4).map((game: any) => (
-                  <div key={String(game._id)} className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-sm">
-                    <span>{game.whiteName} vs {game.blackName}</span>
-                    <span className="font-semibold text-slate-700">{resultLabel(game)}</span>
-                  </div>
-                ))}
-                {!state.myGames?.length ? <div className="text-sm text-slate-500">No game history yet.</div> : null}
-              </div>
-            </div>
-          </div>
-        </section>
-      </div>
+      {/* 2. My current action. Exactly one, whatever the state. */}
+      <section
+        className={`card flex flex-wrap items-center gap-3 ${action.emphasis === "primary" ? "border-brand/25 bg-brand-50/40" : ""}`}
+        aria-label="Your next step"
+      >
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold text-slate-950">{action.label}</p>
+          {action.hint ? <p className="mt-0.5 text-sm text-slate-600">{action.hint}</p> : null}
+          {myStanding ? (
+            <p className="mt-1 text-xs tabular-nums text-slate-500">
+              You are #{myRank} on {myStanding.points} point{myStanding.points === 1 ? "" : "s"} from {myStanding.gamesPlayed} game
+              {myStanding.gamesPlayed === 1 ? "" : "s"}
+            </p>
+          ) : null}
+        </div>
 
-      <section className={`${mobileClass("mine")} rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:hidden`}>
-        <h3 className="mb-3 text-base font-semibold text-slate-950">My games</h3>
-        <div className="space-y-2">
-          {(state.myGames || []).map((game: any) => (
-            <div key={String(game._id)} className="rounded-xl border border-slate-200 px-3 py-2 text-sm">
-              <div className="flex items-center justify-between gap-3">
-                <span className="font-medium text-slate-900">{game.whiteName} vs {game.blackName || "Bye"}</span>
-                <span className="font-semibold text-slate-700">{resultLabel(game)}</span>
-              </div>
-              <div className="mt-1 text-xs text-slate-500">{game.moveHistorySAN?.length || 0} moves</div>
-            </div>
-          ))}
-          {!state.myGames?.length ? <div className="text-sm text-slate-500">No games recorded yet.</div> : null}
+        <div className="flex flex-wrap gap-2">
+          {action.kind === "join" ? (
+            <button type="button" disabled={pending} onClick={() => runAction(`/api/tournaments/${tournamentId}/join`)} className="btn-primary min-h-11">
+              <Trophy size={15} aria-hidden /> {action.label}
+            </button>
+          ) : action.href ? (
+            <Link href={action.href} className={action.emphasis === "primary" ? "btn-primary min-h-11" : "btn-outline min-h-11"}>
+              <Swords size={15} aria-hidden /> {action.kind === "rejoin" ? "Rejoin game" : "Open play room"}
+            </Link>
+          ) : null}
+          {state.joined && !isPlaying && !isFinished ? (
+            <button type="button" disabled={pending} onClick={() => runAction(`/api/tournaments/${tournamentId}/withdraw`)} className="btn-ghost min-h-11">
+              Withdraw
+            </button>
+          ) : null}
         </div>
       </section>
 
-      {podium.length && ["completed", "finished", "cancelled"].includes(String(tournament.status)) ? (
-        <section id="standings" className={`${mobileClass("standings")} rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-5`}>
-          <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-base font-semibold text-slate-950">Final results</h3>
-            <div className="flex flex-wrap gap-2">
-              <button
-                onClick={() => { window.location.href = `/api/tournaments/${tournamentId}/my-games/pgn`; }}
-                className="inline-flex h-8 items-center gap-2 rounded-xl border border-slate-200 px-3 text-xs font-semibold text-slate-700"
-              >
-                <Download size={14} /> Download PGN
-              </button>
-              <button
-                onClick={() => navigator.clipboard?.writeText(window.location.href)}
-                className="inline-flex h-8 items-center gap-2 rounded-xl border border-slate-200 px-3 text-xs font-semibold text-slate-700"
-              >
-                Copy Link
-              </button>
-              <button onClick={shareTournament} className="inline-flex h-8 items-center gap-2 rounded-xl border border-slate-200 px-3 text-xs font-semibold text-slate-700">
-                <Share2 size={14} /> Share
-              </button>
-              <button onClick={analyseMyGames} className="inline-flex h-8 items-center gap-2 rounded-xl border border-slate-200 px-3 text-xs font-semibold text-slate-700">
-                Analyse My Games
-              </button>
-              <Link href="/tournaments" className="inline-flex h-8 items-center gap-2 rounded-xl bg-slate-950 px-3 text-xs font-semibold text-white">Directory</Link>
-            </div>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-3">
-            {podium.map((entry: any, index: number) => (
-              <div key={entry.playerKey || index} className="rounded-xl border border-purple-100 bg-purple-50 p-4">
-                <div className="text-xs font-bold uppercase tracking-wide text-purple-700">{index === 0 ? "First Place" : index === 1 ? "Second Place" : "Third Place"}</div>
-                <div className="mt-2 text-lg font-semibold text-slate-950">{entry.displayName}</div>
-                <div className="mt-1 text-sm text-slate-600">{entry.points} pts - {entry.gamesPlayed} games - {performanceLabel(entry, tournament)} performance</div>
-              </div>
-            ))}
-          </div>
-        </section>
-      ) : null}
+      {/* 3. Where everyone stands. */}
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="space-y-4">
+          {isFinished && standings.length ? <Podium standings={standings} /> : null}
 
-      <div className={`${mobileClass("games")} grid gap-3 xl:grid-cols-[0.9fr_1.1fr] xl:gap-4`}>
-        <section id="games" className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-5">
-          <div className="mb-3 flex items-center gap-2">
-            <Crown size={16} className="text-purple-700" />
-            <h3 className="text-base font-semibold text-slate-950">Featured game</h3>
-          </div>
-          {state.featuredGame ? (
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <div className="font-semibold text-slate-950">{state.featuredGame.whiteName} vs {state.featuredGame.blackName}</div>
-              <div className="mt-1 text-sm text-slate-500">Board {state.featuredGame.tableNumber || "-"} - {state.featuredGame.moveHistorySAN?.length || 0} moves</div>
-              <Link href={`/tournaments/${tournamentId}/games/${state.featuredGame._id}`} className="mt-3 inline-flex h-9 items-center gap-2 rounded-xl bg-slate-950 px-3 text-xs font-semibold text-white">
-                <Swords size={14} /> Watch board
-              </Link>
+          <section className="card">
+            <div className="mb-3 flex items-baseline justify-between gap-2">
+              <h2 className="font-semibold text-slate-950">Standings</h2>
+              {tieBreak ? <span className="text-xs text-slate-400">Ties broken on {tieBreak.label}</span> : null}
             </div>
-          ) : (
-            <div className="rounded-xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500">No featured live board yet.</div>
-          )}
-        </section>
-        <section id="chat" className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-5">
-          <h3 className="mb-3 text-base font-semibold text-slate-950">Top ongoing games</h3>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {(state.topGames || []).slice(0, 6).map((game: any) => (
-              <div key={String(game._id)} className="rounded-xl border border-slate-200 px-3 py-2 text-sm">
-                <div className="font-medium text-slate-900">{game.whiteName} vs {game.blackName}</div>
-                <div className="text-xs text-slate-500">Board {game.tableNumber || "-"} - {game.moveHistorySAN?.length || 0} moves</div>
-                <Link href={`/tournaments/${tournamentId}/games/${game._id}`} className="mt-2 inline-flex h-8 items-center rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700">Watch</Link>
-              </div>
-            ))}
-            {!(state.topGames || []).length ? <div className="text-sm text-slate-500">No live games right now.</div> : null}
-          </div>
-        </section>
-      </div>
-
-      <div className={`${mobileClass("standings")} grid gap-3 xl:grid-cols-[1.1fr_0.9fr] xl:gap-4`}>
-        <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-5">
-          <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-base font-semibold text-slate-950">Standings</h3>
-            <label className="relative">
-              <Search size={14} className="absolute left-2 top-2.5 text-slate-400" />
-              <input value={playerSearch} onChange={(event) => setPlayerSearch(event.target.value)} className="h-9 rounded-xl border border-slate-200 pl-8 pr-3 text-xs" placeholder="Search player" />
-            </label>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-left text-sm">
-              <thead className="border-b text-xs uppercase tracking-wide text-slate-500">
-                <tr>
-                  <th className="px-2 py-3">#</th>
-                  <th className="px-2 py-3">Player</th>
-                  <th className="px-2 py-3">Rating</th>
-                  <th className="px-2 py-3">Pts</th>
-                  <th className="px-2 py-3">W</th>
-                  <th className="px-2 py-3">D</th>
-                  <th className="px-2 py-3">L</th>
-                  <th className="px-2 py-3">BH</th>
-                  <th className="px-2 py-3">Games</th>
-                  <th className="px-2 py-3">State</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visibleStandingsRows.map((entry: any) => {
-                  const index = standings.findIndex((item: any) => item.playerKey === entry.playerKey);
-                  const playerState = (tournament.participantStates || []).find((item: any) => item.playerKey === entry.playerKey);
-                  const active = (state.games || []).some((game: any) => game.status === "active" && [game.whiteKey, game.blackKey].includes(entry.playerKey));
-                  return (
-                  <tr key={entry.playerKey} className="cursor-pointer border-b last:border-0 hover:bg-slate-50" onClick={() => setSelectedPlayerKey(entry.playerKey)}>
-                    <td className="px-2 py-3 font-semibold text-purple-700">#{index + 1}</td>
-                    <td className="px-2 py-3 font-medium text-slate-900">
-                      {entry.displayName}
-                      <div className="text-xs text-slate-400">{entry.recentResults?.join(" ") || "No recent results"}</div>
-                    </td>
-                    <td className="px-2 py-3">{entry.rating || "-"}</td>
-                    <td className="px-2 py-3">{entry.points}</td>
-                    <td className="px-2 py-3">{entry.wins}</td>
-                    <td className="px-2 py-3">{entry.draws}</td>
-                    <td className="px-2 py-3">{entry.losses}</td>
-                    <td className="px-2 py-3">{entry.buchholz}</td>
-                    <td className="px-2 py-3">{entry.gamesPlayed}</td>
-                    <td className="px-2 py-3">
-                      <div className="flex flex-wrap items-center gap-1">
-                        <span className={`rounded-full px-2 py-1 text-xs font-semibold ${active ? "bg-emerald-50 text-emerald-700" : playerState?.status === "paused" ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-600"}`}>
-                          {active ? "Playing" : playerState?.status === "paused" ? "Paused" : entry.streak > 1 ? `Streak ${entry.streak}` : "Ready"}
-                        </span>
-                        {state.canManage ? (
-                          <button onClick={(event) => { event.stopPropagation(); void removeParticipant(entry.playerKey); }} className="rounded-full border border-red-200 bg-white px-2 py-1 text-xs font-semibold text-red-700">
-                            Remove
-                          </button>
+            {standings.length ? (
+              <div className="-mx-1 overflow-x-auto">
+                <table className="w-full min-w-[420px] text-sm">
+                  <thead>
+                    <tr className="text-left text-[11px] uppercase tracking-[0.1em] text-slate-400">
+                      <th scope="col" className="px-1 py-1.5 font-bold">#</th>
+                      <th scope="col" className="px-1 py-1.5 font-bold">Player</th>
+                      <th scope="col" className="px-1 py-1.5 text-right font-bold">Pts</th>
+                      <th scope="col" className="px-1 py-1.5 text-right font-bold">W/D/L</th>
+                      {tieBreak ? (
+                        <th scope="col" className="px-1 py-1.5 text-right font-bold" title={tieBreak.label}>
+                          TB
+                        </th>
+                      ) : null}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {standings.slice(0, 60).map((entry: any, index: number) => (
+                      <tr key={entry.playerKey} className={entry.playerKey === myPlayerKey ? "bg-brand-50/60" : ""}>
+                        <td className="px-1 py-2 text-xs font-bold tabular-nums text-slate-400">
+                          {index === 0 ? <Crown size={13} className="text-accent-500" aria-label="Leader" /> : index + 1}
+                        </td>
+                        <td className="max-w-0 truncate px-1 py-2 font-medium text-slate-800">
+                          {entry.displayName}
+                          {entry.onStreak ? <span className="ml-1.5 text-[11px] font-bold text-orange-600">2x</span> : null}
+                        </td>
+                        <td className="px-1 py-2 text-right font-semibold tabular-nums text-slate-900">{entry.points}</td>
+                        <td className="px-1 py-2 text-right text-xs tabular-nums text-slate-500">
+                          {entry.wins}/{entry.draws}/{entry.losses}
+                        </td>
+                        {tieBreak ? (
+                          <td className="px-1 py-2 text-right text-xs tabular-nums text-slate-400">
+                            {Number(entry[tieBreak.key] || 0).toFixed(1)}
+                          </td>
                         ) : null}
-                      </div>
-                    </td>
-                  </tr>
-                  );
-                })}
-                {!standings.length ? (
-                  <tr>
-                    <td colSpan={10} className="px-2 py-8 text-center text-sm text-slate-500">Standings appear once the field is ready.</td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
-          </div>
-          {filteredStandings.length > visibleStandings ? (
-            <button onClick={() => setVisibleStandings((value) => value + 50)} className="mt-3 h-9 rounded-xl border border-slate-200 px-4 text-sm font-semibold text-slate-700">
-              Load more players
-            </button>
-          ) : null}
-        </section>
-
-        <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-5">
-          <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-base font-semibold text-slate-950">{tournament.type === "swiss" ? "Round overview" : "Active pairings"}</h3>
-            {activeRound ? <span className="text-xs text-slate-500">Round {activeRound.roundNumber}</span> : null}
-          </div>
-          <div className="space-y-3">
-            {(tournament.type === "swiss" ? rounds.slice().reverse() : state.games.filter((game: any) => game.status === "active")).slice(0, 6).map((item: any) =>
-              tournament.type === "swiss" ? (
-                <div key={`round-${item.roundNumber}`} className="rounded-xl border border-slate-200 p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="font-semibold text-slate-900">Round {item.roundNumber}</div>
-                    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusChip(item.status === "live" ? "live" : item.status === "completed" ? "completed" : "upcoming")}`}>{item.status}</span>
-                  </div>
-                  <div className="mt-3 space-y-2 text-sm text-slate-600">
-                    {(item.pairings || []).slice(0, 6).map((pairing: any) => (
-                      <div key={String(pairing.gameId || `${pairing.whiteKey}-${pairing.blackKey}`)} className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
-                        <span>{pairing.whiteName} vs {pairing.blackName || "Bye"}</span>
-                        <div className="flex flex-wrap items-center justify-end gap-1">
-                          <span className="font-semibold text-slate-700">{pairing.result === "*" ? "Live" : pairing.result}</span>
-                          {state.canManage && pairing.gameId ? (
-                            <button
-                              onClick={() => setCorrectionDraft({
-                                gameId: String(pairing.gameId),
-                                label: `${pairing.whiteName} vs ${pairing.blackName || "Bye"}`,
-                                current: pairing.result || "*",
-                                result: ["1-0", "0-1", "1/2-1/2"].includes(pairing.result) ? pairing.result : "1-0",
-                                reason: "",
-                              })}
-                              className="rounded bg-white px-2 py-1 text-xs font-semibold text-slate-700"
-                            >
-                              Correct
-                            </button>
-                          ) : null}
-                        </div>
-                      </div>
+                      </tr>
                     ))}
-                  </div>
-                </div>
-              ) : (
-                <div key={String(item._id)} className="flex items-center justify-between rounded-xl border border-slate-200 px-4 py-3 text-sm">
-                  <span className="font-medium text-slate-900">{item.whiteName} vs {item.blackName}</span>
-                  <div className="flex flex-wrap items-center justify-end gap-1">
-                    <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">Board live</span>
-                    {state.canManage ? (
-                      <button
-                        onClick={() => setCorrectionDraft({
-                          gameId: String(item._id),
-                          label: `${item.whiteName} vs ${item.blackName || "Bye"}`,
-                          current: item.result || "*",
-                          result: "1-0",
-                          reason: "",
-                        })}
-                        className="rounded bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700"
-                      >
-                        Correct
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-              )
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="py-6 text-center text-sm text-slate-400">Standings appear once the first games finish.</p>
             )}
-            {!(tournament.type === "swiss" ? rounds.length : state.games.filter((game: any) => game.status === "active").length) ? (
-              <div className="rounded-xl border border-dashed border-slate-200 px-4 py-8 text-center text-sm text-slate-500">
-                Pairings will appear here once the tournament starts.
-              </div>
-            ) : null}
-          </div>
-        </section>
-      </div>
-      {tournament.chatEnabled ? (
-        <section className={`${mobileClass("chat")} rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-5`}>
-          <div className="mb-3 flex items-center gap-2">
-            <MessageSquare size={16} className="text-purple-700" />
-            <h3 className="text-base font-semibold text-slate-950">Tournament chat</h3>
-          </div>
-          <div className="max-h-56 space-y-2 overflow-auto rounded-xl bg-slate-50 p-3">
-            {(tournament.chatMessages || []).filter((item: any) => !item.hidden).slice(-30).map((item: any, index: number) => (
-              <div key={`${item.createdAt}-${index}`} className="rounded-lg bg-white px-3 py-2 text-sm">
-                <span className="font-semibold text-slate-900">{item.senderName}: </span>
-                <span className="text-slate-600">{item.message}</span>
-              </div>
-            ))}
-            {!tournament.chatMessages?.length ? <div className="text-sm text-slate-500">No messages yet.</div> : null}
-          </div>
-          <div className="mt-3 flex gap-2">
-            <input value={chatMessage} onChange={(event) => setChatMessage(event.target.value)} className="h-10 flex-1 rounded-xl border border-slate-200 px-3 text-sm" placeholder="Write a message" />
-            <button onClick={submitChat} className="h-10 rounded-xl bg-purple-700 px-4 text-sm font-semibold text-white">Send</button>
-          </div>
-        </section>
-      ) : null}
-      {state.canManage ? (
-        <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-5">
-          <h3 className="mb-3 text-base font-semibold text-slate-950">Tournament health</h3>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-            <SeatTile label="Active Games" value={activeBoards} />
-            <SeatTile label="Queued" value={queuedPlayers} />
-            <SeatTile label="Stale" value={staleConnections} />
-            <SeatTile label="Pairing Lock" value={tournament.pairingLock?.expiresAt && new Date(tournament.pairingLock.expiresAt).getTime() > Date.now() ? "Active" : "Clear"} />
-            <SeatTile label="Last Event" value={latestAudit?.action || "-"} />
-          </div>
-        </section>
-      ) : null}
+          </section>
 
-      {state.canManage ? (
-        <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-5">
-          <h3 className="mb-3 text-base font-semibold text-slate-950">Tournament audit</h3>
-          <div className="max-h-72 space-y-2 overflow-auto rounded-xl bg-slate-50 p-3">
-            {(tournament.adminActions || []).slice().reverse().map((action: any, index: number) => (
-              <div key={`${action.action}-${action.createdAt}-${index}`} className="rounded-lg bg-white px-3 py-2 text-sm">
-                <div className="font-semibold text-slate-900">{action.action}</div>
-                <div className="text-slate-600">{action.note || "Action recorded."}</div>
-                <div className="mt-1 text-xs text-slate-400">{action.createdAt ? new Date(action.createdAt).toLocaleString("en-IN") : ""}</div>
-              </div>
-            ))}
-            {!tournament.adminActions?.length ? <div className="text-sm text-slate-500">No audit records yet.</div> : null}
-          </div>
-        </section>
-      ) : null}
+          {/* Swiss pairings for the round in progress. */}
+          {activeRound?.pairings?.length ? (
+            <section className="card">
+              <h2 className="mb-3 font-semibold text-slate-950">Round {activeRound.roundNumber} pairings</h2>
+              <ol className="divide-y divide-slate-100">
+                {activeRound.pairings.map((pairing: any) => (
+                  <li key={`${pairing.tableNumber}-${pairing.whiteKey}`} className="flex items-center gap-2 py-2 text-sm">
+                    <span className="w-6 shrink-0 text-right text-xs font-bold tabular-nums text-slate-400">{pairing.tableNumber}</span>
+                    <span className="min-w-0 flex-1 truncate text-slate-700">
+                      {pairing.whiteName} <span className="text-slate-400">vs</span> {pairing.blackName || "Bye"}
+                    </span>
+                    <span className="shrink-0 text-xs font-semibold tabular-nums text-slate-500">{pairing.result}</span>
+                    {pairing.gameId && pairing.status !== "completed" ? (
+                      <Link
+                        href={`/tournaments/${tournamentId}/games/${pairing.gameId}`}
+                        className="inline-flex h-9 shrink-0 items-center gap-1 rounded-lg px-2 text-xs font-semibold text-brand hover:bg-brand-50"
+                      >
+                        <Eye size={13} aria-hidden /> Watch
+                      </Link>
+                    ) : null}
+                  </li>
+                ))}
+              </ol>
+            </section>
+          ) : null}
+        </div>
 
-      {editOpen ? (
-        <AdminModal title="Edit Tournament" onClose={() => setEditOpen(false)}>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <EditField label="Name" value={editDraft.name} onChange={(value) => setEditDraft((current: any) => ({ ...current, name: value }))} />
-            <EditField label="Entry Restrictions" value={editDraft.entryRestrictions} onChange={(value) => setEditDraft((current: any) => ({ ...current, entryRestrictions: value }))} />
-            <EditField label="Time Control Minutes" type="number" value={editDraft.timeControlMinutes} onChange={(value) => setEditDraft((current: any) => ({ ...current, timeControlMinutes: Number(value) }))} />
-            <EditField label="Increment Seconds" type="number" value={editDraft.incrementSeconds} onChange={(value) => setEditDraft((current: any) => ({ ...current, incrementSeconds: Number(value) }))} />
-            {tournament.type === "arena" ? <EditField label="Arena Duration" type="number" value={editDraft.arenaDurationMinutes} onChange={(value) => setEditDraft((current: any) => ({ ...current, arenaDurationMinutes: Number(value) }))} /> : null}
-            {tournament.type === "swiss" ? <EditField label="Rounds" type="number" value={editDraft.rounds} onChange={(value) => setEditDraft((current: any) => ({ ...current, rounds: Number(value) }))} /> : null}
-            <label className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm">
-              <input type="checkbox" checked={Boolean(editDraft.lateJoiningAllowed)} onChange={(event) => setEditDraft((current: any) => ({ ...current, lateJoiningAllowed: event.target.checked }))} />
-              Late joining allowed
-            </label>
-            <label className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm">
-              <input type="checkbox" checked={Boolean(editDraft.chatEnabled)} onChange={(event) => setEditDraft((current: any) => ({ ...current, chatEnabled: event.target.checked }))} />
-              Tournament chat
-            </label>
-            <label className="sm:col-span-2">
-              <span className="mb-1 block text-sm font-semibold text-slate-800">Description</span>
-              <textarea value={editDraft.description || ""} onChange={(event) => setEditDraft((current: any) => ({ ...current, description: event.target.value }))} className="min-h-24 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
-            </label>
-          </div>
-          <ModalActions onCancel={() => setEditOpen(false)} onSave={async () => { if (await patchTournament(editDraft)) setEditOpen(false); }} />
-        </AdminModal>
-      ) : null}
+        {/* 4. What is being played, then 5. the details. */}
+        <aside className="space-y-4">
+          <section className="card">
+            <h2 className="mb-2 font-semibold text-slate-950">Live boards</h2>
+            {liveGames.length ? (
+              <ol className="divide-y divide-slate-100">
+                {liveGames.slice(0, 10).map((game: any) => (
+                  <li key={String(game._id)} className="flex items-center gap-2 py-2 text-sm">
+                    <span className="w-6 shrink-0 text-right text-xs font-bold tabular-nums text-slate-400">{game.tableNumber || "-"}</span>
+                    <span className="min-w-0 flex-1 truncate text-slate-700">
+                      {game.whiteName} <span className="text-slate-400">vs</span> {game.blackName || "Bye"}
+                    </span>
+                    <Link
+                      href={`/tournaments/${tournamentId}/games/${game._id}`}
+                      className="inline-flex h-9 shrink-0 items-center rounded-lg px-2 text-xs font-semibold text-brand hover:bg-brand-50"
+                    >
+                      Watch
+                    </Link>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className="py-4 text-center text-sm text-slate-400">{isPlaying ? "No boards running right now." : "Boards appear when the tournament starts."}</p>
+            )}
+          </section>
 
-      {externalOpen ? (
-        <AdminModal title="Manage External Access" onClose={() => setExternalOpen(false)}>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm">
-              <input type="checkbox" checked={Boolean(externalDraft.enabled)} onChange={(event) => setExternalDraft((current: any) => ({ ...current, enabled: event.target.checked }))} />
-              External access enabled
-            </label>
-            <label>
-              <span className="mb-1 block text-sm font-semibold text-slate-800">Mode</span>
-              <select value={externalDraft.accessMode || "private"} onChange={(event) => setExternalDraft((current: any) => ({ ...current, accessMode: event.target.value }))} className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm">
-                <option value="public">Public Link</option>
-                <option value="private">Private Link</option>
-                <option value="password">Password</option>
-                <option value="entry_code">Entry Code</option>
-              </select>
-            </label>
-            <EditField label="Password" value={externalDraft.password || ""} onChange={(value) => setExternalDraft((current: any) => ({ ...current, password: value }))} />
-            <EditField label="Entry Code" value={externalDraft.entryCode || ""} onChange={(value) => setExternalDraft((current: any) => ({ ...current, entryCode: value }))} />
-            <EditField label="Expires At" type="datetime-local" value={externalDraft.expiresAt || ""} onChange={(value) => setExternalDraft((current: any) => ({ ...current, expiresAt: value }))} />
-          </div>
-          <ModalActions onCancel={() => setExternalOpen(false)} onSave={async () => { if (await patchTournament({ externalInvite: externalDraft })) setExternalOpen(false); }} />
-        </AdminModal>
-      ) : null}
+          {state.myGames?.length ? (
+            <section className="card">
+              <h2 className="mb-2 font-semibold text-slate-950">Your games</h2>
+              <ol className="divide-y divide-slate-100">
+                {state.myGames.slice(0, 8).map((game: any) => (
+                  <li key={String(game._id)} className="flex items-center gap-2 py-2 text-sm">
+                    <span className="min-w-0 flex-1 truncate text-slate-700">
+                      {game.whiteName} <span className="text-slate-400">vs</span> {game.blackName || "Bye"}
+                    </span>
+                    <span className="shrink-0 text-xs font-semibold tabular-nums text-slate-500">{resultLabel(game)}</span>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          ) : null}
 
-      {announcementOpen ? (
-        <AdminModal title="Organizer Announcement" onClose={() => setAnnouncementOpen(false)}>
-          <div className="space-y-3">
-            <EditField label="Title" value={announcementDraft.title} onChange={(value) => setAnnouncementDraft((current) => ({ ...current, title: value }))} />
-            <label>
-              <span className="mb-1 block text-sm font-semibold text-slate-800">Message</span>
-              <textarea value={announcementDraft.message} onChange={(event) => setAnnouncementDraft((current) => ({ ...current, message: event.target.value }))} className="min-h-28 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
-            </label>
-          </div>
-          <ModalActions onCancel={() => setAnnouncementOpen(false)} onSave={sendAnnouncement} saveLabel="Send" />
-        </AdminModal>
-      ) : null}
-
-      {correctionDraft ? (
-        <AdminModal title="Correct Result" onClose={() => setCorrectionDraft(null)}>
-          <div className="space-y-3">
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
-              <div className="font-semibold text-slate-900">{correctionDraft.label}</div>
-              <div className="mt-1 text-slate-600">Current result: {correctionDraft.current || "*"}</div>
-            </div>
-            <label>
-              <span className="mb-1 block text-sm font-semibold text-slate-800">New Result</span>
-              <select
-                value={correctionDraft.result}
-                onChange={(event) => setCorrectionDraft((current) => current ? ({ ...current, result: event.target.value as "1-0" | "0-1" | "1/2-1/2" }) : current)}
-                className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm"
+          {tournament.chatEnabled ? (
+            <section className="card">
+              <h2 className="mb-2 font-semibold text-slate-950">Tournament chat</h2>
+              <ol className="mb-2 max-h-48 space-y-1.5 overflow-y-auto overscroll-contain text-sm">
+                {(tournament.chatMessages || [])
+                  .filter((message: any) => !message.hidden)
+                  .slice(-40)
+                  .map((message: any, index: number) => (
+                    <li key={`${message.createdAt}-${index}`}>
+                      <span className="font-semibold text-slate-700">{message.senderName}</span>{" "}
+                      <span className="text-slate-600">{message.message}</span>
+                    </li>
+                  ))}
+                {!(tournament.chatMessages || []).length ? <li className="text-slate-400">No messages yet.</li> : null}
+              </ol>
+              <form
+                className="flex gap-2"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void submitChat();
+                }}
               >
-                <option value="1-0">1-0 White wins</option>
-                <option value="1/2-1/2">1/2-1/2 Draw</option>
-                <option value="0-1">0-1 Black wins</option>
-              </select>
-            </label>
-            <label>
-              <span className="mb-1 block text-sm font-semibold text-slate-800">Reason</span>
-              <textarea
-                value={correctionDraft.reason}
-                onChange={(event) => setCorrectionDraft((current) => current ? ({ ...current, reason: event.target.value }) : current)}
-                className="min-h-24 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                placeholder="Explain why this result is being corrected"
-              />
-            </label>
-          </div>
-          <ModalActions onCancel={() => setCorrectionDraft(null)} onSave={correctResult} saveLabel="Confirm Correction" />
-        </AdminModal>
-      ) : null}
+                <input
+                  className="input"
+                  value={chatMessage}
+                  onChange={(event) => setChatMessage(event.target.value)}
+                  placeholder="Say something"
+                  aria-label="Chat message"
+                  maxLength={500}
+                />
+                <button type="submit" disabled={!chatMessage.trim()} className="btn-primary min-h-11 disabled:opacity-50" aria-label="Send message">
+                  <Send size={15} aria-hidden />
+                </button>
+              </form>
+            </section>
+          ) : null}
 
-      {selectedPlayer ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 px-4">
-          <div className="max-h-[86vh] w-full max-w-xl overflow-auto rounded-2xl bg-white p-4 shadow-2xl">
-            <div className="mb-3 flex items-start justify-between">
-              <div>
-                <h3 className="text-lg font-semibold text-slate-950">{selectedPlayer.displayName}</h3>
-                <p className="text-sm text-slate-500">Rank #{standings.findIndex((entry: any) => entry.playerKey === selectedPlayer.playerKey) + 1}</p>
-              </div>
-              <button onClick={() => setSelectedPlayerKey("")} className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 text-slate-500">
-                <X size={15} />
-              </button>
-            </div>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              <SeatTile label="Points" value={selectedPlayer.points} />
-              <SeatTile label="Rating" value={selectedPlayer.rating || "-"} />
-              <SeatTile label="Games" value={selectedPlayer.gamesPlayed} />
-              <SeatTile label="Wins" value={selectedPlayer.wins} />
-              <SeatTile label="Win %" value={selectedPlayerStats ? `${selectedPlayerStats.winPercentage}%` : selectedPlayer.gamesPlayed ? `${Math.round((selectedPlayer.wins / selectedPlayer.gamesPlayed) * 100)}%` : "0%"} />
-              <SeatTile label="Avg Opp" value={selectedPlayerStats?.averageOpponentRating || averageOpponentRating(selectedPlayerGames, selectedPlayer.playerKey)} />
-              <SeatTile label="Performance" value={performanceLabel(selectedPlayer, tournament)} />
-            </div>
-            <div className="mt-4 flex items-center justify-between gap-3">
-              <div className="text-sm font-semibold text-slate-900">Game history</div>
-              {selectedPlayerLoading ? <div className="text-xs font-semibold text-slate-500">Loading full history...</div> : null}
-            </div>
-            <div className="mt-2 space-y-2">
-              {selectedPlayerGames.map((game: any) => {
-                const isWhite = game.whiteKey === selectedPlayer.playerKey;
-                return (
-                  <div key={String(game._id)} className="rounded-xl border border-slate-200 px-3 py-2 text-sm">
-                    <div className="flex justify-between gap-3">
-                      <span>{isWhite ? game.blackName : game.whiteName}</span>
-                      <span className="font-semibold">{resultLabel(game)}</span>
-                    </div>
-                    <div className="mt-1 text-xs text-slate-500">
-                      {game.color || (isWhite ? "White" : "Black")} - {game.status} - {game.moveHistorySAN?.length || 0} moves - {game.pointsEarned ?? pointsEarnedFor(game, selectedPlayer.playerKey, tournament)} pts earned
-                    </div>
-                  </div>
-                );
-              })}
-              {!selectedPlayerGames.length ? <div className="text-sm text-slate-500">No games recorded for this player yet.</div> : null}
-            </div>
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
-  return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50 p-2.5 sm:p-4">
-      <div className="flex items-center gap-1.5 text-slate-500 sm:gap-2">{icon}<span className="text-[10px] font-semibold uppercase tracking-wide sm:text-xs">{label}</span></div>
-      <div className="mt-1 truncate text-base font-semibold text-slate-950 sm:mt-2 sm:text-xl">{value}</div>
-    </div>
-  );
-}
-
-function formatCountdown(ms: number) {
-  const seconds = Math.max(0, Math.floor(ms / 1000));
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const rest = seconds % 60;
-  return hours > 0 ? `${hours}:${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}` : `${minutes}:${String(rest).padStart(2, "0")}`;
-}
-
-function SeatTile({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white px-2.5 py-2 sm:px-3">
-      <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500 sm:text-[11px] sm:tracking-[0.14em]">{label}</div>
-      <div className="mt-0.5 truncate text-sm font-semibold text-slate-950 sm:mt-1">{value}</div>
-    </div>
-  );
-}
-
-function AdminModal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 px-4">
-      <div className="max-h-[88vh] w-full max-w-2xl overflow-auto rounded-2xl bg-white p-4 shadow-2xl">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-slate-950">{title}</h3>
-          <button onClick={onClose} className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 text-slate-500">
-            <X size={15} />
-          </button>
-        </div>
-        {children}
+          <section className="card">
+            <h2 className="mb-2 flex items-center gap-1.5 font-semibold text-slate-950">
+              <Info size={15} className="text-slate-400" aria-hidden /> How this event works
+            </h2>
+            <ul className="space-y-1.5 text-sm text-slate-600">
+              <li>
+                {tournament.type === "arena"
+                  ? "Arena: you are paired again as soon as each game ends, for the whole duration. Win two in a row and the games after that score double."
+                  : `Swiss: ${tournament.rounds || 0} rounds, everyone plays once per round, and the next round starts when every board has finished.`}
+              </li>
+              <li>Win 1, draw &frac12;, loss 0{tournament.type === "arena" ? ", doubled for Arena points." : "."}</li>
+              {tieBreak ? <li>Ties are broken on {tieBreak.label}.</li> : null}
+              {tournament.allowBerserk && tournament.type === "arena" ? <li>Berserk is on: halve your clock before your first move for an extra point if you win.</li> : null}
+              {tournament.lateJoiningAllowed === false ? <li>Late entry is not allowed once the tournament starts.</li> : null}
+              {state.maxRounds && tournament.rounds > state.maxRounds ? (
+                <li className="text-amber-700">
+                  Scheduled for {tournament.rounds} rounds, but {summary.participants} players can only fill {state.maxRounds} without a repeat pairing.
+                </li>
+              ) : null}
+              {tournament.entryRestrictions ? <li>{tournament.entryRestrictions}</li> : null}
+            </ul>
+          </section>
+        </aside>
       </div>
+
+      {/* The arbiter's surface: one panel, only for people who can use it. */}
+      {state.canManage ? (
+        <TournamentAdminPanel
+          tournamentId={tournamentId}
+          tournament={tournament}
+          games={state.games || []}
+          standings={standings}
+          pending={pending}
+          onAction={runAction}
+          onPatch={patchTournament}
+          onRefresh={refresh}
+          onError={setError}
+        />
+      ) : null}
     </div>
   );
 }
 
-function EditField({ label, value, onChange, type = "text" }: { label: string; value: string | number; onChange: (value: string) => void; type?: string }) {
+function Stat({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
-    <label>
-      <span className="mb-1 block text-sm font-semibold text-slate-800">{label}</span>
-      <input type={type} value={value ?? ""} onChange={(event) => onChange(event.target.value)} className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm" />
-    </label>
+    <div className="rounded-lg bg-slate-50 px-3 py-2">
+      <dt className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-[0.1em] text-slate-500">
+        <span className="text-slate-400" aria-hidden>
+          {icon}
+        </span>
+        {label}
+      </dt>
+      <dd className="mt-0.5 truncate font-semibold tabular-nums text-slate-950">{value}</dd>
+    </div>
   );
 }
 
-function ModalActions({ onCancel, onSave, saveLabel = "Save" }: { onCancel: () => void; onSave: () => void | Promise<void>; saveLabel?: string }) {
+function Podium({ standings }: { standings: any[] }) {
+  const top = standings.slice(0, 3);
+  if (!top.length) return null;
+  const medals = ["bg-accent-300 text-brand-900", "bg-slate-200 text-slate-700", "bg-orange-200 text-orange-900"];
   return (
-    <div className="mt-4 flex justify-end gap-2">
-      <button onClick={onCancel} className="h-10 rounded-xl border border-slate-200 px-4 text-sm font-semibold text-slate-700">Cancel</button>
-      <button onClick={() => void onSave()} className="h-10 rounded-xl bg-purple-700 px-4 text-sm font-semibold text-white">{saveLabel}</button>
-    </div>
+    <section className="card">
+      <h2 className="mb-3 font-semibold text-slate-950">Final placings</h2>
+      <ol className="grid gap-2 sm:grid-cols-3">
+        {top.map((entry: any, index: number) => (
+          <li key={entry.playerKey} className="flex items-center gap-3 rounded-lg bg-slate-50 px-3 py-2.5">
+            <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-full text-sm font-bold ${medals[index]}`}>{index + 1}</span>
+            <span className="min-w-0">
+              <span className="block truncate font-semibold text-slate-900">{entry.displayName}</span>
+              <span className="text-xs tabular-nums text-slate-500">{entry.points} pts</span>
+            </span>
+          </li>
+        ))}
+      </ol>
+    </section>
   );
 }

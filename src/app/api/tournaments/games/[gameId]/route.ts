@@ -6,6 +6,7 @@ import { Tournament } from "@/models/Tournament";
 import { cookies } from "next/headers";
 import { getTournamentGuestUsername } from "@/lib/tournamentGuests";
 import { inactiveStudentMessage, isCurrentStudent } from "@/lib/studentAccess";
+import { redactGameForViewer, redactTournamentForPlayer } from "@/lib/tournament/redact";
 
 export const dynamic = "force-dynamic";
 
@@ -42,5 +43,13 @@ export async function GET(_: Request, { params }: { params: { gameId: string } }
     )
   );
   if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  return NextResponse.json({ game, tournament });
+
+  // Watching a board is public within the event; the invite credentials, the
+  // audit trail and the players' browser sessions are not.
+  const canManage = role === "admin";
+  return NextResponse.json({
+    game: redactGameForViewer(game, canManage),
+    tournament: redactTournamentForPlayer(tournament, canManage),
+    serverNow: Date.now(),
+  });
 }

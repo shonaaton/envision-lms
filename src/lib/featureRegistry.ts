@@ -384,6 +384,17 @@ export const FEATURE_DEFINITIONS: FeatureDefinition[] = [
     defaultRolePermissions: { admin: all(view, create, edit, del, manage) },
   },
   {
+    key: "studentPause",
+    label: "Paused Students",
+    category: "Administration",
+    description: "Pausing a student from a batch, the paused list, and reinstating them with a fresh billing date.",
+    routes: ["/admin/paused-students"],
+    apiPrefixes: ["/api/admin/student-pauses"],
+    permissions: [view, { id: "manage", label: "Pause and Reinstate", critical: true }],
+    defaultStatus: "enabled",
+    defaultRolePermissions: { admin: ["view", "manage"], "sub-admin": ["view", "manage"] },
+  },
+  {
     key: "onboarding",
     label: "Onboarding",
     category: "Administration",

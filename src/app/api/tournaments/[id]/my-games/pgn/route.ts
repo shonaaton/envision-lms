@@ -4,20 +4,42 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { Tournament } from "@/models/Tournament";
 import { TournamentGame } from "@/models/TournamentGame";
-import { playerKeyForExternal, playerKeyForUser } from "@/lib/tournamentEngine";
+import { playerKeyForExternal, playerKeyForUser, tournamentPgnTimeControl } from "@/lib/tournamentEngine";
+import { buildPgn } from "@/lib/tournament/chessRules";
 import { getTournamentGuestUsername } from "@/lib/tournamentGuests";
 
 export const dynamic = "force-dynamic";
 
-function fallbackPgn(game: any) {
-  return [
-    `[Event "${game.source === "arena" ? "Arena" : "Swiss"} Tournament"]`,
-    `[White "${game.whiteName || ""}"]`,
-    `[Black "${game.blackName || "Bye"}"]`,
-    `[Result "${game.result || "*"}"]`,
-    "",
-    `${(game.moveHistorySAN || []).join(" ") || "*"}`
-  ].join("\n");
+/**
+ * PGN is rebuilt from the recorded move history rather than read from the
+ * stored `pgn` field. Games played before this rebuild stored only their last
+ * move, so trusting that field would export broken games.
+ */
+function gamePgn(game: any, tournament: any) {
+  try {
+    return buildPgn(game.moveHistorySAN, {
+      event: `${tournament.name || "Tournament"} (${game.source === "arena" ? "Arena" : "Swiss"})`,
+      round: game.roundNumber || "-",
+      white: game.whiteName || "?",
+      black: game.blackName || "Bye",
+      result: game.result || "*",
+      termination: game.termination || undefined,
+      timeControl: tournamentPgnTimeControl(tournament),
+      startFen: game.startFen || null,
+      date: game.startedAt || game.createdAt,
+    });
+  } catch {
+    // A game whose history will not replay still exports its moves as text,
+    // rather than being silently dropped from the download.
+    return [
+      `[Event "${tournament.name || "Tournament"}"]`,
+      `[White "${game.whiteName || "?"}"]`,
+      `[Black "${game.blackName || "Bye"}"]`,
+      `[Result "${game.result || "*"}"]`,
+      "",
+      `${(game.moveHistorySAN || []).join(" ") || "*"} ${game.result || "*"}`,
+    ].join("\n");
+  }
 }
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
@@ -37,7 +59,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     tournament: params.id,
     $or: [{ whiteKey: playerKey }, { blackKey: playerKey }],
   }).sort({ createdAt: 1 }).lean();
-  const body = games.map((game: any) => game.pgn || fallbackPgn(game)).join("\n\n");
+  const body = games.map((game: any) => gamePgn(game, tournament)).join("\n\n");
   return new NextResponse(body, {
     headers: {
       "Content-Type": "text/plain; charset=utf-8",

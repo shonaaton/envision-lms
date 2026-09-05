@@ -2,9 +2,18 @@ declare global {
   var askCoachReminderInterval: ReturnType<typeof setInterval> | undefined;
   var homeworkReminderInterval: ReturnType<typeof setInterval> | undefined;
   var reminderStartupTimer: ReturnType<typeof setTimeout> | undefined;
+  var tournamentTickInterval: ReturnType<typeof setInterval> | undefined;
+  var tournamentTickRunning: boolean | undefined;
 }
 
 const REMINDER_STARTUP_DELAY_MS = 30_000;
+
+/**
+ * How often the tournament lifecycle runs. Arena pairing latency is bounded by
+ * this, so it is deliberately short — a player who finishes a game waits at
+ * most this long for the next one.
+ */
+const TOURNAMENT_TICK_MS = 5_000;
 
 function isTransientMongoStartupError(error: unknown) {
   const name = typeof error === "object" && error ? String((error as { name?: unknown }).name || "") : "";
@@ -81,5 +90,44 @@ export async function register() {
   if (!globalThis.homeworkReminderInterval) {
     globalThis.homeworkReminderInterval = setInterval(runHomework, 60_000);
     globalThis.homeworkReminderInterval.unref?.();
+  }
+
+  /**
+   * The tournament heartbeat.
+   *
+   * Without this, tournaments only advanced as a side effect of somebody
+   * loading a page: an event with nobody watching would never start, never
+   * pair, never flag a clock and never finish. The tick is guarded against
+   * overlapping with itself, and every step it calls is idempotent, so running
+   * it alongside platform cron or a second instance is safe.
+   */
+  const runTournamentTick = () => {
+    if (globalThis.tournamentTickRunning) return;
+    globalThis.tournamentTickRunning = true;
+    void (async () => {
+      try {
+        const { runTournamentTick: tick } = await import("@/lib/tournamentLifecycle");
+        await tick();
+      } catch (error) {
+        if (isTransientMongoStartupError(error)) {
+          console.warn("Tournament lifecycle tick skipped: MongoDB primary is not ready yet.");
+          return;
+        }
+        console.error("Tournament lifecycle tick failed", error);
+        writeRuntimeLog({
+          source: "instrumentation.tournamentTick",
+          message: "Tournament lifecycle tick failed.",
+          error,
+          metadata: { automation: "tournament_lifecycle" },
+        });
+      } finally {
+        globalThis.tournamentTickRunning = false;
+      }
+    })();
+  };
+
+  if (!globalThis.tournamentTickInterval) {
+    globalThis.tournamentTickInterval = setInterval(runTournamentTick, TOURNAMENT_TICK_MS);
+    globalThis.tournamentTickInterval.unref?.();
   }
 }

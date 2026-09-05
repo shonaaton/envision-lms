@@ -22,6 +22,7 @@ import { CoachApplication, DemoBooking } from "@/models/Onboarding";
 import { Payment } from "@/models/Payment";
 import { PGN } from "@/models/PGN";
 import { PgnFolder } from "@/models/PgnFolder";
+import { StudentPause } from "@/models/StudentPause";
 import { TacticAttempt } from "@/models/TacticPuzzle";
 import { Tournament } from "@/models/Tournament";
 import { TournamentGame } from "@/models/TournamentGame";
@@ -171,6 +172,7 @@ export async function deleteUserRecords(userIdValue: string): Promise<CleanupSum
 
   await Promise.all([
     remove(Availability.deleteMany({ instructor: userId })),
+    remove(StudentPause.deleteMany({ student: userId })),
     remove(FeeAssignment.deleteMany({ student: userId })),
     remove(Invoice.deleteMany({ student: userId })),
     remove(CreditLedger.deleteMany({ student: userId })),

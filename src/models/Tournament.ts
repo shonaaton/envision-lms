@@ -6,14 +6,26 @@ const TournamentSchema = new Schema(
     description: String,
     type: { type: String, enum: ["swiss", "arena"], required: true, index: true },
     status: { type: String, enum: ["draft", "created", "registration_open", "starting_soon", "upcoming", "live", "playing", "completed", "finished", "cancelled"], default: "upcoming", index: true },
+    /**
+     * Scoring and tie-break ruleset. Absent or 1 means the pre-rebuild rules,
+     * kept so tournaments played under them keep their recorded scores. New
+     * tournaments are created at the current version.
+     */
+    rulesVersion: { type: Number, default: 1 },
     arenaDurationMinutes: Number,
     rounds: Number,
+    /**
+     * Canonical time control. `timeControlMinutes` is retained for historical
+     * tournaments; read both through `resolveTimeControl`.
+     */
+    initialClockSeconds: { type: Number },
     timeControlMinutes: { type: Number, required: true },
     incrementSeconds: { type: Number, default: 0 },
     breakBetweenRoundsMinutes: { type: Number, default: 0 },
     rated: { type: Boolean, default: false },
     allowBerserk: { type: Boolean, default: false },
     arenaStreaks: { type: Boolean, default: true },
+    berserkMinPlies: { type: Number, default: 7 },
     earlyDrawMoveLimit: { type: Number, default: 10 },
     drawStreakLimit: { type: Number, default: 2 },
     chatEnabled: { type: Boolean, default: false },
@@ -24,6 +36,14 @@ const TournamentSchema = new Schema(
       token: String,
       expiresAt: Date,
     },
+    /** Claimed before a Swiss round is generated, so it can only happen once. */
+    roundLock: {
+      token: String,
+      roundNumber: Number,
+      expiresAt: Date,
+    },
+    /** Last time the lifecycle worker processed this tournament. */
+    lifecycleAt: Date,
     startAt: { type: Date, required: true, index: true },
     repeat: {
       enabled: { type: Boolean, default: false },
@@ -46,10 +66,13 @@ const TournamentSchema = new Schema(
       users: [{ type: Schema.Types.ObjectId, ref: "User", index: true }],
     },
     participants: [{ type: Schema.Types.ObjectId, ref: "User", index: true }],
+    // These arrays are only ever read as part of the parent document, so they
+    // carry no indexes: indexing them re-indexed every entry on each standings
+    // rewrite and answered no query.
     participantStates: [
       {
-        playerKey: { type: String, required: true, index: true },
-        status: { type: String, enum: ["joined", "queued", "playing", "paused", "withdrawn"], default: "joined", index: true },
+        playerKey: { type: String, required: true },
+        status: { type: String, enum: ["joined", "queued", "playing", "paused", "withdrawn"], default: "joined" },
         joinedAt: { type: Date, default: Date.now },
         queuedAt: Date,
         pausedAt: Date,
@@ -88,8 +111,8 @@ const TournamentSchema = new Schema(
     arenaEndsAt: Date,
     standings: [
       {
-        playerKey: { type: String, required: true, index: true },
-        user: { type: Schema.Types.ObjectId, ref: "User", index: true },
+        playerKey: { type: String, required: true },
+        user: { type: Schema.Types.ObjectId, ref: "User" },
         externalUsername: String,
         displayName: String,
         rating: { type: Number, default: 0 },
@@ -100,8 +123,12 @@ const TournamentSchema = new Schema(
         byes: { type: Number, default: 0 },
         gamesPlayed: { type: Number, default: 0 },
         buchholz: { type: Number, default: 0 },
+        sonnebornBerger: { type: Number, default: 0 },
         streak: { type: Number, default: 0 },
+        onStreak: { type: Boolean, default: false },
         lastColor: { type: String, enum: ["white", "black", ""], default: "" },
+        /** Which way this player floated last round, for Swiss float balancing. */
+        lastFloat: { type: String, enum: ["up", "down", null], default: null },
         scoreHistory: [{ type: Number, default: 0 }],
         recentResults: [{ type: String }],
       },

@@ -22,7 +22,7 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
     createdAt: new Date(),
   }];
   await tournament.save();
-  if (tournament.type === "arena" && ["live", "playing"].includes(String(tournament.status || ""))) await syncArenaPairings(tournament);
+  if (tournament.type === "arena" && ["live", "playing"].includes(String(tournament.status || ""))) await syncArenaPairings(String(tournament._id));
   await recordActivity({ actor: (session!.user as any).id, type: "tournament.resumed", label: `Resumed tournament ${tournament.name}`, entityType: "Tournament", entityId: tournament._id.toString() });
   emitTournamentUpdate(tournament._id.toString(), "resume");
   return NextResponse.json({ ok: true });

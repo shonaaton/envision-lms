@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { formatTimeControl, TIME_CONTROL_PRESETS } from "@/lib/tournament/timeControl";
 import { useFormState } from "react-dom";
 import { ArrowLeft, ArrowRight, RotateCcw, Search, ShieldCheck, Trophy } from "lucide-react";
 import { Chess } from "chess.js";
@@ -27,6 +28,7 @@ type Draft = {
   arenaDurationMinutes: string;
   rounds: string;
   breakBetweenRoundsMinutes: string;
+  initialClockSeconds: string;
   timeControlMinutes: string;
   incrementSeconds: string;
   rated: boolean;
@@ -88,7 +90,8 @@ function Field({
 }
 
 function textInputClass(hasError?: boolean) {
-  return `h-10 w-full rounded-md border px-3 text-sm ${hasError ? "border-red-300 bg-red-50" : "border-slate-200 bg-white"}`;
+  // `.input` is the app's shared control style; only the error state differs.
+  return `input min-h-11 ${hasError ? "border-red-300 bg-red-50 focus:border-red-400 focus:ring-red-500/10" : ""}`;
 }
 
 function toggleList(list: string[], id: string) {
@@ -117,7 +120,7 @@ function buildClientErrors(draft: Draft, step: number) {
     if (!draft.type) errors.type = "Choose Swiss or Arena.";
   }
   if (step >= 2) {
-    if (!draft.timeControlMinutes || Number(draft.timeControlMinutes) < 1) errors.timeControlMinutes = "Time control must be at least 1 minute.";
+    if (!draft.initialClockSeconds || Number(draft.initialClockSeconds) < 15) errors.timeControlMinutes = "Time control must be at least 15 seconds.";
     if (!draft.startDate) errors.startDate = "Start date is required.";
     if (!draft.startTime) errors.startTime = "Start time is required.";
     if (draft.type === "arena" && (!draft.arenaDurationMinutes || Number(draft.arenaDurationMinutes) < 1)) errors.arenaDurationMinutes = "Arena duration is required.";
@@ -172,6 +175,7 @@ export default function TournamentCreateForm({
     arenaDurationMinutes: "",
     rounds: "",
     breakBetweenRoundsMinutes: "0",
+    initialClockSeconds: "600",
     timeControlMinutes: "",
     incrementSeconds: "0",
     rated: false,
@@ -231,7 +235,7 @@ export default function TournamentCreateForm({
     const nextErrors = buildClientErrors(draft, step);
     const relevant = Object.keys(nextErrors).filter((key) => {
       if (step === 1) return ["name", "type"].includes(key);
-      if (step === 2) return ["arenaDurationMinutes", "rounds", "timeControlMinutes", "startDate", "startTime", "customFen"].includes(key);
+      if (step === 2) return ["arenaDurationMinutes", "rounds", "initialClockSeconds", "timeControlMinutes", "startDate", "startTime", "customFen"].includes(key);
       return ["access", "externalInvitePassword", "externalInviteEntryCode"].includes(key);
     });
     if (relevant.length) {
@@ -245,7 +249,7 @@ export default function TournamentCreateForm({
     const nextErrors = buildClientErrors(draft, 3);
     if (Object.keys(nextErrors).length) {
       setLocalErrors(nextErrors);
-      setStep(Object.keys(nextErrors).some((key) => ["name", "type"].includes(key)) ? 1 : Object.keys(nextErrors).some((key) => ["arenaDurationMinutes", "rounds", "timeControlMinutes", "startDate", "startTime", "customFen"].includes(key)) ? 2 : 3);
+      setStep(Object.keys(nextErrors).some((key) => ["name", "type"].includes(key)) ? 1 : Object.keys(nextErrors).some((key) => ["arenaDurationMinutes", "rounds", "initialClockSeconds", "timeControlMinutes", "startDate", "startTime", "customFen"].includes(key)) ? 2 : 3);
       return;
     }
     setPending(true);
@@ -278,7 +282,17 @@ export default function TournamentCreateForm({
 
       <div className="grid grid-cols-3 gap-2 text-sm">
         {["Basic Details", `${draft.type === "arena" ? "Arena" : "Swiss"} Setup`, "Access"].map((label, index) => (
-          <div key={label} className={`rounded-md px-3 py-2 text-center font-medium ${step === index + 1 ? "bg-purple-700 text-white" : "bg-slate-100 text-slate-600"}`}>
+          <div
+            key={label}
+            aria-current={step === index + 1 ? "step" : undefined}
+            className={`rounded-lg px-3 py-2 text-center font-semibold ${
+              step === index + 1
+                ? "bg-brand text-white"
+                : step > index + 1
+                  ? "bg-brand-50 text-brand"
+                  : "bg-slate-100 text-slate-500"
+            }`}
+          >
             Step {index + 1}: {label}
           </div>
         ))}
@@ -329,11 +343,65 @@ export default function TournamentCreateForm({
                 </Field>
               </>
             )}
-            <Field label="Time Control" description="Base time per player in minutes." error={mergedErrors.timeControlMinutes}>
-              <input value={draft.timeControlMinutes} onChange={(event) => update("timeControlMinutes", event.target.value)} type="number" min="1" className={textInputClass(Boolean(mergedErrors.timeControlMinutes))} placeholder="10" />
-            </Field>
-            <Field label="Increment" description="Increment per move in seconds.">
-              <input value={draft.incrementSeconds} onChange={(event) => update("incrementSeconds", event.target.value)} type="number" min="0" className={textInputClass()} placeholder="0" />
+            <Field
+              label="Time Control"
+              description="Pick a preset or set your own. Sub-minute controls are supported."
+              error={mergedErrors.timeControlMinutes}
+            >
+              <div className="flex flex-wrap gap-1.5">
+                {TIME_CONTROL_PRESETS.map((preset) => {
+                  const selected =
+                    Number(draft.initialClockSeconds) === preset.initialSeconds &&
+                    Number(draft.incrementSeconds) === preset.incrementSeconds;
+                  return (
+                    <button
+                      key={preset.label}
+                      type="button"
+                      aria-pressed={selected}
+                      onClick={() => {
+                        update("initialClockSeconds", String(preset.initialSeconds));
+                        update("incrementSeconds", String(preset.incrementSeconds));
+                      }}
+                      className={`h-10 min-w-[64px] rounded-xl border px-3 text-sm font-semibold transition ${
+                        selected
+                          ? "border-brand bg-brand text-white"
+                          : "border-slate-200 bg-white text-slate-700 hover:border-brand/40 hover:text-brand"
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <label className="text-xs font-semibold text-slate-600">
+                  Base time (seconds)
+                  <input
+                    value={draft.initialClockSeconds}
+                    onChange={(event) => update("initialClockSeconds", event.target.value)}
+                    type="number"
+                    min="15"
+                    step="15"
+                    className={textInputClass(Boolean(mergedErrors.timeControlMinutes))}
+                  />
+                </label>
+                <label className="text-xs font-semibold text-slate-600">
+                  Increment (seconds)
+                  <input
+                    value={draft.incrementSeconds}
+                    onChange={(event) => update("incrementSeconds", event.target.value)}
+                    type="number"
+                    min="0"
+                    className={textInputClass()}
+                  />
+                </label>
+              </div>
+              <div className="mt-2 text-xs text-slate-500">
+                Selected: {formatTimeControl({
+                  initialSeconds: Number(draft.initialClockSeconds || 0),
+                  incrementSeconds: Number(draft.incrementSeconds || 0),
+                })}
+              </div>
             </Field>
             <Field label="Rated or Casual" description="Rated tournaments can be reported separately from casual events.">
               <select value={draft.rated ? "yes" : "no"} onChange={(event) => update("rated", event.target.value === "yes")} className={textInputClass()}>
@@ -556,16 +624,21 @@ export default function TournamentCreateForm({
       )}
 
       <div className="flex justify-between">
-        <button type="button" disabled={step === 1 || pending} onClick={() => setStep((value) => Math.max(1, value - 1))} className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-200 px-4 text-sm disabled:opacity-40">
-          <ArrowLeft size={15} /> Back
+        <button
+          type="button"
+          disabled={step === 1 || pending}
+          onClick={() => setStep((value) => Math.max(1, value - 1))}
+          className="btn-outline min-h-11 disabled:opacity-40"
+        >
+          <ArrowLeft size={15} aria-hidden /> Back
         </button>
         {step < 3 ? (
-          <button type="button" disabled={pending} onClick={nextStep} className="inline-flex h-10 items-center gap-2 rounded-md bg-purple-700 px-4 text-sm font-semibold text-white">
-            Next <ArrowRight size={15} />
+          <button type="button" disabled={pending} onClick={nextStep} className="btn-primary min-h-11">
+            Next <ArrowRight size={15} aria-hidden />
           </button>
         ) : (
-          <button type="button" disabled={pending} onClick={submitAll} className="inline-flex h-10 items-center gap-2 rounded-md bg-purple-700 px-4 text-sm font-semibold text-white disabled:opacity-60">
-            <Trophy size={15} /> {pending ? "Creating..." : "Create Tournament"}
+          <button type="button" disabled={pending} onClick={submitAll} className="btn-primary min-h-11 disabled:opacity-60">
+            <Trophy size={15} aria-hidden /> {pending ? "Creating..." : "Create tournament"}
           </button>
         )}
       </div>

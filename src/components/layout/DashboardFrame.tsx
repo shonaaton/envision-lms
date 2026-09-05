@@ -24,7 +24,7 @@ export default function DashboardFrame({
   isSuperAdmin?: boolean;
   featureState?: Record<string, { visible: boolean; status: "enabled" | "disabled" | "testing" | "coming_soon"; permissions: string[] }>;
   hasCreditPlan?: boolean;
-  user: { name?: string | null; role: string; isActive?: boolean };
+  user: { name?: string | null; role: string; isActive?: boolean; isPaused?: boolean };
   children: ReactNode;
 }) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);

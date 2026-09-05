@@ -8,6 +8,7 @@ import TournamentCreateForm from "@/components/tournaments/TournamentCreateForm"
 import { redirect } from "next/navigation";
 import { Chess } from "chess.js";
 import { randomBytes } from "crypto";
+import { CURRENT_RULES_VERSION } from "@/lib/tournament/scoring";
 
 export const dynamic = "force-dynamic";
 
@@ -37,8 +38,13 @@ async function createTournament(_: CreateTournamentState, formData: FormData): P
   const type = String(formData.get("type") || "").trim() as "swiss" | "arena";
   const startDate = String(formData.get("startDate") || "").trim();
   const startTime = String(formData.get("startTime") || "").trim();
-  const timeControlMinutes = Math.max(0, Number(formData.get("timeControlMinutes") || 0));
-  const incrementSeconds = Math.max(0, Number(formData.get("incrementSeconds") || 0));
+  // Canonical time control is seconds, which can express sub-minute controls.
+  // `timeControlMinutes` is still written so historical readers keep working.
+  const initialClockSeconds = Math.max(0, Math.round(Number(formData.get("initialClockSeconds") || 0)));
+  const legacyMinutes = Math.max(0, Number(formData.get("timeControlMinutes") || 0));
+  const resolvedClockSeconds = initialClockSeconds > 0 ? initialClockSeconds : Math.round(legacyMinutes * 60);
+  const timeControlMinutes = resolvedClockSeconds / 60;
+  const incrementSeconds = Math.max(0, Math.round(Number(formData.get("incrementSeconds") || 0)));
   const arenaDurationMinutes = Math.max(0, Number(formData.get("arenaDurationMinutes") || 0));
   const rounds = Math.max(0, Number(formData.get("rounds") || 0));
   const breakBetweenRoundsMinutes = Math.max(0, Number(formData.get("breakBetweenRoundsMinutes") || 0));
@@ -61,7 +67,7 @@ async function createTournament(_: CreateTournamentState, formData: FormData): P
   if (type !== "swiss" && type !== "arena") return fail("Please choose either Swiss or Arena format.", { type: "Choose Swiss or Arena." });
   if (!startDate) return fail("Start date is required.", { startDate: "Start date is required." });
   if (!startTime) return fail("Start time is required.", { startTime: "Start time is required." });
-  if (timeControlMinutes < 1) return fail("Time control must be at least 1 minute.", { timeControlMinutes: "Time control must be at least 1 minute." });
+  if (resolvedClockSeconds < 15) return fail("Time control must be at least 15 seconds.", { timeControlMinutes: "Time control must be at least 15 seconds." });
   if (type === "arena" && arenaDurationMinutes < 1) return fail("Arena tournaments need a total duration in minutes.", { arenaDurationMinutes: "Arena duration is required." });
   if (type === "swiss" && rounds < 1) return fail("Swiss tournaments need at least 1 round.", { rounds: "Swiss rounds are required." });
   if (startingPositionType === "custom") {
@@ -150,6 +156,8 @@ async function createTournament(_: CreateTournamentState, formData: FormData): P
         status: initialStatus,
         arenaDurationMinutes: type === "arena" ? arenaDurationMinutes : 0,
         rounds: type === "swiss" ? rounds : 0,
+        rulesVersion: CURRENT_RULES_VERSION,
+        initialClockSeconds: resolvedClockSeconds,
         timeControlMinutes,
         incrementSeconds,
         breakBetweenRoundsMinutes: type === "swiss" ? breakBetweenRoundsMinutes : 0,

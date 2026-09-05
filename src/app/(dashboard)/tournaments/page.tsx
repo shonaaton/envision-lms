@@ -4,19 +4,81 @@ import { inactiveStudentMessage } from "@/lib/studentAccess";
 import { Tournament } from "@/models/Tournament";
 import { User } from "@/models/User";
 import Link from "next/link";
-import { Plus, Trophy } from "lucide-react";
+import { CalendarClock, CheckCircle2, Clock3, Plus, Trophy, Users } from "lucide-react";
+import { describeTournament, relativeTime, type TournamentSummary } from "@/lib/tournament/playerAction";
 
 export const dynamic = "force-dynamic";
 
-function prettyStatus(value: string) {
-  return String(value || "draft").replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
-}
+const TONE_STYLES: Record<TournamentSummary["tone"], string> = {
+  live: "bg-emerald-50 text-emerald-700 ring-emerald-600/20",
+  soon: "bg-accent-50 text-brand-700 ring-accent-500/40",
+  upcoming: "bg-slate-100 text-slate-600 ring-slate-500/15",
+  finished: "bg-slate-100 text-slate-500 ring-slate-500/15",
+  cancelled: "bg-red-50 text-red-600 ring-red-500/20",
+};
 
-function accessState(status: string) {
-  const value = String(status || "").toLowerCase();
-  if (value === "live") return "Joinable";
-  if (value === "upcoming") return "Scheduled";
-  return "Closed";
+function TournamentCard({ tournament, joined, now }: { tournament: any; joined: boolean; now: number }) {
+  const summary = describeTournament(tournament);
+  const id = String(tournament._id);
+  const startAt = tournament.startAt ? new Date(tournament.startAt) : null;
+  const live = summary.tone === "live";
+
+  return (
+    <Link
+      href={`/tournaments/${id}`}
+      // A live event is lifted by a brand-tinted edge rather than by shouting:
+      // in a long list the eye should find it without the page feeling noisy.
+      className={[
+        "group relative flex flex-col gap-3 rounded-lg border bg-white/95 p-4 shadow-sm transition duration-200",
+        "hover:-translate-y-0.5 hover:shadow-lg hover:shadow-brand-900/10 focus-visible:-translate-y-0.5",
+        live ? "border-brand/30 shadow-brand-900/10" : "border-slate-200/80 shadow-brand-900/5",
+      ].join(" ")}
+    >
+      {live ? <span aria-hidden className="absolute inset-x-0 top-0 h-0.5 rounded-t-lg bg-brand" /> : null}
+
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="truncate font-semibold text-slate-950 group-hover:text-brand">{tournament.name}</h3>
+          <p className="mt-0.5 text-xs text-slate-500">{summary.format}</p>
+        </div>
+        <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-bold ring-1 ${TONE_STYLES[summary.tone]}`}>
+          {summary.statusLabel}
+        </span>
+      </div>
+
+      <dl className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600">
+        <div className="inline-flex items-center gap-1.5">
+          <Clock3 size={13} className="text-slate-400" aria-hidden />
+          <dt className="sr-only">Time control</dt>
+          <dd className="font-semibold tabular-nums">{summary.timeControl}</dd>
+        </div>
+        <div className="inline-flex items-center gap-1.5">
+          <Users size={13} className="text-slate-400" aria-hidden />
+          <dt className="sr-only">Players</dt>
+          <dd className="tabular-nums">{summary.participants}</dd>
+        </div>
+        {startAt ? (
+          <div className="inline-flex items-center gap-1.5">
+            <CalendarClock size={13} className="text-slate-400" aria-hidden />
+            <dt className="sr-only">Starts</dt>
+            <dd>
+              {summary.tone === "upcoming" || summary.tone === "soon" ? (
+                <span className="font-semibold text-slate-700">{relativeTime(startAt, now)}</span>
+              ) : (
+                startAt.toLocaleDateString(undefined, { day: "numeric", month: "short" })
+              )}
+            </dd>
+          </div>
+        ) : null}
+      </dl>
+
+      {joined ? (
+        <span className="inline-flex w-fit items-center gap-1 rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-bold text-brand ring-1 ring-brand/15">
+          <CheckCircle2 size={11} aria-hidden /> Entered
+        </span>
+      ) : null}
+    </Link>
+  );
 }
 
 export default async function TournamentsPage() {
@@ -24,106 +86,107 @@ export default async function TournamentsPage() {
   const role = (session?.user as any)?.role;
   const userId = (session?.user as any)?.id;
   await dbConnect();
-  const currentStudent = role === "student" && userId
-    ? await User.findById(userId).select("isActive role").lean()
-    : null;
+
+  const currentStudent =
+    role === "student" && userId ? await User.findById(userId).select("isActive role").lean() : null;
   if (role === "student" && ((currentStudent as any)?.role !== "student" || (currentStudent as any)?.isActive === false)) {
     return (
-      <div className="min-h-screen bg-slate-50 px-2 py-3 text-slate-950 sm:px-6 sm:py-5 lg:px-8">
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-5">
-          <div className="flex items-center gap-2 font-semibold text-amber-900"><Trophy size={18} /> Tournaments paused</div>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-amber-800">{inactiveStudentMessage}</p>
-          <Link href="/dashboard" className="mt-4 inline-flex h-10 items-center rounded-md bg-purple-700 px-4 text-sm font-semibold text-white">Back to Dashboard</Link>
+      <div className="mx-auto max-w-3xl px-4 py-8">
+        <div className="card border-amber-200 bg-amber-50">
+          <div className="flex items-center gap-2 font-semibold text-amber-900">
+            <Trophy size={18} aria-hidden /> Tournaments paused
+          </div>
+          <p className="mt-2 text-sm leading-6 text-amber-800">{inactiveStudentMessage}</p>
+          <Link href="/dashboard" className="btn-primary mt-4">
+            Back to dashboard
+          </Link>
         </div>
       </div>
     );
   }
-  const filter = role === "admin" || role === "instructor" ? {} : {
-    $or: [{ "access.users": userId }, { participants: userId }, { "access.allActiveStudents": true }],
-  };
-  const tournaments = await Tournament.find(filter).sort({ startAt: 1 }).limit(200).lean();
-  const safeTournaments = (tournaments || []).filter((item: any) => item && item._id);
+
+  const filter =
+    role === "admin" || role === "instructor"
+      ? {}
+      : { $or: [{ "access.users": userId }, { participants: userId }, { "access.allActiveStudents": true }] };
+  const tournaments = await Tournament.find(filter).sort({ startAt: -1 }).limit(200).lean();
+  const all = (tournaments || []).filter((item: any) => item && item._id);
   const now = Date.now();
+
+  const isJoined = (item: any) =>
+    (item.participants || []).map((id: any) => String(id?._id ?? id)).includes(String(userId));
+  const isOver = (item: any) => ["completed", "finished", "cancelled"].includes(String(item.status));
+  const isLive = (item: any) => ["live", "playing"].includes(String(item.status));
+
+  /* Four sections, in the order a player cares about them: what is happening
+     now, what they are part of, what is coming, and what is done. */
+  const live = all.filter(isLive);
+  const mine = all.filter((item: any) => isJoined(item) && !isOver(item) && !isLive(item));
+  const upcoming = all
+    .filter((item: any) => !isOver(item) && !isLive(item) && !isJoined(item))
+    .sort((a: any, b: any) => new Date(a.startAt || 0).getTime() - new Date(b.startAt || 0).getTime());
+  const completed = all.filter(isOver);
+
   const sections = [
-    {
-      title: "Ongoing",
-      items: safeTournaments.filter((item: any) => ["live", "playing"].includes(String(item.status))),
-    },
-    {
-      title: "Starting Soon",
-      items: safeTournaments.filter((item: any) => !["live", "playing", "completed", "finished", "cancelled"].includes(String(item.status)) && new Date(item.startAt).getTime() >= now && new Date(item.startAt).getTime() - now <= 60 * 60 * 1000),
-    },
-    {
-      title: "Upcoming",
-      items: safeTournaments.filter((item: any) => !["live", "playing", "completed", "finished", "cancelled"].includes(String(item.status)) && new Date(item.startAt).getTime() - now > 60 * 60 * 1000),
-    },
-    {
-      title: "Finished",
-      items: safeTournaments.filter((item: any) => ["completed", "finished"].includes(String(item.status))),
-    },
-    {
-      title: "My Tournaments",
-      items: safeTournaments.filter((item: any) => (item.participants || []).map((id: any) => id?.toString?.() || String(id)).includes(String(userId))),
-    },
-    {
-      title: "Private / Invitation Tournaments",
-      items: safeTournaments.filter((item: any) => item.externalInvite?.enabled || !item.access?.allActiveStudents),
-    },
-  ];
+    { title: "Live now", items: live, hint: "Join in progress or watch a board." },
+    { title: "You are entered", items: mine, hint: "Your board opens automatically when each starts." },
+    { title: "Upcoming", items: upcoming, hint: "" },
+    { title: "Completed", items: completed.slice(0, 24), hint: "" },
+  ].filter((section) => section.items.length);
+
+  const canCreate = role === "admin";
 
   return (
-    <div className="min-h-screen bg-slate-50 px-2 py-3 text-slate-950 sm:px-6 sm:py-5 lg:px-8">
-      <div className="mb-3 flex flex-col gap-2 sm:mb-5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-        <div className="flex items-center gap-2">
-          <span className="flex h-8 w-8 flex-none items-center justify-center rounded-md bg-purple-50 text-purple-700 sm:h-9 sm:w-9"><Trophy size={18} /></span>
-          <div><h1 className="text-xl font-semibold sm:text-2xl">Tournaments</h1><p className="text-xs text-slate-500 sm:text-sm">Swiss and Arena tournaments available on the platform.</p></div>
+    <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
+      <header className="mb-6 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="flex items-center gap-2 text-2xl font-semibold text-slate-950">
+            <Trophy size={22} className="text-brand" aria-hidden /> Tournaments
+          </h1>
+          <p className="mt-1 text-sm text-slate-500">
+            {live.length ? `${live.length} event${live.length === 1 ? "" : "s"} running right now.` : "Arena and Swiss events for the academy."}
+          </p>
         </div>
-        {role === "admin" && <Link href="/tournaments/new" className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-purple-700 px-3 text-xs font-semibold text-white sm:h-10 sm:px-4 sm:text-sm"><Plus size={15} /> Create Tournament</Link>}
-      </div>
+        {canCreate ? (
+          <Link href="/tournaments/new" className="btn-primary">
+            <Plus size={16} aria-hidden /> New tournament
+          </Link>
+        ) : null}
+      </header>
 
-      <div className="space-y-5">
-        {sections.map((section) => (
-          <section key={section.title} className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-semibold text-slate-950">{section.title}</h2>
-              <span className="text-xs font-semibold text-slate-500">{section.items.length}</span>
-            </div>
-            {section.items.length ? (
-              <div className="grid grid-cols-1 gap-2 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {section.items.map((tournament: any) => <TournamentCard key={`${section.title}-${tournament._id.toString()}`} tournament={tournament} />)}
+      {sections.length ? (
+        <div className="space-y-8">
+          {sections.map((section) => (
+            <section key={section.title}>
+              <div className="mb-3 flex items-baseline gap-2">
+                <h2 className="text-sm font-bold uppercase tracking-[0.12em] text-slate-500">{section.title}</h2>
+                <span className="text-xs tabular-nums text-slate-400">{section.items.length}</span>
+                {section.hint ? <span className="ml-auto hidden text-xs text-slate-400 sm:block">{section.hint}</span> : null}
               </div>
-            ) : (
-              <div className="rounded-lg border border-dashed bg-white p-4 text-sm text-slate-500">No tournaments in this section.</div>
-            )}
-          </section>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function TournamentCard({ tournament }: { tournament: any }) {
-  const participants = Number((tournament.participants || []).length) + Number((tournament.externalParticipants || []).length);
-  const formatDetail = tournament.type === "arena" ? `${tournament.arenaDurationMinutes || 0} min` : `${tournament.rounds || 0} rounds`;
-  const restricted = tournament.externalInvite?.enabled ? "Invitation enabled" : tournament.access?.allActiveStudents ? "All active students" : "Restricted";
-  return (
-    <Link href={`/tournaments/${tournament._id}`} className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm hover:border-purple-200 sm:p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="truncate font-semibold text-slate-950">{tournament.name}</h3>
-          <p className="mt-1 line-clamp-2 text-xs text-slate-500 sm:text-sm">{tournament.description || "No description added."}</p>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {section.items.map((tournament: any) => (
+                  <TournamentCard key={String(tournament._id)} tournament={tournament} joined={isJoined(tournament)} now={now} />
+                ))}
+              </div>
+            </section>
+          ))}
         </div>
-        <span className="rounded-full bg-purple-50 px-2 py-1 text-xs font-medium capitalize text-purple-700">{tournament.type}</span>
-      </div>
-      <div className="mt-3 grid grid-cols-2 gap-1.5 text-xs text-slate-600 sm:mt-4 sm:gap-2 sm:text-sm">
-        <div>Start</div><b>{new Date(tournament.startAt).toLocaleString("en-IN")}</b>
-        <div>Time Control</div><b>{tournament.timeControlMinutes}+{tournament.incrementSeconds}</b>
-        <div>{tournament.type === "arena" ? "Duration" : "Rounds"}</div><b>{formatDetail}</b>
-        <div>Participants</div><b>{participants}</b>
-        <div>Entry</div><b>{restricted}</b>
-        <div>Status</div><b>{prettyStatus(tournament.status)}</b>
-        <div>Action</div><b>{accessState(tournament.status) === "Joinable" ? "Join" : "View"}</b>
-      </div>
-    </Link>
+      ) : (
+        <div className="card py-12 text-center">
+          <Trophy size={28} className="mx-auto text-slate-300" aria-hidden />
+          <h2 className="mt-3 font-semibold text-slate-900">No tournaments yet</h2>
+          <p className="mx-auto mt-1 max-w-sm text-sm text-slate-500">
+            {canCreate
+              ? "Create an Arena or Swiss event and it will appear here for everyone who can enter it."
+              : "When your coach schedules an event you can enter, it will appear here."}
+          </p>
+          {canCreate ? (
+            <Link href="/tournaments/new" className="btn-primary mt-4">
+              <Plus size={16} aria-hidden /> New tournament
+            </Link>
+          ) : null}
+        </div>
+      )}
+    </div>
   );
 }

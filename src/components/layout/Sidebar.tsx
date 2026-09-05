@@ -37,6 +37,7 @@ import {
   Target,
   PanelLeftClose,
   PanelLeftOpen,
+  PauseCircle,
   LogOut,
   X,
 } from "lucide-react";
@@ -128,6 +129,7 @@ const sections: NavSection[] = [
     roles: ["admin", "sub-admin"],
     items: [
       { href: "/admin/users", label: "Users", icon: Users, featureKey: "userManagement" },
+      { href: "/admin/paused-students", label: "Paused Students", icon: PauseCircle, featureKey: "studentPause" },
       { href: "/admin/coach-applications", label: "Coach Applications", icon: UserPlus, featureKey: "onboarding" },
     ],
   },
@@ -186,9 +188,11 @@ const sections: NavSection[] = [
   },
 ];
 
-function canSee(role: Role, accountStatus: AccountStatus | undefined, isActive: boolean | undefined, isSuperAdmin: boolean | undefined, featureState: FeatureState | undefined, item: { href?: string; roles?: Role[]; demoOnly?: boolean; hideForDemo?: boolean; featureKey?: string; permission?: string; superAdminOnly?: boolean }) {
+function canSee(role: Role, accountStatus: AccountStatus | undefined, isActive: boolean | undefined, isPaused: boolean | undefined, isSuperAdmin: boolean | undefined, featureState: FeatureState | undefined, item: { href?: string; roles?: Role[]; demoOnly?: boolean; hideForDemo?: boolean; featureKey?: string; permission?: string; superAdminOnly?: boolean }) {
   const isDemo = accountStatus === "demo";
-  if (isActive === false && item.href && isInactiveRestrictedPath(item.href)) return false;
+  // A paused student keeps their account but not their classes, so the same
+  // links are hidden as for a deactivated account.
+  if ((isActive === false || isPaused === true) && item.href && isInactiveRestrictedPath(item.href)) return false;
   if (item.superAdminOnly && !isSuperAdmin) return false;
   if (item.featureKey && featureState?.[item.featureKey] && !featureState[item.featureKey].visible) return false;
   if (item.featureKey && item.permission && featureState?.[item.featureKey] && !featureState[item.featureKey].permissions.includes(item.permission)) return false;
@@ -231,7 +235,7 @@ export default function Sidebar({
   isSuperAdmin?: boolean;
   featureState?: FeatureState;
   hasCreditPlan?: boolean;
-  user: { name?: string | null; role: string; isActive?: boolean };
+  user: { name?: string | null; role: string; isActive?: boolean; isPaused?: boolean };
   mobileOpen?: boolean;
   desktopCollapsed?: boolean;
   onToggleDesktop?: () => void;
@@ -245,16 +249,16 @@ export default function Sidebar({
   const visibleSections = useMemo(
     () =>
       sections
-        .filter((section) => canSee(role, accountStatus, user.isActive, isSuperAdmin, featureState, section))
+        .filter((section) => canSee(role, accountStatus, user.isActive, user.isPaused, isSuperAdmin, featureState, section))
         .map((section) => ({
           ...section,
           items: section.items.filter((item) => {
             if (role === "student" && item.href === "/fees/credit-history" && !hasCreditPlan) return false;
-            return canSee(role, accountStatus, user.isActive, isSuperAdmin, featureState, item);
+            return canSee(role, accountStatus, user.isActive, user.isPaused, isSuperAdmin, featureState, item);
           }),
         }))
         .filter((section) => section.items.length > 0),
-    [role, accountStatus, user.isActive, isSuperAdmin, featureState, hasCreditPlan]
+    [role, accountStatus, user.isActive, user.isPaused, isSuperAdmin, featureState, hasCreditPlan]
   );
   const activeSection = visibleSections.find((section) => section.items.some((item) => isActive(pathname, item)))?.id || "academy";
   const [openSection, setOpenSection] = useState(activeSection);

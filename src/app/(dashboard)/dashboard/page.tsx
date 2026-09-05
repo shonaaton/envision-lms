@@ -27,6 +27,7 @@ import { DataPanel, EmptyState as CommonEmptyState, FilterBar } from "@/componen
 import { bookingFeatureNameForAccount } from "@/lib/bookingLabels";
 import { demoStudentExperience } from "@/lib/demoStudentExperience";
 import { inactiveStudentMessage } from "@/lib/studentAccess";
+import { getActivePause, pausedStudentMessage } from "@/lib/studentPause";
 import { coachClassroomQuery, limitClassroomToCoachSessions } from "@/lib/classroomCoachAccess";
 import { unstable_noStore as noStore } from "next/cache";
 import {
@@ -48,6 +49,7 @@ import {
   Gamepad2,
   GraduationCap,
   MessageSquare,
+  PauseCircle,
   PlayCircle,
   RotateCcw,
   Search,
@@ -625,6 +627,42 @@ function InactiveAccountDashboard({ userName, role }: { userName?: string | null
           <InfoTile label="Can login" value="Yes" />
           <InfoTile label="Can book classes" value="No" />
           <InfoTile label="Can join tournaments" value="No" />
+        </div>
+      </DashboardPanel>
+    </div>
+  );
+}
+
+function pauseDateLabel(value: any) {
+  if (!value) return "Not set";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Not set";
+  return date.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+}
+
+async function PausedStudentDashboard({ userId, userName }: { userId: string; userName?: string | null }) {
+  const pause: any = await getActivePause(userId);
+  const batchName = pause?.batchName || "your batch";
+  return (
+    <div className="space-y-5 text-slate-950">
+      <DashboardHero
+        eyebrow="Student Status"
+        title={`Classes paused${userName ? `, ${userName}` : ""}`}
+        subtitle={pausedStudentMessage}
+        icon={PauseCircle}
+      >
+        <div className="grid gap-3 sm:grid-cols-3">
+          <StatCard label="Paused from" value={pauseDateLabel(pause?.pausedFrom)} note={batchName} icon={Calendar} tone="amber" />
+          <StatCard label="Paused till" value={pauseDateLabel(pause?.pausedUntil)} note="Classes resume after this date" icon={Clock3} tone="rose" />
+          <StatCard label="Planned restart" value={pauseDateLabel(pause?.expectedRestartDate)} note="Shared with the academy" icon={RotateCcw} tone="green" />
+        </div>
+      </DashboardHero>
+      <DashboardPanel>
+        <SectionTitle icon={BellRing} title="What this means" subtitle="Your seat is held and no fees are raised while you are paused." />
+        <div className="grid gap-3 md:grid-cols-3">
+          <InfoTile label="Can login" value="Yes" />
+          <InfoTile label="Classes & homework" value="Paused" />
+          <InfoTile label="Fees billed now" value="None" />
         </div>
       </DashboardPanel>
     </div>
@@ -1805,6 +1843,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
   }
 
   await dbConnect();
+  if ((session?.user as any)?.isPaused === true) {
+    return <PausedStudentDashboard userId={userId} userName={session?.user?.name} />;
+  }
   const joinAllowed = await canAccessFeature("classrooms", session?.user as any, "join");
 
   if (role === "student") return <StudentDashboard userId={userId} joinAllowed={joinAllowed} />;

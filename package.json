@@ -14,7 +14,13 @@
     "rewards:rebalance": "tsx scripts/rebalance-student-rewards.ts",
     "seed": "tsx scripts/seed.ts",
     "import:puzzles": "tsx scripts/import-lichess-puzzles.ts",
-    "import:puzzles:prod": "node scripts/import-lichess-puzzles.cjs"
+    "import:puzzles:prod": "node scripts/import-lichess-puzzles.cjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "migrate:tournament-v2": "tsx scripts/migrate-tournament-v2.ts",
+    "bench:tournament": "tsx scripts/bench-tournament-engine.ts",
+    "loadtest:arena": "tsx scripts/loadtest-arena.ts",
+    "test:integration": "tsx scripts/integration-tournament.ts"
   },
   "dependencies": {
     "@auth/mongodb-adapter": "3.5.2",
@@ -63,6 +69,7 @@
     "postcss": "8.4.39",
     "tailwindcss": "3.4.6",
     "tsx": "4.16.2",
-    "typescript": "5.5.3"
+    "typescript": "5.5.3",
+    "vitest": "^2.1.9"
   }
 }

@@ -53,7 +53,7 @@ async function joinExternalTournament(formData: FormData) {
     createdAt: new Date(),
   }];
   await tournament.save();
-  if (tournament.type === "arena" && isPlaying) await syncArenaPairings(tournament);
+  if (tournament.type === "arena" && isPlaying) await syncArenaPairings(String(tournament._id));
   await notifyAdmins({
     type: "tournament.external_registration",
     title: "External tournament registration",

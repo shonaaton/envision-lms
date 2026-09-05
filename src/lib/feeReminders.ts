@@ -105,7 +105,7 @@ export async function getFeeReminderWorkspace(now = new Date()) {
 
   for (const assignment of creditAssignments as any[]) {
     const student = assignment.student;
-    if (!student?._id || student.isActive === false || !isCreditReminderAssignment(assignment)) continue;
+    if (!student?._id || student.isActive === false || student.isPaused === true || !isCreditReminderAssignment(assignment)) continue;
     const creditBalance = Number(assignment.creditBalance || 0);
     const category = creditReminderCategory(creditBalance, lowCreditThreshold);
     if (!category) continue;
@@ -139,7 +139,7 @@ export async function getFeeReminderWorkspace(now = new Date()) {
 
   for (const invoice of invoices as any[]) {
     const student = invoice.student;
-    if (!student?._id || student.isActive === false || !isInvoiceReminderRecord(invoice)) continue;
+    if (!student?._id || student.isActive === false || student.isPaused === true || !isInvoiceReminderRecord(invoice)) continue;
     const category = invoiceReminderCategory(String(invoice.status || ""), invoice.dueDate, now);
     if (!category) continue;
     const contact = resolveFeeReminderContact(student);

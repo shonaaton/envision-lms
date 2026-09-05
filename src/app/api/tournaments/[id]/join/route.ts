@@ -75,7 +75,9 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
     createdAt: new Date(),
   }];
   await tournament.save();
-  if (queued) await syncArenaPairings(tournament);
+  // The tournament document is saved above; pairing owns its own load and
+  // save, so nothing here can overwrite what it commits.
+  if (queued) await syncArenaPairings(String(tournament._id));
   if (session) {
     await notifyTournamentUsers(tournament, {
       users: [String((session.user as any).id)],

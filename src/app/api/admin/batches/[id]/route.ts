@@ -8,6 +8,7 @@ import { recordActivity } from "@/lib/activity";
 import { canAccessFeature } from "@/lib/featureAccess";
 import { syncClassroomSessionInstances } from "@/lib/classroomSessionInstances";
 import { notifyBatchCoachAssigned } from "@/lib/batchCoachNotifications";
+import { pausedStudentIds } from "@/lib/studentPause";
 
 export const dynamic = "force-dynamic";
 
@@ -60,8 +61,9 @@ function isAssignableFutureSession(session: any, classroom: any, now: Date) {
   );
 }
 
-async function enrollAddedStudentsInFutureBatchClassrooms(batchId: string, studentIds: string[]) {
-  if (!studentIds.length) return 0;
+async function enrollAddedStudentsInFutureBatchClassrooms(batchId: string, studentIds: string[], pausedIds: Set<string>) {
+  const joiningIds = studentIds.filter((studentId) => !pausedIds.has(studentId));
+  if (!joiningIds.length) return 0;
   const now = new Date();
   const classrooms: any[] = await Classroom.find({
     batches: batchId,
@@ -83,7 +85,7 @@ async function enrollAddedStudentsInFutureBatchClassrooms(batchId: string, stude
       if (!isAssignableFutureSession(session, classroom, now)) return;
       const sessionStudents = new Set((session.students || []).map(idOf));
       const before = sessionStudents.size;
-      studentIds.forEach((studentId) => sessionStudents.add(studentId));
+      joiningIds.forEach((studentId) => sessionStudents.add(studentId));
       if (sessionStudents.size !== before) {
         session.students = Array.from(sessionStudents);
         changed = true;
@@ -91,7 +93,7 @@ async function enrollAddedStudentsInFutureBatchClassrooms(batchId: string, stude
     });
 
     const beforeClassroomCount = current.size;
-    studentIds.forEach((studentId) => current.add(studentId));
+    joiningIds.forEach((studentId) => current.add(studentId));
     if (current.size !== beforeClassroomCount) {
       classroom.students = Array.from(current);
       changed = true;
@@ -138,19 +140,26 @@ async function enrollmentDateMap(batchId: string, studentIds: string[], existing
   return map;
 }
 
-function sessionRosterForEnrollment(classroom: any, session: any, batchStudentDates: Map<string, Date>) {
+function sessionRosterForEnrollment(classroom: any, session: any, batchStudentDates: Map<string, Date>, pausedIds: Set<string>) {
   const startsAt = sessionStartsAt(session, classroom?.classDate || classroom?.startDate);
   const baseRoster = Array.isArray(session?.students) && session.students.length ? session.students : classroom.students || [];
   const nextRoster = new Map<string, any>();
+  const now = new Date();
+  // A paused student keeps their batch and classroom membership, but stays off
+  // the roster of any session that has not happened yet.
+  const isPausedOutOfSession = (studentId: string) =>
+    pausedIds.has(studentId) && Boolean(startsAt) && startsAt!.getTime() >= now.getTime();
 
   baseRoster.forEach((student: any) => {
     const studentId = idOf(student);
+    if (isPausedOutOfSession(studentId)) return;
     const enrolledAt = batchStudentDates.get(studentId);
     if (!enrolledAt || !startsAt || enrolledAt.getTime() <= startsAt.getTime()) nextRoster.set(studentId, student);
   });
 
   (classroom.students || []).forEach((student: any) => {
     const studentId = idOf(student);
+    if (isPausedOutOfSession(studentId)) return;
     const enrolledAt = batchStudentDates.get(studentId);
     if (enrolledAt && startsAt && enrolledAt.getTime() <= startsAt.getTime()) nextRoster.set(studentId, student);
   });
@@ -158,7 +167,7 @@ function sessionRosterForEnrollment(classroom: any, session: any, batchStudentDa
   return Array.from(nextRoster.values());
 }
 
-async function reconcileBatchStudentsInClassrooms(batchId: string, batchStudentDates: Map<string, Date>) {
+async function reconcileBatchStudentsInClassrooms(batchId: string, batchStudentDates: Map<string, Date>, pausedIds: Set<string>) {
   const classrooms: any[] = await Classroom.find({
     batches: batchId,
     isActive: { $ne: false },
@@ -169,7 +178,7 @@ async function reconcileBatchStudentsInClassrooms(batchId: string, batchStudentD
   for (const classroom of classrooms) {
     let changed = false;
     classroomSessions(classroom).forEach((session: any) => {
-      const nextRoster = sessionRosterForEnrollment(classroom, session, batchStudentDates);
+      const nextRoster = sessionRosterForEnrollment(classroom, session, batchStudentDates, pausedIds);
       const before = (session.students || []).map(idOf).filter(Boolean).join("|");
       const after = nextRoster.map(idOf).filter(Boolean).join("|");
       if (before !== after) {
@@ -213,8 +222,9 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     await b.save();
     if (removedIds.length) await User.updateMany({ _id: { $in: removedIds } }, { $pull: { batches: b?._id } });
     if (nextIds.length) await User.updateMany({ _id: { $in: nextIds } }, { $addToSet: { batches: b?._id } });
-    if (addedIds.length) await enrollAddedStudentsInFutureBatchClassrooms(params.id, addedIds);
-    await reconcileBatchStudentsInClassrooms(params.id, dates);
+    const pausedIds = await pausedStudentIds();
+    if (addedIds.length) await enrollAddedStudentsInFutureBatchClassrooms(params.id, addedIds, pausedIds);
+    await reconcileBatchStudentsInClassrooms(params.id, dates, pausedIds);
   }
   const previousCoachId = idOf(existing.coach);
   const nextCoachId = idOf(b?.coach || body.coach);

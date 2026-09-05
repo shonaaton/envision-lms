@@ -19,6 +19,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const featureState = await getNavigationFeatureState({ ...(session.user as any), isSuperAdmin });
   const pathname = headers().get("x-pathname") || "";
   const isActive = (session.user as any).isActive !== false;
+  const isPaused = (session.user as any).isPaused === true;
   let hasCreditPlan = true;
   if (role === "student") {
     try {
@@ -30,13 +31,14 @@ export default async function DashboardLayout({ children }: { children: React.Re
     }
   }
   if (!isActive && isInactiveRestrictedPath(pathname)) redirect("/dashboard?inactive=1");
+  if (isPaused && isInactiveRestrictedPath(pathname)) redirect("/dashboard?paused=1");
   const currentFeature = findFeatureByPath(pathname);
   const currentFeatureState = currentFeature ? featureState[currentFeature.key] : null;
   if (currentFeatureState && (!currentFeatureState.visible || currentFeatureState.status === "coming_soon") && pathname !== "/dashboard") {
     redirect("/dashboard?restricted=1");
   }
   return (
-    <DashboardFrame role={role} accountStatus={accountStatus} isSuperAdmin={isSuperAdmin} featureState={featureState} hasCreditPlan={hasCreditPlan} user={{ name: session.user.name, role, isActive }}>
+    <DashboardFrame role={role} accountStatus={accountStatus} isSuperAdmin={isSuperAdmin} featureState={featureState} hasCreditPlan={hasCreditPlan} user={{ name: session.user.name, role, isActive, isPaused }}>
       {children}
     </DashboardFrame>
   );

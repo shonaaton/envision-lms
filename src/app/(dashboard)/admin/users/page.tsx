@@ -10,6 +10,7 @@ import {
   FileText,
   KeyRound,
   MoreVertical,
+  PauseCircle,
   Plus,
   Search,
   Trash2,
@@ -23,6 +24,7 @@ import { toast } from "sonner";
 import Avatar from "@/components/admin/Avatar";
 import AddUserModal from "@/components/admin/AddUserModal";
 import AddBatchModal from "@/components/admin/AddBatchModal";
+import { PauseStudentModal } from "@/components/admin/PausedStudentsClient";
 
 export const dynamic = "force-dynamic";
 
@@ -47,6 +49,8 @@ type AdminUser = {
   notes?: string;
   accountStatus?: "demo" | "enrolled" | "coach_applicant" | "approved" | "rejected";
   isActive: boolean;
+  isPaused?: boolean;
+  pausedUntil?: string;
 };
 
 type BatchItem = {
@@ -98,6 +102,7 @@ export default function AdminUsersPage() {
   const [reportUser, setReportUser] = useState<AdminUser | null>(null);
   const [assignCoach, setAssignCoach] = useState<AdminUser | null>(null);
   const [deleteUserTarget, setDeleteUserTarget] = useState<AdminUser | null>(null);
+  const [pauseTarget, setPauseTarget] = useState<AdminUser | null>(null);
   const [detailBatch, setDetailBatch] = useState<BatchItem | null>(null);
   const [editBatch, setEditBatch] = useState<BatchItem | null>(null);
 
@@ -307,10 +312,10 @@ export default function AdminUsersPage() {
                     <InfoPill label="Username" value={u.username || "-"} />
                     <InfoPill label="Phone" value={contactNumber(u)} />
                     <button
-                      className={`rounded-lg px-3 py-2 text-left text-xs font-bold ${u.isActive ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}
-                      onClick={() => toggleUserAccess(u)}
+                      className={`rounded-lg px-3 py-2 text-left text-xs font-bold ${u.isPaused ? "bg-amber-100 text-amber-800" : u.isActive ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}
+                      onClick={() => (u.isPaused ? undefined : toggleUserAccess(u))}
                     >
-                      {u.isActive ? "Active" : "Inactive"}
+                      {u.isPaused ? "Paused" : u.isActive ? "Active" : "Inactive"}
                     </button>
                   </div>
                   <div className="mt-2">
@@ -367,13 +372,25 @@ export default function AdminUsersPage() {
                       <td className="py-3 text-slate-600">{u.email}</td>
                       <td className="py-3 text-slate-600">{contactNumber(u)}</td>
                       <td className="py-3">
-                        <button
-                          className={`rounded-full px-2.5 py-1 text-xs font-semibold transition hover:shadow-sm ${u.isActive ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200" : "bg-red-100 text-red-700 hover:bg-red-200"}`}
-                          onClick={() => toggleUserAccess(u)}
-                          title={u.isActive ? "Mark inactive" : "Mark active"}
-                        >
-                          {u.isActive ? "Active" : "Inactive"}
-                        </button>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <button
+                            className={`rounded-full px-2.5 py-1 text-xs font-semibold transition hover:shadow-sm ${u.isActive ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200" : "bg-red-100 text-red-700 hover:bg-red-200"}`}
+                            onClick={() => toggleUserAccess(u)}
+                            title={u.isActive ? "Mark inactive" : "Mark active"}
+                          >
+                            {u.isActive ? "Active" : "Inactive"}
+                          </button>
+                          {u.isPaused && (
+                            <a
+                              href="/admin/paused-students"
+                              className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-200"
+                              title={u.pausedUntil ? `Paused till ${new Date(u.pausedUntil).toLocaleDateString("en-IN")}` : "Paused from the batch"}
+                            >
+                              <PauseCircle size={12} />
+                              Paused
+                            </a>
+                          )}
+                        </div>
                       </td>
                       <td className="relative py-3 text-right">
                         <button className="rounded p-1 hover:bg-slate-100" onClick={() => setMenu(menu?.id === u._id ? null : { type: "user", id: u._id })}><MoreVertical size={16} /></button>
@@ -449,6 +466,11 @@ export default function AdminUsersPage() {
           { icon: KeyRound, label: "Reset Password", onClick: async () => { await updateUser(openMenuUser._id, { resetPassword: true }); setMenu(null); } },
           ...(openMenuUser.role === "instructor" ? [{ icon: UserPlus, label: "Assign Students", onClick: () => { setAssignCoach(openMenuUser); setMenu(null); } }] : []),
           { icon: FileText, label: `${userRoleLabel(openMenuUser.role)} Report`, onClick: () => { setReportUser(openMenuUser); setMenu(null); } },
+          ...(openMenuUser.role === "student"
+            ? [openMenuUser.isPaused
+                ? { icon: PauseCircle, label: "Manage pause / reactivate", onClick: () => { setMenu(null); window.location.href = "/admin/paused-students"; } }
+                : { icon: PauseCircle, label: "Pause from batch", onClick: () => { setPauseTarget(openMenuUser); setMenu(null); } }]
+            : []),
           { icon: openMenuUser.isActive ? UserX : UserCheck, label: openMenuUser.isActive ? "Deactivate access" : "Reactivate access", onClick: async () => { await toggleUserAccess(openMenuUser); setMenu(null); } },
           { icon: Trash2, label: "Delete permanently", danger: true, onClick: () => { setDeleteUserTarget(openMenuUser); setMenu(null); } },
         ]} />
@@ -467,6 +489,16 @@ export default function AdminUsersPage() {
       {detailUser && <UserDetailsModal user={detailUser} batches={batches} onClose={() => setDetailUser(null)} onCopy={() => copyCredentials(detailUser)} />}
       {editUser && <EditUserModal user={editUser} onClose={() => setEditUser(null)} onSave={async (payload) => { await updateUser(editUser._id, payload); setEditUser(null); }} />}
       {deleteUserTarget && <PermanentDeleteUserModal user={deleteUserTarget} onClose={() => setDeleteUserTarget(null)} onDelete={(confirmName) => permanentlyDeleteUser(deleteUserTarget, confirmName)} />}
+      {pauseTarget && (
+        <PauseStudentModal
+          presetStudent={{ _id: pauseTarget._id, name: pauseTarget.name, batches: pauseTarget.batches }}
+          onClose={() => setPauseTarget(null)}
+          onDone={() => {
+            setPauseTarget(null);
+            loadUsers();
+          }}
+        />
+      )}
       {reportUser && <ReportModal user={reportUser} batches={batches} onClose={() => setReportUser(null)} />}
       {assignCoach && <AssignStudentsModal coach={assignCoach} students={allStudents} batches={batches} onClose={() => setAssignCoach(null)} onSave={async (batchId, students) => { await updateBatch(batchId, { students }); setAssignCoach(null); }} />}
       {detailBatch && <BatchDetailsModal batch={detailBatch} onClose={() => setDetailBatch(null)} />}

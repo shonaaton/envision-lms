@@ -6,10 +6,12 @@ import {
   matchesGst,
   monthlyCyclesInRange,
   monthlyDueDate,
+  pauseHoldWindow,
   planMatchesGst,
   rate,
   resolveRange,
   retentionBucket,
+  unbilledPauseCycles,
 } from "../src/lib/feesMetrics";
 
 // The finance dashboard reports money, so every definition behind a KPI is
@@ -115,6 +117,51 @@ test("students deactivated before deactivatedAt existed fall back to updatedAt",
   expect(leftAt({ deactivatedAt: day("2026-05-01"), updatedAt: day("2026-08-01") })?.getMonth()).toBe(4);
   expect(leftAt({ updatedAt: day("2026-08-01") })?.getMonth()).toBe(7);
   expect(leftAt({})).toBe(null);
+});
+
+// A paused student is a temporary revenue loss and it lands on the books twice:
+// invoices already raised for the window get voided, and monthly billing skips
+// the student so later cycles are never raised at all. Both must be counted,
+// and neither may be counted twice.
+
+test("a pause only costs the part of its window that falls inside the range", () => {
+  const window = pauseHoldWindow(day("2026-08-20"), day("2026-10-15"), day("2026-09-01"), day("2026-09-30T23:59:59.999"));
+  expect(window).not.toBe(null);
+  expect(window!.holdFrom.getMonth()).toBe(8);
+  expect(window!.holdFrom.getDate()).toBe(1);
+  expect(window!.holdTo.getDate()).toBe(30);
+});
+
+test("a pause that ended before the range costs the range nothing", () => {
+  expect(pauseHoldWindow(day("2026-05-01"), day("2026-06-01"), day("2026-09-01"), day("2026-09-30"))).toBe(null);
+  expect(pauseHoldWindow(day("2026-11-01"), day("2026-12-01"), day("2026-09-01"), day("2026-09-30"))).toBe(null);
+});
+
+test("cycles never billed during a pause are counted, voided ones are not double counted", () => {
+  const anchor = day("2026-01-06T00:00:00");
+  const holdFrom = day("2026-09-01T00:00:00");
+  const holdTo = day("2026-11-30T23:59:59.999");
+
+  // Nothing voided: all three cycles in the window were simply never raised.
+  expect(unbilledPauseCycles(anchor, holdFrom, holdTo, []).length).toBe(3);
+
+  // September was already voided, so only October and November are unbilled.
+  const withVoided = unbilledPauseCycles(anchor, holdFrom, holdTo, [day("2026-09-06T23:59:59.999")]);
+  expect(withVoided.length).toBe(2);
+  expect(withVoided.map((date) => date.getMonth())).toEqual([9, 10]);
+});
+
+test("a voided invoice matches its cycle regardless of the time on the timestamp", () => {
+  const anchor = day("2026-01-06T00:00:00");
+  // The stored invoice ends the day; the generated cycle must still match it.
+  const cycles = unbilledPauseCycles(anchor, day("2026-09-01"), day("2026-09-30T23:59:59.999"), [day("2026-09-06T00:00:01")]);
+  expect(cycles.length).toBe(0);
+});
+
+test("a pause with every cycle already voided adds no second charge", () => {
+  const anchor = day("2026-03-10T00:00:00");
+  const voided = [day("2026-09-10T23:59:59.999"), day("2026-10-10T23:59:59.999")];
+  expect(unbilledPauseCycles(anchor, day("2026-09-01"), day("2026-10-31T23:59:59.999"), voided).length).toBe(0);
 });
 
 test("an inverted date range is corrected rather than returning nothing", () => {

@@ -102,6 +102,36 @@ export function monthlyCyclesInRange(anchor: Date, from: Date, to: Date): Date[]
   return cycles;
 }
 
+/**
+ * Billing cycles inside a pause window that were never invoiced at all.
+ *
+ * A pause hits revenue twice: invoices already raised for the window are voided,
+ * and monthly billing skips a paused student so later cycles are never raised.
+ * Only the second half is returned here - any cycle that already has a voided
+ * invoice against its due date is dropped, so the two halves never double count.
+ */
+export function unbilledPauseCycles(anchor: Date, holdFrom: Date, holdTo: Date, voidedDueDates: unknown[]): Date[] {
+  const voidedDays = new Set(
+    voidedDueDates
+      .map((value) => toDate(value))
+      .filter((date): date is Date => !!date)
+      .map((date) => date.toDateString())
+  );
+  return monthlyCyclesInRange(anchor, holdFrom, holdTo).filter((due) => !voidedDays.has(due.toDateString()));
+}
+
+/** The part of a pause window that actually falls inside the reporting range. */
+export function pauseHoldWindow(pausedFrom: unknown, pausedUntil: unknown, from: Date, to: Date) {
+  const start = toDate(pausedFrom);
+  const end = toDate(pausedUntil);
+  if (!start || !end) return null;
+  if (start.getTime() > to.getTime() || end.getTime() < from.getTime()) return null;
+  return {
+    holdFrom: new Date(Math.max(start.getTime(), from.getTime())),
+    holdTo: new Date(Math.min(end.getTime(), to.getTime())),
+  };
+}
+
 /** Local-time YYYY-MM-DD, so date inputs and the server agree on the day. */
 export function dateKey(date: Date) {
   const offset = date.getTimezoneOffset() * 60000;

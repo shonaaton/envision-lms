@@ -18,6 +18,7 @@ import {
   Layers,
   LineChart,
   Loader2,
+  PauseCircle,
   Percent,
   PieChart,
   Receipt,
@@ -585,6 +586,33 @@ export function FinanceDashboard({
       tables: ["newStudents", "deactivatedStudents"],
       delta: { value: money(Math.abs(k.netRecurringGrowth)), positive: k.netRecurringGrowth >= 0 },
     },
+    {
+      key: "paused",
+      label: "Students paused",
+      value: String(k.pausedStudents),
+      note: `${k.pausedActive} still out, ${k.pausedReturning} due back`,
+      icon: PauseCircle,
+      tone: "amber",
+      tables: ["pausedStudents", "pausedVoidedInvoices", "pausedReturning"],
+    },
+    {
+      key: "onHold",
+      label: "Revenue on hold",
+      value: money(k.pausedOnHold),
+      note: `${k.pausedVoidedCount} invoices voided, ${money(k.pausedUnbilledValue)} never billed`,
+      icon: PauseCircle,
+      tone: "amber",
+      tables: ["pausedStudents", "pausedVoidedInvoices"],
+    },
+    {
+      key: "revenueLost",
+      label: "Total revenue lost",
+      value: money(k.revenueLostTotal),
+      note: "Students who left plus revenue on hold",
+      icon: TrendingDown,
+      tone: "rose",
+      tables: ["deactivatedStudents", "pausedStudents"],
+    },
   ];
 
   const demoCards: CardDef[] = [
@@ -852,7 +880,7 @@ export function FinanceDashboard({
           </div>
         </Section>
 
-        <Section title="Sales growth and churn" description="New students won, students lost, and the fee value that moved with them" icon={TrendingUp}>
+        <Section title="Sales growth, churn and pauses" description="New students won, students lost or paused, and the fee value that moved with them" icon={TrendingUp}>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {growthCards.map((card) => (
               <KpiCard key={card.key} card={card} onOpen={openModal} />

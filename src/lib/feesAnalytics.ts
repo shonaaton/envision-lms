@@ -3,6 +3,7 @@ import "server-only";
 import { Booking } from "@/models/Booking";
 import { Classroom } from "@/models/Classroom";
 import { DeletedInvoice, FeeAssignment, Invoice } from "@/models/Fee";
+import { StudentPause } from "@/models/StudentPause";
 import { User } from "@/models/User";
 import { getAcademySettings, invoiceBreakup } from "@/lib/fees";
 import {
@@ -15,11 +16,13 @@ import {
   leftAt,
   matchesGst,
   monthlyCyclesInRange,
+  pauseHoldWindow,
   planMatchesGst,
   rangeLabel,
   rate,
   retentionBucket,
   toDate,
+  unbilledPauseCycles,
 } from "@/lib/feesMetrics";
 
 import type { CoachConversionRow, DetailColumn, DetailTable, FeesAnalytics, GstFilter } from "@/lib/feesAnalyticsTypes";
@@ -58,7 +61,7 @@ export async function getFeesAnalytics(options: { from: Date; to: Date; gst: Gst
   const now = new Date();
   const next7Days = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
-  const [settings, invoices, assignments, students, coaches, demoBookings, classrooms, deletedInvoices] = await Promise.all([
+  const [settings, invoices, assignments, students, coaches, demoBookings, classrooms, deletedInvoices, pauses] = await Promise.all([
     getAcademySettings(),
     Invoice.find({})
       .populate("student", "name username email isActive createdAt deactivatedAt accountStatus conversionSetup")
@@ -85,6 +88,10 @@ export async function getFeesAnalytics(options: { from: Date; to: Date; gst: Gst
       .select("title students classDate startDate status generatedSessions")
       .lean(),
     DeletedInvoice.find({}).populate("student", "name username").sort({ deletedAt: -1 }).lean(),
+    StudentPause.find({ status: { $ne: "cancelled" } })
+      .populate("student", "name username email isActive")
+      .sort({ pausedFrom: -1 })
+      .lean(),
   ]);
 
   const studentById = new Map<string, any>();
@@ -373,6 +380,133 @@ export async function getFeesAnalytics(options: { from: Date; to: Date; gst: Gst
     }),
     totals: { planValue: churnRecurringLost, unpaid: churnUnpaid, lifetime: churnLifetime },
     footnote: "Accounts deactivated before this dashboard shipped fall back to their last profile update date.",
+  });
+
+  /* ------------------------------------------------------- 3b. paused students
+
+     A pause is a real but temporary revenue loss, and it hits the books twice:
+     invoices already raised for the pause window are voided outright, and
+     `ensureMonthlyInvoices` skips a paused student, so the cycles inside the
+     window are never billed in the first place. Both halves are counted here,
+     deduplicated by due date so a voided cycle is never charged twice.        */
+
+  const pausesInRange = (pauses as any[]).filter((pause) => !!pauseHoldWindow(pause.pausedFrom, pause.pausedUntil, from, to));
+
+  const pauseRows: Record<string, any>[] = [];
+  const voidedRows: Record<string, any>[] = [];
+  let pausedVoidedValue = 0;
+  let pausedUnbilledValue = 0;
+  let pausedVoidedCount = 0;
+
+  for (const pause of pausesInRange) {
+    const studentId = idOf(pause.student);
+    const assignment = assignmentByStudent.get(studentId);
+    const plan = assignment?.plan || null;
+    // The pause only costs money for the part of its window inside the range.
+    const { holdFrom, holdTo } = pauseHoldWindow(pause.pausedFrom, pause.pausedUntil, from, to)!;
+
+    const voided = (pause.voidedInvoices || []).filter((entry: any) => inRange(entry.dueDate, holdFrom, holdTo));
+    const voidedValue = sum(voided, (entry) => entry.totalAmount);
+
+    // Monthly plans keep billing on a fixed anchor, so any cycle in the window
+    // without a voided invoice behind it is revenue that was simply never raised.
+    const isMonthly = (pause.feeSnapshot?.planType || assignment?.type) === "monthly";
+    const anchor = toDate(pause.feeSnapshot?.firstDueDate || pause.feeSnapshot?.billingStartDate)
+      || toDate(assignment?.firstDueDate || assignment?.billingStartDate);
+    const perCycle = plan ? planGross(plan, settings) : 0;
+    const unbilledCycles = isMonthly && anchor && planMatchesGst(plan, gst)
+      ? unbilledPauseCycles(anchor, holdFrom, holdTo, voided.map((entry: any) => entry.dueDate))
+      : [];
+    const unbilledValue = unbilledCycles.length * perCycle;
+
+    pausedVoidedValue += voidedValue;
+    pausedUnbilledValue += unbilledValue;
+    pausedVoidedCount += voided.length;
+
+    for (const entry of voided) {
+      voidedRows.push({
+        invoice: entry.invoiceNumber || "-",
+        student: studentLabel(pause.student),
+        title: entry.title || "-",
+        due: entry.dueDate,
+        wasStatus: entry.previousStatus || "unpaid",
+        total: Number(entry.totalAmount || 0),
+      });
+    }
+
+    pauseRows.push({
+      pauseId: idOf(pause),
+      student: studentLabel(pause.student),
+      batch: pause.batchName || "-",
+      plan: plan?.name || pause.feeSnapshot?.planName || "No plan assigned",
+      pausedFrom: pause.pausedFrom,
+      pausedUntil: pause.pausedUntil,
+      restart: pause.expectedRestartDate || pause.pausedUntil,
+      voidedCount: voided.length,
+      voidedValue,
+      unbilledCycles: unbilledCycles.length,
+      unbilledValue,
+      onHold: voidedValue + unbilledValue,
+      state: pause.status === "resumed" ? "Back in class" : "Paused",
+    });
+  }
+
+  const pausedOnHold = pausedVoidedValue + pausedUnbilledValue;
+  const pausesActive = pausesInRange.filter((pause) => pause.status === "active");
+  const pausesReturning = pausesInRange.filter((pause) => inRange(pause.expectedRestartDate || pause.pausedUntil, from, to));
+  const returningPauseIds = new Set(pausesReturning.map((pause) => idOf(pause)));
+  const pausedStudentIds = new Set(pausesActive.map((pause) => idOf(pause.student)));
+
+  addTable({
+    id: "pausedStudents",
+    title: "Paused students",
+    subtitle: "Students out of class this range, and the fee value held back while they are away",
+    columns: [
+      { key: "student", label: "Student" },
+      { key: "batch", label: "Batch" },
+      { key: "plan", label: "Plan" },
+      { key: "pausedFrom", label: "Paused from", type: "date" },
+      { key: "pausedUntil", label: "Paused till", type: "date" },
+      { key: "restart", label: "Restarts", type: "date" },
+      { key: "voidedValue", label: "Invoices voided", type: "money", align: "right" },
+      { key: "unbilledValue", label: "Never billed", type: "money", align: "right" },
+      { key: "onHold", label: "On hold", type: "money", align: "right" },
+      { key: "state", label: "Status", type: "badge" },
+    ],
+    rows: pauseRows.sort((a, b) => b.onHold - a.onHold),
+    totals: { voidedValue: pausedVoidedValue, unbilledValue: pausedUnbilledValue, onHold: pausedOnHold },
+    footnote:
+      "On hold = invoices voided by the pause plus the monthly cycles inside the pause window that were never raised, because paused students are skipped by monthly billing. Credit plans count voided invoices only.",
+  });
+
+  addTable({
+    id: "pausedVoidedInvoices",
+    title: "Invoices voided by a pause",
+    subtitle: "Invoices that were cancelled when the student stepped out of the batch",
+    columns: [
+      { key: "invoice", label: "Invoice" },
+      { key: "student", label: "Student" },
+      { key: "title", label: "Invoice for" },
+      { key: "due", label: "Was due", type: "date" },
+      { key: "wasStatus", label: "Was", type: "badge" },
+      { key: "total", label: "Amount", type: "money", align: "right" },
+    ],
+    rows: voidedRows.sort((a, b) => new Date(b.due).getTime() - new Date(a.due).getTime()),
+    totals: { total: pausedVoidedValue },
+  });
+
+  addTable({
+    id: "pausedReturning",
+    title: "Students due back",
+    subtitle: "Pauses ending inside this range - revenue that should restart",
+    columns: [
+      { key: "student", label: "Student" },
+      { key: "batch", label: "Batch" },
+      { key: "restart", label: "Restarts", type: "date" },
+      { key: "onHold", label: "Was on hold", type: "money", align: "right" },
+      { key: "state", label: "Status", type: "badge" },
+    ],
+    rows: pauseRows.filter((row) => returningPauseIds.has(row.pauseId)),
   });
 
   /* ------------------------------------------------------------- 4. demos */
@@ -683,7 +817,9 @@ export async function getFeesAnalytics(options: { from: Date; to: Date; gst: Gst
     ],
     rows: monthlyExpectedRows.sort((a, b) => b.expected - a.expected),
     totals: { expected: expectedMonthly },
-    footnote: "Paused students and inactive plans are excluded.",
+    footnote: pausedStudentIds.size
+      ? `Inactive plans are excluded, and so are ${pausedStudentIds.size} paused student(s) worth ${(pausedOnHold / 100).toLocaleString("en-IN", { style: "currency", currency: "INR" })} - see Paused students for that breakdown.`
+      : "Paused students and inactive plans are excluded.",
   });
   addTable({
     id: "expectedCredits",
@@ -829,6 +965,15 @@ export async function getFeesAnalytics(options: { from: Date; to: Date; gst: Gst
     churnLifetime,
     netStudentGrowth: newStudents.length - leftStudents.length,
     netRecurringGrowth: newStudentRecurring - churnRecurringLost,
+
+    pausedStudents: pausesInRange.length,
+    pausedActive: pausesActive.length,
+    pausedReturning: pausesReturning.length,
+    pausedOnHold,
+    pausedVoidedValue,
+    pausedVoidedCount,
+    pausedUnbilledValue,
+    revenueLostTotal: churnRecurringLost + pausedOnHold,
 
     demosScheduled: demosInRange.length,
     demosDone: demoDone.length,

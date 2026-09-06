@@ -57,6 +57,28 @@ function demoStatusLabel(booking: any) {
   return "Demo Requested";
 }
 
+const LEVEL_LABELS: Record<string, string> = {
+  absolute_beginner: "Absolute Beginner",
+  beginner: "Beginner",
+  intermediate: "Intermediate",
+  advanced: "Advanced",
+  federated: "Federated",
+  not_set: "Not set",
+};
+
+/** Levels are stored as snake_case enums; never show the raw value to an admin. */
+function levelLabel(value?: string) {
+  const key = String(value || "").trim();
+  if (!key) return "";
+  return LEVEL_LABELS[key] || key.replace(/_/g, " ").replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function titleCase(value?: string) {
+  const key = String(value || "").trim();
+  if (!key) return "";
+  return key.replace(/_/g, " ").replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
 function classifyDemo(booking: any): DemoTab {
   if (booking.demoStatus === "CONVERTED") return "converted";
   if (booking.demoStatus === "CLOSED" || booking.status === "cancelled" || booking.demoStatus === "CANCELLED") return "closed";
@@ -309,17 +331,26 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
   return (
     <div className="space-y-5 p-2 text-slate-950">
       <header>
-        <div className="inline-flex items-center gap-2 rounded-full bg-amber-100 px-3 py-1 text-xs font-black uppercase tracking-[0.18em] text-amber-700">
-          <GraduationCap size={14} /> Demo Management
+        <div className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-600">
+          <GraduationCap size={13} /> Demo Management
         </div>
-        <h1 className="mt-2 text-3xl font-black text-brand">Demo Center</h1>
-        <p className="mt-1 max-w-3xl text-sm text-slate-600">Manage the full demo journey: requested time, coach assignment, demo classroom, assessment, conversion, and closed leads.</p>
+        <h1 className="mt-1.5 text-2xl font-semibold tracking-tight text-brand">Demo Center</h1>
+        <p className="mt-1 max-w-3xl text-[13px] text-slate-500">Manage the full demo journey: requested time, coach assignment, demo classroom, assessment, conversion, and closed leads.</p>
       </header>
 
-      <nav className="flex overflow-x-auto rounded-lg bg-slate-100 p-1">
+      <nav className="flex gap-1 overflow-x-auto border-b border-slate-200 pb-px">
         {tabs.map((tab) => (
-          <Link key={tab.id} href={`/admin/demo-center?tab=${tab.id}`} className={`min-w-fit rounded-md px-4 py-2 text-sm font-black ${activeTab === tab.id ? "bg-white text-brand shadow" : "text-slate-600 hover:bg-white/70"}`}>
-            {tab.label} <span className="ml-1 rounded-full bg-slate-200 px-2 py-0.5 text-[11px] text-slate-700">{counts[tab.id]}</span>
+          <Link
+            key={tab.id}
+            href={`/admin/demo-center?tab=${tab.id}`}
+            className={`min-w-fit border-b-2 px-3.5 py-2 text-[13px] font-medium transition ${
+              activeTab === tab.id
+                ? "border-brand text-brand"
+                : "border-transparent text-slate-500 hover:border-slate-200 hover:text-slate-800"
+            }`}
+          >
+            {tab.label}
+            <span className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[11px] ${activeTab === tab.id ? "bg-brand/10 text-brand" : "bg-slate-100 text-slate-500"}`}>{counts[tab.id]}</span>
           </Link>
         ))}
       </nav>
@@ -337,7 +368,7 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
             <article key={item._id.toString()} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <div className="font-black text-slate-950">{item.demoUser?.name || "Demo student"}</div>
+                  <div className="font-semibold text-slate-950">{item.demoUser?.name || "Demo student"}</div>
                   <div className="mt-1 text-sm text-slate-500">Coach: {item.coach?.name || "-"} · Recommended: {item.recommendedCourseLevel || "-"}</div>
                   <div className="mt-1 text-xs font-bold uppercase text-slate-400">{item.status === "submitted" ? "Submitted" : "Draft / waiting for coach"}</div>
                   <div className="mt-1 text-sm text-slate-600">Engagement: {item.studentEngagement || "-"} · Format: {item.coachRecommendation || "-"} · Frequency: {item.suggestedClassFrequency || "-"}</div>
@@ -351,19 +382,35 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
         </section>
       )}
 
-      <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <h2 className="text-lg font-black">Demo Accounts Without Active Request</h2>
-        <div className="mt-3 grid gap-3 md:grid-cols-2">
+      <section className="rounded-xl border border-slate-200/80 bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+        <h2 className="text-base font-semibold tracking-tight text-slate-900">Demo Accounts Without Active Request</h2>
+        <p className="mt-0.5 text-[13px] text-slate-500">Signed-up demo accounts that have not booked a demo class yet.</p>
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
           {demoStudents
             .filter((student: any) => !bookings.some((booking: any) => String(booking.student?._id || booking.student) === String(student._id) && ["pending", "confirmed"].includes(String(booking.status || ""))))
             .map((student: any) => {
               const extendModalId = `extend-demo-account-${student._id.toString()}`;
+              const accountExpired = student.demoExpiresAt && new Date(student.demoExpiresAt).getTime() < Date.now();
               return (
-                <div key={student._id.toString()} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                  <div className="font-black">{student.name}</div>
-                  <div className="text-sm text-slate-500">{student.email} · {contactNumber(student)}</div>
-                  <div className="mt-1 text-xs font-semibold text-slate-500">Demo access: {student.demoExpiresAt ? formatAcademyDateTime(student.demoExpiresAt) : "No expiry set"}</div>
-                  <div className="mt-2">
+                <div key={student._id.toString()} className="rounded-lg border border-slate-200/80 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="text-[15px] font-semibold tracking-tight text-slate-900">{student.name}</div>
+                    <Tag tone={accountExpired ? "slate" : "emerald"}>
+                      {student.demoExpiresAt ? formatAcademyDateTime(student.demoExpiresAt) : "No expiry"}{accountExpired ? " · expired" : ""}
+                    </Tag>
+                  </div>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[13px] text-slate-500">
+                    {student.parentName ? <><span>Parent: {student.parentName}</span><Dot /></> : null}
+                    <a href={`mailto:${student.email}`} className="hover:text-brand">{student.email}</a>
+                    <Dot />
+                    <span>{contactNumber(student)}</span>
+                  </div>
+                  <dl className="mt-3 grid gap-x-5 gap-y-3 sm:grid-cols-3">
+                    <Field label="Chess level" value={levelLabel(student.studentLevel)} />
+                    <Field label="Location" value={[student.city, student.country].filter(Boolean).join(", ")} />
+                    <Field label="Signed up" value={student.createdAt ? formatAcademyDateTime(student.createdAt) : ""} />
+                  </dl>
+                  <div className="mt-3">
                     <PopupTrigger id={extendModalId} className="btn-outline bg-white">
                       <Clock3 size={15} /> Extend Demo Validity
                     </PopupTrigger>
@@ -398,38 +445,57 @@ function DemoCard({ booking, coaches, courses, batches, feedback }: { booking: a
   const assignModalId = `assign-demo-${cardId}`;
   const extendModalId = `extend-demo-${cardId}`;
   return (
-    <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="flex flex-col gap-4">
+    <article className="rounded-xl border border-slate-200/80 bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-lg font-black text-slate-950">{student.name || "Demo student"}</h2>
-            <span className="rounded-full bg-amber-100 px-3 py-1 text-[11px] font-black uppercase text-amber-700">{demoStatusLabel(booking)}</span>
-            {booking.rescheduleCount ? <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-bold text-slate-600"><History size={12} className="mr-1 inline" /> {booking.rescheduleCount} changes</span> : null}
+            <h2 className="text-base font-semibold tracking-tight text-slate-900">{student.name || "Demo student"}</h2>
+            <Tag tone="amber">{demoStatusLabel(booking)}</Tag>
+            {booking.rescheduleCount ? (
+              <Tag tone="slate"><History size={11} /> {booking.rescheduleCount} {booking.rescheduleCount === 1 ? "change" : "changes"}</Tag>
+            ) : null}
           </div>
-          <div className="mt-1 text-sm text-slate-500">{student.parentName ? `Parent: ${student.parentName} · ` : ""}{contactNumber(student)} · {student.city || booking.city || "-"} · {booking.requestedTimezone || "Timezone not captured"}</div>
-          <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2 xl:grid-cols-4">
-            <Info label="Requested" value={booking.requestedLocalDateTime || formatAcademyDateTime(booking.startAt)} />
-            <Info label="IST" value={booking.requestedIstDateTime || formatAcademyDateTime(booking.startAt)} />
-            <Info label="Coach" value={booking.assignedCoach?.name || booking.instructor?.name || "Unassigned"} />
-            <Info label="Level" value={booking.level || student.studentLevel || "Not set"} />
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[13px] text-slate-500">
+            {student.parentName ? <span>Parent: {student.parentName}</span> : null}
+            {student.parentName ? <Dot /> : null}
+            <a href={`tel:${[student.countryCode, student.phone].filter(Boolean).join("")}`} className="hover:text-brand">{contactNumber(student)}</a>
+            {student.email ? <><Dot /><a href={`mailto:${student.email}`} className="hover:text-brand">{student.email}</a></> : null}
+            {student.username ? <><Dot /><span className="text-slate-400">{student.username}</span></> : null}
           </div>
-          <div className={`mt-3 w-fit rounded-full px-3 py-1 text-xs font-bold ${isExpired ? "bg-rose-50 text-rose-700" : "bg-emerald-50 text-emerald-700"}`}>
-            Demo access: {student.demoExpiresAt ? formatAcademyDateTime(student.demoExpiresAt) : "No expiry set"}{isExpired ? " (expired)" : ""}
-          </div>
-          {booking.notes ? (
-            <div className="mt-3 rounded-xl border border-brand/10 bg-purple-50/60 p-4">
-              <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-wide text-brand">
-                <MessageSquareText size={15} /> Demo Request Message
-              </div>
-              <p className="whitespace-pre-wrap text-sm leading-6 text-slate-800">{booking.notes}</p>
-            </div>
-          ) : (
-            <div className="mt-3 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
-              No parent message was added with this request.
-            </div>
-          )}
         </div>
+        <span className={`rounded-full px-2.5 py-1 text-[11px] font-medium ring-1 ring-inset ${isExpired ? "bg-rose-50 text-rose-700 ring-rose-200/70" : "bg-emerald-50 text-emerald-700 ring-emerald-200/70"}`}>
+          Demo access {student.demoExpiresAt ? formatAcademyDateTime(student.demoExpiresAt) : "not set"}{isExpired ? " · expired" : ""}
+        </span>
       </div>
+
+      <dl className="mt-4 grid gap-x-6 gap-y-3.5 border-t border-slate-100 pt-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Field label="Requested" value={booking.requestedLocalDateTime || formatAcademyDateTime(booking.startAt)} />
+        <Field label="IST" value={booking.requestedIstDateTime || formatAcademyDateTime(booking.startAt)} />
+        <Field label="Duration" value={`${duration} minutes`} />
+        <Field label="Submitted" value={booking.createdAt ? formatAcademyDateTime(booking.createdAt) : ""} />
+        <Field label="Coach" value={booking.assignedCoach?.name || booking.instructor?.name || "Unassigned"} />
+        <Field label="Chess level" value={levelLabel(booking.level || student.studentLevel)} />
+        <Field label="Location" value={[student.city || booking.city, student.country || booking.country].filter(Boolean).join(", ")} />
+        <Field label="Timezone" value={booking.requestedTimezone} />
+        {booking.meetingUrl ? (
+          <Field
+            label="Meeting link"
+            className="lg:col-span-2"
+            value={<a href={booking.meetingUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-brand hover:underline"><LinkIcon size={13} /> Join demo class</a>}
+          />
+        ) : null}
+        {booking.cancellationReason ? <Field label="Closed reason" value={booking.cancellationReason} className="lg:col-span-2" /> : null}
+      </dl>
+
+      {booking.notes || booking.adminNote || booking.coachNote ? (
+        <div className="mt-4 grid gap-2 border-t border-slate-100 pt-4">
+          {booking.notes ? <Note icon={<MessageSquareText size={13} />} label="Parent message" text={booking.notes} /> : null}
+          {booking.adminNote ? <Note label="Admin note" text={booking.adminNote} /> : null}
+          {booking.coachNote ? <Note label="Coach note" text={booking.coachNote} /> : null}
+        </div>
+      ) : null}
+
+      <AssessmentSummary feedback={feedback} />
       <div className="mt-3 flex flex-wrap gap-2 border-t border-slate-100 pt-3">
         <PopupTrigger id={assignModalId} className="btn-primary">
           <CheckCircle2 size={15} /> Assign / Confirm Demo
@@ -438,7 +504,7 @@ function DemoCard({ booking, coaches, courses, batches, feedback }: { booking: a
         {booking.feedbackStatus === "pending" && booking.classroom ? <Link href={`/demo-feedback/${booking._id}`} className="btn-outline bg-white"><Clock3 size={15} /> Assessment Pending</Link> : null}
         {booking.feedbackStatus === "submitted" ? (
           <form action={convertDemoStudent} className="grid w-full gap-2 rounded-lg border border-emerald-100 bg-emerald-50 p-3 xl:max-w-3xl">
-            <div className="text-sm font-black text-emerald-950">Convert {student.name || "demo student"} to Student</div>
+            <div className="text-sm font-semibold text-emerald-950">Convert {student.name || "demo student"} to Student</div>
             <input type="hidden" name="booking" value={booking._id.toString()} />
             <input type="hidden" name="student" value={String(student._id || booking.student)} />
             <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-5">
@@ -489,7 +555,7 @@ function DemoCard({ booking, coaches, courses, batches, feedback }: { booking: a
         <form action={approveBooking} className="grid gap-3">
           <input type="hidden" name="booking" value={cardId} />
           <label className="block">
-            <span className="mb-1.5 block text-xs font-black uppercase tracking-wide text-slate-500">Coach</span>
+            <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Coach</span>
             <select name="coach" defaultValue={booking.assignedCoach?._id?.toString() || booking.instructor?._id?.toString() || ""} className="input bg-white" required>
               <option value="">Assign coach</option>
               {coaches.map((coach: any) => <option key={coach._id.toString()} value={coach._id.toString()}>{coach.name}</option>)}
@@ -497,16 +563,16 @@ function DemoCard({ booking, coaches, courses, batches, feedback }: { booking: a
           </label>
           <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_120px]">
             <label className="block">
-              <span className="mb-1.5 block text-xs font-black uppercase tracking-wide text-slate-500">Final date and time</span>
+              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Final date and time</span>
               <input name="startAt" type="datetime-local" defaultValue={startAt} className="input bg-white" required />
             </label>
             <label className="block">
-              <span className="mb-1.5 block text-xs font-black uppercase tracking-wide text-slate-500">Minutes</span>
+              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Minutes</span>
               <input name="durationMinutes" type="number" min={15} step={15} defaultValue={duration || 30} className="input bg-white" />
             </label>
           </div>
           <label className="block">
-            <span className="mb-1.5 block text-xs font-black uppercase tracking-wide text-slate-500">Google Meet link</span>
+            <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Google Meet link</span>
             <span className="relative block">
               <LinkIcon size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input name="meetingUrl" defaultValue={booking.meetingUrl || ""} placeholder="Paste Google Meet link" className="input bg-white pl-9" />
@@ -550,7 +616,7 @@ function PopupShell({ id, title, subtitle, children }: { id: string; title: stri
       <div className="w-full max-w-2xl overflow-hidden rounded-xl bg-white shadow-2xl">
         <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4">
           <div className="min-w-0">
-            <h2 className="text-lg font-black text-slate-950">{title}</h2>
+            <h2 className="text-lg font-semibold text-slate-950">{title}</h2>
             {subtitle ? <p className="mt-1 text-sm text-slate-500">{subtitle}</p> : null}
           </div>
           <a href="#" className="grid h-9 w-9 flex-none place-items-center rounded-md border border-slate-200 bg-white text-slate-600 hover:border-purple-200 hover:text-brand">
@@ -563,11 +629,84 @@ function PopupShell({ id, title, subtitle, children }: { id: string; title: stri
   );
 }
 
-function Info({ label, value }: { label: string; value: string }) {
+/**
+ * Borderless label/value pair. The card already sits inside a bordered panel, so
+ * boxing every value again is what made this page feel heavy.
+ */
+function Field({ label, value, className = "" }: { label: string; value?: ReactNode; className?: string }) {
+  const isEmpty = value === null || value === undefined || value === "";
   return (
-    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-      <div className="text-[10px] font-black uppercase tracking-wide text-slate-500">{label}</div>
-      <div className="mt-1 text-sm font-semibold text-slate-950">{value}</div>
+    <div className={`min-w-0 ${className}`}>
+      <dt className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400">{label}</dt>
+      <dd className={`mt-1 truncate text-[13px] ${isEmpty ? "text-slate-300" : "text-slate-800"}`}>{isEmpty ? "Not captured" : value}</dd>
+    </div>
+  );
+}
+
+function Tag({ tone, children }: { tone: "amber" | "slate" | "emerald"; children: ReactNode }) {
+  const tones = {
+    amber: "bg-amber-50 text-amber-700 ring-amber-200/70",
+    slate: "bg-slate-50 text-slate-600 ring-slate-200",
+    emerald: "bg-emerald-50 text-emerald-700 ring-emerald-200/70",
+  };
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset ${tones[tone]}`}>
+      {children}
+    </span>
+  );
+}
+
+function Dot() {
+  return <span aria-hidden className="text-slate-300">·</span>;
+}
+
+function Note({ label, text, icon }: { label: string; text: string; icon?: ReactNode }) {
+  return (
+    <div className="rounded-lg bg-slate-50/80 px-3.5 py-2.5">
+      <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400">
+        {icon} {label}
+      </div>
+      <p className="mt-1 whitespace-pre-wrap text-[13px] leading-6 text-slate-700">{text}</p>
+    </div>
+  );
+}
+
+/**
+ * The coach assessment is what an admin actually decides conversion on, so it
+ * belongs on the card rather than only in the Assessments tab.
+ */
+function AssessmentSummary({ feedback }: { feedback?: any }) {
+  if (!feedback) return null;
+  const ratings = [
+    feedback.fideRating ? `FIDE ${feedback.fideRating}` : "",
+    feedback.chessComRating ? `Chess.com ${feedback.chessComRating}` : "",
+    feedback.lichessRating ? `Lichess ${feedback.lichessRating}` : "",
+  ].filter(Boolean).join(" · ");
+
+  return (
+    <div className="mt-4 rounded-lg border border-emerald-100 bg-emerald-50/40 p-4">
+      <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-emerald-700">
+        <UserCheck size={13} /> Coach assessment
+      </div>
+      <dl className="mt-2.5 grid gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Field label="Assessed level" value={levelLabel(feedback.chessLevel)} />
+        <Field label="Playing strength" value={feedback.playingStrength} />
+        <Field label="Engagement" value={titleCase(feedback.studentEngagement)} />
+        <Field label="Recommends" value={titleCase(feedback.coachRecommendation)} />
+        <Field label="Course level" value={levelLabel(feedback.recommendedCourseLevel)} />
+        <Field label="Starting topic" value={feedback.recommendedStartingTopic} />
+        <Field label="Class frequency" value={feedback.suggestedClassFrequency} />
+        <Field label="Ratings" value={ratings} />
+      </dl>
+      {feedback.strengths || feedback.weaknesses || feedback.parentFacingSummary || feedback.coachComments || feedback.salesAdminNotes ? (
+        <div className="mt-3 grid gap-2">
+          {feedback.strengths ? <Note label="Strengths" text={feedback.strengths} /> : null}
+          {feedback.weaknesses ? <Note label="Areas to work on" text={feedback.weaknesses} /> : null}
+          {feedback.parentFacingSummary ? <Note label="Parent-facing summary" text={feedback.parentFacingSummary} /> : null}
+          {feedback.coachComments ? <Note label="Coach comments" text={feedback.coachComments} /> : null}
+          {feedback.salesAdminNotes ? <Note label="Sales notes" text={feedback.salesAdminNotes} /> : null}
+        </div>
+      ) : null}
     </div>
   );
 }

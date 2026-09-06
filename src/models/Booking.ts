@@ -80,5 +80,30 @@ BookingSchema.index({ instructor: 1, startAt: 1 }, { unique: true, partialFilter
 BookingSchema.index({ student: 1, bookingType: 1, status: 1, startAt: 1 });
 BookingSchema.index({ idempotencyKey: 1 }, { unique: true, sparse: true });
 
+/**
+ * Mirror demo stage changes into the CRM.
+ *
+ * `demoStatus` is written from a dozen places (demo center actions, attendance
+ * marking, live session teardown, coach feedback, the booking API). Hooking the
+ * schema keeps the CRM in step from one place and means new call sites are
+ * covered automatically. The sync module is imported lazily because it depends
+ * on this model, and it is fire-and-forget so the CRM can never fail a booking.
+ */
+function scheduleCrmStageSync(doc: any) {
+  const bookingId = doc?._id?.toString?.();
+  if (!bookingId || doc?.bookingType !== "demo") return;
+  import("@/lib/crm/sync")
+    .then((module) => module.queueBookingStageSync(bookingId))
+    .catch(() => undefined);
+}
+
+BookingSchema.post("save", function (doc: any) {
+  scheduleCrmStageSync(doc);
+});
+
+BookingSchema.post("findOneAndUpdate", function (doc: any) {
+  scheduleCrmStageSync(doc);
+});
+
 export const Availability = models.Availability || model("Availability", AvailabilitySchema);
 export const Booking = models.Booking || model("Booking", BookingSchema);

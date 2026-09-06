@@ -9,7 +9,10 @@ export const registerSchema = z.object({
   password: z.string().min(8).max(72),
   role: z.enum(["student", "instructor"]).default("student"),
   countryCode: optionalText(8),
-  phone: optionalText(40),
+  // Required: the signup form already enforces a phone number, and a lead
+  // without one can neither be matched nor created in the CRM, so it would never
+  // reach the sales pipeline. Length stays loose so international numbers pass.
+  phone: z.string().trim().min(6, "Please enter a phone number.").max(40),
   city: optionalText(80),
   country: optionalText(80),
   level: z.preprocess((value) => (value == null || value === "" ? undefined : value), z.enum(["absolute_beginner", "beginner", "intermediate", "advanced", "federated"]).optional()),

@@ -49,6 +49,20 @@ declare global {
 const sessionUserStatusCache = global._sessionUserStatusCache ?? new Map<string, SessionUserStatusCacheEntry>();
 if (!global._sessionUserStatusCache) global._sessionUserStatusCache = sessionUserStatusCache;
 
+/**
+ * Every refusal below returns null so the browser only ever sees a generic
+ * "invalid credentials" and no account information leaks. That also means the
+ * server log is the only place the real reason exists - without this, a support
+ * question like "the password is right but it says invalid" is undiagnosable.
+ * Passwords are never logged.
+ */
+function logLoginFailure(reason: string, identifier: string, extra: Record<string, unknown> = {}) {
+  const details = Object.entries(extra)
+    .map(([key, value]) => `${key}=${String(value)}`)
+    .join(" ");
+  console.warn(`[login] refused reason=${reason} identifier="${identifier}"${details ? ` ${details}` : ""}`);
+}
+
 function readCachedUserStatus(userId: string) {
   const cached = sessionUserStatusCache.get(userId);
   if (!cached) return null;
@@ -84,14 +98,25 @@ const nextAuth = NextAuth({
         const clientIp = getClientIp(requestHeaders);
         const ipLimit = consumeRateLimit(`login:ip:${clientIp}`, MAX_LOGIN_ATTEMPTS_PER_IP, LOGIN_IP_WINDOW_MS);
         const loginLimit = consumeRateLimit(`login:identifier:${normalized}`, MAX_LOGIN_ATTEMPTS_PER_LOGIN, LOGIN_ID_WINDOW_MS);
-        if (!ipLimit.allowed || !loginLimit.allowed) return null;
+        if (!ipLimit.allowed || !loginLimit.allowed) {
+          logLoginFailure(ipLimit.allowed ? "rate_limited_identifier" : "rate_limited_ip", loginValue, {
+            ip: clientIp,
+            retryAfterSeconds: Math.ceil((ipLimit.allowed ? loginLimit.retryAfterMs : ipLimit.retryAfterMs) / 1000),
+          });
+          return null;
+        }
         const user = await User.findOne(loginIdentifierFilter(loginValue));
         if (!user) {
           await bcrypt.compare(String(creds.password), DUMMY_PASSWORD_HASH);
+          logLoginFailure("no_matching_account", loginValue, { ip: clientIp });
           return null;
         }
         if (user.loginLockedUntil && new Date(user.loginLockedUntil).getTime() > Date.now()) {
           await bcrypt.compare(String(creds.password), DUMMY_PASSWORD_HASH);
+          logLoginFailure("account_locked", loginValue, {
+            ip: clientIp,
+            lockedUntil: new Date(user.loginLockedUntil).toISOString(),
+          });
           return null;
         }
         const ok = await bcrypt.compare(String(creds.password), user.passwordHash);
@@ -100,6 +125,12 @@ const nextAuth = NextAuth({
           const update: Record<string, unknown> = { failedLoginAttempts: failedAttempts };
           if (failedAttempts >= MAX_FAILED_LOGINS_BEFORE_LOCK) update.loginLockedUntil = new Date(Date.now() + LOGIN_LOCK_WINDOW_MS);
           await User.updateOne({ _id: user._id }, { $set: update });
+          logLoginFailure("wrong_password", loginValue, {
+            ip: clientIp,
+            matchedUsername: user.username || "",
+            failedAttempts,
+            nowLocked: failedAttempts >= MAX_FAILED_LOGINS_BEFORE_LOCK,
+          });
           return null;
         }
         if ((user.failedLoginAttempts || 0) > 0 || user.loginLockedUntil) {

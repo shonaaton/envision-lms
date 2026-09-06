@@ -9,7 +9,9 @@ type ReminderUser = {
   email?: string;
   name?: string;
   username?: string;
-  role?: "student" | "instructor" | "admin";
+  role?: string;
+  phone?: string;
+  countryCode?: string;
 };
 
 type QueueReminderInput = {
@@ -28,6 +30,16 @@ const TRANSIENT_DB_RETRY_DELAY_MS = 2_000;
 function unreadEmailDelayMs() {
   const configured = Number(process.env.ASK_COACH_UNREAD_EMAIL_DELAY_MINUTES || 5);
   const minutes = Number.isFinite(configured) ? Math.min(Math.max(configured, 0.1), 24 * 60) : 5;
+  return Math.round(minutes * 60 * 1000);
+}
+
+/**
+ * How long a message may sit unread before the WhatsApp nudge goes out.
+ * Kept separate from the email delay so the two channels tune independently.
+ */
+function unreadWhatsAppDelayMs() {
+  const configured = Number(process.env.ASK_COACH_UNREAD_WHATSAPP_DELAY_MINUTES || 30);
+  const minutes = Number.isFinite(configured) ? Math.min(Math.max(configured, 1), 24 * 60) : 30;
   return Math.round(minutes * 60 * 1000);
 }
 
@@ -68,6 +80,8 @@ async function cancelReminder(reminderId: unknown, reason?: string) {
         status: "cancelled",
         cancelledAt: new Date(),
         ...(reason ? { lastError: reason } : {}),
+        ...(reason ? { whatsappError: reason } : {}),
+        whatsappStatus: "cancelled",
       },
       $unset: { processingStartedAt: 1 },
     }
@@ -191,7 +205,9 @@ export async function queueAskCoachUnreadEmail(input: QueueReminderInput) {
   const recipientEmail = String(input.recipient.email || "").trim();
   if (!recipientEmail) return null;
 
+  const recipientPhone = String(input.recipient.phone || "").trim();
   const dueAt = new Date(Date.now() + unreadEmailDelayMs());
+  const whatsappDueAt = new Date(Date.now() + unreadWhatsAppDelayMs());
   const reminder: any = await AskCoachEmailReminder.findOneAndUpdate(
     { message: input.messageId, recipient: input.recipient._id },
     {
@@ -205,16 +221,33 @@ export async function queueAskCoachUnreadEmail(input: QueueReminderInput) {
         senderEmail: "",
         senderName: "",
         senderRole: input.sender.role || "admin",
+        recipientRole: input.recipient.role || "",
+        recipientPhone: recipientPhone,
+        recipientCountryCode: String(input.recipient.countryCode || "").trim(),
         messageBody: "[redacted]",
         href: input.href,
         dueAt,
         status: "pending",
+        whatsappDueAt,
+        whatsappStatus: recipientPhone ? "pending" : "skipped",
       },
     },
     { upsert: true, new: true }
   ).lean();
   if (reminder?.status === "pending") scheduleReminder(reminder._id, new Date(reminder.dueAt));
   return reminder;
+}
+
+export async function cancelPendingAskCoachWhatsApp(conversationId: unknown, recipientId: unknown) {
+  await AskCoachEmailReminder.updateMany(
+    { conversation: conversationId, recipient: recipientId, whatsappStatus: "pending" },
+    {
+      $set: {
+        whatsappStatus: "cancelled",
+        whatsappError: "Message was read on the platform before the WhatsApp nudge.",
+      },
+    }
+  );
 }
 
 export async function cancelAskCoachUnreadEmails(conversationId: unknown, recipientId: unknown) {
@@ -233,6 +266,7 @@ export async function cancelAskCoachUnreadEmails(conversationId: unknown, recipi
       $unset: { processingStartedAt: 1 },
     }
   );
+  await cancelPendingAskCoachWhatsApp(conversationId, recipientId);
 }
 
 export async function processDueAskCoachEmailReminders(limit = 50) {

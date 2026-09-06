@@ -30,6 +30,8 @@ type PopulatedUserRef = {
   username?: string;
   email?: string;
   role?: "student" | "instructor" | "admin";
+  phone?: string;
+  countryCode?: string;
 };
 
 type PopulatedBatchRef = {
@@ -327,7 +329,7 @@ export async function POST(req: Request) {
     ? await User.findById(sender).select("_id email name username role").lean<PopulatedUserRef | null>()
     : null;
   if (receiver && !created.flagged) {
-    const receiverUser = await User.findById(receiver).select("_id email name username role").lean<PopulatedUserRef | null>();
+    const receiverUser = await User.findById(receiver).select("_id email name username role phone countryCode").lean<PopulatedUserRef | null>();
     await notifyUser(receiver, "New Ask Coach message", "You have received a new message.", {
       conversation: conversation._id,
       message: created._id,
@@ -346,7 +348,7 @@ export async function POST(req: Request) {
     }
   }
   if (batchId && !created.flagged) {
-    const batch = await Batch.findById(batchId).populate("students", "email name username role").select("students").lean<{ students?: PopulatedUserRef[] } | null>();
+    const batch = await Batch.findById(batchId).populate("students", "email name username role phone countryCode").select("students").lean<{ students?: PopulatedUserRef[] } | null>();
     await Promise.all((batch?.students || [])
       .filter((student) => student._id?.toString() !== sender)
       .map(async (student) => {

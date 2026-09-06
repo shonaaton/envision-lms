@@ -114,8 +114,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, matched: true, stage: stageName, kind, ...result });
     }
 
-    // Demo stages: the portal owns these, so an inbound demo stage is recorded
+    // "demo": the portal owns these stages, so an inbound demo stage is recorded
     // for visibility but never overwrites a real class outcome.
+    // "ignore": early-funnel or unrecognised stages, which change nothing here.
     return NextResponse.json({ ok: true, matched: true, stage: stageName, kind, applied: false });
   } catch (error) {
     console.error("Kraya webhook failed", error);

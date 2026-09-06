@@ -1,5 +1,6 @@
 declare global {
   var askCoachReminderInterval: ReturnType<typeof setInterval> | undefined;
+  var askCoachWhatsAppInterval: ReturnType<typeof setInterval> | undefined;
   var homeworkReminderInterval: ReturnType<typeof setInterval> | undefined;
   var reminderStartupTimer: ReturnType<typeof setTimeout> | undefined;
   var tournamentTickInterval: ReturnType<typeof setInterval> | undefined;
@@ -37,6 +38,7 @@ export async function register() {
 
   const { processDueAskCoachEmailReminders } = await import("@/lib/askCoachEmailReminders");
   const { processDueHomeworkEmailReminders } = await import("@/lib/homeworkEmailReminders");
+  const { processDueAskCoachWhatsAppReminders, processAskCoachNightlyDigest } = await import("@/lib/askCoachWhatsAppReminders");
   const { notifyFailure } = await import("@/lib/failureNotifications");
   const { installRuntimeProcessLogging, installRuntimeStderrCapture, writeRuntimeLog } = await import("@/lib/runtimeLogger");
   installRuntimeProcessLogging();
@@ -57,6 +59,25 @@ export async function register() {
       void notifyFailure({ title: "Scheduled Ask Coach unread email processing failed", error, metadata: { automation: "ask_coach_email_reminders" } });
     });
   };
+  const runAskCoachWhatsApp = () => {
+    void (async () => {
+      await processDueAskCoachWhatsAppReminders();
+      await processAskCoachNightlyDigest();
+    })().catch((error) => {
+      if (isTransientMongoStartupError(error)) {
+        console.warn("Scheduled Ask Coach WhatsApp processing skipped: MongoDB primary is not ready yet.");
+        return;
+      }
+      console.error("Scheduled Ask Coach WhatsApp processing failed", error);
+      writeRuntimeLog({
+        source: "instrumentation.askCoachWhatsApp",
+        message: "Scheduled Ask Coach WhatsApp processing failed.",
+        error,
+        metadata: { automation: "ask_coach_whatsapp_reminders" },
+      });
+      void notifyFailure({ title: "Scheduled Ask Coach WhatsApp processing failed", error, metadata: { automation: "ask_coach_whatsapp_reminders" } });
+    });
+  };
   const runHomework = () => {
     void processDueHomeworkEmailReminders().catch((error) => {
       if (isTransientMongoStartupError(error)) {
@@ -75,6 +96,7 @@ export async function register() {
   };
   const runStartup = () => {
     runAskCoach();
+    runAskCoachWhatsApp();
     runHomework();
   };
 
@@ -90,6 +112,10 @@ export async function register() {
   if (!globalThis.homeworkReminderInterval) {
     globalThis.homeworkReminderInterval = setInterval(runHomework, 60_000);
     globalThis.homeworkReminderInterval.unref?.();
+  }
+  if (!globalThis.askCoachWhatsAppInterval) {
+    globalThis.askCoachWhatsAppInterval = setInterval(runAskCoachWhatsApp, 60_000);
+    globalThis.askCoachWhatsAppInterval.unref?.();
   }
 
   /**

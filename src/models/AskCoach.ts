@@ -55,6 +55,9 @@ const AskCoachEmailReminderSchema = new Schema(
     senderEmail: { type: String, default: "" },
     senderName: { type: String, default: "" },
     senderRole: { type: String, enum: ["student", "instructor", "admin"], required: true },
+    recipientRole: { type: String, default: "" },
+    recipientPhone: { type: String, default: "" },
+    recipientCountryCode: { type: String, default: "" },
     messageBody: { type: String, required: true },
     href: { type: String, required: true },
     dueAt: { type: Date, required: true, index: true },
@@ -69,19 +72,50 @@ const AskCoachEmailReminderSchema = new Schema(
     sentAt: Date,
     cancelledAt: Date,
     lastError: String,
+    whatsappDueAt: { type: Date, index: true },
+    whatsappStatus: {
+      type: String,
+      enum: ["pending", "processing", "sent", "cancelled", "skipped", "failed"],
+      default: "pending",
+      index: true,
+    },
+    whatsappSentAt: Date,
+    whatsappError: String,
   },
   { timestamps: true }
 );
 
 AskCoachEmailReminderSchema.index({ message: 1, recipient: 1 }, { unique: true });
 AskCoachEmailReminderSchema.index({ status: 1, dueAt: 1 });
+AskCoachEmailReminderSchema.index({ whatsappStatus: 1, whatsappDueAt: 1 });
+
+/**
+ * One WhatsApp digest per recipient per academy day. The unique index is the
+ * dedupe: the nightly job upserts here first and only sends when it wins the
+ * insert, so a second worker (or a restarted tick) cannot double-message.
+ */
+const AskCoachWhatsAppDigestSchema = new Schema(
+  {
+    recipient: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
+    dateKey: { type: String, required: true },
+    messageCount: { type: Number, default: 0 },
+    sentAt: Date,
+    lastError: String,
+  },
+  { timestamps: true }
+);
+
+AskCoachWhatsAppDigestSchema.index({ recipient: 1, dateKey: 1 }, { unique: true });
 
 export type AskCoachConversationDoc = InferSchemaType<typeof AskCoachConversationSchema> & { _id: any };
 export type AskCoachMessageDoc = InferSchemaType<typeof AskCoachMessageSchema> & { _id: any };
+export type AskCoachWhatsAppDigestDoc = InferSchemaType<typeof AskCoachWhatsAppDigestSchema> & { _id: any };
 export type AskCoachEmailReminderDoc = InferSchemaType<typeof AskCoachEmailReminderSchema> & { _id: any };
 
 export const AskCoachConversation =
   models.AskCoachConversation || model("AskCoachConversation", AskCoachConversationSchema);
 export const AskCoachMessage = models.AskCoachMessage || model("AskCoachMessage", AskCoachMessageSchema);
+export const AskCoachWhatsAppDigest =
+  models.AskCoachWhatsAppDigest || model("AskCoachWhatsAppDigest", AskCoachWhatsAppDigestSchema);
 export const AskCoachEmailReminder =
   models.AskCoachEmailReminder || model("AskCoachEmailReminder", AskCoachEmailReminderSchema);

@@ -3,7 +3,7 @@ import { classifyCrmStage, crmStageLabel, demoStatusToStage } from "@/lib/crm/st
 import { crmClientConfig, pushLeadStage } from "@/lib/crm/client";
 import { crmPhoneNumber, emailKey, phoneKey, phoneVariants } from "@/lib/crm/identity";
 
-const ENV_KEYS = ["CRM_STAGE_DEMO_REQUESTED", "CRM_DEMO_STAGES", "CRM_CONVERTED_STAGES", "CRM_DEFAULT_COUNTRY_CODE"];
+const ENV_KEYS = ["CRM_STAGE_DEMO_REQUESTED", "CRM_DEMO_STAGES", "CRM_CONVERTED_STAGES", "CRM_CLOSED_STAGES", "CRM_DEFAULT_COUNTRY_CODE"];
 
 afterEach(() => {
   for (const key of ENV_KEYS) delete process.env[key];
@@ -55,22 +55,50 @@ describe("classifyCrmStage", () => {
     expect(classifyCrmStage("Enrolled")).toBe("converted");
   });
 
-  it("treats every non-demo stage as a closure trigger", () => {
-    expect(classifyCrmStage("Dead")).toBe("closed");
+  it("recognises the live Envision pipeline stage names", () => {
+    expect(classifyCrmStage("Requested for Demo Class")).toBe("demo");
+    expect(classifyCrmStage("Demo Booked")).toBe("demo");
+    expect(classifyCrmStage("Demo Class Missed")).toBe("demo");
+    expect(classifyCrmStage("Demo Class Taken")).toBe("demo");
+    expect(classifyCrmStage("Current Student")).toBe("converted");
+  });
+
+  it("closes only on stages that actually mean the lead is dead", () => {
     expect(classifyCrmStage("No Response")).toBe("closed");
-    expect(classifyCrmStage("New Lead")).toBe("closed");
+    expect(classifyCrmStage("Deleted")).toBe("closed");
+    expect(classifyCrmStage("Dead")).toBe("closed");
+    expect(classifyCrmStage("Not Interested")).toBe("closed");
     expect(classifyCrmStage("Wrong Number")).toBe("closed");
   });
 
-  it("does not close a live demo when the stage name is missing", () => {
-    expect(classifyCrmStage("")).toBe("demo");
+  it("never closes a demo for ordinary early-funnel movement", () => {
+    // Moving a lead forward through the funnel must not cancel a live demo.
+    expect(classifyCrmStage("New Lead")).toBe("ignore");
+    expect(classifyCrmStage("Qualified")).toBe("ignore");
+    expect(classifyCrmStage("Hot Leads")).toBe("ignore");
+    expect(classifyCrmStage("Fresh Lead")).toBe("ignore");
+  });
+
+  it("ignores an unrecognised stage rather than guessing", () => {
+    expect(classifyCrmStage("Some New Stage")).toBe("ignore");
+    expect(classifyCrmStage("")).toBe("ignore");
   });
 
   it("lets exact stage names be pinned from the environment", () => {
     process.env.CRM_DEMO_STAGES = "Trial Scheduled,Follow Up Demo";
     process.env.CRM_CONVERTED_STAGES = "Joined Batch";
+    process.env.CRM_CLOSED_STAGES = "Archived";
     expect(classifyCrmStage("Trial Scheduled")).toBe("demo");
     expect(classifyCrmStage("Joined Batch")).toBe("converted");
+    expect(classifyCrmStage("Archived")).toBe("closed");
+  });
+
+  it("makes a pinned closure list authoritative", () => {
+    process.env.CRM_CLOSED_STAGES = "Archived";
+    // "Dead" matches a built-in pattern, but an explicit list overrides it so
+    // the closing stages are exactly the ones the academy chose.
+    expect(classifyCrmStage("Dead")).toBe("ignore");
+    expect(classifyCrmStage("Archived")).toBe("closed");
   });
 });
 

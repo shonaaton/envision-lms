@@ -34,7 +34,7 @@ const CrmLeadSchema = new Schema(
     lastPushError: String,
 
     lastInboundStage: String,
-    lastInboundStageKind: { type: String, enum: ["demo", "converted", "closed"] },
+    lastInboundStageKind: { type: String, enum: ["demo", "converted", "closed", "ignore"] },
     lastInboundAt: Date,
 
     syncEnabled: { type: Boolean, default: true },

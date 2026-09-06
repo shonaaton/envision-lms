@@ -83,27 +83,59 @@ function envStageList(key: string) {
     .filter(Boolean);
 }
 
-export type InboundStageKind = "demo" | "converted" | "closed";
+export type InboundStageKind = "demo" | "converted" | "closed" | "ignore";
 
 const CONVERTED_PATTERNS = ["current student", "converted", "enrolled", "active student", "paid student"];
 
 /**
+ * Stages that mean the lead is genuinely dead. Closing a demo is destructive, so
+ * it requires an explicit match here rather than being the fallback.
+ */
+const CLOSED_PATTERNS = [
+  "no response",
+  "not responding",
+  "unresponsive",
+  "dead",
+  "deleted",
+  "not interested",
+  "no interest",
+  "lost",
+  "junk",
+  "spam",
+  "wrong number",
+  "duplicate",
+  "unqualified",
+  "dropped",
+];
+
+/**
  * Classify an arbitrary CRM stage name arriving over the webhook.
  *
- * Matching is fuzzy on purpose: pipeline labels get renamed and truncated in the
- * CRM UI, and a mislabelled stage must never silently close a live demo. Exact
- * names can be pinned with CRM_DEMO_STAGES / CRM_CONVERTED_STAGES when needed.
+ * Anything unrecognised falls through to "ignore" and changes nothing on the
+ * portal. An earlier version closed the demo on any non-demo stage, which meant
+ * ordinary forward movement through the early funnel - New Lead, Qualified, Hot
+ * Leads, Fresh Lead - would have cancelled a live demo booking.
+ *
+ * Matching stays fuzzy because pipeline labels get renamed and truncated in the
+ * CRM UI. Exact names can be pinned with CRM_DEMO_STAGES, CRM_CONVERTED_STAGES
+ * and CRM_CLOSED_STAGES.
  */
 export function classifyCrmStage(stageName: string): InboundStageKind {
   const normalized = normalizeStageName(stageName);
-  if (!normalized) return "demo";
+  if (!normalized) return "ignore";
 
   const pinnedConverted = envStageList("CRM_CONVERTED_STAGES");
   const pinnedDemo = envStageList("CRM_DEMO_STAGES");
+  const pinnedClosed = envStageList("CRM_CLOSED_STAGES");
   if (pinnedConverted.includes(normalized)) return "converted";
   if (pinnedDemo.includes(normalized)) return "demo";
+  if (pinnedClosed.includes(normalized)) return "closed";
+  // A pinned closure list is authoritative: if it is set and this stage is not
+  // on it, nothing may close a demo by pattern-matching.
+  const hasPinnedClosed = pinnedClosed.length > 0;
 
   if (CONVERTED_PATTERNS.some((pattern) => normalized.includes(pattern))) return "converted";
   if (normalized.includes("demo") || normalized.includes("trial")) return "demo";
-  return "closed";
+  if (!hasPinnedClosed && CLOSED_PATTERNS.some((pattern) => normalized.includes(pattern))) return "closed";
+  return "ignore";
 }

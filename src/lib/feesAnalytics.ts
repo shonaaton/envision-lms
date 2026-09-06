@@ -2,7 +2,7 @@ import "server-only";
 
 import { Booking } from "@/models/Booking";
 import { Classroom } from "@/models/Classroom";
-import { DeletedInvoice, FeeAssignment, Invoice } from "@/models/Fee";
+import { DeletedInvoice, FeeAssignment, FeePlan, Invoice } from "@/models/Fee";
 import { StudentPause } from "@/models/StudentPause";
 import { User } from "@/models/User";
 import { getAcademySettings, invoiceBreakup } from "@/lib/fees";
@@ -15,6 +15,7 @@ import {
   joinedAt,
   leftAt,
   matchesGst,
+  mergeLostInvoices,
   monthlyCyclesInRange,
   pauseHoldWindow,
   planMatchesGst,
@@ -61,7 +62,7 @@ export async function getFeesAnalytics(options: { from: Date; to: Date; gst: Gst
   const now = new Date();
   const next7Days = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
-  const [settings, invoices, assignments, students, coaches, demoBookings, classrooms, deletedInvoices, pauses] = await Promise.all([
+  const [settings, invoices, assignments, students, coaches, demoBookings, classrooms, deletedInvoices, feePlans, pauses] = await Promise.all([
     getAcademySettings(),
     Invoice.find({})
       .populate("student", "name username email isActive createdAt deactivatedAt accountStatus conversionSetup")
@@ -88,6 +89,7 @@ export async function getFeesAnalytics(options: { from: Date; to: Date; gst: Gst
       .select("title students classDate startDate status generatedSessions")
       .lean(),
     DeletedInvoice.find({}).populate("student", "name username").sort({ deletedAt: -1 }).lean(),
+    FeePlan.find({}).lean(),
     StudentPause.find({ status: { $ne: "cancelled" } })
       .populate("student", "name username email isActive")
       .sort({ pausedFrom: -1 })
@@ -100,6 +102,8 @@ export async function getFeesAnalytics(options: { from: Date; to: Date; gst: Gst
   for (const coach of coaches as any[]) coachById.set(idOf(coach), coach);
   const assignmentByStudent = new Map<string, any>();
   for (const assignment of assignments as any[]) assignmentByStudent.set(idOf(assignment.student), assignment);
+  const planById = new Map<string, any>();
+  for (const plan of feePlans as any[]) planById.set(idOf(plan), plan);
 
   const scoped = (invoices as any[]).filter((invoice) => matchesGst(invoice, gst));
 
@@ -384,16 +388,41 @@ export async function getFeesAnalytics(options: { from: Date; to: Date; gst: Gst
 
   /* ------------------------------------------------------- 3b. paused students
 
-     A pause is a real but temporary revenue loss, and it hits the books twice:
-     invoices already raised for the pause window are voided outright, and
-     `ensureMonthlyInvoices` skips a paused student, so the cycles inside the
-     window are never billed in the first place. Both halves are counted here,
-     deduplicated by due date so a voided cycle is never charged twice.        */
+     A pause is a real but temporary revenue loss, and the money disappears in
+     three different ways - so all three have to be gathered or the total reads
+     zero while students are visibly out of class:
+
+       1. the pause voids the invoices already raised (status -> cancelled),
+       2. an admin deletes invoices for the paused month, which moves them out
+          of `Invoice` into `DeletedInvoice` *and* records the due date on
+          `deletedMonthlyDueDates` so monthly billing never raises them again,
+       3. monthly billing skips a paused student, so cycles still inside the
+          pause window are never raised in the first place.
+
+     Every invoice is keyed by its number (falling back to its due date) so an
+     invoice that was voided by the pause and later deleted is counted once. */
 
   const pausesInRange = (pauses as any[]).filter((pause) => !!pauseHoldWindow(pause.pausedFrom, pause.pausedUntil, from, to));
 
+  const cancelledByStudent = new Map<string, any[]>();
+  for (const invoice of scoped) {
+    if (invoice.status !== "cancelled") continue;
+    const key = idOf(invoice.student);
+    if (!cancelledByStudent.has(key)) cancelledByStudent.set(key, []);
+    cancelledByStudent.get(key)!.push(invoice);
+  }
+  const deletedByStudent = new Map<string, any[]>();
+  for (const record of deletedInvoices as any[]) {
+    // The archive keeps the whole original invoice, so the GST selector can
+    // still classify it; a record without a snapshot falls back to non-GST.
+    if (!matchesGst(record.invoiceSnapshot || record, gst)) continue;
+    const key = idOf(record.student);
+    if (!deletedByStudent.has(key)) deletedByStudent.set(key, []);
+    deletedByStudent.get(key)!.push(record);
+  }
+
   const pauseRows: Record<string, any>[] = [];
-  const voidedRows: Record<string, any>[] = [];
+  const lostInvoiceRows: Record<string, any>[] = [];
   let pausedVoidedValue = 0;
   let pausedUnbilledValue = 0;
   let pausedVoidedCount = 0;
@@ -401,48 +430,86 @@ export async function getFeesAnalytics(options: { from: Date; to: Date; gst: Gst
   for (const pause of pausesInRange) {
     const studentId = idOf(pause.student);
     const assignment = assignmentByStudent.get(studentId);
-    const plan = assignment?.plan || null;
-    // The pause only costs money for the part of its window inside the range.
+    // Fall back to the plan captured on the pause when the live fee assignment
+    // has since been removed, otherwise the plan value reads as zero.
+    const plan = assignment?.plan || planById.get(idOf(pause.feeSnapshot?.plan)) || null;
+    const student = studentLabel(pause.student);
     const { holdFrom, holdTo } = pauseHoldWindow(pause.pausedFrom, pause.pausedUntil, from, to)!;
 
-    const voided = (pause.voidedInvoices || []).filter((entry: any) => inRange(entry.dueDate, holdFrom, holdTo));
-    const voidedValue = sum(voided, (entry) => entry.totalAmount);
+    // One entry per lost invoice, whatever route it took out of the ledger.
+    // Deletion is the most final state, so it is offered first and wins the key.
+    const lost = mergeLostInvoices(
+      [
+        ...(deletedByStudent.get(studentId) || []).map((record: any) => ({
+          invoice: record.invoiceNumber,
+          title: record.title,
+          due: record.dueDate,
+          total: record.totalAmount,
+          source: "Deleted",
+          wasStatus: record.status,
+        })),
+        ...(pause.voidedInvoices || []).map((entry: any) => ({
+          invoice: entry.invoiceNumber,
+          title: entry.title,
+          due: entry.dueDate,
+          total: entry.totalAmount,
+          source: "Voided by pause",
+          wasStatus: entry.previousStatus,
+        })),
+        ...(cancelledByStudent.get(studentId) || []).map((invoice: any) => ({
+          invoice: invoice.invoiceNumber,
+          title: invoice.title,
+          due: invoice.dueDate,
+          total: invoice.totalAmount,
+          source: "Cancelled",
+          wasStatus: "cancelled",
+        })),
+      ],
+      from,
+      to
+    );
 
-    // Monthly plans keep billing on a fixed anchor, so any cycle in the window
-    // without a voided invoice behind it is revenue that was simply never raised.
+    const voidedValue = sum(lost, (entry) => entry.total);
+
+    // Monthly plans bill on a fixed anchor, so any cycle still inside the pause
+    // window with no invoice behind it is revenue that was never raised at all.
     const isMonthly = (pause.feeSnapshot?.planType || assignment?.type) === "monthly";
     const anchor = toDate(pause.feeSnapshot?.firstDueDate || pause.feeSnapshot?.billingStartDate)
       || toDate(assignment?.firstDueDate || assignment?.billingStartDate);
     const perCycle = plan ? planGross(plan, settings) : 0;
     const unbilledCycles = isMonthly && anchor && planMatchesGst(plan, gst)
-      ? unbilledPauseCycles(anchor, holdFrom, holdTo, voided.map((entry: any) => entry.dueDate))
+      ? unbilledPauseCycles(anchor, holdFrom, holdTo, lost.map((entry) => entry.due))
       : [];
     const unbilledValue = unbilledCycles.length * perCycle;
 
     pausedVoidedValue += voidedValue;
     pausedUnbilledValue += unbilledValue;
-    pausedVoidedCount += voided.length;
+    pausedVoidedCount += lost.length;
 
-    for (const entry of voided) {
-      voidedRows.push({
-        invoice: entry.invoiceNumber || "-",
-        student: studentLabel(pause.student),
-        title: entry.title || "-",
-        due: entry.dueDate,
-        wasStatus: entry.previousStatus || "unpaid",
-        total: Number(entry.totalAmount || 0),
+    for (const entry of lost) {
+      lostInvoiceRows.push({ ...entry, student });
+    }
+    for (const due of unbilledCycles) {
+      lostInvoiceRows.push({
+        invoice: "-",
+        student,
+        title: `${plan?.name || "Monthly plan"} - never raised`,
+        due,
+        wasStatus: "not billed",
+        total: perCycle,
+        source: "Never billed",
       });
     }
 
     pauseRows.push({
       pauseId: idOf(pause),
-      student: studentLabel(pause.student),
+      student,
       batch: pause.batchName || "-",
       plan: plan?.name || pause.feeSnapshot?.planName || "No plan assigned",
       pausedFrom: pause.pausedFrom,
       pausedUntil: pause.pausedUntil,
       restart: pause.expectedRestartDate || pause.pausedUntil,
-      voidedCount: voided.length,
+      voidedCount: lost.length,
       voidedValue,
       unbilledCycles: unbilledCycles.length,
       unbilledValue,
@@ -468,7 +535,8 @@ export async function getFeesAnalytics(options: { from: Date; to: Date; gst: Gst
       { key: "pausedFrom", label: "Paused from", type: "date" },
       { key: "pausedUntil", label: "Paused till", type: "date" },
       { key: "restart", label: "Restarts", type: "date" },
-      { key: "voidedValue", label: "Invoices voided", type: "money", align: "right" },
+      { key: "voidedCount", label: "Invoices lost", type: "number", align: "right" },
+      { key: "voidedValue", label: "Voided / deleted", type: "money", align: "right" },
       { key: "unbilledValue", label: "Never billed", type: "money", align: "right" },
       { key: "onHold", label: "On hold", type: "money", align: "right" },
       { key: "state", label: "Status", type: "badge" },
@@ -476,23 +544,25 @@ export async function getFeesAnalytics(options: { from: Date; to: Date; gst: Gst
     rows: pauseRows.sort((a, b) => b.onHold - a.onHold),
     totals: { voidedValue: pausedVoidedValue, unbilledValue: pausedUnbilledValue, onHold: pausedOnHold },
     footnote:
-      "On hold = invoices voided by the pause plus the monthly cycles inside the pause window that were never raised, because paused students are skipped by monthly billing. Credit plans count voided invoices only.",
+      "On hold = every invoice for this range that the pause voided or an admin deleted, plus the monthly cycles inside the pause window that were never raised at all. Credit plans count lost invoices only, since they have no fixed billing cycle.",
   });
 
   addTable({
     id: "pausedVoidedInvoices",
-    title: "Invoices voided by a pause",
-    subtitle: "Invoices that were cancelled when the student stepped out of the batch",
+    title: "Revenue lost to a pause",
+    subtitle: "Every invoice a paused student would have paid this range, and how it left the ledger",
     columns: [
       { key: "invoice", label: "Invoice" },
       { key: "student", label: "Student" },
       { key: "title", label: "Invoice for" },
       { key: "due", label: "Was due", type: "date" },
+      { key: "source", label: "How it was lost", type: "badge" },
       { key: "wasStatus", label: "Was", type: "badge" },
       { key: "total", label: "Amount", type: "money", align: "right" },
     ],
-    rows: voidedRows.sort((a, b) => new Date(b.due).getTime() - new Date(a.due).getTime()),
-    totals: { total: pausedVoidedValue },
+    rows: lostInvoiceRows.sort((a, b) => new Date(b.due).getTime() - new Date(a.due).getTime()),
+    totals: { total: pausedOnHold },
+    footnote: "Voided by pause = cancelled automatically when the student was paused. Deleted = removed by an admin, which also stops monthly billing from ever raising it again. Never billed = a cycle that was skipped because the student was paused.",
   });
 
   addTable({

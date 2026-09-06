@@ -4,6 +4,7 @@ import {
   joinedAt,
   leftAt,
   matchesGst,
+  mergeLostInvoices,
   monthlyCyclesInRange,
   monthlyDueDate,
   pauseHoldWindow,
@@ -162,6 +163,87 @@ test("a pause with every cycle already voided adds no second charge", () => {
   const anchor = day("2026-03-10T00:00:00");
   const voided = [day("2026-09-10T23:59:59.999"), day("2026-10-10T23:59:59.999")];
   expect(unbilledPauseCycles(anchor, day("2026-09-01"), day("2026-10-31T23:59:59.999"), voided).length).toBe(0);
+});
+
+// An invoice can leave the ledger by more than one route - the pause voids it,
+// an admin deletes it, and the cancelled row may still be sitting there - so
+// the merge has to find all of them exactly once.
+
+test("an invoice both voided by the pause and later deleted is counted once", () => {
+  const from = day("2026-09-01");
+  const to = day("2026-09-30T23:59:59.999");
+  const merged = mergeLostInvoices(
+    [
+      { invoice: "ENV/26-27/031", due: day("2026-09-10"), total: 354000, source: "Deleted" },
+      { invoice: "ENV/26-27/031", due: day("2026-09-10"), total: 354000, source: "Voided by pause" },
+      { invoice: "ENV/26-27/031", due: day("2026-09-10"), total: 354000, source: "Cancelled" },
+    ],
+    from,
+    to
+  );
+  expect(merged.length).toBe(1);
+  expect(merged[0].total).toBe(354000);
+  // Deletion is the most final state, so it is the one reported.
+  expect(merged[0].source).toBe("Deleted");
+});
+
+test("an invoice that was only deleted still counts - this is what read as zero before", () => {
+  const merged = mergeLostInvoices(
+    [{ invoice: "ENV/26-27/044", due: day("2026-09-10"), total: 708000, source: "Deleted" }],
+    day("2026-09-01"),
+    day("2026-09-30T23:59:59.999")
+  );
+  expect(merged.length).toBe(1);
+  expect(merged[0].total).toBe(708000);
+});
+
+test("distinct invoices for the same student are all kept", () => {
+  const merged = mergeLostInvoices(
+    [
+      { invoice: "ENV/26-27/031", due: day("2026-09-10"), total: 354000, source: "Deleted" },
+      { invoice: "ENV/26-27/032", due: day("2026-09-20"), total: 354000, source: "Voided by pause" },
+    ],
+    day("2026-09-01"),
+    day("2026-09-30T23:59:59.999")
+  );
+  expect(merged.length).toBe(2);
+  expect(merged.reduce((total, row) => total + row.total, 0)).toBe(708000);
+});
+
+test("archived rows with no invoice number fall back to the due date as their key", () => {
+  const merged = mergeLostInvoices(
+    [
+      { due: day("2026-09-10"), total: 354000, source: "Deleted" },
+      { invoice: "-", due: day("2026-09-10"), total: 354000, source: "Voided by pause" },
+    ],
+    day("2026-09-01"),
+    day("2026-09-30T23:59:59.999")
+  );
+  expect(merged.length).toBe(1);
+});
+
+test("invoices due outside the range belong to another period and are dropped", () => {
+  const merged = mergeLostInvoices(
+    [
+      { invoice: "A", due: day("2026-09-10"), total: 100, source: "Deleted" },
+      { invoice: "B", due: day("2026-10-10"), total: 200, source: "Deleted" },
+      { invoice: "C", due: day("2026-08-10"), total: 300, source: "Deleted" },
+    ],
+    day("2026-09-01"),
+    day("2026-09-30T23:59:59.999")
+  );
+  expect(merged.map((row) => row.invoice)).toEqual(["A"]);
+});
+
+test("a cycle already covered by a lost invoice is not billed again as never billed", () => {
+  const anchor = day("2026-01-10T00:00:00");
+  const lost = mergeLostInvoices(
+    [{ invoice: "ENV/26-27/031", due: day("2026-09-10T23:59:59.999"), total: 354000, source: "Deleted" }],
+    day("2026-09-01"),
+    day("2026-09-30T23:59:59.999")
+  );
+  const unbilled = unbilledPauseCycles(anchor, day("2026-09-06"), day("2026-09-30T23:59:59.999"), lost.map((row) => row.due));
+  expect(unbilled.length).toBe(0);
 });
 
 test("an inverted date range is corrected rather than returning nothing", () => {

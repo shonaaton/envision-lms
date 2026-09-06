@@ -118,9 +118,9 @@ function cellValue(value: unknown, type?: string) {
 function badgeTone(value: string) {
   const key = String(value || "").toLowerCase();
   if (["paid", "converted", "active", "gst", "demo done", "retained"].includes(key)) return "bg-emerald-50 text-emerald-700 ring-emerald-200";
-  if (["overdue", "left", "no show", "missed", "cancelled"].includes(key)) return "bg-rose-50 text-rose-700 ring-rose-200";
-  if (["unpaid", "paused", "assessment pending", "requested"].includes(key)) return "bg-amber-50 text-amber-700 ring-amber-200";
-  if (["scheduled", "demo conversion", "non-gst", "draft"].includes(key)) return "bg-sky-50 text-sky-700 ring-sky-200";
+  if (["overdue", "left", "no show", "missed", "cancelled", "deleted"].includes(key)) return "bg-rose-50 text-rose-700 ring-rose-200";
+  if (["unpaid", "paused", "assessment pending", "requested", "voided by pause", "not billed"].includes(key)) return "bg-amber-50 text-amber-700 ring-amber-200";
+  if (["scheduled", "demo conversion", "non-gst", "draft", "never billed", "back in class"].includes(key)) return "bg-sky-50 text-sky-700 ring-sky-200";
   return "bg-slate-100 text-slate-600 ring-slate-200";
 }
 
@@ -599,7 +599,7 @@ export function FinanceDashboard({
       key: "onHold",
       label: "Revenue on hold",
       value: money(k.pausedOnHold),
-      note: `${k.pausedVoidedCount} invoices voided, ${money(k.pausedUnbilledValue)} never billed`,
+      note: `${k.pausedVoidedCount} invoices voided or deleted, ${money(k.pausedUnbilledValue)} never billed`,
       icon: PauseCircle,
       tone: "amber",
       tables: ["pausedStudents", "pausedVoidedInvoices"],

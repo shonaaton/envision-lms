@@ -102,6 +102,44 @@ export function monthlyCyclesInRange(anchor: Date, from: Date, to: Date): Date[]
   return cycles;
 }
 
+export type LostInvoice = {
+  invoice?: string;
+  title?: string;
+  due: unknown;
+  total: number;
+  source: string;
+  wasStatus?: string;
+};
+
+/**
+ * Collapse the invoices a paused student lost into one row each.
+ *
+ * The same invoice can show up from several sources - the pause voids it, an
+ * admin later deletes it, and the cancelled row may still sit in the ledger -
+ * so entries are keyed by invoice number, falling back to the due date for
+ * archived rows that never carried one. Earlier entries win, so callers should
+ * pass the most final state (deleted) first. Anything due outside [from, to] is
+ * dropped, because it belongs to a different reporting period.
+ */
+export function mergeLostInvoices(entries: LostInvoice[], from: Date, to: Date) {
+  const merged = new Map<string, LostInvoice & { due: Date }>();
+  for (const entry of entries) {
+    const due = toDate(entry.due);
+    if (!due || !inRange(due, from, to)) continue;
+    const key = entry.invoice && entry.invoice !== "-" ? `no:${entry.invoice}` : `due:${due.toDateString()}`;
+    if (merged.has(key)) continue;
+    merged.set(key, {
+      invoice: entry.invoice || "-",
+      title: entry.title || "-",
+      due,
+      total: Number(entry.total || 0),
+      source: entry.source,
+      wasStatus: entry.wasStatus || "unpaid",
+    });
+  }
+  return [...merged.values()];
+}
+
 /**
  * Billing cycles inside a pause window that were never invoiced at all.
  *

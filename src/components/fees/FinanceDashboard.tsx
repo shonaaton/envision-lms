@@ -466,22 +466,40 @@ export function FinanceDashboard({
       tables: ["collected", "gst", "lateFees", "discounts"],
     },
     {
-      key: "net",
-      label: "Fees excluding GST",
-      value: money(k.netCollected),
-      note: "Net academy earnings",
-      icon: PieChart,
-      tone: "brand",
-      tables: ["collected"],
+      key: "gstInvoiceFees",
+      label: "From GST invoices",
+      value: money(k.gstInvoiceCollected),
+      note: `${k.gstInvoiceCount} invoices, incl. ${money(k.gstCollected)} GST`,
+      icon: Receipt,
+      tone: "violet",
+      tables: ["gst"],
+    },
+    {
+      key: "nonGstFees",
+      label: "From non-GST invoices",
+      value: money(k.nonGstCollected),
+      note: `${k.nonGstInvoiceCount} invoices with no tax charged`,
+      icon: Banknote,
+      tone: "sky",
+      tables: ["nonGstCollected"],
     },
     {
       key: "gst",
       label: "GST collected",
       value: money(k.gstCollected),
-      note: `${k.gstInvoiceCount} GST invoices`,
+      note: "Tax component payable onward",
       icon: Receipt,
       tone: "violet",
       tables: ["gst"],
+    },
+    {
+      key: "net",
+      label: "Fees excluding GST",
+      value: money(k.netCollected),
+      note: "Everything collected, minus the GST",
+      icon: PieChart,
+      tone: "brand",
+      tables: ["collected", "gst", "nonGstCollected"],
     },
     {
       key: "outstanding",
@@ -873,7 +891,7 @@ export function FinanceDashboard({
 
       <div className={loading ? "pointer-events-none opacity-60 transition" : "transition"}>
         <Section title="Collections" description="Money actually received, billed and still owed in this window" icon={Banknote}>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             {collectionCards.map((card) => (
               <KpiCard key={card.key} card={card} onOpen={openModal} />
             ))}

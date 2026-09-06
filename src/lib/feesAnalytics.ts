@@ -153,10 +153,17 @@ export async function getFeesAnalytics(options: { from: Date; to: Date; gst: Gst
   const discounted = paidInRange.filter(
     (invoice) => Number(invoice.discountAmount || 0) + Number(invoice.lateFeeWaivedAmount || 0) > 0
   );
+  // The paid invoices split cleanly in two by tax treatment, so the gross taken
+  // on GST invoices plus the gross taken on non-GST invoices is the whole total.
+  // That is a different question from "total minus the tax component", which is
+  // what `netCollected` answers.
   const gstInvoicesPaid = paidInRange.filter((invoice) => isGstInvoice(invoice));
+  const nonGstInvoicesPaid = paidInRange.filter((invoice) => !isGstInvoice(invoice));
 
   const collected = sum(paidInRange, (i) => i.totalAmount);
   const gstCollected = sum(paidInRange, (i) => i.gstAmount);
+  const gstInvoiceCollected = sum(gstInvoicesPaid, (i) => i.totalAmount);
+  const nonGstCollected = sum(nonGstInvoicesPaid, (i) => i.totalAmount);
   const lateFeeCollected = sum(paidInRange, (i) => i.lateFee);
   const discountValue = sum(discounted, (i) => Number(i.discountAmount || 0) + Number(i.lateFeeWaivedAmount || 0));
 
@@ -192,7 +199,23 @@ export async function getFeesAnalytics(options: { from: Date; to: Date; gst: Gst
       { key: "total", label: "Total", type: "money", align: "right" },
     ],
     rows: gstInvoicesPaid.map((invoice) => ({ ...invoiceRow(invoice), gstPercentage: Number(invoice.gstPercentage || 0) })),
-    totals: { gst: gstCollected, total: sum(gstInvoicesPaid, (i) => i.totalAmount) },
+    totals: { gst: gstCollected, total: gstInvoiceCollected },
+  });
+
+  addTable({
+    id: "nonGstCollected",
+    title: "Non-GST fees collected",
+    subtitle: "Money received on invoices raised without any GST",
+    columns: [
+      { key: "invoice", label: "Invoice" },
+      { key: "student", label: "Student" },
+      { key: "plan", label: "Plan" },
+      { key: "paidAt", label: "Paid on", type: "date" },
+      { key: "total", label: "Amount", type: "money", align: "right" },
+    ],
+    rows: nonGstInvoicesPaid.map(invoiceRow),
+    totals: { total: nonGstCollected },
+    footnote: "No tax was charged on these invoices, so the full amount is academy earnings.",
   });
 
   addTable({
@@ -1011,6 +1034,9 @@ export async function getFeesAnalytics(options: { from: Date; to: Date; gst: Gst
     collectedCount: paidInRange.length,
     gstCollected,
     gstInvoiceCount: gstInvoicesPaid.length,
+    gstInvoiceCollected,
+    nonGstCollected,
+    nonGstInvoiceCount: nonGstInvoicesPaid.length,
     netCollected: collected - gstCollected,
     lateFeeCollected,
     lateFeeCount: paidInRange.filter((invoice) => Number(invoice.lateFee || 0) > 0).length,

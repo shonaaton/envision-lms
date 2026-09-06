@@ -29,6 +29,7 @@ import { demoStudentExperience } from "@/lib/demoStudentExperience";
 import { inactiveStudentMessage } from "@/lib/studentAccess";
 import { getActivePause, pausedStudentMessage } from "@/lib/studentPause";
 import { coachClassroomQuery, limitClassroomToCoachSessions } from "@/lib/classroomCoachAccess";
+import { getCoachDemoConversion } from "@/lib/demoConversion";
 import { unstable_noStore as noStore } from "next/cache";
 import {
   Activity as ActivityIcon,
@@ -1179,7 +1180,7 @@ async function StudentDashboard({ userId, joinAllowed }: { userId: string; joinA
 async function CoachDashboard({ userId, searchParams, joinAllowed }: { userId: string; searchParams: DashboardSearchParams; joinAllowed: boolean }) {
   const now = new Date();
   const summaryRange = getTeachingSummaryRange(searchParams);
-  const [classroomDocs, homework, tournaments] = await Promise.all([
+  const [classroomDocs, homework, tournaments, demoConversion] = await Promise.all([
     Classroom.find({
       ...coachClassroomQuery(userId),
       isActive: { $ne: false },
@@ -1192,6 +1193,7 @@ async function CoachDashboard({ userId, searchParams, joinAllowed }: { userId: s
       .lean(),
     Homework.find({ instructor: userId }).sort({ dueAt: 1, createdAt: -1 }).limit(6).lean(),
     Tournament.find({ status: { $in: ["upcoming", "live"] } }).sort({ startAt: 1 }).limit(4).lean(),
+    getCoachDemoConversion(userId, { from: summaryRange.from, to: summaryRange.to }),
   ]);
   const classrooms = classroomDocs.map((classroom: any) => limitClassroomToCoachSessions(classroom, userId));
 
@@ -1221,11 +1223,12 @@ async function CoachDashboard({ userId, searchParams, joinAllowed }: { userId: s
         subtitle="Scheduled classes, assigned students, classroom entry points, and teaching hours in one clean view."
         icon={BookOpen}
       >
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-5">
             <StatCard label="Next Sessions" value={sessions.length} note="Today, tomorrow, and upcoming" icon={Calendar} tone="purple" />
             <StatCard label="Teaching Hours" value={teaching.totalHoursConducted.toFixed(2)} note={summaryRange.label} icon={BookOpen} tone="blue" />
             <StatCard label="Classes Conducted" value={teaching.classesConducted} note={`${teaching.classesCancelled} cancelled`} icon={ClipboardList} tone="amber" />
             <StatCard label="Students" value={teaching.totalStudentsTaught || new Set(classrooms.flatMap((item: any) => (item.students || []).map((student: any) => objectId(student)))).size} note={`${teaching.attendancePercentage}% completion`} icon={Users} tone="green" />
+            <StatCard label="Demo Conversion" value={`${demoConversion.rate}%`} note={`${demoConversion.converted} of ${demoConversion.done} demos - ${summaryRange.label}`} icon={Target} tone="rose" />
           </div>
       </DashboardHero>
 

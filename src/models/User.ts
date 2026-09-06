@@ -63,6 +63,9 @@ const UserSchema = new Schema(
     classrooms: [{ type: Schema.Types.ObjectId, ref: "Classroom" }],
     notes: { type: String },
     isActive: { type: Boolean, default: true, index: true },
+    // Stamped when `isActive` is turned off so churn reporting knows when a
+    // student actually left. Legacy rows fall back to `updatedAt`.
+    deactivatedAt: { type: Date, index: true },
     // Batch pause — the student stays enrolled but is out of classes and billing
     // until `pausedUntil`. Full detail (dates, voided invoices, restart plan)
     // lives on the StudentPause record referenced by `pauseRecord`.

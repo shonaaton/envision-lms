@@ -28,7 +28,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const actorId = (session!.user as any).id;
   await dbConnect();
   const actorIsSuperAdmin = await isSuperAdminSession(session!.user as any);
-  const target = await User.findById(params.id).select("name role isSuperAdmin").lean();
+  const target = await User.findById(params.id).select("name role isSuperAdmin isActive").lean();
   if ((target as any)?.isSuperAdmin && !actorIsSuperAdmin) return NextResponse.json({ error: "Only Super Admins can update another Super Admin." }, { status: 403 });
   if (body.resetPassword) {
     const tempPassword = body.password || genPassword();
@@ -64,6 +64,10 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if ((update.role === "admin" || update.role === "sub-admin") && !actorIsSuperAdmin) return NextResponse.json({ error: "Only Super Admins can assign admin or sub-admin roles." }, { status: 403 });
   if (update.role && update.role !== "admin") update.isSuperAdmin = false;
   if (update.email) update.email = String(update.email).toLowerCase();
+  // Stamp when the account was switched off so fee churn reporting has a real date.
+  if ("isActive" in update && update.isActive !== (target as any)?.isActive) {
+    update.deactivatedAt = update.isActive === false ? new Date() : null;
+  }
   const removingSuperAdmin =
     (target as any)?.isSuperAdmin &&
     (update.isSuperAdmin === false || update.role !== undefined && update.role !== "admin" || update.isActive === false);

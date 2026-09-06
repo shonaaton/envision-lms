@@ -10,6 +10,7 @@ import { resolvePublicAppUrl } from "@/lib/appUrl";
 import { ACADEMY_DEFAULTS, ACADEMY_FAVICON_URL, ACADEMY_LOGO_URL, ACADEMY_SIGNATURE_URL } from "@/lib/branding";
 import { recordActivity } from "@/lib/activity";
 import { formatINR } from "@/lib/utils";
+import { monthlyDueDate, nextMonthlyDueDate } from "@/lib/feesMetrics";
 import { createHash, randomBytes } from "crypto";
 import { importantContactWhatsAppRecipientsByKeys } from "@/lib/importantContacts";
 import { sendWhatsAppAutomationTemplate, sendWhatsAppAutomationTemplates, whatsappRecipientName } from "@/lib/whatsappAutomationEvents";
@@ -112,16 +113,7 @@ async function nextAvailableInvoiceNumber() {
   return `${prefix}/${fy}/${Date.now()}`;
 }
 
-export function monthlyDueDate(startDate: Date, monthOffset = 0) {
-  const due = new Date(startDate);
-  due.setMonth(due.getMonth() + monthOffset);
-  due.setHours(23, 59, 59, 999);
-  return due;
-}
-
-export function nextMonthlyDueDate(dueDate: Date) {
-  return monthlyDueDate(dueDate, 1);
-}
+export { monthlyDueDate, nextMonthlyDueDate } from "@/lib/feesMetrics";
 
 function hashInvoiceToken(token: string) {
   return createHash("sha256").update(token).digest("hex");

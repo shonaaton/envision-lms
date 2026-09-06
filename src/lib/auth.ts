@@ -5,6 +5,7 @@ import { headers } from "next/headers";
 import { authConfig } from "./auth.config";
 import { isInactiveRestrictedPath } from "./inactiveAccess";
 import { consumeRateLimit, getClientIp } from "./requestSecurity";
+import { loginIdentifierFilter } from "./loginIdentity";
 
 const SESSION_USER_STATUS_TTL_MS = 60_000;
 const LOGIN_IP_WINDOW_MS = 5 * 60 * 1000;
@@ -84,13 +85,7 @@ const nextAuth = NextAuth({
         const ipLimit = consumeRateLimit(`login:ip:${clientIp}`, MAX_LOGIN_ATTEMPTS_PER_IP, LOGIN_IP_WINDOW_MS);
         const loginLimit = consumeRateLimit(`login:identifier:${normalized}`, MAX_LOGIN_ATTEMPTS_PER_LOGIN, LOGIN_ID_WINDOW_MS);
         if (!ipLimit.allowed || !loginLimit.allowed) return null;
-        const user = await User.findOne({
-          $or: [
-            { email: normalized },
-            { username: loginValue },
-            { username: normalized },
-          ],
-        });
+        const user = await User.findOne(loginIdentifierFilter(loginValue));
         if (!user) {
           await bcrypt.compare(String(creds.password), DUMMY_PASSWORD_HASH);
           return null;

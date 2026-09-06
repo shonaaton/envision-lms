@@ -1,3 +1,4 @@
+import { escapeRegex } from "@/lib/loginIdentity";
 import { Schema, model, models, type InferSchemaType } from "mongoose";
 
 const UserSchema = new Schema(
@@ -95,7 +96,9 @@ export async function generateUsername(name: string): Promise<string> {
   const base = `${first}@ENV`;
   let candidate = base;
   let i = 1;
-  while (await User.exists({ username: candidate })) {
+  // Case-insensitive check: sign-in matches user IDs without regard to case, so
+  // `Rahul@ENV` and `rahul@ENV` must not both be handed out.
+  while (await User.exists({ username: new RegExp(`^${escapeRegex(candidate)}$`, "i") })) {
     i += 1;
     candidate = `${first}${i}@ENV`;
   }

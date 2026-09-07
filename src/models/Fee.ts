@@ -94,6 +94,10 @@ const InvoiceSchema = new Schema(
     paymentAdjustmentNote: String,
     credits: { type: Number, default: 0 },
     status: { type: String, enum: ["draft", "unpaid", "paid", "overdue", "cancelled"], default: "unpaid", index: true },
+    // Why an invoice was voided, and what it was before, so a void driven by an
+    // account change can be undone when the account comes back.
+    cancellationReason: { type: String, index: true },
+    cancellationPreviousStatus: { type: String },
     paidAt: Date,
     payment: { type: Schema.Types.ObjectId, ref: "Payment" },
     paymentTransactions: [{

@@ -121,6 +121,16 @@ const ClassroomSchema = new Schema(
     sessionDate: { type: Date, index: true },
     isTestClassroom: { type: Boolean, default: false, index: true },
     testOwner: { type: Schema.Types.ObjectId, ref: "User", index: true },
+
+    // Closure trail. A classroom is switched off when the last active student
+    // leaves it - today that only happens through account deactivation - and
+    // these fields say when, why, and for whom, so the close can be reversed
+    // and so coaches can be shown what was closed on them.
+    closedAt: { type: Date, index: true },
+    closedReason: { type: String, index: true },
+    closedBy: { type: Schema.Types.ObjectId, ref: "User" },
+    closedForStudents: [{ type: Schema.Types.ObjectId, ref: "User", index: true }],
+    previousStatus: { type: String },
   },
   { timestamps: true }
 );

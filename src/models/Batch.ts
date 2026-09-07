@@ -19,6 +19,13 @@ const BatchSchema = new Schema(
     // data fix, not a deploy. Individual classes (names prefixed "PIC") ignore it.
     capacity: { type: Number, default: 8, min: 1, max: 100 },
     isActive: { type: Boolean, default: true, index: true },
+
+    // Same closure trail the Classroom carries - a batch is closed when its last
+    // active student is deactivated, and reopened if that student comes back.
+    closedAt: { type: Date, index: true },
+    closedReason: { type: String, index: true },
+    closedBy: { type: Schema.Types.ObjectId, ref: "User" },
+    closedForStudents: [{ type: Schema.Types.ObjectId, ref: "User", index: true }],
   },
   { timestamps: true }
 );

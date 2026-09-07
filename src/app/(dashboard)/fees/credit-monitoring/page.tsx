@@ -332,13 +332,20 @@ export default async function CreditMonitoringPage({ searchParams }: { searchPar
   const max = value(params, "max");
   const view = selectedView(value(params, "view"));
 
-  const [allAssignments, plans, ledgers] = await Promise.all([
+  const [everyAssignment, plans, ledgers] = await Promise.all([
     FeeAssignment.find(manager ? { type: "credits" } : { type: "credits", student: userId }).populate("student plan").sort({ creditBalance: 1 }).lean(),
     FeePlan.find(manager ? { type: "credits" } : { type: "credits", isActive: true }).sort({ name: 1 }).lean(),
     CreditLedger.find(manager ? {} : { student: userId }).populate("student invoice performedBy").sort({ createdAt: -1 }).limit(120).lean(),
   ]);
 
-  const assignments = allAssignments
+  // A deactivated student is no longer being taught, so their balance does not
+  // belong in the live credit lists or in any of the counts driving them. The
+  // rows are kept, in their own section, because the leftover balance is still
+  // owed back or written off when the account is closed for good.
+  const deactivatedAssignments = everyAssignment.filter((assignment: any) => assignment.student?.isActive === false);
+  const allAssignments = everyAssignment.filter((assignment: any) => assignment.student?.isActive !== false);
+
+  const assignments = (filter === "deactivated" ? deactivatedAssignments : allAssignments)
     .filter((assignment: any) => !q || `${assignment.student?.name || ""} ${assignment.student?.username || ""} ${assignment.student?.email || ""}`.toLowerCase().includes(q))
     .filter((assignment: any) => !plan || assignment.plan?._id?.toString?.() === plan)
     .filter((assignment: any) => filter !== "low" || Number(assignment.creditBalance || 0) === 1)
@@ -348,6 +355,7 @@ export default async function CreditMonitoringPage({ searchParams }: { searchPar
     .filter((assignment: any) => !max || Number(assignment.creditBalance || 0) <= Number(max));
 
   const totalStudents = allAssignments.length;
+  const deactivatedCount = deactivatedAssignments.length;
   const lowCount = allAssignments.filter((assignment: any) => Number(assignment.creditBalance || 0) === 1).length;
   const emptyCount = allAssignments.filter((assignment: any) => Number(assignment.creditBalance || 0) <= 0).length;
   const healthyCount = allAssignments.filter((assignment: any) => Number(assignment.creditBalance || 0) > 1).length;
@@ -415,6 +423,7 @@ export default async function CreditMonitoringPage({ searchParams }: { searchPar
               <StatusLink href={pageHref(params, { view: "students", filter: "low" })} active={filter === "low"} label="Low" value={lowCount} />
               <StatusLink href={pageHref(params, { view: "students", filter: "empty" })} active={filter === "empty"} label="Empty" value={emptyCount} />
               <StatusLink href={pageHref(params, { view: "students", filter: "healthy" })} active={filter === "healthy"} label="Healthy" value={healthyCount} />
+              {manager && <StatusLink href={pageHref(params, { view: "students", filter: "deactivated" })} active={filter === "deactivated"} label="Deactivated" value={deactivatedCount} />}
             </div>
             <form className="grid gap-3 lg:grid-cols-[minmax(220px,1.2fr)_170px_180px_110px_110px_auto] lg:items-end">
               <input type="hidden" name="view" value="students" />
@@ -432,6 +441,7 @@ export default async function CreditMonitoringPage({ searchParams }: { searchPar
                   <option value="low">Low credits</option>
                   <option value="empty">Zero credits</option>
                   <option value="healthy">Healthy</option>
+                  {manager && <option value="deactivated">Deactivated students</option>}
                 </select>
               </label>
               <label className="space-y-1">
@@ -459,15 +469,21 @@ export default async function CreditMonitoringPage({ searchParams }: { searchPar
 
           <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
             <SectionTitle
-              title={manager ? "Students by Credit Balance" : "Your Credit Balance"}
-              note={manager ? "Student names open their invoices." : "Track your purchased, used, and remaining class credits."}
+              title={filter === "deactivated" ? "Deactivated Students" : manager ? "Students by Credit Balance" : "Your Credit Balance"}
+              note={
+                filter === "deactivated"
+                  ? "Accounts that have been switched off. Their batches are closed and their upcoming invoices voided - only the leftover balance is shown here."
+                  : manager
+                    ? "Student names open their invoices. Deactivated accounts are kept out of this list."
+                    : "Track your purchased, used, and remaining class credits."
+              }
               action={<span className="rounded-full bg-brand/10 px-3 py-1 text-xs font-bold text-brand">{assignments.length} visible</span>}
             />
 
             {assignments.length === 0 ? (
               <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
-                <h3 className="text-sm font-bold text-slate-950">No matching credit students</h3>
-                <p className="mt-1 text-xs text-slate-500">Clear the search or widen the credit range.</p>
+                <h3 className="text-sm font-bold text-slate-950">{filter === "deactivated" ? "No deactivated credit students" : "No matching credit students"}</h3>
+                <p className="mt-1 text-xs text-slate-500">{filter === "deactivated" ? "Every credit-plan student is active." : "Clear the search or widen the credit range."}</p>
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -500,6 +516,11 @@ export default async function CreditMonitoringPage({ searchParams }: { searchPar
                               <span className="font-semibold text-slate-950">{assignment.student?.name || "Student"}</span>
                             )}
                             <div className="mt-0.5 text-xs text-slate-500">{assignment.student?.username || assignment.student?.email || "-"}</div>
+                            {assignment.student?.isActive === false && (
+                              <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                                Deactivated{assignment.student?.deactivatedAt ? ` on ${new Date(assignment.student.deactivatedAt).toLocaleDateString("en-IN")}` : ""}
+                              </div>
+                            )}
                           </td>
                           <td className="px-3 py-3">{assignment.plan?.name || "-"}</td>
                           <td className="px-3 py-3 font-semibold">{purchased}</td>

@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivitySquare,
+  Archive,
   Banknote,
   BarChart3,
   Bell,
@@ -78,6 +79,7 @@ const sections: NavSection[] = [
     title: "Class Tools",
     items: [
       { href: "/classrooms", label: "Classrooms", icon: BookOpen, featureKey: "classrooms" },
+      { href: "/classrooms/closed", label: "Closed Batches", icon: Archive, featureKey: "classrooms", roles: ["instructor", "admin", "sub-admin"] },
       { href: "/availability", label: "Available Times", icon: CalendarDays, featureKey: "availableTimes", roles: ["instructor", "admin", "sub-admin"] },
       { href: "/booking", label: "Booking", icon: CalendarDays, featureKey: "booking", roles: ["student"] },
       { href: "/ask-coach", label: "Ask Coach", icon: MessageSquare, featureKey: "askCoach" },

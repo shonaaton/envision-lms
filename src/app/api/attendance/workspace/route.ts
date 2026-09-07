@@ -174,6 +174,9 @@ export async function GET(req: Request) {
     : {
         ...coachClassroomQuery(userId),
         isSessionInstance: { $ne: true },
+        // A closed batch has nothing left to mark - it lives on the coach's
+        // Closed Batches page, not on their attendance board.
+        isActive: { $ne: false },
       };
 
   const classroomDocs: any[] = await Classroom.find(classroomFilter)

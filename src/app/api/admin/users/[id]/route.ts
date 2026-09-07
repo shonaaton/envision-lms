@@ -7,6 +7,7 @@ import { User } from "@/models/User";
 import { recordActivity } from "@/lib/activity";
 import { canAccessFeature, isSuperAdminSession } from "@/lib/featureAccess";
 import { deleteUserRecords } from "@/lib/deleteUserRecords";
+import { applyStudentDeactivation, applyStudentReactivation } from "@/lib/studentDeactivation";
 
 export const dynamic = "force-dynamic";
 
@@ -65,7 +66,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (update.role && update.role !== "admin") update.isSuperAdmin = false;
   if (update.email) update.email = String(update.email).toLowerCase();
   // Stamp when the account was switched off so fee churn reporting has a real date.
-  if ("isActive" in update && update.isActive !== (target as any)?.isActive) {
+  const statusChanged = "isActive" in update && update.isActive !== (target as any)?.isActive;
+  if (statusChanged) {
     update.deactivatedAt = update.isActive === false ? new Date() : null;
   }
   const removingSuperAdmin =
@@ -76,6 +78,17 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     if (remaining === 0) return NextResponse.json({ error: "At least one active Super Admin must remain." }, { status: 409 });
   }
   const u = await User.findByIdAndUpdate(params.id, update, { new: true, projection: { passwordHash: 0 } });
+  // Switching a student account off has to take their classes off with it -
+  // close the batches they were the last active member of and void the invoices
+  // still ahead of them. Switching it back on undoes exactly those closures.
+  if (statusChanged && (target as any)?.role === "student") {
+    try {
+      if (update.isActive === false) await applyStudentDeactivation(params.id, { id: actorId, role: String((session!.user as any).role || "") });
+      else await applyStudentReactivation(params.id, { id: actorId, role: String((session!.user as any).role || "") });
+    } catch (error) {
+      console.error("Student activation side effects failed", error);
+    }
+  }
   await recordActivity({
     actor: actorId,
     targetUser: params.id,

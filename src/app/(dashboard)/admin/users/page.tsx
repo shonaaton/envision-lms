@@ -48,6 +48,9 @@ type AdminUser = {
   rating?: number;
   notes?: string;
   accountStatus?: "demo" | "enrolled" | "coach_applicant" | "approved" | "rejected";
+  closedBatchCount?: number;
+  closedClassroomCount?: number;
+  closedGroupCount?: number;
   isActive: boolean;
   isPaused?: boolean;
   pausedUntil?: string;
@@ -63,6 +66,9 @@ type BatchItem = {
   coach?: AdminUser;
   students?: AdminUser[];
   tags?: string[];
+  isActive?: boolean;
+  closedReason?: string;
+  closedAt?: string;
 };
 
 type BatchUpdatePayload = {
@@ -314,6 +320,7 @@ export default function AdminUsersPage() {
                     <InfoPill label="S.No" value={String(i + 1)} />
                     <InfoPill label="Username" value={u.username || "-"} />
                     <InfoPill label="Phone" value={contactNumber(u)} />
+                    {tab === "coaches" && <InfoPill label="Closed Batches" value={String(u.closedBatchCount || 0)} />}
                     <button
                       className={`rounded-lg px-3 py-2 text-left text-xs font-bold ${u.isPaused ? "bg-amber-100 text-amber-800" : u.isActive ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}
                       onClick={() => (u.isPaused ? undefined : toggleUserAccess(u))}
@@ -346,6 +353,7 @@ export default function AdminUsersPage() {
                     <th className="py-3 text-left">Name</th>
                     <th className="py-3 text-left">Email</th>
                     <th className="py-3 text-left">Contact No.</th>
+                    {tab === "coaches" && <th className="py-3 text-left">Closed Batches</th>}
                     <th className="py-3 text-left">Status</th>
                     <th className="py-3 text-right">Actions</th>
                   </tr>
@@ -374,6 +382,18 @@ export default function AdminUsersPage() {
                       </td>
                       <td className="py-3 text-slate-600">{u.email}</td>
                       <td className="py-3 text-slate-600">{contactNumber(u)}</td>
+                      {tab === "coaches" && (
+                        <td className="py-3">
+                          <a
+                            href="/classrooms/closed"
+                            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${(u.closedBatchCount || 0) + (u.closedClassroomCount || 0) > 0 ? "bg-rose-100 text-rose-700 hover:bg-rose-200" : "bg-slate-100 text-slate-500"}`}
+                            title={`${u.closedBatchCount || 0} batch${(u.closedBatchCount || 0) === 1 ? "" : "es"} and ${u.closedClassroomCount || 0} classroom${(u.closedClassroomCount || 0) === 1 ? "" : "s"} closed after a student was deactivated`}
+                          >
+                            {u.closedBatchCount || 0} batches
+                            <span className="text-[10px] opacity-70">/ {u.closedClassroomCount || 0} classes</span>
+                          </a>
+                        </td>
+                      )}
                       <td className="py-3">
                         <div className="flex flex-wrap items-center gap-1.5">
                           <button
@@ -400,7 +420,7 @@ export default function AdminUsersPage() {
                       </td>
                     </tr>
                   ))}
-                  {users.length === 0 && <tr><td colSpan={8} className="py-8 text-center text-slate-500">No {tab} yet.</td></tr>}
+                  {users.length === 0 && <tr><td colSpan={tab === "coaches" ? 9 : 8} className="py-8 text-center text-slate-500">No {tab} yet.</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -437,6 +457,7 @@ export default function AdminUsersPage() {
                   <th className="py-3 text-left">Name</th>
                   <th className="py-3 text-left">Coach</th>
                   <th className="py-3 text-left">Students Count</th>
+                  <th className="py-3 text-left">Status</th>
                   <th className="py-3 text-right">Actions</th>
                 </tr>
               </thead>
@@ -447,12 +468,21 @@ export default function AdminUsersPage() {
                     <td className="py-3 font-semibold">{batch.name}</td>
                     <td className="py-3">{batch.coach?.name || "-"}</td>
                     <td className="py-3">{batch.students?.length || 0}</td>
+                    <td className="py-3">
+                      {batch.isActive === false ? (
+                        <a href="/classrooms/closed" className="inline-flex items-center gap-1 rounded-full bg-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-300" title={batch.closedReason === "student_deactivated" ? "Closed because its last active student was deactivated" : "Closed"}>
+                          Closed
+                        </a>
+                      ) : (
+                        <span className="inline-flex rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700">Running</span>
+                      )}
+                    </td>
                     <td className="relative py-3 text-right">
                       <button className="rounded p-1 hover:bg-slate-100" onClick={() => setMenu(menu?.id === batch._id ? null : { type: "batch", id: batch._id })}><MoreVertical size={16} /></button>
                     </td>
                   </tr>
                 ))}
-                {currentBatches.length === 0 && <tr><td colSpan={5} className="py-8 text-center text-slate-500">No batches yet.</td></tr>}
+                {currentBatches.length === 0 && <tr><td colSpan={6} className="py-8 text-center text-slate-500">No batches yet.</td></tr>}
               </tbody>
             </table>
           </div>

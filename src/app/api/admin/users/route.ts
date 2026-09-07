@@ -7,6 +7,7 @@ import { addUserSchema } from "@/lib/validation";
 import { recordActivity } from "@/lib/activity";
 import { canAccessFeature, isSuperAdminSession } from "@/lib/featureAccess";
 import { sendWelcomeEmail } from "@/lib/welcomeEmail";
+import { closedGroupCountsByCoach } from "@/lib/studentDeactivation";
 
 export const dynamic = "force-dynamic";
 
@@ -60,6 +61,25 @@ export async function GET(req: Request) {
     .sort(sortObj)
     .limit(500)
     .lean();
+
+  // Coaches carry how many of their groups have been closed by a student
+  // deactivation, so the coach list shows the churn sitting under each of them.
+  if (role === "instructor") {
+    const counts = await closedGroupCountsByCoach((list as any[]).map((user: any) => String(user._id)));
+    return NextResponse.json(
+      (list as any[]).map((user: any) => {
+        const count = counts.get(String(user._id));
+        return {
+          ...user,
+          closedBatchCount: count?.closedBatches || 0,
+          closedClassroomCount: count?.closedClassrooms || 0,
+          closedGroupCount: count?.total || 0,
+          lastGroupClosedAt: count?.lastClosedAt || null,
+        };
+      }),
+      { headers: { "Cache-Control": "no-store, max-age=0" } }
+    );
+  }
   return NextResponse.json(list, { headers: { "Cache-Control": "no-store, max-age=0" } });
 }
 

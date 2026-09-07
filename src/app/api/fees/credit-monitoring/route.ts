@@ -34,6 +34,11 @@ function filterAssignments(assignments: any[], url: URL) {
   const max = url.searchParams.get("max");
 
   return assignments
+    // The export mirrors the page: deactivated accounts are out of every list
+    // except the one that asks for them.
+    .filter((assignment) =>
+      filter === "deactivated" ? assignment.student?.isActive === false : assignment.student?.isActive !== false
+    )
     .filter((assignment) => !q || `${assignment.student?.name || ""} ${assignment.student?.username || ""} ${assignment.student?.email || ""}`.toLowerCase().includes(q))
     .filter((assignment) => !plan || assignment.plan?._id?.toString?.() === plan)
     .filter((assignment) => filter !== "low" || Number(assignment.creditBalance || 0) === 1)
@@ -51,7 +56,7 @@ export async function GET(req: Request) {
   const format = url.searchParams.get("format") || "xls";
   const assignments = await FeeAssignment.find({ type: "credits" }).populate("student plan").sort({ creditBalance: 1 }).lean();
   const filtered = filterAssignments(assignments, url);
-  const headers = ["Student", "Student ID", "Email", "Plan", "Purchased", "Consumed", "Remaining", "Status", "Updated At"];
+  const headers = ["Student", "Student ID", "Email", "Plan", "Purchased", "Consumed", "Remaining", "Status", "Account", "Updated At"];
   const rows = filtered.map((assignment: any) => [
     assignment.student?.name || "",
     assignment.student?.username || assignment.student?._id?.toString?.() || "",
@@ -61,6 +66,9 @@ export async function GET(req: Request) {
     assignment.totalCreditsConsumed || 0,
     assignment.creditBalance || 0,
     statusFor(Number(assignment.creditBalance || 0)),
+    assignment.student?.isActive === false
+      ? `Deactivated${assignment.student?.deactivatedAt ? ` on ${new Date(assignment.student.deactivatedAt).toLocaleDateString("en-IN")}` : ""}`
+      : "Active",
     assignment.updatedAt ? new Date(assignment.updatedAt).toLocaleString("en-IN") : "",
   ]);
 

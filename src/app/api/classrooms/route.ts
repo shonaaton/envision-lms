@@ -28,11 +28,15 @@ export async function GET() {
     role === "admin" && isSuperAdmin
       ? { $or: [{ isTestClassroom: { $ne: true } }, { isTestClassroom: true, testOwner: userId }] }
       : { isTestClassroom: { $ne: true } };
+  // A closed classroom stays in the admin list so it can be reviewed, but coaches
+  // and students only see what is still running - closed batches have their own
+  // page at /classrooms/closed.
+  const runningOnly = { isActive: { $ne: false } };
   const filter = role === "admin" || role === "sub-admin"
     ? { isSessionInstance: { $ne: true }, ...visibleClassrooms }
     : role === "instructor"
-      ? { ...coachClassroomQuery(userId), isSessionInstance: { $ne: true }, ...visibleClassrooms }
-      : { students: userId, isSessionInstance: { $ne: true }, ...visibleClassrooms };
+      ? { ...coachClassroomQuery(userId), isSessionInstance: { $ne: true }, ...runningOnly, ...visibleClassrooms }
+      : { students: userId, isSessionInstance: { $ne: true }, ...runningOnly, ...visibleClassrooms };
   const list = await Classroom.find(filter)
     .populate("coach instructor", "name email username")
     .populate("generatedSessions.substituteCoach", "name email username")

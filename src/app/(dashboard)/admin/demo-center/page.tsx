@@ -2,7 +2,7 @@ import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
-import { CalendarCheck, CheckCircle2, Clock3, GraduationCap, History, Link as LinkIcon, MessageSquareText, RotateCcw, UserCheck, X, XCircle } from "lucide-react";
+import { CalendarCheck, CheckCircle2, Clock3, GraduationCap, History, Link as LinkIcon, MessageSquareText, RotateCcw, Trash2, UserCheck, X, XCircle } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { formatAcademyDateTime } from "@/lib/academyTime";
@@ -10,6 +10,7 @@ import { notifyDemoApproved, notifyDemoConverted } from "@/lib/demoWorkflow";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
 import { recordActivity } from "@/lib/activity";
 import { cancelDemoClassrooms } from "@/lib/demoClassroom";
+import { Activity } from "@/models/Activity";
 import { Booking } from "@/models/Booking";
 import { Classroom } from "@/models/Classroom";
 import { Notification } from "@/models/Fee";
@@ -20,7 +21,7 @@ import { Batch } from "@/models/Batch";
 
 export const dynamic = "force-dynamic";
 
-type DemoTab = "requested" | "upcoming" | "completed" | "missed" | "converted" | "closed" | "assessments";
+type DemoTab = "requested" | "upcoming" | "completed" | "missed" | "converted" | "closed" | "assessments" | "history";
 type DemoManagerSession = Awaited<ReturnType<typeof auth>> & { user: { id?: string; role?: string } };
 
 const tabs: Array<{ id: DemoTab; label: string }> = [
@@ -31,6 +32,7 @@ const tabs: Array<{ id: DemoTab; label: string }> = [
   { id: "converted", label: "Converted" },
   { id: "closed", label: "Closed" },
   { id: "assessments", label: "Assessments" },
+  { id: "history", label: "History" },
 ];
 
 function contactNumber(record: { countryCode?: string; phone?: string }) {
@@ -81,6 +83,9 @@ function titleCase(value?: string) {
 }
 
 function classifyDemo(booking: any): DemoTab {
+  // Archived wins over every other state so a deleted request leaves the working
+  // tabs entirely, rather than lingering in Closed or Requested.
+  if (booking.archivedAt) return "history";
   if (booking.demoStatus === "CONVERTED") return "converted";
   if (booking.demoStatus === "CLOSED" || booking.status === "cancelled" || booking.demoStatus === "CANCELLED") return "closed";
   if (booking.demoStatus === "STUDENT_NO_SHOW" || booking.demoStatus === "ABSENT") return "missed";
@@ -258,6 +263,53 @@ async function closeDemo(formData: FormData) {
   revalidatePath("/classrooms");
 }
 
+/**
+ * Remove a demo request from the working tabs without destroying it. The record
+ * stays queryable for conversion reporting, and restoring is just clearing the
+ * archive fields.
+ */
+async function archiveDemo(formData: FormData) {
+  "use server";
+  const session = await requireDemoManager();
+  await dbConnect();
+  const actorId = String((session.user as any).id || "");
+  const bookingId = String(formData.get("booking") || "");
+  if (!bookingId) return;
+  const reason = String(formData.get("archiveReason") || "").trim() || "Removed by admin";
+  await Booking.findByIdAndUpdate(bookingId, { archivedAt: new Date(), archivedBy: actorId, archiveReason: reason });
+  // An archived request must not leave a live class on a coach's schedule.
+  await cancelDemoClassrooms({ bookingIds: [bookingId], reason }).catch(() => undefined);
+  await recordActivity({
+    actor: actorId,
+    type: "demo.booking.archived",
+    label: "Moved demo request to History",
+    entityType: "Booking",
+    entityId: bookingId,
+    metadata: { reason, event: "DEMO_ARCHIVED" },
+  });
+  revalidatePath("/admin/demo-center");
+  revalidatePath("/classrooms");
+}
+
+async function restoreDemo(formData: FormData) {
+  "use server";
+  const session = await requireDemoManager();
+  await dbConnect();
+  const actorId = String((session.user as any).id || "");
+  const bookingId = String(formData.get("booking") || "");
+  if (!bookingId) return;
+  await Booking.findByIdAndUpdate(bookingId, { $unset: { archivedAt: "", archivedBy: "", archiveReason: "" } });
+  await recordActivity({
+    actor: actorId,
+    type: "demo.booking.restored",
+    label: "Restored demo request from History",
+    entityType: "Booking",
+    entityId: bookingId,
+    metadata: { event: "DEMO_RESTORED" },
+  });
+  revalidatePath("/admin/demo-center");
+}
+
 async function convertDemoStudent(formData: FormData) {
   "use server";
   const session = await requireDemoManager();
@@ -335,9 +387,27 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
     Course.find({ isActive: { $ne: false } }).select("name level").sort({ name: 1 }).lean(),
     Batch.find({ isActive: { $ne: false } }).select("name level").sort({ name: 1 }).lean(),
   ]);
-  const visibleBookings = activeTab === "assessments" ? [] : bookings.filter((booking: any) => classifyDemo(booking) === activeTab);
+  const visibleBookings = activeTab === "assessments" || activeTab === "history"
+    ? []
+    : bookings.filter((booking: any) => classifyDemo(booking) === activeTab);
   const counts = Object.fromEntries(tabs.map((tab) => [tab.id, tab.id === "assessments" ? feedback.length : bookings.filter((booking: any) => classifyDemo(booking) === tab.id).length]));
   const feedbackByBooking = new Map(feedback.map((item: any) => [String(item.booking?._id || item.booking), item]));
+
+  // The audit trail is only needed on the History tab, so it is not paid for on
+  // every other page load.
+  const archivedBookings = activeTab === "history" ? bookings.filter((booking: any) => Boolean(booking.archivedAt)) : [];
+  const historyActivities: any[] = archivedBookings.length
+    ? await Activity.find({ entityType: "Booking", entityId: { $in: archivedBookings.map((booking: any) => booking._id) } })
+        .populate("actor", "name")
+        .sort({ occurredAt: 1 })
+        .limit(1000)
+        .lean()
+    : [];
+  const activityByBooking = new Map<string, any[]>();
+  for (const item of historyActivities) {
+    const key = String(item.entityId);
+    activityByBooking.set(key, [...(activityByBooking.get(key) || []), item]);
+  }
 
   return (
     <div className="space-y-5 p-2 text-slate-950">
@@ -366,7 +436,14 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
         ))}
       </nav>
 
-      {activeTab !== "assessments" ? (
+      {activeTab === "history" ? (
+        <section className="grid gap-3">
+          {archivedBookings.map((booking: any) => (
+            <HistoryCard key={booking._id.toString()} booking={booking} activities={activityByBooking.get(String(booking._id)) || []} />
+          ))}
+          {!archivedBookings.length ? <Empty text="Nothing in History yet. Deleting a demo request moves it here." /> : null}
+        </section>
+      ) : activeTab !== "assessments" ? (
         <section className="grid gap-3">
           {visibleBookings.map((booking: any) => (
             <DemoCard key={booking._id.toString()} booking={booking} coaches={coaches} courses={courses} batches={batches} feedback={feedbackByBooking.get(String(booking._id))} />
@@ -398,7 +475,7 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
         <p className="mt-0.5 text-[13px] text-slate-500">Signed-up demo accounts that have not booked a demo class yet.</p>
         <div className="mt-4 grid gap-3 md:grid-cols-2">
           {demoStudents
-            .filter((student: any) => !bookings.some((booking: any) => String(booking.student?._id || booking.student) === String(student._id) && ["pending", "confirmed"].includes(String(booking.status || ""))))
+            .filter((student: any) => !bookings.some((booking: any) => String(booking.student?._id || booking.student) === String(student._id) && !booking.archivedAt && ["pending", "confirmed"].includes(String(booking.status || ""))))
             .map((student: any) => {
               const extendModalId = `extend-demo-account-${student._id.toString()}`;
               const accountExpired = student.demoExpiresAt && new Date(student.demoExpiresAt).getTime() < Date.now();
@@ -583,6 +660,13 @@ function DemoCard({ booking, coaches, courses, batches, feedback }: { booking: a
           </select>
           <button className="btn-outline border-rose-200 bg-white text-rose-700"><XCircle size={15} /> Close Demo</button>
         </form>
+        {/* Archive, not destroy - the record stays in History for reporting and
+            can be restored. Closing reflects in the CRM; deleting does not. */}
+        <form action={archiveDemo}>
+          <input type="hidden" name="booking" value={booking._id.toString()} />
+          <input type="hidden" name="archiveReason" value="Removed from Demo Center" />
+          <button className="btn-outline bg-white text-slate-500"><Trash2 size={15} /> Delete</button>
+        </form>
       </div>
       <PopupShell id={assignModalId} title="Assign coach and confirm demo" subtitle={`${student.name || "Demo student"} · ${booking.requestedLocalDateTime || formatAcademyDateTime(booking.startAt)}`}>
         <form action={approveBooking} className="grid gap-3">
@@ -633,6 +717,72 @@ function DemoCard({ booking, coaches, courses, batches, feedback }: { booking: a
           </div>
         </form>
       </PopupShell>
+    </article>
+  );
+}
+
+/**
+ * An archived request plus everything that ever happened to it. The timeline is
+ * built from the Activity entries the demo workflow already records, so History
+ * shows the real sequence rather than a summary written after the fact.
+ */
+function HistoryCard({ booking, activities }: { booking: any; activities: any[] }) {
+  const student = booking.student || {};
+  return (
+    <article className="rounded-xl border border-slate-200/80 bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-base font-semibold tracking-tight text-slate-900">{student.name || "Demo student"}</h2>
+            <Tag tone="slate">Archived</Tag>
+            <Tag tone="amber">{demoStatusLabel(booking)}</Tag>
+          </div>
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[13px] text-slate-500">
+            {student.parentName ? <><span>Parent: {student.parentName}</span><Dot /></> : null}
+            <span>{contactNumber(student)}</span>
+            {student.email ? <><Dot /><span>{student.email}</span></> : null}
+          </div>
+        </div>
+        <form action={restoreDemo}>
+          <input type="hidden" name="booking" value={booking._id.toString()} />
+          <button className="btn-outline bg-white"><RotateCcw size={15} /> Restore</button>
+        </form>
+      </div>
+
+      <dl className="mt-4 grid gap-x-6 gap-y-3.5 border-t border-slate-100 pt-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Field label="Archived" value={booking.archivedAt ? formatAcademyDateTime(booking.archivedAt) : ""} />
+        <Field label="Reason" value={booking.archiveReason} />
+        <Field label="Requested time" value={booking.requestedIstDateTime || formatAcademyDateTime(booking.startAt)} />
+        <Field label="Coach" value={booking.assignedCoach?.name || booking.instructor?.name} />
+        <Field label="Chess level" value={levelLabel(booking.level || student.studentLevel)} />
+        <Field label="Submitted" value={booking.createdAt ? formatAcademyDateTime(booking.createdAt) : ""} />
+        {booking.cancellationReason ? <Field label="Closed reason" value={booking.cancellationReason} className="lg:col-span-2" /> : null}
+      </dl>
+
+      <div className="mt-4 border-t border-slate-100 pt-4">
+        <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400">
+          <History size={12} /> Full history
+        </div>
+        {activities.length ? (
+          <ol className="mt-3 space-y-2.5">
+            {activities.map((item: any) => (
+              <li key={item._id.toString()} className="flex gap-2.5">
+                <span aria-hidden className="mt-[7px] h-1.5 w-1.5 flex-none rounded-full bg-brand/40" />
+                <div className="min-w-0">
+                  <div className="text-[13px] text-slate-800">{item.label}</div>
+                  <div className="text-[11px] text-slate-400">
+                    {formatAcademyDateTime(item.occurredAt || item.createdAt)}
+                    {item.actor?.name ? ` · ${item.actor.name}` : ""}
+                    {item.metadata?.source === "crm" ? " · via CRM" : ""}
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p className="mt-2 text-[13px] text-slate-400">No recorded events for this request.</p>
+        )}
+      </div>
     </article>
   );
 }

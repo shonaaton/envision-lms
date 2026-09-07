@@ -74,10 +74,13 @@ export async function syncBookingStageToCrm(bookingId: string): Promise<CrmSyncO
   await dbConnect();
 
   const booking: any = await Booking.findById(bookingId)
-    .select("bookingType demoStatus student startAt requestedIstDateTime cancellationReason")
+    .select("bookingType demoStatus student startAt requestedIstDateTime cancellationReason archivedAt")
     .populate("student", "name email phone countryCode accountStatus")
     .lean();
   if (!booking || booking.bookingType !== "demo") return { ok: false, skipped: true, reason: "Not a demo booking." };
+  // An archived request has been taken out of the working pipeline; it should not
+  // keep driving the lead's stage in the CRM.
+  if (booking.archivedAt) return { ok: false, skipped: true, reason: "Demo request is archived." };
 
   const stage = demoStatusToStage(booking.demoStatus, booking.cancellationReason);
   if (!stage) return { ok: false, skipped: true, reason: `Stage ${booking.demoStatus} is not pushed to the CRM.` };

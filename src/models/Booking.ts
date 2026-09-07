@@ -85,6 +85,12 @@ const BookingSchema = new Schema(
     // back knows what happened last time, since `cancellationReason` is cleared
     // when the booking becomes active again.
     previousCloseReason: String,
+    // Archived demos are hidden from the working tabs but never dropped, so
+    // conversion reporting and the audit trail stay intact. Restoring is just
+    // clearing these fields.
+    archivedAt: { type: Date, index: true },
+    archivedBy: { type: Schema.Types.ObjectId, ref: "User" },
+    archiveReason: String,
   },
   { timestamps: true }
 );

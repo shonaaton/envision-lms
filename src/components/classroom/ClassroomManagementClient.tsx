@@ -66,6 +66,40 @@ type CourseOption = {
 };
 
 type StudentOption = { _id: string; name: string; email?: string; username?: string; isActive?: boolean };
+
+type OverviewTab = "groups" | "calendar" | "closed" | "paused";
+
+type InactivePerson = { _id: string; name?: string; username?: string; email?: string };
+
+type InactiveGroup = {
+  _id: string;
+  /** Batches carry `name`, classrooms carry `title`. */
+  name?: string;
+  title?: string;
+  level?: string;
+  levelName?: string;
+  courseName?: string;
+  closedAt?: string;
+  pausedAt?: string;
+  pausedUntil?: string;
+  coach?: InactivePerson;
+  instructor?: InactivePerson;
+  students?: InactivePerson[];
+  closedForStudents?: InactivePerson[];
+  pausedForStudents?: InactivePerson[];
+  batches?: { _id: string; name?: string }[];
+  generatedSessions?: { status?: string }[];
+};
+
+type InactiveGroupsPayload = {
+  closed: { classrooms: InactiveGroup[]; batches: InactiveGroup[] };
+  paused: { classrooms: InactiveGroup[]; batches: InactiveGroup[] };
+};
+
+const EMPTY_INACTIVE_GROUPS: InactiveGroupsPayload = {
+  closed: { classrooms: [], batches: [] },
+  paused: { classrooms: [], batches: [] },
+};
 type CoachOption = { _id: string; name: string; email?: string; username?: string };
 type BatchOption = { _id: string; name: string; level?: string; students: StudentOption[] };
 
@@ -263,7 +297,12 @@ export default function ClassroomManagementClient({
   const [form, setForm] = useState(blankForm());
   const [studentSearch, setStudentSearch] = useState("");
   const [coachSearch, setCoachSearch] = useState("");
-  const [overviewTab, setOverviewTab] = useState<"groups" | "calendar">("groups");
+  const [overviewTab, setOverviewTab] = useState<OverviewTab>("groups");
+  // Closed and paused groups are off every other list on this page, so they are
+  // fetched on their own the first time one of their tabs is opened.
+  const [inactiveGroups, setInactiveGroups] = useState<InactiveGroupsPayload>(EMPTY_INACTIVE_GROUPS);
+  const [inactiveLoading, setInactiveLoading] = useState(false);
+  const [inactiveLoaded, setInactiveLoaded] = useState(false);
   const [groupSearch, setGroupSearch] = useState("");
   const [calendarDate, setCalendarDate] = useState(() => formatDateInput(new Date().toISOString()));
   const [filters, setFilters] = useState<{ coach: string; batch: string; student: string; course: string; level: string; status: SessionFilterStatus }>({
@@ -318,6 +357,28 @@ export default function ClassroomManagementClient({
   useEffect(() => {
     load();
   }, [load]);
+
+  const loadInactiveGroups = useCallback(async () => {
+    setInactiveLoading(true);
+    try {
+      const response = await fetch("/api/classrooms/closed", { cache: "no-store" });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(payload?.error || "Could not load closed and paused batches");
+      setInactiveGroups({ ...EMPTY_INACTIVE_GROUPS, ...payload });
+      setInactiveLoaded(true);
+    } catch {
+      toast.error("Closed and paused batches could not be loaded. Please try again.");
+    } finally {
+      setInactiveLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (role === "student") return;
+    if (overviewTab !== "closed" && overviewTab !== "paused") return;
+    if (inactiveLoaded || inactiveLoading) return;
+    loadInactiveGroups();
+  }, [inactiveLoaded, inactiveLoading, loadInactiveGroups, overviewTab, role]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -428,6 +489,29 @@ export default function ClassroomManagementClient({
 
     return summaries;
   }, [filteredItems, targets.batches]);
+
+  const visibleInactiveGroups = useMemo(() => {
+    const source = overviewTab === "paused" ? inactiveGroups.paused : inactiveGroups.closed;
+    const query = groupSearch.trim().toLowerCase();
+    const matches = (group: InactiveGroup) => {
+      if (filters.coach && String(group.coach?._id || group.instructor?._id || "") !== filters.coach) return false;
+      if (!query) return true;
+      return [
+        group.name,
+        group.title,
+        group.courseName,
+        group.levelName,
+        group.level,
+        group.coach?.name,
+        group.instructor?.name,
+        ...(group.closedForStudents || []).map((person) => person.name),
+        ...(group.pausedForStudents || []).map((person) => person.name),
+      ]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(query));
+    };
+    return { batches: source.batches.filter(matches), classrooms: source.classrooms.filter(matches) };
+  }, [filters.coach, groupSearch, inactiveGroups, overviewTab]);
 
   const visibleGroupSummaries = useMemo(() => {
     const query = groupSearch.trim().toLowerCase();
@@ -890,6 +974,30 @@ export default function ClassroomManagementClient({
               >
                 Classes by Date
               </button>
+              <button
+                type="button"
+                onClick={() => setOverviewTab("paused")}
+                className={cn("rounded px-3 py-1.5 text-xs font-bold transition", overviewTab === "paused" ? "bg-white text-brand shadow-sm" : "text-slate-500 hover:text-slate-700")}
+              >
+                Paused
+                {inactiveLoaded && inactiveGroups.paused.batches.length + inactiveGroups.paused.classrooms.length > 0 && (
+                  <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">
+                    {inactiveGroups.paused.batches.length + inactiveGroups.paused.classrooms.length}
+                  </span>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setOverviewTab("closed")}
+                className={cn("rounded px-3 py-1.5 text-xs font-bold transition", overviewTab === "closed" ? "bg-white text-brand shadow-sm" : "text-slate-500 hover:text-slate-700")}
+              >
+                Closed
+                {inactiveLoaded && inactiveGroups.closed.batches.length + inactiveGroups.closed.classrooms.length > 0 && (
+                  <span className="ml-1.5 rounded-full bg-slate-200 px-1.5 py-0.5 text-[10px] font-bold text-slate-700">
+                    {inactiveGroups.closed.batches.length + inactiveGroups.closed.classrooms.length}
+                  </span>
+                )}
+              </button>
             </div>
             {overviewTab === "calendar" && (
               <div className="flex items-center gap-1.5">
@@ -913,7 +1021,14 @@ export default function ClassroomManagementClient({
           </div>
 
           <div className="p-3">
-            {overviewTab === "groups" ? (
+            {overviewTab === "closed" || overviewTab === "paused" ? (
+              <InactiveGroupsPanel
+                mode={overviewTab}
+                loading={inactiveLoading && !inactiveLoaded}
+                batches={visibleInactiveGroups.batches}
+                classrooms={visibleInactiveGroups.classrooms}
+              />
+            ) : overviewTab === "groups" ? (
               <>
                 <div className="mb-2">
                   <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Groups</div>
@@ -2405,4 +2520,134 @@ function actionSuccessMessage(type: string) {
   if (type === "mark_session_outcome") return "Class outcome updated";
   if (type === "change_session_topic") return "Class topic updated";
   return "Class updated";
+}
+
+/**
+ * The groups that are no longer on the board, in the same card shape as the
+ * running ones. Closed groups lost their last attending student to a
+ * deactivation and stay closed; paused ones are waiting for a student to come
+ * back and return on their own, so neither is opened from here.
+ */
+function InactiveGroupsPanel({
+  mode,
+  loading,
+  batches,
+  classrooms,
+}: {
+  mode: "closed" | "paused";
+  loading: boolean;
+  batches: InactiveGroup[];
+  classrooms: InactiveGroup[];
+}) {
+  const paused = mode === "paused";
+  const total = batches.length + classrooms.length;
+  return (
+    <>
+      <div className="mb-2">
+        <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">{paused ? "Paused" : "Closed"}</div>
+        <div className="text-sm font-semibold text-slate-950">
+          {paused
+            ? "Groups waiting for a student to restart. Nothing is cancelled - their remaining classes are rescheduled from the restart date."
+            : "Groups closed because their last attending student was deactivated. Their remaining classes were cancelled."}
+        </div>
+      </div>
+      {loading ? (
+        <div className="rounded-md bg-slate-50 px-3 py-3 text-sm text-slate-500">Loading {paused ? "paused" : "closed"} groups...</div>
+      ) : total === 0 ? (
+        <div className="rounded-md border border-dashed border-slate-300 px-3 py-3 text-sm text-slate-500">
+          No {paused ? "paused" : "closed"} groups match the current filters.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {batches.length > 0 && (
+            <InactiveGroupGrid
+              heading={`Batches (${batches.length})`}
+              groups={batches}
+              paused={paused}
+              nameOf={(group) => group.name || "Batch"}
+              subtitleOf={(group) => titleCase(group.level || "") || "Level not set"}
+            />
+          )}
+          {classrooms.length > 0 && (
+            <InactiveGroupGrid
+              heading={`Classrooms (${classrooms.length})`}
+              groups={classrooms}
+              paused={paused}
+              nameOf={(group) => group.title || "Classroom"}
+              subtitleOf={(group) =>
+                [group.courseName, group.levelName].filter(Boolean).join(" - ") ||
+                (group.batches || []).map((batch) => batch.name).filter(Boolean).join(", ") ||
+                "Course not set"
+              }
+            />
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
+function InactiveGroupGrid({
+  heading,
+  groups,
+  paused,
+  nameOf,
+  subtitleOf,
+}: {
+  heading: string;
+  groups: InactiveGroup[];
+  paused: boolean;
+  nameOf: (group: InactiveGroup) => string;
+  subtitleOf: (group: InactiveGroup) => string;
+}) {
+  return (
+    <div>
+      <div className="mb-1.5 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">{heading}</div>
+      <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+        {groups.map((group) => {
+          const awayFor = (paused ? group.pausedForStudents : group.closedForStudents) || [];
+          const names = awayFor.map((person) => person.name || person.username || "").filter(Boolean);
+          const coachName = group.coach?.name || group.instructor?.name || "No coach";
+          const date = paused ? group.pausedAt : group.closedAt;
+          return (
+            <div
+              key={group._id}
+              className={cn(
+                "flex items-start justify-between gap-3 rounded-md border px-3 py-2",
+                paused ? "border-amber-200 bg-amber-50/60" : "border-slate-200 bg-slate-50"
+              )}
+            >
+              <div className="min-w-0">
+                <div className="truncate text-sm font-bold text-slate-950" title={nameOf(group)}>
+                  {nameOf(group)}
+                </div>
+                <div className="mt-0.5 truncate text-xs text-slate-500" title={subtitleOf(group)}>
+                  {subtitleOf(group)}
+                </div>
+                <div className="mt-1 flex flex-wrap gap-1.5 text-[11px] font-semibold text-slate-600">
+                  <span>{coachName}</span>
+                  <span>{group.students?.length || 0} students</span>
+                  {date && <span>{paused ? "Paused" : "Closed"} {formatDate(date)}</span>}
+                  {paused && group.pausedUntil && <span>Back {formatDate(group.pausedUntil)}</span>}
+                </div>
+                {names.length > 0 && (
+                  <div className="mt-1 truncate text-[11px] text-slate-500" title={names.join(", ")}>
+                    {paused ? "Waiting on" : "Closed for"} {names.join(", ")}
+                  </div>
+                )}
+              </div>
+              <span
+                className={cn(
+                  "shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold",
+                  paused ? "bg-amber-100 text-amber-800" : "bg-slate-200 text-slate-700"
+                )}
+              >
+                {paused ? "Paused" : "Closed"}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }

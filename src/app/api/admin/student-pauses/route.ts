@@ -73,8 +73,10 @@ export async function POST(req: Request) {
       .lean();
     return NextResponse.json({
       pause,
-      voidedInvoices: result.voidedInvoices.length,
+      shiftedInvoices: result.shiftedInvoices.length,
       classroomsUpdated: result.classroomsUpdated,
+      classroomsPaused: result.classroomsPaused.length,
+      batchesPaused: result.batchesPaused.length,
     });
   } catch (error: any) {
     return NextResponse.json({ error: error?.message || "Could not pause this student." }, { status: 400 });

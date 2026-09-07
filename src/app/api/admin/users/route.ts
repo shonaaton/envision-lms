@@ -7,7 +7,7 @@ import { addUserSchema } from "@/lib/validation";
 import { recordActivity } from "@/lib/activity";
 import { canAccessFeature, isSuperAdminSession } from "@/lib/featureAccess";
 import { sendWelcomeEmail } from "@/lib/welcomeEmail";
-import { closedGroupCountsByCoach } from "@/lib/studentDeactivation";
+import { closedGroupCountsByCoach } from "@/lib/groupLifecycle";
 
 export const dynamic = "force-dynamic";
 

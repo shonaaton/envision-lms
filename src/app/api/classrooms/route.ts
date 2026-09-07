@@ -28,10 +28,11 @@ export async function GET() {
     role === "admin" && isSuperAdmin
       ? { $or: [{ isTestClassroom: { $ne: true } }, { isTestClassroom: true, testOwner: userId }] }
       : { isTestClassroom: { $ne: true } };
-  // A closed classroom stays in the admin list so it can be reviewed, but coaches
-  // and students only see what is still running - closed batches have their own
-  // page at /classrooms/closed.
-  const runningOnly = { isActive: { $ne: false } };
+  // A closed or paused classroom stays in the admin list so it can be reviewed,
+  // but coaches and students only see what is actually running - closed batches
+  // have their own page at /classrooms/closed, and paused ones come back on
+  // their own when the student restarts.
+  const runningOnly = { isActive: { $ne: false }, isPaused: { $ne: true } };
   const filter = role === "admin" || role === "sub-admin"
     ? { isSessionInstance: { $ne: true }, ...visibleClassrooms }
     : role === "instructor"

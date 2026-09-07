@@ -26,6 +26,14 @@ const BatchSchema = new Schema(
     closedReason: { type: String, index: true },
     closedBy: { type: Schema.Types.ObjectId, ref: "User" },
     closedForStudents: [{ type: Schema.Types.ObjectId, ref: "User", index: true }],
+
+    // A paused batch is not a closed one - it is waiting for its student to come
+    // back, and resumes with the same coach, students and schedule.
+    isPaused: { type: Boolean, default: false, index: true },
+    pausedAt: { type: Date, index: true },
+    pausedFrom: { type: Date },
+    pausedUntil: { type: Date },
+    pausedForStudents: [{ type: Schema.Types.ObjectId, ref: "User", index: true }],
   },
   { timestamps: true }
 );

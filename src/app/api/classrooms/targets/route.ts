@@ -27,7 +27,7 @@ export async function GET() {
   const [students, coaches, batches, courses] = await Promise.all([
     User.find({ role: "student", isActive: true }, { name: 1, email: 1, username: 1, batches: 1 }).sort({ name: 1 }).lean(),
     User.find(coachFilter, { name: 1, email: 1, username: 1 }).sort({ name: 1 }).lean(),
-    Batch.find({ isActive: true }, { name: 1, students: 1, level: 1 }).populate("students", "name email username isActive").sort({ name: 1 }).lean(),
+    Batch.find({ isActive: true, isPaused: { $ne: true } }, { name: 1, students: 1, level: 1 }).populate("students", "name email username isActive").sort({ name: 1 }).lean(),
     Course.find({ isActive: true }, { name: 1, level: 1, category: 1, levels: 1 }).sort({ name: 1 }).lean(),
   ]);
 

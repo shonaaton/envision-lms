@@ -58,6 +58,8 @@ type BackfillResult = {
   invoicesVoided: number;
   classroomsClosed: number;
   batchesClosed: number;
+  classroomsPaused: number;
+  batchesPaused: number;
 };
 
 const EMPTY: Payload = { manager: false, classrooms: [], batches: [], coaches: [], totals: { classrooms: 0, batches: 0, groups: 0 } };
@@ -105,11 +107,11 @@ export default function ClosedClassroomsClient({ role }: { role: "admin" | "sub-
       const payload = await response.json().catch(() => null);
       if (!response.ok) throw new Error(payload?.error || "Could not load closed batches");
       setData({ ...EMPTY, manager: role !== "instructor", ...payload });
-      // Students deactivated before this clean-up existed still have open
-      // batches and standing invoices. Admins are told how many, and can catch
-      // them up from here rather than from a terminal.
+      // Students deactivated or paused before this clean-up existed still have
+      // open batches and standing invoices. Admins are told how many, and can
+      // catch them up from here rather than from a terminal.
       if (payload?.manager) {
-        const outstanding = await fetch("/api/admin/students/deactivation-backfill", { cache: "no-store" });
+        const outstanding = await fetch("/api/admin/students/lifecycle-backfill", { cache: "no-store" });
         if (outstanding.ok) setPending(await outstanding.json());
       }
     } catch {
@@ -126,11 +128,11 @@ export default function ClosedClassroomsClient({ role }: { role: "admin" | "sub-
   async function runBackfill() {
     setBackfilling(true);
     try {
-      const response = await fetch("/api/admin/students/deactivation-backfill", { method: "POST" });
+      const response = await fetch("/api/admin/students/lifecycle-backfill", { method: "POST" });
       const payload = await response.json().catch(() => null);
       if (!response.ok) throw new Error(payload?.error || "The clean-up could not be run");
       toast.success(
-        `Closed ${payload.batchesClosed} batch(es) and ${payload.classroomsClosed} classroom(s), voided ${payload.invoicesVoided} invoice(s) across ${payload.studentsChanged} student(s).`
+        `Closed ${payload.batchesClosed} batch(es) and ${payload.classroomsClosed} classroom(s), paused ${payload.batchesPaused} batch(es) and ${payload.classroomsPaused} classroom(s), voided ${payload.invoicesVoided} invoice(s) across ${payload.studentsChanged} student(s).`
       );
       setLoading(true);
       await load();
@@ -188,9 +190,10 @@ export default function ClosedClassroomsClient({ role }: { role: "admin" | "sub-
       {data.manager && pending && pending.studentsChanged > 0 && (
         <div className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <div className="font-bold">{pending.studentsChanged} already-deactivated student{pending.studentsChanged === 1 ? "" : "s"} still have open groups.</div>
+            <div className="font-bold">{pending.studentsChanged} student{pending.studentsChanged === 1 ? "" : "s"} out of circulation still have open groups.</div>
             <div className="mt-0.5 text-xs">
-              They were switched off before deactivation started closing batches: {pending.batchesClosed} batch(es), {pending.classroomsClosed} classroom(s) and {pending.invoicesVoided} upcoming invoice(s) are still standing.
+              They were deactivated or paused before those actions started closing and pausing batches: {pending.batchesClosed} batch(es) and {pending.classroomsClosed} classroom(s) to close,
+              {" "}{pending.batchesPaused} batch(es) and {pending.classroomsPaused} classroom(s) to pause, and {pending.invoicesVoided} upcoming invoice(s) still standing.
             </div>
           </div>
           <button
@@ -200,7 +203,7 @@ export default function ClosedClassroomsClient({ role }: { role: "admin" | "sub-
             className="inline-flex h-9 w-fit items-center gap-1.5 rounded-md bg-amber-600 px-3 text-xs font-bold text-white shadow-sm hover:bg-amber-700 disabled:opacity-60"
           >
             <RefreshCw size={13} className={backfilling ? "animate-spin" : ""} />
-            {backfilling ? "Closing..." : "Close them now"}
+            {backfilling ? "Working..." : "Bring them up to date"}
           </button>
         </div>
       )}

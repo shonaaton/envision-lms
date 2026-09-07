@@ -2,14 +2,15 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { canAccessFeature } from "@/lib/featureAccess";
-import { backfillStudentDeactivations } from "@/lib/studentDeactivation";
+import { backfillGroupLifecycle } from "@/lib/groupLifecycle";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 /**
- * Catches up the students who were deactivated before deactivation started
- * closing batches. GET reports what is still outstanding; POST applies it.
+ * Catches up the students who were deactivated or paused before those actions
+ * started closing and pausing batches. GET reports what is still outstanding;
+ * POST applies it.
  */
 async function requireAdmin(permission: "view" | "manage") {
   const session = await auth();
@@ -24,7 +25,7 @@ export async function GET() {
   const session = await requireAdmin("view");
   if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
-  const result = await backfillStudentDeactivations({ apply: false });
+  const result = await backfillGroupLifecycle({ apply: false });
   return NextResponse.json(result);
 }
 
@@ -33,7 +34,7 @@ export async function POST() {
   if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
   const user = session.user as any;
-  const result = await backfillStudentDeactivations({
+  const result = await backfillGroupLifecycle({
     apply: true,
     actor: { id: String(user.id || ""), name: String(user.name || ""), role: String(user.role || "") },
   });

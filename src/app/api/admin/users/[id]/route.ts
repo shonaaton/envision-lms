@@ -7,7 +7,7 @@ import { User } from "@/models/User";
 import { recordActivity } from "@/lib/activity";
 import { canAccessFeature, isSuperAdminSession } from "@/lib/featureAccess";
 import { deleteUserRecords } from "@/lib/deleteUserRecords";
-import { applyStudentDeactivation, applyStudentReactivation } from "@/lib/studentDeactivation";
+import { applyStudentDeactivation, applyStudentReactivation } from "@/lib/groupLifecycle";
 
 export const dynamic = "force-dynamic";
 

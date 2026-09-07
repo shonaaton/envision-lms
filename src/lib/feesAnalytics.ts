@@ -479,6 +479,16 @@ export async function getFeesAnalytics(options: { from: Date; to: Date; gst: Gst
           source: "Voided by pause",
           wasStatus: entry.previousStatus,
         })),
+        // A pause now moves an invoice rather than voiding it, so the revenue is
+        // deferred, not lost - it is listed with its new date, not as a write-off.
+        ...(pause.shiftedInvoices || []).map((entry: any) => ({
+          invoice: entry.invoiceNumber,
+          title: entry.title,
+          due: entry.dueDate,
+          total: entry.totalAmount,
+          source: "Moved by pause",
+          wasStatus: `due ${entry.originalDueDate ? new Date(entry.originalDueDate).toLocaleDateString("en-IN") : "-"}`,
+        })),
         ...(cancelledByStudent.get(studentId) || []).map((invoice: any) => ({
           invoice: invoice.invoiceNumber,
           title: invoice.title,

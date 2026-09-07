@@ -69,6 +69,8 @@ type BatchItem = {
   isActive?: boolean;
   closedReason?: string;
   closedAt?: string;
+  isPaused?: boolean;
+  pausedUntil?: string;
 };
 
 type BatchUpdatePayload = {
@@ -472,6 +474,14 @@ export default function AdminUsersPage() {
                       {batch.isActive === false ? (
                         <a href="/classrooms/closed" className="inline-flex items-center gap-1 rounded-full bg-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-300" title={batch.closedReason === "student_deactivated" ? "Closed because its last active student was deactivated" : "Closed"}>
                           Closed
+                        </a>
+                      ) : batch.isPaused ? (
+                        <a
+                          href="/admin/paused-students"
+                          className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-200"
+                          title={batch.pausedUntil ? `Paused till ${new Date(batch.pausedUntil).toLocaleDateString("en-IN")}` : "Paused while its last attending student is away"}
+                        >
+                          Paused
                         </a>
                       ) : (
                         <span className="inline-flex rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700">Running</span>

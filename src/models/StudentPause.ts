@@ -15,6 +15,22 @@ const VoidedInvoiceSchema = new Schema(
   { _id: false }
 );
 
+// Invoices are not voided by a pause - they move. The original due date is kept
+// so the shift can be recalculated against the real restart date, or undone if
+// the pause turns out to have been recorded by mistake.
+const ShiftedInvoiceSchema = new Schema(
+  {
+    invoice: { type: Schema.Types.ObjectId, ref: "Invoice" },
+    invoiceNumber: String,
+    title: String,
+    originalDueDate: Date,
+    dueDate: Date,
+    totalAmount: Number,
+    type: String,
+  },
+  { _id: false }
+);
+
 const StudentPauseSchema = new Schema(
   {
     student: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
@@ -33,6 +49,7 @@ const StudentPauseSchema = new Schema(
     pausedByRole: String,
 
     voidedInvoices: [VoidedInvoiceSchema],
+    shiftedInvoices: [ShiftedInvoiceSchema],
     feeSnapshot: {
       assignment: { type: Schema.Types.ObjectId, ref: "FeeAssignment" },
       plan: { type: Schema.Types.ObjectId, ref: "FeePlan" },
@@ -50,6 +67,11 @@ const StudentPauseSchema = new Schema(
     nextInvoiceDate: Date,
     resumeInvoice: { type: Schema.Types.ObjectId, ref: "Invoice" },
     resumeInvoiceNumber: String,
+    restartDate: Date,
+    pausedGroups: {
+      batches: [{ type: Schema.Types.ObjectId, ref: "Batch" }],
+      classrooms: [{ type: Schema.Types.ObjectId, ref: "Classroom" }],
+    },
     resumeNote: String,
 
     cancelledAt: Date,

@@ -57,6 +57,37 @@ export function buildSessionPlan(topics: Array<{ name: string; order?: number }>
   }));
 }
 
+/**
+ * The next `count` slots the weekly schedule lands on from `fromDate` onwards.
+ *
+ * Used when a pause ends: the classes that were waiting are put back on the
+ * calendar on the days the classroom actually runs, starting from the restart
+ * day, rather than being left on the dates that passed during the pause.
+ */
+export function scheduleDatesFrom(daysOfWeek: DaySlot[], fromDate: string | Date, count: number, fallbackDurationMinutes = 60) {
+  const slots = (daysOfWeek || [])
+    .flatMap((daySlot) => (daySlot.slots || []).map((slot) => ({ day: daySlot.day, ...slot })))
+    .sort((a, b) => a.day - b.day || a.startTime.localeCompare(b.startTime));
+  if (!slots.length || count <= 0) return [];
+
+  const dates: Array<{ scheduledFor: Date; startTime: string; durationMinutes: number }> = [];
+  const cursor = calendarCursor(fromDate);
+  // One slot a week at worst, so a year of days covers any sane series and stops
+  // a malformed schedule from spinning forever.
+  for (let day = 0; day < 366 && dates.length < count; day += 1) {
+    for (const slot of slots.filter((item) => item.day === cursor.getUTCDay())) {
+      if (dates.length >= count) break;
+      dates.push({
+        scheduledFor: new Date(academyDateTime(calendarDateString(cursor), slot.startTime)),
+        startTime: slot.startTime,
+        durationMinutes: slot.durationMinutes || fallbackDurationMinutes,
+      });
+    }
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return dates;
+}
+
 export function buildGeneratedSessions(input: ClassroomBuildInput) {
   if (input.classroomType === "single") {
     if (!input.classDate || !input.startTime) return [];

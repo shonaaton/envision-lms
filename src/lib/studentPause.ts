@@ -3,14 +3,41 @@ import { Types } from "mongoose";
 import { recordActivity } from "@/lib/activity";
 import { createInvoice } from "@/lib/fees";
 import { syncClassroomSessionInstances } from "@/lib/classroomSessionInstances";
+import { pauseEmptyGroupsForStudent, resumeGroupsForStudent } from "@/lib/groupLifecycle";
 import { Batch } from "@/models/Batch";
 import { Classroom } from "@/models/Classroom";
 import { FeeAssignment, FeePlan, Invoice, Notification } from "@/models/Fee";
 import { StudentPause } from "@/models/StudentPause";
 import { User } from "@/models/User";
 
-// Invoices in these states have not been settled, so a pause can still void them.
-const VOIDABLE_INVOICE_STATUSES = ["draft", "unpaid", "overdue"];
+// Invoices in these states have not been settled, so a pause can still move them.
+const SHIFTABLE_INVOICE_STATUSES = ["draft", "unpaid", "overdue"];
+
+function addDays(date: Date, days: number) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+/**
+ * The date a paused student's billing lands on: the day after they restart.
+ * Kept as an end-of-day value like every other due date in `fees.ts`.
+ */
+function dueDateAfterRestart(restartDate: Date) {
+  return pauseDayEnd(addDays(restartDate, 1))!;
+}
+
+/**
+ * Move a set of invoices so the earliest of them falls on `anchor`. In practice
+ * a paused student has exactly one invoice outstanding, so this is simply "due
+ * the day after you restart"; when there happens to be more than one, the gaps
+ * between them are preserved rather than piling every invoice onto one day.
+ */
+export function anchoredDueDates(originalDueDates: Date[], anchor: Date) {
+  if (!originalDueDates.length) return [];
+  const earliest = Math.min(...originalDueDates.map((date) => date.getTime()));
+  return originalDueDates.map((date) => new Date(anchor.getTime() + (date.getTime() - earliest)));
+}
 
 export const pausedStudentMessage =
   "Your classes are paused at the moment. Fees are not being billed for the paused period - the academy will reinstate your account on the agreed restart date.";
@@ -155,49 +182,107 @@ async function restoreToFutureSessions(studentId: string, batchId: string, fromD
 }
 
 /**
- * Cancel every unsettled invoice that falls on or after the pause date. Paid
- * invoices and dues already outstanding before the pause are left alone - the
- * student still owes those.
+ * Move every unsettled invoice dated on or after the pause so it comes due the
+ * day after the student is expected back, rather than falling due during a break
+ * they are not being taught through. Paid invoices and dues already outstanding
+ * before the pause are left alone - the student still owes those.
+ *
+ * The anchor here is provisional, taken from the booked restart date; `resumeStudent`
+ * redoes it against the day the student actually came back. The original due
+ * dates are recorded on the pause so that redo never compounds, and so the whole
+ * thing can be undone if the pause was a mistake.
  */
-async function voidUpcomingInvoices(studentId: string, fromDate: Date, actor?: PauseActor) {
+async function shiftUpcomingInvoices(studentId: string, fromDate: Date, anchor: Date, actor?: PauseActor) {
   const invoices: any[] = await Invoice.find({
     student: new Types.ObjectId(studentId),
-    status: { $in: VOIDABLE_INVOICE_STATUSES },
+    status: { $in: SHIFTABLE_INVOICE_STATUSES },
     dueDate: { $gte: fromDate },
-  });
+  }).sort({ dueDate: 1 });
 
-  const voided: any[] = [];
-  for (const invoice of invoices) {
-    const previousStatus = String(invoice.status || "");
-    invoice.status = "cancelled";
-    invoice.notes = [invoice.notes, `Voided on ${new Date().toLocaleDateString("en-IN")} because the student was paused from classes.`]
+  const newDueDates = anchoredDueDates(
+    invoices.map((invoice: any) => new Date(invoice.dueDate)),
+    anchor
+  );
+
+  const shifted: any[] = [];
+  for (const [index, invoice] of invoices.entries()) {
+    const originalDueDate = new Date(invoice.dueDate);
+    const dueDate = newDueDates[index];
+    invoice.dueDate = dueDate;
+    // An overdue invoice whose new due date is in the future is not overdue any
+    // more; it goes back to simply unpaid.
+    if (invoice.status === "overdue" && dueDate.getTime() > Date.now()) invoice.status = "unpaid";
+    invoice.notes = [invoice.notes, `Due date moved to ${dueDate.toLocaleDateString("en-IN")} because the student was paused.`]
       .filter(Boolean)
       .join(" ");
     await invoice.save();
-    voided.push({
+    shifted.push({
       invoice: invoice._id,
       invoiceNumber: invoice.invoiceNumber,
       title: invoice.title,
-      dueDate: invoice.dueDate,
+      originalDueDate,
+      dueDate,
       totalAmount: invoice.totalAmount,
-      previousStatus,
+      type: invoice.type,
     });
     await recordActivity({
       actor: actor?.id,
       targetUser: studentId,
-      type: "fees.invoice.cancelled",
-      label: `Voided invoice ${invoice.invoiceNumber} after pausing the student`,
+      type: "fees.invoice.due_date_shifted",
+      label: `Moved invoice ${invoice.invoiceNumber || ""} to ${dueDate.toLocaleDateString("en-IN")} after pausing the student`.trim(),
       entityType: "Invoice",
       entityId: invoice._id.toString(),
-      metadata: { invoiceNumber: invoice.invoiceNumber, previousStatus, source: "student_pause" },
+      metadata: { invoiceNumber: invoice.invoiceNumber, originalDueDate, dueDate, anchor, source: "student_pause" },
     });
   }
-  return voided;
+  return shifted;
 }
 
-/** Restore invoices voided by a pause - used when a pause is cancelled by mistake. */
-async function restoreVoidedInvoices(pause: any) {
+/**
+ * Re-anchor the moved invoices on the day after the student actually restarted.
+ * Worked out from each invoice's original due date, so re-running it - or a
+ * restart date that changes - never compounds the earlier move.
+ */
+async function reshiftInvoices(pause: any, anchor: Date, actor?: PauseActor) {
+  const entries = (pause.shiftedInvoices || []).filter((entry: any) => entry?.originalDueDate);
+  const newDueDates = anchoredDueDates(
+    entries.map((entry: any) => new Date(entry.originalDueDate)),
+    anchor
+  );
+  for (const [index, entry] of entries.entries()) {
+    const invoice: any = await Invoice.findById(entry.invoice);
+    if (!invoice || invoice.status === "paid" || invoice.status === "cancelled") continue;
+    const dueDate = newDueDates[index];
+    invoice.dueDate = dueDate;
+    if (invoice.status === "overdue" && dueDate.getTime() > Date.now()) invoice.status = "unpaid";
+    await invoice.save();
+    entry.dueDate = dueDate;
+    pause.markModified?.("shiftedInvoices");
+    await recordActivity({
+      actor: actor?.id,
+      targetUser: idOf(pause.student),
+      type: "fees.invoice.due_date_shifted",
+      label: `Set invoice ${invoice.invoiceNumber || ""} due ${dueDate.toLocaleDateString("en-IN")} after the student restarted`.trim(),
+      entityType: "Invoice",
+      entityId: invoice._id.toString(),
+      metadata: { invoiceNumber: invoice.invoiceNumber, originalDueDate: entry.originalDueDate, dueDate, anchor, source: "student_pause_resume" },
+    });
+  }
+  return entries.length;
+}
+
+/** Put shifted invoices back on their original dates - used when a pause is cancelled by mistake. */
+async function restoreShiftedInvoices(pause: any) {
   let restored = 0;
+  for (const entry of pause.shiftedInvoices || []) {
+    const invoice: any = await Invoice.findById(entry.invoice);
+    if (!invoice || invoice.status === "paid" || !entry.originalDueDate) continue;
+    invoice.dueDate = new Date(entry.originalDueDate);
+    await invoice.save();
+    restored += 1;
+  }
+  // Pauses recorded before invoices were shifted rather than voided still carry
+  // a voided list, so those are put back the old way.
   for (const entry of pause.voidedInvoices || []) {
     const invoice: any = await Invoice.findById(entry.invoice);
     if (!invoice || invoice.status !== "cancelled") continue;
@@ -241,7 +326,16 @@ export async function pauseStudent(input: PauseStudentInput) {
   const batch: any = batchId && Types.ObjectId.isValid(batchId) ? await Batch.findById(batchId).select("name").lean() : null;
 
   const assignment: any = await FeeAssignment.findOne({ student: new Types.ObjectId(studentId) }).populate("plan").lean();
-  const voidedInvoices = await voidUpcomingInvoices(studentId, pausedFrom, input.actor);
+  // Billing waits for the student. The provisional due date is the day after the
+  // restart the academy booked - `expectedRestartDate` when one was agreed, the
+  // day the pause runs to otherwise; `resumeStudent` redoes it against the day
+  // they actually came back.
+  const shiftedInvoices = await shiftUpcomingInvoices(
+    studentId,
+    pausedFrom,
+    dueDateAfterRestart(expectedRestartDate || pausedUntil),
+    input.actor
+  );
 
   const pause: any = await StudentPause.create({
     student: new Types.ObjectId(studentId),
@@ -256,7 +350,7 @@ export async function pauseStudent(input: PauseStudentInput) {
     pausedBy: input.actor?.id,
     pausedByName: input.actor?.name || "",
     pausedByRole: input.actor?.role || "",
-    voidedInvoices,
+    shiftedInvoices,
     feeSnapshot: assignment
       ? {
           assignment: assignment._id,
@@ -275,6 +369,19 @@ export async function pauseStudent(input: PauseStudentInput) {
   );
 
   const sessionsUpdated = await removeFromFutureSessions(studentId, pausedFrom);
+  // A pause empties a one-student batch, so the batch and its classrooms are
+  // paused too rather than left on the coach's board with nobody in them.
+  // Nothing is cancelled: resuming re-dates the waiting classes from the
+  // restart day, and cancelling the pause puts everything back as it was.
+  const { classroomsPaused, batchesPaused } = await pauseEmptyGroupsForStudent(studentId, {
+    pausedFrom,
+    pausedUntil,
+    actor: input.actor,
+  });
+  await StudentPause.updateOne(
+    { _id: pause._id },
+    { $set: { pausedGroups: { batches: batchesPaused.map((group) => group.id), classrooms: classroomsPaused.map((group) => group.id) } } }
+  ).catch(() => undefined);
 
   await Notification.create({
     user: studentId,
@@ -297,13 +404,15 @@ export async function pauseStudent(input: PauseStudentInput) {
       pausedFrom,
       pausedUntil,
       expectedRestartDate,
-      voidedInvoices: voidedInvoices.length,
+      shiftedInvoices: shiftedInvoices.length,
       classroomsUpdated: sessionsUpdated,
+      classroomsPaused: classroomsPaused.length,
+      batchesPaused: batchesPaused.length,
       reason: input.reason || "",
     },
   });
 
-  return { pause, voidedInvoices, classroomsUpdated: sessionsUpdated };
+  return { pause, shiftedInvoices, classroomsUpdated: sessionsUpdated, classroomsPaused, batchesPaused };
 }
 
 export type UpdatePauseInput = {
@@ -409,12 +518,20 @@ export async function resumeStudent(input: ResumeStudentInput) {
     { $set: { isPaused: false }, $unset: { pausedUntil: 1, pauseExpectedRestartDate: 1, pauseRecord: 1 } }
   );
 
+  // Restart the groups first: `restoreToFutureSessions` only looks at running
+  // classrooms, and it is the resume that re-dates the waiting classes onto the
+  // schedule from the restart day.
+  const { classroomsResumed, batchesResumed } = await resumeGroupsForStudent(studentId, { restartDate, actor: input.actor });
+  // Redo the move against the real restart date: the outstanding invoice comes
+  // due the day after the student is back.
+  const invoicesShifted = await reshiftInvoices(pause, dueDateAfterRestart(restartDate), input.actor);
   const classroomsUpdated = targetBatch ? await restoreToFutureSessions(studentId, idOf(targetBatch._id), restartDate) : 0;
 
   // Restart the billing cycle from the chosen date and raise that first invoice.
-  const invoice: any = await restartBilling({ studentId, studentName: student.name, nextInvoiceDate, actor: input.actor });
+  const invoice: any = await restartBilling({ studentId, studentName: student.name, nextInvoiceDate, restartDate, actor: input.actor });
 
   pause.status = "resumed";
+  pause.restartDate = restartDate;
   pause.resumedAt = new Date();
   pause.resumedBy = input.actor?.id;
   pause.resumedByName = input.actor?.name || "";
@@ -451,11 +568,14 @@ export async function resumeStudent(input: ResumeStudentInput) {
       invoice: invoice?._id?.toString?.() || "",
       invoiceNumber: invoice?.invoiceNumber || "",
       classroomsUpdated,
+      classroomsResumed: classroomsResumed.length,
+      batchesResumed: batchesResumed.length,
+      invoicesShifted,
       note: input.note || "",
     },
   });
 
-  return { pause, invoice, classroomsUpdated };
+  return { pause, invoice, classroomsUpdated, classroomsResumed, batchesResumed, invoicesShifted };
 }
 
 /**
@@ -463,7 +583,7 @@ export async function resumeStudent(input: ResumeStudentInput) {
  * invoice of the new cycle. Monthly plans bill from that date onwards; credit
  * plans get a fresh recharge invoice due on it.
  */
-async function restartBilling(input: { studentId: string; studentName?: string; nextInvoiceDate: Date; actor: PauseActor }) {
+async function restartBilling(input: { studentId: string; studentName?: string; nextInvoiceDate: Date; restartDate: Date; actor: PauseActor }) {
   const assignment: any = await FeeAssignment.findOne({ student: new Types.ObjectId(input.studentId) });
   if (!assignment) return null;
   const plan: any = await FeePlan.findById(assignment.plan).lean();
@@ -484,6 +604,16 @@ async function restartBilling(input: { studentId: string; studentName?: string; 
     status: { $ne: "cancelled" },
   });
   if (existing) return null;
+
+  // A pause moves the student's unpaid invoices past the break instead of
+  // voiding them, so one of those is usually already waiting when they come
+  // back. Raising another here would bill the same month twice.
+  const pending = await Invoice.exists({
+    student: new Types.ObjectId(input.studentId),
+    status: { $in: SHIFTABLE_INVOICE_STATUSES },
+    dueDate: { $gte: input.restartDate },
+  });
+  if (pending) return null;
 
   const isCredits = assignment.type === "credits";
   return createInvoice({
@@ -523,13 +653,21 @@ export async function cancelPause(input: CancelPauseInput) {
   if (pause.status !== "active") throw new Error("This pause has already been closed.");
 
   const studentId = idOf(pause.student);
-  const restored = input.restoreInvoices === false ? 0 : await restoreVoidedInvoices(pause);
+  const restored = input.restoreInvoices === false ? 0 : await restoreShiftedInvoices(pause);
   const restoreFrom = pauseDayStart(new Date())!;
 
   await User.updateOne(
     { _id: studentId },
     { $set: { isPaused: false }, $unset: { pausedUntil: 1, pauseExpectedRestartDate: 1, pauseRecord: 1 } }
   );
+  // Cancelling means the pause should never have happened, so the classes go
+  // back where they were: resuming from the original pause start leaves every
+  // waiting session on the date it already had.
+  const { classroomsResumed, batchesResumed } = await resumeGroupsForStudent(studentId, {
+    restartDate: pauseDayStart(pause.pausedFrom) || restoreFrom,
+    reschedule: false,
+    actor: input.actor,
+  });
   const classroomsUpdated = pause.batch ? await restoreToFutureSessions(studentId, idOf(pause.batch), restoreFrom) : 0;
 
   pause.status = "cancelled";
@@ -546,8 +684,14 @@ export async function cancelPause(input: CancelPauseInput) {
     label: `Cancelled the pause for ${pause.batchName || "student"}`,
     entityType: "StudentPause",
     entityId: pause._id.toString(),
-    metadata: { invoicesRestored: restored, classroomsUpdated, reason: input.reason || "" },
+    metadata: {
+      invoicesRestored: restored,
+      classroomsUpdated,
+      classroomsResumed: classroomsResumed.length,
+      batchesResumed: batchesResumed.length,
+      reason: input.reason || "",
+    },
   });
 
-  return { pause, invoicesRestored: restored, classroomsUpdated };
+  return { pause, invoicesRestored: restored, classroomsUpdated, classroomsResumed, batchesResumed };
 }

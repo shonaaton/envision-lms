@@ -246,7 +246,7 @@ async function getStudentEvents(userId: string, canJoin: boolean) {
 }
 
 async function getCoachEvents(userId: string, canJoin: boolean) {
-  const classroomDocs: any[] = await Classroom.find({ ...coachClassroomQuery(userId), isActive: { $ne: false }, isSessionInstance: { $ne: true } })
+  const classroomDocs: any[] = await Classroom.find({ ...coachClassroomQuery(userId), isActive: { $ne: false }, isPaused: { $ne: true }, isSessionInstance: { $ne: true } })
     .populate("coach instructor", "name username")
     .populate("generatedSessions.substituteCoach", "name username")
     .populate("batches", "name")

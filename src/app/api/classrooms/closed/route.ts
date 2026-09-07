@@ -6,14 +6,18 @@ import { Classroom } from "@/models/Classroom";
 import { User } from "@/models/User";
 import { canAccessFeature } from "@/lib/featureAccess";
 import { coachClassroomQuery } from "@/lib/classroomCoachAccess";
-import { closedGroupCountsByCoach, DEACTIVATION_CLOSURE_REASON } from "@/lib/studentDeactivation";
+import { closedGroupCountsByCoach, DEACTIVATION_CLOSURE_REASON } from "@/lib/groupLifecycle";
 
 export const dynamic = "force-dynamic";
 
+const CLASSROOM_FIELDS = "name email username";
+
 /**
- * The batches and classrooms that were closed when their last active student was
- * deactivated. A coach sees their own; an admin sees every one of them together
- * with a per-coach tally of how many groups have been closed under each coach.
+ * The batches and classrooms that are no longer on the coach's board, in the two
+ * states they can be in: closed, because their last attending student was
+ * deactivated, and paused, because that student is away for a fixed window and
+ * coming back. A coach sees their own; an admin sees every one of them, plus a
+ * per-coach tally of how many groups have been closed under each coach.
  */
 export async function GET() {
   const session = await auth();
@@ -29,27 +33,36 @@ export async function GET() {
   await dbConnect();
 
   const manager = role === "admin" || role === "sub-admin";
-  const closedFilter = { isActive: false, closedReason: DEACTIVATION_CLOSURE_REASON };
+  const coachClassrooms = manager ? {} : coachClassroomQuery(userId);
+  const coachBatches = manager ? {} : { coach: userId };
 
-  const [classrooms, batches] = await Promise.all([
-    Classroom.find({
-      ...closedFilter,
-      isSessionInstance: { $ne: true },
-      isTestClassroom: { $ne: true },
-      ...(manager ? {} : coachClassroomQuery(userId)),
-    })
-      .populate("coach instructor", "name email username")
+  const findClassrooms = (state: Record<string, unknown>) =>
+    Classroom.find({ ...state, isSessionInstance: { $ne: true }, isTestClassroom: { $ne: true }, ...coachClassrooms })
+      .populate("coach instructor", CLASSROOM_FIELDS)
       .populate("students", "name email username isActive deactivatedAt")
       .populate("closedForStudents", "name email username deactivatedAt")
+      .populate("pausedForStudents", "name email username pausedUntil")
       .populate("batches", "name")
-      .sort({ closedAt: -1 })
-      .lean(),
-    Batch.find({ ...closedFilter, ...(manager ? {} : { coach: userId }) })
-      .populate("coach", "name email username")
+      .sort({ closedAt: -1, pausedAt: -1 })
+      .lean();
+
+  const findBatches = (state: Record<string, unknown>) =>
+    Batch.find({ ...state, ...coachBatches })
+      .populate("coach", CLASSROOM_FIELDS)
       .populate("students", "name email username isActive deactivatedAt")
       .populate("closedForStudents", "name email username deactivatedAt")
-      .sort({ closedAt: -1 })
-      .lean(),
+      .populate("pausedForStudents", "name email username pausedUntil")
+      .sort({ closedAt: -1, pausedAt: -1 })
+      .lean();
+
+  const closedState = { isActive: false, closedReason: DEACTIVATION_CLOSURE_REASON };
+  const pausedState = { isPaused: true };
+
+  const [closedClassrooms, closedBatches, pausedClassrooms, pausedBatches] = await Promise.all([
+    findClassrooms(closedState),
+    findBatches(closedState),
+    findClassrooms(pausedState),
+    findBatches(pausedState),
   ]);
 
   const counts = await closedGroupCountsByCoach(manager ? undefined : [userId]);
@@ -80,13 +93,20 @@ export async function GET() {
   return NextResponse.json({
     role,
     manager,
-    classrooms,
-    batches,
+    // Kept flat as well as grouped: `classrooms` and `batches` are the closed
+    // ones, which is what every existing caller reads.
+    classrooms: closedClassrooms,
+    batches: closedBatches,
+    closed: { classrooms: closedClassrooms, batches: closedBatches },
+    paused: { classrooms: pausedClassrooms, batches: pausedBatches },
     coaches: coachSummary,
     totals: {
-      classrooms: classrooms.length,
-      batches: batches.length,
-      groups: classrooms.length + batches.length,
+      classrooms: closedClassrooms.length,
+      batches: closedBatches.length,
+      groups: closedClassrooms.length + closedBatches.length,
+      pausedClassrooms: pausedClassrooms.length,
+      pausedBatches: pausedBatches.length,
+      pausedGroups: pausedClassrooms.length + pausedBatches.length,
     },
   });
 }

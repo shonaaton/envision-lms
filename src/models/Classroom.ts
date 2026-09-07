@@ -131,6 +131,15 @@ const ClassroomSchema = new Schema(
     closedBy: { type: Schema.Types.ObjectId, ref: "User" },
     closedForStudents: [{ type: Schema.Types.ObjectId, ref: "User", index: true }],
     previousStatus: { type: String },
+
+    // Pause trail. Unlike a closure this is temporary: the classroom comes back
+    // when the student does, and its remaining classes are re-dated from the
+    // restart day rather than being cancelled.
+    isPaused: { type: Boolean, default: false, index: true },
+    pausedAt: { type: Date, index: true },
+    pausedFrom: { type: Date },
+    pausedUntil: { type: Date },
+    pausedForStudents: [{ type: Schema.Types.ObjectId, ref: "User", index: true }],
   },
   { timestamps: true }
 );

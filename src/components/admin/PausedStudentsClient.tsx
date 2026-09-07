@@ -36,6 +36,16 @@ export type VoidedInvoice = {
   previousStatus?: string;
 };
 
+export type ShiftedInvoice = {
+  invoice?: string;
+  invoiceNumber?: string;
+  title?: string;
+  originalDueDate?: string;
+  dueDate?: string;
+  totalAmount?: number;
+  type?: string;
+};
+
 export type PauseRecord = {
   _id: string;
   student: PauseStudent | null;
@@ -49,6 +59,8 @@ export type PauseRecord = {
   pausedByName?: string;
   pausedAt?: string;
   voidedInvoices?: VoidedInvoice[];
+  shiftedInvoices?: ShiftedInvoice[];
+  pausedGroups?: { batches?: string[]; classrooms?: string[] };
   feeSnapshot?: { planName?: string; planType?: "monthly" | "credits" };
   resumedAt?: string;
   resumedByName?: string;
@@ -202,12 +214,15 @@ export default function PausedStudentsClient({ canManage }: { canManage: boolean
       const left = daysRemaining(pause.pausedUntil);
       return left !== null && left < 0;
     });
-    const voided = pauses.reduce((total, pause) => total + (pause.voidedInvoices?.length || 0), 0);
+    const voided = pauses.reduce(
+      (total, pause) => total + (pause.shiftedInvoices?.length || pause.voidedInvoices?.length || 0),
+      0
+    );
     return { shown: pauses.length, active: active.length, overdue: overdue.length, voided };
   }, [pauses]);
 
   async function cancelPause(pause: PauseRecord) {
-    const reason = window.prompt(`Cancel the pause for ${pause.student?.name || "this student"}? Any invoices it voided will be restored.\n\nReason (optional):`);
+    const reason = window.prompt(`Cancel the pause for ${pause.student?.name || "this student"}? Its invoices go back to their original due dates and any paused batch restarts.\n\nReason (optional):`);
     if (reason === null) return;
     const response = await fetch(`/api/admin/student-pauses/${pause._id}?reason=${encodeURIComponent(reason)}`, { method: "DELETE" });
     const data = await response.json().catch(() => ({}));
@@ -237,7 +252,7 @@ export default function PausedStudentsClient({ canManage }: { canManage: boolean
           <Stat label="Listed" value={stats.shown} icon={<Users size={15} />} />
           <Stat label="Paused now" value={stats.active} icon={<PauseCircle size={15} />} />
           <Stat label="Past end date" value={stats.overdue} icon={<AlertTriangle size={15} />} />
-          <Stat label="Invoices voided" value={stats.voided} icon={<CalendarClock size={15} />} />
+          <Stat label="Invoices moved" value={stats.voided} icon={<CalendarClock size={15} />} />
         </div>
       </div>
 
@@ -286,18 +301,19 @@ export default function PausedStudentsClient({ canManage }: { canManage: boolean
               <th className="px-4 py-3 font-bold">Paused from</th>
               <th className="px-4 py-3 font-bold">Paused till</th>
               <th className="px-4 py-3 font-bold">Plans to restart</th>
-              <th className="px-4 py-3 font-bold">Invoices voided</th>
+              <th className="px-4 py-3 font-bold">Invoices moved</th>
+              <th className="px-4 py-3 font-bold">Paused groups</th>
               <th className="px-4 py-3 font-bold">Status</th>
               <th className="px-4 py-3 text-right font-bold">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {loading && (
-              <tr><td colSpan={8} className="px-4 py-10 text-center text-sm text-slate-500">Loading paused students…</td></tr>
+              <tr><td colSpan={9} className="px-4 py-10 text-center text-sm text-slate-500">Loading paused students…</td></tr>
             )}
             {!loading && !pauses.length && (
               <tr>
-                <td colSpan={8} className="px-4 py-12 text-center">
+                <td colSpan={9} className="px-4 py-12 text-center">
                   <PauseCircle size={28} className="mx-auto mb-2 text-slate-300" />
                   <p className="text-sm font-bold text-slate-700">No records here yet</p>
                   <p className="mt-1 text-xs text-slate-500">Pause a student from this page or from the student list in Users.</p>
@@ -322,9 +338,21 @@ export default function PausedStudentsClient({ canManage }: { canManage: boolean
                 <td className="px-4 py-3 font-semibold">{formatDate(pause.pausedUntil)}</td>
                 <td className="px-4 py-3">{formatDate(pause.expectedRestartDate)}</td>
                 <td className="px-4 py-3">
-                  <span className="font-semibold">{pause.voidedInvoices?.length || 0}</span>
+                  <span className="font-semibold">{pause.shiftedInvoices?.length || pause.voidedInvoices?.length || 0}</span>
                   {pause.status === "resumed" && pause.nextInvoiceDate && (
                     <div className="text-xs text-emerald-700">Next invoice {formatDate(pause.nextInvoiceDate)}</div>
+                  )}
+                </td>
+                <td className="px-4 py-3">
+                  {(pause.pausedGroups?.batches?.length || 0) + (pause.pausedGroups?.classrooms?.length || 0) > 0 ? (
+                    <span
+                      className="inline-flex rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800"
+                      title="Batches and classrooms paused with this student because they were its last attending member"
+                    >
+                      {pause.pausedGroups?.batches?.length || 0} batch / {pause.pausedGroups?.classrooms?.length || 0} class
+                    </span>
+                  ) : (
+                    <span className="text-xs text-slate-400">Batch still running</span>
                   )}
                 </td>
                 <td className="px-4 py-3"><StatusChip pause={pause} /></td>
@@ -455,10 +483,15 @@ export function PauseStudentModal({
       toast.error(data.error || "Could not pause this student.");
       return;
     }
+    const groups = (data.batchesPaused || 0) + (data.classroomsPaused || 0);
     toast.success(
-      data.voidedInvoices
-        ? `Student paused. ${data.voidedInvoices} upcoming invoice(s) voided.`
-        : "Student paused. No upcoming invoices needed voiding."
+      [
+        "Student paused.",
+        data.shiftedInvoices ? `${data.shiftedInvoices} invoice(s) now due the day after the restart.` : "",
+        groups ? `${data.batchesPaused || 0} batch(es) and ${data.classroomsPaused || 0} classroom(s) paused with them.` : "",
+      ]
+        .filter(Boolean)
+        .join(" ")
     );
     onDone();
   }
@@ -466,7 +499,7 @@ export function PauseStudentModal({
   return (
     <Modal
       title="Pause a student from the batch"
-      subtitle="The batch keeps running for everyone else. This student is taken off upcoming classes and every unpaid invoice dated on or after the pause date is voided."
+      subtitle="The batch keeps running for everyone else. This student comes off upcoming classes, their unpaid invoice moves to the day after they restart, and a batch left with nobody attending is paused until they are back."
       onClose={onClose}
     >
       <div className="space-y-3">
@@ -689,14 +722,28 @@ function PauseDetailModal({ pause, onClose }: { pause: PauseRecord; onClose: () 
         )}
 
         <div>
-          <p className="mb-1 text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Invoices voided by this pause</p>
-          {pause.voidedInvoices?.length ? (
+          <p className="mb-1 text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Invoices moved by this pause</p>
+          {pause.shiftedInvoices?.length ? (
+            <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
+              {pause.shiftedInvoices.map((invoice) => (
+                <li key={invoice.invoice || invoice.invoiceNumber} className="flex items-center justify-between gap-3 px-3 py-2">
+                  <span className="min-w-0">
+                    <span className="block truncate font-semibold">{invoice.invoiceNumber || "Invoice"}</span>
+                    <span className="block truncate text-xs text-slate-500">
+                      {invoice.title} · {formatDate(invoice.originalDueDate)} → {formatDate(invoice.dueDate)}
+                    </span>
+                  </span>
+                  <span className="flex-none font-bold">{formatINR(invoice.totalAmount)}</span>
+                </li>
+              ))}
+            </ul>
+          ) : pause.voidedInvoices?.length ? (
             <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
               {pause.voidedInvoices.map((invoice) => (
                 <li key={invoice.invoice || invoice.invoiceNumber} className="flex items-center justify-between gap-3 px-3 py-2">
                   <span className="min-w-0">
                     <span className="block truncate font-semibold">{invoice.invoiceNumber || "Invoice"}</span>
-                    <span className="block truncate text-xs text-slate-500">{invoice.title} · due {formatDate(invoice.dueDate)}</span>
+                    <span className="block truncate text-xs text-slate-500">Voided · due {formatDate(invoice.dueDate)}</span>
                   </span>
                   <span className="flex-none font-bold">{formatINR(invoice.totalAmount)}</span>
                 </li>

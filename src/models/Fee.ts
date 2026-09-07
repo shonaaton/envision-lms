@@ -17,6 +17,15 @@ const AcademySettingsSchema = new Schema(
     gstPercentage: { type: Number, default: 18 },
     invoicePrefix: { type: String, default: "ENV" },
     lowCreditThreshold: { type: Number, default: 1 },
+    /**
+     * CRM pipeline stage name -> { group, order }.
+     *
+     * Kraya's stage names are free text the academy renames in its own UI, so the
+     * portal never hardcodes them. An admin maps each observed stage to a group
+     * once, and the sales counters read groups. Mixed rather than a nested schema
+     * because the keys are the stage names themselves.
+     */
+    crmStageMapping: { type: Schema.Types.Mixed, default: {} },
   },
   { timestamps: true }
 );

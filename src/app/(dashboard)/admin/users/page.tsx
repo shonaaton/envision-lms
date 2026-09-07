@@ -58,6 +58,8 @@ type BatchItem = {
   name: string;
   description?: string;
   level?: string;
+  /** Seats in a group batch. Drives free-slot counts on the sales vacancy board. */
+  capacity?: number;
   coach?: AdminUser;
   students?: AdminUser[];
   tags?: string[];
@@ -67,6 +69,7 @@ type BatchUpdatePayload = {
   name?: string;
   description?: string;
   level?: string;
+  capacity?: number;
   coach?: string;
   students?: string[];
 };
@@ -745,7 +748,7 @@ function EditBatchModal({ batch, coaches, students, onClose, onSave }: { batch: 
       <form className="grid gap-3" onSubmit={(e) => {
         e.preventDefault();
         const fd = new FormData(e.currentTarget);
-        onSave({ name: String(fd.get("name") || ""), description: String(fd.get("description") || ""), level: String(fd.get("level") || "beginner"), coach: String(fd.get("coach") || ""), students: selected });
+        onSave({ name: String(fd.get("name") || ""), description: String(fd.get("description") || ""), level: String(fd.get("level") || "beginner"), capacity: Number(fd.get("capacity") || 8), coach: String(fd.get("coach") || ""), students: selected });
       }}>
         <input className="input bg-white text-slate-950" name="name" defaultValue={batch.name} required />
         <textarea className="input bg-white text-slate-950" name="description" defaultValue={batch.description || ""} />
@@ -758,6 +761,11 @@ function EditBatchModal({ batch, coaches, students, onClose, onSave }: { batch: 
             <option value="beginner">Beginner</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option>
           </select>
         </div>
+        <label className="grid gap-1">
+          <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Seats in this batch</span>
+          <input className="input bg-white text-slate-950" name="capacity" type="number" min={1} max={100} defaultValue={batch.capacity ?? 8} />
+          <span className="text-xs text-slate-500">Free slots on the sales vacancy board are this number minus the active students.</span>
+        </label>
         <div>
           <div className="mb-2 flex items-center justify-between gap-3">
             <div>

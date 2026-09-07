@@ -33,6 +33,7 @@ export default function AddBatchModal({
       description: fd.get("description") || undefined,
       coach: fd.get("coach") || undefined,
       level: fd.get("level"),
+      capacity: Number(fd.get("capacity") || 8),
       tags: (fd.get("tags") as string || "").split(",").map((s) => s.trim()).filter(Boolean),
       students: selectedStudents,
     };
@@ -73,7 +74,13 @@ export default function AddBatchModal({
               <option value="advanced">Advanced</option>
             </select>
           </div>
-          <input className="input" name="tags" placeholder="Tags (comma separated)" />
+          <div className="grid grid-cols-2 gap-3">
+            <input className="input" name="tags" placeholder="Tags (comma separated)" />
+            <label className="flex items-center gap-2">
+              <span className="shrink-0 text-xs uppercase text-slate-500">Seats</span>
+              <input className="input" name="capacity" type="number" min={1} max={100} defaultValue={8} />
+            </label>
+          </div>
           <div>
             <div className="mb-1 text-xs uppercase text-slate-500">Students ({selectedStudents.length} selected)</div>
             <div className="max-h-48 overflow-y-auto rounded border border-slate-200 p-2 text-sm">

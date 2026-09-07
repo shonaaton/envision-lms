@@ -1,73 +1,43 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
-import { crmClientConfig } from "@/lib/crm/client";
-import { crmStageLabel, type DemoStage } from "@/lib/crm/stages";
+import { saveStageMapping } from "@/lib/crm/catalogue";
+import { getCrmHealth } from "@/lib/crm/health";
+import { importLeadsFromCsv } from "@/lib/crm/import";
 import { syncBookingStageToCrm } from "@/lib/crm/sync";
+import { requireAdminApiAccess } from "@/lib/adminApiAccess";
 import { Booking } from "@/models/Booking";
 import { CrmLead } from "@/models/CrmLead";
 
 export const dynamic = "force-dynamic";
 
-const STAGES: DemoStage[] = ["DEMO_REQUESTED", "DEMO_BOOKED", "DEMO_NO_SHOW", "DEMO_COMPLETED", "CURRENT_STUDENT", "CLOSED_NO_RESPONSE", "CLOSED_DELETED"];
-
-async function requireAdmin() {
-  const session = await auth();
-  const role = (session?.user as any)?.role;
-  return role === "admin" || role === "sub-admin" ? session : null;
-}
-
 /** Sync health: is the integration wired up, and what has it been doing. */
-export async function GET() {
-  if (!(await requireAdmin())) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  await dbConnect();
-
-  const config = crmClientConfig();
-  // Every inbound webhook carries the stage name exactly as the CRM spells it.
-  // Collecting the distinct values turns the webhook traffic into an
-  // authoritative catalogue of stage names, so the outbound labels can be
-  // configured from observed data instead of read off the CRM UI.
-  const observedStages = await CrmLead.aggregate([
-    { $unwind: "$history" },
-    { $match: { "history.direction": "inbound", "history.stage": { $nin: [null, ""] } } },
-    { $group: { _id: "$history.stage", seen: { $sum: 1 }, lastSeen: { $max: "$history.at" } } },
-    { $sort: { lastSeen: -1 } },
-    { $project: { _id: 0, stage: "$_id", seen: 1, lastSeen: 1 } },
-  ]).catch(() => []);
-
-  const [leads, failing, total] = await Promise.all([
-    CrmLead.find({})
-      .populate("user", "name email phone accountStatus")
-      .sort({ updatedAt: -1 })
-      .limit(50)
-      .lean(),
-    CrmLead.countDocuments({ lastPushError: { $exists: true, $ne: null } }),
-    CrmLead.countDocuments({}),
-  ]);
-
-  return NextResponse.json({
-    config: {
-      outboundConfigured: config.configured,
-      inboundConfigured: Boolean(String(process.env.KRAYA_WEBHOOK_SECRET || "").trim()),
-      endpoint: config.configured ? `${config.baseUrl}${config.upsertPath}` : null,
-      webhookPath: "/api/crm/kraya/webhook",
-      stageLabels: Object.fromEntries(STAGES.map((stage) => [stage, crmStageLabel(stage)])),
-    },
-    // Stage names the CRM has actually sent, newest first. Configure the
-    // CRM_STAGE_* variables from these, not from the CRM's on-screen labels.
-    observedStages,
-    unmatchedStageLabels: STAGES.map((stage) => crmStageLabel(stage)).filter(
-      (label) => !observedStages.some((entry: any) => entry.stage === label)
-    ),
-    counts: { total, failing },
-    leads,
-  });
+export async function GET(req: Request) {
+  if (!(await requireAdminApiAccess(req, "view"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  return NextResponse.json(await getCrmHealth());
 }
 
 /** Manually re-push a booking, for leads that failed while the CRM was down. */
 export async function POST(req: Request) {
-  if (!(await requireAdmin())) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!(await requireAdminApiAccess(req, "manage"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const body = await req.json().catch(() => ({}));
+
+  // Map observed CRM stage names onto the groups the sales counters read.
+  if ((body as any)?.action === "stageMapping") {
+    await dbConnect();
+    const entries = Array.isArray((body as any)?.entries) ? (body as any).entries : [];
+    const mapping = await saveStageMapping(entries);
+    return NextResponse.json({ ok: true, mapping });
+  }
+
+  // Seed the mirror from a CRM export - the only way to get pre-existing leads in,
+  // because Kraya offers no endpoint to read them.
+  if ((body as any)?.action === "import") {
+    await dbConnect();
+    const csv = String((body as any)?.csv || "");
+    if (!csv.trim()) return NextResponse.json({ error: "No CSV content was uploaded." }, { status: 400 });
+    return NextResponse.json(await importLeadsFromCsv(csv));
+  }
+
   const bookingId = String((body as any)?.bookingId || "").trim();
   if (!bookingId) return NextResponse.json({ error: "bookingId is required." }, { status: 400 });
 

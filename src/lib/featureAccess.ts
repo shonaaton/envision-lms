@@ -137,6 +137,7 @@ export async function seedPermissionTemplates(actorId?: string) {
     { name: "Content Admin", role: "admin", description: "Courses, PGNs, homework, announcements, and learning content." },
     { name: "Super Admin", role: "admin", description: "Full portal administration and protected feature access controls." },
     { name: "Standard Sub Admin", role: "sub-admin", description: "Starts with no access. Super Admins can grant selected modules from Feature Access." },
+    { name: "Sales & Relationship", role: "sub-admin", description: "Sales and relationship team: performance, contacts, batch vacancy, and lead CRM. Read-only, with no export anywhere." },
   ] as const;
 
   const featureDefaults = FEATURE_DEFINITIONS.reduce<Record<string, string[]>>((acc, feature) => {
@@ -152,7 +153,17 @@ export async function seedPermissionTemplates(actorId?: string) {
           $setOnInsert: {
             ...template,
             permissions:
-              template.name === "Finance Admin"
+              // The sales grant is spelled out rather than derived from the admin
+              // defaults, because the point of this template is what it leaves out:
+              // no `export` on any key, and no fees, users, or academics at all.
+              template.name === "Sales & Relationship"
+                ? {
+                    salesPerformance: ["view"],
+                    salesDirectory: ["view"],
+                    batchVacancy: ["view"],
+                    salesCrm: ["view", "stage", "note"],
+                  }
+                : template.name === "Finance Admin"
                 ? { fees: featureDefaults.fees || [], reports: ["view", "export"] }
                 : template.name === "Tournament Admin"
                   ? { tournaments: featureDefaults.tournaments || [], leaderboards: ["view", "export"] }

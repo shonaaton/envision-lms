@@ -4,6 +4,7 @@ import { dbConnect } from "@/lib/db";
 import { findUserForCrmContact, emailKey, phoneKey } from "@/lib/crm/identity";
 import { classifyCrmStage } from "@/lib/crm/stages";
 import { closeDemoFromCrm, convertStudentFromCrm, reopenDemoFromCrm } from "@/lib/crm/sync";
+import { applyKrayaPayload } from "@/lib/crm/mirror";
 import { CrmLead } from "@/models/CrmLead";
 
 export const dynamic = "force-dynamic";
@@ -44,14 +45,26 @@ export async function POST(req: Request) {
   const stageName = String(payload?.stage || "").trim();
   const phone = String(payload?.phone || "").trim();
   const email = String(payload?.email || "").trim();
-
-  if (!stageName) {
-    // Nothing to act on, but a non-200 would trigger the CRM retry cycle.
-    return NextResponse.json({ ok: true, ignored: "No stage in payload." });
-  }
+  const eventType = String(payload?.event_type || "") === "create" ? "create" : "update";
 
   try {
     await dbConnect();
+
+    // Mirror first, and for every payload - including ones with no stage. This is
+    // the portal's only copy of the lead: Kraya has no read endpoint, so anything
+    // not captured from a webhook is not recoverable later. It records only, and
+    // never touches a booking; the demo dispatch below is unchanged.
+    const mirrored = await applyKrayaPayload(payload, eventType).catch((error) => {
+      console.error("CRM mirror write failed", error);
+      return null;
+    });
+
+    if (!stageName) {
+      // Nothing to act on for the demo funnel, but the mirror still took the
+      // update. A non-200 here would put Kraya into its retry cycle.
+      return NextResponse.json({ ok: true, mirrored: Boolean(mirrored), ignored: "No stage in payload." });
+    }
+
     const kind = classifyCrmStage(stageName);
     const user: any = await findUserForCrmContact({ phone, email });
 

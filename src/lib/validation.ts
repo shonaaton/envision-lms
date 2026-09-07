@@ -55,6 +55,7 @@ export const batchSchema = z.object({
   students: z.array(z.string()).default([]),
   tags: z.array(z.string()).default([]),
   level: z.enum(["beginner", "intermediate", "advanced"]).default("beginner"),
+  capacity: z.number().int().min(1).max(100).default(8),
 });
 
 export const classroomSchema = z.object({

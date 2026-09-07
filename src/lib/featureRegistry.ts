@@ -296,9 +296,12 @@ export const FEATURE_DEFINITIONS: FeatureDefinition[] = [
     category: "Payments",
     description: "Main fee dashboard and billing overview.",
     routes: ["/fees"],
-    permissions: [view],
+    // `view` is what a student needs for their own credits and invoices page;
+    // `export` is the separate grant that unlocks CSV download of the academy-wide
+    // drill-down tables, so a read-only manager can be given one without the other.
+    permissions: [view, exportRecords],
     defaultStatus: "enabled",
-    defaultRolePermissions: { student: ["view"], admin: ["view"] },
+    defaultRolePermissions: { student: ["view"], admin: ["view", "export"] },
   },
   {
     key: "feePlans",
@@ -521,6 +524,69 @@ export const FEATURE_DEFINITIONS: FeatureDefinition[] = [
     description: "Student activity centre and practice challenges.",
     routes: ["/activity-centre"],
     permissions: [view, create, edit],
+  },
+  /* ------------------------------------------------------------------ Sales
+   * The sales and relationship team runs on `sub-admin` accounts carrying the
+   * "Sales & Relationship" template, so these keys are the whole definition of
+   * what that team can reach. None of them grants `export`: the workspace is
+   * deliberately read-only and non-extractable.
+   */
+  {
+    key: "salesPerformance",
+    label: "Sales Performance",
+    category: "Sales",
+    description: "Growth, churn, demo conversion, retention, and student operations - without collections or revenue projections.",
+    routes: ["/sales/performance"],
+    apiPrefixes: ["/api/sales/analytics"],
+    permissions: [view],
+    defaultStatus: "enabled",
+    defaultRolePermissions: { admin: ["view"] },
+  },
+  {
+    key: "salesDirectory",
+    label: "Contact Directory",
+    category: "Sales",
+    description: "Student, parent, coach, and demo-account contact details for calling.",
+    routes: ["/sales/directory"],
+    apiPrefixes: ["/api/sales/directory"],
+    permissions: [view],
+    defaultStatus: "enabled",
+    defaultRolePermissions: { admin: ["view"] },
+  },
+  {
+    key: "batchVacancy",
+    label: "Batch Vacancy",
+    category: "Sales",
+    description: "Free slots, schedule, coach, course, level, and classes remaining for every group batch.",
+    routes: ["/sales/batches"],
+    apiPrefixes: ["/api/sales/batches"],
+    permissions: [view],
+    defaultStatus: "enabled",
+    defaultRolePermissions: { admin: ["view"] },
+  },
+  {
+    key: "salesCrm",
+    label: "Lead CRM",
+    category: "Sales",
+    description: "Leads mirrored from the CRM with stages, notes, attributes, and call history. Stage changes sync back.",
+    routes: ["/sales/crm"],
+    apiPrefixes: ["/api/sales/crm"],
+    permissions: [view, { id: "stage", label: "Change Lead Stage" }, { id: "note", label: "Log Calls & Notes" }],
+    defaultStatus: "enabled",
+    defaultRolePermissions: { admin: ["view", "stage", "note"] },
+  },
+  {
+    key: "crmAdmin",
+    label: "CRM Sync & Settings",
+    category: "Sales",
+    description: "CRM sync health, observed pipeline stages, stage mapping, and lead import.",
+    routes: ["/admin/crm"],
+    apiPrefixes: ["/api/admin/crm"],
+    // Deliberately NOT "/api/crm": the Kraya webhook authenticates with a shared
+    // secret and no session, so it must stay outside the session-based feature gate.
+    permissions: [view, manage],
+    defaultStatus: "enabled",
+    defaultRolePermissions: { admin: all(view, manage) },
   },
 ];
 

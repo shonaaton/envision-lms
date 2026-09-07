@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { dbConnect } from "@/lib/db";
 import { formatINR } from "@/lib/utils";
-import { requireFeesAccess } from "@/lib/feesAccess";
+import { auth } from "@/lib/auth";
+import { isFeesManager, requireFeesAccess } from "@/lib/feesAccess";
 import { getFeesAnalytics, resolveRange, type GstFilter } from "@/lib/feesAnalytics";
 
 export const dynamic = "force-dynamic";
@@ -25,6 +26,13 @@ function csv(headers: string[], rows: unknown[][]) {
 }
 
 export async function GET(req: Request) {
+  // Students hold `feeDashboard:view` for their own credits and invoices page, so
+  // the feature check alone is not enough here - this endpoint returns academy-wide
+  // financials and must be restricted to staff who manage fees.
+  const session = await auth();
+  if (!isFeesManager((session?.user as any)?.role)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   if (!(await requireFeesAccess("view", "feeDashboard"))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
@@ -36,6 +44,12 @@ export async function GET(req: Request) {
 
   const exportId = url.searchParams.get("export");
   if (exportId) {
+    // `view` opens the dashboard; taking the rows out of it is a separate grant.
+    // Without this, any role that can see a drill-down could also download it,
+    // which is exactly what the read-only sales workspace must not allow.
+    if (!(await requireFeesAccess("export", "feeDashboard"))) {
+      return NextResponse.json({ error: "Exporting is not enabled for this account." }, { status: 403 });
+    }
     const table = analytics.tables[exportId];
     if (!table) return NextResponse.json({ error: "Unknown report" }, { status: 404 });
     const headers = table.columns.map((column) => column.label);

@@ -14,6 +14,10 @@ const BatchSchema = new Schema(
     ],
     tags: [{ type: String, index: true }],
     level: { type: String, enum: ["beginner", "intermediate", "advanced"], default: "beginner" },
+    // Seats in a group batch. Eight is the academy standard, so it is the default
+    // rather than a hardcoded constant - one differently sized batch should be a
+    // data fix, not a deploy. Individual classes (names prefixed "PIC") ignore it.
+    capacity: { type: Number, default: 8, min: 1, max: 100 },
     isActive: { type: Boolean, default: true, index: true },
   },
   { timestamps: true }

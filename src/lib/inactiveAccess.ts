@@ -17,6 +17,10 @@ const inactiveRestrictedPrefixes = [
   "/api/ask-coach",
   "/api/tournaments",
   "/api/admin/assignment-templates",
+  // A deactivated sales account keeps its login but loses the workspace, the
+  // same way a deactivated student keeps their account but loses their classes.
+  "/sales",
+  "/api/sales",
 ];
 
 export function isInactiveRestrictedPath(pathname: string) {

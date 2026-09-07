@@ -131,11 +131,13 @@ function DetailModal({
   onClose,
   exportBase,
   rangeLabel,
+  canExport,
 }: {
   tables: DetailTable[];
   onClose: () => void;
   exportBase: string;
   rangeLabel: string;
+  canExport: boolean;
 }) {
   const [activeId, setActiveId] = useState(tables[0]?.id || "");
   const [query, setQuery] = useState("");
@@ -249,12 +251,14 @@ function DetailModal({
             <span className="text-xs font-semibold text-slate-500">
               {rows.length} of {active.rows.length} rows
             </span>
-            <a
-              href={`${exportBase}&export=${active.id}`}
-              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-xs font-bold text-brand transition hover:border-brand/40 hover:bg-brand-50"
-            >
-              <Download size={14} /> CSV
-            </a>
+            {canExport ? (
+              <a
+                href={`${exportBase}&export=${active.id}`}
+                className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-xs font-bold text-brand transition hover:border-brand/40 hover:bg-brand-50"
+              >
+                <Download size={14} /> CSV
+              </a>
+            ) : null}
           </div>
         </div>
 
@@ -339,14 +343,20 @@ function DetailModal({
 
 /* -------------------------------------------------------------- KPI cards */
 
-function KpiCard({ card, onOpen }: { card: CardDef; onOpen: (tables: string[]) => void }) {
+function KpiCard({ card, onOpen, hasDetail = true }: { card: CardDef; onOpen: (tables: string[]) => void; hasDetail?: boolean }) {
   const tone = TONES[card.tone || "brand"];
   const Icon = card.icon;
   return (
     <button
       type="button"
+      // A card whose drill-down tables are absent from the payload - which is how
+      // the sales cut withholds a table while keeping its headline count - must not
+      // look clickable, or it opens an empty modal.
+      disabled={!hasDetail}
       onClick={() => onOpen(card.tables)}
-      className={`group flex flex-col rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-brand-900/5 ${tone.ring}`}
+      className={`group flex flex-col rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition duration-200 ${
+        hasDetail ? `hover:-translate-y-0.5 hover:shadow-lg hover:shadow-brand-900/5 ${tone.ring}` : "cursor-default"
+      }`}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="text-xs font-bold uppercase tracking-wide text-slate-500">{card.label}</div>
@@ -369,9 +379,11 @@ function KpiCard({ card, onOpen }: { card: CardDef; onOpen: (tables: string[]) =
           <div className={`h-full rounded-full ${tone.bar}`} style={{ width: `${Math.max(0, Math.min(100, card.progress))}%` }} />
         </div>
       ) : null}
-      <div className="mt-3 flex items-center gap-1 text-[11px] font-bold text-brand opacity-0 transition group-hover:opacity-100">
-        View details <ChevronRight size={12} />
-      </div>
+      {hasDetail ? (
+        <div className="mt-3 flex items-center gap-1 text-[11px] font-bold text-brand opacity-0 transition group-hover:opacity-100">
+          View details <ChevronRight size={12} />
+        </div>
+      ) : null}
     </button>
   );
 }
@@ -405,13 +417,29 @@ function Section({
 
 /* ---------------------------------------------------------------- surface */
 
+/** Section ids in render order. `sections` picks a subset for narrower audiences. */
+export type FinanceSection = "collections" | "growth" | "demos" | "retention" | "expected" | "operations";
+
 export function FinanceDashboard({
   initial,
   quickLinks,
+  endpoint = "/api/fees/analytics",
+  sections,
+  canExport = true,
+  showGstFilter = true,
 }: {
   initial: FeesAnalytics;
   quickLinks: Array<[string, string]>;
+  /** Feed for range changes. The sales workspace points this at its narrower payload. */
+  endpoint?: string;
+  /** Sections to render. Omitted means all six. */
+  sections?: readonly FinanceSection[];
+  /** When false the drill-down modal offers no CSV. The server still enforces this. */
+  canExport?: boolean;
+  /** The GST split only affects collections, so it is hidden when those are. */
+  showGstFilter?: boolean;
 }) {
+  const visible = (id: FinanceSection) => !sections || sections.includes(id);
   const [data, setData] = useState<FeesAnalytics>(initial);
   const [preset, setPreset] = useState<PresetId>("this_month");
   const [from, setFrom] = useState(initial.range.from);
@@ -427,7 +455,7 @@ export function FinanceDashboard({
     setLoading(true);
     setError("");
     try {
-      const response = await fetch(`/api/fees/analytics?${query}`, { cache: "no-store" });
+      const response = await fetch(`${endpoint}?${query}`, { cache: "no-store" });
       if (!response.ok) throw new Error("Unable to load the finance data.");
       setData(await response.json());
     } catch (issue: any) {
@@ -435,7 +463,7 @@ export function FinanceDashboard({
     } finally {
       setLoading(false);
     }
-  }, [query]);
+  }, [query, endpoint]);
 
   const first = `${initial.range.from}|${initial.range.to}|${initial.gst}`;
   useEffect(() => {
@@ -783,6 +811,7 @@ export function FinanceDashboard({
   ];
 
   const openModal = (tables: string[]) => setModalTables(tables);
+  const hasDetail = (card: CardDef) => card.tables.some((id) => Boolean(data.tables[id]));
   const modalDetail = modalTables
     ? (modalTables.map((id) => data.tables[id]).filter(Boolean) as DetailTable[])
     : null;
@@ -859,7 +888,7 @@ export function FinanceDashboard({
             />
           </div>
 
-          <div className="flex rounded-lg bg-slate-100 p-0.5">
+          <div className={showGstFilter ? "flex rounded-lg bg-slate-100 p-0.5" : "hidden"}>
             {GST_OPTIONS.map((option) => (
               <button
                 key={option.id}
@@ -890,86 +919,98 @@ export function FinanceDashboard({
       ) : null}
 
       <div className={loading ? "pointer-events-none opacity-60 transition" : "transition"}>
-        <Section title="Collections" description="Money actually received, billed and still owed in this window" icon={Banknote}>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-            {collectionCards.map((card) => (
-              <KpiCard key={card.key} card={card} onOpen={openModal} />
-            ))}
-          </div>
-        </Section>
-
-        <Section title="Sales growth, churn and pauses" description="New students won, students lost or paused, and the fee value that moved with them" icon={TrendingUp}>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {growthCards.map((card) => (
-              <KpiCard key={card.key} card={card} onOpen={openModal} />
-            ))}
-          </div>
-        </Section>
-
-        <Section title="Demos and conversion" description="Demo pipeline for the academy and for every coach" icon={Target}>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {demoCards.map((card) => (
-              <KpiCard key={card.key} card={card} onOpen={openModal} />
-            ))}
-          </div>
-
-          <div className="mt-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div>
-                <h3 className="text-sm font-bold text-slate-950">Conversion rate by coach</h3>
-                <p className="text-xs text-slate-500">Converted demos as a share of the demos each coach delivered.</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => openModal(["coachConversion", "demosConverted", "demosDone"])}
-                className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 px-3 text-xs font-bold text-brand transition hover:border-brand/40 hover:bg-brand-50"
-              >
-                Full table <ChevronRight size={13} />
-              </button>
+        {visible("collections") ? (
+          <Section title="Collections" description="Money actually received, billed and still owed in this window" icon={Banknote}>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+              {collectionCards.map((card) => (
+                <KpiCard key={card.key} card={card} onOpen={openModal} hasDetail={hasDetail(card)} />
+              ))}
             </div>
-            {topCoaches.length ? (
-              <div className="space-y-2.5">
-                {topCoaches.map((row) => (
-                  <div key={row.coachId} className="flex items-center gap-3">
-                    <div className="w-40 shrink-0 truncate text-sm font-semibold text-slate-800">{row.coach}</div>
-                    <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
-                      <div className="h-full rounded-full bg-brand" style={{ width: `${Math.min(100, row.rate)}%` }} />
-                    </div>
-                    <div className="w-32 shrink-0 text-right text-xs font-bold text-slate-600">
-                      <span className="text-slate-950">{row.rate}%</span> - {row.converted}/{row.done}
-                    </div>
-                  </div>
-                ))}
+          </Section>
+        ) : null}
+
+        {visible("growth") ? (
+          <Section title="Sales growth, churn and pauses" description="New students won, students lost or paused, and the fee value that moved with them" icon={TrendingUp}>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {growthCards.map((card) => (
+                <KpiCard key={card.key} card={card} onOpen={openModal} hasDetail={hasDetail(card)} />
+              ))}
+            </div>
+          </Section>
+        ) : null}
+
+        {visible("demos") ? (
+          <Section title="Demos and conversion" description="Demo pipeline for the academy and for every coach" icon={Target}>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {demoCards.map((card) => (
+                <KpiCard key={card.key} card={card} onOpen={openModal} hasDetail={hasDetail(card)} />
+              ))}
+            </div>
+
+            <div className="mt-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-950">Conversion rate by coach</h3>
+                  <p className="text-xs text-slate-500">Converted demos as a share of the demos each coach delivered.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => openModal(["coachConversion", "demosConverted", "demosDone"])}
+                  className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 px-3 text-xs font-bold text-brand transition hover:border-brand/40 hover:bg-brand-50"
+                >
+                  Full table <ChevronRight size={13} />
+                </button>
               </div>
-            ) : (
-              <p className="text-sm text-slate-500">No demos were delivered in this range.</p>
-            )}
-          </div>
-        </Section>
+              {topCoaches.length ? (
+                <div className="space-y-2.5">
+                  {topCoaches.map((row) => (
+                    <div key={row.coachId} className="flex items-center gap-3">
+                      <div className="w-40 shrink-0 truncate text-sm font-semibold text-slate-800">{row.coach}</div>
+                      <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
+                        <div className="h-full rounded-full bg-brand" style={{ width: `${Math.min(100, row.rate)}%` }} />
+                      </div>
+                      <div className="w-32 shrink-0 text-right text-xs font-bold text-slate-600">
+                        <span className="text-slate-950">{row.rate}%</span> - {row.converted}/{row.done}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-slate-500">No demos were delivered in this range.</p>
+              )}
+            </div>
+          </Section>
+        ) : null}
 
-        <Section title="Retention" description="How much of the money owed by existing students actually came in" icon={Repeat}>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {retentionCards.map((card) => (
-              <KpiCard key={card.key} card={card} onOpen={openModal} />
-            ))}
-          </div>
-        </Section>
+        {visible("retention") ? (
+          <Section title="Retention" description="How much of the money owed by existing students actually came in" icon={Repeat}>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {retentionCards.map((card) => (
+                <KpiCard key={card.key} card={card} onOpen={openModal} hasDetail={hasDetail(card)} />
+              ))}
+            </div>
+          </Section>
+        ) : null}
 
-        <Section title="Expected revenue" description="What the range should earn if every scheduled class runs and every plan is paid" icon={Sparkles}>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {expectedCards.map((card) => (
-              <KpiCard key={card.key} card={card} onOpen={openModal} />
-            ))}
-          </div>
-        </Section>
+        {visible("expected") ? (
+          <Section title="Expected revenue" description="What the range should earn if every scheduled class runs and every plan is paid" icon={Sparkles}>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {expectedCards.map((card) => (
+                <KpiCard key={card.key} card={card} onOpen={openModal} hasDetail={hasDetail(card)} />
+              ))}
+            </div>
+          </Section>
+        ) : null}
 
-        <Section title="Students and operations" description="Who is on the books, and where billing needs attention" icon={Users}>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {operationCards.map((card) => (
-              <KpiCard key={card.key} card={card} onOpen={openModal} />
-            ))}
-          </div>
-        </Section>
+        {visible("operations") ? (
+          <Section title="Students and operations" description="Who is on the books, and where billing needs attention" icon={Users}>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {operationCards.map((card) => (
+                <KpiCard key={card.key} card={card} onOpen={openModal} hasDetail={hasDetail(card)} />
+              ))}
+            </div>
+          </Section>
+        ) : null}
 
         {quickLinks.length ? (
           <Section title="Fee management" description="Jump into the day to day billing screens" icon={Layers}>
@@ -996,8 +1037,9 @@ export function FinanceDashboard({
         <DetailModal
           tables={modalDetail}
           onClose={() => setModalTables(null)}
-          exportBase={`/api/fees/analytics?${query}`}
+          exportBase={`${endpoint}?${query}`}
           rangeLabel={data.range.label}
+          canExport={canExport}
         />
       ) : null}
     </div>

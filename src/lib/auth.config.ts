@@ -49,11 +49,18 @@ export const authConfig = {
         nextUrl.pathname.startsWith("/api/auth") ||
         nextUrl.pathname.startsWith("/api/webhooks") ||
         nextUrl.pathname.startsWith("/api/webhook") ||
+        // The CRM webhook carries no session - it authenticates with the
+        // X-KRAYA-WEBHOOK-SECRET header, which the route itself verifies. Without
+        // this line middleware answers Kraya with a redirect to /login, and Kraya
+        // treats any non-200 as a delivery failure.
+        nextUrl.pathname.startsWith("/api/crm/kraya/webhook") ||
         nextUrl.pathname.startsWith("/api/register") ||
         nextUrl.pathname.startsWith("/api/password") ||
         nextUrl.pathname.startsWith("/api/fees/invoices") ||
         nextUrl.pathname.startsWith("/tournament-join");
-      const isAdminRoute = nextUrl.pathname.startsWith("/admin");
+      // The sales workspace is staff-only. The real gate is the feature check in
+      // (dashboard)/layout.tsx; this is the coarse outer shell, same as /admin.
+      const isAdminRoute = nextUrl.pathname.startsWith("/admin") || nextUrl.pathname.startsWith("/sales");
       const isInstructorRoute = nextUrl.pathname.startsWith("/instructor");
       const isPgnRoute = nextUrl.pathname.startsWith("/pgn");
       const isAnalysisRoute = nextUrl.pathname.startsWith("/analysis");

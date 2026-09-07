@@ -1,6 +1,8 @@
 import { recordActivity } from "@/lib/activity";
 import { isCrmConfigured, pushLeadStage } from "@/lib/crm/client";
 import { contactKeysForUser, crmPhoneNumber } from "@/lib/crm/identity";
+import { cancelDemoClassrooms } from "@/lib/demoClassroom";
+import { DEMO_MANAGEMENT_HREF } from "@/lib/demoWorkflow";
 import { crmStageLabel, demoStatusToStage, type DemoStage } from "@/lib/crm/stages";
 import { dbConnect } from "@/lib/db";
 import { Booking } from "@/models/Booking";
@@ -38,7 +40,10 @@ async function resolveLead(user: any) {
 
   const existing = await CrmLead.findOne({ $or: or });
   if (existing) {
-    existing.user = existing.user || user._id;
+    // Always relink to the account we just resolved from the booking. Keeping a
+    // previous id would strand the lead on a deleted or superseded account when
+    // someone re-registers on the same phone number.
+    existing.user = user._id;
     existing.name = user.name || existing.name;
     if (keys.phoneKey) existing.phoneKey = keys.phoneKey;
     if (keys.emailKey) existing.emailKey = keys.emailKey;
@@ -163,6 +168,10 @@ export async function closeDemoFromCrm(input: { userId: string; stageName: strin
     )
   );
 
+  // The demo classroom must go with the booking, or the coach keeps an upcoming
+  // class for a lead the CRM has already written off.
+  await cancelDemoClassrooms({ bookingIds: bookings.map((booking) => booking._id), reason }).catch(() => undefined);
+
   // Follow-up tasks for a closed lead are dead work.
   await InternalTask.updateMany(
     {
@@ -174,6 +183,98 @@ export async function closeDemoFromCrm(input: { userId: string; stageName: strin
   ).catch(() => undefined);
 
   return { closed: bookings.length };
+}
+
+const DEMO_ACCESS_EXTENSION_DAYS = 14;
+
+/**
+ * CRM moved the lead back into a demo stage after it had been closed.
+ *
+ * Closure was previously one-way: sales could kill a demo from the CRM but not
+ * revive it, leaving the lead sitting in a demo stage with nothing on the portal
+ * for anyone to action. This reopens it to REQUESTED so it returns to the Demo
+ * Center queue. A live demo is never touched - only a closed one is revived, so
+ * the portal still owns the outcome of demos that are actually running.
+ */
+export async function reopenDemoFromCrm(input: { userId: string; stageName: string; crmLeadId?: string }) {
+  const active = await Booking.exists({
+    student: input.userId,
+    bookingType: "demo",
+    demoStatus: { $in: OPEN_DEMO_STATUSES },
+  });
+  if (active) return { reopened: false, reason: "An active demo already exists." };
+
+  const booking: any = await Booking.findOne({
+    student: input.userId,
+    bookingType: "demo",
+    demoStatus: { $in: ["CLOSED", "CANCELLED"] },
+  })
+    .sort({ updatedAt: -1 })
+    .lean();
+  if (!booking) return { reopened: false, reason: "No closed demo to reopen." };
+
+  await Booking.findByIdAndUpdate(booking._id, {
+    status: "pending",
+    approvalStatus: "pending_admin",
+    demoStatus: "REQUESTED",
+    feedbackStatus: "not_required",
+    needsNewTime: true,
+    reopenedAt: new Date(),
+    reopenedFromStage: input.stageName,
+    $unset: { cancellationReason: "" },
+  });
+
+  // The demo account has usually expired by the time a lead is revived, so give
+  // it a fresh window or the student cannot log in for the rescheduled class.
+  const user: any = await User.findById(input.userId).select("name accountStatus demoExpiresAt").lean();
+  if (user?.accountStatus === "demo") {
+    const now = new Date();
+    const base = user.demoExpiresAt && new Date(user.demoExpiresAt).getTime() > now.getTime() ? new Date(user.demoExpiresAt) : now;
+    await User.findByIdAndUpdate(input.userId, {
+      demoExpiresAt: new Date(base.getTime() + DEMO_ACCESS_EXTENSION_DAYS * 24 * 60 * 60 * 1000),
+    }).catch(() => undefined);
+  }
+
+  await InternalTask.findOneAndUpdate(
+    { referenceType: "DemoBooking", referenceId: booking._id },
+    {
+      $set: {
+        title: `Reschedule reopened demo - ${user?.name || "Prospect"}`,
+        details: [
+          `${user?.name || "This lead"} was moved back to "${input.stageName}" in the CRM, so the closed demo has been reopened.`,
+          "The original slot has passed - agree a new time and confirm it from the Demo Center.",
+        ].join("\n"),
+        status: "pending",
+        priority: "high",
+        actionHref: DEMO_MANAGEMENT_HREF,
+      },
+    },
+    { upsert: true }
+  ).catch(() => undefined);
+
+  const admins: any[] = await User.find({ role: { $in: ["admin", "sub-admin"] }, isActive: { $ne: false } })
+    .select("_id")
+    .lean();
+  await Notification.insertMany(
+    admins.map((admin) => ({
+      user: admin._id,
+      type: "crm.demo.reopened",
+      title: "Demo reopened from CRM",
+      message: `${user?.name || "A lead"} was moved back to "${input.stageName}" in the CRM. Their demo is reopened and needs a new time.`,
+      metadata: { studentId: input.userId, booking: booking._id, href: DEMO_MANAGEMENT_HREF, source: "crm" },
+    }))
+  ).catch(() => undefined);
+
+  await recordActivity({
+    targetUser: input.userId,
+    type: "demo.booking.reopened",
+    label: "Reopened demo from CRM",
+    entityType: "Booking",
+    entityId: idOf(booking._id),
+    metadata: { source: "crm", crmStage: input.stageName, crmLeadId: input.crmLeadId || "", event: "DEMO_REOPENED" },
+  });
+
+  return { reopened: true, bookingId: idOf(booking._id) };
 }
 
 /**

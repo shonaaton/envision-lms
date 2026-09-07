@@ -23,6 +23,18 @@ export async function GET() {
   await dbConnect();
 
   const config = crmClientConfig();
+  // Every inbound webhook carries the stage name exactly as the CRM spells it.
+  // Collecting the distinct values turns the webhook traffic into an
+  // authoritative catalogue of stage names, so the outbound labels can be
+  // configured from observed data instead of read off the CRM UI.
+  const observedStages = await CrmLead.aggregate([
+    { $unwind: "$history" },
+    { $match: { "history.direction": "inbound", "history.stage": { $nin: [null, ""] } } },
+    { $group: { _id: "$history.stage", seen: { $sum: 1 }, lastSeen: { $max: "$history.at" } } },
+    { $sort: { lastSeen: -1 } },
+    { $project: { _id: 0, stage: "$_id", seen: 1, lastSeen: 1 } },
+  ]).catch(() => []);
+
   const [leads, failing, total] = await Promise.all([
     CrmLead.find({})
       .populate("user", "name email phone accountStatus")
@@ -41,6 +53,12 @@ export async function GET() {
       webhookPath: "/api/crm/kraya/webhook",
       stageLabels: Object.fromEntries(STAGES.map((stage) => [stage, crmStageLabel(stage)])),
     },
+    // Stage names the CRM has actually sent, newest first. Configure the
+    // CRM_STAGE_* variables from these, not from the CRM's on-screen labels.
+    observedStages,
+    unmatchedStageLabels: STAGES.map((stage) => crmStageLabel(stage)).filter(
+      (label) => !observedStages.some((entry: any) => entry.stage === label)
+    ),
     counts: { total, failing },
     leads,
   });

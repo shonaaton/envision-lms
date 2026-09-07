@@ -9,6 +9,7 @@ import { formatAcademyDateTime } from "@/lib/academyTime";
 import { notifyDemoApproved, notifyDemoConverted } from "@/lib/demoWorkflow";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
 import { recordActivity } from "@/lib/activity";
+import { cancelDemoClassrooms } from "@/lib/demoClassroom";
 import { Booking } from "@/models/Booking";
 import { Classroom } from "@/models/Classroom";
 import { Notification } from "@/models/Fee";
@@ -137,6 +138,7 @@ async function updateBookingRequest(formData: FormData) {
   booking.approvalStatus = "pending_admin";
   booking.status = "pending";
   booking.demoStatus = "COACH_ASSIGNED";
+  booking.needsNewTime = false;
   if (previousStartAt && new Date(previousStartAt).getTime() !== startAt.getTime()) {
     booking.rescheduleCount = Number(booking.rescheduleCount || 0) + 1;
     booking.rescheduleHistory = [
@@ -195,6 +197,10 @@ async function approveBooking(formData: FormData) {
     });
   } else {
     classroom.classroomType = "demo";
+    // Revive it if closing the demo had cancelled it - approving here means the
+    // class is going ahead again.
+    classroom.status = "scheduled";
+    classroom.isActive = true;
     classroom.coach = coachId;
     classroom.instructor = coachId;
     classroom.classDate = start;
@@ -218,6 +224,7 @@ async function approveBooking(formData: FormData) {
     approvedBy: actorId,
     approvedAt: new Date(),
     feedbackStatus: "pending",
+    needsNewTime: false,
   }, { new: true }).populate("student instructor assignedCoach");
   const admins = await User.find({ role: { $in: ["admin", "sub-admin"] }, isActive: { $ne: false } }).select("_id").lean();
   await Notification.insertMany([
@@ -243,8 +250,12 @@ async function closeDemo(formData: FormData) {
   const bookingId = String(formData.get("booking") || "");
   const reason = String(formData.get("reason") || "Other").trim();
   await Booking.findByIdAndUpdate(bookingId, { status: "cancelled", approvalStatus: "rejected", demoStatus: "CLOSED", cancellationReason: reason });
+  // Cancel the demo classroom too, otherwise the coach keeps an upcoming class
+  // on the schedule for a lead that is no longer being pursued.
+  await cancelDemoClassrooms({ bookingIds: [bookingId], reason }).catch(() => undefined);
   await recordActivity({ actor: actorId, type: "demo.booking.closed", label: "Closed demo lead", entityType: "Booking", entityId: bookingId, metadata: { reason, event: "DEMO_CLOSED" } });
   revalidatePath("/admin/demo-center");
+  revalidatePath("/classrooms");
 }
 
 async function convertDemoStudent(formData: FormData) {
@@ -451,6 +462,7 @@ function DemoCard({ booking, coaches, courses, batches, feedback }: { booking: a
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-base font-semibold tracking-tight text-slate-900">{student.name || "Demo student"}</h2>
             <Tag tone="amber">{demoStatusLabel(booking)}</Tag>
+            {booking.needsNewTime ? <Tag tone="rose">Needs a new time</Tag> : null}
             {booking.rescheduleCount ? (
               <Tag tone="slate"><History size={11} /> {booking.rescheduleCount} {booking.rescheduleCount === 1 ? "change" : "changes"}</Tag>
             ) : null}
@@ -643,11 +655,12 @@ function Field({ label, value, className = "" }: { label: string; value?: ReactN
   );
 }
 
-function Tag({ tone, children }: { tone: "amber" | "slate" | "emerald"; children: ReactNode }) {
+function Tag({ tone, children }: { tone: "amber" | "slate" | "emerald" | "rose"; children: ReactNode }) {
   const tones = {
     amber: "bg-amber-50 text-amber-700 ring-amber-200/70",
     slate: "bg-slate-50 text-slate-600 ring-slate-200",
     emerald: "bg-emerald-50 text-emerald-700 ring-emerald-200/70",
+    rose: "bg-rose-50 text-rose-700 ring-rose-200/70",
   };
   return (
     <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset ${tones[tone]}`}>

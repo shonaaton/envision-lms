@@ -73,6 +73,14 @@ const BookingSchema = new Schema(
     ],
     proposedStartAt: Date,
     proposedEndAt: Date,
+    // Set when a closed demo is revived because the CRM moved the lead back into
+    // a demo stage. The original slot is almost always in the past by then, so
+    // the booking reopens flagged for a fresh time rather than silently keeping
+    // a stale one. `startAt` is required by the schema, so it is left in place
+    // as history and `needsNewTime` is what the UI acts on.
+    needsNewTime: { type: Boolean, default: false, index: true },
+    reopenedAt: Date,
+    reopenedFromStage: String,
   },
   { timestamps: true }
 );

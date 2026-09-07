@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { dbConnect } from "@/lib/db";
 import { findUserForCrmContact, emailKey, phoneKey } from "@/lib/crm/identity";
 import { classifyCrmStage } from "@/lib/crm/stages";
-import { closeDemoFromCrm, convertStudentFromCrm } from "@/lib/crm/sync";
+import { closeDemoFromCrm, convertStudentFromCrm, reopenDemoFromCrm } from "@/lib/crm/sync";
 import { CrmLead } from "@/models/CrmLead";
 
 export const dynamic = "force-dynamic";
@@ -114,8 +114,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, matched: true, stage: stageName, kind, ...result });
     }
 
-    // "demo": the portal owns these stages, so an inbound demo stage is recorded
-    // for visibility but never overwrites a real class outcome.
+    if (kind === "demo") {
+      // The portal owns demo stages, so this never overwrites a running demo -
+      // `reopenDemoFromCrm` no-ops unless the only demo on file is a closed one.
+      // That makes closure reversible: sales can revive a lead they wrote off.
+      // The reopened booking then pushes its true state (Demo Requested) back,
+      // and the resulting webhook finds an active demo and stops there.
+      const result = await reopenDemoFromCrm({ userId, stageName, crmLeadId });
+      return NextResponse.json({ ok: true, matched: true, stage: stageName, kind, ...result });
+    }
+
     // "ignore": early-funnel or unrecognised stages, which change nothing here.
     return NextResponse.json({ ok: true, matched: true, stage: stageName, kind, applied: false });
   } catch (error) {

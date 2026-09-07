@@ -47,6 +47,10 @@ const UserSchema = new Schema(
     },
     parentName: { type: String },
     parentEmail: { type: String, lowercase: true, index: true },
+    // When this family was last asked for a Google review. A review request is
+    // a favour to ask, not a broadcast, so it is rate limited per family rather
+    // than sent on every qualifying milestone.
+    reviewRequestedAt: { type: Date, index: true },
     city: { type: String },
     country: { type: String },
     countryCode: { type: String },

@@ -28,6 +28,7 @@ import {
   STUDENT_NO_SHOW_FREE_ALLOWANCE_PER_MONTH,
 } from "@/lib/classroomLifecycle";
 import { sendClassCompletedSummaryEmail, sendStudentNoShowWarningEmail } from "@/lib/studentCommunicationEmails";
+import { notifyAbsenceToFamily } from "@/lib/attendanceNotifications";
 
 export const dynamic = "force-dynamic";
 
@@ -317,6 +318,17 @@ export async function POST(req: Request) {
     if (!record?.student) continue;
     if (isDemoClassroom) continue;
     const recordStatus = String(record.status || "");
+    // Tell the family the same day. Only on the first marking — a correction
+    // pass must not re-notify.
+    if (!existingAttendance) {
+      void notifyAbsenceToFamily({
+        studentId: record.student,
+        classroom: classroomDoc,
+        session: target,
+        status: recordStatus,
+        sessionDate: normalizedDate,
+      }).catch((error) => console.error("Absence notice failed", error));
+    }
     if (outcome === "completed" && (recordStatus === "present" || recordStatus === "late")) {
       await consumeAttendanceCredit(record.student, doc._id.toString());
     } else if (outcome === "student_no_show" && recordStatus === "student_no_show") {

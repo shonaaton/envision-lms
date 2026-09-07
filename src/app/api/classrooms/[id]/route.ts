@@ -23,6 +23,7 @@ import { sendAutomationEmail } from "@/lib/emailAutomation";
 import { normalizeGoogleMeetUrl } from "@/lib/meetingUrl";
 import { sendWhatsAppAutomationTemplates } from "@/lib/whatsappAutomationEvents";
 import { notifyClassroomCoachAssigned } from "@/lib/classroomCoachNotifications";
+import { notifyCourseCompleted, notifySessionCancelled } from "@/lib/classSessionNotifications";
 
 export const dynamic = "force-dynamic";
 
@@ -648,6 +649,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const previousCoachId = recordId(existing.coach || existing.instructor);
   let shiftedSessionCount = 0;
   let shiftedRestartDate = "";
+  let cancelledSessionId = "";
   let addedExtraScheduledFor: Date | null = null;
   const previousSession = body.sessionId
     ? JSON.parse(JSON.stringify(existing.generatedSessions?.id?.(String(body.sessionId || "")) || (existing.generatedSessions || []).find((item: any) => String(item._id) === String(body.sessionId || "")) || null))
@@ -739,6 +741,10 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       target.status = "cancelled";
       target.coachAttendanceStatus = "cancelled";
       target.summary = { ...(target.summary || {}), classOutcome: "cancelled", topicCompleted: false, creditPolicy: "no_charge" };
+      // Same-day cancellations are the ones families need to hear about now.
+      // A cancellation further out already reaches them through the schedule
+      // change notice below.
+      cancelledSessionId = sessionId;
     } else {
       const nextStartTime = String(body.startTime || target.startTime || existing.startTime || "00:00");
       if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(nextStartTime)) return NextResponse.json({ error: "Select a valid class time" }, { status: 400 });
@@ -1120,6 +1126,20 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     ]);
   }
   await syncClassroomSessionInstances(params.id);
+
+  // Class lifecycle notices. Both are fire-and-forget: a messaging failure must
+  // never fail the admin's save, and both are logged and alerted on internally.
+  if (cancelledSessionId) {
+    void notifySessionCancelled(existing.toObject?.() ?? existing, cancelledSessionId).catch((error) => {
+      console.error("Same-day cancellation notice failed", error);
+    });
+  }
+  if (previousClassroomStatus !== "completed" && String(existing.status || "") === "completed") {
+    void notifyCourseCompleted(existing.toObject?.() ?? existing).catch((error) => {
+      console.error("Course completion notice failed", error);
+    });
+  }
+
   const activityAction = String(body.action || "update_classroom");
   const sessionId = String(body.sessionId || "");
   const currentSession = sessionId

@@ -2,6 +2,7 @@ import { Batch } from "@/models/Batch";
 import { Classroom } from "@/models/Classroom";
 import { User } from "@/models/User";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
+import { resolveAudienceEmails } from "@/lib/studentContact";
 import { ACADEMY_TIME_ZONE, formatAcademyDateTime } from "@/lib/academyTime";
 import { sendWhatsAppAutomationTemplates, whatsappRecipientName } from "@/lib/whatsappAutomationEvents";
 import { sendWhatsAppAutomationTemplate } from "@/lib/whatsappAutomationEvents";
@@ -209,20 +210,25 @@ export async function notifyBatchCoachAssigned(input: {
         "Regards,",
         "Team Envision Chess Academy",
       ].join("\n");
-      return Promise.all([
-        student.email && sendAutomationEmail({
-          to: String(student.email),
-          subject: `Permanent coach update for ${summary.batchCode}`,
-          message,
-          metadata: { kind: input.reason, batchId: input.batchId, studentId: objectId(student._id), href: "/dashboard" },
-        }).catch(() => null),
-        student.parentEmail && sendAutomationEmail({
-          to: String(student.parentEmail),
-          subject: `Permanent coach update for ${summary.batchCode}`,
-          message,
-          metadata: { kind: input.reason, batchId: input.batchId, studentId: objectId(student._id), recipientType: "parent", href: "/dashboard" },
-        }).catch(() => null),
-      ]);
+      const coachUpdateEmails = resolveAudienceEmails(
+        student.email
+          ? {
+              to: String(student.email),
+              subject: `Permanent coach update for ${summary.batchCode}`,
+              message,
+              metadata: { kind: input.reason, batchId: input.batchId, studentId: objectId(student._id), href: "/dashboard" },
+            }
+          : null,
+        student.parentEmail
+          ? {
+              to: String(student.parentEmail),
+              subject: `Permanent coach update for ${summary.batchCode}`,
+              message,
+              metadata: { kind: input.reason, batchId: input.batchId, studentId: objectId(student._id), recipientType: "parent", href: "/dashboard" },
+            }
+          : null,
+      );
+      return Promise.all(coachUpdateEmails.map((coachUpdateEmail) => sendAutomationEmail(coachUpdateEmail).catch(() => null)));
     }));
     whatsappInputs.push(...students.map((student: any) => ({
       user: student,

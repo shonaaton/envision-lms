@@ -4,6 +4,7 @@ import { recordActivity } from "@/lib/activity";
 import { createInvoice } from "@/lib/fees";
 import { syncClassroomSessionInstances } from "@/lib/classroomSessionInstances";
 import { pauseEmptyGroupsForStudent, resumeGroupsForStudent } from "@/lib/groupLifecycle";
+import { notifyPauseStarted, notifyStudentResumed } from "@/lib/studentLifecycleNotifications";
 import { Batch } from "@/models/Batch";
 import { Classroom } from "@/models/Classroom";
 import { FeeAssignment, FeePlan, Invoice, Notification } from "@/models/Fee";
@@ -412,6 +413,9 @@ export async function pauseStudent(input: PauseStudentInput) {
     },
   });
 
+  // Fire-and-forget: a messaging failure must not undo a completed pause.
+  void notifyPauseStarted(pause, student).catch((error) => console.error("Pause start notice failed", error));
+
   return { pause, shiftedInvoices, classroomsUpdated: sessionsUpdated, classroomsPaused, batchesPaused };
 }
 
@@ -574,6 +578,8 @@ export async function resumeStudent(input: ResumeStudentInput) {
       note: input.note || "",
     },
   });
+
+  void notifyStudentResumed(pause, student, restartDate).catch((error) => console.error("Resume notice failed", error));
 
   return { pause, invoice, classroomsUpdated, classroomsResumed, batchesResumed, invoicesShifted };
 }

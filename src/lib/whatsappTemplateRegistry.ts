@@ -1892,6 +1892,150 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
         "sample": "25 Aug 2026, 12:05 AM IST"
       }
     ]
+  },
+  {
+    "name": "class_starting_soon_student",
+    "language": "en",
+    "sourceAutomation": "classSessionNotifications.startingSoon",
+    "body": "Hello {{1}}, your class “{{2}}” starts in {{3}} minutes, at {{4}}. Please join from your academy dashboard on time.",
+    "variables": [
+      { "position": 1, "key": "student_name", "sample": "Aarav" },
+      { "position": 2, "key": "class_title", "sample": "I2-100" },
+      { "position": 3, "key": "minutes", "sample": "30" },
+      { "position": 4, "key": "class_datetime", "sample": "27 Aug 2026, 6:00 PM IST" }
+    ]
+  },
+  {
+    "name": "class_starting_soon_coach",
+    "language": "en",
+    "sourceAutomation": "classSessionNotifications.startingSoon",
+    "body": "Hello {{1}}, your class “{{2}}” starts in {{3}} minutes, at {{4}}. Please join the academy portal to start the class on time.",
+    "variables": [
+      { "position": 1, "key": "coach_name", "sample": "Coach Sanjib" },
+      { "position": 2, "key": "class_title", "sample": "I2-100" },
+      { "position": 3, "key": "minutes", "sample": "30" },
+      { "position": 4, "key": "class_datetime", "sample": "27 Aug 2026, 6:00 PM IST" }
+    ]
+  },
+  {
+    "name": "class_coach_missing_admin_alert",
+    "language": "en",
+    "sourceAutomation": "classSessionNotifications.coachMissing",
+    "body": "Hello {{1}}, class “{{2}}” has started and no coach has joined. Assigned coach: {{3}}. Scheduled start: {{4}}. Please check in with the coach or arrange a substitute.",
+    "variables": [
+      { "position": 1, "key": "staff_name", "sample": "Sayandeb" },
+      { "position": 2, "key": "class_title", "sample": "I2-100" },
+      { "position": 3, "key": "coach_name", "sample": "Coach Sanjib" },
+      { "position": 4, "key": "class_datetime", "sample": "27 Aug 2026, 6:00 PM IST" }
+    ]
+  },
+  {
+    "name": "class_cancelled_student",
+    "language": "en",
+    "sourceAutomation": "classSessionNotifications.cancelled",
+    "body": "Hello {{1}}, today’s class “{{2}}” scheduled for {{3}} has been cancelled. No class credit will be used for it, and your next class goes ahead as scheduled.",
+    "variables": [
+      { "position": 1, "key": "student_name", "sample": "Aarav" },
+      { "position": 2, "key": "class_title", "sample": "I2-100" },
+      { "position": 3, "key": "class_datetime", "sample": "27 Aug 2026, 6:00 PM IST" }
+    ]
+  },
+  {
+    "name": "attendance_absence_notice",
+    "language": "en",
+    "sourceAutomation": "attendanceNotifications.absence",
+    "body": "Hello {{1}}, {{2}} was marked absent from “{{3}}” on {{4}}. If this is incorrect, please tell the coach so the register can be corrected.",
+    "variables": [
+      { "position": 1, "key": "recipient_name", "sample": "Aarav" },
+      { "position": 2, "key": "student_name", "sample": "Aarav" },
+      { "position": 3, "key": "class_title", "sample": "I2-100" },
+      { "position": 4, "key": "class_date", "sample": "27 Aug 2026" }
+    ]
+  },
+  {
+    "name": "student_pause_started",
+    "language": "en",
+    "sourceAutomation": "studentLifecycleNotifications.pauseStarted",
+    "body": "Hello {{1}}, your Envision Chess Academy classes are paused from {{2}} until {{3}}. Billing is paused for this period and we will contact you before classes restart.",
+    "variables": [
+      { "position": 1, "key": "student_name", "sample": "Aarav" },
+      { "position": 2, "key": "paused_from", "sample": "1 Sep 2026" },
+      { "position": 3, "key": "paused_until", "sample": "30 Sep 2026" }
+    ]
+  },
+  {
+    "name": "student_pause_ending",
+    "language": "en",
+    "sourceAutomation": "studentLifecycleNotifications.pauseEnding",
+    "body": "Hello {{1}}, your break ends on {{2}} and classes are due to restart on {{3}}. Billing restarts along with the classes. Please tell us before then if you need longer.",
+    "variables": [
+      { "position": 1, "key": "student_name", "sample": "Aarav" },
+      { "position": 2, "key": "paused_until", "sample": "30 Sep 2026" },
+      { "position": 3, "key": "restart_date", "sample": "1 Oct 2026" }
+    ]
+  },
+  {
+    "name": "student_resumed",
+    "language": "en",
+    "sourceAutomation": "studentLifecycleNotifications.resumed",
+    "body": "Hello {{1}}, welcome back. Your Envision Chess Academy classes restart on {{2}}. Your schedule is available on the academy dashboard.",
+    "variables": [
+      { "position": 1, "key": "student_name", "sample": "Aarav" },
+      { "position": 2, "key": "restart_date", "sample": "1 Oct 2026" }
+    ]
+  },
+  {
+    "name": "class_credits_reversed",
+    "language": "en",
+    "sourceAutomation": "studentLifecycleNotifications.creditReversal",
+    "body": "Hello {{1}}, {{2}} class credit(s) have been removed from your balance. Remaining balance: {{3}} credit(s). Please contact the academy if this looks incorrect.",
+    "variables": [
+      { "position": 1, "key": "student_name", "sample": "Aarav" },
+      { "position": 2, "key": "reversed_credits", "sample": "4" },
+      { "position": 3, "key": "balance_after", "sample": "2" }
+    ]
+  },
+  {
+    "name": "batch_vacancy_sales_alert",
+    "language": "en",
+    "sourceAutomation": "studentLifecycleNotifications.batchVacancy",
+    "body": "Hello {{1}}, {{3}} seat(s) have opened in {{2}}. Please review the waiting list in the academy portal.",
+    "variables": [
+      { "position": 1, "key": "staff_name", "sample": "Sayandeb" },
+      { "position": 2, "key": "batch_name", "sample": "I2-100" },
+      { "position": 3, "key": "seats_open", "sample": "1" }
+    ]
+  },
+  {
+    "name": "account_password_changed",
+    "language": "en",
+    "sourceAutomation": "accountSecurityNotifications.passwordChanged",
+    "body": "Hello {{1}}, the password for your Envision Chess Academy account was changed on {{2}}. If this was not you, please contact academy support immediately.",
+    "variables": [
+      { "position": 1, "key": "account_name", "sample": "Aarav" },
+      { "position": 2, "key": "changed_at", "sample": "27 Aug 2026, 6:00 PM IST" }
+    ]
+  },
+  {
+    "name": "review_request_level_complete",
+    "language": "en",
+    "sourceAutomation": "reviewRequests.levelComplete",
+    "body": "Hello {{1}}, congratulations to {{2}} on completing {{3}} at Envision Chess Academy. If the coaching has served you well, we would be grateful for a short Google review.",
+    "variables": [
+      { "position": 1, "key": "recipient_name", "sample": "Aarav" },
+      { "position": 2, "key": "student_name", "sample": "Aarav" },
+      { "position": 3, "key": "level_name", "sample": "Intermediate 2" }
+    ]
+  },
+  {
+    "name": "review_request_farewell",
+    "language": "en",
+    "sourceAutomation": "reviewRequests.studentLeft",
+    "body": "Hello {{1}}, thank you for the time {{2}} spent with Envision Chess Academy. If the coaching served you well, a short Google review would help other parents choosing an academy.",
+    "variables": [
+      { "position": 1, "key": "recipient_name", "sample": "Aarav" },
+      { "position": 2, "key": "student_name", "sample": "Aarav" }
+    ]
   }
 ] as const satisfies readonly WhatsAppTemplateDefinition[];
 

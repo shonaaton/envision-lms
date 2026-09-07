@@ -26,6 +26,12 @@ const AcademySettingsSchema = new Schema(
      * because the keys are the stage names themselves.
      */
     crmStageMapping: { type: Schema.Types.Mixed, default: {} },
+    /**
+     * Month key ("2026-08") of the last attendance summary run. The monthly job
+     * claims the key here before sending, so an hourly sweep — or a second app
+     * instance — mails each family once per month rather than once per sweep.
+     */
+    lastMonthlyAttendanceSummaryMonth: { type: String, default: "" },
   },
   { timestamps: true }
 );

@@ -1,159 +1,90 @@
-declare global {
-  var askCoachReminderInterval: ReturnType<typeof setInterval> | undefined;
-  var askCoachWhatsAppInterval: ReturnType<typeof setInterval> | undefined;
-  var homeworkReminderInterval: ReturnType<typeof setInterval> | undefined;
-  var reminderStartupTimer: ReturnType<typeof setTimeout> | undefined;
-  var tournamentTickInterval: ReturnType<typeof setInterval> | undefined;
-  var tournamentTickRunning: boolean | undefined;
-}
-
-const REMINDER_STARTUP_DELAY_MS = 30_000;
-
 /**
- * How often the tournament lifecycle runs. Arena pairing latency is bounded by
- * this, so it is deliberately short — a player who finishes a game waits at
- * most this long for the next one.
+ * Background job registration.
+ *
+ * Everything scheduled in-process is declared here and run by
+ * `lib/scheduler.ts`, which owns the timers, the overlap guard, the
+ * cold-start handling, logging and failure alerts. To add a job, add a row.
  */
-const TOURNAMENT_TICK_MS = 5_000;
-
-function isTransientMongoStartupError(error: unknown) {
-  const name = typeof error === "object" && error ? String((error as { name?: unknown }).name || "") : "";
-  const message = error instanceof Error ? error.message : String(error || "");
-  const reasonType =
-    typeof error === "object" && error && "reason" in error
-      ? String((error as { reason?: { type?: unknown } }).reason?.type || "")
-      : "";
-
-  return (
-    name === "MongooseServerSelectionError" ||
-    name === "MongoServerSelectionError" ||
-    /server selection timed out/i.test(message) ||
-    /ReplicaSetNoPrimary/i.test(reasonType) ||
-    /connection <monitor> .* closed/i.test(message)
-  );
-}
-
 export async function register() {
-  if (process.env.NEXT_RUNTIME !== "nodejs" || (globalThis.askCoachReminderInterval && globalThis.homeworkReminderInterval)) return;
+  if (process.env.NEXT_RUNTIME !== "nodejs") return;
 
+  const { startScheduler } = await import("@/lib/scheduler");
+  const { installRuntimeProcessLogging, installRuntimeStderrCapture } = await import("@/lib/runtimeLogger");
   const { processDueAskCoachEmailReminders } = await import("@/lib/askCoachEmailReminders");
   const { processDueHomeworkEmailReminders } = await import("@/lib/homeworkEmailReminders");
   const { processDueAskCoachWhatsAppReminders, processAskCoachNightlyDigest } = await import("@/lib/askCoachWhatsAppReminders");
-  const { notifyFailure } = await import("@/lib/failureNotifications");
-  const { installRuntimeProcessLogging, installRuntimeStderrCapture, writeRuntimeLog } = await import("@/lib/runtimeLogger");
+  const { processDueClassSessionReminders } = await import("@/lib/classSessionNotifications");
+  const { processDueAttendanceNudges, sendMonthlyAttendanceSummaries } = await import("@/lib/attendanceNotifications");
+  const { processDuePauseExpiryNotices } = await import("@/lib/studentLifecycleNotifications");
+  const { academyDateKey } = await import("@/lib/academyTime");
+  const { runTournamentTick } = await import("@/lib/tournamentLifecycle");
+
   installRuntimeProcessLogging();
   installRuntimeStderrCapture();
-  const runAskCoach = () => {
-    void processDueAskCoachEmailReminders().catch((error) => {
-      if (isTransientMongoStartupError(error)) {
-        console.warn("Scheduled Ask Coach unread email processing skipped: MongoDB primary is not ready yet.");
-        return;
-      }
-      console.error("Scheduled Ask Coach unread email processing failed", error);
-      writeRuntimeLog({
-        source: "instrumentation.askCoachReminders",
-        message: "Scheduled Ask Coach unread email processing failed.",
-        error,
-        metadata: { automation: "ask_coach_email_reminders" },
-      });
-      void notifyFailure({ title: "Scheduled Ask Coach unread email processing failed", error, metadata: { automation: "ask_coach_email_reminders" } });
-    });
-  };
-  const runAskCoachWhatsApp = () => {
-    void (async () => {
-      await processDueAskCoachWhatsAppReminders();
-      await processAskCoachNightlyDigest();
-    })().catch((error) => {
-      if (isTransientMongoStartupError(error)) {
-        console.warn("Scheduled Ask Coach WhatsApp processing skipped: MongoDB primary is not ready yet.");
-        return;
-      }
-      console.error("Scheduled Ask Coach WhatsApp processing failed", error);
-      writeRuntimeLog({
-        source: "instrumentation.askCoachWhatsApp",
-        message: "Scheduled Ask Coach WhatsApp processing failed.",
-        error,
-        metadata: { automation: "ask_coach_whatsapp_reminders" },
-      });
-      void notifyFailure({ title: "Scheduled Ask Coach WhatsApp processing failed", error, metadata: { automation: "ask_coach_whatsapp_reminders" } });
-    });
-  };
-  const runHomework = () => {
-    void processDueHomeworkEmailReminders().catch((error) => {
-      if (isTransientMongoStartupError(error)) {
-        console.warn("Scheduled homework email reminder processing skipped: MongoDB primary is not ready yet.");
-        return;
-      }
-      console.error("Scheduled homework email reminder processing failed", error);
-      writeRuntimeLog({
-        source: "instrumentation.homeworkReminders",
-        message: "Scheduled homework email reminder processing failed.",
-        error,
-        metadata: { automation: "homework_email_reminders" },
-      });
-      void notifyFailure({ title: "Scheduled homework email reminder processing failed", error, metadata: { automation: "homework_email_reminders" } });
-    });
-  };
-  const runStartup = () => {
-    runAskCoach();
-    runAskCoachWhatsApp();
-    runHomework();
-  };
 
-  if (!globalThis.reminderStartupTimer) {
-    globalThis.reminderStartupTimer = setTimeout(runStartup, REMINDER_STARTUP_DELAY_MS);
-    globalThis.reminderStartupTimer.unref?.();
-  }
-
-  if (!globalThis.askCoachReminderInterval) {
-    globalThis.askCoachReminderInterval = setInterval(runAskCoach, 60_000);
-    globalThis.askCoachReminderInterval.unref?.();
-  }
-  if (!globalThis.homeworkReminderInterval) {
-    globalThis.homeworkReminderInterval = setInterval(runHomework, 60_000);
-    globalThis.homeworkReminderInterval.unref?.();
-  }
-  if (!globalThis.askCoachWhatsAppInterval) {
-    globalThis.askCoachWhatsAppInterval = setInterval(runAskCoachWhatsApp, 60_000);
-    globalThis.askCoachWhatsAppInterval.unref?.();
-  }
-
-  /**
-   * The tournament heartbeat.
-   *
-   * Without this, tournaments only advanced as a side effect of somebody
-   * loading a page: an event with nobody watching would never start, never
-   * pair, never flag a clock and never finish. The tick is guarded against
-   * overlapping with itself, and every step it calls is idempotent, so running
-   * it alongside platform cron or a second instance is safe.
-   */
-  const runTournamentTick = () => {
-    if (globalThis.tournamentTickRunning) return;
-    globalThis.tournamentTickRunning = true;
-    void (async () => {
-      try {
-        const { runTournamentTick: tick } = await import("@/lib/tournamentLifecycle");
-        await tick();
-      } catch (error) {
-        if (isTransientMongoStartupError(error)) {
-          console.warn("Tournament lifecycle tick skipped: MongoDB primary is not ready yet.");
-          return;
-        }
-        console.error("Tournament lifecycle tick failed", error);
-        writeRuntimeLog({
-          source: "instrumentation.tournamentTick",
-          message: "Tournament lifecycle tick failed.",
-          error,
-          metadata: { automation: "tournament_lifecycle" },
-        });
-      } finally {
-        globalThis.tournamentTickRunning = false;
-      }
-    })();
-  };
-
-  if (!globalThis.tournamentTickInterval) {
-    globalThis.tournamentTickInterval = setInterval(runTournamentTick, TOURNAMENT_TICK_MS);
-    globalThis.tournamentTickInterval.unref?.();
-  }
+  startScheduler([
+    {
+      name: "ask_coach_email_reminders",
+      intervalMs: 60_000,
+      run: processDueAskCoachEmailReminders,
+    },
+    {
+      name: "ask_coach_whatsapp_reminders",
+      intervalMs: 60_000,
+      run: async () => {
+        await processDueAskCoachWhatsAppReminders();
+        await processAskCoachNightlyDigest();
+      },
+    },
+    {
+      name: "homework_email_reminders",
+      intervalMs: 60_000,
+      run: processDueHomeworkEmailReminders,
+    },
+    {
+      /**
+       * Class-starting reminders and the coach-not-joined alert. Runs every
+       * minute because a T-10 reminder that arrives at T-4 is not a reminder.
+       */
+      name: "class_session_reminders",
+      intervalMs: 60_000,
+      run: processDueClassSessionReminders,
+    },
+    {
+      /** Chases coaches whose register is still empty an hour after class. */
+      name: "attendance_coach_nudges",
+      intervalMs: 15 * 60_000,
+      run: processDueAttendanceNudges,
+    },
+    {
+      /**
+       * Swept hourly rather than scheduled for a date, so a restart cannot make
+       * it miss its window. The job claims the month before sending, so the
+       * extra sweeps cost a single indexed query each.
+       */
+      name: "monthly_attendance_summaries",
+      intervalMs: 60 * 60_000,
+      run: () => sendMonthlyAttendanceSummaries(),
+    },
+    {
+      /** Warns families a week before a paused enrolment restarts billing. */
+      name: "pause_expiry_notices",
+      intervalMs: 6 * 60 * 60_000,
+      run: () => processDuePauseExpiryNotices(),
+    },
+    {
+      /**
+       * The tournament heartbeat. Without it, tournaments only advanced as a
+       * side effect of somebody loading a page: an event with nobody watching
+       * would never start, never pair, never flag a clock and never finish.
+       * Arena pairing latency is bounded by this interval, so it is short — and
+       * it starts immediately rather than waiting out the startup delay.
+       */
+      name: "tournament_lifecycle",
+      intervalMs: 5_000,
+      run: runTournamentTick,
+      runImmediately: true,
+      silentFailure: true,
+    },
+  ]);
 }

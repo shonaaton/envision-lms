@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { resolvePublicAppUrl } from "@/lib/appUrl";
 import { dbConnect } from "@/lib/db";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
+import { resolveAudienceEmails } from "@/lib/studentContact";
+import { authorizeCronRequest } from "@/lib/cronAuth";
 import { ensureMonthlyInvoices } from "@/lib/fees";
 import { formatINR } from "@/lib/utils";
 import { Invoice, Notification } from "@/models/Fee";
@@ -119,11 +121,8 @@ async function notifyOverdueInvoiceStaff(invoice: any, days: number) {
 }
 
 async function processReminders(req: Request) {
-  const secret = process.env.CRON_SECRET;
-  if (secret) {
-    const authorization = req.headers.get("authorization") || "";
-    if (authorization !== `Bearer ${secret}`) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const authorized = await authorizeCronRequest(req, "monthly_invoice_reminders", ["admin", "sub-admin"]);
+  if (!authorized.ok) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   await dbConnect();
   const now = new Date();
@@ -159,21 +158,26 @@ async function processReminders(req: Request) {
     });
     studentNotifications += 1;
 
-    if (invoice.student.email) {
-      await sendAutomationEmail({
-        to: invoice.student.email,
-        subject: days < 0 ? `Overdue invoice reminder: ${invoice.invoiceNumber}` : `Invoice reminder: ${invoice.invoiceNumber}`,
-        message: studentMessage(invoice, invoiceUrl, days),
-        metadata: { kind: "monthly_invoice_student_reminder", invoiceId: invoice._id.toString(), days },
-      });
-    }
-    if (invoice.student.parentEmail) {
-      await sendAutomationEmail({
-        to: invoice.student.parentEmail,
-        subject: days < 0 ? `Overdue invoice for ${invoice.student.name}` : `Invoice reminder for ${invoice.student.name}`,
-        message: studentMessage(invoice, invoiceUrl, days).replace(`Hello ${invoice.student.name},`, `Hello ${invoice.student.parentName || "Parent"},`),
-        metadata: { kind: "monthly_invoice_parent_reminder", invoiceId: invoice._id.toString(), days },
-      });
+    const invoiceEmails = resolveAudienceEmails(
+      invoice.student.email
+        ? {
+            to: invoice.student.email,
+            subject: days < 0 ? `Overdue invoice reminder: ${invoice.invoiceNumber}` : `Invoice reminder: ${invoice.invoiceNumber}`,
+            message: studentMessage(invoice, invoiceUrl, days),
+            metadata: { kind: "monthly_invoice_student_reminder", invoiceId: invoice._id.toString(), days },
+          }
+        : null,
+      invoice.student.parentEmail
+        ? {
+            to: invoice.student.parentEmail,
+            subject: days < 0 ? `Overdue invoice for ${invoice.student.name}` : `Invoice reminder for ${invoice.student.name}`,
+            message: studentMessage(invoice, invoiceUrl, days).replace(`Hello ${invoice.student.name},`, `Hello ${invoice.student.parentName || "Parent"},`),
+            metadata: { kind: "monthly_invoice_parent_reminder", invoiceId: invoice._id.toString(), days },
+          }
+        : null,
+    );
+    for (const invoiceEmail of invoiceEmails) {
+      await sendAutomationEmail(invoiceEmail);
     }
     await sendWhatsAppAutomationTemplate({
       user: invoice.student,

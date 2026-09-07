@@ -4,6 +4,8 @@ import { dbConnect } from "@/lib/db";
 import { adjustedInvoicePayment, createInvoice, createNextMonthlyInvoiceAfterPayment, createPublicInvoiceUrl, ensureMonthlyInvoices, markInvoicePaid as applyInvoicePayment } from "@/lib/fees";
 import { reverseCreditPurchase } from "@/lib/creditReversal";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
+import { resolveAudienceEmails } from "@/lib/studentContact";
+import { notifyCreditReversal } from "@/lib/studentLifecycleNotifications";
 import { sendWhatsAppReminder } from "@/lib/whatsappAutomation";
 import { formatINR } from "@/lib/utils";
 import { CreditLedger, DeletedInvoice, FeeAssignment, FeePlan, Invoice, Notification } from "@/models/Fee";
@@ -182,21 +184,26 @@ async function markInvoicePaid(formData: FormData) {
         message: `${paidInvoice.invoiceNumber} has been marked as paid.`,
         metadata: { invoice: paidInvoice._id.toString(), transactionCount: transactions.length },
       });
-      if (paidInvoice.student.email) {
-        await sendAutomationEmail({
-          to: paidInvoice.student.email,
-          subject: `Payment received for ${paidInvoice.invoiceNumber}`,
-          message,
-          metadata: { kind: "invoice_paid", invoiceId, invoiceNumber: paidInvoice.invoiceNumber },
-        });
-      }
-      if (paidInvoice.student.parentEmail) {
-        await sendAutomationEmail({
-          to: paidInvoice.student.parentEmail,
-          subject: `Payment recorded for ${paidInvoice.student.name}`,
-          message: message.replace(`Hello ${paidInvoice.student.name},`, `Hello ${paidInvoice.student.parentName || "Parent"},`),
-          metadata: { kind: "invoice_paid_parent", invoiceId, invoiceNumber: paidInvoice.invoiceNumber },
-        });
+      const paidEmails = resolveAudienceEmails(
+        paidInvoice.student.email
+          ? {
+              to: paidInvoice.student.email,
+              subject: `Payment received for ${paidInvoice.invoiceNumber}`,
+              message,
+              metadata: { kind: "invoice_paid", invoiceId, invoiceNumber: paidInvoice.invoiceNumber },
+            }
+          : null,
+        paidInvoice.student.parentEmail
+          ? {
+              to: paidInvoice.student.parentEmail,
+              subject: `Payment recorded for ${paidInvoice.student.name}`,
+              message: message.replace(`Hello ${paidInvoice.student.name},`, `Hello ${paidInvoice.student.parentName || "Parent"},`),
+              metadata: { kind: "invoice_paid_parent", invoiceId, invoiceNumber: paidInvoice.invoiceNumber },
+            }
+          : null,
+      );
+      for (const paidEmail of paidEmails) {
+        await sendAutomationEmail(paidEmail);
       }
     }
   } catch (error) {
@@ -308,6 +315,15 @@ async function deleteInvoice(formData: FormData) {
         totalCreditsPurchased: reversal.purchasedAfter,
       });
       creditReversal = { assignment: assignment._id.toString(), ...reversal };
+      // A balance that changes with no explanation is the most common reason a
+      // parent messages the academy. Tell them what moved and why.
+      void notifyCreditReversal({
+        student: invoice.student,
+        reversedCredits: reversal.reversedCredits,
+        balanceAfter: reversal.balanceAfter,
+        reason: "The related credit invoice was deleted",
+        invoiceNumber: invoice.invoiceNumber,
+      }).catch((error) => console.error("Credit reversal notice failed", error));
     }
   }
   if (invoice.type === "monthly" && invoice.assignment && invoice.dueDate) {
@@ -390,7 +406,14 @@ async function sendInvoiceToStudent(formData: FormData) {
     redirect(`${returnPath}send=missing_email`);
   }
   const invoiceUrl = await createPublicInvoiceUrl(invoice._id.toString());
-  const delivery = await sendAutomationEmail({
+  const parentEmail = String(invoice.student.parentEmail || "").trim();
+  const invoiceSends = resolveAudienceEmails<{
+    to: string;
+    subject: string;
+    message: string;
+    htmlBody?: string;
+    metadata: Record<string, unknown>;
+  }>({
     to: invoice.student.email,
     subject: `Invoice ${invoice.invoiceNumber} from Envisions Chess Academy LLP`,
     message: [
@@ -418,10 +441,9 @@ async function sendInvoiceToStudent(formData: FormData) {
       invoiceUrl,
       previewText: "Your academy invoice is ready.",
     },
-  });
-  const parentEmail = String(invoice.student.parentEmail || "").trim();
-  const parentDelivery = parentEmail
-    ? await sendAutomationEmail({
+  },
+  parentEmail
+    ? {
         to: parentEmail,
         subject: `Invoice ${invoice.invoiceNumber} for ${invoice.student.name}`,
         message: [
@@ -438,13 +460,19 @@ async function sendInvoiceToStudent(formData: FormData) {
           invoiceUrl,
           previewText: "A student fee invoice is ready.",
         },
-      })
-    : null;
+      }
+    : null,
+  );
+  const deliveries = await Promise.all(invoiceSends.map((send) => sendAutomationEmail(send)));
+  // With one inbox per family the parent copy is the only send, so the first
+  // result is the one whose status the admin sees.
+  const delivery = deliveries[0];
   const status = delivery.delivered ? "sent" : delivery.skipped ? "not_configured" : "failed";
-  const finalStatus = status === "sent" && parentDelivery?.delivered ? "sent_with_parent" : status;
+  const finalStatus = deliveries.length > 1 && deliveries.every((result) => result.delivered) ? "sent_with_parent" : status;
+  const deliveredTo = invoiceSends.filter((_, index) => deliveries[index]?.delivered).map((send) => send.to);
   await Invoice.findByIdAndUpdate(invoice._id, {
     lastSentAt: new Date(),
-    lastSentTo: parentDelivery?.delivered ? `${invoice.student.email}, ${parentEmail}` : invoice.student.email,
+    lastSentTo: deliveredTo.join(", ") || invoice.student.email,
     lastEmailStatus: status,
   });
   await recordActivity({

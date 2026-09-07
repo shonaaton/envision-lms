@@ -59,6 +59,11 @@ const ScheduledSessionSchema = new Schema(
     attendanceMarkedAt: Date,
     summary: { type: Schema.Types.Mixed, default: {} },
     students: [{ type: Schema.Types.ObjectId, ref: "User", index: true }],
+    // Which lifecycle notifications have already gone out for this class, e.g.
+    // "starting_t30" or "coach_missing". The reminder sweep claims a kind here
+    // before it sends, so two app instances running the sweep at the same
+    // minute cannot both message the family.
+    notifiedKinds: [{ type: String }],
   },
   { _id: true }
 );

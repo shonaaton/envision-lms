@@ -42,6 +42,9 @@ const StudentPauseSchema = new Schema(
     pausedUntil: { type: Date, required: true, index: true },
     expectedRestartDate: { type: Date, index: true },
     reason: String,
+    // Set when the "your break ends soon" notice goes out, so the nightly sweep
+    // sends it once rather than every night of the final week.
+    expiryNoticeSentAt: { type: Date },
 
     pausedAt: { type: Date, default: Date.now, index: true },
     pausedBy: { type: Schema.Types.ObjectId, ref: "User", index: true },

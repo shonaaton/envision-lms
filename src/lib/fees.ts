@@ -5,6 +5,7 @@ import { Classroom } from "@/models/Classroom";
 import { Payment } from "@/models/Payment";
 import { User } from "@/models/User";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
+import { resolveAudienceEmails } from "@/lib/studentContact";
 import { academyDateKey, academyDateTime, formatAcademyDateTime } from "@/lib/academyTime";
 import { resolvePublicAppUrl } from "@/lib/appUrl";
 import { ACADEMY_DEFAULTS, ACADEMY_FAVICON_URL, ACADEMY_LOGO_URL, ACADEMY_SIGNATURE_URL } from "@/lib/branding";
@@ -610,24 +611,25 @@ async function notifyCreditRechargeInvoice(input: {
     { upsert: true, new: true }
   );
 
-  const studentDeliveries = [];
-  if (input.student.email) {
-    studentDeliveries.push(sendAutomationEmail({
-      to: input.student.email,
-      subject: `Credit recharge invoice ${input.invoice.invoiceNumber}`,
-      message: studentMessage,
-      metadata: { kind: "credit_recharge_invoice", invoiceId: input.invoice._id.toString(), invoiceNumber: input.invoice.invoiceNumber, invoiceUrl: input.invoiceUrl, href: "/fees/invoices" },
-    }));
-  }
-  if (input.student.parentEmail) {
-    studentDeliveries.push(sendAutomationEmail({
-      to: input.student.parentEmail,
-      subject: `Credit recharge invoice for ${input.student.name || "student"}`,
-      message: parentMessage,
-      metadata: { kind: "credit_recharge_invoice_parent", invoiceId: input.invoice._id.toString(), invoiceNumber: input.invoice.invoiceNumber, invoiceUrl: input.invoiceUrl, href: "/fees/invoices" },
-    }));
-  }
-  await Promise.all(studentDeliveries);
+  const studentDeliveries = resolveAudienceEmails(
+    input.student.email
+      ? {
+          to: input.student.email,
+          subject: `Credit recharge invoice ${input.invoice.invoiceNumber}`,
+          message: studentMessage,
+          metadata: { kind: "credit_recharge_invoice", invoiceId: input.invoice._id.toString(), invoiceNumber: input.invoice.invoiceNumber, invoiceUrl: input.invoiceUrl, href: "/fees/invoices" },
+        }
+      : null,
+    input.student.parentEmail
+      ? {
+          to: input.student.parentEmail,
+          subject: `Credit recharge invoice for ${input.student.name || "student"}`,
+          message: parentMessage,
+          metadata: { kind: "credit_recharge_invoice_parent", invoiceId: input.invoice._id.toString(), invoiceNumber: input.invoice.invoiceNumber, invoiceUrl: input.invoiceUrl, href: "/fees/invoices" },
+        }
+      : null,
+  );
+  await Promise.all(studentDeliveries.map((delivery) => sendAutomationEmail(delivery)));
   await sendWhatsAppAutomationTemplate({
     user: input.student,
     templateName: "invoice_available_student",

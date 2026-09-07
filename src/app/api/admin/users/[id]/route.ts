@@ -8,6 +8,8 @@ import { recordActivity } from "@/lib/activity";
 import { canAccessFeature, isSuperAdminSession } from "@/lib/featureAccess";
 import { deleteUserRecords } from "@/lib/deleteUserRecords";
 import { applyStudentDeactivation, applyStudentReactivation } from "@/lib/groupLifecycle";
+import { notifyContactDetailsChanged, notifyPasswordChanged } from "@/lib/accountSecurityNotifications";
+import { requestGoogleReview } from "@/lib/reviewRequests";
 
 export const dynamic = "force-dynamic";
 
@@ -55,6 +57,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       entityType: "User",
       entityId: params.id,
     });
+    void notifyPasswordChanged(u?.toObject?.() ?? u, "admin_reset").catch((error) => console.error("Password reset notice failed", error));
     return NextResponse.json({ ...u?.toObject?.(), tempPassword });
   }
   // Whitelist allowed fields
@@ -88,6 +91,23 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     } catch (error) {
       console.error("Student activation side effects failed", error);
     }
+    // A student leaving is one of the two moments the academy asks for a Google
+    // review. requestGoogleReview() decides eligibility — it will not ask a
+    // family with an invoice still outstanding.
+    if (update.isActive === false) {
+      void requestGoogleReview({ student: u, trigger: "student_left" })
+        .catch((error) => console.error("Review request failed", error));
+    }
+  }
+  // Contact-detail changes go to both the new and previous address, so a
+  // takeover is still visible at an address the attacker no longer controls.
+  if ("email" in update || "phone" in update) {
+    void notifyContactDetailsChanged({
+      user: u,
+      previousEmail: (target as any)?.email,
+      previousPhone: (target as any)?.phone,
+      changedBy: "admin",
+    }).catch((error) => console.error("Contact change notice failed", error));
   }
   await recordActivity({
     actor: actorId,

@@ -1,6 +1,7 @@
 import { resolvePublicAppUrl } from "@/lib/appUrl";
 import { ACADEMY_TIME_ZONE, formatAcademyDateTime } from "@/lib/academyTime";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
+import { resolveAudienceEmails } from "@/lib/studentContact";
 import { sendWhatsAppAutomationTemplate, whatsappRecipientName } from "@/lib/whatsappAutomationEvents";
 import { formatINR } from "@/lib/utils";
 import { Classroom } from "@/models/Classroom";
@@ -45,19 +46,13 @@ function nextSessionAfter(classroom: any, scheduledFor?: Date | string | null) {
 }
 
 async function sendToStudentAndParent(student: any, subject: string, studentMessage: string, parentMessage: string, metadata: Record<string, unknown>) {
-  const deliveries = [];
-  if (student?.email) {
-    deliveries.push(sendAutomationEmail({ to: String(student.email), subject, message: studentMessage, metadata }));
-  }
-  if (student?.parentEmail) {
-    deliveries.push(sendAutomationEmail({
-      to: String(student.parentEmail),
-      subject,
-      message: parentMessage,
-      metadata: { ...metadata, recipientType: "parent" },
-    }));
-  }
-  return Promise.all(deliveries);
+  const sends = resolveAudienceEmails(
+    student?.email ? { to: String(student.email), subject, message: studentMessage, metadata } : null,
+    student?.parentEmail
+      ? { to: String(student.parentEmail), subject, message: parentMessage, metadata: { ...metadata, recipientType: "parent" } }
+      : null,
+  );
+  return Promise.all(sends.map((send) => sendAutomationEmail(send)));
 }
 
 export async function sendCourseAssignedEmail(classroomInput: any, request?: Request) {

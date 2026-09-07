@@ -6,6 +6,7 @@ import { dbConnect } from "@/lib/db";
 import { User } from "@/models/User";
 import { recordActivity } from "@/lib/activity";
 import { canAccessFeature } from "@/lib/featureAccess";
+import { notifyPasswordChanged } from "@/lib/accountSecurityNotifications";
 
 const passwordSchema = z
   .object({
@@ -63,6 +64,9 @@ export async function POST(request: Request) {
     entityType: "User",
     entityId: String(user._id),
   });
+
+  const notifyTarget = await User.findById(user._id).select("name username email phone countryCode").lean();
+  void notifyPasswordChanged(notifyTarget, "self_reset").catch((error) => console.error("Password change notice failed", error));
 
   return NextResponse.json({ ok: true });
 }

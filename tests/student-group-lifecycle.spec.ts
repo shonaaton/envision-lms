@@ -86,3 +86,34 @@ test("a second pending invoice keeps its gap instead of piling onto the same day
 test("nothing pending means nothing to move", () => {
   expect(anchoredDueDates([], restartPlusOne)).toEqual([]);
 });
+
+// Pushing a missed class into the next slot: every later class inherits the slot
+// of the one after it, and one new slot is added at the end so the last topic is
+// not lost. This mirrors the date arithmetic in the push_session_forward action.
+
+import { isUntaughtSessionStatus } from "../src/lib/classroomSessions";
+
+test("only a class that went by untaught can be pushed", () => {
+  expect(isUntaughtSessionStatus("missed")).toBe(true);
+  expect(isUntaughtSessionStatus("abandoned")).toBe(true);
+  expect(isUntaughtSessionStatus("coach_no_show")).toBe(true);
+  expect(isUntaughtSessionStatus("completed")).toBe(false);
+  expect(isUntaughtSessionStatus("cancelled")).toBe(false);
+  expect(isUntaughtSessionStatus("upcoming")).toBe(false);
+});
+
+test("the pushed chain keeps its length and gains one slot at the end", () => {
+  // S2 missed, S3 and S4 still ahead, on a Mon/Thu schedule.
+  const chain = ["2026-03-09", "2026-03-12", "2026-03-16"].map((day) => new Date(`${day}T11:30:00Z`));
+  const dayAfterLast = new Date(chain[chain.length - 1].getTime() + 86400000);
+  const [extra] = scheduleDatesFrom(monThu, dayAfterLast, 1);
+  const donors = [...chain.slice(1), extra.scheduledFor];
+
+  expect(donors).toHaveLength(chain.length);
+  // Each class takes the slot of the one after it.
+  expect(donors[0].toISOString()).toBe(chain[1].toISOString());
+  expect(donors[1].toISOString()).toBe(chain[2].toISOString());
+  // The last lands on a brand new slot after the old end of the series.
+  expect(donors[2].getTime()).toBeGreaterThan(chain[2].getTime());
+  expect(donors[2].getUTCDay()).toBe(4);
+});

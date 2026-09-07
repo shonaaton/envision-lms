@@ -4,7 +4,7 @@ import { dbConnect } from "@/lib/db";
 import { Classroom } from "@/models/Classroom";
 import { Attendance } from "@/models/Attendance";
 import { ClassroomChatMessage, ClassroomSession, LiveQuestion, LiveQuestionResponse } from "@/models/ClassroomLive";
-import { buildGeneratedSessions } from "@/lib/classroomSchedule";
+import { buildGeneratedSessions, scheduleDatesFrom } from "@/lib/classroomSchedule";
 import { deleteClassroomSessionInstances, syncClassroomSessionInstances } from "@/lib/classroomSessionInstances";
 import { canAccessFeature, isSuperAdminSession } from "@/lib/featureAccess";
 import { ACADEMY_TIME_ZONE, academyDateKey, academyDateTime, formatAcademyDateTime } from "@/lib/academyTime";
@@ -131,6 +131,17 @@ function academyDayOffset(from: string | Date, to: string | Date) {
 function isShiftableScheduledSession(session: any) {
   const status = String(session?.status || "scheduled").toLowerCase();
   return ["scheduled", "rescheduled"].includes(status) && !session?.actualStartedAt && !session?.actualEndedAt;
+}
+
+/**
+ * A class that has not been taught, whatever the roster says happened on the
+ * day. A missed or abandoned class still owes its topic, so it is pushable even
+ * though it is in the past; a completed or cancelled one is not.
+ */
+function isPushableSession(session: any) {
+  const status = String(session?.status || "scheduled").toLowerCase();
+  if (session?.actualStartedAt || session?.actualEndedAt) return false;
+  return !["completed", "cancelled", "ongoing"].includes(status);
 }
 
 function topicOrderForName(classroom: any, topicName: string, fallback: number) {
@@ -321,6 +332,13 @@ function scheduleChangeCopy({
       message: `${sessionTitle}${timeText} has been cancelled.`,
     };
   }
+  if (action === "push_session_forward") {
+    return {
+      type: "classroom.series.rescheduled",
+      title: "Class schedule updated",
+      message: `${sessionTitle} has been moved to the next class in ${classTitle}. Every later class moves down one slot and an extra class has been added at the end so no topic is missed.`,
+    };
+  }
   if (action === "shift_future_sessions") {
     const restartText = restartDate ? ` starting from ${scheduleTimeLabel(restartDate) || restartDate}` : "";
     return {
@@ -358,7 +376,7 @@ function rescheduleRequestSource(recipient: any, actor?: { id?: string; role?: s
 function scheduleChangeWhatsAppTemplate(action: string) {
   if (action === "cancel_series") return "class_series_cancelled";
   if (action === "cancel_class" || action === "cancel_session") return "class_session_cancelled";
-  if (action === "shift_future_sessions") return "class_schedule_updated";
+  if (action === "shift_future_sessions" || action === "push_session_forward") return "class_schedule_updated";
   if (action === "permanent_schedule_change") return "class_permanent_timing_updated";
   return "class_rescheduled";
 }
@@ -378,7 +396,7 @@ function scheduleChangeWhatsAppParameters(input: {
   const nextTime = scheduleTimeLabel(input.currentSession?.scheduledFor || input.classroom?.classDate);
   if (input.action === "cancel_series") return [name, classTitle];
   if (input.action === "cancel_class" || input.action === "cancel_session") return [name, classTitle, previousTime || nextTime || "the scheduled class time"];
-  if (input.action === "shift_future_sessions") return [name, classTitle, nextTime || "the next scheduled class"];
+  if (input.action === "shift_future_sessions" || input.action === "push_session_forward") return [name, classTitle, nextTime || "the next scheduled class"];
   if (input.action === "permanent_schedule_change") return [name, classTitle, nextTime || String(input.classroom?.startTime || "the new class time"), input.restartDate ? scheduleTimeLabel(input.restartDate) || input.restartDate : "now"];
   return [name, classTitle, previousTime || "the previous class time", nextTime || "the new class time"];
 }
@@ -810,6 +828,84 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       entityId: params.id,
       metadata: { restartDate: restartKey, shiftedSessions: movable.map((item: any) => String(item._id)), reason: body.reason || "" },
     });
+  } else if (body.action === "push_session_forward") {
+    // Move a class that never happened into the next scheduled slot, taking the
+    // rest of the series with it: every later class slides one slot down and one
+    // new slot is added at the end, so no topic is skipped and no topic is lost.
+    if (existing.classroomType !== "series") {
+      return NextResponse.json({ error: "Only a class in a series can be pushed to the next class. Reschedule a single class instead." }, { status: 409 });
+    }
+    const pushSessionId = String(body.sessionId || "");
+    const pushTarget =
+      existing.generatedSessions?.id?.(pushSessionId) ||
+      (existing.generatedSessions || []).find((item: any) => String(item._id) === pushSessionId);
+    if (!pushTarget) return NextResponse.json({ error: "Scheduled class not found" }, { status: 404 });
+    if (!isPushableSession(pushTarget)) {
+      return NextResponse.json({ error: "A completed, cancelled, or running class cannot be pushed forward." }, { status: 409 });
+    }
+
+    const pushFrom = new Date(pushTarget.scheduledFor || 0).getTime();
+    const chain = (existing.generatedSessions || [])
+      .filter((item: any) => isPushableSession(item) && new Date(item.scheduledFor || 0).getTime() >= pushFrom)
+      .sort((a: any, b: any) => new Date(a.scheduledFor || 0).getTime() - new Date(b.scheduledFor || 0).getTime());
+    if (!chain.length) return NextResponse.json({ error: "This class has nothing left to push into" }, { status: 409 });
+
+    // Each class inherits the slot of the one after it; the last needs a brand
+    // new slot, taken from the classroom's own weekly pattern.
+    const last = chain[chain.length - 1];
+    const dayAfterLast = new Date(new Date(last.scheduledFor).getTime() + 24 * 60 * 60 * 1000);
+    const [extraSlot] = scheduleDatesFrom(
+      (existing.daysOfWeek || []) as any,
+      dayAfterLast,
+      1,
+      Number(last.durationMinutes || existing.durationMinutes || 60)
+    );
+    // No weekly pattern to land on - fall back to the same slot one week later.
+    const fallbackSlot = {
+      scheduledFor: new Date(new Date(last.scheduledFor).getTime() + 7 * 24 * 60 * 60 * 1000),
+      startTime: String(last.startTime || existing.startTime || ""),
+      durationMinutes: Number(last.durationMinutes || existing.durationMinutes || 60),
+    };
+    const donors = [
+      ...chain.slice(1).map((item: any) => ({
+        scheduledFor: new Date(item.scheduledFor),
+        startTime: String(item.startTime || existing.startTime || ""),
+        durationMinutes: Number(item.durationMinutes || existing.durationMinutes || 60),
+      })),
+      extraSlot || fallbackSlot,
+    ];
+
+    chain.forEach((item: any, index: number) => {
+      const slot = donors[index];
+      if (!item.originalDate) item.originalDate = item.scheduledFor;
+      item.scheduledFor = slot.scheduledFor;
+      item.startTime = slot.startTime;
+      item.durationMinutes = slot.durationMinutes;
+      item.status = "scheduled";
+      item.coachAttendanceStatus = "pending";
+      item.attendanceMarkedAt = undefined;
+      item.summary = { ...(item.summary || {}), pushedForward: true, pushedFromSessionId: pushSessionId };
+    });
+
+    const newEnd = chain[chain.length - 1].scheduledFor;
+    if (!existing.endDate || new Date(newEnd).getTime() > new Date(existing.endDate).getTime()) existing.endDate = newEnd;
+    if (existing.status === "completed") existing.status = "scheduled";
+
+    shiftedSessionCount = chain.length;
+    await recordActivity({
+      actor: (session.user as any).id,
+      type: "classroom.session.pushed_forward",
+      label: `Pushed ${pushTarget.topicName || "a missed class"} into the next class and moved ${chain.length - 1} later class${chain.length - 1 === 1 ? "" : "es"} down`,
+      entityType: "Classroom",
+      entityId: params.id,
+      metadata: {
+        sessionId: pushSessionId,
+        movedSessions: chain.map((item: any) => String(item._id)),
+        newEndDate: newEnd,
+        reason: String(body.reason || ""),
+        source: "manual_admin",
+      },
+    });
   } else if (body.action === "permanent_schedule_change") {
     if (existing.classroomType !== "series") return NextResponse.json({ error: "Permanent timing changes are only available for class series" }, { status: 409 });
     if (existing.status === "completed" || existing.status === "cancelled") return NextResponse.json({ error: "This series can no longer be changed" }, { status: 409 });
@@ -1037,7 +1133,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     });
   }
   const shouldNotifyScheduleChange = (
-    ["cancel_class", "cancel_series", "cancel_session", "reschedule_class", "reschedule_session", "shift_future_sessions", "permanent_schedule_change"].includes(activityAction) ||
+    ["cancel_class", "cancel_series", "cancel_session", "reschedule_class", "reschedule_session", "shift_future_sessions", "permanent_schedule_change", "push_session_forward"].includes(activityAction) ||
     (activityAction === "update_session" && scheduleChanged(previousSession, currentSession))
   );
   if (shouldNotifyScheduleChange) {
@@ -1061,7 +1157,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       actor: { id: String((session.user as any).id || ""), role: String((session.user as any).role || "") },
     });
   }
-  if (!["mark_session_outcome", "shift_future_sessions", "permanent_schedule_change"].includes(activityAction)) {
+  if (!["mark_session_outcome", "shift_future_sessions", "permanent_schedule_change", "push_session_forward"].includes(activityAction)) {
     const commonMetadata = {
       action: activityAction,
       title: existing.title,

@@ -84,6 +84,15 @@ export function isSessionUpcomingLike(status: ScheduledSessionStatus) {
   return ["upcoming", "join_available", "ongoing"].includes(status);
 }
 
+/**
+ * A class whose date went by without the topic being taught. Its topic is still
+ * owed, which is what makes it the one class that can be pushed into the next
+ * slot and take the rest of the series with it.
+ */
+export function isUntaughtSessionStatus(status: ScheduledSessionStatus | string) {
+  return ["missed", "abandoned", "absent", "coach_no_show", "student_no_show", "technical_issue"].includes(String(status || ""));
+}
+
 export function flattenScheduledSessions(classrooms: any[]) {
   return classrooms.flatMap((classroom: any) => {
     const sessions = Array.isArray(classroom?.generatedSessions) && classroom.generatedSessions.length

@@ -20,6 +20,7 @@ type ClosedClassroom = {
   closedForStudents?: Person[];
   batches?: { _id: string; name?: string }[];
   generatedSessions?: { status?: string }[];
+  removedSessions?: { status?: string }[];
 };
 
 type ClosedBatch = {
@@ -176,7 +177,7 @@ export default function ClosedClassroomsClient({ role }: { role: "admin" | "sub-
           <h1 className="text-lg font-bold leading-tight text-slate-950">Deactivated Classrooms</h1>
           <p className="mt-0.5 text-xs text-slate-500">
             Batches and classrooms that were closed because their last active student was deactivated. They no longer appear in Classes,
-            Calendar, or Attendance.
+            Calendar, or Attendance, and the classes they never taught have been taken off the calendar.
           </p>
         </div>
         <Link
@@ -332,13 +333,14 @@ export default function ClosedClassroomsClient({ role }: { role: "admin" | "sub-
                 <th className="px-3 py-2">Coach</th>
                 <th className="px-3 py-2">Closed for</th>
                 <th className="px-3 py-2">Course</th>
-                <th className="px-3 py-2">Classes cancelled</th>
+                <th className="px-3 py-2">Classes removed</th>
                 <th className="px-3 py-2">Closed on</th>
               </tr>
             </thead>
             <tbody>
               {classrooms.map((item) => {
-                const cancelled = (item.generatedSessions || []).filter((session) => String(session?.status || "") === "cancelled").length;
+                // Closing takes the never-taught classes off the calendar and stashes them here.
+                const removed = (item.removedSessions || []).length;
                 return (
                   <tr key={item._id} className="border-b last:border-0 hover:bg-slate-50">
                     <td className="px-3 py-2">
@@ -349,7 +351,7 @@ export default function ClosedClassroomsClient({ role }: { role: "admin" | "sub-
                     <td className="max-w-xs truncate px-3 py-2 text-xs text-slate-600"><ClosedForList people={item.closedForStudents} /></td>
                     <td className="px-3 py-2 text-xs text-slate-500">{[item.courseName, item.levelName].filter(Boolean).join(" - ") || "-"}</td>
                     <td className="px-3 py-2 text-xs font-semibold text-slate-600">
-                      <span className="inline-flex items-center gap-1"><CalendarDays size={12} /> {cancelled}</span>
+                      <span className="inline-flex items-center gap-1"><CalendarDays size={12} /> {removed}</span>
                     </td>
                     <td className="px-3 py-2 text-xs text-slate-500">{formatDate(item.closedAt)}</td>
                   </tr>

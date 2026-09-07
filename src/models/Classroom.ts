@@ -131,6 +131,10 @@ const ClassroomSchema = new Schema(
     closedBy: { type: Schema.Types.ObjectId, ref: "User" },
     closedForStudents: [{ type: Schema.Types.ObjectId, ref: "User", index: true }],
     previousStatus: { type: String },
+    // Classes removed when the classroom was closed - they were never taught, so
+    // they are taken off the calendar rather than left showing as missed. Kept
+    // here so reactivating the student can put them back.
+    removedSessions: [{ type: Schema.Types.Mixed }],
 
     // Pause trail. Unlike a closure this is temporary: the classroom comes back
     // when the student does, and its remaining classes are re-dated from the

@@ -6,6 +6,7 @@ import {
   CheckSquare,
   ChevronLeft,
   ChevronRight,
+  ChevronsRight,
   Clock3,
   CopyPlus,
   Eye,
@@ -31,6 +32,7 @@ import {
   getSessionStart,
   isJoinWindowOpen,
   isSessionUpcomingLike,
+  isUntaughtSessionStatus,
 } from "@/lib/classroomSessions";
 import { formatAcademyDateTime } from "@/lib/academyTime";
 import { useViewerTimeZone } from "@/lib/viewerTime";
@@ -1597,6 +1599,18 @@ export default function ClassroomManagementClient({
                   </div>
                 </div>
               )}
+              {actionModal.type === "push_session_forward" && (
+                <div className="grid gap-4">
+                  <div className="rounded-xl bg-slate-50 p-4 text-sm leading-6 text-slate-600">
+                    <span className="font-semibold text-slate-900">{actionModal.session?.topicName || "This class"}</span> moves into the next
+                    scheduled class. Every class after it moves down one slot, and one extra class is added at the end of the series on the
+                    next day the classroom runs - so every topic is still covered and the last one is not lost.
+                  </div>
+                  <Field label="Reason">
+                    <textarea className="input min-h-24 py-2" value={actionDraft.reason || ""} onChange={(event) => setActionDraft((current: any) => ({ ...current, reason: event.target.value }))} placeholder="Optional note, e.g. student was away" />
+                  </Field>
+                </div>
+              )}
               {actionModal.type === "mark_session_outcome" && (
                 <div className="grid gap-4">
                   <Field label="Outcome">
@@ -1993,6 +2007,12 @@ function GroupClassSessionList({
                 <ActionButton icon={<Clock3 size={14} />} label="Reschedule" onClick={() => {
                   setActionModal({ type: "reschedule_session", item: classroom, session });
                   setActionDraft({ classDate: formatDateInput(session.scheduledFor), startTime: session.startTime || classroom.startTime || "", durationMinutes: session.durationMinutes || classroom.durationMinutes || 60 });
+                }} />
+              ) : null}
+              {canOpenActions && permissions.edit && classroom.classroomType === "series" && isUntaughtSessionStatus(status) ? (
+                <ActionButton icon={<ChevronsRight size={14} />} label="Push to next class" onClick={() => {
+                  setActionModal({ type: "push_session_forward", item: classroom, session });
+                  setActionDraft({ reason: "" });
                 }} />
               ) : null}
               {canOpenActions && permissions.assign && !isFinished && !isCancelled ? (
@@ -2461,11 +2481,13 @@ function flattenScheduleSlots(days: Array<{ day: number; slots: Array<{ startTim
 function actionTitle(type: string) {
   if (type === "reschedule_class") return "Reschedule Class";
   if (type === "shift_future_sessions") return "Just break";
+  if (type === "push_session_forward") return "Push forward";
   if (type === "permanent_schedule_change") return "Permanent Timing Change";
   if (type === "cancel_class") return "Cancel Class";
   if (type === "cancel_series") return "Cancel Entire Series";
   if (type === "update_session") return "Edit This Class";
   if (type === "reschedule_session") return "Reschedule This Class";
+  if (type === "push_session_forward") return "Push This Class to the Next Class";
   if (type === "cancel_session") return "Cancel This Class";
   if (type === "delete_session") return "Delete This Class";
   if (type === "substitute_coach") return "Substitute Coach";
@@ -2481,6 +2503,7 @@ function actionConfirmLabel(type: string) {
   if (type === "delete_session") return "Delete Class";
   if (type === "reschedule_class" || type === "reschedule_session") return "Reschedule";
   if (type === "shift_future_sessions") return "Shift Future Classes";
+  if (type === "push_session_forward") return "Push to Next Class";
   if (type === "permanent_schedule_change") return "Update Permanent Timing";
   if (type === "update_session") return "Save Class";
   if (type === "mark_session_outcome") return "Save Outcome";
@@ -2516,6 +2539,7 @@ function actionSuccessMessage(type: string) {
   if (type === "permanent_schedule_change") return "Permanent timing updated";
   if (type === "update_session") return "Class updated";
   if (type === "add_extra_class") return "Extra class added";
+  if (type === "push_session_forward") return "Class pushed forward, later classes moved down, and an extra class added at the end";
   if (type === "substitute_coach") return "Coach assignment updated";
   if (type === "mark_session_outcome") return "Class outcome updated";
   if (type === "change_session_topic") return "Class topic updated";
@@ -2548,7 +2572,7 @@ function InactiveGroupsPanel({
         <div className="text-sm font-semibold text-slate-950">
           {paused
             ? "Groups waiting for a student to restart. Nothing is cancelled - their remaining classes are rescheduled from the restart date."
-            : "Groups closed because their last attending student was deactivated. Their remaining classes were cancelled."}
+            : "Groups closed because their last attending student was deactivated. Classes that were never taught have been taken off the calendar."}
         </div>
       </div>
       {loading ? (

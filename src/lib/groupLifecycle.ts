@@ -6,6 +6,7 @@ import { scheduleDatesFrom } from "@/lib/classroomSchedule";
 import { Batch } from "@/models/Batch";
 import { Classroom } from "@/models/Classroom";
 import { Invoice, Notification } from "@/models/Fee";
+import { StudentPause } from "@/models/StudentPause";
 import { User } from "@/models/User";
 
 /**
@@ -33,8 +34,15 @@ export const CLOSURE_REASONS = [DEACTIVATION_CLOSURE_REASON];
 /** Invoices in these states have not been settled, so a deactivation can void them. */
 const VOIDABLE_INVOICE_STATUSES = ["draft", "unpaid", "overdue"];
 
-/** Sessions in these states have not happened yet, so closing a classroom cancels them. */
-const OPEN_SESSION_STATUSES = ["scheduled", "ongoing", "in_progress"];
+/**
+ * A class that was never taught - still ahead, or already gone by unattended.
+ * Closing a classroom takes these off the calendar entirely; a taught class, or
+ * one already cancelled on purpose, is left alone as history.
+ */
+function isUntaughtSession(session: any) {
+  if (session?.actualStartedAt || session?.actualEndedAt) return false;
+  return !["completed", "cancelled"].includes(String(session?.status || "scheduled").toLowerCase());
+}
 
 export type ClosureActor = {
   id?: string;
@@ -166,16 +174,20 @@ async function closeEmptyClassrooms(studentId: string, actor?: ClosureActor) {
     // batches matched - only groups this student was part of can close for them.
     if (!shouldCloseGroup(rosterOf(classroom), studentId, stillAttending)) continue;
 
-    let sessionsCancelled = 0;
-    (classroom.generatedSessions || []).forEach((session: any) => {
-      const scheduledFor = session?.scheduledFor ? new Date(session.scheduledFor) : null;
-      const status = String(session?.status || "scheduled").toLowerCase();
-      if (!scheduledFor || session?.actualEndedAt || !OPEN_SESSION_STATUSES.includes(status)) return;
-      if (scheduledFor.getTime() < now.getTime()) return;
-      session.status = "cancelled";
-      session.summary = { ...(session.summary || {}), closedByStudentAbsence: true, previousStatus: status };
-      sessionsCancelled += 1;
-    });
+    // Every class that was never taught comes off the calendar - the ones still
+    // ahead and the ones that already went by showing as missed, because the
+    // student was gone for both. They are stashed so a reactivation can restore
+    // them; the taught history stays exactly where it is.
+    const taught = (classroom.generatedSessions || []).filter((session: any) => !isUntaughtSession(session));
+    const removed = (classroom.generatedSessions || []).filter(isUntaughtSession);
+    const sessionsCancelled = removed.length;
+    if (removed.length) {
+      classroom.removedSessions = [
+        ...(classroom.removedSessions || []),
+        ...removed.map((session: any) => ({ ...(session.toObject?.() || session), removedAt: now })),
+      ];
+      classroom.generatedSessions = taught;
+    }
 
     classroom.previousStatus = String(classroom.status || "scheduled");
     if (classroom.status !== "completed") classroom.status = "cancelled";
@@ -342,23 +354,21 @@ export async function reopenGroupsClosedForStudent(studentId: string, actor?: Cl
     ...batches.flatMap((batch: any) => (batch.students || []).map(idOf)),
   ]);
 
-  const now = new Date();
   const classroomsReopened: ClosedGroupSummary[] = [];
   for (const classroom of classrooms) {
     if (!rosterOf(classroom).some((id: string) => attending.has(id))) continue;
-    let sessionsRestored = 0;
-    (classroom.generatedSessions || []).forEach((session: any) => {
-      if (!session?.summary?.closedByStudentAbsence) return;
-      const scheduledFor = session?.scheduledFor ? new Date(session.scheduledFor) : null;
-      // A class that fell inside the absence was never taught, so it stays
-      // cancelled - only the ones still ahead are put back on the calendar.
-      if (scheduledFor && scheduledFor.getTime() >= now.getTime()) {
-        session.status = String(session.summary.previousStatus || "scheduled");
-        sessionsRestored += 1;
-      }
-      const { closedByStudentAbsence, previousStatus, ...rest } = session.summary || {};
-      session.summary = rest;
-    });
+    // Put back the classes the closure took off the calendar. Ones whose date
+    // has since gone by come back as they were - never taught - so the admin can
+    // push them into the next class or drop them.
+    const restored = classroom.removedSessions || [];
+    const sessionsRestored = restored.length;
+    if (sessionsRestored) {
+      classroom.generatedSessions = [
+        ...(classroom.generatedSessions || []),
+        ...restored.map(({ removedAt, ...session }: any) => session),
+      ].sort((a: any, b: any) => new Date(a.scheduledFor || 0).getTime() - new Date(b.scheduledFor || 0).getTime());
+      classroom.removedSessions = [];
+    }
     classroom.isActive = true;
     classroom.status = String(classroom.previousStatus || "scheduled");
     classroom.closedAt = undefined;
@@ -877,7 +887,15 @@ export async function backfillGroupLifecycle(
         batches: applied.batchesClosed.map((group) => group.name),
       });
     } else {
-      const applied = await pauseEmptyGroupsForStudent(studentId, { pausedUntil: student.pausedUntil, actor: options.actor });
+      // The pause started when the pause record says it did, not today - the
+      // classes that went by inside it are exactly the ones the restart has to
+      // pick back up.
+      const record: any = await StudentPause.findOne({ student: student._id, status: "active" }).select("pausedFrom pausedUntil").lean();
+      const applied = await pauseEmptyGroupsForStudent(studentId, {
+        pausedFrom: record?.pausedFrom || null,
+        pausedUntil: record?.pausedUntil || student.pausedUntil || null,
+        actor: options.actor,
+      });
       result.classroomsPaused += applied.classroomsPaused.length;
       result.batchesPaused += applied.batchesPaused.length;
       result.students.push({

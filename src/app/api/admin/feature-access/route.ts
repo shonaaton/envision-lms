@@ -13,6 +13,7 @@ import {
   serializeForAudit,
 } from "@/lib/featureAccess";
 import { FEATURE_DEFINITIONS, PORTAL_ROLES, type FeatureStatus } from "@/lib/featureRegistry";
+import { applyUserFeatureAccess, getUserFeatureAccess, type UserAccessMode } from "@/lib/userFeatureAccess";
 import { FeatureAccess, PermissionAudit } from "@/models/FeatureAccess";
 import { PermissionTemplate } from "@/models/FeatureAccess";
 import { User } from "@/models/User";
@@ -134,6 +135,70 @@ export async function POST(req: Request) {
   if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const actorId = (session.user as any).id;
   const body = await req.json().catch(() => ({}));
+
+  // Assign access to one person rather than to their whole role. Two people can
+  // share the `sub-admin` role and need completely different access; this is how
+  // that is expressed without giving everyone the union of both jobs.
+  if (String(body.action || "") === "userAccess") {
+    const userId = String(body.userId || "").trim();
+    const mode = (["restrict", "add", "clear"].includes(String(body.mode)) ? body.mode : "restrict") as UserAccessMode;
+    if (!Types.ObjectId.isValid(userId)) {
+      return NextResponse.json({ error: "Choose the person this applies to." }, { status: 400 });
+    }
+
+    await dbConnect();
+    const target: any = await User.findById(userId).select("name email username role").lean();
+    if (!target) return NextResponse.json({ error: "That user no longer exists." }, { status: 404 });
+    // Super admins bypass every check in evaluateFeatureState, so an override on
+    // one would be recorded and then quietly ignored. Say so instead.
+    if (target.role === "admin" && (await User.exists({ _id: userId, isSuperAdmin: true }))) {
+      return NextResponse.json({ error: "Super Admins always have full access; per-user limits do not apply to them." }, { status: 400 });
+    }
+
+    const definitions = new Map(FEATURE_DEFINITIONS.map((feature) => [feature.key, feature]));
+    const grants: Record<string, string[]> = {};
+    for (const [key, value] of Object.entries((body.grants || {}) as Record<string, unknown>)) {
+      if (!definitions.has(key)) continue;
+      grants[key] = Array.isArray(value) ? value.map(String) : ["view"];
+    }
+    if (mode !== "clear" && !Object.keys(grants).length) {
+      return NextResponse.json({ error: "Select at least one module to grant." }, { status: 400 });
+    }
+
+    const previous = await getUserFeatureAccess(userId);
+    const result = await applyUserFeatureAccess({
+      userId,
+      mode,
+      grants,
+      note: String(body.note || "").trim(),
+      expiresAt: body.expiresAt ? new Date(body.expiresAt) : null,
+    });
+
+    await PermissionAudit.create({
+      featureKey: "featureAccess",
+      featureLabel: "Feature Access & Permissions",
+      actor: actorId,
+      targetType: "user",
+      targetId: userId,
+      targetLabel: String(target.name || target.email || target.username || userId),
+      previousValue: serializeForAudit(previous),
+      newValue: serializeForAudit({ mode, ...result }),
+      reason: String(body.reason || "").trim() || `Per-user access (${mode})`,
+    });
+
+    ["/dashboard", "/admin/feature-access", ...FEATURE_DEFINITIONS.flatMap((feature) => feature.routes)].forEach((path) =>
+      revalidatePath(path),
+    );
+
+    return NextResponse.json({
+      ok: true,
+      mode,
+      result,
+      features: await getFeatureAccessSnapshot(),
+      audit: await getPermissionAudit(50),
+    });
+  }
+
   const name = String(body.name || "").trim();
   const description = String(body.description || "").trim();
   const role = String(body.role || "") as (typeof PORTAL_ROLES)[number];

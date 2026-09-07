@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { AlertTriangle, Check, ChevronDown, CopyCheck, Filter, History, Layers3, Lock, Plus, RotateCcw, Save, Search, Settings2, ShieldCheck, SlidersHorizontal, Sparkles, TestTube2, Users, X } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, CopyCheck, Filter, History, Layers3, Lock, Plus, RotateCcw, Save, Search, Settings2, ShieldCheck, SlidersHorizontal, Sparkles, TestTube2, UserCog, Users, X } from "lucide-react";
 import { FEATURE_CATEGORIES, FEATURE_DEFINITIONS, PORTAL_ROLES, type FeatureStatus, type PortalRole } from "@/lib/featureRegistry";
 import { cn } from "@/lib/utils";
 
@@ -98,6 +98,12 @@ export default function FeatureAccessClient({ initialData }: { initialData: ApiD
   const [activeFeatureKey, setActiveFeatureKey] = useState<string | null>(null);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [templateOpen, setTemplateOpen] = useState<"apply" | "save" | null>(null);
+  const [personOpen, setPersonOpen] = useState(false);
+  const [personUser, setPersonUser] = useState("");
+  const [personMode, setPersonMode] = useState<"restrict" | "add" | "clear">("restrict");
+  const [personTemplate, setPersonTemplate] = useState("");
+  const [personNote, setPersonNote] = useState("");
+  const [personSaving, setPersonSaving] = useState(false);
   const [templateName, setTemplateName] = useState("");
   const [templateRole, setTemplateRole] = useState<PortalRole>("student");
   const [templateDescription, setTemplateDescription] = useState("");
@@ -130,6 +136,17 @@ export default function FeatureAccessClient({ initialData }: { initialData: ApiD
 
   const activeFeature = features.find((feature) => feature.key === activeFeatureKey) || null;
   const selectedFeatures = features.filter((feature) => selected.includes(feature.key));
+  // Per-person access is a staff concern; listing every student would bury the
+  // handful of accounts anyone actually needs to limit.
+  const staffUsers = useMemo(
+    () => (initialData.users || []).filter((user) => user.role === "sub-admin" || user.role === "admin" || user.role === "instructor"),
+    [initialData.users],
+  );
+  const personTemplateFeatures = useMemo(() => {
+    const template = templates.find((item) => item.name === personTemplate);
+    const keys = new Set<string>([...Object.keys(template?.permissions || {}), ...selected]);
+    return features.filter((feature) => keys.has(feature.key)).map((feature) => feature.label);
+  }, [templates, personTemplate, selected, features]);
   const stats = useMemo(() => ({
     total: features.length,
     enabled: features.filter((feature) => feature.status === "enabled").length,
@@ -214,6 +231,58 @@ export default function FeatureAccessClient({ initialData }: { initialData: ApiD
     setFeatures((current) => current.map((feature) => selected.includes(feature.key) && template.permissions?.[feature.key] ? { ...feature, rolePermissions: { ...feature.rolePermissions, [template.role]: [...template.permissions[feature.key]] } } : feature));
     toast.success(`${template.name} staged for ${roleLabels[template.role]}`);
     setTemplateOpen(null);
+  }
+
+  /**
+   * Grant one person their own access, independent of their role.
+   *
+   * The grid above is keyed by role, so two sub admins with different jobs cannot
+   * be told apart there. This writes `userOverrides` across every feature at once,
+   * which is the same thing the per-feature Configure panel does - just not forty
+   * times by hand. It saves immediately rather than staging, because it touches
+   * every feature and would otherwise be indistinguishable from the pending
+   * role-level edits in the grid.
+   */
+  async function assignToPerson() {
+    if (!personUser) return toast.error("Choose the person this applies to");
+
+    const template = templates.find((item) => item.name === personTemplate);
+    const grants: Record<string, string[]> = {};
+    if (personMode !== "clear") {
+      if (template?.permissions) {
+        for (const [key, permissions] of Object.entries(template.permissions)) grants[key] = [...permissions];
+      }
+      // Anything ticked in the grid is granted too, using that feature's standard
+      // admin permission set unless the template already named something narrower.
+      for (const feature of selectedFeatures) {
+        if (grants[feature.key]) continue;
+        grants[feature.key] = [...(feature.defaultRolePermissions?.admin || ["view"])];
+      }
+      if (!Object.keys(grants).length) return toast.info("Choose a template, or tick the modules to grant");
+    }
+
+    setPersonSaving(true);
+    const res = await fetch("/api/admin/feature-access", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "userAccess", userId: personUser, mode: personMode, grants, note: personNote }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setPersonSaving(false);
+    if (!res.ok) return toast.error(data.error || "Could not save this person's access");
+
+    setFeatures(data.features || features);
+    setSavedFeatures(data.features || features);
+    setAudit(data.audit || audit);
+    const person = staffUsers.find((user) => idOf(user) === personUser);
+    const personName = person?.name || person?.username || person?.email || "That user";
+    toast.success(
+      personMode === "clear"
+        ? `${personName} is back on their role defaults`
+        : `${personName} now has ${data.result?.allowed?.length ?? 0} modules${personMode === "restrict" ? " and nothing else" : ""}`,
+    );
+    setPersonOpen(false);
+    setPersonNote("");
   }
 
   async function saveTemplate() {
@@ -302,6 +371,7 @@ export default function FeatureAccessClient({ initialData }: { initialData: ApiD
           <button type="button" onClick={() => setSelected([])} className="h-9 rounded-md border border-slate-200 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">Clear</button>
           <button type="button" onClick={() => setBulkOpen(true)} className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"><SlidersHorizontal size={15} /> Bulk actions</button>
           <button type="button" onClick={() => setTemplateOpen("apply")} className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"><Sparkles size={15} /> Apply template</button>
+          <button type="button" onClick={() => setPersonOpen(true)} className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"><UserCog size={15} /> Assign to a person</button>
           <button type="button" onClick={() => setTemplateOpen("save")} className="inline-flex h-9 items-center gap-2 rounded-md bg-slate-950 px-3 text-sm font-semibold text-white"><Plus size={15} /> Save template</button>
         </div>
       </div>
@@ -441,6 +511,80 @@ export default function FeatureAccessClient({ initialData }: { initialData: ApiD
             </div>
           )}
           {selectedFeatures.length > 0 && <div className="mt-5 rounded-md bg-slate-50 p-3 text-sm text-slate-600">Includes: {selectedFeatures.slice(0, 8).map((feature) => feature.label).join(", ")}{selectedFeatures.length > 8 ? `, +${selectedFeatures.length - 8} more` : ""}</div>}
+        </Modal>
+      )}
+
+      {personOpen && (
+        <Modal
+          title="Assign access to a person"
+          description="Overrides what their role allows, for this one account."
+          onClose={() => setPersonOpen(false)}
+          width="max-w-2xl"
+        >
+          <div className="space-y-4">
+            <label className="block">
+              <span className="mb-1 block text-sm font-semibold text-slate-800">Person</span>
+              <select value={personUser} onChange={(event) => setPersonUser(event.target.value)} className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm">
+                <option value="">Choose a person</option>
+                {staffUsers.map((user) => (
+                  <option key={idOf(user)} value={idOf(user)}>
+                    {user.name || user.username || user.email} - {roleLabels[(user.role as PortalRole) || "sub-admin"]}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <fieldset className="space-y-2">
+              <legend className="mb-1 text-sm font-semibold text-slate-800">How much access</legend>
+              {([
+                ["restrict", "Only these modules", "Everything else is denied for this person, whatever their role allows."],
+                ["add", "These on top of their role", "Adds access without taking anything away."],
+                ["clear", "Back to role defaults", "Removes every per-person rule for this account."],
+              ] as const).map(([value, label, help]) => (
+                <label key={value} className={cn("flex cursor-pointer gap-3 rounded-md border p-3", personMode === value ? "border-teal-500 bg-teal-50/50" : "border-slate-200")}>
+                  <input type="radio" name="person-mode" checked={personMode === value} onChange={() => setPersonMode(value)} className="mt-1 h-4 w-4" />
+                  <span>
+                    <span className="block text-sm font-semibold text-slate-900">{label}</span>
+                    <span className="block text-xs text-slate-600">{help}</span>
+                  </span>
+                </label>
+              ))}
+            </fieldset>
+
+            {personMode !== "clear" && (
+              <>
+                <label className="block">
+                  <span className="mb-1 block text-sm font-semibold text-slate-800">Grant from a template</span>
+                  <select value={personTemplate} onChange={(event) => setPersonTemplate(event.target.value)} className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm">
+                    <option value="">No template - use the ticked modules below</option>
+                    {templates.map((template) => <option key={template._id} value={template.name}>{template.name}</option>)}
+                  </select>
+                </label>
+
+                <div className="rounded-md bg-slate-50 p-3 text-sm text-slate-600">
+                  {personTemplateFeatures.length ? (
+                    <>Granting: {personTemplateFeatures.slice(0, 10).join(", ")}{personTemplateFeatures.length > 10 ? `, +${personTemplateFeatures.length - 10} more` : ""}</>
+                  ) : (
+                    "Nothing selected yet. Choose a template, or tick modules in the list behind this dialog."
+                  )}
+                  {personMode === "restrict" && (
+                    <p className="mt-2 text-xs text-slate-500">
+                      Dashboard, Account Settings and Notifications stay available, so the account still works.
+                    </p>
+                  )}
+                </div>
+              </>
+            )}
+
+            <input value={personNote} onChange={(event) => setPersonNote(event.target.value)} className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm" placeholder="Note for the audit trail (optional)" />
+
+            <div className="flex items-center gap-3">
+              <button type="button" disabled={personSaving} onClick={assignToPerson} className="inline-flex h-10 items-center gap-2 rounded-md bg-teal-700 px-4 text-sm font-semibold text-white disabled:opacity-60">
+                <UserCog size={15} /> {personSaving ? "Saving" : "Save for this person"}
+              </button>
+              <span className="text-xs text-slate-500">Saves immediately - it does not wait for Save changes.</span>
+            </div>
+          </div>
         </Modal>
       )}
     </div>

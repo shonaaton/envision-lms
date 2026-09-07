@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
-import { normalizeWhatsAppNumber, normalizeWhatsAppRecipient } from "@/lib/whatsappAutomation";
+import { findWhatsAppUserByPhone, normalizeWhatsAppNumber, normalizeWhatsAppRecipient } from "@/lib/whatsappAutomation";
 import { getWhatsAppTemplateDefinition, renderWhatsAppTemplatePreview, resolveWhatsAppMetaTemplateName } from "@/lib/whatsappTemplateRegistry";
 import { WhatsAppMessage } from "@/models/WhatsApp";
 import { User } from "@/models/User";
@@ -89,16 +89,6 @@ function displayStatusForN8nResult(item: any) {
   if (["accepted", "sent", "queued", "delivered", "read", "failed"].includes(rawStatus)) return rawStatus;
   if (firstMetaMessageId(item, rawResponse)) return "accepted";
   return item?.ok ? "accepted" : "failed";
-}
-
-async function findUserByPhone(phoneNumber: string) {
-  const variants = Array.from(new Set([
-    phoneNumber,
-    phoneNumber.replace(/^91/, ""),
-    `+${phoneNumber}`,
-    `+${phoneNumber.replace(/^91/, "")}`,
-  ]));
-  return User.findOne({ phone: { $in: variants } }).select("_id name phone email username role").lean();
 }
 
 function extractTemplateVariables(body: any) {
@@ -193,7 +183,7 @@ export async function POST(req: Request) {
   const results = [];
   for (const item of n8nResults) {
     const phoneNumber = normalizeWhatsAppNumber(String(item.phoneNumber || item.to || ""));
-    const matchedUser: any = await findUserByPhone(phoneNumber);
+    const matchedUser: any = await findWhatsAppUserByPhone(phoneNumber);
     const accepted = n8nResultAccepted(item);
     const metaMessageId = firstMetaMessageId(item);
     await WhatsAppMessage.create({
@@ -227,7 +217,7 @@ export async function POST(req: Request) {
     if (n8nSend.response?.ok) {
       const queuedResults = [];
       for (const phoneNumber of Array.from(new Set<string>(recipients))) {
-        const matchedUser: any = await findUserByPhone(phoneNumber);
+        const matchedUser: any = await findWhatsAppUserByPhone(phoneNumber);
         await WhatsAppMessage.create({
           phoneNumber,
           contactName: matchedUser?.name || "",

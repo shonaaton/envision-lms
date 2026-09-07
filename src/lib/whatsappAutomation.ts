@@ -1,3 +1,4 @@
+import { carriesCountryCode, splitInternationalNumber } from "@/lib/phoneCountryCodes";
 import { notifyFailure } from "@/lib/failureNotifications";
 import { dbConnect } from "@/lib/db";
 import { renderWhatsAppTemplatePreview, resolveWhatsAppMetaTemplateName } from "@/lib/whatsappTemplateRegistry";
@@ -68,9 +69,13 @@ export function normalizeWhatsAppRecipient(phone?: string, countryCode?: string)
   // number already carries a dialling code, otherwise trunk-zero countries look international.
   const national = cleanPhone.replace(/^0+/, "");
   if (!national) return "";
-  if (national.length > 10) return national;
-  const cleanCountryCode = normalizeWhatsAppNumber(countryCode) || defaultWhatsAppCountryCode();
-  return `${cleanCountryCode}${national}`;
+  const cleanCountryCode = normalizeWhatsAppNumber(countryCode);
+  if (cleanCountryCode) {
+    return carriesCountryCode(national, cleanCountryCode) ? national : `${cleanCountryCode}${national}`;
+  }
+  // Nothing on file: keep the number if it already reads as international, else assume local.
+  if (national.length > 10 || splitInternationalNumber(national)) return national;
+  return `${defaultWhatsAppCountryCode()}${national}`;
 }
 
 function configuredGraphVersion() {
@@ -140,19 +145,54 @@ function contactNameFromMetadata(metadata?: Record<string, unknown>) {
   ).trim();
 }
 
+const WHATSAPP_USER_FIELDS = "_id name phone countryCode email username role";
+
+/**
+ * Candidate `User.phone` spellings for a full international WhatsApp number. Most records
+ * store the national part, so the dialling code has to come off — and not just India's,
+ * which is all the previous "^91" strip handled.
+ */
+export function whatsAppPhoneVariants(phoneNumber?: string) {
+  const digits = normalizeWhatsAppNumber(phoneNumber);
+  if (!digits) return [];
+  const nationals = new Set<string>([digits]);
+  const known = splitInternationalNumber(digits);
+  if (known) nationals.add(known.national);
+  // Countries outside the portal's list still need their code trimmed, so try every
+  // plausible code length. Loose candidates are safe: the caller confirms them below.
+  for (const codeLength of [1, 2, 3, 4]) {
+    const rest = digits.slice(codeLength);
+    if (rest.length >= 6) nationals.add(rest);
+  }
+  const variants = new Set<string>();
+  for (const value of nationals) {
+    variants.add(value);
+    variants.add(`+${value}`);
+    variants.add(`0${value}`);
+  }
+  return Array.from(variants);
+}
+
+/** Finds the LMS user behind a WhatsApp number, whichever country it belongs to. */
+export async function findWhatsAppUserByPhone(phoneNumber?: string) {
+  const digits = normalizeWhatsAppNumber(phoneNumber);
+  const variants = whatsAppPhoneVariants(digits);
+  if (!variants.length) return null;
+  const candidates: any[] = await User.find({ phone: { $in: variants } }).select(WHATSAPP_USER_FIELDS).lean();
+  if (!candidates.length) return null;
+  // Prefer the user whose own country code reproduces this exact number. A loosely
+  // trimmed candidate is only trusted when it is the one and only match.
+  const exact = candidates.find((user) => normalizeWhatsAppRecipient(user.phone, user.countryCode) === digits);
+  return exact || (candidates.length === 1 ? candidates[0] : null);
+}
+
 async function findMatchedUser(input: { userId?: unknown; phoneNumber: string }) {
   const userId = String(input.userId || "").trim();
   if (userId) {
-    const user = await User.findById(userId).select("_id name phone email username role").lean();
+    const user = await User.findById(userId).select(WHATSAPP_USER_FIELDS).lean();
     if (user) return user;
   }
-  const variants = Array.from(new Set([
-    input.phoneNumber,
-    input.phoneNumber.replace(/^91/, ""),
-    `+${input.phoneNumber}`,
-    `+${input.phoneNumber.replace(/^91/, "")}`,
-  ]));
-  return User.findOne({ phone: { $in: variants } }).select("_id name phone email username role countryCode").lean();
+  return findWhatsAppUserByPhone(input.phoneNumber);
 }
 
 /**

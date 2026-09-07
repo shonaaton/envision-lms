@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
-import { normalizeWhatsAppNumber, sendWhatsAppTextMessage } from "@/lib/whatsappAutomation";
+import { findWhatsAppUserByPhone, normalizeWhatsAppNumber, sendWhatsAppTextMessage } from "@/lib/whatsappAutomation";
 import { WhatsAppMessage } from "@/models/WhatsApp";
-import { User } from "@/models/User";
 
 export const dynamic = "force-dynamic";
 
@@ -11,16 +10,6 @@ const CUSTOMER_SERVICE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 function canManageWhatsApp(session: any) {
   return ["admin", "sub-admin"].includes(String(session?.user?.role || ""));
-}
-
-async function findUserByPhone(phoneNumber: string) {
-  const variants = Array.from(new Set([
-    phoneNumber,
-    phoneNumber.replace(/^91/, ""),
-    `+${phoneNumber}`,
-    `+${phoneNumber.replace(/^91/, "")}`,
-  ]));
-  return User.findOne({ phone: { $in: variants } }).select("_id name phone email username role").lean();
 }
 
 export async function POST(req: Request) {
@@ -46,7 +35,7 @@ export async function POST(req: Request) {
     }, { status: 409 });
   }
 
-  const matchedUser: any = await findUserByPhone(phoneNumber);
+  const matchedUser: any = await findWhatsAppUserByPhone(phoneNumber);
   const result = await sendWhatsAppTextMessage({
     to: phoneNumber,
     text,

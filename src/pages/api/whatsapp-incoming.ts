@@ -1,8 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { dbConnect } from "@/lib/db";
-import { normalizeWhatsAppNumber } from "@/lib/whatsappAutomation";
+import { findWhatsAppUserByPhone, normalizeWhatsAppNumber } from "@/lib/whatsappAutomation";
 import { WhatsAppMessage } from "@/models/WhatsApp";
-import { User } from "@/models/User";
 
 function normalizeWebhookPayload(payload: any) {
   if (Array.isArray(payload?.entry)) return payload;
@@ -110,16 +109,6 @@ function parseWhatsAppTimestamp(value: unknown) {
   return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
 }
 
-async function findUserByPhone(phoneNumber: string) {
-  const variants = Array.from(new Set([
-    phoneNumber,
-    phoneNumber.replace(/^91/, ""),
-    `+${phoneNumber}`,
-    `+${phoneNumber.replace(/^91/, "")}`,
-  ]));
-  return User.findOne({ phone: { $in: variants } }).select("_id name phone email username role").lean();
-}
-
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method === "GET") return res.status(403).json({ error: "Forbidden" });
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
@@ -158,7 +147,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const phoneNumber = normalizeWhatsAppNumber(waId);
         const contact: any = contacts.get(waId) || {};
         const profileName = String(contact.profile?.name || "");
-        const matchedUser: any = await findUserByPhone(phoneNumber);
+        const matchedUser: any = await findWhatsAppUserByPhone(phoneNumber);
         await WhatsAppMessage.updateOne(
           { metaMessageId },
           {

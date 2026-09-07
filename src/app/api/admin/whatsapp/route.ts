@@ -52,6 +52,8 @@ function chatPath(phoneNumber: string) {
   return `/admin/whatsapp/${encodeURIComponent(phoneNumber)}`;
 }
 
+const UNKNOWN_CONTACT = "Unknown contact";
+
 function messageActivityAt(message: any) {
   return message.direction === "inbound"
     ? message.receivedAt || message.createdAt
@@ -75,7 +77,7 @@ export async function GET() {
     const current = conversations.get(phoneNumber) || {
       phoneNumber,
       chatPath: chatPath(phoneNumber),
-      contactName: message.matchedUser?.name || message.contactName || message.profileName || "Unknown contact",
+      contactName: message.matchedUser?.name || message.contactName || message.profileName || UNKNOWN_CONTACT,
       profileName: message.profileName || "",
       matchedUser: message.matchedUser
         ? {
@@ -108,6 +110,22 @@ export async function GET() {
       if (!current.lastInboundAt || new Date(inboundAt).getTime() >= new Date(current.lastInboundAt).getTime()) {
         current.lastInboundAt = inboundAt;
       }
+    }
+    // The thread's name came from whichever message was oldest, so a thread whose first
+    // message failed to match a user stayed "Unknown contact" forever. Let any later
+    // message that did match supply the name instead.
+    if (!current.matchedUser && message.matchedUser) {
+      current.matchedUser = {
+        id: message.matchedUser._id.toString(),
+        name: message.matchedUser.name,
+        email: message.matchedUser.email,
+        username: message.matchedUser.username,
+        phone: message.matchedUser.phone,
+        role: message.matchedUser.role,
+      };
+    }
+    if (current.contactName === UNKNOWN_CONTACT) {
+      current.contactName = message.matchedUser?.name || message.contactName || message.profileName || UNKNOWN_CONTACT;
     }
     if (message.direction === "outbound") current.lastBusinessMessageAt = message.sentAt || message.createdAt;
     if (message.direction === "outbound" && message.messageType === "template") current.sentTemplateCount += 1;

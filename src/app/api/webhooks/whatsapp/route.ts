@@ -1,9 +1,8 @@
 import crypto from "crypto";
 import { NextResponse } from "next/server";
 import { dbConnect } from "@/lib/db";
-import { normalizeWhatsAppNumber } from "@/lib/whatsappAutomation";
+import { findWhatsAppUserByPhone, normalizeWhatsAppNumber } from "@/lib/whatsappAutomation";
 import { WhatsAppMessage } from "@/models/WhatsApp";
-import { User } from "@/models/User";
 
 export const dynamic = "force-dynamic";
 
@@ -13,16 +12,6 @@ function verifySignature(rawBody: string, signature: string | null) {
   if (!signature?.startsWith("sha256=")) return false;
   const expected = `sha256=${crypto.createHmac("sha256", appSecret).update(rawBody).digest("hex")}`;
   return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
-}
-
-async function findUserByPhone(phoneNumber: string) {
-  const variants = Array.from(new Set([
-    phoneNumber,
-    phoneNumber.replace(/^91/, ""),
-    `+${phoneNumber}`,
-    `+${phoneNumber.replace(/^91/, "")}`,
-  ]));
-  return User.findOne({ phone: { $in: variants } }).select("_id name phone email username role").lean();
 }
 
 function messageText(message: any) {
@@ -181,7 +170,7 @@ export async function POST(req: Request) {
         const phoneNumber = normalizeWhatsAppNumber(waId);
         const contact: any = contacts.get(waId) || {};
         const profileName = String(contact.profile?.name || "");
-        const matchedUser: any = await findUserByPhone(phoneNumber);
+        const matchedUser: any = await findWhatsAppUserByPhone(phoneNumber);
         await WhatsAppMessage.updateOne(
           { metaMessageId },
           {

@@ -4,6 +4,8 @@ import { User } from "@/models/User";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
 import { ACADEMY_TIME_ZONE, formatAcademyDateTime } from "@/lib/academyTime";
 import { sendWhatsAppAutomationTemplates, whatsappRecipientName } from "@/lib/whatsappAutomationEvents";
+import { sendWhatsAppAutomationTemplate } from "@/lib/whatsappAutomationEvents";
+import type { WhatsAppSendResult } from "@/lib/whatsappAutomation";
 
 function objectId(value: any) {
   return value?._id?.toString?.() ?? value?.toString?.() ?? "";
@@ -24,6 +26,14 @@ function scheduleLinesForClassroom(classroom: any) {
   if (classroom?.classDate) return [formatAcademyDateTime(classroom.classDate, { timeZoneName: "short" })];
   if (classroom?.startDate && classroom?.startTime) return [`From ${formatAcademyDateTime(classroom.startDate, { hour: undefined, minute: undefined })} at ${classroom.startTime}`];
   return ["Timings not set"];
+}
+
+function studentListLabel(students: any[]) {
+  const names = students.map((student: any) => String(student?.name || student?.username || "").trim()).filter(Boolean);
+  if (!names.length) return "No students enrolled yet";
+  const shown = names.slice(0, 15);
+  const remaining = names.length - shown.length;
+  return `${shown.join(", ")}${remaining > 0 ? ` and ${remaining} more` : ""} (${names.length} total)`;
 }
 
 function firstClassDate(classrooms: any[]) {
@@ -61,9 +71,76 @@ function coachSummary(input: { batch: any; classrooms: any[] }) {
     batchCode: input.batch?.name || "Batch",
     course: primaryClassroom.courseName || "Not set",
     level: primaryClassroom.levelName || input.batch?.level || primaryClassroom.level || "Not set",
-    timings: lines.join("\n"),
+    timings: lines.filter(Boolean).join("\n") || "Timings not set",
     firstClassDate: firstClassDate(input.classrooms),
+    students: studentListLabel((input.batch?.students || []).filter((student: any) => student?.isActive !== false)),
   };
+}
+
+/**
+ * Meta codes that mean "this template cannot be used right now" - the roster template is still
+ * awaiting approval, or it has been paused or disabled - as opposed to a parameter mistake on our
+ * side, which should surface instead of being masked by the fallback.
+ */
+const TEMPLATE_UNAVAILABLE_META_CODES = new Set([132001, 132015, 132016]);
+
+function templateUnavailable(result: WhatsAppSendResult) {
+  if (result.delivered || result.skipped) return false;
+  const code = Number((result.payload as any)?.error?.code || 0);
+  if (TEMPLATE_UNAVAILABLE_META_CODES.has(code)) return true;
+  const text = `${result.errorMessage || ""} ${result.error || ""}`;
+  return /does not exist|not been approved|template.{0,40}(missing|not found)|paused|disabled/i.test(text);
+}
+
+/**
+ * batch_assigned_coach is the older approved pair plus the student roster, so it is tried first and
+ * the pre-existing templates keep covering the coach until Meta approves the new one.
+ */
+async function sendBatchCoachTemplate(input: {
+  coach: any;
+  summary: ReturnType<typeof coachSummary>;
+  isChange: boolean;
+  metadata: Record<string, unknown>;
+}) {
+  const coachName = whatsappRecipientName(input.coach, "Coach");
+  const primary = await sendWhatsAppAutomationTemplate({
+    user: input.coach,
+    templateName: "batch_assigned_coach",
+    bodyParameters: [
+      coachName,
+      input.isChange ? "an ongoing batch has been permanently assigned to you." : "a new batch has been assigned to you.",
+      input.summary.batchCode,
+      input.summary.course,
+      input.summary.level,
+      input.summary.timings,
+      input.summary.firstClassDate,
+      input.summary.students,
+    ],
+    metadata: input.metadata,
+  });
+  if (!templateUnavailable(primary)) return primary;
+
+  console.warn("batch_assigned_coach is not usable in Meta yet, falling back to the existing batch template", {
+    error: primary.errorMessage || primary.error || "",
+    metaCode: (primary.payload as any)?.error?.code,
+  });
+  return sendWhatsAppAutomationTemplate({
+    user: input.coach,
+    templateName: input.isChange ? "batch_permanent_coach_assigned_coach" : "batch_new_assigned_coach",
+    bodyParameters: [
+      coachName,
+      input.summary.batchCode,
+      input.summary.course,
+      input.summary.level,
+      input.summary.timings,
+      input.summary.firstClassDate,
+    ],
+    metadata: {
+      ...input.metadata,
+      fallbackFor: "batch_assigned_coach",
+      notificationDedupKey: `${input.metadata.notificationDedupKey || ""}:fallback`,
+    },
+  });
 }
 
 export async function notifyBatchCoachAssigned(input: {
@@ -73,6 +150,9 @@ export async function notifyBatchCoachAssigned(input: {
 }) {
   const { batch, classrooms } = await batchContext(input.batchId);
   if (!batch?.coach) return { sent: 0, skipped: true };
+  if (input.reason === "new_batch_assigned" && !classrooms.length) {
+    return { sent: 0, skipped: true, reason: "no_classrooms_yet" };
+  }
   const coach = batch.coach;
   const summary = coachSummary({ batch, classrooms });
   const isChange = input.reason === "permanent_coach_changed";
@@ -88,6 +168,7 @@ export async function notifyBatchCoachAssigned(input: {
     "Timings:",
     summary.timings,
     `First Class Date: ${summary.firstClassDate}`,
+    `Students: ${summary.students}`,
     "",
     "Please review the batch and classroom details in the academy portal.",
   ].join("\n");
@@ -101,25 +182,14 @@ export async function notifyBatchCoachAssigned(input: {
     }).catch(() => null);
   }
 
-  const whatsappInputs: Array<Parameters<typeof sendWhatsAppAutomationTemplates>[0][number]> = [{
-    user: coach,
-    templateName: isChange ? "batch_permanent_coach_assigned_coach" : "batch_new_assigned_coach",
-    bodyParameters: [
-      coach.name || "Coach",
-      summary.batchCode,
-      summary.course,
-      summary.level,
-      summary.timings,
-      summary.firstClassDate,
-    ],
-    metadata: {
-      kind: input.reason,
-      recipientType: "coach",
-      batchId: input.batchId,
-      coachId: objectId(coach._id),
-      notificationDedupKey: `${input.reason}:${input.batchId}:${objectId(coach._id)}`,
-    },
-  }];
+  const coachMetadata = {
+    kind: input.reason,
+    recipientType: "coach",
+    batchId: input.batchId,
+    coachId: objectId(coach._id),
+    notificationDedupKey: `${input.reason}:${input.batchId}:${objectId(coach._id)}`,
+  };
+  const whatsappInputs: Array<Parameters<typeof sendWhatsAppAutomationTemplates>[0][number]> = [];
 
   if (isChange) {
     const students = (batch.students || []).filter((student: any) => student?.isActive !== false);
@@ -176,6 +246,8 @@ export async function notifyBatchCoachAssigned(input: {
     })));
   }
 
+  await sendBatchCoachTemplate({ coach, summary, isChange, metadata: coachMetadata })
+    .catch((error) => console.error("Batch coach WhatsApp failed", error));
   await sendWhatsAppAutomationTemplates(whatsappInputs);
-  return { sent: whatsappInputs.length };
+  return { sent: whatsappInputs.length + 1 };
 }

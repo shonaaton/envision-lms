@@ -980,6 +980,107 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
     ]
   },
   {
+    "name": "class_assigned_coach",
+    "language": "en",
+    "sourceAutomation": "Class Assigned - Coach",
+    "body": "Hello {{1}}, a new class has been assigned to you.\n\nBatch: {{2}}\nClass: {{3}}\nCourse: {{4}}\nCourse Level: {{5}}\nTopic: {{6}}\nSchedule:\n{{7}}\nFirst Class Date: {{8}}\nStudents: {{9}}\n\nPlease review the class details in the academy portal.",
+    "variables": [
+      {
+        "position": 1,
+        "key": "coach_name",
+        "sample": "Coach Sanjib"
+      },
+      {
+        "position": 2,
+        "key": "batch_code",
+        "sample": "I2-100"
+      },
+      {
+        "position": 3,
+        "key": "class_title",
+        "sample": "Intermediate Chess I2"
+      },
+      {
+        "position": 4,
+        "key": "course_name",
+        "sample": "Intermediate Chess"
+      },
+      {
+        "position": 5,
+        "key": "course_level",
+        "sample": "I2"
+      },
+      {
+        "position": 6,
+        "key": "topic",
+        "sample": "Knight Forks"
+      },
+      {
+        "position": 7,
+        "key": "schedule",
+        "sample": "Saturday at 18:00 (60 min)"
+      },
+      {
+        "position": 8,
+        "key": "first_class_date",
+        "sample": "5 Sep 2026, 6:00 PM IST"
+      },
+      {
+        "position": 9,
+        "key": "students",
+        "sample": "Aarav Sharma, Diya Patel (2 total)"
+      }
+    ]
+  },
+  {
+    "name": "batch_assigned_coach",
+    "language": "en",
+    "sourceAutomation": "Batch Assigned - Coach",
+    "body": "Hello {{1}}, {{2}}\n\nBatch Code: {{3}}\nCourse: {{4}}\nCourse Level: {{5}}\nTimings:\n{{6}}\nFirst Class Date: {{7}}\nStudents: {{8}}\n\nPlease review the batch and classroom details in the academy portal.",
+    "variables": [
+      {
+        "position": 1,
+        "key": "coach_name",
+        "sample": "Coach Sanjib"
+      },
+      {
+        "position": 2,
+        "key": "assignment_line",
+        "sample": "a new batch has been assigned to you."
+      },
+      {
+        "position": 3,
+        "key": "batch_code",
+        "sample": "I2-100"
+      },
+      {
+        "position": 4,
+        "key": "course_name",
+        "sample": "Intermediate Chess"
+      },
+      {
+        "position": 5,
+        "key": "course_level",
+        "sample": "I2"
+      },
+      {
+        "position": 6,
+        "key": "timings",
+        "sample": "Saturday at 18:00 (60 min)"
+      },
+      {
+        "position": 7,
+        "key": "first_class_date",
+        "sample": "5 Sep 2026, 6:00 PM IST"
+      },
+      {
+        "position": 8,
+        "key": "students",
+        "sample": "Aarav Sharma, Diya Patel (2 total)"
+      }
+    ]
+  },
+  {
     "name": "attendance_pending_coach",
     "language": "en",
     "sourceAutomation": "Attendance Reminder",

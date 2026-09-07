@@ -22,6 +22,7 @@ import { Batch } from "@/models/Batch";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
 import { normalizeGoogleMeetUrl } from "@/lib/meetingUrl";
 import { sendWhatsAppAutomationTemplates } from "@/lib/whatsappAutomationEvents";
+import { notifyClassroomCoachAssigned } from "@/lib/classroomCoachNotifications";
 
 export const dynamic = "force-dynamic";
 
@@ -647,6 +648,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const previousCoachId = recordId(existing.coach || existing.instructor);
   let shiftedSessionCount = 0;
   let shiftedRestartDate = "";
+  let addedExtraScheduledFor: Date | null = null;
   const previousSession = body.sessionId
     ? JSON.parse(JSON.stringify(existing.generatedSessions?.id?.(String(body.sessionId || "")) || (existing.generatedSessions || []).find((item: any) => String(item._id) === String(body.sessionId || "")) || null))
     : null;
@@ -1006,6 +1008,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
         isExtra: true,
       },
     ];
+    addedExtraScheduledFor = extraScheduledFor;
   } else if (body.action === "delete_series") {
     await recordActivity({
       actor: (session.user as any).id,
@@ -1124,6 +1127,12 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     : Array.isArray(existing.generatedSessions) && existing.generatedSessions.length === 1
       ? existing.generatedSessions[0]
       : null;
+  if (activityAction === "add_extra_class" && addedExtraScheduledFor) {
+    const addedAt = addedExtraScheduledFor.getTime();
+    const addedSession = (existing.generatedSessions || []).find((item: any) => item?.isExtra && new Date(item?.scheduledFor || 0).getTime() === addedAt);
+    await notifyClassroomCoachAssigned({ classroom: existing, reason: "extra_class_added", session: addedSession })
+      .catch((error) => console.error("Coach extra class notification failed", error));
+  }
   if (activityAction === "substitute_coach" && reassignedSessionIds.length) {
     await notifySubstituteCoachAssignment({
       classroom: existing,

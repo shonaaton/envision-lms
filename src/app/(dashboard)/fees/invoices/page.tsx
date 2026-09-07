@@ -12,7 +12,7 @@ import { User } from "@/models/User";
 import PayButton from "@/components/PayButton";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { AlertCircle, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Download, Eye, FileText, IndianRupee, MailCheck, MailWarning, MessageCircle, Printer, Receipt, Send, XCircle } from "lucide-react";
+import { AlertCircle, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Download, Eye, FileText, IndianRupee, MailCheck, MailWarning, MessageCircle, Printer, Receipt, Send, Trash2, XCircle } from "lucide-react";
 import { InvoiceCreationForm } from "@/components/fees/InvoiceCreationForm";
 import { InvoicePaymentModal } from "@/components/fees/InvoicePaymentModal";
 import { DeleteInvoiceButton } from "@/components/fees/DeleteInvoiceButton";
@@ -577,6 +577,7 @@ function invoiceModeLabel(mode: string) {
 }
 
 function invoiceFilterLabel(value: string) {
+  if (value === "cancelled") return "Cancelled";
   if (value === "paid") return "Paid";
   if (value === "due") return "Due";
   if (value === "upcoming") return "Upcoming";
@@ -595,6 +596,7 @@ function invoiceMatchesStatus(invoice: any, filter: string, now = new Date()) {
   const dueDate = invoice.dueDate ? new Date(invoice.dueDate) : null;
   const todayEnd = endOfDay(now).getTime();
   const dueTime = dueDate ? endOfDay(dueDate).getTime() : null;
+  if (filter === "cancelled") return status === "cancelled";
   if (filter === "paid") return status === "paid";
   if (filter === "due") return status !== "paid" && status !== "cancelled" && (!dueDate || dueTime === null || dueTime <= todayEnd || status === "overdue");
   if (filter === "upcoming") return status !== "paid" && status !== "cancelled" && dueTime !== null && dueTime > todayEnd;
@@ -667,22 +669,24 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
   const perPage = 10;
   const todayEnd = endOfDay(new Date());
   const statusFilter =
-    selectedStatus === "paid"
-      ? { status: "paid" }
-      : selectedStatus === "due"
-        ? { status: { $nin: ["paid", "cancelled"] }, $or: [{ dueDate: { $lte: todayEnd } }, { status: "overdue" }] }
-        : selectedStatus === "upcoming"
-          ? { status: { $nin: ["paid", "cancelled"] }, dueDate: { $gt: todayEnd } }
-          : {};
-  const invoiceFilter = {
-    ...(manager
+    selectedStatus === "cancelled"
+      ? { status: "cancelled" }
+      : selectedStatus === "paid"
+        ? { status: "paid" }
+        : selectedStatus === "due"
+          ? { status: { $nin: ["paid", "cancelled"] }, $or: [{ dueDate: { $lte: todayEnd } }, { status: "overdue" }] }
+          : selectedStatus === "upcoming"
+            ? { status: { $nin: ["paid", "cancelled"] }, dueDate: { $gt: todayEnd } }
+            : {};
+  const scopeFilter: any = manager
     ? selectedStudent ? { student: selectedStudent } : {}
-    : { student: userId }),
-    ...statusFilter,
-  };
+    : { student: userId };
+  const invoiceFilter = { ...scopeFilter, ...statusFilter };
   const invoiceLimit = selectedStudent || selectedStatus !== "all" ? 1000 : 500;
-  const [invoices, students, plans, assignments] = await Promise.all([
+  const [invoices, scopedStatuses, deletedInvoiceCount, students, plans, assignments] = await Promise.all([
     Invoice.find(invoiceFilter).populate("student plan").sort(selectedStatus === "paid" ? { paidAt: -1, createdAt: -1 } : { createdAt: -1 }).limit(invoiceLimit).lean(),
+    Invoice.find(scopeFilter, { status: 1, dueDate: 1 }).lean(),
+    manager ? DeletedInvoice.countDocuments(scopeFilter) : Promise.resolve(0),
     manager ? User.find({ role: "student" }, { passwordHash: 0 }).sort({ name: 1 }).lean() : Promise.resolve([]),
     manager ? FeePlan.find({ isActive: true }).sort({ name: 1 }).lean() : Promise.resolve([]),
     manager ? FeeAssignment.find({}).lean() : Promise.resolve([]),
@@ -697,9 +701,11 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
   const totalPages = Math.max(1, Math.ceil(filteredInvoices.length / perPage));
   const safePage = Math.min(currentPage, totalPages);
   const pageInvoices = filteredInvoices.slice((safePage - 1) * perPage, safePage * perPage);
-  const paidCount = invoices.filter((invoice: any) => invoice.status === "paid").length;
-  const dueCount = invoices.filter((invoice: any) => invoiceMatchesStatus(invoice, "due")).length;
-  const upcomingCount = invoices.filter((invoice: any) => invoiceMatchesStatus(invoice, "upcoming")).length;
+  const allCount = scopedStatuses.length;
+  const paidCount = scopedStatuses.filter((invoice: any) => invoice.status === "paid").length;
+  const dueCount = scopedStatuses.filter((invoice: any) => invoiceMatchesStatus(invoice, "due")).length;
+  const upcomingCount = scopedStatuses.filter((invoice: any) => invoiceMatchesStatus(invoice, "upcoming")).length;
+  const cancelledCount = scopedStatuses.filter((invoice: any) => invoice.status === "cancelled").length;
   const totalValue = filteredInvoices.reduce((sum: number, invoice: any) => sum + Number(invoice.totalAmount || 0), 0);
 
   return (
@@ -807,17 +813,19 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
               <option value="paid">Paid</option>
               <option value="due">Due / overdue</option>
               <option value="upcoming">Upcoming</option>
+              <option value="cancelled">Cancelled</option>
             </select>
             <button className="btn-primary h-10">Apply</button>
           </form>
         </div>
 
-        <div className="mb-4 grid gap-2 sm:grid-cols-4">
+        <div className="mb-2 grid gap-2 sm:grid-cols-3 xl:grid-cols-5">
           {[
-            { id: "all", label: "All", count: invoices.length },
+            { id: "all", label: "All", count: allCount },
             { id: "due", label: "Due", count: dueCount },
             { id: "upcoming", label: "Upcoming", count: upcomingCount },
             { id: "paid", label: "Paid", count: paidCount },
+            { id: "cancelled", label: "Cancelled", count: cancelledCount },
           ].map((item) => (
             <a
               key={item.id}
@@ -829,6 +837,19 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
             </a>
           ))}
         </div>
+
+        {manager && (
+          <div className="mb-4 flex justify-end">
+            <a
+              href="/fees/deleted-invoices"
+              className="inline-flex items-center gap-2 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700"
+            >
+              <Trash2 size={13} />
+              Deleted invoices
+              <span className="font-black">{deletedInvoiceCount}</span>
+            </a>
+          </div>
+        )}
 
         {filteredInvoices.length === 0 ? (
           <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-6 text-center">

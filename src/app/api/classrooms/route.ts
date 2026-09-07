@@ -11,6 +11,7 @@ import { User } from "@/models/User";
 import { recordActivity } from "@/lib/activity";
 import { sendCourseAssignedEmail } from "@/lib/studentCommunicationEmails";
 import { normalizeGoogleMeetUrl } from "@/lib/meetingUrl";
+import { notifyClassroomCoachAssigned } from "@/lib/classroomCoachNotifications";
 
 export const dynamic = "force-dynamic";
 
@@ -82,6 +83,7 @@ export async function POST(req: Request) {
       },
     });
     await sendCourseAssignedEmail(created, req).catch((error) => console.error("Course assignment email failed", error));
+    await notifyClassroomCoachAssigned({ classroom: created, reason: "classroom_created" }).catch((error) => console.error("Coach class assignment notification failed", error));
     return NextResponse.json(created);
   } catch (err: any) {
     return NextResponse.json({ error: err.message ?? "Bad request" }, { status: 400 });

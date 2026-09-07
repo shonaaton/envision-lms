@@ -81,6 +81,10 @@ const BookingSchema = new Schema(
     needsNewTime: { type: Boolean, default: false, index: true },
     reopenedAt: Date,
     reopenedFromStage: String,
+    // Why it was closed before being revived. Kept so whoever calls the parent
+    // back knows what happened last time, since `cancellationReason` is cleared
+    // when the booking becomes active again.
+    previousCloseReason: String,
   },
   { timestamps: true }
 );

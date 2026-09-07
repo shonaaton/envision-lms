@@ -11,7 +11,9 @@ export type DemoStage =
   | "DEMO_BOOKED"
   | "DEMO_NO_SHOW"
   | "DEMO_COMPLETED"
-  | "CURRENT_STUDENT";
+  | "CURRENT_STUDENT"
+  | "CLOSED_NO_RESPONSE"
+  | "CLOSED_DELETED";
 
 /**
  * Labels pushed to the CRM. These must match the pipeline stage names exactly or
@@ -24,6 +26,8 @@ const DEFAULT_STAGE_LABELS: Record<DemoStage, string> = {
   DEMO_NO_SHOW: "Demo Class No Shows/Missed",
   DEMO_COMPLETED: "Demo Completed",
   CURRENT_STUDENT: "Current Student",
+  CLOSED_NO_RESPONSE: "No Response",
+  CLOSED_DELETED: "Deleted",
 };
 
 const STAGE_ENV_KEYS: Record<DemoStage, string> = {
@@ -32,7 +36,28 @@ const STAGE_ENV_KEYS: Record<DemoStage, string> = {
   DEMO_NO_SHOW: "CRM_STAGE_DEMO_NO_SHOW",
   DEMO_COMPLETED: "CRM_STAGE_DEMO_COMPLETED",
   CURRENT_STUDENT: "CRM_STAGE_CURRENT_STUDENT",
+  CLOSED_NO_RESPONSE: "CRM_STAGE_CLOSED_NO_RESPONSE",
+  CLOSED_DELETED: "CRM_STAGE_CLOSED_DELETED",
 };
+
+/**
+ * Reasons that mean the record itself was never a real lead. Those belong in
+ * "Deleted"; every other closure is a real person who stopped progressing, which
+ * "No Response" covers. The portal offers seven close reasons and the CRM only
+ * two dead stages, so the exact reason always travels in the lead's notes.
+ */
+const JUNK_CLOSE_REASON_PATTERNS = ["duplicate", "incorrect", "wrong number", "invalid", "test lead", "spam"];
+
+export function closureStageForReason(reason?: string | null): DemoStage {
+  const normalized = String(reason || "").toLowerCase();
+  return JUNK_CLOSE_REASON_PATTERNS.some((pattern) => normalized.includes(pattern))
+    ? "CLOSED_DELETED"
+    : "CLOSED_NO_RESPONSE";
+}
+
+export function isClosureStage(stage: DemoStage) {
+  return stage === "CLOSED_NO_RESPONSE" || stage === "CLOSED_DELETED";
+}
 
 export function crmStageLabel(stage: DemoStage) {
   return String(process.env[STAGE_ENV_KEYS[stage]] || "").trim() || DEFAULT_STAGE_LABELS[stage];
@@ -43,11 +68,13 @@ export function crmPipelineName() {
 }
 
 /**
- * Portal `Booking.demoStatus` -> CRM stage. Returns null for states the portal
- * deliberately does not push: closures and cancellations belong to sales, who
- * own the "why" (dead / no response / wrong number).
+ * Portal `Booking.demoStatus` -> CRM stage.
+ *
+ * Closures need the cancellation reason to pick between the CRM's two dead
+ * stages; without one they default to "No Response", which is the safer of the
+ * two because it does not imply the record was junk.
  */
-export function demoStatusToStage(demoStatus?: string | null): DemoStage | null {
+export function demoStatusToStage(demoStatus?: string | null, cancellationReason?: string | null): DemoStage | null {
   switch (String(demoStatus || "")) {
     case "REQUESTED":
     case "COACH_ASSIGNED":
@@ -64,6 +91,9 @@ export function demoStatusToStage(demoStatus?: string | null): DemoStage | null 
       return "DEMO_COMPLETED";
     case "CONVERTED":
       return "CURRENT_STUDENT";
+    case "CLOSED":
+    case "CANCELLED":
+      return closureStageForReason(cancellationReason);
     default:
       return null;
   }

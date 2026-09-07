@@ -2,8 +2,8 @@ import { recordActivity } from "@/lib/activity";
 import { isCrmConfigured, pushLeadStage } from "@/lib/crm/client";
 import { contactKeysForUser, crmPhoneNumber } from "@/lib/crm/identity";
 import { cancelDemoClassrooms } from "@/lib/demoClassroom";
-import { DEMO_MANAGEMENT_HREF } from "@/lib/demoWorkflow";
-import { crmStageLabel, demoStatusToStage, type DemoStage } from "@/lib/crm/stages";
+import { DEMO_MANAGEMENT_HREF, notifyDemoReopened } from "@/lib/demoWorkflow";
+import { crmStageLabel, demoStatusToStage, isClosureStage, type DemoStage } from "@/lib/crm/stages";
 import { dbConnect } from "@/lib/db";
 import { Booking } from "@/models/Booking";
 import { CrmLead } from "@/models/CrmLead";
@@ -74,12 +74,12 @@ export async function syncBookingStageToCrm(bookingId: string): Promise<CrmSyncO
   await dbConnect();
 
   const booking: any = await Booking.findById(bookingId)
-    .select("bookingType demoStatus student startAt requestedIstDateTime")
+    .select("bookingType demoStatus student startAt requestedIstDateTime cancellationReason")
     .populate("student", "name email phone countryCode accountStatus")
     .lean();
   if (!booking || booking.bookingType !== "demo") return { ok: false, skipped: true, reason: "Not a demo booking." };
 
-  const stage = demoStatusToStage(booking.demoStatus);
+  const stage = demoStatusToStage(booking.demoStatus, booking.cancellationReason);
   if (!stage) return { ok: false, skipped: true, reason: `Stage ${booking.demoStatus} is not pushed to the CRM.` };
 
   const student = booking.student;
@@ -95,7 +95,11 @@ export async function syncBookingStageToCrm(bookingId: string): Promise<CrmSyncO
     phone: crmPhoneNumber(student),
     email: student.email,
     stage,
-    note: `Portal demo update: ${crmStageLabel(stage)}${booking.requestedIstDateTime ? ` (${booking.requestedIstDateTime})` : ""}`,
+    // The CRM has only two dead stages against seven portal close reasons, so the
+    // exact reason rides along in the note rather than being lost in the mapping.
+    note: isClosureStage(stage)
+      ? `Demo closed on the portal: ${booking.cancellationReason || "no reason recorded"}`
+      : `Portal demo update: ${crmStageLabel(stage)}${booking.requestedIstDateTime ? ` (${booking.requestedIstDateTime})` : ""}`,
   });
 
   if (result.ok) {
@@ -221,6 +225,9 @@ export async function reopenDemoFromCrm(input: { userId: string; stageName: stri
     needsNewTime: true,
     reopenedAt: new Date(),
     reopenedFromStage: input.stageName,
+    // Carry the old reason across before clearing it, so whoever rings the parent
+    // back knows why the demo was dropped the first time.
+    previousCloseReason: booking.cancellationReason || "",
     $unset: { cancellationReason: "" },
   });
 
@@ -264,6 +271,14 @@ export async function reopenDemoFromCrm(input: { userId: string; stageName: stri
       metadata: { studentId: input.userId, booking: booking._id, href: DEMO_MANAGEMENT_HREF, source: "crm" },
     }))
   ).catch(() => undefined);
+
+  // The sub-admin has to act on this - nobody is watching the Demo Center for a
+  // reopened demo, and its original slot has already passed.
+  await notifyDemoReopened({
+    studentId: input.userId,
+    bookingId: idOf(booking._id),
+    stageName: input.stageName,
+  }).catch((error) => console.error("Demo reopened notification failed", error));
 
   await recordActivity({
     targetUser: input.userId,

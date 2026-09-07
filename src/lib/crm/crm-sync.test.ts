@@ -35,10 +35,35 @@ describe("demoStatusToStage", () => {
     expect(demoStatusToStage("CONVERTED")).toBe("CURRENT_STUDENT");
   });
 
-  it("never pushes closures, since sales owns the dead reason", () => {
-    expect(demoStatusToStage("CLOSED")).toBeNull();
-    expect(demoStatusToStage("CANCELLED")).toBeNull();
+  it("sends junk closures to Deleted and real ones to No Response", () => {
+    expect(demoStatusToStage("CLOSED", "Duplicate lead")).toBe("CLOSED_DELETED");
+    expect(demoStatusToStage("CLOSED", "Incorrect details")).toBe("CLOSED_DELETED");
+    expect(demoStatusToStage("CLOSED", "Not interested")).toBe("CLOSED_NO_RESPONSE");
+    expect(demoStatusToStage("CLOSED", "Unable to contact")).toBe("CLOSED_NO_RESPONSE");
+    expect(demoStatusToStage("CANCELLED", "Student requested cancellation")).toBe("CLOSED_NO_RESPONSE");
+  });
+
+  it("defaults a reasonless closure to No Response, never Deleted", () => {
+    // Deleted implies the record was junk, which is the more damaging guess.
+    expect(demoStatusToStage("CLOSED")).toBe("CLOSED_NO_RESPONSE");
+    expect(demoStatusToStage("CLOSED", "")).toBe("CLOSED_NO_RESPONSE");
+  });
+
+  it("pushes nothing for a status with no CRM meaning", () => {
     expect(demoStatusToStage(undefined)).toBeNull();
+    expect(demoStatusToStage("SOME_FUTURE_STATE")).toBeNull();
+  });
+});
+
+describe("closure stage labels", () => {
+  it("matches the two dead stages in the pipeline", () => {
+    expect(crmStageLabel("CLOSED_NO_RESPONSE")).toBe("No Response");
+    expect(crmStageLabel("CLOSED_DELETED")).toBe("Deleted");
+  });
+
+  it("round-trips: a pushed closure classifies back as closed, so no loop", () => {
+    expect(classifyCrmStage(crmStageLabel("CLOSED_NO_RESPONSE"))).toBe("closed");
+    expect(classifyCrmStage(crmStageLabel("CLOSED_DELETED"))).toBe("closed");
   });
 });
 

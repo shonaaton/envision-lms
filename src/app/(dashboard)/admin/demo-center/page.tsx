@@ -452,6 +452,10 @@ function DemoCard({ booking, coaches, courses, batches, feedback }: { booking: a
   const startAt = toLocalInput(booking.startAt);
   const duration = Math.max(15, Math.round((new Date(booking.endAt).getTime() - new Date(booking.startAt).getTime()) / 60000) || 30);
   const isExpired = student.demoExpiresAt && new Date(student.demoExpiresAt).getTime() < Date.now();
+  // A reopened demo still carries the slot, coach and meeting link from the run
+  // that was closed. Those are history, not the current plan, so the live fields
+  // read as pending and the old values move to their own block below.
+  const awaitingNewTime = Boolean(booking.needsNewTime);
   const cardId = booking._id.toString();
   const assignModalId = `assign-demo-${cardId}`;
   const extendModalId = `extend-demo-${cardId}`;
@@ -481,15 +485,17 @@ function DemoCard({ booking, coaches, courses, batches, feedback }: { booking: a
       </div>
 
       <dl className="mt-4 grid gap-x-6 gap-y-3.5 border-t border-slate-100 pt-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Field label="Requested" value={booking.requestedLocalDateTime || formatAcademyDateTime(booking.startAt)} />
-        <Field label="IST" value={booking.requestedIstDateTime || formatAcademyDateTime(booking.startAt)} />
+        <Field label="Requested" value={awaitingNewTime ? <Pending /> : booking.requestedLocalDateTime || formatAcademyDateTime(booking.startAt)} />
+        <Field label="IST" value={awaitingNewTime ? <Pending /> : booking.requestedIstDateTime || formatAcademyDateTime(booking.startAt)} />
         <Field label="Duration" value={`${duration} minutes`} />
         <Field label="Submitted" value={booking.createdAt ? formatAcademyDateTime(booking.createdAt) : ""} />
-        <Field label="Coach" value={booking.assignedCoach?.name || booking.instructor?.name || "Unassigned"} />
+        <Field label="Coach" value={awaitingNewTime ? <Pending text="To be reassigned" /> : booking.assignedCoach?.name || booking.instructor?.name || "Unassigned"} />
         <Field label="Chess level" value={levelLabel(booking.level || student.studentLevel)} />
         <Field label="Location" value={[student.city || booking.city, student.country || booking.country].filter(Boolean).join(", ")} />
         <Field label="Timezone" value={booking.requestedTimezone} />
-        {booking.meetingUrl ? (
+        {/* The old meeting link points at a cancelled classroom, so it is hidden
+            until the demo is confirmed again rather than offered as joinable. */}
+        {booking.meetingUrl && !awaitingNewTime ? (
           <Field
             label="Meeting link"
             className="lg:col-span-2"
@@ -498,6 +504,21 @@ function DemoCard({ booking, coaches, courses, batches, feedback }: { booking: a
         ) : null}
         {booking.cancellationReason ? <Field label="Closed reason" value={booking.cancellationReason} className="lg:col-span-2" /> : null}
       </dl>
+
+      {awaitingNewTime ? (
+        <div className="mt-4 rounded-lg border border-slate-200/80 bg-slate-50/60 p-4">
+          <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400">
+            <History size={12} /> Previous demo, before it was reopened
+          </div>
+          <dl className="mt-2.5 grid gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Field label="Previous time" value={booking.requestedIstDateTime || formatAcademyDateTime(booking.startAt)} />
+            <Field label="Previous coach" value={booking.assignedCoach?.name || booking.instructor?.name} />
+            <Field label="Reopened" value={booking.reopenedAt ? formatAcademyDateTime(booking.reopenedAt) : ""} />
+            <Field label="Revived from CRM" value={booking.reopenedFromStage} />
+            {booking.previousCloseReason ? <Field label="Was closed because" value={booking.previousCloseReason} className="lg:col-span-2" /> : null}
+          </dl>
+        </div>
+      ) : null}
 
       {booking.notes || booking.adminNote || booking.coachNote ? (
         <div className="mt-4 grid gap-2 border-t border-slate-100 pt-4">
@@ -671,6 +692,11 @@ function Tag({ tone, children }: { tone: "amber" | "slate" | "emerald" | "rose";
 
 function Dot() {
   return <span aria-hidden className="text-slate-300">·</span>;
+}
+
+/** A value that is deliberately not set yet, distinct from one never captured. */
+function Pending({ text = "To be confirmed" }: { text?: string }) {
+  return <span className="text-rose-600">{text}</span>;
 }
 
 function Note({ label, text, icon }: { label: string; text: string; icon?: ReactNode }) {

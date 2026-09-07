@@ -292,6 +292,29 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
     ]
   },
   {
+    "name": "demo_reopened_admin",
+    "language": "en",
+    "sourceAutomation": "Demo Reopened - Sub-Admin",
+    "body": "Hello {{1}}, the demo for {{2}} ({{3}}) has been reopened because the lead was revived in the CRM. The original slot has passed - please assign a coach and confirm a new class time with the parent from the Demo Center.",
+    "variables": [
+      {
+        "position": 1,
+        "key": "admin_name",
+        "sample": "Saptarshi"
+      },
+      {
+        "position": 2,
+        "key": "student_name",
+        "sample": "Aarav"
+      },
+      {
+        "position": 3,
+        "key": "contact_number",
+        "sample": "+91 9433923040"
+      }
+    ]
+  },
+  {
     "name": "demo_no_show_sales_alert",
     "language": "en",
     "sourceAutomation": "Demo No-Show - Sales",

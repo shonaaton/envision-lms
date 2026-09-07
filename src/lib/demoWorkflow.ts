@@ -463,6 +463,63 @@ export async function notifyDemoMissed(input: { booking: any; student?: any; coa
   return { sent: recipients.length };
 }
 
+/**
+ * A closed demo was revived because the CRM moved the lead back into a demo
+ * stage. Nobody is watching the Demo Center for that, and the original slot has
+ * already passed, so the sub-admin is told directly that this needs a coach and
+ * a new time agreed with the parent.
+ */
+export async function notifyDemoReopened(input: {
+  studentId: string;
+  bookingId?: string;
+  stageName?: string;
+}) {
+  const student: any = await User.findById(input.studentId)
+    .select("name email phone countryCode username role")
+    .lean();
+  if (!student) return { sent: 0 };
+
+  const contact = [student.countryCode, student.phone].filter(Boolean).join(" ").trim() || student.email || "no contact on file";
+  const recipients = importantContactWhatsAppRecipientsByKeys(["saptarshi"]);
+  const studentName = student.name || "a student";
+
+  await sendWhatsAppAutomationTemplates(recipients.map((recipient) => ({
+    user: recipient,
+    templateName: "demo_reopened_admin",
+    bodyParameters: [recipient.name || "Saptarshi", studentName, contact],
+    metadata: {
+      kind: "demo_reopened_admin",
+      event: "DEMO_REOPENED",
+      recipientType: recipient.role || "sub-admin",
+      bookingId: input.bookingId || "",
+      studentId: input.studentId,
+      href: DEMO_MANAGEMENT_HREF,
+      notificationDedupKey: `demo_reopened:${input.bookingId || input.studentId}`,
+    },
+  })));
+
+  await sendStaffEmails(recipients, `Demo reopened: ${studentName}`, (recipient) => [
+    `Hello ${recipient.name || "Saptarshi"},`,
+    "",
+    `The demo for ${studentName} has been reopened because the lead was moved back to "${input.stageName || "a demo stage"}" in the CRM.`,
+    `Contact: ${contact}.`,
+    "",
+    "The originally requested slot has already passed, so this needs two things:",
+    "1. Confirm a new date and time with the parent.",
+    "2. Assign a coach and approve the demo from the Demo Center.",
+    "",
+    "The booking is flagged \"Needs a new time\" in the Requested tab.",
+  ].join("\n"), {
+    kind: "demo_reopened_admin",
+    event: "DEMO_REOPENED",
+    bookingId: input.bookingId || "",
+    studentId: input.studentId,
+    href: DEMO_MANAGEMENT_HREF,
+  });
+
+  return { sent: recipients.length };
+}
+
 export async function notifyDemoConverted(input: {
   studentId: string;
   bookingId?: string;

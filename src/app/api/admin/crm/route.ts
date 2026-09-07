@@ -9,7 +9,7 @@ import { CrmLead } from "@/models/CrmLead";
 
 export const dynamic = "force-dynamic";
 
-const STAGES: DemoStage[] = ["DEMO_REQUESTED", "DEMO_BOOKED", "DEMO_NO_SHOW", "DEMO_COMPLETED", "CURRENT_STUDENT"];
+const STAGES: DemoStage[] = ["DEMO_REQUESTED", "DEMO_BOOKED", "DEMO_NO_SHOW", "DEMO_COMPLETED", "CURRENT_STUDENT", "CLOSED_NO_RESPONSE", "CLOSED_DELETED"];
 
 async function requireAdmin() {
   const session = await auth();

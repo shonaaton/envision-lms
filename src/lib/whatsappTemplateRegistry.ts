@@ -10,6 +10,16 @@ export type WhatsAppTemplateDefinition = {
   sourceAutomation: string;
   body: string;
   variables: WhatsAppTemplateVariable[];
+  /**
+   * Meta's template category. Omit for UTILITY, which is right for anything
+   * arising from a transaction the family already has with the academy — a
+   * class reminder, an invoice, a password change.
+   *
+   * Anything that promotes the academy rather than servicing an existing
+   * booking must be MARKETING. Submitting one of those as UTILITY gets it
+   * rejected, or approved and later re-categorised by Meta.
+   */
+  category?: "UTILITY" | "MARKETING";
 };
 
 export const WHATSAPP_TEMPLATE_DEFINITIONS = [
@@ -2020,7 +2030,8 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
     "name": "review_request_level_complete",
     "language": "en",
     "sourceAutomation": "reviewRequests.levelComplete",
-    "body": "Hello {{1}}, congratulations to {{2}} on completing {{3}} at Envision Chess Academy. If the coaching has served you well, we would be grateful for a short Google review.",
+    "category": "MARKETING",
+    "body": "Hello {{1}}, congratulations to {{2}} on completing {{3}} at Envision Chess Academy. If the coaching has served you well, we would be grateful for a short Google review: https://search.google.com/local/writereview?placeid=ChIJCyzcAPt3AjoRok7LxzV7m04",
     "variables": [
       { "position": 1, "key": "recipient_name", "sample": "Aarav" },
       { "position": 2, "key": "student_name", "sample": "Aarav" },
@@ -2031,7 +2042,8 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
     "name": "review_request_farewell",
     "language": "en",
     "sourceAutomation": "reviewRequests.studentLeft",
-    "body": "Hello {{1}}, thank you for the time {{2}} spent with Envision Chess Academy. If the coaching served you well, a short Google review would help other parents choosing an academy.",
+    "category": "MARKETING",
+    "body": "Hello {{1}}, thank you for the time {{2}} spent with Envision Chess Academy. If the coaching served you well, a short Google review would help other parents choosing an academy: https://search.google.com/local/writereview?placeid=ChIJCyzcAPt3AjoRok7LxzV7m04",
     "variables": [
       { "position": 1, "key": "recipient_name", "sample": "Aarav" },
       { "position": 2, "key": "student_name", "sample": "Aarav" }

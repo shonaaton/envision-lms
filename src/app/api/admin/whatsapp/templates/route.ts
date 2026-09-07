@@ -210,7 +210,9 @@ function templateCreatePayload(template: WhatsAppTemplateDefinition) {
   return {
     name: template.name,
     language: normalizeTemplateLanguage(template.language),
-    category: "UTILITY",
+    // Templates declare their own category; UTILITY stays the default because
+    // almost everything the portal sends services an existing booking.
+    category: template.category || "UTILITY",
     components: [bodyComponent],
   };
 }

@@ -21,6 +21,7 @@ export type WhatsAppSendResult = {
 
 type WhatsAppReminderInput = {
   to?: string;
+  countryCode?: string;
   message: string;
   templateText?: string;
   templateName?: string;
@@ -55,12 +56,21 @@ export function normalizeWhatsAppNumber(value?: string) {
   return String(value || "").replace(/[^\d]/g, "");
 }
 
+/** Last-resort dialling code, used only when the portal has none on file for the contact. */
+export function defaultWhatsAppCountryCode() {
+  return normalizeWhatsAppNumber(process.env.WHATSAPP_DEFAULT_COUNTRY_CODE) || "91";
+}
+
 export function normalizeWhatsAppRecipient(phone?: string, countryCode?: string) {
   const cleanPhone = normalizeWhatsAppNumber(phone);
   if (!cleanPhone) return "";
-  if (cleanPhone.length > 10) return cleanPhone;
-  const cleanCountryCode = normalizeWhatsAppNumber(countryCode) || "91";
-  return `${cleanCountryCode}${cleanPhone.replace(/^0+/, "")}`;
+  // Drop the national trunk prefix ("07911..." -> "7911...") before deciding whether the
+  // number already carries a dialling code, otherwise trunk-zero countries look international.
+  const national = cleanPhone.replace(/^0+/, "");
+  if (!national) return "";
+  if (national.length > 10) return national;
+  const cleanCountryCode = normalizeWhatsAppNumber(countryCode) || defaultWhatsAppCountryCode();
+  return `${cleanCountryCode}${national}`;
 }
 
 function configuredGraphVersion() {
@@ -145,7 +155,17 @@ async function findMatchedUser(input: { userId?: unknown; phoneNumber: string })
   return User.findOne({ phone: { $in: variants } }).select("_id name phone email username role countryCode").lean();
 }
 
-async function countryCodeForUser(userId?: unknown) {
+/**
+ * Dialling code for a contact: the one captured in the portal wins, otherwise it is read
+ * back off the user record. Returns "" when nothing is on file so callers can fall back.
+ */
+export async function resolveWhatsAppCountryCode(input: { countryCode?: string; userId?: unknown }) {
+  const explicit = normalizeWhatsAppNumber(input.countryCode);
+  if (explicit) return explicit;
+  return normalizeWhatsAppNumber(await countryCodeForUser(input.userId));
+}
+
+export async function countryCodeForUser(userId?: unknown) {
   const cleanUserId = String(userId || "").trim();
   if (!cleanUserId) return "";
   try {
@@ -445,12 +465,13 @@ export async function sendWhatsAppReminder(input: WhatsAppReminderInput) {
   const mode = String(process.env.WHATSAPP_MESSAGE_MODE || "template").toLowerCase();
   const message = String(input.message || "").trim().slice(0, 4000);
   if (mode === "text") {
-    return sendWhatsAppTextMessage({ to: input.to, text: message, metadata: input.metadata });
+    return sendWhatsAppTextMessage({ to: input.to, countryCode: input.countryCode, text: message, metadata: input.metadata });
   }
 
   const templateText = String(input.templateText || message || "Student").trim().slice(0, 1024);
   return sendWhatsAppTemplateMessage({
     to: input.to,
+    countryCode: input.countryCode,
     templateName: input.templateName || process.env.WHATSAPP_TEMPLATE_NAME || "jaspers_market_plain_text_v1",
     language: normalizeTemplateLanguage(input.language || process.env.WHATSAPP_TEMPLATE_LANGUAGE),
     bodyParameters: input.templateVariables || templateBodyParameters(input, message, templateText),

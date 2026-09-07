@@ -61,8 +61,8 @@ export async function POST(req: Request) {
 
   await dbConnect();
   const classroom: any = await Classroom.findById(classroomId)
-    .populate("coach instructor", "name username email phone")
-    .populate("generatedSessions.substituteCoach", "name username email phone")
+    .populate("coach instructor", "name username email phone countryCode")
+    .populate("generatedSessions.substituteCoach", "name username email phone countryCode")
     .lean();
   if (!classroom) return NextResponse.json({ error: "Classroom not found" }, { status: 404 });
 

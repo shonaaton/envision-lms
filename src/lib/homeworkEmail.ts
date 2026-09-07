@@ -69,7 +69,7 @@ export async function notifyHomeworkAssigned(homework: any, request?: Request) {
     _id: { $in: recipientIds },
     role: "student",
     isActive: { $ne: false },
-  }).select("name email phone username").lean();
+  }).select("name email phone countryCode username").lean();
   const appUrl = resolvePublicAppUrl(request);
   const assignmentId = objectId(homework._id);
   const href = assignmentId ? `/homework/${assignmentId}` : "/homework";

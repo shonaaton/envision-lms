@@ -70,7 +70,7 @@ export async function sendCourseAssignedEmail(classroomInput: any, request?: Req
   if (!studentIds.length) return { sent: 0 };
 
   const students: any[] = await User.find({ _id: { $in: studentIds }, role: "student", isActive: { $ne: false } })
-    .select("name email phone parentName parentEmail")
+    .select("name email phone countryCode parentName parentEmail")
     .lean();
   const appUrl = resolvePublicAppUrl(request);
   const classroomUrl = appUrl ? `${appUrl}/classrooms/${classroomId}` : "";
@@ -121,7 +121,7 @@ export async function sendAchievementEarnedEmail(achievement: any, request?: Req
     role: "student",
     isActive: { $ne: false },
     name: exactNameRegex(String(achievement.studentName).trim()),
-  }).select("name email phone parentName parentEmail").lean();
+  }).select("name email phone countryCode parentName parentEmail").lean();
   if (!student?.email && !student?.parentEmail && !student?.phone) return { sent: 0, skipped: true };
 
   const appUrl = resolvePublicAppUrl(request);
@@ -165,7 +165,7 @@ export async function sendStudentNoShowWarningEmail(input: {
   creditsDeducted?: boolean;
   request?: Request;
 }) {
-  const student: any = await User.findById(input.studentId).select("name email phone parentName parentEmail").lean();
+  const student: any = await User.findById(input.studentId).select("name email phone countryCode parentName parentEmail").lean();
   if (!student?.email && !student?.parentEmail && !student?.phone) return { sent: 0, skipped: true };
   const appUrl = resolvePublicAppUrl(input.request);
   const attendanceUrl = appUrl ? `${appUrl}/attendance` : "";
@@ -256,7 +256,7 @@ export async function sendClassCompletedSummaryEmail(input: {
   const studentIds = (input.records || []).map((record) => objectId(record.student)).filter(Boolean);
   if (!studentIds.length) return { sent: 0 };
   const students: any[] = await User.find({ _id: { $in: studentIds }, role: "student", isActive: { $ne: false } })
-    .select("name email phone parentName parentEmail")
+    .select("name email phone countryCode parentName parentEmail")
     .lean();
   if (!students.length) return { sent: 0 };
   const recordByStudent = new Map((input.records || []).map((record) => [objectId(record.student), record]));
@@ -314,7 +314,7 @@ export async function sendHomeworkSubmittedConfirmationEmail(input: {
   reward?: any;
   request?: Request;
 }) {
-  const student: any = await User.findById(input.studentId).select("name email phone parentName parentEmail").lean();
+  const student: any = await User.findById(input.studentId).select("name email phone countryCode parentName parentEmail").lean();
   if (!student?.email && !student?.parentEmail && !student?.phone) return { sent: 0, skipped: true };
   const appUrl = resolvePublicAppUrl(input.request);
   const homeworkId = objectId(input.homework?._id || input.homework);

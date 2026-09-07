@@ -153,7 +153,7 @@ async function pendingStudentsForHomework(homework: any) {
   const pendingIds = recipientIds.filter((id) => !submittedIds.has(id));
   const students = pendingIds.length
     ? await User.find({ _id: { $in: pendingIds }, role: "student", isActive: { $ne: false } })
-      .select("name username email phone")
+      .select("name username email phone countryCode")
       .lean()
     : [];
   return { classroom, students: students.filter((student: any) => Boolean(student.email || student.phone)) };
@@ -326,7 +326,7 @@ export async function processHomeworkEmailReminder(reminderId: unknown) {
   }
 
   const [studentRecord, classroom] = await Promise.all([
-    User.findById(reminder.student).select("name username email phone isActive role").lean(),
+    User.findById(reminder.student).select("name username email phone countryCode isActive role").lean(),
     Classroom.findById(homework.classroom).select("title").lean(),
   ]);
   const student = studentRecord as any;

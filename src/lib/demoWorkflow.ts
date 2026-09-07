@@ -98,7 +98,7 @@ export function normalizeDemoRequestedTime(input: {
 
 export async function demoManagementUsers() {
   return User.find({ role: { $in: ["admin", "sub-admin"] }, isActive: { $ne: false } })
-    .select("_id email phone name role")
+    .select("_id email phone countryCode name role")
     .lean();
 }
 

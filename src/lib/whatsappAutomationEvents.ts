@@ -1,4 +1,4 @@
-import { normalizeWhatsAppRecipient, sendWhatsAppTemplateMessage, type WhatsAppSendResult } from "@/lib/whatsappAutomation";
+import { normalizeWhatsAppRecipient, resolveWhatsAppCountryCode, sendWhatsAppTemplateMessage, type WhatsAppSendResult } from "@/lib/whatsappAutomation";
 import { isWhatsAppAutomationTemplateEnabled } from "@/lib/whatsappAutomationSettings";
 import { renderWhatsAppTemplatePreview } from "@/lib/whatsappTemplateRegistry";
 
@@ -33,8 +33,19 @@ function recipientTypePriority(input: Parameters<typeof sendWhatsAppAutomationTe
   return 1;
 }
 
-function automationDedupKey(input: Parameters<typeof sendWhatsAppAutomationTemplate>[0]) {
-  const to = normalizeWhatsAppRecipient(input.to || input.user?.phone, input.user?.countryCode);
+/**
+ * Resolves the dialling code the portal holds for this contact before the number is
+ * normalised, so a recipient loaded without `countryCode` is not silently dialled as +91.
+ */
+async function resolveAutomationRecipient(input: Parameters<typeof sendWhatsAppAutomationTemplate>[0]) {
+  const countryCode = await resolveWhatsAppCountryCode({
+    countryCode: input.user?.countryCode,
+    userId: recipientId(input.user || {}) || input.metadata?.userId,
+  });
+  return { countryCode, to: normalizeWhatsAppRecipient(input.to || input.user?.phone, countryCode) };
+}
+
+function automationDedupKey(input: Parameters<typeof sendWhatsAppAutomationTemplate>[0], to: string) {
   if (!to) return "";
   const metadata = input.metadata || {};
   const explicitKey = String(metadata.notificationDedupKey || metadata.dedupKey || "").trim();
@@ -58,18 +69,23 @@ function automationDedupKey(input: Parameters<typeof sendWhatsAppAutomationTempl
   return `${to}::${preview}`;
 }
 
-function dedupeWhatsAppAutomationInputs(inputs: Array<Parameters<typeof sendWhatsAppAutomationTemplate>[0]>) {
+async function dedupeWhatsAppAutomationInputs(inputs: Array<Parameters<typeof sendWhatsAppAutomationTemplate>[0]>) {
   const deduped = new Map<string, Parameters<typeof sendWhatsAppAutomationTemplate>[0]>();
   const withoutPhone: Array<Parameters<typeof sendWhatsAppAutomationTemplate>[0]> = [];
   for (const input of inputs) {
-    const key = automationDedupKey(input);
+    const { to, countryCode } = await resolveAutomationRecipient(input);
+    // Carry the resolved dialling code on the input so the send step does not look it up again.
+    const resolved = input.user && countryCode && !input.user.countryCode
+      ? { ...input, user: { ...input.user, countryCode } }
+      : input;
+    const key = automationDedupKey(resolved, to);
     if (!key) {
-      withoutPhone.push(input);
+      withoutPhone.push(resolved);
       continue;
     }
     const existing = deduped.get(key);
-    if (!existing || recipientTypePriority(input) > recipientTypePriority(existing)) {
-      deduped.set(key, input);
+    if (!existing || recipientTypePriority(resolved) > recipientTypePriority(existing)) {
+      deduped.set(key, resolved);
     }
   }
   return [...Array.from(deduped.values()), ...withoutPhone];
@@ -86,17 +102,17 @@ export async function sendWhatsAppAutomationTemplate(input: {
     console.error("WhatsApp automation setting lookup failed", { error, templateName: input.templateName });
     return true;
   });
+  const { to, countryCode } = await resolveAutomationRecipient(input);
   if (!enabled) {
     return {
       ok: true,
       delivered: false,
       skipped: true,
-      recipient: normalizeWhatsAppRecipient(input.to || input.user?.phone, input.user?.countryCode),
+      recipient: to,
       debug: { reason: "whatsapp_template_automation_disabled", templateName: input.templateName },
     };
   }
 
-  const to = normalizeWhatsAppRecipient(input.to || input.user?.phone, input.user?.countryCode);
   if (!to) {
     return {
       ok: false,
@@ -109,7 +125,7 @@ export async function sendWhatsAppAutomationTemplate(input: {
 
   return sendWhatsAppTemplateMessage({
     to,
-    countryCode: input.user?.countryCode,
+    countryCode,
     templateName: input.templateName,
     language: WHATSAPP_AUTOMATION_LANGUAGE,
     bodyParameters: (input.bodyParameters || []).map((value) => String(value || "").trim()).filter(Boolean),
@@ -123,7 +139,7 @@ export async function sendWhatsAppAutomationTemplate(input: {
 }
 
 export async function sendWhatsAppAutomationTemplates(inputs: Array<Parameters<typeof sendWhatsAppAutomationTemplate>[0]>) {
-  const dedupedInputs = dedupeWhatsAppAutomationInputs(inputs);
+  const dedupedInputs = await dedupeWhatsAppAutomationInputs(inputs);
   return Promise.all(dedupedInputs.map((input) => sendWhatsAppAutomationTemplate(input).catch((error) => ({
     ok: false,
     delivered: false,

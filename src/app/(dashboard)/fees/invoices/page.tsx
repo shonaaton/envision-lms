@@ -484,6 +484,7 @@ async function sendInvoiceWhatsApp(formData: FormData) {
   const notificationKind = String(formData.get("notificationKind") || "invoice");
   const delivery = await sendWhatsAppReminder({
     to: invoice.student.phone,
+    countryCode: invoice.student.countryCode,
     message,
     templateText: invoice.student.name || "Student",
     metadata: {

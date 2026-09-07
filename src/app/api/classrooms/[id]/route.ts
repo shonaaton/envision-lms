@@ -507,7 +507,7 @@ async function notifyClassroomScheduleChange({
   const recipientIds = Array.from(new Set([...(action === "permanent_schedule_change" ? coachIds : coachIds.slice(0, 1)), ...studentIds]));
   if (!recipientIds.length) return;
 
-  const recipients = await User.find({ _id: { $in: recipientIds }, isActive: { $ne: false } }).select("_id name email phone username role").lean();
+  const recipients = await User.find({ _id: { $in: recipientIds }, isActive: { $ne: false } }).select("_id name email phone username countryCode role").lean();
   if (!recipients.length) return;
 
   const href = classroomHref(classroomId, sessionId || undefined);

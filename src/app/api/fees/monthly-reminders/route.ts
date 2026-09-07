@@ -49,7 +49,7 @@ function studentMessage(invoice: any, invoiceUrl: string, days: number) {
 
 async function notifyAdmins(invoice: any, days: number, invoiceUrl: string) {
   if (days !== 3 && days !== 0) return 0;
-  const admins: any[] = await User.find({ role: { $in: ["admin", "sub-admin"] }, isActive: { $ne: false } }).select("_id name email phone role").lean();
+  const admins: any[] = await User.find({ role: { $in: ["admin", "sub-admin"] }, isActive: { $ne: false } }).select("_id name email phone countryCode role").lean();
   const timing = days === 3 ? "is due in 3 days" : "is due today";
   await Notification.insertMany(admins.map((admin) => ({
     user: admin._id,

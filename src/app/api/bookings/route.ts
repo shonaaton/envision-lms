@@ -40,6 +40,7 @@ type BasicUser = {
   name?: string;
   email?: string;
   phone?: string;
+  countryCode?: string;
   parentName?: string;
   city?: string;
   country?: string;
@@ -319,7 +320,7 @@ export async function POST(req: Request) {
     }
 
     if (!body.instructor) return NextResponse.json({ error: "Please choose a coach." }, { status: 400 });
-    const instructor = await User.findOne({ _id: body.instructor, role: "instructor", isActive: true }).select("name email phone").lean<BasicUser | null>();
+    const instructor = await User.findOne({ _id: body.instructor, role: "instructor", isActive: true }).select("name email phone countryCode").lean<BasicUser | null>();
     if (!instructor) return NextResponse.json({ error: "That coach is no longer available for booking." }, { status: 404 });
 
     const startAt = new Date(String(body.startAt || ""));
@@ -385,7 +386,7 @@ export async function POST(req: Request) {
       notes: body.notes,
     });
     const coach = instructor;
-    const admins = await User.find({ role: "admin", isActive: true }).select("_id email phone name").lean<AdminUser[]>();
+    const admins = await User.find({ role: "admin", isActive: true }).select("_id email phone countryCode name").lean<AdminUser[]>();
     const bookingLabel = bookingFeatureNameForType(decision.bookingType);
     const bookingLabelLower = bookingFeatureNameLowerForType(decision.bookingType);
     const adminTitle = isDemo
@@ -465,13 +466,13 @@ export async function PATCH(req: Request) {
   await dbConnect();
   const { id: actorId, role } = sessionUser(session as AuthSession);
   const body = await req.json();
-  const booking = await Booking.findById(body.bookingId).populate("student instructor", "name email phone studentLevel isActive");
+  const booking = await Booking.findById(body.bookingId).populate("student instructor", "name email phone countryCode studentLevel isActive");
   if (!booking) return NextResponse.json({ error: "Request not found" }, { status: 404 });
   const isAssignedCoach = booking.instructor?._id?.toString() === actorId;
   if (role !== "admin" && !isAssignedCoach) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   if (booking.status !== "pending") return NextResponse.json({ error: "This request has already been handled." }, { status: 409 });
 
-  const admins = await User.find({ role: "admin", isActive: true }).select("_id email phone name").lean<AdminUser[]>();
+  const admins = await User.find({ role: "admin", isActive: true }).select("_id email phone countryCode name").lean<AdminUser[]>();
   const student = booking.student;
   const coach = booking.instructor;
   const action = String(body.action || "");

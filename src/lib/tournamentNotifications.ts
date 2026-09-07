@@ -42,7 +42,7 @@ export async function notifyTournamentUsers(tournament: any, input: {
     );
     const templateName = tournamentTemplateForType(input.type);
     if (templateName) {
-      const recipients: any[] = await User.find({ _id: { $in: users }, isActive: { $ne: false } }).select("_id name username phone").lean();
+      const recipients: any[] = await User.find({ _id: { $in: users }, isActive: { $ne: false } }).select("_id name username phone countryCode").lean();
       await sendWhatsAppAutomationTemplates(recipients.map((recipient) => ({
         user: recipient,
         templateName,

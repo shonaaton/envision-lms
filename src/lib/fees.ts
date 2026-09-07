@@ -419,7 +419,7 @@ export async function markInvoicePaid(
       nextDueDate: nextDueDate || "",
     },
   });
-  const studentForPayment: any = await User.findById(invoice.student).select("name username phone").lean();
+  const studentForPayment: any = await User.findById(invoice.student).select("name username phone countryCode").lean();
   await sendWhatsAppAutomationTemplate({
     user: studentForPayment,
     templateName: "payment_recorded_student",
@@ -684,7 +684,7 @@ async function createCreditRechargeInvoiceIfNeeded(input: {
   attendanceId: string;
 }) {
   const [student, plan, attendance]: any[] = await Promise.all([
-    User.findById(input.studentId).select("name email phone parentName parentEmail role isActive isPaused").lean(),
+    User.findById(input.studentId).select("name email phone countryCode parentName parentEmail role isActive isPaused").lean(),
     input.assignment?.plan ? FeeAssignment.findById(input.assignment._id).populate("plan").then((item: any) => item?.plan || null) : null,
     Attendance.findById(input.attendanceId).select("classroom scheduledSessionId sessionDate").lean(),
   ]);
@@ -726,7 +726,7 @@ async function createCreditRechargeInvoiceIfNeeded(input: {
   }
 
   const invoiceUrl = await createPublicInvoiceUrl(invoice._id.toString());
-  const subAdmins: any[] = await User.find({ role: "sub-admin", isActive: { $ne: false } }).select("name email phone").lean();
+  const subAdmins: any[] = await User.find({ role: "sub-admin", isActive: { $ne: false } }).select("name email phone countryCode").lean();
   await notifyCreditRechargeInvoice({ student, subAdmins, invoice, invoiceUrl, nextClass, created: !isOpenInvoice(openInvoice) });
 
   await recordActivity({
@@ -838,7 +838,7 @@ export async function consumeAttendanceCredit(studentId: string, attendanceId: s
       },
       { upsert: true, new: true }
     );
-    const studentForCredits: any = await User.findById(studentId).select("name username phone").lean();
+    const studentForCredits: any = await User.findById(studentId).select("name username phone countryCode").lean();
     // The student already received the "credits empty" WhatsApp at balance 0;
     // the 0 -> -1 transition is surfaced in-app instead of messaging twice.
     if (!accessBlocked) {

@@ -17,7 +17,7 @@ export const dynamic = "force-dynamic";
 
 type SessionUser = {
   id: string;
-  role: "student" | "instructor" | "admin";
+  role: "student" | "instructor" | "admin" | "sub-admin";
 };
 
 type AuthSession = {
@@ -29,7 +29,7 @@ type PopulatedUserRef = {
   name?: string;
   username?: string;
   email?: string;
-  role?: "student" | "instructor" | "admin";
+  role?: "student" | "instructor" | "admin" | "sub-admin";
   phone?: string;
   countryCode?: string;
 };
@@ -283,7 +283,7 @@ export async function POST(req: Request) {
       conversation = await ensureDirectConversation(receiver, sender);
     } else {
       receiver = String(body.receiver || "");
-      const target = await User.findById(receiver).lean<{ role?: "student" | "instructor" | "admin" } | null>();
+      const target = await User.findById(receiver).lean<{ role?: "student" | "instructor" | "admin" | "sub-admin" } | null>();
       if (!target) return NextResponse.json({ error: "Receiver not found" }, { status: 404 });
       if (target.role === "student") {
         const coach = await studentCoach(receiver);

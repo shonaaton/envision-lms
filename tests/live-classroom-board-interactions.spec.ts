@@ -231,7 +231,7 @@ test.describe("LiveClassroom free-move optimistic refresh protection", () => {
     expect(harness.live).toEqual(confirmed);
     expect(harness.protection.pending).toBeNull();
 
-    const later = { ...confirmed, gamifiedObjects: { a3: "coin" } };
+    const later = { ...confirmed, gamifiedObjects: { a3: "coin" } as GamifiedObjects };
     harness.poll(later);
     expect(harness.live).toEqual(later);
   });
@@ -251,7 +251,7 @@ test.describe("LiveClassroom free-move optimistic refresh protection", () => {
 
     harness.poll(previous);
     expect(harness.live).toEqual(previous);
-    const subsequent = { ...previous, gamifiedObjects: { b3: "gem" } };
+    const subsequent = { ...previous, gamifiedObjects: { b3: "gem" } as GamifiedObjects };
     harness.poll(subsequent);
     expect(harness.live).toEqual(subsequent);
   });

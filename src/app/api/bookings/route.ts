@@ -22,7 +22,7 @@ export const dynamic = "force-dynamic";
 
 type SessionUser = {
   id: string;
-  role: "student" | "instructor" | "admin";
+  role: "student" | "instructor" | "admin" | "sub-admin";
 };
 
 type AuthSession = {
@@ -47,7 +47,7 @@ type BasicUser = {
   studentLevel?: string;
   accountStatus?: string;
   isActive?: boolean;
-  role?: "student" | "instructor" | "admin";
+  role?: "student" | "instructor" | "admin" | "sub-admin";
 };
 
 type AdminUser = BasicUser & { name?: string; email?: string };

@@ -49,37 +49,50 @@ export async function cancelDemoClassrooms(input: { bookingIds: Array<unknown>; 
 /**
  * Point a demo classroom's scheduled session at the approved time.
  *
- * A demo classroom holds exactly one session, and that session - not the
- * classroom's own date - is what the student's join window and class card are
- * built from. Re-approving a demo (a new time, or reopening one that was
- * closed) therefore has to move the session as well, or the student sees the
- * new time on a class that can never be joined.
+ * A demo classroom holds one live session at a time, and that session - not the
+ * classroom's own date - is what the join window, the live room and attendance
+ * are keyed on. So a re-approval either moves the pending session, or, when the
+ * previous one was already used, starts a fresh one.
+ *
+ * Rescheduling a missed demo MUST create a new session rather than revive the
+ * old one: the old session's live room is ended and locked, and its attendance
+ * record already exists, so reusing its id would hand the student and coach a
+ * class they are bounced out of and an assessment that never opens. Reusing it
+ * would also erase the record that the demo was missed.
  */
 export function syncDemoSession(
   classroom: any,
   { start, startTimeLabel, durationMinutes }: { start: Date; startTimeLabel: string; durationMinutes: number }
 ) {
   const sessions = Array.isArray(classroom.generatedSessions) ? classroom.generatedSessions : [];
-  // A demo that already happened keeps its record; only an open session moves.
-  const session = sessions.find((item: any) => !["completed", "missed"].includes(String(item?.status || "")));
-  if (!session) {
-    classroom.generatedSessions = [
-      ...sessions,
-      {
-        sessionNumber: sessions.length + 1,
-        topicName: "Demo assessment class",
-        topicOrder: 0,
-        scheduledFor: start,
-        startTime: startTimeLabel,
-        durationMinutes,
-        status: "scheduled",
-      },
-    ];
+  const pending = sessions.find((item: any) => isPendingDemoSession(item));
+  if (pending) {
+    pending.scheduledFor = start;
+    pending.startTime = startTimeLabel;
+    pending.durationMinutes = durationMinutes;
+    pending.status = "scheduled";
     return;
   }
-  session.scheduledFor = start;
-  session.startTime = startTimeLabel;
-  session.durationMinutes = durationMinutes;
-  session.status = "scheduled";
-  return;
+  classroom.generatedSessions = [
+    ...sessions,
+    {
+      sessionNumber: sessions.length + 1,
+      topicName: "Demo assessment class",
+      topicOrder: 0,
+      scheduledFor: start,
+      startTime: startTimeLabel,
+      durationMinutes,
+      status: "scheduled",
+    },
+  ];
+}
+
+/**
+ * A session that has not been taught, attended or written off yet - the only
+ * kind that can simply be moved to a new time.
+ */
+function isPendingDemoSession(session: any) {
+  if (!session) return false;
+  if (!["scheduled", "ongoing", "in_progress"].includes(String(session.status || ""))) return false;
+  return !session.actualStartedAt && !session.actualEndedAt && !session.attendanceMarkedAt;
 }

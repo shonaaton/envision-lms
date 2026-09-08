@@ -4,7 +4,7 @@ import { dbConnect } from "@/lib/db";
 import { Classroom } from "@/models/Classroom";
 import { Attendance } from "@/models/Attendance";
 import { ClassroomChatMessage, ClassroomSession, LiveQuestion, LiveQuestionResponse } from "@/models/ClassroomLive";
-import { buildGeneratedSessions, scheduleDatesFrom } from "@/lib/classroomSchedule";
+import { buildGeneratedSessions, CLASS_TIME_PATTERN, resolveClassStartTime, scheduleDatesFrom } from "@/lib/classroomSchedule";
 import { deleteClassroomSessionInstances, syncClassroomSessionInstances } from "@/lib/classroomSessionInstances";
 import { canAccessFeature, isSuperAdminSession } from "@/lib/featureAccess";
 import { ACADEMY_TIME_ZONE, academyDateKey, academyDateTime, formatAcademyDateTime } from "@/lib/academyTime";
@@ -887,26 +887,33 @@ async function patchClassroom(req: Request, { params }: { params: { id: string }
     // new slot, taken from the classroom's own weekly pattern.
     const last = chain[chain.length - 1];
     const dayAfterLast = new Date(new Date(last.scheduledFor).getTime() + 24 * 60 * 60 * 1000);
-    const [extraSlot] = scheduleDatesFrom(
+    const [patternSlot] = scheduleDatesFrom(
       (existing.daysOfWeek || []) as any,
       dayAfterLast,
       1,
       Number(last.durationMinutes || existing.durationMinutes || 60)
     );
-    // No weekly pattern to land on - fall back to the same slot one week later.
+    // A weekly pattern can carry a slot with no time on it, and that slot's own
+    // scheduledFor would then be midnight - so only take it when it is usable.
+    const extraSlot = patternSlot && CLASS_TIME_PATTERN.test(String(patternSlot.startTime || "")) ? patternSlot : null;
+    // No usable weekly pattern to land on - keep the last class's own time, one
+    // week later.
     const fallbackSlot = {
       scheduledFor: new Date(new Date(last.scheduledFor).getTime() + 7 * 24 * 60 * 60 * 1000),
-      startTime: String(last.startTime || existing.startTime || ""),
+      startTime: resolveClassStartTime(last, existing),
       durationMinutes: Number(last.durationMinutes || existing.durationMinutes || 60),
     };
     const donors = [
       ...chain.slice(1).map((item: any) => ({
         scheduledFor: new Date(item.scheduledFor),
-        startTime: String(item.startTime || existing.startTime || ""),
+        startTime: resolveClassStartTime(item, existing),
         durationMinutes: Number(item.durationMinutes || existing.durationMinutes || 60),
       })),
       extraSlot || fallbackSlot,
     ];
+    if (donors.some((slot: any) => !CLASS_TIME_PATTERN.test(String(slot.startTime || "")))) {
+      return NextResponse.json({ error: "One or more classes in this series has no class time set. Fix the class time before pushing this class forward." }, { status: 400 });
+    }
 
     chain.forEach((item: any, index: number) => {
       const slot = donors[index];

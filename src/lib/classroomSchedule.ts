@@ -1,4 +1,4 @@
-import { ACADEMY_TIME_ZONE, academyDateTime } from "@/lib/academyTime";
+import { ACADEMY_TIME_ZONE, academyDateTime, academyTimeOfDay } from "@/lib/academyTime";
 
 type TopicPlan = { topicName: string; topicOrder: number };
 type TimeSlot = { startTime: string; durationMinutes: number };
@@ -47,6 +47,25 @@ function calendarCursor(value: string | Date) {
 
 function calendarDateString(value: Date) {
   return `${value.getUTCFullYear()}-${String(value.getUTCMonth() + 1).padStart(2, "0")}-${String(value.getUTCDate()).padStart(2, "0")}`;
+}
+
+export const CLASS_TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/**
+ * The "HH:mm" a class actually runs at. A slot built from a classroom's weekly
+ * pattern can carry a blank time, and generatedSessions.startTime is required -
+ * so fall back to the clock time already baked into scheduledFor rather than
+ * handing back an empty string the Classroom schema rejects.
+ */
+export function resolveClassStartTime(session: any, classroom?: any) {
+  for (const candidate of [session?.startTime, classroom?.startTime]) {
+    const value = String(candidate || "").trim();
+    if (CLASS_TIME_PATTERN.test(value)) return value;
+  }
+  const scheduledFor = session?.scheduledFor || classroom?.classDate;
+  if (!scheduledFor || Number.isNaN(new Date(scheduledFor).getTime())) return "";
+  const derived = academyTimeOfDay(new Date(scheduledFor));
+  return CLASS_TIME_PATTERN.test(derived) ? derived : "";
 }
 
 export function buildSessionPlan(topics: Array<{ name: string; order?: number }>) {

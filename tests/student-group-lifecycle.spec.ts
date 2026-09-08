@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { shouldCloseGroup } from "../src/lib/groupLifecycle";
-import { scheduleDatesFrom } from "../src/lib/classroomSchedule";
+import { CLASS_TIME_PATTERN, resolveClassStartTime, scheduleDatesFrom } from "../src/lib/classroomSchedule";
 
 // Deactivating or pausing a student takes their batch with them only when that
 // student was the last attending member of it. Everything in the lifecycle flow
@@ -115,6 +115,21 @@ test("any class that is not taught, cancelled, or started can be pushed", () => 
   // A class already under way, whatever its derived status, stays put.
   expect(isPushableSessionStatus({ actualStartedAt: new Date() }, "upcoming")).toBe(false);
   expect(isPushableSessionStatus({ actualEndedAt: new Date() }, "upcoming")).toBe(false);
+});
+
+test("a pushed class never lands on an empty start time", () => {
+  // The push that failed in production: the classroom's weekly pattern handed
+  // back a slot with no time on it, and generatedSessions.startTime is required,
+  // so the whole save was rejected. The class time is recoverable from
+  // scheduledFor, which is what the class already displays.
+  expect(resolveClassStartTime({ startTime: "20:00" })).toBe("20:00");
+  expect(resolveClassStartTime({ startTime: "" }, { startTime: "16:30" })).toBe("16:30");
+  expect(resolveClassStartTime({ startTime: "", scheduledFor: new Date("2026-10-16T14:30:00Z") })).toBe("20:00");
+  expect(resolveClassStartTime({ startTime: " 20:00 " })).toBe("20:00");
+  // Nothing to recover from at all - the caller has to reject this, not save it.
+  expect(resolveClassStartTime({})).toBe("");
+  expect(resolveClassStartTime({ startTime: "25:00", scheduledFor: "not a date" })).toBe("");
+  expect(CLASS_TIME_PATTERN.test("")).toBe(false);
 });
 
 test("the pushed chain keeps its length and gains one slot at the end", () => {

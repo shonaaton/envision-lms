@@ -5,14 +5,20 @@ import { auth } from "@/lib/auth";
 import { canAccessFeature } from "@/lib/featureAccess";
 import { dbConnect } from "@/lib/db";
 import { AssignmentAutomationLog, AssignmentTemplate } from "@/models/AssignmentTemplate";
-import { ImportHomeworkPgnButton, TemplateRowActions, UploadTemplateButton } from "@/components/homework/AssignmentTemplateActions";
+import { Course } from "@/models/Course";
+import { ImportHomeworkPgnButton, UploadTemplateButton } from "@/components/homework/AssignmentTemplateActions";
+import TemplateBulkMove, { type MoveCourse, type TemplateRow } from "@/components/homework/TemplateBulkMove";
 import "@/models/Batch";
 import "@/models/Classroom";
-import "@/models/Course";
 import "@/models/Homework";
 import "@/models/PGN";
 
 export const dynamic = "force-dynamic";
+
+// Sentinel for "this field is empty", so an unfiled template is reachable from
+// the same dropdown as the filed ones - those are exactly the rows a course
+// rename leaves behind.
+const NO_VALUE = "__none__";
 
 function formatDate(value?: string | Date | null) {
   if (!value) return "-";
@@ -46,25 +52,52 @@ function activitySummary(template: any) {
     .join(", ");
 }
 
+function duePolicySummary(template: any) {
+  return template.duePolicy?.type === "days_after_class"
+    ? `${template.duePolicy.daysAfterClass || 7} days after class`
+    : `${template.duePolicy?.minutesBefore ?? 1} min before next class`;
+}
+
 function escapeRegex(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function templateFilter(q: string) {
+type Filters = { q: string; course: string; level: string; courseIds: string[] };
+
+function templateFilter({ q, course, level, courseIds }: Filters) {
   const filter: Record<string, any> = { isActive: { $ne: false } };
+  const and: any[] = [];
   if (q) {
     const regex = new RegExp(escapeRegex(q), "i");
-    filter.$or = [{ title: regex }, { topicName: regex }, { courseName: regex }, { levelName: regex }];
+    and.push({ $or: [{ title: regex }, { topicName: regex }, { courseName: regex }, { levelName: regex }] });
   }
+  if (course === NO_VALUE) {
+    // A template can carry the course id, the name, or neither. Unfiled means
+    // neither, so both have to be empty.
+    and.push({ courseName: { $in: ["", null] }, course: null });
+  } else if (course) {
+    const or: any[] = [{ courseName: course }];
+    if (courseIds.length) or.push({ course: { $in: courseIds } });
+    and.push({ $or: or });
+  }
+  if (level === NO_VALUE) and.push({ levelName: { $in: ["", null] } });
+  else if (level) and.push({ levelName: level });
+  if (and.length) filter.$and = and;
   return filter;
 }
 
-function pageHref(page: number, q: string) {
+function pageHref(page: number, { q, course, level }: { q: string; course: string; level: string }) {
   const params = new URLSearchParams();
   if (q) params.set("q", q);
+  if (course) params.set("course", course);
+  if (level) params.set("level", level);
   if (page > 1) params.set("page", String(page));
   const query = params.toString();
   return query ? `/admin/homework-templates?${query}` : "/admin/homework-templates";
+}
+
+function sortedUnique(values: Array<string | null | undefined>) {
+  return Array.from(new Set(values.map((value) => String(value || "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
 }
 
 function StatCard({ label, value, icon }: { label: string; value: string | number; icon: React.ReactNode }) {
@@ -79,18 +112,32 @@ function StatCard({ label, value, icon }: { label: string; value: string | numbe
   );
 }
 
-export default async function HomeworkTemplatesPage({ searchParams }: { searchParams?: { q?: string; page?: string } }) {
+export default async function HomeworkTemplatesPage({ searchParams }: { searchParams?: { q?: string; page?: string; course?: string; level?: string } }) {
   const session = await auth();
   const role = (session?.user as any)?.role;
   if (!session || !(await canAccessFeature("homeworkTemplates", session.user as any, "view"))) redirect("/dashboard");
   await dbConnect();
 
   const q = String(searchParams?.q || "").trim();
+  const course = String(searchParams?.course || "").trim();
+  const level = String(searchParams?.level || "").trim();
   const page = Math.max(1, Number(searchParams?.page || 1));
   const pageSize = 25;
-  const filter = templateFilter(q);
+  const canMove = role === "instructor" ? true : await canAccessFeature("homeworkTemplates", session.user as any, "edit");
 
-  const [templates, totalTemplates, allActiveTemplates, logs] = await Promise.all([
+  // Only the level names are needed here - projecting whole levels would drag
+  // every topic of every course into a page that never shows them.
+  const allCourses: any[] = await Course.find({}, { name: 1, level: 1, "levels.name": 1 }).sort({ name: 1 }).lean();
+  const courseIds = course && course !== NO_VALUE
+    ? allCourses.filter((item: any) => String(item.name || "").trim() === course).map((item: any) => String(item._id))
+    : [];
+  const filters: Filters = { q, course, level, courseIds };
+  const filter = templateFilter(filters);
+  // The level list is scoped to the chosen course, so picking a course narrows
+  // the levels instead of listing every level in the academy.
+  const levelScopeFilter = templateFilter({ q: "", course, level: "", courseIds });
+
+  const [templates, totalTemplates, allActiveTemplates, courseNamesInUse, levelNamesInScope, logs] = await Promise.all([
     AssignmentTemplate.find(filter)
       .populate("course", "name")
       .populate("defaultBatches", "name")
@@ -100,6 +147,8 @@ export default async function HomeworkTemplatesPage({ searchParams }: { searchPa
       .lean(),
     AssignmentTemplate.countDocuments(filter),
     AssignmentTemplate.find({ isActive: { $ne: false } }, { isActive: 1, linkStatus: 1 }).lean(),
+    AssignmentTemplate.distinct("courseName", { isActive: { $ne: false } }),
+    AssignmentTemplate.distinct("levelName", levelScopeFilter),
     AssignmentAutomationLog.find({})
       .populate("classroom", "title")
       .populate("sourceTemplate", "title")
@@ -109,11 +158,43 @@ export default async function HomeworkTemplatesPage({ searchParams }: { searchPa
       .lean(),
   ]);
 
+  const selectedCourseDocs = courseIds.length ? allCourses.filter((item: any) => courseIds.includes(String(item._id))) : allCourses;
+  // The active filter value is always an option, even when nothing matches it
+  // any more - otherwise the dropdown would sit on "All" while the URL still
+  // filters, and the empty table would look like a bug.
+  const courseOptions = sortedUnique([...allCourses.map((item: any) => item.name), ...courseNamesInUse, course === NO_VALUE ? "" : course]);
+  // Course levels and level names already on templates are unioned, so a level
+  // that was renamed on the course is still selectable while its templates
+  // still carry the old name.
+  const levelOptions = sortedUnique([
+    ...selectedCourseDocs.flatMap((item: any) => (item.levels || []).map((courseLevel: any) => courseLevel?.name)),
+    ...levelNamesInScope,
+    level === NO_VALUE ? "" : level,
+  ]);
+  const moveCourses: MoveCourse[] = allCourses.map((item: any) => ({
+    id: String(item._id),
+    name: String(item.name || "Untitled course"),
+    levels: sortedUnique((item.levels || []).map((courseLevel: any) => courseLevel?.name)),
+  }));
+
+  const rows: TemplateRow[] = templates.map((template: any) => ({
+    id: String(template._id),
+    title: template.title,
+    subtitle: `${template.source?.kind || "manual"} - ${template.autoAssign ? "auto on" : "auto off"}`,
+    courseName: template.course?.name || template.courseName || "",
+    levelName: template.levelName || template.level || "",
+    topicName: template.topicName,
+    activities: activitySummary(template),
+    linkStatus: String(template.linkStatus || "unlinked"),
+    duePolicy: duePolicySummary(template),
+  }));
+
   const activeCount = allActiveTemplates.filter((template: any) => template.isActive).length;
   const linkedCount = allActiveTemplates.filter((template: any) => template.linkStatus === "linked").length;
   const reviewCount = allActiveTemplates.filter((template: any) => template.linkStatus !== "linked").length;
   const missingCount = logs.filter((log: any) => ["missing_template", "ambiguous_template"].includes(log.status)).length;
   const totalPages = Math.max(1, Math.ceil(totalTemplates / pageSize));
+  const hasFilters = Boolean(q || course || level);
 
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-5 text-slate-950 sm:px-6 lg:px-8">
@@ -138,71 +219,41 @@ export default async function HomeworkTemplatesPage({ searchParams }: { searchPa
       </section>
 
       <section className="mb-5 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <div className="mb-4 flex flex-col gap-3">
           <div className="flex items-center gap-2">
             <FileText size={18} className="text-brand" />
             <div>
               <h2 className="text-lg font-black text-slate-950">Templates</h2>
-              <p className="text-xs text-slate-500">{totalTemplates} shown by current search</p>
+              <p className="text-xs text-slate-500">{totalTemplates} shown by current filters</p>
             </div>
           </div>
-          <form className="flex w-full max-w-xl flex-col gap-2 sm:flex-row">
-            <span className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3">
+          <form className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_200px_200px_auto_auto]">
+            <span className="flex h-10 min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3">
               <Search size={15} className="text-slate-400" />
               <input name="q" defaultValue={q} className="min-w-0 flex-1 text-sm outline-none" placeholder="Search template, topic, course, level" />
             </span>
-            <button className="inline-flex h-10 items-center justify-center rounded-lg bg-brand px-4 text-sm font-black text-white">Search</button>
-            {q && <Link href="/admin/homework-templates" className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 px-4 text-sm font-bold text-slate-700">Clear</Link>}
+            <select name="course" defaultValue={course} className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700">
+              <option value="">All courses</option>
+              <option value={NO_VALUE}>No course set</option>
+              {courseOptions.map((name) => <option key={name} value={name}>{name}</option>)}
+            </select>
+            <select name="level" defaultValue={level} className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700">
+              <option value="">All levels</option>
+              <option value={NO_VALUE}>No level set</option>
+              {levelOptions.map((name) => <option key={name} value={name}>{name}</option>)}
+            </select>
+            <button className="inline-flex h-10 items-center justify-center rounded-lg bg-brand px-4 text-sm font-black text-white">Apply</button>
+            {hasFilters && <Link href="/admin/homework-templates" className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 px-4 text-sm font-bold text-slate-700">Clear</Link>}
           </form>
         </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-left text-sm">
-            <thead className="text-xs uppercase text-slate-500">
-              <tr className="border-b border-slate-100">
-                <th className="px-3 py-3">Template</th>
-                <th className="px-3 py-3">Course / Level</th>
-                <th className="px-3 py-3">Topic</th>
-                <th className="px-3 py-3">Activities</th>
-                <th className="px-3 py-3">Status</th>
-                <th className="px-3 py-3">Due Policy</th>
-                <th className="px-3 py-3">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {templates.map((template: any) => (
-                <tr key={String(template._id)} className="border-b border-slate-100 last:border-0">
-                  <td className="px-3 py-3">
-                    <div className="font-semibold text-slate-950">{template.title}</div>
-                    <div className="text-xs text-slate-500">{template.source?.kind || "manual"} - {template.autoAssign ? "auto on" : "auto off"}</div>
-                  </td>
-                  <td className="px-3 py-3">
-                    <div>{template.course?.name || template.courseName || "-"}</div>
-                    <div className="text-xs text-slate-500">{template.levelName || template.level || "-"}</div>
-                  </td>
-                  <td className="px-3 py-3">{template.topicName}</td>
-                  <td className="px-3 py-3">{activitySummary(template)}</td>
-                  <td className="px-3 py-3">
-                    <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${badgeClass(template.linkStatus)}`}>{template.linkStatus}</span>
-                  </td>
-                  <td className="px-3 py-3">
-                    {template.duePolicy?.type === "days_after_class"
-                      ? `${template.duePolicy.daysAfterClass || 7} days after class`
-                      : `${template.duePolicy?.minutesBefore ?? 1} min before next class`}
-                  </td>
-                  <td className="px-3 py-3"><TemplateRowActions id={String(template._id)} title={template.title} /></td>
-                </tr>
-              ))}
-              {!templates.length && (
-                <tr><td colSpan={7} className="px-3 py-8 text-center text-sm text-slate-500">No templates found. Upload a JSON template or adjust the search.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+
+        <TemplateBulkMove rows={rows} courses={moveCourses} canMove={canMove} />
+
         <div className="mt-4 flex flex-col gap-3 border-t border-slate-100 pt-4 text-sm sm:flex-row sm:items-center sm:justify-between">
           <div className="font-semibold text-slate-500">Page {page} of {totalPages}</div>
           <div className="flex flex-wrap gap-2">
-            <Link href={pageHref(Math.max(1, page - 1), q)} className={`rounded-lg border border-slate-200 px-3 py-2 font-bold ${page <= 1 ? "pointer-events-none text-slate-300" : "text-slate-700"}`}>Previous</Link>
-            <Link href={pageHref(Math.min(totalPages, page + 1), q)} className={`rounded-lg border border-slate-200 px-3 py-2 font-bold ${page >= totalPages ? "pointer-events-none text-slate-300" : "text-slate-700"}`}>Next</Link>
+            <Link href={pageHref(Math.max(1, page - 1), filters)} className={`rounded-lg border border-slate-200 px-3 py-2 font-bold ${page <= 1 ? "pointer-events-none text-slate-300" : "text-slate-700"}`}>Previous</Link>
+            <Link href={pageHref(Math.min(totalPages, page + 1), filters)} className={`rounded-lg border border-slate-200 px-3 py-2 font-bold ${page >= totalPages ? "pointer-events-none text-slate-300" : "text-slate-700"}`}>Next</Link>
           </div>
         </div>
       </section>

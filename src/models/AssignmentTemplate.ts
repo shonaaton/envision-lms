@@ -1,4 +1,5 @@
 import { Schema, model, models, type InferSchemaType } from "mongoose";
+import { COURSE_TIER_VALUES_WITH_MIXED } from "@/lib/courseTiers";
 
 const DuePolicySchema = new Schema(
   {
@@ -17,7 +18,7 @@ const AssignmentTemplateSchema = new Schema(
     instructions: String,
     course: { type: Schema.Types.ObjectId, ref: "Course", index: true },
     courseName: { type: String, index: true },
-    level: { type: String, enum: ["beginner", "intermediate", "advanced", "mixed", ""], default: "", index: true },
+    level: { type: String, enum: [...COURSE_TIER_VALUES_WITH_MIXED, ""], default: "", index: true },
     levelName: { type: String, index: true },
     topicName: { type: String, required: true, index: true },
     topicKey: { type: String, required: true, index: true },

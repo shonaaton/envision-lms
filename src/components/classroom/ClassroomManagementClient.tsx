@@ -63,7 +63,7 @@ type CourseOption = {
   _id: string;
   name: string;
   category?: string;
-  level: "beginner" | "intermediate" | "advanced" | "mixed";
+  level: string;
   levels: Array<{ name: string; topics: Array<{ name: string; order?: number }> }>;
 };
 

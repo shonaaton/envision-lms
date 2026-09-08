@@ -27,6 +27,7 @@ import AddBatchModal from "@/components/admin/AddBatchModal";
 import { PauseStudentModal } from "@/components/admin/PausedStudentsClient";
 import RoleManager from "@/components/admin/RoleManager";
 import StaffRoleSelect from "@/components/admin/StaffRoleSelect";
+import { COURSE_TIER_OPTIONS } from "@/lib/courseTiers";
 
 export const dynamic = "force-dynamic";
 
@@ -818,7 +819,7 @@ function EditBatchModal({ batch, coaches, students, onClose, onSave }: { batch: 
             {coaches.map((coach) => <option key={coach._id} value={coach._id}>{coach.name}</option>)}
           </select>
           <select className="input bg-white text-slate-950" name="level" defaultValue={batch.level || "beginner"}>
-            <option value="beginner">Beginner</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option>
+            {COURSE_TIER_OPTIONS.map((tier) => <option key={tier.value} value={tier.value}>{tier.label}</option>)}
           </select>
         </div>
         <label className="grid gap-1">

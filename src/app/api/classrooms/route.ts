@@ -11,6 +11,7 @@ import { User } from "@/models/User";
 import { recordActivity } from "@/lib/activity";
 import { sendCourseAssignedEmail } from "@/lib/studentCommunicationEmails";
 import { normalizeGoogleMeetUrl } from "@/lib/meetingUrl";
+import { classroomTier, isCourseTier } from "@/lib/courseTiers";
 import { notifyClassroomCoachAssigned } from "@/lib/classroomCoachNotifications";
 
 export const dynamic = "force-dynamic";
@@ -114,7 +115,7 @@ async function normalizeClassroomPayload(raw: any, actorId: string) {
 
   let sessionPlan = Array.isArray(raw.sessionPlan) ? raw.sessionPlan : [];
   let courseName = String(raw.courseName || "").trim();
-  let level = ["beginner", "intermediate", "advanced"].includes(raw.level) ? raw.level : "beginner";
+  let level = isCourseTier(raw.level) ? raw.level : "beginner";
 
   if (classroomType === "series" && !courseId) {
     throw new Error("Select a course and level for this series.");
@@ -130,7 +131,7 @@ async function normalizeClassroomPayload(raw: any, actorId: string) {
     }
     if (course) {
       courseName = course.name;
-      level = course.level === "mixed" ? "beginner" : course.level;
+      level = classroomTier(course.level);
       const selectedLevel = (course.levels || []).find((item: any) => String(item.name) === levelName);
       if (classroomType === "series" && !selectedLevel) {
         throw new Error("Select a valid course level for this series.");

@@ -5,6 +5,7 @@ import { Copy, Download, Edit3, Eye, KeyRound, MoreHorizontal, Plus, Search, Tra
 import { toast } from "sonner";
 import { AdminV2Card, AdminV2Modal, AdminV2Sheet, AdminV2Stat } from "./AdminV2Primitives";
 import { cn } from "@/lib/utils";
+import { COURSE_TIER_OPTIONS } from "@/lib/courseTiers";
 
 type UserRole = "student" | "instructor" | "admin" | "sub-admin";
 type DirectoryUser = {
@@ -346,9 +347,7 @@ function CreateBatchModal({ open, coaches, onClose, onCreated }: { open: boolean
       <div className="grid gap-3">
         <input className="input" value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} placeholder="Batch name" />
         <select className="input" value={draft.level} onChange={(event) => setDraft((current) => ({ ...current, level: event.target.value }))}>
-          <option value="beginner">Beginner</option>
-          <option value="intermediate">Intermediate</option>
-          <option value="advanced">Advanced</option>
+          {COURSE_TIER_OPTIONS.map((tier) => <option key={tier.value} value={tier.value}>{tier.label}</option>)}
         </select>
         <select className="input" value={draft.coach} onChange={(event) => setDraft((current) => ({ ...current, coach: event.target.value }))}>
           <option value="">No coach</option>

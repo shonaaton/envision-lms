@@ -4,6 +4,7 @@ import { dbConnect } from "@/lib/db";
 import { Batch } from "@/models/Batch";
 import { Classroom } from "@/models/Classroom";
 import { User } from "@/models/User";
+import { courseTierLabel } from "@/lib/courseTiers";
 
 /**
  * Free-slot view of the group batches, for sales calls.
@@ -73,12 +74,6 @@ export type BatchVacancyPayload = {
 function id(value: any) {
   return value?._id?.toString?.() ?? value?.toString?.() ?? "";
 }
-
-const LEVEL_LABELS: Record<string, string> = {
-  beginner: "Beginner",
-  intermediate: "Intermediate",
-  advanced: "Advanced",
-};
 
 function slotsOf(classroom: any): BatchSlot[] {
   const slots: BatchSlot[] = [];
@@ -187,7 +182,7 @@ export async function getBatchVacancy(): Promise<BatchVacancyPayload> {
     return {
       id: id(batch._id),
       name: String(batch.name || ""),
-      level: LEVEL_LABELS[String(batch.level || "beginner")] || "Beginner",
+      level: courseTierLabel(batch.level || "beginner") || "Beginner",
       coach: String(coachDoc?.name || "Unassigned"),
       coachPhone: [coachDoc?.countryCode, coachDoc?.phone].map((part: any) => String(part || "").trim()).filter(Boolean).join(" "),
       capacity,

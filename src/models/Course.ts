@@ -1,4 +1,5 @@
 import { Schema, model, models, type InferSchemaType } from "mongoose";
+import { COURSE_TIER_VALUES_WITH_MIXED } from "@/lib/courseTiers";
 
 const CourseTopicSchema = new Schema(
   {
@@ -26,7 +27,7 @@ const CourseSchema = new Schema(
     name: { type: String, required: true, index: true },
     description: String,
     category: { type: String, default: "General", index: true },
-    level: { type: String, enum: ["beginner", "intermediate", "advanced", "mixed"], default: "beginner", index: true },
+    level: { type: String, enum: COURSE_TIER_VALUES_WITH_MIXED, default: "beginner", index: true },
     totalSessions: { type: Number, default: 0 },
     levels: [CourseLevelSchema],
     isActive: { type: Boolean, default: true, index: true },

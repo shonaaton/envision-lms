@@ -70,8 +70,19 @@ import {
 import Link from "next/link";
 import { canAccessFeature } from "@/lib/featureAccess";
 import RoleHome from "@/components/admin/RoleHome";
+import { COURSE_TIER_VALUES, courseTierLabel } from "@/lib/courseTiers";
 
 export const dynamic = "force-dynamic";
+
+const TIER_COLORS: Record<string, { bar: string; hex: string }> = {
+  beginner: { bar: "bg-indigo-500", hex: "#6366f1" },
+  intermediate: { bar: "bg-emerald-500", hex: "#10b981" },
+  semi_pro: { bar: "bg-sky-500", hex: "#0ea5e9" },
+  pro: { bar: "bg-amber-500", hex: "#f59e0b" },
+  masters: { bar: "bg-fuchsia-500", hex: "#d946ef" },
+  advanced: { bar: "bg-orange-500", hex: "#f97316" },
+};
+const OTHER_TIER_COLOR = { bar: "bg-slate-400", hex: "#94a3b8" };
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -2628,18 +2639,44 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
   const overdueInvoices = invoices.filter((invoice: any) => invoice.status !== "paid" && invoice.status !== "cancelled" && new Date(invoice.dueDate) < new Date()).length;
   const collectionRate = percent(collectedFees, collectedFees + pastDues + futureDues);
   const activeBatches = batches.filter((batch: any) => batch.isActive !== false);
-  const beginnerCount = activeStudents.filter((student: any) => String(student.level || student.courseLevel || "").toLowerCase().includes("beginner")).length;
-  const intermediateCount = activeStudents.filter((student: any) => String(student.level || student.courseLevel || "").toLowerCase().includes("intermediate")).length;
-  const advancedCount = activeStudents.filter((student: any) => String(student.level || student.courseLevel || "").toLowerCase().includes("advanced")).length;
-  const uncategorizedCount = Math.max(0, activeStudents.length - beginnerCount - intermediateCount - advancedCount);
+  // Longest needle first, so "semi pro" is not swallowed by the "pro" test.
+  const tierMatchers = COURSE_TIER_VALUES
+    .map((tier) => ({ tier, needle: tier.replace(/_/g, " ") }))
+    .sort((a, b) => b.needle.length - a.needle.length);
+  const tierCounts = new Map<string, number>();
+  for (const student of activeStudents) {
+    // studentLevel is the field the User model actually carries; level and
+    // courseLevel are read first only for older imported rows.
+    const haystack = String((student as any).level || (student as any).courseLevel || (student as any).studentLevel || "")
+      .toLowerCase()
+      .replace(/_/g, " ");
+    const match = tierMatchers.find((entry) => haystack.includes(entry.needle));
+    if (match) tierCounts.set(match.tier, (tierCounts.get(match.tier) || 0) + 1);
+  }
+  const categorizedCount = [...tierCounts.values()].reduce((sum, count) => sum + count, 0);
   const levelSegments = [
-    { label: "Beginner", value: beginnerCount, className: "bg-indigo-500" },
-    { label: "Intermediate", value: intermediateCount, className: "bg-emerald-500" },
-    { label: "Advanced", value: advancedCount, className: "bg-amber-500" },
-    { label: "Other", value: uncategorizedCount, className: "bg-slate-400" },
+    ...COURSE_TIER_VALUES.map((tier) => ({
+      label: courseTierLabel(tier),
+      value: tierCounts.get(tier) || 0,
+      className: (TIER_COLORS[tier] || OTHER_TIER_COLOR).bar,
+      color: (TIER_COLORS[tier] || OTHER_TIER_COLOR).hex,
+    })),
+    {
+      label: "Other",
+      value: Math.max(0, activeStudents.length - categorizedCount),
+      className: OTHER_TIER_COLOR.bar,
+      color: OTHER_TIER_COLOR.hex,
+    },
   ].filter((item) => item.value > 0);
+  // Walks whatever tiers actually have students, so the donut follows the ladder
+  // instead of assuming exactly three slices.
   const levelChart = levelSegments.length
-    ? `conic-gradient(#6366f1 0 ${percent(beginnerCount, activeStudents.length)}%, #10b981 ${percent(beginnerCount, activeStudents.length)}% ${percent(beginnerCount + intermediateCount, activeStudents.length)}%, #f59e0b ${percent(beginnerCount + intermediateCount, activeStudents.length)}% ${percent(beginnerCount + intermediateCount + advancedCount, activeStudents.length)}%, #94a3b8 ${percent(beginnerCount + intermediateCount + advancedCount, activeStudents.length)}% 100%)`
+    ? `conic-gradient(${levelSegments
+        .map((segment, index) => {
+          const before = levelSegments.slice(0, index).reduce((sum, item) => sum + item.value, 0);
+          return `${segment.color} ${percent(before, activeStudents.length)}% ${percent(before + segment.value, activeStudents.length)}%`;
+        })
+        .join(", ")})`
     : "conic-gradient(#e2e8f0 0 100%)";
 
   if (activeTab === "today") {

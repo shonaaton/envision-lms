@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { COURSE_TIER_ENUM, COURSE_TIER_ENUM_WITH_MIXED_AND_BLANK } from "@/lib/courseTiers";
 
 const optionalText = (max: number) => z.preprocess((value) => (value == null || value === "" ? undefined : value), z.string().max(max).optional());
 
@@ -55,7 +56,7 @@ export const batchSchema = z.object({
   coach: z.string().optional(),
   students: z.array(z.string()).default([]),
   tags: z.array(z.string()).default([]),
-  level: z.enum(["beginner", "intermediate", "advanced"]).default("beginner"),
+  level: z.enum(COURSE_TIER_ENUM).default("beginner"),
   capacity: z.number().int().min(1).max(100).default(8),
 });
 
@@ -209,7 +210,7 @@ export const assignmentTemplateSchema = z.object({
   instructions: z.string().optional(),
   course: z.string().optional(),
   courseName: z.string().optional(),
-  level: z.enum(["beginner", "intermediate", "advanced", "mixed", ""]).default(""),
+  level: z.enum(COURSE_TIER_ENUM_WITH_MIXED_AND_BLANK).default(""),
   levelName: z.string().optional(),
   topicName: z.string().min(1).max(160),
   activities: z.array(assignmentActivitySchema).default([]),

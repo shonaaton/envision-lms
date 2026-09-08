@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { COURSE_TIER_OPTIONS } from "@/lib/courseTiers";
 
 export default function AddBatchModal({
   open,
@@ -69,9 +70,7 @@ export default function AddBatchModal({
               {coaches.map((c) => <option key={c._id} value={c._id}>{c.name}</option>)}
             </select>
             <select className="input" name="level" defaultValue="beginner">
-              <option value="beginner">Beginner</option>
-              <option value="intermediate">Intermediate</option>
-              <option value="advanced">Advanced</option>
+              {COURSE_TIER_OPTIONS.map((tier) => <option key={tier.value} value={tier.value}>{tier.label}</option>)}
             </select>
           </div>
           <div className="grid grid-cols-2 gap-3">

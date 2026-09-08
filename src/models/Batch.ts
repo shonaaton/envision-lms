@@ -1,4 +1,5 @@
 import { Schema, model, models, type InferSchemaType } from "mongoose";
+import { COURSE_TIER_VALUES } from "@/lib/courseTiers";
 
 const BatchSchema = new Schema(
   {
@@ -13,7 +14,7 @@ const BatchSchema = new Schema(
       },
     ],
     tags: [{ type: String, index: true }],
-    level: { type: String, enum: ["beginner", "intermediate", "advanced"], default: "beginner" },
+    level: { type: String, enum: COURSE_TIER_VALUES, default: "beginner" },
     // Seats in a group batch. Eight is the academy standard, so it is the default
     // rather than a hardcoded constant - one differently sized batch should be a
     // data fix, not a deploy. Individual classes (names prefixed "PIC") ignore it.

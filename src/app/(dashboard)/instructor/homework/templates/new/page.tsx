@@ -12,7 +12,7 @@ type AssignmentQuestion = { id: string; text: string; positionFen: string; optio
 type PgnDoc = { _id: string; title: string; pgn?: string; folder?: string; white?: string; black?: string; event?: string; initialFen?: string; sideToMove?: "white" | "black" };
 type CourseTopic = { _id?: string; name: string; description?: string; order?: number };
 type CourseLevel = { _id?: string; name: string; topics?: CourseTopic[] };
-type CourseDoc = { _id: string; name: string; level?: "beginner" | "intermediate" | "advanced" | "mixed"; levels?: CourseLevel[] };
+type CourseDoc = { _id: string; name: string; level?: string; levels?: CourseLevel[] };
 
 type Activity = {
   id: string;

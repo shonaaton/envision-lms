@@ -1,4 +1,5 @@
 import { Schema, model, models, type InferSchemaType } from "mongoose";
+import { COURSE_TIER_VALUES } from "@/lib/courseTiers";
 
 const SlotSchema = new Schema(
   {
@@ -80,7 +81,7 @@ const ClassroomSchema = new Schema(
       default: "scheduled",
       index: true,
     },
-    level: { type: String, enum: ["beginner", "intermediate", "advanced"], default: "beginner" },
+    level: { type: String, enum: COURSE_TIER_VALUES, default: "beginner" },
     levelName: { type: String, index: true },
     topicName: { type: String, index: true },
     topicOrder: { type: Number, default: 0 },

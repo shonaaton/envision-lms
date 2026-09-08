@@ -4,15 +4,19 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { BookOpenCheck, ChevronDown, Download, Plus, Save, Search, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { COURSE_TIER_OPTIONS_WITH_MIXED, isCourseTierOrMixed } from "@/lib/courseTiers";
 
-type Topic = { name: string; sessionCount: number; description?: string; order?: number };
-type CourseLevel = { name: string; sessionCount: number; description?: string; order?: number; topics: Topic[] };
+// `_id` is round-tripped, not decoration: the save route matches levels and
+// topics by it to tell a rename from a delete plus an add, and only a rename is
+// pushed out to the classrooms and templates holding a copy of the name.
+type Topic = { _id?: string; name: string; sessionCount: number; description?: string; order?: number };
+type CourseLevel = { _id?: string; name: string; sessionCount: number; description?: string; order?: number; topics: Topic[] };
 type Course = {
   _id?: string;
   name: string;
   description?: string;
   category: string;
-  level: "beginner" | "intermediate" | "advanced" | "mixed";
+  level: string;
   totalSessions?: number;
   levels: CourseLevel[];
   isActive: boolean;
@@ -137,9 +141,14 @@ export default function AdminCoursesPage() {
     const data = await response.json();
     setSaving(false);
     if (!response.ok) return toast.error(data.error || "Could not save course");
-    setDraft(cloneCourse(data));
-    setCourses((current) => [data, ...current.filter((course) => course._id !== data._id)]);
-    toast.success(existingCourse ? "Course updated and merged" : "Course saved");
+    // renameSummary is a report about the save, not part of the course - it must
+    // not end up in the draft that gets posted back on the next save.
+    const { renameSummary, ...saved } = data as Course & { renameSummary?: RenameSummary };
+    setDraft(cloneCourse(saved));
+    setCourses((current) => [saved, ...current.filter((course) => course._id !== saved._id)]);
+    const cascade = describeCascade(renameSummary);
+    if (cascade) toast.success(cascade, { duration: 9000 });
+    else toast.success(existingCourse ? "Course updated and merged" : "Course saved");
   }
 
   async function deleteCourse() {
@@ -292,10 +301,7 @@ export default function AdminCoursesPage() {
             <div className="grid gap-2 lg:grid-cols-[1fr_160px_180px_auto_auto]">
               <input className="input h-9" value={draft.name} onChange={(event) => updateDraft({ name: event.target.value })} placeholder="Main course name" />
               <select className="input h-9" value={draft.level} onChange={(event) => updateDraft({ level: event.target.value as Course["level"] })}>
-                <option value="beginner">Beginner</option>
-                <option value="intermediate">Intermediate</option>
-                <option value="advanced">Advanced</option>
-                <option value="mixed">Mixed</option>
+                {COURSE_TIER_OPTIONS_WITH_MIXED.map((tier) => <option key={tier.value} value={tier.value}>{tier.label}</option>)}
               </select>
               <input className="input h-9" value={draft.category} onChange={(event) => updateDraft({ category: event.target.value })} placeholder="Category" />
               <button onClick={saveCourse} disabled={saving} className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-brand px-4 text-sm font-bold text-white disabled:opacity-60">
@@ -375,6 +381,38 @@ export default function AdminCoursesPage() {
       </div>
     </div>
   );
+}
+
+type Rename = { from: string; to: string };
+type RenameSummary = {
+  classrooms: number;
+  templates: number;
+  students: number;
+  plan: { course: Rename | null; tier: Rename | null; levels: Rename[]; topics: Rename[] };
+};
+
+/**
+ * Says what the save changed outside this page, so a rename that quietly
+ * rewrote a hundred classrooms does not look like an ordinary save.
+ */
+function describeCascade(summary?: RenameSummary) {
+  if (!summary) return "";
+  const { plan, classrooms, templates, students } = summary;
+  const renamed = [
+    plan.course ? `course to "${plan.course.to}"` : "",
+    plan.levels.length ? `${plan.levels.length} level${plan.levels.length === 1 ? "" : "s"}` : "",
+    plan.topics.length ? `${plan.topics.length} class topic${plan.topics.length === 1 ? "" : "s"}` : "",
+  ].filter(Boolean);
+  if (!renamed.length) return "";
+
+  const touched = [
+    classrooms ? `${classrooms} class record${classrooms === 1 ? "" : "s"}` : "",
+    templates ? `${templates} homework template${templates === 1 ? "" : "s"}` : "",
+    students ? `${students} student record${students === 1 ? "" : "s"}` : "",
+  ].filter(Boolean);
+
+  const head = `Course saved. Renamed ${renamed.join(", ")}`;
+  return touched.length ? `${head} and updated ${touched.join(", ")} to match.` : `${head}. Nothing else was using the old name.`;
 }
 
 function cloneCourse(course: Course): Course {
@@ -551,5 +589,5 @@ function parseCourseCsv(text: string): Course {
 
 function parseCourseLevel(value: string): Course["level"] {
   const normalized = value.toLowerCase();
-  return normalized === "intermediate" || normalized === "advanced" || normalized === "mixed" ? normalized : "beginner";
+  return isCourseTierOrMixed(normalized) ? normalized : "beginner";
 }

@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { COURSE_TIER_OPTIONS } from "@/lib/courseTiers";
 
 export default function NewClassroomPage() {
   const router = useRouter();
@@ -37,9 +38,7 @@ export default function NewClassroomPage() {
         <textarea className="input min-h-[100px]" name="description" placeholder="What students will learn" />
         <div className="grid grid-cols-2 gap-3">
           <select className="input" name="level" defaultValue="beginner">
-            <option value="beginner">Beginner</option>
-            <option value="intermediate">Intermediate</option>
-            <option value="advanced">Advanced</option>
+            {COURSE_TIER_OPTIONS.map((tier) => <option key={tier.value} value={tier.value}>{tier.label}</option>)}
           </select>
           <input className="input" name="feePerMonth" type="number" min="0" placeholder="Fee/month (₹)" />
         </div>

@@ -19,6 +19,7 @@
     "test:watch": "vitest",
     "migrate:tournament-v2": "tsx scripts/migrate-tournament-v2.ts",
     "backfill:country-codes": "tsx scripts/backfill-user-country-codes.ts",
+    "resync:course-names": "tsx scripts/resync-course-names.ts",
     "bench:tournament": "tsx scripts/bench-tournament-engine.ts",
     "loadtest:arena": "tsx scripts/loadtest-arena.ts",
     "test:integration": "tsx scripts/integration-tournament.ts"

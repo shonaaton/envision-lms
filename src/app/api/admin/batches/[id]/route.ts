@@ -9,6 +9,7 @@ import { canAccessFeature } from "@/lib/featureAccess";
 import { syncClassroomSessionInstances } from "@/lib/classroomSessionInstances";
 import { notifyBatchCoachAssigned } from "@/lib/batchCoachNotifications";
 import { pausedStudentIds } from "@/lib/studentPause";
+import { batchUpdateSchema } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
 
@@ -202,7 +203,11 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const actorId = (session!.user as any).id;
   await dbConnect();
-  const body = await req.json();
+  const parsed = batchUpdateSchema.safeParse(await req.json());
+  if (!parsed.success) {
+    return NextResponse.json({ error: "Invalid batch update", details: parsed.error.flatten().fieldErrors }, { status: 400 });
+  }
+  const body: Record<string, any> = { ...parsed.data };
   const existing: any = await Batch.findById(params.id).select("students studentEnrollments coach").lean();
   if (!existing) return NextResponse.json({ error: "Batch not found" }, { status: 404 });
   if (Array.isArray(body.students)) {
@@ -211,7 +216,10 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       : [];
     body.students = activeStudents.map((student: any) => student._id.toString());
   }
-  const b = await Batch.findByIdAndUpdate(params.id, body, { new: true });
+  // The edit form's "No coach" option sends "", which is not an ObjectId -
+  // unassigning has to null the field rather than try to cast an empty string.
+  if (body.coach === "") body.coach = null;
+  const b = await Batch.findByIdAndUpdate(params.id, body, { new: true, runValidators: true });
   if (Array.isArray(body.students)) {
     const previousIds = (existing.students || []).map((student: any) => student.toString());
     const nextIds = body.students.map(String);

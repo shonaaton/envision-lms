@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { Types } from "mongoose";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
+import { completeCourseIfDue } from "@/lib/courseCompletionSweep";
 import { Attendance } from "@/models/Attendance";
 import { recordActivity } from "@/lib/activity";
 import { consumeAttendanceCredit } from "@/lib/fees";
@@ -382,10 +383,12 @@ export async function POST(req: Request) {
         await ensureTopicContinuationSession(classroomDoc, target, (session.user as SessionUser).id);
       }
       if (TERMINAL_SESSION_OUTCOMES.has(outcome)) {
-        const allDone = (classroomDoc.generatedSessions || []).every((item: any) =>
-          TERMINAL_SESSION_OUTCOMES.has(String(item.status || "").toLowerCase())
-        );
-        classroomDoc.status = allDone ? "completed" : "scheduled";
+        // Marking attendance no longer completes the course, and - importantly -
+        // no longer un-completes one. This line used to read
+        // `status = allDone ? "completed" : "scheduled"`, so editing an old
+        // attendance record on a finished course silently reopened it. Closing a
+        // course is now an explicit admin action; see `complete_classroom`.
+        if (classroomDoc.status !== "completed" && classroomDoc.status !== "cancelled") classroomDoc.status = "scheduled";
         await ClassroomSession.updateOne(
           { classroom, scheduledSessionId: sessionId },
           {
@@ -402,6 +405,12 @@ export async function POST(req: Request) {
       }
       if (!isDemoClassroom) await recalculateFutureSessionTopics(classroomDoc, (session.user as SessionUser).id);
       await classroomDoc.save();
+      // If an admin armed "close after the last scheduled class", this register
+      // may have been the last one. Fire-and-forget: a course that fails to
+      // close here is picked up by the hourly sweep.
+      if (!isDemoClassroom && classroomDoc.completeAfterLastSession) {
+        void completeCourseIfDue(String(classroomDoc._id)).catch((error) => console.error("Armed course completion failed", error));
+      }
       if (outcome === "coach_no_show") {
         await notifyCoachNoShowIfThreshold(String(assignedCoach || ""), { classroom, sessionId, attendance: doc._id.toString() });
       }

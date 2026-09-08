@@ -1227,7 +1227,11 @@ async function StudentDashboard({ userId, joinAllowed }: { userId: string; joinA
     (item.assignedBatches || []).some((batchId: any) => batchIds.includes(objectId(batchId))) ||
     classroomIds.includes(objectId(item.classroom))
   );
-  const upcomingSessions = buildCoachUpcomingSessions(classrooms, now);
+  // Split here rather than filtered in the query: a completed course must stay
+  // out of "what's next", but stay in the class history below, which is built
+  // from every classroom the student has been in.
+  const runningClassrooms = classrooms.filter((classroom: any) => String(classroom.status || "") !== "completed");
+  const upcomingSessions = buildCoachUpcomingSessions(runningClassrooms, now);
   const completedSessions = flattenScheduledSessions(classrooms)
     .filter((row) => row.start && isHistoricalSessionStatus(deriveScheduledSessionStatus(row.session, now)))
     .sort((a, b) => (b.start?.getTime() || 0) - (a.start?.getTime() || 0));
@@ -1289,7 +1293,7 @@ async function StudentDashboard({ userId, joinAllowed }: { userId: string; joinA
 
   const studentName = (student as any)?.name || "Student";
   const primaryBatch = (student as any)?.batches?.[0];
-  const currentCourse = nextSession?.classroom?.courseName || classrooms[0]?.courseName || "Chess Foundations";
+  const currentCourse = nextSession?.classroom?.courseName || runningClassrooms[0]?.courseName || "Chess Foundations";
   const currentLevel = primaryBatch?.level || nextSession?.classroom?.levelName || "Level not set";
   const batchName = primaryBatch?.name || nextSession?.classroom?.batches?.[0]?.name || "Batch not assigned";
   const classroomById = new Map(classrooms.map((classroom: any) => [objectId(classroom._id), classroom]));
@@ -1633,7 +1637,10 @@ async function CoachDashboard({ userId, searchParams, joinAllowed }: { userId: s
   ]);
   const classrooms = classroomDocs.map((classroom: any) => limitClassroomToCoachSessions(classroom, userId));
 
-  const sessions = buildCoachUpcomingSessions(classrooms, now);
+  const sessions = buildCoachUpcomingSessions(
+    classrooms.filter((classroom: any) => String(classroom.status || "") !== "completed"),
+    now,
+  );
   const completedSessions = flattenScheduledSessions(classrooms)
     .filter((row) => row.start && isHistoricalSessionStatus(deriveScheduledSessionStatus(row.session, now)))
     .sort((a, b) => (b.start?.getTime() || 0) - (a.start?.getTime() || 0));
@@ -1904,7 +1911,10 @@ async function CoachDashboardV2({ userId, searchParams, joinAllowed }: { userId:
     AskCoachMessage.countDocuments({ receiver: userId, status: { $ne: "deleted" }, "readBy.user": { $ne: userId } }),
   ]);
   const classrooms = classroomDocs.map((classroom: any) => limitClassroomToCoachSessions(classroom, userId));
-  const sessions = buildCoachUpcomingSessions(classrooms, now);
+  const sessions = buildCoachUpcomingSessions(
+    classrooms.filter((classroom: any) => String(classroom.status || "") !== "completed"),
+    now,
+  );
   const completedSessions = flattenScheduledSessions(classrooms)
     .filter((row) => row.start && isHistoricalSessionStatus(deriveScheduledSessionStatus(row.session, now)))
     .sort((a, b) => (b.start?.getTime() || 0) - (a.start?.getTime() || 0));

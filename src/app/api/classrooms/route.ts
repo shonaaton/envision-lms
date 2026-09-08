@@ -12,6 +12,7 @@ import { recordActivity } from "@/lib/activity";
 import { sendCourseAssignedEmail } from "@/lib/studentCommunicationEmails";
 import { normalizeGoogleMeetUrl } from "@/lib/meetingUrl";
 import { classroomTier, isCourseTier } from "@/lib/courseTiers";
+import { hasClassesLeftToTeach, isReadyToComplete, TERMINAL_SESSION_STATUSES } from "@/lib/classroomLifecycle";
 import { notifyClassroomCoachAssigned } from "@/lib/classroomCoachNotifications";
 
 export const dynamic = "force-dynamic";
@@ -49,7 +50,21 @@ export async function GET() {
     .populate("course", "name category level")
     .sort({ classDate: 1, startDate: 1, createdAt: -1 })
     .lean();
-  return NextResponse.json(role === "instructor" ? list.map((item: any) => limitClassroomToCoachSessions(item, userId)) : list);
+  // Derived rather than stored: it is a prompt to the admin ("every topic has
+  // been taught, close this?"), and a stored flag would drift the moment a
+  // session was rescheduled or a topic reopened.
+  const withReadiness = list.map((item: any) => ({
+    ...item,
+    readyToComplete: item.status !== "completed" && item.status !== "cancelled" && isReadyToComplete(item),
+    // Drives the "closes after its last class - N left" chip, and the count in
+    // the close dialog.
+    classesLeftToTeach: hasClassesLeftToTeach(item)
+      ? (item.generatedSessions || []).filter(
+          (item2: any) => !TERMINAL_SESSION_STATUSES.has(String(item2?.status || "scheduled").toLowerCase()),
+        ).length
+      : 0,
+  }));
+  return NextResponse.json(role === "instructor" ? withReadiness.map((item: any) => limitClassroomToCoachSessions(item, userId)) : withReadiness);
 }
 
 export async function POST(req: Request) {

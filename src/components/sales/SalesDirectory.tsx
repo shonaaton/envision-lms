@@ -62,7 +62,16 @@ function ContactRow({ contact, showParent }: { contact: DirectoryContact; showPa
       <td className="px-3 py-2.5 text-slate-700">
         {contact.coaches.length ? contact.coaches.join(", ") : <span className="text-slate-400">-</span>}
       </td>
-      <td className="px-3 py-2.5 text-slate-700">{contact.level || <span className="text-slate-400">-</span>}</td>
+      <td className="px-3 py-2.5 text-slate-700">
+        <div>{contact.courseTier || contact.level || <span className="text-slate-400">-</span>}</div>
+        {contact.course ? <div className="text-xs text-slate-500">{contact.course}</div> : null}
+        {contact.completedLevels.length ? (
+          <div className="text-xs text-emerald-700" title={contact.completedLevels.join(", ")}>
+            {contact.completedLevels.length} completed
+          </div>
+        ) : null}
+        {contact.courseTier && contact.level ? <div className="text-xs text-slate-400">Assessed: {contact.level}</div> : null}
+      </td>
       <td className="px-3 py-2.5 text-slate-600">{contact.detail}</td>
       <td className="px-3 py-2.5">
         <StatusChip contact={contact} />
@@ -88,7 +97,7 @@ export function SalesDirectory({ data }: { data: DirectoryPayload }) {
     return source.filter((contact) => {
       if (status !== "all" && contact.status !== status) return false;
       if (!needle) return true;
-      return [contact.name, contact.parentName, contact.phone, contact.email, contact.batches.join(" "), contact.coaches.join(" ")]
+      return [contact.name, contact.parentName, contact.phone, contact.email, contact.batches.join(" "), contact.coaches.join(" "), contact.course, contact.courseTier]
         .join(" ")
         .toLowerCase()
         .includes(needle);
@@ -166,7 +175,7 @@ export function SalesDirectory({ data }: { data: DirectoryPayload }) {
                 <th className="px-3 py-2.5 font-bold">Phone</th>
                 <th className="px-3 py-2.5 font-bold">{tab === "coaches" ? "Batches" : "Batch"}</th>
                 <th className="px-3 py-2.5 font-bold">Coach</th>
-                <th className="px-3 py-2.5 font-bold">Level</th>
+                <th className="px-3 py-2.5 font-bold">{tab === "demos" ? "Level" : "Level / Course"}</th>
                 <th className="px-3 py-2.5 font-bold">{tab === "demos" ? "Demo" : tab === "coaches" ? "Load" : "Plan"}</th>
                 <th className="px-3 py-2.5 font-bold">Status</th>
               </tr>

@@ -9,7 +9,7 @@ import { deleteClassroomSessionInstances, syncClassroomSessionInstances } from "
 import { canAccessFeature, isSuperAdminSession } from "@/lib/featureAccess";
 import { ACADEMY_TIME_ZONE, academyDateKey, academyDateTime, formatAcademyDateTime } from "@/lib/academyTime";
 import { coachCanAccessClassroomSession, isPrimaryClassroomCoach, limitClassroomToCoachSessions } from "@/lib/classroomCoachAccess";
-import { ensureTopicContinuationSession, recalculateFutureSessionTopics, shouldContinueTopic, topicCompletedForOutcome } from "@/lib/classroomLifecycle";
+import { ensureTopicContinuationSession, hasClassesLeftToTeach, recalculateFutureSessionTopics, shouldContinueTopic, topicCompletedForOutcome } from "@/lib/classroomLifecycle";
 import { recordActivity } from "@/lib/activity";
 import { User } from "@/models/User";
 import { Notification } from "@/models/Fee";
@@ -662,6 +662,12 @@ async function patchClassroom(req: Request, { params }: { params: { id: string }
   if (!(await canAccessFeature("classrooms", session.user as any, permission))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
+  // Closing a course decides that a batch is ready to move up a level, and
+  // reopening one undoes that. Both are academy calls rather than teaching
+  // calls, so they stay with the admin desk even where a coach has edit rights.
+  if (["complete_classroom", "reopen_classroom", "cancel_scheduled_completion"].includes(body.action) && !["admin", "sub-admin"].includes(String((session.user as any).role || ""))) {
+    return NextResponse.json({ error: "Only an admin can close or reopen a course" }, { status: 403 });
+  }
   await dbConnect();
   const existing: any = await Classroom.findById(params.id);
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -690,6 +696,43 @@ async function patchClassroom(req: Request, { params }: { params: { id: string }
         session.summary = { ...(session.summary || {}), classOutcome: "cancelled", topicCompleted: false, creditPolicy: "no_charge" };
       }
     });
+  } else if (body.action === "complete_classroom") {
+    if (existing.isSessionInstance) return NextResponse.json({ error: "A single class mirror cannot be completed on its own" }, { status: 409 });
+    if (existing.status === "completed") return NextResponse.json({ error: "This course is already completed" }, { status: 409 });
+    if (existing.status === "cancelled") return NextResponse.json({ error: "A cancelled course cannot be completed" }, { status: 409 });
+    // "after_last_session" arms the close instead of doing it, so a course that
+    // still has classes to teach finishes on its own once the register for the
+    // last one is in. Anything else - including no mode at all - closes now.
+    if (body.mode === "after_last_session" && hasClassesLeftToTeach(existing)) {
+      existing.completeAfterLastSession = true;
+      existing.completionArmedAt = new Date();
+      existing.completionArmedBy = (session.user as any).id;
+    } else {
+      existing.status = "completed";
+      existing.completedAt = new Date();
+      existing.completedBy = (session.user as any).id;
+      existing.completeAfterLastSession = false;
+      existing.set("completionArmedAt", undefined);
+      existing.set("completionArmedBy", undefined);
+    }
+  } else if (body.action === "cancel_scheduled_completion") {
+    if (!existing.completeAfterLastSession) return NextResponse.json({ error: "This course is not waiting to close" }, { status: 409 });
+    existing.completeAfterLastSession = false;
+    existing.set("completionArmedAt", undefined);
+    existing.set("completionArmedBy", undefined);
+  } else if (body.action === "reopen_classroom") {
+    if (existing.status !== "completed") return NextResponse.json({ error: "Only a completed course can be reopened" }, { status: 409 });
+    // The sessions were never touched on close, so reopening is just the status
+    // going back - whatever was still scheduled is still scheduled.
+    existing.status = (existing.generatedSessions || []).some((item: any) => String(item.status || "") === "scheduled") ? "scheduled" : "ongoing";
+    // `.set(..., undefined)` rather than a plain assignment: that is the form
+    // mongoose reliably turns into an $unset across versions.
+    existing.set("completedAt", undefined);
+    existing.set("completedBy", undefined);
+    // A reopened course must not be re-closed by the sweep the moment it sees it.
+    existing.completeAfterLastSession = false;
+    existing.set("completionArmedAt", undefined);
+    existing.set("completionArmedBy", undefined);
   } else if (["update_session", "reschedule_session", "cancel_session", "delete_session", "mark_session_outcome", "change_session_topic"].includes(body.action)) {
     const sessionId = String(body.sessionId || "");
     const target = existing.generatedSessions?.id?.(sessionId) || (existing.generatedSessions || []).find((session: any) => String(session._id) === sessionId);
@@ -798,7 +841,11 @@ async function patchClassroom(req: Request, { params }: { params: { id: string }
     }
     const remainingStatuses = (existing.generatedSessions || []).map((item: any) => String(item.status || "scheduled"));
     if (remainingStatuses.length && remainingStatuses.every((status: string) => status === "cancelled")) existing.status = "cancelled";
-    else if (remainingStatuses.length && remainingStatuses.every((status: string) => ["completed", "cancelled", "missed", "abandoned", "absent", "coach_no_show", "student_no_show", "technical_issue"].includes(status))) existing.status = "completed";
+    // A finished last class no longer completes the course by itself. It used to,
+    // on the weaker "every session is terminal" test, which marked courses done
+    // that had classes nobody taught - and it also reset an already completed
+    // course back to "scheduled" whenever an old attendance record was edited.
+    // `isReadyToComplete` now surfaces this to the admin as a prompt instead.
   } else if (body.action === "reschedule_class") {
     if (existing.status === "completed" || existing.status === "cancelled") return NextResponse.json({ error: "This class can no longer be rescheduled" }, { status: 409 });
     if (!String(body.classDate || "").trim() || !/^([01]\d|2[0-3]):[0-5]\d$/.test(String(body.startTime || ""))) {

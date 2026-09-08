@@ -18,6 +18,7 @@ export async function register() {
   const { processDuePauseExpiryNotices } = await import("@/lib/studentLifecycleNotifications");
   const { academyDateKey } = await import("@/lib/academyTime");
   const { runTournamentTick } = await import("@/lib/tournamentLifecycle");
+  const { processDueCourseCompletions } = await import("@/lib/courseCompletionSweep");
 
   installRuntimeProcessLogging();
   installRuntimeStderrCapture();
@@ -65,6 +66,16 @@ export async function register() {
       name: "monthly_attendance_summaries",
       intervalMs: 60 * 60_000,
       run: () => sendMonthlyAttendanceSummaries(),
+    },
+    {
+      /**
+       * Closes courses an admin armed with "close after the last scheduled
+       * class". Hourly is ample: the trigger is the last register being marked,
+       * and nothing downstream needs the status within the hour.
+       */
+      name: "course_completions",
+      intervalMs: 60 * 60_000,
+      run: () => processDueCourseCompletions(),
     },
     {
       /** Warns families a week before a paused enrolment restarts billing. */

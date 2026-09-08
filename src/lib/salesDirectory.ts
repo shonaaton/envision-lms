@@ -3,8 +3,11 @@ import "server-only";
 import { dbConnect } from "@/lib/db";
 import { Batch } from "@/models/Batch";
 import { Booking } from "@/models/Booking";
+import { Classroom } from "@/models/Classroom";
 import { FeeAssignment } from "@/models/Fee";
 import { User } from "@/models/User";
+import { courseTierLabel } from "@/lib/courseTiers";
+import { courseLabel, indexStudentCourseProgress } from "@/lib/salesCourseProgress";
 
 /**
  * Contact directory for the sales and relationship team.
@@ -26,7 +29,23 @@ export type DirectoryContact = {
   phone: string;
   email: string;
   city: string;
+  /**
+   * The player assessment - absolute beginner through federated. This is what
+   * someone *is*, and for a demo lead it is the only level that exists yet.
+   * It is NOT where they sit on the course ladder; see `courseTier`.
+   */
   level: string;
+  /**
+   * Where they sit on the academy's course ladder - Beginner through Masters.
+   * Read from the course their running classroom teaches, because that is the
+   * only record that cannot drift; `batch.level` is a hand-maintained label and
+   * is used only as a fallback.
+   */
+  courseTier: string;
+  /** The course and level being taught right now, e.g. "Openings - Level 2". */
+  course: string;
+  /** Levels already finished, newest first, same "Course - Level" shape. */
+  completedLevels: string[];
   status: string;
   statusTone: "active" | "paused" | "left" | "demo";
   batches: string[];
@@ -88,11 +107,11 @@ export type DirectoryPayload = {
 export async function getSalesDirectory(): Promise<DirectoryPayload> {
   await dbConnect();
 
-  const [studentDocs, coachDocs, demoDocs, batches, assignments, demoBookings] = await Promise.all([
+  const [studentDocs, coachDocs, demoDocs, batches, assignments, demoBookings, classrooms] = await Promise.all([
     User.find({ role: "student", accountStatus: { $ne: "demo" } }).select(CONTACT_FIELDS).sort({ name: 1 }).lean(),
     User.find({ role: "instructor" }).select(CONTACT_FIELDS).sort({ name: 1 }).lean(),
     User.find({ accountStatus: "demo" }).select(CONTACT_FIELDS).sort({ createdAt: -1 }).lean(),
-    Batch.find({ isActive: true }).select("_id name coach students").populate("coach", "name").lean(),
+    Batch.find({ isActive: true }).select("_id name coach students level").populate("coach", "name").lean(),
     FeeAssignment.find({}).select("student type creditBalance").lean(),
     Booking.find({ bookingType: "demo" })
       .select("student demoStatus startAt assignedCoach instructor")
@@ -100,15 +119,24 @@ export async function getSalesDirectory(): Promise<DirectoryPayload> {
       .populate("instructor", "name")
       .sort({ startAt: -1 })
       .lean(),
+    // Per-session mirrors describe the same class as their parent, and test
+    // classrooms are not real teaching, so neither says anything about where a
+    // student has reached.
+    Classroom.find({ isSessionInstance: { $ne: true }, isTestClassroom: { $ne: true } })
+      .select("students status level levelName courseName startDate isActive")
+      .sort({ startDate: -1, createdAt: -1 })
+      .lean(),
   ]);
 
   const batchNameById = new Map<string, string>();
+  const batchLevelById = new Map<string, string>();
   const coachNamesByStudent = new Map<string, Set<string>>();
   const batchCountByCoach = new Map<string, number>();
   const studentCountByCoach = new Map<string, number>();
 
   for (const batch of batches as any[]) {
     batchNameById.set(id(batch._id), String(batch.name || ""));
+    batchLevelById.set(id(batch._id), String(batch.level || ""));
     const coachId = id(batch.coach);
     const coachName = String((batch.coach as any)?.name || "");
     if (coachId) {
@@ -123,6 +151,12 @@ export async function getSalesDirectory(): Promise<DirectoryPayload> {
     }
   }
 
+  // What each student is studying now, and what they have finished. The query
+  // above sorts newest-first, which is what lets the indexer pick a current
+  // classroom.
+  const { running: runningClassroomByStudent, completed: completedLevelsByStudent } =
+    indexStudentCourseProgress(classrooms as any[]);
+
   const assignmentByStudent = new Map<string, any>();
   for (const assignment of assignments as any[]) assignmentByStudent.set(id(assignment.student), assignment);
 
@@ -136,6 +170,7 @@ export async function getSalesDirectory(): Promise<DirectoryPayload> {
   const toStudent = (user: any): DirectoryContact => {
     const key = id(user._id);
     const assignment = assignmentByStudent.get(key);
+    const running = runningClassroomByStudent.get(key);
     const balance =
       assignment?.type === "credits"
         ? `${Number(assignment.creditBalance || 0)} credits left`
@@ -150,6 +185,11 @@ export async function getSalesDirectory(): Promise<DirectoryPayload> {
       email: String(user.email || ""),
       city: String(user.city || ""),
       level: LEVEL_LABELS[String(user.studentLevel || "not_set")] || "Not set",
+      courseTier: courseTierLabel(
+        running?.level || (user.batches || []).map((batch: any) => batchLevelById.get(id(batch))).find(Boolean) || "",
+      ),
+      course: running ? courseLabel(running) : "",
+      completedLevels: completedLevelsByStudent.get(key) || [],
       ...studentStatus(user),
       batches: (user.batches || []).map((batch: any) => batchNameById.get(id(batch)) || "").filter(Boolean),
       coaches: Array.from(coachNamesByStudent.get(key) || []),
@@ -168,6 +208,9 @@ export async function getSalesDirectory(): Promise<DirectoryPayload> {
       email: String(user.email || ""),
       city: String(user.city || ""),
       level: "",
+      courseTier: "",
+      course: "",
+      completedLevels: [],
       status: user.isActive === false ? "Inactive" : "Active",
       statusTone: user.isActive === false ? "left" : "active",
       batches: (batches as any[]).filter((batch) => id(batch.coach) === key).map((batch) => String(batch.name || "")),
@@ -192,6 +235,11 @@ export async function getSalesDirectory(): Promise<DirectoryPayload> {
       email: String(user.email || ""),
       city: String(user.city || ""),
       level: LEVEL_LABELS[String(user.studentLevel || "not_set")] || "Not set",
+      // A lead has not been placed on the course ladder yet - that happens at
+      // conversion, when they are put in a batch and given a classroom.
+      courseTier: "",
+      course: "",
+      completedLevels: [],
       status: DEMO_STATUS_LABELS[String(booking?.demoStatus || "")] || "Demo account",
       statusTone: "demo",
       batches: [],

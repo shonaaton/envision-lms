@@ -60,6 +60,34 @@ export const batchSchema = z.object({
   capacity: z.number().int().min(1).max(100).default(8),
 });
 
+/**
+ * Editable fields on an existing batch.
+ *
+ * Deliberately not `batchSchema.partial()`. The closure and pause trail
+ * (`isActive`, `closedAt`, `closedForStudents`, `isPaused`, `pausedUntil`,
+ * `pausedForStudents`) and the `studentEnrollments` join dates are owned by the
+ * closure, pause and enrolment flows, which keep them in step with the matching
+ * `StudentPause` record and the batch's classrooms. A batch paused through a
+ * plain edit has no pause record behind it and can never be resumed, so those
+ * fields are not editable here at any cost.
+ *
+ * `.strict()` rather than a silent drop: an unknown key means the caller and
+ * this list have drifted apart, and failing loudly is how that gets noticed.
+ */
+export const batchUpdateSchema = z
+  .object({
+    name: z.string().min(2).max(80),
+    description: z.string().max(2000),
+    // "" is the "No coach" option in the edit form, and unassigns the coach.
+    coach: z.union([z.literal(""), z.string().regex(/^[a-f\d]{24}$/i)]),
+    students: z.array(z.string().regex(/^[a-f\d]{24}$/i)),
+    tags: z.array(z.string().max(40)),
+    level: z.enum(COURSE_TIER_ENUM),
+    capacity: z.number().int().min(1).max(100),
+  })
+  .partial()
+  .strict();
+
 export const classroomSchema = z.object({
   title: z.string().min(2).max(120),
   description: z.string().optional(),

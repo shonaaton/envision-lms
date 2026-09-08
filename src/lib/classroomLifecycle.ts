@@ -47,6 +47,22 @@ export function normalizeSessionOutcome(value: unknown, actualTeachingMinutes = 
   return actualTeachingMinutes >= MIN_COMPLETED_TEACHING_MINUTES ? "completed" : "abandoned";
 }
 
+/**
+ * Session statuses that mean "this class is behind us", however it went. Note
+ * that most of them taught nothing - see `isReadyToComplete` for why that
+ * distinction matters.
+ */
+export const TERMINAL_SESSION_STATUSES = new Set([
+  "completed",
+  "cancelled",
+  "missed",
+  "abandoned",
+  "absent",
+  "coach_no_show",
+  "student_no_show",
+  "technical_issue",
+]);
+
 export function sessionConsumesTopic(session: any) {
   return String(session?.status || "").toLowerCase() === "completed" && session?.summary?.topicCompleted !== false;
 }
@@ -57,6 +73,56 @@ export function shouldContinueTopic(value: unknown) {
 
 export function topicCompletedForOutcome(status: string, requestedOutcome: unknown) {
   return status === "completed" && !shouldContinueTopic(requestedOutcome);
+}
+
+/**
+ * Whether every topic this classroom set out to teach has actually been taught.
+ *
+ * Deliberately not "every session reached an end state". A session that was
+ * cancelled, missed or no-showed is terminal but taught nothing, so counting it
+ * would let a series where a third of the syllabus never happened report itself
+ * complete. `sessionConsumesTopic` is the same test the topic scheduler uses, so
+ * a topic that ran over two classes counts once and a continuation class does
+ * not close its topic early.
+ *
+ * A classroom with no session plan - a single class, or a series created with
+ * `seriesTopicMode: "none"` - has no topics to check, so it falls back to every
+ * session having finished one way or another.
+ *
+ * This only ever *suggests* completion. Marking a classroom completed is an
+ * admin action, because only a person can say the syllabus was really covered.
+ */
+export function isReadyToComplete(classroom: any) {
+  const sessions: any[] = Array.isArray(classroom?.generatedSessions) ? classroom.generatedSessions : [];
+  if (!sessions.length) return false;
+
+  const plan: any[] = Array.isArray(classroom?.sessionPlan) ? classroom.sessionPlan : [];
+  if (!plan.length) {
+    return sessions.every((session: any) => TERMINAL_SESSION_STATUSES.has(String(session?.status || "").toLowerCase()));
+  }
+
+  const taughtTopics = new Set(
+    sessions
+      .filter((session: any) => sessionConsumesTopic(session))
+      .map((session: any) => String(session?.topicName || "").trim().toLowerCase())
+      .filter(Boolean),
+  );
+  return plan.every((item: any) => taughtTopics.has(String(item?.topicName || "").trim().toLowerCase()));
+}
+
+/**
+ * Whether any class is still waiting to be taught or to have its register
+ * marked. This is what "close after the last scheduled class" waits on.
+ *
+ * Deliberately register-based rather than date-based: a class whose date has
+ * passed but whose attendance was never marked is still outstanding, and
+ * auto-closing over it would strand the register and the credit it consumes.
+ * The attendance nudge job already chases those.
+ */
+export function hasClassesLeftToTeach(classroom: any) {
+  return (Array.isArray(classroom?.generatedSessions) ? classroom.generatedSessions : []).some(
+    (session: any) => !TERMINAL_SESSION_STATUSES.has(String(session?.status || "scheduled").toLowerCase()),
+  );
 }
 
 export function isFutureTopicAssignable(session: any) {

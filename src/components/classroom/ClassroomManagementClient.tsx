@@ -9,6 +9,7 @@ import {
   ChevronsRight,
   Clock3,
   CopyPlus,
+  CheckCircle2,
   Eye,
   GraduationCap,
   ArrowLeft,
@@ -69,7 +70,8 @@ type CourseOption = {
 
 type StudentOption = { _id: string; name: string; email?: string; username?: string; isActive?: boolean };
 
-type OverviewTab = "groups" | "calendar" | "closed" | "paused";
+type OverviewTab = "groups" | "calendar" | "completed" | "closed" | "paused";
+type CompletionMode = "now" | "after_last_session";
 
 type InactivePerson = { _id: string; name?: string; username?: string; email?: string };
 
@@ -133,6 +135,13 @@ type ClassroomItem = {
   meetingProvider?: "meet";
   meetingUrl?: string;
   isTestClassroom?: boolean;
+  completedAt?: string;
+  // Server-derived: every topic in the session plan has actually been taught.
+  // A prompt for the admin, never an automatic close.
+  readyToComplete?: boolean;
+  // Armed to close once its last class has been taught and marked.
+  completeAfterLastSession?: boolean;
+  classesLeftToTeach?: number;
 };
 
 type SessionFilterStatus =
@@ -300,6 +309,7 @@ export default function ClassroomManagementClient({
   const [studentSearch, setStudentSearch] = useState("");
   const [coachSearch, setCoachSearch] = useState("");
   const [overviewTab, setOverviewTab] = useState<OverviewTab>("groups");
+  const [completionTarget, setCompletionTarget] = useState<ClassroomItem | null>(null);
   // Closed and paused groups are off every other list on this page, so they are
   // fetched on their own the first time one of their tabs is opened.
   const [inactiveGroups, setInactiveGroups] = useState<InactiveGroupsPayload>(EMPTY_INACTIVE_GROUPS);
@@ -409,8 +419,21 @@ export default function ClassroomManagementClient({
     return selectedLevel?.topics || [];
   }, [form.classroomType, form.selectedTopicNames, form.seriesTopicMode, selectedLevel]);
 
+  // A completed course is history, not workload: it comes out of the groups and
+  // calendar views entirely and lives in the Completed tab, which is what makes
+  // "close as completed" feel like the course moved rather than just changed a
+  // label. Closed and paused groups are excluded server-side already.
+  const completedItems = useMemo(
+    () =>
+      items
+        .filter((item) => String(item.status || "") === "completed")
+        .sort((a, b) => new Date(b.completedAt || 0).getTime() - new Date(a.completedAt || 0).getTime()),
+    [items],
+  );
+
   const filteredItems = useMemo(() => {
     return items.filter((item) => {
+      if (String(item.status || "") === "completed") return false;
       if (filters.coach) {
         const primaryMatches = String((item.coach as any)?._id || item.coach || "") === filters.coach;
         const substituteMatches = (item.generatedSessions || []).some((session: any) => String(session?.substituteCoach?._id || session?.substituteCoach || "") === filters.coach);
@@ -877,6 +900,44 @@ export default function ClassroomManagementClient({
     });
   }
 
+  async function setCourseCompletion(
+    item: ClassroomItem,
+    action: "complete_classroom" | "reopen_classroom" | "cancel_scheduled_completion",
+    mode?: CompletionMode,
+  ) {
+    const label =
+      action === "complete_classroom"
+        ? mode === "after_last_session"
+          ? "Scheduling close..."
+          : "Closing course..."
+        : action === "reopen_classroom"
+          ? "Reopening course..."
+          : "Cancelling scheduled close...";
+    await withBusy(label, async () => {
+      const response = await fetch(`/api/classrooms/${item._id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(mode ? { action, mode } : { action }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) return toast.error(data.error || "Could not update this course");
+      // The server decides: asking to close after the last class when there is
+      // no class left closes it now instead, so the toast reads the result
+      // rather than the request.
+      toast.success(
+        action === "reopen_classroom"
+          ? "Course reopened"
+          : action === "cancel_scheduled_completion"
+            ? "Scheduled close cancelled"
+            : String(data?.status || "") === "completed"
+              ? "Course closed as completed"
+              : "Course will close after its last class",
+      );
+      setCompletionTarget(null);
+      await load();
+    });
+  }
+
   async function deleteItem(item: ClassroomItem) {
     const target = item.classroomType === "series" ? `the entire series “${item.title}” and all of its classes` : `“${item.title}”`;
     if (!window.confirm(`Permanently delete ${target}? This also removes its classroom records and cannot be undone.`)) return;
@@ -978,6 +1039,18 @@ export default function ClassroomManagementClient({
               </button>
               <button
                 type="button"
+                onClick={() => setOverviewTab("completed")}
+                className={cn("rounded px-3 py-1.5 text-xs font-bold transition", overviewTab === "completed" ? "bg-white text-brand shadow-sm" : "text-slate-500 hover:text-slate-700")}
+              >
+                Completed
+                {completedItems.length > 0 && (
+                  <span className="ml-1.5 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800">
+                    {completedItems.length}
+                  </span>
+                )}
+              </button>
+              <button
+                type="button"
                 onClick={() => setOverviewTab("paused")}
                 className={cn("rounded px-3 py-1.5 text-xs font-bold transition", overviewTab === "paused" ? "bg-white text-brand shadow-sm" : "text-slate-500 hover:text-slate-700")}
               >
@@ -1023,7 +1096,14 @@ export default function ClassroomManagementClient({
           </div>
 
           <div className="p-3">
-            {overviewTab === "closed" || overviewTab === "paused" ? (
+            {overviewTab === "completed" ? (
+              <CompletedCoursesPanel
+                items={completedItems}
+                loading={loading}
+                batches={targets.batches}
+                onReopen={(item) => setCourseCompletion(item, "reopen_classroom")}
+              />
+            ) : overviewTab === "closed" || overviewTab === "paused" ? (
               <InactiveGroupsPanel
                 mode={overviewTab}
                 loading={inactiveLoading && !inactiveLoaded}
@@ -1122,11 +1202,32 @@ export default function ClassroomManagementClient({
                                 <span className="rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-600">{titleCase(item.status)}</span>
                                 {item.courseName && <span className="rounded-full bg-amber-50 px-2 py-0.5 font-semibold text-amber-700">{item.courseName}</span>}
                                 {item.levelName && <span className="rounded-full bg-sky-50 px-2 py-0.5 font-semibold text-sky-700">{item.levelName}</span>}
+                                {item.readyToComplete && !item.completeAfterLastSession && <span className="rounded-full bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700">Every topic taught - ready to close</span>}
+                                {item.completeAfterLastSession && (
+                                  <span className="rounded-full bg-indigo-50 px-2 py-0.5 font-semibold text-indigo-700">
+                                    Closes after its last class{item.classesLeftToTeach ? ` - ${item.classesLeftToTeach} left` : ""}
+                                  </span>
+                                )}
                               </div>
                             </div>
                             <div className="flex shrink-0 justify-start gap-1 lg:justify-end">
                               <IconAction href={summaryHref} icon={<Eye size={15} />} label="View details" />
                               {permissions.edit && <IconAction icon={<Pencil size={15} />} label="Edit classroom" onClick={() => resetModal(item.classroomType, item)} />}
+                              {["admin", "sub-admin"].includes(role) && (
+                                item.completeAfterLastSession ? (
+                                  <IconAction
+                                    icon={<X size={15} />}
+                                    label="Cancel the scheduled close - keep this course running"
+                                    onClick={() => setCourseCompletion(item, "cancel_scheduled_completion")}
+                                  />
+                                ) : (
+                                  <IconAction
+                                    icon={<CheckCircle2 size={15} />}
+                                    label={item.readyToComplete ? "Close as completed - every topic has been taught" : "Close as completed"}
+                                    onClick={() => setCompletionTarget(item)}
+                                  />
+                                )
+                              )}
                               {permissions.cancel && <IconAction destructive icon={<Trash2 size={15} />} label={item.classroomType === "series" ? "Delete entire series" : "Delete class"} onClick={() => deleteItem(item)} />}
                             </div>
                           </div>
@@ -1675,7 +1776,129 @@ export default function ClassroomManagementClient({
         </div>
       )}
     </div>
+    {completionTarget ? (
+      <CloseCourseModal
+        item={completionTarget}
+        onClose={() => setCompletionTarget(null)}
+        onConfirm={(mode) => setCourseCompletion(completionTarget, "complete_classroom", mode)}
+      />
+    ) : null}
     </>
+  );
+}
+
+/**
+ * The two ways a course ends. "Now" is for a course that is finished, or one
+ * being stopped early; "after its last class" is for the common case of closing
+ * the books on a course that still has a class or two on the calendar, so
+ * nobody has to come back and press the button on the day.
+ */
+function CloseCourseModal({
+  item,
+  onClose,
+  onConfirm,
+}: {
+  item: ClassroomItem;
+  onClose: () => void;
+  onConfirm: (mode: CompletionMode) => void;
+}) {
+  const remaining = (item.generatedSessions || []).filter(
+    (session: any) => !["completed", "cancelled", "missed", "abandoned", "absent", "coach_no_show", "student_no_show", "technical_issue"].includes(String(session?.status || "scheduled")),
+  );
+  const [mode, setMode] = useState<CompletionMode>(remaining.length ? "after_last_session" : "now");
+  const nextDate = remaining
+    .map((session: any) => new Date(session?.scheduledFor || 0).getTime())
+    .filter((time) => time > 0)
+    .sort((a, b) => b - a)[0];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4" onClick={onClose}>
+      <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
+        <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4">
+          <div className="min-w-0">
+            <div className="text-xs font-black uppercase tracking-[0.16em] text-brand">Close Course</div>
+            <h2 className="mt-1 truncate text-xl font-black text-slate-950">{item.title}</h2>
+          </div>
+          <button type="button" className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50" onClick={onClose} aria-label="Cancel">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="space-y-2 px-5 py-5">
+          {item.readyToComplete ? (
+            <div className="rounded-md bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800">Every topic in the plan has been taught.</div>
+          ) : remaining.length ? (
+            <div className="rounded-md bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+              {remaining.length} {remaining.length === 1 ? "class has" : "classes have"} not been taught yet.
+            </div>
+          ) : null}
+
+          <ModeChoice
+            checked={mode === "after_last_session"}
+            disabled={!remaining.length}
+            onSelect={() => setMode("after_last_session")}
+            title="After the last scheduled class"
+            detail={
+              remaining.length
+                ? `Keeps running as normal, then closes on its own once the register for the last class is marked${nextDate ? ` - due ${new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric" }).format(new Date(nextDate))}` : ""}.`
+                : "Nothing left on the calendar, so there is no last class to wait for."
+            }
+          />
+          <ModeChoice
+            checked={mode === "now"}
+            onSelect={() => setMode("now")}
+            title="Immediately"
+            detail={
+              remaining.length
+                ? `Closes today. The ${remaining.length === 1 ? "remaining class" : `${remaining.length} remaining classes`} will not be taught.`
+                : "Closes the course now."
+            }
+          />
+
+          <p className="pt-1 text-xs text-slate-500">
+            Either way the course moves to Completed for you, the coach and the students, and stops counting as running work. You can reopen it if this was a mistake.
+          </p>
+        </div>
+
+        <div className="flex justify-end gap-2 border-t border-slate-100 px-5 py-3">
+          <button type="button" onClick={onClose} className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-bold text-slate-700 hover:bg-slate-50">
+            Cancel
+          </button>
+          <button type="button" onClick={() => onConfirm(mode)} className="rounded-md bg-brand px-3 py-1.5 text-sm font-bold text-white hover:bg-brand/90">
+            {mode === "now" ? "Close now" : "Close after last class"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ModeChoice({
+  checked,
+  disabled = false,
+  onSelect,
+  title,
+  detail,
+}: {
+  checked: boolean;
+  disabled?: boolean;
+  onSelect: () => void;
+  title: string;
+  detail: string;
+}) {
+  return (
+    <label
+      className={cn(
+        "flex cursor-pointer gap-2.5 rounded-lg border px-3 py-2.5 transition",
+        disabled ? "cursor-not-allowed border-slate-200 bg-slate-50 opacity-60" : checked ? "border-brand bg-brand/5" : "border-slate-200 hover:bg-slate-50",
+      )}
+    >
+      <input type="radio" name="completion-mode" className="mt-0.5" checked={checked} disabled={disabled} onChange={onSelect} />
+      <div className="min-w-0">
+        <div className="text-sm font-bold text-slate-950">{title}</div>
+        <div className="mt-0.5 text-xs text-slate-600">{detail}</div>
+      </div>
+    </label>
   );
 }
 
@@ -2085,7 +2308,17 @@ function SimpleClassroomList({
   const sessions = dedupeSessionRows(flattenScheduledSessions(items)
     .filter((row) => row.start)
     .sort((a, b) => (a.start?.getTime() || 0) - (b.start?.getTime() || 0)));
-  const upcoming = sessions.filter((row) => isSessionUpcomingLike(deriveScheduledSessionStatus(row.session, now))).slice(0, 12);
+  // A course closed as completed stops producing upcoming classes even if the
+  // admin closed it with classes still on the calendar - otherwise a finished
+  // course keeps advertising a next class that nobody will teach. Its past
+  // classes stay in `history` below, which is built from every item, so closing
+  // a course never erases a student's attendance record.
+  const completedCourses = items.filter((item) => String(item.status || "") === "completed");
+  const completedCourseIds = new Set(completedCourses.map((item) => String(item._id)));
+  const upcoming = sessions
+    .filter((row) => !completedCourseIds.has(String((row as any).classroom?._id || "")))
+    .filter((row) => isSessionUpcomingLike(deriveScheduledSessionStatus(row.session, now)))
+    .slice(0, 12);
   const history = sessions
     .filter((row) => {
       const status = deriveScheduledSessionStatus(row.session, now);
@@ -2189,6 +2422,37 @@ function SimpleClassroomList({
         </div>
       )}
       </div>
+
+      {completedCourses.length > 0 && (
+        <div className="rounded-lg border border-emerald-200 bg-white p-4 shadow-sm">
+          <div className="mb-3">
+            <h2 className="text-2xl font-black text-slate-950">Completed Courses</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              {role === "student"
+                ? "Courses you have finished. Your coach will let you know what comes next."
+                : "Courses closed as completed by the academy."}
+            </p>
+          </div>
+          <div className="grid gap-2">
+            {completedCourses.map((item) => {
+              const taught = (item.generatedSessions || []).filter((session: any) => String(session?.status || "") === "completed").length;
+              return (
+                <div key={item._id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-emerald-200 bg-emerald-50/40 px-3 py-2.5">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-bold text-slate-950">{item.title}</div>
+                    <div className="mt-0.5 text-xs text-slate-600">
+                      {[item.courseName, item.levelName].filter(Boolean).join(" - ") || "Course complete"} - {taught} {taught === 1 ? "class" : "classes"} taught
+                    </div>
+                  </div>
+                  <Link href={`/classrooms/${item._id}/summary`} className="shrink-0 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-700 hover:bg-slate-50">
+                    View summary
+                  </Link>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="rounded-lg border border-brand/10 bg-white p-4 shadow-sm">
         <div className="mb-3">
@@ -2552,6 +2816,79 @@ function actionSuccessMessage(type: string) {
  * deactivation and stay closed; paused ones are waiting for a student to come
  * back and return on their own, so neither is opened from here.
  */
+/**
+ * Courses an admin has closed as completed. Read-only apart from the reopen
+ * escape hatch - a close is easy to do by accident on the wrong row, and every
+ * other action 409s once a course is completed, so without this the only way
+ * back would be the database.
+ */
+function CompletedCoursesPanel({
+  items,
+  loading,
+  batches,
+  onReopen,
+}: {
+  items: ClassroomItem[];
+  loading: boolean;
+  batches: BatchOption[];
+  onReopen: (item: ClassroomItem) => void;
+}) {
+  return (
+    <>
+      <div className="mb-2">
+        <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Completed</div>
+        <div className="text-sm font-semibold text-slate-950">
+          Courses closed as completed. Students and coaches see these under their own Completed list. Assign the batch its next course from the Groups tab.
+        </div>
+      </div>
+      {loading ? (
+        <div className="rounded-md bg-slate-50 px-3 py-3 text-sm text-slate-500">Loading completed courses...</div>
+      ) : items.length === 0 ? (
+        <div className="rounded-md bg-slate-50 px-3 py-3 text-sm text-slate-500">
+          No completed courses yet. Close a course from its card once every topic has been taught.
+        </div>
+      ) : (
+        <div className="grid gap-2">
+          {items.map((item) => {
+            const sessions = item.generatedSessions || [];
+            const taught = sessions.filter((session: any) => String(session?.status || "") === "completed").length;
+            const batchNames = batchNamesForItem(item, batches);
+            return (
+              <div key={item._id} className="rounded-md border border-emerald-200 bg-emerald-50/40 px-3 py-2.5">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-bold text-slate-950">{item.title}</div>
+                    <div className="mt-0.5 text-xs text-slate-600">
+                      {[item.courseName, item.levelName].filter(Boolean).join(" - ") || "No course linked"}
+                      {batchNames ? ` - ${batchNames}` : ""}
+                    </div>
+                    <div className="mt-1 text-[11px] font-semibold text-emerald-800">
+                      {taught} of {sessions.length} classes taught
+                      {item.completedAt ? ` - closed ${new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric" }).format(new Date(item.completedAt))}` : ""}
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <Link href={`/classrooms/${item._id}/summary`} className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-700 hover:bg-slate-50">
+                      Summary
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => onReopen(item)}
+                      className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-700 hover:bg-slate-50"
+                    >
+                      Reopen
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </>
+  );
+}
+
 function InactiveGroupsPanel({
   mode,
   loading,

@@ -128,6 +128,23 @@ const ClassroomSchema = new Schema(
     isTestClassroom: { type: Boolean, default: false, index: true },
     testOwner: { type: Schema.Types.ObjectId, ref: "User", index: true },
 
+    // Completion trail. Set only by the "Close as completed" action - an admin
+    // confirming the syllabus was actually taught. Deliberately separate from
+    // the closure trail below: completion is the happy ending and keeps the
+    // classroom `isActive`, while a closure is an interruption caused by a
+    // student leaving. Conflating them would break the closed-classroom list
+    // and the reactivation path.
+    completedAt: { type: Date, index: true },
+    completedBy: { type: Schema.Types.ObjectId, ref: "User" },
+
+    // Completion armed for later. The admin has already decided this course
+    // ends when its schedule does; the `course_completions` sweep carries that
+    // out once no class is left to teach, so nobody has to remember to come
+    // back and press the button on the last day.
+    completeAfterLastSession: { type: Boolean, default: false, index: true },
+    completionArmedAt: { type: Date },
+    completionArmedBy: { type: Schema.Types.ObjectId, ref: "User" },
+
     // Closure trail. A classroom is switched off when the last active student
     // leaves it - today that only happens through account deactivation - and
     // these fields say when, why, and for whom, so the close can be reversed

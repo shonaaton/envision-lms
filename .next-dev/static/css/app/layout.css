@@ -1397,6 +1397,9 @@ main .rounded-xl.card.bg-white {
 .ml-5 {
   margin-left: 1.25rem;
 }
+.ml-7 {
+  margin-left: 1.75rem;
+}
 .ml-8 {
   margin-left: 2rem;
 }
@@ -1688,6 +1691,9 @@ main .rounded-xl.card.bg-white {
 }
 .h-screen {
   height: 100vh;
+}
+.h-\[calc\(100vh-20px\)\] {
+  height: calc(100vh - 20px);
 }
 .max-h-24 {
   max-height: 6rem;
@@ -3703,6 +3709,14 @@ main .rounded-xl.card.bg-white {
   --tw-bg-opacity: 1;
   background-color: rgb(6 95 70 / var(--tw-bg-opacity));
 }
+.bg-fuchsia-500 {
+  --tw-bg-opacity: 1;
+  background-color: rgb(217 70 239 / var(--tw-bg-opacity));
+}
+.bg-indigo-50 {
+  --tw-bg-opacity: 1;
+  background-color: rgb(238 242 255 / var(--tw-bg-opacity));
+}
 .bg-indigo-500 {
   --tw-bg-opacity: 1;
   background-color: rgb(99 102 241 / var(--tw-bg-opacity));
@@ -3729,6 +3743,10 @@ main .rounded-xl.card.bg-white {
 .bg-orange-50 {
   --tw-bg-opacity: 1;
   background-color: rgb(255 247 237 / var(--tw-bg-opacity));
+}
+.bg-orange-500 {
+  --tw-bg-opacity: 1;
+  background-color: rgb(249 115 22 / var(--tw-bg-opacity));
 }
 .bg-purple-100 {
   --tw-bg-opacity: 1;
@@ -4945,6 +4963,10 @@ main .rounded-xl.card.bg-white {
 .text-gray-400 {
   --tw-text-opacity: 1;
   color: rgb(156 163 175 / var(--tw-text-opacity));
+}
+.text-indigo-700 {
+  --tw-text-opacity: 1;
+  color: rgb(67 56 202 / var(--tw-text-opacity));
 }
 .text-inherit {
   color: inherit;
@@ -6894,6 +6916,11 @@ main td {
   color: rgb(220 38 38 / var(--tw-text-opacity));
 }
 
+.hover\:text-red-700:hover {
+  --tw-text-opacity: 1;
+  color: rgb(185 28 28 / var(--tw-text-opacity));
+}
+
 .hover\:text-rose-600:hover {
   --tw-text-opacity: 1;
   color: rgb(225 29 72 / var(--tw-text-opacity));
@@ -7123,6 +7150,11 @@ main td {
 
 .disabled\:cursor-wait:disabled {
   cursor: wait;
+}
+
+.disabled\:border-slate-100:disabled {
+  --tw-border-opacity: 1;
+  border-color: rgb(241 245 249 / var(--tw-border-opacity));
 }
 
 .disabled\:border-slate-200:disabled {
@@ -8440,6 +8472,10 @@ main td {
 
   .lg\:grid-cols-\[minmax\(0\2c 1\.05fr\)_minmax\(360px\2c 0\.95fr\)\] {
     grid-template-columns: minmax(0,1.05fr) minmax(360px,0.95fr);
+  }
+
+  .lg\:grid-cols-\[minmax\(0\2c 1fr\)_200px_200px_auto_auto\] {
+    grid-template-columns: minmax(0,1fr) 200px 200px auto auto;
   }
 
   .lg\:grid-cols-\[minmax\(0\2c 1fr\)_300px\] {

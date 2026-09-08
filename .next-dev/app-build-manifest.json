@@ -26,10 +26,10 @@
       "static/chunks/main-app.js",
       "static/chunks/app/loading.js"
     ],
-    "/(dashboard)/dashboard/page": [
+    "/(dashboard)/pgn/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/(dashboard)/dashboard/page.js"
+      "static/chunks/app/(dashboard)/pgn/page.js"
     ],
     "/(dashboard)/layout": [
       "static/chunks/webpack.js",
@@ -51,10 +51,10 @@
       "static/chunks/main-app.js",
       "static/chunks/app/(auth)/login/page.js"
     ],
-    "/(dashboard)/classrooms/page": [
+    "/tournament-join/[token]/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/(dashboard)/classrooms/page.js"
+      "static/chunks/app/tournament-join/[token]/page.js"
     ]
   }
 }

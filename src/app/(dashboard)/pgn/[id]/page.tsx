@@ -4,13 +4,16 @@ import { PGN } from "@/models/PGN";
 import PgnViewer from "@/components/quiz/PgnViewer";
 import { notFound } from "next/navigation";
 import { buildPgnLibraryFilter } from "@/lib/pgnAccess";
+import { canAccessFeature } from "@/lib/featureAccess";
 
 export const dynamic = "force-dynamic";
 
 export default async function PgnDetail({ params, searchParams }: { params: { id: string }; searchParams?: { folder?: string; scope?: string } }) {
   const session = await auth();
   if (!session) notFound();
-  if ((session.user as any).role === "student") notFound();
+  const role = (session.user as any).role;
+  if (role === "student") notFound();
+  const canEdit = role === "admin" && await canAccessFeature("pgnLibrary", session.user, "edit");
   await dbConnect();
   const game: any = await PGN.findOne(buildPgnLibraryFilter(session, { _id: params.id })).lean();
   if (!game) notFound();
@@ -56,7 +59,7 @@ export default async function PgnDetail({ params, searchParams }: { params: { id
         )}
       </div>
       <div className="min-h-0 flex-1">
-        <PgnViewer pgn={game.pgn} backHref={backHref} previousFile={previousFile} nextFile={nextFile} folderFiles={folderFiles} currentFileId={game._id.toString()} />
+        <PgnViewer pgn={game.pgn} backHref={backHref} previousFile={previousFile} nextFile={nextFile} folderFiles={folderFiles} currentFileId={game._id.toString()} canEdit={canEdit} />
       </div>
     </div>
   );

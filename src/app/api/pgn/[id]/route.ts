@@ -14,10 +14,6 @@ async function hasPgnAccess(session: any, permission = "view") {
   return ["instructor", "admin", "sub-admin"].includes(role) && await canAccessFeature("pgnLibrary", session.user, permission);
 }
 
-function ownerFilter(session: any, id: string) {
-  return { _id: id, uploadedBy: (session.user as any).id };
-}
-
 function manageableFilter(session: any, id: string) {
   return buildManageablePgnFilter(session, { _id: id });
 }
@@ -48,19 +44,22 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   await dbConnect();
 
   const { title, pgn, folder, description, tags } = await req.json();
-  if (!title?.trim()) return NextResponse.json({ error: "title required" }, { status: 400 });
+  if (title !== undefined && !title?.trim()) return NextResponse.json({ error: "title required" }, { status: 400 });
   if (!pgn?.trim() || !isValidPgnOrFenSetup(pgn)) return NextResponse.json({ error: "Invalid PGN" }, { status: 400 });
-  const summary = summarizePgn(pgn, title.trim());
 
-  const before: any = await PGN.findOne(ownerFilter(session, params.id)).lean();
+  const before: any = await PGN.findOne(manageableFilter(session, params.id)).lean();
+  if (!before) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  const nextTitle = title === undefined ? before.title : title.trim();
+  const summary = summarizePgn(pgn, nextTitle);
   const updated: any = await PGN.findOneAndUpdate(
-    ownerFilter(session, params.id),
+    manageableFilter(session, params.id),
     {
       ...summary,
-      title: title.trim(),
+      title: nextTitle,
       pgn,
-      folder: normalizeFolderPath(folder) || undefined,
-      description,
+      ...(folder === undefined ? {} : { folder: normalizeFolderPath(folder) || undefined }),
+      ...(description === undefined ? {} : { description }),
       ...(Array.isArray(tags) ? { tags: tags.map(String).filter(Boolean) } : {}),
     },
     { new: true },

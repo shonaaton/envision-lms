@@ -1,5 +1,14 @@
 {
-  "node": {},
+  "node": {
+    "a8a2273b9f0315339b87a523afc5e398d356df21": {
+      "workers": {
+        "app/tournament-join/[token]/page": "(rsc)/./node_modules/next/dist/build/webpack/loaders/next-flight-action-entry-loader.js?actions=%5B%5B%22C%3A%5C%5CUsers%5C%5CUser%5C%5CLMS%20PRoject%5C%5CExperimentating%20to%20create%20an%20LMS%5C%5Clms%5C%5Csrc%5C%5Capp%5C%5Ctournament-join%5C%5C%5Btoken%5D%5C%5Cpage.tsx%22%2C%5B%22%24%24ACTION_0%22%5D%5D%5D&__client_imported__=!"
+      },
+      "layer": {
+        "app/tournament-join/[token]/page": "rsc"
+      }
+    }
+  },
   "edge": {},
-  "encryptionKey": "cB7fq8dr/n4ee5Ouy9ufUe7H44LrRoOMy65yUarK1fQ="
+  "encryptionKey": "wGe2pt3DPYj5dFarjNu6FMxm2EiNneq0U0yhrPyseXQ="
 }

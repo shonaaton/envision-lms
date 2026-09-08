@@ -17,6 +17,7 @@ import { inactiveStudentMessage } from "@/lib/studentAccess";
 import { canAccessFeature } from "@/lib/featureAccess";
 import { demoManagementUsers, ensureDemoRequestTask, normalizeDemoRequestedTime, notifyDemoRequestCreated } from "@/lib/demoWorkflow";
 import { sendMetaConversionEvent } from "@/lib/metaConversions";
+import { cancelDemoClassrooms } from "@/lib/demoClassroom";
 
 export const dynamic = "force-dynamic";
 
@@ -240,6 +241,13 @@ export async function POST(req: Request) {
           },
         ];
         await existingActive.save();
+        // The request is pending review again, so an already-approved classroom
+        // must not stay in the student's schedule at the old time.
+        if (existingActive.classroom) {
+          await cancelDemoClassrooms({ bookingIds: [existingActive._id], reason: "Student requested a different demo time" }).catch((error) =>
+            console.error("Demo classroom cancel on reschedule failed", error)
+          );
+        }
         await recordActivity({
           actor: studentUserId,
           targetUser: studentUserId,
@@ -489,21 +497,38 @@ export async function PATCH(req: Request) {
     }
     const start = new Date(booking.proposedStartAt || booking.startAt);
     const end = new Date(booking.proposedEndAt || booking.endAt);
+    const isDemoBooking = booking.bookingType === "demo";
+    const startTimeLabel = classroomStartTime(start);
+    const durationMinutes = Math.max(15, Math.round((end.getTime() - start.getTime()) / 60000));
+    const topicName = isDemoBooking ? "Demo class" : "Booked practice class";
     const classroom = await Classroom.create({
-      title: `${booking.bookingType === "demo" ? "Demo" : "Credit Class"} - ${student.name}`,
+      title: `${isDemoBooking ? "Demo" : "Credit Class"} - ${student.name}`,
       description: booking.notes || "Approved from coach availability.",
-      classroomType: "single",
+      // A demo approved from here is still a demo: the type and the booking link
+      // are what make attendance skip credits and route the coach to the demo
+      // assessment afterwards.
+      classroomType: isDemoBooking ? "demo" : "single",
+      ...(isDemoBooking ? { demoBooking: booking._id } : {}),
       status: "scheduled",
       level: "beginner",
       levelName: booking.level || student.studentLevel || "Class Booking",
-      topicName: booking.bookingType === "demo" ? "Demo class" : "Booked practice class",
+      topicName,
       meetingProvider: "meet",
       coach: coach._id,
       instructor: coach._id,
       students: [student._id],
       classDate: start,
-      startTime: classroomStartTime(start),
-      durationMinutes: Math.max(15, Math.round((end.getTime() - start.getTime()) / 60000)),
+      startTime: startTimeLabel,
+      durationMinutes,
+      generatedSessions: [{
+        sessionNumber: 1,
+        topicName,
+        topicOrder: 0,
+        scheduledFor: start,
+        startTime: startTimeLabel,
+        durationMinutes,
+        status: "scheduled",
+      }],
       isActive: true,
     });
     booking.status = "confirmed";

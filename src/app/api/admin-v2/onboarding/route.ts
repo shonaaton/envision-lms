@@ -13,6 +13,8 @@ import { CoachApplication } from "@/models/Onboarding";
 import { User, generateUsername } from "@/models/User";
 import { DEMO_MANAGEMENT_HREF, notifyDemoApproved, notifyDemoConverted } from "@/lib/demoWorkflow";
 import { recordActivity } from "@/lib/activity";
+import { academyTimeOfDay } from "@/lib/academyTime";
+import { syncDemoSession } from "@/lib/demoClassroom";
 
 export const dynamic = "force-dynamic";
 
@@ -83,6 +85,11 @@ export async function POST(req: Request) {
     const durationMinutes = Math.max(15, Number(body.durationMinutes || Math.round((new Date(booking.endAt).getTime() - new Date(booking.startAt).getTime()) / 60000) || 60));
     const coachId = String(body.coach || booking.instructor?._id || booking.instructor || "");
     if (!coachId || Number.isNaN(start.getTime())) return NextResponse.json({ error: "Coach and start time are required." }, { status: 400 });
+    const studentId = booking.student?._id || booking.student;
+    // Academy wall-clock time, not the server's: Classroom.startTime is read
+    // back as academy time, so toTimeString() here would shift the student's
+    // join window by the server's own offset.
+    const startTimeLabel = academyTimeOfDay(start);
     let classroom: any = booking.classroom ? await Classroom.findById(booking.classroom) : await Classroom.findOne({ demoBooking: booking._id });
     if (!classroom) {
       classroom = await Classroom.create({
@@ -97,21 +104,38 @@ export async function POST(req: Request) {
         meetingProvider: "meet",
         coach: coachId,
         instructor: coachId,
-        students: [booking.student?._id || booking.student],
+        students: [studentId],
         classDate: start,
-        startTime: start.toTimeString().slice(0, 5),
+        startTime: startTimeLabel,
         durationMinutes,
         generatedSessions: [{
           sessionNumber: 1,
           topicName: "Demo assessment class",
           topicOrder: 0,
           scheduledFor: start,
-          startTime: start.toTimeString().slice(0, 5),
+          startTime: startTimeLabel,
           durationMinutes,
           status: "scheduled",
         }],
         isActive: true,
       });
+    } else {
+      // Re-approving an existing demo classroom has to move it to the approved
+      // time as well, or the student keeps a class they cannot join.
+      classroom.classroomType = "demo";
+      classroom.demoBooking = booking._id;
+      classroom.status = "scheduled";
+      classroom.isActive = true;
+      classroom.coach = coachId;
+      classroom.instructor = coachId;
+      classroom.classDate = start;
+      classroom.startTime = startTimeLabel;
+      classroom.durationMinutes = durationMinutes;
+      if (!(classroom.students || []).some((student: any) => String(student) === String(studentId))) {
+        classroom.students = [...(classroom.students || []), studentId];
+      }
+      syncDemoSession(classroom, { start, startTimeLabel, durationMinutes });
+      await classroom.save();
     }
     const updatedBooking: any = await Booking.findByIdAndUpdate(booking._id, {
       instructor: coachId,

@@ -6,11 +6,11 @@ import { CalendarCheck, CheckCircle2, Clock3, GraduationCap, History, Link as Li
 import { auth } from "@/lib/auth";
 import { canAccessFeature } from "@/lib/featureAccess";
 import { dbConnect } from "@/lib/db";
-import { formatAcademyDateTime } from "@/lib/academyTime";
+import { academyTimeOfDay, formatAcademyDateTime } from "@/lib/academyTime";
 import { notifyDemoApproved, notifyDemoConverted } from "@/lib/demoWorkflow";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
 import { recordActivity } from "@/lib/activity";
-import { cancelDemoClassrooms } from "@/lib/demoClassroom";
+import { cancelDemoClassrooms, syncDemoSession } from "@/lib/demoClassroom";
 import { Activity } from "@/models/Activity";
 import { Booking } from "@/models/Booking";
 import { Classroom } from "@/models/Classroom";
@@ -172,6 +172,11 @@ async function approveBooking(formData: FormData) {
   if (!booking || !coachId || Number.isNaN(start.getTime())) return;
   const end = new Date(start.getTime() + durationMinutes * 60000);
   await assertCoachAvailable(coachId, start, end, bookingId);
+  const studentId = booking.student?._id || booking.student;
+  // Classroom.startTime is read back as academy wall-clock time, so it has to be
+  // written in academy time - toTimeString() would record the server's timezone
+  // and shift the student's join window by the server offset.
+  const startTimeLabel = academyTimeOfDay(start);
   let classroom: any = booking.classroom ? await Classroom.findById(booking.classroom) : await Classroom.findOne({ demoBooking: booking._id });
   if (!classroom) {
     classroom = await Classroom.create({
@@ -187,23 +192,24 @@ async function approveBooking(formData: FormData) {
       meetingUrl,
       coach: coachId,
       instructor: coachId,
-      students: [booking.student?._id || booking.student],
+      students: [studentId],
       classDate: start,
-      startTime: start.toTimeString().slice(0, 5),
-      durationMinutes: 30,
+      startTime: startTimeLabel,
+      durationMinutes,
       generatedSessions: [{
         sessionNumber: 1,
         topicName: "Demo assessment class",
         topicOrder: 0,
         scheduledFor: start,
-        startTime: start.toTimeString().slice(0, 5),
-        durationMinutes: 30,
+        startTime: startTimeLabel,
+        durationMinutes,
         status: "scheduled",
       }],
       isActive: true,
     });
   } else {
     classroom.classroomType = "demo";
+    classroom.demoBooking = booking._id;
     // Revive it if closing the demo had cancelled it - approving here means the
     // class is going ahead again.
     classroom.status = "scheduled";
@@ -211,9 +217,16 @@ async function approveBooking(formData: FormData) {
     classroom.coach = coachId;
     classroom.instructor = coachId;
     classroom.classDate = start;
-    classroom.startTime = start.toTimeString().slice(0, 5);
-    classroom.durationMinutes = 30;
+    classroom.startTime = startTimeLabel;
+    classroom.durationMinutes = durationMinutes;
     classroom.meetingUrl = meetingUrl || classroom.meetingUrl;
+    if (!(classroom.students || []).some((student: any) => String(student) === String(studentId))) {
+      classroom.students = [...(classroom.students || []), studentId];
+    }
+    // The scheduled session is what the student's join window is built from, so
+    // it has to follow the approved time too - otherwise the classroom shows the
+    // new time while the join button still tracks the old one.
+    syncDemoSession(classroom, { start, startTimeLabel, durationMinutes });
     await classroom.save();
   }
   const updatedBooking: any = await Booking.findByIdAndUpdate(booking._id, {

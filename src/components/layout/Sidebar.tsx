@@ -208,7 +208,7 @@ const sections: NavSection[] = [
   },
 ];
 
-function canSee(role: Role, accountStatus: AccountStatus | undefined, isActive: boolean | undefined, isPaused: boolean | undefined, isSuperAdmin: boolean | undefined, featureState: FeatureState | undefined, item: { href?: string; roles?: Role[]; demoOnly?: boolean; hideForDemo?: boolean; featureKey?: string; permission?: string; superAdminOnly?: boolean }) {
+function canSee(role: Role, accountStatus: AccountStatus | undefined, isActive: boolean | undefined, isPaused: boolean | undefined, isSuperAdmin: boolean | undefined, featureState: FeatureState | undefined, item: { href?: string; roles?: Role[]; demoOnly?: boolean; hideForDemo?: boolean; featureKey?: string; permission?: string; superAdminOnly?: boolean }, hasScheduledClassroom = false) {
   const isDemo = accountStatus === "demo";
   // A paused student keeps their account but not their classes, so the same
   // links are hidden as for a deactivated account.
@@ -220,6 +220,9 @@ function canSee(role: Role, accountStatus: AccountStatus | undefined, isActive: 
   if (item.hideForDemo && isDemo) return false;
   if (isDemo) {
     const demoAllowed = ["/dashboard", "/profile", "/booking", "/play/square-trainer", "/play/tactics-trainer", "/play/king-hunt", "/play/computer"];
+    // An approved demo gets a real classroom, and the student needs a way into
+    // it - so Classrooms joins the demo list once one exists.
+    if (hasScheduledClassroom) demoAllowed.push("/classrooms");
     if ("href" in item && typeof (item as any).href === "string" && !demoAllowed.includes((item as any).href)) return false;
   }
   return !item.roles || item.roles.includes(role);
@@ -244,6 +247,7 @@ export default function Sidebar({
   isSuperAdmin,
   featureState,
   hasCreditPlan = true,
+  hasScheduledClassroom = false,
   user,
   mobileOpen = false,
   desktopCollapsed = false,
@@ -255,6 +259,7 @@ export default function Sidebar({
   isSuperAdmin?: boolean;
   featureState?: FeatureState;
   hasCreditPlan?: boolean;
+  hasScheduledClassroom?: boolean;
   user: { name?: string | null; role: string; isActive?: boolean; isPaused?: boolean };
   mobileOpen?: boolean;
   desktopCollapsed?: boolean;
@@ -269,16 +274,16 @@ export default function Sidebar({
   const visibleSections = useMemo(
     () =>
       sections
-        .filter((section) => canSee(role, accountStatus, user.isActive, user.isPaused, isSuperAdmin, featureState, section))
+        .filter((section) => canSee(role, accountStatus, user.isActive, user.isPaused, isSuperAdmin, featureState, section, hasScheduledClassroom))
         .map((section) => ({
           ...section,
           items: section.items.filter((item) => {
             if (role === "student" && item.href === "/fees/credit-history" && !hasCreditPlan) return false;
-            return canSee(role, accountStatus, user.isActive, user.isPaused, isSuperAdmin, featureState, item);
+            return canSee(role, accountStatus, user.isActive, user.isPaused, isSuperAdmin, featureState, item, hasScheduledClassroom);
           }),
         }))
         .filter((section) => section.items.length > 0),
-    [role, accountStatus, user.isActive, user.isPaused, isSuperAdmin, featureState, hasCreditPlan]
+    [role, accountStatus, user.isActive, user.isPaused, isSuperAdmin, featureState, hasCreditPlan, hasScheduledClassroom]
   );
   const activeSection = visibleSections.find((section) => section.items.some((item) => isActive(pathname, item)))?.id || "academy";
   const [openSection, setOpenSection] = useState(activeSection);

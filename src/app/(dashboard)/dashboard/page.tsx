@@ -461,12 +461,21 @@ function DemoStudentDashboard({
   bookingFeatureName,
   demoUsage,
   demoLimits,
+  upcomingSessions = [],
+  joinAllowed = false,
+  now = new Date(),
 }: {
   studentName?: string;
   bookingFeatureName: string;
   demoUsage: Record<string, number>;
   demoLimits: Record<string, number>;
+  upcomingSessions?: any[];
+  joinAllowed?: boolean;
+  now?: Date;
 }) {
+  // Everything else on this page is sample data, but an approved demo is a real
+  // class with a real coach - it goes first, above the preview.
+  const bookedClasses = upcomingSessions.slice(0, 3);
   const practiceTools = [
     { title: "Play vs Computer", detail: "Practice against the computer at your level.", href: "/play/computer", used: demoUsage.playComputer || 0, limit: demoLimits.playComputer || 0, icon: Cpu },
     { title: "Square Trainer", detail: "Build vision with square recognition drills.", href: "/play/square-trainer", used: demoUsage.squareTrainer || 0, limit: demoLimits.squareTrainer || 0, icon: Target },
@@ -510,6 +519,46 @@ function DemoStudentDashboard({
           Choose to enroll anytime
         </div>
       </section>
+
+      {bookedClasses.length ? (
+        <section className="rounded-lg border border-emerald-200 bg-white p-5 shadow-[0_20px_50px_rgba(90,19,114,0.10)]">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <SectionTitle icon={Calendar} title="Your Demo Class" subtitle="Confirmed by the academy - join from here when the class opens" />
+            <span className="rounded-full bg-emerald-100 px-3 py-1 text-[11px] font-black uppercase tracking-[0.14em] text-emerald-700">Confirmed</span>
+          </div>
+          <div className="grid gap-3">
+            {bookedClasses.map(({ classroom, session }: any) => (
+              <div key={String(session._id)} className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <div className="font-black text-slate-950">{sessionTopic(session, classroom)}</div>
+                  <div className="mt-1 text-sm text-slate-600">
+                    Coach {session?.substituteCoach?.name || classroom?.coach?.name || classroom?.instructor?.name || "to be assigned"}
+                  </div>
+                  <div className="mt-1 text-xs font-bold text-brand">{formatJoinWindowLabel(session, now)}</div>
+                </div>
+                <JoinScheduledSessionButton
+                  classroomId={objectId(classroom._id)}
+                  sessionId={String(session._id)}
+                  meetingUrl={classroom.meetingUrl}
+                  className="btn-outline w-full justify-center sm:w-auto"
+                  availableClassName="btn-accent w-full justify-center sm:w-auto"
+                  unavailableClassName="btn-outline w-full justify-center sm:w-auto"
+                  label="Join Classroom"
+                  unavailableLabel="Join opens 5 minutes before class"
+                  disabled={!joinAllowed}
+                  icon={<PlayCircle size={16} />}
+                  scheduledFor={session.scheduledFor || classroom.classDate}
+                  startTime={session.startTime || classroom.startTime}
+                  durationMinutes={session.durationMinutes || classroom.durationMinutes || 30}
+                />
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 text-xs font-semibold text-slate-500">
+            Class times are shown in your local timezone. <Link href="/classrooms" className="text-brand">Open Classrooms</Link> for the full schedule.
+          </div>
+        </section>
+      ) : null}
 
       <section className="rounded-lg border border-brand/10 bg-white p-5 shadow-[0_20px_50px_rgba(90,19,114,0.10)]">
         <div className="mb-4 flex items-center justify-between gap-3">
@@ -848,6 +897,9 @@ async function StudentDashboard({ userId, joinAllowed }: { userId: string; joinA
         bookingFeatureName={bookingFeatureName}
         demoUsage={demoUsage}
         demoLimits={demoLimits}
+        upcomingSessions={upcomingSessions}
+        joinAllowed={joinAllowed}
+        now={now}
       />
     );
   }

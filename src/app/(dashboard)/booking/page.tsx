@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
-import { CalendarDays, CheckCircle2, Clock3, LockKeyhole, Sparkles, UserRound } from "lucide-react";
+import Link from "next/link";
+import { CalendarDays, CheckCircle2, Clock3, LockKeyhole, PlayCircle, Sparkles, UserRound } from "lucide-react";
 import { nextOccurrenceForWeeklySlot } from "@/lib/bookingAvailability";
 import { bookingFeatureNameForAccount, bookingFeatureNameForType, isDemoBookingAccount } from "@/lib/bookingLabels";
 import { trackMetaSchedule } from "@/lib/metaPixel";
@@ -92,6 +93,10 @@ export default function BookingPage() {
     ) || null;
   }, [bookings, isDemoStudent]);
 
+  // Once the academy approves the demo, the classroom exists and the student's
+  // next step is joining it - not waiting, and not re-requesting a time.
+  const approvedDemoBooking = activeDemoBooking && isApprovedBooking(activeDemoBooking) ? activeDemoBooking : null;
+
   async function book() {
     if (isDemoStudent) {
       if (!preferredDate || !preferredTime || !timezone) return toast.error("Please choose your preferred date, time, and timezone.");
@@ -172,8 +177,20 @@ export default function BookingPage() {
 
       {!isInactiveStudent && <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_420px]">
         <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-          <h2 className="text-lg font-black text-slate-950">{isDemoStudent ? activeDemoBooking ? "Change Requested Time" : "Request Demo Class" : "Choose an available time"}</h2>
-          {activeDemoBooking ? (
+          <h2 className="text-lg font-black text-slate-950">{isDemoStudent ? approvedDemoBooking ? "Your Demo Class" : activeDemoBooking ? "Change Requested Time" : "Request Demo Class" : "Choose an available time"}</h2>
+          {approvedDemoBooking ? (
+            <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+              <div className="flex items-center gap-2 font-black"><CheckCircle2 size={16} /> Demo Class Confirmed</div>
+              <div className="mt-1">{new Date(approvedDemoBooking.startAt).toLocaleString()}</div>
+              <div className="text-xs font-semibold">
+                {approvedDemoBooking.instructor?.name ? `Coach ${approvedDemoBooking.instructor.name}. ` : ""}
+                The Join button opens on your Classrooms page 5 minutes before the class starts.
+              </div>
+              <Link href="/classrooms" className="btn-primary mt-3 w-full sm:w-auto">
+                <PlayCircle size={16} /> Go to my classroom
+              </Link>
+            </div>
+          ) : activeDemoBooking ? (
             <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
               <div className="font-black">Demo Requested</div>
               <div className="mt-1">{activeDemoBooking.requestedLocalDateTime || new Date(activeDemoBooking.startAt).toLocaleString()}</div>
@@ -245,13 +262,27 @@ export default function BookingPage() {
                   <div className="mt-1 text-sm font-semibold text-amber-700">Coach suggested {new Date(booking.proposedStartAt).toLocaleString()}</div>
                 ) : null}
               </div>
-              <span className="w-fit rounded-full bg-white px-3 py-1 text-xs font-bold capitalize text-brand">{booking.approvalStatus || booking.status}</span>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="w-fit rounded-full bg-white px-3 py-1 text-xs font-bold capitalize text-brand">{booking.approvalStatus || booking.status}</span>
+                {isApprovedBooking(booking) && booking.classroom ? (
+                  <Link href="/classrooms" className="btn-outline h-9 px-3 text-xs">
+                    <PlayCircle size={14} /> Go to classroom
+                  </Link>
+                ) : null}
+              </div>
             </div>
           ))}
           {bookings.length === 0 && <div className="rounded-xl border border-dashed border-slate-300 p-6 text-sm text-slate-500">No {isDemoStudent ? "demo" : "class"} bookings yet.</div>}
         </div>
       </section>
     </div>
+  );
+}
+
+function isApprovedBooking(booking: any) {
+  return (
+    String(booking?.status || "") === "confirmed" &&
+    ["approved", "coach_approved"].includes(String(booking?.approvalStatus || ""))
   );
 }
 

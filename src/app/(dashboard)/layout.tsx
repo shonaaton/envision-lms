@@ -7,6 +7,7 @@ import { headers } from "next/headers";
 import { isInactiveRestrictedPath } from "@/lib/inactiveAccess";
 import { dbConnect } from "@/lib/db";
 import { FeeAssignment } from "@/models/Fee";
+import { Classroom } from "@/models/Classroom";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +22,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const isActive = (session.user as any).isActive !== false;
   const isPaused = (session.user as any).isPaused === true;
   let hasCreditPlan = true;
+  // A demo account's navigation is a deliberately short list, but once the
+  // academy approves their demo they have a real classroom to join - so
+  // Classrooms is added to that list exactly when there is one to show.
+  let hasScheduledClassroom = false;
   if (role === "student") {
     try {
       await dbConnect();
@@ -28,6 +33,23 @@ export default async function DashboardLayout({ children }: { children: React.Re
     } catch (error) {
       console.error("Dashboard credit-plan lookup failed; continuing without blocking the page.", error);
       hasCreditPlan = true;
+    }
+  }
+  if (role === "student" && accountStatus === "demo") {
+    try {
+      await dbConnect();
+      hasScheduledClassroom = Boolean(
+        await Classroom.exists({
+          students: (session.user as any).id,
+          isActive: { $ne: false },
+          isSessionInstance: { $ne: true },
+          isTestClassroom: { $ne: true },
+          status: { $ne: "cancelled" },
+        })
+      );
+    } catch (error) {
+      console.error("Demo classroom lookup failed; continuing without the Classrooms link.", error);
+      hasScheduledClassroom = false;
     }
   }
   if (!isActive && isInactiveRestrictedPath(pathname)) redirect("/dashboard?inactive=1");
@@ -40,7 +62,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     redirect("/dashboard?restricted=1");
   }
   return (
-    <DashboardFrame role={role} accountStatus={accountStatus} isSuperAdmin={isSuperAdmin} featureState={featureState} hasCreditPlan={hasCreditPlan} user={{ name: session.user.name, role: (session.user as any).roleName || role, isActive, isPaused }}>
+    <DashboardFrame role={role} accountStatus={accountStatus} isSuperAdmin={isSuperAdmin} featureState={featureState} hasCreditPlan={hasCreditPlan} hasScheduledClassroom={hasScheduledClassroom} user={{ name: session.user.name, role: (session.user as any).roleName || role, isActive, isPaused }}>
       {children}
     </DashboardFrame>
   );

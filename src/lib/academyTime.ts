@@ -82,3 +82,16 @@ export function formatAcademyDateTime(
     ...options,
   }).format(new Date(value));
 }
+
+/**
+ * The "HH:mm" wall-clock label for an instant, in academy time.
+ *
+ * Classroom.startTime is always read back as an academy-timezone time (see
+ * getSessionStart), so anything writing it has to format it here rather than
+ * with toTimeString(), which would silently record the server's own timezone
+ * and shift every join window by the server offset.
+ */
+export function academyTimeOfDay(value: string | Date, timeZone = ACADEMY_TIME_ZONE) {
+  const { hour, minute } = dateParts(value, timeZone);
+  return `${hour === "24" ? "00" : hour}:${minute}`;
+}

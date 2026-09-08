@@ -45,3 +45,41 @@ export async function cancelDemoClassrooms(input: { bookingIds: Array<unknown>; 
 
   return { cancelled: result.modifiedCount ?? 0 };
 }
+
+/**
+ * Point a demo classroom's scheduled session at the approved time.
+ *
+ * A demo classroom holds exactly one session, and that session - not the
+ * classroom's own date - is what the student's join window and class card are
+ * built from. Re-approving a demo (a new time, or reopening one that was
+ * closed) therefore has to move the session as well, or the student sees the
+ * new time on a class that can never be joined.
+ */
+export function syncDemoSession(
+  classroom: any,
+  { start, startTimeLabel, durationMinutes }: { start: Date; startTimeLabel: string; durationMinutes: number }
+) {
+  const sessions = Array.isArray(classroom.generatedSessions) ? classroom.generatedSessions : [];
+  // A demo that already happened keeps its record; only an open session moves.
+  const session = sessions.find((item: any) => !["completed", "missed"].includes(String(item?.status || "")));
+  if (!session) {
+    classroom.generatedSessions = [
+      ...sessions,
+      {
+        sessionNumber: sessions.length + 1,
+        topicName: "Demo assessment class",
+        topicOrder: 0,
+        scheduledFor: start,
+        startTime: startTimeLabel,
+        durationMinutes,
+        status: "scheduled",
+      },
+    ];
+    return;
+  }
+  session.scheduledFor = start;
+  session.startTime = startTimeLabel;
+  session.durationMinutes = durationMinutes;
+  session.status = "scheduled";
+  return;
+}

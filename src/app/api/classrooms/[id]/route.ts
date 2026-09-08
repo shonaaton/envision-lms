@@ -24,6 +24,7 @@ import { normalizeGoogleMeetUrl } from "@/lib/meetingUrl";
 import { sendWhatsAppAutomationTemplates } from "@/lib/whatsappAutomationEvents";
 import { notifyClassroomCoachAssigned } from "@/lib/classroomCoachNotifications";
 import { notifyCourseCompleted, notifySessionCancelled } from "@/lib/classSessionNotifications";
+import { writeRuntimeLog } from "@/lib/runtimeLogger";
 
 export const dynamic = "force-dynamic";
 
@@ -623,7 +624,31 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
   return NextResponse.json((session.user as any).role === "instructor" ? limitClassroomToCoachSessions(doc, String((session.user as any).id || "")) : doc);
 }
 
+/**
+ * Every class action funnels through one PATCH. Without this wrapper an
+ * unexpected throw reached the browser as a bare 500 with no body, and the
+ * admin only ever saw "Could not update class" - so the actual cause is logged
+ * and the action that failed is named in the response.
+ */
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+  try {
+    return await patchClassroom(req, { params });
+  } catch (error) {
+    writeRuntimeLog({
+      source: "api.classrooms.patch",
+      message: "Classroom update failed",
+      pathname: `/api/classrooms/${params.id}`,
+      metadata: { classroomId: params.id },
+      error,
+    });
+    return NextResponse.json(
+      { error: `Could not update this class: ${error instanceof Error ? error.message : "unexpected server error"}` },
+      { status: 500 }
+    );
+  }
+}
+
+async function patchClassroom(req: Request, { params }: { params: { id: string } }) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const body = await req.json();

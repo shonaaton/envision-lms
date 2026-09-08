@@ -124,6 +124,13 @@ function badgeTone(value: string) {
   return "bg-slate-100 text-slate-600 ring-slate-200";
 }
 
+/** Excel leads: a CSV of rupee amounts is the one that opens looking broken. */
+const EXPORT_FORMATS = [
+  { id: "xlsx", label: "Excel", title: "Download as Excel (.xlsx)" },
+  { id: "ods", label: "ODS", title: "Download as OpenDocument (.ods)" },
+  { id: "csv", label: "CSV", title: "Download as CSV (UTF-8)" },
+] as const;
+
 /* ------------------------------------------------------------ detail modal */
 
 function DetailModal({
@@ -252,12 +259,19 @@ function DetailModal({
               {rows.length} of {active.rows.length} rows
             </span>
             {canExport ? (
-              <a
-                href={`${exportBase}&export=${active.id}`}
-                className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-xs font-bold text-brand transition hover:border-brand/40 hover:bg-brand-50"
-              >
-                <Download size={14} /> CSV
-              </a>
+              <div className="inline-flex h-9 items-center gap-0.5 rounded-lg border border-slate-200 pl-2 pr-0.5">
+                <Download size={14} className="text-slate-400" />
+                {EXPORT_FORMATS.map((format) => (
+                  <a
+                    key={format.id}
+                    href={`${exportBase}&export=${active.id}&format=${format.id}`}
+                    title={format.title}
+                    className="rounded-md px-2 py-1 text-xs font-bold text-brand transition hover:bg-brand-50"
+                  >
+                    {format.label}
+                  </a>
+                ))}
+              </div>
             ) : null}
           </div>
         </div>

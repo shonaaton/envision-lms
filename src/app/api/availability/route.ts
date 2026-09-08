@@ -35,7 +35,7 @@ export async function GET(req: Request) {
 export async function PUT(req: Request) {
   const session = await auth();
   const role = (session?.user as any)?.role;
-  if (!session || (role !== "instructor" && role !== "admin")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!session || (role !== "instructor" && role !== "admin" && role !== "sub-admin")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   if (!(await canAccessFeature("availableTimes", session.user as any, "edit"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
   const body = await req.json();

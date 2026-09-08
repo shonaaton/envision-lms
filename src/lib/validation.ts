@@ -40,6 +40,7 @@ export const addUserSchema = z.object({
   phone: optionalText(40),
   password: z.string().min(8).max(72).optional(), // auto-generated if omitted
   role: z.enum(["student", "instructor", "admin", "sub-admin"]),
+  accessRole: z.string().regex(/^[a-f\d]{24}$/i).nullable().optional(),
   accountStatus: z.enum(["demo", "enrolled", "coach_applicant", "approved", "rejected"]).optional(),
   tags: z.array(z.string()).default([]),
   batches: z.array(z.string()).default([]),

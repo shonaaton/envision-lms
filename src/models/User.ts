@@ -11,6 +11,7 @@ const UserSchema = new Schema(
     passwordChangedAt: { type: Date },
     passwordChangeSource: { type: String, enum: ["registration", "admin_reset", "self_reset"], default: "registration" },
     role: { type: String, enum: ["student", "instructor", "admin", "sub-admin"], default: "student", index: true },
+    accessRole: { type: Schema.Types.ObjectId, ref: "AccessRole", default: null, index: true },
     isSuperAdmin: { type: Boolean, default: false, index: true },
     accountStatus: {
       type: String,

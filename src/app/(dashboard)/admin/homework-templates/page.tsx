@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { AlertTriangle, BookOpenCheck, CheckCircle2, Clock3, FileText, Link2Off, Plus, Search } from "lucide-react";
 import { auth } from "@/lib/auth";
+import { canAccessFeature } from "@/lib/featureAccess";
 import { dbConnect } from "@/lib/db";
 import { AssignmentAutomationLog, AssignmentTemplate } from "@/models/AssignmentTemplate";
 import { ImportHomeworkPgnButton, TemplateRowActions, UploadTemplateButton } from "@/components/homework/AssignmentTemplateActions";
@@ -81,7 +82,7 @@ function StatCard({ label, value, icon }: { label: string; value: string | numbe
 export default async function HomeworkTemplatesPage({ searchParams }: { searchParams?: { q?: string; page?: string } }) {
   const session = await auth();
   const role = (session?.user as any)?.role;
-  if (!session || role !== "admin") redirect("/dashboard");
+  if (!session || !(await canAccessFeature("homeworkTemplates", session.user as any, "view"))) redirect("/dashboard");
   await dbConnect();
 
   const q = String(searchParams?.q || "").trim();

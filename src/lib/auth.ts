@@ -6,8 +6,10 @@ import { authConfig } from "./auth.config";
 import { isInactiveRestrictedPath } from "./inactiveAccess";
 import { consumeRateLimit, getClientIp } from "./requestSecurity";
 import { loginIdentifierFilter } from "./loginIdentity";
+import { requestCache as cache } from "./requestCache";
+import { resolveAccessRole } from "./accessRoles";
+import { namedRoleApiFeature, namedRoleApiPermissions } from "./accessRoleRequests";
 
-const SESSION_USER_STATUS_TTL_MS = 60_000;
 const LOGIN_IP_WINDOW_MS = 5 * 60 * 1000;
 const LOGIN_ID_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_LOCK_WINDOW_MS = 15 * 60 * 1000;
@@ -16,17 +18,15 @@ const MAX_LOGIN_ATTEMPTS_PER_LOGIN = 10;
 const MAX_FAILED_LOGINS_BEFORE_LOCK = 5;
 const DUMMY_PASSWORD_HASH = "$2a$10$0dHO062F6m6nM0JQ5nM0JeH7GZq4wS6vJzpuG1HsfrN7kYMva9nQG";
 
-type SessionUserStatusCacheEntry = {
-  isActive: boolean;
-  isPaused: boolean;
-  expiresAt: number;
-};
 
 declare module "next-auth" {
   interface Session {
     user: {
       id: string;
-      role: "student" | "instructor" | "admin";
+      role: "student" | "instructor" | "admin" | "sub-admin";
+      accessRoleId?: string;
+      roleName?: string;
+      roleEnabled?: boolean;
       isSuperAdmin?: boolean;
       isActive?: boolean;
       isPaused?: boolean;
@@ -35,19 +35,13 @@ declare module "next-auth" {
   }
   // Augment — only add `role`. NextAuth's base User already declares `id`.
   interface User {
-    role?: "student" | "instructor" | "admin";
+    role?: "student" | "instructor" | "admin" | "sub-admin";
     isSuperAdmin?: boolean;
     isActive?: boolean;
     accountStatus?: "demo" | "enrolled" | "coach_applicant" | "approved" | "rejected";
   }
 }
 
-declare global {
-  var _sessionUserStatusCache: Map<string, SessionUserStatusCacheEntry> | undefined;
-}
-
-const sessionUserStatusCache = global._sessionUserStatusCache ?? new Map<string, SessionUserStatusCacheEntry>();
-if (!global._sessionUserStatusCache) global._sessionUserStatusCache = sessionUserStatusCache;
 
 /**
  * Every refusal below returns null so the browser only ever sees a generic
@@ -61,24 +55,6 @@ function logLoginFailure(reason: string, identifier: string, extra: Record<strin
     .map(([key, value]) => `${key}=${String(value)}`)
     .join(" ");
   console.warn(`[login] refused reason=${reason} identifier="${identifier}"${details ? ` ${details}` : ""}`);
-}
-
-function readCachedUserStatus(userId: string) {
-  const cached = sessionUserStatusCache.get(userId);
-  if (!cached) return null;
-  if (cached.expiresAt <= Date.now()) {
-    sessionUserStatusCache.delete(userId);
-    return null;
-  }
-  return cached;
-}
-
-function writeCachedUserStatus(userId: string, isActive: boolean, isPaused: boolean) {
-  sessionUserStatusCache.set(userId, {
-    isActive,
-    isPaused,
-    expiresAt: Date.now() + SESSION_USER_STATUS_TTL_MS,
-  });
 }
 
 const nextAuth = NextAuth({
@@ -140,7 +116,7 @@ const nextAuth = NextAuth({
           );
         }
         const explicitSuperAdminExists = await User.exists({ role: "admin", isSuperAdmin: true, isActive: { $ne: false } });
-        const isBootstrapSuperAdmin = user.role === "admin" && !explicitSuperAdminExists;
+        const isBootstrapSuperAdmin = user.role === "admin" && !user.accessRole && !explicitSuperAdminExists;
         return {
           id: user._id.toString(),
           name: user.name,
@@ -159,45 +135,49 @@ export const { handlers, signIn, signOut } = nextAuth;
 
 // JWT sessions can outlive an admin status change. Re-check the database on every
 // authenticated server request so deactivation and deletion take effect immediately.
-export async function auth() {
+export const auth = cache(async () => {
   const session = await nextAuth.auth();
   const userId = (session?.user as any)?.id;
   if (!userId) return session;
   const pathname = headers().get("x-pathname") || "";
   const isApiRequest = pathname.startsWith("/api/");
-  const cachedUserStatus = readCachedUserStatus(userId);
-
-  if (cachedUserStatus && !isApiRequest) {
-    (session!.user as any).isActive = cachedUserStatus.isActive;
-    (session!.user as any).isPaused = cachedUserStatus.isPaused;
-    return session;
-  }
 
   try {
     const { dbConnect } = await import("./db");
     const { User } = await import("@/models/User");
     await dbConnect();
-    const currentUser: any = await User.findById(userId).select("isActive isPaused").lean();
+    const currentUser: any = await User.findById(userId).select("name email role accountStatus isSuperAdmin accessRole isActive isPaused").lean();
     if (!currentUser) return null;
 
     const isActive = currentUser.isActive !== false;
     // A student paused from their batch keeps their login but loses class,
     // booking, and homework access for the length of the pause.
     const isPaused = currentUser.isPaused === true;
-    writeCachedUserStatus(userId, isActive, isPaused);
     (session!.user as any).isActive = isActive;
     (session!.user as any).isPaused = isPaused;
+    Object.assign(session!.user, {
+      role: currentUser.role, name: currentUser.name, email: currentUser.email,
+      accountStatus: currentUser.accountStatus,
+      isSuperAdmin: Boolean(currentUser.isSuperAdmin && !currentUser.accessRole),
+    });
+    const assigned = await resolveAccessRole(userId);
+    if (assigned) {
+      Object.assign(session!.user, assigned, { isSuperAdmin: false });
+      if (isApiRequest && pathname !== "/api/branding") {
+        if ((!isActive || !assigned.roleEnabled) && !pathname.startsWith("/api/profile")) return null;
+        const feature = pathname === "/api/admin/roles" ? "userManagement" : namedRoleApiFeature(pathname);
+        if (!feature) return null;
+        const { canAccessFeature } = await import("./featureAccess");
+        if (!(await canAccessFeature(feature, session!.user as any, "view"))) return null;
+        const method = headers().get("x-request-method") || "GET";
+        const permissions = namedRoleApiPermissions(pathname, method);
+        if (!(await Promise.all(permissions.map(permission => canAccessFeature(feature, session!.user as any, permission)))).some(Boolean)) return null;
+      }
+    }
     if ((!isActive || isPaused) && isApiRequest && isInactiveRestrictedPath(pathname)) return null;
     return session;
   } catch (error) {
-    if (cachedUserStatus) {
-      (session!.user as any).isActive = cachedUserStatus.isActive;
-      (session!.user as any).isPaused = cachedUserStatus.isPaused;
-      if ((!cachedUserStatus.isActive || cachedUserStatus.isPaused) && isApiRequest && isInactiveRestrictedPath(pathname)) return null;
-      return session;
-    }
-    if (isApiRequest && isInactiveRestrictedPath(pathname)) return null;
-    console.error("Auth user status refresh failed; using session token state instead.", error);
-    return session;
+    console.error("Auth access refresh failed; access denied.", error);
+    return null;
   }
-}
+});

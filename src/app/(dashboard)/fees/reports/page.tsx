@@ -62,7 +62,7 @@ function isGstInvoice(invoice: any) {
   return invoice.invoiceMode !== "non_gst" && (Number(invoice.gstAmount || 0) > 0 || Number(invoice.gstPercentage || 0) > 0);
 }
 
-function downloadHref(params: Record<string, string>, format: "xls" | "csv") {
+function downloadHref(params: Record<string, string>, format: "xlsx" | "ods" | "csv") {
   const next = new URLSearchParams({ ...params, format });
   return `/api/fees/reports?${next.toString()}`;
 }
@@ -296,9 +296,10 @@ export default async function FeeReportsPage({ searchParams }: { searchParams?: 
             </div>
             <p className="mb-4 text-sm leading-6 text-white/72">Apply filters first. Export uses the same report selection.</p>
             <button className="mb-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 text-sm font-bold text-brand shadow-sm"><Eye size={15} /> Preview Report</button>
-            <div className="grid grid-cols-2 gap-2">
-              <a href={downloadHref(downloadParams, "xls")} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-white/15 bg-white/10 px-4 text-sm font-bold text-white hover:bg-white/15"><Download size={15} /> Excel</a>
-              <a href={downloadHref(downloadParams, "csv")} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-white/15 bg-white/10 px-4 text-sm font-bold text-white hover:bg-white/15"><Download size={15} /> CSV</a>
+            <div className="grid grid-cols-3 gap-2">
+              <a href={downloadHref(downloadParams, "xlsx")} title="Excel workbook (.xlsx)" className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border border-white/15 bg-white/10 px-2 text-sm font-bold text-white hover:bg-white/15"><Download size={15} /> Excel</a>
+              <a href={downloadHref(downloadParams, "ods")} title="OpenDocument spreadsheet (.ods)" className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border border-white/15 bg-white/10 px-2 text-sm font-bold text-white hover:bg-white/15"><Download size={15} /> ODS</a>
+              <a href={downloadHref(downloadParams, "csv")} title="CSV (UTF-8)" className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border border-white/15 bg-white/10 px-2 text-sm font-bold text-white hover:bg-white/15"><Download size={15} /> CSV</a>
             </div>
           </div>
         </form>

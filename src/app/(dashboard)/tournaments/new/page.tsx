@@ -1,4 +1,5 @@
 import { auth } from "@/lib/auth";
+import { canAccessFeature } from "@/lib/featureAccess";
 import { dbConnect } from "@/lib/db";
 import { Batch } from "@/models/Batch";
 import { Course } from "@/models/Course";
@@ -28,7 +29,7 @@ function datedName(name: string, date: Date) {
 async function createTournament(_: CreateTournamentState, formData: FormData): Promise<CreateTournamentState> {
   "use server";
   const session = await auth();
-  if ((session?.user as any)?.role !== "admin") {
+  if (!session?.user || !(await canAccessFeature("tournaments", session.user as any, "create"))) {
     return { error: "Only administrators can create tournaments." };
   }
   await dbConnect();
@@ -211,7 +212,7 @@ async function createTournament(_: CreateTournamentState, formData: FormData): P
 
 export default async function NewTournamentPage({ searchParams }: { searchParams?: { error?: string } }) {
   const session = await auth();
-  if ((session?.user as any)?.role !== "admin") return <div className="p-6">Forbidden</div>;
+  if (!session?.user || !(await canAccessFeature("tournaments", session.user as any, "create"))) return <div className="p-6">Forbidden</div>;
   let batches: any[] = [];
   let students: any[] = [];
   let courses: any[] = [];

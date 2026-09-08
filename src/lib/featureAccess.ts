@@ -1,4 +1,5 @@
 import "server-only";
+import { requestCache as cache } from "./requestCache";
 
 import { Types } from "mongoose";
 import { auth } from "@/lib/auth";
@@ -7,6 +8,8 @@ import { FeatureAccess, PermissionAudit, PermissionTemplate } from "@/models/Fea
 import { User } from "@/models/User";
 import { Batch } from "@/models/Batch";
 import { Classroom } from "@/models/Classroom";
+import { resolveAccessRole } from "@/lib/accessRoles";
+import { roleHasPermission, type RoleGrants } from "@/lib/accessRolePolicy";
 import {
   FEATURE_DEFINITIONS,
   PORTAL_ROLES,
@@ -39,6 +42,9 @@ export type FeatureAccessState = {
 export type FeatureAccessSnapshot = FeatureDefinition & FeatureAccessState;
 
 export type SessionUser = {
+  accessRoleId?: string;
+  roleGrants?: RoleGrants;
+  roleEnabled?: boolean;
   id?: string;
   role?: PortalRole;
   isSuperAdmin?: boolean;
@@ -209,15 +215,17 @@ export async function getFeatureAccessSnapshot(): Promise<FeatureAccessSnapshot[
   return FEATURE_DEFINITIONS.map((feature) => ({ ...feature, ...normalizeState(feature, byKey.get(feature.key)) }));
 }
 
-export async function getFeatureAccessMap() {
+export const getFeatureAccessMap = cache(async () => {
   const snapshot = await getFeatureAccessSnapshot();
   return new Map(snapshot.map((feature) => [feature.key, feature]));
-}
+});
 
 export async function isSuperAdminSession(user?: SessionUser | null) {
   if (!user?.id || user.role !== "admin") return false;
-  if (user.isSuperAdmin) return true;
   await dbConnect();
+  const current: any = await User.findById(user.id).select("role isSuperAdmin isActive accessRole").lean();
+  if (!current || current.role !== "admin" || current.accessRole || current.isActive === false) return false;
+  if (current.isSuperAdmin) return true;
   const explicitSuperAdminExists = await User.exists({ role: "admin", isSuperAdmin: true, isActive: { $ne: false } });
   if (explicitSuperAdminExists) return false;
   return Boolean(await User.exists({ _id: user.id, role: "admin", isActive: { $ne: false } }));
@@ -277,6 +285,14 @@ export function evaluateFeatureState({
   allowComingSoonView?: boolean;
 }) {
   if (user.isSuperAdmin && user.role === "admin") return true;
+  if (user.accessRoleId) {
+    if (["dashboard", "accountSettings"].includes(feature.key)) return roleHasPermission({ dashboard: ["view"], accountSettings: ["view", "edit", "security"] }, feature.key, permission);
+    if (!user.roleEnabled || !roleHasPermission(user.roleGrants, feature.key, permission)) return false;
+    if (feature.status === "disabled") return false;
+    if (feature.status === "coming_soon") return allowComingSoonView && permission === "view";
+    if (feature.status === "testing" && !feature.pilotUsers.includes(user.id || "") && !feature.pilotRoles.includes(user.role as PortalRole)) return false;
+    return true;
+  }
   const role = user.role;
   if (!role) return false;
   const override = activeOverride(feature, user.id);
@@ -303,6 +319,7 @@ async function evaluateFeatureStateWithPilotCohorts({
     return evaluateFeatureState({ feature, user, permission, allowComingSoonView });
   }
   if (!(await isPilotBatchMember(feature, user)) && !(await isPilotCourseMember(feature, user))) return false;
+  if (user.accessRoleId) return Boolean(user.roleEnabled && roleHasPermission(user.roleGrants, feature.key, permission));
   return hasPermission(feature.rolePermissions[user.role as PortalRole], permission);
 }
 
@@ -311,7 +328,8 @@ export async function canAccessFeature(featureKey: string, user: SessionUser, pe
   const feature = features.get(featureKey);
   if (!feature) return false;
   const isSuperAdmin = await isSuperAdminSession(user);
-  return evaluateFeatureStateWithPilotCohorts({ feature, user: { ...user, isSuperAdmin }, permission });
+  const assigned = user.id ? await resolveAccessRole(user.id) : null;
+  return evaluateFeatureStateWithPilotCohorts({ feature, user: { ...user, ...assigned, isSuperAdmin }, permission });
 }
 
 export async function getFeaturePermissionState(featureKey: string, user: SessionUser, permissions: readonly string[]) {
@@ -324,7 +342,7 @@ export async function getFeaturePermissionState(featureKey: string, user: Sessio
   }
 
   const isSuperAdmin = await isSuperAdminSession(user);
-  const effectiveUser = { ...user, isSuperAdmin };
+  const effectiveUser = { ...user, ...(user.id ? await resolveAccessRole(user.id) : null), isSuperAdmin };
   await Promise.all(
     permissions.map(async (permission) => {
       result[permission] = await evaluateFeatureStateWithPilotCohorts({ feature, user: effectiveUser, permission });
@@ -348,7 +366,7 @@ export async function canAccessApiPath(pathname: string, user: SessionUser, perm
 export async function getNavigationFeatureState(user: SessionUser) {
   const snapshot = await getFeatureAccessSnapshot();
   const isSuperAdmin = await isSuperAdminSession(user);
-  const effectiveUser = { ...user, isSuperAdmin };
+  const effectiveUser = { ...user, ...(user.id ? await resolveAccessRole(user.id) : null), isSuperAdmin };
   const entries = await Promise.all(snapshot.map(async (feature) => {
     const visible = await evaluateFeatureStateWithPilotCohorts({ feature, user: effectiveUser, permission: "view", allowComingSoonView: true });
     const permissions = (

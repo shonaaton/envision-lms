@@ -36,6 +36,13 @@ const all = (...items: FeaturePermission[]) => items.map((item) => item.id);
 
 export const FEATURE_DEFINITIONS: FeatureDefinition[] = [
   {
+    key: "roleManagement", label: "Role Management", category: "Administration",
+    description: "Create named roles and choose their permissions. Reserved for Super Admins.",
+    routes: ["/admin/roles"], apiPrefixes: ["/api/admin/roles"],
+    permissions: [view, create, edit, del, manage], defaultStatus: "enabled",
+    defaultRolePermissions: { admin: all(view, create, edit, del, manage) },
+  },
+  {
     key: "dashboard",
     label: "Dashboard",
     category: "Learning",
@@ -338,7 +345,7 @@ export const FEATURE_DEFINITIONS: FeatureDefinition[] = [
     label: "Invoices",
     category: "Payments",
     description: "Student and admin invoice lists, invoice review, and invoice PDF access.",
-    routes: ["/fees/invoices", "/invoices"],
+    routes: ["/fees/invoices", "/fees/deleted-invoices", "/invoices"],
     permissions: [view, { id: "invoice", label: "Create Invoice" }, edit, { id: "payment", label: "Record Payment" }, { id: "credit", label: "Issue Credit", critical: true }, exportRecords],
     defaultStatus: "enabled",
     defaultRolePermissions: { student: ["view"], admin: ["view", "invoice", "edit", "payment", "credit", "export"] },
@@ -382,9 +389,9 @@ export const FEATURE_DEFINITIONS: FeatureDefinition[] = [
     description: "User directory, account creation, role changes, activation, and password resets.",
     routes: ["/admin/users"],
     apiPrefixes: ["/api/admin/users"],
-    permissions: [view, create, edit, del, manage],
+    permissions: [view, create, edit, del, manage, exportRecords],
     defaultStatus: "enabled",
-    defaultRolePermissions: { admin: all(view, create, edit, del, manage) },
+    defaultRolePermissions: { admin: all(view, create, edit, del, manage, exportRecords) },
   },
   {
     key: "studentPause",

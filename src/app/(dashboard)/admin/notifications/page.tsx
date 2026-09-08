@@ -1,4 +1,5 @@
 import { auth } from "@/lib/auth";
+import { canAccessFeature } from "@/lib/featureAccess";
 import { dbConnect } from "@/lib/db";
 import { Notification } from "@/models/Fee";
 import { Bell, CheckCircle2, MailOpen, Megaphone } from "lucide-react";
@@ -9,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 export default async function AdminNotificationsPage() {
   const session = await auth();
-  if ((session?.user as any)?.role !== "admin") redirect("/dashboard");
+  if (!session?.user || !(await canAccessFeature("notifications", session.user as any, "manage"))) redirect("/dashboard");
 
   await dbConnect();
   const notifications: any[] = await Notification.find({})

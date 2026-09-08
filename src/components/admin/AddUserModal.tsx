@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { toast } from "sonner";
+import StaffRoleSelect from "@/components/admin/StaffRoleSelect";
 
 export default function AddUserModal({
   open,
@@ -24,12 +25,15 @@ export default function AddUserModal({
     const fd = new FormData(e.currentTarget);
     const phone = String(fd.get("phone") || "").trim();
     const countryCode = String(fd.get("countryCode") || "").trim();
+    const staffRole = String(fd.get("staffRole") || "");
+    if (["admin", "sub-admin"].includes(defaultRole) && !staffRole) { setLoading(false); return toast.error("Wait for the role list and choose a role."); }
     const payload = {
       name: fd.get("name"),
       email: fd.get("email"),
       countryCode: phone ? countryCode || undefined : undefined,
       phone: phone || undefined,
-      role: defaultRole,
+      role: staffRole === "admin" ? "admin" : staffRole ? "sub-admin" : defaultRole,
+      accessRole: staffRole && !["admin", "sub-admin"].includes(staffRole) ? staffRole : undefined,
       accountStatus: defaultAccountStatus,
       fideId: fd.get("fideId") || undefined,
       rating: Number(fd.get("rating") || 0),
@@ -56,13 +60,14 @@ export default function AddUserModal({
     onClose();
   }
 
-  const label = defaultRole === "instructor" ? "Coach" : defaultRole === "admin" ? "Admin" : defaultRole === "sub-admin" ? "Sub Admin" : defaultAccountStatus === "demo" ? "Demo" : "Student";
+  const label = defaultRole === "instructor" ? "Coach" : ["admin", "sub-admin"].includes(defaultRole) ? "Staff Member" : defaultAccountStatus === "demo" ? "Demo" : "Student";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
       <div className="card w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
         <h2 className="mb-4 text-xl font-semibold text-slate-950">Add {label}</h2>
         <form onSubmit={submit} className="space-y-3">
+          {["admin", "sub-admin"].includes(defaultRole) && <StaffRoleSelect defaultValue={defaultRole} />}
           <input className="input" name="name" placeholder="Full name *" required />
           <div className="grid grid-cols-2 gap-3">
             <input className="input" name="email" type="email" placeholder="Email *" required />

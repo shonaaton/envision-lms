@@ -25,6 +25,8 @@ import Avatar from "@/components/admin/Avatar";
 import AddUserModal from "@/components/admin/AddUserModal";
 import AddBatchModal from "@/components/admin/AddBatchModal";
 import { PauseStudentModal } from "@/components/admin/PausedStudentsClient";
+import RoleManager from "@/components/admin/RoleManager";
+import StaffRoleSelect from "@/components/admin/StaffRoleSelect";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +44,7 @@ type AdminUser = {
   countryCode?: string;
   phone?: string;
   role: UserRole;
+  accessRole?: { _id: string; name: string; isActive: boolean } | string | null;
   tags?: string[];
   batches?: Array<{ _id: string; name: string }>;
   fideId?: string;
@@ -88,7 +91,6 @@ function userRoleLabel(role: UserRole) {
   if (role === "admin") return "Admin";
   return "Student";
 }
-
 function contactNumber(user: Pick<AdminUser, "countryCode" | "phone">) {
   const phone = user.phone?.trim();
   if (!phone) return "-";
@@ -97,6 +99,8 @@ function contactNumber(user: Pick<AdminUser, "countryCode" | "phone">) {
 
 export default function AdminUsersPage() {
   const [tab, setTab] = useState<Tab>("students");
+  const [userPermissions, setUserPermissions] = useState<Record<string, boolean>>({});
+  const [canManageStaff, setCanManageStaff] = useState(false);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [allStudents, setAllStudents] = useState<AdminUser[]>([]);
   const [allCoaches, setAllCoaches] = useState<AdminUser[]>([]);
@@ -117,21 +121,32 @@ export default function AdminUsersPage() {
   const [detailBatch, setDetailBatch] = useState<BatchItem | null>(null);
   const [editBatch, setEditBatch] = useState<BatchItem | null>(null);
 
+  useEffect(() => {
+    fetch("/api/admin/roles", { cache: "no-store" }).then(async (response) => {
+      if (!response.ok) return;
+      const data = await response.json();
+      setUserPermissions(data.userPermissions || {});
+      setCanManageStaff(Boolean(data.canManage));
+    }).catch(() => undefined);
+  }, []);
+
   const loadUsers = useCallback(async () => {
     if (tab !== "students" && tab !== "demo" && tab !== "coaches" && tab !== "sub-admins") return;
-    const role = tab === "students" || tab === "demo" ? "student" : tab === "coaches" ? "instructor" : "sub-admin";
+    const role = tab === "students" || tab === "demo" ? "student" : tab === "coaches" ? "instructor" : "staff";
     const params = new URLSearchParams({ role, sort });
     if (tab === "demo") params.set("accountStatus", "demo");
     if (q) params.set("q", q);
     if (status) params.set("status", status);
     if (tag) params.set("tag", tag);
     const response = await fetch("/api/admin/users?" + params, { cache: "no-store" });
-    setUsers(await response.json());
+    const data = await response.json();
+    if (!response.ok) { toast.error(data.error || "Could not load users"); setUsers([]); return; }
+    setUsers(data);
   }, [q, sort, status, tab, tag]);
 
   const loadBatches = useCallback(async () => {
     const response = await fetch("/api/admin/batches", { cache: "no-store" });
-    setBatches(await response.json());
+    setBatches(response.ok ? await response.json() : []);
   }, []);
 
   const loadDirectory = useCallback(async () => {
@@ -139,8 +154,8 @@ export default function AdminUsersPage() {
       fetch("/api/admin/users?role=student&status=active", { cache: "no-store" }),
       fetch("/api/admin/users?role=instructor", { cache: "no-store" }),
     ]);
-    setAllStudents(await studentsResponse.json());
-    setAllCoaches(await coachesResponse.json());
+    setAllStudents(studentsResponse.ok ? await studentsResponse.json() : []);
+    setAllCoaches(coachesResponse.ok ? await coachesResponse.json() : []);
   }, []);
 
   useEffect(() => {
@@ -162,7 +177,7 @@ export default function AdminUsersPage() {
     });
   }, [batches, q]);
 
-  const tabLabel = tab === "students" ? "Student" : tab === "demo" ? "Demo" : tab === "coaches" ? "Coach" : tab === "sub-admins" ? "Sub Admin" : "Batch";
+  const tabLabel = tab === "students" ? "Student" : tab === "demo" ? "Demo" : tab === "coaches" ? "Coach" : tab === "sub-admins" ? "Staff Member" : "Batch";
   const openMenuUser = users.find((u) => menu?.type === "user" && menu.id === u._id);
   const openMenuBatch = batches.find((b) => menu?.type === "batch" && menu.id === b._id);
 
@@ -182,6 +197,7 @@ export default function AdminUsersPage() {
   }
 
   async function toggleUserAccess(user: AdminUser) {
+    if (!userPermissions.edit || (["admin", "sub-admin"].includes(user.role) && !canManageStaff)) return;
     if (user.isActive && !window.confirm(`Deactivate ${user.name}? They will still be able to sign in, but class-related features will be unavailable.`)) return;
     await updateUser(user._id, { isActive: !user.isActive });
   }
@@ -257,8 +273,8 @@ export default function AdminUsersPage() {
             <button className="btn-primary w-full sm:w-auto" onClick={() => setOpenBatchModal(true)}><Plus size={16} className="mr-1" /> Add Batch</button>
           ) : tab !== "roles" ? (
             <>
-              <button className="btn-primary flex-1 sm:flex-none" onClick={() => setOpenUserModal(true)}><Plus size={16} className="mr-1" /> Add {tabLabel}</button>
-              <button className="btn flex-1 border border-slate-200 bg-white text-slate-700 sm:flex-none" onClick={exportCsv}><Upload size={16} className="mr-1" /> Export CSV</button>
+              {userPermissions.create && (tab !== "sub-admins" || canManageStaff) && <button className="btn-primary flex-1 sm:flex-none" onClick={() => setOpenUserModal(true)}><Plus size={16} className="mr-1" /> Add {tabLabel}</button>}
+              {userPermissions.export && <button className="btn flex-1 border border-slate-200 bg-white text-slate-700 sm:flex-none" onClick={exportCsv}><Upload size={16} className="mr-1" /> Export CSV</button>}
             </>
           ) : null}
         </div>
@@ -269,7 +285,7 @@ export default function AdminUsersPage() {
           <div className="flex overflow-x-auto rounded-lg bg-slate-100 p-1">
             {(["students", "demo", "coaches", "sub-admins", "batches", "roles"] as Tab[]).map((t) => (
               <button key={t} onClick={() => { setTab(t); setMenu(null); }} className={`min-w-fit rounded-md px-4 py-1.5 text-sm capitalize ${tab === t ? "bg-white text-slate-950 shadow" : "text-slate-600"}`}>
-                {t.replace("-", " ")}
+                {t === "sub-admins" ? "Staff" : t.replace("-", " ")}
               </button>
             ))}
           </div>
@@ -312,6 +328,7 @@ export default function AdminUsersPage() {
                       <span className="min-w-0">
                         <span className="block truncate font-semibold text-slate-950">{u.name}</span>
                         <span className="block truncate text-xs text-slate-500">{u.email}</span>
+                        {typeof u.accessRole === "object" && u.accessRole && <span className="block text-xs text-purple-700">{u.accessRole.name}</span>}
                       </span>
                     </button>
                     <button className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-white text-slate-600 shadow-sm" onClick={() => setMenu(menu?.id === u._id ? null : { type: "user", id: u._id })} aria-label={`Actions for ${u.name}`}>
@@ -379,7 +396,7 @@ export default function AdminUsersPage() {
                       <td className="py-3">
                         <button className="flex items-center gap-2 text-left" onClick={() => setDetailUser(u)}>
                           <Avatar name={u.name} />
-                          <span className="font-medium">{u.name}</span>
+                          <span className="font-medium">{u.name}{tab === "sub-admins" && <span className="block text-xs font-normal text-purple-700">{typeof u.accessRole === "object" && u.accessRole ? u.accessRole.name : userRoleLabel(u.role)}</span>}</span>
                         </button>
                       </td>
                       <td className="py-3 text-slate-600">{u.email}</td>
@@ -499,23 +516,23 @@ export default function AdminUsersPage() {
           </>
         )}
 
-        {tab === "roles" && <RolesPanel />}
+        {tab === "roles" && <RoleManager />}
       </div>
 
       {menu && openMenuUser && (
         <ActionMenu onClose={() => setMenu(null)} items={[
           { icon: Eye, label: "View Details", onClick: () => { setDetailUser(openMenuUser); setMenu(null); } },
-          { icon: Edit, label: `Edit ${userRoleLabel(openMenuUser.role)}`, onClick: () => { setEditUser(openMenuUser); setMenu(null); } },
-          { icon: KeyRound, label: "Reset Password", onClick: async () => { await updateUser(openMenuUser._id, { resetPassword: true }); setMenu(null); } },
-          ...(openMenuUser.role === "instructor" ? [{ icon: UserPlus, label: "Assign Students", onClick: () => { setAssignCoach(openMenuUser); setMenu(null); } }] : []),
+          ...(userPermissions.edit && (!(["admin", "sub-admin"].includes(openMenuUser.role)) || canManageStaff) ? [{ icon: Edit, label: `Edit ${userRoleLabel(openMenuUser.role)}`, onClick: () => { setEditUser(openMenuUser); setMenu(null); } }] : []),
+          ...(userPermissions.manage && (!(["admin", "sub-admin"].includes(openMenuUser.role)) || canManageStaff) ? [{ icon: KeyRound, label: "Reset Password", onClick: async () => { await updateUser(openMenuUser._id, { resetPassword: true }); setMenu(null); } }] : []),
+          ...(userPermissions.edit && openMenuUser.role === "instructor" ? [{ icon: UserPlus, label: "Assign Students", onClick: () => { setAssignCoach(openMenuUser); setMenu(null); } }] : []),
           { icon: FileText, label: `${userRoleLabel(openMenuUser.role)} Report`, onClick: () => { setReportUser(openMenuUser); setMenu(null); } },
-          ...(openMenuUser.role === "student"
+          ...(userPermissions.edit && openMenuUser.role === "student"
             ? [openMenuUser.isPaused
                 ? { icon: PauseCircle, label: "Manage pause / reactivate", onClick: () => { setMenu(null); window.location.href = "/admin/paused-students"; } }
                 : { icon: PauseCircle, label: "Pause from batch", onClick: () => { setPauseTarget(openMenuUser); setMenu(null); } }]
             : []),
-          { icon: openMenuUser.isActive ? UserX : UserCheck, label: openMenuUser.isActive ? "Deactivate access" : "Reactivate access", onClick: async () => { await toggleUserAccess(openMenuUser); setMenu(null); } },
-          { icon: Trash2, label: "Delete permanently", danger: true, onClick: () => { setDeleteUserTarget(openMenuUser); setMenu(null); } },
+          ...(userPermissions.edit && (!(["admin", "sub-admin"].includes(openMenuUser.role)) || canManageStaff) ? [{ icon: openMenuUser.isActive ? UserX : UserCheck, label: openMenuUser.isActive ? "Deactivate access" : "Reactivate access", onClick: async () => { await toggleUserAccess(openMenuUser); setMenu(null); } }] : []),
+          ...(userPermissions.delete && (!(["admin", "sub-admin"].includes(openMenuUser.role)) || canManageStaff) ? [{ icon: Trash2, label: "Delete permanently", danger: true, onClick: () => { setDeleteUserTarget(openMenuUser); setMenu(null); } }] : []),
         ]} />
       )}
 
@@ -530,7 +547,7 @@ export default function AdminUsersPage() {
       <AddUserModal open={openUserModal} onClose={() => setOpenUserModal(false)} onCreated={loadUsers} defaultRole={tab === "coaches" ? "instructor" : tab === "sub-admins" ? "sub-admin" : "student"} defaultAccountStatus={tab === "demo" ? "demo" : tab === "students" ? "enrolled" : undefined} />
       <AddBatchModal open={openBatchModal} onClose={() => setOpenBatchModal(false)} onCreated={loadBatches} />
       {detailUser && <UserDetailsModal user={detailUser} batches={batches} onClose={() => setDetailUser(null)} onCopy={() => copyCredentials(detailUser)} />}
-      {editUser && <EditUserModal user={editUser} onClose={() => setEditUser(null)} onSave={async (payload) => { await updateUser(editUser._id, payload); setEditUser(null); }} />}
+      {editUser && <EditUserModal user={editUser} onClose={() => setEditUser(null)} onSave={async (payload) => { if (await updateUser(editUser._id, payload)) setEditUser(null); }} />}
       {deleteUserTarget && <PermanentDeleteUserModal user={deleteUserTarget} onClose={() => setDeleteUserTarget(null)} onDelete={(confirmName) => permanentlyDeleteUser(deleteUserTarget, confirmName)} />}
       {pauseTarget && (
         <PauseStudentModal
@@ -678,7 +695,9 @@ function EditUserModal({ user, onClose, onSave }: { user: AdminUser; onClose: ()
         const fd = new FormData(e.currentTarget);
         const phone = String(fd.get("phone") || "").trim();
         const countryCode = String(fd.get("countryCode") || "").trim();
+        const staffRole = String(fd.get("staffRole") || "");
         onSave({
+          ...(staffRole ? { role: staffRole === "admin" ? "admin" : "sub-admin", accessRole: ["admin", "sub-admin"].includes(staffRole) ? null : staffRole } : {}),
           name: String(fd.get("name") || ""),
           email: String(fd.get("email") || ""),
           countryCode: phone ? countryCode : "",
@@ -688,6 +707,7 @@ function EditUserModal({ user, onClose, onSave }: { user: AdminUser; onClose: ()
           isActive: fd.get("isActive") === "on",
         });
       }}>
+        {["admin", "sub-admin"].includes(user.role) && <StaffRoleSelect defaultValue={typeof user.accessRole === "object" && user.accessRole ? user.accessRole._id : typeof user.accessRole === "string" ? user.accessRole : user.role} />}
         <input className="input bg-white text-slate-950" name="name" defaultValue={user.name} required />
         <input className="input bg-white text-slate-950" name="email" type="email" defaultValue={user.email} required />
         <div className="grid grid-cols-[110px_minmax(0,1fr)] gap-3">
@@ -708,7 +728,7 @@ function ReportModal({ user, batches, onClose }: { user: AdminUser; batches: Bat
   return (
     <ModalShell title={`${user.name} Report`} onClose={onClose}>
       <div className="grid gap-4 sm:grid-cols-3">
-        <ReportCard label="Role" value={user.role} />
+        <ReportCard label="Role" value={typeof user.accessRole === "object" && user.accessRole ? user.accessRole.name : userRoleLabel(user.role)} />
         <ReportCard label="Status" value={user.isActive ? "Active" : "Inactive"} />
         <ReportCard label="Batches" value={String(assigned.length)} />
       </div>
@@ -825,23 +845,5 @@ function EditBatchModal({ batch, coaches, students, onClose, onSave }: { batch: 
         <div className="flex justify-end gap-2"><button className="btn border border-slate-200" type="button" onClick={onClose}>Cancel</button><button className="btn-primary">Save Batch</button></div>
       </form>
     </ModalShell>
-  );
-}
-
-function RolesPanel() {
-  return (
-    <div className="mt-6 grid gap-3 md:grid-cols-3">
-      {[
-        ["student", "Can view assigned classes, homework, PGN library, fees, and bookings."],
-        ["instructor", "Can manage classes, homework, attendance, availability, and assigned students."],
-        ["admin", "Full access including user, coach, batch, billing, and settings management."],
-        ["sub-admin", "Configurable admin account. Access is selected from Feature Access by a Super Admin."],
-      ].map(([role, description]) => (
-        <div key={role} className="rounded-lg border border-slate-200 p-4">
-          <div className="mb-2 font-semibold capitalize">{role}</div>
-          <div className="text-sm text-slate-500">{description}</div>
-        </div>
-      ))}
-    </div>
   );
 }

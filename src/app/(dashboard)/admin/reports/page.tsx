@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
+import { canAccessFeature } from "@/lib/featureAccess";
 import { dbConnect } from "@/lib/db";
 import { Attendance } from "@/models/Attendance";
 import { Classroom } from "@/models/Classroom";
@@ -54,7 +55,7 @@ function StatCard({ label, value }: { label: string; value: string | number }) {
 
 export default async function AdminReportsPage() {
   const session = await auth();
-  if ((session?.user as any)?.role !== "admin") redirect("/dashboard");
+  if (!session?.user || !(await canAccessFeature("reportsCenter", session.user as any, "view"))) redirect("/dashboard");
 
   await dbConnect();
 

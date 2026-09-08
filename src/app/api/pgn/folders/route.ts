@@ -1,3 +1,4 @@
+import { canAccessFeature } from "@/lib/featureAccess";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
@@ -8,9 +9,9 @@ import { buildManageableFolderFilter, buildManageablePgnFilter, buildPgnFolderFi
 
 export const dynamic = "force-dynamic";
 
-function hasPgnAccess(session: any) {
+async function hasPgnAccess(session: any, permission = "view") {
   const role = (session?.user as any)?.role;
-  return role === "instructor" || role === "admin";
+  return ["instructor", "admin", "sub-admin"].includes(role) && await canAccessFeature("pgnLibrary", session.user, permission);
 }
 
 function escapeRegex(value: string) {
@@ -29,7 +30,7 @@ function folderVisibility(session: any, personal?: boolean) {
 export async function GET() {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!hasPgnAccess(session)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!(await hasPgnAccess(session, "view"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
 
   const currentUserId = String((session.user as any).id);
@@ -105,7 +106,7 @@ export async function GET() {
 export async function POST(req: Request) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!hasPgnAccess(session)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!(await hasPgnAccess(session, "create"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
 
   const { name, currentFolder, personal = false, description, coverImage, tags = [] } = await req.json();
@@ -149,7 +150,7 @@ export async function POST(req: Request) {
 export async function PATCH(req: Request) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!hasPgnAccess(session)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!(await hasPgnAccess(session, "edit"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
 
   const { oldName, newName, scope } = await req.json();
@@ -229,7 +230,7 @@ export async function PATCH(req: Request) {
 export async function DELETE(req: Request) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!hasPgnAccess(session)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!(await hasPgnAccess(session, "delete"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
 
   const url = new URL(req.url);

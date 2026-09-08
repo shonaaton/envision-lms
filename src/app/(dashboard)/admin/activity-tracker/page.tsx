@@ -1,4 +1,5 @@
 import { auth } from "@/lib/auth";
+import { canAccessFeature } from "@/lib/featureAccess";
 import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 import { dbConnect } from "@/lib/db";
@@ -136,7 +137,7 @@ export default async function ActivityTrackerPage({
   searchParams: SearchParams;
 }) {
   const session = await auth();
-  if ((session?.user as any)?.role !== "admin") redirect("/dashboard");
+  if (!session?.user || !(await canAccessFeature("activityTracker", session.user as any, "view"))) redirect("/dashboard");
   await dbConnect();
 
   const params = searchParams || {};

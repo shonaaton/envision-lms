@@ -184,7 +184,7 @@ const sections: NavSection[] = [
     roles: ["admin", "sub-admin"],
     items: [
       { href: "/admin/announcements", label: "Announcements", icon: Megaphone, featureKey: "announcements" },
-      { href: "/admin/notifications", label: "Notifications", icon: Bell, featureKey: "notifications" },
+      { href: "/admin/notifications", label: "Notifications", icon: Bell, featureKey: "notifications", permission: "manage" },
       { href: "/admin/whatsapp", label: "WhatsApp", icon: MessageCircle, featureKey: "whatsapp" },
     ],
   },
@@ -203,6 +203,7 @@ const sections: NavSection[] = [
       { href: "/profile", label: "Account Settings", icon: UserRound, featureKey: "accountSettings" },
       { href: "/admin/settings", label: "Academy Setup", icon: Settings, featureKey: "academySettings", roles: ["admin", "sub-admin"] },
       { href: "/admin/feature-access", label: "Feature Access", icon: ShieldCheck, featureKey: "featureAccess", roles: ["admin"], superAdminOnly: true },
+      { href: "/admin/roles", label: "Roles & Access", icon: ShieldCheck, featureKey: "roleManagement", roles: ["admin"], superAdminOnly: true },
     ],
   },
 ];
@@ -445,6 +446,7 @@ export default function Sidebar({
           <div className={cn("flex items-center gap-2", desktopCollapsed ? "md:flex-col md:items-center" : "")}>
             <div className={cn("min-w-0 flex-1 rounded-md bg-white/10 px-2 py-1.5", desktopCollapsed ? "md:hidden" : "")}>
               <div className="truncate text-xs font-bold text-white">{user.name || "Player"}</div>
+              <div className="truncate text-[10px] text-white/70" title={user.role}>{user.role}</div>
             </div>
             <div className={cn("flex flex-none items-center gap-2", desktopCollapsed ? "md:flex-col" : "")}>
               <button

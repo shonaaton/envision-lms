@@ -12,6 +12,7 @@ type WelcomeEmailInput = {
   countryCode?: string;
   username: string;
   role: WelcomeEmailRole;
+  roleName?: string;
   accountKind?: WelcomeAccountKind;
   temporaryPassword?: string;
   request?: Request;
@@ -28,7 +29,7 @@ export function buildWelcomeEmail(input: WelcomeEmailInput) {
   const appUrl = resolvePublicAppUrl(input.request);
   const loginUrl = appUrl ? `${appUrl}/login` : "/login";
   const isDemo = input.accountKind === "demo";
-  const roleLabel = isDemo ? "demo student" : ROLE_LABELS[input.role];
+  const roleLabel = isDemo ? "demo student" : input.roleName || ROLE_LABELS[input.role];
   const credentialLines = [
     `Username: ${input.username}`,
     input.temporaryPassword ? `Temporary password: ${input.temporaryPassword}` : "",
@@ -77,7 +78,7 @@ export async function sendWelcomeEmail(input: WelcomeEmailInput) {
     to: input.phone,
     user: input,
     templateName: "account_welcome",
-    bodyParameters: [input.name, input.accountKind === "demo" ? "demo student" : ROLE_LABELS[input.role], input.username],
+    bodyParameters: [input.name, input.accountKind === "demo" ? "demo student" : input.roleName || ROLE_LABELS[input.role], input.username],
     metadata: { kind: input.accountKind === "demo" ? "demo_welcome" : "welcome", role: input.role, accountKind: input.accountKind || "standard", username: input.username },
   });
   return email;

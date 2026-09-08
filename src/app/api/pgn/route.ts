@@ -1,3 +1,4 @@
+import { canAccessFeature } from "@/lib/featureAccess";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
@@ -8,9 +9,9 @@ import { invalidPgnIndexes, splitPgnGames, summarizePgn } from "@/lib/pgnLibrary
 
 export const dynamic = "force-dynamic";
 
-function hasPgnAccess(session: any) {
+async function hasPgnAccess(session: any, permission = "view") {
   const role = (session?.user as any)?.role;
-  return role === "instructor" || role === "admin";
+  return ["instructor", "admin", "sub-admin"].includes(role) && await canAccessFeature("pgnLibrary", session.user, permission);
 }
 
 function escapeRegex(value: string) {
@@ -36,7 +37,7 @@ const listFields = "title white black event result date eco opening moveCount si
 export async function GET(req: Request) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!hasPgnAccess(session)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!(await hasPgnAccess(session, "view"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
   const url = new URL(req.url);
   const q = url.searchParams.get("q");
@@ -89,7 +90,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!hasPgnAccess(session)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!(await hasPgnAccess(session, "create"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
   const { pgn, title, visibility = "private", classroom, folder, sourceFileName, description, tags = [] } = await req.json();
   if (!pgn) return NextResponse.json({ error: "pgn required" }, { status: 400 });

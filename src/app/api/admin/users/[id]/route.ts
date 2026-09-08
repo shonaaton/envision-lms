@@ -10,6 +10,9 @@ import { deleteUserRecords } from "@/lib/deleteUserRecords";
 import { applyStudentDeactivation, applyStudentReactivation } from "@/lib/groupLifecycle";
 import { notifyContactDetailsChanged, notifyPasswordChanged } from "@/lib/accountSecurityNotifications";
 import { requestGoogleReview } from "@/lib/reviewRequests";
+import { validateRoleAssignment } from "@/lib/accessRoles";
+import { PermissionAudit } from "@/models/FeatureAccess";
+import { applyUserFeatureAccess } from "@/lib/userFeatureAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -25,13 +28,16 @@ function genPassword() {
 }
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+  if (!isValidObjectId(params.id)) return NextResponse.json({ error: "Invalid user ID." }, { status: 400 });
   const body = await req.json();
   const session = await requireUserManagement(body.resetPassword ? "manage" : "edit");
   if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const actorId = (session!.user as any).id;
   await dbConnect();
   const actorIsSuperAdmin = await isSuperAdminSession(session!.user as any);
-  const target = await User.findById(params.id).select("name role isSuperAdmin isActive").lean();
+  const target = await User.findById(params.id).select("name email phone role accessRole isSuperAdmin isActive").lean();
+  if (!target) return NextResponse.json({ error: "User not found." }, { status: 404 });
+  if (!actorIsSuperAdmin && ["admin", "sub-admin"].includes((target as any).role)) return NextResponse.json({ error: "Only Super Admins can change staff accounts." }, { status: 403 });
   if ((target as any)?.isSuperAdmin && !actorIsSuperAdmin) return NextResponse.json({ error: "Only Super Admins can update another Super Admin." }, { status: 403 });
   if (body.resetPassword) {
     const tempPassword = body.password || genPassword();
@@ -64,6 +70,19 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const allowed = ["name", "email", "countryCode", "phone", "role", "tags", "batches", "fideId", "rating", "notes", "isActive", "isSuperAdmin"];
   const update: any = {};
   for (const k of allowed) if (k in body) update[k] = body[k];
+  if (body.role !== undefined && !["student", "instructor", "admin", "sub-admin"].includes(body.role)) return NextResponse.json({ error: "Invalid role." }, { status: 400 });
+  if ("accessRole" in body) {
+    if (!actorIsSuperAdmin) return NextResponse.json({ error: "Only Super Admins can assign roles." }, { status: 403 });
+    if (body.accessRole) {
+      try { await validateRoleAssignment(body.accessRole); } catch (error: any) { return NextResponse.json({ error: error.message }, { status: 400 }); }
+      if (!["admin", "sub-admin"].includes((target as any).role)) return NextResponse.json({ error: "Create a separate staff account to preserve this student's or coach's records." }, { status: 400 });
+      if (body.role && body.role !== "sub-admin") return NextResponse.json({ error: "Choose either a named role or a built-in role." }, { status: 400 });
+      update.role = "sub-admin";
+      update.isSuperAdmin = false;
+      update.accessRole = body.accessRole;
+    } else update.accessRole = null;
+  } else if (body.role && body.role !== (target as any).role) update.accessRole = null;
+  if (body.isSuperAdmin === true && (update.accessRole || (!('accessRole' in update) && (target as any).accessRole))) return NextResponse.json({ error: "Named roles cannot grant Super Admin access." }, { status: 400 });
   if ("isSuperAdmin" in update && !actorIsSuperAdmin) return NextResponse.json({ error: "Only Super Admins can grant or remove Super Admin access." }, { status: 403 });
   if ((update.role === "admin" || update.role === "sub-admin") && !actorIsSuperAdmin) return NextResponse.json({ error: "Only Super Admins can assign admin or sub-admin roles." }, { status: 403 });
   if (update.role && update.role !== "admin") update.isSuperAdmin = false;
@@ -74,13 +93,19 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     update.deactivatedAt = update.isActive === false ? new Date() : null;
   }
   const removingSuperAdmin =
-    (target as any)?.isSuperAdmin &&
+    (await isSuperAdminSession({ id: params.id, role: (target as any).role })) &&
     (update.isSuperAdmin === false || update.role !== undefined && update.role !== "admin" || update.isActive === false);
   if (removingSuperAdmin) {
     const remaining = await User.countDocuments({ _id: { $ne: params.id }, role: "admin", isSuperAdmin: true, isActive: { $ne: false } });
     if (remaining === 0) return NextResponse.json({ error: "At least one active Super Admin must remain." }, { status: 409 });
   }
-  const u = await User.findByIdAndUpdate(params.id, update, { new: true, projection: { passwordHash: 0 } });
+  const u = await User.findByIdAndUpdate(params.id, update, { new: true, runValidators: true, projection: { passwordHash: 0, ...(!actorIsSuperAdmin ? { tempPassword: 0 } : {}) } });
+  if ("accessRole" in update || "role" in update) {
+    // Old templates wrote per-person overrides. Remove them when the account's
+    // role changes so they cannot unexpectedly return if a named role is later removed.
+    await applyUserFeatureAccess({ userId: params.id, mode: "clear" });
+    await PermissionAudit.create({ featureKey: "roleManagement", featureLabel: "Roles", actor: actorId, targetType: "user", targetId: params.id, targetLabel: (target as any).name, previousValue: { role: (target as any).role, accessRole: (target as any).accessRole }, newValue: { role: u.role, accessRole: u.accessRole }, reason: "Changed account role and cleared legacy overrides" });
+  }
   // Switching a student account off has to take their classes off with it -
   // close the batches they were the last active member of and void the invoices
   // still ahead of them. Switching it back on undoes exactly those closures.

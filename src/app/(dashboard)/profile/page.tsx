@@ -36,6 +36,7 @@ export default async function ProfilePage() {
     email: user.email || "",
     phone: [user.countryCode, user.phone].filter(Boolean).join(" "),
     role: user.role,
+    roleName: (session.user as any).roleName,
     accountStatus: user.accountStatus || "enrolled",
     city: user.city || "",
     country: user.country || "",

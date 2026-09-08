@@ -28,6 +28,7 @@ export type ProfileData = {
   email: string;
   phone: string;
   role: "student" | "instructor" | "admin" | "sub-admin";
+  roleName?: string;
   accountStatus: string;
   city: string;
   country: string;
@@ -93,7 +94,7 @@ export default function ProfileEditor({ initialProfile, permissions }: { initial
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const changed = JSON.stringify(form) !== JSON.stringify(saved);
   const isStudent = initialProfile.role === "student";
-  const roleLabel = initialProfile.role === "instructor" ? "Coach" : initialProfile.role === "sub-admin" ? "Sub Admin" : titleCase(initialProfile.role);
+  const roleLabel = initialProfile.roleName || (initialProfile.role === "instructor" ? "Coach" : initialProfile.role === "sub-admin" ? "Sub Admin" : titleCase(initialProfile.role));
   const avatarIsImage = form.avatar.startsWith("/images/profiles/");
 
   function update<K extends keyof EditableProfile>(key: K, value: EditableProfile[K]) {

@@ -1,3 +1,4 @@
+import { canAccessFeature } from "@/lib/featureAccess";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
@@ -9,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 export async function PATCH(req: Request) {
   const session = await auth();
-  if (!session || (session.user as any)?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!session || !(await canAccessFeature("askCoach", session.user as any, "moderate"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const adminId = (session.user as any).id;
   await dbConnect();
   const { messageId, action, note } = await req.json();

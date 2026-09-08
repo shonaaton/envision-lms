@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
+import { canAccessFeature } from "@/lib/featureAccess";
 import { dbConnect } from "@/lib/db";
 import { AssignmentTemplate } from "@/models/AssignmentTemplate";
 import TemplateEditClient from "@/components/homework/TemplateEditClient";
@@ -22,7 +23,7 @@ function editableTemplate(template: any) {
 export default async function TemplateEditPage({ params }: { params: { id: string } }) {
   const session = await auth();
   const role = (session?.user as any)?.role;
-  if (!session || role !== "admin") redirect("/dashboard");
+  if (!session || !(await canAccessFeature("homeworkTemplates", session.user as any, "edit"))) redirect("/dashboard");
   await dbConnect();
   const template = await AssignmentTemplate.findById(params.id).lean();
   if (!template) redirect("/admin/homework-templates");

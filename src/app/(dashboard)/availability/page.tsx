@@ -107,7 +107,7 @@ export default function AvailabilityPage() {
     await loadRequests();
   }
 
-  if (role !== "instructor" && role !== "admin") {
+  if (role !== "instructor" && role !== "admin" && role !== "sub-admin") {
     return (
       <div className="rounded-3xl border border-slate-200 bg-white p-8 text-slate-700 shadow-sm">
         Available times are managed by coaches and administrators.

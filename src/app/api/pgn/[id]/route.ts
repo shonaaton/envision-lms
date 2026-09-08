@@ -1,3 +1,4 @@
+import { canAccessFeature } from "@/lib/featureAccess";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
@@ -8,9 +9,9 @@ import { recordActivity } from "@/lib/activity";
 
 export const dynamic = "force-dynamic";
 
-function hasPgnAccess(session: any) {
+async function hasPgnAccess(session: any, permission = "view") {
   const role = (session?.user as any)?.role;
-  return role === "instructor" || role === "admin";
+  return ["instructor", "admin", "sub-admin"].includes(role) && await canAccessFeature("pgnLibrary", session.user, permission);
 }
 
 function ownerFilter(session: any, id: string) {
@@ -28,7 +29,7 @@ function readableFilter(session: any, id: string) {
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!hasPgnAccess(session)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!(await hasPgnAccess(session, "view"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
 
   const doc = await PGN.findOne(readableFilter(session, params.id)).lean();
@@ -43,7 +44,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!hasPgnAccess(session)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!(await hasPgnAccess(session, "edit"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
 
   const { title, pgn, folder, description, tags } = await req.json();
@@ -87,7 +88,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!hasPgnAccess(session)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!(await hasPgnAccess(session, "delete"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
 
   const deleted: any = await PGN.findOneAndDelete(manageableFilter(session, params.id)).lean();

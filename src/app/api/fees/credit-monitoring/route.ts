@@ -2,23 +2,9 @@ import { NextResponse } from "next/server";
 import { dbConnect } from "@/lib/db";
 import { CreditLedger, FeeAssignment } from "@/models/Fee";
 import { requireFeesAccess } from "@/lib/feesAccess";
+import { buildSpreadsheet, resolveFormat, spreadsheetHeaders, type SheetColumn } from "@/lib/spreadsheet";
 
 export const dynamic = "force-dynamic";
-
-function td(value: unknown) {
-  return `<td>${String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;")}</td>`;
-}
-
-function workbook(title: string, headers: string[], rows: unknown[][]) {
-  return `<!doctype html><html><head><meta charset="utf-8" /></head><body><h2>${title}</h2><table border="1"><thead><tr>${headers
-    .map((header) => `<th>${header}</th>`)
-    .join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${row.map(td).join("")}</tr>`).join("")}</tbody></table></body></html>`;
-}
-
-function csv(headers: string[], rows: unknown[][]) {
-  const escape = (value: unknown) => `"${String(value ?? "").replace(/"/g, '""')}"`;
-  return [headers.map(escape).join(","), ...rows.map((row) => row.map(escape).join(","))].join("\n");
-}
 
 function statusFor(balance: number) {
   if (balance <= 0) return "Recharge required";
@@ -53,10 +39,56 @@ export async function GET(req: Request) {
   await dbConnect();
 
   const url = new URL(req.url);
-  const format = url.searchParams.get("format") || "xls";
+  const formatParam = url.searchParams.get("format");
+  // `format=history` is the legacy link shape, from when the ledger download was
+  // modelled as a third file format instead of a second report.
+  const history = url.searchParams.get("report") === "history" || formatParam === "history";
+  const format = resolveFormat(formatParam === "history" ? "csv" : formatParam, "xlsx");
+
+  if (history) {
+    const columns: SheetColumn[] = [
+      { label: "Date", type: "datetime" },
+      { label: "Student" },
+      { label: "Student ID" },
+      { label: "Type" },
+      { label: "Credits", type: "number" },
+      { label: "Balance After", type: "number" },
+      { label: "Invoice" },
+      { label: "Reason" },
+      { label: "Performed By" },
+      { label: "Administrator Role" },
+    ];
+    const ledgers = await CreditLedger.find({}).populate("student invoice performedBy").sort({ createdAt: -1 }).limit(1000).lean();
+    const rows = ledgers.map((ledger: any) => [
+      ledger.createdAt,
+      ledger.student?.name || "",
+      ledger.student?.username || ledger.student?._id?.toString?.() || "",
+      ledger.type,
+      ledger.credits,
+      ledger.balanceAfter,
+      ledger.invoice?.invoiceNumber || "",
+      ledger.note || "",
+      ledger.performedBy?.name || ledger.performedBy?.username || "",
+      ledger.performedByRole || "",
+    ]);
+    const body = buildSpreadsheet(format, [{ name: "Credit ledger history", columns, rows }]);
+    return new NextResponse(body, { headers: spreadsheetHeaders(format, "credit-ledger-history", body) });
+  }
+
   const assignments = await FeeAssignment.find({ type: "credits" }).populate("student plan").sort({ creditBalance: 1 }).lean();
   const filtered = filterAssignments(assignments, url);
-  const headers = ["Student", "Student ID", "Email", "Plan", "Purchased", "Consumed", "Remaining", "Status", "Account", "Updated At"];
+  const columns: SheetColumn[] = [
+    { label: "Student" },
+    { label: "Student ID" },
+    { label: "Email" },
+    { label: "Plan" },
+    { label: "Purchased", type: "number" },
+    { label: "Consumed", type: "number" },
+    { label: "Remaining", type: "number" },
+    { label: "Status" },
+    { label: "Account" },
+    { label: "Updated At", type: "datetime" },
+  ];
   const rows = filtered.map((assignment: any) => [
     assignment.student?.name || "",
     assignment.student?.username || assignment.student?._id?.toString?.() || "",
@@ -69,45 +101,9 @@ export async function GET(req: Request) {
     assignment.student?.isActive === false
       ? `Deactivated${assignment.student?.deactivatedAt ? ` on ${new Date(assignment.student.deactivatedAt).toLocaleDateString("en-IN")}` : ""}`
       : "Active",
-    assignment.updatedAt ? new Date(assignment.updatedAt).toLocaleString("en-IN") : "",
+    assignment.updatedAt,
   ]);
 
-  if (format === "history") {
-    const ledgerHeaders = ["Date", "Student", "Student ID", "Type", "Credits", "Balance After", "Invoice", "Reason", "Performed By", "Administrator Role"];
-    const ledgers = await CreditLedger.find({}).populate("student invoice performedBy").sort({ createdAt: -1 }).limit(1000).lean();
-    const ledgerRows = ledgers.map((ledger: any) => [
-      ledger.createdAt ? new Date(ledger.createdAt).toLocaleString("en-IN") : "",
-      ledger.student?.name || "",
-      ledger.student?.username || ledger.student?._id?.toString?.() || "",
-      ledger.type,
-      ledger.credits,
-      ledger.balanceAfter,
-      ledger.invoice?.invoiceNumber || "",
-      ledger.note || "",
-      ledger.performedBy?.name || ledger.performedBy?.username || "",
-      ledger.performedByRole || "",
-    ]);
-    return new NextResponse(csv(ledgerHeaders, ledgerRows), {
-      headers: {
-        "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": "attachment; filename=\"credit-ledger-history.csv\"",
-      },
-    });
-  }
-
-  if (format === "csv") {
-    return new NextResponse(csv(headers, rows), {
-      headers: {
-        "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": "attachment; filename=\"credit-monitoring.csv\"",
-      },
-    });
-  }
-
-  return new NextResponse(workbook("Credit Monitoring", headers, rows), {
-    headers: {
-      "Content-Type": "application/vnd.ms-excel; charset=utf-8",
-      "Content-Disposition": "attachment; filename=\"credit-monitoring.xls\"",
-    },
-  });
+  const body = buildSpreadsheet(format, [{ name: "Credit monitoring", columns, rows }]);
+  return new NextResponse(body, { headers: spreadsheetHeaders(format, "credit-monitoring", body) });
 }

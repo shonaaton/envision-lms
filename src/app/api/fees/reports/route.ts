@@ -1,26 +1,11 @@
 import { NextResponse } from "next/server";
 import { dbConnect } from "@/lib/db";
-import { formatINR } from "@/lib/utils";
 import { CreditLedger, Invoice } from "@/models/Fee";
 import { Payment } from "@/models/Payment";
 import { requireFeesAccess } from "@/lib/feesAccess";
+import { buildSpreadsheet, resolveFormat, spreadsheetHeaders, type SheetColumn } from "@/lib/spreadsheet";
 
 export const dynamic = "force-dynamic";
-
-function td(value: unknown) {
-  return `<td>${String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;")}</td>`;
-}
-
-function workbook(title: string, headers: string[], rows: unknown[][]) {
-  return `<!doctype html><html><head><meta charset="utf-8" /></head><body><h2>${title}</h2><table border="1"><thead><tr>${headers
-    .map((h) => `<th>${h}</th>`)
-    .join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${row.map(td).join("")}</tr>`).join("")}</tbody></table></body></html>`;
-}
-
-function csv(headers: string[], rows: unknown[][]) {
-  const escape = (value: unknown) => `"${String(value ?? "").replace(/"/g, '""')}"`;
-  return [headers.map(escape).join(","), ...rows.map((row) => row.map(escape).join(","))].join("\n");
-}
 
 function withinRange(dateValue: unknown, url: URL) {
   if (!dateValue) return false;
@@ -62,12 +47,18 @@ function isGstInvoice(invoice: any) {
   return invoice.invoiceMode !== "non_gst" && (Number(invoice.gstAmount || 0) > 0 || Number(invoice.gstPercentage || 0) > 0);
 }
 
+function studentId(person: any) {
+  return person?.username || person?._id?.toString?.() || "-";
+}
+
 export async function GET(req: Request) {
   if (!(await requireFeesAccess("export", "feeReports"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
   const url = new URL(req.url);
   const type = url.searchParams.get("type") || "fee";
-  const format = url.searchParams.get("format") || "xls";
+  // Excel is the default because the old ".xls" export was an HTML table, and a
+  // rupee-denominated CSV opens as mojibake in Excel unless it is read as UTF-8.
+  const format = resolveFormat(url.searchParams.get("format"), "xlsx");
   const planType = url.searchParams.get("planType");
   const student = url.searchParams.get("student");
 
@@ -79,54 +70,115 @@ export async function GET(req: Request) {
   const filteredInvoices = (planType ? invoices.filter((i: any) => i.type === planType) : invoices)
     .filter((i: any) => withinRange(invoiceReportDate(i), url));
 
+  // Rows stay raw - money in paise, dates as dates - and the workbook writer
+  // applies the currency and date formats, so the numbers land in a spreadsheet
+  // as numbers rather than as text that cannot be summed.
   let title = "Fee Report";
-  let headers = ["Invoice", "Student", "Student ID", "Plan", "Status", "Amount", "Late Fee", "GST", "Total", "Due Date"];
-  let rows = filteredInvoices.map((i: any) => [
+  let columns: SheetColumn[] = [
+    { label: "Invoice" },
+    { label: "Student" },
+    { label: "Student ID" },
+    { label: "Plan" },
+    { label: "Status" },
+    { label: "Amount", type: "money" },
+    { label: "Late Fee", type: "money" },
+    { label: "GST", type: "money" },
+    { label: "Total", type: "money" },
+    { label: "Due Date", type: "date" },
+  ];
+  let rows: unknown[][] = filteredInvoices.map((i: any) => [
     i.invoiceNumber,
     i.student?.name,
-    i.student?.username || i.student?._id?.toString?.() || "-",
+    studentId(i.student),
     i.plan?.name || i.type,
     i.status,
-    formatINR(i.amount),
-    formatINR(i.lateFee || 0),
-    formatINR(i.gstAmount || 0),
-    formatINR(i.totalAmount),
-    new Date(i.dueDate).toLocaleDateString("en-IN"),
+    i.amount,
+    i.lateFee || 0,
+    i.gstAmount || 0,
+    i.totalAmount,
+    i.dueDate,
   ]);
 
   if (type === "transaction" || type === "payment") {
     title = type === "payment" ? "Payment Report" : "Transaction Report";
-    headers = ["Payment ID", "User", "User ID", "Purpose", "Amount", "Status", "Paid At", "Invoice"];
+    columns = [
+      { label: "Payment ID" },
+      { label: "User" },
+      { label: "User ID" },
+      { label: "Purpose" },
+      { label: "Amount", type: "money" },
+      { label: "Status" },
+      { label: "Paid At", type: "datetime" },
+      { label: "Invoice" },
+    ];
     rows = payments
       .filter((p: any) => withinRange(paymentReportDate(p), url))
-      .map((p: any) => [p._id, p.user?.name, p.user?.username || p.user?._id?.toString?.() || "-", p.purpose, formatINR(p.amount), p.status, p.paidAt ? new Date(p.paidAt).toLocaleString("en-IN") : "", p.invoiceNumber]);
+      .map((p: any) => [
+        p._id?.toString?.() || String(p._id),
+        p.user?.name,
+        studentId(p.user),
+        p.purpose,
+        p.amount,
+        p.status,
+        p.paidAt,
+        p.invoiceNumber,
+      ]);
   } else if (type === "gst") {
     title = "GST Report";
-    headers = ["Invoice", "Student", "Student ID", "Taxable", "GST %", "CGST", "SGST", "GST Total", "Total Amount", "Invoice Date", "Status"];
+    columns = [
+      { label: "Invoice" },
+      { label: "Student" },
+      { label: "Student ID" },
+      { label: "Taxable", type: "money" },
+      { label: "GST %", type: "percent" },
+      { label: "CGST", type: "money" },
+      { label: "SGST", type: "money" },
+      { label: "GST Total", type: "money" },
+      { label: "Total Amount", type: "money" },
+      { label: "Invoice Date", type: "date" },
+      { label: "Status" },
+    ];
     rows = filteredInvoices
       .filter((i: any) => isGstInvoice(i))
-      .map((i: any) => [i.invoiceNumber, i.student?.name, i.student?.username || i.student?._id?.toString?.() || "-", formatINR(i.taxableAmount || 0), i.gstPercentage, formatINR(i.cgstAmount || 0), formatINR(i.sgstAmount || 0), formatINR(i.gstAmount || 0), formatINR(i.totalAmount || 0), new Date(i.issueDate || i.createdAt).toLocaleDateString("en-IN"), i.status]);
+      .map((i: any) => [
+        i.invoiceNumber,
+        i.student?.name,
+        studentId(i.student),
+        i.taxableAmount || 0,
+        i.gstPercentage,
+        i.cgstAmount || 0,
+        i.sgstAmount || 0,
+        i.gstAmount || 0,
+        i.totalAmount || 0,
+        i.issueDate || i.createdAt,
+        i.status,
+      ]);
   } else if (type === "collection") {
     title = "Collection Report";
-    headers = ["Type", "Student", "Student ID", "Credits", "Balance After", "Invoice", "Date", "Note"];
+    columns = [
+      { label: "Type" },
+      { label: "Student" },
+      { label: "Student ID" },
+      { label: "Credits", type: "number" },
+      { label: "Balance After", type: "number" },
+      { label: "Invoice" },
+      { label: "Date", type: "datetime" },
+      { label: "Note" },
+    ];
     rows = credits
       .filter((c: any) => withinRange(c.createdAt, url))
-      .map((c: any) => [c.type, c.student?.name, c.student?.username || c.student?._id?.toString?.() || "-", c.credits, c.balanceAfter, c.invoice?.invoiceNumber || c.invoice || "", new Date(c.createdAt).toLocaleString("en-IN"), c.note]);
+      .map((c: any) => [
+        c.type,
+        c.student?.name,
+        studentId(c.student),
+        c.credits,
+        c.balanceAfter,
+        c.invoice?.invoiceNumber || c.invoice || "",
+        c.createdAt,
+        c.note,
+      ]);
   }
 
-  if (format === "csv") {
-    return new NextResponse(csv(headers, rows), {
-      headers: {
-        "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": `attachment; filename="${type}-report.csv"`,
-      },
-    });
-  }
-
-  return new NextResponse(workbook(title, headers, rows), {
-    headers: {
-      "Content-Type": "application/vnd.ms-excel; charset=utf-8",
-      "Content-Disposition": `attachment; filename="${type}-report.xls"`,
-    },
-  });
+  const body = buildSpreadsheet(format, [{ name: title, columns, rows }]);
+  return new NextResponse(body, { headers: spreadsheetHeaders(format, `${type}-report`, body) });
 }

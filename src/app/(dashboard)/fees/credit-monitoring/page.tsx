@@ -19,7 +19,15 @@ function value(params: Params, key: keyof Params) {
   return String(params[key] || "");
 }
 
-function exportHref(params: Params, format: "csv" | "xls" | "history") {
+type ExportFormat = "xlsx" | "ods" | "csv";
+
+const EXPORT_FORMATS: Array<{ id: ExportFormat; label: string; title: string }> = [
+  { id: "xlsx", label: "Excel", title: "Excel workbook (.xlsx)" },
+  { id: "ods", label: "ODS", title: "OpenDocument spreadsheet (.ods)" },
+  { id: "csv", label: "CSV", title: "CSV (UTF-8)" },
+];
+
+function exportHref(params: Params, format: ExportFormat, report?: "history") {
   const next = new URLSearchParams({
     q: value(params, "q"),
     filter: value(params, "filter") || "all",
@@ -27,6 +35,7 @@ function exportHref(params: Params, format: "csv" | "xls" | "history") {
     min: value(params, "min"),
     max: value(params, "max"),
     format,
+    ...(report ? { report } : {}),
   });
   return `/api/fees/credit-monitoring?${next.toString()}`;
 }
@@ -461,8 +470,12 @@ export default async function CreditMonitoringPage({ searchParams }: { searchPar
               </label>
               <div className="flex flex-wrap gap-2">
                 <button className="btn-primary h-10 text-sm"><Filter size={14} /> Apply</button>
-                {permissions.export && <a href={exportHref(params, "xls")} className="btn-outline h-10 text-sm"><Download size={14} /> XLS</a>}
-                {permissions.export && <a href={exportHref(params, "csv")} className="btn-outline h-10 text-sm"><Download size={14} /> CSV</a>}
+                {permissions.export &&
+                  EXPORT_FORMATS.map((format) => (
+                    <a key={format.id} href={exportHref(params, format.id)} title={format.title} className="btn-outline h-10 text-sm">
+                      <Download size={14} /> {format.label}
+                    </a>
+                  ))}
               </div>
             </form>
           </section>
@@ -551,7 +564,22 @@ export default async function CreditMonitoringPage({ searchParams }: { searchPar
           <SectionTitle
             title="Recent Credit Movement"
             note="Recharge, class use, and manual adjustments."
-            action={permissions.export ? <a href={exportHref(params, "history")} className="btn-outline h-10 text-sm"><Download size={14} /> History CSV</a> : null}
+            action={
+              permissions.export ? (
+                <div className="flex flex-wrap gap-2">
+                  {EXPORT_FORMATS.map((format) => (
+                    <a
+                      key={format.id}
+                      href={exportHref(params, format.id, "history")}
+                      title={`Credit ledger history - ${format.title}`}
+                      className="btn-outline h-10 text-sm"
+                    >
+                      <Download size={14} /> History {format.label}
+                    </a>
+                  ))}
+                </div>
+              ) : null
+            }
           />
           <div className="overflow-x-auto">
             <table className="min-w-full text-left text-sm">

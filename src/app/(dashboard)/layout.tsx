@@ -33,12 +33,14 @@ export default async function DashboardLayout({ children }: { children: React.Re
   if (!isActive && isInactiveRestrictedPath(pathname)) redirect("/dashboard?inactive=1");
   if (isPaused && isInactiveRestrictedPath(pathname)) redirect("/dashboard?paused=1");
   const currentFeature = findFeatureByPath(pathname);
+  const namedRole = (session.user as any).accessRoleId;
+  if (namedRole && pathname !== "/dashboard" && !pathname.startsWith("/profile") && (!currentFeature || !isActive || !(session.user as any).roleEnabled)) redirect("/dashboard?restricted=1");
   const currentFeatureState = currentFeature ? featureState[currentFeature.key] : null;
   if (currentFeatureState && (!currentFeatureState.visible || currentFeatureState.status === "coming_soon") && pathname !== "/dashboard") {
     redirect("/dashboard?restricted=1");
   }
   return (
-    <DashboardFrame role={role} accountStatus={accountStatus} isSuperAdmin={isSuperAdmin} featureState={featureState} hasCreditPlan={hasCreditPlan} user={{ name: session.user.name, role, isActive, isPaused }}>
+    <DashboardFrame role={role} accountStatus={accountStatus} isSuperAdmin={isSuperAdmin} featureState={featureState} hasCreditPlan={hasCreditPlan} user={{ name: session.user.name, role: (session.user as any).roleName || role, isActive, isPaused }}>
       {children}
     </DashboardFrame>
   );

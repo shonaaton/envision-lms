@@ -1,5 +1,6 @@
 import bcrypt from "bcryptjs";
 import { auth } from "@/lib/auth";
+import { canAccessFeature } from "@/lib/featureAccess";
 import { dbConnect } from "@/lib/db";
 import { sendWelcomeEmail } from "@/lib/welcomeEmail";
 import { CoachApplication } from "@/models/Onboarding";
@@ -23,7 +24,7 @@ function contactNumber(record: { countryCode?: string; phone?: string }) {
 async function approveCoachApplication(formData: FormData) {
   "use server";
   const session = await auth();
-  if ((session?.user as any)?.role !== "admin") throw new Error("Forbidden");
+  if (!session?.user || !(await canAccessFeature("onboarding", session.user as any, "approve"))) throw new Error("Forbidden");
   const reviewerId = (session!.user as any).id;
   await dbConnect();
   const application: any = await CoachApplication.findById(String(formData.get("application"))).lean();
@@ -71,7 +72,7 @@ async function approveCoachApplication(formData: FormData) {
 async function rejectCoachApplication(formData: FormData) {
   "use server";
   const session = await auth();
-  if ((session?.user as any)?.role !== "admin") throw new Error("Forbidden");
+  if (!session?.user || !(await canAccessFeature("onboarding", session.user as any, "approve"))) throw new Error("Forbidden");
   const reviewerId = (session!.user as any).id;
   await dbConnect();
   await CoachApplication.findByIdAndUpdate(String(formData.get("application")), { status: "rejected", reviewedBy: reviewerId, reviewedAt: new Date() });
@@ -81,7 +82,7 @@ async function rejectCoachApplication(formData: FormData) {
 
 export default async function CoachApplicationsPage() {
   const session = await auth();
-  if ((session?.user as any)?.role !== "admin") redirect("/dashboard");
+  if (!session?.user || !(await canAccessFeature("onboarding", session.user as any, "view"))) redirect("/dashboard");
   await dbConnect();
   const applications = await CoachApplication.find({}).sort({ createdAt: -1 }).limit(100).lean();
 

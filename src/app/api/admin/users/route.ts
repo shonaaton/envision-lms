@@ -8,6 +8,8 @@ import { recordActivity } from "@/lib/activity";
 import { canAccessFeature, isSuperAdminSession } from "@/lib/featureAccess";
 import { sendWelcomeEmail } from "@/lib/welcomeEmail";
 import { closedGroupCountsByCoach } from "@/lib/groupLifecycle";
+import { validateRoleAssignment } from "@/lib/accessRoles";
+import { AccessRole } from "@/models/AccessRole";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +38,10 @@ export async function GET(req: Request) {
   const sort = url.searchParams.get("sort") || "newest";
 
   const filter: any = {};
-  if (role) filter.role = role;
+  if (role === "staff") filter.role = { $in: ["admin", "sub-admin"] };
+  else if (role) filter.role = role;
+  const accessRole = url.searchParams.get("accessRole");
+  if (accessRole) filter.accessRole = accessRole;
   if (accountStatus) {
     filter.accountStatus = accountStatus;
   } else if (role === "student" && !includeDemo) {
@@ -56,8 +61,10 @@ export async function GET(req: Request) {
   }
 
   const sortObj: any = sort === "name" ? { name: 1 } : { createdAt: -1 };
-  const list = await User.find(filter, { passwordHash: 0 })
+  const superAdmin = await isSuperAdminSession(session.user as any);
+  const list = await User.find(filter, { passwordHash: 0, passwordResetTokenHash: 0, passwordResetExpiresAt: 0, ...(!superAdmin ? { tempPassword: 0 } : {}) })
     .populate("batches", "name")
+    .populate({ path: "accessRole", select: "name isActive", model: AccessRole })
     .sort(sortObj)
     .limit(500)
     .lean();
@@ -91,6 +98,12 @@ export async function POST(req: Request) {
     const body = addUserSchema.parse(await req.json());
     await dbConnect();
     const actorIsSuperAdmin = await isSuperAdminSession(session.user as any);
+    let namedRole: any = null;
+    if (body.accessRole) {
+      if (!actorIsSuperAdmin) return NextResponse.json({ error: "Only Super Admins can assign staff roles." }, { status: 403 });
+      if (body.role !== "sub-admin") return NextResponse.json({ error: "Named roles are for staff accounts." }, { status: 400 });
+      namedRole = await validateRoleAssignment(body.accessRole);
+    }
     if ((body.role === "admin" || body.role === "sub-admin") && !actorIsSuperAdmin) {
       return NextResponse.json({ error: "Only Super Admins can create admin or sub-admin accounts." }, { status: 403 });
     }
@@ -115,10 +128,10 @@ export async function POST(req: Request) {
       actor: actorId,
       targetUser: u._id.toString(),
       type: "user.created",
-      label: `Created ${body.role} account for ${u.name}`,
+      label: `Created ${namedRole?.name || body.role} account for ${u.name}`,
       entityType: "User",
       entityId: u._id.toString(),
-      metadata: { role: body.role, username, accountStatus: u.accountStatus },
+      metadata: { role: body.role, accessRole: body.accessRole, username, accountStatus: u.accountStatus },
     });
     const welcomeEmail = await sendWelcomeEmail({
       name: u.name,
@@ -127,6 +140,7 @@ export async function POST(req: Request) {
       countryCode: u.countryCode,
       username,
       role: body.role,
+      roleName: namedRole?.name,
       temporaryPassword: tempPassword,
       request: req,
     });

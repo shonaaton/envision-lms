@@ -1,4 +1,5 @@
 import { auth } from "@/lib/auth";
+import { canAccessFeature } from "@/lib/featureAccess";
 import { dbConnect } from "@/lib/db";
 import { getAcademySettings } from "@/lib/fees";
 import { ACADEMY_DEFAULTS, ACADEMY_FAVICON_URL, ACADEMY_LOGO_URL, ACADEMY_SIGNATURE_URL } from "@/lib/branding";
@@ -13,7 +14,7 @@ export const dynamic = "force-dynamic";
 async function saveAcademySetup(formData: FormData) {
   "use server";
   const session = await auth();
-  if ((session?.user as any)?.role !== "admin") redirect("/dashboard");
+  if (!session?.user || !(await canAccessFeature("academySettings", session.user as any, "edit"))) redirect("/dashboard");
   try {
     await dbConnect();
     const settings = await AcademySettings.findOneAndUpdate(
@@ -58,7 +59,7 @@ async function saveAcademySetup(formData: FormData) {
 
 export default async function AcademySettingsPage({ searchParams }: { searchParams?: { saved?: string; error?: string } }) {
   const session = await auth();
-  if ((session?.user as any)?.role !== "admin") return <div className="p-6">Forbidden</div>;
+  if (!session?.user || !(await canAccessFeature("academySettings", session.user as any, "view"))) return <div className="p-6">Forbidden</div>;
   await dbConnect();
   const settings: any = await getAcademySettings();
 

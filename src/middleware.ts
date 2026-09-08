@@ -8,6 +8,7 @@ const { auth: middleware } = NextAuth(authConfig);
 export default middleware((request) => {
   const headers = new Headers(request.headers);
   headers.set("x-pathname", request.nextUrl.pathname);
+  headers.set("x-request-method", request.method);
   return NextResponse.next({ request: { headers } });
 });
 

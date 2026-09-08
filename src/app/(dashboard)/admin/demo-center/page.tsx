@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { CalendarCheck, CheckCircle2, Clock3, GraduationCap, History, Link as LinkIcon, MessageSquareText, RotateCcw, Trash2, UserCheck, X, XCircle } from "lucide-react";
 import { auth } from "@/lib/auth";
+import { canAccessFeature } from "@/lib/featureAccess";
 import { dbConnect } from "@/lib/db";
 import { formatAcademyDateTime } from "@/lib/academyTime";
 import { notifyDemoApproved, notifyDemoConverted } from "@/lib/demoWorkflow";
@@ -109,10 +110,11 @@ async function assertCoachAvailable(coachId: string, startAt: Date, endAt: Date,
   }
 }
 
-async function requireDemoManager(): Promise<DemoManagerSession> {
+async function requireDemoManager(permission = "edit"): Promise<DemoManagerSession> {
   const session = await auth();
   const role = (session?.user as any)?.role;
   if (!["admin", "sub-admin"].includes(role)) redirect("/dashboard");
+  if (!(await canAccessFeature("onboarding", session!.user as any, permission))) redirect("/dashboard");
   return session as DemoManagerSession;
 }
 
@@ -158,7 +160,7 @@ async function updateBookingRequest(formData: FormData) {
 
 async function approveBooking(formData: FormData) {
   "use server";
-  const session = await requireDemoManager();
+  const session = await requireDemoManager("approve");
   await dbConnect();
   const actorId = String((session.user as any).id || "");
   const bookingId = String(formData.get("booking") || "");
@@ -312,7 +314,7 @@ async function restoreDemo(formData: FormData) {
 
 async function convertDemoStudent(formData: FormData) {
   "use server";
-  const session = await requireDemoManager();
+  const session = await requireDemoManager("approve");
   await dbConnect();
   const actorId = String((session.user as any).id || "");
   const studentId = String(formData.get("student") || "");
@@ -376,7 +378,7 @@ async function extendDemoAccess(formData: FormData) {
 }
 
 export default async function DemoCenterPage({ searchParams }: { searchParams?: { tab?: string } }) {
-  await requireDemoManager();
+  await requireDemoManager("view");
   await dbConnect();
   const activeTab = tabs.some((tab) => tab.id === searchParams?.tab) ? searchParams?.tab as DemoTab : "requested";
   const [bookings, demoStudents, coaches, feedback, courses, batches] = await Promise.all([

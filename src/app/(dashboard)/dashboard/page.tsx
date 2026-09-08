@@ -66,6 +66,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { canAccessFeature } from "@/lib/featureAccess";
+import RoleHome from "@/components/admin/RoleHome";
 
 export const dynamic = "force-dynamic";
 
@@ -1844,6 +1845,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
   if ((session?.user as any)?.isActive === false) {
     return <InactiveAccountDashboard userName={session?.user?.name} role={role} />;
   }
+
+  if ((session?.user as any)?.accessRoleId) return <RoleHome user={session!.user as any} />;
 
   await dbConnect();
   if ((session?.user as any)?.isPaused === true) {

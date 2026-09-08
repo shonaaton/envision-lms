@@ -236,21 +236,94 @@ function decodeXmlEntities(value: string) {
     .replace(/&#39;/g, "'");
 }
 
+/**
+ * Excel keeps dates as serial numbers; only the cell's number format marks them
+ * as dates. Reading the sheet without styles.xml hands a due date over as
+ * "45955", and `new Date("45955")` is a perfectly valid date in the year 45955 -
+ * which is how imported invoices ended up dated 01-01-46235.
+ */
+const BUILTIN_DATE_FORMAT_IDS = new Set([
+  14, 15, 16, 17, 18, 19, 20, 21, 22, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 45, 46, 47, 50, 51, 52, 53, 54, 55, 56, 57,
+  58,
+]);
+
+function isDateFormatCode(code: string) {
+  // Literals, escaped characters and [$-409]/[Red] sections carry letters that
+  // are not date tokens, so drop them before looking for y/m/d/h/s.
+  const stripped = code
+    .replace(/"[^"]*"/g, "")
+    .replace(/\\./g, "")
+    .replace(/\[[^\]]*\]/g, "");
+  return /[ymdhs]/i.test(stripped);
+}
+
+/** Style indexes (a cell's `s` attribute) whose number format renders a date. */
+function xlsxDateStyles(stylesXml: string) {
+  const customFormats = new Map<number, string>();
+  for (const match of stylesXml.matchAll(/<numFmt\b[^>]*\bnumFmtId="(\d+)"[^>]*\bformatCode="([^"]*)"[^>]*>/g)) {
+    customFormats.set(Number(match[1]), decodeXmlEntities(match[2]));
+  }
+
+  const dateStyles = new Set<number>();
+  const cellXfs = stylesXml.match(/<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/)?.[1] || "";
+  let styleIndex = 0;
+  for (const match of cellXfs.matchAll(/<xf\b([^>]*)>/g)) {
+    const numFmtId = Number(match[1].match(/\bnumFmtId="(\d+)"/)?.[1] || 0);
+    const customCode = customFormats.get(numFmtId);
+    if (BUILTIN_DATE_FORMAT_IDS.has(numFmtId) || (customCode && isDateFormatCode(customCode))) {
+      dateStyles.add(styleIndex);
+    }
+    styleIndex += 1;
+  }
+  return dateStyles;
+}
+
+function excelSerialToDate(serial: number) {
+  // The epoch is 1899-12-30 rather than 12-31 because Excel keeps a phantom
+  // 1900-02-29; serials below 61 predate that day and need the extra day back.
+  const days = Math.floor(serial);
+  const timeMs = Math.round((serial - days) * 86400000);
+  const utc = new Date(Date.UTC(1899, 11, 30) + (days < 61 ? days + 1 : days) * 86400000 + timeMs);
+  // Rebuild in local time so the calendar day matches what Excel displays.
+  return new Date(
+    utc.getUTCFullYear(),
+    utc.getUTCMonth(),
+    utc.getUTCDate(),
+    utc.getUTCHours(),
+    utc.getUTCMinutes(),
+    utc.getUTCSeconds()
+  );
+}
+
+/** Renders a serial into one of the shapes `asDate` already understands. */
+function formatExcelSerial(serial: number) {
+  const date = excelSerialToDate(serial);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  const day = `${pad(date.getDate())}-${pad(date.getMonth() + 1)}-${date.getFullYear()}`;
+  if (!date.getHours() && !date.getMinutes() && !date.getSeconds()) return day;
+  return `${day} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
 function parseSimpleXlsxRows(buffer: Buffer) {
   const entries = extractZipEntries(buffer);
   const sharedStringsXml = entries.get("xl/sharedStrings.xml")?.toString("utf8") || "";
   const sharedStrings = Array.from(sharedStringsXml.matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)).map((match) => decodeXmlEntities(match[1]));
+  const dateStyles = xlsxDateStyles(entries.get("xl/styles.xml")?.toString("utf8") || "");
   const sheetXml = entries.get("xl/worksheets/sheet1.xml")?.toString("utf8");
   if (!sheetXml) throw new Error("Could not read the first worksheet from the Excel file.");
 
   const rows: string[][] = [];
   for (const rowMatch of sheetXml.matchAll(/<row\b[^>]*>([\s\S]*?)<\/row>/g)) {
     const cells: string[] = [];
-    for (const cellMatch of rowMatch[1].matchAll(/<c\b([^>]*)>([\s\S]*?)<\/c>/g)) {
+    // Empty cells are written self-closing (`<c r="J2" s="2"/>`); matching only
+    // the paired form let one swallow every cell up to the next `</c>` and shift
+    // the row's columns out of alignment.
+    for (const cellMatch of rowMatch[1].matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
       const attrs = cellMatch[1];
-      const body = cellMatch[2];
+      const body = cellMatch[2] || "";
       const ref = attrs.match(/\br="([A-Z]+)\d+"/)?.[1] || "A";
       const type = attrs.match(/\bt="([^"]+)"/)?.[1] || "";
+      const styleIndex = Number(attrs.match(/\bs="(\d+)"/)?.[1] ?? -1);
       const colIndex = columnLettersToIndex(ref);
       const value = body.match(/<v>([\s\S]*?)<\/v>/)?.[1] || "";
       const inlineValue = body.match(/<t[^>]*>([\s\S]*?)<\/t>/)?.[1] || "";
@@ -258,6 +331,11 @@ function parseSimpleXlsxRows(buffer: Buffer) {
       if (type === "s") resolved = sharedStrings[Number(value)] || "";
       else if (type === "inlineStr") resolved = decodeXmlEntities(inlineValue);
       else resolved = decodeXmlEntities(value);
+      // A number carrying a date format is a serial, not a quantity.
+      if (!type || type === "n") {
+        const serial = Number(resolved);
+        if (resolved && dateStyles.has(styleIndex) && Number.isFinite(serial)) resolved = formatExcelSerial(serial);
+      }
       cells[colIndex] = resolved;
     }
     if (cells.some((cell) => String(cell || "").trim().length > 0)) rows.push(cells.map((cell) => String(cell || "")));
@@ -487,10 +565,10 @@ function asNumber(raw: string | undefined) {
 function asDate(raw: string | undefined) {
   const value = String(raw || "").trim();
   if (!value) return undefined;
-  const ddMmYyyy = value.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  const ddMmYyyy = value.match(/^(\d{2})-(\d{2})-(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
   if (ddMmYyyy) {
-    const [, day, month, year] = ddMmYyyy;
-    const date = new Date(Number(year), Number(month) - 1, Number(day));
+    const [, day, month, year, hh, mm, ss] = ddMmYyyy;
+    const date = new Date(Number(year), Number(month) - 1, Number(day), Number(hh || 0), Number(mm || 0), Number(ss || 0));
     if (!Number.isNaN(date.getTime())) return date;
   }
   const ddMonYyyy = value.match(/^(\d{2})-([A-Za-z]{3})-(\d{4})(?:\s+(\d{1,2}):(\d{2}):(\d{2})\s*(AM|PM)?)?$/i);
@@ -505,6 +583,13 @@ function asDate(raw: string | undefined) {
       const date = new Date(Number(year), monthIndex, Number(day), hours, Number(mm || 0), Number(ss || 0));
       if (!Number.isNaN(date.getTime())) return date;
     }
+  }
+  // A CSV saved out of Excel can still carry the bare serial. Bounded to
+  // 1954-2119 so a plain year never reads as one, and checked before the
+  // fallback below because `new Date("45955")` happily returns the year 45955.
+  if (/^\d{5}(?:\.\d+)?$/.test(value)) {
+    const serial = Number(value);
+    if (serial >= 20000 && serial <= 80000) return excelSerialToDate(serial);
   }
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return undefined;
@@ -626,7 +711,7 @@ function inferCreditCount(amountInr: number, options: ImportParseOptions, lineNu
   return rounded;
 }
 
-function parsePaymentHistoryWorkbook(buffer: Buffer, options: ImportParseOptions = {}) {
+export function parsePaymentHistoryWorkbook(buffer: Buffer, options: ImportParseOptions = {}) {
   const sheetRows = parseSimpleXlsxRows(buffer);
   if (sheetRows.length < 2) throw new Error("The Excel file must include a header row and at least one payment row.");
   const headers = sheetRows[0].map(normalizeHeader);

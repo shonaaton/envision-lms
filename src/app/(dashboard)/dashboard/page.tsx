@@ -12,6 +12,7 @@ import { User } from "@/models/User";
 import { Invoice } from "@/models/Fee";
 import { Tournament } from "@/models/Tournament";
 import { AskCoachConversation, AskCoachMessage } from "@/models/AskCoach";
+import { ChessAccount } from "@/models/Chess";
 import { ClassroomSession, StudentReward } from "@/models/ClassroomLive";
 import {
   deriveScheduledSessionStatus,
@@ -26,6 +27,7 @@ import FutureClassDetailsButton from "@/components/classroom/FutureClassDetailsB
 import { DataPanel, EmptyState as CommonEmptyState, FilterBar } from "@/components/common/PageHeader";
 import { bookingFeatureNameForAccount } from "@/lib/bookingLabels";
 import { demoStudentExperience } from "@/lib/demoStudentExperience";
+import { portalTutorials, youtubeEmbedUrl } from "@/lib/portalTutorials";
 import { inactiveStudentMessage } from "@/lib/studentAccess";
 import { getActivePause, pausedStudentMessage } from "@/lib/studentPause";
 import { coachClassroomQuery, limitClassroomToCoachSessions } from "@/lib/classroomCoachAccess";
@@ -49,6 +51,7 @@ import {
   Flame,
   Gamepad2,
   GraduationCap,
+  Link2,
   MessageSquare,
   PauseCircle,
   PlayCircle,
@@ -456,6 +459,101 @@ function DemoPreviewPanel({
   );
 }
 
+function DemoBookingBand({
+  bookingFeatureName,
+  nextSession,
+  joinAllowed,
+  now,
+  requestedLabel,
+  approved,
+}: {
+  bookingFeatureName: string;
+  nextSession?: any;
+  joinAllowed: boolean;
+  now: Date;
+  requestedLabel?: string | null;
+  approved?: boolean;
+}) {
+  if (nextSession) {
+    const { classroom, session } = nextSession;
+    return (
+      <section className="overflow-hidden rounded-lg border border-brand/15 bg-[linear-gradient(135deg,#3b0c53_0%,#651587_58%,#2b0a3f_100%)] p-5 text-white shadow-[0_24px_64px_rgba(90,19,114,0.24)] sm:p-6">
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+          <div className="min-w-0">
+            <span className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 px-2.5 py-1 text-[11px] font-black text-accent ring-1 ring-white/10">
+              <CheckCircle2 size={13} aria-hidden="true" />
+              {approved ? "Demo class confirmed" : "Demo class scheduled"}
+            </span>
+            <h2 className="mt-3 max-w-2xl text-2xl font-black leading-tight text-white sm:text-3xl">{sessionTopic(session, classroom)}</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-white/80">
+              Coach {session?.substituteCoach?.name || classroom?.coach?.name || classroom?.instructor?.name || "to be assigned"} · This is a real class in a real classroom, not a preview.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <span className="inline-flex items-center gap-2 rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white/85 ring-1 ring-white/10">
+                <Clock3 size={14} aria-hidden="true" />
+                {formatJoinWindowLabel(session, now)}
+              </span>
+              <span className="inline-flex items-center gap-2 rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white/85 ring-1 ring-white/10">
+                <Calendar size={14} aria-hidden="true" />
+                {formatDate(String(session.scheduledFor || classroom.classDate || classroom.startDate || ""))} · {session.startTime || classroom.startTime || "--"}
+              </span>
+            </div>
+          </div>
+          <div className="flex shrink-0 flex-col gap-2">
+            <JoinScheduledSessionButton
+              classroomId={objectId(classroom._id)}
+              sessionId={String(session._id)}
+              meetingUrl={classroom.meetingUrl}
+              className="btn-outline w-full justify-center border-white/20 bg-white/10 text-white hover:bg-white/15 sm:w-auto"
+              availableClassName="btn-accent w-full justify-center sm:w-auto"
+              unavailableClassName="btn-outline w-full justify-center border-white/20 bg-white/10 text-white hover:bg-white/15 sm:w-auto"
+              label="Join Demo Class"
+              unavailableLabel="Join opens 5 minutes before class"
+              disabled={!joinAllowed}
+              icon={<PlayCircle size={16} />}
+              scheduledFor={session.scheduledFor || classroom.classDate}
+              startTime={session.startTime || classroom.startTime}
+              durationMinutes={session.durationMinutes || classroom.durationMinutes || 30}
+            />
+            <Link href="/booking" className="text-center text-xs font-bold text-white/70 underline underline-offset-4 hover:text-white">
+              Need a different time?
+            </Link>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="overflow-hidden rounded-lg border border-brand/15 bg-[linear-gradient(135deg,#3b0c53_0%,#651587_58%,#2b0a3f_100%)] p-5 text-white shadow-[0_24px_64px_rgba(90,19,114,0.24)] sm:p-6">
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+        <div className="min-w-0">
+          <span className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 px-2.5 py-1 text-[11px] font-black text-accent ring-1 ring-white/10">
+            <BellRing size={13} aria-hidden="true" />
+            {requestedLabel ? "Waiting for the academy" : "Your next step"}
+          </span>
+          <h2 className="mt-3 max-w-2xl text-3xl font-black leading-tight text-white sm:text-4xl">
+            {requestedLabel ? "Your demo time is with the academy" : "Book your free demo class"}
+          </h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-white/80">
+            {requestedLabel
+              ? `You asked for ${requestedLabel}. A coach is being assigned - you can change the time until it is confirmed.`
+              : "Pick a date and time that suits you. A coach is assigned to you, a real classroom opens on this dashboard, and you meet your coach live."}
+          </p>
+        </div>
+        <div className="shrink-0">
+          <Link href="/booking" className="btn-accent w-full justify-center text-base sm:w-auto">
+            <Calendar size={18} aria-hidden="true" />
+            {requestedLabel ? "Change Demo Timing" : "Choose Demo Timing"}
+            <ArrowRight size={16} aria-hidden="true" />
+          </Link>
+          <p className="mt-2 text-center text-xs font-bold text-white/70">{bookingFeatureName} · Free · No card needed</p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function DemoStudentDashboard({
   studentName,
   bookingFeatureName,
@@ -464,6 +562,10 @@ function DemoStudentDashboard({
   upcomingSessions = [],
   joinAllowed = false,
   now = new Date(),
+  homework = [],
+  submissions = [],
+  chessAccounts = [],
+  demoBooking = null,
 }: {
   studentName?: string;
   bookingFeatureName: string;
@@ -472,135 +574,372 @@ function DemoStudentDashboard({
   upcomingSessions?: any[];
   joinAllowed?: boolean;
   now?: Date;
+  homework?: any[];
+  submissions?: any[];
+  chessAccounts?: any[];
+  demoBooking?: any;
 }) {
-  // Everything else on this page is sample data, but an approved demo is a real
-  // class with a real coach - it goes first, above the preview.
-  const bookedClasses = upcomingSessions.slice(0, 3);
+  // An approved demo is a real class with a real coach, and its classroom now
+  // carries real homework - so anything that exists for this account is shown as
+  // itself, and only the parts that need enrollment fall back to sample data.
+  const nextSession = upcomingSessions[0];
   const practiceTools = [
     { title: "Play vs Computer", detail: "Practice against the computer at your level.", href: "/play/computer", used: demoUsage.playComputer || 0, limit: demoLimits.playComputer || 0, icon: Cpu },
     { title: "Square Trainer", detail: "Build vision with square recognition drills.", href: "/play/square-trainer", used: demoUsage.squareTrainer || 0, limit: demoLimits.squareTrainer || 0, icon: Target },
     { title: "Tactics Trainer", detail: "Solve tactical puzzles and improve accuracy.", href: "/play/tactics-trainer", used: demoUsage.tacticsTrainer || 0, limit: demoLimits.tacticsTrainer || 0, icon: Crosshair },
     { title: "King Hunt", detail: "Find attacking patterns and checkmates.", href: "/play/king-hunt", used: demoUsage.kingHunt || 0, limit: demoLimits.kingHunt || 3, icon: Crown },
   ];
+  const practiceRemaining = practiceTools.reduce((total, tool) => total + Math.max(0, tool.limit - tool.used), 0);
+
+  const activeBooking = demoBooking
+    && ["pending", "confirmed"].includes(String(demoBooking.status || ""))
+    && !["CANCELLED", "COMPLETED", "STUDENT_NO_SHOW", "ABSENT", "CONVERTED", "CLOSED"].includes(String(demoBooking.demoStatus || ""))
+    ? demoBooking
+    : null;
+  const bookingApproved = String(activeBooking?.approvalStatus || "") === "approved";
+  const requestedLabel = !nextSession && activeBooking?.startAt ? formatDateTimeLabel(activeBooking.startAt) : null;
+  // A demo classroom now exists from the moment a coach and a time are fixed, so
+  // the dashboard distinguishes "scheduled" from the academy's final approval
+  // rather than calling every scheduled class confirmed.
+  const classStatusValue = nextSession ? (bookingApproved ? "Confirmed" : "Scheduled") : activeBooking ? "Requested" : "Not booked";
+  const classStatusNote = nextSession
+    ? formatJoinWindowLabel(nextSession.session, now)
+    : requestedLabel || "Pick a time that suits you";
+
+  const submissionByHomework = new Map(submissions.map((submission: any) => [objectId(submission.homework), submission]));
+  const pendingHomework = homework.filter((item: any) => !submissionByHomework.has(objectId(item._id)));
+  const hasRealHomework = homework.length > 0;
+
+  const linkedAccounts = chessAccounts.filter((account: any) => account.isActive !== false);
+  const linkedPlatformLabels = linkedAccounts.map((account: any) => `${account.platform === "LICHESS" ? "Lichess" : "Chess.com"}: ${account.username}`);
 
   return (
     <div className="space-y-5 text-slate-950">
-      <section className="overflow-hidden rounded-lg border border-amber-200 bg-[linear-gradient(135deg,#fff8d8_0%,#fff4c1_42%,#ffffff_100%)] px-5 py-5 shadow-[0_24px_60px_rgba(196,151,0,0.16)]">
-        <div className="grid gap-5 xl:grid-cols-[1fr_420px] xl:items-center">
-          <div>
-            <div className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-[0.16em] text-brand">
-              <Calendar size={14} /> Demo Dashboard
+      <section className="overflow-hidden rounded-lg border border-amber-200 bg-[linear-gradient(135deg,#fffdf3_0%,#fff8d8_46%,#faf7ff_100%)] shadow-[0_24px_70px_rgba(37,24,73,0.10)]">
+        <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_360px] lg:p-5 xl:p-6">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2 text-[11px] font-black uppercase tracking-[0.14em] text-brand">
+              <span className="rounded-lg bg-white px-3 py-1 shadow-sm ring-1 ring-brand/10">Demo Dashboard</span>
+              <span className="rounded-lg bg-accent/30 px-3 py-1 text-brand-900 ring-1 ring-accent/40">Envision Chess Academy</span>
             </div>
-            <h1 className="mt-3 max-w-2xl text-3xl font-black leading-tight text-slate-950 sm:text-4xl">
-              Explore how the LMS works <span className="text-brand">after enrollment</span>
+            <h1 className="mt-4 max-w-3xl text-2xl font-black leading-tight tracking-normal text-slate-950 sm:text-3xl">
+              Welcome, {studentName || "there"}
             </h1>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-700">
-              Welcome{studentName ? `, ${studentName}` : ""}. This guided preview uses sample information to show classes, homework, progress reports, tournaments, payments, and coach support without touching live student data.
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+              This is the same dashboard an enrolled student uses. Your demo class, your homework and your own chess analytics are real - the sections marked <span className="font-bold text-brand">Demo Preview</span> are filled with sample data until you enroll.
             </p>
-            <div className="mt-5 flex flex-wrap gap-3">
-              <Link href="/demo-preview/upcoming-schedule" className="btn-accent min-w-44">Preview Schedule <ArrowRight size={16} /></Link>
-              <Link href="/play/tactics-trainer" className="btn-outline bg-white">Try Sample Puzzle</Link>
-              <Link href="/play/king-hunt" className="btn-outline bg-white">Try King Hunt</Link>
-              <Link href="/play/square-trainer" className="btn-outline bg-white">Try Square Trainer</Link>
+
+            <div className="mt-5 grid gap-3 sm:grid-cols-3">
+              <StudentStatLink href="/booking" label="Demo Class" value={classStatusValue} note={classStatusNote} icon={Calendar} />
+              <StudentStatLink
+                href={hasRealHomework ? "/homework" : "/demo-preview/homework-view"}
+                label="Homework"
+                value={hasRealHomework ? pendingHomework.length : demoStudentExperience.stats.homework}
+                note={hasRealHomework ? `${homework.length} assigned to you` : "Sample assignments"}
+                icon={ClipboardList}
+              />
+              <StudentStatLink href="/chess-profile" label="Chess Analytics" value={linkedAccounts.length ? `${linkedAccounts.length} linked` : "Not linked"} note={linkedAccounts.length ? "Your real games" : "Add Chess.com or Lichess"} icon={BarChart3} />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <StatCard label="Classes Preview" value={demoStudentExperience.stats.upcomingClasses} note="Upcoming" icon={Calendar} tone="purple" />
-            <StatCard label="Homework Preview" value={demoStudentExperience.stats.homework} note="Assignments" icon={ClipboardList} tone="amber" />
-            <StatCard label="Practice Tools" value={practiceTools.length} note="Try limited access" icon={Gamepad2} tone="purple" />
-            <StatCard label="Portal Modules" value={demoStudentExperience.stats.enrolledPreview} note="Demo pages" icon={BookOpen} tone="blue" />
-          </div>
-        </div>
-        <div className="mt-4 flex flex-wrap items-center gap-2 text-xs font-bold text-slate-600">
-          <ShieldCheck size={14} className="text-brand" /> Limited preview
-          <span className="h-1 w-1 rounded-full bg-slate-300" />
-          No real student data
-          <span className="h-1 w-1 rounded-full bg-slate-300" />
-          Choose to enroll anytime
-        </div>
-      </section>
 
-      {bookedClasses.length ? (
-        <section className="rounded-lg border border-emerald-200 bg-white p-5 shadow-[0_20px_50px_rgba(90,19,114,0.10)]">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <SectionTitle icon={Calendar} title="Your Demo Class" subtitle="Confirmed by the academy - join from here when the class opens" />
-            <span className="rounded-full bg-emerald-100 px-3 py-1 text-[11px] font-black uppercase tracking-[0.14em] text-emerald-700">Confirmed</span>
-          </div>
-          <div className="grid gap-3">
-            {bookedClasses.map(({ classroom, session }: any) => (
-              <div key={String(session._id)} className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0">
-                  <div className="font-black text-slate-950">{sessionTopic(session, classroom)}</div>
-                  <div className="mt-1 text-sm text-slate-600">
-                    Coach {session?.substituteCoach?.name || classroom?.coach?.name || classroom?.instructor?.name || "to be assigned"}
-                  </div>
-                  <div className="mt-1 text-xs font-bold text-brand">{formatJoinWindowLabel(session, now)}</div>
-                </div>
-                <JoinScheduledSessionButton
-                  classroomId={objectId(classroom._id)}
-                  sessionId={String(session._id)}
-                  meetingUrl={classroom.meetingUrl}
-                  className="btn-outline w-full justify-center sm:w-auto"
-                  availableClassName="btn-accent w-full justify-center sm:w-auto"
-                  unavailableClassName="btn-outline w-full justify-center sm:w-auto"
-                  label="Join Classroom"
-                  unavailableLabel="Join opens 5 minutes before class"
-                  disabled={!joinAllowed}
-                  icon={<PlayCircle size={16} />}
-                  scheduledFor={session.scheduledFor || classroom.classDate}
-                  startTime={session.startTime || classroom.startTime}
-                  durationMinutes={session.durationMinutes || classroom.durationMinutes || 30}
-                />
-              </div>
-            ))}
-          </div>
-          <div className="mt-3 text-xs font-semibold text-slate-500">
-            Class times are shown in your local timezone. <Link href="/classrooms" className="text-brand">Open Classrooms</Link> for the full schedule.
-          </div>
-        </section>
-      ) : null}
-
-      <section className="rounded-lg border border-brand/10 bg-white p-5 shadow-[0_20px_50px_rgba(90,19,114,0.10)]">
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <SectionTitle icon={BellRing} title="Guided Walkthrough" subtitle="A quick tour of what enrolled students and parents will experience" />
-          <DemoPreviewBadge />
-        </div>
-        <div className="grid gap-3 lg:grid-cols-4">
-          {demoStudentExperience.steps.map((step, index) => (
-            <div key={step.title} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-              <div className="flex items-center gap-3">
-                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand text-sm font-black text-white">{index + 1}</div>
-                <div className="font-black text-slate-950">{step.title}</div>
-              </div>
-              <p className="mt-3 text-sm leading-6 text-slate-600">{step.description}</p>
+          <div className="rounded-lg border border-amber-200 bg-white/90 p-4 shadow-[0_18px_46px_rgba(37,24,73,0.10)] backdrop-blur">
+            <p className="text-[11px] font-black uppercase tracking-[0.14em] text-brand">Book your demo timing</p>
+            <p className="mt-2 text-lg font-black leading-tight text-slate-950">
+              {nextSession ? (bookingApproved ? "Your demo class is confirmed" : "Your demo class is scheduled") : "Pick a slot that suits you"}
+            </p>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              {nextSession
+                ? "Join from this dashboard when the class opens. You can still request a different time."
+                : "Choose a date, time and timezone. The academy confirms a coach and the class appears here."}
+            </p>
+            <Link href="/booking" className="btn-accent mt-4 w-full justify-center">
+              <Calendar size={16} aria-hidden="true" />
+              {nextSession ? "Change Demo Timing" : "Book Demo Class"}
+            </Link>
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] font-bold text-slate-500">
+              <ShieldCheck size={13} className="text-brand" /> Free demo
+              <span className="h-1 w-1 rounded-full bg-slate-300" />
+              Real coach
+              <span className="h-1 w-1 rounded-full bg-slate-300" />
+              Enroll only if you like it
             </div>
-          ))}
+          </div>
         </div>
       </section>
 
-      <section className="rounded-lg border border-brand/10 bg-white p-5 shadow-[0_20px_50px_rgba(90,19,114,0.10)]">
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <SectionTitle icon={Gamepad2} title="Practice Access" subtitle="Try these learning tools with limited demo access" />
-          <Link href="/play/tactics-trainer" className="text-sm font-black text-brand">View all tools <ArrowRight size={15} className="inline" /></Link>
+      <DemoBookingBand
+        bookingFeatureName={bookingFeatureName}
+        nextSession={nextSession}
+        joinAllowed={joinAllowed}
+        now={now}
+        requestedLabel={requestedLabel}
+        approved={bookingApproved}
+      />
+
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.65fr)]">
+        <div className="space-y-5">
+          <div className="grid gap-5 lg:grid-cols-2">
+            <StudentCard className="min-h-[220px]">
+              <StudentSectionHeader
+                icon={Calendar}
+                title={nextSession ? "Your Demo Class" : "Next Class"}
+                action={nextSession ? <StatusBadge tone={bookingApproved ? "success" : "brand"}>{bookingApproved ? "Confirmed" : "Scheduled"}</StatusBadge> : <DemoPreviewBadge />}
+              />
+              {nextSession ? (
+                <div className="flex h-full flex-col justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="truncate text-base font-black text-slate-950">{sessionTopic(nextSession.session, nextSession.classroom)}</h3>
+                      <StatusBadge tone="brand">{formatJoinWindowLabel(nextSession.session, now)}</StatusBadge>
+                    </div>
+                    <p className="mt-1 text-sm leading-6 text-slate-600">
+                      Coach {nextSession.session?.substituteCoach?.name || nextSession.classroom?.coach?.name || nextSession.classroom?.instructor?.name || "to be assigned"}
+                    </p>
+                  </div>
+                  <dl className="grid gap-2 text-xs sm:grid-cols-3 lg:grid-cols-1 2xl:grid-cols-3">
+                    <InfoTile label="Date" value={formatDate(String(nextSession.session.scheduledFor || nextSession.classroom.classDate || nextSession.classroom.startDate || ""))} />
+                    <InfoTile label="Time" value={nextSession.session.startTime || nextSession.classroom.startTime || "--"} />
+                    <InfoTile label="Duration" value={formatDuration(nextSession.session.durationMinutes || nextSession.classroom.durationMinutes || 30)} />
+                  </dl>
+                  <JoinScheduledSessionButton
+                    classroomId={objectId(nextSession.classroom._id)}
+                    sessionId={String(nextSession.session._id)}
+                    meetingUrl={nextSession.classroom.meetingUrl}
+                    className="btn-outline w-full justify-center"
+                    availableClassName="btn-primary w-full justify-center"
+                    unavailableClassName="btn-outline w-full justify-center"
+                    label="Join Classroom"
+                    unavailableLabel="Join opens 5 minutes before class"
+                    disabled={!joinAllowed}
+                    scheduledFor={nextSession.session.scheduledFor || nextSession.classroom.classDate}
+                    startTime={nextSession.session.startTime || nextSession.classroom.startTime}
+                    durationMinutes={nextSession.session.durationMinutes || nextSession.classroom.durationMinutes || 30}
+                  />
+                </div>
+              ) : (
+                <div className="flex h-full flex-col justify-between gap-4">
+                  <div className="grid gap-2">
+                    {demoStudentExperience.upcomingClasses.slice(0, 2).map((item) => (
+                      <div key={item.title} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
+                        <div className="truncate text-sm font-black text-slate-950">{item.title}</div>
+                        <div className="mt-1 text-xs text-slate-500">{item.coach} · {item.dateLabel} · {item.timeLabel}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs leading-5 text-slate-500">
+                    This is how a confirmed class looks. Book your demo timing and your own class replaces this card.
+                  </p>
+                  <Link href="/booking" className="btn-accent w-full justify-center">Book Demo Class</Link>
+                </div>
+              )}
+            </StudentCard>
+
+            <StudentCard className="min-h-[220px]">
+              <StudentSectionHeader icon={Flame} title="Progress Snapshot" action={<DemoPreviewBadge />} />
+              <div className="grid grid-cols-2 gap-2">
+                <InfoTile label="XP" value="620" />
+                <InfoTile label="Coins" value="3" />
+                <InfoTile label="Badges" value="2" />
+                <InfoTile label="Rank" value="#12" />
+              </div>
+              <div className="mt-4 space-y-3">
+                <StudentProgressBar label="Homework accuracy" value={81} />
+                <StudentProgressBar label="Attendance" value={96} />
+              </div>
+              <p className="mt-3 text-xs leading-5 text-slate-500">
+                After enrollment these numbers come from your own classes, homework scores and attendance.
+              </p>
+            </StudentCard>
+          </div>
+
+          <StudentCard>
+            <StudentSectionHeader
+              icon={ClipboardList}
+              title="Homework"
+              action={hasRealHomework ? <StudentTextLink href="/homework">View All Homework</StudentTextLink> : <DemoPreviewBadge />}
+            />
+            {hasRealHomework ? (
+              <>
+                <p className="mb-3 rounded-lg bg-brand/5 px-3 py-2 text-xs font-semibold leading-5 text-brand">
+                  This assignment is real. Open it, answer the questions and submit - your coach sees the result exactly as they would after enrollment.
+                </p>
+                <div className="grid gap-2">
+                  {homework.slice(0, 3).map((item: any) => {
+                    const submission = submissionByHomework.get(objectId(item._id));
+                    const status = homeworkStatus(item, submission, now);
+                    const itemCount = (item.activities || []).length || (item.puzzles || []).length || 1;
+                    const progress = submission ? 100 : 0;
+                    return (
+                      <Link key={objectId(item._id)} href={`/homework/${objectId(item._id)}`} className="group grid gap-3 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-3 transition hover:-translate-y-0.5 hover:border-brand/30 hover:bg-white hover:shadow-md hover:shadow-brand-900/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent sm:grid-cols-[minmax(0,1fr)_120px] sm:items-center">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="min-w-0 flex-1 truncate text-sm font-black text-slate-950">{item.title}</h3>
+                            <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
+                          </div>
+                          <p className="mt-1 text-xs text-slate-500">Due {item.dueAt ? formatDate(new Date(item.dueAt)) : "Any time"}</p>
+                          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white">
+                            <div className="h-full rounded-full bg-brand transition-all duration-500" style={{ width: `${progress}%` }} />
+                          </div>
+                        </div>
+                        <div className="rounded-lg bg-white px-3 py-2 text-center text-xs font-semibold text-slate-600 ring-1 ring-slate-200">
+                          {submission ? "Submitted" : `${itemCount} activities`}
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="mb-3 rounded-lg bg-slate-50 px-3 py-2 text-xs font-semibold leading-5 text-slate-600">
+                  A real starter assignment is attached to your demo class as soon as the academy schedules it. Until then, this is what homework looks like.
+                </p>
+                <div className="grid gap-2">
+                  {demoStudentExperience.homework.slice(0, 3).map((item) => (
+                    <div key={item.title} className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_120px] sm:items-center">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="min-w-0 flex-1 truncate text-sm font-black text-slate-950">{item.title}</h3>
+                          <StatusBadge tone={item.status === "Submitted" ? "success" : "warning"}>{item.status}</StatusBadge>
+                        </div>
+                        <p className="mt-1 text-xs text-slate-500">{item.dueLabel} · {item.score}</p>
+                      </div>
+                      <div className="rounded-lg bg-white px-3 py-2 text-center text-xs font-semibold text-slate-600 ring-1 ring-slate-200">{item.items} items</div>
+                    </div>
+                  ))}
+                </div>
+                <Link href="/demo-preview/homework-view" className="btn-outline mt-3 w-full justify-center">Open Homework Preview</Link>
+              </>
+            )}
+          </StudentCard>
+
+          <StudentCard>
+            <StudentSectionHeader
+              icon={PlayCircle}
+              title="See how a class actually runs"
+              action={<span className="text-xs font-semibold text-slate-500">4 short videos</span>}
+            />
+            <p className="mb-3 text-sm leading-6 text-slate-600">
+              The same walkthroughs every new student watches before their first class - joining the live classroom, doing homework, using class tools and practising between classes.
+            </p>
+            <div className="grid gap-4 lg:grid-cols-2">
+              {portalTutorials.map((tutorial) => (
+                <article key={tutorial.videoId} className="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+                  <div className="aspect-video bg-slate-900">
+                    <iframe
+                      title={`${tutorial.title} tutorial`}
+                      src={youtubeEmbedUrl(tutorial.videoId)}
+                      className="h-full w-full border-0"
+                      loading="lazy"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                      allowFullScreen
+                    />
+                  </div>
+                  <div className="p-3">
+                    <div className="flex items-center gap-2 text-sm font-black text-slate-950">
+                      <PlayCircle size={16} className="shrink-0 text-brand" />
+                      {tutorial.title}
+                    </div>
+                    <p className="mt-1 text-xs leading-5 text-slate-500">{tutorial.detail}</p>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </StudentCard>
         </div>
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {practiceTools.map((tool) => {
-            const Icon = tool.icon;
-            return (
-              <Link key={tool.title} href={tool.href} className="rounded-lg border border-slate-200 bg-slate-50 p-4 transition hover:border-brand/30 hover:bg-white">
-                <div className="flex items-start gap-3">
-                  <span className="flex h-11 w-11 items-center justify-center rounded-lg bg-brand/10 text-brand"><Icon size={20} /></span>
-                  <div>
-                    <div className="font-black text-slate-950">{tool.title}</div>
-                    <div className="mt-1 text-xs leading-5 text-slate-500">{tool.detail}</div>
+
+        <aside className="space-y-5">
+          <StudentCard>
+            <StudentSectionHeader icon={BarChart3} title="Your Chess Analytics" action={<StudentTextLink href="/chess-profile">Open</StudentTextLink>} />
+            {linkedAccounts.length ? (
+              <>
+                <div className="rounded-lg bg-brand px-4 py-4 text-white">
+                  <p className="text-[11px] font-black uppercase tracking-[0.14em] text-accent">Connected accounts</p>
+                  <p className="mt-2 text-2xl font-black">{linkedAccounts.length}</p>
+                  <p className="mt-1 text-xs font-semibold text-white/75">Your real games, analysed</p>
+                </div>
+                <ul className="mt-3 space-y-2">
+                  {linkedPlatformLabels.map((label) => (
+                    <li key={label} className="truncate rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700">{label}</li>
+                  ))}
+                </ul>
+                <Link href="/chess-profile" className="btn-outline mt-3 w-full justify-center">View Rating & Openings</Link>
+              </>
+            ) : (
+              <>
+                <p className="text-sm leading-6 text-slate-600">
+                  Link your Chess.com or Lichess username and the portal imports your games - rating graph, openings, win rate by colour, and the mistakes a coach would look at first.
+                </p>
+                <div className="mt-3 grid gap-2">
+                  <InfoTile label="Chess.com" value="Not linked" />
+                  <InfoTile label="Lichess" value="Not linked" />
+                </div>
+                <Link href="/chess-profile" className="btn-accent mt-3 w-full justify-center">
+                  <Link2 size={16} aria-hidden="true" /> Sync My Chess Accounts
+                </Link>
+                <p className="mt-2 text-xs leading-5 text-slate-500">This uses your own games, not sample data.</p>
+              </>
+            )}
+          </StudentCard>
+
+          <StudentCard>
+            <StudentSectionHeader icon={Gamepad2} title="Practice & Improve" action={<span className="text-xs font-semibold text-slate-500">{practiceRemaining} tries left</span>} />
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+              {practiceTools.map((tool) => {
+                const Icon = tool.icon;
+                const remaining = Math.max(0, tool.limit - tool.used);
+                return (
+                  <Link key={tool.href} href={tool.href} className="group flex min-h-16 items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 transition hover:-translate-y-0.5 hover:border-brand/30 hover:bg-white hover:shadow-md hover:shadow-brand-900/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
+                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-white text-brand ring-1 ring-slate-200 transition group-hover:bg-brand group-hover:text-white">
+                      <Icon size={17} aria-hidden="true" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold text-slate-950">{tool.title}</span>
+                      <span className="block truncate text-xs text-slate-500">{tool.detail}</span>
+                    </span>
+                    <span className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-bold ${remaining ? "bg-brand/10 text-brand" : "bg-slate-100 text-slate-500"}`}>
+                      {remaining ? `${remaining} left` : "Used up"}
+                    </span>
+                  </Link>
+                );
+              })}
+            </div>
+          </StudentCard>
+
+          <StudentCard>
+            <StudentSectionHeader icon={Trophy} title="Tournaments" action={<DemoPreviewBadge />} />
+            <div className="space-y-2">
+              {demoStudentExperience.tournaments.map((item) => (
+                <div key={item.title} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h3 className="truncate text-sm font-semibold text-slate-950">{item.title}</h3>
+                      <p className="mt-1 text-xs text-slate-500">{item.format} · {item.detail}</p>
+                    </div>
+                    <StatusBadge tone="brand">{item.status}</StatusBadge>
                   </div>
                 </div>
-                <div className="mt-4 rounded-md bg-brand/10 px-3 py-2 text-center text-sm font-black text-brand">{tool.used}/{tool.limit} used</div>
-              </Link>
-            );
-          })}
-        </div>
-      </section>
+              ))}
+            </div>
+            <Link href="/demo-preview/tournaments" className="btn-outline mt-3 w-full justify-center">Open Tournament Preview</Link>
+          </StudentCard>
+
+          <StudentCard>
+            <StudentSectionHeader icon={BellRing} title="How the demo works" />
+            <ol className="space-y-3">
+              {demoStudentExperience.steps.map((step, index) => (
+                <li key={step.title} className="flex gap-3">
+                  <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-brand text-[11px] font-black text-white">{index + 1}</span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-black text-slate-950">{step.title}</span>
+                    <span className="mt-1 block text-xs leading-5 text-slate-500">{step.description}</span>
+                  </span>
+                </li>
+              ))}
+            </ol>
+          </StudentCard>
+        </aside>
+      </div>
 
       <section className="rounded-lg border border-brand/10 bg-white p-5 shadow-[0_20px_50px_rgba(90,19,114,0.10)]">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -627,9 +966,30 @@ function DemoStudentDashboard({
         </div>
       </section>
 
+      <section className="overflow-hidden rounded-lg border border-accent/40 bg-[linear-gradient(135deg,#fff4c1_0%,#ffe98a_52%,#ffd84d_100%)] p-6 shadow-[0_24px_60px_rgba(196,151,0,0.22)] sm:p-8">
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+          <div className="min-w-0">
+            <p className="text-[11px] font-black uppercase tracking-[0.16em] text-brand">Ready when you are</p>
+            <h2 className="mt-2 max-w-2xl text-3xl font-black leading-tight text-brand-900 sm:text-4xl">
+              {nextSession ? "Want a different demo timing?" : "Book your demo class timing"}
+            </h2>
+            <p className="mt-3 max-w-2xl text-sm font-semibold leading-6 text-brand-900/80">
+              Choose a date and time, and the academy assigns a coach. The class opens right here on this dashboard - same classroom, same tools, same homework you have just seen.
+            </p>
+          </div>
+          <Link href="/booking" className="btn-primary w-full justify-center px-8 py-4 text-base sm:w-auto">
+            <Calendar size={18} aria-hidden="true" />
+            {bookingFeatureName}
+            <ArrowRight size={18} aria-hidden="true" />
+          </Link>
+        </div>
+      </section>
+
       <section className="sticky bottom-3 z-10 rounded-lg border border-amber-200 bg-white/95 p-3 shadow-[0_16px_42px_rgba(90,19,114,0.18)] backdrop-blur">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="text-sm font-black text-brand">Ready to experience the real journey?</div>
+          <div className="text-sm font-black text-brand">
+            {nextSession ? "Your demo class is booked - join it from this dashboard." : "Ready to experience the real journey?"}
+          </div>
           <Link href="/booking" className="btn-accent min-w-48">{bookingFeatureName} <ArrowRight size={16} /></Link>
         </div>
       </section>
@@ -891,6 +1251,14 @@ async function StudentDashboard({ userId, joinAllowed }: { userId: string; joinA
   const demoUsage = (student as any)?.demoUsage || {};
   const demoLimits = (student as any)?.demoLimits || {};
   if (isDemoAccount) {
+    // A demo account's dashboard mixes real records with sample ones, so the
+    // pieces that are genuinely theirs - the demo booking, the starter homework
+    // on the demo classroom, and any chess account they linked - are loaded here
+    // and shown as real, while the rest stays clearly marked as a preview.
+    const [chessAccounts, latestDemoBooking] = await Promise.all([
+      ChessAccount.find({ student: userId }).select("platform username isActive syncStatus lastSyncedAt").sort({ platform: 1 }).lean(),
+      Booking.findOne({ student: userId, bookingType: "demo" }).sort({ createdAt: -1 }).lean(),
+    ]);
     return (
       <DemoStudentDashboard
         studentName={(student as any)?.name || "Student"}
@@ -900,6 +1268,10 @@ async function StudentDashboard({ userId, joinAllowed }: { userId: string; joinA
         upcomingSessions={upcomingSessions}
         joinAllowed={joinAllowed}
         now={now}
+        homework={visibleHomework}
+        submissions={submissions}
+        chessAccounts={chessAccounts}
+        demoBooking={latestDemoBooking}
       />
     );
   }

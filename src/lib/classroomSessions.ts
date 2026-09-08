@@ -85,12 +85,22 @@ export function isSessionUpcomingLike(status: ScheduledSessionStatus) {
 }
 
 /**
- * A class whose date went by without the topic being taught. Its topic is still
- * owed, which is what makes it the one class that can be pushed into the next
- * slot and take the rest of the series with it.
+ * A class whose date went by without the topic being taught, so its topic is
+ * still owed.
  */
 export function isUntaughtSessionStatus(status: ScheduledSessionStatus | string) {
   return ["missed", "abandoned", "absent", "coach_no_show", "student_no_show", "technical_issue"].includes(String(status || ""));
+}
+
+/**
+ * Mirrors the push rule the classroom API enforces: a class can be pushed into
+ * the next slot - taking the rest of the series with it - as long as it has not
+ * been taught, cancelled, or already started. An untaught class is the usual
+ * reason to push, but an admin can also push one that is still upcoming.
+ */
+export function isPushableSessionStatus(session: ScheduledSessionLike, status: ScheduledSessionStatus | string) {
+  if (session?.actualStartedAt || session?.actualEndedAt) return false;
+  return !["completed", "cancelled", "ongoing"].includes(String(status || ""));
 }
 
 export function flattenScheduledSessions(classrooms: any[]) {

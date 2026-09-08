@@ -219,10 +219,14 @@ function canSee(role: Role, accountStatus: AccountStatus | undefined, isActive: 
   if (item.demoOnly && !isDemo) return false;
   if (item.hideForDemo && isDemo) return false;
   if (isDemo) {
-    const demoAllowed = ["/dashboard", "/profile", "/booking", "/play/square-trainer", "/play/tactics-trainer", "/play/king-hunt", "/play/computer"];
+    // Chess Profile is on the demo list because linking a Chess.com or Lichess
+    // account is the one part of the portal a prospect can experience with their
+    // own data before enrolling - the analytics are built from their real games.
+    const demoAllowed = ["/dashboard", "/profile", "/booking", "/chess-profile", "/play/square-trainer", "/play/tactics-trainer", "/play/king-hunt", "/play/computer"];
     // An approved demo gets a real classroom, and the student needs a way into
-    // it - so Classrooms joins the demo list once one exists.
-    if (hasScheduledClassroom) demoAllowed.push("/classrooms");
+    // it - so Classrooms joins the demo list once one exists. The demo classroom
+    // also carries a real starter assignment, so Homework comes with it.
+    if (hasScheduledClassroom) demoAllowed.push("/classrooms", "/homework");
     if ("href" in item && typeof (item as any).href === "string" && !demoAllowed.includes((item as any).href)) return false;
   }
   return !item.roles || item.roles.includes(role);

@@ -18,6 +18,7 @@ import { canAccessFeature } from "@/lib/featureAccess";
 import { demoManagementUsers, ensureDemoRequestTask, normalizeDemoRequestedTime, notifyDemoRequestCreated } from "@/lib/demoWorkflow";
 import { sendMetaConversionEvent } from "@/lib/metaConversions";
 import { cancelDemoClassrooms } from "@/lib/demoClassroom";
+import { ensureDemoHomework } from "@/lib/demoHomework";
 
 export const dynamic = "force-dynamic";
 
@@ -531,6 +532,16 @@ export async function PATCH(req: Request) {
       }],
       isActive: true,
     });
+    if (isDemoBooking) {
+      // A demo approved from here reaches the student the same way one approved
+      // from the Demo Center does, so it carries the same starter assignment.
+      await ensureDemoHomework({
+        classroomId: classroom._id,
+        coachId: coach._id,
+        studentId: student._id,
+        dueAt: new Date(start.getTime() + 2 * 24 * 60 * 60 * 1000),
+      }).catch((error) => console.error("Demo homework seeding failed", error));
+    }
     booking.status = "confirmed";
     booking.approvalStatus = "coach_approved";
     booking.classroom = classroom._id;

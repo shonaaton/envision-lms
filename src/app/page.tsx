@@ -28,6 +28,7 @@ import { ACADEMY_DEFAULTS, ACADEMY_LOGO_URL } from "@/lib/branding";
 import { MARKETING_BASE_URL, OFFLINE_ACADEMY_URL } from "@/lib/publicLinks";
 import { academyBranches, anishStory, impactCounters, publicAchievementList, studentSlug } from "@/lib/achievementData";
 import { getLandingAchievements } from "@/lib/achievements";
+import { portalTutorials, youtubeEmbedUrl } from "@/lib/portalTutorials";
 
 export const dynamic = "force-dynamic";
 
@@ -75,29 +76,6 @@ const portalTabs = [
   { title: "Tournaments", icon: Trophy, points: ["Tournament lobby", "Pairings", "Live games", "Results", "Academy leaderboards"] },
   { title: "Progress and Certificates", icon: ShieldCheck, points: ["Attendance", "Reports", "Milestones", "Certificates", "Learning history"] },
   { title: "Fees and Invoices", icon: WalletCards, points: ["Class credits", "Usage history", "Monthly dues", "Invoice PDF", "Online payments"] },
-];
-
-const portalTutorials = [
-  {
-    title: "Before Your First Class",
-    detail: "Log in, enter your classroom, and attend your first online class.",
-    videoId: "OQ7RMzfbsoc",
-  },
-  {
-    title: "Homework Tutorial",
-    detail: "Access assignments, complete homework, and submit your work.",
-    videoId: "jkhZnurcl10",
-  },
-  {
-    title: "Class Tools",
-    detail: "Review what was covered, use Ask Coach, and explore class features.",
-    videoId: "JCOrhFkyXas",
-  },
-  {
-    title: "Practice Tools",
-    detail: "Use Tactics Trainer, King Hunt, Square Trainer, and Play vs Computer.",
-    videoId: "sLUjlm4Y350",
-  },
 ];
 
 const practiceTools = [
@@ -378,7 +356,7 @@ export default async function Home() {
                   <div className="aspect-video bg-[#070b10]">
                     <iframe
                       title={`${tutorial.title} tutorial`}
-                      src={`https://www.youtube.com/embed/${tutorial.videoId}`}
+                      src={youtubeEmbedUrl(tutorial.videoId)}
                       className="h-full w-full border-0"
                       loading="lazy"
                       allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"

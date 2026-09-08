@@ -1039,6 +1039,12 @@ main .rounded-xl.card.bg-white {
 .visible {
   visibility: visible;
 }
+.invisible {
+  visibility: hidden;
+}
+.collapse {
+  visibility: collapse;
+}
 .static {
   position: static;
 }
@@ -1125,9 +1131,6 @@ main .rounded-xl.card.bg-white {
 }
 .left-12 {
   left: 3rem;
-}
-.left-2 {
-  left: 0.5rem;
 }
 .left-2\.5 {
   left: 0.625rem;
@@ -1258,6 +1261,9 @@ main .rounded-xl.card.bg-white {
 .z-50 {
   z-index: 50;
 }
+.z-\[100\] {
+  z-index: 100;
+}
 .z-\[140\] {
   z-index: 140;
 }
@@ -1306,6 +1312,10 @@ main .rounded-xl.card.bg-white {
 .-m-6 {
   margin: -1.5rem;
 }
+.-mx-1 {
+  margin-left: -0.25rem;
+  margin-right: -0.25rem;
+}
 .-mx-3 {
   margin-left: -0.75rem;
   margin-right: -0.75rem;
@@ -1329,6 +1339,12 @@ main .rounded-xl.card.bg-white {
 .my-3 {
   margin-top: 0.75rem;
   margin-bottom: 0.75rem;
+}
+.-mr-1 {
+  margin-right: -0.25rem;
+}
+.-mt-1 {
+  margin-top: -0.25rem;
 }
 .-mt-12 {
   margin-top: -3rem;
@@ -1369,14 +1385,14 @@ main .rounded-xl.card.bg-white {
 .ml-1 {
   margin-left: 0.25rem;
 }
+.ml-1\.5 {
+  margin-left: 0.375rem;
+}
 .ml-12 {
   margin-left: 3rem;
 }
 .ml-2 {
   margin-left: 0.5rem;
-}
-.ml-3 {
-  margin-left: 0.75rem;
 }
 .ml-5 {
   margin-left: 1.25rem;
@@ -1395,6 +1411,9 @@ main .rounded-xl.card.bg-white {
 }
 .mr-4 {
   margin-right: 1rem;
+}
+.mr-auto {
+  margin-right: auto;
 }
 .mt-0 {
   margin-top: 0px;
@@ -1444,6 +1463,9 @@ main .rounded-xl.card.bg-white {
 .mt-8 {
   margin-top: 2rem;
 }
+.mt-\[7px\] {
+  margin-top: 7px;
+}
 .mt-auto {
   margin-top: auto;
 }
@@ -1480,8 +1502,17 @@ main .rounded-xl.card.bg-white {
 .inline-flex {
   display: inline-flex;
 }
+.\!table {
+  display: table !important;
+}
 .table {
   display: table;
+}
+.table-cell {
+  display: table-cell;
+}
+.table-column {
+  display: table-column;
 }
 .grid {
   display: grid;
@@ -1573,6 +1604,9 @@ main .rounded-xl.card.bg-white {
 .h-40 {
   height: 10rem;
 }
+.h-48 {
+  height: 12rem;
+}
 .h-5 {
   height: 1.25rem;
 }
@@ -1596,6 +1630,9 @@ main .rounded-xl.card.bg-white {
 }
 .h-\[170px\] {
   height: 170px;
+}
+.h-\[200vh\] {
+  height: 200vh;
 }
 .h-\[210px\] {
   height: 210px;
@@ -1649,6 +1686,9 @@ main .rounded-xl.card.bg-white {
 .h-px {
   height: 1px;
 }
+.h-screen {
+  height: 100vh;
+}
 .max-h-24 {
   max-height: 6rem;
 }
@@ -1685,6 +1725,9 @@ main .rounded-xl.card.bg-white {
 .max-h-96 {
   max-height: 24rem;
 }
+.max-h-\[28rem\] {
+  max-height: 28rem;
+}
 .max-h-\[360px\] {
   max-height: 360px;
 }
@@ -1712,17 +1755,14 @@ main .rounded-xl.card.bg-white {
 .max-h-\[84vh\] {
   max-height: 84vh;
 }
-.max-h-\[86vh\] {
-  max-height: 86vh;
-}
-.max-h-\[88vh\] {
-  max-height: 88vh;
-}
 .max-h-\[90vh\] {
   max-height: 90vh;
 }
 .max-h-\[92vh\] {
   max-height: 92vh;
+}
+.max-h-\[94dvh\] {
+  max-height: 94dvh;
 }
 .max-h-\[94vh\] {
   max-height: 94vh;
@@ -1835,9 +1875,6 @@ main .rounded-xl.card.bg-white {
 .min-h-\[240px\] {
   min-height: 240px;
 }
-.min-h-\[250px\] {
-  min-height: 250px;
-}
 .min-h-\[255px\] {
   min-height: 255px;
 }
@@ -1882,6 +1919,9 @@ main .rounded-xl.card.bg-white {
 }
 .min-h-\[68vh\] {
   min-height: 68vh;
+}
+.min-h-\[70px\] {
+  min-height: 70px;
 }
 .min-h-\[720px\] {
   min-height: 720px;
@@ -1940,6 +1980,12 @@ main .rounded-xl.card.bg-white {
 .w-1\.5 {
   width: 0.375rem;
 }
+.w-1\/2 {
+  width: 50%;
+}
+.w-1\/3 {
+  width: 33.333333%;
+}
 .w-10 {
   width: 2.5rem;
 }
@@ -1961,6 +2007,9 @@ main .rounded-xl.card.bg-white {
 .w-2\.5 {
   width: 0.625rem;
 }
+.w-2\/3 {
+  width: 66.666667%;
+}
 .w-20 {
   width: 5rem;
 }
@@ -1981,6 +2030,9 @@ main .rounded-xl.card.bg-white {
 }
 .w-4 {
   width: 1rem;
+}
+.w-4\/5 {
+  width: 80%;
 }
 .w-40 {
   width: 10rem;
@@ -2035,6 +2087,9 @@ main .rounded-xl.card.bg-white {
 }
 .w-\[186px\] {
   width: 186px;
+}
+.w-\[200vw\] {
+  width: 200vw;
 }
 .w-\[210px\] {
   width: 210px;
@@ -2148,20 +2203,41 @@ main .rounded-xl.card.bg-white {
 .min-w-9 {
   min-width: 2.25rem;
 }
+.min-w-\[104px\] {
+  min-width: 104px;
+}
 .min-w-\[120px\] {
   min-width: 120px;
 }
 .min-w-\[150px\] {
   min-width: 150px;
 }
+.min-w-\[200px\] {
+  min-width: 200px;
+}
+.min-w-\[220px\] {
+  min-width: 220px;
+}
 .min-w-\[240px\] {
   min-width: 240px;
+}
+.min-w-\[420px\] {
+  min-width: 420px;
 }
 .min-w-\[560px\] {
   min-width: 560px;
 }
+.min-w-\[64px\] {
+  min-width: 64px;
+}
+.min-w-\[76px\] {
+  min-width: 76px;
+}
 .min-w-\[860px\] {
   min-width: 860px;
+}
+.min-w-\[900px\] {
+  min-width: 900px;
 }
 .min-w-\[96px\] {
   min-width: 96px;
@@ -2172,6 +2248,9 @@ main .rounded-xl.card.bg-white {
 }
 .min-w-full {
   min-width: 100%;
+}
+.max-w-0 {
+  max-width: 0px;
 }
 .max-w-2xl {
   max-width: 42rem;
@@ -2205,6 +2284,9 @@ main .rounded-xl.card.bg-white {
 }
 .max-w-\[12ch\] {
   max-width: 12ch;
+}
+.max-w-\[1400px\] {
+  max-width: 1400px;
 }
 .max-w-\[150px\] {
   max-width: 150px;
@@ -2326,6 +2408,9 @@ main .rounded-xl.card.bg-white {
 .max-w-xl {
   max-width: 36rem;
 }
+.max-w-xs {
+  max-width: 20rem;
+}
 .flex-1 {
   flex: 1 1 0%;
 }
@@ -2360,6 +2445,10 @@ main .rounded-xl.card.bg-white {
   --tw-translate-x: -50%;
   transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
 }
+.-translate-x-1\/4 {
+  --tw-translate-x: -25%;
+  transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
+}
 .-translate-x-\[28\%\] {
   --tw-translate-x: -28%;
   transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
@@ -2374,6 +2463,10 @@ main .rounded-xl.card.bg-white {
 }
 .-translate-y-1\/2 {
   --tw-translate-y: -50%;
+  transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
+}
+.-translate-y-1\/4 {
+  --tw-translate-y: -25%;
   transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
 }
 .translate-x-0 {
@@ -2523,6 +2616,12 @@ main .rounded-xl.card.bg-white {
 .scroll-mt-4 {
   scroll-margin-top: 1rem;
 }
+.list-inside {
+  list-style-position: inside;
+}
+.list-decimal {
+  list-style-type: decimal;
+}
 .list-none {
   list-style-type: none;
 }
@@ -2595,6 +2694,9 @@ main .rounded-xl.card.bg-white {
 }
 .grid-cols-\[1fr_auto\] {
   grid-template-columns: 1fr auto;
+}
+.grid-cols-\[2\.25rem_1fr_1fr\] {
+  grid-template-columns: 2.25rem 1fr 1fr;
 }
 .grid-cols-\[28px_1fr_1fr\] {
   grid-template-columns: 28px 1fr 1fr;
@@ -2686,6 +2788,9 @@ main .rounded-xl.card.bg-white {
 .items-center {
   align-items: center;
 }
+.items-baseline {
+  align-items: baseline;
+}
 .justify-start {
   justify-content: flex-start;
 }
@@ -2700,6 +2805,9 @@ main .rounded-xl.card.bg-white {
 }
 .gap-0 {
   gap: 0px;
+}
+.gap-0\.5 {
+  gap: 0.125rem;
 }
 .gap-1 {
   gap: 0.25rem;
@@ -2741,6 +2849,14 @@ main .rounded-xl.card.bg-white {
   -moz-column-gap: 0.375rem;
        column-gap: 0.375rem;
 }
+.gap-x-16 {
+  -moz-column-gap: 4rem;
+       column-gap: 4rem;
+}
+.gap-x-2 {
+  -moz-column-gap: 0.5rem;
+       column-gap: 0.5rem;
+}
 .gap-x-3 {
   -moz-column-gap: 0.75rem;
        column-gap: 0.75rem;
@@ -2749,11 +2865,31 @@ main .rounded-xl.card.bg-white {
   -moz-column-gap: 1rem;
        column-gap: 1rem;
 }
+.gap-x-5 {
+  -moz-column-gap: 1.25rem;
+       column-gap: 1.25rem;
+}
+.gap-x-6 {
+  -moz-column-gap: 1.5rem;
+       column-gap: 1.5rem;
+}
 .gap-y-0\.5 {
   row-gap: 0.125rem;
 }
 .gap-y-1 {
   row-gap: 0.25rem;
+}
+.gap-y-2 {
+  row-gap: 0.5rem;
+}
+.gap-y-24 {
+  row-gap: 6rem;
+}
+.gap-y-3 {
+  row-gap: 0.75rem;
+}
+.gap-y-3\.5 {
+  row-gap: 0.875rem;
 }
 .space-y-1 > :not([hidden]) ~ :not([hidden]) {
   --tw-space-y-reverse: 0;
@@ -2769,6 +2905,11 @@ main .rounded-xl.card.bg-white {
   --tw-space-y-reverse: 0;
   margin-top: calc(0.5rem * calc(1 - var(--tw-space-y-reverse)));
   margin-bottom: calc(0.5rem * var(--tw-space-y-reverse));
+}
+.space-y-2\.5 > :not([hidden]) ~ :not([hidden]) {
+  --tw-space-y-reverse: 0;
+  margin-top: calc(0.625rem * calc(1 - var(--tw-space-y-reverse)));
+  margin-bottom: calc(0.625rem * var(--tw-space-y-reverse));
 }
 .space-y-3 > :not([hidden]) ~ :not([hidden]) {
   --tw-space-y-reverse: 0;
@@ -2912,9 +3053,17 @@ main .rounded-xl.card.bg-white {
   border-top-left-radius: 0.25rem;
   border-top-right-radius: 0.25rem;
 }
+.rounded-t-2xl {
+  border-top-left-radius: 1rem;
+  border-top-right-radius: 1rem;
+}
 .rounded-t-\[24px\] {
   border-top-left-radius: 24px;
   border-top-right-radius: 24px;
+}
+.rounded-t-lg {
+  border-top-left-radius: 0.5rem;
+  border-top-right-radius: 0.5rem;
 }
 .rounded-bl-md {
   border-bottom-left-radius: 0.375rem;
@@ -2966,6 +3115,9 @@ main .rounded-xl.card.bg-white {
 .border-t {
   border-top-width: 1px;
 }
+.border-t-2 {
+  border-top-width: 2px;
+}
 .border-dashed {
   border-style: dashed;
 }
@@ -2989,6 +3141,9 @@ main .rounded-xl.card.bg-white {
   --tw-border-opacity: 1;
   border-color: rgb(253 231 90 / var(--tw-border-opacity));
 }
+.border-accent-500\/40 {
+  border-color: rgb(232 207 42 / 0.4);
+}
 .border-accent\/15 {
   border-color: rgb(253 231 90 / 0.15);
 }
@@ -2997,6 +3152,9 @@ main .rounded-xl.card.bg-white {
 }
 .border-accent\/30 {
   border-color: rgb(253 231 90 / 0.3);
+}
+.border-accent\/40 {
+  border-color: rgb(253 231 90 / 0.4);
 }
 .border-accent\/50 {
   border-color: rgb(253 231 90 / 0.5);
@@ -3351,6 +3509,18 @@ main .rounded-xl.card.bg-white {
   --tw-bg-opacity: 1;
   background-color: rgb(253 231 90 / var(--tw-bg-opacity));
 }
+.bg-accent-100 {
+  --tw-bg-opacity: 1;
+  background-color: rgb(254 245 184 / var(--tw-bg-opacity));
+}
+.bg-accent-300 {
+  --tw-bg-opacity: 1;
+  background-color: rgb(253 235 111 / var(--tw-bg-opacity));
+}
+.bg-accent-50 {
+  --tw-bg-opacity: 1;
+  background-color: rgb(255 251 229 / var(--tw-bg-opacity));
+}
 .bg-accent\/10 {
   background-color: rgb(253 231 90 / 0.1);
 }
@@ -3394,12 +3564,23 @@ main .rounded-xl.card.bg-white {
   --tw-bg-opacity: 1;
   background-color: rgb(255 251 235 / var(--tw-bg-opacity));
 }
+.bg-amber-50\/60 {
+  background-color: rgb(255 251 235 / 0.6);
+}
 .bg-amber-50\/70 {
   background-color: rgb(255 251 235 / 0.7);
 }
 .bg-amber-500 {
   --tw-bg-opacity: 1;
   background-color: rgb(245 158 11 / var(--tw-bg-opacity));
+}
+.bg-amber-600 {
+  --tw-bg-opacity: 1;
+  background-color: rgb(217 119 6 / var(--tw-bg-opacity));
+}
+.bg-amber-700 {
+  --tw-bg-opacity: 1;
+  background-color: rgb(180 83 9 / var(--tw-bg-opacity));
 }
 .bg-amber-950\/40 {
   background-color: rgb(69 26 3 / 0.4);
@@ -3450,11 +3631,26 @@ main .rounded-xl.card.bg-white {
   --tw-bg-opacity: 1;
   background-color: rgb(245 237 248 / var(--tw-bg-opacity));
 }
+.bg-brand-50\/40 {
+  background-color: rgb(245 237 248 / 0.4);
+}
+.bg-brand-50\/50 {
+  background-color: rgb(245 237 248 / 0.5);
+}
+.bg-brand-50\/60 {
+  background-color: rgb(245 237 248 / 0.6);
+}
+.bg-brand-50\/70 {
+  background-color: rgb(245 237 248 / 0.7);
+}
 .bg-brand\/10 {
   background-color: rgb(90 19 114 / 0.1);
 }
 .bg-brand\/20 {
   background-color: rgb(90 19 114 / 0.2);
+}
+.bg-brand\/40 {
+  background-color: rgb(90 19 114 / 0.4);
 }
 .bg-brand\/5 {
   background-color: rgb(90 19 114 / 0.05);
@@ -3488,6 +3684,9 @@ main .rounded-xl.card.bg-white {
   --tw-bg-opacity: 1;
   background-color: rgb(236 253 245 / var(--tw-bg-opacity));
 }
+.bg-emerald-50\/40 {
+  background-color: rgb(236 253 245 / 0.4);
+}
 .bg-emerald-500 {
   --tw-bg-opacity: 1;
   background-color: rgb(16 185 129 / var(--tw-bg-opacity));
@@ -3519,6 +3718,13 @@ main .rounded-xl.card.bg-white {
 .bg-ink-800 {
   --tw-bg-opacity: 1;
   background-color: rgb(21 21 21 / var(--tw-bg-opacity));
+}
+.bg-ink\/50 {
+  background-color: rgb(10 10 10 / 0.5);
+}
+.bg-orange-200 {
+  --tw-bg-opacity: 1;
+  background-color: rgb(254 215 170 / var(--tw-bg-opacity));
 }
 .bg-orange-50 {
   --tw-bg-opacity: 1;
@@ -3566,6 +3772,10 @@ main .rounded-xl.card.bg-white {
   --tw-bg-opacity: 1;
   background-color: rgb(185 28 28 / var(--tw-bg-opacity));
 }
+.bg-rose-100 {
+  --tw-bg-opacity: 1;
+  background-color: rgb(255 228 230 / var(--tw-bg-opacity));
+}
 .bg-rose-300 {
   --tw-bg-opacity: 1;
   background-color: rgb(253 164 175 / var(--tw-bg-opacity));
@@ -3594,6 +3804,10 @@ main .rounded-xl.card.bg-white {
   --tw-bg-opacity: 1;
   background-color: rgb(240 249 255 / var(--tw-bg-opacity));
 }
+.bg-sky-500 {
+  --tw-bg-opacity: 1;
+  background-color: rgb(14 165 233 / var(--tw-bg-opacity));
+}
 .bg-sky-700 {
   --tw-bg-opacity: 1;
   background-color: rgb(3 105 161 / var(--tw-bg-opacity));
@@ -3601,6 +3815,9 @@ main .rounded-xl.card.bg-white {
 .bg-slate-100 {
   --tw-bg-opacity: 1;
   background-color: rgb(241 245 249 / var(--tw-bg-opacity));
+}
+.bg-slate-100\/80 {
+  background-color: rgb(241 245 249 / 0.8);
 }
 .bg-slate-200 {
   --tw-bg-opacity: 1;
@@ -3629,6 +3846,10 @@ main .rounded-xl.card.bg-white {
 }
 .bg-slate-50\/80 {
   background-color: rgb(248 250 252 / 0.8);
+}
+.bg-slate-500 {
+  --tw-bg-opacity: 1;
+  background-color: rgb(100 116 139 / var(--tw-bg-opacity));
 }
 .bg-slate-700 {
   --tw-bg-opacity: 1;
@@ -3668,6 +3889,9 @@ main .rounded-xl.card.bg-white {
   --tw-bg-opacity: 1;
   background-color: rgb(240 253 250 / var(--tw-bg-opacity));
 }
+.bg-teal-50\/50 {
+  background-color: rgb(240 253 250 / 0.5);
+}
 .bg-teal-500 {
   --tw-bg-opacity: 1;
   background-color: rgb(20 184 166 / var(--tw-bg-opacity));
@@ -3686,6 +3910,10 @@ main .rounded-xl.card.bg-white {
 .bg-violet-50 {
   --tw-bg-opacity: 1;
   background-color: rgb(245 243 255 / var(--tw-bg-opacity));
+}
+.bg-violet-500 {
+  --tw-bg-opacity: 1;
+  background-color: rgb(139 92 246 / var(--tw-bg-opacity));
 }
 .bg-violet-600 {
   --tw-bg-opacity: 1;
@@ -3779,11 +4007,14 @@ main .rounded-xl.card.bg-white {
 .bg-\[linear-gradient\(135deg\2c \#f5edf8_0\%\2c \#fef5b8_100\%\)\] {
   background-image: linear-gradient(135deg,#f5edf8 0%,#fef5b8 100%);
 }
-.bg-\[linear-gradient\(135deg\2c \#fff8d8_0\%\2c \#fff4c1_42\%\2c \#ffffff_100\%\)\] {
-  background-image: linear-gradient(135deg,#fff8d8 0%,#fff4c1 42%,#ffffff 100%);
+.bg-\[linear-gradient\(135deg\2c \#fff4c1_0\%\2c \#ffe98a_52\%\2c \#ffd84d_100\%\)\] {
+  background-image: linear-gradient(135deg,#fff4c1 0%,#ffe98a 52%,#ffd84d 100%);
 }
 .bg-\[linear-gradient\(135deg\2c \#fff8d8_0\%\2c \#ffffff_58\%\2c \#f8f5ff_100\%\)\] {
   background-image: linear-gradient(135deg,#fff8d8 0%,#ffffff 58%,#f8f5ff 100%);
+}
+.bg-\[linear-gradient\(135deg\2c \#fffdf3_0\%\2c \#fff8d8_46\%\2c \#faf7ff_100\%\)\] {
+  background-image: linear-gradient(135deg,#fffdf3 0%,#fff8d8 46%,#faf7ff 100%);
 }
 .bg-\[linear-gradient\(135deg\2c \#ffffff_0\%\2c \#faf8ff_48\%\2c \#f5f1ff_100\%\)\] {
   background-image: linear-gradient(135deg,#ffffff 0%,#faf8ff 48%,#f5f1ff 100%);
@@ -3963,6 +4194,10 @@ main .rounded-xl.card.bg-white {
   --tw-gradient-to: rgb(253 231 90 / 0)  var(--tw-gradient-to-position);
   --tw-gradient-stops: var(--tw-gradient-from), rgb(253 231 90 / 0.7) var(--tw-gradient-via-position), var(--tw-gradient-to);
 }
+.via-brand-400 {
+  --tw-gradient-to: rgb(138 63 174 / 0)  var(--tw-gradient-to-position);
+  --tw-gradient-stops: var(--tw-gradient-from), #8a3fae var(--tw-gradient-via-position), var(--tw-gradient-to);
+}
 .via-purple-800 {
   --tw-gradient-to: rgb(107 33 168 / 0)  var(--tw-gradient-to-position);
   --tw-gradient-stops: var(--tw-gradient-from), #6b21a8 var(--tw-gradient-via-position), var(--tw-gradient-to);
@@ -3980,6 +4215,12 @@ main .rounded-xl.card.bg-white {
 }
 .to-amber-300\/95 {
   --tw-gradient-to: rgb(252 211 77 / 0.95) var(--tw-gradient-to-position);
+}
+.to-brand {
+  --tw-gradient-to: #5a1372 var(--tw-gradient-to-position);
+}
+.to-brand-400 {
+  --tw-gradient-to: #8a3fae var(--tw-gradient-to-position);
 }
 .to-brand-900 {
   --tw-gradient-to: #1a0622 var(--tw-gradient-to-position);
@@ -4078,6 +4319,10 @@ main .rounded-xl.card.bg-white {
   padding-left: 0px;
   padding-right: 0px;
 }
+.px-0\.5 {
+  padding-left: 0.125rem;
+  padding-right: 0.125rem;
+}
 .px-1 {
   padding-left: 0.25rem;
   padding-right: 0.25rem;
@@ -4117,6 +4362,10 @@ main .rounded-xl.card.bg-white {
 .px-7 {
   padding-left: 1.75rem;
   padding-right: 1.75rem;
+}
+.px-8 {
+  padding-left: 2rem;
+  padding-right: 2rem;
 }
 .px-\[6px\] {
   padding-left: 6px;
@@ -4192,6 +4441,9 @@ main .rounded-xl.card.bg-white {
 .pb-1\.5 {
   padding-bottom: 0.375rem;
 }
+.pb-10 {
+  padding-bottom: 2.5rem;
+}
 .pb-2 {
   padding-bottom: 0.5rem;
 }
@@ -4213,6 +4465,12 @@ main .rounded-xl.card.bg-white {
 .pb-\[calc\(0\.75rem\+env\(safe-area-inset-bottom\)\)\] {
   padding-bottom: calc(0.75rem + env(safe-area-inset-bottom));
 }
+.pb-\[max\(1rem\2c env\(safe-area-inset-bottom\)\)\] {
+  padding-bottom: max(1rem,env(safe-area-inset-bottom));
+}
+.pb-px {
+  padding-bottom: 1px;
+}
 .pl-1 {
   padding-left: 0.25rem;
 }
@@ -4221,6 +4479,9 @@ main .rounded-xl.card.bg-white {
 }
 .pl-14 {
   padding-left: 3.5rem;
+}
+.pl-2 {
+  padding-left: 0.5rem;
 }
 .pl-4 {
   padding-left: 1rem;
@@ -4233,6 +4494,9 @@ main .rounded-xl.card.bg-white {
 }
 .pl-9 {
   padding-left: 2.25rem;
+}
+.pr-0\.5 {
+  padding-right: 0.125rem;
 }
 .pr-1 {
   padding-right: 0.25rem;
@@ -4491,6 +4755,9 @@ main .rounded-xl.card.bg-white {
 .tracking-wide {
   letter-spacing: 0.025em;
 }
+.tracking-widest {
+  letter-spacing: 0.1em;
+}
 .text-\[\#07100e\] {
   --tw-text-opacity: 1;
   color: rgb(7 16 14 / var(--tw-text-opacity));
@@ -4517,6 +4784,10 @@ main .rounded-xl.card.bg-white {
 .text-accent {
   --tw-text-opacity: 1;
   color: rgb(253 231 90 / var(--tw-text-opacity));
+}
+.text-accent-500 {
+  --tw-text-opacity: 1;
+  color: rgb(232 207 42 / var(--tw-text-opacity));
 }
 .text-accent\/70 {
   color: rgb(253 231 90 / 0.7);
@@ -4618,9 +4889,23 @@ main .rounded-xl.card.bg-white {
   --tw-text-opacity: 1;
   color: rgb(90 19 114 / var(--tw-text-opacity));
 }
+.text-brand-600 {
+  --tw-text-opacity: 1;
+  color: rgb(74 15 94 / var(--tw-text-opacity));
+}
+.text-brand-700 {
+  --tw-text-opacity: 1;
+  color: rgb(58 12 74 / var(--tw-text-opacity));
+}
+.text-brand-700\/80 {
+  color: rgb(58 12 74 / 0.8);
+}
 .text-brand-900 {
   --tw-text-opacity: 1;
   color: rgb(26 6 34 / var(--tw-text-opacity));
+}
+.text-brand-900\/80 {
+  color: rgb(26 6 34 / 0.8);
 }
 .text-brand\/70 {
   color: rgb(90 19 114 / 0.7);
@@ -4664,9 +4949,17 @@ main .rounded-xl.card.bg-white {
 .text-inherit {
   color: inherit;
 }
+.text-orange-600 {
+  --tw-text-opacity: 1;
+  color: rgb(234 88 12 / var(--tw-text-opacity));
+}
 .text-orange-700 {
   --tw-text-opacity: 1;
   color: rgb(194 65 12 / var(--tw-text-opacity));
+}
+.text-orange-900 {
+  --tw-text-opacity: 1;
+  color: rgb(124 45 18 / var(--tw-text-opacity));
 }
 .text-purple-50 {
   --tw-text-opacity: 1;
@@ -4712,6 +5005,10 @@ main .rounded-xl.card.bg-white {
   --tw-text-opacity: 1;
   color: rgb(185 28 28 / var(--tw-text-opacity));
 }
+.text-red-800 {
+  --tw-text-opacity: 1;
+  color: rgb(153 27 27 / var(--tw-text-opacity));
+}
 .text-red-900\/80 {
   color: rgb(127 29 29 / 0.8);
 }
@@ -4734,10 +5031,6 @@ main .rounded-xl.card.bg-white {
 .text-rose-800 {
   --tw-text-opacity: 1;
   color: rgb(159 18 57 / var(--tw-text-opacity));
-}
-.text-rose-900 {
-  --tw-text-opacity: 1;
-  color: rgb(136 19 55 / var(--tw-text-opacity));
 }
 .text-sky-500 {
   --tw-text-opacity: 1;
@@ -4799,6 +5092,10 @@ main .rounded-xl.card.bg-white {
   --tw-text-opacity: 1;
   color: rgb(15 118 110 / var(--tw-text-opacity));
 }
+.text-teal-800 {
+  --tw-text-opacity: 1;
+  color: rgb(17 94 89 / var(--tw-text-opacity));
+}
 .text-transparent {
   color: transparent;
 }
@@ -4834,11 +5131,25 @@ main .rounded-xl.card.bg-white {
 .underline {
   text-decoration-line: underline;
 }
+.underline-offset-4 {
+  text-underline-offset: 4px;
+}
+.placeholder-slate-400::-moz-placeholder {
+  --tw-placeholder-opacity: 1;
+  color: rgb(148 163 184 / var(--tw-placeholder-opacity));
+}
+.placeholder-slate-400::placeholder {
+  --tw-placeholder-opacity: 1;
+  color: rgb(148 163 184 / var(--tw-placeholder-opacity));
+}
 .accent-blue-600 {
   accent-color: #2563eb;
 }
 .accent-brand {
   accent-color: #5a1372;
+}
+.accent-emerald-600 {
+  accent-color: #059669;
 }
 .accent-purple-700 {
   accent-color: #7e22ce;
@@ -4867,8 +5178,14 @@ main .rounded-xl.card.bg-white {
 .opacity-70 {
   opacity: 0.7;
 }
+.opacity-80 {
+  opacity: 0.8;
+}
 .opacity-95 {
   opacity: 0.95;
+}
+.opacity-\[0\.045\] {
+  opacity: 0.045;
 }
 .opacity-\[0\.08\] {
   opacity: 0.08;
@@ -5004,6 +5321,11 @@ main .rounded-xl.card.bg-white {
   --tw-shadow-colored: 0 18px 50px var(--tw-shadow-color);
   box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
 }
+.shadow-\[0_1px_2px_rgba\(15\2c 23\2c 42\2c 0\.04\)\] {
+  --tw-shadow: 0 1px 2px rgba(15,23,42,0.04);
+  --tw-shadow-colored: 0 1px 2px var(--tw-shadow-color);
+  box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
+}
 .shadow-\[0_20px_50px_rgba\(90\2c 19\2c 114\2c 0\.10\)\] {
   --tw-shadow: 0 20px 50px rgba(90,19,114,0.10);
   --tw-shadow-colored: 0 20px 50px var(--tw-shadow-color);
@@ -5024,8 +5346,8 @@ main .rounded-xl.card.bg-white {
   --tw-shadow-colored: 0 22px 60px var(--tw-shadow-color);
   box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
 }
-.shadow-\[0_24px_60px_rgba\(196\2c 151\2c 0\2c 0\.16\)\] {
-  --tw-shadow: 0 24px 60px rgba(196,151,0,0.16);
+.shadow-\[0_24px_60px_rgba\(196\2c 151\2c 0\2c 0\.22\)\] {
+  --tw-shadow: 0 24px 60px rgba(196,151,0,0.22);
   --tw-shadow-colored: 0 24px 60px var(--tw-shadow-color);
   box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
 }
@@ -5198,6 +5520,10 @@ main .rounded-xl.card.bg-white {
   --tw-shadow-color: rgb(8 51 68 / 0.3);
   --tw-shadow: var(--tw-shadow-colored);
 }
+.shadow-ink\/30 {
+  --tw-shadow-color: rgb(10 10 10 / 0.3);
+  --tw-shadow: var(--tw-shadow-colored);
+}
 .shadow-purple-700\/20 {
   --tw-shadow-color: rgb(126 34 206 / 0.2);
   --tw-shadow: var(--tw-shadow-colored);
@@ -5265,6 +5591,11 @@ main .rounded-xl.card.bg-white {
 .outline {
   outline-style: solid;
 }
+.ring {
+  --tw-ring-offset-shadow: var(--tw-ring-inset) 0 0 0 var(--tw-ring-offset-width) var(--tw-ring-offset-color);
+  --tw-ring-shadow: var(--tw-ring-inset) 0 0 0 calc(3px + var(--tw-ring-offset-width)) var(--tw-ring-color);
+  box-shadow: var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow, 0 0 #0000);
+}
 .ring-1 {
   --tw-ring-offset-shadow: var(--tw-ring-inset) 0 0 0 var(--tw-ring-offset-width) var(--tw-ring-offset-color);
   --tw-ring-shadow: var(--tw-ring-inset) 0 0 0 calc(1px + var(--tw-ring-offset-width)) var(--tw-ring-color);
@@ -5277,6 +5608,9 @@ main .rounded-xl.card.bg-white {
 }
 .ring-inset {
   --tw-ring-inset: inset;
+}
+.ring-accent-500\/40 {
+  --tw-ring-color: rgb(232 207 42 / 0.4);
 }
 .ring-accent\/40 {
   --tw-ring-color: rgb(253 231 90 / 0.4);
@@ -5291,6 +5625,9 @@ main .rounded-xl.card.bg-white {
 .ring-amber-200 {
   --tw-ring-opacity: 1;
   --tw-ring-color: rgb(253 230 138 / var(--tw-ring-opacity));
+}
+.ring-amber-200\/70 {
+  --tw-ring-color: rgb(253 230 138 / 0.7);
 }
 .ring-black\/10 {
   --tw-ring-color: rgb(0 0 0 / 0.1);
@@ -5320,17 +5657,37 @@ main .rounded-xl.card.bg-white {
   --tw-ring-opacity: 1;
   --tw-ring-color: rgb(167 243 208 / var(--tw-ring-opacity));
 }
+.ring-emerald-200\/70 {
+  --tw-ring-color: rgb(167 243 208 / 0.7);
+}
+.ring-emerald-600\/20 {
+  --tw-ring-color: rgb(5 150 105 / 0.2);
+}
+.ring-orange-200 {
+  --tw-ring-opacity: 1;
+  --tw-ring-color: rgb(254 215 170 / var(--tw-ring-opacity));
+}
 .ring-purple-100 {
   --tw-ring-opacity: 1;
   --tw-ring-color: rgb(243 232 255 / var(--tw-ring-opacity));
+}
+.ring-red-500\/20 {
+  --tw-ring-color: rgb(239 68 68 / 0.2);
 }
 .ring-rose-200 {
   --tw-ring-opacity: 1;
   --tw-ring-color: rgb(254 205 211 / var(--tw-ring-opacity));
 }
+.ring-rose-200\/70 {
+  --tw-ring-color: rgb(254 205 211 / 0.7);
+}
 .ring-sky-100 {
   --tw-ring-opacity: 1;
   --tw-ring-color: rgb(224 242 254 / var(--tw-ring-opacity));
+}
+.ring-sky-200 {
+  --tw-ring-opacity: 1;
+  --tw-ring-color: rgb(186 230 253 / var(--tw-ring-opacity));
 }
 .ring-slate-200 {
   --tw-ring-opacity: 1;
@@ -5343,9 +5700,16 @@ main .rounded-xl.card.bg-white {
   --tw-ring-opacity: 1;
   --tw-ring-color: rgb(203 213 225 / var(--tw-ring-opacity));
 }
+.ring-slate-500\/15 {
+  --tw-ring-color: rgb(100 116 139 / 0.15);
+}
 .ring-teal-100 {
   --tw-ring-opacity: 1;
   --tw-ring-color: rgb(204 251 241 / var(--tw-ring-opacity));
+}
+.ring-violet-200 {
+  --tw-ring-opacity: 1;
+  --tw-ring-color: rgb(221 214 254 / var(--tw-ring-opacity));
 }
 .ring-white {
   --tw-ring-opacity: 1;
@@ -5425,6 +5789,11 @@ main .rounded-xl.card.bg-white {
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   transition-duration: 150ms;
 }
+.transition-\[width\] {
+  transition-property: width;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
 .transition-all {
   transition-property: all;
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
@@ -5440,8 +5809,16 @@ main .rounded-xl.card.bg-white {
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   transition-duration: 150ms;
 }
+.transition-transform {
+  transition-property: transform;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
 .duration-1000 {
   transition-duration: 1000ms;
+}
+.duration-200 {
+  transition-duration: 200ms;
 }
 .duration-300 {
   transition-duration: 300ms;
@@ -5980,6 +6357,45 @@ main td {
   color: rgb(148 163 184 / var(--tw-text-opacity));
 }
 
+.before\:absolute::before {
+  content: var(--tw-content);
+  position: absolute;
+}
+
+.before\:inset-x-0::before {
+  content: var(--tw-content);
+  left: 0px;
+  right: 0px;
+}
+
+.before\:top-0::before {
+  content: var(--tw-content);
+  top: 0px;
+}
+
+.before\:h-1::before {
+  content: var(--tw-content);
+  height: 0.25rem;
+}
+
+.before\:bg-brand::before {
+  content: var(--tw-content);
+  --tw-bg-opacity: 1;
+  background-color: rgb(90 19 114 / var(--tw-bg-opacity));
+}
+
+.before\:bg-emerald-500::before {
+  content: var(--tw-content);
+  --tw-bg-opacity: 1;
+  background-color: rgb(16 185 129 / var(--tw-bg-opacity));
+}
+
+.before\:bg-red-500::before {
+  content: var(--tw-content);
+  --tw-bg-opacity: 1;
+  background-color: rgb(239 68 68 / var(--tw-bg-opacity));
+}
+
 .last\:border-0:last-child {
   border-width: 0px;
 }
@@ -5990,6 +6406,10 @@ main td {
 
 .last\:border-r-0:last-child {
   border-right-width: 0px;
+}
+
+.target\:flex:target {
+  display: flex;
 }
 
 .focus-within\:border-brand:focus-within {
@@ -6047,6 +6467,11 @@ main td {
   border-color: rgb(253 230 138 / var(--tw-border-opacity));
 }
 
+.hover\:border-amber-300:hover {
+  --tw-border-opacity: 1;
+  border-color: rgb(252 211 77 / var(--tw-border-opacity));
+}
+
 .hover\:border-blue-200:hover {
   --tw-border-opacity: 1;
   border-color: rgb(191 219 254 / var(--tw-border-opacity));
@@ -6086,6 +6511,11 @@ main td {
   border-color: rgb(167 243 208 / var(--tw-border-opacity));
 }
 
+.hover\:border-emerald-300:hover {
+  --tw-border-opacity: 1;
+  border-color: rgb(110 231 183 / var(--tw-border-opacity));
+}
+
 .hover\:border-purple-200:hover {
   --tw-border-opacity: 1;
   border-color: rgb(233 213 255 / var(--tw-border-opacity));
@@ -6106,6 +6536,16 @@ main td {
   border-color: rgb(254 202 202 / var(--tw-border-opacity));
 }
 
+.hover\:border-rose-300:hover {
+  --tw-border-opacity: 1;
+  border-color: rgb(253 164 175 / var(--tw-border-opacity));
+}
+
+.hover\:border-sky-300:hover {
+  --tw-border-opacity: 1;
+  border-color: rgb(125 211 252 / var(--tw-border-opacity));
+}
+
 .hover\:border-slate-200:hover {
   --tw-border-opacity: 1;
   border-color: rgb(226 232 240 / var(--tw-border-opacity));
@@ -6114,6 +6554,11 @@ main td {
 .hover\:border-slate-300:hover {
   --tw-border-opacity: 1;
   border-color: rgb(203 213 225 / var(--tw-border-opacity));
+}
+
+.hover\:border-violet-300:hover {
+  --tw-border-opacity: 1;
+  border-color: rgb(196 181 253 / var(--tw-border-opacity));
 }
 
 .hover\:bg-\[\#fffdf0\]:hover {
@@ -6136,6 +6581,11 @@ main td {
   background-color: rgb(254 243 199 / var(--tw-bg-opacity));
 }
 
+.hover\:bg-amber-200:hover {
+  --tw-bg-opacity: 1;
+  background-color: rgb(253 230 138 / var(--tw-bg-opacity));
+}
+
 .hover\:bg-amber-50:hover {
   --tw-bg-opacity: 1;
   background-color: rgb(255 251 235 / var(--tw-bg-opacity));
@@ -6143,6 +6593,11 @@ main td {
 
 .hover\:bg-amber-50\/30:hover {
   background-color: rgb(255 251 235 / 0.3);
+}
+
+.hover\:bg-amber-700:hover {
+  --tw-bg-opacity: 1;
+  background-color: rgb(180 83 9 / var(--tw-bg-opacity));
 }
 
 .hover\:bg-blue-200:hover {
@@ -6172,6 +6627,10 @@ main td {
 
 .hover\:bg-brand-50\/30:hover {
   background-color: rgb(245 237 248 / 0.3);
+}
+
+.hover\:bg-brand-50\/40:hover {
+  background-color: rgb(245 237 248 / 0.4);
 }
 
 .hover\:bg-brand-600:hover {
@@ -6269,6 +6728,11 @@ main td {
   background-color: rgb(153 27 27 / var(--tw-bg-opacity));
 }
 
+.hover\:bg-rose-200:hover {
+  --tw-bg-opacity: 1;
+  background-color: rgb(254 205 211 / var(--tw-bg-opacity));
+}
+
 .hover\:bg-rose-50:hover {
   --tw-bg-opacity: 1;
   background-color: rgb(255 241 242 / var(--tw-bg-opacity));
@@ -6289,9 +6753,18 @@ main td {
   background-color: rgb(241 245 249 / var(--tw-bg-opacity));
 }
 
+.hover\:bg-slate-300:hover {
+  --tw-bg-opacity: 1;
+  background-color: rgb(203 213 225 / var(--tw-bg-opacity));
+}
+
 .hover\:bg-slate-50:hover {
   --tw-bg-opacity: 1;
   background-color: rgb(248 250 252 / var(--tw-bg-opacity));
+}
+
+.hover\:bg-slate-50\/70:hover {
+  background-color: rgb(248 250 252 / 0.7);
 }
 
 .hover\:bg-slate-50\/80:hover {
@@ -6328,6 +6801,10 @@ main td {
 
 .hover\:bg-white\/20:hover {
   background-color: rgb(255 255 255 / 0.2);
+}
+
+.hover\:bg-white\/25:hover {
+  background-color: rgb(255 255 255 / 0.25);
 }
 
 .hover\:bg-white\/5:hover {
@@ -6422,6 +6899,21 @@ main td {
   color: rgb(225 29 72 / var(--tw-text-opacity));
 }
 
+.hover\:text-rose-700:hover {
+  --tw-text-opacity: 1;
+  color: rgb(190 18 60 / var(--tw-text-opacity));
+}
+
+.hover\:text-slate-600:hover {
+  --tw-text-opacity: 1;
+  color: rgb(71 85 105 / var(--tw-text-opacity));
+}
+
+.hover\:text-slate-700:hover {
+  --tw-text-opacity: 1;
+  color: rgb(51 65 85 / var(--tw-text-opacity));
+}
+
 .hover\:text-slate-800:hover {
   --tw-text-opacity: 1;
   color: rgb(30 41 59 / var(--tw-text-opacity));
@@ -6481,6 +6973,11 @@ main td {
   --tw-shadow: var(--tw-shadow-colored);
 }
 
+.hover\:shadow-brand-900\/5:hover {
+  --tw-shadow-color: rgb(26 6 34 / 0.05);
+  --tw-shadow: var(--tw-shadow-colored);
+}
+
 .hover\:shadow-brand\/10:hover {
   --tw-shadow-color: rgb(90 19 114 / 0.1);
   --tw-shadow: var(--tw-shadow-colored);
@@ -6518,6 +7015,11 @@ main td {
 .focus\:border-purple-500:focus {
   --tw-border-opacity: 1;
   border-color: rgb(168 85 247 / var(--tw-border-opacity));
+}
+
+.focus\:border-red-400:focus {
+  --tw-border-opacity: 1;
+  border-color: rgb(248 113 113 / var(--tw-border-opacity));
 }
 
 .focus\:border-teal-500:focus {
@@ -6572,9 +7074,18 @@ main td {
   --tw-ring-color: rgb(243 232 255 / var(--tw-ring-opacity));
 }
 
+.focus\:ring-red-500\/10:focus {
+  --tw-ring-color: rgb(239 68 68 / 0.1);
+}
+
 .focus\:ring-teal-100:focus {
   --tw-ring-opacity: 1;
   --tw-ring-color: rgb(204 251 241 / var(--tw-ring-opacity));
+}
+
+.focus-visible\:-translate-y-0\.5:focus-visible {
+  --tw-translate-y: -0.125rem;
+  transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
 }
 
 .focus-visible\:rounded:focus-visible {
@@ -6652,6 +7163,10 @@ main td {
 .disabled\:text-slate-500:disabled {
   --tw-text-opacity: 1;
   color: rgb(100 116 139 / var(--tw-text-opacity));
+}
+
+.disabled\:opacity-30:disabled {
+  opacity: 0.3;
 }
 
 .disabled\:opacity-35:disabled {
@@ -6743,10 +7258,14 @@ main td {
   opacity: 1;
 }
 
-@media not all and (min-width: 640px) {
+@media (prefers-reduced-motion: reduce) {
 
-  .max-sm\:hidden {
-    display: none;
+  .motion-reduce\:animate-none {
+    animation: none;
+  }
+
+  .motion-reduce\:transition-none {
+    transition-property: none;
   }
 }
 
@@ -6794,16 +7313,8 @@ main td {
     margin-right: auto;
   }
 
-  .sm\:mb-2 {
-    margin-bottom: 0.5rem;
-  }
-
   .sm\:mb-4 {
     margin-bottom: 1rem;
-  }
-
-  .sm\:mb-5 {
-    margin-bottom: 1.25rem;
   }
 
   .sm\:mt-1 {
@@ -6814,16 +7325,8 @@ main td {
     margin-top: 0.5rem;
   }
 
-  .sm\:mt-3 {
-    margin-top: 0.75rem;
-  }
-
   .sm\:mt-4 {
     margin-top: 1rem;
-  }
-
-  .sm\:mt-5 {
-    margin-top: 1.25rem;
   }
 
   .sm\:mt-7 {
@@ -6852,10 +7355,6 @@ main td {
 
   .sm\:hidden {
     display: none;
-  }
-
-  .sm\:h-10 {
-    height: 2.5rem;
   }
 
   .sm\:h-11 {
@@ -6890,10 +7389,6 @@ main td {
     max-height: 7rem;
   }
 
-  .sm\:max-h-40 {
-    max-height: 10rem;
-  }
-
   .sm\:max-h-\[88vh\] {
     max-height: 88vh;
   }
@@ -6904,10 +7399,6 @@ main td {
 
   .sm\:max-h-\[calc\(100dvh-32px\)\] {
     max-height: calc(100dvh - 32px);
-  }
-
-  .sm\:min-h-0 {
-    min-height: 0px;
   }
 
   .sm\:min-h-12 {
@@ -6926,10 +7417,6 @@ main td {
     min-height: 430px;
   }
 
-  .sm\:min-h-\[520px\] {
-    min-height: 520px;
-  }
-
   .sm\:min-h-\[560px\] {
     min-height: 560px;
   }
@@ -6940,10 +7427,6 @@ main td {
 
   .sm\:w-11 {
     width: 2.75rem;
-  }
-
-  .sm\:w-9 {
-    width: 2.25rem;
   }
 
   .sm\:w-\[112px\] {
@@ -6986,6 +7469,10 @@ main td {
     max-width: min(82%,42rem);
   }
 
+  .sm\:max-w-sm {
+    max-width: 24rem;
+  }
+
   .sm\:max-w-xs {
     max-width: 20rem;
   }
@@ -7021,6 +7508,10 @@ main td {
 
   .sm\:grid-cols-\[120px_1fr\] {
     grid-template-columns: 120px 1fr;
+  }
+
+  .sm\:grid-cols-\[160px_100px_1fr_auto\] {
+    grid-template-columns: 160px 100px 1fr auto;
   }
 
   .sm\:grid-cols-\[180px_1fr\] {
@@ -7061,6 +7552,10 @@ main td {
 
   .sm\:grid-cols-\[minmax\(0\2c 1fr\)_180px_auto\] {
     grid-template-columns: minmax(0,1fr) 180px auto;
+  }
+
+  .sm\:grid-cols-\[minmax\(0\2c 1fr\)_minmax\(0\2c 1\.5fr\)\] {
+    grid-template-columns: minmax(0,1fr) minmax(0,1.5fr);
   }
 
   .sm\:grid-rows-\[auto_22px\] {
@@ -7116,12 +7611,6 @@ main td {
     --tw-space-y-reverse: 0;
     margin-top: calc(0.75rem * calc(1 - var(--tw-space-y-reverse)));
     margin-bottom: calc(0.75rem * var(--tw-space-y-reverse));
-  }
-
-  .sm\:space-y-4 > :not([hidden]) ~ :not([hidden]) {
-    --tw-space-y-reverse: 0;
-    margin-top: calc(1rem * calc(1 - var(--tw-space-y-reverse)));
-    margin-bottom: calc(1rem * var(--tw-space-y-reverse));
   }
 
   .sm\:space-y-5 > :not([hidden]) ~ :not([hidden]) {
@@ -7237,6 +7726,11 @@ main td {
     padding-bottom: 1.25rem;
   }
 
+  .sm\:py-8 {
+    padding-top: 2rem;
+    padding-bottom: 2rem;
+  }
+
   .sm\:pb-3 {
     padding-bottom: 0.75rem;
   }
@@ -7311,16 +7805,8 @@ main td {
     line-height: 1.5rem;
   }
 
-  .sm\:tracking-\[0\.14em\] {
-    letter-spacing: 0.14em;
-  }
-
   .sm\:tracking-\[0\.16em\] {
     letter-spacing: 0.16em;
-  }
-
-  .sm\:tracking-\[0\.2em\] {
-    letter-spacing: 0.2em;
   }
 }
 
@@ -7516,16 +8002,12 @@ main td {
     grid-template-columns: 1fr 120px 120px 120px auto;
   }
 
-  .md\:grid-cols-\[1fr_180px\] {
-    grid-template-columns: 1fr 180px;
+  .md\:grid-cols-\[1fr_200px\] {
+    grid-template-columns: 1fr 200px;
   }
 
   .md\:grid-cols-\[1fr_auto\] {
     grid-template-columns: 1fr auto;
-  }
-
-  .md\:grid-cols-\[220px_220px_120px_auto\] {
-    grid-template-columns: 220px 220px 120px auto;
   }
 
   .md\:grid-cols-\[280px_minmax\(0\2c 1fr\)\] {
@@ -7554,6 +8036,10 @@ main td {
 
   .md\:grid-cols-\[minmax\(200px\2c 1fr\)_auto\] {
     grid-template-columns: minmax(200px,1fr) auto;
+  }
+
+  .md\:grid-cols-\[minmax\(220px\2c 1fr\)_220px\] {
+    grid-template-columns: minmax(220px,1fr) 220px;
   }
 
   .md\:flex-row {
@@ -7964,6 +8450,10 @@ main td {
     grid-template-columns: minmax(0,1fr) 320px;
   }
 
+  .lg\:grid-cols-\[minmax\(0\2c 1fr\)_340px\] {
+    grid-template-columns: minmax(0,1fr) 340px;
+  }
+
   .lg\:grid-cols-\[minmax\(0\2c 1fr\)_360px\] {
     grid-template-columns: minmax(0,1fr) 360px;
   }
@@ -8221,6 +8711,10 @@ main td {
     min-width: 680px;
   }
 
+  .xl\:max-w-3xl {
+    max-width: 48rem;
+  }
+
   .xl\:max-w-5xl {
     max-width: 64rem;
   }
@@ -8274,10 +8768,6 @@ main td {
     grid-template-columns: 1.15fr 0.85fr;
   }
 
-  .xl\:grid-cols-\[1\.1fr_0\.9fr\] {
-    grid-template-columns: 1.1fr 0.9fr;
-  }
-
   .xl\:grid-cols-\[1\.2fr_0\.8fr\] {
     grid-template-columns: 1.2fr 0.8fr;
   }
@@ -8292,10 +8782,6 @@ main td {
 
   .xl\:grid-cols-\[110px_140px_130px_140px_140px_minmax\(160px\2c 1fr\)_auto_auto\] {
     grid-template-columns: 110px 140px 130px 140px 140px minmax(160px,1fr) auto auto;
-  }
-
-  .xl\:grid-cols-\[1fr_420px\] {
-    grid-template-columns: 1fr 420px;
   }
 
   .xl\:grid-cols-\[240px_minmax\(0\2c 1fr\)_220px\] {
@@ -8332,10 +8818,6 @@ main td {
 
   .xl\:grid-cols-\[minmax\(0\2c 1\.15fr\)_minmax\(330px\2c 0\.85fr\)\] {
     grid-template-columns: minmax(0,1.15fr) minmax(330px,0.85fr);
-  }
-
-  .xl\:grid-cols-\[minmax\(0\2c 1\.25fr\)_minmax\(280px\2c 0\.75fr\)\] {
-    grid-template-columns: minmax(0,1.25fr) minmax(280px,0.75fr);
   }
 
   .xl\:grid-cols-\[minmax\(0\2c 1\.2fr\)_minmax\(320px\2c 0\.8fr\)\] {
@@ -8434,18 +8916,8 @@ main td {
     justify-content: space-between;
   }
 
-  .xl\:gap-4 {
-    gap: 1rem;
-  }
-
   .xl\:gap-5 {
     gap: 1.25rem;
-  }
-
-  .xl\:space-y-4 > :not([hidden]) ~ :not([hidden]) {
-    --tw-space-y-reverse: 0;
-    margin-top: calc(1rem * calc(1 - var(--tw-space-y-reverse)));
-    margin-bottom: calc(1rem * var(--tw-space-y-reverse));
   }
 
   .xl\:border-l {

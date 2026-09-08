@@ -113,6 +113,9 @@ export async function processDueAttendanceNudges() {
   const classrooms: any[] = await Classroom.find({
     isActive: { $ne: false },
     isTestClassroom: { $ne: true },
+    // The parent classroom owns the schedule; its per-session mirrors carry a
+    // copy of the same session and would nudge the coach a second time.
+    isSessionInstance: { $ne: true },
     generatedSessions: {
       $elemMatch: {
         status: { $in: ["scheduled", "ongoing", "in_progress", "completed"] },

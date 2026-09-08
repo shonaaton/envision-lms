@@ -91,15 +91,30 @@ test("nothing pending means nothing to move", () => {
 // of the one after it, and one new slot is added at the end so the last topic is
 // not lost. This mirrors the date arithmetic in the push_session_forward action.
 
-import { isUntaughtSessionStatus } from "../src/lib/classroomSessions";
+import { isPushableSessionStatus, isUntaughtSessionStatus } from "../src/lib/classroomSessions";
 
-test("only a class that went by untaught can be pushed", () => {
+test("an untaught class is one whose date went by with the topic still owed", () => {
   expect(isUntaughtSessionStatus("missed")).toBe(true);
   expect(isUntaughtSessionStatus("abandoned")).toBe(true);
   expect(isUntaughtSessionStatus("coach_no_show")).toBe(true);
   expect(isUntaughtSessionStatus("completed")).toBe(false);
   expect(isUntaughtSessionStatus("cancelled")).toBe(false);
   expect(isUntaughtSessionStatus("upcoming")).toBe(false);
+});
+
+test("any class that is not taught, cancelled, or started can be pushed", () => {
+  // Untaught classes are the usual reason to push, but an upcoming one counts
+  // too - this is the same rule isPushableSession enforces on the API side.
+  expect(isPushableSessionStatus({}, "upcoming")).toBe(true);
+  expect(isPushableSessionStatus({}, "join_available")).toBe(true);
+  expect(isPushableSessionStatus({}, "missed")).toBe(true);
+  expect(isPushableSessionStatus({}, "coach_no_show")).toBe(true);
+  expect(isPushableSessionStatus({}, "completed")).toBe(false);
+  expect(isPushableSessionStatus({}, "cancelled")).toBe(false);
+  expect(isPushableSessionStatus({}, "ongoing")).toBe(false);
+  // A class already under way, whatever its derived status, stays put.
+  expect(isPushableSessionStatus({ actualStartedAt: new Date() }, "upcoming")).toBe(false);
+  expect(isPushableSessionStatus({ actualEndedAt: new Date() }, "upcoming")).toBe(false);
 });
 
 test("the pushed chain keeps its length and gains one slot at the end", () => {

@@ -292,6 +292,35 @@ async function sendCoachMissingAlert(classroom: any, session: any, start: Date) 
 /* ------------------------------------------------------------------ */
 
 /**
+ * Which classroom records the sweep is allowed to message.
+ *
+ * Exported so the exclusion below can be asserted in a test. It is not
+ * decoration: every session is also mirrored into its own child classroom
+ * (`isSessionInstance: true`) holding a copy of the same session, with the same
+ * session `_id` but a different classroom `_id`. Sweeping both sent every
+ * family two identical reminders, and the per-session claim could not catch it
+ * because the claim is keyed on the classroom as well as the session.
+ *
+ * The parent owns the schedule; the mirror is a read model for per-session
+ * views. Only the parent notifies.
+ */
+export function reminderSweepFilter(lookBehind: Date, horizon: Date) {
+  return {
+    isActive: { $ne: false },
+    isPaused: { $ne: true },
+    isTestClassroom: { $ne: true },
+    isSessionInstance: { $ne: true },
+    status: { $nin: ["completed", "cancelled"] },
+    generatedSessions: {
+      $elemMatch: {
+        status: { $in: ["scheduled", "ongoing", "in_progress"] },
+        scheduledFor: { $gte: lookBehind, $lte: horizon },
+      },
+    },
+  };
+}
+
+/**
  * One pass over the classes due to start soon, or already started without a
  * coach. Safe to run concurrently with itself and with platform cron: every
  * send is claimed first.
@@ -302,18 +331,7 @@ export async function processDueClassSessionReminders() {
   const horizon = new Date(now.getTime() + (Math.max(...START_REMINDER_OFFSETS) + 1) * 60_000);
   const lookBehind = new Date(now.getTime() - (COACH_ALERT_WINDOW_MINUTES + 1) * 60_000);
 
-  const classrooms: any[] = await Classroom.find({
-    isActive: { $ne: false },
-    isPaused: { $ne: true },
-    isTestClassroom: { $ne: true },
-    status: { $nin: ["completed", "cancelled"] },
-    generatedSessions: {
-      $elemMatch: {
-        status: { $in: ["scheduled", "ongoing", "in_progress"] },
-        scheduledFor: { $gte: lookBehind, $lte: horizon },
-      },
-    },
-  })
+  const classrooms: any[] = await Classroom.find(reminderSweepFilter(lookBehind, horizon))
     .select("title courseName meetingUrl coach instructor students generatedSessions")
     .limit(SWEEP_LIMIT)
     .lean();
@@ -370,6 +388,9 @@ export async function processDueClassSessionReminders() {
 export async function notifySessionCancelled(classroomInput: any, sessionInput: any) {
   const classroom = classroomInput?.students ? classroomInput : await Classroom.findById(objectId(classroomInput)).lean();
   if (!classroom) return { sent: 0, skipped: "classroom_not_found" as const };
+  // Only the parent classroom notifies. Its per-session mirrors describe the
+  // same class, so letting both through would send the family two notices.
+  if ((classroom as any).isSessionInstance) return { sent: 0, skipped: "session_instance" as const };
 
   const session = sessionInput?.scheduledFor
     ? sessionInput
@@ -450,6 +471,9 @@ export async function notifyCourseCompleted(classroomInput: any) {
     ? classroomInput
     : await Classroom.findById(objectId(classroomInput)).lean();
   if (!classroom) return { sent: 0 };
+  // A per-session mirror completes whenever its one session does, which is not
+  // the end of the course. Only the parent can say a course finished.
+  if (classroom.isSessionInstance) return { sent: 0 };
 
   const sessions = classroom.generatedSessions || [];
   const taught = sessions.filter((session: any) => String(session.status || "") === "completed");

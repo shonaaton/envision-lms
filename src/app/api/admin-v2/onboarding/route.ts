@@ -13,8 +13,7 @@ import { CoachApplication } from "@/models/Onboarding";
 import { User, createUserWithUsername } from "@/models/User";
 import { DEMO_MANAGEMENT_HREF, notifyDemoApproved, notifyDemoConverted } from "@/lib/demoWorkflow";
 import { recordActivity } from "@/lib/activity";
-import { academyTimeOfDay } from "@/lib/academyTime";
-import { syncDemoSession } from "@/lib/demoClassroom";
+import { upsertDemoClassroom } from "@/lib/demoClassroom";
 
 export const dynamic = "force-dynamic";
 
@@ -55,6 +54,21 @@ export async function POST(req: Request) {
     const startAt = new Date(String(body.startAt || ""));
     const durationMinutes = Math.max(15, Number(body.durationMinutes || 60));
     if (!bookingId || !coach || Number.isNaN(startAt.getTime())) return NextResponse.json({ error: "Missing demo details." }, { status: 400 });
+    const assigned: any = await Booking.findById(bookingId).populate("student", "name studentLevel");
+    if (!assigned) return NextResponse.json({ error: "Demo booking not found." }, { status: 404 });
+    // Fixing the coach and the time is what makes the demo real for both sides,
+    // so the classroom is created or moved here rather than waiting for the
+    // approval step - otherwise neither the coach nor the student has anything
+    // to open, and a later time change leaves the classroom on the old slot.
+    const assignedClassroom: any = await upsertDemoClassroom({
+      booking: assigned,
+      coachId: coach,
+      studentId: assigned.student?._id || assigned.student,
+      start: startAt,
+      durationMinutes,
+      studentName: assigned.student?.name,
+      levelName: assigned.level || assigned.student?.studentLevel,
+    });
     await Booking.findByIdAndUpdate(bookingId, {
       instructor: coach,
       assignedCoach: coach,
@@ -65,6 +79,7 @@ export async function POST(req: Request) {
       demoStatus: "COACH_ASSIGNED",
       approvalStatus: "pending_admin",
       status: "pending",
+      ...(assignedClassroom ? { classroom: assignedClassroom._id } : {}),
     });
     await recordActivity({
       actor: actorId,
@@ -72,9 +87,9 @@ export async function POST(req: Request) {
       label: "Assigned coach to demo request",
       entityType: "Booking",
       entityId: bookingId,
-      metadata: { coach, event: "DEMO_COACH_ASSIGNED" },
+      metadata: { coach, classroom: assignedClassroom ? assignedClassroom._id.toString() : "", event: "DEMO_COACH_ASSIGNED" },
     });
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, classroom: assignedClassroom ? assignedClassroom._id.toString() : null });
   }
 
   if (action === "approve_demo") {
@@ -86,57 +101,16 @@ export async function POST(req: Request) {
     const coachId = String(body.coach || booking.instructor?._id || booking.instructor || "");
     if (!coachId || Number.isNaN(start.getTime())) return NextResponse.json({ error: "Coach and start time are required." }, { status: 400 });
     const studentId = booking.student?._id || booking.student;
-    // Academy wall-clock time, not the server's: Classroom.startTime is read
-    // back as academy time, so toTimeString() here would shift the student's
-    // join window by the server's own offset.
-    const startTimeLabel = academyTimeOfDay(start);
-    let classroom: any = booking.classroom ? await Classroom.findById(booking.classroom) : await Classroom.findOne({ demoBooking: booking._id });
-    if (!classroom) {
-      classroom = await Classroom.create({
-        title: `Demo Class - ${booking.student?.name || booking.student?.studentName || "Student"}`,
-        description: booking.notes || "Approved demo class.",
-        classroomType: "demo",
-        demoBooking: booking._id,
-        status: "scheduled",
-        level: "beginner",
-        levelName: booking.level || "Demo",
-        topicName: "Demo assessment class",
-        meetingProvider: "meet",
-        coach: coachId,
-        instructor: coachId,
-        students: [studentId],
-        classDate: start,
-        startTime: startTimeLabel,
-        durationMinutes,
-        generatedSessions: [{
-          sessionNumber: 1,
-          topicName: "Demo assessment class",
-          topicOrder: 0,
-          scheduledFor: start,
-          startTime: startTimeLabel,
-          durationMinutes,
-          status: "scheduled",
-        }],
-        isActive: true,
-      });
-    } else {
-      // Re-approving an existing demo classroom has to move it to the approved
-      // time as well, or the student keeps a class they cannot join.
-      classroom.classroomType = "demo";
-      classroom.demoBooking = booking._id;
-      classroom.status = "scheduled";
-      classroom.isActive = true;
-      classroom.coach = coachId;
-      classroom.instructor = coachId;
-      classroom.classDate = start;
-      classroom.startTime = startTimeLabel;
-      classroom.durationMinutes = durationMinutes;
-      if (!(classroom.students || []).some((student: any) => String(student) === String(studentId))) {
-        classroom.students = [...(classroom.students || []), studentId];
-      }
-      syncDemoSession(classroom, { start, startTimeLabel, durationMinutes });
-      await classroom.save();
-    }
+    const classroom: any = await upsertDemoClassroom({
+      booking,
+      coachId,
+      studentId,
+      start,
+      durationMinutes,
+      studentName: booking.student?.name || booking.student?.studentName,
+      levelName: booking.level,
+    });
+    if (!classroom) return NextResponse.json({ error: "Could not create the demo classroom." }, { status: 400 });
     const updatedBooking: any = await Booking.findByIdAndUpdate(booking._id, {
       instructor: coachId,
       assignedCoach: coachId,

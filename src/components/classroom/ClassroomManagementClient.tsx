@@ -31,8 +31,8 @@ import {
   formatJoinWindowLabel,
   getSessionStart,
   isJoinWindowOpen,
+  isPushableSessionStatus,
   isSessionUpcomingLike,
-  isUntaughtSessionStatus,
 } from "@/lib/classroomSessions";
 import { formatAcademyDateTime } from "@/lib/academyTime";
 import { useViewerTimeZone } from "@/lib/viewerTime";
@@ -2009,7 +2009,7 @@ function GroupClassSessionList({
                   setActionDraft({ classDate: formatDateInput(session.scheduledFor), startTime: session.startTime || classroom.startTime || "", durationMinutes: session.durationMinutes || classroom.durationMinutes || 60 });
                 }} />
               ) : null}
-              {canOpenActions && permissions.edit && classroom.classroomType === "series" && isUntaughtSessionStatus(status) ? (
+              {canOpenActions && permissions.edit && classroom.classroomType === "series" && isPushableSessionStatus(session, status) ? (
                 <ActionButton icon={<ChevronsRight size={14} />} label="Push to next class" onClick={() => {
                   setActionModal({ type: "push_session_forward", item: classroom, session });
                   setActionDraft({ reason: "" });

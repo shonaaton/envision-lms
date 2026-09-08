@@ -4,7 +4,7 @@ import { canAccessFeature } from "@/lib/featureAccess";
 import { dbConnect } from "@/lib/db";
 import { sendWelcomeEmail } from "@/lib/welcomeEmail";
 import { CoachApplication } from "@/models/Onboarding";
-import { User, generateUsername } from "@/models/User";
+import { User, createUserWithUsername } from "@/models/User";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { CheckCircle2, UserPlus, XCircle } from "lucide-react";
@@ -37,8 +37,7 @@ async function approveCoachApplication(formData: FormData) {
     return;
   }
   const password = tempPassword();
-  const user = await User.create({
-    username: await generateUsername(application.name),
+  const user = await createUserWithUsername({
     name: application.name,
     email: application.email,
     phone: application.phone,

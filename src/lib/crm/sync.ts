@@ -3,7 +3,7 @@ import { isCrmConfigured, pushLeadStage } from "@/lib/crm/client";
 import { contactKeysForUser, crmPhoneNumber } from "@/lib/crm/identity";
 import { cancelDemoClassrooms } from "@/lib/demoClassroom";
 import { DEMO_MANAGEMENT_HREF, notifyDemoReopened } from "@/lib/demoWorkflow";
-import { crmStageLabel, demoStatusToStage, isClosureStage, type DemoStage } from "@/lib/crm/stages";
+import { crmStageLabel, demoStatusToStage, isClosureStage, shouldSkipCrmPush, type DemoStage } from "@/lib/crm/stages";
 import { dbConnect } from "@/lib/db";
 import { Booking } from "@/models/Booking";
 import { CrmLead } from "@/models/CrmLead";
@@ -65,9 +65,10 @@ function appendHistory(lead: any, entry: { direction: "outbound" | "inbound"; st
 /**
  * Push a demo booking current stage to the CRM.
  *
- * Idempotent by design: the stage is compared against `lastPushedStage` before
- * any HTTP call, so repeated saves, CRM retries, and writes that originated from
- * an inbound webhook all collapse to a no-op instead of looping.
+ * Idempotent by design: a push is skipped only when the CRM is already confirmed
+ * to hold the target stage, so repeated saves, CRM retries and the echo of our
+ * own push all collapse to a no-op. See `shouldSkipCrmPush` for why the last
+ * pushed stage alone is not enough.
  */
 export async function syncBookingStageToCrm(bookingId: string): Promise<CrmSyncOutcome> {
   if (!bookingId) return { ok: false, skipped: true, reason: "No booking id." };
@@ -90,7 +91,9 @@ export async function syncBookingStageToCrm(bookingId: string): Promise<CrmSyncO
 
   const lead = await resolveLead(student);
   if (lead.syncEnabled === false) return { ok: false, skipped: true, reason: "Sync disabled for this lead." };
-  if (lead.lastPushedStage === stage) return { ok: true, skipped: true, reason: "Stage already pushed.", stage };
+  if (shouldSkipCrmPush({ stage, lastPushedStage: lead.lastPushedStage, lastInboundStage: lead.lastInboundStage })) {
+    return { ok: true, skipped: true, reason: "CRM is already on this stage.", stage };
+  }
 
   const result = await pushLeadStage({
     crmLeadId: lead.crmLeadId,

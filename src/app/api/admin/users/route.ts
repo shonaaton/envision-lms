@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
-import { User, generateUsername } from "@/models/User";
+import { User, createUserWithUsername } from "@/models/User";
 import { addUserSchema } from "@/lib/validation";
 import { recordActivity } from "@/lib/activity";
 import { canAccessFeature, isSuperAdminSession } from "@/lib/featureAccess";
@@ -109,16 +109,14 @@ export async function POST(req: Request) {
     }
     const exists = await User.findOne({ email: body.email.toLowerCase() });
     if (exists) return NextResponse.json({ error: "Email already registered" }, { status: 409 });
-    const username = await generateUsername(body.name);
     const tempPassword = body.password ?? genPassword();
     const passwordHash = await bcrypt.hash(tempPassword, 10);
     const isDemoStudent = body.role === "student" && body.accountStatus === "demo";
-    const u = await User.create({
+    const u: any = await createUserWithUsername({
       ...body,
       email: body.email.toLowerCase(),
       accountStatus: body.role === "student" ? body.accountStatus || "enrolled" : body.accountStatus,
       ...(isDemoStudent ? { demoExpiresAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), tags: [...new Set([...(body.tags || []), "demo"])] } : {}),
-      username,
       passwordHash,
       tempPassword,
       passwordChangedAt: new Date(),
@@ -131,14 +129,14 @@ export async function POST(req: Request) {
       label: `Created ${namedRole?.name || body.role} account for ${u.name}`,
       entityType: "User",
       entityId: u._id.toString(),
-      metadata: { role: body.role, accessRole: body.accessRole, username, accountStatus: u.accountStatus },
+      metadata: { role: body.role, accessRole: body.accessRole, username: u.username, accountStatus: u.accountStatus },
     });
     const welcomeEmail = await sendWelcomeEmail({
       name: u.name,
       email: u.email,
       phone: u.phone,
       countryCode: u.countryCode,
-      username,
+      username: u.username,
       role: body.role,
       roleName: namedRole?.name,
       temporaryPassword: tempPassword,
@@ -146,7 +144,7 @@ export async function POST(req: Request) {
     });
     return NextResponse.json({
       id: u._id.toString(),
-      username,
+      username: u.username,
       tempPassword,
       welcomeEmailDelivered: welcomeEmail.delivered,
     });

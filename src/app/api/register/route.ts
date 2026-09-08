@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { ZodError } from "zod";
 import { dbConnect } from "@/lib/db";
-import { User, generateUsername } from "@/models/User";
+import { User, createUserWithUsername } from "@/models/User";
 import { Booking } from "@/models/Booking";
 import { CoachApplication } from "@/models/Onboarding";
 import { registerSchema } from "@/lib/validation";
@@ -69,10 +69,8 @@ export async function POST(req: Request) {
     }
 
     const passwordHash = await bcrypt.hash(data.password, 10);
-    const username = await generateUsername(data.name);
     const now = new Date();
-    const user = await User.create({
-      username,
+    const user: any = await createUserWithUsername({
       name: data.name,
       email: data.email.toLowerCase(),
       passwordHash,
@@ -97,7 +95,7 @@ export async function POST(req: Request) {
       email: user.email,
       phone: user.phone,
       countryCode: user.countryCode,
-      username,
+      username: user.username,
       role: "student",
       accountKind: "demo",
       request: req,

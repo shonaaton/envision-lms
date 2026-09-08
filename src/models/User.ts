@@ -95,9 +95,9 @@ export const User = models.User || model("User", UserSchema);
 
 // Auto-generate a username like "Firstname@ENV" — collision-safe via counter suffix.
 export async function generateUsername(name: string): Promise<string> {
-  const first = (name.trim().split(/\s+/)[0] || "user")
+  const first = (name.trim().split(/\s+/)[0] || "")
     .replace(/[^A-Za-z0-9]/g, "")
-    .replace(/^./, (c) => c.toUpperCase());
+    .replace(/^./, (c) => c.toUpperCase()) || "User";
   const base = `${first}@ENV`;
   let candidate = base;
   let i = 1;
@@ -108,4 +108,38 @@ export async function generateUsername(name: string): Promise<string> {
     candidate = `${first}${i}@ENV`;
   }
   return candidate;
+}
+
+function isDuplicateUsernameError(error: any) {
+  if (!error || error.code !== 11000) return false;
+  const fields = { ...(error.keyPattern || {}), ...(error.keyValue || {}) };
+  return "username" in fields;
+}
+
+/**
+ * Create an account and give it a user ID nobody else holds.
+ *
+ * `generateUsername` reads the collection and the insert happens afterwards, so
+ * two people named Rahul signing up in the same moment — or one person
+ * double-submitting the form — can both be told `Rahul@ENV` is free and both
+ * write it. A second `Rahul@ENV` does not just collide: whoever logs in with
+ * that ID is matched by a single `findOne`, so the older student is answered
+ * with the newer account. The unique index rejects the loser of that race, and
+ * this retries with the next free number instead of failing the sign-up.
+ *
+ * Every account must be created through here rather than calling
+ * `generateUsername` and `User.create` separately.
+ */
+export async function createUserWithUsername(doc: Record<string, any>) {
+  let lastError: any;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const username = await generateUsername(String(doc.name || ""));
+    try {
+      return await User.create({ ...doc, username });
+    } catch (error: any) {
+      if (!isDuplicateUsernameError(error)) throw error;
+      lastError = error;
+    }
+  }
+  throw lastError;
 }

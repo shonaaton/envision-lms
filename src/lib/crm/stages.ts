@@ -59,6 +59,29 @@ export function isClosureStage(stage: DemoStage) {
   return stage === "CLOSED_NO_RESPONSE" || stage === "CLOSED_DELETED";
 }
 
+/**
+ * Whether an outbound push can be skipped because the CRM is already there.
+ *
+ * Matching on "we pushed this stage before" alone breaks as soon as a lead goes
+ * round the lifecycle twice: a second demo request computes DEMO_REQUESTED again,
+ * matches the earlier push and is dropped, even though the lead has since moved
+ * to another stage in the CRM.
+ *
+ * `lastInboundStage` is the stage the CRM last told us it holds, so it decides.
+ * When it confirms the target stage the push is redundant - which is what absorbs
+ * the echo webhook each of our own pushes triggers. When it shows anything else,
+ * the CRM has drifted and must be corrected.
+ */
+export function shouldSkipCrmPush(input: {
+  stage: DemoStage;
+  lastPushedStage?: string | null;
+  lastInboundStage?: string | null;
+}) {
+  if (input.lastPushedStage !== input.stage) return false;
+  const crmHasDrifted = Boolean(input.lastInboundStage) && input.lastInboundStage !== crmStageLabel(input.stage);
+  return !crmHasDrifted;
+}
+
 export function crmStageLabel(stage: DemoStage) {
   return String(process.env[STAGE_ENV_KEYS[stage]] || "").trim() || DEFAULT_STAGE_LABELS[stage];
 }

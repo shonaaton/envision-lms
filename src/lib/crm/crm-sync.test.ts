@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { classifyCrmStage, crmStageLabel, demoStatusToStage } from "@/lib/crm/stages";
+import { classifyCrmStage, crmStageLabel, demoStatusToStage, shouldSkipCrmPush } from "@/lib/crm/stages";
 import { crmClientConfig, pushLeadStage } from "@/lib/crm/client";
 import { crmPhoneNumber, emailKey, phoneKey, phoneVariants } from "@/lib/crm/identity";
 
@@ -256,5 +256,41 @@ describe("Kraya Leads API contract", () => {
     const result = await pushLeadStage({ name: "Asha Roy", phone: "+919123456789", stage: "DEMO_REQUESTED" });
     expect(result).toMatchObject({ ok: false, skipped: true });
     expect(calls).toHaveLength(0);
+  });
+});
+
+describe("shouldSkipCrmPush", () => {
+  it("pushes when the stage differs from the last push", () => {
+    expect(shouldSkipCrmPush({ stage: "DEMO_BOOKED", lastPushedStage: "DEMO_REQUESTED", lastInboundStage: "Demo Requested" })).toBe(false);
+  });
+
+  it("skips the echo of our own push, so there is no loop", () => {
+    // Our push moves the CRM, the CRM webhooks back, and that must settle.
+    expect(shouldSkipCrmPush({ stage: "DEMO_REQUESTED", lastPushedStage: "DEMO_REQUESTED", lastInboundStage: "Demo Requested" })).toBe(true);
+  });
+
+  it("re-pushes a repeated stage when the CRM has moved on", () => {
+    // A second demo request after the lead progressed or was dragged elsewhere:
+    // the stage repeats, but the CRM is no longer there, so it must be corrected.
+    expect(shouldSkipCrmPush({ stage: "DEMO_REQUESTED", lastPushedStage: "DEMO_REQUESTED", lastInboundStage: "Qualified" })).toBe(false);
+    expect(shouldSkipCrmPush({ stage: "DEMO_REQUESTED", lastPushedStage: "DEMO_REQUESTED", lastInboundStage: "No Response" })).toBe(false);
+    expect(shouldSkipCrmPush({ stage: "DEMO_REQUESTED", lastPushedStage: "DEMO_REQUESTED", lastInboundStage: "Demo Completed" })).toBe(false);
+  });
+
+  it("skips a repeat when the CRM has never reported a stage", () => {
+    // With no inbound signal there is nothing to say the CRM drifted, so the
+    // conservative choice is to stay quiet rather than push on every save.
+    expect(shouldSkipCrmPush({ stage: "DEMO_REQUESTED", lastPushedStage: "DEMO_REQUESTED" })).toBe(true);
+    expect(shouldSkipCrmPush({ stage: "DEMO_REQUESTED", lastPushedStage: "DEMO_REQUESTED", lastInboundStage: "" })).toBe(true);
+  });
+
+  it("always pushes a lead that has never been pushed", () => {
+    expect(shouldSkipCrmPush({ stage: "DEMO_REQUESTED" })).toBe(false);
+  });
+
+  it("compares against the configured label, not the internal key", () => {
+    process.env.CRM_STAGE_DEMO_REQUESTED = "Requested For Demo Class";
+    expect(shouldSkipCrmPush({ stage: "DEMO_REQUESTED", lastPushedStage: "DEMO_REQUESTED", lastInboundStage: "Requested For Demo Class" })).toBe(true);
+    expect(shouldSkipCrmPush({ stage: "DEMO_REQUESTED", lastPushedStage: "DEMO_REQUESTED", lastInboundStage: "Demo Requested" })).toBe(false);
   });
 });

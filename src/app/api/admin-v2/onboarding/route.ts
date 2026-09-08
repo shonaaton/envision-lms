@@ -10,7 +10,7 @@ import { Classroom } from "@/models/Classroom";
 import { Notification } from "@/models/Fee";
 import { InternalTask } from "@/models/InternalTask";
 import { CoachApplication } from "@/models/Onboarding";
-import { User, generateUsername } from "@/models/User";
+import { User, createUserWithUsername } from "@/models/User";
 import { DEMO_MANAGEMENT_HREF, notifyDemoApproved, notifyDemoConverted } from "@/lib/demoWorkflow";
 import { recordActivity } from "@/lib/activity";
 import { academyTimeOfDay } from "@/lib/academyTime";
@@ -188,8 +188,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, existing: true });
     }
     const password = tempPassword();
-    const user = await User.create({
-      username: await generateUsername(application.name),
+    const user = await createUserWithUsername({
       name: application.name,
       email: application.email,
       phone: application.phone,

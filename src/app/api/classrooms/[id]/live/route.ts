@@ -6,7 +6,7 @@ import { Attendance } from "@/models/Attendance";
 import { PGN } from "@/models/PGN";
 import { ClassroomChatMessage, ClassroomSession, LiveQuestion, LiveQuestionResponse } from "@/models/ClassroomLive";
 import "@/models/User";
-import { getLiveClassroomForUser, type AppRole } from "@/lib/liveClassroomAccess";
+import { getLiveClassroomForUser, LIVE_CLASSROOM_DENIAL_MESSAGES, type AppRole } from "@/lib/liveClassroomAccess";
 import { buildPgnLibraryFilter } from "@/lib/pgnAccess";
 import {
   buildLiveSessionKey,
@@ -163,6 +163,10 @@ async function autoEndCoachNoShowIfNeeded({
   return ClassroomSession.findById(live._id).populate("selectedStudents boardControlStudents challenge.student participants.user", "name username role").lean<LiveSessionRecord | null>();
 }
 
+function denialMessage(reason?: string) {
+  return LIVE_CLASSROOM_DENIAL_MESSAGES[reason as keyof typeof LIVE_CLASSROOM_DENIAL_MESSAGES] || "You cannot open this classroom.";
+}
+
 export async function GET(_: Request, { params }: { params: { id: string } }) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -173,10 +177,15 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     const role = (session.user as { role?: AppRole }).role;
     const userId = (session.user as { id?: string }).id || "";
     if (!role || !userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const { classroom, allowed } = await getLiveClassroomForUser(params.id, role, userId, requestedSessionId);
+    const { classroom, allowed, reason } = await getLiveClassroomForUser(params.id, role, userId, requestedSessionId);
     if (!classroom) return NextResponse.json({ error: "Not found" }, { status: 404 });
     const classroomDoc = classroom as Record<string, any>;
-    if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!allowed) {
+      // The student sees this text on the "classroom did not open" screen, so
+      // say which rule turned them away rather than a bare "Forbidden".
+      console.warn("Live classroom refused", { classroom: params.id, userId, role, reason });
+      return NextResponse.json({ error: denialMessage(reason), reason }, { status: 403 });
+    }
     const scheduledSession = resolveScheduledSession(classroomDoc, requestedSessionId);
     if (!scheduledSession) return NextResponse.json({ error: "Scheduled session not found" }, { status: 404 });
     const scheduledSessionId = String(scheduledSession._id);
@@ -280,10 +289,10 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   await ensureLiveSessionIndexes();
   const userId = (session.user as { id?: string }).id || "";
   const requestedSessionId = getRequestedSessionId(req);
-  const { classroom, allowed } = await getLiveClassroomForUser(params.id, role, userId, requestedSessionId);
+  const { classroom, allowed, reason } = await getLiveClassroomForUser(params.id, role, userId, requestedSessionId);
   if (!classroom) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const classroomDoc = classroom as Record<string, any>;
-  if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!allowed) return NextResponse.json({ error: denialMessage(reason), reason }, { status: 403 });
   const scheduledSession = resolveScheduledSession(classroomDoc, requestedSessionId);
   if (!scheduledSession) return NextResponse.json({ error: "Scheduled session not found" }, { status: 404 });
   const scheduledSessionId = String(scheduledSession._id);

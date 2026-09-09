@@ -17,6 +17,19 @@ import { Classroom } from "@/models/Classroom";
  */
 const OPEN_SESSION_STATUSES = ["scheduled", "ongoing", "in_progress"];
 
+/**
+ * Whether a demo is booked rather than still waiting on an admin.
+ *
+ * The Demo Center sorts a booking into Booked/Upcoming on this rule, so editing
+ * one has to consult the same rule to decide whether the edit is a reschedule or
+ * an assignment. When the two were written out separately, saving a new time
+ * pushed a confirmed demo back into Requested and the admin had to approve it a
+ * second time to get it back.
+ */
+export function isConfirmedDemo(booking: { status?: string; demoStatus?: string } | null | undefined) {
+  return booking?.demoStatus === "CLASSROOM_CREATED" || booking?.status === "confirmed";
+}
+
 export async function cancelDemoClassrooms(input: { bookingIds: Array<unknown>; reason?: string }) {
   const bookingIds = (input.bookingIds || []).filter(Boolean);
   if (!bookingIds.length) return { cancelled: 0 };

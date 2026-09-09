@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { syncDemoSession } from "@/lib/demoClassroom";
+import { isConfirmedDemo, syncDemoSession } from "@/lib/demoClassroom";
 
 const newTime = {
   start: new Date("2026-09-15T08:50:00Z"),
@@ -66,5 +66,19 @@ describe("syncDemoSession", () => {
     };
     syncDemoSession(classroom, newTime);
     expect(classroom.generatedSessions).toHaveLength(2);
+  });
+});
+
+describe("isConfirmedDemo", () => {
+  it("treats a booking with a classroom as confirmed, so editing it is a reschedule", () => {
+    expect(isConfirmedDemo({ demoStatus: "CLASSROOM_CREATED", status: "pending" })).toBe(true);
+    expect(isConfirmedDemo({ status: "confirmed" })).toBe(true);
+  });
+
+  it("leaves an unassigned or coach-assigned demo waiting for approval", () => {
+    expect(isConfirmedDemo({ status: "pending", demoStatus: "COACH_ASSIGNED" })).toBe(false);
+    expect(isConfirmedDemo({ status: "pending" })).toBe(false);
+    expect(isConfirmedDemo(null)).toBe(false);
+    expect(isConfirmedDemo(undefined)).toBe(false);
   });
 });

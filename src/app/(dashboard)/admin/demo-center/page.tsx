@@ -10,7 +10,7 @@ import { academyDateTimeLocalInput, formatAcademyDateTime, parseAcademyDateTimeL
 import { notifyDemoApproved, notifyDemoConverted } from "@/lib/demoWorkflow";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
 import { recordActivity } from "@/lib/activity";
-import { cancelDemoClassrooms, upsertDemoClassroom } from "@/lib/demoClassroom";
+import { cancelDemoClassrooms, isConfirmedDemo, upsertDemoClassroom } from "@/lib/demoClassroom";
 import { Activity } from "@/models/Activity";
 import { Booking } from "@/models/Booking";
 import { Classroom } from "@/models/Classroom";
@@ -93,11 +93,18 @@ function classifyDemo(booking: any): DemoTab {
   if (booking.demoStatus === "STUDENT_NO_SHOW" || booking.demoStatus === "ABSENT") return "missed";
   if (booking.demoStatus === "ASSESSMENT_PENDING") return "assessments";
   if (booking.feedbackStatus === "submitted" || booking.demoStatus === "COMPLETED") return "completed";
-  if (booking.demoStatus === "CLASSROOM_CREATED" || booking.status === "confirmed") return "upcoming";
+  if (isConfirmedDemo(booking)) return "upcoming";
   return "requested";
 }
 
-async function assertCoachAvailable(coachId: string, startAt: Date, endAt: Date, ignoredBookingId?: string) {
+/**
+ * The reason this coach cannot take the slot, or "" if they can.
+ *
+ * Returns the message rather than throwing it: these run inside plain form
+ * actions, where an uncaught throw is an error page rather than something the
+ * admin can act on.
+ */
+async function coachClash(coachId: string, startAt: Date, endAt: Date, ignoredBookingId?: string) {
   const overlapFilter: any = {
     instructor: coachId,
     status: { $in: ["pending", "confirmed"] },
@@ -106,9 +113,8 @@ async function assertCoachAvailable(coachId: string, startAt: Date, endAt: Date,
   };
   if (ignoredBookingId) overlapFilter._id = { $ne: ignoredBookingId };
   const conflictingBooking: any = await Booking.findOne(overlapFilter).populate("student", "name").lean();
-  if (conflictingBooking) {
-    throw new Error(`Coach already has a booking with ${conflictingBooking.student?.name || "another student"} at this time.`);
-  }
+  if (!conflictingBooking) return "";
+  return `Coach already has a booking with ${conflictingBooking.student?.name || "another student"} at this time.`;
 }
 
 async function requireDemoManager(permission = "edit"): Promise<DemoManagerSession> {
@@ -117,6 +123,21 @@ async function requireDemoManager(permission = "edit"): Promise<DemoManagerSessi
   if (!["admin", "sub-admin"].includes(role)) redirect("/dashboard");
   if (!(await canAccessFeature("onboarding", session!.user as any, permission))) redirect("/dashboard");
   return session as DemoManagerSession;
+}
+
+/**
+ * Send the admin back to the Demo Center with something to read.
+ *
+ * These actions are plain `<form action={...}>` submissions, so a bare `return`
+ * on a bad input - or an unreported coach clash - left the page
+ * looking exactly as it did before. Pressing the button appeared to do nothing,
+ * which is indistinguishable from "it saved but kept the old time".
+ */
+function demoCenterOutcome(tab: string, failure: string, success?: string): never {
+  const query = new URLSearchParams({ tab });
+  if (failure) query.set("error", failure);
+  else if (success) query.set("ok", success);
+  redirect(`/admin/demo-center?${query.toString()}`);
 }
 
 async function updateBookingRequest(formData: FormData) {
@@ -129,14 +150,17 @@ async function updateBookingRequest(formData: FormData) {
   const startAt = parseAcademyDateTimeLocal(String(formData.get("startAt") || ""));
   const duration = Math.max(15, Number(formData.get("durationMinutes") || 30));
   const meetingUrl = String(formData.get("meetingUrl") || "").trim();
-  if (!bookingId || !coach || Number.isNaN(startAt.getTime())) return;
+  const tab = String(formData.get("tab") || "requested");
+  if (!bookingId || !coach) return demoCenterOutcome(tab, "Choose a coach before saving.");
+  if (Number.isNaN(startAt.getTime())) return demoCenterOutcome(tab, "Choose a valid date and time.");
   const booking: any = await Booking.findById(bookingId);
-  if (!booking) return;
+  if (!booking) return demoCenterOutcome(tab, "That demo request no longer exists.");
   const student: any = await User.findById(booking.student).select("name studentLevel").lean();
   const previousStartAt = booking.startAt;
   const previousEndAt = booking.endAt;
   const endAt = new Date(startAt.getTime() + duration * 60000);
-  await assertCoachAvailable(coach, startAt, endAt, bookingId);
+  const clash = await coachClash(coach, startAt, endAt, bookingId);
+  if (clash) return demoCenterOutcome(tab, clash);
   booking.instructor = coach;
   booking.assignedCoach = coach;
   booking.assignedCoachAt = new Date();
@@ -144,9 +168,17 @@ async function updateBookingRequest(formData: FormData) {
   booking.startAt = startAt;
   booking.endAt = endAt;
   booking.meetingUrl = meetingUrl;
-  booking.approvalStatus = "pending_admin";
-  booking.status = "pending";
-  booking.demoStatus = "COACH_ASSIGNED";
+  // Editing a demo that is already confirmed must not un-confirm it. Forcing
+  // every save back to pending dropped the card out of Booked/Upcoming into
+  // Requested, so the only route to a new time was to demote the demo and
+  // re-approve it - and in between, the student and the coach still held a
+  // classroom on the old slot. A confirmed demo stays confirmed and just moves.
+  const alreadyConfirmed = isConfirmedDemo(booking);
+  if (!alreadyConfirmed) {
+    booking.approvalStatus = "pending_admin";
+    booking.status = "pending";
+    booking.demoStatus = "COACH_ASSIGNED";
+  }
   booking.needsNewTime = false;
   if (previousStartAt && new Date(previousStartAt).getTime() !== startAt.getTime()) {
     booking.rescheduleCount = Number(booking.rescheduleCount || 0) + 1;
@@ -172,9 +204,16 @@ async function updateBookingRequest(formData: FormData) {
   });
   if (classroom) booking.classroom = classroom._id;
   await booking.save();
-  await recordActivity({ actor: actorId, type: "demo.booking.coach_assigned", label: "Assigned coach to demo request", entityType: "Booking", entityId: bookingId, metadata: { coach, meetingUrl: Boolean(meetingUrl), classroom: classroom ? String(classroom._id) : "", event: "DEMO_COACH_ASSIGNED" } });
+  await recordActivity({ actor: actorId, type: "demo.booking.coach_assigned", label: alreadyConfirmed ? "Rescheduled a confirmed demo" : "Assigned coach to demo request", entityType: "Booking", entityId: bookingId, metadata: { coach, meetingUrl: Boolean(meetingUrl), classroom: classroom ? String(classroom._id) : "", event: "DEMO_COACH_ASSIGNED" } });
   revalidatePath("/admin/demo-center");
   revalidatePath("/classrooms");
+  // A confirmed demo that was just moved belongs in Booked/Upcoming, not back in
+  // Requested - following it there is what tells the admin the change took.
+  demoCenterOutcome(
+    alreadyConfirmed ? "upcoming" : "requested",
+    "",
+    `Demo moved to ${formatAcademyDateTime(startAt)}.`
+  );
 }
 
 async function approveBooking(formData: FormData) {
@@ -187,10 +226,14 @@ async function approveBooking(formData: FormData) {
   const start = parseAcademyDateTimeLocal(String(formData.get("startAt") || ""));
   const durationMinutes = Math.max(15, Number(formData.get("durationMinutes") || 30));
   const meetingUrl = String(formData.get("meetingUrl") || "").trim();
+  const tab = String(formData.get("tab") || "requested");
+  if (!coachId) return demoCenterOutcome(tab, "Choose a coach before confirming.");
+  if (Number.isNaN(start.getTime())) return demoCenterOutcome(tab, "Choose a valid date and time.");
   const booking: any = await Booking.findById(bookingId).populate("student instructor assignedCoach");
-  if (!booking || !coachId || Number.isNaN(start.getTime())) return;
+  if (!booking) return demoCenterOutcome(tab, "That demo request no longer exists.");
   const end = new Date(start.getTime() + durationMinutes * 60000);
-  await assertCoachAvailable(coachId, start, end, bookingId);
+  const clash = await coachClash(coachId, start, end, bookingId);
+  if (clash) return demoCenterOutcome(tab, clash);
   const studentId = booking.student?._id || booking.student;
   const classroom: any = await upsertDemoClassroom({
     booking,
@@ -202,7 +245,7 @@ async function approveBooking(formData: FormData) {
     studentName: booking.student?.name,
     levelName: booking.level || booking.student?.studentLevel,
   });
-  if (!classroom) return;
+  if (!classroom) return demoCenterOutcome(tab, "Could not build the demo classroom for this booking.");
   const updatedBooking: any = await Booking.findByIdAndUpdate(booking._id, {
     instructor: coachId,
     assignedCoach: coachId,
@@ -234,6 +277,7 @@ async function approveBooking(formData: FormData) {
   await recordActivity({ actor: actorId, targetUser: String(booking.student?._id || booking.student || ""), type: "demo.booking.approved", label: "Approved demo and created classroom", entityType: "Booking", entityId: booking._id.toString(), metadata: { classroom: classroom._id.toString(), coach: coachId, event: "DEMO_CLASSROOM_CREATED" } });
   revalidatePath("/admin/demo-center");
   revalidatePath("/classrooms");
+  demoCenterOutcome("upcoming", "", `Demo confirmed for ${formatAcademyDateTime(start)}.`);
 }
 
 async function closeDemo(formData: FormData) {
@@ -364,10 +408,12 @@ async function extendDemoAccess(formData: FormData) {
   revalidatePath("/admin/demo-center");
 }
 
-export default async function DemoCenterPage({ searchParams }: { searchParams?: { tab?: string } }) {
+export default async function DemoCenterPage({ searchParams }: { searchParams?: { tab?: string; error?: string; ok?: string } }) {
   await requireDemoManager("view");
   await dbConnect();
   const activeTab = tabs.some((tab) => tab.id === searchParams?.tab) ? searchParams?.tab as DemoTab : "requested";
+  const errorNotice = String(searchParams?.error || "").trim();
+  const successNotice = String(searchParams?.ok || "").trim();
   const [bookings, demoStudents, coaches, feedback, courses, batches] = await Promise.all([
     Booking.find({ bookingType: "demo" }).populate("student instructor assignedCoach", "name email countryCode phone username accountStatus parentName city country studentLevel demoExpiresAt").sort({ createdAt: -1 }).limit(300).lean(),
     User.find({ role: "student", accountStatus: "demo" }, { passwordHash: 0 }).sort({ createdAt: -1 }).limit(300).lean(),
@@ -434,8 +480,16 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
         </section>
       ) : activeTab !== "assessments" ? (
         <section className="grid gap-3">
+          {errorNotice || successNotice ? (
+            <div
+              role="status"
+              className={`rounded-lg border px-4 py-3 text-sm font-semibold ${errorNotice ? "border-rose-200 bg-rose-50 text-rose-800" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`}
+            >
+              {errorNotice || successNotice}
+            </div>
+          ) : null}
           {visibleBookings.map((booking: any) => (
-            <DemoCard key={booking._id.toString()} booking={booking} coaches={coaches} courses={courses} batches={batches} feedback={feedbackByBooking.get(String(booking._id))} />
+            <DemoCard key={booking._id.toString()} booking={booking} activeTab={activeTab} coaches={coaches} courses={courses} batches={batches} feedback={feedbackByBooking.get(String(booking._id))} />
           ))}
           {!visibleBookings.length ? <Empty text={`No demos in ${tabs.find((tab) => tab.id === activeTab)?.label || "this tab"}.`} /> : null}
         </section>
@@ -513,7 +567,7 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
   );
 }
 
-function DemoCard({ booking, coaches, courses, batches, feedback }: { booking: any; coaches: any[]; courses: any[]; batches: any[]; feedback?: any }) {
+function DemoCard({ booking, activeTab, coaches, courses, batches, feedback }: { booking: any; activeTab: DemoTab; coaches: any[]; courses: any[]; batches: any[]; feedback?: any }) {
   const student = booking.student || {};
   const startAt = toLocalInput(booking.startAt);
   const duration = Math.max(15, Math.round((new Date(booking.endAt).getTime() - new Date(booking.startAt).getTime()) / 60000) || 30);
@@ -665,6 +719,7 @@ function DemoCard({ booking, coaches, courses, batches, feedback }: { booking: a
       <PopupShell id={assignModalId} title="Assign coach and confirm demo" subtitle={`${student.name || "Demo student"} · ${booking.requestedLocalDateTime || formatAcademyDateTime(booking.startAt)}`}>
         <form action={approveBooking} className="grid gap-3">
           <input type="hidden" name="booking" value={cardId} />
+          <input type="hidden" name="tab" value={activeTab} />
           <label className="block">
             <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Coach</span>
             <select name="coach" defaultValue={booking.assignedCoach?._id?.toString() || booking.instructor?._id?.toString() || ""} className="input bg-white" required>
@@ -690,12 +745,13 @@ function DemoCard({ booking, coaches, courses, batches, feedback }: { booking: a
             </span>
           </label>
           <div className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs font-semibold leading-5 text-amber-900">
-            Accept creates the demo classroom. Change Time / Assign Coach keeps it as a pending admin review with the updated details.
+            Both buttons save the date and time above. Confirm books the class and creates or moves the classroom; Save for Review keeps an
+            unconfirmed demo waiting for approval. A demo that is already confirmed stays confirmed either way.
           </div>
           <div className="flex flex-wrap justify-end gap-2 pt-1">
             <a href="#" className="btn-outline bg-white">Cancel</a>
-            <button formAction={updateBookingRequest} className="btn-outline bg-white"><RotateCcw size={15} /> Change Time / Assign Coach</button>
-            <button formAction={approveBooking} className="btn-primary"><CheckCircle2 size={15} /> Accept Requested Time</button>
+            <button formAction={updateBookingRequest} className="btn-outline bg-white"><RotateCcw size={15} /> Save for Review</button>
+            <button formAction={approveBooking} className="btn-primary"><CheckCircle2 size={15} /> Save &amp; Confirm Demo</button>
           </div>
         </form>
       </PopupShell>

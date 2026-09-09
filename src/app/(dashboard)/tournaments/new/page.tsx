@@ -10,6 +10,7 @@ import { redirect } from "next/navigation";
 import { Chess } from "chess.js";
 import { randomBytes } from "crypto";
 import { CURRENT_RULES_VERSION } from "@/lib/tournament/scoring";
+import { academyDateTime, formatAcademyDateTime, parseAcademyDateTimeLocal } from "@/lib/academyTime";
 
 export const dynamic = "force-dynamic";
 
@@ -18,12 +19,21 @@ type CreateTournamentState = {
   fieldErrors?: Record<string, string>;
 };
 
+// The date and time inputs carry no timezone, and this runs in a server action,
+// so `new Date("2026-09-09T17:00:00")` resolved the organiser's wall clock
+// against the *host's* timezone - on a UTC host every tournament started five
+// and a half hours after the time on the form.
 function combineDateTime(date: string, time: string) {
-  return new Date(`${date}T${time || "00:00"}:00`);
+  return academyDateTime(date, time || "00:00");
 }
 
+// en-IN picks the format, not the timezone, so these read the server's clock.
+// The name is stamped into the tournament permanently, so it has to be the same
+// academy time the schedule shows.
 function datedName(name: string, date: Date) {
-  return `${name} - ${date.toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" })} - ${date.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}`;
+  const day = formatAcademyDateTime(date, { day: "2-digit", month: "long", year: "numeric", hour: undefined, minute: undefined });
+  const time = formatAcademyDateTime(date, { day: undefined, month: undefined, year: undefined, hour: "numeric", minute: "2-digit" });
+  return `${name} - ${day} - ${time}`;
 }
 
 async function createTournament(_: CreateTournamentState, formData: FormData): Promise<CreateTournamentState> {
@@ -196,7 +206,7 @@ async function createTournament(_: CreateTournamentState, formData: FormData): P
           entryCode: externalInviteEnabled && externalInviteMode === "entry_code" ? externalInviteEntryCode : "",
           accessMode: externalInviteEnabled ? externalInviteMode : "private",
           createdAt: externalInviteEnabled ? new Date() : undefined,
-          expiresAt: externalInviteEnabled && externalInviteExpiresAt ? new Date(externalInviteExpiresAt) : undefined,
+          expiresAt: externalInviteEnabled && externalInviteExpiresAt ? parseAcademyDateTimeLocal(externalInviteExpiresAt) : undefined,
         },
         createdBy: (session!.user as any).id,
       });

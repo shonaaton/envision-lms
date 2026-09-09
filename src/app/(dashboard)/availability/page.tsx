@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 import { CalendarDays, Check, Clock3, Plus, Save, Trash2, X } from "lucide-react";
+import { parseAcademyDateTimeLocal } from "@/lib/academyTime";
 
 const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -83,7 +84,12 @@ export default function AvailabilityPage() {
 
   async function handleRequest(bookingId: string, action: "approve" | "cancel" | "suggest_time") {
     const suggested = suggestedTimes[bookingId];
-    const proposedStartAt = suggested ? new Date(suggested) : null;
+    // The picker hands back a bare wall clock. new Date() would resolve it
+    // against whatever timezone the coach's own machine is set to, so a coach
+    // travelling abroad proposed a slot that read correctly to them and landed
+    // hours off for the student. Every other view renders academy time, so the
+    // time they typed is academy time.
+    const proposedStartAt = suggested ? parseAcademyDateTimeLocal(suggested) : null;
     const request = requests.find((item) => item._id === bookingId);
     const minutes = request ? Math.max(15, Math.round((new Date(request.endAt).getTime() - new Date(request.startAt).getTime()) / 60000)) : 60;
     if (action === "suggest_time" && (!proposedStartAt || Number.isNaN(proposedStartAt.getTime()))) {

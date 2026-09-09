@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { academyDateKey, parseAcademyDateTimeLocal } from "@/lib/academyTime";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -10,12 +11,13 @@ type AssignmentTarget = { _id: string; name: string; email?: string; username?: 
 type ClassroomTarget = { _id: string; title: string };
 type HomeworkTargets = { classrooms: ClassroomTarget[]; batches: AssignmentTarget[]; students: AssignmentTarget[] };
 
+// A week out, end of that day - in academy time, which is the clock the deadline
+// is shown and enforced on. Built from getTimezoneOffset() it was the end of the
+// coach's own day instead, so a coach abroad opened the dialog on a date the
+// students' calendar had already moved past.
 function defaultDeadline() {
-  const date = new Date();
-  date.setDate(date.getDate() + 7);
-  date.setHours(23, 59, 0, 0);
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 16);
+  const nextWeek = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  return `${academyDateKey(nextWeek)}T23:59`;
 }
 
 export function ImportHomeworkPgnButton() {
@@ -144,7 +146,7 @@ export function AssignTemplateButton({ id, title }: { id: string; title: string 
     if (!classroomId) return toast.error("Choose a classroom");
     if (!selectedIds.length) return toast.error(`Choose at least one ${targetMode === "batches" ? "batch" : "student"}`);
     if (!dueAt) return toast.error("Choose the last submission date");
-    const deadline = new Date(dueAt);
+    const deadline = parseAcademyDateTimeLocal(dueAt);
     if (Number.isNaN(deadline.getTime()) || deadline.getTime() <= Date.now()) return toast.error("Choose a future submission deadline");
 
     setAssigning(true);

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { parseAcademyDateTimeLocal } from "@/lib/academyTime";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -309,7 +310,7 @@ export default function NewHomeworkPage() {
         classroom,
         title,
         description,
-        dueAt: dueAt ? new Date(dueAt).toISOString() : undefined,
+        dueAt: dueAt ? parseAcademyDateTimeLocal(dueAt).toISOString() : undefined,
         numberOfAttempts,
         timeLimitMinutes,
         assignAllStudents: targetMode === "all",

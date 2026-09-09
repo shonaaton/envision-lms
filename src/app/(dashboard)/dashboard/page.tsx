@@ -68,7 +68,8 @@ import {
   Zap,
 } from "lucide-react";
 import Link from "next/link";
-import { canAccessFeature } from "@/lib/featureAccess";
+import { canAccessFeature, isSuperAdminSession } from "@/lib/featureAccess";
+import { visibleClassroomFilter } from "@/lib/classroomVisibility";
 import RoleHome from "@/components/admin/RoleHome";
 import { COURSE_TIER_VALUES, courseTierLabel } from "@/lib/courseTiers";
 
@@ -1194,12 +1195,7 @@ async function StudentDashboard({ userId, joinAllowed }: { userId: string; joinA
   const now = new Date();
   const [student, classrooms, homework, submissions, tournaments, rewards, attendance, conversations, messages, studentInvoices] = await Promise.all([
     User.findById(userId).populate("batches", "name level").lean(),
-    // isTestClassroom is excluded here for the same reason the classrooms API,
-    // the layout's demo check and the notification jobs exclude it: the live
-    // room refuses a sandbox classroom outright, so surfacing one on the
-    // dashboard produces a Join button that can only bounce the student back
-    // here with nothing shown and nothing explained.
-    Classroom.find({ students: userId, isActive: { $ne: false }, isSessionInstance: { $ne: true }, isTestClassroom: { $ne: true } })
+    Classroom.find({ students: userId, isActive: { $ne: false }, isSessionInstance: { $ne: true }, ...visibleClassroomFilter({ role: "student", userId }) })
       .populate("coach instructor", "name username")
       .populate("generatedSessions.substituteCoach", "name username")
       .populate("batches", "name")
@@ -1630,6 +1626,7 @@ async function CoachDashboard({ userId, searchParams, joinAllowed }: { userId: s
       ...coachClassroomQuery(userId),
       isActive: { $ne: false },
       isSessionInstance: { $ne: true },
+      ...visibleClassroomFilter({ role: "instructor", userId }),
     })
       .populate("coach instructor", "name username email")
       .populate("generatedSessions.substituteCoach", "name username email")
@@ -1906,6 +1903,7 @@ async function CoachDashboardV2({ userId, searchParams, joinAllowed }: { userId:
       ...coachClassroomQuery(userId),
       isActive: { $ne: false },
       isSessionInstance: { $ne: true },
+      ...visibleClassroomFilter({ role: "instructor", userId }),
     })
       .populate("coach instructor", "name username email")
       .populate("generatedSessions.substituteCoach", "name username email")
@@ -2307,6 +2305,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
   if (role === "student") return <StudentDashboard userId={userId} joinAllowed={joinAllowed} />;
   if (role === "instructor") return <CoachDashboardV2 userId={userId} searchParams={searchParams} joinAllowed={joinAllowed} />;
 
+  // Only the admin branch below needs this, and it costs a lookup - so it is
+  // resolved after the student and coach dashboards have already returned.
+  const isSuperAdmin = await isSuperAdminSession(session?.user as any);
   const { preset, from, to } = getRange(searchParams);
   const focusDate = parseDate(searchParams.date) || new Date();
   const focusFrom = startOfDay(focusDate);
@@ -2376,7 +2377,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
           .populate("coach", "name")
           .lean()
       : [],
-    needsClassrooms ? Classroom.find({ isSessionInstance: { $ne: true } })
+    needsClassrooms ? Classroom.find({ isSessionInstance: { $ne: true }, ...visibleClassroomFilter({ role, userId, isSuperAdmin }) })
       .populate("coach instructor", "name username email")
       .populate("generatedSessions.substituteCoach", "name username email")
       .populate("students", "name username email")

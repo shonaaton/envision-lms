@@ -5,6 +5,7 @@ import { Classroom } from "@/models/Classroom";
 import { Course } from "@/models/Course";
 import { buildGeneratedSessions, buildSessionPlan } from "@/lib/classroomSchedule";
 import { syncClassroomSessionInstances } from "@/lib/classroomSessionInstances";
+import { visibleClassroomFilter } from "@/lib/classroomVisibility";
 import { canAccessFeature, isSuperAdminSession } from "@/lib/featureAccess";
 import { coachClassroomQuery, limitClassroomToCoachSessions } from "@/lib/classroomCoachAccess";
 import { User } from "@/models/User";
@@ -27,10 +28,7 @@ export async function GET() {
   const userId = (session.user as any).id;
   const role = (session.user as any).role;
   const isSuperAdmin = await isSuperAdminSession(session.user as any);
-  const visibleClassrooms =
-    role === "admin" && isSuperAdmin
-      ? { $or: [{ isTestClassroom: { $ne: true } }, { isTestClassroom: true, testOwner: userId }] }
-      : { isTestClassroom: { $ne: true } };
+  const visibleClassrooms = visibleClassroomFilter({ role, userId, isSuperAdmin });
   // A closed or paused classroom stays in the admin list so it can be reviewed,
   // but coaches and students only see what is actually running - closed batches
   // have their own page at /classrooms/closed, and paused ones come back on

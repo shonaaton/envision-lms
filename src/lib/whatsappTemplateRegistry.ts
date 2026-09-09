@@ -279,6 +279,34 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
     ]
   },
   {
+    "name": "demo_class_reminder_staff_alert",
+    "language": "en",
+    "sourceAutomation": "Demo Class Reminder - Staff",
+    "body": "Hello {{1}}, reminder: {{2}}'s demo class is {{3}}, scheduled for {{4}}. Please monitor the demo workflow in the academy portal.",
+    "variables": [
+      {
+        "position": 1,
+        "key": "staff_name",
+        "sample": "Mohammed"
+      },
+      {
+        "position": 2,
+        "key": "student_name",
+        "sample": "Aarav"
+      },
+      {
+        "position": 3,
+        "key": "reminder_window",
+        "sample": "in 1 hour"
+      },
+      {
+        "position": 4,
+        "key": "class_datetime",
+        "sample": "27 Aug 2026, 6:00 PM IST"
+      }
+    ]
+  },
+  {
     "name": "demo_no_show_reschedule_admin",
     "language": "en",
     "sourceAutomation": "Demo No-Show - Admin",

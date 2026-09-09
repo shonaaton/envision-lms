@@ -14,6 +14,7 @@ const DEFAULT_IMPORTANT_CONTACTS = [
   "sub-admin:dhritabrata:Dhritabrata:918017450090:dhritabratakundu06@gmail.com",
   "sub-admin:sayan_bose:Sayan Bose:919804470707:sayanthsbose@gmail.com",
   "sales:sayandeb:Sayandeb:6291780127:sayanenvisionchess@gmail.com",
+  "sales:mohammed_shahzib:Mohammed Shahzib:916366063104:mohammedshazib@gmail.com",
 ];
 
 const CONTACT_KEY_ALIASES: Record<string, string[]> = {

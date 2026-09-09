@@ -5,6 +5,7 @@ import { dbConnect } from "@/lib/db";
 import { Booking } from "@/models/Booking";
 import { DemoFeedback } from "@/models/Onboarding";
 import { recordActivity } from "@/lib/activity";
+import { notifyDemoFeedbackSubmitted } from "@/lib/demoWorkflow";
 import DemoAssessmentLeaveGuard from "@/components/demo/DemoAssessmentLeaveGuard";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +25,7 @@ async function submitDemoFeedback(formData: FormData) {
   if (!booking || booking.bookingType !== "demo" || !booking.classroom) return;
   const coachId = String(booking.assignedCoach?._id || booking.instructor?._id || booking.instructor || "");
   if (role === "instructor" && coachId !== actorId) return;
-  await DemoFeedback.findOneAndUpdate(
+  const feedback = await DemoFeedback.findOneAndUpdate(
     { booking: booking._id, classroom: booking.classroom },
     {
       booking: booking._id,
@@ -57,6 +58,13 @@ async function submitDemoFeedback(formData: FormData) {
     { upsert: true, new: true }
   );
   await Booking.findByIdAndUpdate(booking._id, { demoStatus: "COMPLETED", feedbackStatus: "submitted" });
+  // Never let a delivery failure lose the assessment the coach just typed.
+  await notifyDemoFeedbackSubmitted({
+    booking,
+    student: booking.student,
+    coach: booking.assignedCoach || booking.instructor,
+    feedback,
+  }).catch((error) => console.error("Demo feedback notification failed", error));
   await recordActivity({
     actor: actorId,
     targetUser: String(booking.student?._id || booking.student || ""),

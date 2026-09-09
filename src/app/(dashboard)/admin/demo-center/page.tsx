@@ -6,7 +6,7 @@ import { CalendarCheck, CheckCircle2, Clock3, GraduationCap, History, Link as Li
 import { auth } from "@/lib/auth";
 import { canAccessFeature } from "@/lib/featureAccess";
 import { dbConnect } from "@/lib/db";
-import { formatAcademyDateTime } from "@/lib/academyTime";
+import { academyDateTimeLocalInput, formatAcademyDateTime, parseAcademyDateTimeLocal } from "@/lib/academyTime";
 import { notifyDemoApproved, notifyDemoConverted } from "@/lib/demoWorkflow";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
 import { recordActivity } from "@/lib/activity";
@@ -42,11 +42,12 @@ function contactNumber(record: { countryCode?: string; phone?: string }) {
   return [record.countryCode, phone].map((part) => part?.trim()).filter(Boolean).join(" ");
 }
 
+// This page renders on the server, so a getTimezoneOffset()-based conversion
+// would fill the picker with the *host's* wall clock - an 11:37 IST demo showed
+// as 06:07 on a UTC server, and whatever the admin then typed was read back in
+// that same host timezone. Both ends of the round trip are academy time now.
 function toLocalInput(value?: string | Date) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  return academyDateTimeLocalInput(value);
 }
 
 function demoStatusLabel(booking: any) {
@@ -125,7 +126,7 @@ async function updateBookingRequest(formData: FormData) {
   const actorId = String((session.user as any).id || "");
   const bookingId = String(formData.get("booking") || "");
   const coach = String(formData.get("coach") || "");
-  const startAt = new Date(String(formData.get("startAt") || ""));
+  const startAt = parseAcademyDateTimeLocal(String(formData.get("startAt") || ""));
   const duration = Math.max(15, Number(formData.get("durationMinutes") || 30));
   const meetingUrl = String(formData.get("meetingUrl") || "").trim();
   if (!bookingId || !coach || Number.isNaN(startAt.getTime())) return;
@@ -183,7 +184,7 @@ async function approveBooking(formData: FormData) {
   const actorId = String((session.user as any).id || "");
   const bookingId = String(formData.get("booking") || "");
   const coachId = String(formData.get("coach") || "");
-  const start = new Date(String(formData.get("startAt") || ""));
+  const start = parseAcademyDateTimeLocal(String(formData.get("startAt") || ""));
   const durationMinutes = Math.max(15, Number(formData.get("durationMinutes") || 30));
   const meetingUrl = String(formData.get("meetingUrl") || "").trim();
   const booking: any = await Booking.findById(bookingId).populate("student instructor assignedCoach");
@@ -550,8 +551,13 @@ function DemoCard({ booking, coaches, courses, batches, feedback }: { booking: a
       </div>
 
       <dl className="mt-4 grid gap-x-6 gap-y-3.5 border-t border-slate-100 pt-4 sm:grid-cols-2 lg:grid-cols-4">
+        {/* requestedLocalDateTime/requestedIstDateTime are labels frozen when the
+            parent submitted the form. Once an admin confirms a different slot
+            they stop describing the class, so the scheduled time is read from
+            startAt - the same field the classroom is built from - and the
+            original request is kept beside it. */}
+        <Field label="Scheduled (IST)" value={awaitingNewTime ? <Pending /> : formatAcademyDateTime(booking.startAt)} />
         <Field label="Requested" value={awaitingNewTime ? <Pending /> : booking.requestedLocalDateTime || formatAcademyDateTime(booking.startAt)} />
-        <Field label="IST" value={awaitingNewTime ? <Pending /> : booking.requestedIstDateTime || formatAcademyDateTime(booking.startAt)} />
         <Field label="Duration" value={`${duration} minutes`} />
         <Field label="Submitted" value={booking.createdAt ? formatAcademyDateTime(booking.createdAt) : ""} />
         <Field label="Coach" value={awaitingNewTime ? <Pending text="To be reassigned" /> : booking.assignedCoach?.name || booking.instructor?.name || "Unassigned"} />
@@ -576,7 +582,7 @@ function DemoCard({ booking, coaches, courses, batches, feedback }: { booking: a
             <History size={12} /> Previous demo, before it was reopened
           </div>
           <dl className="mt-2.5 grid gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Field label="Previous time" value={booking.requestedIstDateTime || formatAcademyDateTime(booking.startAt)} />
+            <Field label="Previous time" value={formatAcademyDateTime(booking.startAt)} />
             <Field label="Previous coach" value={booking.assignedCoach?.name || booking.instructor?.name} />
             <Field label="Reopened" value={booking.reopenedAt ? formatAcademyDateTime(booking.reopenedAt) : ""} />
             <Field label="Revived from CRM" value={booking.reopenedFromStage} />
@@ -740,7 +746,7 @@ function HistoryCard({ booking, activities }: { booking: any; activities: any[] 
       <dl className="mt-4 grid gap-x-6 gap-y-3.5 border-t border-slate-100 pt-4 sm:grid-cols-2 lg:grid-cols-4">
         <Field label="Archived" value={booking.archivedAt ? formatAcademyDateTime(booking.archivedAt) : ""} />
         <Field label="Reason" value={booking.archiveReason} />
-        <Field label="Requested time" value={booking.requestedIstDateTime || formatAcademyDateTime(booking.startAt)} />
+        <Field label="Scheduled time" value={formatAcademyDateTime(booking.startAt)} />
         <Field label="Coach" value={booking.assignedCoach?.name || booking.instructor?.name} />
         <Field label="Chess level" value={levelLabel(booking.level || student.studentLevel)} />
         <Field label="Submitted" value={booking.createdAt ? formatAcademyDateTime(booking.createdAt) : ""} />

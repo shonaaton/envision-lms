@@ -5,6 +5,7 @@ import { CheckCircle2, Clock3, Eye, UserCheck, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { AdminV2Card, AdminV2Modal, AdminV2Sheet, AdminV2Stat } from "./AdminV2Primitives";
 import { cn } from "@/lib/utils";
+import { academyDateTimeLocalInput } from "@/lib/academyTime";
 
 type Coach = { _id: string; name: string; email?: string };
 type Booking = {
@@ -41,11 +42,12 @@ type CoachApplication = {
 };
 type DemoStudent = { _id: string; name: string; email: string; username?: string; countryCode?: string; phone?: string; createdAt?: string };
 
+// The picker's value is sent to the server as a bare wall clock and read back
+// there as academy time, so it has to be written in academy time too - filling it
+// from the admin's own browser timezone shifted every confirmed demo by the
+// difference between the two.
 function toLocalInput(value?: string | Date) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  return academyDateTimeLocalInput(value);
 }
 
 export default function AdminV2OnboardingClient() {

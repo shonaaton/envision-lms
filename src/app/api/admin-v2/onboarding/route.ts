@@ -14,6 +14,7 @@ import { User, createUserWithUsername } from "@/models/User";
 import { DEMO_MANAGEMENT_HREF, notifyDemoApproved, notifyDemoConverted } from "@/lib/demoWorkflow";
 import { recordActivity } from "@/lib/activity";
 import { upsertDemoClassroom } from "@/lib/demoClassroom";
+import { formatAcademyDateTime, parseAcademyDateTimeLocal } from "@/lib/academyTime";
 
 export const dynamic = "force-dynamic";
 
@@ -51,7 +52,7 @@ export async function POST(req: Request) {
   if (action === "update_demo") {
     const bookingId = String(body.bookingId || "");
     const coach = String(body.coach || "");
-    const startAt = new Date(String(body.startAt || ""));
+    const startAt = parseAcademyDateTimeLocal(String(body.startAt || ""));
     const durationMinutes = Math.max(15, Number(body.durationMinutes || 60));
     if (!bookingId || !coach || Number.isNaN(startAt.getTime())) return NextResponse.json({ error: "Missing demo details." }, { status: 400 });
     const assigned: any = await Booking.findById(bookingId).populate("student", "name studentLevel");
@@ -96,7 +97,7 @@ export async function POST(req: Request) {
     const booking: any = await Booking.findById(String(body.bookingId || "")).populate("student instructor");
     if (!booking) return NextResponse.json({ error: "Demo booking not found." }, { status: 404 });
     if (booking.bookingType !== "demo") return NextResponse.json({ error: "Only demo bookings can be approved here." }, { status: 400 });
-    const start = new Date(body.startAt || booking.startAt);
+    const start = parseAcademyDateTimeLocal(body.startAt || booking.startAt);
     const durationMinutes = Math.max(15, Number(body.durationMinutes || Math.round((new Date(booking.endAt).getTime() - new Date(booking.startAt).getTime()) / 60000) || 60));
     const coachId = String(body.coach || booking.instructor?._id || booking.instructor || "");
     if (!coachId || Number.isNaN(start.getTime())) return NextResponse.json({ error: "Coach and start time are required." }, { status: 400 });
@@ -127,13 +128,13 @@ export async function POST(req: Request) {
     await InternalTask.findOneAndUpdate({ referenceType: "DemoBooking", referenceId: booking._id }, { status: "completed" }).catch(() => undefined);
     const admins = await User.find({ role: "admin", isActive: true }).select("_id").lean();
     await Notification.insertMany([
-      { user: booking.student?._id || booking.student, type: "demo.approved", title: "Demo class approved", message: `Your demo class is scheduled for ${start.toLocaleString("en-IN")}.`, metadata: { booking: booking._id, classroom: classroom._id, href: "/classrooms", event: "DEMO_CLASSROOM_CREATED" } },
-      { user: coachId, type: "demo.approved", title: "Demo class assigned", message: `A demo class is scheduled for ${start.toLocaleString("en-IN")}.`, metadata: { booking: booking._id, classroom: classroom._id, href: "/classrooms", event: "DEMO_CLASSROOM_CREATED" } },
+      { user: booking.student?._id || booking.student, type: "demo.approved", title: "Demo class approved", message: `Your demo class is scheduled for ${formatAcademyDateTime(start)}.`, metadata: { booking: booking._id, classroom: classroom._id, href: "/classrooms", event: "DEMO_CLASSROOM_CREATED" } },
+      { user: coachId, type: "demo.approved", title: "Demo class assigned", message: `A demo class is scheduled for ${formatAcademyDateTime(start)}.`, metadata: { booking: booking._id, classroom: classroom._id, href: "/classrooms", event: "DEMO_CLASSROOM_CREATED" } },
       ...admins.map((admin: any) => ({ user: admin._id, type: "demo.approved", title: "Demo class approved", message: "Demo classroom has been created.", metadata: { booking: booking._id, classroom: classroom._id, href: DEMO_MANAGEMENT_HREF, event: "DEMO_CLASSROOM_CREATED" } })),
     ]);
     await Promise.all([
-      booking.student?.email && sendAutomationEmail({ to: booking.student.email, subject: "Your demo class is approved", message: `Your demo class is scheduled for ${start.toLocaleString("en-IN")}. Please join from your academy dashboard.` }),
-      booking.instructor?.email && sendAutomationEmail({ to: booking.instructor.email, subject: "Demo class assigned", message: `A demo class with ${booking.student?.name || "a student"} is scheduled for ${start.toLocaleString("en-IN")}.` }),
+      booking.student?.email && sendAutomationEmail({ to: booking.student.email, subject: "Your demo class is approved", message: `Your demo class is scheduled for ${formatAcademyDateTime(start)}. Please join from your academy dashboard.` }),
+      booking.instructor?.email && sendAutomationEmail({ to: booking.instructor.email, subject: "Demo class assigned", message: `A demo class with ${booking.student?.name || "a student"} is scheduled for ${formatAcademyDateTime(start)}.` }),
     ]);
     await notifyDemoApproved({ booking: updatedBooking, student: updatedBooking.student, coach: updatedBooking.instructor, classroom }).catch((error) => console.error("Demo approval WhatsApp failed", error));
     await recordActivity({

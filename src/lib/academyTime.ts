@@ -35,15 +35,33 @@ function getTimeZoneOffsetMs(date: Date, timeZone: string) {
   return utcFromParts - date.getTime();
 }
 
-export function zonedDateTime(dateValue: string | Date, time = "00:00", timeZone = ACADEMY_TIME_ZONE) {
-  const { year, month, day } = dateParts(dateValue, timeZone);
-  const normalizedTime = /^\d{1,2}:\d{2}$/.test(time) ? time.padStart(5, "0") : "00:00";
-  const [hours, minutes] = normalizedTime.split(":").map(Number);
-  const firstGuess = Date.UTC(Number(year), Number(month) - 1, Number(day), hours || 0, minutes || 0, 0);
+/**
+ * The instant at which a wall-clock reading happens in `timeZone`.
+ *
+ * Resolved in two passes because the offset that applies depends on the instant
+ * we are still solving for - around a DST change the first guess can land on the
+ * wrong side of the transition.
+ */
+function fromWallClock(
+  year: number,
+  month: number,
+  day: number,
+  hours: number,
+  minutes: number,
+  timeZone: string
+) {
+  const firstGuess = Date.UTC(year, month - 1, day, hours, minutes, 0);
   const firstOffset = getTimeZoneOffsetMs(new Date(firstGuess), timeZone);
   const adjusted = firstGuess - firstOffset;
   const secondOffset = getTimeZoneOffsetMs(new Date(adjusted), timeZone);
   return new Date(firstGuess - secondOffset);
+}
+
+export function zonedDateTime(dateValue: string | Date, time = "00:00", timeZone = ACADEMY_TIME_ZONE) {
+  const { year, month, day } = dateParts(dateValue, timeZone);
+  const normalizedTime = /^\d{1,2}:\d{2}$/.test(time) ? time.padStart(5, "0") : "00:00";
+  const [hours, minutes] = normalizedTime.split(":").map(Number);
+  return fromWallClock(Number(year), Number(month), Number(day), hours || 0, minutes || 0, timeZone);
 }
 
 export function academyDateTime(dateValue: string | Date, time = "00:00") {
@@ -94,4 +112,41 @@ export function formatAcademyDateTime(
 export function academyTimeOfDay(value: string | Date, timeZone = ACADEMY_TIME_ZONE) {
   const { hour, minute } = dateParts(value, timeZone);
   return `${hour === "24" ? "00" : hour}:${minute}`;
+}
+
+/**
+ * The value for an `<input type="datetime-local">`, in academy wall-clock time.
+ *
+ * A datetime-local input has no timezone: it shows back whatever wall clock it
+ * is given and returns that same wall clock on submit. Building that string with
+ * `getTimezoneOffset()` reads the clock of whichever machine happens to render
+ * it - the server for a server component, the admin's laptop for a client one -
+ * so an 11:37 IST demo was shown as 06:07 to an admin on a UTC server. Pair this
+ * with parseAcademyDateTimeLocal on the receiving end so the value goes out and
+ * comes back in the same timezone.
+ */
+export function academyDateTimeLocalInput(value?: string | Date | null, timeZone = ACADEMY_TIME_ZONE) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const { year, month, day, hour, minute } = dateParts(date, timeZone);
+  return `${year}-${month}-${day}T${hour === "24" ? "00" : hour}:${minute}`;
+}
+
+/**
+ * Read an `<input type="datetime-local">` value as academy wall-clock time.
+ *
+ * `new Date("2026-09-09T11:42")` resolves a bare wall clock against the *server's*
+ * timezone, so on a UTC host every time an admin typed was banked five and a half
+ * hours late - the WhatsApp confirmation quoted the requested slot while the
+ * classroom sat on the shifted one. Values that already carry a zone (an ISO
+ * string with Z or an offset, or a Date) are unambiguous and pass straight
+ * through.
+ */
+export function parseAcademyDateTimeLocal(value?: string | Date | null, timeZone = ACADEMY_TIME_ZONE) {
+  if (value instanceof Date) return new Date(value.getTime());
+  const raw = String(value ?? "").trim();
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{1,2}):(\d{2})(?::\d{2}(?:\.\d+)?)?$/);
+  if (!match) return new Date(raw);
+  return fromWallClock(Number(match[1]), Number(match[2]), Number(match[3]), Number(match[4]), Number(match[5]), timeZone);
 }

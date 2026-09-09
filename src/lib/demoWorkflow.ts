@@ -1,6 +1,7 @@
 import { Types } from "mongoose";
 import { ACADEMY_TIME_ZONE, formatAcademyDateTime, zonedDateTime } from "@/lib/academyTime";
 import { recordActivity } from "@/lib/activity";
+import { demoFeedbackNotificationRecipients, demoNotificationRecipients } from "@/lib/demoNotificationRecipients";
 import { importantContactsFromEnvKeys, importantContactWhatsAppRecipientsByKeys } from "@/lib/importantContacts";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
 import { sendWhatsAppTextMessage } from "@/lib/whatsappAutomation";
@@ -125,12 +126,24 @@ export function configuredDemoNotificationRecipients() {
   };
 }
 
-async function sendConfiguredDemoTexts(recipients: Array<{ name?: string; phone?: string; role?: string }>, text: string, metadata: Record<string, unknown>) {
-  await Promise.all(recipients.map((recipient) =>
+async function sendConfiguredDemoTexts(
+  recipients: Array<{ name?: string; phone?: string; role?: string; countryCode?: string; userId?: string }>,
+  text: string,
+  metadata: Record<string, unknown>
+) {
+  await Promise.all(recipients.filter((recipient) => recipient.phone).map((recipient) =>
     sendWhatsAppTextMessage({
       to: recipient.phone || "",
+      // Directory records keep the country code in its own field; static rows
+      // carry it inside `phone` and send an empty string here.
+      countryCode: recipient.countryCode || undefined,
       text,
-      metadata: { ...metadata, recipientRole: recipient.role || "", configuredRecipient: true },
+      metadata: {
+        ...metadata,
+        recipientRole: recipient.role || "",
+        ...(recipient.userId ? { userId: recipient.userId } : {}),
+        configuredRecipient: true,
+      },
     }).catch(() => null)
   ));
 }
@@ -205,13 +218,15 @@ export async function notifyDemoRequestCreated(input: { booking: any; student: a
       metadata: { booking: booking._id, href: DEMO_MANAGEMENT_HREF, event: "DEMO_CLASS_REQUESTED" },
     }))
   );
-  const configured = configuredDemoNotificationRecipients();
-  await sendConfiguredDemoTexts(configured.subAdmins, `${message} Booking ID: ${booking._id}.`, {
+  // Sales team + the demo sub-admin, read live from the user directory rather
+  // than a static contact list, and the same list on both channels.
+  const { all: staffRecipients } = await demoNotificationRecipients();
+  await sendConfiguredDemoTexts(staffRecipients, `${message} Booking ID: ${booking._id}.`, {
     kind: "demo_class_requested",
     event: "DEMO_CLASS_REQUESTED",
     bookingId: booking._id?.toString?.() || "",
   });
-  await sendStaffEmails([...configured.sales, ...configured.subAdmins], "New demo booking received", (recipient) => [
+  await sendStaffEmails(staffRecipients, "New demo booking received", (recipient) => [
     `Hello ${recipient.name || "Team"},`,
     "",
     message,
@@ -252,8 +267,92 @@ export async function ensureDemoRequestTask(input: { booking: any; student: any;
   );
 }
 
+const COACH_RECOMMENDATION_LABELS: Record<string, string> = {
+  group: "Group class",
+  individual: "Individual class",
+  either: "Group or individual",
+};
+
+/**
+ * Tell sales and the sub-admins that a coach has filed a demo assessment.
+ *
+ * This is the hand-off point: the coach is done, and converting the lead is now
+ * somebody else's job. Until this existed the assessment landed in the Demo
+ * Center and waited to be noticed, so the summary carries the two fields the
+ * conversion call actually turns on - the recommended level and whether the
+ * coach wants group or individual - rather than only a "go and look" prompt.
+ */
+export async function notifyDemoFeedbackSubmitted(input: {
+  booking: any;
+  student: any;
+  coach: any;
+  feedback: any;
+}) {
+  const { booking, student, coach, feedback } = input;
+  const studentName = student?.name || "A demo student";
+  const coachName = coach?.name || "The coach";
+  const classTime = booking?.startAt ? demoClassTimeLabel(booking.startAt) : "the demo class";
+  const contact = [student?.countryCode, student?.phone].filter(Boolean).join(" ").trim() || student?.email || "no contact on file";
+  const recommendation = COACH_RECOMMENDATION_LABELS[String(feedback?.coachRecommendation || "")] || "Not specified";
+  const recommendedLevel = String(feedback?.recommendedCourseLevel || "").trim() || "Not specified";
+  const engagement = String(feedback?.studentEngagement || "").trim();
+  const message = `${coachName} submitted the demo assessment for ${studentName} (${classTime}). Recommended: ${recommendation}, level ${recommendedLevel}.`;
+
+  const { all: staffRecipients } = await demoFeedbackNotificationRecipients();
+
+  await Notification.insertMany(
+    staffRecipients
+      .filter((recipient) => recipient.userId)
+      .map((recipient) => ({
+        user: recipient.userId,
+        type: "demo.feedback.submitted",
+        title: "Demo assessment submitted",
+        message,
+        metadata: {
+          booking: objectId(booking?._id),
+          href: DEMO_MANAGEMENT_HREF,
+          event: "DEMO_FEEDBACK_SUBMITTED",
+        },
+      }))
+  ).catch(() => undefined);
+
+  await sendConfiguredDemoTexts(staffRecipients, `${message} Contact: ${contact}. Review it in the Demo Center.`, {
+    kind: "demo_feedback_submitted",
+    event: "DEMO_FEEDBACK_SUBMITTED",
+    bookingId: objectId(booking?._id),
+  });
+
+  await sendStaffEmails(staffRecipients, `Demo assessment submitted: ${studentName}`, (recipient) => [
+    `Hello ${recipient.name || "Team"},`,
+    "",
+    `${coachName} has submitted the demo assessment for ${studentName}.`,
+    "",
+    `Demo class: ${classTime}`,
+    `Contact: ${contact}`,
+    `Recommended class type: ${recommendation}`,
+    `Recommended course level: ${recommendedLevel}`,
+    ...(engagement ? [`Student engagement: ${engagement}`] : []),
+    ...(feedback?.parentFacingSummary ? ["", `Summary for the parent: ${feedback.parentFacingSummary}`] : []),
+    ...(feedback?.salesAdminNotes ? ["", `Notes for sales: ${feedback.salesAdminNotes}`] : []),
+    "",
+    "The full assessment is on the demo's record in the Demo Center.",
+  ].join("\n"), {
+    kind: "demo_feedback_submitted",
+    event: "DEMO_FEEDBACK_SUBMITTED",
+    bookingId: objectId(booking?._id),
+    href: DEMO_MANAGEMENT_HREF,
+  });
+
+  return { sent: staffRecipients.length };
+}
+
 export async function notifyDemoApproved(input: { booking: any; student: any; coach: any; classroom: any }) {
-  const classTime = input.booking.requestedIstDateTime || formatAcademyDateTime(input.booking.startAt, { timeZoneName: "short" });
+  // The confirmation has to quote the slot the class was actually booked into.
+  // requestedIstDateTime is a label frozen when the parent submitted the form and
+  // is never rewritten when an admin confirms a different time, so reading it
+  // here told the student and the coach one time while the classroom, built from
+  // startAt, held another.
+  const classTime = demoClassTimeLabel(input.booking.startAt);
   const staffRecipients = importantContactWhatsAppRecipientsByKeys(["sayandeb", "sayan_bose", "dhritabrata"]);
   await sendWhatsAppAutomationTemplates([
     {

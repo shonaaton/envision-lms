@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { FeeAssignment, Invoice } from "@/models/Fee";
+import { User } from "@/models/User";
 
 export const dynamic = "force-dynamic";
 
@@ -27,9 +28,19 @@ export async function GET() {
   const next7Days = new Date(now);
   next7Days.setDate(next7Days.getDate() + 7);
   const { from, to } = monthRange();
+  // The warning count is about students who are still being taught: a student
+  // who has left or been paused keeps their balance but stops being chased for
+  // a recharge until the account is reactivated.
+  const dormantStudents = await User.find({ role: "student", $or: [{ isActive: false }, { isPaused: true }] })
+    .select("_id")
+    .lean();
   const [invoices, lowCredit] = await Promise.all([
     Invoice.find({}).lean(),
-    FeeAssignment.countDocuments({ type: "credits", creditBalance: { $lte: 1 } }),
+    FeeAssignment.countDocuments({
+      type: "credits",
+      creditBalance: { $lte: 1 },
+      student: { $nin: dormantStudents.map((student: any) => student._id) },
+    }),
   ]);
   const currentMonthPaid = invoices.filter((invoice: any) => invoice.status === "paid" && invoice.paidAt && new Date(invoice.paidAt) >= from && new Date(invoice.paidAt) <= to);
   const overdue = invoices.filter((invoice: any) => !["paid", "cancelled"].includes(invoice.status) && invoice.dueDate && new Date(invoice.dueDate) < now);

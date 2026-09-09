@@ -14,16 +14,21 @@ function statusFor(balance: number) {
 
 function filterAssignments(assignments: any[], url: URL) {
   const q = String(url.searchParams.get("q") || "").trim().toLowerCase();
-  const filter = url.searchParams.get("filter") || "all";
+  const raw = url.searchParams.get("filter") || "all";
+  // `deactivated` is the old name for the dormant list, kept working for links
+  // that were saved before paused students joined it.
+  const filter = raw === "deactivated" ? "dormant" : raw;
   const plan = url.searchParams.get("plan") || "";
   const min = url.searchParams.get("min");
   const max = url.searchParams.get("max");
 
   return assignments
-    // The export mirrors the page: deactivated accounts are out of every list
-    // except the one that asks for them.
+    // The export mirrors the page: students who have left or been paused are out
+    // of every list except the one that asks for them.
     .filter((assignment) =>
-      filter === "deactivated" ? assignment.student?.isActive === false : assignment.student?.isActive !== false
+      filter === "dormant"
+        ? assignment.student?.isActive === false || assignment.student?.isPaused === true
+        : assignment.student?.isActive !== false && assignment.student?.isPaused !== true
     )
     .filter((assignment) => !q || `${assignment.student?.name || ""} ${assignment.student?.username || ""} ${assignment.student?.email || ""}`.toLowerCase().includes(q))
     .filter((assignment) => !plan || assignment.plan?._id?.toString?.() === plan)
@@ -99,8 +104,10 @@ export async function GET(req: Request) {
     assignment.creditBalance || 0,
     statusFor(Number(assignment.creditBalance || 0)),
     assignment.student?.isActive === false
-      ? `Deactivated${assignment.student?.deactivatedAt ? ` on ${new Date(assignment.student.deactivatedAt).toLocaleDateString("en-IN")}` : ""}`
-      : "Active",
+      ? `Left${assignment.student?.deactivatedAt ? ` on ${new Date(assignment.student.deactivatedAt).toLocaleDateString("en-IN")}` : ""}`
+      : assignment.student?.isPaused === true
+        ? "Paused"
+        : "Active",
     assignment.updatedAt,
   ]);
 

@@ -309,8 +309,16 @@ export async function getFeesAnalytics(options: { from: Date; to: Date; gst: Gst
 
   /* ------------------------------------------------------------ 2. growth */
 
+  // The growth table answers "who did sales bring in", so it follows the GST
+  // toggle the same way the invoice tables do - a student sits on the GST side
+  // or the non-GST side according to the plan they were signed up on. A student
+  // with no plan yet has no GST treatment, so `planMatchesGst` files them under
+  // non-GST; that keeps the two filtered lists a clean split of the full one.
   const newStudents = (students as any[]).filter(
-    (student) => student.accountStatus !== "demo" && inRange(joinedAt(student), from, to)
+    (student) =>
+      student.accountStatus !== "demo" &&
+      inRange(joinedAt(student), from, to) &&
+      planMatchesGst(assignmentByStudent.get(idOf(student))?.plan, gst)
   );
   const newStudentIds = new Set(newStudents.map((student) => idOf(student)));
   const newStudentInvoices = scoped.filter((invoice) => newStudentIds.has(idOf(invoice.student)));
@@ -330,7 +338,10 @@ export async function getFeesAnalytics(options: { from: Date; to: Date; gst: Gst
   addTable({
     id: "newStudents",
     title: "New students added",
-    subtitle: "Sales growth - students enrolled inside the range and the fees they brought in",
+    subtitle:
+      gst === "all"
+        ? "Sales growth - students enrolled inside the range and the fees they brought in"
+        : `Sales growth - students enrolled inside the range on a ${gst === "gst" ? "GST" : "non-GST"} plan, and the fees they brought in`,
     columns: [
       { key: "student", label: "Student" },
       { key: "username", label: "Student ID" },
@@ -839,12 +850,14 @@ export async function getFeesAnalytics(options: { from: Date; to: Date; gst: Gst
 
   const monthlyAssignments = (assignments as any[]).filter((assignment) => assignment.type === "monthly");
   const creditAssignments = (assignments as any[]).filter((assignment) => assignment.type === "credits");
-  const billable = (assignment: any) =>
-    assignment.student &&
-    assignment.student.isActive !== false &&
-    assignment.student.isPaused !== true &&
-    assignment.plan &&
-    assignment.plan.isActive !== false;
+  // A student who has left or been paused is not being taught, so their plan is
+  // dormant: the assignment stays on file but drops out of the fee rosters,
+  // counts, and alerts until the account is reactivated.
+  const enrolled = (assignment: any) =>
+    assignment.student && assignment.student.isActive !== false && assignment.student.isPaused !== true;
+  const billable = (assignment: any) => enrolled(assignment) && assignment.plan && assignment.plan.isActive !== false;
+  const activeCreditAssignments = creditAssignments.filter(enrolled);
+  const activeMonthlyAssignments = monthlyAssignments.filter(enrolled);
   const monthlyExpectedRows: Record<string, any>[] = [];
   let expectedMonthly = 0;
   let expectedMonthlyCycles = 0;
@@ -946,7 +959,7 @@ export async function getFeesAnalytics(options: { from: Date; to: Date; gst: Gst
   const activeStudents = (students as any[]).filter(
     (student) => student.isActive !== false && student.accountStatus !== "demo"
   );
-  const lowCredit = creditAssignments.filter(
+  const lowCredit = activeCreditAssignments.filter(
     (assignment) => Number(assignment.creditBalance || 0) <= Number(settings.lowCreditThreshold || 1)
   );
   const unassigned = activeStudents.filter((student) => !assignmentByStudent.has(idOf(student)));
@@ -979,7 +992,7 @@ export async function getFeesAnalytics(options: { from: Date; to: Date; gst: Gst
   addTable({
     id: "creditStudents",
     title: "Credit plan students",
-    subtitle: "Students billed per class from a credit balance",
+    subtitle: "Enrolled students billed per class from a credit balance",
     columns: [
       { key: "student", label: "Student" },
       { key: "plan", label: "Plan" },
@@ -987,7 +1000,7 @@ export async function getFeesAnalytics(options: { from: Date; to: Date; gst: Gst
       { key: "purchased", label: "Purchased", type: "number", align: "right" },
       { key: "consumed", label: "Consumed", type: "number", align: "right" },
     ],
-    rows: creditAssignments.map((assignment) => ({
+    rows: activeCreditAssignments.map((assignment) => ({
       student: studentLabel(assignment.student),
       plan: assignment.plan?.name || "-",
       balance: Number(assignment.creditBalance || 0),
@@ -1015,14 +1028,14 @@ export async function getFeesAnalytics(options: { from: Date; to: Date; gst: Gst
   addTable({
     id: "monthlyStudents",
     title: "Monthly plan students",
-    subtitle: "Students on a recurring monthly fee",
+    subtitle: "Enrolled students on a recurring monthly fee",
     columns: [
       { key: "student", label: "Student" },
       { key: "plan", label: "Plan" },
       { key: "perCycle", label: "Per month", type: "money", align: "right" },
       { key: "since", label: "Billing since", type: "date" },
     ],
-    rows: monthlyAssignments.map((assignment) => ({
+    rows: activeMonthlyAssignments.map((assignment) => ({
       student: studentLabel(assignment.student),
       plan: assignment.plan?.name || "-",
       perCycle: planGross(assignment.plan, settings),
@@ -1112,8 +1125,8 @@ export async function getFeesAnalytics(options: { from: Date; to: Date; gst: Gst
     expectedTotal: expectedMonthly + expectedCredits,
 
     activeStudents: activeStudents.length,
-    creditStudents: creditAssignments.length,
-    monthlyStudents: monthlyAssignments.length,
+    creditStudents: activeCreditAssignments.length,
+    monthlyStudents: activeMonthlyAssignments.length,
     lowCreditStudents: lowCredit.length,
     unassignedStudents: unassigned.length,
   };

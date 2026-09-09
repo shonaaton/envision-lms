@@ -46,6 +46,21 @@ describe("normalizeWhatsAppRecipient", () => {
     expect(normalizeWhatsAppRecipient("12345678", "+974")).toBe("97412345678");
   });
 
+  it("never prefixes a dialling code onto a number that already opens with it", () => {
+    // A demo lead stored as a 13-digit "+91" number was dialled as
+    // 91919162903499998: the code did not match a valid national length, so the
+    // 91 was added again, and every retry from the same record added another.
+    expect(normalizeWhatsAppRecipient("9162903499998", "+91")).toBe("9162903499998");
+    expect(normalizeWhatsAppRecipient("919162903499998", "+91")).toBe("919162903499998");
+    expect(normalizeWhatsAppRecipient(normalizeWhatsAppRecipient("919162903499998", "+91"), "+91")).toBe("919162903499998");
+  });
+
+  it("still dials a national number that merely starts with its own country code", () => {
+    // 91xxxxxxxx is an ordinary Indian mobile, not a number carrying "+91".
+    expect(normalizeWhatsAppRecipient("9123456789", "+91")).toBe("919123456789");
+    expect(normalizeWhatsAppRecipient("6512345678", "+65")).toBe("6512345678");
+  });
+
   it("returns an empty string when there is no number to dial", () => {
     expect(normalizeWhatsAppRecipient("", "+91")).toBe("");
     expect(normalizeWhatsAppRecipient("000", "+91")).toBe("");

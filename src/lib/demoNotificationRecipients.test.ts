@@ -122,7 +122,9 @@ describe("demoNotificationRecipients", () => {
   it("falls back to the configured contacts rather than notifying nobody", async () => {
     userDirectory([]);
     const { sales, subAdmins } = await demoNotificationRecipients();
-    expect(sales.map((person) => person.phone)).toEqual(["916291780127"]);
+    // Every salesperson on the static list, not just the first - the list grew a
+    // second one and the fallback has to reach both.
+    expect(sales.map((person) => person.phone)).toEqual(["916291780127", "916366063104"]);
     expect(subAdmins.map((person) => person.phone)).toEqual(["919230534866"]);
   });
 

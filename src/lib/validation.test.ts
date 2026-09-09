@@ -29,6 +29,18 @@ describe("registerSchema phone", () => {
     expect(registerSchema.parse({ ...baseRegistration, countryCode: "+352", phone: "621123" }).phone).toBe("621123");
   });
 
+  it("rejects a number that cannot belong to the dialling code beside it", () => {
+    // How a demo lead came to be stored as a 13-digit Indian mobile, which then
+    // failed every WhatsApp send it was used for.
+    expect(() => registerSchema.parse({ ...baseRegistration, phone: "9162903499998" })).toThrow();
+    expect(() => registerSchema.parse({ ...baseRegistration, phone: "91234" })).toThrow();
+  });
+
+  it("accepts an Indian number typed with or without its country code", () => {
+    expect(registerSchema.parse({ ...baseRegistration, phone: "919123456789" }).phone).toBe("919123456789");
+    expect(registerSchema.parse({ ...baseRegistration, phone: "+91 91234 56789" }).phone).toBe("+91 91234 56789");
+  });
+
   it("applies to coach applications too, matching the shared signup form", () => {
     expect(() => registerSchema.parse({ ...baseRegistration, role: "instructor", phone: "" })).toThrow();
   });

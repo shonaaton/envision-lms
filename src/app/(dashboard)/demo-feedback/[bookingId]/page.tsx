@@ -25,6 +25,14 @@ async function submitDemoFeedback(formData: FormData) {
   if (!booking || booking.bookingType !== "demo" || !booking.classroom) return;
   const coachId = String(booking.assignedCoach?._id || booking.instructor?._id || booking.instructor || "");
   if (role === "instructor" && coachId !== actorId) return;
+  // Whether the hand-off to sales has already happened. Read before the upsert,
+  // because the upsert is what sets it: without this every re-save of the form
+  // sent the whole "assessment submitted" fan-out again, and a coach correcting
+  // a typo emailed and messaged three people a second time. Editing an
+  // assessment is fine; announcing it twice is not.
+  const alreadySubmitted = Boolean(
+    await DemoFeedback.exists({ booking: booking._id, classroom: booking.classroom, status: "submitted" })
+  );
   const feedback = await DemoFeedback.findOneAndUpdate(
     { booking: booking._id, classroom: booking.classroom },
     {
@@ -59,12 +67,14 @@ async function submitDemoFeedback(formData: FormData) {
   );
   await Booking.findByIdAndUpdate(booking._id, { demoStatus: "COMPLETED", feedbackStatus: "submitted" });
   // Never let a delivery failure lose the assessment the coach just typed.
-  await notifyDemoFeedbackSubmitted({
-    booking,
-    student: booking.student,
-    coach: booking.assignedCoach || booking.instructor,
-    feedback,
-  }).catch((error) => console.error("Demo feedback notification failed", error));
+  if (!alreadySubmitted) {
+    await notifyDemoFeedbackSubmitted({
+      booking,
+      student: booking.student,
+      coach: booking.assignedCoach || booking.instructor,
+      feedback,
+    }).catch((error) => console.error("Demo feedback notification failed", error));
+  }
   await recordActivity({
     actor: actorId,
     targetUser: String(booking.student?._id || booking.student || ""),

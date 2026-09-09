@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { COURSE_TIER_ENUM, COURSE_TIER_ENUM_WITH_MIXED_AND_BLANK } from "@/lib/courseTiers";
+import { phoneNumberProblem } from "@/lib/phoneCountryCodes";
 
 const optionalText = (max: number) => z.preprocess((value) => (value == null || value === "" ? undefined : value), z.string().max(max).optional());
 
@@ -27,6 +28,13 @@ export const registerSchema = z.object({
   preferredStudents: optionalText(1000),
   availabilityNote: optionalText(1000),
   message: optionalText(3000),
+}).superRefine((value, context) => {
+  // Checked against the dialling code the form collected, because the two are
+  // only meaningful together: "9162903499998" is a fine string and an impossible
+  // +91 number. A signup that gets past this point is messaged for the life of
+  // the lead, so a typo here is a lead nobody can reach.
+  const problem = phoneNumberProblem(value.phone, value.countryCode);
+  if (problem) context.addIssue({ code: z.ZodIssueCode.custom, path: ["phone"], message: problem });
 });
 
 export const loginSchema = z.object({

@@ -3,7 +3,8 @@ import { Classroom } from "@/models/Classroom";
 import { User } from "@/models/User";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
 import { resolveAudienceEmails } from "@/lib/studentContact";
-import { ACADEMY_TIME_ZONE, formatAcademyDateTime } from "@/lib/academyTime";
+import { ACADEMY_TIME_ZONE } from "@/lib/academyTime";
+import { firstClassDateLabel, scheduledDateLabel } from "@/lib/firstClassDate";
 import { sendWhatsAppAutomationTemplates, whatsappRecipientName } from "@/lib/whatsappAutomationEvents";
 import { sendWhatsAppAutomationTemplate } from "@/lib/whatsappAutomationEvents";
 import type { WhatsAppSendResult } from "@/lib/whatsappAutomation";
@@ -24,8 +25,8 @@ function scheduleLinesForClassroom(classroom: any) {
       (day.slots || []).map((slot: any) => `${dayName(day.day)} at ${slot.startTime || classroom.startTime || "time not set"} (${slot.durationMinutes || classroom.durationMinutes || 60} min)`)
     );
   }
-  if (classroom?.classDate) return [formatAcademyDateTime(classroom.classDate, { timeZoneName: "short" })];
-  if (classroom?.startDate && classroom?.startTime) return [`From ${formatAcademyDateTime(classroom.startDate, { hour: undefined, minute: undefined })} at ${classroom.startTime}`];
+  if (classroom?.classDate) return [scheduledDateLabel(classroom, classroom.classDate, { weekday: "long" })];
+  if (classroom?.startDate && classroom?.startTime) return [`From ${scheduledDateLabel(classroom, classroom.startDate)}`];
   return ["Timings not set"];
 }
 
@@ -35,19 +36,6 @@ function studentListLabel(students: any[]) {
   const shown = names.slice(0, 15);
   const remaining = names.length - shown.length;
   return `${shown.join(", ")}${remaining > 0 ? ` and ${remaining} more` : ""} (${names.length} total)`;
-}
-
-function firstClassDate(classrooms: any[]) {
-  const timestamps = classrooms
-    .flatMap((classroom) => [
-      ...(classroom.generatedSessions || []).map((session: any) => session.scheduledFor),
-      classroom.classDate,
-      classroom.startDate,
-    ])
-    .map((value) => value ? new Date(value) : null)
-    .filter((date): date is Date => Boolean(date && !Number.isNaN(date.getTime())))
-    .sort((a, b) => a.getTime() - b.getTime());
-  return timestamps[0] ? formatAcademyDateTime(timestamps[0], { timeZoneName: "short" }) : "Not set";
 }
 
 async function batchContext(batchId: string) {
@@ -73,7 +61,7 @@ function coachSummary(input: { batch: any; classrooms: any[] }) {
     course: primaryClassroom.courseName || "Not set",
     level: primaryClassroom.levelName || input.batch?.level || primaryClassroom.level || "Not set",
     timings: lines.filter(Boolean).join("\n") || "Timings not set",
-    firstClassDate: firstClassDate(input.classrooms),
+    firstClassDate: firstClassDateLabel(input.classrooms),
     students: studentListLabel((input.batch?.students || []).filter((student: any) => student?.isActive !== false)),
   };
 }

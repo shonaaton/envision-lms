@@ -43,7 +43,9 @@ const DEMO_REMINDER_RULES = [
 
 const DEMO_STAFF_RECIPIENT_KEYS = {
   accountCreated: ["mohammed_shahzib"],
-  bookingRequested: ["mohammed_shahzib"],
+  // Saptarshi is the sub-admin who assigns the coach and the slot, so a request
+  // that reaches sales but not him sits unassigned until someone notices it.
+  bookingRequested: ["mohammed_shahzib", "saptarshi"],
   approved: ["mohammed_shahzib", "sayandeb"],
   assessmentSubmitted: ["mohammed_shahzib", "sayandeb", "sayan_bose"],
   reopened: ["saptarshi"],

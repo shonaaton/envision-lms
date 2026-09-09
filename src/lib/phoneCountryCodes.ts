@@ -42,6 +42,49 @@ export function carriesCountryCode(digits: string, countryCode: string) {
   return rest.length >= 6 && digits.length > 10;
 }
 
+/**
+ * True when `digits` is already too long to be a national number for `countryCode`.
+ *
+ * `carriesCountryCode` answers a narrower question - "is this a well-formed
+ * international number?" - and says no both to a bare national number and to a
+ * malformed one. Callers that prefix the dialling code on a "no" need to tell
+ * those two apart, because prefixing a number that already opens with its own
+ * code just makes it longer, and the next send makes it longer again.
+ */
+export function exceedsNationalLength(digits: string, countryCode: string) {
+  const clean = String(digits || "").replace(/[^\d]/g, "");
+  const code = String(countryCode || "").replace(/[^\d]/g, "");
+  if (!clean || !code) return false;
+  const entry = dialCodeEntry(code);
+  const longestNational = entry ? Math.max(...entry.nationalLengths) : 10;
+  return clean.length > longestNational;
+}
+
+/**
+ * Why this number cannot be dialled, or "" when it looks reachable.
+ *
+ * Deliberately a length check and nothing more. The portal only needs to stop
+ * numbers that could never be a phone number at all - a demo lead was stored as
+ * a 13-digit "Indian mobile", which then failed every WhatsApp send it was ever
+ * used for - and a stricter format rule would start rejecting real signups from
+ * countries the dial-code table does not describe well.
+ */
+export function phoneNumberProblem(phone: unknown, countryCode?: unknown) {
+  const digits = String(phone || "").replace(/[^\d]/g, "").replace(/^0+/, "");
+  if (!digits) return "Please enter a phone number.";
+  const entry = dialCodeEntry(String(countryCode || ""));
+  if (!entry) return digits.length < 6 || digits.length > 15 ? "Please enter a valid phone number." : "";
+  const shortest = Math.min(...entry.nationalLengths);
+  // The number may or may not repeat its own dialling code, and both spellings
+  // are accepted everywhere else in the portal, so allow for either here.
+  const longest = Math.max(...entry.nationalLengths) + entry.code.length;
+  if (digits.length < shortest || digits.length > longest) {
+    const expected = entry.nationalLengths.join(" or ");
+    return `Please enter a valid ${entry.country} phone number (${expected} digits).`;
+  }
+  return "";
+}
+
 /** Splits a full international number into its dialling code and national part. */
 export function splitInternationalNumber(digits: string) {
   const clean = String(digits || "").replace(/[^\d]/g, "");

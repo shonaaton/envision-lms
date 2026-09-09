@@ -1,4 +1,4 @@
-import { carriesCountryCode, splitInternationalNumber } from "@/lib/phoneCountryCodes";
+import { carriesCountryCode, exceedsNationalLength, splitInternationalNumber } from "@/lib/phoneCountryCodes";
 import { notifyFailure } from "@/lib/failureNotifications";
 import { dbConnect } from "@/lib/db";
 import { renderWhatsAppTemplatePreview, resolveWhatsAppMetaTemplateName } from "@/lib/whatsappTemplateRegistry";
@@ -71,11 +71,64 @@ export function normalizeWhatsAppRecipient(phone?: string, countryCode?: string)
   if (!national) return "";
   const cleanCountryCode = normalizeWhatsAppNumber(countryCode);
   if (cleanCountryCode) {
-    return carriesCountryCode(national, cleanCountryCode) ? national : `${cleanCountryCode}${national}`;
+    if (carriesCountryCode(national, cleanCountryCode)) return national;
+    // A number that already opens with its own dialling code but is too long to
+    // be a national one is a malformed international number, not a local one.
+    // Prefixing it again is how a stored "919162903499998" was dialled as
+    // "91919162903499998" - and because the send is retried from the same
+    // record, every attempt added another copy. Dial what is on file and let it
+    // fail on a wrong number rather than on a number nobody could ever have.
+    if (national.startsWith(cleanCountryCode) && exceedsNationalLength(national, cleanCountryCode)) return national;
+    return `${cleanCountryCode}${national}`;
   }
   // Nothing on file: keep the number if it already reads as international, else assume local.
   if (national.length > 10 || splitInternationalNumber(national)) return national;
   return `${defaultWhatsAppCountryCode()}${national}`;
+}
+
+/**
+ * Flattens one template body parameter into something Meta will accept.
+ *
+ * A template's own body may span lines - that is the approved template - but a
+ * *parameter* substituted into it may not: Meta rejects the whole message when a
+ * parameter contains a newline, a tab, or a run of more than four spaces. That
+ * is why `class_assigned_coach` delivered for a batch meeting once a week and
+ * failed for one meeting on Tuesdays and Thursdays: the second schedule put a
+ * newline inside {{7}}. The lines are joined rather than dropped, so the coach
+ * still sees every slot.
+ */
+export function sanitizeWhatsAppParameter(value: unknown) {
+  const lines = String(value ?? "")
+    .replace(/[\t\v\f]/g, " ")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  return lines
+    .reduce((text, line) => {
+      if (!text) return line;
+      // Don't punctuate twice when the previous line already ends in a separator.
+      return /[,;:|\u00b7\u2022-]$/.test(text) ? `${text} ${line}` : `${text}, ${line}`;
+    }, "")
+    .replace(/ {2,}/g, " ")
+    .trim();
+}
+
+/**
+ * Body parameters in template order, flattened and with interior gaps filled.
+ *
+ * Position is everything in a template: an empty value in the middle used to be
+ * dropped, which slid every later parameter one slot up the message and left
+ * Meta with fewer parameters than the template declares - a rejection either
+ * way. Trailing empties are still dropped, since a caller passing them is
+ * telling us those placeholders are not in play.
+ */
+export function normalizeTemplateBodyParameters(values: unknown[]) {
+  const cleaned = values.map((value) => sanitizeWhatsAppParameter(value).slice(0, 1024));
+  let lastFilled = -1;
+  cleaned.forEach((text, index) => {
+    if (text) lastFilled = index;
+  });
+  return cleaned.slice(0, lastFilled + 1).map((text) => text || "-");
 }
 
 function configuredGraphVersion() {
@@ -430,7 +483,7 @@ export async function sendWhatsAppTemplateMessage(input: WhatsAppTemplateInput) 
   }
 
   const { testMode, recipient } = resolveRecipient(input.to, input.testMode, countryCode);
-  const bodyParameters = (input.bodyParameters || input.templateVariables || []).map((text) => String(text || "").slice(0, 1024)).filter(Boolean);
+  const bodyParameters = normalizeTemplateBodyParameters(input.bodyParameters || input.templateVariables || []);
   const metaTemplateName = resolveWhatsAppMetaTemplateName(input.templateName);
   if (!input.bypassN8n) {
     const n8nResult = await sendViaN8n({

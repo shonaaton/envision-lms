@@ -1,5 +1,6 @@
 import { resolvePublicAppUrl } from "@/lib/appUrl";
 import { notifyFailure } from "@/lib/failureNotifications";
+import { claimEmailDispatch } from "@/lib/emailDedupe";
 
 type AutomationEmailInput = {
   to?: string;
@@ -117,10 +118,19 @@ function buildHtmlBody(message: string, actionUrl: string, actionLabel: string) 
   return `${paragraphs}${button}`;
 }
 
-async function sendEmailToWebhook(input: AutomationEmailInput, webhook?: string) {
+async function sendEmailToWebhook(input: AutomationEmailInput, webhook?: string, dedupe = false) {
   if (!webhook || !input.to) return { ok: false, delivered: false, skipped: true };
   const action = normalizeAction(input);
   const message = stripActionUrlLines(input.message, action.actionUrl);
+  if (dedupe) {
+    // Claimed on the rendered message, so only a byte-identical repeat inside
+    // the window is stopped - see `claimEmailDispatch`.
+    const claim = await claimEmailDispatch({ to: input.to, subject: input.subject, message, metadata: input.metadata });
+    if (!claim.claimed) {
+      console.warn("Duplicate automation email suppressed", { to: input.to, subject: input.subject, kind: input.metadata?.kind });
+      return { ok: true, delivered: false, skipped: true, deduped: true };
+    }
+  }
   const htmlBody = action.actionUrl ? buildHtmlBody(message, action.actionUrl, action.actionLabel) : input.htmlBody || buildHtmlBody(message, "", "");
   const metadata = {
     ...(input.metadata || {}),
@@ -164,10 +174,15 @@ async function sendEmailToWebhook(input: AutomationEmailInput, webhook?: string)
 export async function sendAutomationEmail(input: AutomationEmailInput) {
   return sendEmailToWebhook(
     input,
-    process.env.EMAIL_AUTOMATION_WEBHOOK_URL || process.env.ASK_COACH_EMAIL_WEBHOOK_URL
+    process.env.EMAIL_AUTOMATION_WEBHOOK_URL || process.env.ASK_COACH_EMAIL_WEBHOOK_URL,
+    true
   );
 }
 
+/**
+ * Never deduped: a reset link is single-use, so a second request has to produce
+ * a second email even when the two read alike.
+ */
 export async function sendPasswordResetEmail(input: AutomationEmailInput) {
   return sendEmailToWebhook(input, process.env.PASSWORD_RESET_EMAIL_WEBHOOK_URL);
 }

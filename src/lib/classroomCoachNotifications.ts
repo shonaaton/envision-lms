@@ -3,6 +3,7 @@ import { User } from "@/models/User";
 import { Notification } from "@/models/Fee";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
 import { ACADEMY_TIME_ZONE, formatAcademyDateTime } from "@/lib/academyTime";
+import { firstClassDateLabel, scheduledDateLabel } from "@/lib/firstClassDate";
 import { sendWhatsAppAutomationTemplate, whatsappRecipientName } from "@/lib/whatsappAutomationEvents";
 import type { WhatsAppSendResult } from "@/lib/whatsappAutomation";
 
@@ -47,8 +48,8 @@ function seriesScheduleLines(classroom: any) {
       (day.slots || []).map((slot: any) => `${dayName(day.day)} at ${slot.startTime || classroom.startTime || "time not set"} (${slot.durationMinutes || classroom.durationMinutes || 60} min)`)
     );
   }
-  if (classroom?.classDate) return [formatAcademyDateTime(classroom.classDate, { weekday: "long", timeZoneName: "short" })];
-  if (classroom?.startDate && classroom?.startTime) return [`From ${formatAcademyDateTime(classroom.startDate, { hour: undefined, minute: undefined })} at ${classroom.startTime}`];
+  if (classroom?.classDate) return [scheduledDateLabel(classroom, classroom.classDate, { weekday: "long" })];
+  if (classroom?.startDate && classroom?.startTime) return [`From ${scheduledDateLabel(classroom, classroom.startDate)}`];
   return ["Timings not set"];
 }
 
@@ -62,21 +63,6 @@ function studentListLabel(students: any[]) {
   const shown = names.slice(0, 15);
   const remaining = names.length - shown.length;
   return `${shown.join(", ")}${remaining > 0 ? ` and ${remaining} more` : ""} (${names.length} total)`;
-}
-
-function firstClassDateLabel(classroom: any, session?: any) {
-  const candidates = session?.scheduledFor
-    ? [session.scheduledFor]
-    : [
-        ...(classroom?.generatedSessions || []).map((item: any) => item?.scheduledFor),
-        classroom?.classDate,
-        classroom?.startDate,
-      ];
-  const earliest = candidates
-    .map((value: any) => (value ? new Date(value) : null))
-    .filter((date: Date | null): date is Date => Boolean(date && !Number.isNaN(date.getTime())))
-    .sort((a: Date, b: Date) => a.getTime() - b.getTime())[0];
-  return earliest ? formatAcademyDateTime(earliest, { timeZoneName: "short" }) : "Not set";
 }
 
 async function classSummary(classroom: any, session?: any): Promise<ClassSummary> {
@@ -104,7 +90,7 @@ async function classSummary(classroom: any, session?: any): Promise<ClassSummary
     level: String(classroom?.levelName || classroom?.level || "Not set"),
     topic: String(session?.topicName || classroom?.topicName || "Not set"),
     schedule,
-    firstClassDate: firstClassDateLabel(classroom, session),
+    firstClassDate: firstClassDateLabel([classroom], session),
     students: studentListLabel(roster as any[]),
   };
 }

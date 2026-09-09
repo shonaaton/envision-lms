@@ -2,6 +2,7 @@ import { academyTimeOfDay } from "@/lib/academyTime";
 import { ensureDemoHomework } from "@/lib/demoHomework";
 import { Booking } from "@/models/Booking";
 import { Classroom } from "@/models/Classroom";
+import { ClassroomSession } from "@/models/ClassroomLive";
 
 /**
  * Cancel the demo classroom(s) belonging to closed demo bookings.
@@ -110,6 +111,60 @@ function isPendingDemoSession(session: any) {
   if (!session) return false;
   if (!["scheduled", "ongoing", "in_progress"].includes(String(session.status || ""))) return false;
   return !session.actualStartedAt && !session.actualEndedAt && !session.attendanceMarkedAt;
+}
+
+/**
+ * Write off a demo class that was never delivered.
+ *
+ * The coach closing the live room is the usual way a demo is marked as a no
+ * show, but a demo nobody opened at all never reaches that flow - the class time
+ * simply passes and the classroom sits in the schedule as upcoming forever, with
+ * the lead still filed under Booked/Upcoming. This is the admin's equivalent: it
+ * leaves the classroom in exactly the state the live-room close leaves it in, so
+ * the two cannot drift apart.
+ *
+ * Stamping `attendanceMarkedAt` matters as much as the status: it is what makes
+ * `syncDemoSession` start a fresh session on a re-approval instead of reviving
+ * this one, which is how a rebooked demo gets a live room it can actually enter.
+ */
+export async function markDemoClassroomMissed(input: {
+  classroomId: unknown;
+  outcome: "student_no_show" | "absent";
+  actorId?: string;
+}) {
+  if (!input.classroomId) return null;
+  const classroom: any = await Classroom.findById(input.classroomId);
+  if (!classroom) return null;
+  const sessions = Array.isArray(classroom.generatedSessions) ? classroom.generatedSessions : [];
+  const target = sessions.find((item: any) => isPendingDemoSession(item));
+  if (!target) return classroom;
+  const now = new Date();
+  target.status = input.outcome;
+  target.coachAttendanceStatus = input.outcome === "student_no_show" ? "student_no_show" : "absent";
+  target.attendanceMarkedAt = now;
+  target.actualEndedAt = target.actualEndedAt || now;
+  target.teachingMinutes = 0;
+  target.actualTeachingMinutes = 0;
+  target.conductedBy = target.conductedBy || input.actorId;
+  target.summary = {
+    ...(target.summary || {}),
+    classOutcome: input.outcome,
+    topicCompleted: false,
+    creditPolicy: "demo_no_charge",
+    markedByAdmin: true,
+  };
+  const allDone = sessions.every((item: any) => !isPendingDemoSession(item));
+  classroom.status = allDone ? "completed" : classroom.status;
+  await classroom.save();
+
+  // A room the coach opened and walked away from is still joinable, and a demo
+  // already written off must not be re-entered - so close it the same way the
+  // class-close flow does.
+  await ClassroomSession.updateOne(
+    { classroom: classroom._id, scheduledSessionId: String(target._id), status: { $ne: "ended" } },
+    { $set: { status: "ended", endedAt: now, locked: true } }
+  );
+  return classroom;
 }
 
 /**

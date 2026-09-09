@@ -88,6 +88,13 @@ export default async function DemoFeedbackPage({ params }: { params: { bookingId
   const coachId = String(booking.assignedCoach?._id || booking.instructor?._id || booking.instructor || "");
   if (role === "instructor" && coachId !== actorId) redirect("/classrooms");
   const feedback: any = await DemoFeedback.findOne({ booking: booking._id, classroom: booking.classroom }).lean();
+  // An assessment is the write-up of a class that actually happened. A demo that
+  // was never delivered - a no show, a missed slot, a closed lead - has nothing
+  // to assess, and the leave guard below would otherwise trap whoever opened
+  // this page in a form they cannot honestly fill in. Those leads belong in the
+  // Demo Center's No Shows/Missed tab, where they can be rebooked or closed.
+  const isAssessable = ["ASSESSMENT_PENDING", "COMPLETED", "CONVERTED"].includes(String(booking.demoStatus || "")) || Boolean(feedback);
+  if (!isAssessable) redirect(role === "instructor" ? "/classrooms" : "/admin/demo-center?tab=missed");
 
   return (
     <main className="mx-auto max-w-5xl space-y-5 p-4 sm:p-6">

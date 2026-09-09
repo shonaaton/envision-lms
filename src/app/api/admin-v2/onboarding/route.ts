@@ -129,7 +129,9 @@ export async function POST(req: Request) {
       ...(meetingUrl ? { meetingUrl } : {}),
       approvedBy: actorId,
       approvedAt: new Date(),
-      feedbackStatus: "pending",
+      // Armed by the class-close flow when the demo is marked Present, never by
+      // scheduling it - see the same note in the Demo Center approval.
+      feedbackStatus: "not_required",
     }, { new: true }).populate("student instructor");
     await InternalTask.findOneAndUpdate({ referenceType: "DemoBooking", referenceId: booking._id }, { status: "completed" }).catch(() => undefined);
     const admins = await User.find({ role: "admin", isActive: true }).select("_id").lean();

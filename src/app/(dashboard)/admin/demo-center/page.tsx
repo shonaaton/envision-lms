@@ -2,15 +2,15 @@ import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
-import { CalendarCheck, CheckCircle2, Clock3, GraduationCap, History, Link as LinkIcon, MessageSquareText, RotateCcw, Trash2, UserCheck, X, XCircle } from "lucide-react";
+import { CalendarCheck, CheckCircle2, Clock3, GraduationCap, History, Link as LinkIcon, MessageSquareText, RotateCcw, Trash2, UserCheck, UserX, X, XCircle } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { canAccessFeature } from "@/lib/featureAccess";
 import { dbConnect } from "@/lib/db";
 import { academyDateTimeLocalInput, formatAcademyDateTime, parseAcademyDateTimeLocal } from "@/lib/academyTime";
-import { notifyDemoApproved, notifyDemoConverted } from "@/lib/demoWorkflow";
+import { notifyDemoApproved, notifyDemoConverted, notifyDemoMissed } from "@/lib/demoWorkflow";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
 import { recordActivity } from "@/lib/activity";
-import { cancelDemoClassrooms, isConfirmedDemo, upsertDemoClassroom } from "@/lib/demoClassroom";
+import { cancelDemoClassrooms, isConfirmedDemo, markDemoClassroomMissed, upsertDemoClassroom } from "@/lib/demoClassroom";
 import { Activity } from "@/models/Activity";
 import { Booking } from "@/models/Booking";
 import { Classroom } from "@/models/Classroom";
@@ -260,7 +260,12 @@ async function approveBooking(formData: FormData) {
     meetingUrl,
     approvedBy: actorId,
     approvedAt: new Date(),
-    feedbackStatus: "pending",
+    // An assessment is owed only once the demo has actually been taught, so this
+    // is armed by the class-close flow (attendance "Present"), not by scheduling
+    // the class. Setting it here put an "Assessment Pending" button on every
+    // upcoming demo, and left it standing on demos the student never attended -
+    // the admin was asked to write up a class that never happened.
+    feedbackStatus: "not_required",
     needsNewTime: false,
   }, { new: true }).populate("student instructor assignedCoach");
   const admins = await User.find({ role: { $in: ["admin", "sub-admin"] }, isActive: { $ne: false } }).select("_id").lean();
@@ -278,6 +283,53 @@ async function approveBooking(formData: FormData) {
   revalidatePath("/admin/demo-center");
   revalidatePath("/classrooms");
   demoCenterOutcome("upcoming", "", `Demo confirmed for ${formatAcademyDateTime(start)}.`);
+}
+
+/**
+ * Record a demo that was booked but never delivered.
+ *
+ * Marking the result is normally the coach's last act in the live classroom, but
+ * a demo neither side opened never gets there: the slot passes, the lead stays
+ * in Booked/Upcoming and No Shows/Missed stays empty, so nobody is prompted to
+ * rebook or close it. This puts the booking in the same state the coach's close
+ * flow would - back with admin, awaiting a new time - so the existing Assign /
+ * Confirm Demo and Close Demo actions on the card take it from there.
+ */
+async function markDemoMissed(formData: FormData) {
+  "use server";
+  const session = await requireDemoManager();
+  await dbConnect();
+  const actorId = String((session.user as any).id || "");
+  const bookingId = String(formData.get("booking") || "");
+  const tab = String(formData.get("tab") || "upcoming");
+  const outcome = String(formData.get("outcome") || "") === "absent" ? "absent" : "student_no_show";
+  const booking: any = await Booking.findById(bookingId).populate("student instructor assignedCoach");
+  if (!booking) return demoCenterOutcome(tab, "That demo request no longer exists.");
+  if (!isConfirmedDemo(booking)) return demoCenterOutcome(tab, "Only a confirmed demo can be marked as missed.");
+  await Booking.findByIdAndUpdate(booking._id, {
+    status: "pending",
+    approvalStatus: "pending_admin",
+    demoStatus: outcome === "absent" ? "ABSENT" : "STUDENT_NO_SHOW",
+    // The class was never taught, so there is nothing for a coach to assess.
+    feedbackStatus: "not_required",
+  });
+  const classroom = await markDemoClassroomMissed({ classroomId: booking.classroom, outcome, actorId }).catch((error) => {
+    console.error("Demo classroom write-off failed", error);
+    return null;
+  });
+  await notifyDemoMissed({ booking, student: booking.student, classroom }).catch((error) => console.error("Demo missed WhatsApp failed", error));
+  await recordActivity({
+    actor: actorId,
+    targetUser: String(booking.student?._id || booking.student || ""),
+    type: "demo.booking.missed",
+    label: outcome === "absent" ? "Marked demo as missed" : "Marked demo as a student no show",
+    entityType: "Booking",
+    entityId: booking._id.toString(),
+    metadata: { outcome, event: outcome === "absent" ? "DEMO_ABSENT" : "DEMO_STUDENT_NO_SHOW" },
+  });
+  revalidatePath("/admin/demo-center");
+  revalidatePath("/classrooms");
+  demoCenterOutcome("missed", "", outcome === "absent" ? "Demo marked as missed." : "Demo marked as a no show.");
 }
 
 async function closeDemo(formData: FormData) {
@@ -576,6 +628,9 @@ function DemoCard({ booking, activeTab, coaches, courses, batches, feedback }: {
   // that was closed. Those are history, not the current plan, so the live fields
   // read as pending and the old values move to their own block below.
   const awaitingNewTime = Boolean(booking.needsNewTime);
+  // A confirmed demo whose slot has already gone by, still sitting in
+  // Booked/Upcoming because nobody closed it in the live classroom.
+  const demoWentUnmarked = isConfirmedDemo(booking) && !awaitingNewTime && new Date(booking.endAt || booking.startAt || 0).getTime() < Date.now();
   const cardId = booking._id.toString();
   const assignModalId = `assign-demo-${cardId}`;
   const extendModalId = `extend-demo-${cardId}`;
@@ -659,7 +714,12 @@ function DemoCard({ booking, activeTab, coaches, courses, batches, feedback }: {
           <CheckCircle2 size={15} /> Assign / Confirm Demo
         </PopupTrigger>
         {booking.classroom ? <Link href={`/classrooms/${booking.classroom}`} className="btn-outline bg-white"><CalendarCheck size={15} /> Open Demo Classroom</Link> : null}
-        {booking.feedbackStatus === "pending" && booking.classroom ? <Link href={`/demo-feedback/${booking._id}`} className="btn-outline bg-white"><Clock3 size={15} /> Assessment Pending</Link> : null}
+        {/* Both halves of "the demo was taught and the write-up is owed" are set
+            together by the class-close flow, and the demo status is the half a
+            no-show clears. Keying the prompt to it means demos approved before
+            `feedbackStatus` stopped being armed at scheduling time do not keep
+            asking for an assessment of a class that never happened. */}
+        {booking.demoStatus === "ASSESSMENT_PENDING" && booking.classroom ? <Link href={`/demo-feedback/${booking._id}`} className="btn-outline bg-white"><Clock3 size={15} /> Assessment Pending</Link> : null}
         {booking.feedbackStatus === "submitted" ? (
           <form action={convertDemoStudent} className="grid w-full gap-2 rounded-lg border border-emerald-100 bg-emerald-50 p-3 xl:max-w-3xl">
             <div className="text-sm font-semibold text-emerald-950">Convert {student.name || "demo student"} to Student</div>
@@ -695,6 +755,17 @@ function DemoCard({ booking, activeTab, coaches, courses, batches, feedback }: {
         <PopupTrigger id={extendModalId} className="btn-outline bg-white">
           <Clock3 size={15} /> Extend Demo Validity
         </PopupTrigger>
+        {demoWentUnmarked ? (
+          <form action={markDemoMissed} className="flex flex-wrap gap-2">
+            <input type="hidden" name="booking" value={booking._id.toString()} />
+            <input type="hidden" name="tab" value={activeTab} />
+            <select name="outcome" defaultValue="student_no_show" className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm">
+              <option value="student_no_show">Student did not join</option>
+              <option value="absent">Class did not happen</option>
+            </select>
+            <button className="btn-outline border-amber-200 bg-white text-amber-700"><UserX size={15} /> Mark No Show / Missed</button>
+          </form>
+        ) : null}
         <form action={closeDemo} className="flex flex-wrap gap-2">
           <input type="hidden" name="booking" value={booking._id.toString()} />
           <select name="reason" defaultValue="Not interested" className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm">

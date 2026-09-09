@@ -71,6 +71,25 @@ export const authConfig = {
       const isBookingRoute = nextUrl.pathname.startsWith("/booking") || nextUrl.pathname.startsWith("/demo-booking");
       const isFeesRoute = nextUrl.pathname.startsWith("/fees") || nextUrl.pathname.startsWith("/invoices");
       const isTournamentCreateRoute = nextUrl.pathname.startsWith("/tournaments/new");
+      // An approved demo is a real class in a real classroom: the demo dashboard
+      // renders the same join button an enrolled student gets, the sidebar adds
+      // Classrooms and Homework once the classroom exists, and the starter
+      // assignment and the linked chess accounts are the student's own records.
+      // Those destinations have to be reachable, or the join button opens Google
+      // Meet in a new tab and the live board bounces straight back to the
+      // dashboard - which is exactly what happened before these were listed.
+      //
+      // Middleware runs on the Edge with no database, so it cannot tell whether
+      // this account is on that classroom's roster. It does not need to: the
+      // live classroom page, `getLiveClassroomForUser` and the homework routes
+      // each check membership themselves. This list only decides which doors a
+      // demo account may knock on.
+      const isClassroomRoute =
+        nextUrl.pathname.startsWith("/classrooms") || nextUrl.pathname.startsWith("/api/classrooms");
+      const isHomeworkRoute =
+        nextUrl.pathname.startsWith("/homework") || nextUrl.pathname.startsWith("/api/homework");
+      const isChessProfileRoute =
+        nextUrl.pathname.startsWith("/chess-profile") || nextUrl.pathname.startsWith("/api/chess");
       const demoAllowed =
         nextUrl.pathname.startsWith("/dashboard") ||
         nextUrl.pathname.startsWith("/demo-preview") ||
@@ -81,11 +100,21 @@ export const authConfig = {
         isSquareTrainerRoute ||
         isTacticsTrainerRoute ||
         isKingHuntRoute ||
+        isClassroomRoute ||
+        isHomeworkRoute ||
+        isChessProfileRoute ||
         nextUrl.pathname.startsWith("/api/bookings") ||
         nextUrl.pathname.startsWith("/api/availability") ||
         nextUrl.pathname.startsWith("/api/play/computer/reward") ||
         nextUrl.pathname.startsWith("/api/square-trainer") ||
-        nextUrl.pathname.startsWith("/api/tactics-trainer");
+        nextUrl.pathname.startsWith("/api/tactics-trainer") ||
+        // The join button asks whether the account is credit-blocked before it
+        // opens anything; the answer is the caller's own.
+        nextUrl.pathname.startsWith("/api/fees/credit-eligibility") ||
+        // Every dashboard page renders the shared frame, which reads the academy
+        // branding and the account's own notifications.
+        nextUrl.pathname.startsWith("/api/branding") ||
+        nextUrl.pathname.startsWith("/api/notifications");
 
       if (isPublic) return true;
       if (isAuthRoute) return true;

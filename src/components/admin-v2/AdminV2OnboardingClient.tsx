@@ -23,6 +23,7 @@ type Booking = {
   requestedTimezone?: string;
   requestedLocalDateTime?: string;
   requestedIstDateTime?: string;
+  meetingUrl?: string;
 };
 type CoachApplication = {
   _id: string;
@@ -197,10 +198,16 @@ function DemoApprovalModal({ booking, coaches, onClose, onAction }: { booking: B
   const [coach, setCoach] = useState("");
   const [startAt, setStartAt] = useState("");
   const [durationMinutes, setDurationMinutes] = useState(60);
+  // The demo classroom's join button opens this link in a second tab, so the
+  // meeting URL has to be collected here too - approving from this screen
+  // without it built a classroom the student could enter but no meeting to
+  // attend, while the Demo Center form (which does ask) built a complete one.
+  const [meetingUrl, setMeetingUrl] = useState("");
   useEffect(() => {
     setCoach(booking?.assignedCoach?._id || booking?.instructor?._id || "");
     setStartAt(toLocalInput(booking?.startAt));
     setDurationMinutes(booking ? Math.max(15, Math.round((new Date(booking.endAt).getTime() - new Date(booking.startAt).getTime()) / 60000)) : 60);
+    setMeetingUrl(booking?.meetingUrl || "");
   }, [booking]);
   return (
     <AdminV2Modal open={!!booking} title="Approve Demo" description={booking?.student?.name || "Demo request"} onClose={onClose}>
@@ -218,9 +225,10 @@ function DemoApprovalModal({ booking, coaches, onClose, onAction }: { booking: B
           </select>
           <input className="input" type="datetime-local" value={startAt} onChange={(event) => setStartAt(event.target.value)} />
           <input className="input" type="number" min={15} step={15} value={durationMinutes} onChange={(event) => setDurationMinutes(Number(event.target.value))} />
+          <input className="input" value={meetingUrl} onChange={(event) => setMeetingUrl(event.target.value)} placeholder="https://meet.google.com/..." />
           <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-4">
-            <button className="btn-primary" onClick={() => void onAction({ action: "approve_demo", bookingId: booking._id, coach, startAt, durationMinutes }).then(onClose)}><CheckCircle2 size={16} /> Approve & Create Classroom</button>
-            <button className="btn-outline" onClick={() => void onAction({ action: "update_demo", bookingId: booking._id, coach, startAt, durationMinutes })}>Assign Coach</button>
+            <button className="btn-primary" onClick={() => void onAction({ action: "approve_demo", bookingId: booking._id, coach, startAt, durationMinutes, meetingUrl }).then(onClose)}><CheckCircle2 size={16} /> Approve & Create Classroom</button>
+            <button className="btn-outline" onClick={() => void onAction({ action: "update_demo", bookingId: booking._id, coach, startAt, durationMinutes, meetingUrl })}>Assign Coach</button>
             <button className="btn-outline border-rose-200 text-rose-700" onClick={() => void onAction({ action: "reject_demo", bookingId: booking._id }).then(onClose)}><XCircle size={16} /> Reject</button>
           </div>
         </div>

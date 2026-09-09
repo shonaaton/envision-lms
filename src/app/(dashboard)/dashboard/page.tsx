@@ -1194,7 +1194,12 @@ async function StudentDashboard({ userId, joinAllowed }: { userId: string; joinA
   const now = new Date();
   const [student, classrooms, homework, submissions, tournaments, rewards, attendance, conversations, messages, studentInvoices] = await Promise.all([
     User.findById(userId).populate("batches", "name level").lean(),
-    Classroom.find({ students: userId, isActive: { $ne: false }, isSessionInstance: { $ne: true } })
+    // isTestClassroom is excluded here for the same reason the classrooms API,
+    // the layout's demo check and the notification jobs exclude it: the live
+    // room refuses a sandbox classroom outright, so surfacing one on the
+    // dashboard produces a Join button that can only bounce the student back
+    // here with nothing shown and nothing explained.
+    Classroom.find({ students: userId, isActive: { $ne: false }, isSessionInstance: { $ne: true }, isTestClassroom: { $ne: true } })
       .populate("coach instructor", "name username")
       .populate("generatedSessions.substituteCoach", "name username")
       .populate("batches", "name")

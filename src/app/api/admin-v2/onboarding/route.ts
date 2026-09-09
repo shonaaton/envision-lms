@@ -54,6 +54,7 @@ export async function POST(req: Request) {
     const coach = String(body.coach || "");
     const startAt = parseAcademyDateTimeLocal(String(body.startAt || ""));
     const durationMinutes = Math.max(15, Number(body.durationMinutes || 60));
+    const meetingUrl = String(body.meetingUrl || "").trim();
     if (!bookingId || !coach || Number.isNaN(startAt.getTime())) return NextResponse.json({ error: "Missing demo details." }, { status: 400 });
     const assigned: any = await Booking.findById(bookingId).populate("student", "name studentLevel");
     if (!assigned) return NextResponse.json({ error: "Demo booking not found." }, { status: 404 });
@@ -67,6 +68,7 @@ export async function POST(req: Request) {
       studentId: assigned.student?._id || assigned.student,
       start: startAt,
       durationMinutes,
+      meetingUrl,
       studentName: assigned.student?.name,
       levelName: assigned.level || assigned.student?.studentLevel,
     });
@@ -80,6 +82,7 @@ export async function POST(req: Request) {
       demoStatus: "COACH_ASSIGNED",
       approvalStatus: "pending_admin",
       status: "pending",
+      ...(meetingUrl ? { meetingUrl } : {}),
       ...(assignedClassroom ? { classroom: assignedClassroom._id } : {}),
     });
     await recordActivity({
@@ -100,6 +103,7 @@ export async function POST(req: Request) {
     const start = parseAcademyDateTimeLocal(body.startAt || booking.startAt);
     const durationMinutes = Math.max(15, Number(body.durationMinutes || Math.round((new Date(booking.endAt).getTime() - new Date(booking.startAt).getTime()) / 60000) || 60));
     const coachId = String(body.coach || booking.instructor?._id || booking.instructor || "");
+    const meetingUrl = String(body.meetingUrl || booking.meetingUrl || "").trim();
     if (!coachId || Number.isNaN(start.getTime())) return NextResponse.json({ error: "Coach and start time are required." }, { status: 400 });
     const studentId = booking.student?._id || booking.student;
     const classroom: any = await upsertDemoClassroom({
@@ -108,6 +112,7 @@ export async function POST(req: Request) {
       studentId,
       start,
       durationMinutes,
+      meetingUrl,
       studentName: booking.student?.name || booking.student?.studentName,
       levelName: booking.level,
     });
@@ -121,6 +126,7 @@ export async function POST(req: Request) {
       approvalStatus: "approved",
       demoStatus: "CLASSROOM_CREATED",
       classroom: classroom._id,
+      ...(meetingUrl ? { meetingUrl } : {}),
       approvedBy: actorId,
       approvedAt: new Date(),
       feedbackStatus: "pending",

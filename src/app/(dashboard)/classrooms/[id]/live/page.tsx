@@ -41,35 +41,50 @@ function pickScheduledSession(classroom: any, requestedSessionId: string | undef
   return sessions[0] || resolveScheduledSession(classroom, requestedSessionId);
 }
 
+/**
+ * Turn a student away from the live room, saying why in the URL.
+ *
+ * Every one of these used to be a bare redirect, so a student who pressed Join
+ * and landed back on the dashboard left no trace of which rule stopped them -
+ * the same blank bounce covered a missing permission, a closed join window, a
+ * cancelled session and a classroom they were not in. The reason rides along as
+ * `?live=` (matching the existing `?credits=blocked`) so the failure is legible
+ * from the address bar and in server logs.
+ */
+function bounce(destination: string, reason: string): never {
+  console.warn("Live classroom entry refused", { destination, reason });
+  redirect(`${destination}?live=${encodeURIComponent(reason)}`);
+}
+
 export default async function ClassroomLivePage({ params, searchParams }: { params: { id: string }; searchParams: { session?: string } }) {
   const session = await auth();
   if (!session) redirect("/login");
   const userId = (session?.user as any).id;
   const role = (session?.user as any).role as "student" | "instructor" | "admin" | "sub-admin";
-  if (!(await canAccessFeature("classrooms", session.user as any, "join"))) redirect("/classrooms");
+  if (!(await canAccessFeature("classrooms", session.user as any, "join"))) bounce("/classrooms", "no_join_permission");
   await dbConnect();
   const classroom: any = await Classroom.findById(params.id).lean();
   if (!classroom) notFound();
   const isSuperAdmin = await isSuperAdminSession(session?.user as any);
-  if (classroom.isTestClassroom && (!isSuperAdmin || String(classroom.testOwner || "") !== userId)) redirect("/dashboard");
-  if (role === "student" && !(await isCurrentStudent(userId))) redirect("/dashboard");
+  if (classroom.isTestClassroom && (!isSuperAdmin || String(classroom.testOwner || "") !== userId)) bounce("/dashboard", "test_classroom");
+  if (role === "student" && !(await isCurrentStudent(userId))) bounce("/dashboard", "not_a_current_student");
   // Credit-plan students at -1 or below are blocked until they recharge. This
   // also catches direct URL entry that bypasses the join button.
   if ((await getClassroomCreditEligibility(userId, role)).blocked) redirect("/classrooms?credits=blocked");
 
   if (role !== "admin" && role !== "sub-admin") {
     const scheduledSession: any = pickScheduledSession(classroom, searchParams.session, role, userId);
-    if (!scheduledSession) redirect("/classrooms");
-    if (!participantHasAccess(classroom, role, userId, String(scheduledSession._id))) redirect("/dashboard");
-    if (!isJoinWindowOpen(scheduledSession)) redirect("/classrooms");
+    if (!scheduledSession) bounce("/classrooms", "no_scheduled_session");
+    if (!participantHasAccess(classroom, role, userId, String(scheduledSession._id))) bounce("/dashboard", "not_a_participant");
+    if (!isJoinWindowOpen(scheduledSession)) bounce("/classrooms", "join_window_closed");
     const sessionStatus = deriveScheduledSessionStatus(scheduledSession);
-    if (["completed", "cancelled", "rescheduled", "missed"].includes(sessionStatus)) redirect("/classrooms");
+    if (["completed", "cancelled", "rescheduled", "missed"].includes(sessionStatus)) bounce("/classrooms", `session_${sessionStatus}`);
     const liveSession: any = await ClassroomSession.findOne({ classroom: params.id, scheduledSessionId: String(scheduledSession._id) }).lean();
-    if (liveSession?.status === "ended") redirect("/classrooms");
+    if (liveSession?.status === "ended") bounce("/classrooms", "room_already_ended");
     return <LiveClassroom classroomId={params.id} role={role} userId={userId} sessionId={String(scheduledSession._id)} />;
   }
 
-  if (!participantHasAccess(classroom, role, userId)) redirect("/dashboard");
+  if (!participantHasAccess(classroom, role, userId)) bounce("/dashboard", "not_a_participant");
 
   return <LiveClassroom classroomId={params.id} role={role} userId={userId} sessionId={searchParams.session} />;
 }

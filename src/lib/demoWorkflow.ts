@@ -343,12 +343,14 @@ export async function notifyDemoFeedbackSubmitted(input: {
   const message = `${coachName} submitted the demo assessment for ${studentName} (${classTime}). Recommended: ${recommendation}, level ${recommendedLevel}.`;
 
   const staffRecipients = demoStaffRecipients("assessmentSubmitted");
+  const staffUsers: any[] = await User.find({
+    email: { $in: staffRecipients.map((recipient) => recipient.email).filter(Boolean) },
+    isActive: { $ne: false },
+  }).select("_id").lean();
 
   await Notification.insertMany(
-    staffRecipients
-      .filter((recipient) => recipient.userId)
-      .map((recipient) => ({
-        user: recipient.userId,
+    staffUsers.map((recipient) => ({
+        user: recipient._id,
         type: "demo.feedback.submitted",
         title: "Demo assessment submitted",
         message,

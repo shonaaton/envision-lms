@@ -1,4 +1,5 @@
 import { Classroom } from "@/models/Classroom";
+import { rosterForSession } from "@/lib/classroomStudentExits";
 
 function buildSessionInstancePayload(classroom: any, session: any) {
   return {
@@ -17,7 +18,7 @@ function buildSessionInstancePayload(classroom: any, session: any) {
     meetingUrl: classroom.meetingUrl || "",
     coach: session.substituteCoach || classroom.coach || undefined,
     instructor: session.substituteCoach || classroom.instructor || classroom.coach || undefined,
-    students: Array.isArray(session.students) && session.students.length ? session.students : classroom.students || [],
+    students: rosterForSession(classroom, session),
     batches: classroom.batches || [],
     classDate: session.scheduledFor ? new Date(session.scheduledFor) : undefined,
     startTime: session.startTime || classroom.startTime || "",
@@ -45,6 +46,7 @@ function buildSessionInstancePayload(classroom: any, session: any) {
     feePerMonth: classroom.feePerMonth || 0,
     isActive: classroom.isActive !== false,
     isSessionInstance: true,
+    studentExits: classroom.studentExits || [],
     parentClassroom: classroom._id,
     sourceSessionId: String(session._id),
     sessionDate: session.scheduledFor ? new Date(session.scheduledFor) : undefined,

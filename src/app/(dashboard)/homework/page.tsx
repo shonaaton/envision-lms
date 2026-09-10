@@ -5,6 +5,7 @@ import { Classroom } from "@/models/Classroom";
 import { Batch } from "@/models/Batch";
 import { User } from "@/models/User";
 import { getCoachAssignedStudentIds } from "@/lib/coachStudentAccess";
+import { studentHomeworkFilter } from "@/lib/studentHomeworkVisibility";
 import { canAccessFeature } from "@/lib/featureAccess";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -102,22 +103,7 @@ export default async function HomeworkListPage({ searchParams }: { searchParams?
 
   let filter: any = {};
   if (role === "student") {
-    const [my, me, batchMemberships] = await Promise.all([
-      Classroom.find({ students: userId }, { _id: 1 }).lean(),
-      User.findById(userId, { batches: 1 }).lean(),
-      Batch.find({ students: userId }, { _id: 1 }).lean(),
-    ]);
-    const classroomIds = my.map((c: any) => c._id);
-    const batchIds = Array.from(new Set([
-      ...((me as any)?.batches || []).map((id: any) => id.toString()),
-      ...batchMemberships.map((batch: any) => batch._id.toString()),
-    ]));
-    filter.$or = [
-      { assignedStudents: userId },
-      { assignedBatches: { $in: batchIds } },
-      { classroom: { $in: classroomIds }, assignAllStudents: true },
-      { classroom: { $in: classroomIds }, assignedStudents: { $size: 0 }, assignedBatches: { $size: 0 } },
-    ];
+    filter = { ...filter, ...(await studentHomeworkFilter(userId)) };
   } else if (role === "instructor") {
     filter.instructor = userId;
   }

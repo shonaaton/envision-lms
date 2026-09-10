@@ -10,6 +10,7 @@ import { syncClassroomSessionInstances } from "@/lib/classroomSessionInstances";
 import { notifyBatchCoachAssigned } from "@/lib/batchCoachNotifications";
 import { pausedStudentIds } from "@/lib/studentPause";
 import { batchUpdateSchema } from "@/lib/validation";
+import { enrollStudentInBatchClassrooms, recordStudentExitFromBatchClassrooms } from "@/lib/studentBatchTransfer";
 
 export const dynamic = "force-dynamic";
 
@@ -230,8 +231,24 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     await b.save();
     if (removedIds.length) await User.updateMany({ _id: { $in: removedIds } }, { $pull: { batches: b?._id } });
     if (nextIds.length) await User.updateMany({ _id: { $in: nextIds } }, { $addToSet: { batches: b?._id } });
+    // Unticking a student here means the same thing as moving them out of the
+    // batch: they keep everything up to today and see nothing of this batch
+    // afterwards. Without this the student stayed in `Classroom.students`, which
+    // is what every access check reads, and kept the classroom outright.
+    if (removedIds.length) {
+      await recordStudentExitFromBatchClassrooms(params.id, removedIds, {
+        exitedAt: new Date(),
+        reason: "removed_from_batch",
+        actorId: actorId,
+      });
+    }
     const pausedIds = await pausedStudentIds();
     if (addedIds.length) await enrollAddedStudentsInFutureBatchClassrooms(params.id, addedIds, pausedIds);
+    // Re-ticking someone who had left lifts their old cut.
+    for (const studentId of addedIds) {
+      if (pausedIds.has(studentId)) continue;
+      await enrollStudentInBatchClassrooms(params.id, studentId, { joinedAt: dates.get(studentId) || new Date() });
+    }
     await reconcileBatchStudentsInClassrooms(params.id, dates, pausedIds);
   }
   const previousCoachId = idOf(existing.coach);

@@ -9,6 +9,7 @@ import { homeworkSchema } from "@/lib/validation";
 import { notifyHomeworkAssigned } from "@/lib/homeworkEmail";
 import { recordActivity } from "@/lib/activity";
 import { canAccessFeature } from "@/lib/featureAccess";
+import { studentHomeworkFilter } from "@/lib/studentHomeworkVisibility";
 
 export const dynamic = "force-dynamic";
 
@@ -24,22 +25,7 @@ export async function GET(req: Request) {
   let filter: any = {};
   if (classroomId) filter.classroom = classroomId;
   else if (role === "student") {
-    const [myClassrooms, me, batchMemberships] = await Promise.all([
-      Classroom.find({ students: userId }, { _id: 1 }).lean(),
-      User.findById(userId, { batches: 1 }).lean(),
-      Batch.find({ students: userId }, { _id: 1 }).lean(),
-    ]);
-    const classroomIds = myClassrooms.map((c) => c._id);
-    const batchIds = Array.from(new Set([
-      ...((me as any)?.batches || []).map((id: any) => id.toString()),
-      ...batchMemberships.map((batch: any) => batch._id.toString()),
-    ]));
-    filter.$or = [
-      { assignedStudents: userId },
-      { assignedBatches: { $in: batchIds } },
-      { classroom: { $in: classroomIds }, assignAllStudents: true },
-      { classroom: { $in: classroomIds }, assignedStudents: { $size: 0 }, assignedBatches: { $size: 0 } },
-    ];
+    filter = { ...filter, ...(await studentHomeworkFilter(userId)) };
   } else if (role === "instructor") {
     filter.instructor = userId;
   }

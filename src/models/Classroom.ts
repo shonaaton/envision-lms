@@ -159,6 +159,28 @@ const ClassroomSchema = new Schema(
     // here so reactivating the student can put them back.
     removedSessions: [{ type: Schema.Types.Mixed }],
 
+    // Students who left this classroom part-way through, almost always because
+    // they were moved to another batch. Deliberately NOT a removal from
+    // `students`: their attendance, submissions and completed levels are all
+    // derived from that membership, so dropping them would erase the history
+    // they are still entitled to see. The exit date is the cut instead -
+    // everything on or before it stays readable, everything after it is as if
+    // they were never on the roster. `classroomStudentExits.ts` is the only
+    // place that rule is spelled out; every roster read goes through it.
+    studentExits: [
+      new Schema(
+        {
+          student: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
+          exitedAt: { type: Date, required: true },
+          reason: { type: String, default: "batch_changed" },
+          fromBatch: { type: Schema.Types.ObjectId, ref: "Batch" },
+          movedToBatch: { type: Schema.Types.ObjectId, ref: "Batch" },
+          recordedBy: { type: Schema.Types.ObjectId, ref: "User" },
+        },
+        { _id: false }
+      ),
+    ],
+
     // Pause trail. Unlike a closure this is temporary: the classroom comes back
     // when the student does, and its remaining classes are re-dated from the
     // restart day rather than being cancelled.

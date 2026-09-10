@@ -1,4 +1,5 @@
 import { Classroom } from "@/models/Classroom";
+import { rosterForSession, studentExitDate } from "@/lib/classroomStudentExits";
 import { canAccessFeature, isSuperAdminSession } from "@/lib/featureAccess";
 import { User } from "@/models/User";
 import { coachCanAccessClassroomSession } from "@/lib/classroomCoachAccess";
@@ -16,6 +17,9 @@ type ClassroomAccessShape = {
   generatedSessions?: unknown[];
   isTestClassroom?: boolean;
   testOwner?: unknown;
+  studentExits?: unknown[];
+  classDate?: unknown;
+  startDate?: unknown;
 };
 
 function objectId(value: unknown) {
@@ -36,7 +40,11 @@ function studentsForSession(classroom: ClassroomAccessShape, scheduledSessionId?
   const session = scheduledSessionId && Array.isArray(classroom.generatedSessions)
     ? classroom.generatedSessions.find((item: any) => objectId(item?._id) === scheduledSessionId)
     : null;
-  return Array.isArray((session as any)?.students) && (session as any).students.length ? (session as any).students : classroom.students || [];
+  // `rosterForSession` applies both rules at once: a session with its own list
+  // owns its roster, and anyone who left the classroom before this class is off
+  // it either way - including when the fallback to `classroom.students` would
+  // otherwise hand a departed student their old batch back.
+  return rosterForSession(classroom, session);
 }
 
 export function canAccessLiveClassroom(classroom: ClassroomAccessShape | null | undefined, role: AppRole, userId: string, scheduledSessionId?: string) {
@@ -66,7 +74,8 @@ export type LiveClassroomDenial =
   | "credit_balance_blocked"
   | "no_scheduled_session"
   | "session_not_open"
-  | "not_on_the_roster";
+  | "not_on_the_roster"
+  | "left_this_classroom";
 
 export const LIVE_CLASSROOM_DENIAL_MESSAGES: Record<LiveClassroomDenial, string> = {
   classroom_not_found: "This classroom no longer exists.",
@@ -77,6 +86,7 @@ export const LIVE_CLASSROOM_DENIAL_MESSAGES: Record<LiveClassroomDenial, string>
   no_scheduled_session: "This class has no scheduled session to join.",
   session_not_open: "This class is not open yet. The room opens 5 minutes before the start time.",
   not_on_the_roster: "You are not on the student list for this class.",
+  left_this_classroom: "You have moved to another batch. Your past classes and homework are still on your account, but this class is not yours to join.",
 };
 
 export async function getLiveClassroomForUser(classroomId: string, role: AppRole, userId: string, scheduledSessionId?: string) {
@@ -116,6 +126,10 @@ export async function getLiveClassroomForUser(classroomId: string, role: AppRole
     (scheduledSession.actualStartedAt && !scheduledSession.actualEndedAt && scheduledSession.status !== "cancelled")
   );
   if (!sessionOpen) return deny("session_not_open");
-  if (!canAccessLiveClassroom(classroom, role, userId, scheduledSessionId)) return deny("not_on_the_roster");
+  if (!canAccessLiveClassroom(classroom, role, userId, scheduledSessionId)) {
+    // Say which of the two it is: never on this roster, or moved on from it.
+    const movedOn = role === "student" && Boolean(studentExitDate(classroom, userId));
+    return deny(movedOn ? "left_this_classroom" : "not_on_the_roster");
+  }
   return { classroom, allowed: true as const, reason: undefined };
 }

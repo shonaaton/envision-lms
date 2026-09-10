@@ -8,6 +8,7 @@ import { ClassroomChatMessage, ClassroomSession, LiveQuestion, LiveQuestionRespo
 import "@/models/User";
 import { getLiveClassroomForUser, LIVE_CLASSROOM_DENIAL_MESSAGES, type AppRole } from "@/lib/liveClassroomAccess";
 import { buildPgnLibraryFilter } from "@/lib/pgnAccess";
+import { rosterForSession } from "@/lib/classroomStudentExits";
 import {
   buildLiveSessionKey,
   ensureLiveSessionIndexes,
@@ -64,7 +65,9 @@ function activeCoachParticipants(live: any, now = new Date()) {
 }
 
 function studentsForSession(classroom: any, scheduledSession: any) {
-  return Array.isArray(scheduledSession?.students) && scheduledSession.students.length ? scheduledSession.students : classroom.students || [];
+  // Students who left the batch stay in `classroom.students` so their history
+  // survives, so the register has to filter them out by exit date.
+  return rosterForSession(classroom, scheduledSession);
 }
 
 async function loadPgnLibrary(session: any, role: AppRole, userId: string, classroomId: string, summaryOnly = false) {

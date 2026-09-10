@@ -6,6 +6,7 @@ import { Course } from "@/models/Course";
 import { buildGeneratedSessions, buildSessionPlan } from "@/lib/classroomSchedule";
 import { syncClassroomSessionInstances } from "@/lib/classroomSessionInstances";
 import { visibleClassroomFilter } from "@/lib/classroomVisibility";
+import { sessionsVisibleToStudent, studentExitDate } from "@/lib/classroomStudentExits";
 import { canAccessFeature, isSuperAdminSession } from "@/lib/featureAccess";
 import { coachClassroomQuery, limitClassroomToCoachSessions } from "@/lib/classroomCoachAccess";
 import { User } from "@/models/User";
@@ -62,7 +63,30 @@ export async function GET() {
         ).length
       : 0,
   }));
-  return NextResponse.json(role === "instructor" ? withReadiness.map((item: any) => limitClassroomToCoachSessions(item, userId)) : withReadiness);
+  if (role === "instructor") {
+    return NextResponse.json(withReadiness.map((item: any) => limitClassroomToCoachSessions(item, userId)));
+  }
+  if (role === "student") {
+    // A classroom the student has moved on from stays in the list - the classes
+    // they sat and the homework they were set are still theirs - but it is
+    // trimmed to what happened before they left, so no Join button is offered
+    // for a class the live route would only turn them away from.
+    return NextResponse.json(
+      withReadiness.map((item: any) => {
+        const exitedAt = studentExitDate(item, userId);
+        if (!exitedAt) return item;
+        return {
+          ...item,
+          generatedSessions: sessionsVisibleToStudent(item, userId),
+          studentHasLeft: true,
+          studentLeftAt: exitedAt,
+          readyToComplete: false,
+          classesLeftToTeach: 0,
+        };
+      }),
+    );
+  }
+  return NextResponse.json(withReadiness);
 }
 
 export async function POST(req: Request) {

@@ -10,12 +10,19 @@ import { ClassroomSession } from "@/models/ClassroomLive";
 import { notFound, redirect } from "next/navigation";
 import LiveClassroom from "@/components/classroom/LiveClassroom";
 import { coachCanAccessClassroomSession } from "@/lib/classroomCoachAccess";
+import { sessionsVisibleToStudent, studentIsOnSessionRoster } from "@/lib/classroomStudentExits";
 
 export const dynamic = "force-dynamic";
 
 function participantHasAccess(classroom: any, role: string, userId: string, scheduledSessionId?: string) {
   if (role === "admin" || role === "sub-admin") return true;
-  if (role === "student") return (classroom.students || []).some((student: any) => String(student) === userId || String(student?._id || "") === userId);
+  if (role === "student") {
+    // Roster membership alone is not enough any more: a student who moved to
+    // another batch is still in `classroom.students` for their history, and
+    // must not be let into a class that runs after they left.
+    const session = (classroom.generatedSessions || []).find((item: any) => String(item?._id || "") === String(scheduledSessionId || ""));
+    return studentIsOnSessionRoster(classroom, session, userId);
+  }
   return coachCanAccessClassroomSession(classroom, userId, scheduledSessionId);
 }
 
@@ -23,7 +30,9 @@ function pickScheduledSession(classroom: any, requestedSessionId: string | undef
   const allSessions = Array.isArray(classroom?.generatedSessions) ? classroom.generatedSessions : [];
   const sessions = role === "instructor"
     ? allSessions.filter((item: any) => coachCanAccessClassroomSession(classroom, userId, String(item?._id || "")))
-    : allSessions;
+    : role === "student"
+      ? sessionsVisibleToStudent(classroom, userId)
+      : allSessions;
   if (requestedSessionId) {
     const exact = sessions.find((item: any) => String(item?._id || "") === requestedSessionId);
     if (exact) return exact;

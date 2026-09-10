@@ -12,6 +12,7 @@ import {
   MoreVertical,
   PauseCircle,
   Plus,
+  Repeat,
   Search,
   Trash2,
   Upload,
@@ -24,6 +25,7 @@ import { toast } from "sonner";
 import Avatar from "@/components/admin/Avatar";
 import AddUserModal from "@/components/admin/AddUserModal";
 import AddBatchModal from "@/components/admin/AddBatchModal";
+import ChangeBatchModal from "@/components/admin/ChangeBatchModal";
 import { PauseStudentModal } from "@/components/admin/PausedStudentsClient";
 import RoleManager from "@/components/admin/RoleManager";
 import StaffRoleSelect from "@/components/admin/StaffRoleSelect";
@@ -119,6 +121,7 @@ export default function AdminUsersPage() {
   const [assignCoach, setAssignCoach] = useState<AdminUser | null>(null);
   const [deleteUserTarget, setDeleteUserTarget] = useState<AdminUser | null>(null);
   const [pauseTarget, setPauseTarget] = useState<AdminUser | null>(null);
+  const [changeBatchTarget, setChangeBatchTarget] = useState<AdminUser | null>(null);
   const [detailBatch, setDetailBatch] = useState<BatchItem | null>(null);
   const [editBatch, setEditBatch] = useState<BatchItem | null>(null);
 
@@ -528,6 +531,9 @@ export default function AdminUsersPage() {
           ...(userPermissions.edit && openMenuUser.role === "instructor" ? [{ icon: UserPlus, label: "Assign Students", onClick: () => { setAssignCoach(openMenuUser); setMenu(null); } }] : []),
           { icon: FileText, label: `${userRoleLabel(openMenuUser.role)} Report`, onClick: () => { setReportUser(openMenuUser); setMenu(null); } },
           ...(userPermissions.edit && openMenuUser.role === "student"
+            ? [{ icon: Repeat, label: "Change batch", onClick: () => { setChangeBatchTarget(openMenuUser); setMenu(null); } }]
+            : []),
+          ...(userPermissions.edit && openMenuUser.role === "student"
             ? [openMenuUser.isPaused
                 ? { icon: PauseCircle, label: "Manage pause / reactivate", onClick: () => { setMenu(null); window.location.href = "/admin/paused-students"; } }
                 : { icon: PauseCircle, label: "Pause from batch", onClick: () => { setPauseTarget(openMenuUser); setMenu(null); } }]
@@ -550,6 +556,16 @@ export default function AdminUsersPage() {
       {detailUser && <UserDetailsModal user={detailUser} batches={batches} onClose={() => setDetailUser(null)} onCopy={() => copyCredentials(detailUser)} />}
       {editUser && <EditUserModal user={editUser} onClose={() => setEditUser(null)} onSave={async (payload) => { if (await updateUser(editUser._id, payload)) setEditUser(null); }} />}
       {deleteUserTarget && <PermanentDeleteUserModal user={deleteUserTarget} onClose={() => setDeleteUserTarget(null)} onDelete={(confirmName) => permanentlyDeleteUser(deleteUserTarget, confirmName)} />}
+      {changeBatchTarget && (
+        <ChangeBatchModal
+          student={{ _id: changeBatchTarget._id, name: changeBatchTarget.name }}
+          onClose={() => setChangeBatchTarget(null)}
+          onDone={() => {
+            setChangeBatchTarget(null);
+            Promise.all([loadUsers(), loadBatches(), loadDirectory()]);
+          }}
+        />
+      )}
       {pauseTarget && (
         <PauseStudentModal
           presetStudent={{ _id: pauseTarget._id, name: pauseTarget.name, batches: pauseTarget.batches }}

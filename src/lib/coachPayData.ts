@@ -4,8 +4,8 @@ import { dbConnect } from "@/lib/db";
 import { Classroom } from "@/models/Classroom";
 import { Booking } from "@/models/Booking";
 import { User } from "@/models/User";
-import { CoachRate, NoShowRuling, SessionPayOverride } from "@/models/CoachPay";
-import { buildPayEvents, summarizePayEvents, REVIEWABLE_SESSION_STATUSES } from "@/lib/coachPay";
+import { CoachPayProposal, CoachRate, NoShowRuling, SessionPayOverride, type PayKind, type RateUnit } from "@/models/CoachPay";
+import { buildPayEvents, resolveRate, summarizePayEvents, REVIEWABLE_SESSION_STATUSES, type ResolvedRate } from "@/lib/coachPay";
 import { effectiveSessionCoachId, scheduledPaymentMinutes, scheduledStartDate } from "@/lib/teachingStats";
 import type { PayPeriod } from "@/lib/payPeriods";
 
@@ -254,3 +254,178 @@ export async function listPayableCoaches() {
     .lean();
 }
 
+
+/** One classroom a coach is assigned to, with the rates that apply to them there. */
+export type CoachAssignmentRow = {
+  classroomId: string;
+  classroomTitle: string;
+  classroomType: string;
+  batchName: string;
+  batchIds: string[];
+  isActive: boolean;
+  /** The `classroom_coach` card for this exact pair, if one has been set. */
+  card: {
+    id: string;
+    effectiveFrom: Date;
+    values: Record<PayKind, { amount: number | null; unit: RateUnit }>;
+  } | null;
+  /** What each kind actually resolves to today, and which rung decided it. */
+  effective: Record<PayKind, ResolvedRate | null>;
+  pendingProposal: {
+    id: string;
+    values: Record<PayKind, { amount: number | null; unit: RateUnit }>;
+    note: string;
+    submittedAt: Date;
+  } | null;
+};
+
+function cardValues(source: any): Record<PayKind, { amount: number | null; unit: RateUnit }> {
+  const read = (kind: PayKind) => {
+    const value = source?.[kind];
+    const amount = value?.amount;
+    return {
+      amount: amount === null || amount === undefined ? null : Number(amount),
+      unit: (value?.unit as RateUnit) || "per_class",
+    };
+  };
+  return {
+    regular: read("regular"),
+    demo: read("demo"),
+    demoConversionBonus: read("demoConversionBonus"),
+    substitute: read("substitute"),
+  };
+}
+
+/**
+ * Every classroom a coach teaches, priced.
+ *
+ * This is the coach-by-coach view of the rate ladder: one row per classroom
+ * they are assigned to, showing both the card set specifically for them there
+ * and what the ladder currently resolves to, so it is obvious whether a number
+ * was chosen for this coach or merely inherited from a default.
+ */
+export async function loadCoachAssignments(coachId: string, now = new Date()): Promise<CoachAssignmentRow[]> {
+  await dbConnect();
+
+  const [classrooms, rates, proposals] = await Promise.all([
+    Classroom.find({
+      isSessionInstance: { $ne: true },
+      isTestClassroom: { $ne: true },
+      $or: [{ coach: coachId }, { instructor: coachId }],
+    })
+      .select("title classroomType batches isActive")
+      .populate("batches", "name")
+      .sort({ isActive: -1, title: 1 })
+      .lean(),
+    CoachRate.find({ isActive: { $ne: false } }).lean(),
+    CoachPayProposal.find({ coach: coachId, kind: "classroom_rate", status: "pending" }).lean(),
+  ]);
+
+  return (classrooms as any[]).map((classroom) => {
+    const classroomId = idOf(classroom._id);
+    const batchIds = (classroom.batches || []).map(idOf).filter(Boolean);
+
+    // The card in force today for this exact coach-and-classroom pair.
+    const own = (rates as any[])
+      .filter(
+        (rate) =>
+          rate.scope === "classroom_coach" &&
+          idOf(rate.classroom) === classroomId &&
+          idOf(rate.coach) === coachId &&
+          new Date(rate.effectiveFrom || 0) <= now
+      )
+      .sort((a, b) => new Date(b.effectiveFrom || 0).getTime() - new Date(a.effectiveFrom || 0).getTime())[0];
+
+    const lookup = { coachId, classroomId, batchIds, date: now, rates: rates as any[] };
+    const proposal = (proposals as any[]).find((item) => idOf(item.classroom) === classroomId);
+
+    return {
+      classroomId,
+      classroomTitle: classroom.title || "Classroom",
+      classroomType: classroom.classroomType || "series",
+      batchName: (classroom.batches || []).map((batch: any) => batch?.name).filter(Boolean).join(", ") || "Unassigned",
+      batchIds,
+      isActive: classroom.isActive !== false,
+      card: own
+        ? { id: idOf(own._id), effectiveFrom: new Date(own.effectiveFrom || 0), values: cardValues(own) }
+        : null,
+      effective: {
+        regular: resolveRate({ ...lookup, kind: "regular" }),
+        demo: resolveRate({ ...lookup, kind: "demo" }),
+        demoConversionBonus: resolveRate({ ...lookup, kind: "demoConversionBonus" }),
+        substitute: resolveRate({ ...lookup, kind: "substitute" }),
+      },
+      pendingProposal: proposal
+        ? {
+            id: idOf(proposal._id),
+            values: cardValues(proposal),
+            note: proposal.note || "",
+            submittedAt: new Date(proposal.submittedAt || proposal.createdAt || Date.now()),
+          }
+        : null,
+    };
+  });
+}
+
+export type ProposalRow = {
+  id: string;
+  kind: string;
+  status: string;
+  coachId: string;
+  coachName: string;
+  classroomId: string;
+  classroomTitle: string;
+  sessionId: string;
+  sessionDate: Date | null;
+  payKind: PayKind;
+  amount: number | null;
+  unit: RateUnit;
+  values: Record<PayKind, { amount: number | null; unit: RateUnit }>;
+  note: string;
+  submittedAt: Date;
+  reviewedByName: string;
+  reviewedAt: Date | null;
+  reviewNote: string;
+};
+
+/** Coach submissions, newest first. Pending ones are what an admin owes an answer to. */
+export async function loadProposals(filters: { status?: string; coachId?: string } = {}): Promise<ProposalRow[]> {
+  await dbConnect();
+  const query: Record<string, any> = {};
+  if (filters.status) query.status = filters.status;
+  if (filters.coachId) query.coach = filters.coachId;
+
+  const proposals = await CoachPayProposal.find(query)
+    .populate("coach", "name username")
+    .populate("classroom", "title")
+    .populate("reviewedBy", "name username")
+    .sort({ submittedAt: -1 })
+    .lean();
+
+  return (proposals as any[]).map((proposal) => ({
+    id: idOf(proposal._id),
+    kind: proposal.kind,
+    status: proposal.status,
+    coachId: idOf(proposal.coach),
+    coachName: proposal.coach?.name || proposal.coach?.username || "Coach",
+    classroomId: idOf(proposal.classroom),
+    classroomTitle: proposal.classroom?.title || "Classroom",
+    sessionId: proposal.sessionId || "",
+    sessionDate: proposal.sessionDate ? new Date(proposal.sessionDate) : null,
+    payKind: (proposal.payKind as PayKind) || "substitute",
+    amount: proposal.amount === null || proposal.amount === undefined ? null : Number(proposal.amount),
+    unit: (proposal.unit as RateUnit) || "per_class",
+    values: cardValues(proposal),
+    note: proposal.note || "",
+    submittedAt: new Date(proposal.submittedAt || proposal.createdAt || Date.now()),
+    reviewedByName: proposal.reviewedBy?.name || proposal.reviewedBy?.username || "",
+    reviewedAt: proposal.reviewedAt ? new Date(proposal.reviewedAt) : null,
+    reviewNote: proposal.reviewNote || "",
+  }));
+}
+
+/** How many submissions are waiting on an admin. Drives the badge in the nav. */
+export async function countPendingProposals() {
+  await dbConnect();
+  return CoachPayProposal.countDocuments({ status: "pending" });
+}

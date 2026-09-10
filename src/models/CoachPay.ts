@@ -3,7 +3,7 @@ import { Schema, model, models, type InferSchemaType } from "mongoose";
 /**
  * What a coach is paid, and why.
  *
- * Three collections, each answering one question:
+ * Four collections, each answering one question:
  *
  * - `CoachRate`   - the standing price list. Scoped, so one card can price the
  *                   whole academy and a more specific card overrides it.
@@ -13,6 +13,8 @@ import { Schema, model, models, type InferSchemaType } from "mongoose";
  * - `NoShowRuling` - an admin's decision about a class nobody taught through no
  *                   fault of the coach: pay them or not, and charge the student
  *                   or not. Those two answers are independent on purpose.
+ * - `CoachPayProposal` - a coach's own submission of what they are owed, inert
+ *                   until an admin approves it into one of the above.
  *
  * Every amount is paise, like the rest of the billing code.
  */
@@ -132,10 +134,75 @@ const NoShowRulingSchema = new Schema(
 
 NoShowRulingSchema.index({ classroom: 1, sessionId: 1 }, { unique: true });
 
+export const PROPOSAL_KINDS = ["session", "classroom_rate"] as const;
+export type ProposalKind = (typeof PROPOSAL_KINDS)[number];
+
+export const PROPOSAL_STATUSES = ["pending", "approved", "rejected"] as const;
+export type ProposalStatus = (typeof PROPOSAL_STATUSES)[number];
+
+/**
+ * A coach's own account of what they should be paid, waiting on an admin.
+ *
+ * Coaches know things the office does not - which cover they actually took, and
+ * what was agreed on the phone when it was arranged. So they can enter it. What
+ * they cannot do is pay themselves: a proposal is inert until an admin approves
+ * it, and only then is it written into the rate cards the payroll engine reads.
+ * Nothing here is ever consulted when totalling a month, which is what keeps the
+ * approval meaningful rather than decorative.
+ *
+ * Two shapes share the collection because they share a lifecycle:
+ *
+ * - `session`        - one substitution class, at one agreed amount.
+ * - `classroom_rate` - the standing rates for one classroom this coach teaches,
+ *                      reviewed and approved as a single card.
+ */
+const CoachPayProposalSchema = new Schema(
+  {
+    kind: { type: String, enum: PROPOSAL_KINDS, required: true, index: true },
+    coach: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
+    classroom: { type: Schema.Types.ObjectId, ref: "Classroom", required: true, index: true },
+
+    // `session` proposals only.
+    sessionId: { type: String, index: true },
+    sessionDate: { type: Date },
+    payKind: { type: String, enum: PAY_KINDS, default: "substitute" },
+    amount: { type: Number, default: null },
+    unit: { type: String, enum: RATE_UNITS, default: "per_class" },
+
+    // `classroom_rate` proposals only - the same four prices a rate card holds.
+    regular: { type: RateValueSchema, default: () => ({}) },
+    demo: { type: RateValueSchema, default: () => ({}) },
+    demoConversionBonus: { type: RateValueSchema, default: () => ({}) },
+    substitute: { type: RateValueSchema, default: () => ({}) },
+    effectiveFrom: { type: Date },
+
+    note: String,
+    status: { type: String, enum: PROPOSAL_STATUSES, default: "pending", index: true },
+    submittedBy: { type: Schema.Types.ObjectId, ref: "User", index: true },
+    submittedAt: { type: Date, default: Date.now, index: true },
+    reviewedBy: { type: Schema.Types.ObjectId, ref: "User", index: true },
+    reviewedAt: { type: Date },
+    reviewNote: String,
+    /** The CoachRate or SessionPayOverride an approval produced. */
+    appliedTo: { type: Schema.Types.ObjectId },
+  },
+  { timestamps: true }
+);
+
+// A coach gets one open proposal per target. Re-submitting edits the one that is
+// still waiting rather than queueing a second opinion for the same class, while
+// decided proposals stay as history.
+CoachPayProposalSchema.index(
+  { coach: 1, classroom: 1, sessionId: 1, kind: 1, status: 1 },
+  { unique: true, partialFilterExpression: { status: "pending" } }
+);
+
 export type CoachRateDoc = InferSchemaType<typeof CoachRateSchema> & { _id: any };
 export type SessionPayOverrideDoc = InferSchemaType<typeof SessionPayOverrideSchema> & { _id: any };
 export type NoShowRulingDoc = InferSchemaType<typeof NoShowRulingSchema> & { _id: any };
+export type CoachPayProposalDoc = InferSchemaType<typeof CoachPayProposalSchema> & { _id: any };
 
 export const CoachRate = models.CoachRate || model("CoachRate", CoachRateSchema);
 export const SessionPayOverride = models.SessionPayOverride || model("SessionPayOverride", SessionPayOverrideSchema);
 export const NoShowRuling = models.NoShowRuling || model("NoShowRuling", NoShowRulingSchema);
+export const CoachPayProposal = models.CoachPayProposal || model("CoachPayProposal", CoachPayProposalSchema);

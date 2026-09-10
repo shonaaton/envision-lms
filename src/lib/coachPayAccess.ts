@@ -4,7 +4,7 @@ import { auth } from "@/lib/auth";
 import { canAccessFeature, getFeaturePermissionState } from "@/lib/featureAccess";
 
 export const COACH_PAY_FEATURE = "coachPay";
-export const COACH_PAY_PERMISSIONS = ["view", "view_own", "manage_rates", "rule", "export"] as const;
+export const COACH_PAY_PERMISSIONS = ["view", "view_all", "manage_rates", "rule", "export"] as const;
 export type CoachPayPermission = (typeof COACH_PAY_PERMISSIONS)[number];
 
 export type CoachPayViewer = {
@@ -32,8 +32,9 @@ export async function resolveCoachPayViewer(): Promise<CoachPayViewer | null> {
   if (!user?.id) return null;
 
   const permissions = await getFeaturePermissionState(COACH_PAY_FEATURE, user, COACH_PAY_PERMISSIONS);
-  const canViewAll = Boolean(permissions.view);
-  if (!canViewAll && !permissions.view_own) return null;
+  // `view` is the door; `view_all` is how much of the room you get to see.
+  if (!permissions.view) return null;
+  const canViewAll = Boolean(permissions.view_all);
 
   return {
     userId: String(user.id),
@@ -53,4 +54,18 @@ export async function requireCoachPayPermission(permission: CoachPayPermission) 
   if (!user?.id) return null;
   if (user.role !== "admin" && user.role !== "sub-admin") return null;
   return (await canAccessFeature(COACH_PAY_FEATURE, user, permission)) ? session : null;
+}
+
+/**
+ * Guard for the things a coach does to their own pay record.
+ *
+ * Returns the coach's own id, which callers must use as the subject rather than
+ * anything the form supplied - a coach may submit proposals about themselves and
+ * nobody else, and that is enforced here rather than trusted from a hidden field.
+ */
+export async function requireCoachSelf() {
+  const session = await auth();
+  const user = session?.user as any;
+  if (!user?.id) return null;
+  return (await canAccessFeature(COACH_PAY_FEATURE, user, "view")) ? String(user.id) : null;
 }

@@ -1,12 +1,12 @@
 import Link from "next/link";
-import { AlertTriangle, BadgeIndianRupee, CalendarClock, Gavel, Layers, ScrollText, UserCheck, Users } from "lucide-react";
+import { AlertTriangle, BadgeIndianRupee, CalendarClock, Gavel, Inbox, Layers, Repeat, ScrollText, UserCheck, Users } from "lucide-react";
 
 import { DataPanel, EmptyState, PageHeader, StatCard } from "@/components/common/PageHeader";
 import { PayPeriodFilter } from "@/components/coach-pay/PayPeriodFilter";
 import { SessionRateDialog } from "@/components/coach-pay/SessionRateDialog";
 import { PAY_KIND_LABELS, PAY_STATUS_LABELS, RATE_SCOPE_LABELS, type PayEvent } from "@/lib/coachPay";
 import { resolveCoachPayViewer } from "@/lib/coachPayAccess";
-import { loadCoachPay, listPayableCoaches } from "@/lib/coachPayData";
+import { countPendingProposals, loadCoachPay, listPayableCoaches } from "@/lib/coachPayData";
 import { financialYearOptions, resolvePayPeriod } from "@/lib/payPeriods";
 import { dbConnect } from "@/lib/db";
 import { Batch } from "@/models/Batch";
@@ -57,10 +57,11 @@ export default async function CoachPayPage({
   const batchFilter = value(params, "batch");
 
   await dbConnect();
-  const [{ events, summary, overrides }, coaches, batches] = await Promise.all([
+  const [{ events, summary, overrides }, coaches, batches, pendingProposals] = await Promise.all([
     loadCoachPay(period, { coachId: coachFilter || undefined, batchId: batchFilter || undefined }),
     viewer.canViewAll ? listPayableCoaches() : Promise.resolve([]),
     Batch.find({}).select("name").sort({ name: 1 }).lean(),
+    viewer.canManageRates ? countPendingProposals() : Promise.resolve(0),
   ]);
 
   const query = new URLSearchParams();
@@ -129,25 +130,32 @@ export default async function CoachPayPage({
         </div>
       </PageHeader>
 
-      {viewer.canViewAll && (
-        <div className="mt-3 flex flex-wrap gap-2">
-          {viewer.canManageRates && (
-            <Link href="/coach-pay/rates" className="btn-outline h-9 px-4 text-xs">
-              <Layers size={14} /> Rate cards
-            </Link>
-          )}
-          {viewer.canRule && (
-            <Link href="/coach-pay/reviews" className="btn-outline h-9 px-4 text-xs">
-              <Gavel size={14} /> No-show rulings
-              {summary.pendingReview > 0 && (
-                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800">
-                  {summary.pendingReview}
-                </span>
-              )}
-            </Link>
-          )}
-        </div>
-      )}
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Link href="/coach-pay/rates" className="btn-outline h-9 px-4 text-xs">
+          <Layers size={14} /> {viewer.canManageRates ? "Rate cards" : "My class rates"}
+        </Link>
+        <Link href="/coach-pay/substitutions" className="btn-outline h-9 px-4 text-xs">
+          <Repeat size={14} /> {viewer.canViewAll ? "Substitutions" : "My substitutions"}
+        </Link>
+        {viewer.canManageRates && (
+          <Link href="/coach-pay/proposals" className="btn-outline h-9 px-4 text-xs">
+            <Inbox size={14} /> Coach submissions
+            {pendingProposals > 0 && (
+              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800">{pendingProposals}</span>
+            )}
+          </Link>
+        )}
+        {viewer.canRule && (
+          <Link href="/coach-pay/reviews" className="btn-outline h-9 px-4 text-xs">
+            <Gavel size={14} /> No-show rulings
+            {summary.pendingReview > 0 && (
+              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800">
+                {summary.pendingReview}
+              </span>
+            )}
+          </Link>
+        )}
+      </div>
 
       <div className="mt-3">
         <PayPeriodFilter

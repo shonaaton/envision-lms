@@ -6,10 +6,11 @@ import { Types, isValidObjectId } from "mongoose";
 import { dbConnect } from "@/lib/db";
 import { recordActivity } from "@/lib/activity";
 import { consumeAttendanceCredit } from "@/lib/fees";
-import { requireCoachPayPermission } from "@/lib/coachPayAccess";
+import { requireCoachPayPermission, requireCoachSelf } from "@/lib/coachPayAccess";
 import { isValidRateScope } from "@/lib/coachPay";
-import { CoachRate, NoShowRuling, SessionPayOverride, PAY_KINDS, RATE_UNITS } from "@/models/CoachPay";
+import { CoachPayProposal, CoachRate, NoShowRuling, SessionPayOverride, PAY_KINDS, RATE_UNITS } from "@/models/CoachPay";
 import { Attendance } from "@/models/Attendance";
+import { Classroom } from "@/models/Classroom";
 import { CreditLedger, FeeAssignment } from "@/models/Fee";
 
 /**
@@ -51,6 +52,8 @@ function refresh() {
   revalidatePath("/coach-pay");
   revalidatePath("/coach-pay/rates");
   revalidatePath("/coach-pay/reviews");
+  revalidatePath("/coach-pay/substitutions");
+  revalidatePath("/coach-pay/proposals");
 }
 
 export async function saveRateCard(formData: FormData) {
@@ -417,6 +420,332 @@ export async function saveNoShowRuling(formData: FormData) {
     entityType: "NoShowRuling",
     entityId: saved._id.toString(),
     metadata: { classroom, sessionId, payCoach, deductStudentCredit, note, creditActions },
+  });
+
+  refresh();
+}
+
+/**
+ * Set one coach's rates for one classroom, straight from the coach-wise grid.
+ *
+ * This writes the `classroom_coach` rung, which is the one the academy actually
+ * works in: rates are agreed per coach per class, and everything above it in the
+ * ladder is a safety net for classes nobody has got to yet.
+ */
+export async function saveCoachClassroomRates(formData: FormData) {
+  const session = await requireCoachPayPermission("manage_rates");
+  if (!session?.user) throw new Error("Forbidden");
+  await dbConnect();
+
+  const coach = text(formData, "coach");
+  const classroom = text(formData, "classroom");
+  if (!isValidObjectId(coach) || !isValidObjectId(classroom)) throw new Error("Unknown coach or classroom");
+
+  const effectiveRaw = text(formData, "effectiveFrom");
+  const effectiveFrom = effectiveRaw ? new Date(`${effectiveRaw}T00:00:00`) : new Date(0);
+  if (Number.isNaN(effectiveFrom.getTime())) throw new Error("Enter a valid start date for this rate");
+
+  const values = {
+    regular: rateValue(formData, "regular"),
+    demo: rateValue(formData, "demo"),
+    demoConversionBonus: rateValue(formData, "demoConversionBonus"),
+    substitute: rateValue(formData, "substitute"),
+  };
+
+  const key = {
+    scope: "classroom_coach" as const,
+    coach: new Types.ObjectId(coach),
+    batch: null,
+    classroom: new Types.ObjectId(classroom),
+    effectiveFrom,
+  };
+
+  // Clearing every box removes the card rather than storing an empty one, so the
+  // classroom falls back to the batch or academy rate instead of reading as
+  // "priced, at nothing".
+  if (Object.values(values).every((entry) => entry.amount === null)) {
+    const removed = await CoachRate.findOneAndDelete(key).lean();
+    if (removed) {
+      await recordActivity({
+        actor: (session.user as any).id,
+        targetUser: coach,
+        type: "coachPay.rate.cleared",
+        label: "Cleared a coach's rates for one classroom",
+        entityType: "CoachRate",
+        entityId: String((removed as any)._id),
+        metadata: { coach, classroom, effectiveFrom },
+      });
+    }
+    refresh();
+    return;
+  }
+
+  const saved = await CoachRate.findOneAndUpdate(
+    key,
+    {
+      ...key,
+      ...values,
+      isActive: true,
+      note: text(formData, "note"),
+      updatedBy: (session.user as any).id,
+      $setOnInsert: { createdBy: (session.user as any).id },
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  );
+
+  await recordActivity({
+    actor: (session.user as any).id,
+    targetUser: coach,
+    type: "coachPay.rate.saved",
+    label: "Set a coach's rates for one classroom",
+    entityType: "CoachRate",
+    entityId: saved._id.toString(),
+    metadata: { coach, classroom, effectiveFrom, ...values },
+  });
+
+  refresh();
+}
+
+/**
+ * A coach putting forward what one of their classrooms should pay.
+ *
+ * Saved as a proposal and nothing more. The payroll engine never reads this
+ * collection, so until an admin approves it the coach's total is unchanged -
+ * which is the whole point of letting them enter it in the first place.
+ */
+export async function submitClassroomRateProposal(formData: FormData) {
+  const coachId = await requireCoachSelf();
+  if (!coachId) throw new Error("Forbidden");
+  await dbConnect();
+
+  const classroom = text(formData, "classroom");
+  if (!isValidObjectId(classroom)) throw new Error("Unknown classroom");
+
+  // The coach must actually teach it. Without this the classroom id is just a
+  // number in a form, and any coach could propose rates on anyone's class.
+  const teaches = await Classroom.exists({
+    _id: classroom,
+    $or: [{ coach: coachId }, { instructor: coachId }],
+  });
+  if (!teaches) throw new Error("You are not assigned to that classroom");
+
+  const values = {
+    regular: rateValue(formData, "regular"),
+    demo: rateValue(formData, "demo"),
+    demoConversionBonus: rateValue(formData, "demoConversionBonus"),
+    substitute: rateValue(formData, "substitute"),
+  };
+  if (Object.values(values).every((entry) => entry.amount === null)) {
+    throw new Error("Enter at least one rate to propose");
+  }
+
+  const saved = await CoachPayProposal.findOneAndUpdate(
+    { coach: new Types.ObjectId(coachId), classroom: new Types.ObjectId(classroom), kind: "classroom_rate", status: "pending" },
+    {
+      kind: "classroom_rate",
+      coach: new Types.ObjectId(coachId),
+      classroom: new Types.ObjectId(classroom),
+      ...values,
+      note: text(formData, "note"),
+      status: "pending",
+      submittedBy: coachId,
+      submittedAt: new Date(),
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  );
+
+  await recordActivity({
+    actor: coachId,
+    targetUser: coachId,
+    type: "coachPay.proposal.submitted",
+    label: "Proposed rates for a classroom they teach",
+    entityType: "CoachPayProposal",
+    entityId: saved._id.toString(),
+    metadata: { classroom, ...values },
+  });
+
+  refresh();
+}
+
+/** A coach putting forward what one substitution class they covered should pay. */
+export async function submitSessionRateProposal(formData: FormData) {
+  const coachId = await requireCoachSelf();
+  if (!coachId) throw new Error("Forbidden");
+  await dbConnect();
+
+  const classroom = text(formData, "classroom");
+  const sessionId = text(formData, "sessionId");
+  if (!isValidObjectId(classroom) || !sessionId) throw new Error("Unknown class");
+
+  const amount = paise(formData, "amount");
+  if (amount === null) throw new Error("Enter the amount for this class");
+
+  // Only for a class this coach actually took: they must be named on the
+  // session itself as the substitute or as whoever conducted it.
+  const covered = await Classroom.exists({
+    _id: classroom,
+    generatedSessions: {
+      $elemMatch: {
+        _id: sessionId,
+        $or: [{ substituteCoach: coachId }, { conductedBy: coachId }],
+      },
+    },
+  });
+  if (!covered) throw new Error("You are not recorded as having taken that class");
+
+  const sessionDateRaw = text(formData, "sessionDate");
+  const saved = await CoachPayProposal.findOneAndUpdate(
+    { coach: new Types.ObjectId(coachId), classroom: new Types.ObjectId(classroom), sessionId, kind: "session", status: "pending" },
+    {
+      kind: "session",
+      coach: new Types.ObjectId(coachId),
+      classroom: new Types.ObjectId(classroom),
+      sessionId,
+      sessionDate: sessionDateRaw ? new Date(sessionDateRaw) : undefined,
+      payKind: "substitute",
+      amount,
+      unit: unit(formData, "unit"),
+      note: text(formData, "note"),
+      status: "pending",
+      submittedBy: coachId,
+      submittedAt: new Date(),
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  );
+
+  await recordActivity({
+    actor: coachId,
+    targetUser: coachId,
+    type: "coachPay.proposal.submitted",
+    label: `Proposed ${(amount / 100).toFixed(2)} for a substitution class they covered`,
+    entityType: "CoachPayProposal",
+    entityId: saved._id.toString(),
+    metadata: { classroom, sessionId, amount },
+  });
+
+  refresh();
+}
+
+/** A coach taking back a submission an admin has not answered yet. */
+export async function withdrawProposal(formData: FormData) {
+  const coachId = await requireCoachSelf();
+  if (!coachId) throw new Error("Forbidden");
+  const id = text(formData, "id");
+  if (!isValidObjectId(id)) throw new Error("Unknown proposal");
+  await dbConnect();
+
+  // Scoped to the coach and to `pending`, so this can never delete someone
+  // else's submission or erase one that has already been decided.
+  const removed = await CoachPayProposal.findOneAndDelete({ _id: id, coach: coachId, status: "pending" }).lean();
+  if (removed) {
+    await recordActivity({
+      actor: coachId,
+      targetUser: coachId,
+      type: "coachPay.proposal.withdrawn",
+      label: "Withdrew a pay proposal",
+      entityType: "CoachPayProposal",
+      entityId: id,
+      metadata: { proposal: removed },
+    });
+  }
+  refresh();
+}
+
+/**
+ * An admin answering a coach's submission.
+ *
+ * Approving is what moves money: it writes the proposed numbers into the rate
+ * card or the one-off override that payroll actually reads. Rejecting leaves the
+ * record and the reason, so the coach can see what happened and why.
+ */
+export async function reviewProposal(formData: FormData) {
+  const session = await requireCoachPayPermission("manage_rates");
+  if (!session?.user) throw new Error("Forbidden");
+  await dbConnect();
+
+  const id = text(formData, "id");
+  const decision = text(formData, "decision");
+  if (!isValidObjectId(id)) throw new Error("Unknown proposal");
+  if (decision !== "approve" && decision !== "reject") throw new Error("Choose approve or reject");
+
+  const proposal: any = await CoachPayProposal.findOne({ _id: id, status: "pending" });
+  if (!proposal) throw new Error("That proposal has already been decided");
+
+  const actorId = (session.user as any).id;
+  const reviewNote = text(formData, "reviewNote");
+  let appliedTo: any = null;
+
+  if (decision === "approve") {
+    if (proposal.kind === "classroom_rate") {
+      // The approver dates the rate, not the coach. Left blank it applies to all
+      // history, which is right when the class had no rate at all and wrong once
+      // a month has been paid out - so the choice is put in front of whoever is
+      // approving rather than defaulted silently.
+      const effectiveRaw = text(formData, "effectiveFrom");
+      const effectiveFrom = effectiveRaw
+        ? new Date(`${effectiveRaw}T00:00:00`)
+        : proposal.effectiveFrom
+          ? new Date(proposal.effectiveFrom)
+          : new Date(0);
+      if (Number.isNaN(effectiveFrom.getTime())) throw new Error("Enter a valid start date for this rate");
+      const key = {
+        scope: "classroom_coach" as const,
+        coach: proposal.coach,
+        batch: null,
+        classroom: proposal.classroom,
+        effectiveFrom,
+      };
+      const card = await CoachRate.findOneAndUpdate(
+        key,
+        {
+          ...key,
+          regular: proposal.regular,
+          demo: proposal.demo,
+          demoConversionBonus: proposal.demoConversionBonus,
+          substitute: proposal.substitute,
+          isActive: true,
+          note: proposal.note || "Approved from a coach submission",
+          updatedBy: actorId,
+          $setOnInsert: { createdBy: actorId },
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
+      appliedTo = card._id;
+    } else {
+      const override = await SessionPayOverride.findOneAndUpdate(
+        { classroom: proposal.classroom, sessionId: proposal.sessionId, coach: proposal.coach },
+        {
+          classroom: proposal.classroom,
+          sessionId: proposal.sessionId,
+          coach: proposal.coach,
+          kind: proposal.payKind || "substitute",
+          amount: proposal.amount,
+          unit: proposal.unit || "per_class",
+          reason: proposal.note || "Approved from a coach submission",
+          updatedBy: actorId,
+          $setOnInsert: { createdBy: actorId },
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
+      appliedTo = override._id;
+    }
+  }
+
+  proposal.status = decision === "approve" ? "approved" : "rejected";
+  proposal.reviewedBy = actorId;
+  proposal.reviewedAt = new Date();
+  proposal.reviewNote = reviewNote;
+  if (appliedTo) proposal.appliedTo = appliedTo;
+  await proposal.save();
+
+  await recordActivity({
+    actor: actorId,
+    targetUser: proposal.coach?.toString?.(),
+    type: `coachPay.proposal.${decision === "approve" ? "approved" : "rejected"}`,
+    label: `${decision === "approve" ? "Approved" : "Rejected"} a coach pay proposal`,
+    entityType: "CoachPayProposal",
+    entityId: proposal._id.toString(),
+    metadata: { kind: proposal.kind, classroom: proposal.classroom?.toString?.(), reviewNote, appliedTo: appliedTo?.toString?.() },
   });
 
   refresh();

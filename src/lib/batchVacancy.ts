@@ -118,7 +118,11 @@ export async function getBatchVacancy(): Promise<BatchVacancyPayload> {
       // Session instances are per-class copies of a series; counting them would
       // report the same batch many times over.
       isSessionInstance: { $ne: true },
-      status: { $ne: "cancelled" },
+      // A completed series deliberately remains active so it can be reopened
+      // from the classroom history. It is not, however, a live sales option.
+      // Without excluding it here, a recently updated completed series can
+      // win the per-batch lookup over the batch's currently scheduled series.
+      status: { $nin: ["cancelled", "completed"] },
     })
       .select("title batches coach instructor courseName levelName topicName daysOfWeek startTime durationMinutes generatedSessions sessionPlan classroomType updatedAt")
       .populate("coach", "name phone countryCode")

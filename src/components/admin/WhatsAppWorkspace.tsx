@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import { Bot, CheckCircle2, Clock3, MessageCircle, RefreshCw, Send, Sparkles, ToggleLeft, ToggleRight, UserRound } from "lucide-react";
+import { Bot, CheckCircle2, Clock3, FileText, MessageCircle, RefreshCw, Send, Sparkles, ToggleLeft, ToggleRight, UserRound } from "lucide-react";
 import { WHATSAPP_TEMPLATE_DEFINITIONS, type WhatsAppTemplateDefinition } from "@/lib/whatsappTemplateRegistry";
+
+type WaReaction = { emoji: string; direction: string; at: string };
 
 type WaMessage = {
   id: string;
@@ -16,6 +17,12 @@ type WaMessage = {
   createdAt: string;
   sentAt?: string;
   receivedAt?: string;
+  reactions?: WaReaction[];
+  mediaId?: string;
+  mediaKind?: "image" | "sticker" | "video" | "audio" | "document";
+  mediaMimeType?: string;
+  mediaFilename?: string;
+  mediaUrl?: string;
 };
 
 type Conversation = {
@@ -47,6 +54,7 @@ type InboxPayload = {
   closed: Conversation[];
   sentTemplates: Conversation[];
   conversations: Conversation[];
+  loadedPhoneNumber?: string;
   windowHours: number;
 };
 
@@ -78,7 +86,6 @@ function sendErrorText(value: any) {
 }
 
 export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initialPhoneNumber?: string }) {
-  const router = useRouter();
   const [tab, setTab] = useState<"all" | "active" | "closed" | "sent" | "automation">("all");
   const [data, setData] = useState<InboxPayload>({ active: [], closed: [], sentTemplates: [], conversations: [], windowHours: 24 });
   const [selectedPhone, setSelectedPhone] = useState(initialPhoneNumber);
@@ -97,14 +104,31 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
   const [notice, setNotice] = useState("");
   const [templateResults, setTemplateResults] = useState<any[]>([]);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  // The poll reads the open thread from a ref so switching chats does not tear down and
+  // restart the polling interval on every selection.
+  const selectedPhoneRef = useRef(initialPhoneNumber);
+  const inboxSignatureRef = useRef("");
+  const nearestExpiryRef = useRef(0);
 
-  const loadInbox = useCallback(async (options: { quiet?: boolean } = {}) => {
+  useEffect(() => {
+    selectedPhoneRef.current = selectedPhone;
+  }, [selectedPhone]);
+
+  const loadInbox = useCallback(async (options: { quiet?: boolean; phoneNumber?: string } = {}) => {
     if (!options.quiet) setLoading(true);
+    const phoneNumber = options.phoneNumber ?? selectedPhoneRef.current;
     try {
-      const res = await fetch(`/api/admin/whatsapp?t=${Date.now()}`, { cache: "no-store" });
+      const res = await fetch(`/api/admin/whatsapp${phoneNumber ? `?phone=${encodeURIComponent(phoneNumber)}` : ""}`, { cache: "no-store" });
       const payload = await res.json();
-      setData(payload);
-      setSelectedPhone((current) => current || initialPhoneNumber || payload.conversations?.[0]?.phoneNumber || payload.sentTemplates?.[0]?.phoneNumber || "");
+      if (payload?.error) return;
+      // Most polls come back identical, and skipping the state write keeps the whole inbox
+      // from re-rendering every five seconds.
+      const signature = JSON.stringify(payload);
+      if (signature !== inboxSignatureRef.current) {
+        inboxSignatureRef.current = signature;
+        setData(payload);
+      }
+      setSelectedPhone((current) => current || initialPhoneNumber || payload.loadedPhoneNumber || payload.conversations?.[0]?.phoneNumber || payload.sentTemplates?.[0]?.phoneNumber || "");
     } finally {
       if (!options.quiet) setLoading(false);
     }
@@ -112,7 +136,10 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
 
   useEffect(() => {
     void loadInbox();
-    const interval = window.setInterval(() => void loadInbox({ quiet: true }), 5000);
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "hidden") return;
+      void loadInbox({ quiet: true });
+    }, 5000);
     return () => window.clearInterval(interval);
   }, [loadInbox]);
 
@@ -152,7 +179,24 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
   }, [loadInbox]);
 
   useEffect(() => {
-    const interval = window.setInterval(() => setNow(Date.now()), 1000);
+    nearestExpiryRef.current = data.conversations.reduce((nearest, conversation) => {
+      const expiry = conversation.whatsapp?.window_expires_at ? new Date(conversation.whatsapp.window_expires_at).getTime() : 0;
+      if (expiry <= Date.now()) return nearest;
+      return nearest === 0 || expiry < nearest ? expiry : nearest;
+    }, 0);
+  }, [data.conversations]);
+
+  // The countdown only prints seconds in its final minute, so re-render every second there and
+  // every half minute otherwise instead of repainting the whole inbox once a second all day.
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setNow((current) => {
+        const next = Date.now();
+        const nearestExpiry = nearestExpiryRef.current;
+        const countingSeconds = nearestExpiry > 0 && nearestExpiry - next <= 120_000;
+        return countingSeconds || next - current >= 30_000 ? next : current;
+      });
+    }, 1000);
     return () => window.clearInterval(interval);
   }, []);
 
@@ -169,6 +213,9 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
     [conversations, liveConversations, selectedPhone]
   );
   const selectedMessageKey = selected?.messages.map((message) => `${message.id}:${message.status}`).join("|") || "";
+  // Only the open thread ships its messages, so a freshly clicked chat is empty until its
+  // fetch lands.
+  const threadLoading = Boolean(selected && !selected.messages.length && data.loadedPhoneNumber !== selected.phoneNumber);
   const selectedTemplateDefinition = useMemo(() => findTemplateDefinition(templates, templateName), [templates, templateName]);
   const orderedTemplateVariables = useMemo(
     () => templateVariables.split(/\r?\n/).map((item) => item.trim()).filter(Boolean),
@@ -232,9 +279,15 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
   }
 
   function openConversation(phoneNumber: string) {
+    if (phoneNumber === selectedPhone) return;
     const conversation = data.conversations.find((item) => item.phoneNumber === phoneNumber);
     setSelectedPhone(phoneNumber);
-    router.push(conversation?.chatPath || `/admin/whatsapp/${encodeURIComponent(phoneNumber)}`);
+    selectedPhoneRef.current = phoneNumber;
+    // router.push re-ran the server component and remounted the whole workspace on every
+    // click, which is what made opening a chat feel like a page load. Keep the URL shareable
+    // by rewriting it in place and just fetch the thread.
+    window.history.replaceState(null, "", conversation?.chatPath || `/admin/whatsapp/${encodeURIComponent(phoneNumber)}`);
+    void loadInbox({ quiet: true, phoneNumber });
   }
 
   async function sendReply() {
@@ -550,14 +603,23 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
                 </div>
               ) : (
                 <>
+                  {threadLoading ? <div className="text-center text-sm text-slate-500">Loading conversation...</div> : null}
                   {selected.messages.map((message) => (
                     <div key={message.id} className={`flex ${message.direction === "outbound" ? "justify-end" : "justify-start"}`}>
-                      <div className={`max-w-[78%] whitespace-pre-line rounded-lg px-4 py-3 text-sm leading-6 shadow-md ${message.direction === "outbound" ? "bg-white text-slate-800 shadow-slate-300/50" : "bg-teal-900 text-white shadow-teal-950/20"}`}>
-                        <div>{message.text}</div>
+                      <div className={`relative max-w-[78%] rounded-lg px-4 py-3 text-sm leading-6 shadow-md ${message.reactions?.length ? "mb-3" : ""} ${message.direction === "outbound" ? "bg-white text-slate-800 shadow-slate-300/50" : "bg-teal-900 text-white shadow-teal-950/20"}`}>
+                        <MessageMedia message={message} />
+                        {message.text ? <div className="whitespace-pre-line">{message.text}</div> : null}
                         {message.messageType === "template" && message.templateName ? (
                           <div className={`mt-2 text-[11px] font-semibold ${message.direction === "outbound" ? "text-emerald-600" : "text-teal-100"}`}>{message.templateName}</div>
                         ) : null}
                         <div className={`mt-1 text-[11px] ${message.direction === "outbound" ? "text-slate-400" : "text-teal-100"}`}>{message.status} · {new Date(message.createdAt).toLocaleString()}</div>
+                        {message.reactions?.length ? (
+                          <div className={`absolute -bottom-3 ${message.direction === "outbound" ? "right-3" : "left-3"} flex gap-1 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-sm shadow-sm`}>
+                            {message.reactions.map((reaction) => (
+                              <span key={`${message.id}-${reaction.emoji}`} title={`Reacted ${reaction.emoji}`}>{reaction.emoji}</span>
+                            ))}
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                   ))}
@@ -614,6 +676,41 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
         </section>
       )}
     </div>
+  );
+}
+
+// Media is streamed back through the admin proxy, since Meta media ids are not public URLs.
+function MessageMedia({ message }: { message: WaMessage }) {
+  if (!message.mediaUrl) return null;
+  if (message.mediaKind === "image" || message.mediaKind === "sticker") {
+    return (
+      <a href={message.mediaUrl} target="_blank" rel="noreferrer" className="mb-2 block">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={message.mediaUrl}
+          alt={message.mediaFilename || (message.mediaKind === "sticker" ? "WhatsApp sticker" : "WhatsApp photo")}
+          loading="lazy"
+          className={message.mediaKind === "sticker" ? "h-28 w-28 object-contain" : "max-h-72 max-w-full rounded-md object-contain"}
+        />
+      </a>
+    );
+  }
+  if (message.mediaKind === "video") {
+    return <video src={message.mediaUrl} controls preload="metadata" className="mb-2 max-h-72 w-full rounded-md" />;
+  }
+  if (message.mediaKind === "audio") {
+    return <audio src={message.mediaUrl} controls preload="none" className="mb-2 w-56 max-w-full" />;
+  }
+  return (
+    <a
+      href={message.mediaUrl}
+      target="_blank"
+      rel="noreferrer"
+      className={`mb-2 inline-flex items-center gap-2 rounded-md px-2 py-1.5 text-xs font-bold underline ${message.direction === "outbound" ? "bg-slate-50 text-slate-700" : "bg-teal-800 text-white"}`}
+    >
+      <FileText size={14} />
+      {message.mediaFilename || "Open attachment"}
+    </a>
   );
 }
 

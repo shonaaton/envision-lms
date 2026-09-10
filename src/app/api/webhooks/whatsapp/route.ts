@@ -14,10 +14,32 @@ function verifySignature(rawBody: string, signature: string | null) {
   return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
 }
 
+const MEDIA_TYPES = ["image", "video", "audio", "voice", "document", "sticker"] as const;
+
+// Media arrives as `{ type: "image", image: { id, mime_type, caption } }`. Keep the id and the
+// caption so the inbox can stream the file back from Meta instead of printing "[image]".
+function mediaPart(message: any) {
+  for (const type of MEDIA_TYPES) {
+    const part = message?.[type];
+    if (part && typeof part === "object" && (part.id || part.link)) return { type, part };
+  }
+  return null;
+}
+
 function messageText(message: any) {
   if (message.type === "text") return typeof message.text === "string" ? message.text : String(message.text?.body || "");
   if (message.type === "button") return String(message.button?.text || message.button?.payload || "");
   if (message.type === "interactive") return String(message.interactive?.button_reply?.title || message.interactive?.list_reply?.title || "");
+  if (message.type === "reaction") return String(message.reaction?.emoji || "");
+  if (message.type === "location") {
+    const location = message.location || {};
+    return String(location.name || location.address || `${location.latitude ?? ""}, ${location.longitude ?? ""}`);
+  }
+  if (message.type === "contacts") {
+    return (message.contacts || []).map((contact: any) => String(contact?.name?.formatted_name || "")).filter(Boolean).join(", ");
+  }
+  const media = mediaPart(message);
+  if (media) return String(media.part.caption || media.part.filename || "");
   return `[${message.type || "message"}]`;
 }
 
@@ -171,6 +193,7 @@ export async function POST(req: Request) {
         const contact: any = contacts.get(waId) || {};
         const profileName = String(contact.profile?.name || "");
         const matchedUser: any = await findWhatsAppUserByPhone(phoneNumber);
+        const media = mediaPart(message);
         await WhatsAppMessage.updateOne(
           { metaMessageId },
           {
@@ -186,6 +209,11 @@ export async function POST(req: Request) {
               status: "received",
               metaMessageId,
               rawPayload: message,
+              mediaId: String(media?.part?.id || ""),
+              mediaMimeType: String(media?.part?.mime_type || ""),
+              mediaFilename: String(media?.part?.filename || ""),
+              reactionTargetMessageId: message.type === "reaction" ? String(message.reaction?.message_id || "") : "",
+              reactionEmoji: message.type === "reaction" ? String(message.reaction?.emoji || "") : "",
               receivedAt: parseWhatsAppTimestamp(message.timestamp),
             },
           },

@@ -19,6 +19,11 @@ const WhatsAppMessageSchema = new Schema(
       index: true,
     },
     metaMessageId: { type: String, unique: true, sparse: true, index: true },
+    mediaId: { type: String, default: "" },
+    mediaMimeType: { type: String, default: "" },
+    mediaFilename: { type: String, default: "" },
+    reactionTargetMessageId: { type: String, default: "", index: true },
+    reactionEmoji: { type: String, default: "" },
     error: { type: String, default: "" },
     rawPayload: { type: Schema.Types.Mixed },
     sentAt: { type: Date },
@@ -27,6 +32,8 @@ const WhatsAppMessageSchema = new Schema(
   { timestamps: true }
 );
 
+// The inbox sorts the whole collection by createdAt, which was a full scan without this index.
+WhatsAppMessageSchema.index({ createdAt: -1 });
 WhatsAppMessageSchema.index({ phoneNumber: 1, createdAt: -1 });
 WhatsAppMessageSchema.index({ direction: 1, templateName: 1, createdAt: -1 });
 

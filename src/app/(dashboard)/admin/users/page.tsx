@@ -345,10 +345,10 @@ export default function AdminUsersPage() {
                     <InfoPill label="Phone" value={contactNumber(u)} />
                     {tab === "coaches" && <InfoPill label="Closed Batches" value={String(u.closedBatchCount || 0)} />}
                     <button
-                      className={`rounded-lg px-3 py-2 text-left text-xs font-bold ${u.isPaused ? "bg-amber-100 text-amber-800" : u.isActive ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}
-                      onClick={() => (u.isPaused ? undefined : toggleUserAccess(u))}
+                      className={`rounded-lg px-3 py-2 text-left text-xs font-bold ${!u.isActive ? "bg-red-100 text-red-700" : u.isPaused ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-700"}`}
+                      onClick={() => (u.isActive && u.isPaused ? undefined : toggleUserAccess(u))}
                     >
-                      {u.isPaused ? "Paused" : u.isActive ? "Active" : "Inactive"}
+                      {!u.isActive ? "Inactive" : u.isPaused ? "Paused" : "Active"}
                     </button>
                   </div>
                   <div className="mt-2">
@@ -426,7 +426,7 @@ export default function AdminUsersPage() {
                           >
                             {u.isActive ? "Active" : "Inactive"}
                           </button>
-                          {u.isPaused && (
+                          {u.isActive && u.isPaused && (
                             <a
                               href="/admin/paused-students"
                               className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-200"

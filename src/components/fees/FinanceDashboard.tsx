@@ -650,7 +650,7 @@ export function FinanceDashboard({
       key: "paused",
       label: "Students paused",
       value: String(k.pausedStudents),
-      note: `${k.pausedActive} still out, ${k.pausedReturning} due back`,
+      note: `Still out of class, ${k.pausedReturning} due back this range`,
       icon: PauseCircle,
       tone: "amber",
       tables: ["pausedStudents", "pausedVoidedInvoices", "pausedReturning"],

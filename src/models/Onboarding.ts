@@ -1,4 +1,12 @@
 import { Schema, model, models, type InferSchemaType } from "mongoose";
+import {
+  CALCULATION_POWER,
+  ENDGAME_KNOWLEDGE,
+  OVERALL_STRENGTH,
+  POSITIONAL_SENSE,
+  TACTICAL_STRENGTH,
+  scaleEnum,
+} from "@/lib/demoAssessmentScales";
 
 const CoachApplicationSchema = new Schema(
   {
@@ -70,8 +78,27 @@ const DemoFeedbackSchema = new Schema(
     assessmentNotes: String,
     strengths: String,
     weaknesses: String,
+    /**
+     * Whether a salesperson sat in on the demo, and which one. The name is
+     * snapshotted alongside the reference because sales staff leave and the
+     * assessment still has to say who was in that call a year later.
+     */
+    salesPersonPresent: { type: Boolean, default: false },
+    salesPerson: { type: Schema.Types.ObjectId, ref: "User" },
+    salesPersonName: String,
+    /** A tier from `COURSE_TIERS` since the demo assessment became a dropdown. */
     recommendedCourseLevel: String,
+    /** "Level 1".."Level 3" within the tier, from `demoCurriculum`. */
+    recommendedSubLevel: String,
     recommendedStartingTopic: String,
+    /** Position of the starting topic in the tier - what the batch calls Session N. */
+    recommendedStartingSession: Number,
+    /** Graded ladders, defined in `demoAssessmentScales`. "" means not rated. */
+    calculationPower: { type: String, enum: scaleEnum(CALCULATION_POWER), default: "" },
+    tacticalStrength: { type: String, enum: scaleEnum(TACTICAL_STRENGTH), default: "" },
+    endgameKnowledge: { type: String, enum: scaleEnum(ENDGAME_KNOWLEDGE), default: "" },
+    positionalSense: { type: String, enum: scaleEnum(POSITIONAL_SENSE), default: "" },
+    overallStrength: { type: String, enum: scaleEnum(OVERALL_STRENGTH), default: "" },
     studentEngagement: { type: String, enum: ["high", "medium", "low", ""], default: "" },
     coachRecommendation: { type: String, enum: ["group", "individual", "either", ""], default: "" },
     suggestedClassFrequency: String,

@@ -5,6 +5,8 @@ import { importantContacts, importantContactsFromEnvKeys, importantContactWhatsA
 import { sendAutomationEmail } from "@/lib/emailAutomation";
 import { sendWhatsAppTextMessage } from "@/lib/whatsappAutomation";
 import { sendWhatsAppAutomationTemplates } from "@/lib/whatsappAutomationEvents";
+import { courseTierLabel } from "@/lib/courseTiers";
+import { OVERALL_STRENGTH, scaleLabel } from "@/lib/demoAssessmentScales";
 import { Booking } from "@/models/Booking";
 import { Batch } from "@/models/Batch";
 import { Notification } from "@/models/Fee";
@@ -340,7 +342,13 @@ export async function notifyDemoFeedbackSubmitted(input: {
   const classTime = booking?.startAt ? demoClassTimeLabel(booking.startAt) : "the demo class";
   const contact = [student?.countryCode, student?.phone].filter(Boolean).join(" ").trim() || student?.email || "no contact on file";
   const recommendation = COACH_RECOMMENDATION_LABELS[String(feedback?.coachRecommendation || "")] || "Not specified";
-  const recommendedLevel = String(feedback?.recommendedCourseLevel || "").trim() || "Not specified";
+  const recommendedLevel = courseTierLabel(feedback?.recommendedCourseLevel) || "Not specified";
+  const startingTopic = String(feedback?.recommendedStartingTopic || "").trim();
+  const startingSession = Number(feedback?.recommendedStartingSession || 0);
+  // Assessments filed before the syllabus dropdown carry a typed topic with no
+  // session number, so the number is only quoted when it is actually there.
+  const startsAt = startingTopic ? (startingSession ? `Session ${startingSession} - ${startingTopic}` : startingTopic) : "";
+  const overall = scaleLabel(OVERALL_STRENGTH, feedback?.overallStrength);
   const engagement = String(feedback?.studentEngagement || "").trim();
   const message = `${coachName} submitted the demo assessment for ${studentName} (${classTime}). Recommended: ${recommendation}, level ${recommendedLevel}.`;
 
@@ -379,6 +387,8 @@ export async function notifyDemoFeedbackSubmitted(input: {
     `Contact: ${contact}`,
     `Recommended class type: ${recommendation}`,
     `Recommended course level: ${recommendedLevel}`,
+    ...(startsAt ? [`Starts at: ${startsAt}`] : []),
+    ...(overall ? [`Overall strength: ${overall}`] : []),
     ...(engagement ? [`Student engagement: ${engagement}`] : []),
     ...(feedback?.parentFacingSummary ? ["", `Summary for the parent: ${feedback.parentFacingSummary}`] : []),
     ...(feedback?.salesAdminNotes ? ["", `Notes for sales: ${feedback.salesAdminNotes}`] : []),

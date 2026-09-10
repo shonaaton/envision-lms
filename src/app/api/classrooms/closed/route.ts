@@ -56,7 +56,11 @@ export async function GET() {
       .lean();
 
   const closedState = { isActive: false, closedReason: DEACTIVATION_CLOSURE_REASON };
-  const pausedState = { isPaused: true };
+  // Closing a group does not clear its pause flag, so a group that was paused
+  // for a student and then closed when that student was deactivated matches
+  // both states. Closed is the later and the final one, so it wins and the group
+  // is listed once.
+  const pausedState = { isPaused: true, isActive: { $ne: false } };
 
   const [closedClassrooms, closedBatches, pausedClassrooms, pausedBatches] = await Promise.all([
     findClassrooms(closedState),

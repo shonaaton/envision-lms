@@ -1,17 +1,28 @@
 import { redirect } from "next/navigation";
-import { CheckCircle2, ClipboardList } from "lucide-react";
+import { ClipboardList } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { Booking } from "@/models/Booking";
 import { DemoFeedback } from "@/models/Onboarding";
 import { recordActivity } from "@/lib/activity";
 import { notifyDemoFeedbackSubmitted } from "@/lib/demoWorkflow";
+import { demoSalesRecipients } from "@/lib/demoNotificationRecipients";
+import { curriculumByTier, curriculumSessionByNumber } from "@/lib/demoCurriculum";
 import DemoAssessmentLeaveGuard from "@/components/demo/DemoAssessmentLeaveGuard";
+import DemoFeedbackForm, { type SalesPersonOption } from "@/components/demo/DemoFeedbackForm";
 
 export const dynamic = "force-dynamic";
 
 function value(formData: FormData, key: string) {
   return String(formData.get(key) || "").trim();
+}
+
+/** Sales staff who can be named as present, from the live directory. */
+async function salesPeopleOptions(): Promise<SalesPersonOption[]> {
+  // Fallback rows from the static contact list carry no user id, and the field
+  // is a User reference, so only real accounts can be offered here.
+  const recipients = await demoSalesRecipients();
+  return recipients.filter((recipient) => recipient.userId && recipient.name).map((recipient) => ({ id: recipient.userId, name: recipient.name }));
 }
 
 async function submitDemoFeedback(formData: FormData) {
@@ -25,11 +36,21 @@ async function submitDemoFeedback(formData: FormData) {
   if (!booking || booking.bookingType !== "demo" || !booking.classroom) return;
   const coachId = String(booking.assignedCoach?._id || booking.instructor?._id || booking.instructor || "");
   if (role === "instructor" && coachId !== actorId) return;
-  // Whether the hand-off to sales has already happened. Read before the upsert,
-  // because the upsert is what sets it: without this every re-save of the form
-  // sent the whole "assessment submitted" fan-out again, and a coach correcting
-  // a typo emailed and messaged three people a second time. Editing an
-  // assessment is fine; announcing it twice is not.
+
+  // The starting topic is stored as text so a report never has to re-resolve it,
+  // but it is chosen by session number: several sessions in a tier share a name
+  // ("Revision", "Practice Session") and only the number says which one.
+  const recommendedCourseLevel = value(formData, "recommendedCourseLevel");
+  const startingSession = curriculumSessionByNumber(recommendedCourseLevel, Number(value(formData, "recommendedStartingSession")));
+
+  // Only a name from the live sales directory is accepted - the id arrives from
+  // a dropdown, and a form post is not a promise that it came from one.
+  const salesPersonPresent = value(formData, "salesPersonPresent") === "yes";
+  const salesPersonId = value(formData, "salesPerson");
+  const salesPerson = salesPersonPresent ? (await salesPeopleOptions()).find((person) => person.id === salesPersonId) : undefined;
+
+  const hasFideRating = value(formData, "hasFideRating") === "yes";
+
   const alreadySubmitted = Boolean(
     await DemoFeedback.exists({ booking: booking._id, classroom: booking.classroom, status: "submitted" })
   );
@@ -41,23 +62,21 @@ async function submitDemoFeedback(formData: FormData) {
       coach: coachId,
       classroom: booking.classroom,
       attendanceStatus: "present",
-      chessLevel: value(formData, "chessLevel"),
-      playingStrength: value(formData, "playingStrength"),
-      hasFideRating: value(formData, "hasFideRating") === "yes",
-      fideRating: Number(value(formData, "fideRating") || 0) || undefined,
-      chessComRating: Number(value(formData, "chessComRating") || 0) || undefined,
-      lichessRating: Number(value(formData, "lichessRating") || 0) || undefined,
-      assessmentNotes: value(formData, "assessmentNotes"),
-      strengths: value(formData, "strengths"),
-      weaknesses: value(formData, "weaknesses"),
-      recommendedCourseLevel: value(formData, "recommendedCourseLevel"),
-      recommendedStartingTopic: value(formData, "recommendedStartingTopic"),
-      studentEngagement: value(formData, "studentEngagement"),
+      salesPersonPresent,
+      salesPerson: salesPerson?.id || undefined,
+      salesPersonName: salesPerson?.name || "",
+      recommendedCourseLevel,
+      recommendedSubLevel: startingSession?.levelName || "",
+      recommendedStartingTopic: startingSession?.topic || "",
+      recommendedStartingSession: startingSession?.sessionNumber || undefined,
       coachRecommendation: value(formData, "coachRecommendation"),
-      suggestedClassFrequency: value(formData, "suggestedClassFrequency"),
-      coachComments: value(formData, "coachComments"),
-      parentFacingSummary: value(formData, "parentFacingSummary"),
-      internalCoachNotes: value(formData, "internalCoachNotes"),
+      hasFideRating,
+      fideRating: hasFideRating ? Number(value(formData, "fideRating") || 0) || undefined : undefined,
+      calculationPower: value(formData, "calculationPower"),
+      tacticalStrength: value(formData, "tacticalStrength"),
+      endgameKnowledge: value(formData, "endgameKnowledge"),
+      positionalSense: value(formData, "positionalSense"),
+      overallStrength: value(formData, "overallStrength"),
       salesAdminNotes: value(formData, "salesAdminNotes"),
       status: "submitted",
       submittedAt: new Date(),
@@ -66,8 +85,13 @@ async function submitDemoFeedback(formData: FormData) {
     { upsert: true, new: true }
   );
   await Booking.findByIdAndUpdate(booking._id, { demoStatus: "COMPLETED", feedbackStatus: "submitted" });
-  // Never let a delivery failure lose the assessment the coach just typed.
+  // Whether the hand-off to sales has already happened, read before the upsert
+  // above because the upsert is what sets it: without this every re-save sent
+  // the whole "assessment submitted" fan-out again, and a coach correcting a
+  // typo emailed and messaged three people a second time. Editing an
+  // assessment is fine; announcing it twice is not.
   if (!alreadySubmitted) {
+    // Never let a delivery failure lose the assessment the coach just typed.
     await notifyDemoFeedbackSubmitted({
       booking,
       student: booking.student,
@@ -106,78 +130,41 @@ export default async function DemoFeedbackPage({ params }: { params: { bookingId
   const isAssessable = ["ASSESSMENT_PENDING", "COMPLETED", "CONVERTED"].includes(String(booking.demoStatus || "")) || Boolean(feedback);
   if (!isAssessable) redirect(role === "instructor" ? "/classrooms" : "/admin/demo-center?tab=missed");
 
+  const salesPeople = await salesPeopleOptions();
+  const coachName = booking.assignedCoach?.name || booking.instructor?.name || "Unassigned";
+
   return (
-    <main className="mx-auto max-w-5xl space-y-5 p-4 sm:p-6">
+    <main className="mx-auto max-w-3xl space-y-4 p-4 sm:p-6">
       <DemoAssessmentLeaveGuard />
-      <section className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-950 shadow-sm">
-        <div className="flex items-center gap-2 text-sm font-black uppercase tracking-wide"><ClipboardList size={18} /> Demo Feedback</div>
-        <h1 className="mt-2 text-2xl font-black text-slate-950">Initial assessment for {booking.student?.name || "demo student"}</h1>
-        <p className="mt-1 text-sm leading-6 text-amber-900">Capture the first coach assessment now. This schema is ready for the fuller assessment system later.</p>
+      <section className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-950 shadow-sm">
+        <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.12em]"><ClipboardList size={15} /> Demo Feedback</div>
+        <h1 className="mt-1.5 text-xl font-black text-slate-950 sm:text-2xl">{booking.student?.name || "Demo student"}</h1>
+        <p className="mt-1 text-sm leading-6 text-amber-900">Fill this in while the class is fresh. Sales converts the lead from what you write here.</p>
       </section>
 
-      <form action={submitDemoFeedback} className="grid gap-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-        <input type="hidden" name="bookingId" value={String(booking._id)} />
-        <div className="grid gap-4 md:grid-cols-2">
-          <Field name="chessLevel" label="Current chess level" defaultValue={feedback?.chessLevel} required />
-          <Field name="playingStrength" label="Approximate playing strength" defaultValue={feedback?.playingStrength} />
-          <label className="block">
-            <span className="mb-2 block text-xs font-black uppercase text-slate-500">FIDE rating?</span>
-            <select name="hasFideRating" defaultValue={feedback?.hasFideRating ? "yes" : "no"} className="h-11 w-full rounded-lg border border-slate-200 px-3 text-sm">
-              <option value="no">No</option>
-              <option value="yes">Yes</option>
-            </select>
-          </label>
-          <Field name="fideRating" label="FIDE rating" type="number" defaultValue={feedback?.fideRating} />
-          <Field name="chessComRating" label="Chess.com rating" type="number" defaultValue={feedback?.chessComRating} />
-          <Field name="lichessRating" label="Lichess rating" type="number" defaultValue={feedback?.lichessRating} />
-          <Field name="recommendedCourseLevel" label="Recommended course level" defaultValue={feedback?.recommendedCourseLevel} required />
-          <Field name="recommendedStartingTopic" label="Recommended starting topic" defaultValue={feedback?.recommendedStartingTopic} />
-        </div>
-        <TextArea name="assessmentNotes" label="Basic assessment notes" defaultValue={feedback?.assessmentNotes} />
-        <div className="grid gap-4 md:grid-cols-2">
-          <TextArea name="strengths" label="Strengths" defaultValue={feedback?.strengths} />
-          <TextArea name="weaknesses" label="Weaknesses" defaultValue={feedback?.weaknesses} />
-        </div>
-        <div className="grid gap-4 md:grid-cols-3">
-          <Select name="studentEngagement" label="Student engagement" defaultValue={feedback?.studentEngagement} options={["", "high", "medium", "low"]} required />
-          <Select name="coachRecommendation" label="Coach recommendation" defaultValue={feedback?.coachRecommendation} options={["", "group", "individual", "either"]} required />
-          <Field name="suggestedClassFrequency" label="Suggested class frequency" defaultValue={feedback?.suggestedClassFrequency} />
-        </div>
-        <TextArea name="parentFacingSummary" label="Student assessment summary" defaultValue={feedback?.parentFacingSummary} required />
-        <TextArea name="coachComments" label="Coach comments" defaultValue={feedback?.coachComments} />
-        <TextArea name="internalCoachNotes" label="Internal coach notes" defaultValue={feedback?.internalCoachNotes} />
-        {role !== "instructor" ? <TextArea name="salesAdminNotes" label="Sales/admin notes" defaultValue={feedback?.salesAdminNotes} /> : null}
-        <button className="btn-primary w-fit"><CheckCircle2 size={16} /> Submit Demo Feedback</button>
-      </form>
+      <DemoFeedbackForm
+        action={submitDemoFeedback}
+        bookingId={String(booking._id)}
+        studentName={booking.student?.name || "Demo student"}
+        coachName={coachName}
+        salesPeople={salesPeople}
+        curriculum={curriculumByTier()}
+        defaults={{
+          salesPersonPresent: Boolean(feedback?.salesPersonPresent),
+          salesPerson: String(feedback?.salesPerson || ""),
+          recommendedCourseLevel: String(feedback?.recommendedCourseLevel || ""),
+          recommendedStartingSession: Number(feedback?.recommendedStartingSession || 0),
+          coachRecommendation: String(feedback?.coachRecommendation || ""),
+          hasFideRating: Boolean(feedback?.hasFideRating),
+          fideRating: feedback?.fideRating ? String(feedback.fideRating) : "",
+          calculationPower: String(feedback?.calculationPower || ""),
+          tacticalStrength: String(feedback?.tacticalStrength || ""),
+          endgameKnowledge: String(feedback?.endgameKnowledge || ""),
+          positionalSense: String(feedback?.positionalSense || ""),
+          overallStrength: String(feedback?.overallStrength || ""),
+          salesAdminNotes: String(feedback?.salesAdminNotes || ""),
+        }}
+      />
     </main>
-  );
-}
-
-function Field({ name, label, type = "text", defaultValue, required = false }: { name: string; label: string; type?: string; defaultValue?: string | number; required?: boolean }) {
-  return (
-    <label className="block">
-      <span className="mb-2 block text-xs font-black uppercase text-slate-500">{label}</span>
-      <input name={name} type={type} defaultValue={defaultValue || ""} required={required} className="h-11 w-full rounded-lg border border-slate-200 px-3 text-sm" />
-    </label>
-  );
-}
-
-function Select({ name, label, defaultValue, options, required = false }: { name: string; label: string; defaultValue?: string; options: string[]; required?: boolean }) {
-  return (
-    <label className="block">
-      <span className="mb-2 block text-xs font-black uppercase text-slate-500">{label}</span>
-      <select name={name} defaultValue={defaultValue || ""} required={required} className="h-11 w-full rounded-lg border border-slate-200 px-3 text-sm capitalize">
-        {options.map((option) => <option key={option || "blank"} value={option}>{option || "Select"}</option>)}
-      </select>
-    </label>
-  );
-}
-
-function TextArea({ name, label, defaultValue, required = false }: { name: string; label: string; defaultValue?: string; required?: boolean }) {
-  return (
-    <label className="block">
-      <span className="mb-2 block text-xs font-black uppercase text-slate-500">{label}</span>
-      <textarea name={name} defaultValue={defaultValue || ""} required={required} className="min-h-24 w-full rounded-lg border border-slate-200 px-3 py-3 text-sm" />
-    </label>
   );
 }

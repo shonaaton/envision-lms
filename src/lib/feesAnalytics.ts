@@ -90,7 +90,11 @@ export async function getFeesAnalytics(options: { from: Date; to: Date; gst: Gst
       .lean(),
     DeletedInvoice.find({}).populate("student", "name username").sort({ deletedAt: -1 }).lean(),
     FeePlan.find({}).lean(),
-    StudentPause.find({ status: { $ne: "cancelled" } })
+    // Only students who are actually out of class. A pause that was cancelled
+    // never happened, and a pause that was resumed is over - the student is back
+    // in class and their billing has restarted, so neither is a live pause and
+    // neither belongs in the paused counts or the revenue held back.
+    StudentPause.find({ status: "active" })
       .populate("student", "name username email isActive")
       .sort({ pausedFrom: -1 })
       .lean(),
@@ -434,9 +438,31 @@ export async function getFeesAnalytics(options: { from: Date; to: Date; gst: Gst
           pause window are never raised in the first place.
 
      Every invoice is keyed by its number (falling back to its due date) so an
-     invoice that was voided by the pause and later deleted is counted once. */
+     invoice that was voided by the pause and later deleted is counted once.
 
-  const pausesInRange = (pauses as any[]).filter((pause) => !!pauseHoldWindow(pause.pausedFrom, pause.pausedUntil, from, to));
+     Reinstated students are not part of any of this. Once a pause is resumed the
+     student is back in class, their classes are back on the schedule and
+     `resumeStudent` has re-dated the moved invoices and raised the next one - so
+     nothing is on hold any more. Counting them here would report a student as
+     paused while they are sitting in class, and would count revenue as lost that
+     has already gone back on the books. Only `status: "active"` pauses are
+     loaded, so a resume drops out of every number below from that moment on, and
+     a student who has since been deactivated is dropped here for the same
+     reason - they are in the churn tables above, not in these. */
+
+  // A deactivated account has left the academy rather than stepped out of it for
+  // a while, so it is counted once - under "Students who left", never here as
+  // well. `pauseStudent` refuses to pause a deactivated student, so this only
+  // arises in the other order: paused first, deactivated after, which leaves the
+  // pause record open behind them. Read from the live student record, so a
+  // student deactivated long after their pause was written is caught too.
+  const livePauses = (pauses as any[]).filter((pause) => {
+    const student = studentById.get(idOf(pause.student)) || pause.student;
+    return student?.isActive !== false;
+  });
+  // `pauses` holds live pauses only, so this is "students who were out of class
+  // during this range and have not been put back yet".
+  const pausesInRange = livePauses.filter((pause) => !!pauseHoldWindow(pause.pausedFrom, pause.pausedUntil, from, to));
 
   const cancelledByStudent = new Map<string, any[]>();
   for (const invoice of scoped) {
@@ -558,20 +584,20 @@ export async function getFeesAnalytics(options: { from: Date; to: Date; gst: Gst
       unbilledCycles: unbilledCycles.length,
       unbilledValue,
       onHold: voidedValue + unbilledValue,
-      state: pause.status === "resumed" ? "Back in class" : "Paused",
     });
   }
 
   const pausedOnHold = pausedVoidedValue + pausedUnbilledValue;
-  const pausesActive = pausesInRange.filter((pause) => pause.status === "active");
+  // Every pause left here is still open, so "due back" means the restart the
+  // academy booked falls inside the range and the student has not returned yet.
   const pausesReturning = pausesInRange.filter((pause) => inRange(pause.expectedRestartDate || pause.pausedUntil, from, to));
   const returningPauseIds = new Set(pausesReturning.map((pause) => idOf(pause)));
-  const pausedStudentIds = new Set(pausesActive.map((pause) => idOf(pause.student)));
+  const pausedStudentIds = new Set(pausesInRange.map((pause) => idOf(pause.student)));
 
   addTable({
     id: "pausedStudents",
     title: "Paused students",
-    subtitle: "Students out of class this range, and the fee value held back while they are away",
+    subtitle: "Students still out of class, and the fee value held back while they are away",
     columns: [
       { key: "student", label: "Student" },
       { key: "batch", label: "Batch" },
@@ -583,18 +609,17 @@ export async function getFeesAnalytics(options: { from: Date; to: Date; gst: Gst
       { key: "voidedValue", label: "Voided / deleted", type: "money", align: "right" },
       { key: "unbilledValue", label: "Never billed", type: "money", align: "right" },
       { key: "onHold", label: "On hold", type: "money", align: "right" },
-      { key: "state", label: "Status", type: "badge" },
     ],
     rows: pauseRows.sort((a, b) => b.onHold - a.onHold),
     totals: { voidedValue: pausedVoidedValue, unbilledValue: pausedUnbilledValue, onHold: pausedOnHold },
     footnote:
-      "On hold = every invoice for this range that the pause voided or an admin deleted, plus the monthly cycles inside the pause window that were never raised at all. Credit plans count lost invoices only, since they have no fixed billing cycle.",
+      "On hold = every invoice for this range that the pause voided or an admin deleted, plus the monthly cycles inside the pause window that were never raised at all. Credit plans count lost invoices only, since they have no fixed billing cycle. Students who have been reinstated are not listed: their classes and billing have restarted, so nothing of theirs is on hold. A paused student whose account was then deactivated is counted under Students who left instead.",
   });
 
   addTable({
     id: "pausedVoidedInvoices",
     title: "Revenue lost to a pause",
-    subtitle: "Every invoice a paused student would have paid this range, and how it left the ledger",
+    subtitle: "Every invoice a student still out of class would have paid this range, and how it left the ledger",
     columns: [
       { key: "invoice", label: "Invoice" },
       { key: "student", label: "Student" },
@@ -612,15 +637,15 @@ export async function getFeesAnalytics(options: { from: Date; to: Date; gst: Gst
   addTable({
     id: "pausedReturning",
     title: "Students due back",
-    subtitle: "Pauses ending inside this range - revenue that should restart",
+    subtitle: "Open pauses ending inside this range - students to reinstate, and the revenue that restarts with them",
     columns: [
       { key: "student", label: "Student" },
       { key: "batch", label: "Batch" },
       { key: "restart", label: "Restarts", type: "date" },
-      { key: "onHold", label: "Was on hold", type: "money", align: "right" },
-      { key: "state", label: "Status", type: "badge" },
+      { key: "onHold", label: "On hold", type: "money", align: "right" },
     ],
     rows: pauseRows.filter((row) => returningPauseIds.has(row.pauseId)),
+    footnote: "A student who has already been put back in class drops off this list - reinstating them is what closes the pause.",
   });
 
   /* ------------------------------------------------------------- 4. demos */
@@ -1085,8 +1110,10 @@ export async function getFeesAnalytics(options: { from: Date; to: Date; gst: Gst
     netStudentGrowth: newStudents.length - leftStudents.length,
     netRecurringGrowth: newStudentRecurring - churnRecurringLost,
 
+    // Students out of class in this range who are still out - a reinstated
+    // student is no longer paused, so they are not here and neither is any
+    // revenue of theirs.
     pausedStudents: pausesInRange.length,
-    pausedActive: pausesActive.length,
     pausedReturning: pausesReturning.length,
     pausedOnHold,
     pausedVoidedValue,

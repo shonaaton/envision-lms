@@ -31,7 +31,6 @@ const SALES_KPIS = [
   "netStudentGrowth",
   "netRecurringGrowth",
   "pausedStudents",
-  "pausedActive",
   "pausedReturning",
   "pausedOnHold",
   "pausedVoidedValue",

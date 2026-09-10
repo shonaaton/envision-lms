@@ -11,6 +11,15 @@ import { notifyDemoApproved, notifyDemoConverted, notifyDemoMissed } from "@/lib
 import { sendAutomationEmail } from "@/lib/emailAutomation";
 import { recordActivity } from "@/lib/activity";
 import { cancelDemoClassrooms, isConfirmedDemo, markDemoClassroomMissed, upsertDemoClassroom } from "@/lib/demoClassroom";
+import { COURSE_TIER_LABELS } from "@/lib/courseTiers";
+import {
+  CALCULATION_POWER,
+  ENDGAME_KNOWLEDGE,
+  OVERALL_STRENGTH,
+  POSITIONAL_SENSE,
+  TACTICAL_STRENGTH,
+  scaleLabel,
+} from "@/lib/demoAssessmentScales";
 import { Activity } from "@/models/Activity";
 import { Booking } from "@/models/Booking";
 import { Classroom } from "@/models/Classroom";
@@ -75,7 +84,18 @@ const LEVEL_LABELS: Record<string, string> = {
 function levelLabel(value?: string) {
   const key = String(value || "").trim();
   if (!key) return "";
-  return LEVEL_LABELS[key] || key.replace(/_/g, " ").replace(/\b\w/g, (character) => character.toUpperCase());
+  return COURSE_TIER_LABELS[key] || LEVEL_LABELS[key] || key.replace(/_/g, " ").replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+/**
+ * Where the student picks the course up. Assessments filed before the syllabus
+ * dropdown existed carry only a typed topic, so the session number is optional.
+ */
+function startingSessionLabel(feedback: any) {
+  const topic = String(feedback?.recommendedStartingTopic || "").trim();
+  if (!topic) return "";
+  const number = Number(feedback?.recommendedStartingSession || 0);
+  return number ? `Session ${number} - ${topic}` : topic;
 }
 
 function titleCase(value?: string) {
@@ -552,10 +572,10 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <div className="font-semibold text-slate-950">{item.demoUser?.name || "Demo student"}</div>
-                  <div className="mt-1 text-sm text-slate-500">Coach: {item.coach?.name || "-"} · Recommended: {item.recommendedCourseLevel || "-"}</div>
+                  <div className="mt-1 text-sm text-slate-500">Coach: {item.coach?.name || "-"} · Recommended: {levelLabel(item.recommendedCourseLevel) || "-"}</div>
                   <div className="mt-1 text-xs font-bold uppercase text-slate-400">{item.status === "submitted" ? "Submitted" : "Draft / waiting for coach"}</div>
-                  <div className="mt-1 text-sm text-slate-600">Engagement: {item.studentEngagement || "-"} · Format: {item.coachRecommendation || "-"} · Frequency: {item.suggestedClassFrequency || "-"}</div>
-                  <p className="mt-2 text-sm leading-6 text-slate-700">{item.parentFacingSummary || item.assessmentNotes || "No parent-facing summary yet."}</p>
+                  <div className="mt-1 text-sm text-slate-600">Overall: {scaleLabel(OVERALL_STRENGTH, item.overallStrength) || titleCase(item.studentEngagement) || "-"} · Format: {titleCase(item.coachRecommendation) || "-"} · Starts at: {startingSessionLabel(item) || "-"}</div>
+                  <p className="mt-2 text-sm leading-6 text-slate-700">{item.salesAdminNotes || item.parentFacingSummary || item.assessmentNotes || "No notes for sales yet."}</p>
                 </div>
                 <Link href={`/demo-feedback/${item.booking?._id || item.booking}`} className="btn-outline bg-white">Open Assessment</Link>
               </div>
@@ -988,10 +1008,11 @@ function Note({ label, text, icon }: { label: string; text: string; icon?: React
 function AssessmentSummary({ feedback }: { feedback?: any }) {
   if (!feedback) return null;
   const ratings = [
-    feedback.fideRating ? `FIDE ${feedback.fideRating}` : "",
+    feedback.hasFideRating ? `FIDE ${feedback.fideRating || "rated"}` : "Not FIDE rated",
     feedback.chessComRating ? `Chess.com ${feedback.chessComRating}` : "",
     feedback.lichessRating ? `Lichess ${feedback.lichessRating}` : "",
   ].filter(Boolean).join(" · ");
+  const salesPresent = feedback.salesPersonPresent ? feedback.salesPersonName || feedback.salesPerson?.name || "Yes" : "No";
 
   return (
     <div className="mt-4 rounded-lg border border-emerald-100 bg-emerald-50/40 p-4">
@@ -999,22 +1020,27 @@ function AssessmentSummary({ feedback }: { feedback?: any }) {
         <UserCheck size={13} /> Coach assessment
       </div>
       <dl className="mt-2.5 grid gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Field label="Assessed level" value={levelLabel(feedback.chessLevel)} />
-        <Field label="Playing strength" value={feedback.playingStrength} />
-        <Field label="Engagement" value={titleCase(feedback.studentEngagement)} />
-        <Field label="Recommends" value={titleCase(feedback.coachRecommendation)} />
         <Field label="Course level" value={levelLabel(feedback.recommendedCourseLevel)} />
-        <Field label="Starting topic" value={feedback.recommendedStartingTopic} />
-        <Field label="Class frequency" value={feedback.suggestedClassFrequency} />
+        <Field label="Starts at" value={startingSessionLabel(feedback)} />
+        <Field label="Class type" value={titleCase(feedback.coachRecommendation)} />
         <Field label="Ratings" value={ratings} />
+        <Field label="Calculation" value={scaleLabel(CALCULATION_POWER, feedback.calculationPower)} />
+        <Field label="Tactics" value={scaleLabel(TACTICAL_STRENGTH, feedback.tacticalStrength)} />
+        <Field label="Endgame" value={scaleLabel(ENDGAME_KNOWLEDGE, feedback.endgameKnowledge)} />
+        <Field label="Positional" value={scaleLabel(POSITIONAL_SENSE, feedback.positionalSense)} />
+        <Field label="Overall" value={scaleLabel(OVERALL_STRENGTH, feedback.overallStrength)} />
+        <Field label="Sales present" value={salesPresent} />
+        {/* Only for assessments filed before the form was rebuilt around graded scales. */}
+        {feedback.chessLevel ? <Field label="Assessed level" value={levelLabel(feedback.chessLevel)} /> : null}
+        {feedback.studentEngagement ? <Field label="Engagement" value={titleCase(feedback.studentEngagement)} /> : null}
       </dl>
-      {feedback.strengths || feedback.weaknesses || feedback.parentFacingSummary || feedback.coachComments || feedback.salesAdminNotes ? (
+      {feedback.salesAdminNotes || feedback.strengths || feedback.weaknesses || feedback.parentFacingSummary || feedback.coachComments ? (
         <div className="mt-3 grid gap-2">
+          {feedback.salesAdminNotes ? <Note label="Notes for sales" text={feedback.salesAdminNotes} /> : null}
           {feedback.strengths ? <Note label="Strengths" text={feedback.strengths} /> : null}
           {feedback.weaknesses ? <Note label="Areas to work on" text={feedback.weaknesses} /> : null}
           {feedback.parentFacingSummary ? <Note label="Parent-facing summary" text={feedback.parentFacingSummary} /> : null}
           {feedback.coachComments ? <Note label="Coach comments" text={feedback.coachComments} /> : null}
-          {feedback.salesAdminNotes ? <Note label="Sales notes" text={feedback.salesAdminNotes} /> : null}
         </div>
       ) : null}
     </div>

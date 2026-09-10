@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { signIn, signOut, useSession } from "next-auth/react";
+import { useEffect, useState } from "react";
+import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -39,9 +39,6 @@ function shuffledAchievements() {
 
 export default function LoginPage() {
   const router = useRouter();
-  const { status } = useSession();
-  const submittedRef = useRef(false);
-  const clearedExistingSessionRef = useRef(false);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [loginId, setLoginId] = useState("");
@@ -55,13 +52,6 @@ export default function LoginPage() {
   const previousAchievement =
     randomizedAchievements[(achievementIndex - 1 + randomizedAchievements.length) % randomizedAchievements.length] || activeAchievement;
   const nextAchievement = randomizedAchievements[(achievementIndex + 1) % randomizedAchievements.length] || activeAchievement;
-
-  useEffect(() => {
-    if (status === "authenticated" && !submittedRef.current && !clearedExistingSessionRef.current) {
-      clearedExistingSessionRef.current = true;
-      signOut({ redirect: false });
-    }
-  }, [status]);
 
   useEffect(() => {
     const rememberedLogin = window.localStorage.getItem(rememberedLoginKey);
@@ -94,7 +84,6 @@ export default function LoginPage() {
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    submittedRef.current = true;
     setLoading(true);
     const fd = new FormData(e.currentTarget);
     const email = String(fd.get("email") || "").trim();
@@ -335,7 +324,7 @@ export default function LoginPage() {
                       checked={rememberMe}
                       onChange={(event) => setRememberMe(event.target.checked)}
                     />
-                    Remember me
+                    Remember my email or user ID
                   </label>
                   <Link href="/forgot-password" className="text-sm font-semibold text-brand hover:text-brand-700">
                     Forgot password?

@@ -10,6 +10,7 @@ export function namedRoleApiFeature(path: string) {
     ["/api/admin/attendance-diagnostics", "attendance"], ["/api/admin-v2/academics", "courseManagement"],
     ["/api/admin-v2/calendar", "calendar"], ["/api/admin-v2/activity", "activityTracker"],
     ["/api/admin-v2/financial-snapshot", "feeDashboard"], ["/api/admin-v2/onboarding", "onboarding"],
+    ["/api/coach-pay", "coachPay"],
   ];
   return mappings.find(([prefix]) => path === prefix || path.startsWith(prefix + "/"))?.[1] || findFeatureByApiPath(path)?.key;
 }
@@ -25,6 +26,8 @@ export function namedRoleApiPermissions(path: string, method: string): string[] 
   if (path.startsWith("/api/admin/whatsapp/")) return ["create"];
   if (path.startsWith("/api/admin/student-pauses")) return ["manage"];
   if (path.startsWith("/api/admin/google-")) return ["manage"];
+  if (path.startsWith("/api/coach-pay/rates") || path.startsWith("/api/coach-pay/overrides")) return ["manage_rates"];
+  if (path.startsWith("/api/coach-pay/no-show-rulings")) return ["rule"];
   if (path === "/api/fees/reminders" && method === "POST") return ["invoice", "credit"];
   if (path.startsWith("/api/payments")) return ["payment"];
   if (path.startsWith("/api/attendance")) return ["edit"];

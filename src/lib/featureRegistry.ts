@@ -361,6 +361,32 @@ export const FEATURE_DEFINITIONS: FeatureDefinition[] = [
     defaultRolePermissions: { admin: ["view", "export"] },
   },
   {
+    key: "coachPay",
+    label: "Coach Pay",
+    category: "Payments",
+    description: "Coach rate cards, teaching cost dashboard, no-show rulings, and each coach's own earnings.",
+    routes: ["/coach-pay", "/coach-pay/rates", "/coach-pay/reviews"],
+    apiPrefixes: ["/api/coach-pay"],
+    // `view` is the academy-wide wage bill; `view_own` is a coach reading only
+    // their own lines. They are separate grants so a coach can never be handed
+    // the whole payroll by widening one permission.
+    permissions: [
+      view,
+      { id: "view_own", label: "View Own Earnings" },
+      { id: "manage_rates", label: "Manage Rate Cards", critical: true },
+      { id: "rule", label: "Rule On No-Shows", critical: true },
+      exportRecords,
+    ],
+    defaultStatus: "enabled",
+    defaultRolePermissions: {
+      instructor: ["view_own"],
+      admin: ["view", "view_own", "manage_rates", "rule", "export"],
+      // Sub-admins read and export the cost report by default; changing what a
+      // coach is owed stays with admins until it is granted explicitly.
+      "sub-admin": ["view", "export"],
+    },
+  },
+  {
     key: "notifications",
     label: "Notifications",
     category: "Communication",

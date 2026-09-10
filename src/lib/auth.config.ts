@@ -40,6 +40,7 @@ export const authConfig = {
       const accountStatus = (auth?.user as any)?.accountStatus as string | undefined;
       const isInactiveAccount = (auth?.user as any)?.isActive === false;
 
+      const isLoginRoute = nextUrl.pathname.startsWith("/login");
       const isAuthRoute = ["/login", "/register", "/forgot-password", "/reset-password"].some((p) => nextUrl.pathname.startsWith(p));
       const isPublic =
         nextUrl.pathname === "/" ||
@@ -117,6 +118,9 @@ export const authConfig = {
         nextUrl.pathname.startsWith("/api/notifications");
 
       if (isPublic) return true;
+      // A valid session is already durable. Keep the login route from mounting
+      // for an authenticated user, so it cannot accidentally clear that session.
+      if (isLoginRoute && isLoggedIn) return Response.redirect(new URL("/dashboard", nextUrl));
       if (isAuthRoute) return true;
       if (!isLoggedIn) return false; // triggers redirect to signIn
       if (isInactiveAccount && isInactiveRestrictedPath(nextUrl.pathname)) return Response.redirect(new URL("/dashboard", nextUrl));

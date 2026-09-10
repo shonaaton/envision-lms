@@ -2076,6 +2076,47 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
       { "position": 1, "key": "recipient_name", "sample": "Aarav" },
       { "position": 2, "key": "student_name", "sample": "Aarav" }
     ]
+  },
+  {
+    "name": "batch_student_left_coach",
+    "language": "en",
+    "sourceAutomation": "batchMembershipNotifications.studentLeftBatch",
+    "body": "Hello {{1}}, {{2}} has left {{3}} with effect from {{4}}.\n\nTheir upcoming classes in this batch have been taken off your register. The classes you have already taught them stay on their record.\n\nPlease review the batch in the academy portal.",
+    "variables": [
+      { "position": 1, "key": "coach_name", "sample": "Coach Sanjib" },
+      { "position": 2, "key": "student_name", "sample": "Aarav Sharma" },
+      { "position": 3, "key": "batch_code", "sample": "I2-100" },
+      { "position": 4, "key": "effective_from", "sample": "5 Sep 2026" }
+    ]
+  },
+  {
+    "name": "batch_changed_student",
+    "language": "en",
+    "sourceAutomation": "batchMembershipNotifications.studentBatchChanged",
+    "body": "Hello {{1}}, {{2}}'s batch has been changed to {{3}}.\n\nCoach: {{4}}\nTimings:\n{{5}}\nNext Class Date: {{6}}\n\nEverything from the previous batch stays in the academy portal to look back on.\n\nRegards,\nTeam Envision Chess Academy",
+    "variables": [
+      { "position": 1, "key": "recipient_name", "sample": "Mr. Sharma" },
+      { "position": 2, "key": "student_name", "sample": "Aarav Sharma" },
+      { "position": 3, "key": "batch_code", "sample": "I2-100" },
+      { "position": 4, "key": "coach_name", "sample": "Coach Sanjib" },
+      { "position": 5, "key": "timings", "sample": "Saturday at 18:00 (60 min)" },
+      { "position": 6, "key": "next_class_date", "sample": "5 Sep 2026, 6:00 PM IST" }
+    ]
+  },
+  {
+    "name": "batch_student_joined_coach",
+    "language": "en",
+    "sourceAutomation": "batchMembershipNotifications.studentJoinedBatch",
+    "body": "Hello {{1}}, {{2}} has joined your batch {{3}}.\n\nCourse: {{4}}\nCourse Level: {{5}}\nTimings:\n{{6}}\nNext Class Date: {{7}}\n\nPlease review the batch and classroom details in the academy portal.",
+    "variables": [
+      { "position": 1, "key": "coach_name", "sample": "Coach Sanjib" },
+      { "position": 2, "key": "student_name", "sample": "Aarav Sharma" },
+      { "position": 3, "key": "batch_code", "sample": "I2-100" },
+      { "position": 4, "key": "course_name", "sample": "Intermediate Chess" },
+      { "position": 5, "key": "course_level", "sample": "I2" },
+      { "position": 6, "key": "timings", "sample": "Saturday at 18:00 (60 min)" },
+      { "position": 7, "key": "next_class_date", "sample": "5 Sep 2026, 6:00 PM IST" }
+    ]
   }
 ] as const satisfies readonly WhatsAppTemplateDefinition[];
 

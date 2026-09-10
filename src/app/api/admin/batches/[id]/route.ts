@@ -8,6 +8,7 @@ import { recordActivity } from "@/lib/activity";
 import { canAccessFeature } from "@/lib/featureAccess";
 import { syncClassroomSessionInstances } from "@/lib/classroomSessionInstances";
 import { notifyBatchCoachAssigned } from "@/lib/batchCoachNotifications";
+import { notifyStudentsJoinedBatchCoach, notifyStudentsLeftBatchCoach } from "@/lib/batchMembershipNotifications";
 import { pausedStudentIds } from "@/lib/studentPause";
 import { batchUpdateSchema } from "@/lib/validation";
 import { enrollStudentInBatchClassrooms, recordStudentExitFromBatchClassrooms } from "@/lib/studentBatchTransfer";
@@ -221,11 +222,14 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   // unassigning has to null the field rather than try to cast an empty string.
   if (body.coach === "") body.coach = null;
   const b = await Batch.findByIdAndUpdate(params.id, body, { new: true, runValidators: true });
+  const rosterChangedAt = new Date();
+  let removedIds: string[] = [];
+  let addedIds: string[] = [];
   if (Array.isArray(body.students)) {
     const previousIds = (existing.students || []).map((student: any) => student.toString());
     const nextIds = body.students.map(String);
-    const removedIds = previousIds.filter((studentId: string) => !nextIds.includes(studentId));
-    const addedIds = nextIds.filter((studentId: string) => !previousIds.includes(studentId));
+    removedIds = previousIds.filter((studentId: string) => !nextIds.includes(studentId));
+    addedIds = nextIds.filter((studentId: string) => !previousIds.includes(studentId));
     const dates = await enrollmentDateMap(params.id, nextIds, existing.studentEnrollments || []);
     b.studentEnrollments = nextIds.map((studentId: string) => ({ student: studentId, enrolledAt: dates.get(studentId) || new Date() }));
     await b.save();
@@ -237,7 +241,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     // is what every access check reads, and kept the classroom outright.
     if (removedIds.length) {
       await recordStudentExitFromBatchClassrooms(params.id, removedIds, {
-        exitedAt: new Date(),
+        exitedAt: rosterChangedAt,
         reason: "removed_from_batch",
         actorId: actorId,
       });
@@ -253,12 +257,33 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   }
   const previousCoachId = idOf(existing.coach);
   const nextCoachId = idOf(b?.coach || body.coach);
-  if (body.coach !== undefined && nextCoachId && previousCoachId !== nextCoachId) {
+  const coachChanged = Boolean(body.coach !== undefined && nextCoachId && previousCoachId !== nextCoachId);
+  if (coachChanged) {
     await notifyBatchCoachAssigned({
       batchId: params.id,
       previousCoachId,
       reason: previousCoachId ? "permanent_coach_changed" : "new_batch_assigned",
     }).catch((error) => console.error("Batch coach notification failed", error));
+  }
+  // Unticking a student is the same departure as a transfer out, so the coach
+  // who was teaching them hears about it the same way - and hears only that.
+  if (removedIds.length && previousCoachId) {
+    await notifyStudentsLeftBatchCoach({
+      batchId: params.id,
+      studentIds: removedIds,
+      coachId: previousCoachId,
+      reason: "removed_from_batch",
+      effectiveFrom: rosterChangedAt,
+    }).catch((error) => console.error("Batch departure notification failed", error));
+  }
+  // A coach handed the batch in this same edit has just been sent its full
+  // roster, so announcing each arrival again would be the second copy.
+  if (addedIds.length && !coachChanged) {
+    await notifyStudentsJoinedBatchCoach({
+      batchId: params.id,
+      studentIds: addedIds,
+      reason: "new_admission",
+    }).catch((error) => console.error("Batch arrival notification failed", error));
   }
   await recordActivity({
     actor: actorId,

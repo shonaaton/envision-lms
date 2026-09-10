@@ -1,66 +1,27 @@
 import { Batch } from "@/models/Batch";
-import { Classroom } from "@/models/Classroom";
-import { User } from "@/models/User";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
 import { resolveAudienceEmails } from "@/lib/studentContact";
-import { ACADEMY_TIME_ZONE } from "@/lib/academyTime";
-import { firstClassDateLabel, scheduledDateLabel } from "@/lib/firstClassDate";
+import { batchObjectId as objectId, batchTimingLines, findBatchClassrooms, studentListLabel } from "@/lib/batchSummary";
+import { firstClassDateLabel } from "@/lib/firstClassDate";
 import { sendWhatsAppAutomationTemplates, whatsappRecipientName } from "@/lib/whatsappAutomationEvents";
 import { sendWhatsAppAutomationTemplate } from "@/lib/whatsappAutomationEvents";
 import type { WhatsAppSendResult } from "@/lib/whatsappAutomation";
 
-function objectId(value: any) {
-  return value?._id?.toString?.() ?? value?.toString?.() ?? "";
-}
-
-function dayName(day: number) {
-  return new Intl.DateTimeFormat("en-IN", { timeZone: ACADEMY_TIME_ZONE, weekday: "long" }).format(
-    new Date(Date.UTC(2026, 7, 2 + Number(day || 0)))
-  );
-}
-
-function scheduleLinesForClassroom(classroom: any) {
-  if (Array.isArray(classroom?.daysOfWeek) && classroom.daysOfWeek.length) {
-    return classroom.daysOfWeek.flatMap((day: any) =>
-      (day.slots || []).map((slot: any) => `${dayName(day.day)} at ${slot.startTime || classroom.startTime || "time not set"} (${slot.durationMinutes || classroom.durationMinutes || 60} min)`)
-    );
-  }
-  if (classroom?.classDate) return [scheduledDateLabel(classroom, classroom.classDate, { weekday: "long" })];
-  if (classroom?.startDate && classroom?.startTime) return [`From ${scheduledDateLabel(classroom, classroom.startDate)}`];
-  return ["Timings not set"];
-}
-
-function studentListLabel(students: any[]) {
-  const names = students.map((student: any) => String(student?.name || student?.username || "").trim()).filter(Boolean);
-  if (!names.length) return "No students enrolled yet";
-  const shown = names.slice(0, 15);
-  const remaining = names.length - shown.length;
-  return `${shown.join(", ")}${remaining > 0 ? ` and ${remaining} more` : ""} (${names.length} total)`;
-}
-
 async function batchContext(batchId: string) {
   const [batch, classrooms] = await Promise.all([
     Batch.findById(batchId).populate("coach", "name email phone countryCode username role").populate("students", "name email phone countryCode username parentName parentEmail role isActive").lean(),
-    Classroom.find({
-      batches: batchId,
-      isActive: { $ne: false },
-      isSessionInstance: { $ne: true },
-      status: { $nin: ["completed", "cancelled"] },
-    }).select("title courseName levelName level startTime classDate startDate daysOfWeek generatedSessions").lean(),
+    findBatchClassrooms(batchId),
   ]);
   return { batch: batch as any, classrooms: classrooms as any[] };
 }
 
 function coachSummary(input: { batch: any; classrooms: any[] }) {
   const primaryClassroom = input.classrooms[0] || {};
-  const lines = input.classrooms.length
-    ? input.classrooms.flatMap((classroom) => scheduleLinesForClassroom(classroom).map((line: string) => `${classroom.title || input.batch.name}: ${line}`))
-    : ["Timings not set"];
   return {
     batchCode: input.batch?.name || "Batch",
     course: primaryClassroom.courseName || "Not set",
     level: primaryClassroom.levelName || input.batch?.level || primaryClassroom.level || "Not set",
-    timings: lines.filter(Boolean).join("\n") || "Timings not set",
+    timings: batchTimingLines(input.batch, input.classrooms),
     firstClassDate: firstClassDateLabel(input.classrooms),
     students: studentListLabel((input.batch?.students || []).filter((student: any) => student?.isActive !== false)),
   };

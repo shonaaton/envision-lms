@@ -10,6 +10,9 @@ const mocks = vi.hoisted(() => ({
   activity: vi.fn(),
   paused: vi.fn(),
   sync: vi.fn(),
+  notifyLeft: vi.fn(),
+  notifyJoined: vi.fn(),
+  notifyChanged: vi.fn(),
 }));
 
 vi.mock("server-only", () => ({}));
@@ -20,6 +23,11 @@ vi.mock("@/models/Fee", () => ({ Notification: { create: mocks.notify } }));
 vi.mock("@/lib/activity", () => ({ recordActivity: mocks.activity }));
 vi.mock("@/lib/studentPause", () => ({ pausedStudentIds: mocks.paused }));
 vi.mock("@/lib/classroomSessionInstances", () => ({ syncClassroomSessionInstances: mocks.sync }));
+vi.mock("@/lib/batchMembershipNotifications", () => ({
+  notifyStudentsLeftBatchCoach: mocks.notifyLeft,
+  notifyStudentsJoinedBatchCoach: mocks.notifyJoined,
+  notifyStudentBatchChanged: mocks.notifyChanged,
+}));
 
 import { transferStudentBatch } from "./studentBatchTransfer";
 
@@ -55,6 +63,9 @@ beforeEach(() => {
   mocks.sync.mockResolvedValue(undefined);
   mocks.notify.mockReturnValue({ catch: vi.fn() });
   mocks.activity.mockResolvedValue(undefined);
+  mocks.notifyLeft.mockResolvedValue({ sent: 1 });
+  mocks.notifyJoined.mockResolvedValue({ sent: 1 });
+  mocks.notifyChanged.mockResolvedValue({ sent: 1 });
   mocks.batchUpdateOne.mockResolvedValue({});
   mocks.userUpdateOne.mockResolvedValue({});
   mocks.userFindOne.mockReturnValue(lean({ _id: STUDENT, name: "Riya", batches: [OLD_BATCH], isActive: true }));
@@ -182,5 +193,36 @@ describe("transferStudentBatch", () => {
     mocks.userFindOne.mockReturnValue(lean({ _id: STUDENT, name: "Riya", batches: [OLD_BATCH], isActive: false }));
     await expect(run()).rejects.toThrow("deactivated");
     expect(mocks.batchUpdateOne).not.toHaveBeenCalled();
+  });
+});
+
+describe("transferStudentBatch notifications", () => {
+  it("tells the outgoing coach the student left, without naming where they went", async () => {
+    withClassrooms([], []);
+    await run();
+
+    expect(mocks.notifyLeft).toHaveBeenCalledTimes(1);
+    const [departure] = mocks.notifyLeft.mock.calls[0];
+    expect(departure).toMatchObject({ batchId: OLD_BATCH, studentIds: [STUDENT], reason: "batch_changed" });
+    // The destination is the academy's business, not the outgoing coach's.
+    expect(JSON.stringify(departure)).not.toContain(NEW_BATCH);
+    expect(JSON.stringify(departure)).not.toContain("Thu 6pm");
+  });
+
+  it("tells the family about the new batch and the receiving coach about the arrival", async () => {
+    withClassrooms([], []);
+    await run();
+
+    expect(mocks.notifyChanged).toHaveBeenCalledWith({ studentId: STUDENT, toBatchId: NEW_BATCH, fromBatchId: OLD_BATCH });
+    expect(mocks.notifyJoined).toHaveBeenCalledTimes(1);
+    expect(mocks.notifyJoined).toHaveBeenCalledWith({ batchId: NEW_BATCH, studentIds: [STUDENT], reason: "batch_changed" });
+  });
+
+  it("still completes the move when an announcement fails", async () => {
+    withClassrooms([], []);
+    mocks.notifyChanged.mockRejectedValue(new Error("webhook down"));
+
+    await expect(run()).resolves.toMatchObject({ toBatchName: "Thu 6pm" });
+    expect(mocks.activity).toHaveBeenCalled();
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { firstClassDateLabel, scheduledDateLabel } from "@/lib/firstClassDate";
+import { firstClassDateLabel, nextClassDateLabel, scheduledDateLabel } from "@/lib/firstClassDate";
 
 // A Sunday 18:30 IST series starting 13 Sept 2026. `startDate` is what a date
 // input stores - midnight UTC - while the generated session carries the real
@@ -49,5 +49,41 @@ describe("scheduledDateLabel", () => {
   it("never prints a time of day the classroom does not have", () => {
     expect(scheduledDateLabel(sundaySeries, sundaySeries.startDate)).toBe("13 Sept 2026 at 18:30");
     expect(scheduledDateLabel({ title: "No time set" }, "2026-09-13")).toBe("13 Sept 2026");
+  });
+});
+
+describe("nextClassDateLabel", () => {
+  it("names the next session ahead, not the one the series started on", () => {
+    // Mid-series: a student joining now turns up on the 20th, not the 13th.
+    expect(nextClassDateLabel([sundaySeries], new Date("2026-09-15T00:00:00.000Z"))).toContain("20 Sept 2026");
+  });
+
+  it("moves on once the day's session has started", () => {
+    const justAfter = new Date("2026-09-13T13:00:00.001Z");
+    const label = nextClassDateLabel([sundaySeries], justAfter);
+    expect(label).toContain("20 Sept 2026");
+    expect(label).not.toContain("13 Sept");
+  });
+
+  it("takes the soonest upcoming class across a batch's classrooms", () => {
+    const sooner = { ...sundaySeries, generatedSessions: [{ _id: "s9", scheduledFor: new Date("2026-09-16T13:00:00.000Z") }] };
+    expect(nextClassDateLabel([sundaySeries, sooner], new Date("2026-09-15T00:00:00.000Z"))).toContain("16 Sept 2026");
+  });
+
+  it("falls back to the classroom's own start date when no sessions exist yet", () => {
+    const { generatedSessions, ...notGeneratedYet } = sundaySeries;
+    expect(nextClassDateLabel([notGeneratedYet], new Date("2026-09-01T00:00:00.000Z"))).toBe("13 Sept 2026 at 18:30");
+  });
+
+  it("still counts a class later today, whose date is stored as midnight UTC", () => {
+    // 21:30 IST on the 13th: the stored date (00:00 UTC) is already behind the
+    // instant, so only comparing against the start of the academy day keeps it.
+    const { generatedSessions, ...notGeneratedYet } = sundaySeries;
+    expect(nextClassDateLabel([notGeneratedYet], new Date("2026-09-13T16:00:00.000Z"))).toBe("13 Sept 2026 at 18:30");
+  });
+
+  it("points at the timings when nothing upcoming is scheduled", () => {
+    expect(nextClassDateLabel([sundaySeries], new Date("2026-12-01T00:00:00.000Z"))).toBe("As per the batch timings");
+    expect(nextClassDateLabel([{ title: "Unscheduled" }])).toBe("As per the batch timings");
   });
 });

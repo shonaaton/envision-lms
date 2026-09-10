@@ -1,4 +1,4 @@
-import { formatAcademyDateTime } from "@/lib/academyTime";
+import { academyDayBounds, formatAcademyDateTime } from "@/lib/academyTime";
 
 /**
  * When the coach's first class actually starts.
@@ -73,6 +73,46 @@ export function firstClassDateLabel(classrooms: any[], session?: any) {
     .filter((entry): entry is { classroom: any; date: Date } => Boolean(entry.date))
     .sort((a, b) => a.date.getTime() - b.date.getTime())[0];
   if (!dated) return "Not set";
+
+  return scheduledDateLabel(dated.classroom, dated.date);
+}
+
+/** The earliest session on or after `from`, across these classrooms. */
+export function nextScheduledSessionStart(classrooms: any[], from: Date = new Date()) {
+  return earliest(
+    classrooms
+      .flatMap((classroom) => (classroom?.generatedSessions || []).map((session: any) => session?.scheduledFor))
+      .filter((value) => {
+        const date = toDate(value);
+        return Boolean(date && date.getTime() >= from.getTime());
+      })
+  );
+}
+
+/**
+ * The "Next Class Date" line for a student notification.
+ *
+ * Unlike `firstClassDateLabel`, which announces where a series begins, this
+ * answers "when do I next turn up" - so a batch that has been running for
+ * months names its next session rather than its first one, and only sessions
+ * still ahead of `from` count.
+ *
+ * The fallback compares the classroom's own `classDate`/`startDate` against the
+ * start of the academy day, not against the instant: those fields are stored as
+ * midnight UTC, which is 5:30 am IST, so a class starting later today would
+ * otherwise be read as already past.
+ */
+export function nextClassDateLabel(classrooms: any[], from: Date = new Date()) {
+  const sessionStart = nextScheduledSessionStart(classrooms, from);
+  if (sessionStart) return formatAcademyDateTime(sessionStart, { timeZoneName: "short" });
+
+  const dayStart = academyDayBounds(from).start.getTime();
+  const dated = classrooms
+    .map((classroom) => ({ classroom, date: earliest([classroom?.classDate, classroom?.startDate]) }))
+    .filter((entry): entry is { classroom: any; date: Date } => Boolean(entry.date))
+    .filter((entry) => entry.date.getTime() >= dayStart)
+    .sort((a, b) => a.date.getTime() - b.date.getTime())[0];
+  if (!dated) return "As per the batch timings";
 
   return scheduledDateLabel(dated.classroom, dated.date);
 }

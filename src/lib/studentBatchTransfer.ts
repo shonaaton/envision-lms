@@ -3,6 +3,11 @@ import "server-only";
 import { Types } from "mongoose";
 
 import { recordActivity } from "@/lib/activity";
+import {
+  notifyStudentBatchChanged,
+  notifyStudentsJoinedBatchCoach,
+  notifyStudentsLeftBatchCoach,
+} from "@/lib/batchMembershipNotifications";
 import { exitStudentId as idOf, sessionStartDate, studentExitDate } from "@/lib/classroomStudentExits";
 import { syncClassroomSessionInstances } from "@/lib/classroomSessionInstances";
 import { pausedStudentIds } from "@/lib/studentPause";
@@ -255,6 +260,23 @@ export async function transferStudentBatch(input: TransferStudentBatchInput) {
     message: `Your classes now run with ${toBatch.name}${fromBatch ? `, not ${fromBatch.name}` : ""}. Everything from your old batch up to today stays in your account to look back on.`,
     metadata: { fromBatch: fromBatchId, toBatch: toBatchId, effectiveFrom: exitedAt },
   }).catch(() => undefined);
+
+  // Announcements run after the move has landed, so every message quotes the
+  // batches as they now stand. None of them may fail the transfer itself, and
+  // the outgoing coach is told only that the student has left - `toBatch` is
+  // deliberately not passed to `notifyStudentsLeftBatchCoach`.
+  if (fromBatchId) {
+    await notifyStudentsLeftBatchCoach({
+      batchId: fromBatchId,
+      studentIds: [studentId],
+      reason: "batch_changed",
+      effectiveFrom: exitedAt,
+    }).catch((error) => console.error("Batch departure notification failed", error));
+  }
+  await notifyStudentBatchChanged({ studentId, toBatchId, fromBatchId })
+    .catch((error) => console.error("Batch change notification failed", error));
+  await notifyStudentsJoinedBatchCoach({ batchId: toBatchId, studentIds: [studentId], reason: "batch_changed" })
+    .catch((error) => console.error("Batch arrival notification failed", error));
 
   await recordActivity({
     actor: input.actor?.id,

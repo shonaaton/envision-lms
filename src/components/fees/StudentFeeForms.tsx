@@ -126,7 +126,7 @@ export function LegacyStudentImportForm({ students, plans, action }: { students:
         <p>`monthly_summary`: maps the fee statement totals like total fees, paid amount, due amount, and concession.</p>
         <p>`monthly_payment`: creates a paid monthly installment from statement rows.</p>
         <p>`monthly_invoice`: creates an unpaid, overdue, cancelled, or paid installment row from the fee structure.</p>
-        <p>`xlsx` payment-history uploads create paid invoice history directly from receipt data, without needing a fee plan.</p>
+        <p>`xlsx` payment-history uploads only record the receipts as paid history. They never add credits, never change the assigned plan, and the amounts do not have to match it.</p>
         <p>PDF and ZIP uploads are meant for installment fee statements like the one dated August 17, 2026 that you shared.</p>
         <p>If you prefer the statement style you shared, you can omit `row_type` for installment rows and just use columns like `installment_number`, `fee_type`, `paid_amount_inr`, `paid_date`, `amount_inr`, `balance_amount_inr`, `due_date`, and `status`.</p>
       </div>

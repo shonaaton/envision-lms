@@ -120,4 +120,31 @@ describe("parsePaymentHistoryWorkbook", () => {
     expect(rows[0].amountInr).toBe(2200);
     expect(rows[0].paidDate?.toDateString()).toBe(new Date(2025, 9, 25).toDateString());
   });
+
+  it("records payment history without touching credits, whatever plan is assigned", () => {
+    const buffer = workbook([
+      HEADER_ROW,
+      [
+        textCell("A2", "INV/26-27/276"),
+        `<c r="B2" s="0"/>`,
+        `<c r="C2" s="1"><v>46132</v></c>`,
+        `<c r="D2"><v>8</v></c>`,
+        // 3300 is not a whole multiple of the 2600 credit plan below, which is
+        // exactly the receipt that used to abort the whole import.
+        `<c r="E2"><v>3300</v></c>`,
+        `<c r="F2" s="1"><v>46132</v></c>`,
+      ].join(""),
+    ]);
+
+    const rows = parsePaymentHistoryWorkbook(buffer, {
+      planType: "credits",
+      creditPlanAmountInr: 2600,
+      creditPlanCredits: 8,
+    });
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].rowType).toBe("history_payment");
+    expect(rows[0].amountInr).toBe(3300);
+    expect(rows[0].credits).toBeUndefined();
+  });
 });

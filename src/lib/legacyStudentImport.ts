@@ -13,7 +13,8 @@ type SupportedRowType =
   | "credit_payment"
   | "monthly_summary"
   | "monthly_invoice"
-  | "monthly_payment";
+  | "monthly_payment"
+  | "history_payment";
 
 type ImportRow = {
   lineNumber: number;
@@ -616,12 +617,13 @@ function normalizeRowType(raw: string, lineNumber: number): SupportedRowType {
     value === "credit_payment" ||
     value === "monthly_summary" ||
     value === "monthly_invoice" ||
-    value === "monthly_payment"
+    value === "monthly_payment" ||
+    value === "history_payment"
   ) {
     return value;
   }
   throw new Error(
-    `Line ${lineNumber}: unsupported row_type "${raw}". Use attendance, credit_summary, credit_payment, monthly_summary, monthly_invoice, or monthly_payment.`
+    `Line ${lineNumber}: unsupported row_type "${raw}". Use attendance, credit_summary, credit_payment, monthly_summary, monthly_invoice, monthly_payment, or history_payment.`
   );
 }
 
@@ -699,24 +701,17 @@ function parseImportRows(fileText: string) {
   return rows;
 }
 
-function inferCreditCount(amountInr: number, options: ImportParseOptions, lineNumber: number) {
-  if (!options.creditPlanAmountInr || !options.creditPlanCredits) {
-    throw new Error(`Line ${lineNumber}: credits is required for a credit payment unless the selected credit plan has an amount and credit count.`);
-  }
-  const credits = (amountInr / options.creditPlanAmountInr) * options.creditPlanCredits;
-  const rounded = Math.round(credits);
-  if (!Number.isFinite(credits) || Math.abs(credits - rounded) > 0.001 || rounded <= 0) {
-    throw new Error(`Line ${lineNumber}: amount_inr does not match the selected credit plan pricing, so credits could not be inferred.`);
-  }
-  return rounded;
-}
-
-export function parsePaymentHistoryWorkbook(buffer: Buffer, options: ImportParseOptions = {}) {
+/**
+ * A payment-history workbook is a record of what a student already paid on the
+ * old platform, not a fresh purchase. It is imported as flat paid history:
+ * every row becomes a standalone paid invoice, so the amounts never have to
+ * line up with the student's current fee plan and no credits are granted.
+ */
+export function parsePaymentHistoryWorkbook(buffer: Buffer, _options: ImportParseOptions = {}) {
   const sheetRows = parseSimpleXlsxRows(buffer);
   if (sheetRows.length < 2) throw new Error("The Excel file must include a header row and at least one payment row.");
   const headers = sheetRows[0].map(normalizeHeader);
   const rows: ImportRow[] = [];
-  const rowType: SupportedRowType = options.planType === "credits" ? "credit_payment" : "monthly_payment";
 
   for (let index = 1; index < sheetRows.length; index += 1) {
     const values = sheetRows[index];
@@ -729,21 +724,21 @@ export function parsePaymentHistoryWorkbook(buffer: Buffer, options: ImportParse
 
     const paidDate = asDate(rawRow.paid_date);
     const collectedDate = asDate(rawRow.collected_date);
+    const dueDate = asDate(rawRow.due_date);
     const hasReceipt = Boolean(rawRow.reference_number);
     const hasInstallment = Boolean(rawRow.installment_number);
     const hasStudentName = Boolean(rawRow.name);
-    const hasAnyDate = Boolean(paidDate || collectedDate);
+    const hasAnyDate = Boolean(paidDate || collectedDate || dueDate);
     if (!hasAnyDate || (!hasReceipt && !hasInstallment && !hasStudentName)) continue;
     rows.push({
       lineNumber: index + 1,
-      rowType,
+      rowType: "history_payment",
       installmentNumber: asNumber(rawRow.installment_number),
       feeType: rawRow.fee_type || "Tuition Fees",
       receiptNumber: rawRow.reference_number || undefined,
       amountInr,
-      credits: rowType === "credit_payment" ? inferCreditCount(amountInr, options, index + 1) : undefined,
-      paidDate: paidDate || collectedDate,
-      dueDate: paidDate || collectedDate,
+      paidDate: paidDate || collectedDate || dueDate,
+      dueDate: dueDate || paidDate || collectedDate,
       status: "paid",
       referenceNumber: rawRow.reference_number || undefined,
       note: rawRow.reference_number ? `Imported from payment history ${rawRow.reference_number}` : "Imported from payment history workbook",
@@ -849,7 +844,9 @@ async function createImportedInvoice(params: {
           paidAt: params.paidDate || params.dueDate,
           referenceNumber: params.referenceNumber,
         },
-      ]
+      ],
+      {},
+      { notifyStudent: false }
     );
     return Invoice.findById(invoice._id);
   }
@@ -921,8 +918,12 @@ export async function importLegacyStudentData(input: {
     .filter((value): value is Date => Boolean(value))
     .sort((left, right) => left.getTime() - right.getTime())[0];
 
+  // History rows are pure record-keeping: they must never re-assign the plan,
+  // shift the billing dates, or add credits to the student's balance.
+  const needsAssignment = feeRows.some((row) => row.rowType !== "history_payment");
+
   let assignment: any = existingAssignment;
-  if (targetPlan) {
+  if (targetPlan && needsAssignment) {
     const historyNote = `${new Date().toISOString()} | ${targetPlan.name} | ${targetPlan.type} | Legacy migration import`;
     assignment = await FeeAssignment.findOneAndUpdate(
       { student: new Types.ObjectId(input.studentId) },
@@ -1011,6 +1012,30 @@ export async function importLegacyStudentData(input: {
         status: "paid",
         invoiceMode: tax.invoiceMode,
         gstPercentage: tax.gstPercentage,
+      });
+      invoicesImported += 1;
+      continue;
+    }
+
+    if (row.rowType === "history_payment") {
+      const amountInr = requireNumber(row.amountInr, "amount_inr", row.lineNumber);
+      const dueDate = requireDate(row.dueDate || row.paidDate || row.invoiceDate, "due_date", row.lineNumber);
+      await createImportedInvoice({
+        studentId: input.studentId,
+        type: "manual",
+        title: row.receiptNumber
+          ? `Imported receipt ${row.receiptNumber}${row.installmentNumber ? ` - Installment ${row.installmentNumber}` : ""}`
+          : row.note || `Imported fee payment - ${dueDate.toLocaleString("en-IN", { month: "long", year: "numeric" })}`,
+        amountInr,
+        issueDate: row.invoiceDate || dueDate,
+        dueDate,
+        actorId: input.actorId,
+        referenceNumber: row.receiptNumber || row.referenceNumber,
+        note: row.note,
+        paidDate: row.paidDate || dueDate,
+        status: "paid",
+        invoiceMode: "non_gst",
+        gstPercentage: 0,
       });
       invoicesImported += 1;
       continue;

@@ -339,8 +339,12 @@ export async function markInvoicePaid(
   paymentId?: string,
   activity?: { actor?: string; source?: "manual_admin" | "razorpay_checkout" | "razorpay_webhook" | "backend"; label?: string },
   transactions: ManualPaymentTransaction[] = [],
-  adjustment: InvoicePaymentAdjustment = {}
+  adjustment: InvoicePaymentAdjustment = {},
+  // Back-dated imports replay payments that were settled long ago, so the
+  // "we received your payment" message would reach the parent years late.
+  options: { notifyStudent?: boolean } = {}
 ) {
+  const notifyStudent = options.notifyStudent !== false;
   const before: any = await Invoice.findById(invoiceId).select("status").lean();
   const existing: any = await Invoice.findById(invoiceId).populate("plan").lean();
   if (!existing) return existing;
@@ -420,18 +424,20 @@ export async function markInvoicePaid(
       nextDueDate: nextDueDate || "",
     },
   });
-  const studentForPayment: any = await User.findById(invoice.student).select("name username phone countryCode").lean();
-  await sendWhatsAppAutomationTemplate({
-    user: studentForPayment,
-    templateName: "payment_recorded_student",
-    bodyParameters: [
-      whatsappRecipientName(studentForPayment || {}),
-      formatINR(invoice.totalAmount),
-      invoice.invoiceNumber,
-      finalPaymentId || transactions.map((transaction) => transaction.referenceNumber).filter(Boolean).join(", ") || "Recorded",
-    ],
-    metadata: { kind: "payment_recorded", invoiceId: invoice._id.toString(), invoiceNumber: invoice.invoiceNumber, payment: finalPaymentId || "" },
-  });
+  if (notifyStudent) {
+    const studentForPayment: any = await User.findById(invoice.student).select("name username phone countryCode").lean();
+    await sendWhatsAppAutomationTemplate({
+      user: studentForPayment,
+      templateName: "payment_recorded_student",
+      bodyParameters: [
+        whatsappRecipientName(studentForPayment || {}),
+        formatINR(invoice.totalAmount),
+        invoice.invoiceNumber,
+        finalPaymentId || transactions.map((transaction) => transaction.referenceNumber).filter(Boolean).join(", ") || "Recorded",
+      ],
+      metadata: { kind: "payment_recorded", invoiceId: invoice._id.toString(), invoiceNumber: invoice.invoiceNumber, payment: finalPaymentId || "" },
+    });
+  }
   if (invoice.type !== "credits" || !invoice.credits) return invoice;
 
   const assignment: any = await FeeAssignment.findOne({ student: invoice.student, type: "credits" });

@@ -4,36 +4,9 @@ import { CreditLedger, Invoice } from "@/models/Fee";
 import { Payment } from "@/models/Payment";
 import { requireFeesAccess } from "@/lib/feesAccess";
 import { buildSpreadsheet, resolveFormat, spreadsheetHeaders, type SheetColumn } from "@/lib/spreadsheet";
+import { resolveReportRange, withinReportRange } from "@/lib/reportRange";
 
 export const dynamic = "force-dynamic";
-
-function withinRange(dateValue: unknown, url: URL) {
-  if (!dateValue) return false;
-  const date = new Date(dateValue as string | number | Date);
-  if (Number.isNaN(date.getTime())) return false;
-  const from = url.searchParams.get("from");
-  const to = url.searchParams.get("to");
-  const month = url.searchParams.get("month");
-  const fy = url.searchParams.get("fy");
-  if (month) {
-    const monthDate = new Date(`${month}-01`);
-    const rangeStart = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
-    const rangeEnd = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0, 23, 59, 59, 999);
-    return date >= rangeStart && date <= rangeEnd;
-  }
-  if (from || to) {
-    const rangeStart = from ? new Date(from) : new Date(-8640000000000000);
-    const rangeEnd = to ? new Date(`${to}T23:59:59.999`) : new Date(8640000000000000);
-    return date >= rangeStart && date <= rangeEnd;
-  }
-  if (fy) {
-    const startYear = Number(fy);
-    const rangeStart = new Date(startYear, 3, 1);
-    const rangeEnd = new Date(startYear + 1, 2, 31, 23, 59, 59, 999);
-    return date >= rangeStart && date <= rangeEnd;
-  }
-  return true;
-}
 
 function invoiceReportDate(invoice: any) {
   return invoice.issueDate || invoice.dueDate || invoice.createdAt;
@@ -60,6 +33,9 @@ export async function GET(req: Request) {
   // rupee-denominated CSV opens as mojibake in Excel unless it is read as UTF-8.
   const format = resolveFormat(url.searchParams.get("format"), "xlsx");
   const planType = url.searchParams.get("planType");
+  // Read through the same resolver the preview page uses, so an export always
+  // covers exactly the period the filter form was showing.
+  const range = resolveReportRange(Object.fromEntries(url.searchParams));
   const student = url.searchParams.get("student");
 
   const [invoices, payments, credits] = await Promise.all([
@@ -68,7 +44,7 @@ export async function GET(req: Request) {
     CreditLedger.find(student ? { student } : {}).populate("student invoice").sort({ createdAt: -1 }).lean(),
   ]);
   const filteredInvoices = (planType ? invoices.filter((i: any) => i.type === planType) : invoices)
-    .filter((i: any) => withinRange(invoiceReportDate(i), url));
+    .filter((i: any) => withinReportRange(invoiceReportDate(i), range));
 
   // Rows stay raw - money in paise, dates as dates - and the workbook writer
   // applies the currency and date formats, so the numbers land in a spreadsheet
@@ -112,7 +88,7 @@ export async function GET(req: Request) {
       { label: "Invoice" },
     ];
     rows = payments
-      .filter((p: any) => withinRange(paymentReportDate(p), url))
+      .filter((p: any) => withinReportRange(paymentReportDate(p), range))
       .map((p: any) => [
         p._id?.toString?.() || String(p._id),
         p.user?.name,
@@ -166,7 +142,7 @@ export async function GET(req: Request) {
       { label: "Note" },
     ];
     rows = credits
-      .filter((c: any) => withinRange(c.createdAt, url))
+      .filter((c: any) => withinReportRange(c.createdAt, range))
       .map((c: any) => [
         c.type,
         c.student?.name,

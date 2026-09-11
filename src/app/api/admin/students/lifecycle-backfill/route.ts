@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { canAccessFeature } from "@/lib/featureAccess";
 import { backfillGroupLifecycle } from "@/lib/groupLifecycle";
+import { syncPausedStudentRosters } from "@/lib/studentPause";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -38,5 +39,9 @@ export async function POST() {
     apply: true,
     actor: { id: String(user.id || ""), name: String(user.name || ""), role: String(user.role || "") },
   });
-  return NextResponse.json(result);
+  // Pausing a student in a batch that keeps running leaves no group to pause, so
+  // the group catch-up never reaches them - but they can still be sitting on the
+  // register of classes inside their break. Sweep those rosters as well.
+  const rosters = await syncPausedStudentRosters().catch(() => null);
+  return NextResponse.json({ ...result, rosters });
 }

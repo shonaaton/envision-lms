@@ -896,6 +896,23 @@ export async function backfillGroupLifecycle(
         pausedUntil: record?.pausedUntil || student.pausedUntil || null,
         actor: options.actor,
       });
+      // The pause record is what the Paused Students screen reads to say whether
+      // the batch stopped with the student, so a group paused by the catch-up has
+      // to land on it too - otherwise a pause fixed here keeps reporting "batch
+      // still running" over a batch that is now paused.
+      if (record && (applied.classroomsPaused.length || applied.batchesPaused.length)) {
+        await StudentPause.updateOne(
+          { _id: record._id },
+          {
+            $set: {
+              pausedGroups: {
+                batches: applied.batchesPaused.map((group) => new Types.ObjectId(group.id)),
+                classrooms: applied.classroomsPaused.map((group) => new Types.ObjectId(group.id)),
+              },
+            },
+          }
+        ).catch(() => undefined);
+      }
       result.classroomsPaused += applied.classroomsPaused.length;
       result.batchesPaused += applied.batchesPaused.length;
       result.students.push({

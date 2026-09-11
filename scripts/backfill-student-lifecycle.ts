@@ -24,6 +24,7 @@ import { dbConnect } from "../src/lib/db";
 import { Batch } from "../src/models/Batch";
 import { Classroom } from "../src/models/Classroom";
 import { backfillGroupLifecycle, closedGroupCountsByCoach, DEACTIVATION_CLOSURE_REASON } from "../src/lib/groupLifecycle";
+import { syncPausedStudentRosters } from "../src/lib/studentPause";
 import { User } from "../src/models/User";
 
 const args = new Set(process.argv.slice(2));
@@ -62,6 +63,17 @@ async function main() {
     if (student.classrooms.length) console.log(`      classrooms ${verb}: ${student.classrooms.join(", ")}`);
   });
   if (!result.students.length) console.log("  Nothing left to close or pause.");
+
+  // A student paused out of a batch that keeps running leaves no group to pause,
+  // so the walk above never reaches them - but they can still be on the register
+  // of classes falling inside their break.
+  if (apply) {
+    const rosters = await syncPausedStudentRosters();
+    console.log(
+      `
+  Class registers: ${rosters.studentsChanged} paused student${rosters.studentsChanged === 1 ? "" : "s"} taken off ${rosters.classroomsUpdated} classroom${rosters.classroomsUpdated === 1 ? "" : "s"} (${rosters.pausesScanned} active pause${rosters.pausesScanned === 1 ? "" : "s"} scanned).`
+    );
+  }
 
   console.log(
     `\nTotals: ${result.invoicesVoided} invoice(s) voided; ${result.batchesClosed} batch(es) and ${result.classroomsClosed} classroom(s) closed; ` +

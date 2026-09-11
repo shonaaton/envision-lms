@@ -5,6 +5,7 @@ import { Payment } from "@/models/Payment";
 import { User } from "@/models/User";
 import { BarChart3, CalendarDays, Download, Eye, FileSpreadsheet, Filter, ReceiptText, UsersRound } from "lucide-react";
 import { requireFeesAccess } from "@/lib/feesAccess";
+import { paramValue, reportRangeLabel, resolveReportRange, withinReportRange, type ReportRange } from "@/lib/reportRange";
 
 export const dynamic = "force-dynamic";
 
@@ -16,39 +17,6 @@ const REPORTS: Record<string, { title: string; description: string }> = {
   invoice: { title: "Invoice Report", description: "Invoice number, type, amount, payment status, and invoice state." },
   payment: { title: "Payment Report", description: "Payments received and payment state." },
 };
-
-function value(params: Record<string, string | string[] | undefined>, key: string, fallback = "") {
-  const raw = params[key];
-  return typeof raw === "string" ? raw : fallback;
-}
-
-function withinRange(dateValue: unknown, params: Record<string, string | string[] | undefined>) {
-  if (!dateValue) return false;
-  const date = new Date(dateValue as string | number | Date);
-  if (Number.isNaN(date.getTime())) return false;
-  const from = value(params, "from");
-  const to = value(params, "to");
-  const month = value(params, "month");
-  const fy = value(params, "fy");
-  if (month) {
-    const monthDate = new Date(`${month}-01`);
-    const rangeStart = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
-    const rangeEnd = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0, 23, 59, 59, 999);
-    return date >= rangeStart && date <= rangeEnd;
-  }
-  if (from || to) {
-    const rangeStart = from ? new Date(from) : new Date(-8640000000000000);
-    const rangeEnd = to ? new Date(`${to}T23:59:59.999`) : new Date(8640000000000000);
-    return date >= rangeStart && date <= rangeEnd;
-  }
-  if (fy) {
-    const startYear = Number(fy);
-    const rangeStart = new Date(startYear, 3, 1);
-    const rangeEnd = new Date(startYear + 1, 2, 31, 23, 59, 59, 999);
-    return date >= rangeStart && date <= rangeEnd;
-  }
-  return true;
-}
 
 function invoiceReportDate(invoice: any) {
   return invoice.issueDate || invoice.dueDate || invoice.createdAt;
@@ -62,23 +30,24 @@ function isGstInvoice(invoice: any) {
   return invoice.invoiceMode !== "non_gst" && (Number(invoice.gstAmount || 0) > 0 || Number(invoice.gstPercentage || 0) > 0);
 }
 
-function downloadHref(params: Record<string, string>, format: "xlsx" | "ods" | "csv") {
-  const next = new URLSearchParams({ ...params, format });
-  return `/api/fees/reports?${next.toString()}`;
-}
-
 function reportHref(params: Record<string, string | string[] | undefined>, type: string, currentYear: number) {
   const next = new URLSearchParams({
     type,
-    from: value(params, "from"),
-    to: value(params, "to"),
-    month: value(params, "month"),
-    fy: value(params, "fy", String(currentYear)),
-    planType: value(params, "planType"),
-    student: value(params, "student"),
+    from: paramValue(params, "from"),
+    to: paramValue(params, "to"),
+    month: paramValue(params, "month"),
+    fy: paramValue(params, "fy", String(currentYear)),
+    planType: paramValue(params, "planType"),
+    student: paramValue(params, "student"),
   });
   return `/fees/reports?${next.toString()}`;
 }
+
+const EXPORT_FORMATS = [
+  { format: "xlsx", label: "Excel", title: "Excel workbook (.xlsx)" },
+  { format: "ods", label: "ODS", title: "OpenDocument spreadsheet (.ods)" },
+  { format: "csv", label: "CSV", title: "CSV (UTF-8)" },
+] as const;
 
 function statusClass(value: unknown) {
   const status = String(value || "").toLowerCase();
@@ -88,20 +57,10 @@ function statusClass(value: unknown) {
   return "bg-slate-100 text-slate-700 ring-slate-200";
 }
 
-function filterLabel(params: Record<string, string | string[] | undefined>, currentYear: number) {
-  const from = value(params, "from");
-  const to = value(params, "to");
-  const month = value(params, "month");
-  const fy = value(params, "fy", String(currentYear));
-  if (month) return new Date(`${month}-01`).toLocaleDateString("en-IN", { month: "long", year: "numeric" });
-  if (from || to) return `${from || "Start"} to ${to || "Today"}`;
-  return `FY ${fy}-${String(Number(fy) + 1).slice(-2)}`;
-}
-
-async function getPreview(params: Record<string, string | string[] | undefined>) {
-  const type = value(params, "type", "fee");
-  const planType = value(params, "planType");
-  const student = value(params, "student");
+async function getPreview(params: Record<string, string | string[] | undefined>, range: ReportRange) {
+  const type = paramValue(params, "type", "fee");
+  const planType = paramValue(params, "planType");
+  const student = paramValue(params, "student");
 
   const [invoices, payments, credits] = await Promise.all([
     Invoice.find(student ? { student } : {}).populate("student plan").sort({ createdAt: -1 }).lean(),
@@ -110,7 +69,7 @@ async function getPreview(params: Record<string, string | string[] | undefined>)
   ]);
 
   const filteredInvoices = (planType ? invoices.filter((invoice: any) => invoice.type === planType) : invoices)
-    .filter((invoice: any) => withinRange(invoiceReportDate(invoice), params));
+    .filter((invoice: any) => withinReportRange(invoiceReportDate(invoice), range));
   let headers = ["Invoice", "Student", "Student ID", "Plan", "Status", "Amount", "Late Fee", "GST", "Total", "Due Date"];
   let rows = filteredInvoices.map((invoice: any) => [
     invoice.invoiceNumber,
@@ -127,7 +86,7 @@ async function getPreview(params: Record<string, string | string[] | undefined>)
 
   if (type === "transaction" || type === "payment") {
     headers = ["Payment ID", "User", "User ID", "Purpose", "Amount", "Status", "Paid At", "Invoice"];
-    rows = payments.filter((payment: any) => withinRange(paymentReportDate(payment), params)).map((payment: any) => [
+    rows = payments.filter((payment: any) => withinReportRange(paymentReportDate(payment), range)).map((payment: any) => [
       payment._id?.toString(),
       payment.user?.name,
       payment.user?.username || payment.user?._id?.toString?.() || "-",
@@ -154,7 +113,7 @@ async function getPreview(params: Record<string, string | string[] | undefined>)
     ]);
   } else if (type === "collection") {
     headers = ["Type", "Student", "Student ID", "Credits", "Balance After", "Invoice", "Date", "Note"];
-    rows = credits.filter((credit: any) => withinRange(credit.createdAt, params)).map((credit: any) => [
+    rows = credits.filter((credit: any) => withinReportRange(credit.createdAt, range)).map((credit: any) => [
       credit.type,
       credit.student?.name,
       credit.student?.username || credit.student?._id?.toString?.() || "-",
@@ -174,20 +133,12 @@ export default async function FeeReportsPage({ searchParams }: { searchParams?: 
   await dbConnect();
   const params = searchParams ? await searchParams : {};
   const currentYear = new Date().getMonth() >= 3 ? new Date().getFullYear() : new Date().getFullYear() - 1;
-  const selectedType = REPORTS[value(params, "type", "fee")] ? value(params, "type", "fee") : "fee";
+  const selectedType = REPORTS[paramValue(params, "type", "fee")] ? paramValue(params, "type", "fee") : "fee";
   const selected = REPORTS[selectedType];
   const students = await User.find({ role: "student" }, { passwordHash: 0 }).sort({ name: 1 }).lean();
-  const preview = await getPreview({ ...params, type: selectedType });
-  const selectedStudent = students.find((student: any) => student._id.toString() === value(params, "student"));
-  const downloadParams = {
-    type: selectedType,
-    from: value(params, "from"),
-    to: value(params, "to"),
-    month: value(params, "month"),
-    fy: value(params, "fy", String(currentYear)),
-    planType: value(params, "planType"),
-    student: value(params, "student"),
-  };
+  const range = resolveReportRange(params);
+  const preview = await getPreview({ ...params, type: selectedType }, range);
+  const selectedStudent = students.find((student: any) => student._id.toString() === paramValue(params, "student"));
 
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-4 text-slate-950 sm:px-6 lg:px-8">
@@ -207,7 +158,7 @@ export default async function FeeReportsPage({ searchParams }: { searchParams?: 
             </div>
             <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
               <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Period</div>
-              <div className="mt-1 truncate text-sm font-bold text-slate-950">{filterLabel(params, currentYear)}</div>
+              <div className="mt-1 truncate text-sm font-bold text-slate-950">{reportRangeLabel(range, params)}</div>
             </div>
             <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
               <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Audience</div>
@@ -248,21 +199,24 @@ export default async function FeeReportsPage({ searchParams }: { searchParams?: 
             <div className="grid gap-3 md:grid-cols-2">
               <label className="space-y-1">
                 <span className="text-xs font-semibold text-slate-500">From</span>
-                <input name="from" type="date" defaultValue={value(params, "from")} className="input h-10" />
+                <input name="from" type="date" defaultValue={paramValue(params, "from")} className="input h-10" />
               </label>
               <label className="space-y-1">
                 <span className="text-xs font-semibold text-slate-500">To</span>
-                <input name="to" type="date" defaultValue={value(params, "to")} className="input h-10" />
+                <input name="to" type="date" defaultValue={paramValue(params, "to")} className="input h-10" />
               </label>
               <label className="space-y-1">
                 <span className="text-xs font-semibold text-slate-500">Month</span>
-                <input name="month" type="month" defaultValue={value(params, "month")} className="input h-10" />
+                <input name="month" type="month" defaultValue={paramValue(params, "month")} className="input h-10" />
               </label>
               <label className="space-y-1">
                 <span className="text-xs font-semibold text-slate-500">Financial Year Start</span>
-                <input name="fy" type="number" defaultValue={value(params, "fy", String(currentYear))} className="input h-10" placeholder="FY start" />
+                <input name="fy" type="number" defaultValue={paramValue(params, "fy", String(currentYear))} className="input h-10" placeholder="FY start" />
               </label>
             </div>
+            <p className="mt-3 text-xs leading-5 text-slate-500">
+              Only one period applies: a From/To range wins over Month, and Month over the financial year. Clear the range to report on a whole month.
+            </p>
           </div>
 
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
@@ -273,7 +227,7 @@ export default async function FeeReportsPage({ searchParams }: { searchParams?: 
             <div className="grid gap-3">
               <label className="space-y-1">
                 <span className="text-xs font-semibold text-slate-500">Plan Type</span>
-                <select name="planType" defaultValue={value(params, "planType")} className="input h-10">
+                <select name="planType" defaultValue={paramValue(params, "planType")} className="input h-10">
                   <option value="">All plan types</option>
                   <option value="monthly">Monthly</option>
                   <option value="credits">Credit-Based</option>
@@ -281,7 +235,7 @@ export default async function FeeReportsPage({ searchParams }: { searchParams?: 
               </label>
               <label className="space-y-1">
                 <span className="text-xs font-semibold text-slate-500">Student</span>
-                <select name="student" defaultValue={value(params, "student")} className="input h-10">
+                <select name="student" defaultValue={paramValue(params, "student")} className="input h-10">
                   <option value="">All students</option>
                   {students.map((student: any) => <option key={student._id} value={student._id.toString()}>{student.name}{student.username ? ` (${student.username})` : ""}</option>)}
                 </select>
@@ -296,10 +250,23 @@ export default async function FeeReportsPage({ searchParams }: { searchParams?: 
             </div>
             <p className="mb-4 text-sm leading-6 text-white/72">Apply filters first. Export uses the same report selection.</p>
             <button className="mb-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 text-sm font-bold text-brand shadow-sm"><Eye size={15} /> Preview Report</button>
+            {/* Submit buttons rather than links: they post whatever the filter
+                fields hold right now, so an export never trails the form. */}
             <div className="grid grid-cols-3 gap-2">
-              <a href={downloadHref(downloadParams, "xlsx")} title="Excel workbook (.xlsx)" className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border border-white/15 bg-white/10 px-2 text-sm font-bold text-white hover:bg-white/15"><Download size={15} /> Excel</a>
-              <a href={downloadHref(downloadParams, "ods")} title="OpenDocument spreadsheet (.ods)" className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border border-white/15 bg-white/10 px-2 text-sm font-bold text-white hover:bg-white/15"><Download size={15} /> ODS</a>
-              <a href={downloadHref(downloadParams, "csv")} title="CSV (UTF-8)" className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border border-white/15 bg-white/10 px-2 text-sm font-bold text-white hover:bg-white/15"><Download size={15} /> CSV</a>
+              {EXPORT_FORMATS.map((option) => (
+                <button
+                  key={option.format}
+                  type="submit"
+                  name="format"
+                  value={option.format}
+                  formAction="/api/fees/reports"
+                  formMethod="get"
+                  title={option.title}
+                  className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border border-white/15 bg-white/10 px-2 text-sm font-bold text-white hover:bg-white/15"
+                >
+                  <Download size={15} /> {option.label}
+                </button>
+              ))}
             </div>
           </div>
         </form>

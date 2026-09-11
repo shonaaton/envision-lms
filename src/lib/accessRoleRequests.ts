@@ -7,9 +7,7 @@ export function namedRoleApiFeature(path: string) {
     ["/api/fees/analytics", "feeDashboard"], ["/api/fees/credit-monitoring", "creditMonitoring"],
     ["/api/fees/credit-eligibility", "studentFees"], ["/api/fees/reports", "feeReports"], ["/api/fees/invoices", "invoices"],
     ["/api/admin/activity-tracker", "activityTracker"], ["/api/admin/reports", "reportsCenter"],
-    ["/api/admin/attendance-diagnostics", "attendance"], ["/api/admin-v2/academics", "courseManagement"],
-    ["/api/admin-v2/calendar", "calendar"], ["/api/admin-v2/activity", "activityTracker"],
-    ["/api/admin-v2/financial-snapshot", "feeDashboard"], ["/api/admin-v2/onboarding", "onboarding"],
+    ["/api/admin/attendance-diagnostics", "attendance"],
     ["/api/coach-pay", "coachPay"],
   ];
   return mappings.find(([prefix]) => path === prefix || path.startsWith(prefix + "/"))?.[1] || findFeatureByApiPath(path)?.key;

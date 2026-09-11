@@ -61,6 +61,9 @@ type BackfillResult = {
   batchesClosed: number;
   classroomsPaused: number;
   batchesPaused: number;
+  // Only returned by the apply run: paused students taken off the registers of
+  // classes falling inside their break.
+  rosters?: { pausesScanned: number; studentsChanged: number; classroomsUpdated: number } | null;
 };
 
 const EMPTY: Payload = { manager: false, classrooms: [], batches: [], coaches: [], totals: { classrooms: 0, batches: 0, groups: 0 } };
@@ -132,8 +135,11 @@ export default function ClosedClassroomsClient({ role }: { role: "admin" | "sub-
       const response = await fetch("/api/admin/students/lifecycle-backfill", { method: "POST" });
       const payload = await response.json().catch(() => null);
       if (!response.ok) throw new Error(payload?.error || "The clean-up could not be run");
+      const rosters = payload.rosters?.classroomsUpdated
+        ? ` Took ${payload.rosters.studentsChanged} paused student(s) off ${payload.rosters.classroomsUpdated} class register(s).`
+        : "";
       toast.success(
-        `Closed ${payload.batchesClosed} batch(es) and ${payload.classroomsClosed} classroom(s), paused ${payload.batchesPaused} batch(es) and ${payload.classroomsPaused} classroom(s), voided ${payload.invoicesVoided} invoice(s) across ${payload.studentsChanged} student(s).`
+        `Closed ${payload.batchesClosed} batch(es) and ${payload.classroomsClosed} classroom(s), paused ${payload.batchesPaused} batch(es) and ${payload.classroomsPaused} classroom(s), voided ${payload.invoicesVoided} invoice(s) across ${payload.studentsChanged} student(s).${rosters}`
       );
       setLoading(true);
       await load();

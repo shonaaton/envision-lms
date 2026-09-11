@@ -125,12 +125,24 @@ async function removeFromFutureSessions(studentId: string, fromDate: Date) {
   });
   let updated = 0;
 
+  // A generated session carries no roster of its own until something edits it -
+  // it is taught to whoever is on the classroom. So the classroom roster is what
+  // the student has to be taken out of, written onto the session as the list of
+  // who is actually expected. Reading only `session.students` made this a no-op
+  // on every untouched session, which is how a paused student stayed on the
+  // register of classes running through their break. Anyone else already away is
+  // left off the roster being written, so standing in for a missing one never
+  // puts an earlier pause back on the register.
+  const away = await pausedStudentIds();
+
   for (const classroom of classrooms) {
     let changed = false;
+    const classroomRoster = (classroom.students || []).map(idOf).filter((id: string) => id === studentId || !away.has(id));
     (classroom.generatedSessions || []).forEach((session: any) => {
       const startsAt = toDate(session?.scheduledFor);
       if (!startsAt || startsAt.getTime() < fromDate.getTime() || session?.actualEndedAt) return;
-      const roster = (session.students || []).map(idOf);
+      const own = (session.students || []).map(idOf);
+      const roster = own.length ? own : classroomRoster;
       if (!roster.includes(studentId)) return;
       session.students = roster.filter((id: string) => id !== studentId);
       changed = true;
@@ -142,6 +154,29 @@ async function removeFromFutureSessions(studentId: string, fromDate: Date) {
     }
   }
   return updated;
+}
+
+/**
+ * Take every currently paused student off the sessions still ahead of them.
+ *
+ * Pauses recorded before a session roster was written at all, and pauses taken
+ * while the removal only read `session.students`, left the student on the
+ * register of classes running through their break. Re-running is harmless: a
+ * student already off a session is not on its roster to remove.
+ */
+export async function syncPausedStudentRosters() {
+  const pauses: any[] = await StudentPause.find({ status: "active" }).select("student pausedFrom").lean();
+  let studentsChanged = 0;
+  let classroomsUpdated = 0;
+  for (const pause of pauses) {
+    const studentId = idOf(pause.student);
+    if (!studentId) continue;
+    const updated = await removeFromFutureSessions(studentId, pauseDayStart(pause.pausedFrom) || pauseDayStart(new Date())!);
+    if (!updated) continue;
+    studentsChanged += 1;
+    classroomsUpdated += updated;
+  }
+  return { pausesScanned: pauses.length, studentsChanged, classroomsUpdated };
 }
 
 /**

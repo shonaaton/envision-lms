@@ -30,13 +30,16 @@ export async function GET() {
   const role = (session.user as any).role;
   const isSuperAdmin = await isSuperAdminSession(session.user as any);
   const visibleClassrooms = visibleClassroomFilter({ role, userId, isSuperAdmin });
-  // A closed or paused classroom stays in the admin list so it can be reviewed,
-  // but coaches and students only see what is actually running - closed batches
-  // have their own page at /classrooms/closed, and paused ones come back on
-  // their own when the student restarts.
+  // Nobody's running list carries a closed or paused group. Closed ones were
+  // switched off when their last attending student was deactivated and paused
+  // ones are waiting for a student to come back, so leaving them here put
+  // classes on the admin's board - and on the calendar for a date inside the
+  // pause - for groups that nobody is teaching. Both states have their own tabs,
+  // fed by /api/classrooms/closed, which is where they are reviewed and where
+  // the reopen and restart live.
   const runningOnly = { isActive: { $ne: false }, isPaused: { $ne: true } };
   const filter = role === "admin" || role === "sub-admin"
-    ? { isSessionInstance: { $ne: true }, ...visibleClassrooms }
+    ? { isSessionInstance: { $ne: true }, ...runningOnly, ...visibleClassrooms }
     : role === "instructor"
       ? { ...coachClassroomQuery(userId), isSessionInstance: { $ne: true }, ...runningOnly, ...visibleClassrooms }
       : { students: userId, isSessionInstance: { $ne: true }, ...runningOnly, ...visibleClassrooms };

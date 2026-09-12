@@ -249,7 +249,10 @@ export default function RegisterPage() {
     trackMetaCompleteRegistration(result.metaEventId, result.id);
     await signIn("credentials", { redirect: false, email: payload.email, password: payload.password });
     setLoading(false);
-    router.push("/dashboard");
+    // Every self-registered student is a free-demo account, and the one thing
+    // they still have to do is pick a date, time and slot. The dashboard's only
+    // real call to action is a link to that page, so go straight there.
+    router.push(result.type === "demo_student" ? "/booking" : "/dashboard");
     router.refresh();
   }
 

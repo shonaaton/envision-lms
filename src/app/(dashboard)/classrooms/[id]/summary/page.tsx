@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { rosterForSession } from "@/lib/classroomStudentExits";
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
@@ -21,8 +22,11 @@ function objectId(value: any) {
   return value?._id?.toString?.() ?? value?.toString?.() ?? "";
 }
 
+// `rosterForSession` rather than the session-or-classroom fallback by hand: an
+// emptied session roster falls back to the whole classroom, which would put a
+// student who changed batch back into a class held after they left.
 function studentsForSession(classroom: any, scheduledSession?: any) {
-  return Array.isArray(scheduledSession?.students) && scheduledSession.students.length ? scheduledSession.students : classroom.students || [];
+  return rosterForSession(classroom, scheduledSession) as any[];
 }
 
 function participantHasAccess(classroom: any, role: string, userId: string, scheduledSession?: any) {

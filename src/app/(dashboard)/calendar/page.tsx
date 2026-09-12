@@ -10,6 +10,8 @@ import {
   flattenScheduledSessions,
   isJoinWindowOpen,
 } from "@/lib/classroomSessions";
+import { classroomsAsSeenByStudent } from "@/lib/classroomStudentExits";
+import { studentHomeworkFilter } from "@/lib/studentHomeworkVisibility";
 import { inactiveStudentMessage } from "@/lib/studentStatus";
 import CalendarWorkspace, { type CalendarEvent } from "@/components/calendar/CalendarWorkspace";
 import { coachClassroomQuery, limitClassroomToCoachSessions } from "@/lib/classroomCoachAccess";
@@ -181,7 +183,7 @@ async function getStudentEvents(userId: string, canJoin: boolean) {
   }
   const batchIds = ((me?.batches || []) as any[]).map(objectId);
 
-  const classrooms: any[] = await Classroom.find({
+  const classroomDocs: any[] = await Classroom.find({
     isActive: { $ne: false },
     isSessionInstance: { $ne: true },
     $or: [{ students: userId }, { batches: { $in: batchIds } }],
@@ -191,17 +193,21 @@ async function getStudentEvents(userId: string, canJoin: boolean) {
     .populate("batches", "name")
     .populate("students", "name")
     .lean();
+  // A student moved to another batch stays in the old classroom's `students` so
+  // their history survives, so it still comes back from that query. Trim it to
+  // the classes they sat before the move, or the calendar keeps offering the
+  // old batch's future classes.
+  const classrooms: any[] = classroomsAsSeenByStudent(classroomDocs, userId) as any[];
 
   const classroomIds = classrooms.map((item: any) => item._id);
+  // Shared with the homework page, API and dashboard: work the old batch was
+  // set after the student left is not theirs.
+  const homeworkFilter = await studentHomeworkFilter(userId);
   const [homework, submissions, tournaments, attendance] = await Promise.all([
-    Homework.find({
-      $or: [
-        { assignedStudents: userId },
-        { assignedBatches: { $in: batchIds } },
-        { classroom: { $in: classroomIds }, assignAllStudents: true },
-        { classroom: { $in: classroomIds }, assignedStudents: { $size: 0 }, assignedBatches: { $size: 0 } },
-      ],
-    }).populate("instructor", "name").sort({ dueAt: 1, createdAt: -1 }).lean(),
+    Homework.find(homeworkFilter)
+      .populate("instructor", "name")
+      .sort({ dueAt: 1, createdAt: -1 })
+      .lean(),
     Submission.find({ student: userId }).lean(),
     Tournament.find({
       $or: [

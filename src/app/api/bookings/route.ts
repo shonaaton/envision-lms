@@ -15,7 +15,7 @@ import { isBookingWithinAvailability, type AvailabilitySlot } from "@/lib/bookin
 import { bookingFeatureNameForType, bookingFeatureNameLowerForType } from "@/lib/bookingLabels";
 import { inactiveStudentMessage } from "@/lib/studentAccess";
 import { canAccessFeature } from "@/lib/featureAccess";
-import { demoManagementUsers, ensureDemoRequestTask, normalizeDemoRequestedTime, notifyDemoRequestCreated } from "@/lib/demoWorkflow";
+import { demoManagementUsers, demoRequestTaskOwner, ensureDemoRequestTask, normalizeDemoRequestedTime, notifyDemoRequestCreated } from "@/lib/demoWorkflow";
 import { sendMetaConversionEvent } from "@/lib/metaConversions";
 import { cancelDemoClassrooms } from "@/lib/demoClassroom";
 import { ensureDemoHomework } from "@/lib/demoHomework";
@@ -305,7 +305,7 @@ export async function POST(req: Request) {
         { upsert: true }
       );
       await notifyDemoRequestCreated({ booking: created, student, admins }).catch((error) => console.error("Demo request notification failed", error));
-      await ensureDemoRequestTask({ booking: created, student, owner: admins.find((admin: any) => admin.role === "sub-admin") || admins[0] }).catch((error) => console.error("Demo task creation failed", error));
+      await ensureDemoRequestTask({ booking: created, student, owner: demoRequestTaskOwner(admins) }).catch((error) => console.error("Demo task creation failed", error));
       await recordActivity({
         actor: studentUserId,
         targetUser: studentUserId,

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  classroomAsSeenByStudent,
   hasStudentExited,
   rosterForSession,
   sessionsVisibleToStudent,
@@ -102,5 +103,39 @@ describe("studentIsOnSessionRoster", () => {
 
   it("turns away someone who was never in the classroom", () => {
     expect(studentIsOnSessionRoster(classroom(), before, "aaaaaaaaaaaaaaaaaaaaaaa9")).toBe(false);
+  });
+});
+
+describe("classroomAsSeenByStudent", () => {
+  it("hands a current student the classroom untouched", () => {
+    const doc = classroom();
+    expect(classroomAsSeenByStudent(doc, STAYED)).toBe(doc);
+  });
+
+  it("trims a departed student's sessions and flags the move", () => {
+    const seen = classroomAsSeenByStudent(classroom(), MOVED) as any;
+    expect(seen.generatedSessions).toEqual([before, sameDayEarlier]);
+    expect(seen.studentHasLeft).toBe(true);
+    expect(seen.studentLeftAt).toEqual(EXIT);
+  });
+
+  it("drops the single-class fallback once every session is trimmed away", () => {
+    // `flattenScheduledSessions` invents a session out of `classDate` whenever
+    // `generatedSessions` is empty, which would hand back the class we just
+    // took away - Join button and all.
+    const seen = classroomAsSeenByStudent(
+      classroom({ generatedSessions: [after], classDate: after.scheduledFor }),
+      MOVED,
+    ) as any;
+    expect(seen.generatedSessions).toEqual([]);
+    expect(seen.classDate).toBeNull();
+  });
+
+  it("keeps the single-class fallback for a class they actually sat", () => {
+    const seen = classroomAsSeenByStudent(
+      classroom({ generatedSessions: [], classDate: before.scheduledFor }),
+      MOVED,
+    ) as any;
+    expect(seen.classDate).toEqual(before.scheduledFor);
   });
 });

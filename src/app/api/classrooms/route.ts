@@ -6,7 +6,7 @@ import { Course } from "@/models/Course";
 import { buildGeneratedSessions, buildSessionPlan } from "@/lib/classroomSchedule";
 import { syncClassroomSessionInstances } from "@/lib/classroomSessionInstances";
 import { visibleClassroomFilter } from "@/lib/classroomVisibility";
-import { sessionsVisibleToStudent, studentExitDate } from "@/lib/classroomStudentExits";
+import { classroomAsSeenByStudent } from "@/lib/classroomStudentExits";
 import { canAccessFeature, isSuperAdminSession } from "@/lib/featureAccess";
 import { coachClassroomQuery, limitClassroomToCoachSessions } from "@/lib/classroomCoachAccess";
 import { User } from "@/models/User";
@@ -76,16 +76,9 @@ export async function GET() {
     // for a class the live route would only turn them away from.
     return NextResponse.json(
       withReadiness.map((item: any) => {
-        const exitedAt = studentExitDate(item, userId);
-        if (!exitedAt) return item;
-        return {
-          ...item,
-          generatedSessions: sessionsVisibleToStudent(item, userId),
-          studentHasLeft: true,
-          studentLeftAt: exitedAt,
-          readyToComplete: false,
-          classesLeftToTeach: 0,
-        };
+        const trimmed = classroomAsSeenByStudent(item, userId) as any;
+        if (!trimmed.studentHasLeft) return trimmed;
+        return { ...trimmed, readyToComplete: false, classesLeftToTeach: 0 };
       }),
     );
   }

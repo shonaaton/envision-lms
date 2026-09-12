@@ -70,6 +70,8 @@ import {
 import Link from "next/link";
 import { canAccessFeature, isSuperAdminSession } from "@/lib/featureAccess";
 import { visibleClassroomFilter } from "@/lib/classroomVisibility";
+import { classroomsAsSeenByStudent } from "@/lib/classroomStudentExits";
+import { studentHomeworkFilter } from "@/lib/studentHomeworkVisibility";
 import RoleHome from "@/components/admin/RoleHome";
 import { COURSE_TIER_VALUES, courseTierLabel } from "@/lib/courseTiers";
 
@@ -1193,6 +1195,9 @@ function coachSessionDayLabel(date: Date, now: Date) {
 
 async function StudentDashboard({ userId, joinAllowed }: { userId: string; joinAllowed: boolean }) {
   const now = new Date();
+  // Shared with the homework page and API so a batch change hides the same work
+  // everywhere: nothing the old batch was set after the student left.
+  const homeworkFilter = await studentHomeworkFilter(userId);
   const [student, classrooms, homework, submissions, tournaments, rewards, attendance, conversations, messages, studentInvoices] = await Promise.all([
     User.findById(userId).populate("batches", "name level").lean(),
     Classroom.find({ students: userId, isActive: { $ne: false }, isSessionInstance: { $ne: true }, ...visibleClassroomFilter({ role: "student", userId }) })
@@ -1200,7 +1205,7 @@ async function StudentDashboard({ userId, joinAllowed }: { userId: string; joinA
       .populate("generatedSessions.substituteCoach", "name username")
       .populate("batches", "name")
       .lean(),
-    Homework.find({ isPublished: true }).sort({ dueAt: 1, createdAt: -1 }).lean(),
+    Homework.find({ isPublished: true, ...homeworkFilter }).sort({ dueAt: 1, createdAt: -1 }).lean(),
     Submission.find({ student: userId }).lean(),
     Tournament.find({
       status: { $in: ["upcoming", "live"] },
@@ -1221,19 +1226,22 @@ async function StudentDashboard({ userId, joinAllowed }: { userId: string; joinA
     return <InactiveAccountDashboard userName={(student as any)?.name || "Student"} role="student" />;
   }
 
-  const batchIds = ((student as any)?.batches || []).map((batch: any) => objectId(batch));
-  const classroomIds = classrooms.map((classroom: any) => objectId(classroom._id));
-  const visibleHomework = homework.filter((item: any) =>
-    (item.assignedStudents || []).some((studentId: any) => objectId(studentId) === userId) ||
-    (item.assignedBatches || []).some((batchId: any) => batchIds.includes(objectId(batchId))) ||
-    classroomIds.includes(objectId(item.classroom))
-  );
+  // A batch change leaves the student in `Classroom.students` on purpose - that
+  // membership is what their history hangs off - so the query above still
+  // returns the classroom they moved out of. Trim it to the classes they
+  // actually sat before anything reads a session off it, or the dashboard hands
+  // back the old batch's next class, Join button and all.
+  const visibleClassrooms = classroomsAsSeenByStudent(classrooms as any[], userId) as any[];
+  const classroomIds = visibleClassrooms.map((classroom: any) => objectId(classroom._id));
+  const visibleHomework = homework;
   // Split here rather than filtered in the query: a completed course must stay
   // out of "what's next", but stay in the class history below, which is built
   // from every classroom the student has been in.
-  const runningClassrooms = classrooms.filter((classroom: any) => String(classroom.status || "") !== "completed");
+  const runningClassrooms = visibleClassrooms.filter(
+    (classroom: any) => String(classroom.status || "") !== "completed" && !classroom.studentHasLeft,
+  );
   const upcomingSessions = buildCoachUpcomingSessions(runningClassrooms, now);
-  const completedSessions = flattenScheduledSessions(classrooms)
+  const completedSessions = flattenScheduledSessions(visibleClassrooms)
     .filter((row) => row.start && isHistoricalSessionStatus(deriveScheduledSessionStatus(row.session, now)))
     .sort((a, b) => (b.start?.getTime() || 0) - (a.start?.getTime() || 0));
   const nextSession = upcomingSessions[0];
@@ -1297,7 +1305,7 @@ async function StudentDashboard({ userId, joinAllowed }: { userId: string; joinA
   const currentCourse = nextSession?.classroom?.courseName || runningClassrooms[0]?.courseName || "Chess Foundations";
   const currentLevel = primaryBatch?.level || nextSession?.classroom?.levelName || "Level not set";
   const batchName = primaryBatch?.name || nextSession?.classroom?.batches?.[0]?.name || "Batch not assigned";
-  const classroomById = new Map(classrooms.map((classroom: any) => [objectId(classroom._id), classroom]));
+  const classroomById = new Map(visibleClassrooms.map((classroom: any) => [objectId(classroom._id), classroom]));
   const homeworkItems = visibleHomework.slice(0, 3);
   const nextTournament = tournaments[0];
   const classSoon = nextSession?.start ? nextSession.start.getTime() - now.getTime() <= 30 * 60 * 1000 : false;

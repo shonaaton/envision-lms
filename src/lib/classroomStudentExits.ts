@@ -128,3 +128,34 @@ export function studentIsOnSessionRoster(classroom: ClassroomExitShape | null | 
 }
 
 export { idOf as exitStudentId };
+
+/**
+ * One classroom as a student who has left it should see it: the classes they
+ * sat are still there, everything after the cut is gone.
+ *
+ * Trimming `generatedSessions` alone is not enough. `flattenScheduledSessions`
+ * synthesises a single session out of `classroom.classDate` whenever there are
+ * no generated ones, so a classroom trimmed down to nothing would hand the
+ * class straight back - with a Join button on it. The fallback is dropped in
+ * exactly that case.
+ */
+export function classroomAsSeenByStudent<T extends ClassroomExitShape>(classroom: T, studentId: string): T {
+  const exitedAt = studentExitDate(classroom, studentId);
+  if (!exitedAt) return classroom;
+  const hadSessions = Array.isArray(classroom.generatedSessions) && classroom.generatedSessions.length > 0;
+  const visibleSessions = sessionsVisibleToStudent(classroom, studentId);
+  const fallbackDate = toDate(classroom.classDate);
+  const dropFallback = !visibleSessions.length
+    && (hadSessions || Boolean(fallbackDate && fallbackDate.getTime() > exitedAt.getTime()));
+  return {
+    ...classroom,
+    generatedSessions: visibleSessions,
+    ...(dropFallback ? { classDate: null } : {}),
+    studentHasLeft: true,
+    studentLeftAt: exitedAt,
+  };
+}
+
+export function classroomsAsSeenByStudent<T extends ClassroomExitShape>(classrooms: T[], studentId: string): T[] {
+  return (classrooms || []).map((classroom) => classroomAsSeenByStudent(classroom, studentId));
+}

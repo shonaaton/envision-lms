@@ -69,11 +69,13 @@ export default async function CoachPayPage({
     const single = typeof raw === "string" ? raw : Array.isArray(raw) ? raw[0] : "";
     if (single) query.set(key, single);
   });
-  const exportHref = (format: "xlsx" | "csv" | "ods") => {
+  // Built here as finished strings rather than handed over as a function: the
+  // filter is a client component, and a closure cannot cross that boundary.
+  const exportLinks = (["xlsx", "csv", "ods"] as const).map((format) => {
     const next = new URLSearchParams(query);
     next.set("format", format);
-    return `/api/coach-pay?${next.toString()}`;
-  };
+    return { format, href: `/api/coach-pay?${next.toString()}` };
+  });
 
   const overrideFor = (event: PayEvent) =>
     overrides.find(
@@ -169,7 +171,7 @@ export default async function CoachPayPage({
           batches={(batches as any[]).map((batch) => ({ id: String(batch._id), name: batch.name }))}
           selectedCoach={requestedCoach}
           selectedBatch={batchFilter}
-          exportHref={exportHref}
+          exportLinks={exportLinks}
           canExport={viewer.canExport}
           showCoachFilter={viewer.canViewAll}
         />

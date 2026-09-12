@@ -2,6 +2,7 @@ import { Types } from "mongoose";
 import { ACADEMY_TIME_ZONE, formatAcademyDateTime, zonedDateTime } from "@/lib/academyTime";
 import { recordActivity } from "@/lib/activity";
 import { importantContacts, importantContactsFromEnvKeys, importantContactWhatsAppRecipientsByKeys } from "@/lib/importantContacts";
+import { demoNotificationRecipients, demoSubAdminEmails, type DemoStaffRecipient } from "@/lib/demoNotificationRecipients";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
 import { sendWhatsAppTextMessage } from "@/lib/whatsappAutomation";
 import { sendWhatsAppAutomationTemplates } from "@/lib/whatsappAutomationEvents";
@@ -45,9 +46,6 @@ const DEMO_REMINDER_RULES = [
 
 const DEMO_STAFF_RECIPIENT_KEYS = {
   accountCreated: ["mohammed_shahzib"],
-  // Saptarshi is the sub-admin who assigns the coach and the slot, so a request
-  // that reaches sales but not him sits unassigned until someone notices it.
-  bookingRequested: ["mohammed_shahzib", "saptarshi"],
   approved: ["mohammed_shahzib", "sayandeb"],
   assessmentSubmitted: ["mohammed_shahzib", "sayandeb", "sayan_bose"],
   reopened: ["saptarshi"],
@@ -198,6 +196,22 @@ async function sendConfiguredDemoTexts(
   ));
 }
 
+/**
+ * Shapes a directory recipient for the WhatsApp automation sender. Static
+ * fallback rows carry the dialling code inside `phone` and leave
+ * `countryCode` blank, which `normalizeWhatsAppRecipient` already handles -
+ * passing an empty string through is what stops it being prefixed twice.
+ */
+function whatsappStaffUser(recipient: DemoStaffRecipient) {
+  return {
+    _id: recipient.userId || undefined,
+    name: recipient.name,
+    phone: recipient.phone,
+    countryCode: recipient.countryCode || undefined,
+    role: recipient.role,
+  };
+}
+
 async function sendStaffEmails(
   recipients: Array<{ name?: string; email?: string; role?: string }>,
   subject: string,
@@ -268,12 +282,30 @@ export async function notifyDemoRequestCreated(input: { booking: any; student: a
       metadata: { booking: booking._id, href: DEMO_MANAGEMENT_HREF, event: "DEMO_CLASS_REQUESTED" },
     }))
   );
-  const staffRecipients = demoStaffRecipients("bookingRequested");
-  await sendConfiguredDemoTexts(staffRecipients, `${message} Booking ID: ${booking._id}.`, {
-    kind: "demo_class_requested",
-    event: "DEMO_CLASS_REQUESTED",
-    bookingId: booking._id?.toString?.() || "",
-  });
+  // Staff alerts follow the live user directory rather than the deploy-time
+  // contact list: a sub-admin whose number or email changes in the admin user
+  // directory kept being paged on the old one, and a key missing from
+  // LMS_IMPORTANT_CONTACTS dropped that person silently.
+  const { all: staffRecipients } = await demoNotificationRecipients();
+  const bookingId = booking._id?.toString?.() || "";
+  const classTime = booking.requestedIstDateTime || formatAcademyDateTime(booking.startAt, { timeZoneName: "short" });
+  // Sent as an approved template, not free text. Meta only delivers a
+  // free-form message inside a 24-hour window the recipient opened by writing
+  // to the academy number; staff never do, so those alerts were accepted by
+  // the API and quietly dropped before reaching anyone's phone.
+  await sendWhatsAppAutomationTemplates(staffRecipients.map((recipient) => ({
+    user: whatsappStaffUser(recipient),
+    templateName: "demo_booking_received_sales_alert",
+    bodyParameters: [recipient.name || "Team", student.name || "A prospect", classTime],
+    metadata: {
+      kind: "demo_class_requested",
+      event: "DEMO_CLASS_REQUESTED",
+      recipientType: recipient.role,
+      bookingId,
+      href: DEMO_MANAGEMENT_HREF,
+      notificationDedupKey: `demo_requested:${bookingId}:staff`,
+    },
+  })));
   await sendStaffEmails(staffRecipients, "New demo booking received", (recipient) => [
     `Hello ${recipient.name || "Team"},`,
     "",
@@ -287,6 +319,21 @@ export async function notifyDemoRequestCreated(input: { booking: any; student: a
     bookingId: booking._id?.toString?.() || "",
     href: DEMO_MANAGEMENT_HREF,
   });
+}
+
+/**
+ * The desk a new demo request lands on: the sub-admin who assigns the coach and
+ * the slot, matched by the email in `DEMO_SUB_ADMIN_NOTIFY_EMAILS`. Callers
+ * used to take the first sub-admin the unsorted directory query returned, so
+ * the task could open on somebody else’s list while its owner saw nothing.
+ */
+export function demoRequestTaskOwner(admins: any[]) {
+  const emails = new Set(demoSubAdminEmails());
+  return (
+    admins.find((admin: any) => admin?.role === "sub-admin" && emails.has(String(admin?.email || "").trim().toLowerCase())) ||
+    admins.find((admin: any) => admin?.role === "sub-admin") ||
+    admins[0]
+  );
 }
 
 export async function ensureDemoRequestTask(input: { booking: any; student: any; owner?: any }) {

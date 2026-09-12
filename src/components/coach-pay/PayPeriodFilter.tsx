@@ -27,7 +27,7 @@ export function PayPeriodFilter({
   batches,
   selectedCoach,
   selectedBatch,
-  exportHref,
+  exportLinks,
   canExport,
   showCoachFilter,
 }: {
@@ -41,7 +41,7 @@ export function PayPeriodFilter({
   batches: Option[];
   selectedCoach: string;
   selectedBatch: string;
-  exportHref: (format: "xlsx" | "csv" | "ods") => string;
+  exportLinks: { format: string; href: string }[];
   canExport: boolean;
   showCoachFilter: boolean;
 }) {
@@ -126,8 +126,8 @@ export function PayPeriodFilter({
         {canExport && (
           <>
             <span className="ml-auto text-xs font-semibold text-slate-500">Export</span>
-            {(["xlsx", "csv", "ods"] as const).map((format) => (
-              <a key={format} href={exportHref(format)} className="btn-outline h-10 px-3 text-xs uppercase">
+            {exportLinks.map(({ format, href }) => (
+              <a key={format} href={href} className="btn-outline h-10 px-3 text-xs uppercase">
                 <Download size={14} /> {format}
               </a>
             ))}

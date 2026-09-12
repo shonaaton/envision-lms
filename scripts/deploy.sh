@@ -20,12 +20,15 @@ log "LMS deploy started from $(pwd)"
 
 run_node_script() {
   local script="$1"
-  if command -v node >/dev/null 2>&1; then
+  # Host Node is only usable if it can resolve the driver. The app's
+  # node_modules live inside the image, not in this checkout, so a VPS that
+  # merely has Node installed still has to take the Docker path.
+  if command -v node >/dev/null 2>&1 && node -e "require.resolve('mongodb')" >/dev/null 2>&1; then
     timeout 30 node "$script"
     return
   fi
 
-  log "Node.js not found on host; running ${script} inside Docker..."
+  log "mongodb driver not available to host Node; running ${script} inside Docker..."
   timeout 90 docker run --rm \
     -e ENV_FILE=/app/.env \
     -v "$PWD:/app:ro" \

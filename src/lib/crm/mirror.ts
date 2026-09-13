@@ -85,7 +85,13 @@ export async function applyKrayaPayload(payload: KrayaPayload, eventType: "creat
 
   const attributes = customAttributes(payload);
   if (Object.keys(attributes).length) {
-    record.attributes = { ...(record.attributes || {}), ...attributes };
+    const previous = record.attributes || {};
+    const changedAt = { ...(record.attributeChangedAt || {}) };
+    for (const [key, value] of Object.entries(attributes)) {
+      if (!changedAt[key] || JSON.stringify(previous[key]) !== JSON.stringify(value)) changedAt[key] = now;
+    }
+    record.attributes = { ...previous, ...attributes };
+    record.attributeChangedAt = changedAt;
   }
 
   if (stageChanged) {

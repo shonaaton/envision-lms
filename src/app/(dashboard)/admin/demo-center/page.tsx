@@ -28,6 +28,7 @@ import { DemoFeedback } from "@/models/Onboarding";
 import { User } from "@/models/User";
 import { Course } from "@/models/Course";
 import { Batch } from "@/models/Batch";
+import { leadOwnersForStudents, notifyLeadOwnerOfDemo } from "@/lib/demoLeadOwner";
 
 export const dynamic = "force-dynamic";
 
@@ -299,6 +300,7 @@ async function approveBooking(formData: FormData) {
     updatedBooking.instructor?.email && sendAutomationEmail({ to: updatedBooking.instructor.email, subject: "Demo class assigned", message: `A demo class with ${updatedBooking.student?.name || "a student"} is scheduled for ${formatAcademyDateTime(start)}.` }),
   ]);
   await notifyDemoApproved({ booking: updatedBooking, student: updatedBooking.student, coach: updatedBooking.instructor, classroom }).catch(() => undefined);
+  await notifyLeadOwnerOfDemo({ bookingId: booking._id.toString(), event: "confirmed", coachName: updatedBooking.instructor?.name }).catch((error) => console.error("Demo lead owner confirmation notice failed", error));
   await recordActivity({ actor: actorId, targetUser: String(booking.student?._id || booking.student || ""), type: "demo.booking.approved", label: "Approved demo and created classroom", entityType: "Booking", entityId: booking._id.toString(), metadata: { classroom: classroom._id.toString(), coach: coachId, event: "DEMO_CLASSROOM_CREATED" } });
   revalidatePath("/admin/demo-center");
   revalidatePath("/classrooms");
@@ -499,6 +501,10 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
     : bookings.filter((booking: any) => classifyDemo(booking) === activeTab);
   const counts = Object.fromEntries(tabs.map((tab) => [tab.id, tab.id === "assessments" ? feedback.length : bookings.filter((booking: any) => classifyDemo(booking) === tab.id).length]));
   const feedbackByBooking = new Map(feedback.map((item: any) => [String(item.booking?._id || item.booking), item]));
+  // The salesperson Kraya assigned each lead. Routed demos carry it; older demos
+  // and unbooked accounts are resolved from the CRM mirror for the label.
+  const leadOwners = await leadOwnersForStudents([...bookings.map((booking: any) => booking.student), ...demoStudents]).catch(() => new Map());
+  const salesOwnerOf = (booking: any) => String(booking.salesOwnerName || leadOwners.get(String(booking.student?._id || booking.student))?.name || "");
 
   // The audit trail is only needed on the History tab, so it is not paid for on
   // every other page load.
@@ -561,7 +567,7 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
             </div>
           ) : null}
           {visibleBookings.map((booking: any) => (
-            <DemoCard key={booking._id.toString()} booking={booking} activeTab={activeTab} coaches={coaches} courses={courses} batches={batches} feedback={feedbackByBooking.get(String(booking._id))} />
+            <DemoCard key={booking._id.toString()} booking={booking} activeTab={activeTab} coaches={coaches} courses={courses} batches={batches} feedback={feedbackByBooking.get(String(booking._id))} salesOwnerName={salesOwnerOf(booking)} />
           ))}
           {!visibleBookings.length ? <Empty text={`No demos in ${tabs.find((tab) => tab.id === activeTab)?.label || "this tab"}.`} /> : null}
         </section>
@@ -612,6 +618,7 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
                     <Field label="Chess level" value={levelLabel(student.studentLevel)} />
                     <Field label="Location" value={[student.city, student.country].filter(Boolean).join(", ")} />
                     <Field label="Signed up" value={student.createdAt ? formatAcademyDateTime(student.createdAt) : ""} />
+                    <Field label="Salesperson" value={leadOwners.get(String(student._id))?.name || "Unassigned"} />
                   </dl>
                   <div className="mt-3">
                     <PopupTrigger id={extendModalId} className="btn-outline bg-white">
@@ -639,7 +646,7 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
   );
 }
 
-function DemoCard({ booking, activeTab, coaches, courses, batches, feedback }: { booking: any; activeTab: DemoTab; coaches: any[]; courses: any[]; batches: any[]; feedback?: any }) {
+function DemoCard({ booking, activeTab, coaches, courses, batches, feedback, salesOwnerName = "" }: { booking: any; activeTab: DemoTab; coaches: any[]; courses: any[]; batches: any[]; feedback?: any; salesOwnerName?: string }) {
   const student = booking.student || {};
   const startAt = toLocalInput(booking.startAt);
   const duration = Math.max(15, Math.round((new Date(booking.endAt).getTime() - new Date(booking.startAt).getTime()) / 60000) || 30);
@@ -690,6 +697,7 @@ function DemoCard({ booking, activeTab, coaches, courses, batches, feedback }: {
         <Field label="Duration" value={`${duration} minutes`} />
         <Field label="Submitted" value={booking.createdAt ? formatAcademyDateTime(booking.createdAt) : ""} />
         <Field label="Coach" value={awaitingNewTime ? <Pending text="To be reassigned" /> : booking.assignedCoach?.name || booking.instructor?.name || "Unassigned"} />
+        <Field label="Salesperson" value={salesOwnerName || "Unassigned"} />
         <Field label="Chess level" value={levelLabel(booking.level || student.studentLevel)} />
         <Field label="Location" value={[student.city || booking.city, student.country || booking.country].filter(Boolean).join(", ")} />
         <Field label="Timezone" value={booking.requestedTimezone} />

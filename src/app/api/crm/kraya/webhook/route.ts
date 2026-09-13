@@ -5,6 +5,7 @@ import { findUserForCrmContact, emailKey, phoneKey } from "@/lib/crm/identity";
 import { classifyCrmStage } from "@/lib/crm/stages";
 import { closeDemoFromCrm, convertStudentFromCrm, reopenDemoFromCrm } from "@/lib/crm/sync";
 import { applyKrayaPayload } from "@/lib/crm/mirror";
+import { attributeLeadDemosFromCrm } from "@/lib/demoLeadOwner";
 import { CrmLead } from "@/models/CrmLead";
 
 export const dynamic = "force-dynamic";
@@ -58,6 +59,13 @@ export async function POST(req: Request) {
       console.error("CRM mirror write failed", error);
       return null;
     });
+
+    // The salesperson attribute can reach the mirror after the lead already booked
+    // a demo (the portal's own push is often what creates the lead in Kraya), so
+    // route any open demo now. Attribution notifies once and never fails the hook.
+    if (mirrored?.leadId) {
+      await attributeLeadDemosFromCrm({ crmLeadId: mirrored.leadId }).catch((error) => console.error("Lead owner routing from CRM failed", error));
+    }
 
     if (!stageName) {
       // Nothing to act on for the demo funnel, but the mirror still took the

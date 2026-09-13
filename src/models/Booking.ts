@@ -91,6 +91,15 @@ const BookingSchema = new Schema(
     archivedAt: { type: Date, index: true },
     archivedBy: { type: Schema.Types.ObjectId, ref: "User" },
     archiveReason: String,
+    // The salesperson Kraya assigned the lead to, read from the lead's custom
+    // attribute when the demo is booked. Drives the owner's notification and the
+    // "My leads' demos" panel on their dashboard - see src/lib/demoLeadOwner.ts.
+    salesOwner: { type: Schema.Types.ObjectId, ref: "User", index: true },
+    salesOwnerName: String,
+    /** The raw CRM attribute value the owner was matched from, for auditing a mis-route. */
+    salesOwnerAttribute: String,
+    salesOwnerAttributedAt: Date,
+    salesOwnerNotifiedAt: Date,
   },
   { timestamps: true }
 );

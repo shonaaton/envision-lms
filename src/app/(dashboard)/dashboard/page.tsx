@@ -73,6 +73,7 @@ import { visibleClassroomFilter } from "@/lib/classroomVisibility";
 import { classroomsAsSeenByStudent } from "@/lib/classroomStudentExits";
 import { studentHomeworkFilter } from "@/lib/studentHomeworkVisibility";
 import RoleHome from "@/components/admin/RoleHome";
+import LeadOwnerDemosPanel from "@/components/sales/LeadOwnerDemosPanel";
 import { COURSE_TIER_VALUES, courseTierLabel } from "@/lib/courseTiers";
 
 export const dynamic = "force-dynamic";
@@ -2965,6 +2966,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
 
   return (
     <div className="space-y-5 text-slate-950">
+      {/* Admins and sub-admins see every demo lead with the salesperson the CRM assigned. */}
+      <LeadOwnerDemosPanel userId={userId} scope="all" />
       <DashboardHero
         eyebrow="Admin Workspace"
         title="Welcome to Admin Dashboard"

@@ -19,6 +19,7 @@ import { demoManagementUsers, demoRequestTaskOwner, ensureDemoRequestTask, norma
 import { sendMetaConversionEvent } from "@/lib/metaConversions";
 import { cancelDemoClassrooms } from "@/lib/demoClassroom";
 import { ensureDemoHomework } from "@/lib/demoHomework";
+import { attributeDemoToLeadOwner, notifyLeadOwnerOfDemo } from "@/lib/demoLeadOwner";
 
 export const dynamic = "force-dynamic";
 
@@ -258,6 +259,7 @@ export async function POST(req: Request) {
           entityId: existingActive._id.toString(),
           metadata: { bookingType: "demo", timezone: requested.timezone, localTime: requested.localLabel, istTime: requested.istLabel, rescheduleCount: existingActive.rescheduleCount },
         });
+        await notifyLeadOwnerOfDemo({ bookingId: existingActive._id.toString(), event: "rescheduled" }).catch((error) => console.error("Demo lead owner reschedule notice failed", error));
         return NextResponse.json({
           ...(existingActive.toObject ? existingActive.toObject() : existingActive),
           metaEventId: `demo_booking_${existingActive._id.toString()}`,
@@ -306,6 +308,7 @@ export async function POST(req: Request) {
       );
       await notifyDemoRequestCreated({ booking: created, student, admins }).catch((error) => console.error("Demo request notification failed", error));
       await ensureDemoRequestTask({ booking: created, student, owner: demoRequestTaskOwner(admins) }).catch((error) => console.error("Demo task creation failed", error));
+      await attributeDemoToLeadOwner(created._id.toString()).catch((error) => console.error("Demo lead owner routing failed", error));
       await recordActivity({
         actor: studentUserId,
         targetUser: studentUserId,

@@ -85,6 +85,12 @@ const CrmLeadRecordSchema = new Schema(
      * dropped for not fitting a schema.
      */
     attributes: { type: Schema.Types.Mixed, default: {} },
+    /**
+     * When each attribute last changed value. Attributes are merged, never removed,
+     * so a reassigned lead keeps the old owner key too; this is how the newest
+     * owner is told apart - see src/lib/crm/leadOwner.ts.
+     */
+    attributeChangedAt: { type: Schema.Types.Mixed, default: {} },
 
     firstSeenAt: { type: Date, index: true },
     lastEventAt: { type: Date, index: true },

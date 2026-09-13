@@ -1156,6 +1156,7 @@ async function patchClassroom(req: Request, { params }: { params: { id: string }
       }
       safeBody.meetingUrl = normalizedMeetingUrl;
     }
+    const previousStudentIds = new Set<string>((existing.students || []).map(recordId));
     existing.set({
       ...safeBody,
       course: body.course ? body.course : undefined,
@@ -1164,6 +1165,30 @@ async function patchClassroom(req: Request, { params }: { params: { id: string }
       endDate: body.endDate ? new Date(body.endDate) : undefined,
       durationMinutes: Math.max(15, Number(body.durationMinutes || existing.durationMinutes || 60)),
     });
+    if (Array.isArray(body.students)) {
+      // The form edits `classroom.students`, but a session with a roster of its
+      // own never reads that list - so a student added here stayed locked out of
+      // every class ahead ("not on the student list"), and one removed here could
+      // still walk in. Carry the change onto sessions that have not finished.
+      const nextStudentIds = new Set<string>((existing.students || []).map(recordId));
+      const added = Array.from(nextStudentIds).filter((id) => !previousStudentIds.has(id));
+      const removed = new Set(Array.from(previousStudentIds).filter((id) => !nextStudentIds.has(id)));
+      if (added.length || removed.size) {
+        const now = Date.now();
+        (existing.generatedSessions || []).forEach((item: any) => {
+          const own: string[] = (item.students || []).map(recordId);
+          if (!own.length || item.actualEndedAt) return;
+          const startsAt = item.scheduledFor ? new Date(item.scheduledFor).getTime() : NaN;
+          const endsAt = startsAt + Math.max(15, Number(item.durationMinutes || existing.durationMinutes || 60)) * 60000;
+          if (!Number.isFinite(endsAt) || endsAt < now) return;
+          const next = own.filter((id) => !removed.has(id));
+          added.forEach((id) => {
+            if (!next.includes(id)) next.push(id);
+          });
+          if (next.length !== own.length || next.some((id, index) => id !== own[index])) item.students = next;
+        });
+      }
+    }
     if (scheduleChanged) {
       const regenerated = buildGeneratedSessions({
         classroomType: nextType,

@@ -3,6 +3,7 @@ import { Types } from "mongoose";
 import { recordActivity } from "@/lib/activity";
 import { createInvoice } from "@/lib/fees";
 import { syncClassroomSessionInstances } from "@/lib/classroomSessionInstances";
+import { sessionRosterWithStudent, studentsMissingFromSessionRoster } from "@/lib/classroomStudentExits";
 import { pauseEmptyGroupsForStudent, resumeGroupsForStudent } from "@/lib/groupLifecycle";
 import { notifyPauseStarted, notifyStudentResumed } from "@/lib/studentLifecycleNotifications";
 import { Batch } from "@/models/Batch";
@@ -179,6 +180,98 @@ export async function syncPausedStudentRosters() {
   return { pausesScanned: pauses.length, studentsChanged, classroomsUpdated };
 }
 
+export type SessionRosterRepair = {
+  apply: boolean;
+  classroomsScanned: number;
+  classroomsUpdated: number;
+  sessionsUpdated: number;
+  studentsRestored: number;
+  classrooms: Array<{ id: string; title: string; sessions: number; students: number }>;
+};
+
+const CLOSED_SESSION_STATUSES = new Set(["cancelled", "completed", "rescheduled", "missed"]);
+
+/**
+ * Put classroom members back on the upcoming sessions whose written-out roster
+ * dropped them.
+ *
+ * Reinstating a paused student into a session with no roster of its own used to
+ * write one holding only that student, and the classroom edit form changed
+ * `classroom.students` without touching rosters sessions already had. Either way
+ * the student is still in the classroom and on the coach's register, while the
+ * live room turns them away as "not on the student list". Anyone meant to be off
+ * stays off: students who left, are paused or deactivated, or whose batch
+ * enrolment starts after the class.
+ */
+export async function repairSessionRosterLockouts(options: { apply?: boolean; now?: Date } = {}): Promise<SessionRosterRepair> {
+  const apply = options.apply === true;
+  const from = pauseDayStart(options.now || new Date())!;
+  const classrooms: any[] = await Classroom.find({
+    isActive: { $ne: false },
+    isSessionInstance: { $ne: true },
+    isTestClassroom: { $ne: true },
+    status: { $nin: ["completed", "cancelled"] },
+    generatedSessions: { $elemMatch: { scheduledFor: { $gte: from }, "students.0": { $exists: true } } },
+  });
+
+  const memberIds = Array.from(new Set(classrooms.flatMap((classroom) => (classroom.students || []).map(idOf)).filter(Boolean)));
+  const batchIds = Array.from(new Set(classrooms.flatMap((classroom) => (classroom.batches || []).map(idOf)).filter(Boolean)));
+  const [paused, inactive, batches] = await Promise.all([
+    pausedStudentIds(),
+    memberIds.length ? User.find({ _id: { $in: memberIds }, isActive: false }).select("_id").lean() : Promise.resolve([]),
+    batchIds.length ? Batch.find({ _id: { $in: batchIds } }).select("studentEnrollments").lean() : Promise.resolve([]),
+  ]);
+  const skip = new Set<string>([...Array.from(paused), ...(inactive as any[]).map((user) => idOf(user._id))]);
+  const enrolmentsByBatch = new Map((batches as any[]).map((batch) => [idOf(batch._id), batch.studentEnrollments || []]));
+
+  const result: SessionRosterRepair = {
+    apply,
+    classroomsScanned: classrooms.length,
+    classroomsUpdated: 0,
+    sessionsUpdated: 0,
+    studentsRestored: 0,
+    classrooms: [],
+  };
+
+  for (const classroom of classrooms) {
+    const joinedAt = new Map<string, Date>();
+    (classroom.batches || []).forEach((batchId: any) => {
+      (enrolmentsByBatch.get(idOf(batchId)) || []).forEach((entry: any) => {
+        const studentId = idOf(entry?.student);
+        const enrolledAt = toDate(entry?.enrolledAt);
+        if (!studentId || !enrolledAt) return;
+        const known = joinedAt.get(studentId);
+        if (!known || enrolledAt.getTime() < known.getTime()) joinedAt.set(studentId, enrolledAt);
+      });
+    });
+
+    let sessions = 0;
+    const restored = new Set<string>();
+    (classroom.generatedSessions || []).forEach((session: any) => {
+      const startsAt = toDate(session?.scheduledFor);
+      if (!startsAt || startsAt.getTime() < from.getTime() || session?.actualEndedAt) return;
+      if (CLOSED_SESSION_STATUSES.has(String(session?.status || ""))) return;
+      const missing = studentsMissingFromSessionRoster(classroom, session, { skip, joinedAt });
+      if (!missing.length) return;
+      sessions += 1;
+      missing.forEach((studentId) => restored.add(studentId));
+      if (apply) session.students = [...session.students, ...missing.map((studentId) => new Types.ObjectId(studentId))];
+    });
+
+    if (!sessions) continue;
+    result.classroomsUpdated += 1;
+    result.sessionsUpdated += sessions;
+    result.studentsRestored += restored.size;
+    result.classrooms.push({ id: idOf(classroom._id), title: classroom.title || "", sessions, students: restored.size });
+    if (apply) {
+      await classroom.save();
+      await syncClassroomSessionInstances(idOf(classroom._id)).catch(() => undefined);
+    }
+  }
+
+  return result;
+}
+
 /**
  * Put the student back on the roster of every session from `fromDate` onwards in
  * the classrooms attached to the batch they are returning to.
@@ -203,9 +296,11 @@ async function restoreToFutureSessions(studentId: string, batchId: string, fromD
     (classroom.generatedSessions || []).forEach((session: any) => {
       const startsAt = toDate(session?.scheduledFor);
       if (!startsAt || startsAt.getTime() < fromDate.getTime() || session?.actualEndedAt) return;
-      const sessionRoster = (session.students || []).map(idOf);
-      if (sessionRoster.includes(studentId)) return;
-      session.students = [...sessionRoster, studentId];
+      // A session with no roster of its own already includes every classroom
+      // member; appending to it would leave this student alone on the list.
+      const next = sessionRosterWithStudent(session, studentId);
+      if (!next) return;
+      session.students = next;
       changed = true;
     });
     if (changed) {

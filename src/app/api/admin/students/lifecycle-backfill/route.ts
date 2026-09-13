@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { canAccessFeature } from "@/lib/featureAccess";
 import { backfillGroupLifecycle } from "@/lib/groupLifecycle";
-import { syncPausedStudentRosters } from "@/lib/studentPause";
+import { repairSessionRosterLockouts, syncPausedStudentRosters } from "@/lib/studentPause";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -27,7 +27,8 @@ export async function GET() {
   if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
   const result = await backfillGroupLifecycle({ apply: false });
-  return NextResponse.json(result);
+  const rosterLockouts = await repairSessionRosterLockouts({ apply: false }).catch(() => null);
+  return NextResponse.json({ ...result, rosterLockouts });
 }
 
 export async function POST() {
@@ -43,5 +44,12 @@ export async function POST() {
   // the group catch-up never reaches them - but they can still be sitting on the
   // register of classes inside their break. Sweep those rosters as well.
   const rosters = await syncPausedStudentRosters().catch(() => null);
-  return NextResponse.json({ ...result, rosters });
+  // Runs after the paused sweep so it reads the rosters that sweep just wrote,
+  // and puts back classroom members an earlier reinstatement or classroom edit
+  // left off the upcoming classes.
+  const rosterLockouts = await repairSessionRosterLockouts({ apply: true }).catch((error) => {
+    console.error("Session roster repair failed", error);
+    return null;
+  });
+  return NextResponse.json({ ...result, rosters, rosterLockouts });
 }

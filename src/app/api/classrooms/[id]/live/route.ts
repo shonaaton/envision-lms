@@ -265,6 +265,10 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     return NextResponse.json({
       classroom: classroomDoc,
       scheduledSession,
+      // Who the room actually admits for this class. `classroom.students` alone
+      // can list someone the session roster leaves out, and the register has to
+      // show that rather than a plain "Not joined".
+      sessionStudentIds: studentsForSession(classroomDoc, scheduledSession).map((student: any) => String(student?._id || student)),
       live,
       activeQuestion,
       responses,

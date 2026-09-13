@@ -64,6 +64,9 @@ type BackfillResult = {
   // Only returned by the apply run: paused students taken off the registers of
   // classes falling inside their break.
   rosters?: { pausesScanned: number; studentsChanged: number; classroomsUpdated: number } | null;
+  // Classroom members left off the rosters of upcoming classes, so the live room
+  // refuses them. Previewed on GET, put back on POST.
+  rosterLockouts?: { classroomsUpdated: number; sessionsUpdated: number; studentsRestored: number } | null;
 };
 
 const EMPTY: Payload = { manager: false, classrooms: [], batches: [], coaches: [], totals: { classrooms: 0, batches: 0, groups: 0 } };
@@ -138,8 +141,11 @@ export default function ClosedClassroomsClient({ role }: { role: "admin" | "sub-
       const rosters = payload.rosters?.classroomsUpdated
         ? ` Took ${payload.rosters.studentsChanged} paused student(s) off ${payload.rosters.classroomsUpdated} class register(s).`
         : "";
+      const lockouts = payload.rosterLockouts?.classroomsUpdated
+        ? ` Put ${payload.rosterLockouts.studentsRestored} student(s) back on ${payload.rosterLockouts.sessionsUpdated} upcoming class(es) they were locked out of.`
+        : "";
       toast.success(
-        `Closed ${payload.batchesClosed} batch(es) and ${payload.classroomsClosed} classroom(s), paused ${payload.batchesPaused} batch(es) and ${payload.classroomsPaused} classroom(s), voided ${payload.invoicesVoided} invoice(s) across ${payload.studentsChanged} student(s).${rosters}`
+        `Closed ${payload.batchesClosed} batch(es) and ${payload.classroomsClosed} classroom(s), paused ${payload.batchesPaused} batch(es) and ${payload.classroomsPaused} classroom(s), voided ${payload.invoicesVoided} invoice(s) across ${payload.studentsChanged} student(s).${rosters}${lockouts}`
       );
       setLoading(true);
       await load();
@@ -194,14 +200,28 @@ export default function ClosedClassroomsClient({ role }: { role: "admin" | "sub-
         </Link>
       </div>
 
-      {data.manager && pending && pending.studentsChanged > 0 && (
+      {data.manager && pending && (pending.studentsChanged > 0 || Number(pending.rosterLockouts?.studentsRestored || 0) > 0) && (
         <div className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <div className="font-bold">{pending.studentsChanged} student{pending.studentsChanged === 1 ? "" : "s"} out of circulation still have open groups.</div>
-            <div className="mt-0.5 text-xs">
-              They were deactivated or paused before those actions started closing and pausing batches: {pending.batchesClosed} batch(es) and {pending.classroomsClosed} classroom(s) to close,
-              {" "}{pending.batchesPaused} batch(es) and {pending.classroomsPaused} classroom(s) to pause, and {pending.invoicesVoided} upcoming invoice(s) still standing.
-            </div>
+            {pending.studentsChanged > 0 && (
+              <>
+                <div className="font-bold">{pending.studentsChanged} student{pending.studentsChanged === 1 ? "" : "s"} out of circulation still have open groups.</div>
+                <div className="mt-0.5 text-xs">
+                  They were deactivated or paused before those actions started closing and pausing batches: {pending.batchesClosed} batch(es) and {pending.classroomsClosed} classroom(s) to close,
+                  {" "}{pending.batchesPaused} batch(es) and {pending.classroomsPaused} classroom(s) to pause, and {pending.invoicesVoided} upcoming invoice(s) still standing.
+                </div>
+              </>
+            )}
+            {pending.rosterLockouts?.studentsRestored ? (
+              <div className={pending.studentsChanged > 0 ? "mt-2" : ""}>
+                <div className="font-bold">
+                  {pending.rosterLockouts.studentsRestored} student{pending.rosterLockouts.studentsRestored === 1 ? " is" : "s are"} locked out of upcoming classes.
+                </div>
+                <div className="mt-0.5 text-xs">
+                  They are in the classroom but missing from the student list of {pending.rosterLockouts.sessionsUpdated} class(es) across {pending.rosterLockouts.classroomsUpdated} classroom(s), so the live room refuses them.
+                </div>
+              </div>
+            ) : null}
           </div>
           <button
             type="button"

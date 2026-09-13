@@ -536,7 +536,17 @@ function publicUserLabel(user: any) {
   return email.includes("@") ? email.split("@")[0] : email;
 }
 
-function studentPresenceState(participant: any) {
+function studentPresenceState(participant: any, onSessionList = true) {
+  if (!participant && !onSessionList) {
+    // In the classroom but not on this class's own roster: the room will refuse
+    // them, so "Not joined" would send the coach chasing the wrong problem.
+    return {
+      key: "not_on_list",
+      label: "Cannot join",
+      detail: "Not on this class's student list, so the room turns them away. Ask an admin to check the class roster.",
+      className: "bg-rose-100 text-rose-800",
+    };
+  }
   if (!participant) {
     return {
       key: "not_joined",
@@ -1208,12 +1218,17 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const classroomName = classroom?.title || "Live Classroom";
   const coachName = classroom?.coach?.name || classroom?.instructor?.name || "Coach";
   const activeStudents = students.filter((student: any) => student?.status !== "inactive");
+  const sessionStudentIds = useMemo(
+    () => (Array.isArray(data?.sessionStudentIds) ? new Set<string>(data.sessionStudentIds.map(String)) : null),
+    [data?.sessionStudentIds]
+  );
   const studentPresenceRows = useMemo<StudentPresenceRow[]>(
     () => students.filter((student: any) => student?.status !== "inactive").map((student: any) => {
       const participant = (live?.participants || []).find((item: any) => item.role === "student" && entityId(item.user) === entityId(student));
-      return { student, participant, presence: studentPresenceState(participant) };
+      const onSessionList = !sessionStudentIds || sessionStudentIds.has(entityId(student));
+      return { student, participant, presence: studentPresenceState(participant, onSessionList) };
     }),
-    [students, live?.participants]
+    [students, live?.participants, sessionStudentIds]
   );
   const joinedStudentCount = studentPresenceRows.filter((row: StudentPresenceRow) => row.presence.key === "joined" || row.presence.key === "idle").length;
   const activeCoachInRoom = (live?.participants || []).some((participant: any) => {

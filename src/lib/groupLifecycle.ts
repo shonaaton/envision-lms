@@ -2,6 +2,7 @@ import { Types } from "mongoose";
 
 import { recordActivity } from "@/lib/activity";
 import { syncClassroomSessionInstances } from "@/lib/classroomSessionInstances";
+import { sessionRosterWithStudent } from "@/lib/classroomStudentExits";
 import { scheduleDatesFrom } from "@/lib/classroomSchedule";
 import { Batch } from "@/models/Batch";
 import { Classroom } from "@/models/Classroom";
@@ -562,8 +563,10 @@ export async function resumeGroupsForStudent(
         session.scheduledFor = new Date(new Date(session.scheduledFor).getTime() + shiftMs);
       }
       if (onClassroomRoster) {
-        const roster = (session.students || []).map(idOf);
-        if (!roster.includes(studentId)) session.students = [...roster, new Types.ObjectId(studentId)];
+        // An inherited roster already holds every member; appending to it
+        // would leave this student alone on the class.
+        const next = sessionRosterWithStudent(session, studentId);
+        if (next) session.students = next;
       }
       session.status = "scheduled";
     });

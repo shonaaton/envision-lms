@@ -114,6 +114,54 @@ export function rosterForSession(classroom: ClassroomExitShape | null | undefine
   });
 }
 
+/**
+ * A session's own roster with one student added, or null when nothing needs
+ * writing.
+ *
+ * A session with no roster of its own is taught to the whole classroom, so a
+ * classroom member is already on it. Appending to that empty list writes a
+ * roster holding only this student - which replaces "everyone in the class"
+ * with "just them" and turns the rest of the class away from the live room as
+ * not on the student list. Reinstating a paused student used to do exactly that.
+ */
+export function sessionRosterWithStudent(session: any, studentId: string): unknown[] | null {
+  const own = Array.isArray(session?.students) ? session.students : [];
+  if (!own.length || !studentId) return null;
+  if (own.some((student: unknown) => idOf(student) === studentId)) return null;
+  return [...own, studentId];
+}
+
+/**
+ * Classroom members that a session's own roster leaves out but should not.
+ *
+ * Only a written-out roster can drop someone; an inherited one is the classroom.
+ * Anyone meant to be off it stays off: a student who left before the class,
+ * anyone in `skip` (paused, deactivated), and anyone whose batch enrolment in
+ * `joinedAt` starts after the class does.
+ */
+export function studentsMissingFromSessionRoster(
+  classroom: ClassroomExitShape | null | undefined,
+  session: any,
+  options: { skip?: Set<string>; joinedAt?: Map<string, Date> } = {}
+): string[] {
+  const own = Array.isArray(session?.students) ? session.students : [];
+  if (!own.length) return [];
+  const onRoster = new Set(own.map(idOf));
+  const exits = exitDatesByStudent(classroom);
+  const startsAt = sessionStartDate(classroom, session);
+  const missing: string[] = [];
+  (classroom?.students || []).forEach((student: unknown) => {
+    const studentId = idOf(student);
+    if (!studentId || onRoster.has(studentId) || options.skip?.has(studentId) || missing.includes(studentId)) return;
+    const exitedAt = exits.get(studentId);
+    if (exitedAt && !sessionIsWithinStudentTime(classroom, session, exitedAt)) return;
+    const joined = options.joinedAt?.get(studentId);
+    if (joined && (!startsAt || joined.getTime() > startsAt.getTime())) return;
+    missing.push(studentId);
+  });
+  return missing;
+}
+
 /** The sessions a given student may see - all of them until they left. */
 export function sessionsVisibleToStudent(classroom: ClassroomExitShape | null | undefined, studentId: string) {
   const sessions = Array.isArray(classroom?.generatedSessions) ? classroom!.generatedSessions : [];

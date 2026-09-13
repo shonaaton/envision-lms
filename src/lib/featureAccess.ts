@@ -323,7 +323,10 @@ async function evaluateFeatureStateWithPilotCohorts({
   return hasPermission(feature.rolePermissions[user.role as PortalRole], permission);
 }
 
-export async function canAccessFeature(featureKey: string, user: SessionUser, permission = "view") {
+export async function canAccessFeature(featureKey: string, user: SessionUser | null | undefined, permission = "view") {
+  // A session that failed its refresh arrives here with no user at all; that is
+  // "no access", not a crash on the page that asked.
+  if (!user) return false;
   const features = await getFeatureAccessMap();
   const feature = features.get(featureKey);
   if (!feature) return false;
@@ -332,7 +335,8 @@ export async function canAccessFeature(featureKey: string, user: SessionUser, pe
   return evaluateFeatureStateWithPilotCohorts({ feature, user: { ...user, ...assigned, isSuperAdmin }, permission });
 }
 
-export async function getFeaturePermissionState(featureKey: string, user: SessionUser, permissions: readonly string[]) {
+export async function getFeaturePermissionState(featureKey: string, user: SessionUser | null | undefined, permissions: readonly string[]) {
+  if (!user) return Object.fromEntries(permissions.map((permission) => [permission, false])) as Record<string, boolean>;
   const features = await getFeatureAccessMap();
   const feature = features.get(featureKey);
   const result: Record<string, boolean> = {};

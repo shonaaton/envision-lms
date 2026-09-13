@@ -68,6 +68,7 @@ import {
   Zap,
 } from "lucide-react";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { canAccessFeature, isSuperAdminSession } from "@/lib/featureAccess";
 import { visibleClassroomFilter } from "@/lib/classroomVisibility";
 import { classroomsAsSeenByStudent } from "@/lib/classroomStudentExits";
@@ -2296,6 +2297,9 @@ function classroomGroupHref(classroom: any) {
 export default async function DashboardPage({ searchParams }: { searchParams: DashboardSearchParams }) {
   noStore();
   const session = await auth();
+  // The layout redirects too, but a page renders alongside its layout rather
+  // than after it - without this the page runs on for a user who is not there.
+  if (!session?.user) redirect("/login");
   const userId = (session?.user as any)?.id;
   const role = (session?.user as any)?.role as "student" | "instructor" | "admin" | undefined;
 

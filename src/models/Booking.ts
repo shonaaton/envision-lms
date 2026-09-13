@@ -96,7 +96,9 @@ const BookingSchema = new Schema(
     // "My leads' demos" panel on their dashboard - see src/lib/demoLeadOwner.ts.
     salesOwner: { type: Schema.Types.ObjectId, ref: "User", index: true },
     salesOwnerName: String,
-    /** The raw CRM attribute value the owner was matched from, for auditing a mis-route. */
+    /** "crm" when read from the lead's Kraya attribute, "manual" when an admin picked it. */
+    salesOwnerSource: { type: String, enum: ["crm", "manual"] },
+    /** The CRM attribute key the owner was matched from, for auditing a mis-route. */
     salesOwnerAttribute: String,
     salesOwnerAttributedAt: Date,
     salesOwnerNotifiedAt: Date,

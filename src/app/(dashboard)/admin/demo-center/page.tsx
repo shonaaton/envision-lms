@@ -2,7 +2,7 @@ import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
-import { CalendarCheck, CheckCircle2, Clock3, GraduationCap, History, Link as LinkIcon, MessageSquareText, RotateCcw, Trash2, UserCheck, UserX, X, XCircle } from "lucide-react";
+import { CalendarCheck, CheckCircle2, Clock3, GraduationCap, History, Link as LinkIcon, MessageSquareText, RefreshCw, RotateCcw, Trash2, UserCheck, UserX, X, XCircle } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { canAccessFeature } from "@/lib/featureAccess";
 import { dbConnect } from "@/lib/db";
@@ -28,7 +28,15 @@ import { DemoFeedback } from "@/models/Onboarding";
 import { User } from "@/models/User";
 import { Course } from "@/models/Course";
 import { Batch } from "@/models/Batch";
-import { leadOwnersForStudents, notifyLeadOwnerOfDemo } from "@/lib/demoLeadOwner";
+import {
+  assignLeadOwnerManually,
+  leadOwnersForStudents,
+  notifyLeadOwnerOfDemo,
+  salesOwnerOptions,
+  syncDemoSalesOwners,
+  type ResolvedLeadOwner,
+  type SalesOwnerOption,
+} from "@/lib/demoLeadOwner";
 
 export const dynamic = "force-dynamic";
 
@@ -482,6 +490,46 @@ async function extendDemoAccess(formData: FormData) {
   revalidatePath("/admin/demo-center");
 }
 
+/** Backfill: match every unassigned demo - done or pending - to its CRM salesperson. */
+async function syncSalesOwners(formData: FormData) {
+  "use server";
+  await requireDemoManager();
+  const tab = String(formData.get("tab") || "requested");
+  let result: Awaited<ReturnType<typeof syncDemoSalesOwners>>;
+  try {
+    result = await syncDemoSalesOwners();
+  } catch (error) {
+    console.error("Salesperson sync failed", error);
+    demoCenterOutcome(tab, "Could not sync salespeople from the CRM. Try again.");
+  }
+  revalidatePath("/admin/demo-center");
+  const parts = [
+    `Matched ${result.assigned} of ${result.scanned} unassigned demos to a salesperson from the CRM.`,
+    result.notified ? `${result.notified} upcoming ${result.notified === 1 ? "demo was" : "demos were"} sent to the salesperson.` : "",
+    result.unmatched ? `${result.unmatched} have no salesperson in the CRM - pick one on the card.` : "",
+  ];
+  demoCenterOutcome(tab, "", parts.filter(Boolean).join(" "));
+}
+
+/** Manual salesperson pick for a lead the CRM did not tag, or tagged wrongly. */
+async function assignSalesOwner(formData: FormData) {
+  "use server";
+  const session = await requireDemoManager();
+  const tab = String(formData.get("tab") || "requested");
+  let ownerName = "";
+  try {
+    ({ ownerName } = await assignLeadOwnerManually({
+      studentId: String(formData.get("student") || ""),
+      ownerId: String(formData.get("owner") || ""),
+      actorId: String((session.user as any).id || ""),
+    }));
+  } catch (error: any) {
+    demoCenterOutcome(tab, error?.message || "Could not update the salesperson.");
+  }
+  revalidatePath("/admin/demo-center");
+  demoCenterOutcome(tab, "", ownerName ? `Salesperson set to ${ownerName}.` : "Manual salesperson cleared - the CRM assignment applies again.");
+}
+
 export default async function DemoCenterPage({ searchParams }: { searchParams?: { tab?: string; error?: string; ok?: string } }) {
   await requireDemoManager("view");
   await dbConnect();
@@ -503,8 +551,16 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
   const feedbackByBooking = new Map(feedback.map((item: any) => [String(item.booking?._id || item.booking), item]));
   // The salesperson Kraya assigned each lead. Routed demos carry it; older demos
   // and unbooked accounts are resolved from the CRM mirror for the label.
-  const leadOwners = await leadOwnersForStudents([...bookings.map((booking: any) => booking.student), ...demoStudents]).catch(() => new Map());
-  const salesOwnerOf = (booking: any) => String(booking.salesOwnerName || leadOwners.get(String(booking.student?._id || booking.student))?.name || "");
+  const [leadOwners, ownerOptions] = await Promise.all([
+    leadOwnersForStudents([...bookings.map((booking: any) => booking.student), ...demoStudents]).catch(() => new Map<string, ResolvedLeadOwner>()),
+    salesOwnerOptions().catch(() => [] as SalesOwnerOption[]),
+  ]);
+  const ownerLabel = (name: string, source?: string) => (name ? `${name} · ${source === "manual" ? "set manually" : "from CRM"}` : "Unassigned");
+  const salesOwnerOf = (booking: any) => {
+    if (booking.salesOwner) return ownerLabel(String(booking.salesOwnerName || ""), booking.salesOwnerSource);
+    const live = leadOwners.get(String(booking.student?._id || booking.student));
+    return ownerLabel(live?.name || "", live?.source);
+  };
 
   // The audit trail is only needed on the History tab, so it is not paid for on
   // every other page load.
@@ -530,6 +586,11 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
         </div>
         <h1 className="mt-1.5 text-2xl font-semibold tracking-tight text-brand">Demo Center</h1>
         <p className="mt-1 max-w-3xl text-[13px] text-slate-500">Manage the full demo journey: requested time, coach assignment, demo classroom, assessment, conversion, and closed leads.</p>
+        <form action={syncSalesOwners} className="mt-3 flex flex-wrap items-center gap-3">
+          <input type="hidden" name="tab" value={activeTab} />
+          <button className="btn-outline bg-white"><RefreshCw size={15} /> Sync salespeople from CRM</button>
+          <span className="text-[12px] text-slate-500">Assigns every existing demo - done or pending - to the salesperson on its CRM lead. Past demos are assigned without notifying anyone.</span>
+        </form>
       </header>
 
       <nav className="flex gap-1 overflow-x-auto border-b border-slate-200 pb-px">
@@ -567,7 +628,7 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
             </div>
           ) : null}
           {visibleBookings.map((booking: any) => (
-            <DemoCard key={booking._id.toString()} booking={booking} activeTab={activeTab} coaches={coaches} courses={courses} batches={batches} feedback={feedbackByBooking.get(String(booking._id))} salesOwnerName={salesOwnerOf(booking)} />
+            <DemoCard key={booking._id.toString()} booking={booking} activeTab={activeTab} coaches={coaches} courses={courses} batches={batches} feedback={feedbackByBooking.get(String(booking._id))} salesOwnerName={salesOwnerOf(booking)} salesOwnerManualId={booking.salesOwnerSource === "manual" ? String(booking.salesOwner || "") : ""} ownerOptions={ownerOptions} />
           ))}
           {!visibleBookings.length ? <Empty text={`No demos in ${tabs.find((tab) => tab.id === activeTab)?.label || "this tab"}.`} /> : null}
         </section>
@@ -618,12 +679,13 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
                     <Field label="Chess level" value={levelLabel(student.studentLevel)} />
                     <Field label="Location" value={[student.city, student.country].filter(Boolean).join(", ")} />
                     <Field label="Signed up" value={student.createdAt ? formatAcademyDateTime(student.createdAt) : ""} />
-                    <Field label="Salesperson" value={leadOwners.get(String(student._id))?.name || "Unassigned"} />
+                    <Field label="Salesperson" value={ownerLabel(leadOwners.get(String(student._id))?.name || "", leadOwners.get(String(student._id))?.source)} />
                   </dl>
-                  <div className="mt-3">
+                  <div className="mt-3 flex flex-wrap gap-2">
                     <PopupTrigger id={extendModalId} className="btn-outline bg-white">
                       <Clock3 size={15} /> Extend Demo Validity
                     </PopupTrigger>
+                    <SalesOwnerPicker studentId={student._id.toString()} manualOwnerId={student.leadOwner ? String(student.leadOwner) : ""} options={ownerOptions} tab={activeTab} />
                   </div>
                   <PopupShell id={extendModalId} title="Extend demo account validity" subtitle={`${student.name || "Demo student"} · Current expiry: ${student.demoExpiresAt ? formatAcademyDateTime(student.demoExpiresAt) : "No expiry set"}`}>
                     <form action={extendDemoAccess} className="grid gap-4">
@@ -646,7 +708,27 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
   );
 }
 
-function DemoCard({ booking, activeTab, coaches, courses, batches, feedback, salesOwnerName = "" }: { booking: any; activeTab: DemoTab; coaches: any[]; courses: any[]; batches: any[]; feedback?: any; salesOwnerName?: string }) {
+function DemoCard({
+  booking,
+  activeTab,
+  coaches,
+  courses,
+  batches,
+  feedback,
+  salesOwnerName = "",
+  salesOwnerManualId = "",
+  ownerOptions = [],
+}: {
+  booking: any;
+  activeTab: DemoTab;
+  coaches: any[];
+  courses: any[];
+  batches: any[];
+  feedback?: any;
+  salesOwnerName?: string;
+  salesOwnerManualId?: string;
+  ownerOptions?: SalesOwnerOption[];
+}) {
   const student = booking.student || {};
   const startAt = toLocalInput(booking.startAt);
   const duration = Math.max(15, Math.round((new Date(booking.endAt).getTime() - new Date(booking.startAt).getTime()) / 60000) || 30);
@@ -783,6 +865,7 @@ function DemoCard({ booking, activeTab, coaches, courses, batches, feedback, sal
         <PopupTrigger id={extendModalId} className="btn-outline bg-white">
           <Clock3 size={15} /> Extend Demo Validity
         </PopupTrigger>
+        <SalesOwnerPicker studentId={String(student._id || booking.student)} manualOwnerId={salesOwnerManualId} options={ownerOptions} tab={activeTab} />
         {demoWentUnmarked ? (
           <form action={markDemoMissed} className="flex flex-wrap gap-2">
             <input type="hidden" name="booking" value={booking._id.toString()} />
@@ -965,6 +1048,28 @@ function PopupShell({ id, title, subtitle, children }: { id: string; title: stri
  * Borderless label/value pair. The card already sits inside a bordered panel, so
  * boxing every value again is what made this page feel heavy.
  */
+/**
+ * Manual salesperson for a lead. The select only ever shows a manual pick - a
+ * CRM-derived owner is shown in the Salesperson field instead - so saving an
+ * untouched picker never quietly turns a CRM assignment into a manual one.
+ */
+function SalesOwnerPicker({ studentId, manualOwnerId, options, tab }: { studentId: string; manualOwnerId: string; options: SalesOwnerOption[]; tab: string }) {
+  if (!options.length) return null;
+  return (
+    <form action={assignSalesOwner} className="flex flex-wrap gap-2">
+      <input type="hidden" name="student" value={studentId} />
+      <input type="hidden" name="tab" value={tab} />
+      <select name="owner" defaultValue={manualOwnerId} aria-label="Salesperson" className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm">
+        <option value="">Salesperson: use CRM</option>
+        {options.map((option) => (
+          <option key={option.id} value={option.id}>{option.name}{option.isSales ? "" : " (staff)"}</option>
+        ))}
+      </select>
+      <button className="btn-outline bg-white"><UserCheck size={15} /> Set Salesperson</button>
+    </form>
+  );
+}
+
 function Field({ label, value, className = "" }: { label: string; value?: ReactNode; className?: string }) {
   const isEmpty = value === null || value === undefined || value === "";
   return (

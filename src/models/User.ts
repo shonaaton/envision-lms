@@ -12,6 +12,13 @@ const UserSchema = new Schema(
     passwordChangeSource: { type: String, enum: ["registration", "admin_reset", "self_reset"], default: "registration" },
     role: { type: String, enum: ["student", "instructor", "admin", "sub-admin"], default: "student", index: true },
     accessRole: { type: Schema.Types.ObjectId, ref: "AccessRole", default: null, index: true },
+    // Salesperson an admin assigned to this demo lead by hand, from the Demo
+    // Center. Outranks the CRM's own "<Name> Lead" attribute - it exists for leads
+    // the CRM never tagged or tagged wrongly. See src/lib/demoLeadOwner.ts.
+    leadOwner: { type: Schema.Types.ObjectId, ref: "User", default: null, index: true },
+    leadOwnerName: String,
+    leadOwnerAssignedAt: Date,
+    leadOwnerAssignedBy: { type: Schema.Types.ObjectId, ref: "User" },
     isSuperAdmin: { type: Boolean, default: false, index: true },
     accountStatus: {
       type: String,

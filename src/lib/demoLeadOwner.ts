@@ -47,7 +47,9 @@ const STUDENT_FIELDS = "name email phone countryCode parentName createdAt demoEx
 
 export type LeadOwnerEvent = "booked" | "rescheduled" | "confirmed";
 
-export type ResolvedLeadOwner = { userId: string; name: string; attributeKey: string; crmLeadId: string };
+export type ResolvedLeadOwner = { userId: string; name: string; attributeKey: string; crmLeadId: string; source: "crm" | "manual" };
+
+export type AttributionResult = { attributed: boolean; reason?: string; ownerId?: string; notified?: boolean };
 
 function idOf(value: any) {
   return value?._id?.toString?.() ?? value?.toString?.() ?? "";
@@ -102,7 +104,18 @@ export async function isSalesStaff(userId: string) {
  */
 export async function leadOwnersForStudents(students: any[]): Promise<Map<string, ResolvedLeadOwner>> {
   const result = new Map<string, ResolvedLeadOwner>();
-  const list = [...new Map(students.filter((student) => student?._id).map((student) => [String(student._id), student])).values()];
+  const everyone = [...new Map(students.filter((student) => student?._id).map((student) => [String(student._id), student])).values()];
+  if (!everyone.length) return result;
+
+  // An admin's manual pick outranks the CRM: it exists precisely for leads the
+  // CRM never tagged, or tagged wrongly.
+  const manual: any[] = await User.find({ _id: { $in: everyone.map((student) => student._id) }, leadOwner: { $ne: null } })
+    .select("leadOwner leadOwnerName")
+    .lean();
+  for (const row of manual) {
+    result.set(String(row._id), { userId: String(row.leadOwner), name: String(row.leadOwnerName || ""), attributeKey: "", crmLeadId: "", source: "manual" });
+  }
+  const list = everyone.filter((student) => !result.has(String(student._id)));
   if (!list.length) return result;
 
   const phones = Array.from(new Set(list.map((student) => phoneKey(student.phone)).filter(Boolean)));
@@ -132,7 +145,7 @@ export async function leadOwnersForStudents(students: any[]): Promise<Map<string
     if (!record) continue;
     const match = matchLeadOwner(record.attributes, candidates, record.attributeChangedAt);
     if (match) {
-      result.set(studentId, { userId: match.owner.userId, name: match.owner.name, attributeKey: match.attributeKey, crmLeadId: String(record.crmLeadId || "") });
+      result.set(studentId, { userId: match.owner.userId, name: match.owner.name, attributeKey: match.attributeKey, crmLeadId: String(record.crmLeadId || ""), source: "crm" });
     }
   }
   return result;
@@ -217,8 +230,12 @@ async function notifyOwnerOfBooking(input: { ownerId: string; booking: any; even
 /**
  * Stamp a demo booking with its lead owner and tell them. Safe to call
  * repeatedly: it notifies only when the booking gains an owner or changes owner.
+ *
+ * `anyStatus` lets a backfill stamp demos that already happened or were closed;
+ * those are recorded silently, since there is nothing left for the owner to
+ * attend. `notify: false` silences an open demo too.
  */
-export async function attributeDemoToLeadOwner(bookingId: string) {
+export async function attributeDemoToLeadOwner(bookingId: string, options: { notify?: boolean; anyStatus?: boolean } = {}): Promise<AttributionResult> {
   if (!Types.ObjectId.isValid(String(bookingId))) return { attributed: false, reason: "Invalid booking id." };
   await dbConnect();
   const booking: any = await Booking.findById(bookingId)
@@ -226,7 +243,8 @@ export async function attributeDemoToLeadOwner(bookingId: string) {
     .populate("student", STUDENT_FIELDS)
     .lean();
   if (!booking || booking.bookingType !== "demo" || booking.archivedAt) return { attributed: false, reason: "Not an open demo." };
-  if (!ATTRIBUTABLE_DEMO_STATUSES.includes(String(booking.demoStatus))) return { attributed: false, reason: "Demo is past routing." };
+  const open = ATTRIBUTABLE_DEMO_STATUSES.includes(String(booking.demoStatus));
+  if (!open && !options.anyStatus) return { attributed: false, reason: "Demo is past routing." };
   if (!booking.student?._id) return { attributed: false, reason: "Demo has no student." };
 
   const owner = (await leadOwnersForStudents([booking.student])).get(String(booking.student._id));
@@ -239,6 +257,7 @@ export async function attributeDemoToLeadOwner(bookingId: string) {
       $set: {
         salesOwner: owner.userId,
         salesOwnerName: owner.name,
+        salesOwnerSource: owner.source,
         salesOwnerAttribute: owner.attributeKey,
         salesOwnerAttributedAt: now,
         salesOwnerNotifiedAt: now,
@@ -247,16 +266,19 @@ export async function attributeDemoToLeadOwner(bookingId: string) {
   );
   if (!claimed.modifiedCount) return { attributed: true, ownerId: owner.userId, notified: false };
 
-  await notifyOwnerOfBooking({ ownerId: owner.userId, booking, event: "booked" });
+  // The claim stamp doubles as "handled" for a silent backfill, so a later run
+  // does not notify about a demo that was already settled when it was stamped.
+  const notify = options.notify !== false && open;
+  if (notify) await notifyOwnerOfBooking({ ownerId: owner.userId, booking, event: "booked" });
   await recordActivity({
     targetUser: idOf(booking.student._id),
     type: "demo.lead_owner.attributed",
     label: `Demo routed to ${owner.name || "lead owner"}`,
     entityType: "Booking",
     entityId: idOf(booking._id),
-    metadata: { ownerId: owner.userId, attribute: owner.attributeKey, crmLeadId: owner.crmLeadId, previousOwner: idOf(booking.salesOwner) },
+    metadata: { ownerId: owner.userId, source: owner.source, attribute: owner.attributeKey, crmLeadId: owner.crmLeadId, previousOwner: idOf(booking.salesOwner), notified: notify },
   });
-  return { attributed: true, ownerId: owner.userId, notified: true };
+  return { attributed: true, ownerId: owner.userId, notified: notify };
 }
 
 /** Tell the owner that their lead's demo moved or was confirmed. */
@@ -499,4 +521,119 @@ export async function getDemoBoard(input: { viewerId: string; scope: DemoBoardSc
     recent: recent.map((booking) => toDemoView(booking, ownerNameOf(booking))),
     unbooked,
   };
+}
+
+export type SalesOwnerOption = { id: string; name: string; isSales: boolean };
+
+/** Who an admin can hand a lead to: the sales team first, then other staff. */
+export async function salesOwnerOptions(): Promise<SalesOwnerOption[]> {
+  await dbConnect();
+  return (await ownerCandidates())
+    .map((candidate) => ({ id: candidate.userId, name: candidate.name || candidate.email, isSales: candidate.isSales }))
+    .sort((a, b) => Number(b.isSales) - Number(a.isSales) || a.name.localeCompare(b.name));
+}
+
+/**
+ * One-off backfill for demos that predate routing - done, missed, closed or still
+ * pending. Every unassigned demo is matched against the CRM; ones that already
+ * happened are stamped silently, open ones notify their owner as a new booking
+ * would. Leads the CRM never tagged are left for a manual pick.
+ */
+export async function syncDemoSalesOwners() {
+  await dbConnect();
+  const bookings: any[] = await Booking.find({ bookingType: "demo", archivedAt: null, salesOwner: null })
+    .select("_id student")
+    .populate("student", STUDENT_FIELDS)
+    .sort({ createdAt: -1 })
+    .limit(2000)
+    .lean();
+  const owners = await leadOwnersForStudents(bookings.map((booking) => booking.student));
+
+  let assigned = 0;
+  let notified = 0;
+  for (const booking of bookings) {
+    if (!owners.has(idOf(booking.student?._id))) continue;
+    const result = await attributeDemoToLeadOwner(String(booking._id), { anyStatus: true }).catch(() => null);
+    if (result?.attributed) assigned++;
+    if (result?.notified) notified++;
+  }
+  return { scanned: bookings.length, assigned, notified, unmatched: bookings.length - assigned };
+}
+
+/**
+ * An admin picks the salesperson for a lead by hand. Stored on the student so it
+ * also covers demo accounts that have not booked, applied to all their demos,
+ * and it outranks the CRM from then on. An empty `ownerId` clears the pick and
+ * hands the lead back to the CRM's assignment.
+ */
+export async function assignLeadOwnerManually(input: { studentId: string; ownerId: string; actorId: string }) {
+  if (!Types.ObjectId.isValid(String(input.studentId))) throw new Error("Choose a valid lead.");
+  await dbConnect();
+  const student: any = await User.findById(input.studentId).select(`${STUDENT_FIELDS} leadOwner`).lean();
+  if (!student) throw new Error("That lead no longer exists.");
+  const studentId = String(student._id);
+  const actor = Types.ObjectId.isValid(String(input.actorId)) ? input.actorId : undefined;
+
+  if (!input.ownerId) {
+    await User.updateOne({ _id: student._id }, { $set: { leadOwner: null }, $unset: { leadOwnerName: "", leadOwnerAssignedAt: "", leadOwnerAssignedBy: "" } });
+    await Booking.updateMany(
+      { student: student._id, bookingType: "demo", salesOwnerSource: "manual" },
+      { $unset: { salesOwner: "", salesOwnerName: "", salesOwnerSource: "", salesOwnerAttribute: "", salesOwnerAttributedAt: "", salesOwnerNotifiedAt: "" } }
+    );
+    const released: any[] = await Booking.find({ student: student._id, bookingType: "demo", archivedAt: null, salesOwner: null }).select("_id").lean();
+    for (const booking of released) {
+      await attributeDemoToLeadOwner(String(booking._id), { anyStatus: true }).catch(() => null);
+    }
+    await recordActivity({ actor, targetUser: studentId, type: "demo.lead_owner.cleared", label: "Cleared manual salesperson", entityType: "User", entityId: studentId });
+    return { ownerName: "" };
+  }
+
+  const owner = (await salesOwnerOptions()).find((option) => option.id === input.ownerId);
+  if (!owner) throw new Error("Choose an active staff member.");
+
+  const now = new Date();
+  const bookings: any[] = await Booking.find({ student: student._id, bookingType: "demo", archivedAt: null })
+    .select("_id demoStatus startAt requestedIstDateTime salesOwner")
+    .sort({ startAt: -1 })
+    .lean();
+  const previousOwner = String(student.leadOwner || bookings[0]?.salesOwner || "");
+
+  await User.updateOne({ _id: student._id }, { $set: { leadOwner: owner.id, leadOwnerName: owner.name, leadOwnerAssignedAt: now, leadOwnerAssignedBy: actor } });
+  // updateMany skips the model's CRM stage-sync hook, which is right: the demo's
+  // stage has not changed, only who owns it.
+  if (bookings.length) {
+    await Booking.updateMany(
+      { _id: { $in: bookings.map((booking) => booking._id) } },
+      { $set: { salesOwner: owner.id, salesOwnerName: owner.name, salesOwnerSource: "manual", salesOwnerAttribute: "", salesOwnerAttributedAt: now, salesOwnerNotifiedAt: now } }
+    );
+  }
+
+  if (previousOwner !== owner.id) {
+    const openDemo = bookings.find((booking) => ATTRIBUTABLE_DEMO_STATUSES.includes(String(booking.demoStatus)));
+    const summary = openDemo
+      ? `Their demo is on ${openDemo.requestedIstDateTime && String(openDemo.demoStatus) === "REQUESTED" ? openDemo.requestedIstDateTime : formatAcademyDateTime(openDemo.startAt, { timeZoneName: "short" })}.`
+      : bookings.length
+        ? "Their demo has already taken place - please follow up on the outcome."
+        : "They have not requested a demo yet - please call them.";
+    await notifyOwner({
+      ownerId: owner.id,
+      student,
+      type: "demo.lead_owner.assigned",
+      title: "A lead was assigned to you",
+      message: `${student.name || "A lead"} was assigned to you by the academy team. ${summary}`,
+      dedupKey: `demo_lead_owner:assigned:${studentId}:${owner.id}:${now.toISOString()}`,
+      metadata: { demoUserId: studentId },
+    }).catch(() => false);
+  }
+
+  await recordActivity({
+    actor,
+    targetUser: studentId,
+    type: "demo.lead_owner.manual",
+    label: `Salesperson set to ${owner.name}`,
+    entityType: "User",
+    entityId: studentId,
+    metadata: { ownerId: owner.id, previousOwner, demos: bookings.length },
+  });
+  return { ownerName: owner.name };
 }

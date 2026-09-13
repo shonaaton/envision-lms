@@ -14,22 +14,23 @@ afterEach(() => {
 
 describe("matchLeadOwner", () => {
   it("reads the owner from Kraya's attribute name, not its value", () => {
-    expect(matchLeadOwner({ "Sayandeb Lead": "40", city: "Kolkata" }, staff)?.owner.userId).toBe("sayandeb");
-    expect(matchLeadOwner({ "Shazib Lead": "40" }, staff)?.owner.userId).toBe("shahzib");
+    expect(matchLeadOwner({ "Sayandeb Lead": "Yes", city: "Kolkata" }, staff)?.owner.userId).toBe("sayandeb");
+    expect(matchLeadOwner({ "Shazib Lead": "Yes" }, staff)?.owner.userId).toBe("shahzib");
   });
 
   it("accepts the key however the payload spells it", () => {
-    expect(matchLeadOwner({ shazib_lead: 40 }, staff)?.owner.userId).toBe("shahzib");
-    expect(matchLeadOwner({ SayandebLead: "40" }, staff)?.owner.userId).toBe("sayandeb");
+    expect(matchLeadOwner({ shazib_lead: "yes" }, staff)?.owner.userId).toBe("shahzib");
+    expect(matchLeadOwner({ SayandebLead: "YES" }, staff)?.owner.userId).toBe("sayandeb");
   });
 
   it("does not route Sayandeb's lead to Sayan or Sayantan", () => {
-    const match = matchLeadOwner({ "Sayandeb Lead": "40" }, staff);
+    const match = matchLeadOwner({ "Sayandeb Lead": "Yes" }, staff);
     expect(match?.owner.userId).toBe("sayandeb");
     expect(match?.attributeKey).toBe("Sayandeb Lead");
   });
 
   it("ignores owner keys that are present but switched off", () => {
+    expect(matchLeadOwner({ "Shazib Lead": "No" }, staff)).toBeNull();
     expect(matchLeadOwner({ "Shazib Lead": "0" }, staff)).toBeNull();
     expect(matchLeadOwner({ "Shazib Lead": "" }, staff)).toBeNull();
     expect(ownerSignals({ "Lead Source": "Facebook", "Shazib Lead": null })).toEqual([
@@ -39,17 +40,17 @@ describe("matchLeadOwner", () => {
   });
 
   it("gives a reassigned lead to whoever was set most recently", () => {
-    const attributes = { "Sayandeb Lead": "40", "Shazib Lead": "40" };
+    const attributes = { "Sayandeb Lead": "Yes", "Shazib Lead": "Yes" };
     const changedAt = { "Sayandeb Lead": "2026-09-01T10:00:00Z", "Shazib Lead": "2026-09-10T10:00:00Z" };
     expect(matchLeadOwner(attributes, staff, changedAt)?.owner.userId).toBe("shahzib");
   });
 
   it("refuses to guess when two owners were set at the same moment", () => {
-    expect(matchLeadOwner({ "Sayandeb Lead": "40", "Shazib Lead": "40" }, staff)).toBeNull();
+    expect(matchLeadOwner({ "Sayandeb Lead": "Yes", "Shazib Lead": "Yes" }, staff)).toBeNull();
   });
 
   it("uses a pinned email from CRM_LEAD_OWNER_ATTRIBUTES", () => {
     process.env.CRM_LEAD_OWNER_ATTRIBUTES = "Priority Bucket=sayanenvisionchess@gmail.com";
-    expect(matchLeadOwner({ priority_bucket: "40" }, staff)?.owner.userId).toBe("sayandeb");
+    expect(matchLeadOwner({ priority_bucket: "Yes" }, staff)?.owner.userId).toBe("sayandeb");
   });
 });

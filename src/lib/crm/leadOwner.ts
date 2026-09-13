@@ -2,7 +2,7 @@
  * Which salesperson owns a CRM lead.
  *
  * Kraya's routing automation marks the owner by setting a custom attribute NAMED
- * after the salesperson - `"Sayandeb Lead" = "40"`, `"Shazib Lead" = "40"`. The
+ * after the salesperson - `"Sayandeb Lead" = "Yes"`, `"Shazib Lead" = "Yes"`. The
  * value is not the owner; the attribute's name is. So the owner is read from the
  * attribute keys whose value is set, and the name part is matched against the
  * staff directory rather than a fixed spelling - "Shazib" in the CRM has to find

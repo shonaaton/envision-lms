@@ -5,6 +5,9 @@ import type { NamedRole } from "@/lib/accessRolePolicy";
 export default function StaffRoleSelect({ defaultValue = "sub-admin" }: { defaultValue?: string }) {
   const [roles, setRoles] = useState<NamedRole[]>([]);
   const [state, setState] = useState("loading");
+  // Controlled: the "Current role" placeholder is swapped for the real option once
+  // roles load, and an uncontrolled select would fall back to "Sub Admin" then.
+  const [value, setValue] = useState(defaultValue);
   useEffect(() => {
     let active = true;
     fetch("/api/admin/roles", { cache: "no-store" }).then(async response => {
@@ -16,7 +19,7 @@ export default function StaffRoleSelect({ defaultValue = "sub-admin" }: { defaul
   }, []);
   if (state === "readonly") return <p className="text-xs text-slate-500">Role assignment requires a Super Admin.</p>;
   return <label className="block text-xs font-semibold">Role
-    <select required name="staffRole" defaultValue={defaultValue} disabled={state !== "ready"} className="input mt-1">
+    <select required name="staffRole" value={value} onChange={event => setValue(event.target.value)} disabled={state !== "ready"} className="input mt-1">
       <option value="sub-admin">Sub Admin (built-in)</option><option value="admin">Admin (built-in)</option>
       {!roles.some(role => role._id === defaultValue) && !["admin", "sub-admin"].includes(defaultValue) && <option value={defaultValue}>Current role</option>}
       {roles.map(role => <option key={role._id} value={role._id} disabled={!role.isActive}>{role.name}{!role.isActive ? " (inactive)" : ""}</option>)}

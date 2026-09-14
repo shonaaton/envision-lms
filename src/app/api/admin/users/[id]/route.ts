@@ -66,8 +66,15 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     void notifyPasswordChanged(u?.toObject?.() ?? u, "admin_reset").catch((error) => console.error("Password reset notice failed", error));
     return NextResponse.json({ ...u?.toObject?.(), tempPassword });
   }
+  // The edit form always posts the staff role alongside contact details. An
+  // unchanged role is not a role change: skip it so a contact edit neither needs
+  // the current named role to still be active nor clears feature overrides.
+  if ("accessRole" in body && String(body.accessRole ?? "") === String((target as any).accessRole ?? "")) {
+    delete body.accessRole;
+    if (body.role === (target as any).role) delete body.role;
+  } else if (!("accessRole" in body) && body.role === (target as any).role) delete body.role;
   // Whitelist allowed fields
-  const allowed = ["name", "email", "countryCode", "phone", "role", "tags", "batches", "fideId", "rating", "notes", "isActive", "isSuperAdmin"];
+  const allowed =["name", "email", "countryCode", "phone", "role", "tags", "batches", "fideId", "rating", "notes", "isActive", "isSuperAdmin"];
   const update: any = {};
   for (const k of allowed) if (k in body) update[k] = body[k];
   if (body.role !== undefined && !["student", "instructor", "admin", "sub-admin"].includes(body.role)) return NextResponse.json({ error: "Invalid role." }, { status: 400 });
@@ -99,7 +106,16 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     const remaining = await User.countDocuments({ _id: { $ne: params.id }, role: "admin", isSuperAdmin: true, isActive: { $ne: false } });
     if (remaining === 0) return NextResponse.json({ error: "At least one active Super Admin must remain." }, { status: 409 });
   }
-  const u = await User.findByIdAndUpdate(params.id, update, { new: true, runValidators: true, projection: { passwordHash: 0, ...(!actorIsSuperAdmin ? { tempPassword: 0 } : {}) } });
+  const emailTaken = () => NextResponse.json({ error: "That email is already used by another account." }, { status: 409 });
+  if (update.email && update.email !== (target as any).email && (await User.exists({ email: update.email, _id: { $ne: params.id } }))) return emailTaken();
+  let u: any;
+  try {
+    u = await User.findByIdAndUpdate(params.id, update, { new: true, runValidators: true, projection: { passwordHash: 0, ...(!actorIsSuperAdmin ? { tempPassword: 0 } : {}) } });
+  } catch (error: any) {
+    if (error?.code === 11000) return emailTaken();
+    if (error?.name === "ValidationError" || error?.name === "CastError") return NextResponse.json({ error: error.message }, { status: 400 });
+    throw error;
+  }
   if ("accessRole" in update || "role" in update) {
     // Old templates wrote per-person overrides. Remove them when the account's
     // role changes so they cannot unexpectedly return if a named role is later removed.

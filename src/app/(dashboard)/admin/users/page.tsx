@@ -191,8 +191,8 @@ export default function AdminUsersPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    const data = await response.json();
-    if (!response.ok) return toast.error(data.error || "Could not update user");
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) return toast.error(data.error || `Could not update user (error ${response.status})`);
     toast.success(payload.resetPassword ? "Password reset" : "User updated");
     await loadUsers();
     await loadBatches();
@@ -705,6 +705,7 @@ function passwordStatus(user: AdminUser) {
 }
 
 function EditUserModal({ user, onClose, onSave }: { user: AdminUser; onClose: () => void; onSave: (payload: Partial<AdminUser>) => void }) {
+  const currentStaffRole = typeof user.accessRole === "object" && user.accessRole ? user.accessRole._id : typeof user.accessRole === "string" ? user.accessRole : user.role;
   return (
     <ModalShell title={`Edit ${userRoleLabel(user.role)}`} onClose={onClose}>
       <form className="grid gap-3" onSubmit={(e) => {
@@ -714,7 +715,7 @@ function EditUserModal({ user, onClose, onSave }: { user: AdminUser; onClose: ()
         const countryCode = String(fd.get("countryCode") || "").trim();
         const staffRole = String(fd.get("staffRole") || "");
         onSave({
-          ...(staffRole ? { role: staffRole === "admin" ? "admin" : "sub-admin", accessRole: ["admin", "sub-admin"].includes(staffRole) ? null : staffRole } : {}),
+          ...(staffRole && staffRole !== currentStaffRole ? { role: staffRole === "admin" ? "admin" : "sub-admin", accessRole: ["admin", "sub-admin"].includes(staffRole) ? null : staffRole } : {}),
           name: String(fd.get("name") || ""),
           email: String(fd.get("email") || ""),
           countryCode: phone ? countryCode : "",
@@ -724,7 +725,7 @@ function EditUserModal({ user, onClose, onSave }: { user: AdminUser; onClose: ()
           isActive: fd.get("isActive") === "on",
         });
       }}>
-        {["admin", "sub-admin"].includes(user.role) && <StaffRoleSelect defaultValue={typeof user.accessRole === "object" && user.accessRole ? user.accessRole._id : typeof user.accessRole === "string" ? user.accessRole : user.role} />}
+        {["admin", "sub-admin"].includes(user.role) && <StaffRoleSelect defaultValue={currentStaffRole} />}
         <input className="input bg-white text-slate-950" name="name" defaultValue={user.name} required />
         <input className="input bg-white text-slate-950" name="email" type="email" defaultValue={user.email} required />
         <div className="grid grid-cols-[110px_minmax(0,1fr)] gap-3">

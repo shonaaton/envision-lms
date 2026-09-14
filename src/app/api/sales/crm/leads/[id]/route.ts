@@ -6,6 +6,7 @@ import { toLeadView } from "@/lib/crm/leads";
 import { recordPortalStageChange } from "@/lib/crm/mirror";
 import { classifyCrmStage } from "@/lib/crm/stages";
 import { closeDemoFromCrm, convertStudentFromCrm, reopenDemoFromCrm } from "@/lib/crm/sync";
+import { syncLeadStageToMeta } from "@/lib/metaCrmEvents";
 import { logSalesAction, requireSalesViewer } from "@/lib/salesAudit";
 import { CrmLead } from "@/models/CrmLead";
 import { CrmLeadRecord } from "@/models/CrmLeadRecord";
@@ -82,6 +83,10 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       actorId: viewer.id,
       actorName: viewer.name,
     });
+
+    // The mirror now already holds this stage, so Kraya's echo webhook will not see
+    // a change - the Meta event for a portal move has to be sent from here.
+    await syncLeadStageToMeta({ crmLeadId: record.crmLeadId, stage });
 
     // Echo suppression, the same guard the webhook relies on: marking the stage as
     // already pushed stops the booking write below bouncing it back to Kraya.

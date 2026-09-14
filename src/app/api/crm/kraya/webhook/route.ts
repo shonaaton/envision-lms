@@ -6,6 +6,7 @@ import { classifyCrmStage } from "@/lib/crm/stages";
 import { closeDemoFromCrm, convertStudentFromCrm, reopenDemoFromCrm } from "@/lib/crm/sync";
 import { applyKrayaPayload } from "@/lib/crm/mirror";
 import { attributeLeadDemosFromCrm } from "@/lib/demoLeadOwner";
+import { syncLeadStageToMeta } from "@/lib/metaCrmEvents";
 import { CrmLead } from "@/models/CrmLead";
 
 export const dynamic = "force-dynamic";
@@ -65,6 +66,12 @@ export async function POST(req: Request) {
     // route any open demo now. Attribution notifies once and never fails the hook.
     if (mirrored?.leadId) {
       await attributeLeadDemosFromCrm({ crmLeadId: mirrored.leadId }).catch((error) => console.error("Lead owner routing from CRM failed", error));
+    }
+
+    // Every real stage move goes to Meta as a Conversion Leads event. Keyed on the
+    // mirror's `stageChanged`, so a note or phone edit sends nothing.
+    if (mirrored?.stageChanged && stageName) {
+      await syncLeadStageToMeta({ crmLeadId: mirrored.leadId, stage: stageName });
     }
 
     if (!stageName) {

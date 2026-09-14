@@ -106,6 +106,13 @@ const CrmLeadRecordSchema = new Schema(
 
     /** Set when a portal stage push failed, so the CRM screen can surface it. */
     lastPushError: String,
+
+    /** The last stage reported to Meta - the claim that stops a move being sent twice. See src/lib/metaCrmEvents.ts. */
+    metaSentStage: String,
+    metaSentAt: Date,
+    metaEventId: String,
+    /** Why the last Meta send failed or was skipped. Cleared on the next success. */
+    metaSyncError: String,
   },
   { timestamps: true }
 );

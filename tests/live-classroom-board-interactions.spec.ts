@@ -176,6 +176,8 @@ test.describe("LiveClassroom normal legal move parity", () => {
     { name: "capture", fen: "rnbqkbnr/ppp1pppp/8/3p4/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2", from: "e4", to: "d5", san: "exd5" },
     { name: "castling", fen: "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1", from: "e1", to: "g1", san: "O-O" },
     { name: "promotion", fen: "7k/P7/8/8/8/8/8/7K w - - 0 1", from: "a7", to: "a8", promotion: "q", san: "a8=Q+" },
+    { name: "under-promotion to knight", fen: "7k/P7/8/8/8/8/8/7K w - - 0 1", from: "a7", to: "a8", promotion: "n", san: "a8=N" },
+    { name: "under-promotion to rook", fen: "7k/P7/8/8/8/8/8/7K w - - 0 1", from: "a7", to: "a8", promotion: "r", san: "a8=R+" },
     { name: "en passant", fen: "7k/8/8/3pP3/8/8/8/7K w - d6 0 1", from: "e5", to: "d6", san: "exd6" },
   ];
 
@@ -187,6 +189,7 @@ test.describe("LiveClassroom normal legal move parity", () => {
       expect(drag.result).not.toBeNull();
       expect(click.result).toEqual(drag.result);
       expect(click.mutation).toEqual(drag.mutation);
+      if (scenario.promotion) expect(click.mutation.promotion).toBe(scenario.promotion);
       expect(click.visualPosition).toEqual(fenToBoardPosition(click.result!.fen));
       expect(click.result!.moveHistory).toEqual([scenario.san]);
       expect(click.result!.turn).toBe("b");

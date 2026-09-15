@@ -1740,7 +1740,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       return true;
     }
     if (!coach) {
-      submitStudentMove(source, target).catch(() => undefined);
+      submitStudentMove(source, target, promotion).catch(() => undefined);
       return true;
     }
     try {

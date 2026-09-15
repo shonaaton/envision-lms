@@ -92,6 +92,9 @@ const OTHER_TIER_COLOR = { bar: "bg-slate-400", hex: "#94a3b8" };
 const DAY = 24 * 60 * 60 * 1000;
 
 type DashboardSearchParams = {
+  // Outcome of Assign Demo on the demo leads panel.
+  demoOk?: string;
+  demoError?: string;
   tab?: string;
   preset?: string;
   from?: string;
@@ -2307,7 +2310,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
     return <InactiveAccountDashboard userName={session?.user?.name} role={role} />;
   }
 
-  if ((session?.user as any)?.accessRoleId) return <RoleHome user={session!.user as any} />;
+  if ((session?.user as any)?.accessRoleId) return <RoleHome user={session!.user as any} demoNotice={{ ok: searchParams?.demoOk, error: searchParams?.demoError }} />;
 
   await dbConnect();
   if ((session?.user as any)?.isPaused === true) {
@@ -2971,7 +2974,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
   return (
     <div className="space-y-5 text-slate-950">
       {/* Admins and sub-admins see every demo lead with the salesperson the CRM assigned. */}
-      <LeadOwnerDemosPanel userId={userId} scope="all" />
+      <LeadOwnerDemosPanel userId={userId} scope="all" notice={{ ok: searchParams?.demoOk, error: searchParams?.demoError }} />
       <DashboardHero
         eyebrow="Admin Workspace"
         title="Welcome to Admin Dashboard"

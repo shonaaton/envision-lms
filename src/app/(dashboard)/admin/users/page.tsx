@@ -217,9 +217,9 @@ export default function AdminUsersPage() {
       const proceed = window.confirm(
         `${data.error}
 
-Deleting this account also deletes its demo booking. The coach assessment is kept, but it will no longer appear in Demo Center unless it is linked to the student's enrolled account.
+Deleting this account also deletes its demo booking. The coach assessment stays in Demo Center under Assessments, saved with the student's name and demo date.
 
-If this child has a newer account, link the assessment first. Delete anyway?`
+Delete anyway?`
       );
       return proceed ? permanentlyDeleteUser(user, confirmName, true) : false;
     }

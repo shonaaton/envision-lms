@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { DemoFeedback } from "@/models/Onboarding";
+import { Booking } from "@/models/Booking";
 import bcrypt from "bcryptjs";
 import { isValidObjectId } from "mongoose";
 import { auth } from "@/lib/auth";
@@ -198,6 +199,30 @@ export async function DELETE(req: Request, { params }: { params: { id: string } 
       code: "HAS_DEMO_ASSESSMENTS",
       assessments: submittedAssessments,
     }, { status: 409 });
+  }
+
+  // Copy names and the demo date onto every assessment this account appears on,
+  // as student or as coach, before the records they point at are deleted.
+  const linkedAssessments: any[] = await DemoFeedback.find({ $or: [{ demoUser: params.id }, { coach: params.id }] })
+    .select("_id demoUser coach booking studentName coachName demoStartAt")
+    .lean();
+  if (linkedAssessments.length) {
+    const bookingIds = linkedAssessments.filter((item) => !item.demoStartAt && item.booking).map((item) => item.booking);
+    const startById = new Map(
+      (bookingIds.length ? await Booking.find({ _id: { $in: bookingIds } }).select("_id startAt").lean() : [])
+        .map((booking: any) => [String(booking._id), booking.startAt])
+    );
+    const operations = linkedAssessments
+      .map((item) => {
+        const set: Record<string, unknown> = {};
+        if (String(item.demoUser) === params.id && !item.studentName) set.studentName = target.name;
+        if (String(item.coach) === params.id && !item.coachName) set.coachName = target.name;
+        const startAt = startById.get(String(item.booking));
+        if (!item.demoStartAt && startAt) set.demoStartAt = startAt;
+        return Object.keys(set).length ? { updateOne: { filter: { _id: item._id }, update: { $set: set } } } : null;
+      })
+      .filter(Boolean) as any[];
+    if (operations.length) await DemoFeedback.bulkWrite(operations);
   }
 
   const summary = await deleteUserRecords(params.id);

@@ -84,6 +84,9 @@ async function submitDemoFeedback(formData: FormData) {
       status: "submitted",
       submittedAt: new Date(),
       submittedBy: actorId,
+      studentName: booking.student?.name || "",
+      coachName: booking.assignedCoach?.name || booking.instructor?.name || "",
+      demoStartAt: booking.startAt || undefined,
     },
     { upsert: true, new: true }
   );

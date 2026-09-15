@@ -476,22 +476,50 @@ async function assignSalesOwner(formData: FormData) {
   demoCenterOutcome(tab, "", ownerName ? `Salesperson set to ${ownerName}.` : "Manual salesperson cleared - the CRM assignment applies again.");
 }
 
-export default async function DemoCenterPage({ searchParams }: { searchParams?: { tab?: string; error?: string; ok?: string } }) {
+const ASSESSMENTS_PAGE_SIZE = 50;
+
+export default async function DemoCenterPage({ searchParams }: { searchParams?: { tab?: string; error?: string; ok?: string; page?: string } }) {
   await requireDemoManager("view");
   await dbConnect();
   const activeTab = tabs.some((tab) => tab.id === searchParams?.tab) ? searchParams?.tab as DemoTab : "requested";
   const errorNotice = String(searchParams?.error || "").trim();
   const successNotice = String(searchParams?.ok || "").trim();
-  const [bookings, demoStudents, coaches, feedback, courses, batches, convertedStudents, studentsWithConvertedBooking] = await Promise.all([
+  const [bookings, demoStudents, coaches, courses, batches, convertedStudents, studentsWithConvertedBooking] = await Promise.all([
     Booking.find({ bookingType: "demo" }).populate("student instructor assignedCoach", "name email countryCode phone username accountStatus parentName city country studentLevel demoExpiresAt").sort({ createdAt: -1 }).limit(300).lean(),
     User.find({ role: "student", accountStatus: "demo" }, { passwordHash: 0 }).sort({ createdAt: -1 }).limit(300).lean(),
     User.find({ role: "instructor", isActive: true }, { name: 1, email: 1 }).sort({ name: 1 }).lean(),
-    DemoFeedback.find({}).populate("booking demoUser coach classroom", "startAt demoStatus feedbackStatus name email title").sort({ submittedAt: -1, createdAt: -1 }).limit(300).lean(),
     Course.find({ isActive: { $ne: false } }).select("name level").sort({ name: 1 }).lean(),
     Batch.find({ isActive: { $ne: false } }).select("name level").sort({ name: 1 }).lean(),
     User.find({ role: "student", "conversionSetup.convertedAt": { $exists: true } }, { passwordHash: 0 }).sort({ "conversionSetup.convertedAt": -1 }).limit(300).lean(),
     Booking.distinct("student", { bookingType: "demo", demoStatus: "CONVERTED" }),
   ]);
+  // Two different questions, so two queries. The Assessments tab lists every
+  // assessment ever written, a page at a time, so none drops off the end. The
+  // cards on the other tabs only need the assessments behind the demos and
+  // students they are actually showing - paging those would strip the summary
+  // off any card whose assessment is not on the current page.
+  const assessmentPage = Math.max(1, Math.floor(Number(searchParams?.page) || 1));
+  const [assessmentTotal, feedback, cardFeedback] = await Promise.all([
+    DemoFeedback.countDocuments({}),
+    activeTab === "assessments"
+      ? DemoFeedback.find({})
+          .populate("booking demoUser coach classroom", "startAt demoStatus feedbackStatus name email title")
+          .sort({ submittedAt: -1, createdAt: -1 })
+          .skip((assessmentPage - 1) * ASSESSMENTS_PAGE_SIZE)
+          .limit(ASSESSMENTS_PAGE_SIZE)
+          .lean()
+      : Promise.resolve([] as any[]),
+    DemoFeedback.find({
+      $or: [
+        { booking: { $in: bookings.map((booking: any) => booking._id) } },
+        { demoUser: { $in: convertedStudents.map((student: any) => student._id) } },
+      ],
+    })
+      .populate("booking demoUser coach classroom", "startAt demoStatus feedbackStatus name email title")
+      .sort({ submittedAt: -1, createdAt: -1 })
+      .lean(),
+  ]);
+  const assessmentPageCount = Math.max(1, Math.ceil(assessmentTotal / ASSESSMENTS_PAGE_SIZE));
   // The tabs are built from demo bookings, but a lead can be converted without
   // one - the CRM "Current Student" stage enrols a demo account that never
   // booked a class. Enrolment also drops it from the demo-account list below,
@@ -504,15 +532,15 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
   const counts = Object.fromEntries(tabs.map((tab) => [
     tab.id,
     tab.id === "assessments"
-      ? feedback.length
+      ? assessmentTotal
       : bookings.filter((booking: any) => classifyDemo(booking) === tab.id).length + (tab.id === "converted" ? convertedWithoutBooking.length : 0),
   ]));
-  const feedbackByBooking = new Map(feedback.map((item: any) => [String(item.booking?._id || item.booking), item]));
+  const feedbackByBooking = new Map(cardFeedback.map((item: any) => [String(item.booking?._id || item.booking), item]));
   // A converted student with no booking left can still have an assessment - the
   // booking goes when a demo account is deleted, the assessment does not - so
   // those cards look it up by student instead.
   const feedbackByStudent = new Map<string, any>();
-  feedback.forEach((item: any) => {
+  cardFeedback.forEach((item: any) => {
     const studentId = String(item.demoUser?._id || item.demoUser || "");
     if (studentId && !feedbackByStudent.has(studentId)) feedbackByStudent.set(studentId, item);
   });
@@ -616,17 +644,30 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
             <article key={item._id.toString()} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <div className="font-semibold text-slate-950">{item.demoUser?.name || "Demo student"}</div>
-                  <div className="mt-1 text-sm text-slate-500">Coach: {item.coach?.name || "-"} · Recommended: {levelLabel(item.recommendedCourseLevel) || "-"}</div>
+                  <div className="font-semibold text-slate-950">{item.demoUser?.name || item.studentName || "Demo student"}</div>
+                  <div className="mt-1 text-sm text-slate-500">Coach: {item.coach?.name || item.coachName || "-"} · Recommended: {levelLabel(item.recommendedCourseLevel) || "-"}</div>
                   <div className="mt-1 text-xs font-bold uppercase text-slate-400">{item.status === "submitted" ? "Submitted" : "Draft / waiting for coach"}</div>
                   <div className="mt-1 text-sm text-slate-600">Overall: {scaleLabel(OVERALL_STRENGTH, item.overallStrength) || titleCase(item.studentEngagement) || "-"} · Format: {titleCase(item.coachRecommendation) || "-"} · Starts at: {startingSessionLabel(item) || "-"}</div>
                   <p className="mt-2 text-sm leading-6 text-slate-700">{item.salesAdminNotes || item.parentFacingSummary || item.assessmentNotes || "No notes for sales yet."}</p>
                 </div>
                 {item.booking ? <Link href={`/demo-feedback/${item.booking?._id || item.booking}`} className="btn-outline bg-white">Open Assessment</Link> : <span className="text-xs font-semibold text-slate-400">Demo booking deleted</span>}
               </div>
+              {/* The form needs the booking; the assessment does not. Show it in full here. */}
+              {item.booking ? null : <AssessmentSummary feedback={item} />}
             </article>
           ))}
-          {!feedback.length ? <Empty text="No submitted demo assessments yet." /> : null}
+          {!assessmentTotal ? <Empty text="No submitted demo assessments yet." /> : null}
+          {assessmentTotal > ASSESSMENTS_PAGE_SIZE ? (
+            <nav className="flex flex-wrap items-center justify-between gap-2 text-[13px] text-slate-500">
+              <span>
+                Showing {(assessmentPage - 1) * ASSESSMENTS_PAGE_SIZE + 1}-{Math.min(assessmentPage * ASSESSMENTS_PAGE_SIZE, assessmentTotal)} of {assessmentTotal}
+              </span>
+              <div className="flex gap-2">
+                {assessmentPage > 1 ? <Link href={`/admin/demo-center?tab=assessments&page=${assessmentPage - 1}`} className="btn-outline bg-white">Newer</Link> : null}
+                {assessmentPage < assessmentPageCount ? <Link href={`/admin/demo-center?tab=assessments&page=${assessmentPage + 1}`} className="btn-outline bg-white">Older</Link> : null}
+              </div>
+            </nav>
+          ) : null}
         </section>
       )}
 

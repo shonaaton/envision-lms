@@ -111,6 +111,15 @@ const DemoFeedbackSchema = new Schema(
     extensibleData: { type: Schema.Types.Mixed, default: {} },
     submittedAt: Date,
     submittedBy: { type: Schema.Types.ObjectId, ref: "User" },
+    /**
+     * Who and when, copied onto the assessment. The references above point at a
+     * demo account, a coach and a booking that can all be deleted later - a demo
+     * account is routinely removed once the child enrols - and the assessment has
+     * to stay readable after every one of them is gone.
+     */
+    studentName: String,
+    coachName: String,
+    demoStartAt: Date,
   },
   { timestamps: true }
 );

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { DemoFeedback } from "@/models/Onboarding";
 import bcrypt from "bcryptjs";
 import { isValidObjectId } from "mongoose";
 import { auth } from "@/lib/auth";
@@ -184,6 +185,19 @@ export async function DELETE(req: Request, { params }: { params: { id: string } 
   const body = await req.json().catch(() => ({}));
   if (body.confirmName !== target.name) {
     return NextResponse.json({ error: "Enter the user's full name to confirm permanent deletion." }, { status: 400 });
+  }
+
+  // Deleting a demo account takes its demo booking with it, but not the coach
+  // assessment written about that demo - which then vanishes from Demo Center
+  // while sales still needs it for the child the account belonged to. Make the
+  // admin say they know before it happens.
+  const submittedAssessments = await DemoFeedback.countDocuments({ demoUser: params.id, status: "submitted" });
+  if (submittedAssessments > 0 && body.acknowledgeAssessments !== true) {
+    return NextResponse.json({
+      error: `${target.name} has ${submittedAssessments} submitted demo assessment${submittedAssessments === 1 ? "" : "s"}.`,
+      code: "HAS_DEMO_ASSESSMENTS",
+      assessments: submittedAssessments,
+    }, { status: 409 });
   }
 
   const summary = await deleteUserRecords(params.id);

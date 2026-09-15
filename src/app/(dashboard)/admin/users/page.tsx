@@ -206,13 +206,23 @@ export default function AdminUsersPage() {
     await updateUser(user._id, { isActive: !user.isActive });
   }
 
-  async function permanentlyDeleteUser(user: AdminUser, confirmName: string) {
+  async function permanentlyDeleteUser(user: AdminUser, confirmName: string, acknowledgeAssessments = false): Promise<boolean> {
     const response = await fetch(`/api/admin/users/${user._id}`, {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ confirmName }),
+      body: JSON.stringify({ confirmName, acknowledgeAssessments }),
     });
     const data = await response.json().catch(() => ({}));
+    if (response.status === 409 && data.code === "HAS_DEMO_ASSESSMENTS") {
+      const proceed = window.confirm(
+        `${data.error}
+
+Deleting this account also deletes its demo booking. The coach assessment is kept, but it will no longer appear in Demo Center unless it is linked to the student's enrolled account.
+
+If this child has a newer account, link the assessment first. Delete anyway?`
+      );
+      return proceed ? permanentlyDeleteUser(user, confirmName, true) : false;
+    }
     if (!response.ok) {
       toast.error(data.error || "Could not permanently delete this user");
       return false;

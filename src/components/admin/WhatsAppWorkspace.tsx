@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Bot, CheckCircle2, Clock3, FileText, MessageCircle, RefreshCw, Send, Sparkles, ToggleLeft, ToggleRight, UserRound } from "lucide-react";
+import { ArrowLeft, Bot, CheckCircle2, Clock3, FileText, MessageCircle, RefreshCw, Send, Sparkles, ToggleLeft, ToggleRight, UserRound } from "lucide-react";
 import { WHATSAPP_TEMPLATE_DEFINITIONS, type WhatsAppTemplateDefinition } from "@/lib/whatsappTemplateRegistry";
 
 type WaReaction = { emoji: string; direction: string; at: string };
@@ -89,6 +89,8 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
   const [tab, setTab] = useState<"all" | "active" | "closed" | "sent" | "automation">("all");
   const [data, setData] = useState<InboxPayload>({ active: [], closed: [], sentTemplates: [], conversations: [], windowHours: 24 });
   const [selectedPhone, setSelectedPhone] = useState(initialPhoneNumber);
+  // Phones have room for either the chat list or the open thread, never both side by side.
+  const [mobilePane, setMobilePane] = useState<"list" | "chat">(initialPhoneNumber ? "chat" : "list");
   const [now, setNow] = useState(() => Date.now());
   const [loading, setLoading] = useState(true);
   const [reply, setReply] = useState("");
@@ -279,6 +281,7 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
   }
 
   function openConversation(phoneNumber: string) {
+    setMobilePane("chat");
     if (phoneNumber === selectedPhone) return;
     const conversation = data.conversations.find((item) => item.phoneNumber === phoneNumber);
     setSelectedPhone(phoneNumber);
@@ -352,7 +355,7 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
 
   return (
     <div className="min-h-0 min-w-0 text-slate-950">
-      <div className="mb-3 flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+      <div className="mb-3 flex min-w-0 items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="flex min-w-0 items-center gap-3">
             <div className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-teal-900 text-white shadow-lg shadow-teal-950/15">
@@ -364,13 +367,14 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
             </div>
           </div>
         </div>
-        <button onClick={() => void loadInbox()} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm shadow-slate-200/70 transition hover:border-emerald-200 hover:text-emerald-700">
+        <button onClick={() => void loadInbox()} aria-label="Refresh" className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 shadow-sm shadow-slate-200/70 transition hover:border-emerald-200 hover:text-emerald-700 sm:px-4">
           <RefreshCw size={15} />
-          Refresh
+          <span className="hidden sm:inline">Refresh</span>
         </button>
       </div>
 
-      <div className="mb-3 flex flex-wrap gap-2">
+      {/* One scrollable row, so the tabs never wrap and push the inbox below the fold. */}
+      <div className="-mx-1 mb-3 flex gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none]">
         <TabButton active={tab === "all"} onClick={() => setTab("all")} icon={<MessageCircle size={15} />} label={`All Chats (${liveConversations.length})`} />
         <TabButton active={tab === "active"} onClick={() => setTab("active")} icon={<Clock3 size={15} />} label={`Active (${liveConversations.filter((conversation) => conversation.canReply).length})`} />
         <TabButton active={tab === "closed"} onClick={() => setTab("closed")} icon={<CheckCircle2 size={15} />} label={`Closed (${liveConversations.filter((conversation) => !conversation.canReply).length})`} />
@@ -548,8 +552,8 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
           ) : null}
         </section>
       ) : (
-        <section className="grid h-[calc(100dvh-190px)] min-h-[500px] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl shadow-slate-200/70 xl:grid-cols-[330px_minmax(0,1fr)_300px] 2xl:grid-cols-[360px_minmax(0,1fr)_320px]">
-          <aside className="min-h-0 border-r border-slate-200 bg-white">
+        <section className="grid h-[calc(100dvh-180px)] min-h-[420px] grid-rows-[minmax(0,1fr)] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl shadow-slate-200/70 md:h-[calc(100dvh-150px)] md:grid-cols-[260px_minmax(0,1fr)] lg:grid-cols-[300px_minmax(0,1fr)] xl:grid-cols-[330px_minmax(0,1fr)_300px] 2xl:grid-cols-[360px_minmax(0,1fr)_320px]">
+          <aside className={`min-h-0 border-slate-200 bg-white md:block md:border-r ${mobilePane === "chat" ? "hidden" : ""}`}>
             <div className="flex h-12 items-center justify-between border-b border-slate-200 bg-slate-50 px-4 text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
               {tab === "active" ? "Active conversations" : tab === "closed" ? "Closed conversations" : tab === "all" ? "All chats" : "Template sends"}
               <span className="rounded-full bg-white px-2 py-1 text-[11px] text-slate-500 shadow-sm">{conversations.length}</span>
@@ -566,7 +570,7 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
                 <button
                   key={conversation.phoneNumber}
                   onClick={() => openConversation(conversation.phoneNumber)}
-                  className={`flex w-full items-center gap-3 border-b border-slate-100 px-4 py-4 text-left transition hover:bg-slate-50 ${selected?.phoneNumber === conversation.phoneNumber ? "bg-emerald-50" : "bg-white"}`}
+                  className={`flex w-full items-center gap-3 border-b border-slate-100 px-3 py-3 text-left lg:px-4 lg:py-4 transition hover:bg-slate-50 ${selected?.phoneNumber === conversation.phoneNumber ? "bg-emerald-50" : "bg-white"}`}
                 >
                   <Avatar name={conversation.contactName} />
                   <span className="min-w-0 flex-1">
@@ -582,15 +586,18 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
             </div>
           </aside>
 
-          <main className="flex min-h-0 min-w-0 flex-col bg-[#f7f3e7]">
-            <div className="flex h-16 shrink-0 items-center justify-between border-b border-teal-900/10 bg-teal-900 px-5 text-white">
-              <div className="min-w-0">
+          <main className={`min-h-0 min-w-0 flex-col bg-[#f7f3e7] md:flex ${mobilePane === "chat" ? "flex" : "hidden"}`}>
+            <div className="flex h-16 shrink-0 items-center gap-3 border-b border-teal-900/10 bg-teal-900 px-3 text-white lg:px-5">
+              <button type="button" onClick={() => setMobilePane("list")} aria-label="Back to chats" className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-white/10 transition hover:bg-white/20 md:hidden">
+                <ArrowLeft size={18} />
+              </button>
+              <div className="min-w-0 flex-1">
                 <div className="truncate text-lg font-black">{selected?.contactName || "No conversation selected"}</div>
                 {selected ? <div className="text-xs font-semibold text-emerald-100">+{selected.phoneNumber}</div> : null}
               </div>
-              {selected ? <Badge text={windowLabel(selected)} tone={selected.canReply && !selected.whatsapp?.expiring_soon ? "green" : "amber"} /> : null}
+              {selected ? <span className="shrink-0"><Badge text={windowLabel(selected)} tone={selected.canReply && !selected.whatsapp?.expiring_soon ? "green" : "amber"} /></span> : null}
             </div>
-            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-5">
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3 lg:p-5">
               {!selected ? (
                 <div className="grid h-full place-items-center">
                   <div className="max-w-sm text-center">
@@ -606,7 +613,7 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
                   {threadLoading ? <div className="text-center text-sm text-slate-500">Loading conversation...</div> : null}
                   {selected.messages.map((message) => (
                     <div key={message.id} className={`flex ${message.direction === "outbound" ? "justify-end" : "justify-start"}`}>
-                      <div className={`relative max-w-[78%] rounded-lg px-4 py-3 text-sm leading-6 shadow-md ${message.reactions?.length ? "mb-3" : ""} ${message.direction === "outbound" ? "bg-white text-slate-800 shadow-slate-300/50" : "bg-teal-900 text-white shadow-teal-950/20"}`}>
+                      <div className={`relative max-w-[88%] rounded-lg lg:max-w-[78%] px-4 py-3 text-sm leading-6 shadow-md ${message.reactions?.length ? "mb-3" : ""} ${message.direction === "outbound" ? "bg-white text-slate-800 shadow-slate-300/50" : "bg-teal-900 text-white shadow-teal-950/20"}`}>
                         <MessageMedia message={message} />
                         {message.text ? <div className="whitespace-pre-line">{message.text}</div> : null}
                         {message.messageType === "template" && message.templateName ? (
@@ -627,29 +634,30 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
                 </>
               )}
             </div>
-            <div className="shrink-0 border-t border-slate-200 bg-white p-3">
+            <div className="shrink-0 border-t border-slate-200 bg-white p-2 lg:p-3">
               {selected ? (
-                <div className={`mb-2 flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-bold ${selected.canReply ? (selected.whatsapp?.expiring_soon ? "border-amber-200 bg-amber-50 text-amber-800" : "border-emerald-200 bg-emerald-50 text-emerald-800") : "border-slate-200 bg-slate-50 text-slate-600"}`}>
-                  <Clock3 size={14} />
-                  <span>{windowDescription(selected)}</span>
+                <div className={`mb-2 flex items-start gap-2 rounded-lg border px-3 py-1.5 text-xs font-bold leading-5 ${selected.canReply ? (selected.whatsapp?.expiring_soon ? "border-amber-200 bg-amber-50 text-amber-800" : "border-emerald-200 bg-emerald-50 text-emerald-800") : "border-slate-200 bg-slate-50 text-slate-600"}`}>
+                  <Clock3 size={14} className="mt-0.5 shrink-0" />
+                  <span className="xl:hidden">{windowShortDescription(selected)}</span>
+                  <span className="hidden xl:inline">{windowDescription(selected)}</span>
                 </div>
               ) : null}
-              <div className="flex gap-2">
+              <div className="flex min-w-0 gap-2">
                 <input
                   value={reply}
                   onChange={(event) => setReply(event.target.value)}
                   disabled={!selected?.canReply}
-                  placeholder={selected?.canReply ? "Type a reply..." : "24-hour window closed. Send a template instead."}
-                  className="min-h-11 flex-1 rounded-lg border border-slate-200 px-4 text-sm outline-none focus:border-emerald-500 disabled:bg-slate-50"
+                  placeholder={selected?.canReply ? "Type a reply..." : "Window closed · send a template"}
+                  className="min-h-11 min-w-0 flex-1 rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-emerald-500 disabled:bg-slate-50 lg:px-4"
                 />
-                <button disabled={!selected?.canReply || sendingReply || !reply.trim()} onClick={sendReply} className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-teal-900 px-4 text-sm font-bold text-white disabled:cursor-not-allowed disabled:bg-slate-300">
+                <button disabled={!selected?.canReply || sendingReply || !reply.trim()} onClick={sendReply} aria-label="Reply" className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-teal-900 px-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:bg-slate-300 lg:px-4">
                   <Send size={16} />
-                  Reply
+                  <span className="hidden sm:inline">Reply</span>
                 </button>
                 {selected && !selected.canReply ? (
-                  <button onClick={prepareTemplateForSelectedContact} className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 text-sm font-bold text-white">
+                  <button onClick={prepareTemplateForSelectedContact} aria-label="Send template" className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 text-sm font-bold text-white lg:px-4">
                     <Bot size={16} />
-                    Template
+                    <span className="hidden sm:inline">Template</span>
                   </button>
                 ) : null}
               </div>
@@ -730,7 +738,7 @@ function EmptyPanel({ title, text }: { title: string; text: string }) {
 
 function TabButton({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
   return (
-    <button onClick={onClick} className={`inline-flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-bold transition ${active ? "bg-emerald-600 text-white shadow-sm" : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}>
+    <button onClick={onClick} className={`inline-flex h-10 shrink-0 items-center gap-2 whitespace-nowrap rounded-lg px-3 text-sm font-bold transition lg:px-4 ${active ? "bg-emerald-600 text-white shadow-sm" : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}>
       {icon}
       {label}
     </button>
@@ -851,6 +859,11 @@ function windowLabel(conversation: Conversation) {
 function windowDescription(conversation: Conversation) {
   if (!conversation.canReply) return "Closed · 24-hour window ended. The customer must reply again before a free-form message can be sent.";
   return `${conversation.whatsapp?.expiring_soon ? "Closing soon" : "Open"} · ${formatRemaining(conversation.whatsapp?.remaining_seconds || 0)} remaining from the latest customer reply.`;
+}
+
+function windowShortDescription(conversation: Conversation) {
+  if (!conversation.canReply) return "24h window closed · the customer must reply before you can send free text.";
+  return `${conversation.whatsapp?.expiring_soon ? "Closing soon" : "Open"} · ${formatRemaining(conversation.whatsapp?.remaining_seconds || 0)} left to reply.`;
 }
 
 function ProfileRow({ label, value }: { label: string; value: string }) {

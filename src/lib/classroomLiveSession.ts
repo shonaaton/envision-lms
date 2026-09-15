@@ -4,6 +4,7 @@ import { DemoFeedback } from "@/models/Onboarding";
 import { ClassroomSession } from "@/models/ClassroomLive";
 import { Attendance } from "@/models/Attendance";
 import { autoAssignHomeworkForSession } from "@/lib/assignmentAutomation";
+import { notifyHomeworkNotAssigned } from "@/lib/homeworkAutomationAlerts";
 import { notifyFailure } from "@/lib/failureNotifications";
 import { ensureTopicContinuationSession, normalizeSessionOutcome, recalculateFutureSessionTopics, shouldContinueTopic, topicCompletedForOutcome } from "@/lib/classroomLifecycle";
 import { actualSessionMinutes, punctualityBreakdown, scheduledPaymentMinutes } from "@/lib/teachingStats";
@@ -167,6 +168,7 @@ export async function markScheduledSessionFinished({
       await autoAssignHomeworkForSession({ classroomId, scheduledSessionId, actorId, endedAt: finish });
     } catch (error) {
       console.error("Homework auto-assignment failed", error);
+      void notifyHomeworkNotAssigned({ classroomId, scheduledSessionId, status: "error", reason: error instanceof Error ? error.message : String(error) }).catch((alertError) => console.error("Homework automation alert email failed", alertError));
       void notifyFailure({ title: "Homework auto-assignment failed after class completion", error, metadata: { automation: "homework_auto_assignment", classroomId, scheduledSessionId, actorId } });
     }
   }

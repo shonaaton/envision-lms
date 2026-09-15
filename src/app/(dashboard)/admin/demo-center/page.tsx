@@ -12,6 +12,7 @@ import { recordActivity } from "@/lib/activity";
 import { cancelDemoClassrooms, isConfirmedDemo, markDemoClassroomMissed, upsertDemoClassroom } from "@/lib/demoClassroom";
 import { COURSE_TIER_LABELS } from "@/lib/courseTiers";
 import { bookDemoForAccount, coachClash, confirmDemoBooking } from "@/lib/demoScheduling";
+import { normalizeGoogleMeetUrl, parseMeetingUrlInput } from "@/lib/meetingUrl";
 import { PopupShell, PopupTrigger } from "@/components/HashPopup";
 import {
   CALCULATION_POWER,
@@ -157,10 +158,11 @@ async function updateBookingRequest(formData: FormData) {
   const coach = String(formData.get("coach") || "");
   const startAt = parseAcademyDateTimeLocal(String(formData.get("startAt") || ""));
   const duration = Math.max(15, Number(formData.get("durationMinutes") || 30));
-  const meetingUrl = String(formData.get("meetingUrl") || "").trim();
+  const { url: meetingUrl, error: meetingUrlError } = parseMeetingUrlInput(formData.get("meetingUrl"));
   const tab = String(formData.get("tab") || "requested");
   if (!bookingId || !coach) return demoCenterOutcome(tab, "Choose a coach before saving.");
   if (Number.isNaN(startAt.getTime())) return demoCenterOutcome(tab, "Choose a valid date and time.");
+  if (meetingUrlError) return demoCenterOutcome(tab, meetingUrlError);
   const booking: any = await Booking.findById(bookingId);
   if (!booking) return demoCenterOutcome(tab, "That demo request no longer exists.");
   const student: any = await User.findById(booking.student).select("name studentLevel").lean();
@@ -849,7 +851,9 @@ function DemoCard({
           <Field
             label="Meeting link"
             className="lg:col-span-2"
-            value={<a href={booking.meetingUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-brand hover:underline"><LinkIcon size={13} /> Join demo class</a>}
+            value={normalizeGoogleMeetUrl(booking.meetingUrl)
+              ? <a href={normalizeGoogleMeetUrl(booking.meetingUrl)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-brand hover:underline"><LinkIcon size={13} /> Join demo class</a>
+              : <span className="text-rose-700">Not a Google Meet room link ({booking.meetingUrl}) - edit the demo to fix it</span>}
           />
         ) : null}
         {booking.cancellationReason ? <Field label="Closed reason" value={booking.cancellationReason} className="lg:col-span-2" /> : null}

@@ -10,6 +10,7 @@ import { attributeDemoToLeadOwner, leadOwnersForStudents, notifyLeadOwnerOfDemo 
 import { notifyDemoApproved } from "@/lib/demoWorkflow";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
 import { canAccessFeature } from "@/lib/featureAccess";
+import { parseMeetingUrlInput } from "@/lib/meetingUrl";
 import { Booking } from "@/models/Booking";
 import { Notification } from "@/models/Fee";
 import { User } from "@/models/User";
@@ -50,9 +51,11 @@ export async function coachClash(coachId: string, startAt: Date, endAt: Date, ig
  * tell the family, the coach, the staff and the salesperson.
  */
 export async function confirmDemoBooking(input: ScheduleInput & { bookingId: string }): Promise<DemoScheduleResult> {
-  const { bookingId, coachId, start, durationMinutes, meetingUrl, actorId } = input;
+  const { bookingId, coachId, start, durationMinutes, actorId } = input;
   if (!coachId) return { ok: false, error: "Choose a coach before confirming." };
   if (Number.isNaN(start.getTime())) return { ok: false, error: "Choose a valid date and time." };
+  const { url: meetingUrl, error: meetingUrlError } = parseMeetingUrlInput(input.meetingUrl);
+  if (meetingUrlError) return { ok: false, error: meetingUrlError };
   await dbConnect();
   const booking: any = await Booking.findById(bookingId).populate("student instructor assignedCoach");
   if (!booking) return { ok: false, error: "That demo request no longer exists." };
@@ -121,6 +124,9 @@ export async function bookDemoForAccount(input: ScheduleInput & { studentId: str
   if (!coachId) return { ok: false, error: "Choose a coach before booking the demo." };
   if (Number.isNaN(start.getTime())) return { ok: false, error: "Choose a valid date and time." };
   if (!isValidObjectId(studentId)) return { ok: false, error: "That demo account no longer exists." };
+  // Checked before the request is created, so a mistyped link does not leave a half-booked demo behind.
+  const meetingUrlError = parseMeetingUrlInput(input.meetingUrl).error;
+  if (meetingUrlError) return { ok: false, error: meetingUrlError };
   await dbConnect();
   const student: any = await User.findOne({ _id: studentId, role: "student" }).select("name accountStatus parentName city country studentLevel").lean();
   if (!student || student.accountStatus !== "demo") return { ok: false, error: "This account is no longer a demo account." };

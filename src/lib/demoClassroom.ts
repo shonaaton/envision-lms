@@ -1,5 +1,6 @@
 import { academyTimeOfDay } from "@/lib/academyTime";
 import { ensureDemoHomework } from "@/lib/demoHomework";
+import { normalizeGoogleMeetUrl } from "@/lib/meetingUrl";
 import { Booking } from "@/models/Booking";
 import { Classroom } from "@/models/Classroom";
 import { ClassroomSession } from "@/models/ClassroomLive";
@@ -195,7 +196,7 @@ export async function upsertDemoClassroom(input: {
   // written in academy time - toTimeString() would record the server's timezone
   // and shift the student's join window by the server offset.
   const startTimeLabel = academyTimeOfDay(start);
-  const meetingUrl = String(input.meetingUrl || "").trim();
+  const meetingUrl = normalizeGoogleMeetUrl(input.meetingUrl);
   const studentName = input.studentName || booking.student?.name || "Student";
 
   let classroom: any = booking.classroom ? await Classroom.findById(booking.classroom) : null;

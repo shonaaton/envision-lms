@@ -149,7 +149,9 @@ export default async function HomeworkTemplatesPage({ searchParams }: { searchPa
     AssignmentTemplate.find({ isActive: { $ne: false } }, { isActive: 1, linkStatus: 1 }).lean(),
     AssignmentTemplate.distinct("courseName", { isActive: { $ne: false } }),
     AssignmentTemplate.distinct("levelName", levelScopeFilter),
-    AssignmentAutomationLog.find({})
+    // "already assigned" rows were the second trigger of the same class
+    // echoing an "assigned" row, so they are left out of the feed.
+    AssignmentAutomationLog.find({ status: { $ne: "already_assigned" } })
       .populate("classroom", "title")
       .populate("sourceTemplate", "title")
       .populate("homework", "title")

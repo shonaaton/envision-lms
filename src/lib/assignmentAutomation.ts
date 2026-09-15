@@ -3,6 +3,7 @@ import { Classroom } from "@/models/Classroom";
 import { Homework } from "@/models/Homework";
 import { getSessionStart } from "@/lib/classroomSessions";
 import { notifyHomeworkAssigned } from "@/lib/homeworkEmail";
+import { notifyHomeworkNotAssigned } from "@/lib/homeworkAutomationAlerts";
 
 export function normalizeTopicKey(value?: string | null) {
   return String(value || "")
@@ -73,14 +74,41 @@ function findSession(classroom: any, scheduledSessionId: string) {
   return scheduledSessionsFor(classroom).find((session: any) => String(session?._id || "") === scheduledSessionId) || null;
 }
 
-function compatible(template: any, classroom: any) {
+// Session topics come from the course planner, template topics from PGN file
+// names or a hand-typed name, so "&" against "and" or a stray "the" must not
+// decide whether homework goes out.
+function looseTopicKey(value?: string | null) {
+  return normalizeTopicKey(String(value || "").replace(/&/g, " and "))
+    .split(" ")
+    .filter((word) => word && word !== "and" && word !== "the")
+    .join(" ");
+}
+
+function placeLabel(value: any) {
+  return `${value?.courseName || "no course"} - ${value?.levelName || "no level"}`;
+}
+
+/** Returns why a template cannot serve this classroom, or "" when it can. */
+function incompatibility(template: any, classroom: any) {
+  if (template.autoAssign === false) return "auto-assign is off";
   const templateCourse = objectId(template.course);
   const classroomCourse = objectId(classroom.course);
-  if (templateCourse && classroomCourse && templateCourse !== classroomCourse) return false;
-  if (template.courseName && classroom.courseName && normalizedName(template.courseName) !== normalizedName(classroom.courseName)) return false;
-  if (template.levelName && classroom.levelName && !sameLevelName(template.levelName, classroom.levelName)) return false;
-  if (template.level && template.level !== "mixed" && classroom.level && template.level !== classroom.level) return false;
-  return true;
+  const sameCourseId = Boolean(templateCourse && templateCourse === classroomCourse);
+  const bothCourseNames = Boolean(template.courseName && classroom.courseName);
+  const sameCourseName = bothCourseNames && normalizedName(template.courseName) === normalizedName(classroom.courseName);
+  // The id is the truth and the names are frozen copies: a renamed course can
+  // leave one side on the old name. Only when the ids differ (or one is
+  // missing) does the name decide - a re-created course keeps its name.
+  if (!sameCourseId) {
+    if (templateCourse && classroomCourse && !sameCourseName) return "course";
+    if (bothCourseNames && !sameCourseName) return "course";
+  }
+  if (template.levelName && classroom.levelName && !sameLevelName(template.levelName, classroom.levelName)) return "level";
+  // The tier is only a fallback for templates that carry no course at all: a
+  // classroom's tier defaults to beginner, so it is unreliable next to a course.
+  const courseMatched = (templateCourse && templateCourse === classroomCourse) || sameCourseName;
+  if (!courseMatched && template.level && template.level !== "mixed" && classroom.level && template.level !== classroom.level) return "level";
+  return "";
 }
 
 function matchScore(template: any, classroom: any) {
@@ -90,11 +118,13 @@ function matchScore(template: any, classroom: any) {
   if (template.levelName && normalizedName(template.levelName) === normalizedName(classroom.levelName)) score += 2;
   else if (template.levelName && sameLevelName(template.levelName, classroom.levelName)) score += 1;
   if (template.level && template.level === classroom.level) score += 1;
+  if (template.linkStatus === "linked") score += 3;
   return score;
 }
 
+/** Returns true when this event is new for the session, false when it repeats an existing row. */
 async function recordAutomationEvent(payload: Record<string, any>) {
-  await AssignmentAutomationLog.findOneAndUpdate(
+  const result = await AssignmentAutomationLog.updateOne(
     {
       classroom: payload.classroom,
       scheduledSessionId: payload.scheduledSessionId,
@@ -102,28 +132,71 @@ async function recordAutomationEvent(payload: Record<string, any>) {
       status: payload.status,
     },
     { $set: payload },
-    { upsert: true, new: true }
+    { upsert: true }
   );
+  return Boolean(result.upsertedCount);
+}
+
+/**
+ * Logs a completed class that ended without homework and emails the admin.
+ * The email follows the log row's insert, so the second trigger for the same
+ * class (register saved after the live room ended, possibly hours later)
+ * does not send it again.
+ */
+async function recordMissedAssignment(classroom: any, payload: Record<string, any>) {
+  const isNew = await recordAutomationEvent(payload);
+  if (!isNew) return;
+  void notifyHomeworkNotAssigned({
+    classroom,
+    classroomId: String(payload.classroom),
+    scheduledSessionId: String(payload.scheduledSessionId),
+    status: payload.status,
+    reason: payload.message,
+    topicName: payload.topicName,
+  }).catch((error) => console.error("Homework automation alert email failed", error));
 }
 
 async function findTemplateForSession(classroom: any, topicName: string) {
   const topicKey = normalizeTopicKey(topicName);
-  if (!topicKey) return { topicKey, template: null, ambiguous: [] as any[] };
-  const candidates = await AssignmentTemplate.find({
-    topicKey,
-    isActive: true,
-    autoAssign: true,
-    linkStatus: "linked",
-  }).lean();
-  const ranked = candidates
-    .filter((template: any) => compatible(template, classroom))
-    .map((template: any) => ({ template, score: matchScore(template, classroom) }))
-    .sort((a, b) => b.score - a.score);
-  if (!ranked.length) return { topicKey, template: null, ambiguous: [] as any[] };
+  const rejected: Array<{ template: any; reason: string }> = [];
+  if (!topicKey) return { topicKey, template: null, ambiguous: [] as any[], rejected };
+  const looseKey = looseTopicKey(topicName);
+  // A template left on "needs review" (a PGN import whose topic exists on more
+  // than one course) is still a real template for this topic, so link status
+  // only ranks candidates - it no longer hides them. Activities are loaded for
+  // the winner alone; they carry whole PGNs.
+  const candidates = (
+    await AssignmentTemplate.find({ isActive: true })
+      .select("_id title topicName topicKey course courseName level levelName linkStatus autoAssign")
+      .lean()
+  ).filter(
+    (template: any) =>
+      template.topicKey === topicKey || looseTopicKey(template.topicKey) === looseKey || looseTopicKey(template.topicName) === looseKey
+  );
+  const ranked: Array<{ template: any; score: number }> = [];
+  for (const template of candidates) {
+    const reason = incompatibility(template, classroom);
+    if (reason) rejected.push({ template, reason });
+    else ranked.push({ template, score: matchScore(template, classroom) });
+  }
+  ranked.sort((a, b) => b.score - a.score);
+  if (!ranked.length) return { topicKey, template: null, ambiguous: [] as any[], rejected };
   const best = ranked[0].score;
   const top = ranked.filter((item) => item.score === best).map((item) => item.template);
-  if (top.length > 1) return { topicKey, template: null, ambiguous: top };
-  return { topicKey, template: top[0], ambiguous: [] as any[] };
+  if (top.length > 1) return { topicKey, template: null, ambiguous: top, rejected };
+  const template: any = await AssignmentTemplate.findById(top[0]._id).lean();
+  return { topicKey, template, ambiguous: [] as any[], rejected };
+}
+
+function missingTemplateMessage(topicName: string, classroom: any, rejected: Array<{ template: any; reason: string }>) {
+  if (!rejected.length) return `No auto-assignment template found for "${topicName}".`;
+  const [first] = rejected;
+  const detail =
+    first.reason === "auto-assign is off"
+      ? `"${first.template.title}" has auto-assign turned off`
+      : `"${first.template.title}" is set to ${placeLabel(first.template)}, but this class is ${placeLabel(classroom)}`;
+  const others = rejected.length > 1 ? ` (${rejected.length - 1} more template${rejected.length === 2 ? "" : "s"} for this topic also skipped)` : "";
+  return `Template exists for "${topicName}" but was not used: ${detail}${others}.`;
 }
 
 function nextSessionStart(classroom: any, currentSession: any) {
@@ -196,10 +269,10 @@ export async function autoAssignHomeworkForSession({
   const currentSession = findSession(classroom, scheduledSessionId);
   if (!currentSession) return null;
   const topicName = String(currentSession.topicName || classroom.topicName || classroom.title || "").trim();
-  const { topicKey, template, ambiguous } = await findTemplateForSession(classroom, topicName);
+  const { topicKey, template, ambiguous, rejected } = await findTemplateForSession(classroom, topicName);
 
   if (ambiguous.length) {
-    await recordAutomationEvent({
+    await recordMissedAssignment(classroom, {
       classroom: classroomId,
       scheduledSessionId,
       topicName,
@@ -212,36 +285,38 @@ export async function autoAssignHomeworkForSession({
   }
 
   if (!template) {
-    await recordAutomationEvent({
+    await recordMissedAssignment(classroom, {
       classroom: classroomId,
       scheduledSessionId,
       topicName,
       topicKey,
       status: "missing_template",
-      message: `No linked auto-assignment template found for "${topicName}".`,
+      message: missingTemplateMessage(topicName, classroom, rejected),
+      metadata: rejected.length
+        ? {
+            skippedTemplates: rejected.map(({ template: skipped, reason }) => ({
+              id: objectId(skipped._id),
+              title: skipped.title,
+              reason,
+              courseName: skipped.courseName || "",
+              levelName: skipped.levelName || "",
+            })),
+          }
+        : undefined,
     });
     return null;
   }
 
-  const existing: any = await Homework.findOne({ classroom: classroomId, sourceSessionId: scheduledSessionId, sourceTemplate: template._id }).lean();
-  if (existing) {
-    await recordAutomationEvent({
-      classroom: classroomId,
-      scheduledSessionId,
-      sourceTemplate: template._id,
-      homework: existing._id,
-      topicName,
-      topicKey,
-      status: "already_assigned",
-      message: `Homework already exists for "${topicName}".`,
-      dueAt: existing.dueAt,
-    });
-    return existing;
-  }
+  // A completed class reaches here twice - once when the live room ends and
+  // again when the register is saved. Whichever run came first already logged
+  // "assigned", so the second one returns quietly instead of adding a row.
+  const existingQuery = { classroom: classroomId, sourceSessionId: scheduledSessionId, sourceTemplate: template._id };
+  const existing: any = await Homework.findOne(existingQuery).lean();
+  if (existing) return existing;
 
   const target = targetPayload(template, classroom);
   if (!target.hasRecipients) {
-    await recordAutomationEvent({
+    await recordMissedAssignment(classroom, {
       classroom: classroomId,
       scheduledSessionId,
       sourceTemplate: template._id,
@@ -255,7 +330,7 @@ export async function autoAssignHomeworkForSession({
 
   const dueAt = dueAtFor(template, classroom, currentSession, endedAt);
   if (!dueAt && template.duePolicy?.noNextClassBehavior === "skip") {
-    await recordAutomationEvent({
+    await recordMissedAssignment(classroom, {
       classroom: classroomId,
       scheduledSessionId,
       sourceTemplate: template._id,
@@ -269,7 +344,7 @@ export async function autoAssignHomeworkForSession({
 
   const instructor = objectId(classroom.coach) || objectId(classroom.instructor) || actorId;
   if (!instructor) {
-    await recordAutomationEvent({
+    await recordMissedAssignment(classroom, {
       classroom: classroomId,
       scheduledSessionId,
       sourceTemplate: template._id,
@@ -281,32 +356,40 @@ export async function autoAssignHomeworkForSession({
     return null;
   }
 
-  const created = await Homework.create({
-    classroom: classroomId,
-    instructor,
-    type: template.activities?.some((activity: any) => activity.type === "study_pgn")
-      ? "pgn_study"
-      : template.activities?.some((activity: any) => activity.type === "quiz" || activity.type === "written_answer")
-        ? "quiz"
-        : "puzzle_set",
-    title: template.title,
-    description: template.description,
-    instructions: template.instructions,
-    assignedStudents: target.assignedStudents,
-    assignedBatches: target.assignedBatches,
-    assignAllStudents: target.assignAllStudents,
-    puzzles: JSON.parse(JSON.stringify(template.puzzles || [])),
-    activities: JSON.parse(JSON.stringify(template.activities || [])),
-    dueAt: dueAt || undefined,
-    numberOfAttempts: template.numberOfAttempts || 1,
-    timeLimitMinutes: template.timeLimitMinutes || 0,
-    scoring: template.scoring || undefined,
-    sourceTemplate: template._id,
-    sourceSessionId: scheduledSessionId,
-    autoAssigned: true,
-    automationStatus: dueAt ? "assigned" : "assigned_without_due",
-    isPublished: true,
-  });
+  let created: any;
+  try {
+    created = await Homework.create({
+      classroom: classroomId,
+      instructor,
+      type: template.activities?.some((activity: any) => activity.type === "study_pgn")
+        ? "pgn_study"
+        : template.activities?.some((activity: any) => activity.type === "quiz" || activity.type === "written_answer")
+          ? "quiz"
+          : "puzzle_set",
+      title: template.title,
+      description: template.description,
+      instructions: template.instructions,
+      assignedStudents: target.assignedStudents,
+      assignedBatches: target.assignedBatches,
+      assignAllStudents: target.assignAllStudents,
+      puzzles: JSON.parse(JSON.stringify(template.puzzles || [])),
+      activities: JSON.parse(JSON.stringify(template.activities || [])),
+      dueAt: dueAt || undefined,
+      numberOfAttempts: template.numberOfAttempts || 1,
+      timeLimitMinutes: template.timeLimitMinutes || 0,
+      scoring: template.scoring || undefined,
+      sourceTemplate: template._id,
+      sourceSessionId: scheduledSessionId,
+      autoAssigned: true,
+      automationStatus: dueAt ? "assigned" : "assigned_without_due",
+      isPublished: true,
+    });
+  } catch (error: any) {
+    // Both triggers can pass the existence check together; the unique index
+    // lets exactly one create win, and the loser hands back the winner's copy.
+    if (error?.code !== 11000) throw error;
+    return Homework.findOne(existingQuery).lean();
+  }
 
   await recordAutomationEvent({
     classroom: classroomId,

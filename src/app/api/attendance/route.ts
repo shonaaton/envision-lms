@@ -15,6 +15,7 @@ import { canAccessFeature } from "@/lib/featureAccess";
 import { coachCanAccessClassroomSession, coachClassroomQuery, limitClassroomToCoachSessions } from "@/lib/classroomCoachAccess";
 import { academyDateKey } from "@/lib/academyTime";
 import { autoAssignHomeworkForSession } from "@/lib/assignmentAutomation";
+import { notifyHomeworkNotAssigned } from "@/lib/homeworkAutomationAlerts";
 import { notifyDemoMissed } from "@/lib/demoWorkflow";
 import { notifyFailure } from "@/lib/failureNotifications";
 import {
@@ -422,6 +423,7 @@ export async function POST(req: Request) {
           endedAt: target.actualEndedAt || new Date(),
         }).catch((error) => {
           console.error("Homework auto-assignment failed after attendance save", error);
+          void notifyHomeworkNotAssigned({ classroomId: String(classroom), scheduledSessionId: String(sessionId), status: "error", reason: error instanceof Error ? error.message : String(error) }).catch((alertError) => console.error("Homework automation alert email failed", alertError));
           void notifyFailure({
             title: "Homework auto-assignment failed after attendance save",
             error,

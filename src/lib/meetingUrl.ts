@@ -13,3 +13,14 @@ export function normalizeGoogleMeetUrl(value?: string | null) {
     return "";
   }
 }
+
+/**
+ * A Meet link typed into a form. `url` is always absolute or empty: a link saved
+ * without "https://" rendered as a relative href and sent people to a portal 404.
+ * `error` is set only when something was pasted that is not a Meet room.
+ */
+export function parseMeetingUrlInput(value?: FormDataEntryValue | string | null) {
+  const raw = String(value || "").trim();
+  const url = normalizeGoogleMeetUrl(raw);
+  return { url, error: raw && !url ? "Paste the Google Meet room link, like https://meet.google.com/abc-defg-hij." : "" };
+}

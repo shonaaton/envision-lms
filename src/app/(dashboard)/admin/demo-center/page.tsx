@@ -613,7 +613,7 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
                   <div className="mt-1 text-sm text-slate-600">Overall: {scaleLabel(OVERALL_STRENGTH, item.overallStrength) || titleCase(item.studentEngagement) || "-"} · Format: {titleCase(item.coachRecommendation) || "-"} · Starts at: {startingSessionLabel(item) || "-"}</div>
                   <p className="mt-2 text-sm leading-6 text-slate-700">{item.salesAdminNotes || item.parentFacingSummary || item.assessmentNotes || "No notes for sales yet."}</p>
                 </div>
-                <Link href={`/demo-feedback/${item.booking?._id || item.booking}`} className="btn-outline bg-white">Open Assessment</Link>
+                {item.booking ? <Link href={`/demo-feedback/${item.booking?._id || item.booking}`} className="btn-outline bg-white">Open Assessment</Link> : <span className="text-xs font-semibold text-slate-400">Demo booking deleted</span>}
               </div>
             </article>
           ))}

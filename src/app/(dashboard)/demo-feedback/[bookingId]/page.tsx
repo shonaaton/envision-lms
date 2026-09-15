@@ -1,3 +1,4 @@
+import { isValidObjectId } from "mongoose";
 import { redirect } from "next/navigation";
 import { ClipboardList } from "lucide-react";
 import { auth } from "@/lib/auth";
@@ -31,8 +32,10 @@ async function submitDemoFeedback(formData: FormData) {
   const role = (session?.user as any)?.role;
   const actorId = String((session?.user as any)?.id || "");
   if (!session?.user || !["instructor", "admin", "sub-admin"].includes(role)) return;
+  const bookingId = String(formData.get("bookingId") || "");
+  if (!isValidObjectId(bookingId)) return;
   await dbConnect();
-  const booking: any = await Booking.findById(String(formData.get("bookingId") || "")).populate("student instructor assignedCoach");
+  const booking: any = await Booking.findById(bookingId).populate("student instructor assignedCoach");
   if (!booking || booking.bookingType !== "demo" || !booking.classroom) return;
   const coachId = String(booking.assignedCoach?._id || booking.instructor?._id || booking.instructor || "");
   if (role === "instructor" && coachId !== actorId) return;
@@ -116,6 +119,9 @@ export default async function DemoFeedbackPage({ params }: { params: { bookingId
   const role = (session?.user as any)?.role;
   const actorId = String((session?.user as any)?.id || "");
   if (!session?.user || !["instructor", "admin", "sub-admin"].includes(role)) redirect("/dashboard");
+  // findById throws on anything that is not an ObjectId, so a link built from a
+  // missing booking ("/demo-feedback/null") took the whole page down.
+  if (!isValidObjectId(params.bookingId)) redirect(role === "instructor" ? "/classrooms" : "/admin/demo-center");
   await dbConnect();
   const booking: any = await Booking.findById(params.bookingId).populate("student instructor assignedCoach").lean();
   if (!booking || booking.bookingType !== "demo") redirect("/classrooms");

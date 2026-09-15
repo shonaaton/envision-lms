@@ -508,6 +508,14 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
       : bookings.filter((booking: any) => classifyDemo(booking) === tab.id).length + (tab.id === "converted" ? convertedWithoutBooking.length : 0),
   ]));
   const feedbackByBooking = new Map(feedback.map((item: any) => [String(item.booking?._id || item.booking), item]));
+  // A converted student with no booking left can still have an assessment - the
+  // booking goes when a demo account is deleted, the assessment does not - so
+  // those cards look it up by student instead.
+  const feedbackByStudent = new Map<string, any>();
+  feedback.forEach((item: any) => {
+    const studentId = String(item.demoUser?._id || item.demoUser || "");
+    if (studentId && !feedbackByStudent.has(studentId)) feedbackByStudent.set(studentId, item);
+  });
   // The salesperson Kraya assigned each lead. Routed demos carry it; older demos
   // and unbooked accounts are resolved from the CRM mirror for the label.
   const [leadOwners, ownerOptions] = await Promise.all([
@@ -595,6 +603,7 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
                   key={student._id.toString()}
                   student={student}
                   batches={batches}
+                  feedback={feedbackByStudent.get(String(student._id))}
                   salesOwnerName={ownerLabel(leadOwners.get(String(student._id))?.name || "", leadOwners.get(String(student._id))?.source)}
                 />
               ))
@@ -1060,7 +1069,7 @@ function SalesOwnerPicker({ studentId, manualOwnerId, options, tab }: { studentI
  * lead the CRM moved to "Current Student" before a demo class was ever booked.
  * There is no class, coach or assessment to show, only the enrolment itself.
  */
-function ConvertedStudentCard({ student, batches, salesOwnerName }: { student: any; batches: any[]; salesOwnerName: string }) {
+function ConvertedStudentCard({ student, batches, feedback, salesOwnerName }: { student: any; batches: any[]; feedback?: any; salesOwnerName: string }) {
   const setup = student.conversionSetup || {};
   const batchIds = [setup.batch, ...(student.batches || [])].filter(Boolean).map((id: any) => String(id));
   const batchNames = [...new Set(batchIds)]
@@ -1090,6 +1099,7 @@ function ConvertedStudentCard({ student, batches, salesOwnerName }: { student: a
         <Field label="Salesperson" value={salesOwnerName} />
         <Field label="Location" value={[student.city, student.country].filter(Boolean).join(", ")} />
       </dl>
+      <AssessmentSummary feedback={feedback} />
     </article>
   );
 }

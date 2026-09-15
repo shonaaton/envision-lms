@@ -113,6 +113,13 @@ const CrmLeadRecordSchema = new Schema(
     metaEventId: String,
     /** Why the last Meta send failed or was skipped. Cleared on the next success. */
     metaSyncError: String,
+
+    /** The owner attribute last written back to Kraya, and at which stage. See src/lib/crm/ownerRestore.ts. */
+    ownerRestoreKey: String,
+    ownerRestoreStage: String,
+    ownerRestoredAt: Date,
+    /** Why the last write-back failed, or that Kraya did not keep it. */
+    ownerRestoreError: String,
   },
   { timestamps: true }
 );

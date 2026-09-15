@@ -23,7 +23,19 @@ export type CrmPushInput = {
   email?: string | null;
   stage: DemoStage;
   note?: string | null;
+  /** The lead's own pipeline. Defaults to CRM_PIPELINE_NAME. */
+  pipeline?: string | null;
+  /** Custom attributes to set on the lead, e.g. `{ "Sayandeb Lead": "Yes" }`. */
+  attributes?: Record<string, string> | null;
 };
+
+/**
+ * How the Leads API takes custom attributes: nested under this field name, or
+ * "top-level" to send them as plain keys - the shape the webhook delivers them in.
+ */
+function attributesField() {
+  return String(process.env.KRAYA_LEAD_ATTRIBUTES_FIELD ?? "").trim() || "attributes";
+}
 
 export function crmClientConfig() {
   const baseUrl = String(process.env.KRAYA_API_URL || "").trim().replace(/\/+$/, "");
@@ -129,11 +141,22 @@ export async function pushLeadStageLabel(
     name: input.name || input.email || "Prospect",
     phone: input.phone,
     stage: stageLabel,
-    pipeline: crmPipelineName(),
+    pipeline: String(input.pipeline || "").trim() || crmPipelineName(),
   };
   if (input.crmLeadId) payload.lead_id = input.crmLeadId;
   if (input.email) payload.email = input.email;
   if (input.note) payload.notes = input.note;
+
+  const attributes = Object.entries(input.attributes || {}).filter(([key, value]) => key && value !== undefined && value !== null && value !== "");
+  if (attributes.length) {
+    const field = attributesField();
+    if (field.toLowerCase() === "top-level") {
+      // An attribute named like a core field must not overwrite it.
+      for (const [key, value] of attributes) if (!(key in payload)) payload[key] = value;
+    } else {
+      payload[field] = Object.fromEntries(attributes);
+    }
+  }
 
   const url = `${config.baseUrl}${config.upsertPath}`;
   const headers = {

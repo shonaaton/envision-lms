@@ -1,10 +1,11 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { Menu } from "lucide-react";
 import { usePathname } from "next/navigation";
 import LiveDataRefresher from "@/components/layout/LiveDataRefresher";
+import PopupTargetReset from "@/components/layout/PopupTargetReset";
 import Sidebar from "@/components/layout/Sidebar";
 
 type Role = "student" | "instructor" | "admin" | "sub-admin";
@@ -56,6 +57,9 @@ export default function DashboardFrame({
 
   return (
     <div className="flex min-h-dvh bg-[linear-gradient(180deg,#f8fafc_0%,#f3f0f7_52%,#f8fafc_100%)] text-slate-950 md:h-dvh md:overflow-hidden">
+      <Suspense fallback={null}>
+        <PopupTargetReset />
+      </Suspense>
       <Sidebar
         role={role}
         accountStatus={accountStatus}

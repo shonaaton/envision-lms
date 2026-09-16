@@ -112,12 +112,26 @@ probe /api/payments/webhook "Razorpay webhook"
 probe /api/webhooks/whatsapp "WhatsApp webhook"
 probe /api/demo/reminders "Demo reminders + lead-owner follow-ups"
 probe /api/fees/monthly-reminders "Monthly invoice reminders"
-probe /api/attendance/reminders "Attendance reminders"
+probe /api/attendance/reminders "Attendance reminders (in-app action, not cron)"
 
 head2 "Crontab"
+# Most scheduled work runs in-process from src/instrumentation.ts and needs no
+# crontab. These two do not: their logic lives in the route, so an HTTP caller is
+# the only thing that ever runs them.
+#
+# /api/attendance/reminders is deliberately absent - it is POST-only, needs a
+# signed-in session and takes a classroom and session id from the body. It is an
+# in-app action fired from the attendance workspace, not a sweep.
+NEEDS_CRON="demo/reminders fees/monthly-reminders"
 cron="$(crontab -l 2>/dev/null || true)"
 if [ -z "$cron" ]; then
-  note "root has no crontab - if the reminder jobs run from n8n or another user, check there"
+  bad "root has no crontab, so nothing calls:"
+  for job in $NEEDS_CRON; do echo "         /api/$job"; done
+  echo "         (the ask-coach, homework, class-session, attendance-nudge,"
+  echo "          monthly-summary, course-completion, pause-expiry and tournament"
+  echo "          jobs are unaffected - they run in-process from instrumentation.ts)"
+  echo "         Check another user's crontab, /etc/cron.d, systemd timers or an"
+  echo "         n8n Schedule trigger before adding entries, to avoid doubling up."
 else
   stale="$(printf '%s\n' "$cron" | grep -nE 'https?://' | grep -v "//$APEX/" || true)"
   if [ -n "$stale" ]; then
@@ -126,7 +140,7 @@ else
   else
     ok "every crontab URL names $APEX"
   fi
-  for job in demo/reminders fees/monthly-reminders attendance/reminders; do
+  for job in $NEEDS_CRON; do
     printf '%s\n' "$cron" | grep -q "$job" \
       && ok "cron calls /api/$job" \
       || note "no cron entry calls /api/$job - that job only runs when an admin triggers it by hand"
@@ -134,20 +148,26 @@ else
 fi
 
 head2 "Repo files"
+# Only this app's own retired hostnames count. A bare `srv*.hstgr.cloud` does not:
+# n8n still lives on one legitimately, and the outbound section above is what
+# decides whether a host is reachable.
+RETIRED="classroom\.$APEX|lms\.srv[0-9]+\.hstgr\.cloud"
 if [ -f "$ENV_FILE" ]; then
-  if grep -qE "classroom\.$APEX|srv[0-9]+\.hstgr\.cloud" "$ENV_FILE"; then
-    bad "$ENV_FILE still names a retired host:"
-    grep -nE "classroom\.$APEX|srv[0-9]+\.hstgr\.cloud" "$ENV_FILE" \
+  if grep -qE "$RETIRED" "$ENV_FILE"; then
+    bad "$ENV_FILE still names a retired LMS host:"
+    grep -nE "$RETIRED" "$ENV_FILE" \
       | sed -E 's/=.*/=<redacted>/' | sed 's/^/         /'
   else
-    ok "$ENV_FILE names no retired host"
+    ok "$ENV_FILE names no retired LMS host"
   fi
 else
   note "$ENV_FILE not found in $(pwd) - run this from the deployed checkout"
 fi
 
-if grep -q "classroom" docker-compose.yml 2>/dev/null; then
-  note "docker-compose.yml still mentions classroom. - check the router rule and the canonical regex"
+# Match the Traefik labels only. The surrounding comments explain why `classroom.`
+# was dropped and must not themselves trip the check.
+if grep -E '^\s*-\s*.?traefik\.' docker-compose.yml 2>/dev/null | grep -q "classroom"; then
+  bad "docker-compose.yml still routes classroom. - drop it from the router rule and the canonical regex"
 else
   ok "docker-compose.yml has no classroom. routing"
 fi

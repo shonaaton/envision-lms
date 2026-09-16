@@ -104,23 +104,48 @@ PASSWORD_RESET_EMAIL_WEBHOOK_URL="http://root-n8n-1:5678/webhook/lms-password-re
 
 Confirm the container name first with `docker ps --format '{{.Names}}' | grep n8n`.
 Going internal is what keeps these working through the next domain move. A public
-n8n hostname has to actually resolve, and `n8n.envisionchessacademy.com` never got
-a DNS record - every ask-coach email, automation email and password-reset email
-sent through it failed at the fetch.
+n8n hostname has to actually resolve, and the `n8n.envisionchessacademy.com` this
+file used to suggest never got a DNS record - anyone who copied it verbatim would
+have lost every ask-coach, automation and password-reset email at the fetch.
 
 Scheduled jobs, in the VPS crontab (`crontab -e`). These are plain HTTP calls into
-this app, so they carry whatever host was current when they were written:
+this app, so they carry whatever host was current when they were written - and if
+there is no crontab at all, they have never run:
 
 ```text
 https://envisionchessacademy.com/api/demo/reminders
 https://envisionchessacademy.com/api/fees/monthly-reminders
-https://envisionchessacademy.com/api/attendance/reminders
-https://envisionchessacademy.com/api/ask-coach/email-reminders
-https://envisionchessacademy.com/api/homework/reminders
 ```
 
-`/api/demo/reminders` also runs the unbooked-demo follow-ups to each salesperson,
-so a stale entry there costs the sales board its nudges with nothing logged.
+Only these two need a caller. Their logic lives in the route, so nothing else runs
+them. `/api/demo/reminders` also runs the unbooked-demo follow-ups to each
+salesperson, so a missing or stale entry costs the sales board its nudges with
+nothing logged anywhere.
+
+Install them through `scripts/cron-call.sh`, which reads `CRON_SECRET` and
+`LMS_HOST` out of `.env` at call time. That keeps the secret out of `crontab -l`
+and means the next domain change needs no crontab edit:
+
+```cron
+*/5 * * * * /opt/envision-lms/scripts/cron-call.sh /api/demo/reminders >> /var/log/lms-cron.log 2>&1
+7 * * * *   /opt/envision-lms/scripts/cron-call.sh /api/fees/monthly-reminders >> /var/log/lms-cron.log 2>&1
+```
+
+The fee sweep runs hourly rather than once a day for the same reason
+`monthly_attendance_summaries` does: a restart during its one daily window would
+otherwise skip it silently. Re-running costs nothing - each invoice carries a
+`lastReminderKey` of `<date>:<kind>`, so a given reminder goes out once per day
+however often the sweep runs, and `ensureMonthlyInvoices` checks for an existing
+invoice before creating one.
+
+Everything else scheduled - ask-coach email and WhatsApp reminders, homework
+reminders, class-session reminders, attendance nudges, monthly attendance
+summaries, course completions, pause-expiry notices and the tournament heartbeat -
+runs in-process from `src/instrumentation.ts` and needs no crontab.
+`/api/ask-coach/email-reminders` and `/api/homework/reminders` accept a cron call
+as an optional second safeguard over the same work; `/api/attendance/reminders` is
+not a cron endpoint at all, but an in-app action fired from the attendance
+workspace.
 
 ## 4. Rebuild and restart
 

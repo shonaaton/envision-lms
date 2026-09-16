@@ -124,6 +124,13 @@ const sections: NavSection[] = [
       { href: "/fees/reminders", label: "Fee Reminders", icon: Send, featureKey: "fees", permission: "view" },
       { href: "/fees/invoices", label: "Invoices", icon: Receipt, featureKey: "invoices" },
       { href: "/fees/reports", label: "Fee Reports", icon: BarChart3, featureKey: "feeReports" },
+    ],
+  },
+  {
+    id: "coach-pay",
+    title: "Coach Pay",
+    roles: ["admin", "sub-admin"],
+    items: [
       { href: "/coach-pay", label: "Coach Pay", icon: BadgeIndianRupee, featureKey: "coachPay", permission: "view_all" },
       { href: "/coach-pay/rates", label: "Coach Rate Cards", icon: Layers, featureKey: "coachPay", permission: "manage_rates" },
       { href: "/coach-pay/substitutions", label: "Substitutions", icon: Repeat, featureKey: "coachPay", permission: "view_all" },

@@ -97,7 +97,7 @@ export default function DynamicLandingShowcase({ achievements }: DynamicLandingS
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-[10px] font-black uppercase tracking-[0.14em] text-brand">Envision LMS</p>
-                <h2 className="mt-1 text-base font-black leading-tight text-brand-900">Weekly progress</h2>
+                <p className="mt-1 text-base font-black leading-tight text-brand-900">Weekly progress</p>
               </div>
               <span className="grid h-9 w-9 place-items-center rounded-lg bg-brand text-accent">
                 <UsersRound size={18} />
@@ -185,7 +185,7 @@ export default function DynamicLandingShowcase({ achievements }: DynamicLandingS
             <div className="mt-3 grid gap-3 md:grid-cols-[1.08fr_0.92fr]">
               <div className="rounded-xl border border-brand/10 bg-brand-50 p-2.5">
                 <div className="mb-3 flex items-center justify-between">
-                  <h3 className="text-xs font-black text-brand-900">Activity feed</h3>
+                  <p className="text-xs font-black text-brand-900">Activity feed</p>
                   <BarChart3 size={17} className="text-brand" />
                 </div>
                 <div className="grid gap-2">
@@ -209,7 +209,7 @@ export default function DynamicLandingShowcase({ achievements }: DynamicLandingS
 
               <div className="rounded-xl border border-brand/10 bg-brand-50 p-2.5">
                 <div className="mb-3 flex items-center justify-between">
-                  <h3 className="text-xs font-black text-brand-900">Spotlight</h3>
+                  <p className="text-xs font-black text-brand-900">Spotlight</p>
                   <PlayCircle size={17} className="text-brand" />
                 </div>
                 {spotlight ? (

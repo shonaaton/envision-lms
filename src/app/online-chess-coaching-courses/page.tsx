@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ArrowRight, CalendarDays, CheckCircle2, GraduationCap, MonitorSmartphone, Sparkles } from "lucide-react";
+import CourseResultsStrip from "@/components/marketing/CourseResultsStrip";
 import HeroStudentCluster from "@/components/marketing/HeroStudentCluster";
 import WhyEnvision from "@/components/marketing/WhyEnvision";
 import { MarketingFooter, MarketingHeader, courseNav } from "@/components/marketing/MarketingChrome";
@@ -44,12 +45,18 @@ export default function CourseHubPage() {
           description: stage.description,
           url: `${MARKETING_BASE_URL}/${stage.slug}`,
           educationalLevel: stage.educationalLevel,
+          inLanguage: "en",
+          courseMode: "online",
           provider: {
             "@type": "EducationalOrganization",
             name: "Envision Chess Academy",
             url: `${MARKETING_BASE_URL}/`,
             email: ACADEMY_DEFAULTS.email,
             telephone: ACADEMY_DEFAULTS.phone,
+            areaServed: [
+              { "@type": "Country", name: "India" },
+              { "@type": "City", name: "Kolkata" },
+            ],
           },
         },
       })),
@@ -61,6 +68,15 @@ export default function CourseHubPage() {
         { "@type": "ListItem", position: 1, name: "Home", item: `${MARKETING_BASE_URL}/` },
         { "@type": "ListItem", position: 2, name: courseHub.navLabel, item: hubUrl },
       ],
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      mainEntity: courseHub.faqs.map((faq) => ({
+        "@type": "Question",
+        name: faq.q,
+        acceptedAnswer: { "@type": "Answer", text: faq.a },
+      })),
     },
   ];
 
@@ -135,9 +151,10 @@ export default function CourseHubPage() {
         <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="mb-10 max-w-3xl">
             <p className="inline-flex rounded-full bg-brand px-3.5 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-white shadow-sm shadow-brand-900/20">The Ladder</p>
-            <h2 className="mt-4 text-2xl font-black leading-tight text-brand-900 sm:text-3xl">Five stages, from first move to elite competitive play.</h2>
+            <h2 className="mt-4 text-2xl font-black leading-tight text-brand-900 sm:text-3xl">Five online chess courses, from first move to elite competitive play.</h2>
             <p className="mt-3 text-sm leading-7 text-brand-900/70">
-              Each stage is three levels of sixteen sessions. Open any course to read its full syllabus, session by session.
+              Each course is a stage of the same ladder: three levels of sixteen live sessions, taught two classes a week. They are five separate
+              courses with five separate syllabuses, so open any one of them to read what a coach actually teaches, session by session.
             </p>
           </div>
 
@@ -173,20 +190,57 @@ export default function CourseHubPage() {
         </div>
       </section>
 
+      <CourseResultsStrip
+        heading="What students from these courses go on to win."
+        intro="Every result below belongs to a student who worked through this ladder, online or at a Kolkata centre."
+        offset={0}
+      />
+
       <WhyEnvision
         demoHref={demoHref}
-        heading="Why parents and players choose Envision Chess Academy."
-        secondary={{ href: "#courses", label: "Compare the five stages" }}
+        heading="Why parents and players choose Envision for online chess coaching."
+        intro="Not a set of loose classes. A published syllabus, a coach who places your child at the right session, and a portal where parents can see every class, score and tournament result."
+        secondary={{ href: "#courses", label: "Compare the five courses" }}
       />
+
+      {/*
+        The hub FAQ answers the questions asked about the ladder as a whole -
+        which course to start with, how long it takes, online versus Kolkata -
+        and feeds the FAQPage schema at the top of this page.
+      */}
+      <section id="faq" className="relative overflow-hidden bg-[#f5edf8] py-16 text-brand-900 lg:py-24">
+        <div className="absolute inset-0 bg-[linear-gradient(180deg,#f5edf8_0%,#ffffff_100%)]" />
+        <div className="relative mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
+          <p className="inline-flex rounded-full bg-brand px-3.5 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-white shadow-sm shadow-brand-900/20">Questions</p>
+          <h2 className="mt-4 text-2xl font-black leading-tight text-brand-900 sm:text-3xl">Questions about our online chess coaching courses.</h2>
+          <p className="mt-3 text-sm leading-7 text-brand-900/70">
+            How the five courses fit together, how long each one takes, and how a student is placed into the right one.
+          </p>
+          <div className="mt-8 grid gap-3">
+            {courseHub.faqs.map((faq) => (
+              <details key={faq.q} className="group rounded-2xl border border-brand/10 bg-white p-5 shadow-lg shadow-brand-900/5 transition duration-300 hover:border-brand/30">
+                <summary className="cursor-pointer list-none">
+                  <h3 className="flex items-center justify-between gap-4 text-sm font-black text-brand-900">
+                    {faq.q}
+                    <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-brand text-accent transition-transform duration-300 group-open:rotate-45" aria-hidden>+</span>
+                  </h3>
+                </summary>
+                <p className="mt-3 text-sm leading-6 text-brand-900/70">{faq.a}</p>
+              </details>
+            ))}
+          </div>
+        </div>
+      </section>
 
       {/* ---------------------------------------------------------- last CTA */}
       <section className="relative overflow-hidden bg-white px-4 py-16 text-brand-900 sm:px-6 lg:px-8 lg:py-24">
         <div className="relative mx-auto max-w-7xl rounded-2xl border border-brand/10 bg-white p-6 shadow-lg shadow-brand-900/5 sm:p-8 lg:flex lg:items-center lg:justify-between lg:gap-8">
           <div>
             <p className="inline-flex rounded-full bg-accent px-3.5 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-brand-900 shadow-sm shadow-accent-600/30">Not sure where to start?</p>
-            <h2 className="mt-3 text-2xl font-black sm:text-3xl">A coach will tell you which stage fits.</h2>
+            <h2 className="mt-3 text-2xl font-black sm:text-3xl">A coach will tell you which chess course fits.</h2>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-brand-900/70">
-              Book a free demo class. The coach assesses the player and recommends the exact stage and session to begin from.
+              Book a free demo class. The coach assesses the player and recommends the exact course and session to begin from, whether you want
+              online chess classes at home or offline coaching at a Kolkata centre.
             </p>
           </div>
           <div className="mt-6 flex flex-col gap-3 sm:flex-row lg:mt-0">

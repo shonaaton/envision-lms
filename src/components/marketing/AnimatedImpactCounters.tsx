@@ -17,7 +17,20 @@ function formatCounter(value: number, template: string) {
   return template.includes("+") ? `${formatted}+` : formatted;
 }
 
-export default function AnimatedImpactCounters({ counters }: { counters: Counter[] }) {
+/**
+ * `heading` and `intro` are optional: the counters render as a bare strip
+ * unless a caller wants the band to carry a real section heading rather than a
+ * row of numbers with no context.
+ */
+export default function AnimatedImpactCounters({
+  counters,
+  heading,
+  intro,
+}: {
+  counters: Counter[];
+  heading?: string;
+  intro?: string;
+}) {
   const ref = useRef<HTMLElement | null>(null);
   const [started, setStarted] = useState(false);
   const [values, setValues] = useState(() => counters.map(() => 0));
@@ -58,6 +71,12 @@ export default function AnimatedImpactCounters({ counters }: { counters: Counter
 
   return (
     <section ref={ref} className="relative z-10 bg-brand-50 px-4 pb-10 pt-8 sm:px-6 lg:px-8">
+      {heading ? (
+        <div className="mx-auto mb-6 max-w-7xl">
+          <h2 className="text-2xl font-black leading-tight text-brand-900 sm:text-3xl">{heading}</h2>
+          {intro ? <p className="mt-3 max-w-3xl text-sm leading-7 text-brand-900/70">{intro}</p> : null}
+        </div>
+      ) : null}
       <div className="mx-auto grid max-w-7xl overflow-hidden rounded-2xl border border-brand/10 bg-white shadow-lg shadow-brand-900/5 sm:grid-cols-2 lg:grid-cols-5">
         {counters.map((item, index) => (
           <article key={item.label} className="group border-b border-brand/10 p-5 transition duration-300 hover:bg-brand-50 sm:border-r lg:border-b-0">

@@ -1,4 +1,5 @@
 import { academyTimeOfDay } from "@/lib/academyTime";
+import { actualSessionMinutes, scheduledPaymentMinutes } from "@/lib/teachingStats";
 import { ensureDemoHomework } from "@/lib/demoHomework";
 import { normalizeGoogleMeetUrl } from "@/lib/meetingUrl";
 import { Booking } from "@/models/Booking";
@@ -165,6 +166,64 @@ export async function markDemoClassroomMissed(input: {
     { classroom: classroom._id, scheduledSessionId: String(target._id), status: { $ne: "ended" } },
     { $set: { status: "ended", endedAt: now, locked: true } }
   );
+  return classroom;
+}
+
+/** The states `markDemoClassroomMissed` and the live class-close flow leave a written-off demo session in. */
+const WRITTEN_OFF_DEMO_STATUSES = ["student_no_show", "absent", "missed", "abandoned"];
+
+/**
+ * Undo a demo write-off.
+ *
+ * Marking a demo missed is a one-way door everywhere else in the app, and the
+ * only way back used to be editing the database by hand. It is an easy button to
+ * hit by mistake - the outcome dropdown sits next to Close Demo on every card
+ * whose slot has passed - and hitting it on a demo that really was taught costs
+ * more than the wrong label: the session drops to zero teaching minutes and
+ * lands in the coach-pay review queue, so the coach is not paid for a class they
+ * delivered. This puts the class back the way the coach's "completed" close
+ * would have left it.
+ *
+ * A demo the coach closed properly before the mis-click never reached
+ * `markDemoClassroomMissed` (it only touches a session that is still pending),
+ * so there is nothing to restore and this returns the classroom untouched. The
+ * booking is corrected either way by the caller.
+ */
+export async function markDemoClassroomDelivered(input: { classroomId: unknown; actorId?: string }) {
+  if (!input.classroomId) return null;
+  const classroom: any = await Classroom.findById(input.classroomId);
+  if (!classroom) return null;
+  const sessions = Array.isArray(classroom.generatedSessions) ? classroom.generatedSessions : [];
+  // Newest first: a demo that was written off, rebooked and written off again
+  // has more than one, and the mis-marked one is the latest.
+  const target = [...sessions].reverse().find((item: any) => WRITTEN_OFF_DEMO_STATUSES.includes(String(item.status || "")));
+  if (!target) return classroom;
+  const now = new Date();
+  const restoredFrom = String(target.status || "");
+  target.status = "completed";
+  target.coachAttendanceStatus = "present";
+  target.attendanceMarkedAt = now;
+  target.actualStartedAt = target.actualStartedAt || target.scheduledFor || now;
+  target.actualEndedAt = target.actualEndedAt || now;
+  // The write-off zeroed both counters; a demo that was taught is paid work.
+  target.teachingMinutes = scheduledPaymentMinutes(target, classroom);
+  target.actualTeachingMinutes = actualSessionMinutes(target);
+  target.conductedBy = target.conductedBy || input.actorId;
+  target.summary = {
+    ...(target.summary || {}),
+    classOutcome: "completed",
+    topicCompleted: true,
+    creditPolicy: "demo_no_charge",
+    markedByAdmin: true,
+    restoredFrom,
+    restoredAt: now,
+    restoredBy: input.actorId,
+  };
+  const allDone = sessions.every((item: any) => !isPendingDemoSession(item));
+  classroom.status = allDone ? "completed" : classroom.status;
+  await classroom.save();
+  // The live room stays ended and locked: the class really did happen, and
+  // reopening it would hand the coach a room to re-enter for a finished demo.
   return classroom;
 }
 

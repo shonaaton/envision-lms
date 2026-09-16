@@ -1,7 +1,7 @@
 import CoursePage from "@/components/marketing/CoursePage";
 import { courseMetadata, getCoursePage } from "@/lib/coursePages";
 
-const config = getCoursePage("online-chess-coaching-courses/beginner-chess-course");
+const config = getCoursePage("beginner-chess-course");
 
 export const metadata = courseMetadata(config);
 

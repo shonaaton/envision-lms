@@ -39,19 +39,25 @@ export const courseNav: NavItem[] = [
   ["Centres", "/#centres"],
 ];
 
-/** The courses dropdown, on both the landing page and the course routes. */
+/**
+ * The courses dropdown, on both the landing page and the course routes.
+ *
+ * The trigger is the sitewide internal link into the hub, so it spells out
+ * "Online Chess Coaching Courses" - the phrase that page targets - rather than
+ * spending the anchor text on the word "Courses".
+ */
 function CoursesMenu() {
   return (
     <div className="group relative">
-      <Link href={hubHref} className="inline-flex items-center gap-1 text-sm font-semibold text-white/80 hover:text-accent">
-        Courses <ChevronDown size={14} className="transition-transform duration-200 group-hover:rotate-180" />
+      <Link href={hubHref} className="inline-flex items-center gap-1 whitespace-nowrap text-sm font-semibold text-white/80 hover:text-accent">
+        Online Chess Coaching Courses <ChevronDown size={14} className="shrink-0 transition-transform duration-200 group-hover:rotate-180" />
       </Link>
       {/* Hover-opened so it works without client JavaScript; the hub link above
           is the keyboard and touch path into the same content. */}
       <div className="invisible absolute left-0 top-full z-50 w-[min(80vw,300px)] translate-y-1 pt-3 opacity-0 transition duration-200 group-hover:visible group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:visible group-focus-within:translate-y-0 group-focus-within:opacity-100">
         <div className="overflow-hidden rounded-xl border border-brand/10 bg-white p-2 shadow-xl shadow-brand-900/15">
           <Link href={hubHref} className="block rounded-lg px-3 py-2.5 text-xs font-black uppercase tracking-[0.1em] text-brand hover:bg-brand-50">
-            All courses
+            All five courses
           </Link>
           {coursePages.map((page) => (
             <Link key={page.slug} href={`/${page.slug}`} className="block rounded-lg px-3 py-2.5 text-sm font-bold text-brand-900/80 hover:bg-brand-50 hover:text-brand">
@@ -80,19 +86,21 @@ export function MarketingHeader({ navItems, demoHref }: { navItems: NavItem[]; d
             className="h-12 w-auto max-w-[150px] object-contain sm:h-14 sm:max-w-[190px]"
           />
         </Link>
-        <nav className="hidden items-center gap-5 xl:flex" aria-label="Main navigation">
+        <nav className="hidden items-center gap-4 xl:flex" aria-label="Main navigation">
+          {/* Nowrap keeps the row single-line now that the courses link spells
+              out its full phrase. */}
           {navItems.map(([label, href]) => (
-            <Link key={href} href={href} className="text-sm font-semibold text-white/80 hover:text-accent">
+            <Link key={href} href={href} className="whitespace-nowrap text-sm font-semibold text-white/80 hover:text-accent">
               {label}
             </Link>
           ))}
           <CoursesMenu />
         </nav>
         <div className="hidden items-center gap-2 sm:flex">
-          <Link href="/login" className="btn border border-white/30 bg-white/10 text-white hover:bg-white/20">
+          <Link href="/login" className="btn whitespace-nowrap border border-white/30 bg-white/10 text-white hover:bg-white/20">
             Login
           </Link>
-          <Link href={demoHref} className="btn-accent">
+          <Link href={demoHref} className="btn-accent whitespace-nowrap">
             Book Free Demo Class
           </Link>
         </div>
@@ -175,8 +183,8 @@ export function MarketingFooter() {
           </div>
 
           {/* -------------------------------------------------------- courses */}
-          <nav aria-label="Courses">
-            <h2 className="text-xs font-black uppercase tracking-[0.14em] text-brand-900">Courses</h2>
+          <nav aria-label="Online chess coaching courses">
+            <h2 className="text-xs font-black uppercase tracking-[0.14em] text-brand-900">Online Chess Coaching Courses</h2>
             <ul className="mt-4 space-y-2.5">
               <li>
                 <Link href={hubHref} className="text-sm font-bold text-brand hover:underline">

@@ -1,14 +1,18 @@
 import Link from "next/link";
 import { ArrowRight, CalendarDays, CheckCircle2, ClipboardList, GraduationCap, MonitorSmartphone, Sparkles } from "lucide-react";
+import CourseResultsStrip from "@/components/marketing/CourseResultsStrip";
 import HeroStudentCluster from "@/components/marketing/HeroStudentCluster";
 import WhyEnvision from "@/components/marketing/WhyEnvision";
 import { MarketingFooter, MarketingHeader, courseNav } from "@/components/marketing/MarketingChrome";
 import { ACADEMY_DEFAULTS } from "@/lib/branding";
-import { courseHub, type CoursePageConfig } from "@/lib/coursePages";
+import { courseHub, coursePages, type CoursePageConfig } from "@/lib/coursePages";
 import { curriculumLevels } from "@/lib/demoCurriculum";
 import { MARKETING_BASE_URL } from "@/lib/publicLinks";
 
 const demoHref = "/register";
+
+/** Matches the social card `courseMetadata` sets, so schema and OG agree. */
+const COURSE_OG_IMAGE = "/images/achievements/682626726_122217430778279433_7786835792267057544_n.jpg";
 
 /**
  * One tier of the ladder as a standalone, indexable page.
@@ -37,7 +41,10 @@ export default function CoursePage({ config }: { config: CoursePageConfig }) {
       description: config.description,
       url: pageUrl,
       inLanguage: "en",
+      alternateName: config.h1,
+      image: `${MARKETING_BASE_URL}${COURSE_OG_IMAGE}`,
       educationalLevel: config.educationalLevel,
+      coursePrerequisites: config.prerequisite,
       teaches: levels.flatMap((level) => level.sessions.map((session) => session.topic)),
       numberOfCredits: totalSessions,
       timeRequired: "P6M",
@@ -48,6 +55,10 @@ export default function CoursePage({ config }: { config: CoursePageConfig }) {
         url: `${MARKETING_BASE_URL}/`,
         email: ACADEMY_DEFAULTS.email,
         telephone: ACADEMY_DEFAULTS.phone,
+        areaServed: [
+          { "@type": "Country", name: "India" },
+          { "@type": "City", name: "Kolkata" },
+        ],
       },
       hasCourseInstance: levels.map((level) => ({
         "@type": "CourseInstance",
@@ -93,7 +104,7 @@ export default function CoursePage({ config }: { config: CoursePageConfig }) {
             <nav aria-label="Breadcrumb" className="mb-4 flex flex-wrap items-center gap-x-1.5 text-xs font-bold text-brand-900/60">
               <Link href="/" className="hover:text-brand">Home</Link>
               <span>/</span>
-              <Link href={`/${courseHub.slug}`} className="hover:text-brand">Courses</Link>
+              <Link href={`/${courseHub.slug}`} className="hover:text-brand">{courseHub.navLabel}</Link>
               <span>/</span>
               <span className="text-brand">{config.navLabel}</span>
             </nav>
@@ -164,6 +175,7 @@ export default function CoursePage({ config }: { config: CoursePageConfig }) {
             </h2>
             <p className="mt-3 text-sm leading-7 text-brand-900/70">
               This is the actual syllabus a coach teaches from - not a summary. {totalSessions} sessions, {levels.length} levels, in the order they are taught.
+              Every session is live, online for students anywhere in India and offline at our four Kolkata centres.
             </p>
           </div>
 
@@ -206,11 +218,40 @@ export default function CoursePage({ config }: { config: CoursePageConfig }) {
           <div className="mt-8 flex flex-wrap items-center gap-3">
             <Link href={demoHref} className="btn-accent">{ctaLabel} <ArrowRight size={16} /></Link>
             <Link href={`/${courseHub.slug}`} className="btn border border-brand/25 bg-white text-brand shadow-sm shadow-brand-900/5 hover:border-brand/50 hover:bg-brand-50">
-              See all five courses
+              See all online chess coaching courses
             </Link>
           </div>
+
+          {/*
+            Each course is its own page targeting its own phrase, so the sibling
+            links are spelled out rather than hidden behind the header dropdown.
+          */}
+          <nav aria-label="Other chess courses" className="mt-10 border-t border-brand/10 pt-8">
+            <h3 className="text-sm font-black uppercase tracking-[0.14em] text-brand-900/70">The other chess courses in this ladder</h3>
+            <ul className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              {coursePages
+                .filter((page) => page.slug !== config.slug)
+                .map((page) => (
+                  <li key={page.slug}>
+                    <Link
+                      href={`/${page.slug}`}
+                      className="flex h-full flex-col rounded-xl border border-brand/10 bg-white px-4 py-3 shadow-sm shadow-brand-900/5 transition hover:-translate-y-0.5 hover:border-brand/30 hover:bg-brand-50"
+                    >
+                      <span className="text-sm font-black text-brand-900">{page.h1}</span>
+                      <span className="mt-1 text-xs leading-5 text-brand-900/60">{page.supportingHeading ?? page.keyword}</span>
+                    </Link>
+                  </li>
+                ))}
+            </ul>
+          </nav>
         </div>
       </section>
+
+      <CourseResultsStrip
+        heading="Results from students on this ladder."
+        intro={`Students who trained through the Envision syllabus, of which the ${config.eyebrow.replace(" Stage", "").toLowerCase()} course is one stage.`}
+        offset={coursePages.findIndex((page) => page.slug === config.slug) + 1}
+      />
 
       {/* -------------------------------------------------------------- FAQ */}
       <section className="relative overflow-hidden bg-[#f5edf8] py-16 text-brand-900 lg:py-24">
@@ -218,14 +259,18 @@ export default function CoursePage({ config }: { config: CoursePageConfig }) {
         <div className="relative mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
           <p className="inline-flex rounded-full bg-brand px-3.5 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-white shadow-sm shadow-brand-900/20">Questions</p>
           <h2 className="mt-4 text-2xl font-black leading-tight text-brand-900 sm:text-3xl">
-            Common questions about the {config.eyebrow.replace(" Stage", "").toLowerCase()} course.
+            Common questions about this {config.eyebrow.replace(" Stage", "").toLowerCase()} chess course.
           </h2>
           <div className="mt-8 grid gap-3">
             {config.faqs.map((faq) => (
               <details key={faq.q} className="group rounded-2xl border border-brand/10 bg-white p-5 shadow-lg shadow-brand-900/5 transition duration-300 hover:border-brand/30">
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-sm font-black text-brand-900">
-                  {faq.q}
-                  <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-brand text-accent transition-transform duration-300 group-open:rotate-45" aria-hidden>+</span>
+                {/* One heading inside <summary> keeps the markup valid while still
+                    putting the question in the document outline. */}
+                <summary className="cursor-pointer list-none">
+                  <h3 className="flex items-center justify-between gap-4 text-sm font-black text-brand-900">
+                    {faq.q}
+                    <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-brand text-accent transition-transform duration-300 group-open:rotate-45" aria-hidden>+</span>
+                  </h3>
                 </summary>
                 <p className="mt-3 text-sm leading-6 text-brand-900/70">{faq.a}</p>
               </details>
@@ -239,9 +284,10 @@ export default function CoursePage({ config }: { config: CoursePageConfig }) {
         <div className="relative mx-auto max-w-7xl rounded-2xl border border-brand/10 bg-white p-6 shadow-lg shadow-brand-900/5 sm:p-8 lg:flex lg:items-center lg:justify-between lg:gap-8">
           <div>
             <p className="inline-flex rounded-full bg-accent px-3.5 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-brand-900 shadow-sm shadow-accent-600/30">Start with a free assessment</p>
-            <h2 className="mt-3 text-2xl font-black sm:text-3xl">Begin this course this week.</h2>
+            <h2 className="mt-3 text-2xl font-black sm:text-3xl">Start this chess course this week.</h2>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-brand-900/70">
-              A coach assesses your child in the demo class and tells you exactly which session to start from. No obligation.
+              A coach assesses your child in the demo class and tells you exactly which session to start from. No obligation, online or at a
+              Kolkata centre.
             </p>
           </div>
           <div className="mt-6 flex flex-col gap-3 sm:flex-row lg:mt-0">

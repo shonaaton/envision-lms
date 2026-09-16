@@ -25,28 +25,28 @@ type ClusterStudent = {
 
 const students: ClusterStudent[] = [
   {
-    alt: "Student playing at a tournament with a chess clock",
+    alt: "Envision Chess Academy student playing a rated tournament game with a chess clock",
     src: "/images/students/tournament-play.webp",
     style: { left: "41%", top: "0%", width: "44%" },
     float: "hero-float-a",
     z: "z-20",
   },
   {
-    alt: "Student writing chess notation beside a tablet",
+    alt: "Chess student writing notation while finishing homework set in an online chess class",
     src: "/images/students/homework-notation.webp",
     style: { left: "4%", top: "24%", width: "42%" },
     float: "hero-float-b",
     z: "z-30",
   },
   {
-    alt: "Student making a move on a chessboard",
+    alt: "Young chess student making a move on the board during a live coaching session",
     src: "/images/students/live-board.webp",
     style: { left: "54%", top: "34%", width: "43%" },
     float: "hero-float-c",
     z: "z-10",
   },
   {
-    alt: "Student showing a progress dashboard on a tablet",
+    alt: "Chess student checking their progress dashboard in the Envision learning portal",
     src: "/images/students/progress-tracking.webp",
     style: { left: "23%", top: "55%", width: "40%" },
     float: "hero-float-d",
@@ -93,7 +93,7 @@ function Confetti({ item }: { item: (typeof confetti)[number] }) {
 
 export default function HeroStudentCluster() {
   return (
-    <div className="relative mx-auto aspect-square w-full max-w-[640px]" aria-label="Envision students">
+    <div className="relative mx-auto aspect-square w-full max-w-[640px]" aria-label="Envision Chess Academy students learning chess online and at our Kolkata centres">
       {confetti.map((item, index) => (
         <Confetti key={index} item={item} />
       ))}

@@ -3,7 +3,24 @@ import { curriculumLevels } from "@/lib/demoCurriculum";
 import { MARKETING_BASE_URL } from "@/lib/publicLinks";
 
 /**
+ * One social card for the whole course tree. Each page supplies its own alt
+ * text through `socialImage`, so the card is described by what that page is
+ * about rather than by the filename.
+ */
+const OG_IMAGE_PATH = "/images/achievements/682626726_122217430778279433_7786835792267057544_n.jpg";
+
+function socialImage(alt: string) {
+  return [{ url: OG_IMAGE_PATH, width: 1200, height: 900, alt }];
+}
+
+/**
  * Per-tier landing pages for the course ladder.
+ *
+ * Each course is its own top-level page - `/beginner-chess-course`, not a child
+ * of the hub - because each one targets its own phrase and stands on its own in
+ * search. The hub groups them for readers, in the header dropdown, the footer
+ * and the breadcrumb, but it is not a URL segment. `COURSE_SLUG_REDIRECTS` in
+ * `next.config.mjs` 301s the old nested paths here.
  *
  * Only the words live here. The sessions themselves are read from
  * `demoCurriculum` at render time, so a page can never advertise a syllabus the
@@ -50,7 +67,7 @@ export type CoursePageConfig = {
 export const coursePages: CoursePageConfig[] = [
   {
     tier: "beginner",
-    slug: "online-chess-coaching-courses/beginner-chess-course",
+    slug: "beginner-chess-course",
     navLabel: "Beginner Course",
     keyword: "online chess classes for beginners",
     h1: "Beginner Chess Course",
@@ -58,7 +75,7 @@ export const coursePages: CoursePageConfig[] = [
     eyebrow: "Beginner Stage",
     title: "Online Chess Classes for Beginners | Envision",
     description:
-      "A structured online chess course for beginners: 48 live sessions across three levels, from how the pieces move to checkmate patterns and opening principles. Two classes a week with a coach. Book a free demo class.",
+      "Online chess classes for beginners: 48 live sessions across three levels, from how the pieces move to checkmate patterns and opening principles. Free demo class.",
     keywords: [
       "online chess classes for beginners",
       "beginner chess course online",
@@ -106,7 +123,7 @@ export const coursePages: CoursePageConfig[] = [
   },
   {
     tier: "intermediate",
-    slug: "online-chess-coaching-courses/intermediate-chess-course",
+    slug: "intermediate-chess-course",
     navLabel: "Intermediate Course",
     keyword: "intermediate chess course online",
     h1: "Intermediate Chess Course",
@@ -114,7 +131,7 @@ export const coursePages: CoursePageConfig[] = [
     eyebrow: "Intermediate Stage",
     title: "Intermediate Chess Course Online | Envision",
     description:
-      "An intermediate chess course online built entirely on tactics: 48 live sessions covering forks, pins, skewers, back rank, discovered attacks, deflection, decoy, windmill and mate in two and three. Book a free demo class.",
+      "Intermediate chess course online, built entirely on tactics: 48 live sessions on forks, pins, skewers, back rank, discovered attacks and mate in two and three.",
     keywords: [
       "intermediate chess course online",
       "online chess classes for intermediate players",
@@ -161,7 +178,7 @@ export const coursePages: CoursePageConfig[] = [
   },
   {
     tier: "semi_pro",
-    slug: "online-chess-coaching-courses/semi-pro-chess-course",
+    slug: "semi-pro-chess-course",
     navLabel: "Semi-Pro Course",
     keyword: "advanced chess course online",
     h1: "Semi-Pro Chess Course",
@@ -169,7 +186,7 @@ export const coursePages: CoursePageConfig[] = [
     eyebrow: "Semi Pro Stage",
     title: "Advanced Chess Course Online | Semi-Pro - Envision",
     description:
-      "An advanced chess course online for competitive players: 48 live sessions covering king and pawn endgames, fifteen named mating patterns, a full opening repertoire as White and Black, and Lucena, Philidor and Vancura rook endings. Book a free demo class.",
+      "Advanced chess course online for competitive players: 48 live sessions on king and pawn endgames, fifteen named mating patterns and a full opening repertoire.",
     keywords: [
       "advanced chess course online",
       "advanced chess coaching online",
@@ -220,7 +237,7 @@ export const coursePages: CoursePageConfig[] = [
   },
   {
     tier: "pro",
-    slug: "online-chess-coaching-courses/pro-chess-course",
+    slug: "pro-chess-course",
     navLabel: "Pro Course",
     keyword: "chess coaching for rated players",
     h1: "Pro Chess Course",
@@ -297,7 +314,7 @@ export const coursePages: CoursePageConfig[] = [
   },
   {
     tier: "masters",
-    slug: "online-chess-coaching-courses/masters-chess-course",
+    slug: "masters-chess-course",
     navLabel: "Masters Course",
     keyword: "elite chess coaching online",
     h1: "Masters Chess Course",
@@ -375,19 +392,20 @@ export const coursePages: CoursePageConfig[] = [
 ];
 
 /**
- * The parent page every course sits under. It carries the broad commercial
- * phrases so the child pages do not compete with it - each of those owns one
- * specific intent instead.
+ * The hub that lists every course. It is a sibling of the course pages rather
+ * than their parent in the URL, and it carries the broad commercial phrases so
+ * the course pages do not compete with it - each of those owns one specific
+ * intent instead.
  */
 export const courseHub = {
   slug: "online-chess-coaching-courses",
   navLabel: "Online Chess Coaching Courses",
   keyword: "online chess coaching courses",
-  h1: "Online Chess Coaching Courses",
-  supportingHeading: "Structured online chess coaching in India for every level.",
+  h1: "Online Chess Coaching Courses in India",
+  supportingHeading: "Structured online chess coaching for every level, from first move to Masters.",
   title: "Online Chess Coaching Courses in India | Envision Chess Academy",
   description:
-    "Explore online chess coaching courses at Envision Chess Academy, with structured training from Beginner to Masters level for students across India and worldwide.",
+    "Online chess coaching courses in India: five stages, fifteen levels and 240 live sessions from beginner to Masters, with a free coach-led placement class.",
   keywords: [
     "online chess coaching courses",
     "online chess coaching in India",
@@ -402,7 +420,37 @@ export const courseHub = {
     "structured online chess coaching",
   ],
   intro:
-    "One ladder, five stages, 240 taught sessions. Every student is placed by a coach at the session that matches their strength, then works through a syllabus that runs from the first move to elite competitive play.",
+    "One ladder, five stages, 240 taught sessions. Every student is placed by a coach at the session that matches their strength, then works through a syllabus that runs from the first move to elite competitive play. Classes are live and online for students anywhere in India, and the same courses run offline at our four Kolkata centres.",
+  /**
+   * Hub-level FAQs: the questions asked about the ladder as a whole rather
+   * than about one stage. They also feed the FAQPage schema on the hub page.
+   */
+  faqs: [
+    {
+      q: "What are the online chess coaching courses at Envision Chess Academy?",
+      a: "Five courses form one ladder: Beginner, Intermediate, Semi-Pro, Pro and Masters. Each is three levels of sixteen live sessions, 240 taught sessions end to end, running from how the pieces move through to pawn structure and theoretical endgames.",
+    },
+    {
+      q: "Which online chess course should my child start with?",
+      a: "You do not have to choose. Book a free demo class, and the coach assesses the student during that session and recommends the exact course and session number to begin from, so nobody repeats material they already know.",
+    },
+    {
+      q: "Are these online chess classes available across India?",
+      a: "Yes. Every course runs live online for students anywhere in India and in 15+ other countries, and the same courses run offline at our four Kolkata centres in Bowbazar, Haridevpur, Jodhpur Park and New Alipore.",
+    },
+    {
+      q: "How long does each online chess course take?",
+      a: "Each course is 48 sessions across three levels of sixteen. At two classes a week a level takes about two months, so a full stage is roughly six months and the complete ladder runs across several years of steady study.",
+    },
+    {
+      q: "Are the chess classes live or pre-recorded?",
+      a: "Every session is live with a coach in the academy portal. Homework, coach feedback, weekly tournaments and progress reports sit in the same portal, and parents can see all of it.",
+    },
+    {
+      q: "Do you offer one-to-one online chess coaching as well as group courses?",
+      a: "Yes. Students can be enrolled in a group batch or in one-to-one coaching on the same syllabus. The demo assessment covers which format suits the player.",
+    },
+  ],
 };
 
 export function courseHubMetadata(): Metadata {
@@ -413,8 +461,20 @@ export function courseHubMetadata(): Metadata {
     description: courseHub.description,
     keywords: courseHub.keywords,
     alternates: { canonical: url },
-    openGraph: { title: courseHub.title, description: courseHub.description, url, siteName: "Envision Chess Academy", type: "website" },
-    twitter: { card: "summary_large_image", title: "Online Chess Coaching Courses", description: courseHub.description },
+    openGraph: {
+      title: courseHub.title,
+      description: courseHub.description,
+      url,
+      siteName: "Envision Chess Academy",
+      type: "website",
+      images: socialImage("Envision Chess Academy student with a tournament trophy - online chess coaching courses in India"),
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: courseHub.title,
+      description: courseHub.description,
+      images: [OG_IMAGE_PATH],
+    },
   };
 }
 
@@ -442,11 +502,13 @@ export function courseMetadata(config: CoursePageConfig): Metadata {
       url,
       siteName: "Envision Chess Academy",
       type: "website",
+      images: socialImage(`${config.h1} at Envision Chess Academy - ${config.keyword}`),
     },
     twitter: {
       card: "summary_large_image",
-      title: config.keyword.replace(/\b\w/g, (c) => c.toUpperCase()),
+      title: config.title,
       description: config.description,
+      images: [OG_IMAGE_PATH],
     },
   };
 }

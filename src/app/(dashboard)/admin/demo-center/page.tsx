@@ -11,7 +11,7 @@ import { notifyDemoConverted, notifyDemoMissed } from "@/lib/demoWorkflow";
 import { pendingDuplicateReviews, reviewDuplicateFlag } from "@/lib/duplicateAccounts";
 import { duplicateReasonSummary } from "@/lib/identityMatch";
 import { recordActivity } from "@/lib/activity";
-import { cancelDemoClassrooms, isConfirmedDemo, markDemoClassroomMissed, upsertDemoClassroom } from "@/lib/demoClassroom";
+import { cancelDemoClassrooms, isConfirmedDemo, markDemoClassroomDelivered, markDemoClassroomMissed, upsertDemoClassroom } from "@/lib/demoClassroom";
 import { COURSE_TIER_LABELS } from "@/lib/courseTiers";
 import { bookDemoForAccount, coachClash, confirmDemoBooking } from "@/lib/demoScheduling";
 import { normalizeGoogleMeetUrl, parseMeetingUrlInput } from "@/lib/meetingUrl";
@@ -116,6 +116,19 @@ function titleCase(value?: string) {
   const key = String(value || "").trim();
   if (!key) return "";
   return key.replace(/_/g, " ").replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+/** A demo that has been taught: the assessment is either owed or already filed. */
+function demoWasDelivered(booking: any) {
+  return (
+    ["ASSESSMENT_PENDING", "COMPLETED", "CONVERTED"].includes(String(booking?.demoStatus || "")) ||
+    booking?.feedbackStatus === "submitted"
+  );
+}
+
+/** A demo currently written off as never delivered - the only kind `markDemoDelivered` can undo. */
+function demoWasWrittenOff(booking: any) {
+  return ["STUDENT_NO_SHOW", "ABSENT"].includes(String(booking?.demoStatus || ""));
 }
 
 function classifyDemo(booking: any): DemoTab {
@@ -289,6 +302,13 @@ async function markDemoMissed(formData: FormData) {
   const booking: any = await Booking.findById(bookingId).populate("student instructor assignedCoach");
   if (!booking) return demoCenterOutcome(tab, "That demo request no longer exists.");
   if (!isConfirmedDemo(booking)) return demoCenterOutcome(tab, "Only a confirmed demo can be marked as missed.");
+  // A demo that was taught cannot retroactively have been missed. Without this a
+  // mis-click on a completed demo silently zeroed the coach's teaching minutes
+  // and sent the parent a "you missed your demo" message. A lead that went cold
+  // after the demo belongs in Closed, not here.
+  if (demoWasDelivered(booking)) {
+    return demoCenterOutcome(tab, "This demo was already delivered - use Close Demo if the lead is no longer active.");
+  }
   await Booking.findByIdAndUpdate(booking._id, {
     status: "pending",
     approvalStatus: "pending_admin",
@@ -313,6 +333,100 @@ async function markDemoMissed(formData: FormData) {
   revalidatePath("/admin/demo-center");
   revalidatePath("/classrooms");
   demoCenterOutcome("missed", "", outcome === "absent" ? "Demo marked as missed." : "Demo marked as a no show.");
+}
+
+/**
+ * Undo a no-show / missed marking on a demo that was actually delivered.
+ *
+ * Every other route out of No Shows/Missed is forward - rebook it, or close the
+ * lead - so a demo marked missed by mistake had no way back at all: the card
+ * stayed in the wrong tab, the lead sat in the CRM as DEMO_NO_SHOW, conversion
+ * reporting counted it against us, and the coach's session was left at zero
+ * teaching minutes in the pay review queue. This walks all four back together.
+ *
+ * Where the demo lands depends on the assessment, not on the admin: a demo with
+ * a submitted assessment is Completed, and one without goes back to Assessment
+ * Pending so the coach is still asked for the write-up.
+ */
+async function markDemoDelivered(formData: FormData) {
+  "use server";
+  const session = await requireDemoManager();
+  await dbConnect();
+  const actorId = String((session.user as any).id || "");
+  const bookingId = String(formData.get("booking") || "");
+  const tab = String(formData.get("tab") || "missed");
+  const booking: any = await Booking.findById(bookingId).populate("student");
+  if (!booking) return demoCenterOutcome(tab, "That demo request no longer exists.");
+  if (!demoWasWrittenOff(booking)) {
+    return demoCenterOutcome(tab, "Only a demo marked as a no show or missed can be moved back to Completed.");
+  }
+  // The assessment is matched on the booking alone: it is keyed by booking and
+  // classroom, and a demo written off before its classroom was linked would
+  // otherwise look unassessed and lose the coach's write-up behind an
+  // "Assessment Pending" button that reopens an already-filed form.
+  const feedback: any = await DemoFeedback.findOne({ booking: booking._id }).select("status").lean();
+  const assessed = String(feedback?.status || "") === "submitted";
+  await Booking.findByIdAndUpdate(booking._id, {
+    // The write-off sent the booking back to admin as unconfirmed; a delivered
+    // demo is a confirmed, approved booking that has already happened.
+    status: "confirmed",
+    approvalStatus: "approved",
+    demoStatus: assessed ? "COMPLETED" : "ASSESSMENT_PENDING",
+    feedbackStatus: assessed ? "submitted" : "pending",
+  });
+  const classroom = await markDemoClassroomDelivered({ classroomId: booking.classroom, actorId }).catch((error) => {
+    console.error("Demo classroom restore failed", error);
+    return null;
+  });
+  // A demo written off before the coach ever closed the room has no assessment
+  // record at all, and the Assessments tab is a list of those records - so
+  // without a draft the restored demo would land in a tab that cannot show it.
+  // This is the same draft the live class-close flow opens.
+  if (!feedback && booking.classroom) {
+    const coachId = booking.assignedCoach || booking.instructor;
+    if (coachId) {
+      await DemoFeedback.findOneAndUpdate(
+        { booking: booking._id, classroom: booking.classroom },
+        {
+          $setOnInsert: {
+            booking: booking._id,
+            demoUser: booking.student?._id || booking.student,
+            coach: coachId,
+            classroom: booking.classroom,
+            attendanceStatus: "present",
+            status: "draft",
+            studentName: booking.student?.name || "",
+            demoStartAt: booking.startAt || undefined,
+            extensibleData: { createdFrom: "admin_missed_marking_undone" },
+          },
+        },
+        { upsert: true }
+      ).catch((error: unknown) => console.error("Demo assessment draft creation failed", error));
+    }
+  }
+  await recordActivity({
+    actor: actorId,
+    targetUser: String(booking.student?._id || booking.student || ""),
+    type: "demo.booking.delivered",
+    label: "Moved demo back to Completed",
+    entityType: "Booking",
+    entityId: booking._id.toString(),
+    metadata: {
+      previousStatus: String(booking.demoStatus || ""),
+      assessed,
+      classroom: classroom ? String(classroom._id) : "",
+      event: "DEMO_MARKED_DELIVERED",
+    },
+  });
+  revalidatePath("/admin/demo-center");
+  revalidatePath("/classrooms");
+  demoCenterOutcome(
+    assessed ? "completed" : "assessments",
+    "",
+    assessed
+      ? "Demo moved back to Completed."
+      : "Demo moved back to Completed - the coach's assessment is still pending."
+  );
 }
 
 async function closeDemo(formData: FormData) {
@@ -709,6 +823,14 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
         </section>
       ) : (
         <section className="grid gap-3">
+          {errorNotice || successNotice ? (
+            <div
+              role="status"
+              className={`rounded-lg border px-4 py-3 text-sm font-semibold ${errorNotice ? "border-rose-200 bg-rose-50 text-rose-800" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`}
+            >
+              {errorNotice || successNotice}
+            </div>
+          ) : null}
           {feedback.map((item: any) => (
             <article key={item._id.toString()} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -868,7 +990,19 @@ function DemoCard({
   const awaitingNewTime = Boolean(booking.needsNewTime);
   // A confirmed demo whose slot has already gone by, still sitting in
   // Booked/Upcoming because nobody closed it in the live classroom.
-  const demoWentUnmarked = isConfirmedDemo(booking) && !awaitingNewTime && new Date(booking.endAt || booking.startAt || 0).getTime() < Date.now();
+  // `isConfirmedDemo` stays true for the whole life of a demo, including after
+  // it has been taught, so a completed demo kept offering "Mark No Show /
+  // Missed" right next to Close Demo - one slip and a delivered class was
+  // written off. The prompt is only for a demo whose outcome is genuinely still
+  // unrecorded.
+  const demoWentUnmarked =
+    isConfirmedDemo(booking) &&
+    !awaitingNewTime &&
+    !demoWasDelivered(booking) &&
+    !demoWasWrittenOff(booking) &&
+    new Date(booking.endAt || booking.startAt || 0).getTime() < Date.now();
+  // The way back out of No Shows/Missed when the marking was the mistake.
+  const demoWrittenOff = demoWasWrittenOff(booking);
   const cardId = booking._id.toString();
   const assignModalId = `assign-demo-${cardId}`;
   // Every demo card carries the same four scheduling fields, so a browser that
@@ -1013,6 +1147,15 @@ function DemoCard({
               <option value="absent">Class did not happen</option>
             </select>
             <button className="btn-outline border-amber-200 bg-white text-amber-700"><UserX size={15} /> Mark No Show / Missed</button>
+          </form>
+        ) : null}
+        {demoWrittenOff ? (
+          <form action={markDemoDelivered}>
+            <input type="hidden" name="booking" value={booking._id.toString()} />
+            <input type="hidden" name="tab" value={activeTab} />
+            <button className="btn-outline border-emerald-200 bg-white text-emerald-700" title="The demo was actually taught - undo the no show / missed marking">
+              <RotateCcw size={15} /> Demo Was Delivered
+            </button>
           </form>
         ) : null}
         <form action={closeDemo} className="flex flex-wrap gap-2">

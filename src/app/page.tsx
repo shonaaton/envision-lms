@@ -26,12 +26,13 @@ import DynamicLandingShowcase from "@/components/marketing/DynamicLandingShowcas
 import HeroStudentCluster from "@/components/marketing/HeroStudentCluster";
 import WhyEnvision from "@/components/marketing/WhyEnvision";
 import { MarketingFooter, MarketingHeader, landingNav } from "@/components/marketing/MarketingChrome";
-import { ACADEMY_DEFAULTS } from "@/lib/branding";
+import { ACADEMY_DEFAULTS, ACADEMY_LOGO_URL } from "@/lib/branding";
 import { courseTierLabel } from "@/lib/courseTiers";
-import { coursePages } from "@/lib/coursePages";
+import { courseHub, coursePages } from "@/lib/coursePages";
 import { CURRICULUM_TIERS, curriculumLevels } from "@/lib/demoCurriculum";
 import { MARKETING_BASE_URL, OFFLINE_ACADEMY_URL } from "@/lib/publicLinks";
 import { academyBranches, anishStory, impactCounters, publicAchievementList, studentSlug } from "@/lib/achievementData";
+import { achievementAlt, achievementCaption } from "@/lib/achievementCopy";
 import { getLandingAchievements } from "@/lib/achievements";
 import { portalTutorials, youtubeEmbedUrl } from "@/lib/portalTutorials";
 
@@ -41,20 +42,31 @@ export const metadata: Metadata = {
   metadataBase: new URL(MARKETING_BASE_URL),
   title: "Best Chess Coaching in India | Envision Chess Academy",
   description:
-    "Premium online and offline chess coaching with verified student achievements, structured mentorship, tournaments, practice tools, progress tracking, and payments in one student portal.",
+    "Best chess coaching in India for kids and beginners: live online chess classes across India, four Kolkata centres, a 240-session curriculum and weekly tournaments.",
+  keywords: [
+    "best chess coaching in India",
+    "chess coaching in India",
+    "online chess classes in India",
+    "best chess academy in India",
+    "chess classes for kids in India",
+    "chess coaching in Kolkata",
+    "online chess coaching for beginners",
+    "chess tournament training India",
+  ],
   alternates: { canonical: `${MARKETING_BASE_URL}/` },
   openGraph: {
-    title: "Envision Chess Academy",
-    description: "Structured chess coaching, verified student achievements, and an all-in-one learning portal.",
+    title: "Best Chess Coaching in India | Envision Chess Academy",
+    description:
+      "Structured chess coaching in India - live online across the country and offline at four Kolkata centres - with verified student achievements, weekly tournaments and an all-in-one learning portal.",
     url: `${MARKETING_BASE_URL}/`,
     siteName: "Envision Chess Academy",
     type: "website",
-    images: [{ url: "/images/achievements/682626726_122217430778279433_7786835792267057544_n.jpg", width: 1200, height: 900, alt: "Envision Chess Academy student achievement" }],
+    images: [{ url: "/images/achievements/682626726_122217430778279433_7786835792267057544_n.jpg", width: 1200, height: 900, alt: "Envision Chess Academy student with a tournament trophy, best chess coaching in India" }],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Envision Chess Academy",
-    description: "Practise, compete, and improve in one chess-learning platform.",
+    title: "Best Chess Coaching in India | Envision Chess Academy",
+    description: "Learn, practise and compete with structured chess coaching in India. Free demo class for every new student.",
     images: ["/images/achievements/682626726_122217430778279433_7786835792267057544_n.jpg"],
   },
 };
@@ -138,12 +150,32 @@ const groupClassTracks = CURRICULUM_TIERS.filter((tier) => groupClassCopy[tier])
 const totalCurriculumSessions = groupClassTracks.reduce((total, track) => total + track.totalSessions, 0);
 const totalCurriculumLevels = groupClassTracks.reduce((total, track) => total + track.levels.length, 0);
 
+/**
+ * The five steps carry a line of detail each now. They are the page's answer to
+ * "how do I actually start chess coaching", so a bare five-word label was
+ * leaving the most asked question on the page half answered.
+ */
 const learningSteps = [
-  "Book a free assessment",
-  "Get placed in the correct level",
-  "Attend structured live classes",
-  "Practise through assignments and tournaments",
-  "Track progress through feedback and reports",
+  {
+    title: "Book a free chess assessment",
+    detail: "A coach meets your child online or at a Kolkata centre, plays through a few positions, and reads where they actually are.",
+  },
+  {
+    title: "Get placed at the right level",
+    detail: "The assessment points to the exact session to begin from on the fifteen-level ladder, instead of a generic beginner slot.",
+  },
+  {
+    title: "Attend structured live classes",
+    detail: "Two live classes a week, sixteen sessions to a level, about two months from one level to the next.",
+  },
+  {
+    title: "Practise with homework and tournaments",
+    detail: "Assignments, tactics trainers and weekly academy tournaments keep the work going between classes.",
+  },
+  {
+    title: "Track progress in the parent portal",
+    detail: "Attendance, assignment scores, tournament results, coach feedback and invoices stay visible to parents throughout.",
+  },
 ];
 
 const supportTools = [
@@ -151,6 +183,42 @@ const supportTools = [
   { title: "Invoices and Fee Payments", detail: "Parents can review credits, download invoices, and complete secure online payments.", icon: Receipt },
   { title: "Class Bookings", detail: "Students can request classes, track approval, and see upcoming sessions in the portal.", icon: CalendarDays },
   { title: "Progress Checks", detail: "Attendance, assignments, tournament results, and leaderboard performance stay visible.", icon: Trophy },
+];
+
+/**
+ * Homepage FAQs. These double as the FAQPage schema below, so every answer has
+ * to be true of the academy as it runs today - the numbers here are the same
+ * ones the curriculum, the branch list and the impact counters put on the page.
+ */
+const homeFaqs = [
+  {
+    q: "What makes Envision one of the best chess coaching academies in India?",
+    a: "Envision Chess Academy has trained over 2,000 students across India and 15+ countries, and produced 100+ rated players and 1,000+ tournament winners. Coaching follows a fixed 240-session curriculum rather than ad-hoc lessons, and every class, homework task, tournament and progress report sits in one portal that parents can see.",
+  },
+  {
+    q: "Do you offer online chess classes across India, or only in Kolkata?",
+    a: "Both. Live online chess classes run for students anywhere in India and abroad, and offline coaching runs at four Kolkata centres: Bowbazar, Haridevpur, Jodhpur Park and New Alipore. The curriculum, homework and tournaments are identical either way.",
+  },
+  {
+    q: "Can a complete beginner join the chess coaching programme?",
+    a: "Yes. The Beginner stage starts from board vision, piece movement, notation and basic checkmates, so a child who has never played a full game can start there. A free assessment with a coach decides the exact session to begin from.",
+  },
+  {
+    q: "How are the chess classes structured each week?",
+    a: "Students attend two live classes a week. Every level runs sixteen sessions across roughly two months, and the full ladder is five stages, fifteen levels and 240 taught sessions from the first move through to Masters.",
+  },
+  {
+    q: "Do students play in chess tournaments?",
+    a: "Weekly academy tournaments run inside the portal with real pairings, live games, results and academy leaderboards. Students are also prepared for external rated tournaments, which is where the academy's state, national and international results come from.",
+  },
+  {
+    q: "How can parents track their child's chess progress?",
+    a: "Parents use the same portal and can see attendance, homework status and scores, coach feedback, tournament results, progress reports, certificates, class credits and invoices.",
+  },
+  {
+    q: "How do I book a free demo chess class?",
+    a: "Register on the site and pick a slot. The demo is a real assessment class with a coach, it carries no obligation, and it ends with a level recommendation for your child. Online and offline options are both available.",
+  },
 ];
 
 function randomizeAchievementOrder<T>(items: T[]) {
@@ -161,23 +229,47 @@ export default async function Home() {
   const achievements = publicAchievementList(await getLandingAchievements());
   const featuredAchievements = randomizeAchievementOrder(achievements);
 
-  const schema = {
-    "@context": "https://schema.org",
-    "@type": "EducationalOrganization",
-    name: "Envision Chess Academy",
-    url: `${MARKETING_BASE_URL}/`,
-    description:
-      "Chess academy offering structured online and offline coaching, student learning tools, tournament preparation, and progress tracking.",
-    address: academyBranches.map((centre) => ({
-      "@type": "PostalAddress",
-      streetAddress: centre.address,
-      addressLocality: "Kolkata",
-      addressRegion: "West Bengal",
-      addressCountry: "IN",
-    })),
-    email: ACADEMY_DEFAULTS.email,
-    telephone: ACADEMY_DEFAULTS.phone,
-  };
+  const schema = [
+    {
+      "@context": "https://schema.org",
+      "@type": "EducationalOrganization",
+      name: "Envision Chess Academy",
+      legalName: ACADEMY_DEFAULTS.legalName,
+      url: `${MARKETING_BASE_URL}/`,
+      logo: ACADEMY_LOGO_URL,
+      description:
+        "Chess coaching academy in India offering structured online chess classes nationwide and offline coaching at four Kolkata centres, with student learning tools, tournament preparation and progress tracking.",
+      areaServed: [
+        { "@type": "Country", name: "India" },
+        { "@type": "City", name: "Kolkata" },
+      ],
+      knowsAbout: [
+        "Chess coaching",
+        "Online chess classes",
+        "Chess for beginners",
+        "Chess tactics and endgame training",
+        "Rated chess tournament preparation",
+      ],
+      address: academyBranches.map((centre) => ({
+        "@type": "PostalAddress",
+        streetAddress: centre.address,
+        addressLocality: "Kolkata",
+        addressRegion: "West Bengal",
+        addressCountry: "IN",
+      })),
+      email: ACADEMY_DEFAULTS.email,
+      telephone: ACADEMY_DEFAULTS.phone,
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      mainEntity: homeFaqs.map((faq) => ({
+        "@type": "Question",
+        name: faq.q,
+        acceptedAnswer: { "@type": "Answer", text: faq.a },
+      })),
+    },
+  ];
 
   return (
     <main id="home" className="landing-compact min-h-screen bg-[#ffffff] text-brand-900">
@@ -192,13 +284,21 @@ export default async function Home() {
         <div className="relative mx-auto grid min-h-[calc(100dvh-82px)] max-w-7xl items-center gap-8 px-4 py-8 sm:px-6 lg:grid-cols-[0.86fr_1.14fr] lg:px-8">
           <div className="motion-rise max-w-xl">
             <p className="inline-flex items-center gap-2 rounded-full bg-brand px-3.5 py-1.5 text-[10px] font-extrabold uppercase tracking-[0.12em] text-white shadow-sm shadow-brand-900/20">
-              <ShieldCheck size={15} /> Premium Chess Mentorship
+              <ShieldCheck size={15} /> Online &amp; Offline Chess Classes Across India
             </p>
+            {/*
+              The page's one H1 leads with the phrase parents actually search
+              for, and keeps the old promise as the second line so the hero
+              still reads like a sentence rather than a keyword.
+            */}
             <h1 className="mt-4 max-w-xl text-[1.85rem] font-bold leading-[1.08] text-brand-900 sm:text-[2.25rem] lg:text-[2.7rem]">
-              Chess coaching that feels organised from day one.
+              Best Chess Coaching in India
+              <span className="mt-2 block text-[1.1rem] font-bold leading-snug text-brand sm:text-[1.3rem] lg:text-[1.55rem]">
+                Coaching that feels organised from day one.
+              </span>
             </h1>
             <p className="mt-4 max-w-lg text-sm leading-6 text-brand-900/70 sm:text-[0.95rem]">
-              Live classes, homework, tournaments, coach feedback, payments, and progress tracking in one clear academy portal.
+              Envision Chess Academy runs live online chess classes for students anywhere in India, and offline coaching at four Kolkata centres. Classes, homework, tournaments, coach feedback, payments and progress tracking all sit in one academy portal.
             </p>
             <div className="mt-6 flex flex-col gap-3 sm:flex-row">
               <Link href={demoHref} className="btn-accent min-h-11 px-5 shadow-lg shadow-accent/10">
@@ -221,9 +321,18 @@ export default async function Home() {
         </div>
       </section>
 
-      <AnimatedImpactCounters counters={impactCounters} />
+      <AnimatedImpactCounters
+        counters={impactCounters}
+        heading="Chess coaching results from across India and beyond."
+        intro="Students trained online from every part of India and in person at our Kolkata centres, with the rating gains and tournament results to show for it."
+      />
 
-      <WhyEnvision demoHref={demoHref} secondary={{ href: "#programs", label: "See the full curriculum" }} />
+      <WhyEnvision
+        demoHref={demoHref}
+        secondary={{ href: "#programs", label: "See the full curriculum" }}
+        heading="Why parents call Envision the best chess coaching in India."
+        intro="Not a set of loose classes. A structured chess curriculum, a coach who knows exactly where your child is, and a portal that shows parents the progress - whether you join online from anywhere in India or walk into one of our Kolkata centres."
+      />
 
       <section id="programs" className="relative overflow-hidden bg-[#ffffff] py-16 text-brand-900 lg:py-24">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_12%_14%,rgba(253,231,90,0.55),transparent_32%),radial-gradient(circle_at_86%_22%,rgba(90,19,114,0.10),transparent_34%),linear-gradient(180deg,#ffffff_0%,#f5edf8_100%)]" />
@@ -231,10 +340,10 @@ export default async function Home() {
         <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="mb-8 grid gap-6 lg:grid-cols-[0.88fr_1.12fr] lg:items-end">
             <div>
-              <p className="inline-flex rounded-full bg-brand px-3.5 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-white shadow-sm shadow-brand-900/20">Group Chess Classes</p>
-              <h2 className="mt-4 text-2xl font-black text-brand-900 sm:text-3xl">A complete path from beginner to champion.</h2>
+              <p className="inline-flex rounded-full bg-brand px-3.5 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-white shadow-sm shadow-brand-900/20">Group Chess Classes in India</p>
+              <h2 className="mt-4 text-2xl font-black text-brand-900 sm:text-3xl">A complete chess course, from beginner to champion.</h2>
               <p className="mt-3 max-w-2xl text-sm leading-7 text-brand-900/70">
-                Students learn in a structured batch environment with regular practice, guided feedback, and continuous competitive exposure.
+                Students learn in a structured batch with regular practice, guided coach feedback and continuous competitive exposure. The ladder below is the same for online chess classes anywhere in India and for offline batches in Kolkata, so a child never has to restart because they moved city or switched to online.
               </p>
             </div>
             <div className="grid gap-2 sm:grid-cols-2">
@@ -289,6 +398,15 @@ export default async function Home() {
             ))}
           </div>
 
+          <div className="mt-6 flex flex-wrap items-center gap-3">
+            <Link href={`/${courseHub.slug}`} className="btn-accent">
+              See all online chess coaching courses <ArrowRight size={16} />
+            </Link>
+            <Link href={demoHref} className="btn border border-brand/25 bg-white text-brand shadow-sm shadow-brand-900/5 hover:border-brand/50 hover:bg-brand-50">
+              Book Free Demo Class
+            </Link>
+          </div>
+
           <div className="mt-6 grid gap-3 border-t border-brand/10 pt-6 sm:grid-cols-3">
             {["Learn", "Practice", "Compete and grow"].map((step) => (
               <div key={step} className="rounded-xl border border-brand/10 bg-white px-4 py-3 text-sm font-black text-brand-900/80">
@@ -307,10 +425,10 @@ export default async function Home() {
           <div className="mb-8 grid gap-4 lg:grid-cols-[0.8fr_1.2fr] lg:items-end">
             <div>
               <p className="inline-flex rounded-full bg-brand px-3.5 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-white shadow-sm shadow-brand-900/20">Learning Portal</p>
-              <h2 className="mt-4 text-2xl font-black leading-tight text-brand-900">Simple weekly workflow.</h2>
+              <h2 className="mt-4 text-2xl font-black leading-tight text-brand-900">Every chess class, homework task and report in one portal.</h2>
             </div>
             <p className="max-w-2xl text-sm leading-6 text-brand-900/70">
-              Students see what to attend, what to practise, what to submit, and how they are progressing.
+              Students see what to attend, what to practise, what to submit and how they are progressing. It is the part most online chess coaching leaves scattered across chat groups and spreadsheets, and it is the part parents ask about most.
             </p>
           </div>
           {/*
@@ -337,32 +455,34 @@ export default async function Home() {
             <div className="mb-6 grid gap-4 lg:grid-cols-[0.8fr_1.2fr] lg:items-end">
               <div>
                 <p className="inline-flex rounded-full bg-brand px-3.5 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-white shadow-sm shadow-brand-900/20">Platform Tutorials</p>
-                <h3 className="mt-4 text-2xl font-black leading-tight text-brand-900">See how the learning platform works.</h3>
+                <h3 className="mt-4 text-2xl font-black leading-tight text-brand-900">See how the online chess coaching platform works.</h3>
               </div>
               <p className="max-w-2xl text-sm leading-6 text-brand-900/70">
-                New students can watch these quick walkthroughs before their first class and understand the main tools available in the portal.
+                New students can watch these short walkthroughs before their first chess class and arrive already knowing where the live board, homework and tournament lobby are.
               </p>
             </div>
             <div className="grid gap-4 lg:grid-cols-2">
               {portalTutorials.map((tutorial) => (
                 <article key={tutorial.videoId} className="overflow-hidden rounded-xl border border-brand/10 bg-white shadow-xl shadow-brand-900/5 transition hover:-translate-y-0.5 hover:border-brand/30 hover:bg-brand-50">
-                  <div className="aspect-video bg-brand-900">
-                    <iframe
-                      title={`${tutorial.title} tutorial`}
-                      src={youtubeEmbedUrl(tutorial.videoId)}
-                      className="h-full w-full border-0"
-                      loading="lazy"
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                      allowFullScreen
-                    />
-                  </div>
-                  <div className="p-4">
-                    <div className="flex items-center gap-2 text-sm font-black text-brand-900">
-                      <PlayCircle size={18} className="shrink-0 text-brand" />
-                      {tutorial.title}
+                  <figure className="m-0">
+                    <div className="aspect-video bg-brand-900">
+                      <iframe
+                        title={`${tutorial.title} - Envision Chess Academy portal tutorial`}
+                        src={youtubeEmbedUrl(tutorial.videoId)}
+                        className="h-full w-full border-0"
+                        loading="lazy"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                        allowFullScreen
+                      />
                     </div>
-                    <p className="mt-2 text-sm leading-6 text-brand-900/70">{tutorial.detail}</p>
-                  </div>
+                    <figcaption className="p-4">
+                      <h4 className="flex items-center gap-2 text-sm font-black text-brand-900">
+                        <PlayCircle size={18} className="shrink-0 text-brand" />
+                        {tutorial.title}
+                      </h4>
+                      <p className="mt-2 text-sm leading-6 text-brand-900/70">{tutorial.detail}</p>
+                    </figcaption>
+                  </figure>
                 </article>
               ))}
             </div>
@@ -377,8 +497,8 @@ export default async function Home() {
           <div className="mb-8 flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
             <div>
               <p className="inline-flex rounded-full bg-brand px-3.5 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-white shadow-sm shadow-brand-900/20">Practice Tools</p>
-              <h2 className="mt-4 text-2xl font-black text-brand-900 sm:text-3xl">Focused training between live classes.</h2>
-              <p className="mt-3 max-w-2xl text-sm leading-7 text-brand-900/70">Students can solve tactics, learn coordinates, hunt kings, play computer bots, complete assignments, and climb academy leaderboards from the same portal.</p>
+              <h2 className="mt-4 text-2xl font-black text-brand-900 sm:text-3xl">Daily chess practice between live classes.</h2>
+              <p className="mt-3 max-w-2xl text-sm leading-7 text-brand-900/70">Good chess coaching is only half the week. Students anywhere in India can solve tactics, learn coordinates, hunt kings, play computer bots, finish assignments and climb academy leaderboards from the same portal they attend class in.</p>
             </div>
             <Link href={demoHref} className="btn border border-brand/25 bg-white text-brand shadow-sm shadow-brand-900/5 hover:border-brand/50 hover:bg-brand-50">Explore Learning Portal</Link>
           </div>
@@ -407,7 +527,8 @@ export default async function Home() {
           <div className="mb-8 flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
             <div>
               <p className="inline-flex rounded-full bg-brand px-3.5 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-white shadow-sm shadow-brand-900/20">Google Reviews</p>
-              <h2 className="mt-4 text-2xl font-black text-brand-900 sm:text-3xl">Reviews from parents and students.</h2>
+              <h2 className="mt-4 text-2xl font-black text-brand-900 sm:text-3xl">Parent and student reviews of our chess coaching.</h2>
+              <p className="mt-3 max-w-2xl text-sm leading-7 text-brand-900/70">Unedited Google reviews from families at the Kolkata centres and from students taking online chess classes with us.</p>
             </div>
             <Link href={offlineSourceUrl} target="_blank" rel="noreferrer" className="btn border border-brand/25 bg-white text-brand shadow-sm shadow-brand-900/5 hover:border-brand/50 hover:bg-brand-50">
               Review Source <ArrowRight size={16} />
@@ -424,17 +545,23 @@ export default async function Home() {
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_22%_28%,rgba(253,231,90,0.5),transparent_30%),radial-gradient(circle_at_76%_14%,rgba(90,19,114,0.13),transparent_32%),linear-gradient(180deg,#f5edf8_0%,#ffffff_100%)]" />
         <div className="absolute inset-0 opacity-[0.55] [background-image:linear-gradient(rgba(90,19,114,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(90,19,114,0.05)_1px,transparent_1px)] [background-size:84px_84px]" />
         <div className="relative mx-auto grid max-w-7xl gap-8 px-4 sm:px-6 lg:grid-cols-[0.58fr_1.42fr] lg:px-8">
-          <div className="group overflow-hidden border border-brand/10 bg-white shadow-xl shadow-brand-900/5">
+          <figure className="group m-0 overflow-hidden border border-brand/10 bg-white shadow-xl shadow-brand-900/5">
             <div className="relative aspect-[0.92] rounded-xl bg-brand-50">
-              <Image src="/images/achievements/682626726_122217430778279433_7786835792267057544_n.jpg" alt="" fill sizes="(min-width: 1024px) 38vw, 100vw" className="scale-110 object-cover opacity-15 blur-2xl" />
-              <Image src="/images/achievements/682626726_122217430778279433_7786835792267057544_n.jpg" alt="Anish qualified for the World Cadets Chess Championship" fill sizes="(min-width: 1024px) 28vw, 100vw" className="object-contain p-4 transition duration-700 group-hover:scale-[1.015]" />
+              <Image src="/images/achievements/682626726_122217430778279433_7786835792267057544_n.jpg" alt="" aria-hidden fill sizes="(min-width: 1024px) 38vw, 100vw" className="scale-110 object-cover opacity-15 blur-2xl" />
+              <Image src="/images/achievements/682626726_122217430778279433_7786835792267057544_n.jpg" alt="Anish Bijibilla, Envision Chess Academy student, after qualifying for the FIDE World Cadets Cup in Batumi" fill sizes="(min-width: 1024px) 28vw, 100vw" className="object-contain p-4 transition duration-700 group-hover:scale-[1.015]" />
             </div>
-          </div>
+            <figcaption className="border-t border-brand/10 px-4 py-3 text-xs leading-5 text-brand-900/70">
+              Anish Bijibilla went from complete beginner to England&apos;s No. 1 Under-7 in two and a half years of online chess coaching with Envision.
+            </figcaption>
+          </figure>
           <div className="self-center">
             <p className="inline-flex rounded-full bg-brand px-3.5 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-white shadow-sm shadow-brand-900/20">Student Journey</p>
-            <h2 className="mt-4 text-2xl font-black leading-tight text-brand-900">Anish: beginner to World Cadets qualifier.</h2>
+            <h2 className="mt-4 text-2xl font-black leading-tight text-brand-900">Anish: from first chess lesson to World Cadets qualifier.</h2>
             <p className="mt-4 max-w-2xl text-sm leading-7 text-brand-900/70">
               {anishStory.achievement}
+            </p>
+            <p className="mt-3 max-w-2xl text-sm leading-7 text-brand-900/70">
+              Anish learned entirely through live online classes, the same structured coaching our students across India follow: a placement assessment, two classes a week, homework reviewed by a coach, and tournament preparation before every event.
             </p>
             <div className="mt-5 grid gap-3 sm:grid-cols-3">
               <JourneyStat label="Starting Level" value={anishStory.startingLevel} />
@@ -456,8 +583,8 @@ export default async function Home() {
           <div className="mb-8 flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
             <div>
               <p className="inline-flex rounded-full bg-brand px-3.5 py-1.5 text-[11px] font-black uppercase tracking-[0.14em] text-white shadow-sm shadow-brand-900/20">Achiever Gallery</p>
-              <h2 className="mt-4 text-2xl font-black text-brand-900">Recent achievers.</h2>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-brand-900/70">A quick proof wall from the academy&apos;s student results.</p>
+              <h2 className="mt-4 text-2xl font-black text-brand-900">Recent results from our chess students.</h2>
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-brand-900/70">Podium finishes, age-group titles and FIDE ratings won by students coached at Envision - the plainest answer we can give to what good chess coaching in India produces.</p>
             </div>
             <Link href={cloudinaryCollectionUrl} target="_blank" rel="noreferrer" className="btn border border-brand/25 bg-white text-brand shadow-sm shadow-brand-900/5 hover:border-brand/50 hover:bg-brand-50">
               Achievement Collection <ArrowRight size={16} />
@@ -469,23 +596,31 @@ export default async function Home() {
                 key={`${item.studentName}-${item.displayOrder}`}
                 className="group relative rounded-xl border border-brand/10 bg-white p-2 shadow-lg shadow-brand-900/5 transition duration-300 hover:-translate-y-0.5 hover:border-brand/30 hover:bg-brand-50"
               >
-                <div className="relative aspect-[1.08] overflow-hidden rounded-xl bg-brand-50 shadow-inner shadow-brand-900/10">
-                  <Image src={item.achievementImageUrl} alt="" fill sizes="(min-width: 1024px) 25vw, 50vw" className="scale-110 object-cover opacity-12 blur-2xl transition duration-700" />
-                  <Image src={item.achievementImageUrl} alt={`${item.studentName} achievement`} fill sizes="(min-width: 1024px) 25vw, 50vw" className="object-contain p-3 transition duration-700 group-hover:scale-[1.02]" />
-                  <div className="absolute left-3 top-3 rounded-full bg-brand px-2.5 py-0.5 text-[10px] font-black text-accent shadow-sm">#{index + 1}</div>
-                  {item.studentPhotoUrl && (
-                    <div className="absolute bottom-3 right-3 h-12 w-12 overflow-hidden rounded-lg border-2 border-white bg-white">
-                      <Image src={item.studentPhotoUrl} alt={`${item.studentName} profile`} fill sizes="48px" className="object-cover" />
-                    </div>
-                  )}
-                </div>
-                <div className="p-3">
-                  <h3 className="line-clamp-1 text-sm font-black text-brand-900">{item.studentName}</h3>
-                  <p className="mt-1 line-clamp-1 text-xs font-semibold text-brand-900/70">{item.result}</p>
-                  <Link href={`/success-stories/${studentSlug(item.studentName)}`} className="mt-3 inline-flex items-center gap-1 text-xs font-black text-brand">
-                    Story <ArrowRight size={13} />
-                  </Link>
-                </div>
+                {/*
+                  Each card is a figure now: the photo gets alt text built from
+                  the record, and the caption names the event, year and level
+                  instead of leaving the result as a floating line of text.
+                */}
+                <figure className="m-0">
+                  <div className="relative aspect-[1.08] overflow-hidden rounded-xl bg-brand-50 shadow-inner shadow-brand-900/10">
+                    <Image src={item.achievementImageUrl} alt="" aria-hidden fill sizes="(min-width: 1024px) 25vw, 50vw" className="scale-110 object-cover opacity-12 blur-2xl transition duration-700" />
+                    <Image src={item.achievementImageUrl} alt={achievementAlt(item)} fill sizes="(min-width: 1024px) 25vw, 50vw" className="object-contain p-3 transition duration-700 group-hover:scale-[1.02]" />
+                    <div className="absolute left-3 top-3 rounded-full bg-brand px-2.5 py-0.5 text-[10px] font-black text-accent shadow-sm">#{index + 1}</div>
+                    {item.studentPhotoUrl && (
+                      <div className="absolute bottom-3 right-3 h-12 w-12 overflow-hidden rounded-lg border-2 border-white bg-white">
+                        <Image src={item.studentPhotoUrl} alt={`Portrait of ${item.studentName}, chess student at Envision Chess Academy`} fill sizes="48px" className="object-cover" />
+                      </div>
+                    )}
+                  </div>
+                  <figcaption className="p-3">
+                    <h3 className="line-clamp-1 text-sm font-black text-brand-900">{item.studentName}</h3>
+                    <p className="mt-1 line-clamp-1 text-xs font-semibold text-brand-900/70">{item.result}</p>
+                    <p className="mt-1 line-clamp-2 text-[11px] leading-4 text-brand-900/55">{achievementCaption(item)}</p>
+                    <Link href={`/success-stories/${studentSlug(item.studentName)}`} className="mt-3 inline-flex items-center gap-1 text-xs font-black text-brand">
+                      Story <ArrowRight size={13} />
+                    </Link>
+                  </figcaption>
+                </figure>
               </article>
             ))}
           </div>
@@ -499,9 +634,9 @@ export default async function Home() {
           <div className="mb-8 grid gap-5 lg:grid-cols-[0.9fr_1.1fr] lg:items-end">
             <div>
               <p className="inline-flex rounded-full bg-brand px-3.5 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-white shadow-sm shadow-brand-900/20">Student Support</p>
-              <h2 className="mt-4 text-2xl font-black text-brand-900 sm:text-3xl">The practical tools parents and students need every week.</h2>
+              <h2 className="mt-4 text-2xl font-black text-brand-900 sm:text-3xl">The weekly tools parents and chess students actually use.</h2>
             </div>
-            <p className="text-sm leading-7 text-brand-900/70">After practice and achievements, the portal still keeps the everyday academy work simple: coach questions, bookings, credits, invoices, fee payments, and progress checks.</p>
+            <p className="text-sm leading-7 text-brand-900/70">Beyond the classes themselves, the portal keeps the everyday running of chess coaching simple for families in any time zone: coach questions between sessions, class bookings, credits, invoices, online fee payments and progress checks.</p>
           </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {supportTools.map((item) => {
@@ -524,13 +659,17 @@ export default async function Home() {
         <div className="mx-auto grid max-w-7xl gap-10 px-4 sm:px-6 lg:grid-cols-[0.8fr_1.2fr] lg:px-8">
           <div>
             <p className="inline-flex rounded-full bg-brand px-3.5 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-white shadow-sm shadow-brand-900/20">How it works</p>
-            <h2 className="mt-3 text-2xl font-black sm:text-3xl">A clear learning path parents can follow.</h2>
+            <h2 className="mt-3 text-2xl font-black sm:text-3xl">How to start chess coaching with us, in five steps.</h2>
+            <p className="mt-3 text-sm leading-7 text-brand-900/70">The path is identical for a family walking into a Kolkata centre and for a student joining online chess classes from anywhere else in India.</p>
           </div>
           <div className="grid gap-3">
             {learningSteps.map((step, index) => (
-              <div key={step} className="group grid grid-cols-[46px_minmax(0,1fr)] gap-3 rounded-xl border border-brand/10 bg-white p-4 shadow-sm shadow-brand-900/5 transition hover:-translate-y-0.5 hover:border-brand/30 hover:bg-brand-50">
+              <div key={step.title} className="group grid grid-cols-[46px_minmax(0,1fr)] gap-3 rounded-xl border border-brand/10 bg-white p-4 shadow-sm shadow-brand-900/5 transition hover:-translate-y-0.5 hover:border-brand/30 hover:bg-brand-50">
                 <div className="grid h-11 w-11 place-items-center rounded-xl bg-brand text-sm font-black text-accent shadow-sm shadow-brand-900/20">{index + 1}</div>
-                <div className="self-center font-bold text-brand-900">{step}</div>
+                <div className="self-center">
+                  <h3 className="font-bold text-brand-900">{step.title}</h3>
+                  <p className="mt-1 text-sm leading-6 text-brand-900/70">{step.detail}</p>
+                </div>
               </div>
             ))}
           </div>
@@ -543,8 +682,8 @@ export default async function Home() {
         <div className="relative mx-auto grid max-w-7xl gap-8 px-4 sm:px-6 lg:grid-cols-[0.78fr_1.22fr] lg:px-8">
           <div>
             <p className="inline-flex rounded-full bg-brand px-3.5 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-white shadow-sm shadow-brand-900/20">Centres and Global Reach</p>
-            <h2 className="mt-4 text-2xl font-black text-brand-900 sm:text-3xl">Four Kolkata centres. Online for global students.</h2>
-            <p className="mt-4 text-sm leading-7 text-brand-900/70">Branch information now reflects the active four-centre setup.</p>
+            <h2 className="mt-4 text-2xl font-black text-brand-900 sm:text-3xl">Chess classes in Kolkata, online chess coaching across India.</h2>
+            <p className="mt-4 text-sm leading-7 text-brand-900/70">Four coaching centres in Kolkata run in-person batches, and live online batches take students from every other part of India and from 15+ countries. Same curriculum, same coaches, same portal.</p>
             <div className="mt-5 flex flex-wrap gap-3">
               <Link href={`tel:${ACADEMY_DEFAULTS.phone}`} className="btn-accent">Call Academy</Link>
               <Link href={`mailto:${ACADEMY_DEFAULTS.email}`} className="btn border border-brand/25 bg-white text-brand shadow-sm shadow-brand-900/5 hover:border-brand/50 hover:bg-brand-50">Email Academy</Link>
@@ -555,25 +694,62 @@ export default async function Home() {
               <div key={centre.name} className="overflow-hidden rounded-xl border border-brand/10 bg-white shadow-xl shadow-brand-900/5 transition hover:border-brand/30 hover:bg-brand-50">
                 <div className="p-4">
                 <MapPin size={18} className="text-brand" />
-                <div className="mt-3 font-black text-brand-900">{centre.name}</div>
-                <div className="mt-1 text-sm leading-5 text-brand-900/70">{centre.address}</div>
+                <h3 className="mt-3 font-black text-brand-900">{centre.name} chess coaching centre</h3>
+                <address className="mt-1 text-sm not-italic leading-5 text-brand-900/70">{centre.address}</address>
                 <Link href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(centre.address)}`} target="_blank" rel="noreferrer" className="mt-3 inline-flex text-xs font-black text-brand">
                   Open directions
                 </Link>
                 </div>
-                <iframe
-                  title={`${centre.name} map`}
-                  src={`https://maps.google.com/maps?q=${encodeURIComponent(centre.address)}&output=embed`}
-                  className="h-32 w-full border-0 grayscale contrast-125"
-                  loading="lazy"
-                />
+                <figure className="m-0">
+                  <iframe
+                    title={`Map to the Envision Chess Academy ${centre.name} chess coaching centre in Kolkata`}
+                    src={`https://maps.google.com/maps?q=${encodeURIComponent(centre.address)}&output=embed`}
+                    className="h-32 w-full border-0 grayscale contrast-125"
+                    loading="lazy"
+                  />
+                  <figcaption className="border-t border-brand/10 px-4 py-2 text-[11px] leading-4 text-brand-900/60">
+                    Offline chess classes at our {centre.name} centre, Kolkata.
+                  </figcaption>
+                </figure>
               </div>
             ))}
             <div className="rounded-xl border border-brand/15 bg-brand-50 p-4 text-brand-900 sm:col-span-2">
               <Globe2 size={18} className="text-brand" />
-              <div className="mt-3 font-black">Online Classes</div>
-              <div className="mt-1 text-sm text-brand-900/70">Structured programs, personal mentorship, and proven methods from home.</div>
+              <h3 className="mt-3 font-black">Online chess classes across India</h3>
+              <p className="mt-1 text-sm text-brand-900/70">Delhi, Mumbai, Bengaluru, Hyderabad, Chennai, Pune or a small town with a good connection - the structured programme, personal mentorship and weekly tournaments reach students at home, wherever home is.</p>
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/*
+        The FAQ answers the questions a parent types into search before they
+        ever reach the site, and the same list feeds the FAQPage schema at the
+        top of the page, so the two can never drift apart.
+      */}
+      <section id="faq" className="relative overflow-hidden bg-[#ffffff] py-16 text-brand-900 lg:py-24">
+        <div className="absolute inset-0 bg-[linear-gradient(180deg,#f5edf8_0%,#ffffff_100%)]" />
+        <div className="absolute inset-0 opacity-[0.55] [background-image:linear-gradient(rgba(90,19,114,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(90,19,114,0.05)_1px,transparent_1px)] [background-size:84px_84px]" />
+        <div className="relative mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
+          <p className="inline-flex rounded-full bg-brand px-3.5 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-white shadow-sm shadow-brand-900/20">Questions</p>
+          <h2 className="mt-4 text-2xl font-black leading-tight text-brand-900 sm:text-3xl">Questions parents ask about chess coaching in India.</h2>
+          <p className="mt-3 text-sm leading-7 text-brand-900/70">
+            Everything below is how the academy runs today - the curriculum length, the class rhythm, the centres and what parents can see.
+          </p>
+          <div className="mt-8 grid gap-3">
+            {homeFaqs.map((faq) => (
+              <details key={faq.q} className="group rounded-2xl border border-brand/10 bg-white p-5 shadow-lg shadow-brand-900/5 transition duration-300 hover:border-brand/30">
+                {/* One heading inside <summary> keeps the markup valid while still
+                    putting the question in the document outline. */}
+                <summary className="cursor-pointer list-none">
+                  <h3 className="flex items-center justify-between gap-4 text-sm font-black text-brand-900">
+                    {faq.q}
+                    <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-brand text-accent transition-transform duration-300 group-open:rotate-45" aria-hidden>+</span>
+                  </h3>
+                </summary>
+                <p className="mt-3 text-sm leading-6 text-brand-900/70">{faq.a}</p>
+              </details>
+            ))}
           </div>
         </div>
       </section>
@@ -583,9 +759,9 @@ export default async function Home() {
         <div className="relative mx-auto max-w-7xl rounded-2xl border border-brand/10 bg-white p-6 shadow-lg shadow-brand-900/5 sm:p-8 lg:flex lg:items-center lg:justify-between lg:gap-8">
           <div>
             <p className="inline-flex rounded-full bg-brand px-3.5 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-white shadow-sm shadow-brand-900/20">Start with a free assessment</p>
-            <h2 className="mt-3 text-2xl font-black sm:text-3xl">Your child&apos;s next great move starts here.</h2>
+            <h2 className="mt-3 text-2xl font-black sm:text-3xl">Start the best chess coaching in India with a free demo class.</h2>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-brand-900/70">
-              No obligation. Level recommendation included. Online and offline options available.
+              No obligation, and a level recommendation for your child at the end of it. Online chess classes across India and offline coaching in Kolkata are both open for booking.
             </p>
           </div>
           <div className="mt-6 flex flex-col gap-3 sm:flex-row lg:mt-0">

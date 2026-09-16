@@ -28,6 +28,7 @@ import WhyEnvision from "@/components/marketing/WhyEnvision";
 import { MarketingFooter, MarketingHeader, landingNav } from "@/components/marketing/MarketingChrome";
 import { ACADEMY_DEFAULTS } from "@/lib/branding";
 import { courseTierLabel } from "@/lib/courseTiers";
+import { coursePages } from "@/lib/coursePages";
 import { CURRICULUM_TIERS, curriculumLevels } from "@/lib/demoCurriculum";
 import { MARKETING_BASE_URL, OFFLINE_ACADEMY_URL } from "@/lib/publicLinks";
 import { academyBranches, anishStory, impactCounters, publicAchievementList, studentSlug } from "@/lib/achievementData";
@@ -129,6 +130,7 @@ const groupClassTracks = CURRICULUM_TIERS.filter((tier) => groupClassCopy[tier])
     title: courseTierLabel(tier),
     levels: levels.map((level) => ({ name: level.name, sessions: level.sessions.length })),
     totalSessions: levels.reduce((total, level) => total + level.sessions.length, 0),
+    coursePath: coursePages.find((page) => page.tier === tier)?.slug,
     ...groupClassCopy[tier],
   };
 });
@@ -275,12 +277,12 @@ export default async function Home() {
                 </div>
                 <p className="mt-3 text-[10px] font-black uppercase tracking-[0.12em] text-brand-900/60">{track.totalSessions} sessions in this stage</p>
                 <div className="mt-auto pt-5">
-                  {/* The beginner stage has its own page, so the ladder links into it. */}
+                  {/* Stages with their own page link into it; the rest go to the demo. */}
                   <Link
-                    href={track.tier === "beginner" ? "/online-chess-course-for-beginners" : demoHref}
+                    href={track.coursePath ? `/${track.coursePath}` : demoHref}
                     className="inline-flex items-center gap-1 text-sm font-black text-brand hover:underline"
                   >
-                    {track.tier === "beginner" ? "See all 48 sessions" : "Book Free Demo Class"} <ArrowRight size={16} />
+                    {track.coursePath ? `See all ${track.totalSessions} sessions` : "Book Free Demo Class"} <ArrowRight size={16} />
                   </Link>
                 </div>
               </article>

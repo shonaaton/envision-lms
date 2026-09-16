@@ -18,6 +18,11 @@ export type CoursePageConfig = {
   /** The exact phrase the page targets, used in the H1 and title. */
   keyword: string;
   h1: string;
+  /**
+   * Optional H2 directly under the H1. Lets a page lead with a course name
+   * while still carrying its target phrase in a real heading.
+   */
+  supportingHeading?: string;
   eyebrow: string;
   title: string;
   description: string;
@@ -25,8 +30,19 @@ export type CoursePageConfig = {
   intro: string;
   /** What each level is for, keyed by "Level 1".."Level 3". */
   levelBlurb: Record<string, string>;
+  /**
+   * Wording for the demo call to action. The upper tiers are assessment-led
+   * rather than drop-in, so they say so.
+   */
+  ctaLabel?: string;
   /** Who the course assumes you already are. */
   prerequisite: string;
+  /**
+   * schema.org educationalLevel. Kept separate from `eyebrow` because the
+   * ladder's own name for a tier is not always the word people search for -
+   * Semi Pro is taught and indexed as advanced.
+   */
+  educationalLevel: string;
   faqs: { q: string; a: string }[];
   whyHeading: string;
 };
@@ -61,6 +77,7 @@ export const coursePages: CoursePageConfig[] = [
         "Delivering checkmate on purpose: king and queen, two rooks, rook and king, then defending, opening traps and punishing weak moves.",
     },
     prerequisite: "No experience needed",
+    educationalLevel: "Beginner",
     whyHeading: "Why parents choose Envision Chess Academy.",
     faqs: [
       {
@@ -114,6 +131,7 @@ export const coursePages: CoursePageConfig[] = [
         "The harder motifs: intermediate moves, decoy, windmill and overloading, finishing with smothered mate, pattern recognition and mate in three.",
     },
     prerequisite: "Knows the rules already",
+    educationalLevel: "Intermediate",
     whyHeading: "Why players move to Envision Chess Academy.",
     faqs: [
       {
@@ -135,6 +153,217 @@ export const coursePages: CoursePageConfig[] = [
       {
         q: "How is progress tracked?",
         a: "Every session has homework the coach reviews, and attendance, assignment scores, tournament results and progress reports are visible to parents in the portal.",
+      },
+    ],
+  },
+  {
+    tier: "semi_pro",
+    slug: "advanced-chess-course-online",
+    navLabel: "Advanced Course",
+    keyword: "advanced chess course online",
+    h1: "Advanced chess course online.",
+    eyebrow: "Semi Pro Stage",
+    title: "Advanced Chess Course Online | Endgames, Openings & Mating Patterns | Envision Chess Academy",
+    description:
+      "An advanced chess course online for competitive players: 48 live sessions covering king and pawn endgames, fifteen named mating patterns, a full opening repertoire as White and Black, and Lucena, Philidor and Vancura rook endings. Book a free demo class.",
+    keywords: [
+      "advanced chess course online",
+      "advanced chess coaching online",
+      "online chess classes for advanced players",
+      "competitive chess training",
+      "advanced chess classes for kids",
+      "tournament chess preparation",
+      "chess coaching for rated players",
+      "FIDE rating improvement",
+      "opening preparation for chess tournaments",
+      "advanced chess strategy course",
+    ],
+    intro:
+      "For the player who already sees tactics and now needs technique. 48 live sessions on the endgames, mating patterns and opening repertoire that decide rated tournament games.",
+    levelBlurb: {
+      "Level 1":
+        "King and pawn endgame technique - opposition, key squares, triangulation, mined squares - then fifteen named mating patterns from Anastasia's to Boden's.",
+      "Level 2":
+        "A working opening repertoire: Italian, Ruy Lopez, Queen's Gambit and London as White, classical open games and the Sicilian as Black, plus defensive technique and model games.",
+      "Level 3":
+        "The endgames that decide tournament games: piece against pawn, Lucena, Philidor and Vancura, pawn endings, opposite and same-colour bishops, and bishop against knight.",
+    },
+    prerequisite: "For competitive players",
+    educationalLevel: "Advanced",
+    whyHeading: "Why competitive players train at Envision Chess Academy.",
+    faqs: [
+      {
+        q: "Who is this advanced chess course online for?",
+        a: "A player who already spots tactics reliably and plays in tournaments, but loses points to technique - drawn endgames going wrong, no repertoire against a prepared opponent, or missing a known mating pattern. It assumes the intermediate tactics stage is behind you.",
+      },
+      {
+        q: "Does the course include opening preparation for chess tournaments?",
+        a: "Yes. Level 2 is a complete repertoire block: the Italian Game, Ruy Lopez, Queen's Gambit and London System as White, and classical open games plus the Sicilian Defence as Black, followed by annotated model games.",
+      },
+      {
+        q: "Which endgames does the advanced course cover?",
+        a: "Opposition, key squares, the rule of the square, triangulation and mined squares, then rook, knight, bishop and queen against pawn, Lucena, Philidor and Vancura rook endings, pawn endings, same and opposite-colour bishop endgames, and bishop against knight.",
+      },
+      {
+        q: "Will this help with FIDE rating improvement?",
+        a: "The syllabus targets the areas rated games are usually decided by - endgame technique, a prepared repertoire and recognising mating patterns quickly. Progress depends on the player, but the course is built around competitive rather than casual play.",
+      },
+      {
+        q: "How long is the advanced stage?",
+        a: "48 sessions across three levels of sixteen. At two classes a week that is about two months per level, so roughly six months for the full stage.",
+      },
+    ],
+  },
+  {
+    tier: "pro",
+    slug: "pro-chess-course",
+    navLabel: "Pro Course",
+    keyword: "online chess coaching in India",
+    h1: "Pro Chess Course",
+    supportingHeading: "Online chess coaching in India for serious competitive players.",
+    eyebrow: "Pro Stage",
+    title: "Online Chess Coaching in India | Pro Course - Envision",
+    description:
+      "Join Envision Chess Academy's Pro Course for online chess coaching in India, with structured training for rated and competitive tournament players.",
+    keywords: [
+      "online chess coaching in India",
+      "online chess classes in India",
+      "professional chess coaching online",
+      "advanced chess coaching in India",
+      "chess coaching for FIDE-rated players",
+      "chess coaching for tournament players",
+      "chess rating improvement",
+      "FIDE rating improvement",
+      "competitive chess training",
+      "tournament chess preparation",
+      "online chess training in India",
+      "advanced chess training online",
+      "chess calculation training",
+      "advanced chess tactics",
+      "professional chess training",
+    ],
+    intro:
+      "Structured online chess coaching in India for rated and tournament players. 48 live sessions on advanced calculation - sacrifices, combinations and every tactical motif taken to its hardest form.",
+    levelBlurb: {
+      "Level 1":
+        "Advanced motifs and combinations: x-ray, clearance, blockade, destroying the castled king, and combinations on files, ranks, diagonals and with the knight.",
+      "Level 2":
+        "Sacrificial and positional play - the Greek gift, perpetual check, stalemate combinations, opening and closing lines, bishop and knight mate - plus mate in four, zugzwang and hard forks, pins and skewers.",
+      "Level 3":
+        "Every motif at its hardest: discovered attack, double check, back rank, overloading, deflection, decoy and windmill, finishing with hard x-ray, blockade, Greek gift, zugzwang and intermediate moves.",
+    },
+    prerequisite: "For rated and tournament players",
+    educationalLevel: "Advanced",
+    whyHeading: "Why competitive players choose Envision for online chess coaching in India.",
+    faqs: [
+      {
+        q: "Who should join the Envision Pro Chess Course?",
+        a: "A competitive player who already has a tactical foundation and an endgame and opening base, and now needs depth of calculation. It assumes the intermediate and advanced stages are behind you, and is aimed at players competing in rated events.",
+      },
+      {
+        q: "Is the Pro Course suitable for FIDE-rated chess players?",
+        a: "Yes. The syllabus is built around the calculation depth rated games demand - sacrificial attacks, multi-move combinations and every standard motif in its hardest form, up to mate in four.",
+      },
+      {
+        q: "Do you provide online chess coaching in India?",
+        a: "Yes. Classes are live and online, so students anywhere in India join from the academy portal. Envision also runs four centres in Kolkata for students who prefer to attend in person.",
+      },
+      {
+        q: "Can online chess coaching help improve my FIDE rating?",
+        a: "The course targets what rated games are usually decided by at this level: whether you find the combination and calculate it accurately. Rating gains depend on the player and how much they compete, so no coach can promise a number, but the training is built for competitive rather than casual play.",
+      },
+      {
+        q: "Does the Pro Course include opening repertoire training?",
+        a: "Opening repertoire is taught in the Advanced (Semi Pro) stage before this one - the Italian, Ruy Lopez, Queen's Gambit and London as White, and classical open games and the Sicilian as Black. The Pro Course builds on that foundation and concentrates entirely on calculation and combinations.",
+      },
+      {
+        q: "Is individual chess coaching available?",
+        a: "Yes. Students can be enrolled in group batches or one-to-one coaching, and the demo assessment covers which format suits the player.",
+      },
+      {
+        q: "How are students placed into the Pro Course?",
+        a: "Through a free assessment class. A coach reviews the student's current level and recommends the exact session to start from, so a strong player is not made to repeat earlier stages.",
+      },
+      {
+        q: "How long does the Pro stage take?",
+        a: "48 sessions across three levels of sixteen. At two classes a week that is about two months per level, so roughly six months for the full stage.",
+      },
+    ],
+  },
+  {
+    tier: "masters",
+    slug: "masters-chess-course",
+    navLabel: "Masters Course",
+    keyword: "elite chess coaching online",
+    h1: "Masters Chess Course",
+    supportingHeading: "Elite chess coaching online for serious competitive players.",
+    eyebrow: "Masters Stage",
+    title: "Elite Chess Coaching Online | Masters Course - Envision",
+    description:
+      "Elite chess coaching online for competitive players. Train pawn structure, attacking play, positional judgement and advanced endgames with Envision.",
+    keywords: [
+      "elite chess coaching online",
+      "elite chess training online",
+      "master chess course online",
+      "high level chess coaching",
+      "professional chess training online",
+      "chess coaching for competitive players",
+      "chess coaching for rated players",
+      "advanced tournament chess training",
+      "FIDE rating improvement",
+      "personalised chess coaching online",
+      "advanced chess calculation training",
+      "advanced chess endgame training",
+      "advanced positional chess",
+      "strategic chess training",
+      "high performance chess training",
+    ],
+    intro:
+      "High-performance chess training for ambitious rated players. 48 live sessions on the positional understanding that separates strong players - pawn structure, weak squares, attacking schemes and deep endgame theory.",
+    levelBlurb: {
+      "Level 1":
+        "Positional foundations: the seventh rank, line blocking, outposts and underpromotion, then exploiting weaknesses, fortresses, weak points and open files.",
+      "Level 2":
+        "Pawn structure as a whole discipline - isolated, doubled, backward, hanging and passed pawns, pawn islands - alongside queen sacrifices and attacking the king by typical mates and target points.",
+      "Level 3":
+        "Attacking schemes by piece pair, then king and pawn technique at theoretical depth: shouldering, the active king, king routes, outside and protected passed pawns, breakthrough and same-colour bishop endings.",
+    },
+    ctaLabel: "Book Your Masters Assessment",
+    prerequisite: "By assessment only",
+    educationalLevel: "Advanced",
+    whyHeading: "Why ambitious players train at Envision Chess Academy.",
+    faqs: [
+      {
+        q: "Who is the Masters Chess Course designed for?",
+        a: "A competitive player who already calculates well and now needs judgement - knowing which structure to aim for, which weakness to attack and which endgame to steer into. It assumes the Pro stage, or equivalent strength, is already behind you.",
+      },
+      {
+        q: "What is elite chess coaching?",
+        a: "At this level coaching stops being about learning motifs and becomes about understanding positions. The Masters syllabus is built around pawn structure, weak squares, attacking schemes and theoretical endgames rather than puzzle patterns.",
+      },
+      {
+        q: "How do I qualify for the Masters Course?",
+        a: "Through an assessment class rather than direct enrolment. A coach reviews the player's current standard and recommends whether Masters is the right stage, or which earlier session to start from instead.",
+      },
+      {
+        q: "Is the Masters Course suitable for FIDE-rated players?",
+        a: "Yes, it is aimed at rated and competitive players. The material - hanging pawns, fortresses, target points, the outside passed pawn, same-colour bishop endings - is the sort that decides games between players who both already know the tactics.",
+      },
+      {
+        q: "Does the course include advanced endgame training?",
+        a: "Yes. The second half of Level 3 is theoretical endgame work: shouldering, the active king, king routes, outside and protected passed pawns, breakthrough and same-colour bishop endings.",
+      },
+      {
+        q: "Does the Masters Course include opening preparation?",
+        a: "Opening repertoire is taught earlier in the ladder, in the Advanced (Semi Pro) stage. The Masters Course is positional and endgame work, and assumes a repertoire is already in place.",
+      },
+      {
+        q: "Can the Masters Course help improve my FIDE rating?",
+        a: "It targets the areas games are decided by once both players see the tactics. Rating depends on the player and how often they compete, so no course can promise a number, but the syllabus is built for competitive rather than casual play.",
+      },
+      {
+        q: "Is individual coaching available for Masters students?",
+        a: "Yes. Students can be placed in a group batch or in one-to-one coaching, and the assessment covers which format suits the player.",
       },
     ],
   },

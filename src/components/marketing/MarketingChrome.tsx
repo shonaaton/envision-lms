@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { Menu } from "lucide-react";
 import { ACADEMY_LOGO_URL } from "@/lib/branding";
+import { coursePages } from "@/lib/coursePages";
 import { OFFLINE_ACADEMY_URL } from "@/lib/publicLinks";
 
 /**
@@ -26,13 +27,15 @@ export const landingNav: NavItem[] = [
   ["Centres", "#centres"],
 ];
 
-/** Same destinations, reachable from a sub-route. */
-export const subPageNav: NavItem[] = [
+/**
+ * Same destinations, reachable from a course route. The course links are built
+ * from the page configs so a new tier appears in the nav automatically.
+ */
+export const courseNav: NavItem[] = [
   ["Home", "/"],
-  ["Beginner Course", "/online-chess-course-for-beginners"],
+  ...coursePages.map((page) => [page.navLabel, `/${page.slug}`] as NavItem),
   ["Programs", "/#programs"],
   ["Portal", "/#platform"],
-  ["Reviews", "/#reviews"],
   ["Achievements", "/#achievements"],
   ["Centres", "/#centres"],
 ];
@@ -95,7 +98,11 @@ export function MarketingFooter() {
       <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
         <div>Copyright {new Date().getFullYear()} Envision Chess Academy</div>
         <div className="flex flex-wrap gap-4">
-          <Link href="/online-chess-course-for-beginners" className="font-semibold text-brand hover:underline">Online chess course for beginners</Link>
+          {coursePages.map((page) => (
+            <Link key={page.slug} href={`/${page.slug}`} className="font-semibold text-brand hover:underline">
+              {page.keyword}
+            </Link>
+          ))}
           <Link href={cloudinaryCollectionUrl} target="_blank" rel="noreferrer" className="font-semibold text-brand hover:underline">Achievement images</Link>
           <Link href={OFFLINE_ACADEMY_URL} target="_blank" rel="noreferrer" className="font-semibold text-brand hover:underline">Offline academy source</Link>
         </div>

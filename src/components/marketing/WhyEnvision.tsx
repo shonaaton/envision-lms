@@ -13,11 +13,13 @@ import { academyReasons } from "@/lib/academyReasons";
 export default function WhyEnvision({
   demoHref,
   secondary,
+  ctaLabel = "Book Free Demo Class",
   heading = "Why parents choose Envision Chess Academy.",
   intro = "Not a set of loose classes. A structured path, a coach who knows where your child is, and a portal that shows you the progress.",
 }: {
   demoHref: string;
   secondary?: { href: string; label: string };
+  ctaLabel?: string;
   heading?: string;
   intro?: string;
 }) {
@@ -59,7 +61,7 @@ export default function WhyEnvision({
         </div>
         <div className="mt-8 flex flex-wrap items-center gap-3">
           <Link href={demoHref} className="btn-accent">
-            Book Free Demo Class <ArrowRight size={16} />
+            {ctaLabel} <ArrowRight size={16} />
           </Link>
           {secondary ? (
             <Link href={secondary.href} className="btn border border-brand/25 bg-white text-brand shadow-sm shadow-brand-900/5 hover:border-brand/50 hover:bg-brand-50">

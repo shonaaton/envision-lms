@@ -20,6 +20,7 @@ export default function CoursePage({ config }: { config: CoursePageConfig }) {
   const levels = curriculumLevels(config.tier);
   const totalSessions = levels.reduce((total, level) => total + level.sessions.length, 0);
   const pageUrl = `${MARKETING_BASE_URL}/${config.slug}`;
+  const ctaLabel = config.ctaLabel ?? "Book Demo Class";
 
   const courseFacts = [
     { label: `${totalSessions} live sessions`, detail: "Across three levels", icon: ClipboardList },
@@ -36,7 +37,7 @@ export default function CoursePage({ config }: { config: CoursePageConfig }) {
       description: config.description,
       url: pageUrl,
       inLanguage: "en",
-      educationalLevel: config.eyebrow.replace(" Stage", ""),
+      educationalLevel: config.educationalLevel,
       teaches: levels.flatMap((level) => level.sessions.map((session) => session.topic)),
       numberOfCredits: totalSessions,
       timeRequired: "P6M",
@@ -97,10 +98,13 @@ export default function CoursePage({ config }: { config: CoursePageConfig }) {
               <CheckCircle2 size={15} /> {config.eyebrow} · {totalSessions} Sessions
             </p>
             <h1 className="mt-4 text-[1.85rem] font-bold leading-[1.08] text-brand-900 sm:text-[2.25rem] lg:text-[2.6rem]">{config.h1}</h1>
+            {config.supportingHeading ? (
+              <h2 className="mt-2.5 max-w-lg text-base font-black leading-snug text-brand sm:text-lg">{config.supportingHeading}</h2>
+            ) : null}
             <p className="mt-4 max-w-lg text-sm leading-7 text-brand-900/70 sm:text-[0.95rem]">{config.intro}</p>
             <div className="mt-6 flex flex-col gap-3 sm:flex-row">
               <Link href={demoHref} className="btn-accent min-h-11 px-5 shadow-lg shadow-accent-600/20">
-                Book Demo Class <ArrowRight size={18} />
+                {ctaLabel} <ArrowRight size={18} />
               </Link>
               <Link href="/login" className="btn min-h-11 border border-brand/25 bg-white px-5 text-brand shadow-sm shadow-brand-900/5 hover:border-brand/50 hover:bg-brand-50">
                 <MonitorSmartphone size={18} /> Explore Portal
@@ -143,7 +147,7 @@ export default function CoursePage({ config }: { config: CoursePageConfig }) {
         </div>
       </section>
 
-      <WhyEnvision demoHref={demoHref} heading={config.whyHeading} secondary={{ href: "#curriculum", label: `See all ${totalSessions} sessions` }} />
+      <WhyEnvision demoHref={demoHref} heading={config.whyHeading} ctaLabel={ctaLabel} secondary={{ href: "#curriculum", label: `See all ${totalSessions} sessions` }} />
 
       {/* ------------------------------------------------------- curriculum */}
       <section id="curriculum" className="relative overflow-hidden bg-white py-16 text-brand-900 lg:py-24">
@@ -197,7 +201,7 @@ export default function CoursePage({ config }: { config: CoursePageConfig }) {
           </div>
 
           <div className="mt-8 flex flex-wrap items-center gap-3">
-            <Link href={demoHref} className="btn-accent">Book Demo Class <ArrowRight size={16} /></Link>
+            <Link href={demoHref} className="btn-accent">{ctaLabel} <ArrowRight size={16} /></Link>
             <Link href="/#programs" className="btn border border-brand/25 bg-white text-brand shadow-sm shadow-brand-900/5 hover:border-brand/50 hover:bg-brand-50">
               See the full 5-stage ladder
             </Link>
@@ -238,7 +242,7 @@ export default function CoursePage({ config }: { config: CoursePageConfig }) {
             </p>
           </div>
           <div className="mt-6 flex flex-col gap-3 sm:flex-row lg:mt-0">
-            <Link href={demoHref} className="btn-accent">Book Demo Class</Link>
+            <Link href={demoHref} className="btn-accent">{ctaLabel}</Link>
             <Link href="/login" className="btn border border-brand/25 bg-white text-brand hover:border-brand/50 hover:bg-brand-50">Explore Portal</Link>
           </div>
         </div>

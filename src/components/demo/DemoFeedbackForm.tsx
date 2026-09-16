@@ -55,8 +55,18 @@ export default function DemoFeedbackForm({
 
   const levels = useMemo(() => curriculum[tier] || [], [curriculum, tier]);
   // A session number from one tier means a different topic in the next, so the
-  // saved pick only survives while the level it was made under is still chosen.
-  const sessionDefault = tier === defaults.recommendedCourseLevel ? String(defaults.recommendedStartingSession || "") : "";
+  // saved pick only survives while the course it was made under is still chosen.
+  const savedSession = tier === defaults.recommendedCourseLevel ? Number(defaults.recommendedStartingSession || 0) : 0;
+  const savedLevelName = useMemo(
+    () => levels.find((level) => level.sessions.some((session) => session.sessionNumber === savedSession))?.name || "",
+    [levels, savedSession]
+  );
+  // The sub-level is asked for in its own right: "intermediate" alone does not
+  // tell sales whether the student starts at Level 1 or Level 3, and a single
+  // forty-eight row topic list buried that answer inside the topic.
+  const [levelName, setLevelName] = useState(savedLevelName);
+  const level = useMemo(() => levels.find((item) => item.name === levelName), [levels, levelName]);
+  const sessionDefault = level && level.name === savedLevelName ? String(savedSession || "") : "";
 
   return (
     <form action={action} className="grid gap-5 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
@@ -92,38 +102,53 @@ export default function DemoFeedbackForm({
 
       <Group title="What to sell them">
         <div className="grid gap-4 sm:grid-cols-2">
-          <Labelled label="Recommended course level">
+          <Labelled label="Recommended course">
             <select
               name="recommendedCourseLevel"
               value={tier}
-              onChange={(event) => setTier(event.target.value)}
+              onChange={(event) => {
+                setTier(event.target.value);
+                setLevelName("");
+              }}
               required
               className="input h-11"
             >
-              <option value="">Select level</option>
+              <option value="">Select course</option>
               {CURRICULUM_TIER_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>{option.label}</option>
               ))}
             </select>
           </Labelled>
-          <Labelled label="Start from" hint={tier ? undefined : "Pick a level first"}>
+          <Labelled label="Which level of that course" hint={tier ? undefined : "Pick a course first"}>
             <select
-              name="recommendedStartingSession"
-              key={tier || "no-tier"}
-              defaultValue={sessionDefault}
+              value={levelName}
+              onChange={(event) => setLevelName(event.target.value)}
               disabled={!levels.length}
               required={levels.length > 0}
               className="input h-11 disabled:bg-slate-50 disabled:text-slate-400"
             >
-              <option value="">Select starting session</option>
-              {levels.map((level) => (
-                <optgroup key={level.name} label={level.name}>
-                  {level.sessions.map((session) => (
-                    <option key={session.sessionNumber} value={session.sessionNumber}>
-                      Session {session.sessionNumber} - {session.topic}
-                    </option>
-                  ))}
-                </optgroup>
+              <option value="">Select level</option>
+              {levels.map((item) => (
+                <option key={item.name} value={item.name}>
+                  {item.name} (Sessions {item.sessions[0]?.sessionNumber}-{item.sessions[item.sessions.length - 1]?.sessionNumber})
+                </option>
+              ))}
+            </select>
+          </Labelled>
+          <Labelled label="Start from" hint={level ? undefined : "Pick a level first"}>
+            <select
+              name="recommendedStartingSession"
+              key={`${tier || "no-tier"}-${levelName || "no-level"}`}
+              defaultValue={sessionDefault}
+              disabled={!level}
+              required={Boolean(level)}
+              className="input h-11 disabled:bg-slate-50 disabled:text-slate-400"
+            >
+              <option value="">Select starting topic</option>
+              {(level?.sessions || []).map((session) => (
+                <option key={session.sessionNumber} value={session.sessionNumber}>
+                  Session {session.sessionNumber} - {session.topic}
+                </option>
               ))}
             </select>
           </Labelled>

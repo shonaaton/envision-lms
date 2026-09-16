@@ -104,7 +104,9 @@ function startingSessionLabel(feedback: any) {
   const topic = String(feedback?.recommendedStartingTopic || "").trim();
   if (!topic) return "";
   const number = Number(feedback?.recommendedStartingSession || 0);
-  return number ? `Session ${number} - ${topic}` : topic;
+  const subLevel = String(feedback?.recommendedSubLevel || "").trim();
+  const session = number ? `Session ${number} - ${topic}` : topic;
+  return subLevel ? `${subLevel}, ${session}` : session;
 }
 
 function titleCase(value?: string) {

@@ -74,7 +74,7 @@ safeguard, you can also create an n8n Schedule Trigger that runs every minute an
 request to:
 
 ```text
-https://classroom.envisionchessacademy.com/api/ask-coach/email-reminders
+https://envisionchessacademy.com/api/ask-coach/email-reminders
 ```
 
 Send this header, using the same secret configured in the LMS `.env` file:

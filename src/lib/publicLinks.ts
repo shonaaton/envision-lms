@@ -10,18 +10,26 @@ function normalizeExternalUrl(value?: string | null) {
   }
 }
 
+/**
+ * The public origin the marketing pages are served from.
+ *
+ * The apex is canonical: Traefik 301s `www.` to it, so every absolute URL the
+ * app emits - canonicals, sitemap entries, JSON-LD - names the same origin a
+ * crawler will land on.
+ */
 export const MARKETING_BASE_URL =
   normalizeExternalUrl(process.env.NEXT_PUBLIC_MARKETING_URL) ||
-  "https://www.envisionchessacademy.com";
+  "https://envisionchessacademy.com";
 
-export const POLICY_BASE_URL =
-  normalizeExternalUrl(process.env.NEXT_PUBLIC_POLICY_BASE_URL) ||
-  MARKETING_BASE_URL;
-
+/**
+ * The legal pages are routes of this app, not of a separate marketing site, so
+ * these stay relative. Absolute URLs to the old WordPress slugs would now point
+ * back at this same origin and loop.
+ */
 export const LEGAL_LINKS = {
-  privacy: `${POLICY_BASE_URL}/privacy-policy`,
-  terms: `${POLICY_BASE_URL}/terms-and-conditions`,
-  refund: `${POLICY_BASE_URL}/refund-policy`,
+  privacy: "/privacy",
+  terms: "/terms",
+  refund: "/refund-policy",
 };
 
 export const OFFLINE_ACADEMY_URL = `${MARKETING_BASE_URL}/chess-academy-in-kolkata`;

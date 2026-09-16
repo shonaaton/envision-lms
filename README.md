@@ -50,7 +50,7 @@ Assumes you already have:
 
 - A Hostinger KVM VPS with Docker + Docker Compose
 - n8n running behind Traefik (or Caddy) with an external Docker network named `web`
-- DNS `classroom.envisionchessacademy.com` pointing at the VPS
+- DNS `envisionchessacademy.com` and `www.envisionchessacademy.com` pointing at the VPS
 
 Then:
 
@@ -63,8 +63,11 @@ nano .env   # fill Mongo, AUTH_SECRET, Razorpay keys
 docker compose up -d --build
 ```
 
-Traefik picks up the labels in `docker-compose.yml` and routes the `LMS_HOST`
-domain from `.env` to the container on port 3000, with automatic Let's Encrypt TLS.
+Traefik picks up the labels in `docker-compose.yml` and routes both the `LMS_HOST`
+apex from `.env` and its `www.` form to the container on port 3000, with automatic
+Let's Encrypt TLS. The `www.` form is 301'd to the apex so the app is only ever
+served from one origin - NextAuth cookies and the Socket.IO CORS allowlist both
+assume that.
 
 Tournament Arena realtime play uses Socket.IO over WebSocket only. Deploy the app as
 the included standalone Node server or another long-running Node process. Do not use
@@ -74,8 +77,12 @@ not reliably keep WebSocket rooms, presence, and live board updates alive.
 If you use Caddy instead of Traefik, drop these lines in your `Caddyfile`:
 
 ```
-classroom.envisionchessacademy.com {
+envisionchessacademy.com {
   reverse_proxy envision-lms:3000
+}
+
+www.envisionchessacademy.com {
+  redir https://envisionchessacademy.com{uri} permanent
 }
 ```
 

@@ -7,7 +7,7 @@
 #   cd /opt/envision-lms
 #   docker compose up -d --build
 #
-# Requires `.env` with at least: LMS_HOST, MONGODB_URI, AUTH_SECRET,
+# Requires `.env` with at least: LMS_HOST (apex, no `www.`), MONGODB_URI, AUTH_SECRET,
 # RAZORPAY_* keys, NEXT_PUBLIC_RAZORPAY_KEY_ID.
 
 services:
@@ -37,7 +37,10 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=root_default"
-      - "traefik.http.routers.envision.rule=Host(`${LMS_HOST}`)"
+      # LMS_HOST is the canonical apex host. The `www.` form is routed too so it
+      # resolves, then 301'd to the apex by `envision-canonical` below - a single
+      # origin is what NextAuth cookies and the socket.io CORS allowlist expect.
+      - "traefik.http.routers.envision.rule=Host(`${LMS_HOST}`) || Host(`www.${LMS_HOST}`)"
       - "traefik.http.routers.envision.entrypoints=web,websecure"
       - "traefik.http.routers.envision.tls=true"
       - "traefik.http.routers.envision.tls.certresolver=mytlschallenge"
@@ -50,7 +53,11 @@ services:
       - "traefik.http.middlewares.envision.headers.SSLHost=${LMS_HOST}"
       - "traefik.http.middlewares.envision.headers.STSIncludeSubdomains=true"
       - "traefik.http.middlewares.envision.headers.STSPreload=true"
-      - "traefik.http.routers.envision.middlewares=envision@docker"
+      # `$$` is compose's escape for a literal `$`, so Traefik receives `${1}`.
+      - 'traefik.http.middlewares.envision-canonical.redirectregex.regex=^https?://www\.(.+)'
+      - "traefik.http.middlewares.envision-canonical.redirectregex.replacement=https://$${1}"
+      - "traefik.http.middlewares.envision-canonical.redirectregex.permanent=true"
+      - "traefik.http.routers.envision.middlewares=envision-canonical@docker,envision@docker"
 
   fishnet-01:
     image: niklasf/fishnet:2.14.0

@@ -1,6 +1,8 @@
-import { redirect } from "next/navigation";
-import { LEGAL_LINKS } from "@/lib/publicLinks";
+import type { Metadata } from "next";
+import LegalPagePlaceholder from "@/components/marketing/LegalPagePlaceholder";
+
+export const metadata: Metadata = { title: "Refund Policy | Envision Chess Academy" };
 
 export default function RefundPolicyPage() {
-  redirect(LEGAL_LINKS.refund);
+  return <LegalPagePlaceholder title="Refund Policy" />;
 }

@@ -1,6 +1,8 @@
-import { redirect } from "next/navigation";
-import { LEGAL_LINKS } from "@/lib/publicLinks";
+import type { Metadata } from "next";
+import LegalPagePlaceholder from "@/components/marketing/LegalPagePlaceholder";
+
+export const metadata: Metadata = { title: "Terms and Conditions | Envision Chess Academy" };
 
 export default function TermsPage() {
-  redirect(LEGAL_LINKS.terms);
+  return <LegalPagePlaceholder title="Terms and Conditions" />;
 }

@@ -56,11 +56,11 @@ function AssignDemoPopup({ account, coaches }: { account: UnbookedAccountView; c
         Assign Demo
       </PopupTrigger>
       <PopupShell id={modalId} title="Assign a demo" subtitle={`${account.studentName} · no demo requested yet`}>
-        <form action={assignDemoFromDashboard} className="grid gap-3">
+        <form key={`assign-lead-demo-form-${account.id}`} action={assignDemoFromDashboard} autoComplete="off" className="grid gap-3">
           <input type="hidden" name="student" value={account.id} />
           <label className="block">
             <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Coach</span>
-            <select name="coach" defaultValue="" className="input bg-white" required>
+            <select name="coach" defaultValue="" autoComplete="off" className="input bg-white" required>
               <option value="">Assign coach</option>
               {coaches.map((coach) => <option key={coach.id} value={coach.id}>{coach.name}</option>)}
             </select>
@@ -68,18 +68,18 @@ function AssignDemoPopup({ account, coaches }: { account: UnbookedAccountView; c
           <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_120px]">
             <label className="block">
               <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Date and time (IST)</span>
-              <input name="startAt" type="datetime-local" className="input bg-white" required />
+              <input name="startAt" type="datetime-local" autoComplete="off" className="input bg-white" required />
             </label>
             <label className="block">
               <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Minutes</span>
-              <input name="durationMinutes" type="number" min={15} step={15} defaultValue={30} className="input bg-white" />
+              <input name="durationMinutes" type="number" min={15} step={15} defaultValue={30} autoComplete="off" className="input bg-white" />
             </label>
           </div>
           <label className="block">
             <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Google Meet link</span>
             <span className="relative block">
               <LinkIcon size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input name="meetingUrl" placeholder="Paste Google Meet link" className="input bg-white pl-9" />
+              <input name="meetingUrl" placeholder="Paste Google Meet link" autoComplete="off" className="input bg-white pl-9" />
             </span>
           </label>
           <div className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs font-semibold leading-5 text-amber-900">

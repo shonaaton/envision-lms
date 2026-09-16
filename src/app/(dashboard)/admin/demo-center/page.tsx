@@ -780,12 +780,12 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
                     <SalesOwnerPicker studentId={student._id.toString()} manualOwnerId={student.leadOwner ? String(student.leadOwner) : ""} options={ownerOptions} tab={activeTab} />
                   </div>
                   <PopupShell id={assignDemoModalId} title="Assign a demo" subtitle={`${student.name || "Demo student"} · no demo requested yet`}>
-                    <form action={scheduleDemoForAccount} className="grid gap-3">
+                    <form key={`assign-demo-account-form-${student._id.toString()}`} action={scheduleDemoForAccount} autoComplete="off" className="grid gap-3">
                       <input type="hidden" name="student" value={student._id.toString()} />
                       <input type="hidden" name="tab" value={activeTab} />
                       <label className="block">
                         <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Coach</span>
-                        <select name="coach" defaultValue="" className="input bg-white" required>
+                        <select name="coach" defaultValue="" autoComplete="off" className="input bg-white" required>
                           <option value="">Assign coach</option>
                           {coaches.map((coach: any) => <option key={coach._id.toString()} value={coach._id.toString()}>{coach.name}</option>)}
                         </select>
@@ -793,18 +793,18 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
                       <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_120px]">
                         <label className="block">
                           <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Date and time (IST)</span>
-                          <input name="startAt" type="datetime-local" className="input bg-white" required />
+                          <input name="startAt" type="datetime-local" autoComplete="off" className="input bg-white" required />
                         </label>
                         <label className="block">
                           <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Minutes</span>
-                          <input name="durationMinutes" type="number" min={15} step={15} defaultValue={30} className="input bg-white" />
+                          <input name="durationMinutes" type="number" min={15} step={15} defaultValue={30} autoComplete="off" className="input bg-white" />
                         </label>
                       </div>
                       <label className="block">
                         <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Google Meet link</span>
                         <span className="relative block">
                           <LinkIcon size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                          <input name="meetingUrl" placeholder="Paste Google Meet link" className="input bg-white pl-9" />
+                          <input name="meetingUrl" placeholder="Paste Google Meet link" autoComplete="off" className="input bg-white pl-9" />
                         </span>
                       </label>
                       <div className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs font-semibold leading-5 text-amber-900">
@@ -871,6 +871,13 @@ function DemoCard({
   const demoWentUnmarked = isConfirmedDemo(booking) && !awaitingNewTime && new Date(booking.endAt || booking.startAt || 0).getTime() < Date.now();
   const cardId = booking._id.toString();
   const assignModalId = `assign-demo-${cardId}`;
+  // Every demo card carries the same four scheduling fields, so a browser that
+  // restores form values by position - which it does on a reload or a Back -
+  // dropped the coach, slot and meeting link typed for the demo just booked into
+  // the next demo's form, on top of that demo's own details. Keying the form to
+  // the values it renders, and opting the fields out of restoration, keeps each
+  // form showing the demo it belongs to.
+  const assignFormKey = [cardId, booking.assignedCoach?._id || booking.instructor?._id || "", startAt, duration, booking.meetingUrl || ""].join("|");
   const extendModalId = `extend-demo-${cardId}`;
   return (
     <article className="rounded-xl border border-slate-200/80 bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
@@ -1030,12 +1037,12 @@ function DemoCard({
         </form>
       </div>
       <PopupShell id={assignModalId} title="Assign coach and confirm demo" subtitle={`${student.name || "Demo student"} · ${booking.requestedLocalDateTime || formatAcademyDateTime(booking.startAt)}`}>
-        <form action={approveBooking} className="grid gap-3">
+        <form key={assignFormKey} action={approveBooking} autoComplete="off" className="grid gap-3">
           <input type="hidden" name="booking" value={cardId} />
           <input type="hidden" name="tab" value={activeTab} />
           <label className="block">
             <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Coach</span>
-            <select name="coach" defaultValue={booking.assignedCoach?._id?.toString() || booking.instructor?._id?.toString() || ""} className="input bg-white" required>
+            <select name="coach" defaultValue={booking.assignedCoach?._id?.toString() || booking.instructor?._id?.toString() || ""} autoComplete="off" className="input bg-white" required>
               <option value="">Assign coach</option>
               {coaches.map((coach: any) => <option key={coach._id.toString()} value={coach._id.toString()}>{coach.name}</option>)}
             </select>
@@ -1043,18 +1050,18 @@ function DemoCard({
           <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_120px]">
             <label className="block">
               <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Final date and time</span>
-              <input name="startAt" type="datetime-local" defaultValue={startAt} className="input bg-white" required />
+              <input name="startAt" type="datetime-local" defaultValue={startAt} autoComplete="off" className="input bg-white" required />
             </label>
             <label className="block">
               <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Minutes</span>
-              <input name="durationMinutes" type="number" min={15} step={15} defaultValue={duration || 30} className="input bg-white" />
+              <input name="durationMinutes" type="number" min={15} step={15} defaultValue={duration || 30} autoComplete="off" className="input bg-white" />
             </label>
           </div>
           <label className="block">
             <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Google Meet link</span>
             <span className="relative block">
               <LinkIcon size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input name="meetingUrl" defaultValue={booking.meetingUrl || ""} placeholder="Paste Google Meet link" className="input bg-white pl-9" />
+              <input name="meetingUrl" defaultValue={booking.meetingUrl || ""} placeholder="Paste Google Meet link" autoComplete="off" className="input bg-white pl-9" />
             </span>
           </label>
           <div className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs font-semibold leading-5 text-amber-900">

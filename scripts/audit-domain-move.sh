@@ -144,10 +144,13 @@ if [ -z "$cron" ]; then
   echo "         Check another user's crontab, /etc/cron.d, systemd timers or an"
   echo "         n8n Schedule trigger before adding entries, to avoid doubling up."
 else
-  stale="$(printf '%s\n' "$cron" | grep -nE 'https?://' | grep -v "//$APEX/" || true)"
+  urls="$(printf '%s\n' "$cron" | grep -nE 'https?://' || true)"
+  stale="$(printf '%s\n' "$urls" | grep -v "//$APEX/" | grep . || true)"
   if [ -n "$stale" ]; then
     bad "crontab entries name a host other than $APEX:"
     printf '%s\n' "$stale" | sed 's/^/         /'
+  elif [ -z "$urls" ]; then
+    ok "crontab hardcodes no host - cron-call.sh reads LMS_HOST from .env"
   else
     ok "every crontab URL names $APEX"
   fi

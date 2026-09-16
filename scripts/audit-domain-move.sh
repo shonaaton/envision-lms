@@ -123,6 +123,17 @@ head2 "Crontab"
 # signed-in session and takes a classroom and session id from the body. It is an
 # in-app action fired from the attendance workspace, not a sweep.
 NEEDS_CRON="demo/reminders fees/monthly-reminders"
+
+# A crontab entry is useless without the secret: with CRON_SECRET unset,
+# authorizeCronRequest accepts only a signed-in admin, so every cron call 403s.
+if docker ps --format '{{.Names}}' | grep -qx "$CONTAINER"; then
+  if docker exec "$CONTAINER" sh -c '[ -n "${CRON_SECRET:-}" ]' 2>/dev/null; then
+    ok "CRON_SECRET is set"
+  else
+    bad "CRON_SECRET is unset - every scheduled-job call 403s, whatever the crontab says"
+  fi
+fi
+
 cron="$(crontab -l 2>/dev/null || true)"
 if [ -z "$cron" ]; then
   bad "root has no crontab, so nothing calls:"

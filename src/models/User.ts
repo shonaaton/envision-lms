@@ -1,4 +1,5 @@
 import { escapeRegex } from "@/lib/loginIdentity";
+import { canonicalEmail, canonicalPhone } from "@/lib/identityMatch";
 import { Schema, model, models, type InferSchemaType } from "mongoose";
 
 const UserSchema = new Schema(
@@ -6,6 +7,35 @@ const UserSchema = new Schema(
     username: { type: String, unique: true, sparse: true, index: true }, // e.g. "Maira@ENV"
     name: { type: String, required: true },
     email: { type: String, required: true, unique: true, lowercase: true, index: true },
+    // Match keys, not contact details: the family is always written to on the
+    // `email`/`phone` they typed. These fold the spellings that mean the same
+    // inbox or the same handset so a second signup cannot slip past the unique
+    // index on `email`. Kept in sync by the hooks below - never set by hand.
+    emailCanonical: { type: String, index: true },
+    phoneCanonical: { type: String, index: true },
+    // Raised when an account is created against contact details an existing
+    // account already holds. Deliberately a flag and not a refusal: siblings
+    // share a parent's phone and often the parent's inbox, so a human decides.
+    duplicateReview: {
+      status: { type: String, enum: ["pending", "cleared", "confirmed"], index: true },
+      reasons: [{ type: String, enum: ["email", "phone"] }],
+      matches: [
+        {
+          user: { type: Schema.Types.ObjectId, ref: "User" },
+          name: String,
+          email: String,
+          username: String,
+          accountStatus: String,
+          reasons: [{ type: String, enum: ["email", "phone"] }],
+          createdAt: Date,
+        },
+      ],
+      flaggedAt: Date,
+      reviewedAt: Date,
+      reviewedBy: { type: Schema.Types.ObjectId, ref: "User" },
+      reviewedByName: String,
+      note: String,
+    },
     passwordHash: { type: String, required: true },
     tempPassword: { type: String },
     passwordChangedAt: { type: Date },
@@ -96,6 +126,50 @@ const UserSchema = new Schema(
 );
 
 UserSchema.index({ name: "text", email: "text", username: "text" });
+
+/**
+ * Keep the duplicate-match keys true to the contact details on the record.
+ *
+ * Both write paths are hooked because both are used: `save()` for signups and
+ * anything that loads a document, `findOneAndUpdate`/`updateOne` for the admin
+ * edit screens, which change a phone number without ever building a document.
+ * A key left behind by an edit is worse than no key at all - it would quietly
+ * stop matching the account it belongs to.
+ */
+UserSchema.pre("save", function syncIdentityKeys(this: any, next) {
+  if (this.isModified("email") || this.isNew) this.emailCanonical = canonicalEmail(this.email);
+  if (this.isModified("phone") || this.isModified("countryCode") || this.isNew) {
+    this.phoneCanonical = canonicalPhone(this.phone, this.countryCode);
+  }
+  next();
+});
+
+// Single-document updates only. A bulk `updateMany` that set a phone would have
+// to derive a different key per row, and one read-back would stamp the first
+// row's key onto every match; bulk contact changes go through
+// `scripts/backfill-identity-keys.ts` instead.
+UserSchema.pre(["findOneAndUpdate", "updateOne"], async function syncIdentityKeysOnUpdate(this: any, next) {
+  const update = this.getUpdate() || {};
+  const set = { ...(update.$set || {}), ...Object.fromEntries(Object.entries(update).filter(([key]) => !key.startsWith("$"))) };
+  const touchesEmail = "email" in set;
+  const touchesPhone = "phone" in set || "countryCode" in set;
+  if (!touchesEmail && !touchesPhone) return next();
+  // A phone edit that leaves the dialling code alone (or the other way round)
+  // still needs both halves to build the key, so read back whatever the update
+  // does not carry - and only then, since the edit forms send both together.
+  const needsReadBack = touchesPhone && !("phone" in set && "countryCode" in set);
+  const current = needsReadBack ? await this.model.findOne(this.getQuery()).select("phone countryCode").lean() : null;
+  const patch: Record<string, string> = {};
+  if (touchesEmail) patch.emailCanonical = canonicalEmail(set.email);
+  if (touchesPhone) {
+    patch.phoneCanonical = canonicalPhone(
+      "phone" in set ? set.phone : (current as any)?.phone,
+      "countryCode" in set ? set.countryCode : (current as any)?.countryCode
+    );
+  }
+  this.setUpdate({ ...update, $set: { ...(update.$set || {}), ...patch } });
+  next();
+});
 
 export type UserDoc = InferSchemaType<typeof UserSchema> & { _id: any };
 export const User = models.User || model("User", UserSchema);

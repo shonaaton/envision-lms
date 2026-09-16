@@ -106,3 +106,41 @@ export function dialCodeForCountryName(country?: string) {
     (entry.aliases || []).includes(clean)
   ) || null;
 }
+
+/** Last-resort dialling code, used only when the portal has none on file for a contact. */
+export function defaultDialCode() {
+  return String(process.env.WHATSAPP_DEFAULT_COUNTRY_CODE || "").replace(/[^\d]/g, "") || "91";
+}
+
+/**
+ * One number, one spelling: digits only, dialling code included, no trunk zero.
+ *
+ * Two things read this. WhatsApp dials it, and duplicate detection keys on it -
+ * which is why it has to be the *same* function for both. "9884417455",
+ * "+91 9884417455" and "09884417455" are one phone number, and a second demo
+ * signup was spelling it differently each time to land on a row the exact-match
+ * duplicate check could not see.
+ */
+export function canonicalPhoneNumber(phone?: string, countryCode?: string) {
+  const cleanPhone = String(phone || "").replace(/[^\d]/g, "");
+  if (!cleanPhone) return "";
+  // Drop the national trunk prefix ("07911..." -> "7911...") before deciding whether the
+  // number already carries a dialling code, otherwise trunk-zero countries look international.
+  const national = cleanPhone.replace(/^0+/, "");
+  if (!national) return "";
+  const cleanCountryCode = String(countryCode || "").replace(/[^\d]/g, "");
+  if (cleanCountryCode) {
+    if (carriesCountryCode(national, cleanCountryCode)) return national;
+    // A number that already opens with its own dialling code but is too long to
+    // be a national one is a malformed international number, not a local one.
+    // Prefixing it again is how a stored "919162903499998" was dialled as
+    // "91919162903499998" - and because the send is retried from the same
+    // record, every attempt added another copy. Dial what is on file and let it
+    // fail on a wrong number rather than on a number nobody could ever have.
+    if (national.startsWith(cleanCountryCode) && exceedsNationalLength(national, cleanCountryCode)) return national;
+    return `${cleanCountryCode}${national}`;
+  }
+  // Nothing on file: keep the number if it already reads as international, else assume local.
+  if (national.length > 10 || splitInternationalNumber(national)) return national;
+  return `${defaultDialCode()}${national}`;
+}

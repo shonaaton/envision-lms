@@ -1,4 +1,4 @@
-import { carriesCountryCode, exceedsNationalLength, splitInternationalNumber } from "@/lib/phoneCountryCodes";
+import { canonicalPhoneNumber, defaultDialCode, splitInternationalNumber } from "@/lib/phoneCountryCodes";
 import { notifyFailure } from "@/lib/failureNotifications";
 import { dbConnect } from "@/lib/db";
 import { renderWhatsAppTemplatePreview, resolveWhatsAppMetaTemplateName } from "@/lib/whatsappTemplateRegistry";
@@ -59,31 +59,17 @@ export function normalizeWhatsAppNumber(value?: string) {
 
 /** Last-resort dialling code, used only when the portal has none on file for the contact. */
 export function defaultWhatsAppCountryCode() {
-  return normalizeWhatsAppNumber(process.env.WHATSAPP_DEFAULT_COUNTRY_CODE) || "91";
+  return defaultDialCode();
 }
 
+/**
+ * The number to dial, in the one spelling the portal stores everywhere.
+ *
+ * Shared with duplicate detection rather than reimplemented: see
+ * `canonicalPhoneNumber` for why both have to agree on what one phone number is.
+ */
 export function normalizeWhatsAppRecipient(phone?: string, countryCode?: string) {
-  const cleanPhone = normalizeWhatsAppNumber(phone);
-  if (!cleanPhone) return "";
-  // Drop the national trunk prefix ("07911..." -> "7911...") before deciding whether the
-  // number already carries a dialling code, otherwise trunk-zero countries look international.
-  const national = cleanPhone.replace(/^0+/, "");
-  if (!national) return "";
-  const cleanCountryCode = normalizeWhatsAppNumber(countryCode);
-  if (cleanCountryCode) {
-    if (carriesCountryCode(national, cleanCountryCode)) return national;
-    // A number that already opens with its own dialling code but is too long to
-    // be a national one is a malformed international number, not a local one.
-    // Prefixing it again is how a stored "919162903499998" was dialled as
-    // "91919162903499998" - and because the send is retried from the same
-    // record, every attempt added another copy. Dial what is on file and let it
-    // fail on a wrong number rather than on a number nobody could ever have.
-    if (national.startsWith(cleanCountryCode) && exceedsNationalLength(national, cleanCountryCode)) return national;
-    return `${cleanCountryCode}${national}`;
-  }
-  // Nothing on file: keep the number if it already reads as international, else assume local.
-  if (national.length > 10 || splitInternationalNumber(national)) return national;
-  return `${defaultWhatsAppCountryCode()}${national}`;
+  return canonicalPhoneNumber(phone, countryCode);
 }
 
 /**

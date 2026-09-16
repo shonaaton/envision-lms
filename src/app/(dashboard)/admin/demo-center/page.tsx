@@ -2,12 +2,14 @@ import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
-import { CalendarCheck, CheckCircle2, Clock3, GraduationCap, History, Link as LinkIcon, MessageSquareText, RefreshCw, RotateCcw, Trash2, UserCheck, UserX, XCircle } from "lucide-react";
+import { CalendarCheck, CheckCircle2, Clock3, Copy, GraduationCap, History, Link as LinkIcon, MessageSquareText, RefreshCw, RotateCcw, Trash2, UserCheck, UserX, Users, XCircle } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { canAccessFeature } from "@/lib/featureAccess";
 import { dbConnect } from "@/lib/db";
 import { academyDateTimeLocalInput, formatAcademyDateTime, parseAcademyDateTimeLocal } from "@/lib/academyTime";
 import { notifyDemoConverted, notifyDemoMissed } from "@/lib/demoWorkflow";
+import { pendingDuplicateReviews, reviewDuplicateFlag } from "@/lib/duplicateAccounts";
+import { duplicateReasonSummary } from "@/lib/identityMatch";
 import { recordActivity } from "@/lib/activity";
 import { cancelDemoClassrooms, isConfirmedDemo, markDemoClassroomMissed, upsertDemoClassroom } from "@/lib/demoClassroom";
 import { COURSE_TIER_LABELS } from "@/lib/courseTiers";
@@ -40,7 +42,7 @@ import {
 
 export const dynamic = "force-dynamic";
 
-type DemoTab = "requested" | "upcoming" | "completed" | "missed" | "converted" | "closed" | "assessments" | "history";
+type DemoTab = "requested" | "upcoming" | "completed" | "missed" | "converted" | "closed" | "duplicates" | "assessments" | "history";
 type DemoManagerSession = Awaited<ReturnType<typeof auth>> & { user: { id?: string; role?: string } };
 
 const tabs: Array<{ id: DemoTab; label: string }> = [
@@ -50,6 +52,7 @@ const tabs: Array<{ id: DemoTab; label: string }> = [
   { id: "missed", label: "No Shows/Missed" },
   { id: "converted", label: "Converted" },
   { id: "closed", label: "Closed" },
+  { id: "duplicates", label: "Duplicates" },
   { id: "assessments", label: "Assessments" },
   { id: "history", label: "History" },
 ];
@@ -480,6 +483,43 @@ async function assignSalesOwner(formData: FormData) {
   demoCenterOutcome(tab, "", ownerName ? `Salesperson set to ${ownerName}.` : "Manual salesperson cleared - the CRM assignment applies again.");
 }
 
+/**
+ * Rule on a duplicate flag.
+ *
+ * Both outcomes leave both accounts standing. "Separate people" is the common
+ * one - a second child on the same parent's phone - and clearing it takes the
+ * card off the tab for good. "Confirmed duplicate" records the finding against
+ * the newer account; deactivating or merging it stays a deliberate, separate
+ * step in the user directory, because which of the two to keep is not something
+ * this page can know.
+ */
+async function reviewDuplicate(formData: FormData) {
+  "use server";
+  const session = await requireDemoManager();
+  const decision = String(formData.get("decision") || "") === "confirmed" ? "confirmed" : "cleared";
+  let outcome: Awaited<ReturnType<typeof reviewDuplicateFlag>>;
+  try {
+    await dbConnect();
+    outcome = await reviewDuplicateFlag({
+      userId: String(formData.get("student") || ""),
+      decision,
+      actorId: String((session.user as any).id || ""),
+      actorName: String((session.user as any).name || ""),
+      note: String(formData.get("note") || "").trim(),
+    });
+  } catch (error: any) {
+    demoCenterOutcome("duplicates", error?.message || "Could not save that decision.");
+  }
+  revalidatePath("/admin/demo-center");
+  demoCenterOutcome(
+    "duplicates",
+    "",
+    decision === "cleared"
+      ? `${outcome.name} is marked as a separate person. The flag is cleared.`
+      : `${outcome.name} is recorded as a duplicate. Deactivate or merge it from the user directory.`
+  );
+}
+
 const ASSESSMENTS_PAGE_SIZE = 50;
 
 export default async function DemoCenterPage({ searchParams }: { searchParams?: { tab?: string; error?: string; ok?: string; page?: string } }) {
@@ -488,7 +528,7 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
   const activeTab = tabs.some((tab) => tab.id === searchParams?.tab) ? searchParams?.tab as DemoTab : "requested";
   const errorNotice = String(searchParams?.error || "").trim();
   const successNotice = String(searchParams?.ok || "").trim();
-  const [bookings, demoStudents, coaches, courses, batches, convertedStudents, studentsWithConvertedBooking] = await Promise.all([
+  const [bookings, demoStudents, coaches, courses, batches, convertedStudents, studentsWithConvertedBooking, duplicateFlags] = await Promise.all([
     Booking.find({ bookingType: "demo" }).populate("student instructor assignedCoach", "name email countryCode phone username accountStatus parentName city country studentLevel demoExpiresAt").sort({ createdAt: -1 }).limit(300).lean(),
     User.find({ role: "student", accountStatus: "demo" }, { passwordHash: 0 }).sort({ createdAt: -1 }).limit(300).lean(),
     User.find({ role: "instructor", isActive: true }, { name: 1, email: 1 }).sort({ name: 1 }).lean(),
@@ -496,6 +536,10 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
     Batch.find({ isActive: { $ne: false } }).select("name level").sort({ name: 1 }).lean(),
     User.find({ role: "student", "conversionSetup.convertedAt": { $exists: true } }, { passwordHash: 0 }).sort({ "conversionSetup.convertedAt": -1 }).limit(300).lean(),
     Booking.distinct("student", { bookingType: "demo", demoStatus: "CONVERTED" }),
+    // Flagged accounts are not demo bookings, so they are fetched rather than
+    // classified out of `bookings` - an account can be flagged before it has
+    // ever asked for a class.
+    pendingDuplicateReviews(),
   ]);
   // Two different questions, so two queries. The Assessments tab lists every
   // assessment ever written, a page at a time, so none drops off the end. The
@@ -530,14 +574,16 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
   // so without this it vanished from the Demo Center altogether.
   const convertedBookingStudents = new Set(studentsWithConvertedBooking.map((id: any) => String(id)));
   const convertedWithoutBooking = convertedStudents.filter((student: any) => !convertedBookingStudents.has(String(student._id)));
-  const visibleBookings = activeTab === "assessments" || activeTab === "history"
+  const visibleBookings = activeTab === "assessments" || activeTab === "history" || activeTab === "duplicates"
     ? []
     : bookings.filter((booking: any) => classifyDemo(booking) === activeTab);
   const counts = Object.fromEntries(tabs.map((tab) => [
     tab.id,
     tab.id === "assessments"
       ? assessmentTotal
-      : bookings.filter((booking: any) => classifyDemo(booking) === tab.id).length + (tab.id === "converted" ? convertedWithoutBooking.length : 0),
+      : tab.id === "duplicates"
+        ? duplicateFlags.length
+        : bookings.filter((booking: any) => classifyDemo(booking) === tab.id).length + (tab.id === "converted" ? convertedWithoutBooking.length : 0),
   ]));
   const feedbackByBooking = new Map(cardFeedback.map((item: any) => [String(item.booking?._id || item.booking), item]));
   // A converted student with no booking left can still have an assessment - the
@@ -609,7 +655,26 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
         ))}
       </nav>
 
-      {activeTab === "history" ? (
+      {activeTab === "duplicates" ? (
+        <section className="grid gap-3">
+          {errorNotice || successNotice ? (
+            <div
+              role="status"
+              className={`rounded-lg border px-4 py-3 text-sm font-semibold ${errorNotice ? "border-rose-200 bg-rose-50 text-rose-800" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`}
+            >
+              {errorNotice || successNotice}
+            </div>
+          ) : null}
+          <p className="text-[13px] leading-6 text-slate-500">
+            Accounts opened against contact details another account already holds. Signups are never blocked on this - a second child on the same
+            parent&apos;s phone or inbox is a real student - so each one waits here for a decision.
+          </p>
+          {duplicateFlags.map((student: any) => (
+            <DuplicateCard key={student._id.toString()} student={student} />
+          ))}
+          {!duplicateFlags.length ? <Empty text="No accounts waiting on a duplicate decision." /> : null}
+        </section>
+      ) : activeTab === "history" ? (
         <section className="grid gap-3">
           {archivedBookings.map((booking: any) => (
             <HistoryCard key={booking._id.toString()} booking={booking} activities={activityByBooking.get(String(booking._id)) || []} />
@@ -1024,6 +1089,80 @@ function DemoCard({
  * built from the Activity entries the demo workflow already records, so History
  * shows the real sequence rather than a summary written after the fact.
  */
+/**
+ * One flagged account, side by side with what it matched.
+ *
+ * The older account's details are shown in full because that is the comparison
+ * the admin is actually making - two Roonwals on one phone number is a sibling,
+ * two Roonwals on one phone number and one inbox with the same first name is
+ * usually not.
+ */
+function DuplicateCard({ student }: { student: any }) {
+  const review = student.duplicateReview || {};
+  const matches: any[] = review.matches || [];
+  const noteId = `duplicate-note-${student._id.toString()}`;
+  return (
+    <article className="rounded-xl border border-amber-200 bg-white p-4 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[15px] font-semibold tracking-tight text-slate-900">{student.name || "Unnamed account"}</span>
+            <Tag tone="amber">{duplicateReasonSummary(review.reasons || [])}</Tag>
+            {student.accountStatus ? <Tag tone="slate">{titleCase(student.accountStatus)}</Tag> : null}
+          </div>
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[13px] text-slate-500">
+            <span>{student.username || "No user ID"}</span>
+            <Dot />
+            <a href={`mailto:${student.email}`} className="hover:text-brand">{student.email}</a>
+            <Dot />
+            <span>{contactNumber(student)}</span>
+          </div>
+        </div>
+        <Field label="Signed up" value={student.createdAt ? formatAcademyDateTime(student.createdAt) : ""} />
+      </div>
+
+      <div className="mt-3 rounded-lg border border-slate-200/80 bg-slate-50 p-3">
+        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Already on file ({matches.length})
+        </div>
+        <ul className="mt-2 grid gap-2">
+          {matches.map((match: any, index: number) => (
+            <li key={String(match.user || index)} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[13px] text-slate-600">
+              <span className="font-semibold text-slate-900">{match.name || "Unnamed"}</span>
+              <Dot />
+              <span>{match.username || "No user ID"}</span>
+              <Dot />
+              <span>{match.email || "No email"}</span>
+              <Dot />
+              <Tag tone="slate">{duplicateReasonSummary(match.reasons || [])}</Tag>
+              {match.createdAt ? <><Dot /><span>Signed up {formatAcademyDateTime(match.createdAt)}</span></> : null}
+            </li>
+          ))}
+          {!matches.length ? <li className="text-[13px] text-slate-500">The matching account has since been removed.</li> : null}
+        </ul>
+      </div>
+
+      <form action={reviewDuplicate} className="mt-3 grid gap-2">
+        <input type="hidden" name="student" value={student._id.toString()} />
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Note (optional)</span>
+          <input id={noteId} name="note" placeholder="e.g. Younger brother, same parent&apos;s phone" className="input bg-white" />
+        </label>
+        <div className="flex flex-wrap gap-2">
+          <button name="decision" value="cleared" className="btn-primary"><Users size={15} /> Separate people - clear flag</button>
+          <button name="decision" value="confirmed" className="btn-outline bg-white"><Copy size={15} /> Confirm duplicate</button>
+          <Link
+            href={`/admin/users?tab=${student.accountStatus === "demo" ? "demo" : "students"}&q=${encodeURIComponent(student.email || student.name || "")}`}
+            className="btn-outline bg-white"
+          >
+            Open in user directory
+          </Link>
+        </div>
+      </form>
+    </article>
+  );
+}
+
 function HistoryCard({ booking, activities }: { booking: any; activities: any[] }) {
   const student = booking.student || {};
   return (

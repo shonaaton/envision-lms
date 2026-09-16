@@ -3,12 +3,13 @@ import bcrypt from "bcryptjs";
 import { ZodError } from "zod";
 import { dbConnect } from "@/lib/db";
 import { User, createUserWithUsername } from "@/models/User";
-import { Booking } from "@/models/Booking";
 import { CoachApplication } from "@/models/Onboarding";
 import { registerSchema } from "@/lib/validation";
 import { sendWelcomeEmail } from "@/lib/welcomeEmail";
 import { consumeRateLimit, getClientIp, jsonRateLimitHeaders } from "@/lib/requestSecurity";
 import { notifyDemoAccountCreated } from "@/lib/demoWorkflow";
+import { flagDuplicateAccount } from "@/lib/duplicateAccounts";
+import { canonicalEmail } from "@/lib/identityMatch";
 import { sendMetaConversionEvent } from "@/lib/metaConversions";
 
 export const dynamic = "force-dynamic";
@@ -18,7 +19,9 @@ export async function POST(req: Request) {
     const body = await req.json();
     const rateIp = getClientIp(req.headers);
     const ipLimit = consumeRateLimit(`register:ip:${rateIp}`, 8, 15 * 60 * 1000);
-    const emailKey = String(body?.email || "").trim().toLowerCase();
+    // Keyed on the inbox rather than the string typed, so respelling a Gmail
+    // address with dots or a +tag does not hand out a fresh quota.
+    const emailKey = canonicalEmail(String(body?.email || ""));
     const emailLimit = emailKey ? consumeRateLimit(`register:email:${emailKey}`, 3, 60 * 60 * 1000) : null;
     if (!ipLimit.allowed || (emailLimit && !emailLimit.allowed)) {
       const limited = !ipLimit.allowed ? ipLimit : emailLimit!;
@@ -31,18 +34,10 @@ export async function POST(req: Request) {
     await dbConnect();
     const exists = await User.findOne({ email: data.email.toLowerCase() });
     if (exists) return NextResponse.json({ error: "Email already registered" }, { status: 409 });
-    const phone = String(data.phone || "").trim();
-    if (phone) {
-      const usersWithPhone = await User.find({ phone }).select("_id").lean();
-      if (usersWithPhone.length) {
-        const usedDemo = await Booking.exists({
-          student: { $in: usersWithPhone.map((user: any) => user._id) },
-          bookingType: "demo",
-          demoStatus: { $in: ["COMPLETED", "CONVERTED"] },
-        });
-        if (usedDemo) return NextResponse.json({ error: "A free demo has already been completed for this phone number. Please contact the academy team." }, { status: 409 });
-      }
-    }
+    // A phone number already on file no longer stops the signup. Siblings share
+    // one, and the family that is genuinely opening a second demo account was
+    // getting through anyway by respelling the email. The account is created and
+    // flagged for the Demo Center instead - see src/lib/duplicateAccounts.ts.
     if (!data.acceptedPrivacy || !data.acceptedTerms || !data.acceptedRefund) {
       return NextResponse.json({ error: "Please accept the academy policies to continue." }, { status: 400 });
     }
@@ -102,6 +97,7 @@ export async function POST(req: Request) {
     });
     const metaEventId = `demo_registration_${user._id.toString()}`;
     await notifyDemoAccountCreated(user).catch((error) => console.error("Demo account notification failed", error));
+    await flagDuplicateAccount(user).catch((error) => console.error("Duplicate account check failed", error));
     await sendMetaConversionEvent({
       eventName: "CompleteRegistration",
       eventId: metaEventId,

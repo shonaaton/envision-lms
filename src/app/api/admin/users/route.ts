@@ -9,6 +9,7 @@ import { canAccessFeature, isSuperAdminSession } from "@/lib/featureAccess";
 import { sendWelcomeEmail } from "@/lib/welcomeEmail";
 import { closedGroupCountsByCoach } from "@/lib/groupLifecycle";
 import { validateRoleAssignment } from "@/lib/accessRoles";
+import { flagDuplicateAccount } from "@/lib/duplicateAccounts";
 import { AccessRole } from "@/models/AccessRole";
 
 export const dynamic = "force-dynamic";
@@ -122,6 +123,11 @@ export async function POST(req: Request) {
       passwordChangedAt: new Date(),
       passwordChangeSource: "registration",
     });
+    // Staff create accounts from the CRM too, and a lead that already signed up
+    // for itself arrives here as a second record. Flagged, never blocked - the
+    // admin doing the typing is usually the person who knows whether this is a
+    // sibling.
+    await flagDuplicateAccount(u).catch((error) => console.error("Duplicate account check failed", error));
     await recordActivity({
       actor: actorId,
       targetUser: u._id.toString(),

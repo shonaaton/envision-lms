@@ -60,6 +60,11 @@ type AdminUser = {
   isActive: boolean;
   isPaused?: boolean;
   pausedUntil?: string;
+  duplicateReview?: {
+    status?: "pending" | "cleared" | "confirmed";
+    reasons?: string[];
+    matches?: Array<{ name?: string; email?: string; username?: string }>;
+  };
 };
 
 type BatchItem = {
@@ -124,6 +129,17 @@ export default function AdminUsersPage() {
   const [changeBatchTarget, setChangeBatchTarget] = useState<AdminUser | null>(null);
   const [detailBatch, setDetailBatch] = useState<BatchItem | null>(null);
   const [editBatch, setEditBatch] = useState<BatchItem | null>(null);
+
+  // Deep links land here from the Demo Center's duplicate review, which sends an
+  // admin to one specific account. Read once, from the URL the page was opened
+  // with, so typing in the search box afterwards is not fought with.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const search = params.get("q");
+    const openTab = params.get("tab");
+    if (search) setQ(search);
+    if (openTab === "students" || openTab === "demo" || openTab === "coaches" || openTab === "sub-admins") setTab(openTab);
+  }, []);
 
   useEffect(() => {
     fetch("/api/admin/roles", { cache: "no-store" }).then(async (response) => {
@@ -354,6 +370,7 @@ Delete anyway?`
                     <InfoPill label="Username" value={u.username || "-"} />
                     <InfoPill label="Phone" value={contactNumber(u)} />
                     {tab === "coaches" && <InfoPill label="Closed Batches" value={String(u.closedBatchCount || 0)} />}
+                    {u.duplicateReview?.status === "pending" && <div className="col-span-2"><DuplicateFlag user={u} /></div>}
                     <button
                       className={`rounded-lg px-3 py-2 text-left text-xs font-bold ${!u.isActive ? "bg-red-100 text-red-700" : u.isPaused ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-700"}`}
                       onClick={() => (u.isActive && u.isPaused ? undefined : toggleUserAccess(u))}
@@ -412,6 +429,7 @@ Delete anyway?`
                           <Avatar name={u.name} />
                           <span className="font-medium">{u.name}{tab === "sub-admins" && <span className="block text-xs font-normal text-purple-700">{typeof u.accessRole === "object" && u.accessRole ? u.accessRole.name : userRoleLabel(u.role)}</span>}</span>
                         </button>
+                        <DuplicateFlag user={u} />
                       </td>
                       <td className="py-3 text-slate-600">{u.email}</td>
                       <td className="py-3 text-slate-600">{contactNumber(u)}</td>
@@ -698,6 +716,30 @@ function InfoPill({ label, value }: { label: string; value: string }) {
       <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{label}</div>
       <div className="mt-1 truncate text-xs font-semibold text-slate-950">{value}</div>
     </div>
+  );
+}
+
+/**
+ * The duplicate flag raised at signup, if it is still open.
+ *
+ * Shown on the row rather than only in the Demo Center because this directory is
+ * where two accounts for one family are actually noticed - the flag belongs next
+ * to the rows that prompted the question.
+ */
+function DuplicateFlag({ user }: { user: AdminUser }) {
+  if (user.duplicateReview?.status !== "pending") return null;
+  const matches = user.duplicateReview.matches || [];
+  const names = matches.map((match) => match.name || match.email || match.username).filter(Boolean).join(", ");
+  const reasons = (user.duplicateReview.reasons || []).map((reason) => (reason === "email" ? "same email inbox" : "same phone number")).join(" and ");
+  return (
+    <a
+      href="/admin/demo-center?tab=duplicates"
+      className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-200"
+      title={`Possible duplicate of ${names || "an existing account"}${reasons ? ` - ${reasons}` : ""}. Review it in the Demo Center.`}
+    >
+      <AlertTriangle size={12} />
+      Possible duplicate
+    </a>
   );
 }
 

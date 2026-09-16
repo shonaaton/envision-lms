@@ -1,12 +1,8 @@
 import "./globals.css";
-import { Suspense } from "react";
 import type { Metadata } from "next";
 import { Caveat } from "next/font/google";
 import { Toaster } from "sonner";
-import MetaPageViewTracker from "@/components/MetaPageViewTracker";
-import CookieConsent from "@/components/marketing/CookieConsent";
-import MetaPixel from "@/components/marketing/MetaPixel";
-import SiteAnalyticsTracker from "@/components/marketing/SiteAnalyticsTracker";
+import PublicPageTracking from "@/components/marketing/PublicPageTracking";
 import Providers from "./providers";
 import { ACADEMY_FAVICON_URL } from "@/lib/branding";
 
@@ -27,13 +23,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={caveat.variable}>
       <body>
-        <MetaPixel pixelId={metaPixelId} />
         <Providers>{children}</Providers>
-        <Suspense fallback={null}>
-          <MetaPageViewTracker />
-          <SiteAnalyticsTracker />
-        </Suspense>
-        <CookieConsent />
+        <PublicPageTracking pixelId={metaPixelId} />
         <Toaster
           richColors
           theme="light"

@@ -50,21 +50,23 @@ export type CoursePageConfig = {
 export const coursePages: CoursePageConfig[] = [
   {
     tier: "beginner",
-    slug: "online-chess-course-for-beginners",
+    slug: "online-chess-coaching-courses/beginner-chess-course",
     navLabel: "Beginner Course",
-    keyword: "online chess course for beginners",
-    h1: "Online chess course for beginners.",
+    keyword: "online chess classes for beginners",
+    h1: "Beginner Chess Course",
+    supportingHeading: "Online chess classes for beginners, starting from the very first move.",
     eyebrow: "Beginner Stage",
-    title: "Online Chess Course for Beginners | 48 Live Sessions | Envision Chess Academy",
+    title: "Online Chess Classes for Beginners | Envision",
     description:
       "A structured online chess course for beginners: 48 live sessions across three levels, from how the pieces move to checkmate patterns and opening principles. Two classes a week with a coach. Book a free demo class.",
     keywords: [
-      "online chess course for beginners",
-      "beginner chess classes online",
-      "learn chess online for beginners",
-      "chess coaching for kids",
-      "online chess classes",
-      "chess course for beginners",
+      "online chess classes for beginners",
+      "beginner chess course online",
+      "online chess classes for kids",
+      "chess coaching for beginners",
+      "learn chess online for kids",
+      "beginner chess coaching",
+      "chess lessons for beginners",
     ],
     intro:
       "Start from the very first move. 48 live sessions with a coach, across three levels, taking a complete beginner from how a rook moves to delivering checkmate on purpose.",
@@ -104,12 +106,13 @@ export const coursePages: CoursePageConfig[] = [
   },
   {
     tier: "intermediate",
-    slug: "intermediate-chess-course-online",
+    slug: "online-chess-coaching-courses/intermediate-chess-course",
     navLabel: "Intermediate Course",
     keyword: "intermediate chess course online",
-    h1: "Intermediate chess course online.",
+    h1: "Intermediate Chess Course",
+    supportingHeading: "Intermediate chess course online - turn the fundamentals into stronger chess.",
     eyebrow: "Intermediate Stage",
-    title: "Intermediate Chess Course Online | 48 Tactics Sessions | Envision Chess Academy",
+    title: "Intermediate Chess Course Online | Envision",
     description:
       "An intermediate chess course online built entirely on tactics: 48 live sessions covering forks, pins, skewers, back rank, discovered attacks, deflection, decoy, windmill and mate in two and three. Book a free demo class.",
     keywords: [
@@ -158,12 +161,13 @@ export const coursePages: CoursePageConfig[] = [
   },
   {
     tier: "semi_pro",
-    slug: "advanced-chess-course-online",
-    navLabel: "Advanced Course",
+    slug: "online-chess-coaching-courses/semi-pro-chess-course",
+    navLabel: "Semi-Pro Course",
     keyword: "advanced chess course online",
-    h1: "Advanced chess course online.",
+    h1: "Semi-Pro Chess Course",
+    supportingHeading: "Advanced chess training for developing competitive players.",
     eyebrow: "Semi Pro Stage",
-    title: "Advanced Chess Course Online | Endgames, Openings & Mating Patterns | Envision Chess Academy",
+    title: "Advanced Chess Course Online | Semi-Pro - Envision",
     description:
       "An advanced chess course online for competitive players: 48 live sessions covering king and pawn endgames, fifteen named mating patterns, a full opening repertoire as White and Black, and Lucena, Philidor and Vancura rook endings. Book a free demo class.",
     keywords: [
@@ -216,21 +220,22 @@ export const coursePages: CoursePageConfig[] = [
   },
   {
     tier: "pro",
-    slug: "pro-chess-course",
+    slug: "online-chess-coaching-courses/pro-chess-course",
     navLabel: "Pro Course",
-    keyword: "online chess coaching in India",
+    keyword: "chess coaching for rated players",
     h1: "Pro Chess Course",
-    supportingHeading: "Online chess coaching in India for serious competitive players.",
+    supportingHeading: "Structured training for FIDE-rated and competitive players.",
     eyebrow: "Pro Stage",
-    title: "Online Chess Coaching in India | Pro Course - Envision",
+    title: "Chess Coaching for Rated Players | Pro Course - Envision",
     description:
-      "Join Envision Chess Academy's Pro Course for online chess coaching in India, with structured training for rated and competitive tournament players.",
+      "Chess coaching for rated players at Envision Chess Academy. The Pro Course is 48 live sessions of advanced calculation for competitive tournament players.",
     keywords: [
-      "online chess coaching in India",
-      "online chess classes in India",
-      "professional chess coaching online",
-      "advanced chess coaching in India",
+      "chess coaching for rated players",
+      "online chess coaching for rated players",
       "chess coaching for FIDE-rated players",
+      "FIDE chess coaching",
+      "competitive chess coaching",
+      "professional chess coaching",
       "chess coaching for tournament players",
       "chess rating improvement",
       "FIDE rating improvement",
@@ -292,11 +297,11 @@ export const coursePages: CoursePageConfig[] = [
   },
   {
     tier: "masters",
-    slug: "masters-chess-course",
+    slug: "online-chess-coaching-courses/masters-chess-course",
     navLabel: "Masters Course",
     keyword: "elite chess coaching online",
     h1: "Masters Chess Course",
-    supportingHeading: "Elite chess coaching online for serious competitive players.",
+    supportingHeading: "Elite training for serious competitive chess players.",
     eyebrow: "Masters Stage",
     title: "Elite Chess Coaching Online | Masters Course - Envision",
     description:
@@ -368,6 +373,50 @@ export const coursePages: CoursePageConfig[] = [
     ],
   },
 ];
+
+/**
+ * The parent page every course sits under. It carries the broad commercial
+ * phrases so the child pages do not compete with it - each of those owns one
+ * specific intent instead.
+ */
+export const courseHub = {
+  slug: "online-chess-coaching-courses",
+  navLabel: "Online Chess Coaching Courses",
+  keyword: "online chess coaching courses",
+  h1: "Online Chess Coaching Courses",
+  supportingHeading: "Structured online chess coaching in India for every level.",
+  title: "Online Chess Coaching Courses in India | Envision Chess Academy",
+  description:
+    "Explore online chess coaching courses at Envision Chess Academy, with structured training from Beginner to Masters level for students across India and worldwide.",
+  keywords: [
+    "online chess coaching courses",
+    "online chess coaching in India",
+    "online chess classes in India",
+    "online chess courses",
+    "online chess training",
+    "online chess academy in India",
+    "chess classes online",
+    "online chess classes for kids",
+    "professional chess coaching online",
+    "chess coaching for kids",
+    "structured online chess coaching",
+  ],
+  intro:
+    "One ladder, five stages, 240 taught sessions. Every student is placed by a coach at the session that matches their strength, then works through a syllabus that runs from the first move to elite competitive play.",
+};
+
+export function courseHubMetadata(): Metadata {
+  const url = `${MARKETING_BASE_URL}/${courseHub.slug}`;
+  return {
+    metadataBase: new URL(MARKETING_BASE_URL),
+    title: courseHub.title,
+    description: courseHub.description,
+    keywords: courseHub.keywords,
+    alternates: { canonical: url },
+    openGraph: { title: courseHub.title, description: courseHub.description, url, siteName: "Envision Chess Academy", type: "website" },
+    twitter: { card: "summary_large_image", title: "Online Chess Coaching Courses", description: courseHub.description },
+  };
+}
 
 export function getCoursePage(slug: string) {
   const config = coursePages.find((page) => page.slug === slug);

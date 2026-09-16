@@ -8,6 +8,7 @@ import { CalendarDays, CheckCircle2, Clock3, LockKeyhole, PlayCircle, Sparkles, 
 import { nextOccurrenceForWeeklySlot } from "@/lib/bookingAvailability";
 import { bookingFeatureNameForAccount, bookingFeatureNameForType, isDemoBookingAccount } from "@/lib/bookingLabels";
 import { trackMetaSchedule } from "@/lib/metaPixel";
+import { trackConversion } from "@/lib/siteAnalytics";
 import { inactiveStudentMessage } from "@/lib/studentStatus";
 
 const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -117,6 +118,7 @@ export default function BookingPage() {
       setLoading(false);
       if (!res.ok) return toast.error(payload.error || "Could not request this demo time.");
       trackMetaSchedule(payload.metaEventId, payload._id);
+      trackConversion("demo_booking");
       toast.success(activeDemoBooking ? "Requested demo time changed" : "Demo request sent for academy review");
       setPreferredDate("");
       setPreferredTime("");

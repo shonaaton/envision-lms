@@ -205,6 +205,28 @@ export const FEATURE_DEFINITIONS: FeatureDefinition[] = [
     },
   },
   {
+    key: "marketingAnalytics",
+    label: "Marketing Analytics",
+    category: "Administration",
+    description:
+      "First-party website analytics: traffic, landing pages, referrers, UTM campaign attribution and demo conversions. Consent-gated collection, no personal data stored.",
+    routes: [
+      "/admin/marketing-analytics",
+      "/admin/marketing-analytics/realtime",
+      "/admin/marketing-analytics/traffic",
+      "/admin/marketing-analytics/behaviour",
+    ],
+    apiPrefixes: ["/api/analytics"],
+    permissions: [view],
+    defaultStatus: "enabled",
+    defaultRolePermissions: {
+      student: [],
+      instructor: [],
+      admin: ["view"],
+      "sub-admin": [],
+    },
+  },
+  {
     key: "playerAnalytics",
     label: "Player Analytics",
     category: "Training Tools",

@@ -4,7 +4,7 @@ import HeroStudentCluster from "@/components/marketing/HeroStudentCluster";
 import WhyEnvision from "@/components/marketing/WhyEnvision";
 import { MarketingFooter, MarketingHeader, courseNav } from "@/components/marketing/MarketingChrome";
 import { ACADEMY_DEFAULTS } from "@/lib/branding";
-import type { CoursePageConfig } from "@/lib/coursePages";
+import { courseHub, type CoursePageConfig } from "@/lib/coursePages";
 import { curriculumLevels } from "@/lib/demoCurriculum";
 import { MARKETING_BASE_URL } from "@/lib/publicLinks";
 
@@ -62,7 +62,8 @@ export default function CoursePage({ config }: { config: CoursePageConfig }) {
       "@type": "BreadcrumbList",
       itemListElement: [
         { "@type": "ListItem", position: 1, name: "Home", item: `${MARKETING_BASE_URL}/` },
-        { "@type": "ListItem", position: 2, name: config.navLabel, item: pageUrl },
+        { "@type": "ListItem", position: 2, name: courseHub.navLabel, item: `${MARKETING_BASE_URL}/${courseHub.slug}` },
+        { "@type": "ListItem", position: 3, name: config.navLabel, item: pageUrl },
       ],
     },
     {
@@ -89,9 +90,11 @@ export default function CoursePage({ config }: { config: CoursePageConfig }) {
         <div className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-white to-transparent" />
         <div className="relative mx-auto grid max-w-7xl items-center gap-8 px-4 py-10 sm:px-6 lg:grid-cols-[0.92fr_1.08fr] lg:px-8 lg:py-14">
           <div className="motion-rise max-w-xl">
-            <nav aria-label="Breadcrumb" className="mb-4 text-xs font-bold text-brand-900/60">
+            <nav aria-label="Breadcrumb" className="mb-4 flex flex-wrap items-center gap-x-1.5 text-xs font-bold text-brand-900/60">
               <Link href="/" className="hover:text-brand">Home</Link>
-              <span className="px-1.5">/</span>
+              <span>/</span>
+              <Link href={`/${courseHub.slug}`} className="hover:text-brand">Courses</Link>
+              <span>/</span>
               <span className="text-brand">{config.navLabel}</span>
             </nav>
             <p className="inline-flex items-center gap-2 rounded-full bg-accent px-3.5 py-1.5 text-[10px] font-extrabold uppercase tracking-[0.12em] text-brand-900 shadow-sm shadow-accent-600/30">
@@ -202,8 +205,8 @@ export default function CoursePage({ config }: { config: CoursePageConfig }) {
 
           <div className="mt-8 flex flex-wrap items-center gap-3">
             <Link href={demoHref} className="btn-accent">{ctaLabel} <ArrowRight size={16} /></Link>
-            <Link href="/#programs" className="btn border border-brand/25 bg-white text-brand shadow-sm shadow-brand-900/5 hover:border-brand/50 hover:bg-brand-50">
-              See the full 5-stage ladder
+            <Link href={`/${courseHub.slug}`} className="btn border border-brand/25 bg-white text-brand shadow-sm shadow-brand-900/5 hover:border-brand/50 hover:bg-brand-50">
+              See all five courses
             </Link>
           </div>
         </div>

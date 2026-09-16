@@ -1,10 +1,10 @@
 import CoursePage from "@/components/marketing/CoursePage";
 import { courseMetadata, getCoursePage } from "@/lib/coursePages";
 
-const config = getCoursePage("masters-chess-course");
+const config = getCoursePage("online-chess-coaching-courses/beginner-chess-course");
 
 export const metadata = courseMetadata(config);
 
-export default function MastersCoursePage() {
+export default function BeginnerCoursePage() {
   return <CoursePage config={config} />;
 }

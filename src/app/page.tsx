@@ -39,7 +39,7 @@ export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   metadataBase: new URL(MARKETING_BASE_URL),
-  title: "Envision Chess Academy | Premium Chess Coaching and Student LMS",
+  title: "Best Chess Coaching in India | Envision Chess Academy",
   description:
     "Premium online and offline chess coaching with verified student achievements, structured mentorship, tournaments, practice tools, progress tracking, and payments in one student portal.",
   alternates: { canonical: `${MARKETING_BASE_URL}/` },
@@ -277,7 +277,7 @@ export default async function Home() {
                 </div>
                 <p className="mt-3 text-[10px] font-black uppercase tracking-[0.12em] text-brand-900/60">{track.totalSessions} sessions in this stage</p>
                 <div className="mt-auto pt-5">
-                  {/* Stages with their own page link into it; the rest go to the demo. */}
+                  {/* Every stage has its own page under the courses hub. */}
                   <Link
                     href={track.coursePath ? `/${track.coursePath}` : demoHref}
                     className="inline-flex items-center gap-1 text-sm font-black text-brand hover:underline"

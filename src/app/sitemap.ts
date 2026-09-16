@@ -1,7 +1,7 @@
 import type { MetadataRoute } from "next";
 import { publicAchievementList, studentSlug } from "@/lib/achievementData";
 import { getLandingAchievements } from "@/lib/achievements";
-import { coursePages } from "@/lib/coursePages";
+import { courseHub, coursePages } from "@/lib/coursePages";
 import { MARKETING_BASE_URL } from "@/lib/publicLinks";
 
 /**
@@ -30,12 +30,15 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: url("/success-stories"), lastModified: now, changeFrequency: "weekly", priority: 0.7 },
   ];
 
-  const courses: MetadataRoute.Sitemap = coursePages.map((page) => ({
-    url: url(`/${page.slug}`),
-    lastModified: now,
-    changeFrequency: "monthly",
-    priority: 0.9,
-  }));
+  const courses: MetadataRoute.Sitemap = [
+    { url: url(`/${courseHub.slug}`), lastModified: now, changeFrequency: "monthly" as const, priority: 0.9 },
+    ...coursePages.map((page) => ({
+      url: url(`/${page.slug}`),
+      lastModified: now,
+      changeFrequency: "monthly" as const,
+      priority: 0.8,
+    })),
+  ];
 
   // Story pages are generated from the same list the pages themselves read, so
   // the sitemap cannot advertise a story that does not resolve.

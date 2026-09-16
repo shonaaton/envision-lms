@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { ACADEMY_LOGO_URL } from "@/lib/branding";
 import { trackMetaCompleteRegistration } from "@/lib/metaPixel";
+import { trackConversion } from "@/lib/siteAnalytics";
 import { LEGAL_LINKS } from "@/lib/publicLinks";
 
 const countries = [
@@ -247,6 +248,7 @@ export default function RegisterPage() {
     }
 
     trackMetaCompleteRegistration(result.metaEventId, result.id);
+    trackConversion("demo_registration");
     await signIn("credentials", { redirect: false, email: payload.email, password: payload.password });
     setLoading(false);
     // Every self-registered student is a free-demo account, and the one thing

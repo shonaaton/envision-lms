@@ -325,7 +325,14 @@ export async function getFeesAnalytics(options: { from: Date; to: Date; gst: Gst
       planMatchesGst(assignmentByStudent.get(idOf(student))?.plan, gst)
   );
   const newStudentIds = new Set(newStudents.map((student) => idOf(student)));
-  const newStudentInvoices = scoped.filter((invoice) => newStudentIds.has(idOf(invoice.student)));
+  // Only invoices issued inside the range count as fees won. Migrating a legacy
+  // student imports their whole payment history against a join date of today, and
+  // those back-dated invoices would otherwise be read as new business. `scoped` is
+  // GST-filtered but never date-filtered, so the range is applied here the same way
+  // `issuedInRange` applies it.
+  const newStudentInvoices = scoped.filter(
+    (invoice) => newStudentIds.has(idOf(invoice.student)) && inRange(invoiceIssuedAt(invoice), from, to)
+  );
   const newStudentBilled = sum(
     newStudentInvoices.filter((invoice) => invoice.status !== "cancelled"),
     (i) => i.totalAmount
@@ -344,8 +351,8 @@ export async function getFeesAnalytics(options: { from: Date; to: Date; gst: Gst
     title: "New students added",
     subtitle:
       gst === "all"
-        ? "Sales growth - students enrolled inside the range and the fees they brought in"
-        : `Sales growth - students enrolled inside the range on a ${gst === "gst" ? "GST" : "non-GST"} plan, and the fees they brought in`,
+        ? "Sales growth - students enrolled inside the range, and the fees they were billed inside it"
+        : `Sales growth - students enrolled inside the range on a ${gst === "gst" ? "GST" : "non-GST"} plan, and the fees they were billed inside it`,
     columns: [
       { key: "student", label: "Student" },
       { key: "username", label: "Student ID" },

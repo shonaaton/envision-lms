@@ -37,10 +37,17 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=root_default"
-      # LMS_HOST is the canonical apex host. The `www.` form is routed too so it
-      # resolves, then 301'd to the apex by `envision-canonical` below - a single
-      # origin is what NextAuth cookies and the socket.io CORS allowlist expect.
-      - "traefik.http.routers.envision.rule=Host(`${LMS_HOST}`) || Host(`www.${LMS_HOST}`)"
+      # LMS_HOST is the canonical apex host. The `www.` and legacy `classroom.`
+      # forms are routed too so they resolve and get a certificate, then are 301'd
+      # to the apex by `envision-canonical` below - a single origin is what
+      # NextAuth cookies and the socket.io CORS allowlist expect.
+      #
+      # `classroom.` is only here to keep already-installed Android APKs and any
+      # not-yet-migrated bookmark working. Drop it from this rule and from the
+      # `envision-canonical` regex once nothing points there. Note it does NOT
+      # rescue webhooks: a 301 makes most HTTP clients re-send as GET and drop the
+      # body, so every webhook provider must be repointed at the apex directly.
+      - "traefik.http.routers.envision.rule=Host(`${LMS_HOST}`) || Host(`www.${LMS_HOST}`) || Host(`classroom.${LMS_HOST}`)"
       - "traefik.http.routers.envision.entrypoints=web,websecure"
       - "traefik.http.routers.envision.tls=true"
       - "traefik.http.routers.envision.tls.certresolver=mytlschallenge"
@@ -54,7 +61,7 @@ services:
       - "traefik.http.middlewares.envision.headers.STSIncludeSubdomains=true"
       - "traefik.http.middlewares.envision.headers.STSPreload=true"
       # `$$` is compose's escape for a literal `$`, so Traefik receives `${1}`.
-      - 'traefik.http.middlewares.envision-canonical.redirectregex.regex=^https?://www\.(.+)'
+      - 'traefik.http.middlewares.envision-canonical.redirectregex.regex=^https?://(?:www|classroom)\.(.+)'
       - "traefik.http.middlewares.envision-canonical.redirectregex.replacement=https://$${1}"
       - "traefik.http.middlewares.envision-canonical.redirectregex.permanent=true"
       - "traefik.http.routers.envision.middlewares=envision-canonical@docker,envision@docker"

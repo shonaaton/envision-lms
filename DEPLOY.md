@@ -8,8 +8,9 @@ https://envisionchessacademy.com
 
 Use HTTPS in production, even if you type `http://` first. Traefik should issue SSL and serve the final secure URL.
 
-The apex is canonical. `www.envisionchessacademy.com` is routed too and 301s to
-the apex, so both spellings work but only one origin is ever served.
+The apex is canonical. `www.envisionchessacademy.com` and the legacy
+`classroom.envisionchessacademy.com` are routed too and 301 to the apex, so old
+links keep working but only one origin is ever served.
 
 ## 1. Point DNS to the VPS
 
@@ -27,8 +28,9 @@ Value: <your-vps-ip-address>
 TTL: Automatic or 300
 ```
 
-The `www` record matters: Traefik answers on it only to issue the redirect, and
-it needs its own certificate to do that over HTTPS.
+Keep the existing `classroom` A record as well. Traefik answers on `www` and
+`classroom` only to issue the redirect, but each still needs its own certificate
+to do that over HTTPS - which it cannot get without a DNS record.
 
 ## 2. Update `.env` on the VPS
 
@@ -43,12 +45,30 @@ NEXT_PUBLIC_MARKETING_URL="https://envisionchessacademy.com"
 ```
 
 `LMS_HOST` is the bare apex - no `www.`, no `https://`. docker-compose builds
-both Traefik host rules from it. `NEXT_PUBLIC_POLICY_BASE_URL` is gone: the legal
+all three Traefik host rules from it. `NEXT_PUBLIC_POLICY_BASE_URL` is gone: the legal
 pages are routes of this app now, so there is nothing to point elsewhere.
 
 Keep your existing MongoDB, Razorpay, WhatsApp, and `AUTH_SECRET` values unchanged.
 
 ## 3. Update connected services
+
+Do this even though `classroom.` still redirects. The redirect is a 301, and most
+HTTP clients re-send a redirected POST as a GET with no body - so a webhook left
+on the old URL will not fail loudly, it will silently deliver nothing. Every
+provider below has to be repointed at the apex by hand.
+
+Kraya CRM webhook (Settings > the "URL to be hit when a new lead is upserted"
+field - leave the secret untouched):
+
+```text
+https://envisionchessacademy.com/api/crm/kraya/webhook
+```
+
+WhatsApp webhook, set inside the n8n workflow's HTTP node:
+
+```text
+https://envisionchessacademy.com/api/webhooks/whatsapp
+```
 
 Razorpay webhook:
 
@@ -117,6 +137,9 @@ When rebuilding the Android APK, pass the same final LMS URL:
 - Do not change MongoDB data for the domain move.
 - Do not rotate Razorpay or Google secrets unless you want to.
 - Leave `AUTH_SECRET` unchanged on the live site; changing it logs everyone out.
-- Check `https://www.envisionchessacademy.com` too: it should 301 to the apex,
+- Check `https://www.envisionchessacademy.com` and
+  `https://classroom.envisionchessacademy.com` too: both should 301 to the apex,
   not serve a second copy of the site.
+- Once nothing points at `classroom.` any more, drop it from the router rule and
+  the `envision-canonical` regex in `docker-compose.yml`, then delete its A record.
 - DNS can take a few minutes to update, and SSL may take 30-60 seconds after Traefik sees the new domain.

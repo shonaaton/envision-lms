@@ -57,13 +57,13 @@ export default function AnimatedImpactCounters({ counters }: { counters: Counter
   }, [counters, started]);
 
   return (
-    <section ref={ref} className="relative z-10 mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      <div className="grid overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl shadow-brand-900/12 sm:grid-cols-2 lg:grid-cols-5">
+    <section ref={ref} className="relative z-10 bg-[#fdf8ee] px-4 pb-10 pt-8 sm:px-6 lg:px-8">
+      <div className="mx-auto grid max-w-7xl overflow-hidden rounded-2xl border border-brand/10 bg-white shadow-lg shadow-brand-900/5 sm:grid-cols-2 lg:grid-cols-5">
         {counters.map((item, index) => (
-          <article key={item.label} className="group border-b border-slate-200 p-5 transition duration-300 hover:bg-[#fffdf0] sm:border-r lg:border-b-0">
+          <article key={item.label} className="group border-b border-brand/10 p-5 transition duration-300 hover:bg-accent/15 sm:border-r lg:border-b-0">
             <div className="text-3xl font-black tabular-nums text-brand">{formatCounter(values[index], item.value)}</div>
             <div className="mt-2 text-sm font-semibold leading-5 text-slate-600">{item.label}</div>
-            <div className="mt-4 h-0.5 w-10 bg-accent transition duration-300 group-hover:w-16" />
+            <div className="mt-4 h-1 w-10 rounded-full bg-accent transition duration-300 group-hover:w-16" />
           </article>
         ))}
       </div>

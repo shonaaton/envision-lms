@@ -25,6 +25,8 @@ import {
 import AnimatedImpactCounters from "@/components/marketing/AnimatedImpactCounters";
 import DynamicLandingShowcase from "@/components/marketing/DynamicLandingShowcase";
 import { ACADEMY_DEFAULTS, ACADEMY_LOGO_URL } from "@/lib/branding";
+import { courseTierLabel } from "@/lib/courseTiers";
+import { CURRICULUM_TIERS, curriculumLevels } from "@/lib/demoCurriculum";
 import { MARKETING_BASE_URL, OFFLINE_ACADEMY_URL } from "@/lib/publicLinks";
 import { academyBranches, anishStory, impactCounters, publicAchievementList, studentSlug } from "@/lib/achievementData";
 import { getLandingAchievements } from "@/lib/achievements";
@@ -87,34 +89,60 @@ const practiceTools = [
 
 const groupClassHighlights = [
   { label: "2 classes per week", detail: "Steady learning rhythm" },
-  { label: "16 classes per level", detail: "Structured progression" },
+  { label: "16 sessions per level", detail: "Structured progression" },
   { label: "2 months per level", detail: "Clear completion timeline" },
   { label: "Weekly tournaments", detail: "Regular competitive exposure" },
 ];
 
-const groupClassTracks = [
-  {
-    title: "Beginner Level",
-    subtitle: "Building strong foundations",
-    levels: ["B1", "B2", "B3"],
+/**
+ * Marketing copy for each stage of the ladder. The ladder itself - which stages
+ * exist, how many levels sit in each, and how many sessions sit in a level - is
+ * read from the taught syllabus in `demoCurriculum`, so this section cannot
+ * drift from what coaches actually teach the way the old hardcoded three-track
+ * list did.
+ */
+const groupClassCopy: Record<string, { accent: string; subtitle: string; detail: string }> = {
+  beginner: {
     accent: "Foundation",
-    detail: "Rules, board vision, piece safety, checkmates, opening habits, and confidence in real games.",
+    subtitle: "Building strong foundations",
+    detail: "Board vision, piece movement, notation, good and bad trades, checkmate and stalemate - everything a first real game needs.",
   },
-  {
-    title: "Intermediate Level",
-    subtitle: "Developing skills and strategy",
-    levels: ["I1", "I2", "I3", "I4", "I5", "I6", "I7", "I8"],
-    accent: "Strategy",
-    detail: "Tactics, calculation, positional ideas, endgames, tournament decisions, and practical game review.",
+  intermediate: {
+    accent: "Tactics",
+    subtitle: "Seeing the board sharply",
+    detail: "Forks, pins, skewers, back rank and discovered attacks, worked up to mates in two and three moves.",
   },
-  {
-    title: "Advanced Level",
-    subtitle: "Mastering the game",
-    levels: ["A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8"],
+  semi_pro: {
+    accent: "Endgames",
+    subtitle: "Converting winning positions",
+    detail: "Opposition and key squares, the named mating patterns, a first opening repertoire, and Lucena and Philidor rook endings.",
+  },
+  pro: {
+    accent: "Combinations",
+    subtitle: "Calculating under pressure",
+    detail: "X-ray, clearance, deflection, decoy and the Greek gift sacrifice, plus zugzwang and hard mates at tournament standard.",
+  },
+  masters: {
     accent: "Mastery",
-    detail: "Deeper preparation, complex middlegames, advanced endings, annotated games, and event readiness.",
+    subtitle: "Playing like a champion",
+    detail: "Pawn structure, outposts, fortresses, queen sacrifices, attacking schemes and theoretical endgames.",
   },
-];
+};
+
+const groupClassTracks = CURRICULUM_TIERS.filter((tier) => groupClassCopy[tier]).map((tier, index) => {
+  const levels = curriculumLevels(tier);
+  return {
+    tier,
+    stage: `Stage ${index + 1}`,
+    title: courseTierLabel(tier),
+    levels: levels.map((level) => ({ name: level.name, sessions: level.sessions.length })),
+    totalSessions: levels.reduce((total, level) => total + level.sessions.length, 0),
+    ...groupClassCopy[tier],
+  };
+});
+
+const totalCurriculumSessions = groupClassTracks.reduce((total, track) => total + track.totalSessions, 0);
+const totalCurriculumLevels = groupClassTracks.reduce((total, track) => total + track.levels.length, 0);
 
 const learningSteps = [
   "Book a free assessment",
@@ -176,7 +204,7 @@ export default async function Home() {
           </Link>
           <nav className="hidden items-center gap-5 xl:flex" aria-label="Main navigation">
             {navItems.map(([label, href]) => (
-              <Link key={href} href={href} className="text-sm font-semibold text-white/72 hover:text-accent">
+              <Link key={href} href={href} className="text-sm font-semibold text-white/70 hover:text-accent">
                 {label}
               </Link>
             ))}
@@ -193,7 +221,7 @@ export default async function Home() {
             <summary className="grid h-11 w-11 cursor-pointer list-none place-items-center rounded-lg border border-white/15 bg-white/10 text-accent">
               <Menu size={20} />
             </summary>
-            <div className="absolute right-0 mt-3 w-[min(88vw,340px)] rounded-lg border border-white/12 bg-[#21082c] p-3 shadow-2xl shadow-black/35">
+            <div className="absolute right-0 mt-3 w-[min(88vw,340px)] rounded-lg border border-white/10 bg-[#21082c] p-3 shadow-2xl shadow-black/35">
               {navItems.map(([label, href]) => (
                 <Link key={href} href={href} className="block rounded-lg px-3 py-3 text-sm font-bold text-white/80 hover:bg-white/10">
                   {label}
@@ -211,7 +239,7 @@ export default async function Home() {
       <section className="relative isolate overflow-hidden bg-[#120519] text-white">
         <div className="absolute inset-0 bg-[linear-gradient(118deg,#0b1018_0%,#16081f_47%,#220b2d_100%)]" />
         <div className="absolute inset-0 opacity-[0.08] [background-image:linear-gradient(rgba(255,255,255,0.08)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.08)_1px,transparent_1px)] [background-size:64px_64px]" />
-        <div className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-[#f7f8fb] via-[#f7f8fb]/20 to-transparent" />
+        <div className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-[#fdf8ee] via-[#fdf8ee]/25 to-transparent" />
         <div className="relative mx-auto grid min-h-[calc(100dvh-82px)] max-w-7xl items-center gap-8 px-4 py-8 sm:px-6 lg:grid-cols-[0.86fr_1.14fr] lg:px-8">
           <div className="motion-rise max-w-xl">
             <p className="inline-flex items-center gap-2 border-l-2 border-accent bg-white/[0.045] px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-[0.12em] text-accent backdrop-blur">
@@ -220,22 +248,22 @@ export default async function Home() {
             <h1 className="mt-4 max-w-xl text-[1.85rem] font-bold leading-[1.08] text-white sm:text-[2.25rem] lg:text-[2.7rem]">
               Chess coaching that feels organised from day one.
             </h1>
-            <p className="mt-4 max-w-lg text-sm leading-6 text-white/68 sm:text-[0.95rem]">
+            <p className="mt-4 max-w-lg text-sm leading-6 text-white/70 sm:text-[0.95rem]">
               Live classes, homework, tournaments, coach feedback, payments, and progress tracking in one clear academy portal.
             </p>
             <div className="mt-6 flex flex-col gap-3 sm:flex-row">
               <Link href={demoHref} className="btn-accent min-h-11 px-5 shadow-lg shadow-accent/10">
                 Book Free Demo Class <ArrowRight size={18} />
               </Link>
-              <Link href="#platform" className="btn min-h-11 border border-white/14 bg-white/[0.055] px-5 text-white backdrop-blur hover:bg-white/[0.1]">
+              <Link href="#platform" className="btn min-h-11 border border-white/15 bg-white/[0.055] px-5 text-white backdrop-blur hover:bg-white/[0.1]">
                 See Portal
               </Link>
             </div>
             <div className="mt-6 grid max-w-lg grid-cols-3 gap-2">
               {["Live batches", "Homework", "Progress"].map((label, index) => (
-                <div key={label} className="border-l border-white/12 bg-white/[0.035] px-3 py-2.5 backdrop-blur">
+                <div key={label} className="border-l border-white/10 bg-white/[0.035] px-3 py-2.5 backdrop-blur">
                   <div className="text-lg font-extrabold text-accent">{["6", "42", "92%"][index]}</div>
-                  <div className="mt-0.5 text-[11px] font-semibold text-white/54">{label}</div>
+                  <div className="mt-0.5 text-[11px] font-semibold text-white/55">{label}</div>
                 </div>
               ))}
             </div>
@@ -246,57 +274,59 @@ export default async function Home() {
 
       <AnimatedImpactCounters counters={impactCounters} />
 
-      <section id="programs" className="relative overflow-hidden bg-[#10131b] py-16 text-white lg:py-24">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_14%_18%,rgba(253,231,90,0.12),transparent_25%),radial-gradient(circle_at_82%_24%,rgba(93,183,156,0.13),transparent_28%),linear-gradient(180deg,#10131b_0%,#17051f_100%)]" />
-        <div className="absolute inset-0 opacity-[0.1] [background-image:linear-gradient(rgba(255,255,255,0.07)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.07)_1px,transparent_1px)] [background-size:84px_84px]" />
+      <section id="programs" className="relative overflow-hidden bg-[#fdf8ee] py-16 text-brand-900 lg:py-24">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_12%_14%,rgba(253,231,90,0.55),transparent_32%),radial-gradient(circle_at_86%_22%,rgba(90,19,114,0.10),transparent_34%),linear-gradient(180deg,#fdf8ee_0%,#fff6e2_100%)]" />
+        <div className="absolute inset-0 opacity-[0.55] [background-image:linear-gradient(rgba(90,19,114,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(90,19,114,0.05)_1px,transparent_1px)] [background-size:84px_84px]" />
         <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="mb-8 grid gap-6 lg:grid-cols-[0.88fr_1.12fr] lg:items-end">
             <div>
-              <p className="inline-flex border-l-2 border-accent bg-white/[0.045] px-3 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-accent">Group Chess Classes</p>
-              <h2 className="mt-4 text-2xl font-black text-white sm:text-3xl">A complete level-wise academy path.</h2>
-              <p className="mt-3 max-w-2xl text-sm leading-7 text-white/64">
+              <p className="inline-flex rounded-full bg-accent px-3.5 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-brand-900 shadow-sm shadow-accent-600/30">Group Chess Classes</p>
+              <h2 className="mt-4 text-2xl font-black text-brand-900 sm:text-3xl">A complete path from beginner to champion.</h2>
+              <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
                 Students learn in a structured batch environment with regular practice, guided feedback, and continuous competitive exposure.
               </p>
             </div>
             <div className="grid gap-2 sm:grid-cols-2">
               {groupClassHighlights.map((item) => (
-                <div key={item.label} className="border-l border-white/12 bg-white/[0.035] px-4 py-3 shadow-xl shadow-black/10 backdrop-blur">
-                  <div className="flex items-center gap-2 text-sm font-black text-white">
-                    <CheckCircle2 size={17} className="shrink-0 text-accent" />
+                <div key={item.label} className="rounded-xl border border-brand/10 bg-white px-4 py-3 shadow-xl shadow-brand-900/5">
+                  <div className="flex items-center gap-2 text-sm font-black text-brand-900">
+                    <CheckCircle2 size={17} className="shrink-0 text-brand" />
                     {item.label}
                   </div>
-                  <div className="mt-1 pl-6 text-xs font-semibold text-white/52">{item.detail}</div>
+                  <div className="mt-1 pl-6 text-xs font-semibold text-slate-600">{item.detail}</div>
                 </div>
               ))}
             </div>
           </div>
 
-          <div className="mb-5 border-l border-accent bg-accent/12 px-4 py-3 text-sm font-bold leading-6 text-white shadow-xl shadow-black/10 backdrop-blur">
-            Every level includes 16 classes across 2 months. <strong className="font-black text-accent">Students attend 2 classes per week.</strong>
+          <div className="mb-5 rounded-xl border border-accent-500/40 bg-accent/35 px-4 py-3 text-sm font-bold leading-6 text-brand-900 shadow-sm shadow-accent-600/20">
+            {groupClassTracks.length} stages, {totalCurriculumLevels} levels, {totalCurriculumSessions} sessions from the first move to Masters.{" "}
+            <strong className="font-black text-brand">Every level is 16 sessions across 2 months, at 2 classes per week.</strong>
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             {groupClassTracks.map((track) => (
-              <article key={track.title} className="group flex min-h-full flex-col border-l border-white/12 bg-white/[0.035] p-5 shadow-xl shadow-black/10 backdrop-blur transition duration-300 hover:-translate-y-0.5 hover:border-accent/40 hover:bg-white/[0.055]">
+              <article key={track.tier} className="group flex min-h-full flex-col rounded-xl border border-brand/10 bg-white p-5 shadow-xl shadow-brand-900/5 transition duration-300 hover:-translate-y-0.5 hover:border-accent-500/60 hover:bg-accent/15">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-[10px] font-black uppercase tracking-[0.14em] text-accent/80">{track.accent}</p>
-                    <h3 className="mt-2 text-xl font-black text-white">{track.title}</h3>
-                    <p className="mt-1 text-sm font-bold text-white/58">{track.subtitle}</p>
+                    <p className="text-[10px] font-black uppercase tracking-[0.14em] text-brand/70">{track.stage} &middot; {track.accent}</p>
+                    <h3 className="mt-2 text-xl font-black text-brand-900">{track.title}</h3>
+                    <p className="mt-1 text-sm font-bold text-slate-600">{track.subtitle}</p>
                   </div>
-                  <Trophy size={22} className="shrink-0 text-accent" />
+                  <Trophy size={22} className="shrink-0 text-brand" />
                 </div>
-                <p className="mt-4 text-sm leading-6 text-white/62">{track.detail}</p>
-                <div className="mt-5 grid grid-cols-3 gap-2">
+                <p className="mt-4 text-sm leading-6 text-slate-600">{track.detail}</p>
+                <div className="mt-5 space-y-1.5">
                   {track.levels.map((level) => (
-                    <div key={level} className="rounded-lg border border-white/10 bg-[#0d1018]/60 px-2 py-2 text-center">
-                      <div className="text-sm font-black text-accent">{level}</div>
-                      <div className="mt-0.5 text-[10px] font-semibold text-white/48">16 classes</div>
+                    <div key={level.name} className="flex items-center justify-between gap-2 rounded-lg bg-brand-50 px-3 py-2">
+                      <span className="text-sm font-black text-brand">{level.name}</span>
+                      <span className="text-[10px] font-semibold text-brand/70">{level.sessions} sessions</span>
                     </div>
                   ))}
                 </div>
+                <p className="mt-3 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">{track.totalSessions} sessions in this stage</p>
                 <div className="mt-auto pt-5">
-                  <Link href={demoHref} className="inline-flex items-center gap-1 text-sm font-black text-accent">
+                  <Link href={demoHref} className="inline-flex items-center gap-1 text-sm font-black text-brand">
                     Book Free Demo Class <ArrowRight size={16} />
                   </Link>
                 </div>
@@ -304,10 +334,10 @@ export default async function Home() {
             ))}
           </div>
 
-          <div className="mt-6 grid gap-3 border-t border-white/10 pt-6 sm:grid-cols-3">
+          <div className="mt-6 grid gap-3 border-t border-brand/10 pt-6 sm:grid-cols-3">
             {["Learn", "Practice", "Compete and grow"].map((step) => (
-              <div key={step} className="border-l border-white/12 bg-white/[0.03] px-4 py-3 text-sm font-black text-white/76">
-                <Sparkles size={16} className="mb-2 text-accent" />
+              <div key={step} className="rounded-xl border border-brand/10 bg-white px-4 py-3 text-sm font-black text-slate-700">
+                <Sparkles size={16} className="mb-2 text-brand" />
                 {step}
               </div>
             ))}
@@ -315,16 +345,16 @@ export default async function Home() {
         </div>
       </section>
 
-      <section id="platform" className="relative overflow-hidden bg-[#10131b] py-12 text-white lg:py-16">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_20%,rgba(93,183,156,0.16),transparent_28%),radial-gradient(circle_at_82%_12%,rgba(253,231,90,0.1),transparent_24%),linear-gradient(180deg,#10131b_0%,#17051f_100%)]" />
-        <div className="absolute inset-0 opacity-[0.1] [background-image:linear-gradient(rgba(255,255,255,0.07)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.07)_1px,transparent_1px)] [background-size:84px_84px]" />
+      <section id="platform" className="relative overflow-hidden bg-[#fdf8ee] py-12 text-brand-900 lg:py-16">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_16%_18%,rgba(90,19,114,0.10),transparent_30%),radial-gradient(circle_at_84%_12%,rgba(253,231,90,0.45),transparent_28%),linear-gradient(180deg,#fff9e6_0%,#fdf8ee_100%)]" />
+        <div className="absolute inset-0 opacity-[0.55] [background-image:linear-gradient(rgba(90,19,114,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(90,19,114,0.05)_1px,transparent_1px)] [background-size:84px_84px]" />
         <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="mb-8 grid gap-4 lg:grid-cols-[0.8fr_1.2fr] lg:items-end">
             <div>
-              <p className="inline-flex border-l-2 border-accent bg-white/[0.035] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-accent">Learning Portal</p>
-              <h2 className="mt-4 text-2xl font-black leading-tight text-white">Simple weekly workflow.</h2>
+              <p className="inline-flex rounded-full bg-accent px-3.5 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-brand-900 shadow-sm shadow-accent-600/30">Learning Portal</p>
+              <h2 className="mt-4 text-2xl font-black leading-tight text-brand-900">Simple weekly workflow.</h2>
             </div>
-            <p className="max-w-2xl text-sm leading-6 text-white/58">
+            <p className="max-w-2xl text-sm leading-6 text-slate-600">
               Students see what to attend, what to practise, what to submit, and how they are progressing.
             </p>
           </div>
@@ -332,28 +362,28 @@ export default async function Home() {
               {portalTabs.slice(0, 4).map((item) => {
                 const Icon = item.icon;
                 return (
-                  <article key={item.title} className="group border-l border-white/12 bg-white/[0.03] p-4 shadow-lg shadow-black/5 backdrop-blur transition duration-300 hover:-translate-y-0.5 hover:border-accent/40 hover:bg-white/[0.05]">
-                    <Icon size={19} className="text-accent" />
-                    <h3 className="mt-3 text-sm font-black text-white">{item.title}</h3>
-                    <p className="mt-2 text-xs leading-5 text-white/56">{item.points.slice(0, 2).join(" · ")}</p>
+                  <article key={item.title} className="group rounded-xl border border-brand/10 bg-white p-4 shadow-lg shadow-brand-900/5 transition duration-300 hover:-translate-y-0.5 hover:border-accent-500/60 hover:bg-accent/15">
+                    <Icon size={19} className="text-brand" />
+                    <h3 className="mt-3 text-sm font-black text-brand-900">{item.title}</h3>
+                    <p className="mt-2 text-xs leading-5 text-slate-600">{item.points.slice(0, 2).join(" · ")}</p>
                   </article>
                 );
               })}
           </div>
-          <div className="mt-10 border-t border-white/10 pt-8">
+          <div className="mt-10 border-t border-brand/10 pt-8">
             <div className="mb-6 grid gap-4 lg:grid-cols-[0.8fr_1.2fr] lg:items-end">
               <div>
-                <p className="inline-flex border-l-2 border-accent bg-white/[0.035] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-accent">Platform Tutorials</p>
-                <h3 className="mt-4 text-2xl font-black leading-tight text-white">See how the learning platform works.</h3>
+                <p className="inline-flex rounded-full bg-accent px-3.5 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-brand-900 shadow-sm shadow-accent-600/30">Platform Tutorials</p>
+                <h3 className="mt-4 text-2xl font-black leading-tight text-brand-900">See how the learning platform works.</h3>
               </div>
-              <p className="max-w-2xl text-sm leading-6 text-white/58">
+              <p className="max-w-2xl text-sm leading-6 text-slate-600">
                 New students can watch these quick walkthroughs before their first class and understand the main tools available in the portal.
               </p>
             </div>
             <div className="grid gap-4 lg:grid-cols-2">
               {portalTutorials.map((tutorial) => (
-                <article key={tutorial.videoId} className="overflow-hidden border-l border-white/12 bg-white/[0.035] shadow-xl shadow-black/10 backdrop-blur transition hover:-translate-y-0.5 hover:border-accent/40 hover:bg-white/[0.055]">
-                  <div className="aspect-video bg-[#070b10]">
+                <article key={tutorial.videoId} className="overflow-hidden rounded-xl border border-brand/10 bg-white shadow-xl shadow-brand-900/5 transition hover:-translate-y-0.5 hover:border-accent-500/60 hover:bg-accent/15">
+                  <div className="aspect-video bg-brand-900">
                     <iframe
                       title={`${tutorial.title} tutorial`}
                       src={youtubeEmbedUrl(tutorial.videoId)}
@@ -364,11 +394,11 @@ export default async function Home() {
                     />
                   </div>
                   <div className="p-4">
-                    <div className="flex items-center gap-2 text-sm font-black text-white">
-                      <PlayCircle size={18} className="shrink-0 text-accent" />
+                    <div className="flex items-center gap-2 text-sm font-black text-brand-900">
+                      <PlayCircle size={18} className="shrink-0 text-brand" />
                       {tutorial.title}
                     </div>
-                    <p className="mt-2 text-sm leading-6 text-white/58">{tutorial.detail}</p>
+                    <p className="mt-2 text-sm leading-6 text-slate-600">{tutorial.detail}</p>
                   </div>
                 </article>
               ))}
@@ -377,29 +407,29 @@ export default async function Home() {
         </div>
       </section>
 
-      <section className="relative overflow-hidden bg-[#17051f] py-16 text-white lg:py-24">
-        <div className="absolute inset-0 bg-[linear-gradient(180deg,#17051f_0%,#10131b_100%)]" />
-        <div className="absolute inset-0 opacity-[0.1] [background-image:linear-gradient(rgba(255,255,255,0.07)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.07)_1px,transparent_1px)] [background-size:84px_84px]" />
+      <section className="relative overflow-hidden bg-[#f8f4fc] py-16 text-brand-900 lg:py-24">
+        <div className="absolute inset-0 bg-[linear-gradient(180deg,#f8f4fc_0%,#fdf8ee_100%)]" />
+        <div className="absolute inset-0 opacity-[0.55] [background-image:linear-gradient(rgba(90,19,114,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(90,19,114,0.05)_1px,transparent_1px)] [background-size:84px_84px]" />
         <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="mb-8 flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
             <div>
-              <p className="inline-flex border-l-2 border-accent bg-white/[0.045] px-3 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-accent">Practice Tools</p>
-              <h2 className="mt-4 text-2xl font-black text-white sm:text-3xl">Focused training between live classes.</h2>
-              <p className="mt-3 max-w-2xl text-sm leading-7 text-white/64">Students can solve tactics, learn coordinates, hunt kings, play computer bots, complete assignments, and climb academy leaderboards from the same portal.</p>
+              <p className="inline-flex rounded-full bg-accent px-3.5 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-brand-900 shadow-sm shadow-accent-600/30">Practice Tools</p>
+              <h2 className="mt-4 text-2xl font-black text-brand-900 sm:text-3xl">Focused training between live classes.</h2>
+              <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">Students can solve tactics, learn coordinates, hunt kings, play computer bots, complete assignments, and climb academy leaderboards from the same portal.</p>
             </div>
-            <Link href={demoHref} className="btn border border-white/14 bg-white/[0.06] text-white hover:bg-white/[0.1]">Explore Learning Portal</Link>
+            <Link href={demoHref} className="btn border border-brand/25 bg-white text-brand shadow-sm shadow-brand-900/5 hover:border-brand/50 hover:bg-brand-50">Explore Learning Portal</Link>
           </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {practiceTools.map((tool) => {
               const Icon = tool.icon;
               return (
-                <article key={tool.title} className="group relative overflow-hidden border-l border-white/12 bg-white/[0.035] p-5 shadow-xl shadow-black/10 backdrop-blur transition duration-300 hover:-translate-y-0.5 hover:border-accent/40 hover:bg-white/[0.055]">
+                <article key={tool.title} className="group relative overflow-hidden rounded-xl border border-brand/10 bg-white p-5 shadow-xl shadow-brand-900/5 transition duration-300 hover:-translate-y-0.5 hover:border-accent-500/60 hover:bg-accent/15">
                   <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-transparent via-accent/70 to-transparent opacity-0 transition group-hover:opacity-100" />
-                  <span className="grid h-12 w-12 place-items-center rounded-lg bg-accent/10 text-accent transition group-hover:bg-accent group-hover:text-brand">
+                  <span className="grid h-12 w-12 place-items-center rounded-xl bg-accent text-brand-900 shadow-sm shadow-accent-600/30 transition group-hover:bg-brand group-hover:text-accent">
                     <Icon size={21} />
                   </span>
-                  <h3 className="mt-4 font-black text-white">{tool.title}</h3>
-                  <p className="mt-2 text-sm leading-6 text-white/62">{tool.detail}</p>
+                  <h3 className="mt-4 font-black text-brand-900">{tool.title}</h3>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">{tool.detail}</p>
                 </article>
               );
             })}
@@ -407,40 +437,40 @@ export default async function Home() {
         </div>
       </section>
 
-      <section id="reviews" className="relative overflow-hidden bg-[#10131b] py-16 text-white lg:py-24">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_18%,rgba(253,231,90,0.1),transparent_24%),linear-gradient(180deg,#10131b_0%,#17051f_100%)]" />
-        <div className="absolute inset-0 opacity-[0.1] [background-image:linear-gradient(rgba(255,255,255,0.07)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.07)_1px,transparent_1px)] [background-size:84px_84px]" />
+      <section id="reviews" className="relative overflow-hidden bg-[#fdf8ee] py-16 text-brand-900 lg:py-24">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_16%_16%,rgba(253,231,90,0.5),transparent_30%),linear-gradient(180deg,#fdf8ee_0%,#f8f4fc_100%)]" />
+        <div className="absolute inset-0 opacity-[0.55] [background-image:linear-gradient(rgba(90,19,114,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(90,19,114,0.05)_1px,transparent_1px)] [background-size:84px_84px]" />
         <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="mb-8 flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
             <div>
-              <p className="inline-flex border-l-2 border-accent bg-white/[0.045] px-3 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-accent">Google Reviews</p>
-              <h2 className="mt-4 text-2xl font-black text-white sm:text-3xl">Reviews from parents and students.</h2>
+              <p className="inline-flex rounded-full bg-accent px-3.5 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-brand-900 shadow-sm shadow-accent-600/30">Google Reviews</p>
+              <h2 className="mt-4 text-2xl font-black text-brand-900 sm:text-3xl">Reviews from parents and students.</h2>
             </div>
-            <Link href={offlineSourceUrl} target="_blank" rel="noreferrer" className="btn border border-white/14 bg-white/[0.06] text-white hover:bg-white/[0.1]">
+            <Link href={offlineSourceUrl} target="_blank" rel="noreferrer" className="btn border border-brand/25 bg-white text-brand shadow-sm shadow-brand-900/5 hover:border-brand/50 hover:bg-brand-50">
               Review Source <ArrowRight size={16} />
             </Link>
           </div>
-          <div className="overflow-hidden rounded-lg border border-white/10 bg-white p-3 shadow-xl shadow-black/10">
+          <div className="overflow-hidden rounded-2xl border border-brand/10 bg-white p-3 shadow-lg shadow-brand-900/5">
             <div className="sk-ww-google-reviews" data-embed-id="25710479" />
           </div>
           <Script src="https://widgets.sociablekit.com/google-reviews/widget.js" strategy="afterInteractive" />
         </div>
       </section>
 
-      <section id="anish" className="relative overflow-hidden bg-[#10131b] py-12 text-white lg:py-16">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_24%_30%,rgba(253,231,90,0.1),transparent_25%),radial-gradient(circle_at_74%_16%,rgba(90,19,114,0.42),transparent_30%),linear-gradient(180deg,#10131b_0%,#17051f_100%)]" />
-        <div className="absolute inset-0 opacity-[0.1] [background-image:linear-gradient(rgba(255,255,255,0.07)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.07)_1px,transparent_1px)] [background-size:84px_84px]" />
+      <section id="anish" className="relative overflow-hidden bg-[#fdf8ee] py-12 text-brand-900 lg:py-16">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_22%_28%,rgba(253,231,90,0.5),transparent_30%),radial-gradient(circle_at_76%_14%,rgba(90,19,114,0.13),transparent_32%),linear-gradient(180deg,#f8f4fc_0%,#fdf8ee_100%)]" />
+        <div className="absolute inset-0 opacity-[0.55] [background-image:linear-gradient(rgba(90,19,114,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(90,19,114,0.05)_1px,transparent_1px)] [background-size:84px_84px]" />
         <div className="relative mx-auto grid max-w-7xl gap-8 px-4 sm:px-6 lg:grid-cols-[0.58fr_1.42fr] lg:px-8">
-          <div className="group overflow-hidden border border-white/10 bg-white/[0.035] shadow-xl shadow-black/20 backdrop-blur">
-            <div className="relative aspect-[0.92] bg-[#090b10]">
-              <Image src="/images/achievements/682626726_122217430778279433_7786835792267057544_n.jpg" alt="" fill sizes="(min-width: 1024px) 38vw, 100vw" className="scale-110 object-cover opacity-25 blur-2xl" />
+          <div className="group overflow-hidden border border-brand/10 bg-white shadow-xl shadow-brand-900/5">
+            <div className="relative aspect-[0.92] rounded-xl bg-brand-50">
+              <Image src="/images/achievements/682626726_122217430778279433_7786835792267057544_n.jpg" alt="" fill sizes="(min-width: 1024px) 38vw, 100vw" className="scale-110 object-cover opacity-15 blur-2xl" />
               <Image src="/images/achievements/682626726_122217430778279433_7786835792267057544_n.jpg" alt="Anish qualified for the World Cadets Chess Championship" fill sizes="(min-width: 1024px) 28vw, 100vw" className="object-contain p-4 transition duration-700 group-hover:scale-[1.015]" />
             </div>
           </div>
           <div className="self-center">
-            <p className="inline-flex border-l-2 border-accent bg-white/[0.035] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-accent">Student Journey</p>
-            <h2 className="mt-4 text-2xl font-black leading-tight text-white">Anish: beginner to World Cadets qualifier.</h2>
-            <p className="mt-4 max-w-2xl text-sm leading-7 text-white/66">
+            <p className="inline-flex rounded-full bg-accent px-3.5 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-brand-900 shadow-sm shadow-accent-600/30">Student Journey</p>
+            <h2 className="mt-4 text-2xl font-black leading-tight text-brand-900">Anish: beginner to World Cadets qualifier.</h2>
+            <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-600">
               {anishStory.achievement}
             </p>
             <div className="mt-5 grid gap-3 sm:grid-cols-3">
@@ -448,25 +478,25 @@ export default async function Home() {
               <JourneyStat label="Current Level" value={anishStory.currentLevel} />
               <JourneyStat label="Coaching Duration" value={anishStory.coachingDuration} />
             </div>
-            <Link href="/success-stories/anish" className="mt-5 inline-flex items-center gap-1 text-sm font-black text-accent">
+            <Link href="/success-stories/anish" className="mt-5 inline-flex items-center gap-1 text-sm font-black text-brand">
               Read the full story <ArrowRight size={16} />
             </Link>
           </div>
         </div>
       </section>
 
-      <section id="achievements" className="relative overflow-hidden bg-[#121722] py-12 text-white lg:py-16">
-        <div className="absolute inset-0 bg-[linear-gradient(180deg,#121722_0%,#17051f_100%)]" />
-        <div className="absolute inset-x-0 top-24 h-px bg-gradient-to-r from-transparent via-white/18 to-transparent" />
-        <div className="absolute inset-0 opacity-[0.08] [background-image:linear-gradient(115deg,rgba(255,255,255,0.08)_1px,transparent_1px)] [background-size:74px_74px]" />
+      <section id="achievements" className="relative overflow-hidden bg-[#fdf8ee] py-12 text-brand-900 lg:py-16">
+        <div className="absolute inset-0 bg-[linear-gradient(180deg,#fdf8ee_0%,#fff6e2_100%)]" />
+        <div className="absolute inset-x-0 top-24 h-px bg-gradient-to-r from-transparent via-brand/20 to-transparent" />
+        <div className="absolute inset-0 opacity-[0.5] [background-image:linear-gradient(115deg,rgba(90,19,114,0.06)_1px,transparent_1px)] [background-size:74px_74px]" />
         <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="mb-8 flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
             <div>
-              <p className="inline-flex border-l-2 border-accent bg-white/[0.035] px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.14em] text-accent">Achiever Gallery</p>
-              <h2 className="mt-4 text-2xl font-black text-white">Recent achievers.</h2>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-white/56">A quick proof wall from the academy&apos;s student results.</p>
+              <p className="inline-flex rounded-full bg-accent px-3.5 py-1.5 text-[11px] font-black uppercase tracking-[0.14em] text-brand-900 shadow-sm shadow-accent-600/30">Achiever Gallery</p>
+              <h2 className="mt-4 text-2xl font-black text-brand-900">Recent achievers.</h2>
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">A quick proof wall from the academy&apos;s student results.</p>
             </div>
-            <Link href={cloudinaryCollectionUrl} target="_blank" rel="noreferrer" className="btn border border-white/14 bg-white/[0.06] text-white hover:bg-white/[0.1]">
+            <Link href={cloudinaryCollectionUrl} target="_blank" rel="noreferrer" className="btn border border-brand/25 bg-white text-brand shadow-sm shadow-brand-900/5 hover:border-brand/50 hover:bg-brand-50">
               Achievement Collection <ArrowRight size={16} />
             </Link>
           </div>
@@ -474,12 +504,12 @@ export default async function Home() {
             {featuredAchievements.slice(0, 8).map((item, index) => (
               <article
                 key={`${item.studentName}-${item.displayOrder}`}
-                className="group relative border-l border-white/12 bg-white/[0.03] p-2 shadow-lg shadow-black/10 backdrop-blur transition duration-300 hover:-translate-y-0.5 hover:border-accent/45 hover:bg-white/[0.05]"
+                className="group relative rounded-xl border border-brand/10 bg-white p-2 shadow-lg shadow-brand-900/5 transition duration-300 hover:-translate-y-0.5 hover:border-accent-500/60 hover:bg-accent/15"
               >
-                <div className="relative aspect-[1.08] overflow-hidden bg-[#070b10] shadow-xl shadow-black/20">
-                  <Image src={item.achievementImageUrl} alt="" fill sizes="(min-width: 1024px) 25vw, 50vw" className="scale-110 object-cover opacity-22 blur-2xl transition duration-700" />
+                <div className="relative aspect-[1.08] overflow-hidden rounded-xl bg-brand-50 shadow-inner shadow-brand-900/10">
+                  <Image src={item.achievementImageUrl} alt="" fill sizes="(min-width: 1024px) 25vw, 50vw" className="scale-110 object-cover opacity-12 blur-2xl transition duration-700" />
                   <Image src={item.achievementImageUrl} alt={`${item.studentName} achievement`} fill sizes="(min-width: 1024px) 25vw, 50vw" className="object-contain p-3 transition duration-700 group-hover:scale-[1.02]" />
-                  <div className="absolute left-3 top-3 bg-accent px-2 py-0.5 text-[10px] font-black text-brand">#{index + 1}</div>
+                  <div className="absolute left-3 top-3 rounded-full bg-brand px-2.5 py-0.5 text-[10px] font-black text-accent shadow-sm">#{index + 1}</div>
                   {item.studentPhotoUrl && (
                     <div className="absolute bottom-3 right-3 h-12 w-12 overflow-hidden rounded-lg border-2 border-white bg-white">
                       <Image src={item.studentPhotoUrl} alt={`${item.studentName} profile`} fill sizes="48px" className="object-cover" />
@@ -487,9 +517,9 @@ export default async function Home() {
                   )}
                 </div>
                 <div className="p-3">
-                  <h3 className="line-clamp-1 text-sm font-black text-white">{item.studentName}</h3>
-                  <p className="mt-1 line-clamp-1 text-xs font-semibold text-white/52">{item.result}</p>
-                  <Link href={`/success-stories/${studentSlug(item.studentName)}`} className="mt-3 inline-flex items-center gap-1 text-xs font-black text-accent">
+                  <h3 className="line-clamp-1 text-sm font-black text-brand-900">{item.studentName}</h3>
+                  <p className="mt-1 line-clamp-1 text-xs font-semibold text-slate-600">{item.result}</p>
+                  <Link href={`/success-stories/${studentSlug(item.studentName)}`} className="mt-3 inline-flex items-center gap-1 text-xs font-black text-brand">
                     Story <ArrowRight size={13} />
                   </Link>
                 </div>
@@ -499,27 +529,27 @@ export default async function Home() {
         </div>
       </section>
 
-      <section className="relative overflow-hidden bg-[#10131b] py-16 text-white lg:py-24">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_22%_18%,rgba(93,183,156,0.14),transparent_26%),radial-gradient(circle_at_76%_28%,rgba(253,231,90,0.1),transparent_24%),linear-gradient(180deg,#10131b_0%,#17051f_100%)]" />
-        <div className="absolute inset-0 opacity-[0.1] [background-image:linear-gradient(rgba(255,255,255,0.07)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.07)_1px,transparent_1px)] [background-size:84px_84px]" />
+      <section className="relative overflow-hidden bg-[#fdf8ee] py-16 text-brand-900 lg:py-24">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_16%,rgba(90,19,114,0.09),transparent_28%),radial-gradient(circle_at_78%_26%,rgba(253,231,90,0.5),transparent_28%),linear-gradient(180deg,#fff9e6_0%,#fdf8ee_100%)]" />
+        <div className="absolute inset-0 opacity-[0.55] [background-image:linear-gradient(rgba(90,19,114,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(90,19,114,0.05)_1px,transparent_1px)] [background-size:84px_84px]" />
         <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="mb-8 grid gap-5 lg:grid-cols-[0.9fr_1.1fr] lg:items-end">
             <div>
-              <p className="inline-flex border-l-2 border-accent bg-white/[0.045] px-3 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-accent">Student Support</p>
-              <h2 className="mt-4 text-2xl font-black text-white sm:text-3xl">The practical tools parents and students need every week.</h2>
+              <p className="inline-flex rounded-full bg-accent px-3.5 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-brand-900 shadow-sm shadow-accent-600/30">Student Support</p>
+              <h2 className="mt-4 text-2xl font-black text-brand-900 sm:text-3xl">The practical tools parents and students need every week.</h2>
             </div>
-            <p className="text-sm leading-7 text-white/64">After practice and achievements, the portal still keeps the everyday academy work simple: coach questions, bookings, credits, invoices, fee payments, and progress checks.</p>
+            <p className="text-sm leading-7 text-slate-600">After practice and achievements, the portal still keeps the everyday academy work simple: coach questions, bookings, credits, invoices, fee payments, and progress checks.</p>
           </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {supportTools.map((item) => {
               const Icon = item.icon;
               return (
-                <article key={item.title} className="border-l border-white/12 bg-white/[0.035] p-5 shadow-xl shadow-black/10 backdrop-blur transition hover:-translate-y-0.5 hover:border-accent/40 hover:bg-white/[0.055]">
-                  <span className="grid h-12 w-12 place-items-center rounded-lg bg-accent/10 text-accent">
+                <article key={item.title} className="rounded-xl border border-brand/10 bg-white p-5 shadow-xl shadow-brand-900/5 transition hover:-translate-y-0.5 hover:border-accent-500/60 hover:bg-accent/15">
+                  <span className="grid h-12 w-12 place-items-center rounded-xl bg-accent text-brand-900 shadow-sm shadow-accent-600/30">
                     <Icon size={21} />
                   </span>
-                  <h3 className="mt-4 font-black text-white">{item.title}</h3>
-                  <p className="mt-2 text-sm leading-6 text-white/62">{item.detail}</p>
+                  <h3 className="mt-4 font-black text-brand-900">{item.title}</h3>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">{item.detail}</p>
                 </article>
               );
             })}
@@ -527,44 +557,44 @@ export default async function Home() {
         </div>
       </section>
 
-      <section className="bg-[#17051f] py-16 text-white lg:py-24">
+      <section className="bg-[#f8f4fc] py-16 text-brand-900 lg:py-24">
         <div className="mx-auto grid max-w-7xl gap-10 px-4 sm:px-6 lg:grid-cols-[0.8fr_1.2fr] lg:px-8">
           <div>
-            <p className="text-xs font-black uppercase tracking-[0.16em] text-accent">How it works</p>
+            <p className="text-xs font-black uppercase tracking-[0.16em] text-brand">How it works</p>
             <h2 className="mt-3 text-2xl font-black sm:text-3xl">A clear learning path parents can follow.</h2>
           </div>
           <div className="grid gap-3">
             {learningSteps.map((step, index) => (
-              <div key={step} className="group grid grid-cols-[46px_minmax(0,1fr)] gap-3 border-l border-white/12 bg-white/[0.045] p-4 transition hover:-translate-y-0.5 hover:border-accent/40 hover:bg-white/[0.07]">
-                <div className="grid h-11 w-11 place-items-center rounded-lg bg-accent text-sm font-black text-brand-900">{index + 1}</div>
-                <div className="self-center font-bold text-white">{step}</div>
+              <div key={step} className="group grid grid-cols-[46px_minmax(0,1fr)] gap-3 rounded-xl border border-brand/10 bg-white p-4 shadow-sm shadow-brand-900/5 transition hover:-translate-y-0.5 hover:border-accent-500/60 hover:bg-accent/15">
+                <div className="grid h-11 w-11 place-items-center rounded-xl bg-brand text-sm font-black text-accent shadow-sm shadow-brand-900/20">{index + 1}</div>
+                <div className="self-center font-bold text-brand-900">{step}</div>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      <section id="centres" className="relative overflow-hidden bg-[#10131b] py-16 text-white lg:py-24">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_24%_24%,rgba(93,183,156,0.14),transparent_26%),radial-gradient(circle_at_78%_30%,rgba(253,231,90,0.09),transparent_25%),linear-gradient(180deg,#10131b_0%,#17051f_100%)]" />
-        <div className="absolute inset-0 opacity-[0.1] [background-image:linear-gradient(rgba(255,255,255,0.07)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.07)_1px,transparent_1px)] [background-size:84px_84px]" />
+      <section id="centres" className="relative overflow-hidden bg-[#fdf8ee] py-16 text-brand-900 lg:py-24">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_22%_22%,rgba(90,19,114,0.09),transparent_28%),radial-gradient(circle_at_80%_28%,rgba(253,231,90,0.45),transparent_28%),linear-gradient(180deg,#fdf8ee_0%,#f8f4fc_100%)]" />
+        <div className="absolute inset-0 opacity-[0.55] [background-image:linear-gradient(rgba(90,19,114,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(90,19,114,0.05)_1px,transparent_1px)] [background-size:84px_84px]" />
         <div className="relative mx-auto grid max-w-7xl gap-8 px-4 sm:px-6 lg:grid-cols-[0.78fr_1.22fr] lg:px-8">
           <div>
-            <p className="inline-flex border-l-2 border-accent bg-white/[0.045] px-3 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-accent">Centres and Global Reach</p>
-            <h2 className="mt-4 text-2xl font-black text-white sm:text-3xl">Four Kolkata centres. Online for global students.</h2>
-            <p className="mt-4 text-sm leading-7 text-white/64">Branch information now reflects the active four-centre setup.</p>
+            <p className="inline-flex rounded-full bg-accent px-3.5 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-brand-900 shadow-sm shadow-accent-600/30">Centres and Global Reach</p>
+            <h2 className="mt-4 text-2xl font-black text-brand-900 sm:text-3xl">Four Kolkata centres. Online for global students.</h2>
+            <p className="mt-4 text-sm leading-7 text-slate-600">Branch information now reflects the active four-centre setup.</p>
             <div className="mt-5 flex flex-wrap gap-3">
               <Link href={`tel:${ACADEMY_DEFAULTS.phone}`} className="btn-accent">Call Academy</Link>
-              <Link href={`mailto:${ACADEMY_DEFAULTS.email}`} className="btn border border-white/14 bg-white/[0.06] text-white hover:bg-white/[0.1]">Email Academy</Link>
+              <Link href={`mailto:${ACADEMY_DEFAULTS.email}`} className="btn border border-brand/25 bg-white text-brand shadow-sm shadow-brand-900/5 hover:border-brand/50 hover:bg-brand-50">Email Academy</Link>
             </div>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             {academyBranches.map((centre) => (
-              <div key={centre.name} className="overflow-hidden border-l border-white/12 bg-white/[0.035] shadow-xl shadow-black/10 backdrop-blur transition hover:border-accent/40 hover:bg-white/[0.055]">
+              <div key={centre.name} className="overflow-hidden rounded-xl border border-brand/10 bg-white shadow-xl shadow-brand-900/5 transition hover:border-accent-500/60 hover:bg-accent/15">
                 <div className="p-4">
-                <MapPin size={18} className="text-accent" />
-                <div className="mt-3 font-black text-white">{centre.name}</div>
-                <div className="mt-1 text-sm leading-5 text-white/56">{centre.address}</div>
-                <Link href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(centre.address)}`} target="_blank" rel="noreferrer" className="mt-3 inline-flex text-xs font-black text-accent">
+                <MapPin size={18} className="text-brand" />
+                <div className="mt-3 font-black text-brand-900">{centre.name}</div>
+                <div className="mt-1 text-sm leading-5 text-slate-600">{centre.address}</div>
+                <Link href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(centre.address)}`} target="_blank" rel="noreferrer" className="mt-3 inline-flex text-xs font-black text-brand">
                   Open directions
                 </Link>
                 </div>
@@ -576,10 +606,10 @@ export default async function Home() {
                 />
               </div>
             ))}
-            <div className="rounded-lg border border-accent/20 bg-accent/12 p-4 text-white shadow-2xl shadow-black/12 backdrop-blur sm:col-span-2">
-              <Globe2 size={18} className="text-accent" />
+            <div className="rounded-xl border border-accent-500/40 bg-accent/35 p-4 text-brand-900 shadow-sm shadow-accent-600/20 sm:col-span-2">
+              <Globe2 size={18} className="text-brand" />
               <div className="mt-3 font-black">Online Classes</div>
-              <div className="mt-1 text-sm text-white/66">Structured programs, personal mentorship, and proven methods from home.</div>
+              <div className="mt-1 text-sm text-slate-600">Structured programs, personal mentorship, and proven methods from home.</div>
             </div>
           </div>
         </div>
@@ -587,11 +617,11 @@ export default async function Home() {
 
       <section className="relative overflow-hidden bg-[#17051f] px-4 py-16 text-white sm:px-6 lg:px-8 lg:py-24">
         <div className="absolute inset-0 bg-[linear-gradient(180deg,#17051f_0%,#0d1018_100%)]" />
-        <div className="relative mx-auto max-w-7xl rounded-lg border border-white/12 bg-white/[0.055] p-6 shadow-2xl shadow-black/25 backdrop-blur sm:p-8 lg:flex lg:items-center lg:justify-between lg:gap-8">
+        <div className="relative mx-auto max-w-7xl rounded-lg border border-white/10 bg-white/[0.055] p-6 shadow-2xl shadow-black/25 backdrop-blur sm:p-8 lg:flex lg:items-center lg:justify-between lg:gap-8">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.16em] text-accent">Start with a free assessment</p>
             <h2 className="mt-3 text-2xl font-black sm:text-3xl">Your child&apos;s next great move starts here.</h2>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-white/72">
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-white/70">
               No obligation. Level recommendation included. Online and offline options available.
             </p>
           </div>
@@ -603,7 +633,7 @@ export default async function Home() {
         </div>
       </section>
 
-      <footer className="border-t border-white/10 bg-[#0d1018] py-6 text-sm text-white/46">
+      <footer className="border-t border-white/10 bg-[#0d1018] py-6 text-sm text-white/45">
         <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
           <div>Copyright {new Date().getFullYear()} Envision Chess Academy</div>
           <div className="flex flex-wrap gap-4">
@@ -618,9 +648,9 @@ export default async function Home() {
 
 function JourneyStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="border-l border-white/12 bg-white/[0.035] p-3 shadow-lg shadow-black/5 backdrop-blur">
-      <div className="text-[10px] font-black uppercase tracking-[0.1em] text-accent/80">{label}</div>
-      <div className="mt-1 text-sm font-black text-white">{value}</div>
+    <div className="rounded-xl border border-brand/10 bg-white p-3 shadow-sm shadow-brand-900/5">
+      <div className="text-[10px] font-black uppercase tracking-[0.1em] text-brand/70">{label}</div>
+      <div className="mt-1 text-sm font-black text-brand-900">{value}</div>
     </div>
   );
 }

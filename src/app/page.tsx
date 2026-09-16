@@ -11,7 +11,6 @@ import {
   Gamepad2,
   Globe2,
   MapPin,
-  Menu,
   MessageSquare,
   MonitorSmartphone,
   PlayCircle,
@@ -24,7 +23,10 @@ import {
 } from "lucide-react";
 import AnimatedImpactCounters from "@/components/marketing/AnimatedImpactCounters";
 import DynamicLandingShowcase from "@/components/marketing/DynamicLandingShowcase";
-import { ACADEMY_DEFAULTS, ACADEMY_LOGO_URL } from "@/lib/branding";
+import HeroStudentCluster from "@/components/marketing/HeroStudentCluster";
+import WhyEnvision from "@/components/marketing/WhyEnvision";
+import { MarketingFooter, MarketingHeader, landingNav } from "@/components/marketing/MarketingChrome";
+import { ACADEMY_DEFAULTS } from "@/lib/branding";
 import { courseTierLabel } from "@/lib/courseTiers";
 import { CURRICULUM_TIERS, curriculumLevels } from "@/lib/demoCurriculum";
 import { MARKETING_BASE_URL, OFFLINE_ACADEMY_URL } from "@/lib/publicLinks";
@@ -59,16 +61,6 @@ export const metadata: Metadata = {
 const demoHref = "/register";
 const cloudinaryCollectionUrl = "https://collection.cloudinary.com/dlafr6yu3/3ddc9e2d8d7656087c4a52336a2e1df4";
 const offlineSourceUrl = OFFLINE_ACADEMY_URL;
-
-const navItems = [
-  ["Home", "#home"],
-  ["Programs", "#programs"],
-  ["Portal", "#platform"],
-  ["Reviews", "#reviews"],
-  ["Anish", "#anish"],
-  ["Achievements", "#achievements"],
-  ["Centres", "#centres"],
-];
 
 const portalTabs = [
   { title: "Student Dashboard", icon: MonitorSmartphone, points: ["Upcoming classes", "Homework status", "Attendance", "Notifications", "Credit balance"] },
@@ -189,53 +181,7 @@ export default async function Home() {
     <main id="home" className="landing-compact min-h-screen bg-[#ffffff] text-brand-900">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }} />
 
-      <header className="sticky top-0 z-50 border-b border-brand-700 bg-brand/95 text-white backdrop-blur-xl">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
-          {/* The logo artwork is yellow-on-transparent, so it sits directly on the brand purple bar. */}
-          <Link href="/" className="flex shrink-0 items-center" aria-label="Envision Chess Academy home">
-            <Image
-              src={ACADEMY_LOGO_URL}
-              alt="Envision Chess Academy"
-              width={190}
-              height={64}
-              priority
-              unoptimized
-              className="h-12 w-auto max-w-[150px] object-contain sm:h-14 sm:max-w-[190px]"
-            />
-          </Link>
-          <nav className="hidden items-center gap-5 xl:flex" aria-label="Main navigation">
-            {navItems.map(([label, href]) => (
-              <Link key={href} href={href} className="text-sm font-semibold text-white/80 hover:text-accent">
-                {label}
-              </Link>
-            ))}
-          </nav>
-          <div className="hidden items-center gap-2 sm:flex">
-            <Link href="/login" className="btn border border-white/30 bg-white/10 text-white hover:bg-white/20">
-              Login
-            </Link>
-            <Link href={demoHref} className="btn-accent">
-              Book Free Demo Class
-            </Link>
-          </div>
-          <details className="relative xl:hidden">
-            <summary className="grid h-11 w-11 cursor-pointer list-none place-items-center rounded-lg border border-white/30 bg-white/10 text-accent">
-              <Menu size={20} />
-            </summary>
-            <div className="absolute right-0 mt-3 w-[min(88vw,340px)] rounded-xl border border-brand-700 bg-brand-900 p-3 shadow-lg shadow-brand-900/30">
-              {navItems.map(([label, href]) => (
-                <Link key={href} href={href} className="block rounded-lg px-3 py-3 text-sm font-bold text-white/85 hover:bg-white/10">
-                  {label}
-                </Link>
-              ))}
-              <div className="mt-3 grid gap-2 border-t border-white/15 pt-3">
-                <Link href="/login" className="btn border border-white/30 bg-white/10 text-white">Login</Link>
-                <Link href={demoHref} className="btn-accent">Book Free Demo Class</Link>
-              </div>
-            </div>
-          </details>
-        </div>
-      </header>
+      <MarketingHeader navItems={landingNav} demoHref={demoHref} />
 
       <section className="relative isolate overflow-hidden bg-[#f5edf8] text-brand-900">
         <div className="absolute inset-0 bg-[linear-gradient(118deg,#ffffff_0%,#f5edf8_52%,#e8d4f0_100%)]" />
@@ -269,11 +215,13 @@ export default async function Home() {
               ))}
             </div>
           </div>
-          <DynamicLandingShowcase achievements={featuredAchievements} />
+          <HeroStudentCluster />
         </div>
       </section>
 
       <AnimatedImpactCounters counters={impactCounters} />
+
+      <WhyEnvision demoHref={demoHref} secondary={{ href: "#programs", label: "See the full curriculum" }} />
 
       <section id="programs" className="relative overflow-hidden bg-[#ffffff] py-16 text-brand-900 lg:py-24">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_12%_14%,rgba(253,231,90,0.55),transparent_32%),radial-gradient(circle_at_86%_22%,rgba(90,19,114,0.10),transparent_34%),linear-gradient(180deg,#ffffff_0%,#f5edf8_100%)]" />
@@ -327,8 +275,12 @@ export default async function Home() {
                 </div>
                 <p className="mt-3 text-[10px] font-black uppercase tracking-[0.12em] text-brand-900/60">{track.totalSessions} sessions in this stage</p>
                 <div className="mt-auto pt-5">
-                  <Link href={demoHref} className="inline-flex items-center gap-1 text-sm font-black text-brand">
-                    Book Free Demo Class <ArrowRight size={16} />
+                  {/* The beginner stage has its own page, so the ladder links into it. */}
+                  <Link
+                    href={track.tier === "beginner" ? "/online-chess-course-for-beginners" : demoHref}
+                    className="inline-flex items-center gap-1 text-sm font-black text-brand hover:underline"
+                  >
+                    {track.tier === "beginner" ? "See all 48 sessions" : "Book Free Demo Class"} <ArrowRight size={16} />
                   </Link>
                 </div>
               </article>
@@ -359,14 +311,22 @@ export default async function Home() {
               Students see what to attend, what to practise, what to submit, and how they are progressing.
             </p>
           </div>
+          {/*
+            The Student Command Centre lives here rather than in the hero: this
+            section is where the portal is actually being explained, so the real
+            UI belongs above the feature cards that describe it.
+          */}
+          <div className="mb-10 xl:mb-28">
+            <DynamicLandingShowcase achievements={featuredAchievements} />
+          </div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              {portalTabs.slice(0, 4).map((item) => {
+              {portalTabs.map((item) => {
                 const Icon = item.icon;
                 return (
                   <article key={item.title} className="group rounded-xl border border-brand/10 bg-white p-4 shadow-lg shadow-brand-900/5 transition duration-300 hover:-translate-y-0.5 hover:border-brand/30 hover:bg-brand-50">
                     <Icon size={19} className="text-brand" />
                     <h3 className="mt-3 text-sm font-black text-brand-900">{item.title}</h3>
-                    <p className="mt-2 text-xs leading-5 text-brand-900/70">{item.points.slice(0, 2).join(" · ")}</p>
+                    <p className="mt-2 text-xs leading-5 text-brand-900/70">{item.points.slice(0, 3).join(" · ")}</p>
                   </article>
                 );
               })}
@@ -634,15 +594,7 @@ export default async function Home() {
         </div>
       </section>
 
-      <footer className="border-t border-brand/10 bg-white py-6 text-sm text-brand-900/60">
-        <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
-          <div>Copyright {new Date().getFullYear()} Envision Chess Academy</div>
-          <div className="flex flex-wrap gap-4">
-            <Link href={cloudinaryCollectionUrl} target="_blank" rel="noreferrer" className="font-semibold text-brand hover:underline">Achievement images</Link>
-            <Link href={offlineSourceUrl} target="_blank" rel="noreferrer" className="font-semibold text-brand hover:underline">Offline academy source</Link>
-          </div>
-        </div>
-      </footer>
+      <MarketingFooter />
     </main>
   );
 }

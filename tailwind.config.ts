@@ -40,6 +40,7 @@ const config: Config = {
       fontFamily: {
         sans: ["Inter", "system-ui", "sans-serif"],
         display: ["Bangers", "Inter", "system-ui", "sans-serif"],
+        hand: ["var(--font-hand)", "Segoe Script", "cursive"],
       },
     },
   },

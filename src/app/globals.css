@@ -391,10 +391,43 @@ main td {
   }
 }
 
+/* ---------------------------------------------------------------- hero cluster
+ * Organic blobs: the shape itself morphs through four irregular radii while a
+ * wrapper drifts vertically. Kept on separate elements so the border-radius
+ * animation never fights the transform.
+ */
+@keyframes hero-drift {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+/* Staggered so the four blobs never bob in step. */
+.hero-float-a {
+  animation: hero-drift 6.5s ease-in-out infinite;
+}
+.hero-float-b {
+  animation: hero-drift 7.8s ease-in-out -1.2s infinite;
+}
+.hero-float-c {
+  animation: hero-drift 8.6s ease-in-out -2.4s infinite;
+}
+.hero-float-d {
+  animation: hero-drift 7.1s ease-in-out -3.1s infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .motion-rise,
   .motion-float,
-  .landing-progress {
+  .landing-progress,
+  .hero-float-a,
+  .hero-float-b,
+  .hero-float-c,
+  .hero-float-d {
     animation: none !important;
   }
 }

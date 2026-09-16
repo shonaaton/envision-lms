@@ -252,7 +252,7 @@ export default function DynamicLandingShowcase({ achievements }: DynamicLandingS
         </div>
       </div>
 
-      <div className="absolute -bottom-4 left-5 hidden rounded-xl border border-brand/15 bg-white p-2.5 text-brand-900 shadow-lg shadow-brand-900/10 xl:block">
+      <div className="absolute left-2 top-full mt-4 hidden rounded-xl border border-brand/15 bg-white p-2.5 text-brand-900 shadow-lg shadow-brand-900/10 xl:block">
         <div className="flex items-center gap-3">
           <span className="grid h-9 w-9 place-items-center rounded-lg bg-brand text-accent">
             <CheckCircle2 size={18} />

@@ -1,6 +1,7 @@
 import "./globals.css";
 import { Suspense } from "react";
 import type { Metadata } from "next";
+import { Caveat } from "next/font/google";
 import Script from "next/script";
 import { Toaster } from "sonner";
 import MetaPageViewTracker from "@/components/MetaPageViewTracker";
@@ -16,9 +17,13 @@ export const metadata: Metadata = {
 
 const metaPixelId = process.env.NEXT_PUBLIC_META_PIXEL_ID || "924225047079586";
 
+// Handwriting face, used only for the landing hero's aside. Exposed as a CSS
+// variable so Tailwind's `font-hand` picks it up without loading it everywhere.
+const caveat = Caveat({ subsets: ["latin"], weight: ["600", "700"], variable: "--font-hand", display: "swap" });
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" className={caveat.variable}>
       <body>
         <Script id="meta-pixel" strategy="afterInteractive">
           {`

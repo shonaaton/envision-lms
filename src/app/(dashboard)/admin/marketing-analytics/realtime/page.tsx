@@ -3,6 +3,7 @@ import { AnalyticsHeader, BarList, Columns, ConsentNote, Stat, countryName } fro
 import { auth } from "@/lib/auth";
 import { canAccessFeature } from "@/lib/featureAccess";
 import { getRealtimeSnapshot } from "@/lib/marketingAnalytics";
+import RealtimeAnalyticsRefresh from "@/components/admin/RealtimeAnalyticsRefresh";
 
 export const dynamic = "force-dynamic";
 /** Cheap enough to re-read often; the page also refreshes itself client-side. */
@@ -31,8 +32,7 @@ export default async function RealtimeAnalyticsPage() {
 
   return (
     <div className="space-y-4 p-4 lg:p-6">
-      {/* No client JS needed for a live view: the browser re-requests the page. */}
-      <meta httpEquiv="refresh" content="30" />
+      <RealtimeAnalyticsRefresh />
 
       <AnalyticsHeader
         title="Real-time Analytics"

@@ -529,6 +529,29 @@ export function centreOpeningHours(centre: CentreConfig) {
   );
 }
 
+export type ServedArea = { area: string; centre: CentreConfig };
+
+/**
+ * Every Kolkata locality our centres are a realistic commute from, each mapped
+ * to the nearest one.
+ *
+ * Deduped, because Behala and Tollygunge sit near two centres and a footer that
+ * lists the same place twice, pointing at two different pages, is worse than one
+ * that lists it once. First centre in `kolkataCentres` order wins, which is also
+ * the order they were opened.
+ */
+export function kolkataAreasServed(): ServedArea[] {
+  const nearest = new Map<string, CentreConfig>();
+  for (const centre of kolkataCentres) {
+    for (const area of centre.nearby) {
+      if (!nearest.has(area)) nearest.set(area, centre);
+    }
+  }
+  return [...nearest.entries()]
+    .map(([area, centre]) => ({ area, centre }))
+    .sort((a, b) => a.area.localeCompare(b.area));
+}
+
 export function centrePostalAddress(centre: CentreConfig) {
   return {
     "@type": "PostalAddress",

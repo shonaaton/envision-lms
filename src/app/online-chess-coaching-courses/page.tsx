@@ -1,12 +1,14 @@
 import Link from "next/link";
 import { ArrowRight, CalendarDays, CheckCircle2, GraduationCap, MonitorSmartphone, Sparkles } from "lucide-react";
 import CourseResultsStrip from "@/components/marketing/CourseResultsStrip";
+import RelatedLinks from "@/components/marketing/RelatedLinks";
 import HeroStudentCluster from "@/components/marketing/HeroStudentCluster";
 import WhyEnvision from "@/components/marketing/WhyEnvision";
 import { MarketingFooter, MarketingHeader } from "@/components/marketing/MarketingChrome";
 import { ACADEMY_DEFAULTS } from "@/lib/branding";
 import { courseHub, courseHubMetadata, coursePages } from "@/lib/coursePages";
 import { curriculumLevels } from "@/lib/demoCurriculum";
+import { centreHubLink, centreLinks, contactLink, successStoriesLink } from "@/lib/internalLinks";
 import { MARKETING_BASE_URL } from "@/lib/publicLinks";
 
 export const metadata = courseHubMetadata();
@@ -201,6 +203,13 @@ export default function CourseHubPage() {
         heading="Why parents and players choose Envision for online chess coaching."
         intro="Not a set of loose classes. A published syllabus, a coach who places your child at the right session, and a portal where parents can see every class, score and tournament result."
         secondary={{ href: "#courses", label: "Compare the five courses" }}
+      />
+
+      <RelatedLinks
+        eyebrow="Learn in person"
+        heading="The same courses, taught offline in Kolkata."
+        intro="Every stage of this ladder also runs at our four Kolkata centres, with the same syllabus, homework, tournaments and progress tracking. Open a centre for its batch timings, coach and contact number."
+        links={[centreHubLink, ...centreLinks(), successStoriesLink, contactLink]}
       />
 
       {/*

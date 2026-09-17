@@ -1,12 +1,14 @@
 import Link from "next/link";
 import { ArrowRight, CalendarDays, CheckCircle2, ClipboardList, GraduationCap, MonitorSmartphone, Sparkles } from "lucide-react";
 import CourseResultsStrip from "@/components/marketing/CourseResultsStrip";
+import RelatedLinks from "@/components/marketing/RelatedLinks";
 import HeroStudentCluster from "@/components/marketing/HeroStudentCluster";
 import WhyEnvision from "@/components/marketing/WhyEnvision";
 import { MarketingFooter, MarketingHeader } from "@/components/marketing/MarketingChrome";
 import { ACADEMY_DEFAULTS } from "@/lib/branding";
 import { courseHub, coursePages, type CoursePageConfig } from "@/lib/coursePages";
 import { curriculumLevels } from "@/lib/demoCurriculum";
+import { centreHubLink, centreLinks, contactLink, successStoriesLink } from "@/lib/internalLinks";
 import { MARKETING_BASE_URL } from "@/lib/publicLinks";
 
 const demoHref = "/register";
@@ -251,6 +253,13 @@ export default function CoursePage({ config }: { config: CoursePageConfig }) {
         heading="Results from students on this ladder."
         intro={`Students who trained through the Envision syllabus, of which the ${config.eyebrow.replace(" Stage", "").toLowerCase()} course is one stage.`}
         offset={coursePages.findIndex((page) => page.slug === config.slug) + 1}
+      />
+
+      <RelatedLinks
+        eyebrow="Learn in person"
+        heading="Prefer to learn at a chess academy in Kolkata?"
+        intro={`The ${config.eyebrow.replace(" Stage", "").toLowerCase()} course runs offline too, on the same syllabus and with the same homework, tournaments and progress tracking. Four centres across the city, each with its own coach and batch timings.`}
+        links={[centreHubLink, ...centreLinks(), successStoriesLink, contactLink]}
       />
 
       {/* -------------------------------------------------------------- FAQ */}

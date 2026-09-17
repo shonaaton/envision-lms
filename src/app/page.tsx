@@ -587,9 +587,14 @@ export default async function Home() {
               <h2 className="mt-4 text-2xl font-black text-brand-900">Recent results from our chess students.</h2>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-brand-900/70">Podium finishes, age-group titles and FIDE ratings won by students coached at Envision - the plainest answer we can give to what good chess coaching in India produces.</p>
             </div>
-            <Link href={cloudinaryCollectionUrl} target="_blank" rel="noreferrer" className="btn border border-brand/25 bg-white text-brand shadow-sm shadow-brand-900/5 hover:border-brand/50 hover:bg-brand-50">
-              Achievement Collection <ArrowRight size={16} />
-            </Link>
+            <div className="flex flex-wrap gap-2">
+              <Link href="/success-stories" className="btn border border-brand/25 bg-white text-brand shadow-sm shadow-brand-900/5 hover:border-brand/50 hover:bg-brand-50">
+                All student success stories <ArrowRight size={16} />
+              </Link>
+              <Link href={cloudinaryCollectionUrl} target="_blank" rel="noreferrer" className="btn border border-brand/25 bg-white text-brand shadow-sm shadow-brand-900/5 hover:border-brand/50 hover:bg-brand-50">
+                Achievement Collection <ArrowRight size={16} />
+              </Link>
+            </div>
           </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {featuredAchievements.slice(0, 8).map((item, index) => (
@@ -770,7 +775,7 @@ export default async function Home() {
           </div>
           <div className="mt-6 flex flex-col gap-3 sm:flex-row lg:mt-0">
             <Link href={demoHref} className="btn-accent">Book Free Demo Class</Link>
-            <Link href={demoHref} className="btn border border-brand/25 bg-white text-brand hover:border-brand/50 hover:bg-brand-50">Start Your Chess Journey</Link>
+            <Link href="/contact-us" className="btn border border-brand/25 bg-white text-brand hover:border-brand/50 hover:bg-brand-50">Contact Us</Link>
             <Link href="#platform" className="btn border border-brand/25 bg-white text-brand hover:border-brand/50 hover:bg-brand-50">Explore Learning Portal</Link>
           </div>
         </div>

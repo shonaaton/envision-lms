@@ -1,8 +1,8 @@
 import Image from "next/image";
 import Link from "next/link";
 import { ChevronDown, Mail, MapPin, Menu, Phone } from "lucide-react";
-import { ACADEMY_DEFAULTS, ACADEMY_LOGO_URL } from "@/lib/branding";
-import { centreHref, centreHub, kolkataCentres } from "@/lib/centrePages";
+import { ACADEMY_DEFAULTS, ACADEMY_LOGO_URL, ACADEMY_PHONE_DISPLAY } from "@/lib/branding";
+import { centreHref, centreHub, kolkataAreasServed, kolkataCentres } from "@/lib/centrePages";
 import { courseHub, coursePages } from "@/lib/coursePages";
 import CookieSettingsLink from "@/components/marketing/CookieSettingsLink";
 
@@ -204,12 +204,21 @@ export function MarketingHeader({ demoHref, ctaLabel = "Book Free Demo Class" }:
 const academyLinks: NavItem[] = [
   ["Learning Portal", "/#platform"],
   ["Student Achievements", "/#achievements"],
-  ["Success Stories", "/success-stories"],
+  ["Student Success Stories", "/success-stories"],
   ["Parent Reviews", "/#reviews"],
-  ["Book a Free Demo", "/register"],
+  ["Book a Free Demo Class", "/register"],
   ["Contact Us", "/contact-us"],
   ["Student Login", "/login"],
 ];
+
+/** A footer column heading, so the footer has a real document outline. */
+function FooterHeading({ children, href }: { children: React.ReactNode; href?: string }) {
+  const text = <span className="text-xs font-black uppercase tracking-[0.14em] text-accent">{children}</span>;
+  return <h2 className="mb-4">{href ? <Link href={href} className="hover:underline">{text}</Link> : text}</h2>;
+}
+
+/** Every footer link reads the same: quiet white, accent on hover, like the header. */
+const footerLink = "text-sm text-white/75 transition hover:text-accent hover:underline";
 
 const legalLinks: NavItem[] = [
   ["Privacy Policy", "/privacy"],
@@ -217,51 +226,83 @@ const legalLinks: NavItem[] = [
   ["Refund Policy", "/refund-policy"],
 ];
 
+/**
+ * The sitewide footer.
+ *
+ * It is the only block that links every public page from every public page, so
+ * it is built from `coursePages` and `kolkataCentres` rather than a hand-kept
+ * list: a new course or centre cannot go missing from it.
+ *
+ * Two parts exist specifically for search. The NAP block repeats the academy's
+ * name, address and phone in the same form the centre pages' `LocalBusiness`
+ * schema uses, because inconsistent NAP is what splits one local listing into
+ * two. And the areas row links each Kolkata locality to the centre that actually
+ * serves it - the honest version of a "we serve X" list, since every entry is a
+ * real commute to a real address rather than a doorway page.
+ */
 export function MarketingFooter() {
   const telHref = `tel:${ACADEMY_DEFAULTS.phone}`;
   const mailHref = `mailto:${ACADEMY_DEFAULTS.email}`;
+  const areas = kolkataAreasServed();
 
   return (
-    <footer className="border-t border-brand/10 bg-brand-50 text-brand-900">
+    /*
+      Brand purple, the same bar the header is, so the page is bookended rather
+      than fading into a pale panel at the end. The logo artwork is
+      yellow-on-transparent, so on this background it sits directly on the bar
+      exactly as it does in the header - the dark box it used to need only
+      existed because the old footer was light.
+    */
+    <footer className="border-t border-brand-700 bg-brand text-white">
       <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
-        <div className="grid gap-10 lg:grid-cols-[1.4fr_1fr_1fr_1.2fr]">
+        <div className="grid gap-10 lg:grid-cols-[1.35fr_1fr_1.25fr_1fr]">
           {/* ---------------------------------------------------------- brand */}
           <div>
-            <Link href="/" className="inline-flex rounded-xl bg-brand-900 px-3 py-2" aria-label="Envision Chess Academy home">
-              <Image src={ACADEMY_LOGO_URL} alt="Envision Chess Academy" width={190} height={64} unoptimized className="h-10 w-auto max-w-[160px] object-contain" />
+            <Link href="/" className="inline-flex" aria-label="Envision Chess Academy home">
+              <Image src={ACADEMY_LOGO_URL} alt="Envision Chess Academy" width={190} height={64} unoptimized className="h-12 w-auto max-w-[190px] object-contain" />
             </Link>
-            <p className="mt-4 max-w-sm text-sm leading-6 text-brand-900/70">
-              Structured chess coaching from the first move to elite competitive play, with live classes, homework, tournaments and progress
-              tracking in one portal.
+            <p className="mt-5 max-w-sm text-sm leading-6 text-white/70">
+              Structured chess coaching from the first move to elite competitive play - live online across India and offline at{" "}
+              {kolkataCentres.length} Kolkata centres - with classes, homework, tournaments and progress tracking in one portal.
             </p>
-            <p className="mt-4 text-xs font-semibold leading-5 text-brand-900/60">
+
+            {/* Name, address and phone, in the form the centre schema uses. */}
+            <div className="mt-5 space-y-2 text-sm">
+              <p className="font-black text-white">{ACADEMY_DEFAULTS.legalName}</p>
+              <address className="flex gap-2 not-italic leading-6 text-white/70">
+                <MapPin size={15} className="mt-1 shrink-0 text-accent" />
+                <span>{ACADEMY_DEFAULTS.registeredAddress.replace("\n", ", ")}</span>
+              </address>
+              <a href={telHref} className="flex items-center gap-2 font-bold text-accent transition hover:underline">
+                <Phone size={15} /> {ACADEMY_PHONE_DISPLAY}
+              </a>
+              <a href={mailHref} className="flex items-center gap-2 break-all font-bold text-accent transition hover:underline">
+                <Mail size={15} /> {ACADEMY_DEFAULTS.email}
+              </a>
+            </div>
+
+            <p className="mt-5 text-xs font-semibold leading-5 text-white/65">
               {ACADEMY_DEFAULTS.affiliationLine}
               <br />
               {ACADEMY_DEFAULTS.recognitionLine}
             </p>
-            <div className="mt-5 flex flex-col gap-2">
-              <a href={telHref} className="inline-flex items-center gap-2 text-sm font-bold text-brand hover:underline">
-                <Phone size={15} /> {ACADEMY_DEFAULTS.phone}
-              </a>
-              <a href={mailHref} className="inline-flex items-center gap-2 text-sm font-bold text-brand hover:underline">
-                <Mail size={15} /> {ACADEMY_DEFAULTS.email}
-              </a>
-            </div>
           </div>
 
           {/* -------------------------------------------------------- courses */}
           <nav aria-label="Online chess coaching courses">
-            <h2 className="text-xs font-black uppercase tracking-[0.14em] text-brand-900">Online Chess Coaching Courses</h2>
-            <ul className="mt-4 space-y-2.5">
+            <FooterHeading href={hubHref}>Online Chess Coaching Courses</FooterHeading>
+            <ul className="space-y-2.5">
               <li>
-                <Link href={hubHref} className="text-sm font-bold text-brand hover:underline">
-                  {courseHub.navLabel}
+                <Link href={hubHref} className="text-sm font-bold text-accent transition hover:underline">
+                  All five chess courses
                 </Link>
               </li>
+              {/* The full course name, not the nav label: the anchor text is the
+                  phrase each of those pages targets. */}
               {coursePages.map((page) => (
                 <li key={page.slug}>
-                  <Link href={`/${page.slug}`} className="text-sm text-brand-900/70 hover:text-brand hover:underline">
-                    {page.navLabel}
+                  <Link href={`/${page.slug}`} className={footerLink}>
+                    {page.h1}
                   </Link>
                 </li>
               ))}
@@ -270,22 +311,17 @@ export function MarketingFooter() {
 
           {/* -------------------------------------------------------- academy */}
           <nav aria-label="Academy">
-            <h2 className="text-xs font-black uppercase tracking-[0.14em] text-brand-900">Academy</h2>
-            <ul className="mt-4 space-y-2.5">
+            <FooterHeading>Academy</FooterHeading>
+            <ul className="space-y-2.5">
               {academyLinks.map(([label, href]) => (
                 <li key={href}>
-                  <Link href={href} className="text-sm text-brand-900/70 hover:text-brand hover:underline">
+                  <Link href={href} className={footerLink}>
                     {label}
                   </Link>
                 </li>
               ))}
               <li>
-                <Link href={centreHubHref} className="text-sm text-brand-900/70 hover:text-brand hover:underline">
-                  {centreHub.navLabel}
-                </Link>
-              </li>
-              <li>
-                <a href={cloudinaryCollectionUrl} target="_blank" rel="noreferrer" className="text-sm text-brand-900/70 hover:text-brand hover:underline">
+                <a href={cloudinaryCollectionUrl} target="_blank" rel="noreferrer" className={footerLink}>
                   Achievement Gallery
                 </a>
               </li>
@@ -294,39 +330,61 @@ export function MarketingFooter() {
 
           {/* -------------------------------------------------------- centres */}
           <nav aria-label="Kolkata chess academy centres">
-            <h2 className="text-xs font-black uppercase tracking-[0.14em] text-brand-900">
-              <Link href={centreHubHref} className="hover:text-brand hover:underline">Kolkata Centres</Link>
-            </h2>
-            <ul className="mt-4 space-y-3">
+            <FooterHeading href={centreHubHref}>{centreHub.navLabel}</FooterHeading>
+            <ul className="space-y-3">
               {kolkataCentres.map((centre) => (
                 <li key={centre.slug} className="flex gap-2">
-                  <MapPin size={14} className="mt-0.5 shrink-0 text-brand" />
+                  <MapPin size={14} className="mt-0.5 shrink-0 text-accent" />
                   <span>
-                    <Link href={centreHref(centre.slug)} className="block text-sm font-bold text-brand-900 hover:text-brand hover:underline">
+                    <Link href={centreHref(centre.slug)} className="block text-sm font-bold text-white transition hover:text-accent hover:underline">
                       {centre.h1}
                     </Link>
-                    <span className="block text-xs leading-5 text-brand-900/60">{centre.address}</span>
+                    <span className="block text-xs leading-5 text-white/65">{centre.address}</span>
+                    <a href={`tel:${centre.phone}`} className="mt-0.5 inline-block text-xs font-bold text-accent transition hover:underline">
+                      {centre.phoneDisplay}
+                    </a>
                   </span>
                 </li>
               ))}
             </ul>
           </nav>
         </div>
+
+        {/* ------------------------------------------------------------ areas */}
+        <nav aria-label="Areas we serve in Kolkata" className="mt-10 border-t border-white/12 pt-8">
+          <h2 className="text-xs font-black uppercase tracking-[0.14em] text-accent">Chess Classes Across Kolkata</h2>
+          <p className="mt-2 max-w-3xl text-xs leading-5 text-white/60">
+            Each area links to the Envision centre nearest to it, with that centre&apos;s batch timings, coach and contact number.
+          </p>
+          <ul className="mt-4 flex flex-wrap gap-2">
+            {areas.map(({ area, centre }) => (
+              <li key={area}>
+                <Link
+                  href={centreHref(centre.slug)}
+                  title={`Nearest centre: ${centre.h1}, ${centre.address}`}
+                  className="inline-flex rounded-full border border-white/15 bg-white/[0.06] px-3 py-1.5 text-xs font-semibold text-white/80 transition hover:border-accent/60 hover:bg-white/10 hover:text-accent"
+                >
+                  Chess classes in {area}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </nav>
       </div>
 
       {/* ------------------------------------------------------------- bottom */}
-      <div className="border-t border-brand/10">
-        <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-5 text-xs text-brand-900/60 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
+      <div className="border-t border-white/12 bg-brand-600">
+        <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-5 text-xs text-white/60 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
           <div>
             Copyright {new Date().getFullYear()} {ACADEMY_DEFAULTS.legalName}. GSTIN {ACADEMY_DEFAULTS.gstNumber}.
           </div>
           <nav aria-label="Legal" className="flex flex-wrap gap-4">
             {legalLinks.map(([label, href]) => (
-              <Link key={href} href={href} className="font-semibold text-brand-900/70 hover:text-brand hover:underline">
+              <Link key={href} href={href} className="font-semibold text-white/70 transition hover:text-accent hover:underline">
                 {label}
               </Link>
             ))}
-            <CookieSettingsLink className="font-semibold text-brand-900/70 hover:text-brand hover:underline" />
+            <CookieSettingsLink className="font-semibold text-white/70 transition hover:text-accent hover:underline" />
           </nav>
         </div>
       </div>

@@ -2,10 +2,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowRight, Clock3, Mail, MapPin, MessageCircle, Navigation, Phone } from "lucide-react";
 import ContactForm from "@/components/marketing/ContactForm";
+import RelatedLinks from "@/components/marketing/RelatedLinks";
 import { MarketingFooter, MarketingHeader } from "@/components/marketing/MarketingChrome";
 import { ACADEMY_DEFAULTS, ACADEMY_LOGO_URL } from "@/lib/branding";
 import { centreHref, centreHub, centreTimeRange, kolkataCentres } from "@/lib/centrePages";
 import { courseHub } from "@/lib/coursePages";
+import { centreHubLink, courseHubLink, courseLinks, demoLink, successStoriesLink } from "@/lib/internalLinks";
 import { MARKETING_BASE_URL } from "@/lib/publicLinks";
 
 const pageUrl = `${MARKETING_BASE_URL}/contact-us`;
@@ -191,6 +193,13 @@ export default function ContactUsPage() {
           </p>
         </div>
       </section>
+
+      <RelatedLinks
+        eyebrow="Before you write"
+        heading="You may find the answer here first."
+        intro="Most questions we get are about what is taught, where, and what a student starts with. Every one of those has a page."
+        links={[courseHubLink, ...courseLinks(), centreHubLink, successStoriesLink, demoLink]}
+      />
 
       {/* ---------------------------------------------------------- last CTA */}
       <section className="relative overflow-hidden bg-white px-4 pb-16 text-brand-900 sm:px-6 lg:px-8 lg:pb-24">

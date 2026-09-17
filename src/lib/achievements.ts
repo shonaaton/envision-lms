@@ -1,4 +1,5 @@
 import { dbConnect } from "@/lib/db";
+import { requestCache } from "@/lib/requestCache";
 import { seededAchievements, type AchievementRecord } from "@/lib/achievementData";
 import { Achievement } from "@/models/Achievement";
 
@@ -49,7 +50,12 @@ export function normalizeAchievement(input: any, actorId?: string) {
   return body;
 }
 
-export async function getLandingAchievements() {
+/**
+ * Wrapped in the per-request cache because a success story page now reads this
+ * twice - once in `generateMetadata` for the title, once in the page body for
+ * the content - and both should be one query, not two.
+ */
+export const getLandingAchievements = requestCache(async function getLandingAchievements() {
   try {
     await dbConnect();
     const records = await Achievement.find({ isPublished: { $ne: false } })
@@ -61,7 +67,7 @@ export async function getLandingAchievements() {
     return seededAchievements;
   }
   return seededAchievements;
-}
+});
 
 export async function seedVerifiedAchievements(actorId?: string) {
   const inserted = [];

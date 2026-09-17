@@ -39,8 +39,11 @@ export default function CourseResultsStrip({
             <h2 className="mt-4 text-2xl font-black text-brand-900">{heading}</h2>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-brand-900/70">{intro}</p>
           </div>
-          <Link href="/#achievements" className="btn border border-brand/25 bg-white text-brand shadow-sm shadow-brand-900/5 hover:border-brand/50 hover:bg-brand-50">
-            All student achievements <ArrowRight size={16} />
+          {/* The stories hub, not the landing page's anchor: it is a real
+              indexable page of its own, and every page carrying this strip is a
+              link into it. */}
+          <Link href="/success-stories" className="btn border border-brand/25 bg-white text-brand shadow-sm shadow-brand-900/5 hover:border-brand/50 hover:bg-brand-50">
+            All student success stories <ArrowRight size={16} />
           </Link>
         </div>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

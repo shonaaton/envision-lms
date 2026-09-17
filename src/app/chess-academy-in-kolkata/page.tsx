@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowRight, CalendarDays, CheckCircle2, GraduationCap, MapPin, Navigation, Phone, Quote, Sparkles, Star, Trophy } from "lucide-react";
 import CourseResultsStrip from "@/components/marketing/CourseResultsStrip";
+import RelatedLinks from "@/components/marketing/RelatedLinks";
 import HeroStudentCluster from "@/components/marketing/HeroStudentCluster";
 import WhyEnvision from "@/components/marketing/WhyEnvision";
 import { MarketingFooter, MarketingHeader } from "@/components/marketing/MarketingChrome";
@@ -17,6 +18,7 @@ import {
   kolkataCentres,
 } from "@/lib/centrePages";
 import { courseHub, coursePages } from "@/lib/coursePages";
+import { courseHubLink, courseLinks, demoLink, successStoriesLink } from "@/lib/internalLinks";
 import { curriculumLevels } from "@/lib/demoCurriculum";
 import { MARKETING_BASE_URL } from "@/lib/publicLinks";
 
@@ -410,6 +412,13 @@ export default function KolkataAcademyPage() {
         heading="What students from our Kolkata centres go on to win."
         intro="Every result below belongs to a student trained on the Envision syllabus, at a Kolkata centre or in a live online batch."
         offset={0}
+      />
+
+      <RelatedLinks
+        eyebrow="The syllabus"
+        heading="The five courses taught at every Kolkata centre."
+        intro="Offline students work through the same published ladder as our online students. Open any stage to read what a coach teaches, session by session."
+        links={[courseHubLink, ...courseLinks(), successStoriesLink, demoLink]}
       />
 
       {/* -------------------------------------------------------------- FAQ */}

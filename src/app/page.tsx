@@ -26,7 +26,7 @@ import DynamicLandingShowcase from "@/components/marketing/DynamicLandingShowcas
 import HeroStudentCluster from "@/components/marketing/HeroStudentCluster";
 import WhyEnvision from "@/components/marketing/WhyEnvision";
 import { MarketingFooter, MarketingHeader } from "@/components/marketing/MarketingChrome";
-import { ACADEMY_DEFAULTS, ACADEMY_LOGO_URL } from "@/lib/branding";
+import { ACADEMY_ACCREDITATIONS, ACADEMY_DEFAULTS, ACADEMY_LOGO_URL } from "@/lib/branding";
 import { centreHub } from "@/lib/centrePages";
 import { courseTierLabel } from "@/lib/courseTiers";
 import { courseHub, coursePages } from "@/lib/coursePages";
@@ -309,13 +309,37 @@ export default async function Home() {
                 See Portal
               </Link>
             </div>
-            <div className="mt-6 grid max-w-lg grid-cols-3 gap-2">
-              {["Live batches", "Homework", "Progress"].map((label, index) => (
-                <div key={label} className="rounded-xl border border-brand/10 bg-white px-3 py-2.5 shadow-sm shadow-brand-900/5">
-                  <div className="text-lg font-extrabold text-brand">{["6", "42", "92%"][index]}</div>
-                  <div className="mt-0.5 text-[11px] font-semibold text-brand-900/60">{label}</div>
-                </div>
-              ))}
+            {/*
+              The hero used to show three invented portal numbers here. Parents
+              deciding on an academy want proof it answers to someone, so the
+              space now carries the two bodies that accredit us, with the logos
+              a Bengal chess parent recognises without reading the caption.
+            */}
+            <div className="mt-6 max-w-lg rounded-2xl border border-brand/10 bg-white/85 p-3.5 shadow-sm shadow-brand-900/5 backdrop-blur-sm">
+              <p className="text-[10px] font-extrabold uppercase tracking-[0.14em] text-brand-900/45">
+                Affiliated &amp; Recognised
+              </p>
+              <ul className="mt-2.5 grid gap-2.5 sm:grid-cols-2">
+                {ACADEMY_ACCREDITATIONS.map((body) => (
+                  <li key={body.name} className="flex items-center gap-2.5">
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-brand/10 bg-white p-1 shadow-sm shadow-brand-900/5">
+                      <Image
+                        src={body.logo}
+                        alt={`${body.name} logo`}
+                        width={44}
+                        height={44}
+                        className="h-full w-full object-contain"
+                      />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-[10px] font-semibold uppercase tracking-[0.08em] text-brand-900/45">
+                        {body.relation}
+                      </span>
+                      <span className="block text-[11.5px] font-bold leading-tight text-brand-900">{body.name}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
             </div>
           </div>
           <HeroStudentCluster />

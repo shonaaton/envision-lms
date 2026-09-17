@@ -21,3 +21,21 @@ export const ACADEMY_DEFAULTS = {
  * not a +NN NNNNN NNNNN passes through unchanged.
  */
 export const ACADEMY_PHONE_DISPLAY = ACADEMY_DEFAULTS.phone.replace(/^(\+\d{2})(\d{5})(\d{5})$/, "$1 $2 $3");
+
+/**
+ * The two bodies the academy is accredited by, with the logo each one is
+ * recognised by on sight. Kept beside the affiliation lines above so the wording
+ * on a page and the wording on an invoice can never drift apart.
+ */
+export const ACADEMY_ACCREDITATIONS = [
+  {
+    relation: "Affiliated to",
+    name: "Kolkata District Chess Association",
+    logo: "/images/affiliations/kolkata-district-chess-association.png",
+  },
+  {
+    relation: "Recognised by",
+    name: "Sara Bangla Daba Sangstha",
+    logo: "/images/affiliations/sara-bangla-daba-sangstha.png",
+  },
+] as const;

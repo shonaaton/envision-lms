@@ -472,7 +472,9 @@ export const FEATURE_DEFINITIONS: FeatureDefinition[] = [
     routes: ["/admin/demo-center"],
     permissions: [view, approve, edit, { id: "convert", label: "Convert Demo Students", critical: true }],
     defaultStatus: "enabled",
-    defaultRolePermissions: { admin: all(view, approve, edit, { id: "convert", label: "Convert Demo Students", critical: true }) },
+    // Demo follow-up has always been sub-admin work; conversion stays with an
+    // admin, matching the Marketing role.
+    defaultRolePermissions: { admin: all(view, approve, edit, { id: "convert", label: "Convert Demo Students", critical: true }), "sub-admin": ["view", "edit", "approve"] },
   },
   {
     key: "courseManagement",

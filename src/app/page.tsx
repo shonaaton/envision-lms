@@ -37,7 +37,17 @@ import { achievementAlt, achievementCaption } from "@/lib/achievementCopy";
 import { getLandingAchievements } from "@/lib/achievements";
 import { portalTutorials, youtubeEmbedUrl } from "@/lib/portalTutorials";
 
-export const dynamic = "force-dynamic";
+/**
+ * The landing page is regenerated on a timer rather than rendered per request.
+ *
+ * It was `force-dynamic`, which made it the only page on the site served with
+ * `Cache-Control: no-store` - every visit and every crawl re-rendered it and
+ * re-read the achievements from Mongo, while the course and centre pages sat on
+ * a CDN hit. Nothing here needs per-request data: the only reason it was dynamic
+ * was the random order of the achievement gallery, which is now seeded from the
+ * revalidation window instead (see `rotateForWindow`).
+ */
+export const revalidate = 1800;
 
 export const metadata: Metadata = {
   metadataBase: new URL(MARKETING_BASE_URL),
@@ -222,13 +232,25 @@ const homeFaqs = [
   },
 ];
 
-function randomizeAchievementOrder<T>(items: T[]) {
-  return [...items].sort(() => Math.random() - 0.5);
+/**
+ * Rotates the gallery by one position per revalidation window.
+ *
+ * The gallery used to be shuffled with `Math.random()` on every render, which is
+ * what forced the whole page to be dynamic. Only eight of these are shown, so
+ * rotating the list still changes which students appear, and it changes every
+ * time the page regenerates - but it is deterministic within a render, so the
+ * page can be cached and the server and client cannot disagree about the order.
+ */
+function rotateForWindow<T>(items: T[]) {
+  if (items.length < 2) return items;
+  const windowsElapsed = Math.floor(Date.now() / (revalidate * 1000));
+  const offset = windowsElapsed % items.length;
+  return [...items.slice(offset), ...items.slice(0, offset)];
 }
 
 export default async function Home() {
   const achievements = publicAchievementList(await getLandingAchievements());
-  const featuredAchievements = randomizeAchievementOrder(achievements);
+  const featuredAchievements = rotateForWindow(achievements);
 
   const schema = [
     {
@@ -294,10 +316,17 @@ export default async function Home() {
             */}
             <h1 className="mt-4 max-w-xl text-[1.85rem] font-bold leading-[1.08] text-brand-900 sm:text-[2.25rem] lg:text-[2.7rem]">
               Best Chess Coaching in India
-              <span className="mt-2 block text-[1.1rem] font-bold leading-snug text-brand sm:text-[1.3rem] lg:text-[1.55rem]">
-                Coaching that feels organised from day one.
-              </span>
             </h1>
+            {/*
+              The promise is a sibling heading rather than a span inside the H1.
+              Nested, the two ran together with no whitespace between them, so
+              anything reading the H1 as text saw "IndiaCoaching" - one token,
+              and no exact match on the phrase the page targets. The course and
+              centre pages already split them this way.
+            */}
+            <h2 className="mt-2 max-w-xl text-[1.1rem] font-bold leading-snug text-brand sm:text-[1.3rem] lg:text-[1.55rem]">
+              Coaching that feels organised from day one.
+            </h2>
             <p className="mt-4 max-w-lg text-sm leading-6 text-brand-900/70 sm:text-[0.95rem]">
               Envision Chess Academy runs live online chess classes for students anywhere in India, and offline coaching at four Kolkata centres. Classes, homework, tournaments, coach feedback, payments and progress tracking all sit in one academy portal.
             </p>

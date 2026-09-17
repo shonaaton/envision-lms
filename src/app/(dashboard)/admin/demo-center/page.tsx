@@ -148,7 +148,7 @@ async function requireDemoManager(permission = "edit"): Promise<DemoManagerSessi
   const session = await auth();
   const role = (session?.user as any)?.role;
   if (!["admin", "sub-admin"].includes(role)) redirect("/dashboard");
-  if (!(await canAccessFeature("onboarding", session!.user as any, permission))) redirect("/dashboard");
+  if (!(await canAccessFeature("demoCenter", session!.user as any, permission))) redirect("/dashboard");
   return session as DemoManagerSession;
 }
 
@@ -494,7 +494,7 @@ async function restoreDemo(formData: FormData) {
 
 async function convertDemoStudent(formData: FormData) {
   "use server";
-  const session = await requireDemoManager("approve");
+  const session = await requireDemoManager("convert");
   await dbConnect();
   const actorId = String((session.user as any).id || "");
   const studentId = String(formData.get("student") || "");
@@ -637,7 +637,8 @@ async function reviewDuplicate(formData: FormData) {
 const ASSESSMENTS_PAGE_SIZE = 50;
 
 export default async function DemoCenterPage({ searchParams }: { searchParams?: { tab?: string; error?: string; ok?: string; page?: string } }) {
-  await requireDemoManager("view");
+  const session = await requireDemoManager("view");
+  const canConvertDemo = await canAccessFeature("demoCenter", session.user as any, "convert");
   await dbConnect();
   const activeTab = tabs.some((tab) => tab.id === searchParams?.tab) ? searchParams?.tab as DemoTab : "requested";
   const errorNotice = String(searchParams?.error || "").trim();
@@ -806,7 +807,7 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
             </div>
           ) : null}
           {visibleBookings.map((booking: any) => (
-            <DemoCard key={booking._id.toString()} booking={booking} activeTab={activeTab} coaches={coaches} courses={courses} batches={batches} feedback={feedbackByBooking.get(String(booking._id))} salesOwnerName={salesOwnerOf(booking)} salesOwnerManualId={booking.salesOwnerSource === "manual" ? String(booking.salesOwner || "") : ""} ownerOptions={ownerOptions} />
+            <DemoCard key={booking._id.toString()} booking={booking} activeTab={activeTab} coaches={coaches} courses={courses} batches={batches} feedback={feedbackByBooking.get(String(booking._id))} salesOwnerName={salesOwnerOf(booking)} salesOwnerManualId={booking.salesOwnerSource === "manual" ? String(booking.salesOwner || "") : ""} ownerOptions={ownerOptions} canConvertDemo={canConvertDemo} />
           ))}
           {activeTab === "converted"
             ? convertedWithoutBooking.map((student: any) => (
@@ -969,6 +970,7 @@ function DemoCard({
   salesOwnerName = "",
   salesOwnerManualId = "",
   ownerOptions = [],
+  canConvertDemo,
 }: {
   booking: any;
   activeTab: DemoTab;
@@ -979,6 +981,7 @@ function DemoCard({
   salesOwnerName?: string;
   salesOwnerManualId?: string;
   ownerOptions?: SalesOwnerOption[];
+  canConvertDemo: boolean;
 }) {
   const student = booking.student || {};
   const startAt = toLocalInput(booking.startAt);
@@ -1102,7 +1105,7 @@ function DemoCard({
             `feedbackStatus` stopped being armed at scheduling time do not keep
             asking for an assessment of a class that never happened. */}
         {booking.demoStatus === "ASSESSMENT_PENDING" && booking.classroom ? <Link href={`/demo-feedback/${booking._id}`} className="btn-outline bg-white"><Clock3 size={15} /> Assessment Pending</Link> : null}
-        {booking.feedbackStatus === "submitted" ? (
+        {booking.feedbackStatus === "submitted" && canConvertDemo ? (
           <form action={convertDemoStudent} className="grid w-full gap-2 rounded-lg border border-emerald-100 bg-emerald-50 p-3 xl:max-w-3xl">
             <div className="text-sm font-semibold text-emerald-950">Convert {student.name || "demo student"} to Student</div>
             <input type="hidden" name="booking" value={booking._id.toString()} />

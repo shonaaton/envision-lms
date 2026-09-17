@@ -183,7 +183,7 @@ export async function bookDemoForAccount(input: ScheduleInput & { studentId: str
 export async function canScheduleDemoForAccount(user: any, studentId: string) {
   if (!user?.id || !isValidObjectId(studentId)) return false;
   await dbConnect();
-  if (["admin", "sub-admin"].includes(String(user.role)) && (await canAccessFeature("onboarding", user, "approve"))) return true;
+  if (["admin", "sub-admin"].includes(String(user.role)) && (await canAccessFeature("demoCenter", user, "approve"))) return true;
   const student: any = await User.findOne({ _id: studentId, role: "student" }).select("name email phone").lean();
   if (!student) return false;
   const owner = (await leadOwnersForStudents([student])).get(String(student._id));

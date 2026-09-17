@@ -4,7 +4,7 @@ import { Types } from "mongoose";
 import { dbConnect } from "@/lib/db";
 import { AccessRole } from "@/models/AccessRole";
 import { User } from "@/models/User";
-import { SALES_ROLE_GRANTS } from "@/lib/accessRolePolicy";
+import { MARKETING_ROLE_GRANTS, SALES_ROLE_GRANTS } from "@/lib/accessRolePolicy";
 
 export async function ensureSalesRole() {
   await dbConnect();
@@ -13,6 +13,17 @@ export async function ensureSalesRole() {
     description: "Lead CRM, calls and notes, contacts, batch vacancies, and sales performance.",
     permissions: SALES_ROLE_GRANTS,
   } }, { upsert: true });
+}
+
+export async function ensureMarketingRole() {
+  await dbConnect();
+  await AccessRole.updateOne({ nameKey: "marketing" }, {
+    $set: {
+      description: "Sales and relationship work, Demo Center operations, and marketing analytics. Demo student conversion is excluded.",
+      permissions: MARKETING_ROLE_GRANTS,
+    },
+    $setOnInsert: { name: "Marketing", nameKey: "marketing" },
+  }, { upsert: true });
 }
 
 // Request-local only: revocation and role edits take effect on the next request,

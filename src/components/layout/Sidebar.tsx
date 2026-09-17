@@ -177,7 +177,7 @@ const sections: NavSection[] = [
     title: "Demo Center",
     roles: ["admin", "sub-admin"],
     items: [
-      { href: "/admin/demo-center", label: "Demo Management", icon: GraduationCap, featureKey: "onboarding" },
+      { href: "/admin/demo-center", label: "Demo Management", icon: GraduationCap, featureKey: "demoCenter" },
     ],
   },
   {
@@ -219,7 +219,7 @@ const sections: NavSection[] = [
   {
     id: "marketing",
     title: "Marketing",
-    roles: ["admin"],
+    roles: ["admin", "sub-admin"],
     items: [
       { href: "/admin/marketing-analytics", label: "Internal Analytics", icon: BarChart3, featureKey: "marketingAnalytics", permission: "view" },
       { href: "/admin/google-analytics", label: "Google Analytics", icon: BarChart3, featureKey: "marketingAnalytics", permission: "view" },

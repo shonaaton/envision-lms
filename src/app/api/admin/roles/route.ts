@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { canAccessFeature, getFeatureAccessSnapshot, getFeaturePermissionState, isSuperAdminSession } from "@/lib/featureAccess";
-import { ensureSalesRole } from "@/lib/accessRoles";
+import { ensureMarketingRole, ensureSalesRole } from "@/lib/accessRoles";
 import { roleInputSchema, validateRoleGrants } from "@/lib/accessRolePolicy";
 import { AccessRole } from "@/models/AccessRole";
 import { User } from "@/models/User";
@@ -14,7 +14,7 @@ export async function GET() {
   if (!session?.user) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const canManage = await isSuperAdminSession(session.user as any);
   if (!canManage && !(await canAccessFeature("userManagement", session.user as any))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  await ensureSalesRole();
+  await Promise.all([ensureSalesRole(), ensureMarketingRole()]);
   const [roles, counts] = await Promise.all([
     AccessRole.find({ archivedAt: null }).sort({ name: 1 }).lean(),
     User.aggregate([{ $match: { accessRole: { $ne: null } } }, { $group: { _id: "$accessRole", count: { $sum: 1 } } }]),
@@ -31,7 +31,7 @@ export async function POST(req: Request) {
   try {
     const input = roleInputSchema.parse(await req.json());
     const permissions = validateRoleGrants(input.permissions);
-    await ensureSalesRole();
+    await Promise.all([ensureSalesRole(), ensureMarketingRole()]);
     const role = await AccessRole.create({ ...input, permissions, nameKey: input.name.toLowerCase(), updatedBy: session.user.id });
     await PermissionAudit.create({ featureKey: "roleManagement", featureLabel: "Roles", actor: session.user.id, targetType: "role", targetId: String(role._id), targetLabel: role.name, newValue: role.toObject(), reason: "Created named role" });
     return NextResponse.json(role, { status: 201 });

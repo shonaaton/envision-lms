@@ -3,7 +3,7 @@ const mocks = vi.hoisted(() => ({ auth: vi.fn(), superAdmin: vi.fn(), create: vi
 vi.mock("@/lib/auth", () => ({ auth: mocks.auth }));
 vi.mock("@/lib/featureAccess", () => ({ isSuperAdminSession: mocks.superAdmin, canAccessFeature: vi.fn(), getFeatureAccessSnapshot: vi.fn().mockResolvedValue([]) }));
 vi.mock("@/lib/db", () => ({ dbConnect: vi.fn() }));
-vi.mock("@/lib/accessRoles", () => ({ ensureSalesRole: vi.fn() }));
+vi.mock("@/lib/accessRoles", () => ({ ensureSalesRole: vi.fn(), ensureMarketingRole: vi.fn() }));
 vi.mock("@/models/AccessRole", () => ({ AccessRole: { create: mocks.create, findById: mocks.find, findOneAndUpdate: mocks.update } }));
 vi.mock("@/models/User", () => ({ User: { exists: mocks.exists } }));
 vi.mock("@/models/FeatureAccess", () => ({ PermissionAudit: { create: mocks.audit } }));

@@ -4,7 +4,7 @@ vi.mock("@/lib/db", () => ({ dbConnect: vi.fn() }));
 vi.mock("@/lib/accessRoles", () => ({ resolveAccessRole: vi.fn() }));
 import { FEATURE_DEFINITIONS } from "@/lib/featureRegistry";
 import { evaluateFeatureState, type FeatureAccessSnapshot } from "@/lib/featureAccess";
-import { ESSENTIAL_ROLE_GRANTS, PROTECTED_ROLE_FEATURES, SALES_ROLE_GRANTS, roleInputSchema, validateRoleGrants } from "@/lib/accessRolePolicy";
+import { ESSENTIAL_ROLE_GRANTS, MARKETING_ROLE_GRANTS, PROTECTED_ROLE_FEATURES, SALES_ROLE_GRANTS, roleInputSchema, validateRoleGrants } from "@/lib/accessRolePolicy";
 import { namedRoleApiFeature, namedRoleApiPermissions } from "@/lib/accessRoleRequests";
 
 function feature(key: string, extra: Partial<FeatureAccessSnapshot> = {}): FeatureAccessSnapshot {
@@ -20,6 +20,14 @@ describe("named role permission boundary", () => {
   it("ignores stale per-user allows and denies from access templates", () => {
     expect(evaluateFeatureState({ feature: feature("fees", { userOverrides: [{ user: sales.id, access: "allow", permissions: [] }] }), user: sales })).toBe(false);
     expect(evaluateFeatureState({ feature: feature("salesCrm", { userOverrides: [{ user: sales.id, access: "deny", permissions: [] }] }), user: sales })).toBe(true);
+  });
+  it("gives the separate Marketing role sales and Demo Center access without conversion", () => {
+    const marketing = { ...sales, roleGrants: MARKETING_ROLE_GRANTS };
+    expect(evaluateFeatureState({ feature: feature("marketingAnalytics"), user: marketing })).toBe(true);
+    expect(evaluateFeatureState({ feature: feature("salesCrm"), user: marketing })).toBe(true);
+    expect(evaluateFeatureState({ feature: feature("demoCenter"), user: marketing, permission: "approve" })).toBe(true);
+    expect(evaluateFeatureState({ feature: feature("demoCenter"), user: marketing, permission: "convert" })).toBe(false);
+    expect(evaluateFeatureState({ feature: feature("marketingAnalytics"), user: sales })).toBe(false);
   });
   it.each(["disabled", "coming_soon", "testing"] as const)("respects %s release state", status => {
     expect(evaluateFeatureState({ feature: feature("salesCrm", { status }), user: sales })).toBe(false);

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { resolvePublicAppUrl } from "@/lib/appUrl";
 import { dbConnect } from "@/lib/db";
 import { exchangeGoogleAnalyticsCode } from "@/lib/googleAnalyticsAuth";
 import { GoogleAnalyticsIntegration } from "@/models/GoogleAnalyticsIntegration";
@@ -30,7 +31,7 @@ export async function GET(req: Request) {
       { $set: { propertyId, refreshToken: token.refresh_token, accessToken: token.access_token, accessTokenExpiresAt: new Date(Date.now() + Number(token.expires_in || 3600) * 1000), scope: token.scope, tokenType: token.token_type, connectedBy: user.id, connectedAt: new Date(), lastReportError: "" } },
       { upsert: true }
     );
-    const response = NextResponse.redirect(new URL("/admin/google-analytics?connected=1", req.url));
+    const response = NextResponse.redirect(new URL("/admin/google-analytics?connected=1", resolvePublicAppUrl(req)));
     response.cookies.delete("google_analytics_oauth_state");
     return response;
   } catch (error: any) {

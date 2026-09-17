@@ -1,6 +1,7 @@
 "use client";
 
 import { CONSENT_EVENT, type ConsentState, readConsent } from "@/lib/cookieConsent";
+import { publicPageType, trackGoogleAnalyticsEvent } from "@/lib/googleAnalytics";
 
 /**
  * The browser half of first-party analytics.
@@ -198,6 +199,13 @@ export function trackConversion(conversionType: string) {
   if (typeof window === "undefined" || !analyticsAllowed()) return;
   if (!session()) return;
   send({ type: "conversion", conversionType, ...base(window.location.pathname), pageIndex: openPage?.index || 0 });
+  const conversionEvents: Record<string, { event: string; parameters: Record<string, string> }> = {
+    contact_form_submit: { event: "generate_lead", parameters: { lead_type: "contact_form" } },
+    demo_registration: { event: "sign_up", parameters: { method: "demo_registration" } },
+    demo_booking: { event: "generate_lead", parameters: { lead_type: "demo_booking" } },
+  };
+  const mapped = conversionEvents[conversionType] || { event: "generate_lead", parameters: { lead_type: "other" } };
+  trackGoogleAnalyticsEvent(mapped.event, { ...mapped.parameters, page_type: publicPageType(window.location.pathname) });
 }
 
 /* -------------------------------------------------------------------- clicks */
@@ -214,6 +222,12 @@ export function trackClick(clickType: ClickType, label: string) {
     clickLabel: label.slice(0, 80),
     ...base(window.location.pathname),
     pageIndex: openPage?.index || 0,
+  });
+  const event = clickType === "contact" ? "contact_click" : clickType === "cta" ? "demo_interest" : "outbound_click";
+  trackGoogleAnalyticsEvent(event, {
+    interaction_type: clickType,
+    link_label: label.slice(0, 80),
+    page_type: publicPageType(window.location.pathname),
   });
 }
 

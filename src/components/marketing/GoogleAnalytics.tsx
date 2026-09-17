@@ -4,13 +4,7 @@ import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import Script from "next/script";
 import { CONSENT_EVENT, type ConsentState, readConsent } from "@/lib/cookieConsent";
-
-declare global {
-  interface Window {
-    dataLayer?: unknown[];
-    gtag?: (...args: unknown[]) => void;
-  }
-}
+import { publicPageType, trackGoogleAnalyticsEvent } from "@/lib/googleAnalytics";
 
 /**
  * GA4 is an additional, public-site-only measurement source. It follows the
@@ -31,8 +25,12 @@ export default function GoogleAnalytics({ measurementId }: { measurementId: stri
   }, []);
 
   useEffect(() => {
-    if (!allowed || !ready || !window.gtag) return;
-    window.gtag("event", "page_view", { page_path: pathname });
+    if (!allowed || !ready) return;
+    trackGoogleAnalyticsEvent("page_view", {
+      page_path: pathname,
+      page_title: document.title,
+      page_type: publicPageType(pathname),
+    });
   }, [allowed, pathname, ready]);
 
   if (!allowed || !measurementId) return null;

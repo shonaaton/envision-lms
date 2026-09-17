@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ArrowRight, MapPin, Trophy } from "lucide-react";
 import { getLandingAchievements } from "@/lib/achievements";
 import { publicAchievementList, studentSlug } from "@/lib/achievementData";
+import { MarketingFooter, MarketingHeader } from "@/components/marketing/MarketingChrome";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +13,7 @@ export default async function SuccessStoriesPage() {
 
   return (
     <main className="min-h-screen bg-[#f7f8fb] text-slate-950">
+      <MarketingHeader demoHref="/register" />
       <section className="bg-[#17051f] px-4 py-16 text-white sm:px-6 lg:px-8">
         <div className="mx-auto max-w-7xl">
           <p className="text-xs font-black uppercase tracking-[0.16em] text-accent">Student Success Stories</p>
@@ -36,6 +38,7 @@ export default async function SuccessStoriesPage() {
           </Link>
         ))}
       </section>
+      <MarketingFooter />
     </main>
   );
 }

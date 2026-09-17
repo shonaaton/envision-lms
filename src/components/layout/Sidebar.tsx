@@ -165,6 +165,7 @@ const sections: NavSection[] = [
     title: "Sales & Relationship",
     roles: ["admin", "sub-admin"],
     items: [
+      { href: "/sales/enquiries", label: "Contact Enquiries", icon: Inbox, featureKey: "contactEnquiries", roles: ["admin", "sub-admin"] },
       { href: "/sales/crm", label: "Lead CRM", icon: Handshake, featureKey: "salesCrm", roles: ["admin", "sub-admin"] },
       { href: "/sales/batches", label: "Batch Vacancy", icon: LayoutGrid, featureKey: "batchVacancy", roles: ["admin", "sub-admin"] },
       { href: "/sales/directory", label: "Contact Directory", icon: Contact, featureKey: "salesDirectory", roles: ["admin", "sub-admin"] },

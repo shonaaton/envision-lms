@@ -10,6 +10,7 @@ export const ESSENTIAL_ROLE_GRANTS: RoleGrants = {
 export const SALES_ROLE_GRANTS: RoleGrants = {
   ...ESSENTIAL_ROLE_GRANTS, salesPerformance: ["view"], salesDirectory: ["view"],
   batchVacancy: ["view"], salesCrm: ["view", "stage", "note"],
+  contactEnquiries: ["view", "manage"],
 };
 export const roleInputSchema = z.object({
   name: z.string().trim().min(2).max(80).refine(value => !["admin", "super admin", "super-admin", "sub admin", "sub-admin", "student", "instructor", "coach"].includes(value.toLowerCase()), "Choose a name different from a built-in role."),

@@ -632,6 +632,20 @@ export const FEATURE_DEFINITIONS: FeatureDefinition[] = [
     defaultRolePermissions: { admin: ["view", "stage", "note"] },
   },
   {
+    key: "contactEnquiries",
+    label: "Contact Enquiries",
+    category: "Sales",
+    description: "Submissions from the public contact form: name, email, address, WhatsApp number and whether they want online classes or a Kolkata centre.",
+    routes: ["/sales/enquiries"],
+    apiPrefixes: ["/api/sales/enquiries"],
+    // `manage` covers moving an enquiry between new, contacted and closed. It is
+    // not critical: marking a message as answered is ordinary daily work, and
+    // locking it behind an approval would leave the inbox permanently unread.
+    permissions: [view, { id: "manage", label: "Update Enquiry Status" }],
+    defaultStatus: "enabled",
+    defaultRolePermissions: { admin: ["view", "manage"] },
+  },
+  {
     key: "crmAdmin",
     label: "CRM Sync & Settings",
     category: "Sales",

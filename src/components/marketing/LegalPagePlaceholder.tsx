@@ -1,5 +1,5 @@
 import { ACADEMY_DEFAULTS } from "@/lib/branding";
-import { MarketingFooter, MarketingHeader, courseNav } from "@/components/marketing/MarketingChrome";
+import { MarketingFooter, MarketingHeader } from "@/components/marketing/MarketingChrome";
 
 /**
  * A holding page for the legal routes.
@@ -11,7 +11,7 @@ import { MarketingFooter, MarketingHeader, courseNav } from "@/components/market
 export default function LegalPagePlaceholder({ title }: { title: string }) {
   return (
     <>
-      <MarketingHeader navItems={courseNav} demoHref="/register" />
+      <MarketingHeader demoHref="/register" />
       <main className="min-h-[60vh] bg-[#f7f8fb] px-4 py-16 text-slate-950 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-3xl">
           <h1 className="text-3xl font-black sm:text-4xl">{title}</h1>

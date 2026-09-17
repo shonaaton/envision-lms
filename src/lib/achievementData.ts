@@ -1,3 +1,5 @@
+import { centreHref, kolkataCentres } from "@/lib/centrePages";
+
 export type AchievementLevel = "District" | "State" | "National" | "International" | "Rating" | "Other";
 
 export type AchievementRecord = {
@@ -69,12 +71,18 @@ export const impactCounters = [
   { value: "20+", label: "State, National & International Achievements" },
 ];
 
-export const academyBranches = [
-  { name: "Bowbazar", address: "20 Dr Jagabandhu Lane, Kolkata 700012" },
-  { name: "Haridevpur", address: "403B, Mahatma Gandhi Rd, Kolkata 700082" },
-  { name: "Jodhpur Park", address: "1D, Jodhpur Park, Kolkata, West Bengal 700068" },
-  { name: "New Alipore", address: "2/1, Shyama Charan Smriti Tirtha Rd, Kolkata 700053" },
-];
+/**
+ * The four Kolkata centres, for the landing page and the footer.
+ *
+ * Derived from `centrePages` rather than typed again here, so a centre's
+ * address exists in exactly one place - the same place its page, its map embed
+ * and its LocalBusiness schema read from.
+ */
+export const academyBranches = kolkataCentres.map((centre) => ({
+  name: centre.name,
+  address: centre.address,
+  href: centreHref(centre.slug),
+}));
 
 export const verifiedReviews: ReviewRecord[] = [
   {

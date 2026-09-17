@@ -1,10 +1,9 @@
 import Image from "next/image";
 import Link from "next/link";
 import { ChevronDown, Mail, MapPin, Menu, Phone } from "lucide-react";
-import { academyBranches } from "@/lib/achievementData";
 import { ACADEMY_DEFAULTS, ACADEMY_LOGO_URL } from "@/lib/branding";
+import { centreHref, centreHub, kolkataCentres } from "@/lib/centrePages";
 import { courseHub, coursePages } from "@/lib/coursePages";
-import { OFFLINE_ACADEMY_URL } from "@/lib/publicLinks";
 import CookieSettingsLink from "@/components/marketing/CookieSettingsLink";
 
 /**
@@ -18,29 +17,31 @@ import CookieSettingsLink from "@/components/marketing/CookieSettingsLink";
 
 const cloudinaryCollectionUrl = "https://collection.cloudinary.com/dlafr6yu3/3ddc9e2d8d7656087c4a52336a2e1df4";
 const hubHref = `/${courseHub.slug}`;
+const centreHubHref = `/${centreHub.slug}`;
 
 export type NavItem = [label: string, href: string];
 
-export const landingNav: NavItem[] = [
-  ["Home", "#home"],
-  ["Why Us", "#why"],
-  ["Programs", "#programs"],
-  ["Portal", "#platform"],
-  ["Reviews", "#reviews"],
-  ["Achievements", "#achievements"],
-  ["Centres", "#centres"],
-];
+/**
+ * One nav row for the whole public site.
+ *
+ * Every page used to pass its own list, so the menu changed shape as you moved
+ * between the landing page, a course and a centre. The two dropdowns are the
+ * journeys the site splits into, so they sit in the middle of the row and the
+ * links on either side are absolute - they work identically from every route,
+ * including the legal and contact pages, which carry no sections of their own.
+ */
+export type NavEntry = NavItem | "courses" | "centres";
 
-/** Same destinations, reachable from a course route. */
-export const courseNav: NavItem[] = [
+export const siteNav: NavEntry[] = [
   ["Home", "/"],
-  ["Portal", "/#platform"],
-  ["Achievements", "/#achievements"],
-  ["Centres", "/#centres"],
+  ["Why Us", "/#why"],
+  "courses",
+  "centres",
+  ["Contact Us", "/contact-us"],
 ];
 
 /**
- * The courses dropdown, on both the landing page and the course routes.
+ * The courses dropdown, the same on every page.
  *
  * The trigger is the sitewide internal link into the hub, so it spells out
  * "Online Chess Coaching Courses" - the phrase that page targets - rather than
@@ -70,7 +71,56 @@ function CoursesMenu() {
   );
 }
 
-export function MarketingHeader({ navItems, demoHref }: { navItems: NavItem[]; demoHref: string }) {
+/**
+ * The Kolkata centres dropdown, the offline counterpart to `CoursesMenu`,
+ * likewise the same on every page.
+ *
+ * The trigger is the sitewide internal link into the city hub, so it spells out
+ * "Chess Academy in Kolkata" - the phrase that page targets - and the children
+ * spell out the localities theirs do.
+ */
+function CentresMenu() {
+  return (
+    <div className="group relative">
+      <Link href={centreHubHref} className="inline-flex items-center gap-1 whitespace-nowrap text-sm font-semibold text-white/80 hover:text-accent">
+        {centreHub.navLabel} <ChevronDown size={14} className="shrink-0 transition-transform duration-200 group-hover:rotate-180" />
+      </Link>
+      <div className="invisible absolute left-0 top-full z-50 w-[min(80vw,300px)] translate-y-1 pt-3 opacity-0 transition duration-200 group-hover:visible group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:visible group-focus-within:translate-y-0 group-focus-within:opacity-100">
+        <div className="overflow-hidden rounded-xl border border-brand/10 bg-white p-2 shadow-xl shadow-brand-900/15">
+          <Link href={centreHubHref} className="block rounded-lg px-3 py-2.5 text-xs font-black uppercase tracking-[0.1em] text-brand hover:bg-brand-50">
+            All {kolkataCentres.length} Kolkata centres
+          </Link>
+          {kolkataCentres.map((centre) => (
+            <Link key={centre.slug} href={centreHref(centre.slug)} className="block rounded-lg px-3 py-2.5 text-sm font-bold text-brand-900/80 hover:bg-brand-50 hover:text-brand">
+              {centre.name}
+            </Link>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** The mobile drawer's grouped copy of a dropdown. */
+function MobileMenuGroup({ href, label, links }: { href: string; label: string; links: NavItem[] }) {
+  return (
+    <div className="mt-2 border-t border-white/15 pt-2">
+      <Link href={href} className="block rounded-lg px-3 py-2 text-[11px] font-black uppercase tracking-[0.1em] text-accent hover:bg-white/10">
+        {label}
+      </Link>
+      {links.map(([childLabel, childHref]) => (
+        <Link key={childHref} href={childHref} className="block rounded-lg px-3 py-2.5 pl-5 text-sm font-bold text-white/85 hover:bg-white/10">
+          {childLabel}
+        </Link>
+      ))}
+    </div>
+  );
+}
+
+const courseChildren: NavItem[] = coursePages.map((page) => [page.navLabel, `/${page.slug}`]);
+const centreChildren: NavItem[] = kolkataCentres.map((centre) => [centre.name, centreHref(centre.slug)]);
+
+export function MarketingHeader({ demoHref }: { demoHref: string }) {
   return (
     <header className="sticky top-0 z-50 border-b border-brand-700 bg-brand/95 text-white backdrop-blur-xl">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
@@ -87,14 +137,19 @@ export function MarketingHeader({ navItems, demoHref }: { navItems: NavItem[]; d
           />
         </Link>
         <nav className="hidden items-center gap-4 xl:flex" aria-label="Main navigation">
-          {/* Nowrap keeps the row single-line now that the courses link spells
-              out its full phrase. */}
-          {navItems.map(([label, href]) => (
-            <Link key={href} href={href} className="whitespace-nowrap text-sm font-semibold text-white/80 hover:text-accent">
-              {label}
-            </Link>
-          ))}
-          <CoursesMenu />
+          {/* Five entries fit the desktop container alongside the action
+              buttons; below xl the same row is available from the menu. */}
+          {siteNav.map((entry) =>
+            entry === "courses" ? (
+              <CoursesMenu key="courses" />
+            ) : entry === "centres" ? (
+              <CentresMenu key="centres" />
+            ) : (
+              <Link key={entry[1]} href={entry[1]} className="whitespace-nowrap text-sm font-semibold text-white/80 hover:text-accent">
+                {entry[0]}
+              </Link>
+            ),
+          )}
         </nav>
         <div className="hidden items-center gap-2 sm:flex">
           <Link href="/login" className="btn whitespace-nowrap border border-white/30 bg-white/10 text-white hover:bg-white/20">
@@ -109,21 +164,26 @@ export function MarketingHeader({ navItems, demoHref }: { navItems: NavItem[]; d
             <Menu size={20} />
           </summary>
           <div className="absolute right-0 mt-3 max-h-[70vh] w-[min(88vw,340px)] overflow-y-auto rounded-xl border border-brand-700 bg-brand-900 p-3 shadow-lg shadow-brand-900/30">
-            {navItems.map(([label, href]) => (
-              <Link key={href} href={href} className="block rounded-lg px-3 py-3 text-sm font-bold text-white/85 hover:bg-white/10">
-                {label}
-              </Link>
-            ))}
-            <div className="mt-2 border-t border-white/15 pt-2">
-              <Link href={hubHref} className="block rounded-lg px-3 py-2 text-[11px] font-black uppercase tracking-[0.1em] text-accent hover:bg-white/10">
-                Online Chess Coaching Courses
-              </Link>
-              {coursePages.map((page) => (
-                <Link key={page.slug} href={`/${page.slug}`} className="block rounded-lg px-3 py-2.5 pl-5 text-sm font-bold text-white/85 hover:bg-white/10">
-                  {page.navLabel}
+            {/* Same order as the desktop row, with each dropdown expanded in
+                place. A plain link straight after an expanded group takes the
+                group's divider, so it still reads as a top-level entry. */}
+            {siteNav.map((entry, index) =>
+              entry === "courses" ? (
+                <MobileMenuGroup key="courses" href={hubHref} label={courseHub.navLabel} links={courseChildren} />
+              ) : entry === "centres" ? (
+                <MobileMenuGroup key="centres" href={centreHubHref} label={centreHub.navLabel} links={centreChildren} />
+              ) : (
+                <Link
+                  key={entry[1]}
+                  href={entry[1]}
+                  className={`block rounded-lg px-3 py-3 text-sm font-bold text-white/85 hover:bg-white/10${
+                    typeof siteNav[index - 1] === "string" ? " mt-2 border-t border-white/15 pt-4" : ""
+                  }`}
+                >
+                  {entry[0]}
                 </Link>
-              ))}
-            </div>
+              ),
+            )}
             <div className="mt-3 grid gap-2 border-t border-white/15 pt-3">
               <Link href="/login" className="btn border border-white/30 bg-white/10 text-white">Login</Link>
               <Link href={demoHref} className="btn-accent">Book Free Demo Class</Link>
@@ -141,6 +201,7 @@ const academyLinks: NavItem[] = [
   ["Success Stories", "/success-stories"],
   ["Parent Reviews", "/#reviews"],
   ["Book a Free Demo", "/register"],
+  ["Contact Us", "/contact-us"],
   ["Student Login", "/login"],
 ];
 
@@ -213,9 +274,9 @@ export function MarketingFooter() {
                 </li>
               ))}
               <li>
-                <a href={OFFLINE_ACADEMY_URL} target="_blank" rel="noreferrer" className="text-sm text-brand-900/70 hover:text-brand hover:underline">
-                  Offline Academy
-                </a>
+                <Link href={centreHubHref} className="text-sm text-brand-900/70 hover:text-brand hover:underline">
+                  {centreHub.navLabel}
+                </Link>
               </li>
               <li>
                 <a href={cloudinaryCollectionUrl} target="_blank" rel="noreferrer" className="text-sm text-brand-900/70 hover:text-brand hover:underline">
@@ -226,20 +287,24 @@ export function MarketingFooter() {
           </nav>
 
           {/* -------------------------------------------------------- centres */}
-          <div>
-            <h2 className="text-xs font-black uppercase tracking-[0.14em] text-brand-900">Kolkata Centres</h2>
+          <nav aria-label="Kolkata chess academy centres">
+            <h2 className="text-xs font-black uppercase tracking-[0.14em] text-brand-900">
+              <Link href={centreHubHref} className="hover:text-brand hover:underline">Kolkata Centres</Link>
+            </h2>
             <ul className="mt-4 space-y-3">
-              {academyBranches.map((centre) => (
-                <li key={centre.name} className="flex gap-2">
+              {kolkataCentres.map((centre) => (
+                <li key={centre.slug} className="flex gap-2">
                   <MapPin size={14} className="mt-0.5 shrink-0 text-brand" />
                   <span>
-                    <span className="block text-sm font-bold text-brand-900">{centre.name}</span>
+                    <Link href={centreHref(centre.slug)} className="block text-sm font-bold text-brand-900 hover:text-brand hover:underline">
+                      {centre.h1}
+                    </Link>
                     <span className="block text-xs leading-5 text-brand-900/60">{centre.address}</span>
                   </span>
                 </li>
               ))}
             </ul>
-          </div>
+          </nav>
         </div>
       </div>
 

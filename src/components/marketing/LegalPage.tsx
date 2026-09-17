@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { MarketingFooter, MarketingHeader, courseNav } from "@/components/marketing/MarketingChrome";
+import { MarketingFooter, MarketingHeader } from "@/components/marketing/MarketingChrome";
 
 /**
  * Shared chrome and typography for the legal routes.
@@ -59,7 +59,7 @@ export default function LegalPage({
 }) {
   return (
     <>
-      <MarketingHeader navItems={courseNav} demoHref="/register" />
+      <MarketingHeader demoHref="/register" />
       <main className="bg-[#f7f8fb] px-4 py-14 text-slate-950 sm:px-6 lg:px-8">
         <article className={`mx-auto max-w-3xl ${prose}`}>
           <h1 className="text-3xl font-black sm:text-4xl">{title}</h1>

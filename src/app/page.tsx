@@ -25,8 +25,9 @@ import AnimatedImpactCounters from "@/components/marketing/AnimatedImpactCounter
 import DynamicLandingShowcase from "@/components/marketing/DynamicLandingShowcase";
 import HeroStudentCluster from "@/components/marketing/HeroStudentCluster";
 import WhyEnvision from "@/components/marketing/WhyEnvision";
-import { MarketingFooter, MarketingHeader, landingNav } from "@/components/marketing/MarketingChrome";
+import { MarketingFooter, MarketingHeader } from "@/components/marketing/MarketingChrome";
 import { ACADEMY_DEFAULTS, ACADEMY_LOGO_URL } from "@/lib/branding";
+import { centreHub } from "@/lib/centrePages";
 import { courseTierLabel } from "@/lib/courseTiers";
 import { courseHub, coursePages } from "@/lib/coursePages";
 import { CURRICULUM_TIERS, curriculumLevels } from "@/lib/demoCurriculum";
@@ -275,7 +276,7 @@ export default async function Home() {
     <main id="home" className="landing-compact min-h-screen bg-[#ffffff] text-brand-900">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }} />
 
-      <MarketingHeader navItems={landingNav} demoHref={demoHref} />
+      <MarketingHeader demoHref={demoHref} />
 
       <section className="relative isolate overflow-hidden bg-[#f5edf8] text-brand-900">
         <div className="absolute inset-0 bg-[linear-gradient(118deg,#ffffff_0%,#f5edf8_52%,#e8d4f0_100%)]" />
@@ -685,7 +686,8 @@ export default async function Home() {
             <h2 className="mt-4 text-2xl font-black text-brand-900 sm:text-3xl">Chess classes in Kolkata, online chess coaching across India.</h2>
             <p className="mt-4 text-sm leading-7 text-brand-900/70">Four coaching centres in Kolkata run in-person batches, and live online batches take students from every other part of India and from 15+ countries. Same curriculum, same coaches, same portal.</p>
             <div className="mt-5 flex flex-wrap gap-3">
-              <Link href={`tel:${ACADEMY_DEFAULTS.phone}`} className="btn-accent">Call Academy</Link>
+              <Link href={`/${centreHub.slug}`} className="btn-accent">{centreHub.navLabel} <ArrowRight size={16} /></Link>
+              <Link href={`tel:${ACADEMY_DEFAULTS.phone}`} className="btn border border-brand/25 bg-white text-brand shadow-sm shadow-brand-900/5 hover:border-brand/50 hover:bg-brand-50">Call Academy</Link>
               <Link href={`mailto:${ACADEMY_DEFAULTS.email}`} className="btn border border-brand/25 bg-white text-brand shadow-sm shadow-brand-900/5 hover:border-brand/50 hover:bg-brand-50">Email Academy</Link>
             </div>
           </div>
@@ -694,10 +696,12 @@ export default async function Home() {
               <div key={centre.name} className="overflow-hidden rounded-xl border border-brand/10 bg-white shadow-xl shadow-brand-900/5 transition hover:border-brand/30 hover:bg-brand-50">
                 <div className="p-4">
                 <MapPin size={18} className="text-brand" />
-                <h3 className="mt-3 font-black text-brand-900">{centre.name} chess coaching centre</h3>
+                <h3 className="mt-3 font-black text-brand-900">
+                  <Link href={centre.href} className="hover:text-brand hover:underline">{centre.name} chess coaching centre</Link>
+                </h3>
                 <address className="mt-1 text-sm not-italic leading-5 text-brand-900/70">{centre.address}</address>
-                <Link href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(centre.address)}`} target="_blank" rel="noreferrer" className="mt-3 inline-flex text-xs font-black text-brand">
-                  Open directions
+                <Link href={centre.href} className="mt-3 inline-flex text-xs font-black text-brand hover:underline">
+                  Timings, coach and directions
                 </Link>
                 </div>
                 <figure className="m-0">

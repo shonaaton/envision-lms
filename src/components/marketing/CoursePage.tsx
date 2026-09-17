@@ -3,7 +3,7 @@ import { ArrowRight, CalendarDays, CheckCircle2, ClipboardList, GraduationCap, M
 import CourseResultsStrip from "@/components/marketing/CourseResultsStrip";
 import HeroStudentCluster from "@/components/marketing/HeroStudentCluster";
 import WhyEnvision from "@/components/marketing/WhyEnvision";
-import { MarketingFooter, MarketingHeader, courseNav } from "@/components/marketing/MarketingChrome";
+import { MarketingFooter, MarketingHeader } from "@/components/marketing/MarketingChrome";
 import { ACADEMY_DEFAULTS } from "@/lib/branding";
 import { courseHub, coursePages, type CoursePageConfig } from "@/lib/coursePages";
 import { curriculumLevels } from "@/lib/demoCurriculum";
@@ -92,7 +92,7 @@ export default function CoursePage({ config }: { config: CoursePageConfig }) {
     <main className="landing-compact min-h-screen bg-white text-brand-900">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }} />
 
-      <MarketingHeader navItems={courseNav} demoHref={demoHref} />
+      <MarketingHeader demoHref={demoHref} />
 
       {/* ------------------------------------------------------------- hero */}
       <section className="relative isolate overflow-hidden bg-[#f5edf8] text-brand-900">

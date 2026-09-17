@@ -1,6 +1,7 @@
 import type { MetadataRoute } from "next";
 import { publicAchievementList, studentSlug } from "@/lib/achievementData";
 import { getLandingAchievements } from "@/lib/achievements";
+import { centreHref, centreHub, kolkataCentres } from "@/lib/centrePages";
 import { courseHub, coursePages } from "@/lib/coursePages";
 import { MARKETING_BASE_URL } from "@/lib/publicLinks";
 
@@ -28,12 +29,26 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     // The demo form is where every call to action lands, so it is worth indexing.
     { url: url("/register"), lastModified: now, changeFrequency: "monthly", priority: 0.8 },
     { url: url("/success-stories"), lastModified: now, changeFrequency: "weekly", priority: 0.7 },
+    { url: url("/contact-us"), lastModified: now, changeFrequency: "monthly", priority: 0.7 },
   ];
 
   const courses: MetadataRoute.Sitemap = [
     { url: url(`/${courseHub.slug}`), lastModified: now, changeFrequency: "monthly" as const, priority: 0.9 },
     ...coursePages.map((page) => ({
       url: url(`/${page.slug}`),
+      lastModified: now,
+      changeFrequency: "monthly" as const,
+      priority: 0.8,
+    })),
+  ];
+
+  // The offline side of the site: the Kolkata hub and one page per centre,
+  // derived from the same list the pages are built from so the sitemap cannot
+  // advertise a centre that does not resolve.
+  const centres: MetadataRoute.Sitemap = [
+    { url: url(`/${centreHub.slug}`), lastModified: now, changeFrequency: "monthly" as const, priority: 0.9 },
+    ...kolkataCentres.map((centre) => ({
+      url: url(centreHref(centre.slug)),
       lastModified: now,
       changeFrequency: "monthly" as const,
       priority: 0.8,
@@ -58,5 +73,5 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.3,
   }));
 
-  return [...core, ...courses, ...stories, ...legal];
+  return [...core, ...courses, ...centres, ...stories, ...legal];
 }

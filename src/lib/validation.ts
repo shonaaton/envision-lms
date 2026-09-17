@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { COURSE_TIER_ENUM, COURSE_TIER_ENUM_WITH_MIXED_AND_BLANK } from "@/lib/courseTiers";
 import { phoneNumberProblem } from "@/lib/phoneCountryCodes";
+import { CONTACT_INTEREST_VALUES } from "@/lib/contactEnquiries";
 
 const optionalText = (max: number) => z.preprocess((value) => (value == null || value === "" ? undefined : value), z.string().max(max).optional());
 
@@ -302,4 +303,28 @@ export const orderSchema = z.object({
   purpose: z.enum(["enrollment", "booking", "tournament", "invoice", "other"]),
   refId: z.string().optional(),
   amount: z.number().int().min(100),
+});
+
+/**
+ * The public contact form.
+ *
+ * `website` is a honeypot: a real person never sees the field, so anything in it
+ * came from a bot. The phone check is the same one registration uses, because a
+ * WhatsApp number that cannot be dialled makes the whole submission worthless.
+ */
+export const contactMessageSchema = z.object({
+  name: z.string().trim().min(2, "Please enter your name.").max(80),
+  email: z.string().trim().email("Please enter a valid email address."),
+  address: optionalText(300),
+  countryCode: z.string().trim().min(1).max(8),
+  phone: z.string().trim().min(6, "Please enter a valid WhatsApp number.").max(40),
+  interest: z.enum(CONTACT_INTEREST_VALUES as [string, ...string[]], {
+    errorMap: () => ({ message: "Please choose online classes or a centre." }),
+  }),
+  message: optionalText(2000),
+  sourcePath: optionalText(200),
+  website: optionalText(200),
+}).superRefine((value, context) => {
+  const problem = phoneNumberProblem(value.phone, value.countryCode);
+  if (problem) context.addIssue({ code: z.ZodIssueCode.custom, path: ["phone"], message: problem });
 });

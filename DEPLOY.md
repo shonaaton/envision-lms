@@ -11,14 +11,20 @@ Use HTTPS in production, even if you type `http://` first. Traefik should issue 
 The apex is canonical. `www.envisionchessacademy.com` is routed too and 301s to
 the apex, so old links keep working but only one origin is ever served.
 
-`classroom.envisionchessacademy.com` is gone: the A record is deleted and it has
-been dropped from the Traefik rule in `docker-compose.yml`. It does not resolve,
-so anything still pointing there fails to connect - it is not redirected. Run
-`bash scripts/audit-domain-move.sh` on the VPS to find whatever still names it.
+`classroom.envisionchessacademy.com` is routed and 301s to the apex too, path for
+path: `classroom.../` lands on the apex home page and `classroom.../register` on
+the apex register page. It serves nothing of its own. This needs its A record
+back - see section 1 - because a host that does not resolve cannot redirect:
+the browser fails to connect before it ever reaches Traefik.
+
+The redirect covers browsers and links only. It does not rescue a webhook (see
+section 3) and it does not rescue an old Android APK (see section 6). Run
+`bash scripts/audit-domain-move.sh` on the VPS to find what still names the old
+host in a place a redirect cannot reach.
 
 ## 1. Point DNS to the VPS
 
-In your domain DNS panel, add both records:
+In your domain DNS panel, add the apex and `www` records:
 
 ```text
 Type: A
@@ -32,9 +38,29 @@ Value: <your-vps-ip-address>
 TTL: Automatic or 300
 ```
 
-Keep the existing `classroom` A record as well. Traefik answers on `www` and
-`classroom` only to issue the redirect, but each still needs its own certificate
-to do that over HTTPS - which it cannot get without a DNS record.
+Add a third record for `classroom` as well, pointing at the same IP:
+
+```text
+Type: A
+Name: classroom
+Value: <your-vps-ip-address>
+TTL: Automatic or 300
+```
+
+Traefik answers on `www` and `classroom` only to issue the redirect, but each
+still needs its own certificate to do that over HTTPS - which it cannot get
+without a DNS record. If the `classroom` record was deleted in an earlier move,
+re-create it.
+
+**Do this before deploying, not after.** Traefik asks Let's Encrypt for one
+certificate covering every host in the router rule. A single name in that rule
+with no DNS record fails the whole order, so the apex ends up with no
+certificate either and the live site shows `ERR_CERT_AUTHORITY_INVALID` against
+Traefik's default cert. Add the record, confirm it resolves, then deploy.
+
+DNS for this domain is answered by Wix (`ns0.wixdns.net` / `ns1.wixdns.net`),
+not by hPanel - make the change in the Wix domain panel. `@` and `www` already
+point at the VPS; `classroom` needs the same IP.
 
 ## 2. Update `.env` on the VPS
 
@@ -56,11 +82,12 @@ Keep your existing MongoDB, Razorpay, WhatsApp, and `AUTH_SECRET` values unchang
 
 ## 3. Update connected services
 
-Nothing rescues these automatically. While `classroom.` still resolved the 301 was
-already a trap: most HTTP clients re-send a redirected POST as a GET with no body,
-so a webhook left on the old URL delivered nothing without failing loudly. Now
-that the record is deleted the call does not connect at all. Either way the
-provider stays silently dead until it is repointed at the apex by hand.
+Nothing rescues these automatically, and the `classroom.` redirect least of all.
+A 301 is a trap for a webhook: most HTTP clients re-send a redirected POST as a
+GET with no body, so a provider left on the old URL delivers nothing while its
+dashboard still shows a 2xx. That is worse than the dead record it replaces,
+because it fails without failing loudly. Every provider below must name the apex
+directly, by hand.
 
 Every item below lives in a third-party dashboard or on the VPS, not in this repo,
 so a deploy cannot fix them. `bash scripts/audit-domain-move.sh` shows which are
@@ -187,11 +214,11 @@ When rebuilding the Android APK, pass the same final LMS URL:
 .\android-webview\build-apk.ps1 -AppUrl "https://envisionchessacademy.com"
 ```
 
-An APK built against `classroom.` cannot be fixed from the server. `MainActivity`
-pins the host it was built with and sends every other host to the system browser,
-so even restoring the DNS record would land the 301 on the apex, fail `isAppHost`
-and throw the user out to Chrome with no session. Those installs need a rebuilt
-APK, redistributed.
+An APK built against `classroom.` cannot be fixed from the server, and the
+restored `classroom.` redirect does not change that. `MainActivity` pins the host
+it was built with and sends every other host to the system browser, so the 301
+lands on the apex, fails `isAppHost`, and throws the user out to Chrome with no
+session. Those installs need a rebuilt APK, redistributed.
 
 ## Notes
 
@@ -200,7 +227,9 @@ APK, redistributed.
 - Leave `AUTH_SECRET` unchanged on the live site; changing it logs everyone out.
 - Check `https://www.envisionchessacademy.com` too: it should 301 to the apex, not
   serve a second copy of the site.
-- `classroom.` is out of the router rule and the `envision-canonical` regex, and
-  its A record is deleted. Do not add it back to rescue an old APK - section 6
-  explains why that does not work.
+- `classroom.` is on the router rule and in the `envision-canonical` regex, and
+  needs its A record. Check `https://classroom.envisionchessacademy.com/` and
+  `/register`: each should 301 to the same path on the apex, not serve a page.
+  It is there for old links and bookmarks - it does not rescue an old APK, and
+  section 6 explains why.
 - DNS can take a few minutes to update, and SSL may take 30-60 seconds after Traefik sees the new domain.

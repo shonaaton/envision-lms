@@ -41,19 +41,17 @@ resolves() {
 }
 
 head2 "DNS"
+# All three must resolve to this VPS. `www.` and `classroom.` serve nothing of
+# their own - they exist so Traefik can get a certificate for each and answer
+# with the 301 to the apex. Without the record the redirect never happens: the
+# browser fails to connect before it reaches us.
 for h in "$APEX" "www.$APEX" "classroom.$APEX"; do
   if resolves "$h"; then
-    if [ "$h" = "classroom.$APEX" ]; then
-      note "$h still resolves - it is retired; confirm nothing is pointed at it before deleting the record"
-    else
-      ok "$h resolves"
-    fi
+    ok "$h resolves"
+  elif [ "$h" = "classroom.$APEX" ]; then
+    bad "$h does not resolve - add its A record back, pointed at this VPS, or the redirect to the apex cannot fire"
   else
-    if [ "$h" = "classroom.$APEX" ]; then
-      ok "$h does not resolve (retired, as intended)"
-    else
-      bad "$h does not resolve"
-    fi
+    bad "$h does not resolve"
   fi
 done
 
@@ -162,28 +160,45 @@ else
 fi
 
 head2 "Repo files"
-# Only this app's own retired hostnames count. A bare `srv*.hstgr.cloud` does not:
-# n8n still lives on one legitimately, and the outbound section above is what
-# decides whether a host is reachable.
+# Only this app's own non-canonical hostnames count. A bare `srv*.hstgr.cloud`
+# does not: n8n still lives on one legitimately, and the outbound section above
+# is what decides whether a host is reachable.
+#
+# `classroom.` is still wrong here even though it resolves and redirects again.
+# A value in `.env` is a URL the app hands out or calls - a callback, a webhook,
+# a link in an email - and every one of those wants the apex it will end up on,
+# not a 301 that a POST does not survive.
 RETIRED="classroom\.$APEX|lms\.srv[0-9]+\.hstgr\.cloud"
 if [ -f "$ENV_FILE" ]; then
   if grep -qE "$RETIRED" "$ENV_FILE"; then
-    bad "$ENV_FILE still names a retired LMS host:"
+    bad "$ENV_FILE names a host that is not the apex - point it at $APEX:"
     grep -nE "$RETIRED" "$ENV_FILE" \
       | sed -E 's/=.*/=<redacted>/' | sed 's/^/         /'
   else
-    ok "$ENV_FILE names no retired LMS host"
+    ok "$ENV_FILE names no non-canonical LMS host"
   fi
 else
   note "$ENV_FILE not found in $(pwd) - run this from the deployed checkout"
 fi
 
-# Match the Traefik labels only. The surrounding comments explain why `classroom.`
-# was dropped and must not themselves trip the check.
-if grep -E '^\s*-\s*.?traefik\.' docker-compose.yml 2>/dev/null | grep -q "classroom"; then
-  bad "docker-compose.yml still routes classroom. - drop it from the router rule and the canonical regex"
+# Match the Traefik labels only, so the surrounding comments cannot answer the
+# check for them. `classroom.` has to appear twice: on the router rule, so the
+# host is answered and gets a certificate, and in the canonical regex, so what
+# it answers with is the 301 to the apex. One without the other is worse than
+# neither - routed but not redirected serves a second copy of the site on a
+# second origin, which is exactly what the canonical host is meant to prevent.
+traefik_labels="$(grep -E '^\s*-\s*.?traefik\.' docker-compose.yml 2>/dev/null || true)"
+routed=0; redirected=0
+printf '%s' "$traefik_labels" | grep -q 'routers\.envision\.rule=.*classroom\.' && routed=1
+printf '%s' "$traefik_labels" | grep -q 'envision-canonical\.redirectregex\.regex=.*classroom' && redirected=1
+if [ "$routed" = 1 ] && [ "$redirected" = 1 ]; then
+  ok "docker-compose.yml routes classroom. and 301s it to the apex"
+elif [ "$routed" = 1 ]; then
+  bad "docker-compose.yml routes classroom. but the canonical regex does not match it - it would serve a second copy of the site instead of redirecting"
+elif [ "$redirected" = 1 ]; then
+  bad "the canonical regex names classroom. but the router rule does not - Traefik never answers the host, so the redirect never runs"
 else
-  ok "docker-compose.yml has no classroom. routing"
+  bad "docker-compose.yml no longer routes classroom. - add it to the router rule and the canonical regex"
 fi
 
 head2 "Cannot be checked from here - confirm in each dashboard"
@@ -196,6 +211,7 @@ cat <<EOF
       =  https://$APEX/api/auth/google-business/callback
   - Meta Events Manager: domain verification and allowed domains list
   - Android: any APK built against classroom. must be rebuilt and redistributed
+    (the 301 above does not rescue it - the WebView pins its build host)
 EOF
 
 echo

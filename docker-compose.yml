@@ -42,16 +42,27 @@ services:
       # below - a single origin is what NextAuth cookies and the socket.io CORS
       # allowlist expect.
       #
-      # `classroom.${LMS_HOST}` used to be routed here for already-installed
-      # Android APKs. Its A record is gone, so the rule matched a host that no
-      # longer resolves; it is dropped. An old APK cannot be rescued by bringing
-      # the record back either: its WebView pins the host it was built with, so a
-      # 301 to the apex fails `isAppHost` and kicks the user out to Chrome. Those
-      # installs need a rebuilt APK (see android-webview/README.md).
+      # `classroom.${LMS_HOST}` is routed on the same terms: it served the same
+      # app before the move, so the old links and bookmarks are 301'd path for
+      # path to the apex rather than left to fail to connect. It needs its own
+      # certificate to issue that redirect over HTTPS, which is why it is on the
+      # router rule and not only in the regex below - and it needs its A record
+      # back, pointed at this VPS (see DEPLOY.md section 1).
+      #
+      # ORDER MATTERS. Traefik asks Let's Encrypt for ONE certificate covering
+      # every host in this rule, so deploying this line while `classroom.` has
+      # no A record fails the whole order and leaves the APEX without a cert
+      # too - the live site goes to ERR_CERT_AUTHORITY_INVALID, not just the
+      # subdomain. Add the DNS record first and let it resolve, then deploy.
+      #
+      # This does not rescue an old Android APK, and it is not why the host is
+      # back. `MainActivity` pins the host it was built with, so the 301 to the
+      # apex fails `isAppHost` and throws the user out to Chrome with no session.
+      # Those installs still need a rebuilt APK (see android-webview/README.md).
       #
       # A redirect never rescues a webhook: a 301 makes most HTTP clients re-send
       # as GET and drop the body, so every provider must name the apex directly.
-      - "traefik.http.routers.envision.rule=Host(`${LMS_HOST}`) || Host(`www.${LMS_HOST}`)"
+      - "traefik.http.routers.envision.rule=Host(`${LMS_HOST}`) || Host(`www.${LMS_HOST}`) || Host(`classroom.${LMS_HOST}`)"
       - "traefik.http.routers.envision.entrypoints=web,websecure"
       - "traefik.http.routers.envision.tls=true"
       - "traefik.http.routers.envision.tls.certresolver=mytlschallenge"
@@ -65,7 +76,7 @@ services:
       - "traefik.http.middlewares.envision.headers.STSIncludeSubdomains=true"
       - "traefik.http.middlewares.envision.headers.STSPreload=true"
       # `$$` is compose's escape for a literal `$`, so Traefik receives `${1}`.
-      - 'traefik.http.middlewares.envision-canonical.redirectregex.regex=^https?://www\.(.+)'
+      - 'traefik.http.middlewares.envision-canonical.redirectregex.regex=^https?://(?:www|classroom)\.(.+)'
       - "traefik.http.middlewares.envision-canonical.redirectregex.replacement=https://$${1}"
       - "traefik.http.middlewares.envision-canonical.redirectregex.permanent=true"
       - "traefik.http.routers.envision.middlewares=envision-canonical@docker,envision@docker"

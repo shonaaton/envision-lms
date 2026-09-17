@@ -106,7 +106,6 @@ const sections: NavSection[] = [
       { href: "/coach-pay/rates", label: "My Class Rates", icon: Layers, featureKey: "coachPay", roles: ["instructor"] },
       { href: "/coach-pay/substitutions", label: "My Substitutions", icon: Repeat, featureKey: "coachPay", roles: ["instructor"] },
       { href: "/admin/player-analytics", label: "Player Analytics", icon: BarChart3, featureKey: "playerAnalytics", permission: "view_all", roles: ["admin", "sub-admin"] },
-      { href: "/admin/marketing-analytics", label: "Marketing Analytics", icon: BarChart3, featureKey: "marketingAnalytics", permission: "view", roles: ["admin"] },
       { href: "/play/tactics-trainer", label: "Tactics Trainer", icon: Target, featureKey: "tacticsTrainer", roles: ["student", "admin", "sub-admin"] },
       { href: "/play/king-hunt", label: "King Hunt", icon: Crown, featureKey: "kingHunt", roles: ["student", "admin", "sub-admin"] },
       { href: "/play/square-trainer", label: "Square Trainer", icon: Crosshair, featureKey: "squareTrainer", roles: ["student", "admin", "sub-admin"] },
@@ -215,6 +214,14 @@ const sections: NavSection[] = [
     roles: ["admin", "sub-admin"],
     items: [
       { href: "/admin/reports", label: "Reports Center", icon: BarChart3, featureKey: "reportsCenter" },
+    ],
+  },
+  {
+    id: "marketing",
+    title: "Marketing",
+    roles: ["admin"],
+    items: [
+      { href: "/admin/marketing-analytics", label: "Marketing Analytics", icon: BarChart3, featureKey: "marketingAnalytics", permission: "view" },
     ],
   },
   {

@@ -23,8 +23,8 @@ export default async function AnalyticsHighlightsPage({
   return (
     <div className="space-y-4 p-4 lg:p-6">
       <AnalyticsHeader
-        title="Marketing Analytics"
-        subtitle="Traffic, campaigns and demo conversions from the public site."
+        title="Internal Marketing Analytics"
+        subtitle="First-party traffic, campaigns and demo conversions from the public site."
         active="/admin/marketing-analytics"
         range={range}
       />

@@ -221,7 +221,8 @@ const sections: NavSection[] = [
     title: "Marketing",
     roles: ["admin"],
     items: [
-      { href: "/admin/marketing-analytics", label: "Marketing Analytics", icon: BarChart3, featureKey: "marketingAnalytics", permission: "view" },
+      { href: "/admin/marketing-analytics", label: "Internal Analytics", icon: BarChart3, featureKey: "marketingAnalytics", permission: "view" },
+      { href: "/admin/google-analytics", label: "Google Analytics", icon: BarChart3, featureKey: "marketingAnalytics", permission: "view" },
     ],
   },
   {

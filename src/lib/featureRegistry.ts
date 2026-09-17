@@ -215,6 +215,7 @@ export const FEATURE_DEFINITIONS: FeatureDefinition[] = [
       "/admin/marketing-analytics/realtime",
       "/admin/marketing-analytics/traffic",
       "/admin/marketing-analytics/behaviour",
+      "/admin/google-analytics",
     ],
     apiPrefixes: ["/api/analytics"],
     permissions: [view],

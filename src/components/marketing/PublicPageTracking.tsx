@@ -6,6 +6,7 @@ import MetaPageViewTracker from "@/components/MetaPageViewTracker";
 import CookieConsent from "@/components/marketing/CookieConsent";
 import MetaPixel from "@/components/marketing/MetaPixel";
 import SiteAnalyticsTracker from "@/components/marketing/SiteAnalyticsTracker";
+import GoogleAnalytics from "@/components/marketing/GoogleAnalytics";
 import { isPortalPath } from "@/lib/portalPaths";
 
 /**
@@ -31,7 +32,7 @@ import { isPortalPath } from "@/lib/portalPaths";
  * there is no choice to put to the reader; the footer's cookie settings link
  * still reopens the panel on every public page.
  */
-export default function PublicPageTracking({ pixelId }: { pixelId: string }) {
+export default function PublicPageTracking({ pixelId, googleAnalyticsId }: { pixelId: string; googleAnalyticsId: string }) {
   const pathname = usePathname();
   if (isPortalPath(pathname)) return null;
 
@@ -41,6 +42,7 @@ export default function PublicPageTracking({ pixelId }: { pixelId: string }) {
       <Suspense fallback={null}>
         <MetaPageViewTracker />
         <SiteAnalyticsTracker />
+        <GoogleAnalytics measurementId={googleAnalyticsId} />
       </Suspense>
       <CookieConsent />
     </>

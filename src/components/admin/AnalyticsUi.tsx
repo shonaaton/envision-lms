@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Info, type LucideIcon } from "lucide-react";
+import { ExternalLink, Info, type LucideIcon } from "lucide-react";
 import { RANGE_LABELS, type RangeKey } from "@/lib/marketingAnalytics";
 
 /** Shared furniture for the marketing analytics pages. */
@@ -79,6 +79,26 @@ export function ConsentNote() {
         Counts visitors who accepted analytics cookies, so treat these as a floor rather than total traffic. No IP addresses, user agents or full
         referrer URLs are stored, and sessions are anonymous and never linked to a student account.
       </span>
+    </div>
+  );
+}
+
+export function GoogleAnalyticsStatus({ configured }: { configured: boolean }) {
+  return (
+    <div className="flex flex-col justify-between gap-3 rounded-lg border border-slate-200 bg-white p-3 text-sm sm:flex-row sm:items-center">
+      <div>
+        <p className="font-black text-slate-950">Google Analytics 4</p>
+        <p className="mt-0.5 text-xs leading-5 text-slate-600">
+          {configured
+            ? "GA4 is enabled for public pages after analytics-cookie consent. Its reports remain separate from the first-party figures below."
+            : "GA4 is not connected yet. Add NEXT_PUBLIC_GA_MEASUREMENT_ID to enable public-site tracking."}
+        </p>
+      </div>
+      {configured ? (
+        <a className="btn shrink-0 border border-brand/20 bg-white text-brand hover:bg-brand-50" href="https://analytics.google.com/" target="_blank" rel="noreferrer">
+          Open GA4 <ExternalLink size={14} />
+        </a>
+      ) : null}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { BarChart3, MousePointerClick, PhoneCall, TrendingUp, Users } from "lucide-react";
-import { AnalyticsHeader, BarList, Columns, ConsentNote, Stat, countryName } from "@/components/admin/AnalyticsUi";
+import { AnalyticsHeader, BarList, Columns, ConsentNote, GoogleAnalyticsStatus, Stat, countryName } from "@/components/admin/AnalyticsUi";
 import { auth } from "@/lib/auth";
 import { canAccessFeature } from "@/lib/featureAccess";
 import { RANGE_LABELS, getHighlights, resolveRange } from "@/lib/marketingAnalytics";
@@ -29,6 +29,7 @@ export default async function AnalyticsHighlightsPage({
         range={range}
       />
       <ConsentNote />
+      <GoogleAnalyticsStatus configured={Boolean(process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID)} />
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Stat label="Site sessions" value={data.sessions.toLocaleString("en-IN")} sub={RANGE_LABELS[range]} icon={Users} delta={data.sessionsChange} />

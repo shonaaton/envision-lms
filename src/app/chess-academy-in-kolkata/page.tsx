@@ -5,7 +5,7 @@ import HeroStudentCluster from "@/components/marketing/HeroStudentCluster";
 import WhyEnvision from "@/components/marketing/WhyEnvision";
 import { MarketingFooter, MarketingHeader } from "@/components/marketing/MarketingChrome";
 import { verifiedReviews } from "@/lib/achievementData";
-import { ACADEMY_DEFAULTS, ACADEMY_LOGO_URL } from "@/lib/branding";
+import { ACADEMY_DEFAULTS, ACADEMY_LOGO_URL, ACADEMY_PHONE_DISPLAY } from "@/lib/branding";
 import {
   centreBatchCount,
   centreHref,
@@ -22,7 +22,12 @@ import { MARKETING_BASE_URL } from "@/lib/publicLinks";
 
 export const metadata = centreHubMetadata();
 
-const demoHref = "/register";
+/**
+ * Like the centre pages, the city hub leads with the contact form: the questions
+ * an offline reader has - which centre, which batch, what it costs - are ones
+ * the team answers. The academy number is the second call to action throughout.
+ */
+const contactHref = "/contact-us";
 const hubUrl = `${MARKETING_BASE_URL}/${centreHub.slug}`;
 
 /** Read from the taught syllabus, so the page cannot advertise sessions nobody teaches. */
@@ -142,7 +147,7 @@ export default function KolkataAcademyPage() {
     <main className="landing-compact min-h-screen bg-white text-brand-900">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }} />
 
-      <MarketingHeader demoHref={demoHref} />
+      <MarketingHeader demoHref={contactHref} ctaLabel="Contact Us" />
 
       {/* ------------------------------------------------------------- hero */}
       <section className="relative isolate overflow-hidden bg-[#f5edf8] text-brand-900">
@@ -163,10 +168,13 @@ export default function KolkataAcademyPage() {
             <h2 className="mt-2.5 max-w-lg text-base font-black leading-snug text-brand sm:text-lg">{centreHub.supportingHeading}</h2>
             <p className="mt-4 max-w-lg text-sm leading-7 text-brand-900/70 sm:text-[0.95rem]">{centreHub.intro}</p>
             <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-              <Link href={demoHref} className="btn-accent min-h-11 px-5 shadow-lg shadow-accent-600/20">
-                Book Free Demo Class <ArrowRight size={18} />
+              <Link href={contactHref} className="btn-accent min-h-11 whitespace-nowrap px-5 shadow-lg shadow-accent-600/20">
+                Contact Us <ArrowRight size={18} />
               </Link>
-              <Link href="#centres" className="btn min-h-11 border border-brand/25 bg-white px-5 text-brand shadow-sm shadow-brand-900/5 hover:border-brand/50 hover:bg-brand-50">
+              <a href={`tel:${ACADEMY_DEFAULTS.phone}`} className="btn min-h-11 whitespace-nowrap border border-brand/25 bg-white px-5 text-brand shadow-sm shadow-brand-900/5 hover:border-brand/50 hover:bg-brand-50">
+                <Phone size={18} /> {ACADEMY_PHONE_DISPLAY}
+              </a>
+              <Link href="#centres" className="btn min-h-11 whitespace-nowrap border border-brand/25 bg-white px-5 text-brand shadow-sm shadow-brand-900/5 hover:border-brand/50 hover:bg-brand-50">
                 <MapPin size={18} /> Find your nearest centre
               </Link>
             </div>
@@ -220,7 +228,7 @@ export default function KolkataAcademyPage() {
                 it is going.
               </p>
               <div className="mt-6 flex flex-wrap gap-3">
-                <Link href={demoHref} className="btn-accent">Book Free Demo Class <ArrowRight size={16} /></Link>
+                <Link href={contactHref} className="btn-accent">Contact Us <ArrowRight size={16} /></Link>
                 <Link href={`/${courseHub.slug}`} className="btn border border-brand/25 bg-white text-brand shadow-sm shadow-brand-900/5 hover:border-brand/50 hover:bg-brand-50">
                   See the full syllabus
                 </Link>
@@ -365,10 +373,11 @@ export default function KolkataAcademyPage() {
       </section>
 
       <WhyEnvision
-        demoHref={demoHref}
+        demoHref={contactHref}
+        ctaLabel="Contact Us"
         heading="Why parents in Kolkata choose Envision Chess Academy."
         intro="Not a set of loose classes. A published syllabus, a coach who places your child at the right session, and a portal where parents can see every class, score and tournament result."
-        secondary={{ href: "#centres", label: "Find your nearest centre" }}
+        secondary={{ href: `tel:${ACADEMY_DEFAULTS.phone}`, label: `Call ${ACADEMY_PHONE_DISPLAY}` }}
       />
 
       {/* ---------------------------------------------------------- reviews */}
@@ -410,7 +419,7 @@ export default function KolkataAcademyPage() {
           <p className="inline-flex rounded-full bg-brand px-3.5 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-white shadow-sm shadow-brand-900/20">Questions</p>
           <h2 className="mt-4 text-2xl font-black leading-tight text-brand-900 sm:text-3xl">Questions about our chess academy in Kolkata.</h2>
           <p className="mt-3 text-sm leading-7 text-brand-900/70">
-            Where the centres are, who teaches, what a beginner starts with, and how to book a free demo class.
+            Where the centres are, who teaches, what a beginner starts with, and how to get in touch.
           </p>
           <div className="mt-8 grid gap-3">
             {centreHub.faqs.map((faq) => (
@@ -432,15 +441,15 @@ export default function KolkataAcademyPage() {
       <section className="relative overflow-hidden bg-white px-4 py-16 text-brand-900 sm:px-6 lg:px-8 lg:py-24">
         <div className="relative mx-auto max-w-7xl rounded-2xl border border-brand/10 bg-white p-6 shadow-lg shadow-brand-900/5 sm:p-8 lg:flex lg:items-center lg:justify-between lg:gap-8">
           <div>
-            <p className="inline-flex rounded-full bg-accent px-3.5 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-brand-900 shadow-sm shadow-accent-600/30">Free demo class</p>
-            <h2 className="mt-3 text-2xl font-black sm:text-3xl">Book a demo chess class in Kolkata.</h2>
+            <p className="inline-flex rounded-full bg-accent px-3.5 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-brand-900 shadow-sm shadow-accent-600/30">Talk to us</p>
+            <h2 className="mt-3 text-2xl font-black sm:text-3xl">Ask us about chess classes in Kolkata.</h2>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-brand-900/70">
-              A real assessment class with a coach at the centre of your choice. It ends with a level recommendation and a batch suggestion, and
-              there is no obligation to enrol.
+              Tell us which centre suits you and we will come back with the batches that still have room, the current fee structure and a free
+              trial class with the coach. Prefer to speak to somebody now? Call the academy.
             </p>
           </div>
           <div className="mt-6 flex flex-col gap-3 sm:flex-row lg:mt-0">
-            <Link href={demoHref} className="btn-accent">Book Free Demo Class</Link>
+            <Link href={contactHref} className="btn-accent">Contact Us</Link>
             <a href={`tel:${ACADEMY_DEFAULTS.phone}`} className="btn border border-brand/25 bg-white text-brand hover:border-brand/50 hover:bg-brand-50">
               <Phone size={16} /> Call the academy
             </a>

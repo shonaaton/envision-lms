@@ -29,7 +29,14 @@ import {
 import { courseHub, coursePages } from "@/lib/coursePages";
 import { MARKETING_BASE_URL } from "@/lib/publicLinks";
 
-const demoHref = "/register";
+/**
+ * The offline pages lead with the contact form rather than the demo booking.
+ * A parent reading a centre page is choosing a place and a time, and what
+ * decides that - is there a slot on Saturday, what does it cost - is answered by
+ * the team, not by a booking form. The centre's own number is the second call to
+ * action everywhere on the page, so nobody has to fill in anything at all.
+ */
+const contactHref = "/contact-us";
 const CENTRE_OG_IMAGE = "/images/achievements/682626726_122217430778279433_7786835792267057544_n.jpg";
 
 /**
@@ -109,7 +116,7 @@ export default function CentrePage({ config }: { config: CentreConfig }) {
     <main className="landing-compact min-h-screen bg-white text-brand-900">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }} />
 
-      <MarketingHeader demoHref={demoHref} />
+      <MarketingHeader demoHref={contactHref} ctaLabel="Contact Us" />
 
       {/* ------------------------------------------------------------- hero */}
       <section className="relative isolate overflow-hidden bg-[#f5edf8] text-brand-900">
@@ -132,10 +139,10 @@ export default function CentrePage({ config }: { config: CentreConfig }) {
             <h2 className="mt-2.5 max-w-lg text-base font-black leading-snug text-brand sm:text-lg">{config.supportingHeading}</h2>
             <p className="mt-4 max-w-lg text-sm leading-7 text-brand-900/70 sm:text-[0.95rem]">{config.intro}</p>
             <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-              <Link href={demoHref} className="btn-accent min-h-11 px-5 shadow-lg shadow-accent-600/20">
-                Book Free Demo Class <ArrowRight size={18} />
+              <Link href={contactHref} className="btn-accent min-h-11 whitespace-nowrap px-5 shadow-lg shadow-accent-600/20">
+                Contact Us <ArrowRight size={18} />
               </Link>
-              <a href={`tel:${config.phone}`} className="btn min-h-11 border border-brand/25 bg-white px-5 text-brand shadow-sm shadow-brand-900/5 hover:border-brand/50 hover:bg-brand-50">
+              <a href={`tel:${config.phone}`} className="btn min-h-11 whitespace-nowrap border border-brand/25 bg-white px-5 text-brand shadow-sm shadow-brand-900/5 hover:border-brand/50 hover:bg-brand-50">
                 <Phone size={18} /> {config.phoneDisplay}
               </a>
             </div>
@@ -179,7 +186,7 @@ export default function CentrePage({ config }: { config: CentreConfig }) {
               </Link>
             </div>
             <p className="mt-4 border-t border-brand/10 pt-4 text-xs leading-5 text-brand-900/60">
-              Our team shares the current fee structure with you directly when you book a demo class.
+              Our team shares the current fee structure with you directly when you get in touch.
             </p>
           </aside>
         </div>
@@ -335,10 +342,11 @@ export default function CentrePage({ config }: { config: CentreConfig }) {
       </section>
 
       <WhyEnvision
-        demoHref={demoHref}
+        demoHref={contactHref}
+        ctaLabel="Contact Us"
         heading={`Why parents in ${config.name} choose Envision Chess Academy.`}
         intro="Not a set of loose classes. A published syllabus, a coach who places your child at the right session, and a portal where parents can see every class, score and tournament result."
-        secondary={{ href: "#timings", label: "See batch timings" }}
+        secondary={{ href: `tel:${config.phone}`, label: `Call ${config.phoneDisplay}` }}
       />
 
       <CourseResultsStrip
@@ -411,15 +419,15 @@ export default function CentrePage({ config }: { config: CentreConfig }) {
       <section className="relative overflow-hidden bg-white px-4 pb-16 text-brand-900 sm:px-6 lg:px-8 lg:pb-24">
         <div className="relative mx-auto max-w-7xl rounded-2xl border border-brand/10 bg-white p-6 shadow-lg shadow-brand-900/5 sm:p-8 lg:flex lg:items-center lg:justify-between lg:gap-8">
           <div>
-            <p className="inline-flex rounded-full bg-accent px-3.5 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-brand-900 shadow-sm shadow-accent-600/30">Free demo class</p>
-            <h2 className="mt-3 text-2xl font-black sm:text-3xl">Try a class at our {config.name} centre.</h2>
+            <p className="inline-flex rounded-full bg-accent px-3.5 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-brand-900 shadow-sm shadow-accent-600/30">Talk to us</p>
+            <h2 className="mt-3 text-2xl font-black sm:text-3xl">Ask us about the {config.name} centre.</h2>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-brand-900/70">
-              The demo is a real assessment class with a coach. It ends with a level recommendation and a batch suggestion, and there is no
-              obligation to enrol. Call {config.phoneDisplay} or book a slot online.
+              Send us a message and we will come back with the batches that still have room, the current fee structure and a free trial class
+              with the coach. Prefer to speak to somebody now? Call {config.phoneDisplay}.
             </p>
           </div>
           <div className="mt-6 flex flex-col gap-3 sm:flex-row lg:mt-0">
-            <Link href={demoHref} className="btn-accent">Book Free Demo Class</Link>
+            <Link href={contactHref} className="btn-accent">Contact Us</Link>
             <a href={`tel:${config.phone}`} className="btn border border-brand/25 bg-white text-brand hover:border-brand/50 hover:bg-brand-50">
               <Phone size={16} /> Call the centre
             </a>

@@ -120,7 +120,13 @@ function MobileMenuGroup({ href, label, links }: { href: string; label: string; 
 const courseChildren: NavItem[] = coursePages.map((page) => [page.navLabel, `/${page.slug}`]);
 const centreChildren: NavItem[] = kolkataCentres.map((centre) => [centre.name, centreHref(centre.slug)]);
 
-export function MarketingHeader({ demoHref }: { demoHref: string }) {
+/**
+ * `ctaLabel` exists for the offline pages. A parent reading a centre page wants
+ * to talk to that centre, not open a booking form, so those pages point the
+ * primary button at the contact form and relabel it. Every other page keeps the
+ * default and nothing about them changes.
+ */
+export function MarketingHeader({ demoHref, ctaLabel = "Book Free Demo Class" }: { demoHref: string; ctaLabel?: string }) {
   return (
     <header className="sticky top-0 z-50 border-b border-brand-700 bg-brand/95 text-white backdrop-blur-xl">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
@@ -156,7 +162,7 @@ export function MarketingHeader({ demoHref }: { demoHref: string }) {
             Login
           </Link>
           <Link href={demoHref} className="btn-accent whitespace-nowrap">
-            Book Free Demo Class
+            {ctaLabel}
           </Link>
         </div>
         <details className="relative xl:hidden">
@@ -186,7 +192,7 @@ export function MarketingHeader({ demoHref }: { demoHref: string }) {
             )}
             <div className="mt-3 grid gap-2 border-t border-white/15 pt-3">
               <Link href="/login" className="btn border border-white/30 bg-white/10 text-white">Login</Link>
-              <Link href={demoHref} className="btn-accent">Book Free Demo Class</Link>
+              <Link href={demoHref} className="btn-accent">{ctaLabel}</Link>
             </div>
           </div>
         </details>

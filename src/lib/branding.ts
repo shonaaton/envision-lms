@@ -14,3 +14,10 @@ export const ACADEMY_DEFAULTS = {
   website: "www.envisionchessacademy.com",
   authorizedSignatory: "Sayantan Chandra",
 };
+
+/**
+ * The academy number as a person reads it on a button. Derived from the dialled
+ * form rather than typed again, so the two can never disagree; a number that is
+ * not a +NN NNNNN NNNNN passes through unchanged.
+ */
+export const ACADEMY_PHONE_DISPLAY = ACADEMY_DEFAULTS.phone.replace(/^(\+\d{2})(\d{5})(\d{5})$/, "$1 $2 $3");

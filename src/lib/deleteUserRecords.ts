@@ -17,6 +17,7 @@ import { Course } from "@/models/Course";
 import { CreditLedger, FeeAssignment, Invoice, Notification } from "@/models/Fee";
 import { FeatureAccess, PermissionAudit, PermissionTemplate } from "@/models/FeatureAccess";
 import { GoogleBusinessIntegration } from "@/models/GoogleBusinessIntegration";
+import { GoogleAnalyticsIntegration } from "@/models/GoogleAnalyticsIntegration";
 import { Homework, Submission } from "@/models/Homework";
 import { CoachApplication, DemoBooking } from "@/models/Onboarding";
 import { Payment } from "@/models/Payment";
@@ -238,6 +239,7 @@ export async function deleteUserRecords(userIdValue: string): Promise<CleanupSum
     detach(FeatureAccess.updateMany({ updatedBy: userId }, { $unset: { updatedBy: 1 } })),
     detach(PermissionTemplate.updateMany({ updatedBy: userId }, { $unset: { updatedBy: 1 } })),
     detach(GoogleBusinessIntegration.updateMany({ connectedBy: userId }, { $unset: { connectedBy: 1 } })),
+    detach(GoogleAnalyticsIntegration.updateMany({ connectedBy: userId }, { $unset: { connectedBy: 1 } })),
     detach(CoachApplication.updateMany({ reviewedBy: userId }, { $unset: { reviewedBy: 1 } })),
     detach(DemoBooking.updateMany({ requestedCoach: userId }, { $unset: { requestedCoach: 1 } })),
     detach(DemoBooking.updateMany({ approvedCoach: userId }, { $unset: { approvedCoach: 1 } })),

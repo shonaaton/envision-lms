@@ -56,6 +56,12 @@ export function consumeRateLimit(key: string, limit: number, windowMs: number): 
   };
 }
 
+/** Give back one attempt, for limits that should only count failures. */
+export function releaseRateLimit(key: string) {
+  const existing = rateLimitStore.get(String(key || "").trim());
+  if (existing && existing.count > 0) existing.count -= 1;
+}
+
 export function jsonRateLimitHeaders(result: RateLimitResult) {
   return {
     "Retry-After": String(Math.max(1, Math.ceil(result.retryAfterMs / 1000))),

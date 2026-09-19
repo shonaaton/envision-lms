@@ -52,8 +52,11 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
           tempPassword,
           passwordChangedAt: new Date(),
           passwordChangeSource: "admin_reset",
+          failedLoginAttempts: 0,
         },
-        $unset: { passwordResetTokenHash: 1, passwordResetExpiresAt: 1 },
+        // Staff reset a password because the student is stuck; leaving the
+        // lockout in place made the new password look wrong too.
+        $unset: { passwordResetTokenHash: 1, passwordResetExpiresAt: 1, lastFailedLoginAt: 1, loginLockedUntil: 1 },
       },
       { new: true, projection: { passwordHash: 0 } }
     );

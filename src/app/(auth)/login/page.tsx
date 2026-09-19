@@ -93,7 +93,12 @@ export default function LoginPage() {
       password: fd.get("password"),
     });
     setLoading(false);
-    if (res?.error) return toast.error("Invalid email, user ID, or password");
+    if (res?.error) {
+      if (res.code === "too_many_attempts") {
+        return toast.error("Too many sign-in attempts. Please wait 15 minutes, or use Forgot password to set a new one now.");
+      }
+      return toast.error("Invalid email, user ID, or password");
+    }
     if (rememberMe) {
       window.localStorage.setItem(rememberedLoginKey, email);
     } else {
@@ -284,6 +289,9 @@ export default function LoginPage() {
                       name="email"
                       type="text"
                       autoComplete="username"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
                       placeholder="name@example.com"
                       value={loginId}
                       onChange={(event) => setLoginId(event.target.value)}
@@ -301,6 +309,11 @@ export default function LoginPage() {
                       name="password"
                       type={showPassword ? "text" : "password"}
                       autoComplete="current-password"
+                      // Tapping "show password" turns this into a text field, and
+                      // phone keyboards then capitalise the first letter.
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
                       placeholder="Enter your password"
                       required
                     />

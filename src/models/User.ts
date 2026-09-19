@@ -117,6 +117,7 @@ const UserSchema = new Schema(
     pauseExpectedRestartDate: { type: Date },
     pauseRecord: { type: Schema.Types.ObjectId, ref: "StudentPause", index: true },
     failedLoginAttempts: { type: Number, default: 0 },
+    lastFailedLoginAt: { type: Date },
     loginLockedUntil: { type: Date },
     passwordResetTokenHash: { type: String, index: true },
     passwordResetExpiresAt: { type: Date },

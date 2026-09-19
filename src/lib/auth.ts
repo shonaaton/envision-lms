@@ -1,10 +1,11 @@
 import NextAuth, { type DefaultSession } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
+import { CredentialsSignin } from "next-auth";
 import bcrypt from "bcryptjs";
 import { headers } from "next/headers";
 import { authConfig } from "./auth.config";
 import { isInactiveRestrictedPath } from "./inactiveAccess";
-import { consumeRateLimit, getClientIp } from "./requestSecurity";
+import { consumeRateLimit, getClientIp, releaseRateLimit } from "./requestSecurity";
 import { loginIdentifierFilter } from "./loginIdentity";
 import { requestCache as cache } from "./requestCache";
 import { resolveAccessRole } from "./accessRoles";
@@ -13,10 +14,22 @@ import { namedRoleApiFeature, namedRoleApiPermissions } from "./accessRoleReques
 const LOGIN_IP_WINDOW_MS = 5 * 60 * 1000;
 const LOGIN_ID_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_LOCK_WINDOW_MS = 15 * 60 * 1000;
-const MAX_LOGIN_ATTEMPTS_PER_IP = 20;
+// Only failed attempts count. A centre or school on one Wi-Fi, or a mobile
+// carrier NAT, puts a whole class behind one address; counting successful
+// sign-ins refused the 21st student of a batch with "invalid password".
+const MAX_LOGIN_ATTEMPTS_PER_IP = 40;
 const MAX_LOGIN_ATTEMPTS_PER_LOGIN = 10;
 const MAX_FAILED_LOGINS_BEFORE_LOCK = 5;
 const DUMMY_PASSWORD_HASH = "$2a$10$0dHO062F6m6nM0JQ5nM0JeH7GZq4wS6vJzpuG1HsfrN7kYMva9nQG";
+
+/**
+ * Lockouts and rate limits used to come back as "Invalid email, user ID, or
+ * password", so a student who then typed the right password was told it was
+ * wrong and kept trying. This code tells the login page to say "wait" instead.
+ */
+class TooManyLoginAttempts extends CredentialsSignin {
+  code = "too_many_attempts";
+}
 
 
 declare module "next-auth" {
@@ -79,7 +92,7 @@ const nextAuth = NextAuth({
             ip: clientIp,
             retryAfterSeconds: Math.ceil((ipLimit.allowed ? loginLimit.retryAfterMs : ipLimit.retryAfterMs) / 1000),
           });
-          return null;
+          throw new TooManyLoginAttempts();
         }
         const user = await User.findOne(loginIdentifierFilter(loginValue));
         if (!user) {
@@ -93,14 +106,27 @@ const nextAuth = NextAuth({
             ip: clientIp,
             lockedUntil: new Date(user.loginLockedUntil).toISOString(),
           });
-          return null;
+          throw new TooManyLoginAttempts();
         }
-        const ok = await bcrypt.compare(String(creds.password), user.passwordHash);
+        const password = String(creds.password);
+        // A password copied out of WhatsApp or an email often carries a trailing
+        // space or newline. Generated passwords never contain whitespace, so the
+        // trimmed form is tried only when the exact one fails.
+        const ok =
+          (await bcrypt.compare(password, user.passwordHash)) ||
+          (password.trim() !== password && (await bcrypt.compare(password.trim(), user.passwordHash)));
         if (!ok) {
-          const failedAttempts = Number(user.failedLoginAttempts || 0) + 1;
-          const update: Record<string, unknown> = { failedLoginAttempts: failedAttempts };
+          // Strikes expire. The counter used to live until the next successful
+          // sign-in, so typos spread over days added up to a lockout, and once a
+          // lock ran out a single typo locked the account again.
+          const lastFailedAt = user.lastFailedLoginAt ? new Date(user.lastFailedLoginAt).getTime() : 0;
+          const strikesAreFresh = Date.now() - lastFailedAt < LOGIN_LOCK_WINDOW_MS && !user.loginLockedUntil;
+          const failedAttempts = (strikesAreFresh ? Number(user.failedLoginAttempts || 0) : 0) + 1;
+          const update: Record<string, unknown> = { failedLoginAttempts: failedAttempts, lastFailedLoginAt: new Date() };
+          const unset: Record<string, 1> = {};
           if (failedAttempts >= MAX_FAILED_LOGINS_BEFORE_LOCK) update.loginLockedUntil = new Date(Date.now() + LOGIN_LOCK_WINDOW_MS);
-          await User.updateOne({ _id: user._id }, { $set: update });
+          else if (user.loginLockedUntil) unset.loginLockedUntil = 1;
+          await User.updateOne({ _id: user._id }, { $set: update, ...(Object.keys(unset).length ? { $unset: unset } : {}) });
           logLoginFailure("wrong_password", loginValue, {
             ip: clientIp,
             matchedUsername: user.username || "",
@@ -109,10 +135,12 @@ const nextAuth = NextAuth({
           });
           return null;
         }
-        if ((user.failedLoginAttempts || 0) > 0 || user.loginLockedUntil) {
+        releaseRateLimit(`login:ip:${clientIp}`);
+        releaseRateLimit(`login:identifier:${normalized}`);
+        if ((user.failedLoginAttempts || 0) > 0 || user.loginLockedUntil || user.lastFailedLoginAt) {
           await User.updateOne(
             { _id: user._id },
-            { $set: { failedLoginAttempts: 0 }, $unset: { loginLockedUntil: 1 } }
+            { $set: { failedLoginAttempts: 0 }, $unset: { loginLockedUntil: 1, lastFailedLoginAt: 1 } }
           );
         }
         const explicitSuperAdminExists = await User.exists({ role: "admin", isSuperAdmin: true, isActive: { $ne: false } });

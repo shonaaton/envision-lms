@@ -17,7 +17,6 @@
 import fs from "node:fs";
 import path from "node:path";
 import { MongoClient } from "mongodb";
-import bcrypt from "bcryptjs";
 
 const MAX_FAILED_LOGINS_BEFORE_LOCK = 5;
 
@@ -104,6 +103,16 @@ try {
   console.log(`  tempPassword   : ${user.tempPassword ? `"${user.tempPassword}"` : "(not stored)"}`);
 
   if (password !== undefined) {
+    // Loaded only here: the production image is a Next.js standalone build that
+    // bundles bcryptjs into the app, so the package is not on disk in the
+    // container and a top-level import broke even a plain --unlock.
+    let bcrypt;
+    try {
+      bcrypt = (await import("bcryptjs")).default;
+    } catch {
+      console.log("\n  bcryptjs is not installed here, so the password cannot be checked. Run without it to see the lock state.");
+      process.exit(1);
+    }
     const matches = user.passwordHash ? await bcrypt.compare(password, user.passwordHash) : false;
     console.log(`\n  supplied password matches: ${matches ? "YES" : "NO"}`);
     if (matches && locked) console.log("  -> The password is correct; the lockout is what is refusing the login.");
@@ -117,11 +126,11 @@ try {
         : "\nThis account is locked. Re-run with --unlock to clear it, or wait for the timestamp above."
     );
     if (unlock) {
-      await users.updateOne({ _id: user._id }, { $set: { failedLoginAttempts: 0 }, $unset: { loginLockedUntil: "" } });
+      await users.updateOne({ _id: user._id }, { $set: { failedLoginAttempts: 0 }, $unset: { loginLockedUntil: "", lastFailedLoginAt: "" } });
       console.log("Lock cleared. They can sign in again immediately.");
     }
   } else if (unlock) {
-    await users.updateOne({ _id: user._id }, { $set: { failedLoginAttempts: 0 }, $unset: { loginLockedUntil: "" } });
+    await users.updateOne({ _id: user._id }, { $set: { failedLoginAttempts: 0 }, $unset: { loginLockedUntil: "", lastFailedLoginAt: "" } });
     console.log("\nNo lock was set; failed attempt counter reset anyway.");
   }
   console.log("");

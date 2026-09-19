@@ -43,11 +43,16 @@ export async function POST(req: Request) {
           passwordHash,
           passwordChangedAt: new Date(),
           passwordChangeSource: "self_reset",
+          failedLoginAttempts: 0,
         },
+        // A new password has to work straight away - the usual reason for a
+        // reset is the lockout those failed attempts caused.
         $unset: {
           tempPassword: 1,
           passwordResetTokenHash: 1,
           passwordResetExpiresAt: 1,
+          lastFailedLoginAt: 1,
+          loginLockedUntil: 1,
         },
       },
       { new: true }

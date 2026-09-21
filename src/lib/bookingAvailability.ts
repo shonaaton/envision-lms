@@ -5,6 +5,12 @@ export type AvailabilitySlot = {
   slotMinutes?: number;
 };
 
+/**
+ * `hourCycle: "h23"` rather than `hour12: false`, and `hour` 24 read back as 0:
+ * see the note on `dateParts` in `@/lib/academyTime`. The same h24 reading was
+ * adding a day to the offset here, which would move a demo slot booked in the
+ * midnight hour to the wrong day.
+ */
 function getTimeZoneParts(date: Date, timeZone: string) {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone,
@@ -14,7 +20,7 @@ function getTimeZoneParts(date: Date, timeZone: string) {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
-    hour12: false,
+    hourCycle: "h23",
     weekday: "short",
   }).formatToParts(date);
 
@@ -33,7 +39,7 @@ function getTimeZoneParts(date: Date, timeZone: string) {
     year: Number(read("year")),
     month: Number(read("month")),
     day: Number(read("day")),
-    hour: Number(read("hour")),
+    hour: Number(read("hour")) % 24,
     minute: Number(read("minute")),
     second: Number(read("second")),
     dayOfWeek: weekdayMap[read("weekday")] ?? -1,

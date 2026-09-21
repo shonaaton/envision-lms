@@ -60,3 +60,50 @@ describe("datetime-local round trip", () => {
     expect(Number.isNaN(parseAcademyDateTimeLocal("not a date").getTime())).toBe(true);
   });
 });
+
+/**
+ * The production Node 20 image resolves en-CA to the h24 hour cycle, so it
+ * prints the midnight hour as "24" while a developer's newer Node prints "00".
+ * The difference is invisible on a dev machine, so the broken clock is forced
+ * on here: without it this suite passes on both, and a class booked at 00:30
+ * IST still lands a day early in production.
+ */
+describe("on an ICU build that reports the midnight hour as 24", () => {
+  const RealDateTimeFormat = Intl.DateTimeFormat;
+
+  function withH24Clock<T>(run: () => T): T {
+    class H24DateTimeFormat extends RealDateTimeFormat {
+      formatToParts(value?: number | Date) {
+        const parts = super.formatToParts(value as any);
+        return parts.map((part) =>
+          part.type === "hour" && part.value === "00" ? { ...part, value: "24" } : part
+        );
+      }
+    }
+    (Intl as any).DateTimeFormat = H24DateTimeFormat;
+    try {
+      return run();
+    } finally {
+      (Intl as any).DateTimeFormat = RealDateTimeFormat;
+    }
+  }
+
+  it("reads the midnight hour back as 00:30, not 24:30", () => {
+    // 19:00 UTC is 00:30 the next day in Asia/Kolkata.
+    expect(withH24Clock(() => academyTimeOfDay(new Date("2026-09-20T19:00:00Z")))).toBe("00:30");
+  });
+
+  it("keeps a class picked for 00:30 on the day it was picked for", () => {
+    // Picking 22 Sept 00:30 IST used to save 21 Sept 00:30 - one day early -
+    // because the offset came back as 29.5 hours instead of 5.5.
+    expect(withH24Clock(() => academyDateTime("2026-09-22", "00:30").toISOString()))
+      .toBe("2026-09-21T19:00:00.000Z");
+  });
+
+  it("still agrees with a working clock on every hour of the day", () => {
+    const hours = Array.from({ length: 24 }, (_, hour) => `${String(hour).padStart(2, "0")}:30`);
+    const working = hours.map((time) => academyDateTime("2026-09-22", time).toISOString());
+    expect(withH24Clock(() => hours.map((time) => academyDateTime("2026-09-22", time).toISOString())))
+      .toEqual(working);
+  });
+});

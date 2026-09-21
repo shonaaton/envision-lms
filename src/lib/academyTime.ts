@@ -1,5 +1,22 @@
 export const ACADEMY_TIME_ZONE = process.env.NEXT_PUBLIC_ACADEMY_TIME_ZONE || "Asia/Kolkata";
 
+/**
+ * The wall-clock reading of an instant in `timeZone`, with midnight as hour 00.
+ *
+ * `hour12: false` is not the same as a 24-hour clock: on an ICU build that
+ * resolves en-CA to the h24 cycle - which the production Node 20 image does,
+ * while a developer's newer Node does not - it prints the midnight hour as
+ * "24" on the day that has just begun. Feeding that back through `Date.UTC`
+ * rolls the day forward, so `getTimeZoneOffsetMs` reported 29.5 hours instead
+ * of 5.5 and every class booked between 00:00 and 00:59 IST was saved exactly
+ * one day early: picking 22 Sept 00:30 landed on 21 Sept 00:30, which is why
+ * rescheduling such a class looked like it saved and changed nothing.
+ *
+ * `hourCycle: "h23"` asks for the cycle we actually want, and `hour12` has to
+ * go because it overrides `hourCycle`. The "24" mapping stays as a backstop for
+ * any ICU build that ignores the request; the day is already correct when it
+ * happens, so only the hour is rewritten.
+ */
 function dateParts(value: string | Date, timeZone = ACADEMY_TIME_ZONE) {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone,
@@ -9,14 +26,15 @@ function dateParts(value: string | Date, timeZone = ACADEMY_TIME_ZONE) {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
-    hour12: false,
+    hourCycle: "h23",
   }).formatToParts(new Date(value));
   const get = (type: string) => parts.find((part) => part.type === type)?.value || "";
+  const hour = get("hour");
   return {
     year: get("year"),
     month: get("month"),
     day: get("day"),
-    hour: get("hour"),
+    hour: hour === "24" ? "00" : hour,
     minute: get("minute"),
     second: get("second"),
   };

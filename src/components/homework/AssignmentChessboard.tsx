@@ -13,8 +13,34 @@ type ChessboardProps = ComponentProps<(typeof import("react-chessboard"))["Chess
 type AssignmentChessboardProps = Omit<ChessboardProps, "boardWidth" | "showBoardNotation"> & {
   maxWidth: number;
   coordinatesClassName?: string;
+  /** Fixed number of pixels to keep free below the viewport top. Prefer viewportBottomReserve. */
   viewportHeightOffset?: number;
+  /**
+   * Pixels to keep free *below* the board (buttons, panel padding). The space above is
+   * measured from where the board actually sits, so the fit survives a header that wraps
+   * on a phone or a different breakpoint's padding, which a fixed offset cannot.
+   */
+  viewportBottomReserve?: number;
+  /** The built-in "White to move" bar. Off for positions where nobody is to move. */
+  showSideToMove?: boolean;
 };
+
+const sideToMoveBarHeight = 34;
+
+/**
+ * Distance from the top of the scrollable content to this element, i.e. what
+ * getBoundingClientRect would report with everything scrolled to the top. Measuring the
+ * raw rect would grow the board every time someone resized the window mid-scroll.
+ */
+function unscrolledTop(element: HTMLElement) {
+  let offset = element.getBoundingClientRect().top + window.scrollY;
+  let node = element.parentElement;
+  while (node && node !== document.body && node !== document.documentElement) {
+    offset += node.scrollTop;
+    node = node.parentElement;
+  }
+  return offset;
+}
 
 function positionSideToMove(position: ChessboardProps["position"]): "white" | "black" | null {
   if (position === "start") return "white";
@@ -30,21 +56,40 @@ export default function AssignmentChessboard({
   boardOrientation,
   coordinatesClassName = "text-slate-600",
   viewportHeightOffset,
+  viewportBottomReserve,
+  showSideToMove = true,
   position,
   ...boardProps
 }: AssignmentChessboardProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [boardWidth, setBoardWidth] = useState(0);
 
+  // Orientation still follows the position even when the bar itself is hidden.
+  const positionSide = positionSideToMove(position);
+  const sideToMove = showSideToMove ? positionSide : null;
+  // The squares are not the whole component: the coordinate row sits under them and the
+  // to-move bar above, so both have to come out of the height budget.
+  const selfChrome = coordinateGutter + (sideToMove ? sideToMoveBarHeight : 0);
+
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
     function measure() {
-      const availableWidth = container?.clientWidth || 0;
-      const availableHeight = viewportHeightOffset
-        ? Math.max(160, window.innerHeight - viewportHeightOffset)
-        : maxWidth;
+      if (!container) return;
+      const availableWidth = container.clientWidth || 0;
+      let availableHeight: number;
+      if (typeof viewportBottomReserve === "number") {
+        availableHeight = window.innerHeight - unscrolledTop(container) - viewportBottomReserve - selfChrome;
+      } else if (viewportHeightOffset) {
+        // Left exactly as it was: the homework board is tuned to this number and is not
+        // what this change is about.
+        availableHeight = window.innerHeight - viewportHeightOffset;
+      } else {
+        availableHeight = maxWidth;
+      }
+      // A board below this is unusable on any device, so let the page scroll instead.
+      availableHeight = Math.max(240, availableHeight);
       setBoardWidth(Math.max(0, Math.floor(Math.min(maxWidth, availableWidth - coordinateGutter, availableHeight))));
     }
 
@@ -52,14 +97,15 @@ export default function AssignmentChessboard({
     const observer = new ResizeObserver(measure);
     observer.observe(container);
     window.addEventListener("resize", measure);
+    window.addEventListener("orientationchange", measure);
     return () => {
       observer.disconnect();
       window.removeEventListener("resize", measure);
+      window.removeEventListener("orientationchange", measure);
     };
-  }, [maxWidth, viewportHeightOffset]);
+  }, [maxWidth, viewportHeightOffset, viewportBottomReserve, selfChrome]);
 
-  const sideToMove = positionSideToMove(position);
-  const resolvedOrientation = boardOrientation || sideToMove || "white";
+  const resolvedOrientation = boardOrientation || positionSide || "white";
   const files = resolvedOrientation === "black" ? [...whiteFiles].reverse() : whiteFiles;
   const ranks = resolvedOrientation === "black" ? [...whiteRanks].reverse() : whiteRanks;
   return (

@@ -275,8 +275,8 @@ export default function LearningExercisePlayer({ exercise }: { exercise: Learnin
   return (
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(330px,0.85fr)]">
       <section className="relative overflow-hidden rounded-[28px] border border-slate-200 bg-[#24152d] p-3 shadow-2xl shadow-brand/20 sm:p-5">
-        <div className="mb-3 flex items-center justify-between gap-3 px-1 text-white sm:mb-4 sm:px-2">
-          <div>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-1 text-white sm:mb-4 sm:px-2">
+          <div className="min-w-0">
             <p className="text-[10px] font-black uppercase tracking-[0.2em] text-accent">
               {isInformation ? "Lesson" : exercise.rulesMode === "MOVEMENT_TRAINER" ? "Movement trainer" : "Interactive board"}
             </p>
@@ -290,7 +290,7 @@ export default function LearningExercisePlayer({ exercise }: { exercise: Learnin
                   : `${exercise.sideToMove === "black" ? "Black" : "White"} to move`}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {isInformation ? (
               hasDemo ? (
                 <span className="rounded-full bg-white/10 px-3 py-1.5 text-xs font-bold text-white/80">
@@ -315,7 +315,8 @@ export default function LearningExercisePlayer({ exercise }: { exercise: Learnin
         <div className="mx-auto w-full max-w-[760px] rounded-2xl bg-[#140c1b] p-2 shadow-inner sm:p-4">
           <AssignmentChessboard
             maxWidth={760}
-            viewportHeightOffset={170}
+            viewportBottomReserve={116}
+            showSideToMove={!isInformation}
             position={isInformation ? demoCurrent?.fen || state.fen : state.fen}
             boardOrientation={exercise.orientation}
             onPieceDrop={(source, target) => onPieceDrop(source as string, target as string)}
@@ -331,8 +332,8 @@ export default function LearningExercisePlayer({ exercise }: { exercise: Learnin
 
         {isInformation ? (
           hasDemo ? (
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 px-1 sm:px-2">
-              <div className="flex items-center gap-2">
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-1 sm:px-2">
+              <div className="flex flex-1 items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setDemoStep(0)}
@@ -359,7 +360,7 @@ export default function LearningExercisePlayer({ exercise }: { exercise: Learnin
                   Next move <SkipForward size={16} />
                 </button>
               </div>
-              <span className="text-xs font-semibold text-white/60">
+              <span className="w-full text-xs font-semibold text-white/60 sm:w-auto">
                 {demoStep === 0 ? "Starting position" : demoCurrent?.label}
               </span>
             </div>

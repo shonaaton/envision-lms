@@ -8,7 +8,15 @@ import { toast } from "sonner";
 import PageLoadingOverlay from "@/components/feedback/PageLoadingOverlay";
 
 type Role = "student" | "instructor" | "admin" | "sub-admin";
-type StudentRow = { _id: string; name: string; username?: string; email?: string; status: "present" | "absent" | "late"; note?: string };
+type StudentStatus = "present" | "absent" | "late" | "student_no_show";
+type StudentRow = { _id: string; name: string; username?: string; email?: string; status: StudentStatus; note?: string };
+
+const STUDENT_STATUS_OPTIONS: Array<{ value: StudentStatus; label: string }> = [
+  { value: "present", label: "Present" },
+  { value: "absent", label: "Absent" },
+  { value: "late", label: "Late" },
+  { value: "student_no_show", label: "No-show" },
+];
 type SessionRow = {
   id: string;
   classroomId: string;
@@ -67,7 +75,7 @@ export default function AttendanceWorkspace({ role }: { role: Role }) {
   const [date, setDate] = useState(requestedDate || new Date().toISOString().slice(0, 10));
   const [data, setData] = useState<any>(null);
   const [selectedSessionId, setSelectedSessionId] = useState("");
-  const [draft, setDraft] = useState<Record<string, "present" | "absent" | "late">>({});
+  const [draft, setDraft] = useState<Record<string, StudentStatus>>({});
   const [coachStatus, setCoachStatus] = useState<"present" | "absent" | "late">("present");
   const [overrideReason, setOverrideReason] = useState("");
   const [busyMessage, setBusyMessage] = useState("");
@@ -96,7 +104,7 @@ export default function AttendanceWorkspace({ role }: { role: Role }) {
         || next?.sessions?.find((session: SessionRow) => session.id === selectedSessionId)
         || first;
       setSelectedSessionId(picked?.id || "");
-      const nextDraft: Record<string, "present" | "absent" | "late"> = {};
+      const nextDraft: Record<string, StudentStatus> = {};
       (picked?.students || []).forEach((student: StudentRow) => {
         nextDraft[student._id] = student.status || "present";
       });
@@ -115,7 +123,7 @@ export default function AttendanceWorkspace({ role }: { role: Role }) {
 
   useEffect(() => {
     if (!selectedSession) return;
-    const nextDraft: Record<string, "present" | "absent" | "late"> = {};
+    const nextDraft: Record<string, StudentStatus> = {};
     selectedSession.students.forEach((student) => {
       nextDraft[student._id] = student.status || "present";
     });
@@ -370,6 +378,12 @@ export default function AttendanceWorkspace({ role }: { role: Role }) {
                 </div>
               ) : null}
 
+              {canEditAttendance ? (
+                <p className="mt-4 text-xs text-slate-500">
+                  No-show: the first in a month is a warning to the family; from the second, one credit is deducted. If nobody attended, the class goes to Coach Pay → No-show rulings for a decision on the coach&apos;s pay.
+                </p>
+              ) : null}
+
               <div className="mt-5 space-y-3">
                 {selectedSession.students.map((student) => (
                   <div key={student._id} className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 lg:flex-row lg:items-center lg:justify-between">
@@ -377,8 +391,8 @@ export default function AttendanceWorkspace({ role }: { role: Role }) {
                       <div className="font-semibold text-slate-950">{student.name}</div>
                       <div className="text-xs text-slate-500">{student.username || student.email}</div>
                     </div>
-                    <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap">
-                      {(["present", "absent", "late"] as const).map((value) => (
+                    <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+                      {STUDENT_STATUS_OPTIONS.map(({ value, label }) => (
                         <button
                           key={value}
                           type="button"
@@ -386,7 +400,7 @@ export default function AttendanceWorkspace({ role }: { role: Role }) {
                           disabled={!canEditAttendance}
                           className={`min-w-0 rounded-lg border px-2 py-2 text-xs font-semibold sm:min-w-[104px] sm:px-4 sm:text-sm ${draft[student._id] === value ? "border-brand bg-brand/10 text-brand" : "border-slate-200 bg-white text-slate-700"}`}
                         >
-                          {value[0].toUpperCase() + value.slice(1)}
+                          {label}
                         </button>
                       ))}
                     </div>

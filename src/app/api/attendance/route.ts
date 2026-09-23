@@ -341,7 +341,12 @@ export async function POST(req: Request) {
         await consumeAttendanceCredit(record.student, doc._id.toString(), "Credit deducted for repeated student no-show");
         await notifyStudentNoShowCreditDeduction(record.student, count, { classroom, sessionId, attendance: doc._id.toString() });
       }
-      if (!existingAttendance) {
+      // Warn once per class. A first marking warns; so does an admin correction
+      // that turns the class into a no-show (e.g. one saved as "abandoned"),
+      // since no warning went out for it. Re-saving an existing no-show does not.
+      const alreadyWarned = existingAttendance?.metadata?.classOutcome === "student_no_show"
+        && (existingAttendance.records || []).some((prior: any) => String(prior?.student) === String(record.student) && prior?.status === "student_no_show");
+      if (!alreadyWarned) {
         await sendStudentNoShowWarningEmail({
           studentId: record.student,
           classroom: classroomDoc,

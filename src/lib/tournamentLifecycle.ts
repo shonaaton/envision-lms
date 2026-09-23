@@ -12,6 +12,7 @@ import {
   SwissExhaustedError,
   syncArenaPairings,
   syncSwissRoundState,
+  withVersionRetry,
 } from "@/lib/tournamentEngine";
 import { notifyExternalTournamentParticipants, notifyTournamentUsers } from "@/lib/tournamentNotifications";
 import { emitRoundCompleted, emitTournamentEnded, emitTournamentStatus, flushStandings } from "@/lib/tournamentSocketServer";
@@ -194,6 +195,10 @@ export async function advanceSwiss(tournament: any, options: { force?: boolean }
  * the pairing and round locks make the expensive parts single-writer.
  */
 export async function processTournament(tournamentId: string, options: { force?: boolean } = {}) {
+  return withVersionRetry(() => processTournamentOnce(tournamentId, options));
+}
+
+async function processTournamentOnce(tournamentId: string, options: { force?: boolean }) {
   const summary = { startingSoon: 0, started: 0, paired: 0, roundsAdvanced: 0, gamesEnded: 0, finalized: 0 };
   let tournament: any = await Tournament.findById(tournamentId);
   if (!tournament) return summary;
@@ -292,6 +297,10 @@ export async function runTournamentTick(): Promise<TickSummary> {
  * only runs when a board actually ends — never on an ordinary move.
  */
 export async function onGameCompleted(tournamentId: string, gameId: string) {
+  return withVersionRetry(() => handleGameCompleted(tournamentId, gameId));
+}
+
+async function handleGameCompleted(tournamentId: string, _gameId: string) {
   const tournament: any = await Tournament.findById(tournamentId);
   if (!tournament) return;
 

@@ -49,6 +49,7 @@ const RECONNECT_NOTICE_MS = 8000;
 function terminationLabel(game: any) {
   if (!game) return "";
   if (game.status === "aborted") return "Nobody moved in time, so the board was abandoned and no result was recorded";
+  if (game.termination === "forfeit") return "Won by forfeit: the opponent did not start the game";
   const reasons: Record<string, string> = {
     checkmate: "Checkmate",
     resign: "Resignation",
@@ -62,6 +63,15 @@ function terminationLabel(game: any) {
     manual: "Result set by an arbiter",
   };
   return reasons[String(game.termination)] || "Game finished";
+}
+
+/** "Won 0-1", not a bare "0-1" a student has to decode from their colour. */
+function seatOutcome(seat: any) {
+  if (!seat || seat.result === "*") return "No result";
+  if (seat.termination === "bye" || seat.opponentName === "Bye") return "Bye (1 point)";
+  const won = (seat.result === "1-0" && seat.color === "white") || (seat.result === "0-1" && seat.color === "black");
+  const word = seat.result === "1/2-1/2" ? "Draw" : won ? "Won" : "Lost";
+  return `${word} ${seat.result === "1/2-1/2" ? "½-½" : seat.result}${seat.termination === "forfeit" ? " by forfeit" : ""}`;
 }
 
 function resultHeadline(game: any, myColour: "white" | "black") {
@@ -107,7 +117,7 @@ export function TournamentPlayClient({
   const [dismissedResultFor, setDismissedResultFor] = useState("");
   const [offlineSince, setOfflineSince] = useState<number | null>(null);
 
-  const { columnRef, areaRef, size: boardWidth } = useBoardSizing();
+  const { columnRef, areaRef, footerRef, size: boardWidth, boardColumnStyle } = useBoardSizing();
 
   if (!tabIdRef.current && typeof window !== "undefined") {
     tabIdRef.current = window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -169,6 +179,7 @@ export function TournamentPlayClient({
             whiteClockMs: payload.whiteClockMs,
             blackClockMs: payload.blackClockMs,
             lastMoveAt: payload.lastMoveAt,
+            firstMoveDeadlineAt: payload.firstMoveDeadlineAt ?? null,
             drawOfferBy: "",
             moveHistorySAN: [...(current.moveHistorySAN || []), payload.san],
             moveHistoryUCI: [...(current.moveHistoryUCI || []), payload.uci],
@@ -299,10 +310,15 @@ export function TournamentPlayClient({
     }
   }, [game?.fen]);
 
+  // Who still owes a first move: White from the start, and in Swiss Black too
+  // once White has moved. Mirrors lib/tournament/firstMove.ts.
+  const plyNow = Number(game?.moveHistorySAN?.length || 0);
+  const firstMoveOwedBy: "white" | "black" | null =
+    !gameIsActive || !game?.firstMoveDeadlineAt ? null : plyNow === 0 ? "white" : plyNow === 1 && !isArena ? "black" : null;
   const firstMoveSecondsLeft = useMemo(() => {
-    if (!game?.firstMoveDeadlineAt || (game.moveHistorySAN?.length || 0) > 0 || !gameIsActive) return 0;
+    if (!firstMoveOwedBy) return 0;
     return Math.max(0, Math.ceil((new Date(game.firstMoveDeadlineAt).getTime() - now) / 1000));
-  }, [game?.firstMoveDeadlineAt, game?.moveHistorySAN?.length, gameIsActive, now]);
+  }, [firstMoveOwedBy, game?.firstMoveDeadlineAt, now]);
 
   const arenaMsLeft = useMemo(
     () => (state?.arenaEndsAt ? Math.max(0, new Date(state.arenaEndsAt).getTime() - now) : 0),
@@ -558,15 +574,19 @@ export function TournamentPlayClient({
     });
     const payload = await response.json().catch(() => null);
     if (!response.ok) {
-      setError(payload?.error || "Could not update your Arena status.");
+      setError(payload?.error || "Could not update your status.");
       return;
     }
     setNotice(
-      action === "pause"
-        ? payload?.finishingGame
-          ? "Paused. You will not be paired again after this game finishes."
-          : "Paused. You will not be paired until you resume."
-        : "Back in the queue. Looking for an opponent."
+      !isArena
+        ? action === "pause"
+          ? "You will sit out from the next round. Your score is kept, and you can come back at any time."
+          : "You are back in. You will be paired from the next round."
+        : action === "pause"
+          ? payload?.finishingGame
+            ? "Paused. You will not be paired again after this game finishes."
+            : "Paused. You will not be paired until you resume."
+          : "Back in the queue. Looking for an opponent."
     );
     await refresh();
   }
@@ -608,7 +628,9 @@ export function TournamentPlayClient({
           : statusKind === "over"
             ? terminationLabel(game)
             : firstMoveSecondsLeft > 0
-              ? `Make your first move within ${firstMoveSecondsLeft}s, or the board is abandoned`
+              ? firstMoveOwedBy === myColor
+                ? `Make your first move within ${firstMoveSecondsLeft}s, or ${isArena ? "the board is abandoned" : "you forfeit this game"}`
+                : `Your opponent has ${firstMoveSecondsLeft}s to make their first move${isArena ? "" : ", or you win by forfeit"}`
               : undefined;
 
   const showResultDialog = Boolean(game) && !gameIsActive && dismissedResultFor !== gameId;
@@ -676,7 +698,7 @@ export function TournamentPlayClient({
 
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px] xl:grid-cols-[minmax(0,1fr)_380px]">
           {game ? (
-            <section ref={columnRef} className="flex min-w-0 flex-col gap-2">
+            <section ref={columnRef} className="flex min-w-0 flex-col gap-2 [&>*]:mx-auto [&>*]:w-full [&>*]:max-w-[var(--board-size)]" style={boardColumnStyle}>
               <PlayerBar
                 name={opponentName || "Opponent"}
                 rating={opponentIsWhite ? game.whiteRating : game.blackRating}
@@ -691,7 +713,7 @@ export function TournamentPlayClient({
 
               {/* Square, absolutely-filled area: measuring it can never feed back
                   into the size of the board it contains. */}
-              <div ref={areaRef} className="relative mx-auto aspect-square w-full">
+              <div ref={areaRef} className="relative aspect-square">
                 <div className="absolute inset-0 flex items-center justify-center" style={{ touchAction: "none" }}>
                   <Chessboard
                     id={`tournament-board-${game._id}`}
@@ -743,7 +765,7 @@ export function TournamentPlayClient({
               />
 
               {/* Controls sit below the board and never over it. */}
-              <div className="flex flex-wrap items-center gap-2">
+              <div ref={footerRef} className="flex flex-wrap items-center gap-2">
                 {gameIsActive ? (
                   <>
                     <button
@@ -774,21 +796,21 @@ export function TournamentPlayClient({
                     ) : null}
                   </>
                 ) : null}
-                {isArena && tournamentPlaying ? (
+                {tournamentPlaying ? (
                   participantState?.status === "paused" ? (
                     <button type="button" onClick={() => setQueueStatus("resume")} className="btn min-h-11 bg-emerald-600 text-white hover:bg-emerald-700">
-                      <Play size={15} aria-hidden /> Resume queue
+                      <Play size={15} aria-hidden /> {isArena ? "Resume queue" : "Play next round"}
                     </button>
                   ) : (
                     <button type="button" onClick={() => setQueueStatus("pause")} className="btn-ghost min-h-11">
-                      <Pause size={15} aria-hidden /> Pause after this game
+                      <Pause size={15} aria-hidden /> {isArena ? "Pause after this game" : "Sit out next round"}
                     </button>
                   )
                 ) : null}
               </div>
 
               {/* Below the board where the panel column has collapsed under it. */}
-              <div className="mt-2 lg:hidden">
+              <div className="mt-2 !max-w-none lg:hidden">
                 <SidePanel {...sidePanelProps} stacked={false} />
               </div>
             </section>
@@ -956,7 +978,7 @@ function WaitingPanel({
   /* A Swiss player who finishes early moves through a definite sequence, and
      each step says what is happening and what happens next. */
   const swissStage =
-    !isArena && tournamentPlaying && state?.joined
+    !isArena && tournamentPlaying && state?.joined && !isPaused
       ? roundProgress && !roundDone
         ? "playing-round"
         : nextRoundIn > 0
@@ -970,8 +992,10 @@ function WaitingPanel({
     ? "Join this tournament first"
     : tournamentFinished
       ? "Tournament finished"
-      : isPaused && isArena
-        ? "You are paused"
+      : isPaused && tournamentPlaying
+        ? isArena
+          ? "You are paused"
+          : "You are sitting out"
         : waitingForOpponent
           ? "Finding your next opponent"
           : swissStage === "playing-round"
@@ -985,8 +1009,10 @@ function WaitingPanel({
                   : "The tournament has not started yet";
 
   const detail =
-    isPaused && isArena
-      ? "You will not be paired again until you rejoin the queue."
+    isPaused && tournamentPlaying
+      ? isArena
+        ? "You will not be paired again until you rejoin the queue."
+        : "You will not be paired in the coming rounds, and your score is kept. Rejoin to be paired from the next round."
       : !state?.joined
         ? publicRoom
           ? "Finish the guest join step first. Once you are registered on this device your pairing appears here automatically."
@@ -1024,7 +1050,7 @@ function WaitingPanel({
           {currentSeat?.status === "completed" && currentSeat.opponentName ? (
             <div className="rounded-lg bg-slate-50 px-3 py-2">
               <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Your last result</div>
-              <div className="mt-0.5 font-semibold text-slate-900">{currentSeat.result === "*" ? "No result" : currentSeat.result}</div>
+              <div className="mt-0.5 font-semibold text-slate-900">{seatOutcome(currentSeat)}</div>
               <div className="text-xs text-slate-500">vs {currentSeat.opponentName}</div>
             </div>
           ) : null}
@@ -1092,14 +1118,14 @@ function WaitingPanel({
         <Link href={`/tournaments/${tournamentId}`} className="btn-primary min-h-11">
           <Trophy size={15} aria-hidden /> Tournament centre
         </Link>
-        {isArena && tournamentPlaying && state?.joined ? (
+        {tournamentPlaying && state?.joined ? (
           isPaused ? (
             <button type="button" onClick={() => onQueue("resume")} className="btn min-h-11 bg-emerald-600 text-white hover:bg-emerald-700">
-              <Play size={15} aria-hidden /> Rejoin the queue
+              <Play size={15} aria-hidden /> {isArena ? "Rejoin the queue" : "Rejoin the tournament"}
             </button>
           ) : (
             <button type="button" onClick={() => onQueue("pause")} className="btn-ghost min-h-11">
-              <Pause size={15} aria-hidden /> Stop pairing me
+              <Pause size={15} aria-hidden /> {isArena ? "Stop pairing me" : "Sit out next round"}
             </button>
           )
         ) : null}

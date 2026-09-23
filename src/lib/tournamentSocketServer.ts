@@ -45,6 +45,8 @@ export type GameMoveEvent = {
   lastMoveAt: number;
   status: string;
   result: string;
+  /** Set after White's first move in Swiss, when Black's own deadline starts. */
+  firstMoveDeadlineAt?: number | null;
 };
 
 export type GameEndedEvent = {

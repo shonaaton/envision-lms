@@ -12,7 +12,7 @@ import { calculateTournamentGameReward } from "@/lib/rewards";
 export async function awardTournamentGameRewards(game: any) {
   if (!game || game.status !== "completed" || !game.result || game.result === "*") return;
   // An aborted or abandoned board is not a played game and earns nothing.
-  if (game.termination === "abandoned") return;
+  if (game.termination === "abandoned" || game.termination === "forfeit") return;
 
   const rewards = [
     game.whiteUser

@@ -10,11 +10,17 @@ import { inactiveStudentMessage, isCurrentStudent } from "@/lib/studentAccess";
 import { consumeTournamentRate, rateIdentity, rateLimitedResponse } from "@/lib/tournamentRateLimit";
 
 /**
- * A player's own place in the Arena queue.
+ * A player's own place in the pairing pool.
  *
- * Pausing stops new pairings; it never touches a game already in progress, so
- * "pause" always means "after this game". Resuming triggers a pairing pass
- * immediately rather than leaving the player to wait for the next tick.
+ * Arena: pausing stops new pairings; it never touches a game already in
+ * progress, so "pause" always means "after this game". Resuming triggers a
+ * pairing pass immediately rather than leaving the player to wait for the next
+ * tick.
+ *
+ * Swiss: pausing means sitting out from the next round on — the player keeps
+ * their score and stays in the standings, but is not paired (and receives no
+ * bye) until they resume. It is how a player leaves a Swiss that has started,
+ * and how a player sat out for missing a board comes back.
  *
  * This replaces using `join` as an implicit resume, which was easy to misread.
  */
@@ -27,8 +33,8 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 
   const tournament: any = await Tournament.findById(params.id);
   if (!tournament) return NextResponse.json({ error: "Tournament not found" }, { status: 404 });
-  if (tournament.type !== "arena") {
-    return NextResponse.json({ error: "Queue control applies to Arena tournaments." }, { status: 400 });
+  if (!["arena", "swiss"].includes(String(tournament.type))) {
+    return NextResponse.json({ error: "Queue control does not apply to this tournament." }, { status: 400 });
   }
 
   const cookieStore = await cookies();
@@ -69,7 +75,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     "_id"
   ).lean();
 
-  if (action === "resume" && isPlayingStatus(tournament.status) && !tournament.pausedByAdmin) {
+  if (action === "resume" && tournament.type === "arena" && isPlayingStatus(tournament.status) && !tournament.pausedByAdmin) {
     await syncArenaPairings(String(tournament._id));
   }
 

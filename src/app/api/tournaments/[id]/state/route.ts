@@ -172,6 +172,7 @@ export async function GET(request: Request, { params }: { params: { id: string }
         : game.whiteName,
     status,
     result: game.result || "*",
+    termination: game.termination || "",
   });
 
   const currentSeat = activeGame
@@ -185,6 +186,7 @@ export async function GET(request: Request, { params }: { params: { id: string }
           opponentName: seatFromRound.whiteKey === myPlayerKey ? seatFromRound.blackName || "Bye" : seatFromRound.whiteName,
           status: seatFromRound.status === "completed" ? "completed" : "assigned",
           result: seatFromRound.result || "*",
+          termination: myGamesRaw.find((game: any) => String(game._id) === String(seatFromRound.gameId))?.termination || "",
         }
       : fallbackGame
         ? seatFor(fallbackGame, fallbackGame.status || "completed")

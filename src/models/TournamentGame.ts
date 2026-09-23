@@ -53,6 +53,8 @@ const TournamentGameSchema = new Schema(
         "manual",
         // Nobody ever moved: the board is aborted, and neither side is scored.
         "abandoned",
+        // Swiss: one side never started the game and the other showed up.
+        "forfeit",
       ],
       default: "ongoing",
     },

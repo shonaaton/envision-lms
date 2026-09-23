@@ -17,10 +17,26 @@
  *   - a berserk win only pays its bonus once the game reaches a real length
  *   - a bye is a bye, not a win
  *   - Swiss ties break on Sonneborn-Berger rather than Buchholz
+ *
+ * v3 is v2 plus FIDE's treatment of unplayed rounds in Swiss tie-breaks:
+ *   - a bye or a forfeit is scored, but it is not a game against anyone, so it
+ *     counts in Buchholz and Sonneborn-Berger as a game against a dummy
+ *     opponent on the player's own score rather than as a zero
+ *   - the forfeit loser is not credited with the no-show opponent either
  */
 
-export type RulesVersion = 1 | 2;
-export const CURRENT_RULES_VERSION: RulesVersion = 2;
+export type RulesVersion = 1 | 2 | 3;
+export const CURRENT_RULES_VERSION: RulesVersion = 3;
+
+/** Parse a stored rules version, defaulting absent values to the legacy rules. */
+export function normalizeRulesVersion(value: any): RulesVersion {
+  const version = Number(value || 1);
+  if (version >= 3) return 3;
+  return version >= 2 ? 2 : 1;
+}
+
+/** A Swiss game one side won because the other never started it. */
+export const FORFEIT_TERMINATION = "forfeit";
 
 export const DEFAULT_BERSERK_MIN_PLIES = 7;
 
@@ -101,7 +117,7 @@ export function tieBreakFor(tournament: any): { key: "sonnebornBerger" | "buchho
 }
 
 export function defaultScoringOptions(tournament: any): ScoringOptions {
-  const rulesVersion: RulesVersion = Number(tournament?.rulesVersion || 1) >= 2 ? 2 : 1;
+  const rulesVersion = normalizeRulesVersion(tournament?.rulesVersion);
   return {
     rulesVersion,
     type: tournament?.type === "arena" ? "arena" : "swiss",
@@ -241,6 +257,9 @@ export function sortStandings(entries: StandingEntry[], options: ScoringOptions)
 export function computeStandings(players: ScoringPlayer[], games: ScoredGame[], options: ScoringOptions): StandingEntry[] {
   const entries = new Map<string, StandingEntry>(players.map((player) => [player.playerKey, emptyEntry(player)]));
   const opponents = new Map<string, Array<{ key: string; score: number }>>(players.map((player) => [player.playerKey, []]));
+  // Rounds a player was scored for without playing anyone: byes and forfeits.
+  const unplayed = new Map<string, number[]>(players.map((player) => [player.playerKey, []]));
+  const dummyOpponents = options.rulesVersion >= 3 && options.type === "swiss";
 
   const scored = games
     .filter((game) => game.status === "completed" && game.result !== "*" && game.endedAt <= options.scoringCutoff)
@@ -254,6 +273,7 @@ export function computeStandings(players: ScoringPlayer[], games: ScoredGame[], 
       white.points += 1;
       white.byes += 1;
       white.scoreHistory.push(1);
+      unplayed.get(game.whiteKey)!.push(1);
       if (options.rulesVersion === 1) {
         white.wins += 1;
         white.gamesPlayed += 1;
@@ -294,8 +314,13 @@ export function computeStandings(players: ScoringPlayer[], games: ScoredGame[], 
     black.scoreHistory.push(blackPoints);
     white.recentResults.push(whiteRaw === 1 ? "W" : whiteRaw === 0.5 ? "D" : "L");
     black.recentResults.push(blackRaw === 1 ? "W" : blackRaw === 0.5 ? "D" : "L");
-    opponents.get(game.whiteKey)!.push({ key: game.blackKey, score: whiteRaw });
-    opponents.get(game.blackKey)!.push({ key: game.whiteKey, score: blackRaw });
+    if (dummyOpponents && game.termination === FORFEIT_TERMINATION) {
+      unplayed.get(game.whiteKey)!.push(whiteRaw);
+      unplayed.get(game.blackKey)!.push(blackRaw);
+    } else {
+      opponents.get(game.whiteKey)!.push({ key: game.blackKey, score: whiteRaw });
+      opponents.get(game.blackKey)!.push({ key: game.whiteKey, score: blackRaw });
+    }
 
     if (whiteRaw === 1) {
       white.wins += 1;
@@ -316,12 +341,20 @@ export function computeStandings(players: ScoringPlayer[], games: ScoredGame[], 
   }
 
   for (const entry of Array.from(entries.values())) {
-    entry.onStreak = options.type === "arena" && options.arenaStreaks && options.rulesVersion === 2 && isOnStreak(entry.recentResults);
+    entry.onStreak = options.type === "arena" && options.arenaStreaks && options.rulesVersion >= 2 && isOnStreak(entry.recentResults);
     for (const opponent of opponents.get(entry.playerKey) || []) {
       const other = entries.get(opponent.key);
       if (!other) continue;
       entry.buchholz += other.points;
       entry.sonnebornBerger += other.points * opponent.score;
+    }
+    if (dummyOpponents) {
+      // FIDE's dummy opponent: an unplayed round is valued as a game against
+      // someone on the player's own final score.
+      for (const scored of unplayed.get(entry.playerKey) || []) {
+        entry.buchholz += entry.points;
+        entry.sonnebornBerger += entry.points * scored;
+      }
     }
     // Displayed history stays bounded; scoring always uses the full list above.
     entry.recentResults = entry.recentResults.slice(-8);

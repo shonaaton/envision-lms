@@ -7,20 +7,22 @@ import { cookies } from "next/headers";
 import { getTournamentGuestUsername } from "@/lib/tournamentGuests";
 import { inactiveStudentMessage, isCurrentStudent } from "@/lib/studentAccess";
 import { consumeTournamentRate, rateIdentity, rateLimitedResponse } from "@/lib/tournamentRateLimit";
+import { extendedFirstMoveDeadline } from "@/lib/tournament/firstMove";
 
 /**
  * Connectivity, kept separate from chess state.
  *
  * Presence no longer decides games: a player who loses their connection is not
- * forfeited, only shown as offline. Its remaining jobs are tab ownership and
- * extending the first-move grace period once a player actually has the board in
- * front of them — a pairing that lands while someone is still in the tournament
- * centre must not expire before they have seen it.
+ * forfeited, only shown as offline. Its remaining jobs are tab ownership,
+ * recording that each player turned up, and extending the first-move grace
+ * period once the player who must move actually has the board in front of them
+ * — a pairing that lands while someone is still in the tournament centre must
+ * not expire before they have seen it. The opponent's presence never extends
+ * it, and the extension is capped, so an absent player's board always ends.
  */
 
 export const dynamic = "force-dynamic";
 
-const FIRST_MOVE_GRACE_MS = 60 * 1000;
 const TAB_CLAIM_TIMEOUT_MS = 15_000;
 
 async function readBody(req: Request) {
@@ -38,7 +40,7 @@ export async function POST(req: Request, { params }: { params: { gameId: string 
   await dbConnect();
 
   const game: any = await TournamentGame.findById(params.gameId).select(
-    "tournament whiteUser blackUser whiteExternalUsername blackExternalUsername status ply moveHistorySAN firstMoveDeadlineAt whiteActiveTabId blackActiveTabId whiteActiveTabAt blackActiveTabAt"
+    "tournament source whiteUser blackUser whiteExternalUsername blackExternalUsername status ply moveHistorySAN firstMoveDeadlineAt startedAt createdAt lastMoveAt whiteActiveTabId blackActiveTabId whiteActiveTabAt blackActiveTabAt"
   );
   if (!game) return NextResponse.json({ error: "Game not found" }, { status: 404 });
 
@@ -99,13 +101,11 @@ export async function POST(req: Request, { params }: { params: { gameId: string 
     }
   }
 
-  // A board nobody has opened yet keeps its grace period rolling from the
-  // moment it is actually seen, so the abort clock is fair.
-  const noMovesYet = Number(game.ply ?? (game.moveHistorySAN || []).length ?? 0) === 0;
-  if (game.status === "active" && noMovesYet && visible) {
-    const deadline = game.firstMoveDeadlineAt ? new Date(game.firstMoveDeadlineAt).getTime() : 0;
-    const extended = Date.now() + FIRST_MOVE_GRACE_MS;
-    if (extended > deadline) set.firstMoveDeadlineAt = new Date(extended);
+  // The player who owes the first move keeps their grace period rolling from
+  // the moment they actually see the board, up to a cap.
+  if (visible) {
+    const extended = extendedFirstMoveDeadline(game, color);
+    if (extended) set.firstMoveDeadlineAt = extended;
   }
 
   await TournamentGame.updateOne({ _id: game._id }, { $set: set, ...(Object.keys(unset).length ? { $unset: unset } : {}) });

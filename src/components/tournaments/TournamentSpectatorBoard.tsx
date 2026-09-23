@@ -49,7 +49,7 @@ export function TournamentSpectatorBoard({
   const [clockBaseline, setClockBaseline] = useState<ClockBaseline | null>(() => clockBaselineFromGame(initialGame));
   const [error, setError] = useState("");
 
-  const { columnRef, areaRef, size: boardWidth } = useBoardSizing();
+  const { columnRef, areaRef, size: boardWidth, boardColumnStyle } = useBoardSizing();
   const gameIsActive = game?.status === "active";
   const now = useNow(250, gameIsActive);
   const clocks = useMemo(() => deriveClocks(clockBaseline, now), [clockBaseline, now]);
@@ -166,7 +166,7 @@ export function TournamentSpectatorBoard({
         ) : null}
 
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
-          <section ref={columnRef} className="flex min-w-0 flex-col gap-2">
+          <section ref={columnRef} className="flex min-w-0 flex-col gap-2 [&>*]:mx-auto [&>*]:w-full [&>*]:max-w-[var(--board-size)]" style={boardColumnStyle}>
             <PlayerBar
               name={topIsWhite ? game?.whiteName : game?.blackName || "Black"}
               rating={topIsWhite ? game?.whiteRating : game?.blackRating}
@@ -176,7 +176,7 @@ export function TournamentSpectatorBoard({
               berserk={topIsWhite ? game?.berserkWhite : game?.berserkBlack}
             />
 
-            <div ref={areaRef} className="relative mx-auto aspect-square w-full">
+            <div ref={areaRef} className="relative aspect-square">
               <div className="absolute inset-0 flex items-center justify-center">
                 <Chessboard
                   id={`spectator-${gameId}`}

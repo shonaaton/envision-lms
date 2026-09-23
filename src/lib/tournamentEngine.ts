@@ -1,4 +1,5 @@
 import { Chess } from "chess.js";
+import mongoose from "mongoose";
 import { TournamentGame } from "@/models/TournamentGame";
 import { Tournament } from "@/models/Tournament";
 import {
@@ -10,6 +11,8 @@ import { buildPgn, detectTermination, loadGamePosition, STANDARD_START_FEN } fro
 import {
   computeStandings,
   CURRENT_RULES_VERSION,
+  FORFEIT_TERMINATION,
+  normalizeRulesVersion,
   type ScoredGame,
   type ScoringOptions,
   type StandingEntry,
@@ -25,7 +28,8 @@ import {
   releaseRoundGuard,
 } from "@/lib/tournament/guards";
 import { buildArenaPairings, mostRecentOpponents, pairingHistory, resolveColors } from "@/lib/tournament/pairing";
-import { pairSwissRound, type Colour, type SwissPlayer } from "@/lib/tournament/swiss";
+import { pairSwissRound, swissHistoriesFromGames, type SwissPlayer } from "@/lib/tournament/swiss";
+import { FIRST_MOVE_GRACE_MS, noShowOutcome } from "@/lib/tournament/firstMove";
 import {
   emitGameEnded,
   emitGameMove,
@@ -37,13 +41,6 @@ import {
 
 export type TournamentLike = any;
 export type TournamentGameLike = any;
-
-/**
- * How long a freshly created board waits for its first move before being
- * aborted. An expired game is aborted, never awarded: a player who was still
- * in the tournament centre when the pairing landed has not lost anything.
- */
-const FIRST_MOVE_GRACE_MS = 60 * 1000;
 
 const PAIRING_LOCK_MS = 20_000;
 const ROUND_LOCK_MS = 30_000;
@@ -90,6 +87,27 @@ export function playerKeyForUser(userId: string) {
 
 export function playerKeyForExternal(username: string) {
   return `external:${String(username).trim().toLowerCase()}`;
+}
+
+/**
+ * Run a whole-document tournament update, starting again from a fresh load if
+ * another writer saved first.
+ *
+ * Boards in a Swiss round often finish together, and each completion saves the
+ * rebuilt standings and round state. Mongoose's version check rejects all but
+ * the first of those saves; the rejected ones used to surface as a failed move
+ * or resignation for the player. Every step here is derived from the games and
+ * idempotent, so redoing it from a fresh copy is always correct.
+ */
+export async function withVersionRetry<T>(run: () => Promise<T>, attempts = 5): Promise<T> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await run();
+    } catch (error) {
+      if (!(error instanceof mongoose.Error.VersionError) || attempt >= attempts) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 20 * attempt + Math.random() * 30));
+    }
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -223,7 +241,7 @@ export function estimateClock(game: TournamentGameLike, at: number = Date.now())
 /* ------------------------------------------------------------------ */
 
 export function scoringOptionsFor(tournament: TournamentLike): ScoringOptions {
-  const rulesVersion = Number(tournament?.rulesVersion || 1) >= 2 ? 2 : 1;
+  const rulesVersion = normalizeRulesVersion(tournament?.rulesVersion);
   // Arena standings freeze at the scheduled end, not at whatever moment the
   // expiry happens to be noticed. The table is the same however late the
   // observation is.
@@ -411,6 +429,11 @@ export async function applyGameMove(
     [game.turn === "w" ? "whiteClockMs" : "blackClockMs"]: movedClockMs,
   };
   const unset: Record<string, any> = { firstMoveDeadlineAt: 1 };
+  // In Swiss, Black owes a first move too; see lib/tournament/firstMove.ts.
+  if (nextPly === 1 && game.source === "swiss" && !detectTermination(chess)) {
+    update.firstMoveDeadlineAt = new Date(now + FIRST_MOVE_GRACE_MS);
+    delete unset.firstMoveDeadlineAt;
+  }
 
   if (finished) {
     update.status = "completed";
@@ -457,6 +480,7 @@ export async function applyGameMove(
     lastMoveAt: now,
     status: updated.status,
     result: updated.result,
+    firstMoveDeadlineAt: updated.firstMoveDeadlineAt ? new Date(updated.firstMoveDeadlineAt).getTime() : null,
   });
 
   if (finished) {
@@ -546,18 +570,32 @@ export async function enforceTournamentGameTimeouts(tournament: TournamentLike) 
   // fields a flag-fall decision needs — never the move histories.
   const activeGames: any[] = await TournamentGame.find(
     { tournament: tournament._id, status: "active" },
-    "whiteKey blackKey turn whiteClockMs blackClockMs lastMoveAt startedAt status ply firstMoveDeadlineAt tournament fen"
+    "source whiteKey blackKey whiteUser blackUser turn whiteClockMs blackClockMs lastMoveAt startedAt createdAt status ply firstMoveDeadlineAt blackOnlineAt tournament fen"
   ).lean();
   const now = Date.now();
   const ended: any[] = [];
+  const absent: Array<{ key: string; user?: string }> = [];
 
   for (const game of activeGames) {
-    const noMovesYet = Number(game.ply || 0) === 0;
-    const graceExpired = game.firstMoveDeadlineAt && new Date(game.firstMoveDeadlineAt).getTime() <= now;
-
-    if (noMovesYet && graceExpired) {
-      const result = await abortGame(game, "abandoned");
-      if (result?.status === "aborted") ended.push(result);
+    const noShow = noShowOutcome(game, now);
+    if (noShow.action !== "none") {
+      const result =
+        noShow.action === "abort"
+          ? await abortGame(game, "abandoned")
+          : await completeGame(game, {
+              result: noShow.winner === "white" ? "1-0" : "0-1",
+              termination: FORFEIT_TERMINATION,
+              winnerKey: noShow.winner === "white" ? game.whiteKey : game.blackKey,
+            });
+      if (result?.status !== "active" && result !== game) {
+        ended.push(result);
+        for (const side of noShow.absent) {
+          absent.push({
+            key: side === "white" ? game.whiteKey : game.blackKey,
+            user: objectId(side === "white" ? game.whiteUser : game.blackUser) || undefined,
+          });
+        }
+      }
       continue;
     }
 
@@ -572,7 +610,34 @@ export async function enforceTournamentGameTimeouts(tournament: TournamentLike) 
       if (result?.status === "completed") ended.push(result);
     }
   }
+
+  if (absent.length && tournament.type === "swiss") await sitOutNoShows(tournament, absent);
   return ended;
+}
+
+/**
+ * A Swiss player who missed a board is taken out of the next pairings, so they
+ * are not paired — and forfeited — round after round. They stay in the
+ * standings and can return from the play page at any time.
+ */
+async function sitOutNoShows(tournament: TournamentLike, absent: Array<{ key: string; user?: string }>) {
+  const now = new Date();
+  for (const player of absent) {
+    await Tournament.updateOne(
+      { _id: tournament._id, "participantStates.playerKey": player.key },
+      { $set: { "participantStates.$.status": "paused", "participantStates.$.pausedAt": now } }
+    );
+  }
+  const users = absent.map((player) => player.user).filter(Boolean) as string[];
+  if (users.length) {
+    await notifyTournamentUsers(tournament, {
+      users,
+      type: "tournament.missed_game",
+      title: "You missed a tournament game",
+      message: `You did not start your game in ${tournament.name}, so you will sit out the next round. Open the tournament to rejoin.`,
+      href: `/tournaments/${objectId(tournament)}/play`,
+    });
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -692,31 +757,6 @@ async function releaseSwissRound(tournamentId: string, token: string) {
   await Tournament.updateOne(releaseRoundGuard(tournamentId, token), { $unset: { roundLock: 1 } });
 }
 
-/**
- * Build each player's Swiss history from the games actually played: who they
- * faced, which colours they held, in round order. Derived rather than stored,
- * so it cannot drift from the games themselves.
- */
-function buildSwissHistories(games: any[]) {
-  const opponents = new Map<string, string[]>();
-  const colours = new Map<string, Colour[]>();
-  const ordered = [...games].sort((a, b) => Number(a.roundNumber || 0) - Number(b.roundNumber || 0));
-
-  for (const game of ordered) {
-    if (!game.blackKey) continue; // A bye is not an opponent and has no colour.
-    if (game.status === "aborted") continue;
-    if (!opponents.has(game.whiteKey)) opponents.set(game.whiteKey, []);
-    if (!opponents.has(game.blackKey)) opponents.set(game.blackKey, []);
-    if (!colours.has(game.whiteKey)) colours.set(game.whiteKey, []);
-    if (!colours.has(game.blackKey)) colours.set(game.blackKey, []);
-    opponents.get(game.whiteKey)!.push(game.blackKey);
-    opponents.get(game.blackKey)!.push(game.whiteKey);
-    colours.get(game.whiteKey)!.push("white");
-    colours.get(game.blackKey)!.push("black");
-  }
-  return { opponents, colours };
-}
-
 export class SwissExhaustedError extends Error {
   code = "swiss_exhausted";
   constructor(message = "Every remaining pairing would repeat a previous game.") {
@@ -743,7 +783,11 @@ export async function generateSwissRound(tournamentId: string, options: { force?
 
   const rounds = Array.isArray(preload.roundsData) ? preload.roundsData : [];
   const unfinished = rounds.find((round: any) => round.status !== "completed");
-  if (unfinished && !options.force) throw new Error("Finish the current round before creating the next one.");
+  // Usually another board's completion got here first and already started the
+  // round; that is a no-op for this caller, not an error to show a player.
+  if (unfinished && !options.force) {
+    return { created: false, roundNumber: Number(preload.currentRound || 0), skipped: "round_in_progress" as const };
+  }
 
   const expectedCurrentRound = Number(preload.currentRound || 0);
   const roundNumber = expectedCurrentRound + 1;
@@ -754,8 +798,11 @@ export async function generateSwissRound(tournamentId: string, options: { force?
     const tournament: any = await Tournament.findById(id);
     await recalculateTournamentStandings(tournament);
 
-    const games = await TournamentGame.find({ tournament: tournament._id }, "whiteKey blackKey status roundNumber").lean();
-    const { opponents, colours } = buildSwissHistories(games);
+    const games = await TournamentGame.find(
+      { tournament: tournament._id },
+      "whiteKey blackKey status result termination roundNumber"
+    ).lean();
+    const { opponents, colours, lastFloat } = swissHistoriesFromGames(games as any);
     const states = participantStateMap(tournament);
 
     const standingByKey = new Map<string, any>(
@@ -771,10 +818,13 @@ export async function generateSwissRound(tournamentId: string, options: { force?
         opponents: opponents.get(entry.playerKey) || [],
         colours: colours.get(entry.playerKey) || [],
         byes: Number(entry.byes || 0),
-        lastFloat: entry.lastFloat || null,
+        lastFloat: lastFloat.get(entry.playerKey) ?? null,
       }));
 
-    const result = pairSwissRound(field, { allowRepeats: options.allowRepeats });
+    const result = pairSwissRound(field, {
+      allowRepeats: options.allowRepeats,
+      roundsRemaining: Math.max(1, Number(tournament.rounds || 0) - expectedCurrentRound),
+    });
     if (result.exhausted) {
       throw new SwissExhaustedError();
     }
@@ -782,10 +832,12 @@ export async function generateSwissRound(tournamentId: string, options: { force?
     const pairings: any[] = [];
     const announce: PairingCreatedEvent[] = [];
     let tableNumber = 1;
+    const createdIds: any[] = [];
 
     if (result.bye) {
       const byeEntry = standingByKey.get(result.bye.playerKey);
       const byeGame = await createGame(tournament, { source: "swiss", roundNumber, tableNumber, white: byeEntry, bye: true });
+      createdIds.push(byeGame._id);
       pairings.push({
         gameId: byeGame._id,
         tableNumber,
@@ -799,20 +851,7 @@ export async function generateSwissRound(tournamentId: string, options: { force?
       tableNumber += 1;
     }
 
-    // Remember which way each player floated, so the next round can avoid
-    // floating the same person the same way twice.
-    const floats = new Map<string, "up" | "down" | null>();
     for (const pair of result.pairs) {
-      if (pair.white.points !== pair.black.points) {
-        const down = pair.white.points > pair.black.points ? pair.white : pair.black;
-        const up = down === pair.white ? pair.black : pair.white;
-        floats.set(down.playerKey, "down");
-        floats.set(up.playerKey, "up");
-      } else {
-        floats.set(pair.white.playerKey, null);
-        floats.set(pair.black.playerKey, null);
-      }
-
       const white = standingByKey.get(pair.white.playerKey);
       const black = standingByKey.get(pair.black.playerKey);
       const game = await createGame(tournament, {
@@ -823,6 +862,7 @@ export async function generateSwissRound(tournamentId: string, options: { force?
         black,
         announce,
       });
+      createdIds.push(game._id);
       pairings.push({
         gameId: game._id,
         tableNumber,
@@ -836,13 +876,29 @@ export async function generateSwissRound(tournamentId: string, options: { force?
       tableNumber += 1;
     }
 
-    tournament.currentRound = roundNumber;
-    tournament.roundsData = [...(tournament.roundsData || []), { roundNumber, status: "live", startedAt: new Date(), pairings }];
-    await recalculateTournamentStandings(tournament);
-    for (const entry of tournament.standings || []) {
-      if (floats.has(entry.playerKey)) entry.lastFloat = floats.get(entry.playerKey) || null;
+    // Record the round in one guarded write rather than saving the whole
+    // document: boards finishing concurrently save this document too, and a
+    // failed whole-document save here used to leave the boards created but the
+    // round unrecorded — so the next attempt paired the round a second time.
+    // The version bump makes any copy loaded before this point reload.
+    const committed = await Tournament.updateOne(
+      { _id: tournament._id, "roundLock.token": token, currentRound: expectedCurrentRound },
+      {
+        $set: { currentRound: roundNumber },
+        $push: { roundsData: { roundNumber, status: "live", startedAt: new Date(), pairings } },
+        $inc: { __v: 1 },
+      }
+    );
+    if (!committed.modifiedCount) {
+      await TournamentGame.deleteMany({ _id: { $in: createdIds } });
+      return { created: false, roundNumber: expectedCurrentRound, skipped: "locked" as const };
     }
-    await tournament.save();
+    // A bye scores at once, so the table moves with the new round.
+    await withVersionRetry(async () => {
+      const fresh: any = await Tournament.findById(id);
+      await recalculateTournamentStandings(fresh);
+      await fresh.save();
+    });
     emitPairingsCreated(id, announce);
     emitRoundStarted(id, roundNumber);
     return { created: true, roundNumber, skipped: null, repeats: result.repeats };

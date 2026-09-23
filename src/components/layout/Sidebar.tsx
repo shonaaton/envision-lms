@@ -110,6 +110,9 @@ const sections: NavSection[] = [
       { href: "/play/king-hunt", label: "King Hunt", icon: Crown, featureKey: "kingHunt", roles: ["student", "admin", "sub-admin"] },
       { href: "/play/square-trainer", label: "Square Trainer", icon: Crosshair, featureKey: "squareTrainer", roles: ["student", "admin", "sub-admin"] },
       { href: "/play/computer", label: "Play vs Computer", icon: Cpu, featureKey: "playVsComputer", roles: ["student", "admin", "sub-admin"] },
+      { href: "/learn", label: "Learn Chess", icon: BookOpenCheck, featureKey: "learnChess", permission: "practice", roles: ["student", "admin", "sub-admin"] },
+      { href: "/admin/learn", label: "Learn Chess Content", icon: BookOpenCheck, featureKey: "learnChess", permission: "edit", roles: ["instructor", "admin", "sub-admin"] },
+      { href: "/admin/learn/analytics", label: "Learn Chess Analytics", icon: BarChart3, featureKey: "learnChess", permission: "manage", roles: ["admin", "sub-admin"] },
     ],
   },
   {

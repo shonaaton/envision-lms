@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, Lock, Star } from "lucide-react";
+import { BookOpen, ChevronLeft, ChevronRight, Lock, Star } from "lucide-react";
 import { notFound } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { EmptyState, PageHeader } from "@/components/common/PageHeader";
@@ -66,7 +66,9 @@ export default async function LearnLessonPage({ params }: { params: { lessonSlug
       ) : (
         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm shadow-brand/5">
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {detail.exercises.map((exercise) => (
+            {detail.exercises.map((exercise) => {
+              const isSlide = exercise.interactionMode === "INFORMATION";
+              return (
               <Link
                 key={exercise.id}
                 href={exercise.isLocked ? "#" : `/learn/${params.lessonSlug}/${exercise.stableKey}`}
@@ -77,30 +79,41 @@ export default async function LearnLessonPage({ params }: { params: { lessonSlug
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Exercise {exercise.order}</div>
+                    <div className="inline-flex items-center gap-1.5 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+                      {isSlide ? <BookOpen size={13} aria-hidden="true" /> : null}
+                      {isSlide ? "Start here" : `Exercise ${exercise.order}`}
+                    </div>
                     <h2 className="mt-1 text-base font-black text-inherit">{exercise.title}</h2>
                   </div>
                   <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${exercise.completed ? "bg-emerald-50 text-emerald-700" : exercise.isLocked ? "bg-slate-200 text-slate-500" : "bg-brand-50 text-brand"}`}>
                     {exercise.completed ? "Complete" : exercise.isLocked ? "Locked" : "Open"}
                   </span>
                 </div>
-                <div className="mt-4 flex items-center justify-between text-sm">
-                  <span className="font-semibold text-slate-600">{difficultyStars(exercise.difficulty)}</span>
-                  <span className="inline-flex items-center gap-1 text-slate-600">
-                    <Star size={14} aria-hidden="true" />
-                    {exercise.bestStars} / 3
-                  </span>
-                </div>
+                {isSlide ? (
+                  <div className="mt-4 text-sm font-semibold text-slate-600">Read this before you start practising.</div>
+                ) : (
+                  <div className="mt-4 flex items-center justify-between text-sm">
+                    <span className="font-semibold text-slate-600">{difficultyStars(exercise.difficulty)}</span>
+                    <span className="inline-flex items-center gap-1 text-slate-600">
+                      <Star size={14} aria-hidden="true" />
+                      {exercise.bestStars} / 3
+                    </span>
+                  </div>
+                )}
                 {exercise.isLocked ? (
                   <div className="mt-4 inline-flex items-center gap-2 text-xs font-semibold text-slate-500">
                     <Lock size={14} aria-hidden="true" />
                     Finish the previous exercise to unlock this one.
                   </div>
                 ) : (
-                  <div className="mt-4 text-xs font-black uppercase tracking-[0.14em] text-brand">{exercise.completed ? "Practice again" : "Start exercise"} <ChevronRight size={14} className="ml-1 inline" /></div>
+                  <div className="mt-4 text-xs font-black uppercase tracking-[0.14em] text-brand">
+                    {isSlide ? (exercise.completed ? "Read again" : "Read the lesson") : exercise.completed ? "Practice again" : "Start exercise"}
+                    <ChevronRight size={14} className="ml-1 inline" />
+                  </div>
                 )}
               </Link>
-            ))}
+              );
+            })}
           </div>
         </section>
       )}

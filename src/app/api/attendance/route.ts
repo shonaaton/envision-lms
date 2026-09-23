@@ -22,6 +22,7 @@ import {
   notifyCoachNoShowIfThreshold,
   notifyStudentNoShowCreditDeduction,
   normalizeSessionOutcome,
+  outcomeFromStudentRecords,
   recalculateFutureSessionTopics,
   ensureTopicContinuationSession,
   topicCompletedForOutcome,
@@ -255,7 +256,8 @@ export async function POST(req: Request) {
   const submittedActualMinutes = Math.max(0, Number(teachingMinutes || 0));
   const recordedActualMinutes = summaryActualMinutes || storedActualMinutes || submittedActualMinutes;
   const actualMinutes = recordedActualMinutes || (hasAttendingStudent ? scheduledMinutes : 0);
-  const requestedOutcome = classOutcome || metadata?.summary?.classOutcome || (hasAttendingStudent ? "completed" : undefined);
+  const pickedOutcome = classOutcome || metadata?.summary?.classOutcome || (hasAttendingStudent ? "completed" : undefined);
+  const requestedOutcome = isDemoClassroom ? pickedOutcome : outcomeFromStudentRecords(pickedOutcome, normalizedRecords);
   const completionOverride = Boolean(adminOverrideCompletion || metadata?.summary?.adminOverrideCompletion || (hasAttendingStudent && requestedOutcome === "completed"));
   const outcome = isDemoClassroom && requestedOutcome === "completed" ? "completed" : normalizeSessionOutcome(requestedOutcome, actualMinutes, completionOverride);
   const topicCompleted = topicCompletedForOutcome(outcome, requestedOutcome);

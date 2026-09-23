@@ -62,6 +62,10 @@ export const authConfig = {
       // The sales workspace is staff-only. The real gate is the feature check in
       // (dashboard)/layout.tsx; this is the coarse outer shell, same as /admin.
       const isAdminRoute = nextUrl.pathname.startsWith("/admin") || nextUrl.pathname.startsWith("/sales");
+      // Coaches write the chess exercises, so Learn Chess authoring is the one
+      // /admin route instructors may open. The learnChess feature permission is
+      // still checked on the page and on every /api/admin/learn call.
+      const isLearnAuthoringRoute = nextUrl.pathname.startsWith("/admin/learn");
       const isInstructorRoute = nextUrl.pathname.startsWith("/instructor");
       const isPgnRoute = nextUrl.pathname.startsWith("/pgn");
       const isAnalysisRoute = nextUrl.pathname.startsWith("/analysis");
@@ -125,7 +129,8 @@ export const authConfig = {
       if (!isLoggedIn) return false; // triggers redirect to signIn
       if (isInactiveAccount && isInactiveRestrictedPath(nextUrl.pathname)) return Response.redirect(new URL("/dashboard", nextUrl));
       if (accountStatus === "demo" && !demoAllowed) return Response.redirect(new URL("/dashboard", nextUrl));
-      if (isAdminRoute && role !== "admin" && role !== "sub-admin") return Response.redirect(new URL("/dashboard", nextUrl));
+      if (isAdminRoute && role !== "admin" && role !== "sub-admin" && !(isLearnAuthoringRoute && role === "instructor"))
+        return Response.redirect(new URL("/dashboard", nextUrl));
       if (isInstructorRoute && role !== "instructor" && role !== "admin" && role !== "sub-admin")
         return Response.redirect(new URL("/dashboard", nextUrl));
       if (isPgnRoute && role === "student") return Response.redirect(new URL("/dashboard", nextUrl));

@@ -8,6 +8,7 @@ type LessonExerciseSummary = {
   id: string;
   stableKey: string;
   title: string;
+  interactionMode: string;
   order: number;
   difficulty: 1 | 2 | 3;
   completed: boolean;
@@ -96,6 +97,11 @@ export type LearningExerciseDetail = {
   goalType: string;
   goalConfig: Record<string, any>;
   acceptedSolutions: Array<{ moves: string[] }>;
+  opponentScript: Array<{ actor: "student" | "opponent"; move?: string; acceptedMoves?: string[] }>;
+  targets: string[];
+  obstacles: string[];
+  maxMoves: number;
+  idealMoves: number;
   hints: Array<{ text?: string; showAfterErrors?: number }>;
   explanation: string;
   successMessage: string;
@@ -124,7 +130,7 @@ async function loadLearningSnapshot(userId?: string) {
     LearningSection.find({ status: "published" }).sort({ order: 1 }).lean(),
     LearningLesson.find({ status: "published" }).sort({ order: 1 }).lean(),
     LearningExercise.find({ status: "published" })
-      .select("_id lessonId stableKey title description order difficulty interactionMode rulesMode startingPosition orientation sideToMove goalType goalConfig acceptedSolutions hints explanation successMessage failureMessage")
+      .select("_id lessonId stableKey title description order difficulty interactionMode rulesMode startingPosition orientation sideToMove goalType goalConfig acceptedSolutions opponentScript targets obstacles maxMoves idealMoves hints explanation successMessage failureMessage")
       .sort({ order: 1 })
       .lean(),
     userId
@@ -172,6 +178,17 @@ export async function getLearningExerciseDetail(
     goalType: String(exercise.goalType || "PRACTICE"),
     goalConfig: (exercise.goalConfig || {}) as Record<string, any>,
     acceptedSolutions: Array.isArray(exercise.acceptedSolutions) ? exercise.acceptedSolutions.map((solution: any) => ({ moves: Array.isArray(solution.moves) ? solution.moves.map(String) : [] })) : [],
+    opponentScript: Array.isArray(exercise.opponentScript)
+      ? exercise.opponentScript.map((step: any) => ({
+          actor: step.actor === "opponent" ? ("opponent" as const) : ("student" as const),
+          move: step.move ? String(step.move) : undefined,
+          acceptedMoves: Array.isArray(step.acceptedMoves) ? step.acceptedMoves.map(String) : [],
+        }))
+      : [],
+    targets: Array.isArray(exercise.targets) ? exercise.targets.map(String) : [],
+    obstacles: Array.isArray(exercise.obstacles) ? exercise.obstacles.map(String) : [],
+    maxMoves: Number(exercise.maxMoves || 0),
+    idealMoves: Number(exercise.idealMoves || 1),
     hints: Array.isArray(exercise.hints) ? exercise.hints : [],
     explanation: String(exercise.explanation || "Review the lesson idea and try the move again."),
     successMessage: String(exercise.successMessage || "Nice work. Keep going!"),
@@ -209,7 +226,10 @@ export async function getLearningCatalog(userId?: string): Promise<LearningCatal
     .map((lesson: any) => {
       const lessonExercises = exercisesByLessonId.get(toId(lesson._id)) || [];
       const completedExercises = lessonExercises.filter((exercise: any) => progressByExerciseId.get(toId(exercise._id))?.completed).length;
-      const earnedStars = lessonExercises.reduce((sum: number, exercise: any) => sum + Number(progressByExerciseId.get(toId(exercise._id))?.bestStars || 0), 0);
+      // An INFORMATION slide is read, not solved, so it earns no stars and must not
+      // be counted in the denominator either.
+      const starableExercises = lessonExercises.filter((exercise: any) => exercise.interactionMode !== "INFORMATION");
+      const earnedStars = starableExercises.reduce((sum: number, exercise: any) => sum + Number(progressByExerciseId.get(toId(exercise._id))?.bestStars || 0), 0);
       const totalExercises = lessonExercises.length;
       const nextExercise = lessonExercises.find((exercise: any) => !progressByExerciseId.get(toId(exercise._id))?.completed) || lessonExercises[0];
       return {
@@ -224,7 +244,7 @@ export async function getLearningCatalog(userId?: string): Promise<LearningCatal
         totalExercises,
         completedExercises,
         earnedStars,
-        totalStars: totalExercises * 3,
+        totalStars: starableExercises.length * 3,
         progressPercent: percent(completedExercises, totalExercises),
         isComplete: totalExercises > 0 && completedExercises === totalExercises,
         isLocked: false,
@@ -250,6 +270,7 @@ export async function getLearningCatalog(userId?: string): Promise<LearningCatal
       const totalExercises = sectionLessons.reduce((sum, lesson) => sum + lesson.totalExercises, 0);
       const completedExercises = sectionLessons.reduce((sum, lesson) => sum + lesson.completedExercises, 0);
       const earnedStars = sectionLessons.reduce((sum, lesson) => sum + lesson.earnedStars, 0);
+      const totalStars = sectionLessons.reduce((sum, lesson) => sum + lesson.totalStars, 0);
       return {
         id: toId(section._id),
         stableKey: String(section.stableKey),
@@ -260,7 +281,7 @@ export async function getLearningCatalog(userId?: string): Promise<LearningCatal
         totalExercises,
         completedExercises,
         earnedStars,
-        totalStars: totalExercises * 3,
+        totalStars,
         progressPercent: percent(completedExercises, totalExercises),
         isComplete: totalExercises > 0 && completedExercises === totalExercises,
         lessons: sectionLessons,
@@ -271,6 +292,7 @@ export async function getLearningCatalog(userId?: string): Promise<LearningCatal
   const totalExercises = sectionSummaries.reduce((sum, section) => sum + section.totalExercises, 0);
   const completedExercises = sectionSummaries.reduce((sum, section) => sum + section.completedExercises, 0);
   const earnedStars = sectionSummaries.reduce((sum, section) => sum + section.earnedStars, 0);
+  const totalStars = sectionSummaries.reduce((sum, section) => sum + section.totalStars, 0);
   const continueLesson =
     lessonsWithLocking.find((lesson) => !lesson.isLocked && !lesson.isComplete) || lessonsWithLocking.find((lesson) => !lesson.isLocked);
   const continueSection = continueLesson
@@ -283,7 +305,7 @@ export async function getLearningCatalog(userId?: string): Promise<LearningCatal
       totalExercises,
       completedExercises,
       earnedStars,
-      totalStars: totalExercises * 3,
+      totalStars,
       overallProgressPercent: percent(completedExercises, totalExercises),
     },
     continueLesson:
@@ -316,6 +338,7 @@ export async function getLearningLessonDetail(lessonSlug: string, userId?: strin
       id: toId(exercise._id),
       stableKey: String(exercise.stableKey),
       title: String(exercise.title),
+      interactionMode: String(exercise.interactionMode || "BOARD_MOVE"),
       order: Number(exercise.order || 0),
       difficulty: Number(exercise.difficulty || 1) as 1 | 2 | 3,
       completed,

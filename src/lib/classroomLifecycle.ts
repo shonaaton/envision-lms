@@ -48,6 +48,30 @@ export function normalizeSessionOutcome(value: unknown, actualTeachingMinutes = 
 }
 
 /**
+ * Outcomes that say the class failed for a reason on the academy's side. A
+ * student marked no-show does not override these.
+ */
+const COACH_SIDE_OUTCOMES = new Set(["coach_no_show", "technical_issue", "cancelled", "rescheduled"]);
+
+/**
+ * The class outcome implied by the per-student marks.
+ *
+ * A coach can leave the class outcome on "completed" and mark the only student
+ * as a no-show. After a short wait that used to fall below
+ * MIN_COMPLETED_TEACHING_MINUTES and be saved as "abandoned". That kept it out
+ * of the admin's no-show rulings and skipped the no-show warning. If nobody
+ * attended and at least one student was marked no-show, the class was a
+ * student no-show, whatever outcome was picked.
+ */
+export function outcomeFromStudentRecords(requestedOutcome: unknown, records: Array<{ status?: unknown }> = []) {
+  const requested = requestedOutcome ? String(requestedOutcome) : undefined;
+  if (requested && COACH_SIDE_OUTCOMES.has(requested.toLowerCase())) return requested;
+  const statuses = records.map((record) => String(record?.status || ""));
+  if (statuses.some((status) => status === "present" || status === "late")) return requested;
+  return statuses.includes("student_no_show") ? "student_no_show" : requested;
+}
+
+/**
  * Session statuses that mean "this class is behind us", however it went. Note
  * that most of them taught nothing - see `isReadyToComplete` for why that
  * distinction matters.

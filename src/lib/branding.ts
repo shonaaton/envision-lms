@@ -31,11 +31,11 @@ export const ACADEMY_ACCREDITATIONS = [
   {
     relation: "Affiliated to",
     name: "Kolkata District Chess Association",
-    logo: "/images/affiliations/kolkata-district-chess-association.png",
+    logo: "/images/affiliations/kolkata-district-chess-association.jpg",
   },
   {
     relation: "Recognised by",
     name: "Sara Bangla Daba Sangstha",
-    logo: "/images/affiliations/sara-bangla-daba-sangstha.png",
+    logo: "/images/affiliations/sara-bangla-daba-sangstha.jpg",
   },
 ] as const;

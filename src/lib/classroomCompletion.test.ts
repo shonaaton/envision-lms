@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hasClassesLeftToTeach, isReadyToComplete } from "@/lib/classroomLifecycle";
+import { hasClassesLeftToTeach, isReadyToComplete, outcomeFromStudentRecords } from "@/lib/classroomLifecycle";
 import { dueCourseCompletionFilter } from "@/lib/courseCompletionSweep";
 
 function taught(topicName: string) {
@@ -131,5 +131,28 @@ describe("dueCourseCompletionFilter", () => {
     expect(statuses).toContain("cancelled");
     expect(statuses).not.toContain("scheduled");
     expect(statuses).not.toContain("ongoing");
+  });
+});
+
+describe("outcomeFromStudentRecords", () => {
+  it("turns a class nobody attended into a student no-show when a student was marked no-show", () => {
+    expect(outcomeFromStudentRecords("completed", [{ status: "student_no_show" }])).toBe("student_no_show");
+    expect(outcomeFromStudentRecords(undefined, [{ status: "student_no_show" }, { status: "absent" }])).toBe("student_no_show");
+  });
+
+  it("keeps the picked outcome when anyone attended", () => {
+    expect(outcomeFromStudentRecords("completed", [{ status: "present" }, { status: "student_no_show" }])).toBe("completed");
+    expect(outcomeFromStudentRecords("completed", [{ status: "late" }, { status: "student_no_show" }])).toBe("completed");
+  });
+
+  it("never overrides a coach-side outcome", () => {
+    for (const outcome of ["coach_no_show", "technical_issue", "cancelled", "rescheduled"]) {
+      expect(outcomeFromStudentRecords(outcome, [{ status: "student_no_show" }])).toBe(outcome);
+    }
+  });
+
+  it("leaves plain absences alone", () => {
+    expect(outcomeFromStudentRecords("completed", [{ status: "absent" }])).toBe("completed");
+    expect(outcomeFromStudentRecords(undefined, [])).toBeUndefined();
   });
 });

@@ -20,6 +20,7 @@ import { sendMetaConversionEvent } from "@/lib/metaConversions";
 import { cancelDemoClassrooms } from "@/lib/demoClassroom";
 import { ensureDemoHomework } from "@/lib/demoHomework";
 import { attributeDemoToLeadOwner, notifyLeadOwnerOfDemo } from "@/lib/demoLeadOwner";
+import { resolveLeadTasksOnBooking } from "@/lib/tasks/taskTriggers";
 
 export const dynamic = "force-dynamic";
 
@@ -202,23 +203,46 @@ export async function POST(req: Request) {
         timezone: body.timezone,
         durationMinutes: 30,
       });
-      const idempotencyKey = String(body.idempotencyKey || `demo:${studentUserId}:${requested.start.toISOString()}`);
+      // The key is always this student + this instant. The page used to send
+      // `demo-<date>-<time>-<tz>`, which every family shares, so the second
+      // parent to pick a popular slot was handed the first family's booking
+      // and nothing was saved for them.
+      const idempotencyKey = `demo:${studentUserId}:${requested.start.toISOString()}`;
+      const activeDemoFilter = {
+        status: { $in: ["pending", "confirmed"] },
+        demoStatus: { $nin: ["CANCELLED", "COMPLETED", "STUDENT_NO_SHOW", "ABSENT", "CONVERTED", "CLOSED"] },
+      };
       const existingForKey = await Booking.findOne({ idempotencyKey });
       if (existingForKey) {
-        return NextResponse.json({
-          ...(existingForKey.toObject ? existingForKey.toObject() : existingForKey),
-          metaEventId: `demo_booking_${existingForKey._id.toString()}`,
-        });
+        const isOpen =
+          activeDemoFilter.status.$in.includes(String(existingForKey.status)) &&
+          !activeDemoFilter.demoStatus.$nin.includes(String(existingForKey.demoStatus || ""));
+        if (isOpen && new Date(existingForKey.startAt).getTime() === requested.start.getTime()) {
+          // A double tap on the same request.
+          return NextResponse.json({
+            ...(existingForKey.toObject ? existingForKey.toObject() : existingForKey),
+            metaEventId: `demo_booking_${existingForKey._id.toString()}`,
+          });
+        }
+        if (!isOpen) {
+          // A cancelled request at this time must not block asking for it again.
+          await Booking.updateOne({ _id: existingForKey._id }, { $unset: { idempotencyKey: 1 } });
+        }
       }
       const existingActive = await Booking.findOne({
         student: studentUserId,
         bookingType: "demo",
-        status: { $in: ["pending", "confirmed"] },
-        demoStatus: { $nin: ["CANCELLED", "COMPLETED", "STUDENT_NO_SHOW", "ABSENT"] },
+        ...activeDemoFilter,
       });
       if (existingActive) {
         const previousStartAt = existingActive.startAt;
         const previousEndAt = existingActive.endAt;
+        // Moving a request must not leave a double-tap guard on the old time,
+        // or asking for it again later would bounce off this booking.
+        if (existingActive.idempotencyKey && existingActive.idempotencyKey !== idempotencyKey) {
+          const keyTaken = await Booking.exists({ idempotencyKey, _id: { $ne: existingActive._id } });
+          existingActive.idempotencyKey = keyTaken ? undefined : idempotencyKey;
+        }
         existingActive.startAt = requested.start;
         existingActive.endAt = requested.end;
         existingActive.status = "pending";
@@ -228,6 +252,12 @@ export async function POST(req: Request) {
         existingActive.requestedLocalDateTime = requested.localLabel;
         existingActive.requestedIstDateTime = requested.istLabel;
         existingActive.requestedAt = new Date();
+        // The parent picking a time is what a held or reopened demo was waiting
+        // for, so it comes off Demo Hold and loses the "needs a new time" flag.
+        existingActive.needsNewTime = false;
+        existingActive.heldAt = undefined;
+        existingActive.heldBy = undefined;
+        existingActive.holdReason = undefined;
         existingActive.notes = body.notes;
         existingActive.rescheduleCount = Number(existingActive.rescheduleCount || 0) + 1;
         existingActive.rescheduleHistory = [
@@ -308,6 +338,7 @@ export async function POST(req: Request) {
       );
       await notifyDemoRequestCreated({ booking: created, student, admins }).catch((error) => console.error("Demo request notification failed", error));
       await ensureDemoRequestTask({ booking: created, student, owner: demoRequestTaskOwner(admins) }).catch((error) => console.error("Demo task creation failed", error));
+      await resolveLeadTasksOnBooking(studentUserId, studentUserId);
       await attributeDemoToLeadOwner(created._id.toString()).catch((error) => console.error("Demo lead owner routing failed", error));
       await recordActivity({
         actor: studentUserId,

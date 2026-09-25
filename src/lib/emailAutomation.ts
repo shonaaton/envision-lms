@@ -7,6 +7,13 @@ type AutomationEmailInput = {
   subject: string;
   message: string;
   htmlBody?: string;
+  /**
+   * The caller's `htmlBody` is a finished, designed email (e.g. the monthly
+   * progress report): send it as-is instead of rebuilding it from `message`.
+   * Without this, any link in the email swaps the design for the generic
+   * paragraphs-plus-button layout.
+   */
+  htmlIsFinal?: boolean;
   actionUrl?: string;
   actionLabel?: string;
   replyTo?: string;
@@ -131,7 +138,9 @@ async function sendEmailToWebhook(input: AutomationEmailInput, webhook?: string,
       return { ok: true, delivered: false, skipped: true, deduped: true };
     }
   }
-  const htmlBody = action.actionUrl ? buildHtmlBody(message, action.actionUrl, action.actionLabel) : input.htmlBody || buildHtmlBody(message, "", "");
+  const htmlBody = input.htmlIsFinal && input.htmlBody
+    ? input.htmlBody
+    : action.actionUrl ? buildHtmlBody(message, action.actionUrl, action.actionLabel) : input.htmlBody || buildHtmlBody(message, "", "");
   const metadata = {
     ...(input.metadata || {}),
     ...(action.actionUrl ? { actionUrl: action.actionUrl, actionLabel: action.actionLabel } : {}),

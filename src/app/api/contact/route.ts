@@ -5,6 +5,7 @@ import { canonicalEmail } from "@/lib/identityMatch";
 import { consumeRateLimit, getClientIp, jsonRateLimitHeaders } from "@/lib/requestSecurity";
 import { contactMessageSchema } from "@/lib/validation";
 import { ContactMessage } from "@/models/ContactMessage";
+import { raiseContactEnquiryTask } from "@/lib/tasks/taskTriggers";
 
 export const dynamic = "force-dynamic";
 
@@ -52,6 +53,8 @@ export async function POST(req: Request) {
       message: data.message,
       sourcePath: data.sourcePath,
     });
+
+    await raiseContactEnquiryTask(created);
 
     return NextResponse.json({ ok: true, id: created._id.toString() });
   } catch (error) {

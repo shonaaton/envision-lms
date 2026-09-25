@@ -4,13 +4,16 @@
  * A board nobody starts must end, or a Swiss round never finishes. What it ends
  * as depends on who was there:
  *
- *   Arena  — White not moving aborts the board. Nobody is scored; both
- *            players go straight back into the pairing pool.
+ *   Arena  — the board is aborted and nobody is scored. The player who never
+ *            started is paused, so they are not paired again and again while
+ *            away — previously one absent player could swallow an opponent's
+ *            whole arena, one abandoned board after another.
  *   Swiss  — the player to move who never moves forfeits to an opponent who
  *            showed up. White not moving with Black never having opened the
- *            board either is a double no-show: aborted, nobody scored. Black
- *            gets a deadline for their first move too, so a present White is
- *            not left waiting out Black's entire clock.
+ *            board either is a double no-show: aborted, nobody scored.
+ *
+ * In both formats Black gets a deadline for their first move too, so a present
+ * White is not left waiting out Black's entire clock.
  *
  * Only the player *to move* can push their own deadline back by having the
  * board open, and only up to a cap. Previously either player's presence
@@ -47,7 +50,7 @@ export function sideOwingFirstMove(game: FirstMoveGame): "white" | "black" | nul
   if (game.status !== "active") return null;
   const ply = plyOf(game);
   if (ply === 0) return "white";
-  if (ply === 1 && game.source === "swiss") return "black";
+  if (ply === 1) return "black";
   return null;
 }
 
@@ -81,9 +84,10 @@ export function noShowOutcome(game: FirstMoveGame, now: number = Date.now()): No
   const deadline = time(game.firstMoveDeadlineAt);
   if (!owing || !deadline || deadline > now) return { action: "none" };
 
-  if (game.source !== "swiss") return { action: "abort", absent: [] };
-  if (owing === "black") return { action: "forfeit", winner: "white", absent: ["black"] };
+  const absent: Array<"white" | "black"> = owing === "black" ? ["black"] : game.blackOnlineAt ? ["white"] : ["white", "black"];
+  if (game.source !== "swiss") return { action: "abort", absent };
+  if (owing === "black") return { action: "forfeit", winner: "white", absent };
   // White never moved. Black only earns the point by having turned up.
-  if (game.blackOnlineAt) return { action: "forfeit", winner: "black", absent: ["white"] };
-  return { action: "abort", absent: ["white", "black"] };
+  if (game.blackOnlineAt) return { action: "forfeit", winner: "black", absent };
+  return { action: "abort", absent };
 }

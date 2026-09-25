@@ -27,6 +27,7 @@ import {
   Megaphone,
   MessageSquare,
   MessageCircle,
+  MessageSquareHeart,
   Receipt,
   Send,
   Settings,
@@ -76,7 +77,11 @@ const sections: NavSection[] = [
   {
     id: "academy",
     title: "Academy",
-    items: [{ href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, featureKey: "dashboard" }],
+    items: [
+      { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, featureKey: "dashboard" },
+      { href: "/tasks", label: "Tasks", icon: ListChecks, featureKey: "taskManager", roles: ["instructor", "admin", "sub-admin"] },
+      { href: "/feedback", label: "Monthly Feedback", icon: MessageSquareHeart, featureKey: "monthlyFeedback", roles: ["student", "instructor", "admin", "sub-admin"] },
+    ],
   },
   {
     id: "class-tools",
@@ -304,6 +309,8 @@ export default function Sidebar({
 }) {
   const pathname = usePathname() || "";
   const [askCoachUnreadCount, setAskCoachUnreadCount] = useState(0);
+  const [pendingTaskCount, setPendingTaskCount] = useState(0);
+  const tasksVisible = role !== "student" && featureState?.taskManager?.visible !== false;
   const [openNotifications, setOpenNotifications] = useState(false);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -364,6 +371,23 @@ export default function Sidebar({
   useEffect(() => {
     void loadNotifications();
   }, []);
+
+  useEffect(() => {
+    if (!tasksVisible) return;
+    let mounted = true;
+    async function loadPendingTaskCount() {
+      const res = await fetch("/api/tasks?summary=1", { cache: "no-store" }).catch(() => null);
+      if (!res?.ok) return;
+      const data = await res.json().catch(() => ({}));
+      if (mounted) setPendingTaskCount(Number(data.pendingCount || 0));
+    }
+    void loadPendingTaskCount();
+    const timer = window.setInterval(() => void loadPendingTaskCount(), 60000);
+    return () => {
+      mounted = false;
+      window.clearInterval(timer);
+    };
+  }, [tasksVisible, pathname]);
 
   useEffect(() => {
     try {
@@ -464,6 +488,14 @@ export default function Sidebar({
                             {item.href === "/booking" ? bookingFeatureNameForAccount(accountStatus) : item.label}
                           </span>
                           {comingSoon && <span className={cn("ml-auto inline-flex h-5 w-11 flex-none items-center justify-center rounded bg-accent px-1 text-[9px] font-black uppercase text-brand shadow-sm", desktopCollapsed ? "md:hidden" : "")}>Soon</span>}
+                          {item.href === "/tasks" && pendingTaskCount > 0 && (
+                            <span className={cn(
+                              "ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1.5 text-[10px] font-black text-brand shadow-sm",
+                              desktopCollapsed ? "md:absolute md:right-1.5 md:top-1.5 md:h-4 md:min-w-4 md:px-1 md:text-[9px]" : ""
+                            )}>
+                              {pendingTaskCount > 99 ? "99+" : pendingTaskCount}
+                            </span>
+                          )}
                           {item.href === "/ask-coach" && askCoachUnreadCount > 0 && (
                             <span className={cn(
                               "ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1.5 text-[10px] font-black text-brand shadow-sm",

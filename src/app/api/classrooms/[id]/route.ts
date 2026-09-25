@@ -25,6 +25,7 @@ import { sendWhatsAppAutomationTemplates } from "@/lib/whatsappAutomationEvents"
 import { notifyClassroomCoachAssigned } from "@/lib/classroomCoachNotifications";
 import { notifyCourseCompleted, notifySessionCancelled } from "@/lib/classSessionNotifications";
 import { writeRuntimeLog } from "@/lib/runtimeLogger";
+import { raiseSubstituteTask, resolveCoachMissingTask } from "@/lib/tasks/taskTriggers";
 
 export const dynamic = "force-dynamic";
 
@@ -1264,6 +1265,15 @@ async function patchClassroom(req: Request, { params }: { params: { id: string }
       substituteCoachId: String(body.coach || ""),
       originalCoachId: previousCoachId,
     });
+    if (body.scope === "session") {
+      const covered = existing.generatedSessions?.id?.(reassignedSessionIds[0]);
+      await raiseSubstituteTask({ classroom: existing, sessionId: reassignedSessionIds[0], scheduledFor: covered?.scheduledFor, coachId: body.coach });
+    } else {
+      // Cover arranged for a whole run: settle any "coach hasn't joined" alert on it.
+      for (const reassignedId of reassignedSessionIds.slice(0, 20)) {
+        await resolveCoachMissingTask(reassignedId, (session.user as any)?.id, "A new coach was assigned.");
+      }
+    }
   }
   const shouldNotifyScheduleChange = (
     ["cancel_class", "cancel_series", "cancel_session", "reschedule_class", "reschedule_session", "shift_future_sessions", "permanent_schedule_change", "push_session_forward"].includes(activityAction) ||

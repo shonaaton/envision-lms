@@ -708,6 +708,7 @@ export async function getFeesAnalytics(options: { from: Date; to: Date; gst: Gst
     if (booking.demoStatus === "CLOSED" || booking.status === "cancelled") return "Closed";
     if (booking.demoStatus === "ASSESSMENT_PENDING") return "Assessment pending";
     if (booking.demoStatus === "CLASSROOM_CREATED") return "Scheduled";
+    if (booking.demoStatus === "ON_HOLD") return "Demo hold";
     return "Requested";
   };
 

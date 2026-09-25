@@ -32,6 +32,7 @@ import {
 } from "@/lib/classroomLifecycle";
 import { sendClassCompletedSummaryEmail, sendStudentNoShowWarningEmail } from "@/lib/studentCommunicationEmails";
 import { notifyAbsenceToFamily } from "@/lib/attendanceNotifications";
+import { raiseDemoAssessmentTask, raiseNoShowRulingTask, resolveAttendanceTask, resolveCoachMissingTask } from "@/lib/tasks/taskTriggers";
 
 export const dynamic = "force-dynamic";
 
@@ -318,6 +319,10 @@ export async function POST(req: Request) {
     entityId: doc._id.toString(),
     metadata: { classroom, sessionDate, sessionId, records: normalizedRecords.length, classOutcome: storedOutcome, overrideReason: overrideEntry?.reason || "" },
   });
+  if (sessionId) {
+    await resolveAttendanceTask(sessionId, (session.user as SessionUser).id);
+    await resolveCoachMissingTask(sessionId, undefined, "The class took place and attendance was marked.");
+  }
   for (const record of normalizedRecords) {
     if (!record?.student) continue;
     if (isDemoClassroom) continue;
@@ -419,6 +424,9 @@ export async function POST(req: Request) {
       if (!isDemoClassroom && classroomDoc.completeAfterLastSession) {
         void completeCourseIfDue(String(classroomDoc._id)).catch((error) => console.error("Armed course completion failed", error));
       }
+      if (!isDemoClassroom && !existingAttendance && sessionId && (outcome === "student_no_show" || outcome === "technical_issue")) {
+        await raiseNoShowRulingTask({ classroom: classroomDoc, sessionId, outcome, scheduledFor: target?.scheduledFor });
+      }
       if (outcome === "coach_no_show") {
         await notifyCoachNoShowIfThreshold(String(assignedCoach || ""), { classroom, sessionId, attendance: doc._id.toString() });
       }
@@ -461,6 +469,7 @@ export async function POST(req: Request) {
               { upsert: true, new: true }
             );
             await Booking.findByIdAndUpdate(demoBooking._id, { demoStatus: "ASSESSMENT_PENDING", feedbackStatus: "pending" });
+            await raiseDemoAssessmentTask({ booking: demoBooking, coachId: assignedCoach, student: recordStudentId(normalizedRecords, classroomDoc.students || []) });
           } else if (outcome === "student_no_show") {
             await Booking.findByIdAndUpdate(demoBooking._id, { status: "pending", approvalStatus: "pending_admin", demoStatus: "STUDENT_NO_SHOW", feedbackStatus: "not_required" });
             await notifyDemoMissed({ booking: demoBooking, classroom: classroomDoc }).catch((error) => console.error("Demo no-show WhatsApp failed", error));

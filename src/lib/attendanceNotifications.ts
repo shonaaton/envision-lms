@@ -9,6 +9,7 @@ import { Attendance } from "@/models/Attendance";
 import { Classroom } from "@/models/Classroom";
 import { AcademySettings, Notification } from "@/models/Fee";
 import { User } from "@/models/User";
+import { raiseAttendanceTask } from "@/lib/tasks/taskTriggers";
 
 /**
  * Attendance notifications for families and coaches.
@@ -157,6 +158,7 @@ export async function processDueAttendanceNudges() {
       if (!coachId) continue;
       const coach: any = await User.findById(coachId).select("name username email phone countryCode").lean();
       if (!coach) continue;
+      await raiseAttendanceTask({ classroom, session, coachId });
 
       const classTitle = String(classroom.title || classroom.courseName || "Class session");
       const coachName = String(coach.name || coach.username || "Coach");

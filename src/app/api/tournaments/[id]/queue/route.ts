@@ -67,7 +67,9 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     return NextResponse.json({ error: "Choose either pause or resume." }, { status: 400 });
   }
 
-  setTournamentPlayerState(tournament, playerKey, action === "pause" ? "paused" : "joined");
+  // Resuming in an Arena restarts the player's waiting clock, so a long pause
+  // does not jump them to the front of the queue.
+  setTournamentPlayerState(tournament, playerKey, action === "pause" ? "paused" : tournament.type === "arena" ? "queued" : "joined");
   await tournament.save();
 
   const activeGame = await TournamentGame.findOne(

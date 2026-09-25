@@ -11,6 +11,7 @@ import { Classroom } from "@/models/Classroom";
 import { FeeAssignment, FeePlan, Invoice, Notification } from "@/models/Fee";
 import { StudentPause } from "@/models/StudentPause";
 import { User } from "@/models/User";
+import { cancelPauseReinstateTask, resolvePauseReinstateTask } from "@/lib/tasks/taskTriggers";
 
 // Invoices in these states have not been settled, so a pause can still move them.
 const SHIFTABLE_INVOICE_STATUSES = ["draft", "unpaid", "overdue"];
@@ -711,6 +712,7 @@ export async function resumeStudent(input: ResumeStudentInput) {
 
   void notifyStudentResumed(pause, student, restartDate).catch((error) => console.error("Resume notice failed", error));
 
+  await resolvePauseReinstateTask(pause._id, input.actor?.id);
   return { pause, invoice, classroomsUpdated, classroomsResumed, batchesResumed, invoicesShifted };
 }
 
@@ -829,5 +831,6 @@ export async function cancelPause(input: CancelPauseInput) {
     },
   });
 
+  await cancelPauseReinstateTask(pause._id);
   return { pause, invoicesRestored: restored, classroomsUpdated, classroomsResumed, batchesResumed };
 }

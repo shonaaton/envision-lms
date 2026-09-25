@@ -7,6 +7,7 @@ import { Chess } from "chess.js";
 import { ArrowLeft, Eye, RefreshCcw, Repeat } from "lucide-react";
 import { useTournamentSocket } from "@/lib/useTournamentSocket";
 import { clockBaselineFromGame, deriveClocks, useNow, type ClockBaseline } from "@/lib/useLiveClock";
+import { CLOCK_START_PLY } from "@/lib/tournament/timeControl";
 import { BOARD_DARK_SQUARE, BOARD_LIGHT_SQUARE, buildBoardSquareStyles, findKingSquare } from "@/lib/tournament/boardTheme";
 import { MoveList } from "./game/MoveList";
 import { PlayerBar } from "./game/PlayerBar";
@@ -93,7 +94,7 @@ export function TournamentSpectatorBoard({
           blackClockMs: Number(payload.blackClockMs || 0),
           turn: payload.turn === "b" ? "b" : "w",
           since: Date.now(),
-          running: payload.status === "active",
+          running: payload.status === "active" && Number(payload.ply || 0) >= CLOCK_START_PLY,
         });
       },
       onGameEnded: () => void refresh(),

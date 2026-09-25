@@ -10,6 +10,9 @@ import { bookingFeatureNameForAccount, bookingFeatureNameForType, isDemoBookingA
 import { trackMetaSchedule } from "@/lib/metaPixel";
 import { trackConversion } from "@/lib/siteAnalytics";
 import { inactiveStudentMessage } from "@/lib/studentStatus";
+import { DemoTimePicker, type DemoTimeValue } from "@/components/demo/DemoTimePicker";
+import { describeInZone, isValidTimeZone } from "@/lib/demoTimeSlots";
+import { zonedDateTime } from "@/lib/academyTime";
 
 const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -39,16 +42,17 @@ export default function BookingPage() {
   const [bookings, setBookings] = useState<any[]>([]);
   const [selectedCoach, setSelectedCoach] = useState("");
   const [selectedSlot, setSelectedSlot] = useState("");
-  const [preferredDate, setPreferredDate] = useState("");
-  const [preferredTime, setPreferredTime] = useState("");
-  const [timezone, setTimezone] = useState("Asia/Kolkata");
+  const [detectedTimeZone, setDetectedTimeZone] = useState("Asia/Kolkata");
+  const [demoTime, setDemoTime] = useState<DemoTimeValue>({ date: "", time: "", timezone: "Asia/Kolkata" });
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     fetch("/api/availability", { cache: "no-store" }).then((r) => r.json()).then((payload) => setCoaches(Array.isArray(payload) ? payload : []));
     fetch("/api/bookings", { cache: "no-store" }).then((r) => r.json()).then((payload) => setBookings(Array.isArray(payload) ? payload : []));
-    setTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kolkata");
+    const deviceZone = normalizeDeviceTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone);
+    setDetectedTimeZone(deviceZone);
+    setDemoTime((current) => ({ ...current, timezone: deviceZone }));
   }, []);
 
   const slotOptions = useMemo<SlotOption[]>(() => {
@@ -90,7 +94,7 @@ export default function BookingPage() {
     return bookings.find((booking) =>
       booking.bookingType === "demo" &&
       ["pending", "confirmed"].includes(String(booking.status || "")) &&
-      !["CANCELLED", "COMPLETED", "STUDENT_NO_SHOW", "ABSENT", "CONVERTED", "CLOSED"].includes(String(booking.demoStatus || ""))
+      !["CANCELLED", "COMPLETED", "STUDENT_NO_SHOW", "ABSENT", "CONVERTED", "CLOSED", "ON_HOLD"].includes(String(booking.demoStatus || ""))
     ) || null;
   }, [bookings, isDemoStudent]);
 
@@ -100,18 +104,18 @@ export default function BookingPage() {
 
   async function book() {
     if (isDemoStudent) {
-      if (!preferredDate || !preferredTime || !timezone) return toast.error("Please choose your preferred date, time, and timezone.");
+      if (!demoTime.date) return toast.error("Please pick a day for the demo.");
+      if (!demoTime.time) return toast.error("Please pick a time for the demo.");
       setLoading(true);
       const res = await fetch("/api/bookings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          preferredDate,
-          preferredTime,
-          timezone,
+          preferredDate: demoTime.date,
+          preferredTime: demoTime.time,
+          timezone: demoTime.timezone,
           bookingType: "demo",
           notes,
-          idempotencyKey: `demo-${preferredDate}-${preferredTime}-${timezone}`,
         }),
       });
       const payload = await res.json().catch(() => ({}));
@@ -119,9 +123,9 @@ export default function BookingPage() {
       if (!res.ok) return toast.error(payload.error || "Could not request this demo time.");
       trackMetaSchedule(payload.metaEventId, payload._id);
       trackConversion("demo_booking");
-      toast.success(activeDemoBooking ? "Requested demo time changed" : "Demo request sent for academy review");
-      setPreferredDate("");
-      setPreferredTime("");
+      const requestedFor = describeInZone(zonedDateTime(demoTime.date, demoTime.time, demoTime.timezone), demoTime.timezone);
+      toast.success(activeDemoBooking ? `Demo time changed to ${requestedFor}` : `Demo requested for ${requestedFor}`);
+      setDemoTime((current) => ({ ...current, date: "", time: "" }));
       setNotes("");
       fetch("/api/bookings", { cache: "no-store" }).then((r) => r.json()).then((next) => setBookings(Array.isArray(next) ? next : []));
       return;
@@ -200,20 +204,7 @@ export default function BookingPage() {
             </div>
           ) : null}
           {isDemoStudent ? (
-            <div className="mt-4 grid gap-4 md:grid-cols-3">
-              <label className="space-y-2">
-                <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Preferred Date</span>
-                <input value={preferredDate} onChange={(event) => setPreferredDate(event.target.value)} type="date" min={new Date().toISOString().slice(0, 10)} className="h-12 w-full rounded-lg border border-slate-200 px-3 text-sm" />
-              </label>
-              <label className="space-y-2">
-                <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Preferred Time</span>
-                <input value={preferredTime} onChange={(event) => setPreferredTime(event.target.value)} type="time" className="h-12 w-full rounded-lg border border-slate-200 px-3 text-sm" />
-              </label>
-              <label className="space-y-2">
-                <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Timezone</span>
-                <input value={timezone} onChange={(event) => setTimezone(event.target.value)} className="h-12 w-full rounded-lg border border-slate-200 px-3 text-sm" />
-              </label>
-            </div>
+            <DemoTimePicker value={demoTime} onChange={setDemoTime} detectedTimeZone={detectedTimeZone} />
           ) : (
             <div className="mt-4 grid gap-4 md:grid-cols-2">
               <label className="space-y-2">
@@ -279,6 +270,12 @@ export default function BookingPage() {
       </section>
     </div>
   );
+}
+
+// Older devices still report India's zone by its pre-2008 name.
+function normalizeDeviceTimeZone(zone: string | undefined) {
+  if (!zone || !isValidTimeZone(zone)) return "Asia/Kolkata";
+  return zone === "Asia/Calcutta" ? "Asia/Kolkata" : zone;
 }
 
 function isApprovedBooking(booking: any) {

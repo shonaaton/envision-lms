@@ -15,6 +15,7 @@ import { monthlyDueDate, nextMonthlyDueDate } from "@/lib/feesMetrics";
 import { createHash, randomBytes } from "crypto";
 import { importantContactWhatsAppRecipientsByKeys } from "@/lib/importantContacts";
 import { sendWhatsAppAutomationTemplate, sendWhatsAppAutomationTemplates, whatsappRecipientName } from "@/lib/whatsappAutomationEvents";
+import { raiseCreditsExhaustedTask, resolveInvoiceTasks } from "@/lib/tasks/taskTriggers";
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -403,6 +404,7 @@ export async function markInvoicePaid(
     { new: true }
   );
   if (!invoice) return invoice;
+  await resolveInvoiceTasks(invoice, activity?.actor);
   await recordActivity({
     actor: activity?.actor,
     targetUser: invoice.student?.toString?.() || String(invoice.student || ""),
@@ -857,6 +859,7 @@ export async function consumeAttendanceCredit(studentId: string, attendanceId: s
         metadata: { kind: "low_credits", balance: nextBalance, threshold: lowCreditThreshold },
       });
     }
+    if (nextBalance === 0) await raiseCreditsExhaustedTask({ student: studentForCredits || { _id: studentId }, balance: nextBalance });
     if (nextBalance <= 0) {
       const creditAlertRecipients = importantContactWhatsAppRecipientsByKeys(["sayan_bose", "saptarshi"]);
       await sendWhatsAppAutomationTemplates(creditAlertRecipients.map((recipient) => ({

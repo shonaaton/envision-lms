@@ -8,6 +8,7 @@ import { recordActivity } from "@/lib/activity";
 import { consumeAttendanceCredit } from "@/lib/fees";
 import { requireCoachPayPermission, requireCoachSelf } from "@/lib/coachPayAccess";
 import { isValidRateScope } from "@/lib/coachPay";
+import { cancelPayProposalTask, raisePayProposalTask, resolveNoShowRulingTask, resolvePayProposalTask } from "@/lib/tasks/taskTriggers";
 import { CoachPayProposal, CoachRate, NoShowRuling, SessionPayOverride, PAY_KINDS, RATE_UNITS } from "@/models/CoachPay";
 import { Attendance } from "@/models/Attendance";
 import { Classroom } from "@/models/Classroom";
@@ -411,6 +412,7 @@ export async function saveNoShowRuling(formData: FormData) {
     },
     { upsert: true, new: true, setDefaultsOnInsert: true }
   );
+  await resolveNoShowRulingTask(sessionId, actorId);
 
   await recordActivity({
     actor: actorId,
@@ -563,6 +565,7 @@ export async function submitClassroomRateProposal(formData: FormData) {
     entityId: saved._id.toString(),
     metadata: { classroom, ...values },
   });
+  await raisePayProposalTask({ proposal: saved });
 
   refresh();
 }
@@ -622,6 +625,7 @@ export async function submitSessionRateProposal(formData: FormData) {
     entityId: saved._id.toString(),
     metadata: { classroom, sessionId, amount },
   });
+  await raisePayProposalTask({ proposal: saved });
 
   refresh();
 }
@@ -638,6 +642,7 @@ export async function withdrawProposal(formData: FormData) {
   // else's submission or erase one that has already been decided.
   const removed = await CoachPayProposal.findOneAndDelete({ _id: id, coach: coachId, status: "pending" }).lean();
   if (removed) {
+    await cancelPayProposalTask(id);
     await recordActivity({
       actor: coachId,
       targetUser: coachId,
@@ -737,6 +742,7 @@ export async function reviewProposal(formData: FormData) {
   proposal.reviewNote = reviewNote;
   if (appliedTo) proposal.appliedTo = appliedTo;
   await proposal.save();
+  await resolvePayProposalTask(proposal._id, actorId, proposal.status);
 
   await recordActivity({
     actor: actorId,

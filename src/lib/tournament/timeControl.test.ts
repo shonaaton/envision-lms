@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { berserkClock, formatTimeControl, resolveTimeControl, TIME_CONTROL_PRESETS, timeControlToMs } from "./timeControl";
+import { CLOCK_START_PLY, clocksRunning } from "./timeControl";
 
 describe("resolveTimeControl", () => {
   it("reads the new seconds field when present", () => {
@@ -85,4 +86,12 @@ describe("berserkClock", () => {
   it("halves an incrementless control", () => {
     expect(berserkClock({ initialSeconds: 180, incrementSeconds: 0 })).toEqual({ initialSeconds: 90, incrementSeconds: 0 });
   });
+});
+
+describe("when the clocks start", () => {
+  it("does not run before either side has moved", () => expect(clocksRunning({ status: "active", ply: 0 })).toBe(false));
+  it("does not run on Black's first move", () => expect(clocksRunning({ status: "active", ply: 1 })).toBe(false));
+  it("runs once both have moved", () => expect(clocksRunning({ status: "active", ply: CLOCK_START_PLY })).toBe(true));
+  it("reads the move list when ply is absent", () => expect(clocksRunning({ status: "active", moveHistorySAN: ["e4", "e5"] })).toBe(true));
+  it("never runs on a finished board", () => expect(clocksRunning({ status: "completed", ply: 40 })).toBe(false));
 });

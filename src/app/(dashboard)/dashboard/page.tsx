@@ -75,6 +75,7 @@ import { classroomsAsSeenByStudent } from "@/lib/classroomStudentExits";
 import { studentHomeworkFilter } from "@/lib/studentHomeworkVisibility";
 import RoleHome from "@/components/admin/RoleHome";
 import LeadOwnerDemosPanel from "@/components/sales/LeadOwnerDemosPanel";
+import MyPendingTasksPanel from "@/components/tasks/MyPendingTasksPanel";
 import { COURSE_TIER_VALUES, courseTierLabel } from "@/lib/courseTiers";
 
 export const dynamic = "force-dynamic";
@@ -612,7 +613,7 @@ function DemoStudentDashboard({
 
   const activeBooking = demoBooking
     && ["pending", "confirmed"].includes(String(demoBooking.status || ""))
-    && !["CANCELLED", "COMPLETED", "STUDENT_NO_SHOW", "ABSENT", "CONVERTED", "CLOSED"].includes(String(demoBooking.demoStatus || ""))
+    && !["CANCELLED", "COMPLETED", "STUDENT_NO_SHOW", "ABSENT", "CONVERTED", "CLOSED", "ON_HOLD"].includes(String(demoBooking.demoStatus || ""))
     ? demoBooking
     : null;
   const bookingApproved = String(activeBooking?.approvalStatus || "") === "approved";
@@ -1979,6 +1980,7 @@ async function CoachDashboardV2({ userId, searchParams, joinAllowed }: { userId:
 
   return (
     <div className="space-y-6 text-slate-950">
+      <MyPendingTasksPanel />
       <section className="overflow-hidden rounded-[28px] bg-gradient-to-br from-brand via-purple-800 to-brand-900 px-5 py-6 text-white shadow-[0_24px_60px_rgba(90,19,114,0.24)] sm:px-7">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
@@ -2973,6 +2975,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
 
   return (
     <div className="space-y-5 text-slate-950">
+      <MyPendingTasksPanel />
       {/* Admins and sub-admins see every demo lead with the salesperson the CRM assigned. */}
       <LeadOwnerDemosPanel userId={userId} scope="all" notice={{ ok: searchParams?.demoOk, error: searchParams?.demoError }} />
       <DashboardHero

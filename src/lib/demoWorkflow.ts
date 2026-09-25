@@ -1,6 +1,7 @@
 import { Types } from "mongoose";
 import { ACADEMY_TIME_ZONE, formatAcademyDateTime, zonedDateTime } from "@/lib/academyTime";
 import { recordActivity } from "@/lib/activity";
+import { isValidTimeZone } from "@/lib/demoTimeSlots";
 import { importantContacts, importantContactsFromEnvKeys, importantContactWhatsAppRecipientsByKeys } from "@/lib/importantContacts";
 import { demoNotificationRecipients, demoSubAdminEmails, type DemoStaffRecipient } from "@/lib/demoNotificationRecipients";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
@@ -11,7 +12,8 @@ import { OVERALL_STRENGTH, scaleLabel } from "@/lib/demoAssessmentScales";
 import { Booking } from "@/models/Booking";
 import { Batch } from "@/models/Batch";
 import { Notification } from "@/models/Fee";
-import { InternalTask } from "@/models/InternalTask";
+import { ensureAutoTask } from "@/lib/tasks/taskService";
+import { raiseDemoRebookTask } from "@/lib/tasks/taskTriggers";
 import { User } from "@/models/User";
 
 export const DEMO_MANAGEMENT_HREF = "/admin/demo-center";
@@ -128,6 +130,7 @@ export function normalizeDemoRequestedTime(input: {
   durationMinutes?: number;
 }) {
   const timezone = String(input.timezone || ACADEMY_TIME_ZONE).trim();
+  if (!isValidTimeZone(timezone)) throw new Error("Please pick your timezone from the list.");
   const durationMinutes = Math.max(15, Number(input.durationMinutes || 30));
   const start = input.preferredDate && input.preferredTime
     ? zonedDateTime(input.preferredDate, input.preferredTime, timezone)
@@ -339,27 +342,23 @@ export function demoRequestTaskOwner(admins: any[]) {
 export async function ensureDemoRequestTask(input: { booking: any; student: any; owner?: any }) {
   const bookingId = input.booking?._id;
   if (!bookingId || !Types.ObjectId.isValid(String(bookingId))) return null;
-  return InternalTask.findOneAndUpdate(
-    { referenceType: "DemoBooking", referenceId: bookingId },
-    {
-      $setOnInsert: {
-        title: `New Demo Request - ${input.student?.name || "Prospect"}`,
-        details: [
-          `Requested: ${input.booking.requestedLocalDateTime || localDateTimeLabel(input.booking.startAt, input.booking.requestedTimezone || ACADEMY_TIME_ZONE)}`,
-          `IST: ${input.booking.requestedIstDateTime || formatAcademyDateTime(input.booking.startAt, { timeZoneName: "short" })}`,
-          `Contact: ${[input.student?.countryCode, input.student?.phone].filter(Boolean).join(" ") || input.student?.email || "Not provided"}`,
-        ].join("\n"),
-        status: "pending",
-        priority: "normal",
-        assignedTo: input.owner?._id,
-        referenceType: "DemoBooking",
-        referenceId: bookingId,
-        actionHref: DEMO_MANAGEMENT_HREF,
-        metadata: { bookingId: String(bookingId), studentId: String(input.student?._id || ""), event: "DEMO_CLASS_REQUESTED" },
-      },
-    },
-    { upsert: true, new: true }
-  );
+  // Raised through the task manager so the owner is notified and sees it in Tasks.
+  return ensureAutoTask({
+    kind: "demo_request",
+    referenceType: "DemoBooking",
+    referenceId: bookingId,
+    title: `New Demo Request - ${input.student?.name || "Prospect"}`,
+    details: [
+      `Requested: ${input.booking.requestedLocalDateTime || localDateTimeLabel(input.booking.startAt, input.booking.requestedTimezone || ACADEMY_TIME_ZONE)}`,
+      `IST: ${input.booking.requestedIstDateTime || formatAcademyDateTime(input.booking.startAt, { timeZoneName: "short" })}`,
+      `Contact: ${[input.student?.countryCode, input.student?.phone].filter(Boolean).join(" ") || input.student?.email || "Not provided"}`,
+    ].join("\n"),
+    priority: "normal",
+    assignedTo: input.owner?._id,
+    pool: "admins",
+    actionHref: DEMO_MANAGEMENT_HREF,
+    metadata: { bookingId: String(bookingId), studentId: String(input.student?._id || ""), event: "DEMO_CLASS_REQUESTED" },
+  });
 }
 
 const COACH_RECOMMENDATION_LABELS: Record<string, string> = {
@@ -628,6 +627,7 @@ export async function notifyDemoMissed(input: { booking: any; student?: any; coa
     : await Booking.findById(bookingId).populate("student instructor assignedCoach", "name email phone countryCode username role").lean();
   const student = input.student || booking?.student;
   const classTime = demoClassTimeLabel(booking?.startAt || input.classroom?.classDate || new Date());
+  await raiseDemoRebookTask({ booking: booking || input.booking, student, ownerId: booking?.salesOwner, reason: "missed" });
   const recipients = [
     ...importantContactWhatsAppRecipientsByKeys(["mohammed_shahzib"]).map((recipient) => ({
       recipient,

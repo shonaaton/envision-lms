@@ -19,6 +19,8 @@ export async function register() {
   const { academyDateKey } = await import("@/lib/academyTime");
   const { runTournamentTick } = await import("@/lib/tournamentLifecycle");
   const { processDueCourseCompletions } = await import("@/lib/courseCompletionSweep");
+  const { processDailyTaskReminders } = await import("@/lib/tasks/taskReminders");
+  const { processMonthlyFeedbackCycle } = await import("@/lib/feedback/feedbackService");
 
   installRuntimeProcessLogging();
   installRuntimeStderrCapture();
@@ -76,6 +78,27 @@ export async function register() {
       name: "course_completions",
       intervalMs: 60 * 60_000,
       run: () => processDueCourseCompletions(),
+    },
+    {
+      /**
+       * Staff task digest (once a day after TASK_REMINDER_HOUR, academy time)
+       * plus a one-off notice when a task passes its due date. Swept hourly and
+       * claimed per person per day, like the monthly attendance summaries.
+       */
+      name: "task_daily_reminders",
+      intervalMs: 60 * 60_000,
+      run: () => processDailyTaskReminders(),
+    },
+    {
+      /**
+       * Opens each month's coach feedback on the 25th: one empty report and one
+       * task per student. Swept hourly until the due date (the 5th) so a
+       * restart cannot miss it and late joiners still get a report; the unique
+       * {month, student, coach} index makes every re-run a no-op.
+       */
+      name: "monthly_feedback_cycle",
+      intervalMs: 60 * 60_000,
+      run: () => processMonthlyFeedbackCycle(),
     },
     {
       /** Warns families a week before a paused enrolment restarts billing. */

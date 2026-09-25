@@ -3,7 +3,7 @@ import { classifyCrmStage, crmStageLabel, demoStatusToStage, shouldSkipCrmPush }
 import { crmClientConfig, pushLeadStage } from "@/lib/crm/client";
 import { crmPhoneNumber, emailKey, phoneKey, phoneVariants } from "@/lib/crm/identity";
 
-const ENV_KEYS = ["CRM_STAGE_DEMO_REQUESTED", "CRM_DEMO_STAGES", "CRM_CONVERTED_STAGES", "CRM_CLOSED_STAGES", "CRM_DEFAULT_COUNTRY_CODE"];
+const ENV_KEYS = ["CRM_STAGE_DEMO_REQUESTED", "CRM_STAGE_DEMO_HOLD", "CRM_HOLD_STAGES", "CRM_DEMO_STAGES", "CRM_CONVERTED_STAGES", "CRM_CLOSED_STAGES", "CRM_DEFAULT_COUNTRY_CODE"];
 
 afterEach(() => {
   for (const key of ENV_KEYS) delete process.env[key];
@@ -52,6 +52,25 @@ describe("demoStatusToStage", () => {
   it("pushes nothing for a status with no CRM meaning", () => {
     expect(demoStatusToStage(undefined)).toBeNull();
     expect(demoStatusToStage("SOME_FUTURE_STATE")).toBeNull();
+  });
+});
+
+describe("demo hold", () => {
+  it("pushes a held demo to the Demo Hold stage", () => {
+    expect(demoStatusToStage("ON_HOLD")).toBe("DEMO_HOLD");
+    expect(crmStageLabel("DEMO_HOLD")).toBe("Demo Hold");
+  });
+
+  it("reads Demo Hold as hold, not as a demo revival, so the echo does not reopen it", () => {
+    expect(classifyCrmStage(crmStageLabel("DEMO_HOLD"))).toBe("hold");
+    expect(classifyCrmStage("demo  hold")).toBe("hold");
+    expect(classifyCrmStage("Demo On Hold")).toBe("hold");
+  });
+
+  it("follows a renamed hold stage from the environment", () => {
+    process.env.CRM_STAGE_DEMO_HOLD = "Parked Demo";
+    expect(crmStageLabel("DEMO_HOLD")).toBe("Parked Demo");
+    expect(classifyCrmStage("Parked Demo")).toBe("hold");
   });
 });
 

@@ -11,6 +11,7 @@ import { demoSalesRecipients } from "@/lib/demoNotificationRecipients";
 import { curriculumByTier, curriculumSessionByNumber } from "@/lib/demoCurriculum";
 import DemoAssessmentLeaveGuard from "@/components/demo/DemoAssessmentLeaveGuard";
 import DemoFeedbackForm, { type SalesPersonOption } from "@/components/demo/DemoFeedbackForm";
+import { raiseConversionCallTask, resolveDemoAssessmentTask } from "@/lib/tasks/taskTriggers";
 
 export const dynamic = "force-dynamic";
 
@@ -91,6 +92,10 @@ async function submitDemoFeedback(formData: FormData) {
     { upsert: true, new: true }
   );
   await Booking.findByIdAndUpdate(booking._id, { demoStatus: "COMPLETED", feedbackStatus: "submitted" });
+  await resolveDemoAssessmentTask(booking._id, actorId);
+  if (!alreadySubmitted) {
+    await raiseConversionCallTask({ booking, student: booking.student, ownerId: booking.salesOwner || salesPerson?.id, level: recommendedCourseLevel });
+  }
   // Whether the hand-off to sales has already happened, read before the upsert
   // above because the upsert is what sets it: without this every re-save sent
   // the whole "assessment submitted" fan-out again, and a coach correcting a

@@ -6,6 +6,7 @@ import { importantContactWhatsAppRecipientsByKeys, importantContactsByRole } fro
 import { sendWhatsAppAutomationTemplates } from "@/lib/whatsappAutomationEvents";
 import { StudentPause } from "@/models/StudentPause";
 import { User } from "@/models/User";
+import { raisePauseReinstateTask } from "@/lib/tasks/taskTriggers";
 
 /**
  * Notifications for changes in a student's standing.
@@ -109,6 +110,7 @@ export async function processDuePauseExpiryNotices(now = new Date()) {
 
     const student: any = await loadStudent(pause.student);
     if (!student) continue;
+    await raisePauseReinstateTask({ pause, student });
     const restart = dayLabel(pause.expectedRestartDate || pause.pausedUntil);
     const body = [
       `Your break ends on ${dayLabel(pause.pausedUntil)} and classes are due to restart on ${restart}.`,

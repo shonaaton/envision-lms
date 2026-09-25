@@ -8,6 +8,7 @@ import { isPromotionMove, promotionFromBoardPiece, type PendingPromotion, type P
 import { ArrowLeft, Flag, Handshake, Pause, Play, RefreshCcw, Trophy, X, Zap } from "lucide-react";
 import { useTournamentSocket } from "@/lib/useTournamentSocket";
 import { clockBaselineFromGame, deriveClocks, useNow, type ClockBaseline } from "@/lib/useLiveClock";
+import { CLOCK_START_PLY } from "@/lib/tournament/timeControl";
 import { applyLeaderboardRows, findMyPairing, mergeLiveGames, rankOf } from "@/lib/tournament/leaderboard";
 import { BOARD_DARK_SQUARE, BOARD_LIGHT_SQUARE, buildBoardSquareStyles, findKingSquare } from "@/lib/tournament/boardTheme";
 import { legalTargetsFromGame } from "@/lib/chessboardUi";
@@ -190,7 +191,7 @@ export function TournamentPlayClient({
           blackClockMs: Number(payload.blackClockMs || 0),
           turn: payload.turn === "b" ? "b" : "w",
           since: Date.now(),
-          running: payload.status === "active",
+          running: payload.status === "active" && Number(payload.ply || 0) >= CLOCK_START_PLY,
         });
       },
       onGameFlags: (payload: any) => {
@@ -310,11 +311,11 @@ export function TournamentPlayClient({
     }
   }, [game?.fen]);
 
-  // Who still owes a first move: White from the start, and in Swiss Black too
-  // once White has moved. Mirrors lib/tournament/firstMove.ts.
+  // Who still owes a first move: White from the start, then Black once White
+  // has moved. Mirrors lib/tournament/firstMove.ts.
   const plyNow = Number(game?.moveHistorySAN?.length || 0);
   const firstMoveOwedBy: "white" | "black" | null =
-    !gameIsActive || !game?.firstMoveDeadlineAt ? null : plyNow === 0 ? "white" : plyNow === 1 && !isArena ? "black" : null;
+    !gameIsActive || !game?.firstMoveDeadlineAt ? null : plyNow === 0 ? "white" : plyNow === 1 ? "black" : null;
   const firstMoveSecondsLeft = useMemo(() => {
     if (!firstMoveOwedBy) return 0;
     return Math.max(0, Math.ceil((new Date(game.firstMoveDeadlineAt).getTime() - now) / 1000));
@@ -629,8 +630,8 @@ export function TournamentPlayClient({
             ? terminationLabel(game)
             : firstMoveSecondsLeft > 0
               ? firstMoveOwedBy === myColor
-                ? `Make your first move within ${firstMoveSecondsLeft}s, or ${isArena ? "the board is abandoned" : "you forfeit this game"}`
-                : `Your opponent has ${firstMoveSecondsLeft}s to make their first move${isArena ? "" : ", or you win by forfeit"}`
+                ? `Make your first move within ${firstMoveSecondsLeft}s, or ${isArena ? "the board is abandoned and you are paused" : "you forfeit this game"}`
+                : `Your opponent has ${firstMoveSecondsLeft}s to make their first move${isArena ? ", or you are paired again" : ", or you win by forfeit"}`
               : undefined;
 
   const showResultDialog = Boolean(game) && !gameIsActive && dismissedResultFor !== gameId;
@@ -1094,7 +1095,9 @@ function WaitingPanel({
 
       {liveGames.length ? (
         <div className="mx-auto mt-5 w-full max-w-xl">
-          <h3 className="mb-1.5 text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Games still being played</h3>
+          <h3 className="mb-1.5 text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
+            {tournamentFinished ? "Finishing after the end (not scored)" : "Games still being played"}
+          </h3>
           <ol className="divide-y divide-slate-100 rounded-lg border border-slate-200/80">
             {liveGames.slice(0, 6).map((liveGame: any) => (
               <li key={String(liveGame._id)} className="flex items-center gap-2 px-3 py-2 text-sm">

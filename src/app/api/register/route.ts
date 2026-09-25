@@ -11,6 +11,7 @@ import { notifyDemoAccountCreated } from "@/lib/demoWorkflow";
 import { flagDuplicateAccount } from "@/lib/duplicateAccounts";
 import { canonicalEmail } from "@/lib/identityMatch";
 import { sendMetaConversionEvent } from "@/lib/metaConversions";
+import { raiseCoachApplicationTask } from "@/lib/tasks/taskTriggers";
 
 export const dynamic = "force-dynamic";
 
@@ -60,6 +61,7 @@ export async function POST(req: Request) {
         availabilityNote: data.availabilityNote,
         message: data.message,
       });
+      await raiseCoachApplicationTask(application, { name: data.name });
       return NextResponse.json({ id: application._id.toString(), type: "coach_application" });
     }
 

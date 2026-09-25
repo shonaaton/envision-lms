@@ -4,6 +4,7 @@ import { FEATURE_DEFINITIONS } from "@/lib/featureRegistry";
 import { resolveAccessRole } from "@/lib/accessRoles";
 import { isSalesStaff } from "@/lib/demoLeadOwner";
 import LeadOwnerDemosPanel, { type DemoPanelNotice } from "@/components/sales/LeadOwnerDemosPanel";
+import MyPendingTasksPanel from "@/components/tasks/MyPendingTasksPanel";
 
 export default async function RoleHome({ user, demoNotice }: { user: SessionUser & { name?: string | null }; demoNotice?: DemoPanelNotice }) {
   const assigned = user.id ? await resolveAccessRole(user.id) : null;
@@ -12,6 +13,7 @@ export default async function RoleHome({ user, demoNotice }: { user: SessionUser
   const features = FEATURE_DEFINITIONS.filter(feature => state[feature.key]?.visible && state[feature.key]?.status !== "coming_soon" && feature.routes.length && !["dashboard", "accountSettings", "notifications"].includes(feature.key));
   return <div className="space-y-5">
     <div className="rounded-xl border border-purple-100 bg-white p-5"><p className="text-xs font-semibold text-purple-700">{assigned?.roleName || "Staff workspace"}</p><h1 className="mt-1 text-2xl font-semibold">Welcome, {user.name || "Team member"}</h1><p className="mt-2 text-sm text-slate-500">{assigned && !assigned.roleEnabled ? "Your role is inactive. Contact the academy administrator to restore access." : "Your workspace includes the features assigned to your role."}</p></div>
+    <MyPendingTasksPanel />
     {user.id && (salesStaff || !["admin", "sub-admin"].includes(String((user as any).role))
       ? <LeadOwnerDemosPanel userId={user.id} scope="mine" showEmpty={salesStaff} notice={demoNotice} />
       : <LeadOwnerDemosPanel userId={user.id} scope="all" notice={demoNotice} />)}

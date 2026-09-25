@@ -5,6 +5,7 @@ import { dbConnect } from "@/lib/db";
 import { recordActivity } from "@/lib/activity";
 import { AskCoachMessage } from "@/models/AskCoach";
 import { notifyUser } from "@/lib/askCoach";
+import { resolveModerationTask } from "@/lib/tasks/taskTriggers";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +41,7 @@ export async function PATCH(req: Request) {
     .populate("sender receiver", "name username email role")
     .populate("batch", "name")
     .lean();
+  if (["approve", "hide", "delete", "review", "warn"].includes(action)) await resolveModerationTask(message._id, adminId, action);
   await recordActivity({
     actor: adminId,
     targetUser: message.sender?.toString?.() || String(message.sender || ""),

@@ -4,6 +4,7 @@ import { canonicalEmail, canonicalPhone, duplicateReasonSummary, type DuplicateR
 import { demoManagementUsers, DEMO_MANAGEMENT_HREF } from "@/lib/demoWorkflow";
 import { Notification } from "@/models/Fee";
 import { User } from "@/models/User";
+import { raiseDuplicateReviewTask, resolveDuplicateReviewTask } from "@/lib/tasks/taskTriggers";
 
 /**
  * Duplicate accounts are flagged for a human, never refused.
@@ -115,6 +116,7 @@ export async function flagDuplicateAccount(user: any): Promise<DuplicateMatch[]>
   const existing = matches.map((match) => `${match.name || "Unnamed"} (${match.email || "no email"})`).join(", ");
   const message = `${user.name || "A new account"} (${user.email || "no email"}) matches an existing account: ${existing}. ${duplicateReasonSummary(reasons)}. This is often a sibling - review it before treating it as a duplicate.`;
   await notifyDuplicateFlag(userId, message).catch((error) => console.error("Duplicate account notification failed", error));
+  await raiseDuplicateReviewTask(user, matches.length);
   await recordActivity({
     actor: userId,
     targetUser: userId,
@@ -173,6 +175,7 @@ export async function reviewDuplicateFlag(input: {
     entityId: input.userId,
     metadata: { decision: input.decision, note: input.note || "", event: "DUPLICATE_ACCOUNT_REVIEWED" },
   }).catch(() => undefined);
+  await resolveDuplicateReviewTask(input.userId, input.actorId);
   return { name: user.name || "The account", decision: input.decision };
 }
 

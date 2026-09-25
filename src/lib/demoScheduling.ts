@@ -14,6 +14,7 @@ import { parseMeetingUrlInput } from "@/lib/meetingUrl";
 import { Booking } from "@/models/Booking";
 import { Notification } from "@/models/Fee";
 import { User } from "@/models/User";
+import { resolveDemoRequestTask, resolveLeadTasksOnBooking } from "@/lib/tasks/taskTriggers";
 
 /**
  * Booking and confirming demo classes, shared by the Demo Center and the
@@ -108,6 +109,8 @@ export async function confirmDemoBooking(input: ScheduleInput & { bookingId: str
   ]);
   await notifyDemoApproved({ booking: updatedBooking, student: updatedBooking.student, coach: updatedBooking.instructor, classroom }).catch(() => undefined);
   await notifyLeadOwnerOfDemo({ bookingId: booking._id.toString(), event: "confirmed", coachName: updatedBooking.instructor?.name }).catch((error) => console.error("Demo lead owner confirmation notice failed", error));
+  await resolveDemoRequestTask(booking._id, actorId);
+  await resolveLeadTasksOnBooking(studentId, actorId);
   await recordActivity({ actor: actorId, targetUser: String(booking.student?._id || booking.student || ""), type: "demo.booking.approved", label: "Approved demo and created classroom", entityType: "Booking", entityId: booking._id.toString(), metadata: { classroom: classroom._id.toString(), coach: coachId, event: "DEMO_CLASSROOM_CREATED" } });
   return { ok: true, start };
 }

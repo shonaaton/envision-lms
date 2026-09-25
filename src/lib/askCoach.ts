@@ -6,6 +6,7 @@ import { User } from "@/models/User";
 import { sendEmailAutomation } from "@/lib/emailAutomation";
 import { resolvePublicAppUrl } from "@/lib/appUrl";
 import { sendWhatsAppAutomationTemplate } from "@/lib/whatsappAutomationEvents";
+import { raiseModerationTask } from "@/lib/tasks/taskTriggers";
 
 const badWords = ["abuse", "idiot", "stupid", "shut up", "bloody", "damn"];
 
@@ -182,6 +183,7 @@ export async function createAskCoachMessage(input: {
         <p><strong>Flagged message:</strong></p><blockquote>${escapeHtml(input.body)}</blockquote>
         <p><a href="${reviewUrl}">Review the flagged message</a></p>`,
     });
+    await raiseModerationTask(message, safety.reasons, href);
     await notifyUser(input.sender, "Message flagged for review", "Your message was hidden and sent for admin review because it may contain restricted content.", {
       message: message._id,
       reasons: safety.reasons,

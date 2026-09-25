@@ -7,6 +7,8 @@ import { recordActivity } from "@/lib/activity";
 import { canStudentAccessHomework } from "@/lib/homeworkAccess";
 import { calculateHomeworkReward } from "@/lib/rewards";
 import { sendHomeworkSubmittedConfirmationEmail } from "@/lib/studentCommunicationEmails";
+import { raiseHomeworkReviewTask } from "@/lib/tasks/taskTriggers";
+import { Classroom } from "@/models/Classroom";
 
 export const dynamic = "force-dynamic";
 
@@ -166,6 +168,15 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     entityId: hw._id.toString(),
     metadata: { totalScore, accuracy, attemptsUsed: attemptsUsed + 1, mistakes, hintsUsed },
   });
+
+  // Written answers have no auto-grading, so a coach has to read them.
+  if (graded.some((answer: any) => answer.needsReview)) {
+    const classroom: any = hw.classroom ? await Classroom.findById(hw.classroom).select("coach instructor").lean() : null;
+    const coachId = classroom?.coach || classroom?.instructor || hw.instructor;
+    if (coachId) {
+      await raiseHomeworkReviewTask({ submission: sub, homework: hw, student: { _id: student, name: (session.user as any).name }, coachId });
+    }
+  }
 
   const { xp, coins, badge } = calculateHomeworkReward({
     totalAutoChecked,

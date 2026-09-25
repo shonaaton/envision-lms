@@ -66,3 +66,18 @@ export function berserkClock(control: TimeControl) {
 export function canBerserkTimeControl(control: TimeControl) {
   return control.initialSeconds > 0;
 }
+
+/**
+ * Clocks start once both players have made their first move, as on Lichess.
+ * Before that a board is governed by the first-move deadlines instead
+ * (lib/tournament/firstMove.ts). Previously each clock ran from the moment the
+ * board was created, so a student who took twenty seconds to notice a pairing
+ * lost twenty seconds of a three-minute game before touching a piece.
+ */
+export const CLOCK_START_PLY = 2;
+
+export function clocksRunning(game: { status?: string; ply?: number; moveHistorySAN?: string[] } | null | undefined) {
+  if (!game || game.status !== "active") return false;
+  const ply = Number(game.ply ?? (game.moveHistorySAN || []).length ?? 0);
+  return ply >= CLOCK_START_PLY;
+}

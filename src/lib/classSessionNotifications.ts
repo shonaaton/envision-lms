@@ -10,6 +10,7 @@ import { sendWhatsAppAutomationTemplate, sendWhatsAppAutomationTemplates, whatsa
 import { Classroom } from "@/models/Classroom";
 import { Notification } from "@/models/Fee";
 import { User } from "@/models/User";
+import { raiseCoachMissingTask } from "@/lib/tasks/taskTriggers";
 
 /**
  * Class lifecycle notifications.
@@ -283,6 +284,8 @@ async function sendCoachMissingAlert(classroom: any, session: any, start: Date) 
       { ordered: false },
     ).catch(() => null);
   }
+
+  await raiseCoachMissingTask({ classroom, session, coachName });
 
   return { alerted: staff.length };
 }

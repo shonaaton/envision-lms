@@ -6,6 +6,7 @@ export type NamedRole = { _id: string; name: string; description: string; permis
 export const PROTECTED_ROLE_FEATURES = ["featureAccess", "roleManagement"];
 export const ESSENTIAL_ROLE_GRANTS: RoleGrants = {
   dashboard: ["view"], accountSettings: ["view", "edit", "security"], notifications: ["view"],
+  taskManager: ["view", "create", "edit"],
 };
 export const SALES_ROLE_GRANTS: RoleGrants = {
   ...ESSENTIAL_ROLE_GRANTS, salesPerformance: ["view"], salesDirectory: ["view"],
@@ -37,5 +38,8 @@ export function validateRoleGrants(input: RoleGrants): RoleGrants {
 
 export function roleHasPermission(grants: RoleGrants | undefined, key: string, permission: string) {
   if (PROTECTED_ROLE_FEATURES.includes(key)) return false;
+  // Essentials are merged in on save, but roles saved before an essential was
+  // added would otherwise lack it until someone re-saved them.
+  if (ESSENTIAL_ROLE_GRANTS[key]?.includes(permission)) return true;
   return Boolean(grants?.[key]?.includes(permission) || grants?.[key]?.includes("full"));
 }

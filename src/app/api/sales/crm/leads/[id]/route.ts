@@ -5,7 +5,7 @@ import { getStageCatalogue } from "@/lib/crm/catalogue";
 import { toLeadView } from "@/lib/crm/leads";
 import { recordPortalStageChange } from "@/lib/crm/mirror";
 import { classifyCrmStage } from "@/lib/crm/stages";
-import { closeDemoFromCrm, convertStudentFromCrm, reopenDemoFromCrm } from "@/lib/crm/sync";
+import { closeDemoFromCrm, convertStudentFromCrm, holdDemoFromCrm, reopenDemoFromCrm } from "@/lib/crm/sync";
 import { syncLeadStageToMeta } from "@/lib/metaCrmEvents";
 import { logSalesAction, requireSalesViewer } from "@/lib/salesAudit";
 import { CrmLead } from "@/models/CrmLead";
@@ -108,6 +108,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       const input = { userId, stageName: stage, crmLeadId: record.crmLeadId };
       if (kind === "closed") applied = await closeDemoFromCrm(input).catch(() => ({ error: true }));
       else if (kind === "converted") applied = await convertStudentFromCrm(input).catch(() => ({ error: true }));
+      else if (kind === "hold") applied = await holdDemoFromCrm(input).catch(() => ({ error: true }));
       else if (kind === "demo") applied = await reopenDemoFromCrm(input).catch(() => ({ error: true }));
     }
 

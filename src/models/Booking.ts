@@ -27,7 +27,7 @@ const BookingSchema = new Schema(
     bookingType: { type: String, enum: ["demo", "credit_class", "regular"], default: "regular", index: true },
     demoStatus: {
       type: String,
-      enum: ["REQUESTED", "COACH_ASSIGNED", "APPROVED", "CLASSROOM_CREATED", "ASSESSMENT_PENDING", "COMPLETED", "STUDENT_NO_SHOW", "ABSENT", "CANCELLED", "RESCHEDULE_REQUESTED", "CONVERTED", "CLOSED"],
+      enum: ["REQUESTED", "COACH_ASSIGNED", "APPROVED", "CLASSROOM_CREATED", "ASSESSMENT_PENDING", "COMPLETED", "STUDENT_NO_SHOW", "ABSENT", "CANCELLED", "RESCHEDULE_REQUESTED", "CONVERTED", "CLOSED", "ON_HOLD"],
       index: true,
     },
     approvalStatus: {
@@ -88,6 +88,12 @@ const BookingSchema = new Schema(
     // Archived demos are hidden from the working tabs but never dropped, so
     // conversion reporting and the audit trail stay intact. Restoring is just
     // clearing these fields.
+    // Demo Hold: the lead is parked - the parent asked to wait, exams, travel -
+    // without being written off. The classroom is cancelled, the booking drops
+    // out of the working tabs and the CRM moves to its "Demo Hold" stage.
+    heldAt: Date,
+    heldBy: { type: Schema.Types.ObjectId, ref: "User" },
+    holdReason: String,
     archivedAt: { type: Date, index: true },
     archivedBy: { type: Schema.Types.ObjectId, ref: "User" },
     archiveReason: String,

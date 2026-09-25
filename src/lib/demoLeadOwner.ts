@@ -14,6 +14,7 @@ import { Booking } from "@/models/Booking";
 import { CrmLeadRecord } from "@/models/CrmLeadRecord";
 import { Notification } from "@/models/Fee";
 import { User } from "@/models/User";
+import { raiseLeadFollowUpTask, reassignLeadTasks } from "@/lib/tasks/taskTriggers";
 
 /**
  * Routing demo leads to the salesperson who owns them.
@@ -368,7 +369,11 @@ export async function processLeadOwnerFollowUps(now = new Date()) {
       dedupKey: `demo_lead_owner:unbooked:${String(account._id)}:${owner.userId}`,
       metadata: { demoUserId: String(account._id) },
     }).catch(() => false);
-    if (sent) followUpsSent++;
+    if (sent) {
+      followUpsSent++;
+      // Raised only on the first notice, so a rep who closes it isn't chased every sweep.
+      await raiseLeadFollowUpTask({ student: account, ownerId: owner.userId, hours: Math.round(unbookedFollowUpDelayMs() / 3_600_000) });
+    }
   }
 
   const unrouted: any[] = await Booking.find({
@@ -400,6 +405,7 @@ const DEMO_STATUS_LABELS: Record<string, string> = {
   STUDENT_NO_SHOW: "Student no-show",
   ABSENT: "Absent",
   CONVERTED: "Converted",
+  ON_HOLD: "Demo hold",
 };
 
 export type DemoBoardScope = "mine" | "all";
@@ -624,6 +630,7 @@ export async function assignLeadOwnerManually(input: { studentId: string; ownerI
       dedupKey: `demo_lead_owner:assigned:${studentId}:${owner.id}:${now.toISOString()}`,
       metadata: { demoUserId: studentId },
     }).catch(() => false);
+    await reassignLeadTasks({ studentId, bookingIds: bookings.map((booking) => booking._id), ownerId: owner.id });
   }
 
   await recordActivity({

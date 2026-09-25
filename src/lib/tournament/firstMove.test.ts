@@ -17,7 +17,7 @@ function game(overrides: Record<string, any> = {}) {
 describe("who owes a first move", () => {
   it("is White at the start", () => expect(sideOwingFirstMove(game())).toBe("white"));
   it("is Black after White's first move in Swiss", () => expect(sideOwingFirstMove(game({ ply: 1 }))).toBe("black"));
-  it("is nobody after White's first move in Arena", () => expect(sideOwingFirstMove(game({ ply: 1, source: "arena" }))).toBeNull());
+  it("is Black after White's first move in Arena too", () => expect(sideOwingFirstMove(game({ ply: 1, source: "arena" }))).toBe("black"));
   it("is nobody once both have moved", () => expect(sideOwingFirstMove(game({ ply: 2 }))).toBeNull());
 });
 
@@ -65,7 +65,16 @@ describe("no-show outcome", () => {
     expect(noShowOutcome(current, expired)).toEqual({ action: "forfeit", winner: "white", absent: ["black"] });
   });
 
-  it("keeps Arena's abort-and-requeue behaviour", () => {
-    expect(noShowOutcome(game({ source: "arena", blackOnlineAt: new Date(T0) }), expired)).toEqual({ action: "abort", absent: [] });
+  it("aborts an Arena board and names the player who never started", () => {
+    expect(noShowOutcome(game({ source: "arena", blackOnlineAt: new Date(T0) }), expired)).toEqual({ action: "abort", absent: ["white"] });
+  });
+
+  it("names Black in Arena when Black never answered White's first move", () => {
+    const current = game({ source: "arena", ply: 1, lastMoveAt: new Date(T0), firstMoveDeadlineAt: new Date(T0 + FIRST_MOVE_GRACE_MS) });
+    expect(noShowOutcome(current, expired)).toEqual({ action: "abort", absent: ["black"] });
+  });
+
+  it("names both in Arena when neither ever opened the board", () => {
+    expect(noShowOutcome(game({ source: "arena" }), expired)).toEqual({ action: "abort", absent: ["white", "black"] });
   });
 });

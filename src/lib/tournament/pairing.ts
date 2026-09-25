@@ -62,6 +62,39 @@ export const REPEAT_PENALTY = 20;
 export const SAME_COLOUR_PENALTY = 1;
 /** Past this much waiting, score proximity stops constraining the pairing. */
 export const PROXIMITY_RELAX_MS = 30_000;
+/**
+ * How long two players who just played each other wait for someone else before
+ * being paired again. Pairing runs the instant a board ends, when those two are
+ * usually the only players free, so without this hold nine arena pairings in
+ * ten were immediate rematches and the field locked into fixed pairs. Measured
+ * in simulation, 40 s takes a 12-player arena from 93% rematches to about 12%
+ * while keeping 95% of waits under ~45 s; longer holds cost more waiting than
+ * they save.
+ */
+export const REMATCH_HOLD_MS = 40_000;
+
+export type ArenaPairingContext = {
+  history: Map<string, Set<string>>;
+  recent: Map<string, string>;
+  /**
+   * Players currently in a game, who will be free again soon. When nobody else
+   * can ever become free, holding back a rematch only makes both players wait
+   * for nothing, so the hold is skipped.
+   */
+  playing?: number;
+  rematchHoldMs?: number;
+};
+
+/** Whether pairing these two now would be an immediate rematch worth holding back. */
+export function rematchHeld(a: PairingCandidate, b: PairingCandidate, waiting: number, context: ArenaPairingContext) {
+  const isRematch = context.recent.get(a.playerKey) === b.playerKey || context.recent.get(b.playerKey) === a.playerKey;
+  if (!isRematch) return false;
+  // Someone else is waiting, or will be once a board ends.
+  const alternatives = waiting > 2 || Number(context.playing || 0) > 0;
+  if (!alternatives) return false;
+  const hold = context.rematchHoldMs ?? REMATCH_HOLD_MS;
+  return Math.min(a.waitingMs, b.waitingMs) < hold;
+}
 
 /**
  * Score one possible opponent. Lower is better.
@@ -98,19 +131,36 @@ export function pickOpponent(
 
 /**
  * Pair everyone who is waiting. Longest wait is served first, so nobody is
- * starved by a stream of newly-free players.
+ * starved by a stream of newly-free players. A player whose only possible
+ * opponent is the one they just played waits (briefly) rather than rematching;
+ * the next pass — the 5-second tick, or the next board to end — picks them up.
  */
-export function buildArenaPairings(waiting: PairingCandidate[], context: { history: Map<string, Set<string>>; recent: Map<string, string> }) {
+export function buildArenaPairings(waiting: PairingCandidate[], context: ArenaPairingContext) {
   const queue = [...waiting].sort((a, b) => b.waitingMs - a.waitingMs);
   const pairs: Array<{ white: PairingCandidate; black: PairingCandidate }> = [];
-  while (queue.length >= 2) {
+  const unpaired: PairingCandidate[] = [];
+  while (queue.length) {
     const player = queue.shift()!;
-    const choice = pickOpponent(player, queue, context);
-    if (!choice) break;
-    queue.splice(choice.index, 1);
+    const allowed = queue.filter((candidate) => !rematchHeld(player, candidate, waiting.length, context));
+    const choice = pickOpponent(player, allowed, context);
+    if (!choice) {
+      unpaired.push(player);
+      continue;
+    }
+    queue.splice(queue.indexOf(choice.candidate), 1);
     pairs.push(resolveColors(player, choice.candidate) as { white: PairingCandidate; black: PairingCandidate });
   }
-  return { pairs, unpaired: queue };
+  return { pairs, unpaired };
+}
+
+/**
+ * How long a player has been free: since their last game ended, or since they
+ * joined or resumed, whichever is later. Measuring from the join time made
+ * every player look equally long-waiting, which switched off both the
+ * longest-wait priority and score proximity after the first half-minute.
+ */
+export function freeSinceMs(input: { lastGameEndedAt?: number | null; queuedAt?: number | null; joinedAt?: number | null; startedAt?: number | null }) {
+  return Math.max(Number(input.lastGameEndedAt || 0), Number(input.queuedAt || 0), Number(input.joinedAt || 0), Number(input.startedAt || 0));
 }
 
 /**

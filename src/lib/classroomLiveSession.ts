@@ -8,6 +8,7 @@ import { notifyHomeworkNotAssigned } from "@/lib/homeworkAutomationAlerts";
 import { notifyFailure } from "@/lib/failureNotifications";
 import { ensureTopicContinuationSession, normalizeSessionOutcome, recalculateFutureSessionTopics, shouldContinueTopic, topicCompletedForOutcome } from "@/lib/classroomLifecycle";
 import { actualSessionMinutes, punctualityBreakdown, scheduledPaymentMinutes } from "@/lib/teachingStats";
+import { raiseDemoAssessmentTask, raiseDemoRebookTask } from "@/lib/tasks/taskTriggers";
 
 export function getRequestedSessionId(req: Request) {
   const url = new URL(req.url);
@@ -150,6 +151,7 @@ export async function markScheduledSessionFinished({
         { upsert: true }
       );
       await Booking.findByIdAndUpdate(booking._id, { demoStatus: "ASSESSMENT_PENDING", feedbackStatus: "pending" });
+      await raiseDemoAssessmentTask({ booking, coachId: target.substituteCoach || classroom.coach || classroom.instructor });
     }
   } else if (isDemoClassroom && (outcome === "student_no_show" || outcome === "absent" || outcome === "missed" || outcome === "abandoned")) {
     const booking: any = classroom.demoBooking
@@ -162,6 +164,7 @@ export async function markScheduledSessionFinished({
         demoStatus: outcome === "student_no_show" ? "STUDENT_NO_SHOW" : "ABSENT",
         feedbackStatus: "not_required",
       });
+      await raiseDemoRebookTask({ booking, student: null, ownerId: booking.salesOwner, reason: outcome === "student_no_show" ? "a no-show" : "missed" });
     }
   } else if (outcome === "completed") {
     try {

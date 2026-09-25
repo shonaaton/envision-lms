@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { dbConnect } from "@/lib/db";
 import { findUserForCrmContact, emailKey, phoneKey } from "@/lib/crm/identity";
 import { classifyCrmStage } from "@/lib/crm/stages";
-import { closeDemoFromCrm, convertStudentFromCrm, reopenDemoFromCrm } from "@/lib/crm/sync";
+import { closeDemoFromCrm, convertStudentFromCrm, holdDemoFromCrm, reopenDemoFromCrm } from "@/lib/crm/sync";
 import { applyKrayaPayload } from "@/lib/crm/mirror";
 import { restoreLeadOwnerAttribute } from "@/lib/crm/ownerRestore";
 import { attributeLeadDemosFromCrm } from "@/lib/demoLeadOwner";
@@ -143,6 +143,11 @@ export async function POST(req: Request) {
     }
     if (kind === "converted") {
       const result = await convertStudentFromCrm({ userId, stageName, crmLeadId });
+      return NextResponse.json({ ok: true, matched: true, stage: stageName, kind, ...result });
+    }
+
+    if (kind === "hold") {
+      const result = await holdDemoFromCrm({ userId, stageName, crmLeadId });
       return NextResponse.json({ ok: true, matched: true, stage: stageName, kind, ...result });
     }
 

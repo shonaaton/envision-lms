@@ -11,6 +11,7 @@ import { User } from "@/models/User";
 import { sendInvoiceOverdueEscalationEmail } from "@/lib/studentCommunicationEmails";
 import { importantContactWhatsAppRecipientsByKeys } from "@/lib/importantContacts";
 import { sendWhatsAppAutomationTemplate, sendWhatsAppAutomationTemplates } from "@/lib/whatsappAutomationEvents";
+import { raiseOverdueInvoiceTask } from "@/lib/tasks/taskTriggers";
 
 export const dynamic = "force-dynamic";
 
@@ -192,6 +193,7 @@ async function processReminders(req: Request) {
       metadata: { kind: "monthly_invoice_student_reminder", invoiceId: invoice._id.toString(), days, href: "/fees/invoices" },
     });
     adminNotifications += await notifyOverdueInvoiceStaff(invoice, days);
+    if (days <= -3) await raiseOverdueInvoiceTask({ invoice, student: invoice.student, daysOverdue: Math.abs(days) });
     if (days === -3 || days === -7) {
       await sendInvoiceOverdueEscalationEmail({
         invoice,

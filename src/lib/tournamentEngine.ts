@@ -17,7 +17,7 @@ import {
   type ScoringOptions,
   type StandingEntry,
 } from "@/lib/tournament/scoring";
-import { berserkClock, formatTimeControl, resolveTimeControl, timeControlToMs } from "@/lib/tournament/timeControl";
+import { berserkClock, clocksRunning, formatTimeControl, resolveTimeControl, timeControlToMs } from "@/lib/tournament/timeControl";
 import { toScoredGame } from "@/lib/tournament/gameRecord";
 import {
   acquirePairingLockGuard,
@@ -27,7 +27,7 @@ import {
   releasePairingLockGuard,
   releaseRoundGuard,
 } from "@/lib/tournament/guards";
-import { buildArenaPairings, mostRecentOpponents, pairingHistory, resolveColors } from "@/lib/tournament/pairing";
+import { buildArenaPairings, freeSinceMs, mostRecentOpponents, pairingHistory, resolveColors } from "@/lib/tournament/pairing";
 import { pairSwissRound, swissHistoriesFromGames, type SwissPlayer } from "@/lib/tournament/swiss";
 import { FIRST_MOVE_GRACE_MS, noShowOutcome } from "@/lib/tournament/firstMove";
 import {
@@ -227,7 +227,7 @@ export function isAvailableForPairing(state: any) {
  * enough to compute the truth at any instant.
  */
 export function estimateClock(game: TournamentGameLike, at: number = Date.now()) {
-  if (game.status !== "active") return { whiteClockMs: Number(game.whiteClockMs || 0), blackClockMs: Number(game.blackClockMs || 0) };
+  if (!clocksRunning(game)) return { whiteClockMs: Number(game.whiteClockMs || 0), blackClockMs: Number(game.blackClockMs || 0) };
   const since = new Date(game.lastMoveAt || game.startedAt || at).getTime();
   const elapsed = Math.max(0, at - since);
   if (game.turn === "w") {
@@ -411,7 +411,8 @@ export async function applyGameMove(
   }
   if (!result) throw new IllegalMoveError();
 
-  const elapsed = Math.max(0, now - new Date(game.lastMoveAt || game.startedAt || now).getTime());
+  // The first move of each side is free; see clocksRunning.
+  const elapsed = clocksRunning(game) ? Math.max(0, now - new Date(game.lastMoveAt || game.startedAt || now).getTime()) : 0;
   const increment = Number((game.turn === "w" ? game.whiteIncrementMs : game.blackIncrementMs) ?? game.incrementMs ?? 0);
   const movedClockMs = Math.max(0, Number(game.turn === "w" ? game.whiteClockMs : game.blackClockMs) - elapsed + increment);
 
@@ -429,8 +430,8 @@ export async function applyGameMove(
     [game.turn === "w" ? "whiteClockMs" : "blackClockMs"]: movedClockMs,
   };
   const unset: Record<string, any> = { firstMoveDeadlineAt: 1 };
-  // In Swiss, Black owes a first move too; see lib/tournament/firstMove.ts.
-  if (nextPly === 1 && game.source === "swiss" && !detectTermination(chess)) {
+  // Black owes a first move too; see lib/tournament/firstMove.ts.
+  if (nextPly === 1 && !detectTermination(chess)) {
     update.firstMoveDeadlineAt = new Date(now + FIRST_MOVE_GRACE_MS);
     delete unset.firstMoveDeadlineAt;
   }
@@ -611,14 +612,15 @@ export async function enforceTournamentGameTimeouts(tournament: TournamentLike) 
     }
   }
 
-  if (absent.length && tournament.type === "swiss") await sitOutNoShows(tournament, absent);
+  if (absent.length) await sitOutNoShows(tournament, absent);
   return ended;
 }
 
 /**
- * A Swiss player who missed a board is taken out of the next pairings, so they
- * are not paired — and forfeited — round after round. They stay in the
- * standings and can return from the play page at any time.
+ * A player who missed a board is taken out of the next pairings, so they are
+ * not paired — and forfeited, or handed another abandoned board — again and
+ * again. They stay in the standings and can return from the play page at any
+ * time.
  */
 async function sitOutNoShows(tournament: TournamentLike, absent: Array<{ key: string; user?: string }>) {
   const now = new Date();
@@ -634,7 +636,10 @@ async function sitOutNoShows(tournament: TournamentLike, absent: Array<{ key: st
       users,
       type: "tournament.missed_game",
       title: "You missed a tournament game",
-      message: `You did not start your game in ${tournament.name}, so you will sit out the next round. Open the tournament to rejoin.`,
+      message:
+        tournament.type === "arena"
+          ? `You did not start your game in ${tournament.name}, so you have been paused. Open the tournament and resume to keep playing.`
+          : `You did not start your game in ${tournament.name}, so you will sit out the next round. Open the tournament to rejoin.`,
       href: `/tournaments/${objectId(tournament)}/play`,
     });
   }
@@ -683,12 +688,20 @@ export async function syncArenaPairings(tournamentId: string) {
 
     const games = await TournamentGame.find(
       { tournament: tournament._id },
-      "whiteKey blackKey status createdAt startedAt"
+      "whiteKey blackKey status createdAt startedAt endedAt"
     ).lean();
 
     const busy = new Set(
       games.filter((game: any) => game.status === "active").flatMap((game: any) => [game.whiteKey, game.blackKey].filter(Boolean))
     );
+    const lastGameEnded = new Map<string, number>();
+    for (const game of games as any[]) {
+      if (!game.endedAt) continue;
+      const ended = new Date(game.endedAt).getTime();
+      for (const key of [game.whiteKey, game.blackKey]) {
+        if (key && ended > (lastGameEnded.get(key) || 0)) lastGameEnded.set(key, ended);
+      }
+    }
     const states = participantStateMap(tournament);
     const history = pairingHistory(games as any);
     const recent = mostRecentOpponents(games as any);
@@ -698,8 +711,13 @@ export async function syncArenaPairings(tournamentId: string) {
       .filter((entry: any) => !busy.has(entry.playerKey) && isAvailableForPairing(states.get(entry.playerKey)))
       .map((entry: any) => {
         const state = states.get(entry.playerKey);
-        const since = new Date(state?.queuedAt || state?.joinedAt || tournament.startedAt || now).getTime();
-        return { ...(entry.toObject ? entry.toObject() : entry), waitingMs: Math.max(0, now - since) };
+        const since = freeSinceMs({
+          lastGameEndedAt: lastGameEnded.get(entry.playerKey),
+          queuedAt: state?.queuedAt ? new Date(state.queuedAt).getTime() : null,
+          joinedAt: state?.joinedAt ? new Date(state.joinedAt).getTime() : null,
+          startedAt: tournament.startedAt ? new Date(tournament.startedAt).getTime() : null,
+        });
+        return { ...(entry.toObject ? entry.toObject() : entry), waitingMs: Math.max(0, now - (since || now)) };
       });
 
     // Board numbers continue from the games already loaded above, rather than
@@ -708,7 +726,7 @@ export async function syncArenaPairings(tournamentId: string) {
     let created = 0;
 
     const announce: PairingCreatedEvent[] = [];
-    const { pairs } = buildArenaPairings(waiting, { history, recent });
+    const { pairs } = buildArenaPairings(waiting, { history, recent, playing: busy.size });
     for (const pair of pairs) {
       await createGame(tournament, {
         source: "arena",

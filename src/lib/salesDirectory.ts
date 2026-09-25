@@ -75,6 +75,7 @@ const DEMO_STATUS_LABELS: Record<string, string> = {
   RESCHEDULE_REQUESTED: "Reschedule requested",
   CANCELLED: "Cancelled",
   CONVERTED: "Converted",
+  ON_HOLD: "Demo hold",
   CLOSED: "Closed",
 };
 

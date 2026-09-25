@@ -4,7 +4,7 @@ vi.mock("@/lib/db", () => ({ dbConnect: vi.fn() }));
 vi.mock("@/lib/accessRoles", () => ({ resolveAccessRole: vi.fn() }));
 import { FEATURE_DEFINITIONS } from "@/lib/featureRegistry";
 import { evaluateFeatureState, type FeatureAccessSnapshot } from "@/lib/featureAccess";
-import { ESSENTIAL_ROLE_GRANTS, MARKETING_ROLE_GRANTS, PROTECTED_ROLE_FEATURES, SALES_ROLE_GRANTS, roleInputSchema, validateRoleGrants } from "@/lib/accessRolePolicy";
+import { ESSENTIAL_ROLE_GRANTS, MARKETING_ROLE_GRANTS, PROTECTED_ROLE_FEATURES, SALES_ROLE_GRANTS, roleHasPermission, roleInputSchema, validateRoleGrants } from "@/lib/accessRolePolicy";
 import { namedRoleApiFeature, namedRoleApiPermissions } from "@/lib/accessRoleRequests";
 
 function feature(key: string, extra: Partial<FeatureAccessSnapshot> = {}): FeatureAccessSnapshot {
@@ -82,5 +82,16 @@ describe("API mapping", () => {
     expect(namedRoleApiPermissions("/api/classrooms/123", "PATCH")).toEqual(["edit", "cancel", "assign", "create", "attendance"]);
     expect(namedRoleApiPermissions("/api/classrooms/123", "DELETE")).toEqual(["cancel"]);
     expect(namedRoleApiPermissions("/api/fees/reminders", "POST")).toEqual(["invoice", "credit"]);
+  });
+  it("routes the task manager to its own feature for every named role", () => {
+    expect(namedRoleApiFeature("/api/tasks")).toBe("taskManager");
+    expect(namedRoleApiFeature("/api/tasks/abc/")).toBe("taskManager");
+    expect(namedRoleApiFeature("/api/tasks/assignees")).toBe("taskManager");
+    expect(namedRoleApiPermissions("/api/tasks/123", "PATCH")).toEqual(["edit"]);
+    expect(namedRoleApiPermissions("/api/tasks", "POST")).toEqual(["create"]);
+  });
+  it("grants essentials to roles saved before the essential existed", () => {
+    expect(roleHasPermission({}, "taskManager", "edit")).toBe(true);
+    expect(roleHasPermission({}, "salesCrm", "view")).toBe(false);
   });
 });

@@ -75,8 +75,17 @@ function fromWallClock(
   return new Date(firstGuess - secondOffset);
 }
 
+/**
+ * A "YYYY-MM-DD" string is already the calendar day the person picked, so it is
+ * read as-is. Converting it through `new Date()` makes it UTC midnight, which is
+ * the previous day anywhere west of UTC: a parent in New York picking 30 Sept
+ * got a demo on 29 Sept, or "choose a future time" when they picked today.
+ */
 export function zonedDateTime(dateValue: string | Date, time = "00:00", timeZone = ACADEMY_TIME_ZONE) {
-  const { year, month, day } = dateParts(dateValue, timeZone);
+  const literal = typeof dateValue === "string" ? dateValue.match(/^(\d{4})-(\d{2})-(\d{2})$/) : null;
+  const { year, month, day } = literal
+    ? { year: literal[1], month: literal[2], day: literal[3] }
+    : dateParts(dateValue, timeZone);
   const normalizedTime = /^\d{1,2}:\d{2}$/.test(time) ? time.padStart(5, "0") : "00:00";
   const [hours, minutes] = normalizedTime.split(":").map(Number);
   return fromWallClock(Number(year), Number(month), Number(day), hours || 0, minutes || 0, timeZone);

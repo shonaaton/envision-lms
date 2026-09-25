@@ -30,6 +30,7 @@ export const portalPaths = [
   "/dashboard",
   "/demo-feedback",
   "/demo-preview",
+  "/feedback",
   "/fees",
   "/homework",
   "/instructor",
@@ -43,6 +44,7 @@ export const portalPaths = [
   "/sales",
   "/square-trainer",
   "/tactics-trainer",
+  "/tasks",
   "/tournaments",
 ] as const;
 

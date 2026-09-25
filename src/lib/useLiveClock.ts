@@ -1,5 +1,6 @@
 "use client";
 
+import { clocksRunning } from "@/lib/tournament/timeControl";
 import { useEffect, useState } from "react";
 
 /**
@@ -65,7 +66,7 @@ export function deriveClocks(baseline: ClockBaseline | null, now: number) {
  */
 export function clockBaselineFromGame(game: any, receivedAt = Date.now()): ClockBaseline | null {
   if (!game) return null;
-  const running = game.status === "active";
+  const running = clocksRunning(game);
   const serverNow = Number(game.serverNow || 0);
   const lastMoveAt = new Date(game.lastMoveAt || game.startedAt || serverNow || receivedAt).getTime();
   const skew = serverNow ? receivedAt - serverNow : 0;

@@ -459,7 +459,9 @@ export async function POST(req: Request) {
         bodyParameters: [student.name || "there", formatBookingTime(startAt)],
         metadata: { kind: "booking_created", bookingId: created._id.toString(), href: bookingNotificationPath("student") },
       },
-      ...importantContactWhatsAppRecipientsByKeys(["sayandeb"]).map((recipient) => ({
+      // A demo's sales alert goes to its assigned salesperson only, sent by
+      // attributeDemoToLeadOwner below once the booking has an owner.
+      ...(isDemo ? [] : importantContactWhatsAppRecipientsByKeys(["sayandeb"])).map((recipient) => ({
         user: recipient,
         templateName: isDemo ? "demo_booking_received_sales_alert" : "class_booking_created_admin",
         bodyParameters: isDemo
@@ -486,6 +488,7 @@ export async function POST(req: Request) {
         metadata: { kind: "booking_created_admin", bookingId: created._id.toString(), href: bookingNotificationPath("admin") },
       })),
     ]);
+    if (isDemo) await attributeDemoToLeadOwner(created._id.toString()).catch((error) => console.error("Demo lead owner routing failed", error));
     await recordActivity({
       actor: studentUserId,
       targetUser: studentUserId,

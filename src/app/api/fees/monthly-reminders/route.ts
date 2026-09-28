@@ -7,9 +7,8 @@ import { authorizeCronRequest } from "@/lib/cronAuth";
 import { ensureMonthlyInvoices } from "@/lib/fees";
 import { formatINR } from "@/lib/utils";
 import { Invoice, Notification } from "@/models/Fee";
-import { User } from "@/models/User";
 import { sendInvoiceOverdueEscalationEmail } from "@/lib/studentCommunicationEmails";
-import { importantContactWhatsAppRecipientsByKeys } from "@/lib/importantContacts";
+import { invoiceStaffRecipients } from "@/lib/demoNotificationRecipients";
 import { sendWhatsAppAutomationTemplate, sendWhatsAppAutomationTemplates } from "@/lib/whatsappAutomationEvents";
 import { raiseOverdueInvoiceTask } from "@/lib/tasks/taskTriggers";
 
@@ -50,11 +49,26 @@ function studentMessage(invoice: any, invoiceUrl: string, days: number) {
   ].join("\n\n");
 }
 
+/**
+ * Invoice alerts go to the named invoice staff (Sayan Bose and Saptarshi) only.
+ * Salespeople are sub-admins on the Sales role, so "every admin and sub-admin"
+ * put every invoice in front of the sales team.
+ */
+async function invoiceStaffUsers() {
+  return (await invoiceStaffRecipients()).map((recipient) => ({
+    _id: recipient.userId || undefined,
+    name: recipient.name,
+    email: recipient.email,
+    phone: recipient.phone,
+    countryCode: recipient.countryCode || undefined,
+  }));
+}
+
 async function notifyAdmins(invoice: any, days: number, invoiceUrl: string) {
   if (days !== 3 && days !== 0) return 0;
-  const admins: any[] = await User.find({ role: { $in: ["admin", "sub-admin"] }, isActive: { $ne: false } }).select("_id name email phone countryCode role").lean();
+  const admins = await invoiceStaffUsers();
   const timing = days === 3 ? "is due in 3 days" : "is due today";
-  await Notification.insertMany(admins.map((admin) => ({
+  await Notification.insertMany(admins.filter((admin) => admin._id).map((admin) => ({
     user: admin._id,
     type: "invoice.monthly_due_admin",
     title: "Monthly invoice due",
@@ -76,10 +90,7 @@ async function notifyAdmins(invoice: any, days: number, invoiceUrl: string) {
       });
     }
   }
-  const whatsappAdmins = days === 0
-    ? importantContactWhatsAppRecipientsByKeys(["saptarshi"])
-    : admins;
-  await sendWhatsAppAutomationTemplates(whatsappAdmins.map((admin) => ({
+  await sendWhatsAppAutomationTemplates(admins.map((admin) => ({
     user: admin,
     templateName: days === 0 ? "invoice_due_today" : "invoice_due_admin_alert",
     bodyParameters: days === 0
@@ -98,7 +109,7 @@ async function notifyAdmins(invoice: any, days: number, invoiceUrl: string) {
 
 async function notifyOverdueInvoiceStaff(invoice: any, days: number) {
   if (days >= 0) return 0;
-  const recipients = importantContactWhatsAppRecipientsByKeys(["sayan_bose", "saptarshi"]);
+  const recipients = await invoiceStaffUsers();
   await sendWhatsAppAutomationTemplates(recipients.map((recipient) => ({
     user: recipient,
     templateName: "invoice_overdue_reminder",

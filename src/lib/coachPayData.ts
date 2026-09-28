@@ -115,7 +115,7 @@ export async function loadCoachPay(period: PayPeriod, filters: CoachPayFilters =
       )
       .populate("coach instructor", "name username")
       .populate("batches", "name")
-      .populate("generatedSessions.substituteCoach generatedSessions.conductedBy", "name username")
+      .populate("generatedSessions.substituteCoach generatedSessions.conductedBy generatedSessions.assignedCoach", "name username")
       .lean(),
     CoachRate.find({ isActive: { $ne: false } }).lean(),
     SessionPayOverride.find({}).lean(),
@@ -192,7 +192,7 @@ export async function loadNoShowReviews(period: PayPeriod, options: { includeDec
       .populate("coach instructor", "name username")
       .populate("batches", "name")
       .populate("students", "name username")
-      .populate("generatedSessions.substituteCoach generatedSessions.conductedBy generatedSessions.students", "name username")
+      .populate("generatedSessions.substituteCoach generatedSessions.conductedBy generatedSessions.assignedCoach generatedSessions.students", "name username")
       .lean(),
     NoShowRuling.find({}).populate("decidedBy", "name username").lean(),
   ]);
@@ -211,7 +211,7 @@ export async function loadNoShowReviews(period: PayPeriod, options: { includeDec
       if (ruling && options.includeDecided === false) continue;
 
       const coachId = effectiveSessionCoachId(session, classroom);
-      const coachSource = [session.conductedBy, session.substituteCoach, classroom.coach, classroom.instructor].find(
+      const coachSource = [session.conductedBy, session.substituteCoach, session.assignedCoach, classroom.coach, classroom.instructor].find(
         (candidate: any) => idOf(candidate) === coachId
       );
       const roster = (session.students?.length ? session.students : classroom.students) || [];

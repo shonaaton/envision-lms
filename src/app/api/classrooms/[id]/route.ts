@@ -8,7 +8,7 @@ import { buildGeneratedSessions, CLASS_TIME_PATTERN, resolveClassStartTime, sche
 import { deleteClassroomSessionInstances, syncClassroomSessionInstances } from "@/lib/classroomSessionInstances";
 import { canAccessFeature, isSuperAdminSession } from "@/lib/featureAccess";
 import { ACADEMY_TIME_ZONE, academyDateKey, academyDateTime, formatAcademyDateTime } from "@/lib/academyTime";
-import { coachCanAccessClassroomSession, isPrimaryClassroomCoach, limitClassroomToCoachSessions } from "@/lib/classroomCoachAccess";
+import { coachCanAccessClassroomSession, coachCanViewClassroomSession, isFormerSessionCoach, isPrimaryClassroomCoach, limitClassroomToCoachSessions } from "@/lib/classroomCoachAccess";
 import { ensureTopicContinuationSession, hasClassesLeftToTeach, recalculateFutureSessionTopics, shouldContinueTopic, topicCompletedForOutcome } from "@/lib/classroomLifecycle";
 import { recordActivity } from "@/lib/activity";
 import { User } from "@/models/User";
@@ -22,7 +22,8 @@ import { Batch } from "@/models/Batch";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
 import { normalizeGoogleMeetUrl } from "@/lib/meetingUrl";
 import { sendWhatsAppAutomationTemplates } from "@/lib/whatsappAutomationEvents";
-import { notifyClassroomCoachAssigned } from "@/lib/classroomCoachNotifications";
+import { notifyClassroomCoachAssigned, notifyClassroomCoachReleased } from "@/lib/classroomCoachNotifications";
+import { applyPermanentCoachChange, type CoachChangeResult } from "@/lib/classroomCoachChange";
 import { notifyCourseCompleted, notifySessionCancelled } from "@/lib/classSessionNotifications";
 import { writeRuntimeLog } from "@/lib/runtimeLogger";
 import { raiseSubstituteTask, resolveCoachMissingTask } from "@/lib/tasks/taskTriggers";
@@ -207,7 +208,7 @@ function buildPermanentScheduleOccurrences(daysOfWeek: any[], effectiveDate: str
   return occurrences;
 }
 
-async function canAccessRecord(doc: any, user: any, allowSubstitute = false, scheduledSessionId?: string) {
+async function canAccessRecord(doc: any, user: any, allowSubstitute = false, scheduledSessionId?: string, viewOnly = false) {
   const role = user?.role;
   const userId = String(user?.id || "");
   if (doc?.isTestClassroom) {
@@ -215,8 +216,10 @@ async function canAccessRecord(doc: any, user: any, allowSubstitute = false, sch
   }
   if (role === "admin" || role === "sub-admin") return true;
   if (role === "instructor") {
-    if (scheduledSessionId) return coachCanAccessClassroomSession(doc, userId, scheduledSessionId);
-    return isPrimaryClassroomCoach(doc, userId) || (allowSubstitute && coachCanAccessClassroomSession(doc, userId));
+    if (scheduledSessionId) return (viewOnly ? coachCanViewClassroomSession : coachCanAccessClassroomSession)(doc, userId, scheduledSessionId);
+    if (isPrimaryClassroomCoach(doc, userId) || (allowSubstitute && coachCanAccessClassroomSession(doc, userId))) return true;
+    // The previous coach may read the classes they held, never change them.
+    return viewOnly && isFormerSessionCoach(doc, userId);
   }
   return (doc?.students || []).some((value: any) => recordId(value) === userId);
 }
@@ -621,7 +624,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     .lean();
   if (!doc) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const scheduledSessionId = new URL(req.url).searchParams.get("session") || undefined;
-  if (!(await canAccessRecord(doc, session.user as any, true, scheduledSessionId))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!(await canAccessRecord(doc, session.user as any, true, scheduledSessionId, true))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   return NextResponse.json((session.user as any).role === "instructor" ? limitClassroomToCoachSessions(doc, String((session.user as any).id || "")) : doc);
 }
 
@@ -655,7 +658,7 @@ async function patchClassroom(req: Request, { params }: { params: { id: string }
   const body = await req.json();
   const permission = ["cancel_class", "cancel_series", "cancel_session", "delete_session", "delete_series"].includes(body.action)
     ? "cancel"
-    : body.action === "substitute_coach"
+    : body.action === "substitute_coach" || body.action === "permanent_coach_change"
       ? "assign"
       : body.action === "add_extra_class"
         ? "create"
@@ -673,12 +676,17 @@ async function patchClassroom(req: Request, { params }: { params: { id: string }
   const existing: any = await Classroom.findById(params.id);
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
   if (!(await canAccessRecord(existing, session.user as any))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  // A class held before a permanent coach change is history: coaches cannot change it.
+  if (String((session.user as any).role || "") === "instructor" && body.sessionId && !coachCanAccessClassroomSession(existing, String((session.user as any).id || ""), String(body.sessionId))) {
+    return NextResponse.json({ error: "This class was held by the previous coach. Ask an admin to change it." }, { status: 403 });
+  }
   const reassignedSessionIds: string[] = [];
   const previousClassroomStatus = String(existing.status || "");
   const previousClassDate = existing.classDate;
   const previousStartTime = existing.startTime;
   const previousDurationMinutes = existing.durationMinutes;
   const previousCoachId = recordId(existing.coach || existing.instructor);
+  let coachChange: CoachChangeResult | null = null;
   let shiftedSessionCount = 0;
   let shiftedRestartDate = "";
   let cancelledSessionId = "";
@@ -1067,15 +1075,19 @@ async function patchClassroom(req: Request, { params }: { params: { id: string }
       });
       if (!reassignedSessionIds.length) return NextResponse.json({ error: "This series has no future classes available for reassignment" }, { status: 409 });
     } else {
-      existing.coach = body.coach;
-      existing.instructor = body.coach;
-      (existing.generatedSessions || []).forEach((item: any) => {
-        if (!["completed", "cancelled"].includes(item.status) && !item.actualEndedAt) {
-          item.substituteCoach = undefined;
-          reassignedSessionIds.push(String(item._id));
-        }
-      });
+      // "Entire series" is a hand-over, so past classes are pinned to the coach
+      // who taught them - see applyPermanentCoachChange.
+      reassignedSessionIds.push(...applyPermanentCoachChange(existing, String(body.coach)).reassignedSessionIds);
     }
+  } else if (body.action === "permanent_coach_change") {
+    const nextCoachId = String(body.coach || "").trim();
+    if (!nextCoachId) return NextResponse.json({ error: "Select the new coach" }, { status: 400 });
+    if (existing.classroomType === "demo") return NextResponse.json({ error: "Change a demo's coach from the Demo Center." }, { status: 409 });
+    if (["completed", "cancelled"].includes(String(existing.status || ""))) return NextResponse.json({ error: "A completed or cancelled classroom cannot change coach" }, { status: 409 });
+    if (nextCoachId === previousCoachId) return NextResponse.json({ error: "That coach already teaches this classroom" }, { status: 400 });
+    if (!(await User.exists({ _id: nextCoachId, role: "instructor", isActive: { $ne: false } }))) return NextResponse.json({ error: "The selected coach is not active" }, { status: 400 });
+    coachChange = applyPermanentCoachChange(existing, nextCoachId);
+    reassignedSessionIds.push(...coachChange.reassignedSessionIds);
   } else if (body.action === "add_extra_class") {
     if (existing.classroomType !== "series" || existing.status === "completed" || existing.status === "cancelled") return NextResponse.json({ error: "Extra classes can only be added to an active series" }, { status: 409 });
     if (!String(body.classDate || "").trim() || !/^([01]\d|2[0-3]):[0-5]\d$/.test(String(body.startTime || ""))) return NextResponse.json({ error: "Select a valid date and time" }, { status: 400 });
@@ -1117,6 +1129,11 @@ async function patchClassroom(req: Request, { params }: { params: { id: string }
       return NextResponse.json({ error: "You do not have permission to reassign this classroom" }, { status: 403 });
     }
     if (body.coach && !(await User.exists({ _id: body.coach, role: "instructor", isActive: { $ne: false } }))) return NextResponse.json({ error: "The selected coach is not active" }, { status: 400 });
+    // A coach picked in the edit form is a hand-over too: keep past classes on
+    // the coach who taught them.
+    if (body.coach && recordId(body.coach) !== previousCoachId) {
+      reassignedSessionIds.push(...applyPermanentCoachChange(existing, recordId(body.coach)).reassignedSessionIds);
+    }
     const nextSchedule = proposedSchedule(existing, body);
     if (nextType === "single") {
       if (!nextSchedule.classDate || Number.isNaN(new Date(nextSchedule.classDate).getTime())) return NextResponse.json({ error: "Select a valid class date" }, { status: 400 });
@@ -1231,6 +1248,16 @@ async function patchClassroom(req: Request, { params }: { params: { id: string }
     ]);
   }
   await syncClassroomSessionInstances(params.id);
+  let batchesUpdated = 0;
+  if (coachChange && body.updateBatchCoach !== false && (existing.batches || []).length) {
+    // Only batches the old coach was running; a batch shared with another
+    // coach's classroom keeps its own coach.
+    const updated = await Batch.updateMany(
+      { _id: { $in: (existing.batches || []).map(recordId).filter(Boolean) }, coach: coachChange.previousCoachId || null },
+      { $set: { coach: String(body.coach) } }
+    );
+    batchesUpdated = updated.modifiedCount || 0;
+  }
 
   // Class lifecycle notices. Both are fire-and-forget: a messaging failure must
   // never fail the admin's save, and both are logged and alerted on internally.
@@ -1257,6 +1284,16 @@ async function patchClassroom(req: Request, { params }: { params: { id: string }
     const addedSession = (existing.generatedSessions || []).find((item: any) => item?.isExtra && new Date(item?.scheduledFor || 0).getTime() === addedAt);
     await notifyClassroomCoachAssigned({ classroom: existing, reason: "extra_class_added", session: addedSession })
       .catch((error) => console.error("Coach extra class notification failed", error));
+  }
+  if (activityAction === "permanent_coach_change" && coachChange) {
+    const firstUpcoming = (existing.generatedSessions || []).find((item: any) => String(item._id) === coachChange?.reassignedSessionIds[0]);
+    await notifyClassroomCoachAssigned({ classroom: existing, reason: "coach_changed", session: firstUpcoming })
+      .catch((error) => console.error("New coach notification failed", error));
+    await notifyClassroomCoachReleased({ classroom: existing, previousCoachId: coachChange.previousCoachId })
+      .catch((error) => console.error("Previous coach notification failed", error));
+    for (const reassignedId of coachChange.reassignedSessionIds.slice(0, 20)) {
+      await resolveCoachMissingTask(reassignedId, (session.user as any)?.id, "The classroom has a new coach.");
+    }
   }
   if (activityAction === "substitute_coach" && reassignedSessionIds.length) {
     await notifySubstituteCoachAssignment({
@@ -1370,6 +1407,24 @@ async function patchClassroom(req: Request, { params }: { params: { id: string }
         entityId: params.id,
         metadata: { ...commonMetadata, coach: body.coach || "", scope: body.scope || "classroom", reassignedSessionIds },
       });
+    } else if (activityAction === "permanent_coach_change" && coachChange) {
+      await recordActivity({
+        actor: (session.user as any).id,
+        type: "classroom.coach.permanent_change",
+        label: `Permanently changed the coach of ${existing.title}`,
+        entityType: "Classroom",
+        entityId: params.id,
+        metadata: {
+          ...commonMetadata,
+          previousCoach: coachChange.previousCoachId,
+          coach: String(body.coach || ""),
+          reason: String(body.reason || ""),
+          reassignedSessionIds: coachChange.reassignedSessionIds,
+          pinnedSessionIds: coachChange.pinnedSessionIds,
+          keptCoverSessionIds: coachChange.keptCoverSessionIds,
+          batchesUpdated,
+        },
+      });
     } else if (activityAction === "add_extra_class") {
       await recordActivity({
         actor: (session.user as any).id,
@@ -1419,7 +1474,7 @@ async function patchClassroom(req: Request, { params }: { params: { id: string }
   }
   const updated = await Classroom.findById(params.id)
     .populate("coach instructor", "name email username")
-    .populate("generatedSessions.substituteCoach", "name email username")
+    .populate("generatedSessions.substituteCoach generatedSessions.assignedCoach", "name email username")
     .populate("generatedSessions.students", "name email username isActive")
     .populate("students", "name email username isActive")
     .populate("batches", "name")

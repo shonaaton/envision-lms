@@ -247,7 +247,7 @@ export async function GET(req: Request) {
   } else if (type === "coaching-hours") {
     const classrooms = await Classroom.find({})
       .populate("coach instructor students batches", "name")
-      .populate("generatedSessions.substituteCoach generatedSessions.conductedBy", "name")
+      .populate("generatedSessions.substituteCoach generatedSessions.conductedBy generatedSessions.assignedCoach", "name")
       .sort({ updatedAt: -1 })
       .lean();
 
@@ -266,7 +266,7 @@ export async function GET(req: Request) {
       addCoachGroup(classroom.coach || classroom.instructor, classroom);
       (classroom.generatedSessions || []).forEach((session: any) => {
         const effectiveCoachId = effectiveSessionCoachId(session, classroom);
-        const effectiveCoach = [session.conductedBy, session.substituteCoach, classroom.coach, classroom.instructor]
+        const effectiveCoach = [session.conductedBy, session.substituteCoach, session.assignedCoach, classroom.coach, classroom.instructor]
           .find((candidate: any) => objectId(candidate) === effectiveCoachId);
         addCoachGroup(effectiveCoach, classroom);
       });

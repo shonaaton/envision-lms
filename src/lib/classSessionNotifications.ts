@@ -107,7 +107,7 @@ async function classroomRecipients(classroom: any, session: any) {
   // A session can carry its own roster (a split or make-up class); otherwise
   // everyone on the classroom is expected.
   const studentIds = (session?.students?.length ? session.students : classroom?.students || []).map(objectId).filter(Boolean);
-  const coachId = objectId(session?.substituteCoach || classroom?.coach || classroom?.instructor);
+  const coachId = objectId(session?.substituteCoach || session?.assignedCoach || classroom?.coach || classroom?.instructor);
   const [students, coach] = await Promise.all([
     studentIds.length
       ? User.find({ _id: { $in: studentIds }, role: "student", isActive: { $ne: false }, isPaused: { $ne: true } })

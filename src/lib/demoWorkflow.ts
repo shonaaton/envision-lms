@@ -3,7 +3,7 @@ import { ACADEMY_TIME_ZONE, formatAcademyDateTime, zonedDateTime } from "@/lib/a
 import { recordActivity } from "@/lib/activity";
 import { isValidTimeZone } from "@/lib/demoTimeSlots";
 import { importantContacts, importantContactsFromEnvKeys, importantContactWhatsAppRecipientsByKeys } from "@/lib/importantContacts";
-import { demoNotificationRecipients, demoSubAdminEmails, type DemoStaffRecipient } from "@/lib/demoNotificationRecipients";
+import { demoSubAdminEmails, demoSubAdminRecipients, nonSalesStaffFilter, staffRecipientById, type DemoStaffRecipient } from "@/lib/demoNotificationRecipients";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
 import { sendWhatsAppTextMessage } from "@/lib/whatsappAutomation";
 import { sendWhatsAppAutomationTemplates } from "@/lib/whatsappAutomationEvents";
@@ -46,10 +46,13 @@ const DEMO_REMINDER_RULES = [
   { key: "coach_30_min", recipientType: "coach", offsetMinutes: 30, windowText: "in 30 minutes" },
 ] as const;
 
+/**
+ * Non-sales staff on each demo event. Salespeople are deliberately absent: a
+ * demo is announced only to the salesperson who owns it (`Booking.salesOwner`,
+ * see `demoSalesOwnerRecipient`), never to the whole sales bench.
+ */
 const DEMO_STAFF_RECIPIENT_KEYS = {
-  accountCreated: ["mohammed_shahzib"],
-  approved: ["mohammed_shahzib", "sayandeb"],
-  assessmentSubmitted: ["mohammed_shahzib", "sayandeb", "sayan_bose"],
+  assessmentSubmitted: ["sayan_bose"],
   reopened: ["saptarshi"],
 } as const;
 
@@ -57,13 +60,35 @@ function demoStaffRecipients(event: keyof typeof DEMO_STAFF_RECIPIENT_KEYS) {
   return importantContactWhatsAppRecipientsByKeys([...DEMO_STAFF_RECIPIENT_KEYS[event]]);
 }
 
-async function reminderAlreadySent(bookingId: string, reminderKey: string, recipientType: string) {
-  return Boolean(await Notification.exists({
+/**
+ * The salesperson assigned to this demo, or null. With no owner set, nothing is
+ * sent to sales - the "requested" alert is released when an owner is assigned
+ * (`attributeDemoToLeadOwner` / `assignLeadOwnerManually` in demoLeadOwner.ts).
+ */
+async function demoSalesOwnerRecipient(input: { booking?: any; studentId?: string }) {
+  let ownerId = input.booking?.salesOwner;
+  const bookingId = objectId(input.booking?._id || input.booking);
+  if (!ownerId && bookingId && Types.ObjectId.isValid(bookingId)) {
+    ownerId = ((await Booking.findById(bookingId).select("salesOwner").lean()) as any)?.salesOwner;
+  }
+  if (!ownerId && input.studentId && Types.ObjectId.isValid(input.studentId)) {
+    ownerId = ((await User.findById(input.studentId).select("leadOwner").lean()) as any)?.leadOwner;
+  }
+  const recipient = ownerId ? await staffRecipientById(ownerId, "sales") : null;
+  return recipient ? { ...whatsappStaffUser(recipient), email: recipient.email } : null;
+}
+
+async function reminderAlreadySent(bookingId: string, reminderKey: string, recipientType: string, userId?: string) {
+  const filter: any = {
     type: "demo.whatsapp_reminder",
     "metadata.bookingId": bookingId,
     "metadata.reminderKey": reminderKey,
     "metadata.recipientType": recipientType,
-  }));
+  };
+  // Coach reminders are per coach: after a coach change, the old coach having
+  // been reminded must not stop the new coach from hearing about the class.
+  if (userId) filter.user = userId;
+  return Boolean(await Notification.exists(filter));
 }
 
 async function markReminderSent(input: {
@@ -94,7 +119,9 @@ async function sendDemoStaffReminder(input: {
   windowText: string;
   classTime: string;
 }) {
-  const recipients = importantContactWhatsAppRecipientsByKeys(["mohammed_shahzib", "sayandeb"]);
+  const owner = await demoSalesOwnerRecipient({ booking: input.booking });
+  if (!owner) return;
+  const recipients = [owner];
   const metadata = {
     kind: "demo_class_reminder_staff",
     event: "DEMO_CLASS_REMINDER",
@@ -148,8 +175,9 @@ export function normalizeDemoRequestedTime(input: {
   };
 }
 
+/** Admins and sub-admins who run demos - the sales bench is excluded (see `nonSalesStaffFilter`). */
 export async function demoManagementUsers() {
-  return User.find({ role: { $in: ["admin", "sub-admin"] }, isActive: { $ne: false } })
+  return User.find(await nonSalesStaffFilter())
     .select("_id email phone countryCode name role")
     .lean();
 }
@@ -233,7 +261,6 @@ async function sendStaffEmails(
 
 export async function notifyDemoAccountCreated(user: any) {
   const admins = await demoManagementUsers();
-  const recipients = demoStaffRecipients("accountCreated");
   const message = `New demo account created: ${user.name || "Prospect"} (${user.email || "no email"}). Phone: ${[user.countryCode, user.phone].filter(Boolean).join(" ") || "not provided"}.`;
   await Notification.insertMany(
     admins.map((admin: any) => ({
@@ -244,23 +271,8 @@ export async function notifyDemoAccountCreated(user: any) {
       metadata: { demoUser: user._id, href: DEMO_MANAGEMENT_HREF, event: "DEMO_ACCOUNT_CREATED" },
     }))
   ).catch(() => undefined);
-  await sendConfiguredDemoTexts(recipients, message, {
-    kind: "demo_account_created",
-    event: "DEMO_ACCOUNT_CREATED",
-    demoUserId: user._id?.toString?.() || "",
-  });
-  await sendStaffEmails(recipients, "New demo account created", (recipient) => [
-    `Hello ${recipient.name || "Team"},`,
-    "",
-    message,
-    "",
-    "Please review it from the Demo Center.",
-  ].join("\n"), {
-    kind: "demo_account_created",
-    event: "DEMO_ACCOUNT_CREATED",
-    demoUserId: user._id?.toString?.() || "",
-    href: DEMO_MANAGEMENT_HREF,
-  });
+  // No salesperson is paged here: a new account has no owner yet. The owner
+  // hears about it once assigned (unbooked follow-up, or the demo request).
   await recordActivity({
     actor: user._id?.toString?.(),
     targetUser: user._id?.toString?.(),
@@ -289,7 +301,10 @@ export async function notifyDemoRequestCreated(input: { booking: any; student: a
   // contact list: a sub-admin whose number or email changes in the admin user
   // directory kept being paged on the old one, and a key missing from
   // LMS_IMPORTANT_CONTACTS dropped that person silently.
-  const { all: staffRecipients } = await demoNotificationRecipients();
+  //
+  // Only the demo sub-admin is told here. The salesperson's copy waits until
+  // the demo has an owner, then goes to that owner alone (see demoLeadOwner.ts).
+  const staffRecipients = await demoSubAdminRecipients();
   const bookingId = booking._id?.toString?.() || "";
   const classTime = booking.requestedIstDateTime || formatAcademyDateTime(booking.startAt, { timeZoneName: "short" });
   // Sent as an approved template, not free text. Meta only delivers a
@@ -398,7 +413,8 @@ export async function notifyDemoFeedbackSubmitted(input: {
   const engagement = String(feedback?.studentEngagement || "").trim();
   const message = `${coachName} submitted the demo assessment for ${studentName} (${classTime}). Recommended: ${recommendation}, level ${recommendedLevel}.`;
 
-  const staffRecipients = demoStaffRecipients("assessmentSubmitted");
+  const owner = await demoSalesOwnerRecipient({ booking });
+  const staffRecipients = [...demoStaffRecipients("assessmentSubmitted"), ...(owner ? [owner] : [])];
   const staffUsers: any[] = await User.find({
     email: { $in: staffRecipients.map((recipient) => recipient.email).filter(Boolean) },
     isActive: { $ne: false },
@@ -457,7 +473,8 @@ export async function notifyDemoApproved(input: { booking: any; student: any; co
   // here told the student and the coach one time while the classroom, built from
   // startAt, held another.
   const classTime = demoClassTimeLabel(input.booking.startAt);
-  const staffRecipients = demoStaffRecipients("approved");
+  // The salesperson's copy is sent by `notifyLeadOwnerOfDemo(... "confirmed")`,
+  // to the assigned owner only.
   await sendWhatsAppAutomationTemplates([
     {
       user: input.student,
@@ -465,19 +482,6 @@ export async function notifyDemoApproved(input: { booking: any; student: any; co
       bodyParameters: [input.student?.name || "there", classTime],
       metadata: { kind: "demo_class_approved", event: "DEMO_APPROVED", bookingId: input.booking._id.toString(), classroomId: input.classroom._id.toString() },
     },
-    ...staffRecipients.map((recipient) => ({
-      user: recipient,
-      templateName: "demo_class_approved_staff_alert",
-      bodyParameters: [recipient.name || "Team", input.student?.name || "student", classTime, input.coach?.name || "coach"],
-      metadata: {
-        kind: "demo_class_approved_staff",
-        event: "DEMO_APPROVED",
-        recipientType: recipient.role || "staff",
-        bookingId: input.booking._id.toString(),
-        classroomId: input.classroom._id.toString(),
-        notificationDedupKey: `demo_approved:${input.booking._id.toString()}:staff`,
-      },
-    })),
     {
       user: input.coach,
       templateName: "demo_class_assigned_coach",
@@ -485,20 +489,22 @@ export async function notifyDemoApproved(input: { booking: any; student: any; co
       metadata: { kind: "demo_class_assigned", event: "DEMO_COACH_ASSIGNED", bookingId: input.booking._id.toString(), classroomId: input.classroom._id.toString() },
     },
   ]);
-  await sendStaffEmails(staffRecipients, "Demo class approved", (recipient) => [
-    `Hello ${recipient.name || "Team"},`,
-    "",
-    `Demo class for ${input.student?.name || "student"} has been approved and scheduled for ${classTime}.`,
-    `Coach: ${input.coach?.name || "coach"}.`,
-    "",
-    "Please review the demo workflow in the academy portal.",
-  ].join("\n"), {
-    kind: "demo_class_approved_staff",
-    event: "DEMO_APPROVED",
-    bookingId: input.booking._id.toString(),
-    classroomId: input.classroom._id.toString(),
-    href: DEMO_MANAGEMENT_HREF,
-  });
+}
+
+/**
+ * WhatsApp the coach a confirmed demo was just handed to. Only the coach: a
+ * coach swap is an internal change, so the family is deliberately not told.
+ */
+export async function notifyDemoCoachChanged(input: { booking: any; student: any; coach: any; classroom: any }) {
+  const classTime = demoClassTimeLabel(input.booking.startAt);
+  await sendWhatsAppAutomationTemplates([
+    {
+      user: input.coach,
+      templateName: "demo_class_assigned_coach",
+      bodyParameters: [input.coach?.name || "Coach", input.student?.name || "student", classTime],
+      metadata: { kind: "demo_class_assigned", event: "DEMO_COACH_CHANGED", bookingId: input.booking._id.toString(), classroomId: input.classroom?._id?.toString() || "" },
+    },
+  ]);
 }
 
 export async function processDueDemoReminders(now = new Date()) {
@@ -532,9 +538,9 @@ export async function processDueDemoReminders(now = new Date()) {
         const assignedOrApprovedAt = booking.approvedAt || booking.assignedCoachAt || booking.createdAt;
         if (assignedOrApprovedAt && new Date(assignedOrApprovedAt).getTime() > triggerAt.getTime()) continue;
       }
-      if (await reminderAlreadySent(bookingId, rule.key, rule.recipientType)) continue;
       const isCoach = rule.recipientType === "coach";
       const recipient = isCoach ? coach : booking.student;
+      if (await reminderAlreadySent(bookingId, rule.key, rule.recipientType, isCoach ? objectId(coach?._id) : undefined)) continue;
       if ((!recipient?.phone && !recipient?.email) || recipient.isActive === false) {
         skipped += 1;
         continue;
@@ -628,19 +634,24 @@ export async function notifyDemoMissed(input: { booking: any; student?: any; coa
   const student = input.student || booking?.student;
   const classTime = demoClassTimeLabel(booking?.startAt || input.classroom?.classDate || new Date());
   await raiseDemoRebookTask({ booking: booking || input.booking, student, ownerId: booking?.salesOwner, reason: "missed" });
-  const recipients = [
-    ...importantContactWhatsAppRecipientsByKeys(["mohammed_shahzib"]).map((recipient) => ({
-      recipient,
+  // The assigned salesperson gets the sales alert; the demo sub-admin, who
+  // re-slots demos, gets the reschedule prompt. No other salesperson is told.
+  const owner = await demoSalesOwnerRecipient({ booking: booking || input.booking, studentId: objectId(student?._id || student) });
+  const recipients: Array<{ recipient: any; templateName: string; bodyParameters: string[]; role: string }> = [
+    ...(await demoSubAdminRecipients()).map((recipient) => ({
+      recipient: { ...whatsappStaffUser(recipient), email: recipient.email, role: "sub_admin" },
       templateName: "demo_no_show_reschedule_admin",
-      bodyParameters: [recipient.name || "Mohammed", student?.name || "student", classTime],
-      role: "sales",
+      bodyParameters: [recipient.name || "Team", student?.name || "student", classTime],
+      role: "sub_admin",
     })),
-    ...importantContactWhatsAppRecipientsByKeys(["sayandeb"]).map((recipient) => ({
-      recipient,
-      templateName: "demo_no_show_sales_alert",
-      bodyParameters: [recipient.name || "Sayandeb", student?.name || "student", classTime],
-      role: "sales",
-    })),
+    ...(owner
+      ? [{
+          recipient: owner,
+          templateName: "demo_no_show_sales_alert",
+          bodyParameters: [owner.name || "there", student?.name || "student", classTime],
+          role: "sales",
+        }]
+      : []),
   ];
   await sendWhatsAppAutomationTemplates(recipients.map((item) => ({
     user: item.recipient,
@@ -747,12 +758,15 @@ export async function notifyDemoConverted(input: {
     input.batchId ? Batch.findById(input.batchId).select("name").lean() : null,
   ]);
   if (!student) return { sent: 0 };
-  const recipients = importantContacts().map((contact) => ({
-    name: contact.name,
-    phone: contact.phone,
-    email: contact.email,
-    role: contact.role,
-  }));
+  // Admin and sub-admins from the contact list, plus the lead's own
+  // salesperson - not the rest of the sales bench.
+  const owner = await demoSalesOwnerRecipient({ booking: input.bookingId, studentId: input.studentId });
+  const recipients: Array<{ name?: string; phone?: string; email?: string; role?: string; countryCode?: string; _id?: string }> = [
+    ...importantContacts()
+      .filter((contact) => contact.role !== "sales")
+      .map((contact) => ({ name: contact.name, phone: contact.phone, email: contact.email, role: contact.role })),
+    ...(owner ? [owner] : []),
+  ];
   const courseName = input.courseName || "Not set";
   const batchName = input.batchName || batch?.name || "Not set";
   await sendWhatsAppAutomationTemplates(recipients.map((recipient) => ({

@@ -264,7 +264,7 @@ export async function POST(req: Request) {
   const topicCompleted = topicCompletedForOutcome(outcome, requestedOutcome);
   const storedOutcome = shouldContinueTopic(requestedOutcome) && outcome === "completed" ? "completed_continue_topic" : outcome;
   const punctualityScore = target ? Number(target.punctualityScore || punctualityBreakdown(target, classroomDoc).punctualityScore) : 0;
-  const assignedCoach = target?.substituteCoach || classroomDoc.coach || classroomDoc.instructor || coach;
+  const assignedCoach = target?.substituteCoach || target?.assignedCoach || classroomDoc.coach || classroomDoc.instructor || coach;
   const existingAttendance: any = await Attendance.findOne({ classroom, scheduledSessionId: sessionId || "", sessionDate: normalizedDate }).lean();
   const overrideReasonText = String(overrideReason || "").trim();
   const overrideEntry = existingAttendance && attendanceOverrideAccess

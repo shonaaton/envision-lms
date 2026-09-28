@@ -166,3 +166,62 @@ export async function demoFeedbackNotificationRecipients() {
   const [sales, subAdmins] = await Promise.all([demoSalesRecipients(), allSubAdminRecipients()]);
   return { sales, subAdmins, all: dedupeDemoRecipients([...sales, ...subAdmins]) };
 }
+
+/**
+ * Admins and sub-admins who are NOT on the Sales role. Salespeople are
+ * `sub-admin` accounts carrying the Sales access role, so a plain
+ * `role: "sub-admin"` query pages the whole sales bench - which is how invoice
+ * and every-demo alerts kept reaching salespeople who do not own the lead.
+ */
+export async function nonSalesStaffFilter() {
+  const roles: any[] = await AccessRole.find({ nameKey: SALES_ACCESS_ROLE_NAME_KEY }).select("_id").lean();
+  const salesIds = roles.map((role) => role._id);
+  return {
+    role: { $in: ["admin", "sub-admin"] },
+    isActive: { $ne: false },
+    ...(salesIds.length ? { accessRole: { $nin: salesIds } } : {}),
+  };
+}
+
+/** Sayan Bose and Saptarshi: the only staff who hear about invoices. */
+const DEFAULT_INVOICE_NOTIFY_EMAILS = ["sayanthsbose@gmail.com", "saptarshi2856@gmail.com"];
+
+export function invoiceNotifyEmails() {
+  const configured = String(process.env.INVOICE_NOTIFY_EMAILS || "")
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+  return configured.length ? configured : DEFAULT_INVOICE_NOTIFY_EMAILS;
+}
+
+/**
+ * Staff alerted about invoices (created, due, overdue, credit recharge). Named
+ * people by email, never "every sub-admin" - see `nonSalesStaffFilter`.
+ */
+export async function invoiceStaffRecipients(): Promise<DemoStaffRecipient[]> {
+  await dbConnect();
+  const emails = invoiceNotifyEmails();
+  const users: any[] = await User.find({ email: { $in: emails }, isActive: { $ne: false } })
+    .select(STAFF_FIELDS)
+    .sort({ name: 1 })
+    .lean();
+  return withFallback(
+    users.map((user) => toRecipient(user, "sub_admin")),
+    () =>
+      importantContactsByKeys(["sayan_bose", "saptarshi"])
+        .filter((contact) => !contact.email || emails.includes(contact.email))
+        .map((contact) => contactToRecipient(contact, "sub_admin")),
+    "invoice staff"
+  );
+}
+
+/** One staff account as a recipient, or null when it is gone or deactivated. */
+export async function staffRecipientById(userId: unknown, role: DemoStaffRole = "sales"): Promise<DemoStaffRecipient | null> {
+  const id = String((userId as any)?._id || userId || "");
+  if (!/^[a-f0-9]{24}$/i.test(id)) return null;
+  await dbConnect();
+  const user: any = await User.findOne({ _id: id, isActive: { $ne: false } }).select(STAFF_FIELDS).lean();
+  if (!user) return null;
+  const recipient = toRecipient(user, role);
+  return isReachable(recipient) ? recipient : null;
+}

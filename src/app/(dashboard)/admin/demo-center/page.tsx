@@ -2,19 +2,20 @@ import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
-import { CalendarCheck, CheckCircle2, Clock3, Copy, GraduationCap, History, Link as LinkIcon, MessageSquareText, PauseCircle, PlayCircle, RefreshCw, RotateCcw, Trash2, UserCheck, UserX, Users, XCircle } from "lucide-react";
+import { CalendarCheck, CheckCircle2, Clock3, Copy, Download, GraduationCap, History, Link as LinkIcon, MessageSquareText, PauseCircle, PlayCircle, RefreshCw, RotateCcw, Trash2, UserCheck, UserX, Users, XCircle } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { canAccessFeature } from "@/lib/featureAccess";
 import { dbConnect } from "@/lib/db";
 import { academyDateTimeLocalInput, formatAcademyDateTime, parseAcademyDateTimeLocal } from "@/lib/academyTime";
 import { notifyDemoConverted, notifyDemoMissed } from "@/lib/demoWorkflow";
+import { canExportDemoAssessments } from "@/lib/demoAssessmentExport";
 import { raiseDemoAssessmentTask, resolveConversionCallTasks } from "@/lib/tasks/taskTriggers";
 import { pendingDuplicateReviews, reviewDuplicateFlag } from "@/lib/duplicateAccounts";
 import { duplicateReasonSummary } from "@/lib/identityMatch";
 import { recordActivity } from "@/lib/activity";
 import { cancelDemoClassrooms, isConfirmedDemo, markDemoClassroomDelivered, markDemoClassroomMissed, upsertDemoClassroom } from "@/lib/demoClassroom";
 import { COURSE_TIER_LABELS } from "@/lib/courseTiers";
-import { bookDemoForAccount, coachClash, confirmDemoBooking } from "@/lib/demoScheduling";
+import { bookDemoForAccount, changeDemoCoach, coachClash, confirmDemoBooking } from "@/lib/demoScheduling";
 import { normalizeGoogleMeetUrl, parseMeetingUrlInput } from "@/lib/meetingUrl";
 import { PopupShell, PopupTrigger } from "@/components/HashPopup";
 import {
@@ -35,6 +36,8 @@ import { Batch } from "@/models/Batch";
 import {
   assignLeadOwnerManually,
   leadOwnersForStudents,
+  demoOwnerRestriction,
+  ownsDemoLead,
   salesOwnerOptions,
   syncDemoSalesOwners,
   type ResolvedLeadOwner,
@@ -148,11 +151,25 @@ function classifyDemo(booking: any): DemoTab {
   return "requested";
 }
 
-async function requireDemoManager(permission = "edit"): Promise<DemoManagerSession> {
+/**
+ * Gate for the page and every action on it. When an action names a demo or a
+ * lead (`booking` / `student` form fields), a salesperson may only act on one
+ * assigned to them - the page never shows them anyone else's, and a hand-built
+ * form post must not reach them either.
+ */
+async function requireDemoManager(permission = "edit", formData?: FormData): Promise<DemoManagerSession> {
   const session = await auth();
   const role = (session?.user as any)?.role;
   if (!["admin", "sub-admin"].includes(role)) redirect("/dashboard");
   if (!(await canAccessFeature("demoCenter", session!.user as any, permission))) redirect("/dashboard");
+  if (formData) {
+    const salesOwner = await demoOwnerRestriction((session!.user as any).id);
+    const bookingId = String(formData.get("booking") || "");
+    const studentId = String(formData.get("student") || "");
+    if (salesOwner && !(await ownsDemoLead(salesOwner, { bookingId: bookingId || undefined, studentId: studentId || undefined }))) {
+      demoCenterOutcome(String(formData.get("tab") || "requested"), "That demo is assigned to another salesperson.");
+    }
+  }
   return session as DemoManagerSession;
 }
 
@@ -173,7 +190,7 @@ function demoCenterOutcome(tab: string, failure: string, success?: string): neve
 
 async function updateBookingRequest(formData: FormData) {
   "use server";
-  const session = await requireDemoManager();
+  const session = await requireDemoManager("edit", formData);
   await dbConnect();
   const actorId = String((session.user as any).id || "");
   const bookingId = String(formData.get("booking") || "");
@@ -250,7 +267,7 @@ async function updateBookingRequest(formData: FormData) {
 
 async function approveBooking(formData: FormData) {
   "use server";
-  const session = await requireDemoManager("approve");
+  const session = await requireDemoManager("approve", formData);
   const tab = String(formData.get("tab") || "requested");
   const result = await confirmDemoBooking({
     bookingId: String(formData.get("booking") || ""),
@@ -266,10 +283,27 @@ async function approveBooking(formData: FormData) {
   demoCenterOutcome("upcoming", "", `Demo confirmed for ${formatAcademyDateTime(result.start)}.`);
 }
 
+/** Hand a booked demo to another coach - see `changeDemoCoach`. The family is not notified. */
+async function changeCoach(formData: FormData) {
+  "use server";
+  const session = await requireDemoManager("edit", formData);
+  const tab = String(formData.get("tab") || "upcoming");
+  const result = await changeDemoCoach({
+    bookingId: String(formData.get("booking") || ""),
+    coachId: String(formData.get("coach") || ""),
+    reason: String(formData.get("reason") || "").trim(),
+    actorId: String((session.user as any).id || ""),
+  });
+  if (!result.ok) return demoCenterOutcome(tab, result.error);
+  revalidatePath("/admin/demo-center");
+  revalidatePath("/classrooms");
+  demoCenterOutcome(tab, "", "Coach changed. The new coach has been notified; the family was not.");
+}
+
 /** Assign Demo on a demo account that never sent a request - see `bookDemoForAccount`. */
 async function scheduleDemoForAccount(formData: FormData) {
   "use server";
-  const session = await requireDemoManager("approve");
+  const session = await requireDemoManager("approve", formData);
   const tab = String(formData.get("tab") || "requested");
   const result = await bookDemoForAccount({
     studentId: String(formData.get("student") || ""),
@@ -297,7 +331,7 @@ async function scheduleDemoForAccount(formData: FormData) {
  */
 async function markDemoMissed(formData: FormData) {
   "use server";
-  const session = await requireDemoManager();
+  const session = await requireDemoManager("edit", formData);
   await dbConnect();
   const actorId = String((session.user as any).id || "");
   const bookingId = String(formData.get("booking") || "");
@@ -354,7 +388,7 @@ async function markDemoMissed(formData: FormData) {
  */
 async function markDemoDelivered(formData: FormData) {
   "use server";
-  const session = await requireDemoManager();
+  const session = await requireDemoManager("edit", formData);
   await dbConnect();
   const actorId = String((session.user as any).id || "");
   const bookingId = String(formData.get("booking") || "");
@@ -436,7 +470,7 @@ async function markDemoDelivered(formData: FormData) {
 
 async function closeDemo(formData: FormData) {
   "use server";
-  const session = await requireDemoManager();
+  const session = await requireDemoManager("edit", formData);
   await dbConnect();
   const actorId = String((session.user as any).id || "");
   const bookingId = String(formData.get("booking") || "");
@@ -460,7 +494,7 @@ const HOLDABLE_DEMO_STATUSES = ["REQUESTED", "COACH_ASSIGNED", "APPROVED", "CLAS
  */
 async function holdDemo(formData: FormData) {
   "use server";
-  const session = await requireDemoManager();
+  const session = await requireDemoManager("edit", formData);
   await dbConnect();
   const actorId = String((session.user as any).id || "");
   const bookingId = String(formData.get("booking") || "");
@@ -492,7 +526,7 @@ async function holdDemo(formData: FormData) {
  */
 async function resumeDemo(formData: FormData) {
   "use server";
-  const session = await requireDemoManager();
+  const session = await requireDemoManager("edit", formData);
   await dbConnect();
   const actorId = String((session.user as any).id || "");
   const bookingId = String(formData.get("booking") || "");
@@ -523,7 +557,7 @@ async function resumeDemo(formData: FormData) {
  */
 async function archiveDemo(formData: FormData) {
   "use server";
-  const session = await requireDemoManager();
+  const session = await requireDemoManager("edit", formData);
   await dbConnect();
   const actorId = String((session.user as any).id || "");
   const bookingId = String(formData.get("booking") || "");
@@ -546,7 +580,7 @@ async function archiveDemo(formData: FormData) {
 
 async function restoreDemo(formData: FormData) {
   "use server";
-  const session = await requireDemoManager();
+  const session = await requireDemoManager("edit", formData);
   await dbConnect();
   const actorId = String((session.user as any).id || "");
   const bookingId = String(formData.get("booking") || "");
@@ -565,7 +599,7 @@ async function restoreDemo(formData: FormData) {
 
 async function convertDemoStudent(formData: FormData) {
   "use server";
-  const session = await requireDemoManager("convert");
+  const session = await requireDemoManager("convert", formData);
   await dbConnect();
   const actorId = String((session.user as any).id || "");
   const studentId = String(formData.get("student") || "");
@@ -616,7 +650,7 @@ async function convertDemoStudent(formData: FormData) {
 
 async function extendDemoAccess(formData: FormData) {
   "use server";
-  const session = await requireDemoManager();
+  const session = await requireDemoManager("edit", formData);
   await dbConnect();
   const actorId = String((session.user as any).id || "");
   const studentId = String(formData.get("student") || "");
@@ -632,8 +666,10 @@ async function extendDemoAccess(formData: FormData) {
 /** Backfill: match every unassigned demo - done or pending - to its CRM salesperson. */
 async function syncSalesOwners(formData: FormData) {
   "use server";
-  await requireDemoManager();
+  const session = await requireDemoManager();
   const tab = String(formData.get("tab") || "requested");
+  // An academy-wide backfill that notifies other salespeople's leads is not a sales action.
+  if (await demoOwnerRestriction((session.user as any).id)) demoCenterOutcome(tab, "Only admins can sync salespeople from the CRM.");
   let result: Awaited<ReturnType<typeof syncDemoSalesOwners>>;
   try {
     result = await syncDemoSalesOwners();
@@ -653,7 +689,7 @@ async function syncSalesOwners(formData: FormData) {
 /** Manual salesperson pick for a lead the CRM did not tag, or tagged wrongly. */
 async function assignSalesOwner(formData: FormData) {
   "use server";
-  const session = await requireDemoManager();
+  const session = await requireDemoManager("edit", formData);
   const tab = String(formData.get("tab") || "requested");
   let ownerName = "";
   try {
@@ -681,7 +717,7 @@ async function assignSalesOwner(formData: FormData) {
  */
 async function reviewDuplicate(formData: FormData) {
   "use server";
-  const session = await requireDemoManager();
+  const session = await requireDemoManager("edit", formData);
   const decision = String(formData.get("decision") || "") === "confirmed" ? "confirmed" : "cleared";
   let outcome: Awaited<ReturnType<typeof reviewDuplicateFlag>>;
   try {
@@ -715,8 +751,12 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
   const activeTab = tabs.some((tab) => tab.id === searchParams?.tab) ? searchParams?.tab as DemoTab : "requested";
   const errorNotice = String(searchParams?.error || "").trim();
   const successNotice = String(searchParams?.ok || "").trim();
-  const [bookings, demoStudents, coaches, courses, batches, convertedStudents, studentsWithConvertedBooking, duplicateFlags] = await Promise.all([
-    Booking.find({ bookingType: "demo" }).populate("student instructor assignedCoach", "name email countryCode phone username accountStatus parentName city country studentLevel demoExpiresAt").sort({ createdAt: -1 }).limit(300).lean(),
+  // A salesperson sees only the demos and leads assigned to them; "" = sees all.
+  const salesOwner = await demoOwnerRestriction((session.user as any).id);
+  // Admins and the demo sub-admin (Saptarshi) only - see canExportDemoAssessments.
+  const canExportAssessments = await canExportDemoAssessments((session.user as any).id);
+  const [allBookings, allDemoStudents, coaches, courses, batches, allConvertedStudents, studentsWithConvertedBooking, allDuplicateFlags] = await Promise.all([
+    Booking.find({ bookingType: "demo", ...(salesOwner ? { $or: [{ salesOwner }, { salesOwner: null }] } : {}) }).populate("student instructor assignedCoach", "name email countryCode phone username accountStatus parentName city country studentLevel demoExpiresAt").sort({ createdAt: -1 }).limit(300).lean(),
     User.find({ role: "student", accountStatus: "demo" }, { passwordHash: 0 }).sort({ createdAt: -1 }).limit(300).lean(),
     User.find({ role: "instructor", isActive: true }, { name: 1, email: 1 }).sort({ name: 1 }).lean(),
     Course.find({ isActive: { $ne: false } }).select("name level").sort({ name: 1 }).lean(),
@@ -728,6 +768,26 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
     // ever asked for a class.
     pendingDuplicateReviews(),
   ]);
+  // Unstamped demos and leads with no booking are matched to their live owner,
+  // the same one the "Salesperson" field on each card shows.
+  const scopeOwners = salesOwner
+    ? await leadOwnersForStudents([...allBookings.map((booking: any) => booking.student), ...allDemoStudents, ...allConvertedStudents, ...allDuplicateFlags]).catch(() => new Map<string, ResolvedLeadOwner>())
+    : null;
+  const ownsStudent = (student: any) => !scopeOwners || scopeOwners.get(String(student?._id || student))?.userId === salesOwner;
+  const bookings = salesOwner
+    ? allBookings.filter((booking: any) => (booking.salesOwner ? String(booking.salesOwner) === salesOwner : ownsStudent(booking.student)))
+    : allBookings;
+  const demoStudents = allDemoStudents.filter(ownsStudent);
+  const convertedStudents = allConvertedStudents.filter(ownsStudent);
+  const duplicateFlags = allDuplicateFlags.filter(ownsStudent);
+  const feedbackScope: Record<string, unknown> = salesOwner
+    ? {
+        $or: [
+          { booking: { $in: bookings.map((booking: any) => booking._id) } },
+          { demoUser: { $in: [...bookings.map((booking: any) => booking.student?._id || booking.student), ...demoStudents.map((student: any) => student._id), ...convertedStudents.map((student: any) => student._id)] } },
+        ],
+      }
+    : {};
   // Two different questions, so two queries. The Assessments tab lists every
   // assessment ever written, a page at a time, so none drops off the end. The
   // cards on the other tabs only need the assessments behind the demos and
@@ -735,9 +795,9 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
   // off any card whose assessment is not on the current page.
   const assessmentPage = Math.max(1, Math.floor(Number(searchParams?.page) || 1));
   const [assessmentTotal, feedback, cardFeedback] = await Promise.all([
-    DemoFeedback.countDocuments({}),
+    DemoFeedback.countDocuments(feedbackScope),
     activeTab === "assessments"
-      ? DemoFeedback.find({})
+      ? DemoFeedback.find(feedbackScope)
           .populate("booking demoUser coach classroom", "startAt demoStatus feedbackStatus name email title")
           .sort({ submittedAt: -1, createdAt: -1 })
           .skip((assessmentPage - 1) * ASSESSMENTS_PAGE_SIZE)
@@ -818,11 +878,20 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
         </div>
         <h1 className="mt-1.5 text-2xl font-semibold tracking-tight text-brand">Demo Center</h1>
         <p className="mt-1 max-w-3xl text-[13px] text-slate-500">Manage the full demo journey: requested time, coach assignment, demo classroom, assessment, conversion, and closed leads.</p>
-        <form action={syncSalesOwners} className="mt-3 flex flex-wrap items-center gap-3">
-          <input type="hidden" name="tab" value={activeTab} />
-          <button className="btn-outline bg-white"><RefreshCw size={15} /> Sync salespeople from CRM</button>
-          <span className="text-[12px] text-slate-500">Assigns every existing demo - done or pending - to the salesperson on its CRM lead. Past demos are assigned without notifying anyone.</span>
-        </form>
+        {canExportAssessments ? (
+          <a href="/api/admin/demo-assessments/export?format=xlsx" className="btn-outline mt-3 inline-flex bg-white" download>
+            <Download size={15} /> Download full assessment report (Excel)
+          </a>
+        ) : null}
+        {salesOwner ? (
+          <p className="mt-2 text-[12px] font-medium text-slate-500">Showing only the demos and leads assigned to you.</p>
+        ) : (
+          <form action={syncSalesOwners} className="mt-3 flex flex-wrap items-center gap-3">
+            <input type="hidden" name="tab" value={activeTab} />
+            <button className="btn-outline bg-white"><RefreshCw size={15} /> Sync salespeople from CRM</button>
+            <span className="text-[12px] text-slate-500">Assigns every existing demo - done or pending - to the salesperson on its CRM lead. Past demos are assigned without notifying anyone.</span>
+          </form>
+        )}
       </header>
 
       <nav className="flex gap-1 overflow-x-auto border-b border-slate-200 pb-px">
@@ -1090,6 +1159,11 @@ function DemoCard({
   // form showing the demo it belongs to.
   const assignFormKey = [cardId, booking.assignedCoach?._id || booking.instructor?._id || "", startAt, duration, booking.meetingUrl || ""].join("|");
   const extendModalId = `extend-demo-${cardId}`;
+  const changeCoachModalId = `change-coach-${cardId}`;
+  const currentCoachId = String(booking.assignedCoach?._id || booking.instructor?._id || "");
+  // A booked demo that has not been taught or written off yet can be handed to
+  // another coach without touching the slot or telling the family.
+  const canChangeCoach = booking.status === "confirmed" && !awaitingNewTime && !demoWasDelivered(booking) && !demoWasWrittenOff(booking);
   return (
     <article className="rounded-xl border border-slate-200/80 bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
       <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
@@ -1174,6 +1248,11 @@ function DemoCard({
         <PopupTrigger id={assignModalId} className="btn-primary">
           <CheckCircle2 size={15} /> Assign / Confirm Demo
         </PopupTrigger>
+        {canChangeCoach ? (
+          <PopupTrigger id={changeCoachModalId} className="btn-outline bg-white">
+            <UserCheck size={15} /> Change Coach
+          </PopupTrigger>
+        ) : null}
         {booking.classroom ? <Link href={`/classrooms/${booking.classroom}`} className="btn-outline bg-white"><CalendarCheck size={15} /> Open Demo Classroom</Link> : null}
         {/* Both halves of "the demo was taught and the write-up is owed" are set
             together by the class-close flow, and the demo status is the half a
@@ -1320,6 +1399,32 @@ function DemoCard({
           </div>
         </form>
       </PopupShell>
+      {canChangeCoach ? (
+        <PopupShell id={changeCoachModalId} title="Change demo coach" subtitle={`${student.name || "Demo student"} · ${formatAcademyDateTime(booking.startAt)} · Current coach: ${booking.assignedCoach?.name || booking.instructor?.name || "Unassigned"}`}>
+          <form key={`${changeCoachModalId}|${currentCoachId}`} action={changeCoach} autoComplete="off" className="grid gap-3">
+            <input type="hidden" name="booking" value={cardId} />
+            <input type="hidden" name="tab" value={activeTab} />
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">New coach</span>
+              <select name="coach" defaultValue="" autoComplete="off" className="input bg-white" required>
+                <option value="">Choose coach</option>
+                {coaches.filter((coach: any) => coach._id.toString() !== currentCoachId).map((coach: any) => <option key={coach._id.toString()} value={coach._id.toString()}>{coach.name}</option>)}
+              </select>
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Reason (internal, optional)</span>
+              <input name="reason" placeholder="e.g. Coach unavailable" autoComplete="off" className="input bg-white" />
+            </label>
+            <div className="rounded-lg border border-sky-100 bg-sky-50 px-3 py-2 text-xs font-semibold leading-5 text-sky-900">
+              The time, meeting link and classroom stay the same. The new coach is notified and the previous coach is told they are off it. The family is not notified.
+            </div>
+            <div className="flex flex-wrap justify-end gap-2 pt-1">
+              <a href="#" className="btn-outline bg-white">Cancel</a>
+              <button className="btn-primary"><UserCheck size={15} /> Change Coach</button>
+            </div>
+          </form>
+        </PopupShell>
+      ) : null}
       <PopupShell id={extendModalId} title="Extend demo account validity" subtitle={`${student.name || "Demo student"} · Current expiry: ${student.demoExpiresAt ? formatAcademyDateTime(student.demoExpiresAt) : "No expiry set"}`}>
         <form action={extendDemoAccess} className="grid gap-4">
           <input type="hidden" name="student" value={String(student._id || booking.student)} />

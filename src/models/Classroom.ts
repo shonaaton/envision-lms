@@ -46,6 +46,10 @@ const ScheduledSessionSchema = new Schema(
     notes: String,
     originalDate: Date,
     substituteCoach: { type: Schema.Types.ObjectId, ref: "User" },
+    // The classroom's coach at the time of this class, frozen when the classroom
+    // is handed to a new coach. Pay compares the teacher against this, not the
+    // current coach, so a hand-over never turns taught classes into substitutions.
+    assignedCoach: { type: Schema.Types.ObjectId, ref: "User" },
     actualStartedAt: Date,
     actualEndedAt: Date,
     conductedBy: { type: Schema.Types.ObjectId, ref: "User" },

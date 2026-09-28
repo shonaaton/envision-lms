@@ -10,6 +10,8 @@ import {
   demoFeedbackNotificationRecipients,
   demoNotificationRecipients,
   demoSubAdminEmails,
+  invoiceStaffRecipients,
+  nonSalesStaffFilter,
   type DemoStaffRecipient,
 } from "@/lib/demoNotificationRecipients";
 import { AccessRole } from "@/models/AccessRole";
@@ -54,6 +56,7 @@ beforeEach(() => {
 afterEach(() => {
   delete process.env.DEMO_SUB_ADMIN_NOTIFY_EMAILS;
   delete process.env.LMS_IMPORTANT_CONTACTS;
+  delete process.env.INVOICE_NOTIFY_EMAILS;
 });
 
 describe("demoSubAdminEmails", () => {
@@ -179,5 +182,34 @@ describe("demoFeedbackNotificationRecipients", () => {
     userDirectory([staff({ _id: "sayandeb", accessRole: SALES_ROLE_ID })]);
     const { subAdmins } = await demoFeedbackNotificationRecipients();
     expect(subAdmins.map((person) => person.name)).toEqual(["Saptarshi", "Dhritabrata", "Sayan Bose"]);
+  });
+});
+
+describe("invoiceStaffRecipients", () => {
+  it("names Sayan Bose and Saptarshi only, whatever other sub-admins exist", async () => {
+    (User.find as any).mockImplementation((filter: any) => {
+      const emails = new Set((filter?.email?.$in || []).map(String));
+      return chain([
+        staff({ _id: "sayan_bose", name: "Sayan Bose", email: "sayanthsbose@gmail.com", role: "sub-admin" }),
+        staff({ _id: "saptarshi", name: "Saptarshi", email: "saptarshi2856@gmail.com", role: "sub-admin" }),
+        staff({ _id: "sayandeb", name: "Sayandeb", email: "sayanenvisionchess@gmail.com", role: "sub-admin", accessRole: SALES_ROLE_ID }),
+      ].filter((row) => emails.has(row.email)));
+    });
+    const recipients = await invoiceStaffRecipients();
+    expect(recipients.map((person) => person.userId)).toEqual(["sayan_bose", "saptarshi"]);
+  });
+
+  it("falls back to the same two people from the contact list", async () => {
+    (User.find as any).mockReturnValue(chain([]));
+    const recipients = await invoiceStaffRecipients();
+    expect(recipients.map((person) => person.name)).toEqual(["Saptarshi", "Sayan Bose"]);
+  });
+});
+
+describe("nonSalesStaffFilter", () => {
+  it("excludes sub-admins on the Sales role", async () => {
+    const filter: any = await nonSalesStaffFilter();
+    expect(filter.role).toEqual({ $in: ["admin", "sub-admin"] });
+    expect(filter.accessRole.$nin.map(String)).toEqual([SALES_ROLE_ID]);
   });
 });

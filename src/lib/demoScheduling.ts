@@ -6,12 +6,14 @@ import { formatAcademyDateTime } from "@/lib/academyTime";
 import { recordActivity } from "@/lib/activity";
 import { dbConnect } from "@/lib/db";
 import { upsertDemoClassroom } from "@/lib/demoClassroom";
-import { attributeDemoToLeadOwner, leadOwnersForStudents, notifyLeadOwnerOfDemo } from "@/lib/demoLeadOwner";
-import { notifyDemoApproved } from "@/lib/demoWorkflow";
+import { attributeDemoToLeadOwner, demoOwnerRestriction, leadOwnersForStudents, notifyLeadOwnerOfDemo } from "@/lib/demoLeadOwner";
+import { notifyDemoApproved, notifyDemoCoachChanged } from "@/lib/demoWorkflow";
+import { nonSalesStaffFilter } from "@/lib/demoNotificationRecipients";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
 import { canAccessFeature } from "@/lib/featureAccess";
 import { parseMeetingUrlInput } from "@/lib/meetingUrl";
 import { Booking } from "@/models/Booking";
+import { Classroom } from "@/models/Classroom";
 import { Notification } from "@/models/Fee";
 import { User } from "@/models/User";
 import { resolveDemoRequestTask, resolveLeadTasksOnBooking } from "@/lib/tasks/taskTriggers";
@@ -97,7 +99,8 @@ export async function confirmDemoBooking(input: ScheduleInput & { bookingId: str
     feedbackStatus: "not_required",
     needsNewTime: false,
   }, { new: true }).populate("student instructor assignedCoach");
-  const admins = await User.find({ role: { $in: ["admin", "sub-admin"] }, isActive: { $ne: false } }).select("_id").lean();
+  // Not the sales bench: the assigned salesperson is told by notifyLeadOwnerOfDemo below.
+  const admins = await User.find(await nonSalesStaffFilter()).select("_id").lean();
   await Notification.insertMany([
     { user: booking.student?._id || booking.student, type: "demo.approved", title: "Demo class approved", message: `Your demo class is scheduled for ${formatAcademyDateTime(start)}.`, metadata: { booking: booking._id, classroom: classroom._id, href: "/classrooms", event: "DEMO_CLASSROOM_CREATED" } },
     { user: coachId, type: "demo.approved", title: "Demo class assigned", message: `A demo class is scheduled for ${formatAcademyDateTime(start)}.`, metadata: { booking: booking._id, classroom: classroom._id, href: "/classrooms", event: "DEMO_CLASSROOM_CREATED" } },
@@ -113,6 +116,64 @@ export async function confirmDemoBooking(input: ScheduleInput & { bookingId: str
   await resolveLeadTasksOnBooking(studentId, actorId);
   await recordActivity({ actor: actorId, targetUser: String(booking.student?._id || booking.student || ""), type: "demo.booking.approved", label: "Approved demo and created classroom", entityType: "Booking", entityId: booking._id.toString(), metadata: { classroom: classroom._id.toString(), coach: coachId, event: "DEMO_CLASSROOM_CREATED" } });
   return { ok: true, start };
+}
+
+/**
+ * Hand a booked demo to another coach, keeping its slot, meeting link and
+ * classroom. The new coach is told (in-app, email, WhatsApp) and the old coach
+ * is told they are off it; the family is not - the class they were promised is
+ * unchanged, so a coach swap is an internal matter.
+ */
+export async function changeDemoCoach(input: { bookingId: string; coachId: string; actorId: string; reason?: string }): Promise<DemoScheduleResult> {
+  const { bookingId, coachId, actorId } = input;
+  if (!isValidObjectId(bookingId)) return { ok: false, error: "That demo no longer exists." };
+  if (!isValidObjectId(coachId)) return { ok: false, error: "Choose the new coach." };
+  await dbConnect();
+  const booking: any = await Booking.findById(bookingId).populate("student", "name");
+  if (!booking || booking.archivedAt) return { ok: false, error: "That demo no longer exists." };
+  if (booking.status !== "confirmed") return { ok: false, error: "Only a booked demo can change coach. Assign the coach from Assign / Confirm Demo instead." };
+  const previousCoachId = String(booking.assignedCoach || booking.instructor || "");
+  if (previousCoachId === coachId) return { ok: false, error: "That coach is already taking this demo." };
+  const coach: any = await User.findOne({ _id: coachId, isActive: { $ne: false } }).select("name email phone countryCode role").lean();
+  if (!coach) return { ok: false, error: "That coach is no longer available." };
+  const clash = await coachClash(coachId, booking.startAt, booking.endAt, bookingId);
+  if (clash) return { ok: false, error: clash };
+
+  booking.instructor = coachId;
+  booking.assignedCoach = coachId;
+  booking.assignedCoachAt = new Date();
+  booking.assignedCoachBy = actorId;
+  await booking.save();
+  const classroom: any = booking.classroom ? await Classroom.findById(booking.classroom) : await Classroom.findOne({ demoBooking: booking._id });
+  if (classroom) {
+    classroom.coach = coachId;
+    classroom.instructor = coachId;
+    await classroom.save();
+  }
+
+  const studentName = booking.student?.name || "a student";
+  const classTime = formatAcademyDateTime(booking.startAt);
+  const previousCoach: any = isValidObjectId(previousCoachId) ? await User.findById(previousCoachId).select("name email").lean() : null;
+  const metadata = { booking: booking._id, classroom: classroom?._id, event: "DEMO_COACH_CHANGED" };
+  await Notification.insertMany([
+    { user: coachId, type: "demo.coach_changed", title: "Demo class assigned", message: `You are now taking the demo class with ${studentName} on ${classTime}.`, metadata: { ...metadata, href: "/classrooms" } },
+    ...(previousCoach ? [{ user: previousCoach._id, type: "demo.coach_changed", title: "Demo class reassigned", message: `The demo class with ${studentName} on ${classTime} has moved to another coach. You no longer need to take it.`, metadata: { ...metadata, href: "/classrooms" } }] : []),
+  ]);
+  await Promise.all([
+    coach.email && sendAutomationEmail({ to: coach.email, subject: "Demo class assigned", message: `A demo class with ${studentName} is scheduled for ${classTime}. It has been handed to you - please open the academy portal to prepare.` }),
+    previousCoach?.email && sendAutomationEmail({ to: previousCoach.email, subject: "Demo class reassigned", message: `The demo class with ${studentName} on ${classTime} has been moved to another coach. You no longer need to take it.` }),
+  ]).catch((error) => console.error("Demo coach change email failed", error));
+  await notifyDemoCoachChanged({ booking, student: booking.student, coach, classroom }).catch((error) => console.error("Demo coach change WhatsApp failed", error));
+  await recordActivity({
+    actor: actorId,
+    targetUser: String(booking.student?._id || booking.student || ""),
+    type: "demo.booking.coach_changed",
+    label: "Changed the coach on a booked demo",
+    entityType: "Booking",
+    entityId: String(booking._id),
+    metadata: { fromCoach: previousCoachId, toCoach: coachId, reason: input.reason || "", event: "DEMO_COACH_CHANGED" },
+  });
+  return { ok: true, start: booking.startAt };
 }
 
 /**
@@ -186,7 +247,9 @@ export async function bookDemoForAccount(input: ScheduleInput & { studentId: str
 export async function canScheduleDemoForAccount(user: any, studentId: string) {
   if (!user?.id || !isValidObjectId(studentId)) return false;
   await dbConnect();
-  if (["admin", "sub-admin"].includes(String(user.role)) && (await canAccessFeature("demoCenter", user, "approve"))) return true;
+  // Salespeople are sub-admins too, but may only book their own leads.
+  const salesOwner = await demoOwnerRestriction(user.id);
+  if (!salesOwner && ["admin", "sub-admin"].includes(String(user.role)) && (await canAccessFeature("demoCenter", user, "approve"))) return true;
   const student: any = await User.findOne({ _id: studentId, role: "student" }).select("name email phone").lean();
   if (!student) return false;
   const owner = (await leadOwnersForStudents([student])).get(String(student._id));

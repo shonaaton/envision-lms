@@ -244,8 +244,7 @@ export function buildPayEvents(input: BuildPayEventsInput): PayEvent[] {
     const isDemoClass = classroom.classroomType === "demo";
     const batchIds = (classroom.batches || []).map(idOf).filter(Boolean);
     const batchName = (classroom.batches || []).map((batch: any) => batch?.name).filter(Boolean).join(", ");
-    const assignedCoach = classroom.coach || classroom.instructor;
-    const assignedCoachId = idOf(assignedCoach);
+    const classroomCoach = classroom.coach || classroom.instructor;
     const sessions = Array.isArray(classroom.generatedSessions) ? classroom.generatedSessions : [];
 
     let demoTaughtBy: { coachId: string; coachName: string; minutes: number } | null = null;
@@ -255,11 +254,15 @@ export function buildPayEvents(input: BuildPayEventsInput): PayEvent[] {
       const date = scheduledStartDate(session, classroom);
       const coachId = effectiveSessionCoachId(session, classroom);
       if (!coachId) continue;
-      const coachSource = [session.conductedBy, session.substituteCoach, classroom.coach, classroom.instructor].find(
+      const coachSource = [session.conductedBy, session.substituteCoach, session.assignedCoach, classroom.coach, classroom.instructor].find(
         (candidate: any) => idOf(candidate) === coachId
       );
       const coachName = nameOf(coachSource, "Coach");
       const status = String(session.status || "");
+      // Whoever held the classroom on the day - frozen on the class by a
+      // permanent coach change - not whoever holds it now.
+      const assignedCoach = session.assignedCoach || classroomCoach;
+      const assignedCoachId = idOf(assignedCoach);
       const isSubstitution = Boolean(assignedCoachId) && coachId !== assignedCoachId;
       const minutes = scheduledPaymentMinutes(session, classroom);
 

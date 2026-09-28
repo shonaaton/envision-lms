@@ -31,7 +31,7 @@ export function scheduledStartDate(session: any, classroom?: any) {
 }
 
 export function effectiveSessionCoachId(session: any, classroom?: any) {
-  return objectId(session?.conductedBy || session?.substituteCoach || classroom?.coach || classroom?.instructor);
+  return objectId(session?.conductedBy || session?.substituteCoach || session?.assignedCoach || classroom?.coach || classroom?.instructor);
 }
 
 export function punctualityBreakdown(session: any, classroom?: any) {

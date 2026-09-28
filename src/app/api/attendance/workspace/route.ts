@@ -182,7 +182,7 @@ export async function GET(req: Request) {
 
   const classroomDocs: any[] = await Classroom.find(classroomFilter)
     .populate("coach instructor", "name username")
-    .populate("generatedSessions.substituteCoach", "name username")
+    .populate("generatedSessions.substituteCoach generatedSessions.assignedCoach", "name username")
     .populate("generatedSessions.students", "name username email")
     .populate("students", "name username email")
     .populate("batches", "name")
@@ -216,7 +216,7 @@ export async function GET(req: Request) {
         courseName: classroom.courseName || "General",
         levelName: classroom.levelName || "Not set",
         batchNames: (classroom.batches || []).map((batch: any) => batch.name).filter(Boolean),
-        coachName: session.substituteCoach?.name || classroom.coach?.name || classroom.instructor?.name || "Coach",
+        coachName: session.substituteCoach?.name || session.assignedCoach?.name || classroom.coach?.name || classroom.instructor?.name || "Coach",
         scheduledFor: session.scheduledFor || classroom.classDate,
         startTime: session.startTime || classroom.startTime || "",
         durationMinutes: Number(session.durationMinutes || classroom.durationMinutes || 60),

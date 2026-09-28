@@ -506,7 +506,7 @@ function DemoBookingBand({
             </span>
             <h2 className="mt-3 max-w-2xl text-2xl font-black leading-tight text-white sm:text-3xl">{sessionTopic(session, classroom)}</h2>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-white/80">
-              Coach {session?.substituteCoach?.name || classroom?.coach?.name || classroom?.instructor?.name || "to be assigned"} · This is a real class in a real classroom, not a preview.
+              Coach {session?.substituteCoach?.name || session?.assignedCoach?.name || classroom?.coach?.name || classroom?.instructor?.name || "to be assigned"} · This is a real class in a real classroom, not a preview.
             </p>
             <div className="mt-4 flex flex-wrap gap-2">
               <span className="inline-flex items-center gap-2 rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white/85 ring-1 ring-white/10">
@@ -713,7 +713,7 @@ function DemoStudentDashboard({
                       <StatusBadge tone="brand">{formatJoinWindowLabel(nextSession.session, now)}</StatusBadge>
                     </div>
                     <p className="mt-1 text-sm leading-6 text-slate-600">
-                      Coach {nextSession.session?.substituteCoach?.name || nextSession.classroom?.coach?.name || nextSession.classroom?.instructor?.name || "to be assigned"}
+                      Coach {nextSession.session?.substituteCoach?.name || nextSession.session?.assignedCoach?.name || nextSession.classroom?.coach?.name || nextSession.classroom?.instructor?.name || "to be assigned"}
                     </p>
                   </div>
                   <dl className="grid gap-2 text-xs sm:grid-cols-3 lg:grid-cols-1 2xl:grid-cols-3">
@@ -1208,7 +1208,7 @@ async function StudentDashboard({ userId, joinAllowed }: { userId: string; joinA
     User.findById(userId).populate("batches", "name level").lean(),
     Classroom.find({ students: userId, isActive: { $ne: false }, isSessionInstance: { $ne: true }, ...visibleClassroomFilter({ role: "student", userId }) })
       .populate("coach instructor", "name username")
-      .populate("generatedSessions.substituteCoach", "name username")
+      .populate("generatedSessions.substituteCoach generatedSessions.assignedCoach", "name username")
       .populate("batches", "name")
       .lean(),
     Homework.find({ isPublished: true, ...homeworkFilter }).sort({ dueAt: 1, createdAt: -1 }).lean(),
@@ -1323,7 +1323,7 @@ async function StudentDashboard({ userId, joinAllowed }: { userId: string; joinA
       ? {
           tone: "Class soon",
           title: sessionTopic(nextSession.session, nextSession.classroom),
-          text: `${nextSession.classroom.courseName || "Class"} with coach ${nextSession.session?.substituteCoach?.name || (nextSession.classroom.coach as any)?.name || "Assigned coach"}`,
+          text: `${nextSession.classroom.courseName || "Class"} with coach ${nextSession.session?.substituteCoach?.name || nextSession.session?.assignedCoach?.name || (nextSession.classroom.coach as any)?.name || "Assigned coach"}`,
           meta: formatJoinWindowLabel(nextSession.session, now),
           kind: "class" as const,
         }
@@ -1356,7 +1356,7 @@ async function StudentDashboard({ userId, joinAllowed }: { userId: string; joinA
   const nextMilestone = totalXp ? Math.ceil(totalXp / 1000) * 1000 : 1000;
   const xpToNext = Math.max(0, nextMilestone - totalXp);
   const engagementScore = Math.round((homeworkCompletion + quizAccuracy + attendancePct) / 3);
-  const coachName = nextSession?.session?.substituteCoach?.name || (nextSession?.classroom?.coach as any)?.name || "Assigned coach";
+  const coachName = nextSession?.session?.substituteCoach?.name || nextSession?.session?.assignedCoach?.name || (nextSession?.classroom?.coach as any)?.name || "Assigned coach";
 
   return (
     <div className="space-y-5 text-slate-950">
@@ -1643,7 +1643,7 @@ async function CoachDashboard({ userId, searchParams, joinAllowed }: { userId: s
       ...visibleClassroomFilter({ role: "instructor", userId }),
     })
       .populate("coach instructor", "name username email")
-      .populate("generatedSessions.substituteCoach", "name username email")
+      .populate("generatedSessions.substituteCoach generatedSessions.assignedCoach", "name username email")
       .populate("students", "name username email")
       .populate("batches", "name")
       .lean(),
@@ -1827,7 +1827,7 @@ async function CoachDashboard({ userId, searchParams, joinAllowed }: { userId: s
                               startDate: String(session.scheduledFor || classroom.classDate || classroom.startDate || ""),
                               startTime: session.startTime || classroom.startTime || "",
                               durationMinutes: Number(session.durationMinutes || classroom.durationMinutes || 60),
-                              coachName: session.substituteCoach?.name || classroom.coach?.name || classroom.instructor?.name || "Assigned coach",
+                              coachName: session.substituteCoach?.name || session.assignedCoach?.name || classroom.coach?.name || classroom.instructor?.name || "Assigned coach",
                               batchNames: targetNames,
                               students: (classroom.students || []).map((student: any) => ({
                                 name: student?.name || "",
@@ -1920,7 +1920,7 @@ async function CoachDashboardV2({ userId, searchParams, joinAllowed }: { userId:
       ...visibleClassroomFilter({ role: "instructor", userId }),
     })
       .populate("coach instructor", "name username email")
-      .populate("generatedSessions.substituteCoach", "name username email")
+      .populate("generatedSessions.substituteCoach generatedSessions.assignedCoach", "name username email")
       .populate("students", "name username email")
       .populate("batches", "name")
       .lean(),
@@ -1956,7 +1956,7 @@ async function CoachDashboardV2({ userId, searchParams, joinAllowed }: { userId:
   }
 
   function coachName(classroom: any, session: any) {
-    return session?.substituteCoach?.name || classroom?.coach?.name || classroom?.instructor?.name || "Assigned coach";
+    return session?.substituteCoach?.name || session?.assignedCoach?.name || classroom?.coach?.name || classroom?.instructor?.name || "Assigned coach";
   }
 
   function detailsFor(classroom: any, session: any) {
@@ -2377,8 +2377,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
     pgns,
     loggedActivities,
   ] = await Promise.all([
+    // Demo sign-ups are student accounts too (accountStatus "demo"); they are
+    // leads, not students, so every count and breakdown here leaves them out.
     needsPeople
-      ? User.find({ role: "student", ...userSearch })
+      ? User.find({ role: "student", accountStatus: { $ne: "demo" }, ...userSearch })
           .select("name username email gender isActive level courseLevel studentLevel createdAt")
           .sort({ createdAt: -1 })
           .lean()
@@ -2397,7 +2399,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
       : [],
     needsClassrooms ? Classroom.find({ isSessionInstance: { $ne: true }, ...visibleClassroomFilter({ role, userId, isSuperAdmin }) })
       .populate("coach instructor", "name username email")
-      .populate("generatedSessions.substituteCoach", "name username email")
+      .populate("generatedSessions.substituteCoach generatedSessions.assignedCoach", "name username email")
       .populate("students", "name username email")
       .populate("batches", "name level course")
       .lean() : [],
@@ -2778,7 +2780,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
                 const liveRow = todayLiveBySession.get(sessionKey) as any;
                 const status = deriveScheduledSessionStatus(sessionRow, new Date());
                 const batchName = (classroom.batches || []).map((batch: any) => batch?.name || "").filter(Boolean).join(", ") || classroom.batchName || "Batch";
-                const coachName = sessionRow.substituteCoach?.name || classroom.coach?.name || classroom.instructor?.name || "Coach";
+                const coachName = sessionRow.substituteCoach?.name || sessionRow.assignedCoach?.name || classroom.coach?.name || classroom.instructor?.name || "Coach";
                 const participants = liveRow?.participants || [];
                 const teacherJoined = Boolean(sessionRow.actualStartedAt || liveRow?.startedAt || participants.some((participant: any) => ["instructor", "admin", "sub-admin"].includes(String(participant.role || ""))));
                 const joinedStudentIds = new Set(

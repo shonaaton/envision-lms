@@ -1,5 +1,5 @@
 import { CalendarClock, CheckCircle2, Link as LinkIcon, PhoneCall } from "lucide-react";
-import { getDemoBoard, type DemoBoardScope, type LeadOwnerDemoView, type UnbookedAccountView } from "@/lib/demoLeadOwner";
+import { effectiveDemoBoardScope, getDemoBoard, type DemoBoardScope, type LeadOwnerDemoView, type UnbookedAccountView } from "@/lib/demoLeadOwner";
 import { LeadMeetJoinButton } from "@/components/sales/LeadMeetJoinButton";
 import { PopupShell, PopupTrigger } from "@/components/HashPopup";
 import { assignDemoFromDashboard } from "@/app/(dashboard)/dashboard/demoActions";
@@ -128,7 +128,9 @@ function UnbookedRow({ account, showOwner, coaches }: { account: UnbookedAccount
  * sign-ups routed to them by the CRM; `all` shows admins everything, labelled
  * with the salesperson. Renders nothing when empty unless `showEmpty`.
  */
-export default async function LeadOwnerDemosPanel({ userId, scope = "mine", showEmpty = false, notice }: { userId: string; scope?: DemoBoardScope; showEmpty?: boolean; notice?: DemoPanelNotice }) {
+export default async function LeadOwnerDemosPanel({ userId, scope: requestedScope = "mine", showEmpty = false, notice }: { userId: string; scope?: DemoBoardScope; showEmpty?: boolean; notice?: DemoPanelNotice }) {
+  // Salespeople are sub-admins, so the admin dashboard asks for "all"; they get their own leads.
+  const scope = await effectiveDemoBoardScope(userId, requestedScope);
   const { upcoming, recent, unbooked } = await getDemoBoard({ viewerId: userId, scope });
   const hasNotice = Boolean(notice?.ok || notice?.error);
   if (!upcoming.length && !recent.length && !unbooked.length && !showEmpty && !hasNotice) return null;

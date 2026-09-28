@@ -59,7 +59,7 @@ function buildClassEvent({
 }): CalendarEvent {
   const classroomId = objectId(classroom._id);
   const sessionId = String(session._id || `${classroomId}-${session.sessionNumber || "session"}`);
-  const coachName = session?.substituteCoach?.name || classroom?.coach?.name || classroom?.instructor?.name || "Assigned coach";
+  const coachName = session?.substituteCoach?.name || session?.assignedCoach?.name || classroom?.coach?.name || classroom?.instructor?.name || "Assigned coach";
   const batchLabel = joinNames(classroom?.batches, classroom?.batches?.length ? "" : `${classroom?.students?.length || 0} students`);
   const studentLabel = joinNames(classroom?.students, classroom?.students?.length ? "" : "No students assigned");
   const topic = session?.topicName || classroom?.topicName || classroom?.title || "Class session";
@@ -189,7 +189,7 @@ async function getStudentEvents(userId: string, canJoin: boolean) {
     $or: [{ students: userId }, { batches: { $in: batchIds } }],
   })
     .populate("coach instructor", "name username")
-    .populate("generatedSessions.substituteCoach", "name username")
+    .populate("generatedSessions.substituteCoach generatedSessions.assignedCoach", "name username")
     .populate("batches", "name")
     .populate("students", "name")
     .lean();
@@ -254,7 +254,7 @@ async function getStudentEvents(userId: string, canJoin: boolean) {
 async function getCoachEvents(userId: string, canJoin: boolean) {
   const classroomDocs: any[] = await Classroom.find({ ...coachClassroomQuery(userId), isActive: { $ne: false }, isPaused: { $ne: true }, isSessionInstance: { $ne: true } })
     .populate("coach instructor", "name username")
-    .populate("generatedSessions.substituteCoach", "name username")
+    .populate("generatedSessions.substituteCoach generatedSessions.assignedCoach", "name username")
     .populate("batches", "name")
     .populate("students", "name")
     .lean();
@@ -300,7 +300,7 @@ async function getCoachEvents(userId: string, canJoin: boolean) {
 async function getAdminEvents(canJoin: boolean) {
   const classrooms: any[] = await Classroom.find({ isActive: { $ne: false }, isSessionInstance: { $ne: true } })
     .populate("coach instructor", "name username")
-    .populate("generatedSessions.substituteCoach", "name username")
+    .populate("generatedSessions.substituteCoach generatedSessions.assignedCoach", "name username")
     .populate("batches", "name")
     .populate("students", "name")
     .lean();

@@ -41,7 +41,7 @@ function singleSessionFor(classroom: any) {
 }
 
 function coachForSession(classroom: any, scheduledSession: any) {
-  return scheduledSession?.substituteCoach || classroom.coach || classroom.instructor || null;
+  return scheduledSession?.substituteCoach || scheduledSession?.assignedCoach || classroom.coach || classroom.instructor || null;
 }
 
 export async function POST(req: Request) {
@@ -62,7 +62,7 @@ export async function POST(req: Request) {
   await dbConnect();
   const classroom: any = await Classroom.findById(classroomId)
     .populate("coach instructor", "name username email phone countryCode")
-    .populate("generatedSessions.substituteCoach", "name username email phone countryCode")
+    .populate("generatedSessions.substituteCoach generatedSessions.assignedCoach", "name username email phone countryCode")
     .lean();
   if (!classroom) return NextResponse.json({ error: "Classroom not found" }, { status: 404 });
 

@@ -154,7 +154,7 @@ export async function processDueAttendanceNudges() {
       ).lean();
       if (!claimed) continue;
 
-      const coachId = objectId(session.substituteCoach || classroom.coach || classroom.instructor);
+      const coachId = objectId(session.substituteCoach || session.assignedCoach || classroom.coach || classroom.instructor);
       if (!coachId) continue;
       const coach: any = await User.findById(coachId).select("name username email phone countryCode").lean();
       if (!coach) continue;

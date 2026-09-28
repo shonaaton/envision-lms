@@ -352,3 +352,41 @@ describe("resolvePayPeriod", () => {
     expect(financialYearOf(new Date(2026, 4, 15))).toBe(2026);
   });
 });
+
+describe("permanent coach change", () => {
+  it("leaves the pay of classes already taught exactly as it was", async () => {
+    const { applyPermanentCoachChange } = await import("@/lib/classroomCoachChange");
+    const NEW_COACH = "aaaaaaaaaaaaaaaaaaaaaaa3";
+    const room: any = classroom({
+      coach: COACH,
+      generatedSessions: [
+        session({ _id: "taught" }),
+        session({ _id: "covered", substituteCoach: OTHER_COACH, scheduledFor: new Date("2026-05-12T00:00:00") }),
+      ],
+    });
+    const rates = [
+      card({ scope: "academy", regular: money(30000), substitute: money(20000) }),
+      card({ scope: "classroom_coach", classroom: CLASSROOM, coach: COACH, regular: money(45000) }),
+      card({ scope: "classroom_coach", classroom: CLASSROOM, coach: NEW_COACH, regular: money(50000) }),
+    ];
+    const pay = () =>
+      buildPayEvents({
+        classrooms: [room],
+        rates,
+        overrides: [],
+        rulings: [],
+        conversions: new Map(),
+        range: { from: new Date("2026-05-01"), to: new Date("2026-05-31T23:59:59.999") },
+      }).map((event) => ({ coachId: event.coachId, kind: event.kind, amount: event.amount, isSubstitution: event.isSubstitution }));
+
+    const before = pay();
+    applyPermanentCoachChange(room, NEW_COACH, new Date("2026-06-01T00:00:00Z"));
+    expect(room.coach).toBe(NEW_COACH);
+    expect(pay()).toEqual(before);
+    expect(before).toHaveLength(2);
+    expect(before).toEqual(expect.arrayContaining([
+      { coachId: COACH, kind: "regular", amount: 45000, isSubstitution: false },
+      { coachId: OTHER_COACH, kind: "substitute", amount: 20000, isSubstitution: true },
+    ]));
+  });
+});

@@ -13,7 +13,7 @@ import JoinScheduledSessionButton from "@/components/classroom/JoinScheduledSess
 import { formatAcademyDateTime } from "@/lib/academyTime";
 import { LocalTime } from "@/components/common/LocalTime";
 import { getSessionStart } from "@/lib/classroomSessions";
-import { coachCanAccessClassroomSession } from "@/lib/classroomCoachAccess";
+import { coachCanViewClassroomSession } from "@/lib/classroomCoachAccess";
 import { canAccessFeature } from "@/lib/featureAccess";
 
 export const dynamic = "force-dynamic";
@@ -32,7 +32,7 @@ function studentsForSession(classroom: any, scheduledSession?: any) {
 function participantHasAccess(classroom: any, role: string, userId: string, scheduledSession?: any) {
   if (role === "admin" || role === "sub-admin") return true;
   if (role === "student") return studentsForSession(classroom, scheduledSession).some((student: any) => String(student) === userId || String(student?._id || "") === userId);
-  return coachCanAccessClassroomSession(classroom, userId, String(scheduledSession?._id || ""));
+  return coachCanViewClassroomSession(classroom, userId, String(scheduledSession?._id || ""));
 }
 
 function formatDate(value?: string | Date | null) {
@@ -253,7 +253,7 @@ export default async function ClassroomSummaryPage({
       ? [resolveScheduledSession(classroom)]
       : [];
   const sessions = role === "instructor"
-    ? allSessions.filter((item: any) => coachCanAccessClassroomSession(classroom, userId, String(item?._id || "")))
+    ? allSessions.filter((item: any) => coachCanViewClassroomSession(classroom, userId, String(item?._id || "")))
     : allSessions;
   if (!sessions.length) notFound();
 

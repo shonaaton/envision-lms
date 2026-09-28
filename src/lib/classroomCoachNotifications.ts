@@ -12,7 +12,7 @@ import type { WhatsAppSendResult } from "@/lib/whatsappAutomation";
  * created straight in the Classrooms module never travels through a batch - so without this the
  * assigned coach learns about the class only by opening the portal.
  */
-export type ClassroomCoachNotificationReason = "classroom_created" | "extra_class_added";
+export type ClassroomCoachNotificationReason = "classroom_created" | "extra_class_added" | "coach_changed";
 
 type ClassSummary = {
   classTitle: string;
@@ -167,11 +167,16 @@ export async function notifyClassroomCoachAssigned(input: {
   const isExtraClass = input.reason === "extra_class_added";
   const summary = await classSummary(input.classroom, input.session);
   const sessionId = recordId(input.session?._id);
-  const title = isExtraClass ? "Extra class added to your schedule" : "New class assigned";
+  const isHandover = input.reason === "coach_changed";
+  const title = isExtraClass ? "Extra class added to your schedule" : isHandover ? "Classroom handed over to you" : "New class assigned";
   const message = [
     `Hello ${coach.name || "Coach"},`,
     "",
-    isExtraClass ? "An extra class has been added to your schedule." : "A new class has been assigned to you.",
+    isExtraClass
+      ? "An extra class has been added to your schedule."
+      : isHandover
+        ? "This classroom is now permanently yours, starting from its next class."
+        : "A new class has been assigned to you.",
     "",
     `Batch: ${summary.batchLabel}`,
     `Class: ${summary.classTitle}`,
@@ -219,4 +224,35 @@ export async function notifyClassroomCoachAssigned(input: {
     return null;
   });
   return { sent: 1, whatsapp };
+}
+
+/**
+ * Tells the previous coach a classroom has been handed to someone else, so it
+ * does not simply vanish from their schedule. In-app and email only.
+ */
+export async function notifyClassroomCoachReleased(input: { classroom: any; previousCoachId: string }) {
+  const classroomId = recordId(input.classroom?._id);
+  if (!classroomId || !input.previousCoachId) return { sent: 0, skipped: true };
+  const coach: any = await User.findOne({ _id: input.previousCoachId, isActive: { $ne: false } })
+    .select("_id name email")
+    .lean();
+  if (!coach) return { sent: 0, skipped: true };
+
+  const classTitle = String(input.classroom?.title || "a classroom");
+  const title = "Classroom moved to another coach";
+  const message = [
+    `Hello ${coach.name || "Coach"},`,
+    "",
+    `${classTitle} has been permanently handed over to another coach, starting from its next class.`,
+    "The classes you already taught stay on your record.",
+  ].join("\n");
+  const metadata = { kind: "classroom_coach_released", classroomId, coachId: String(coach._id), href: "/classrooms" };
+
+  await Notification.create({ user: coach._id, type: "class_coach_released", title, message, metadata })
+    .catch((error) => console.error("Previous coach notification failed", error));
+  if (coach.email) {
+    await sendAutomationEmail({ to: String(coach.email), subject: `${title}: ${classTitle}`, message, metadata })
+      .catch((error) => console.error("Previous coach email failed", error));
+  }
+  return { sent: 1 };
 }

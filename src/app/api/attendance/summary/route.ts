@@ -39,7 +39,7 @@ function flattenClassroomSessions(classrooms: any[]) {
 }
 
 function coachForSession(classroom: any, scheduledSession: any) {
-  return scheduledSession.substituteCoach || classroom.coach || classroom.instructor || null;
+  return scheduledSession.substituteCoach || scheduledSession.assignedCoach || classroom.coach || classroom.instructor || null;
 }
 
 function titleForKind(kind: SummaryKind) {
@@ -83,7 +83,7 @@ export async function GET(req: Request) {
 
   const classroomDocs: any[] = await Classroom.find({ isSessionInstance: { $ne: true } })
     .populate("coach instructor", "name username email")
-    .populate("generatedSessions.substituteCoach", "name username email")
+    .populate("generatedSessions.substituteCoach generatedSessions.assignedCoach", "name username email")
     .populate("batches", "name")
     .sort({ createdAt: -1 })
     .lean();

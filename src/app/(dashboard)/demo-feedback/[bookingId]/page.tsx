@@ -8,6 +8,7 @@ import { DemoFeedback } from "@/models/Onboarding";
 import { recordActivity } from "@/lib/activity";
 import { notifyDemoFeedbackSubmitted } from "@/lib/demoWorkflow";
 import { demoSalesRecipients } from "@/lib/demoNotificationRecipients";
+import { demoOwnerRestriction, ownsDemoLead } from "@/lib/demoLeadOwner";
 import { curriculumByTier, curriculumSessionByNumber } from "@/lib/demoCurriculum";
 import DemoAssessmentLeaveGuard from "@/components/demo/DemoAssessmentLeaveGuard";
 import DemoFeedbackForm, { type SalesPersonOption } from "@/components/demo/DemoFeedbackForm";
@@ -40,6 +41,9 @@ async function submitDemoFeedback(formData: FormData) {
   if (!booking || booking.bookingType !== "demo" || !booking.classroom) return;
   const coachId = String(booking.assignedCoach?._id || booking.instructor?._id || booking.instructor || "");
   if (role === "instructor" && coachId !== actorId) return;
+  // A salesperson may only file the assessment on a demo assigned to them.
+  const salesOwner = await demoOwnerRestriction(actorId);
+  if (salesOwner && !(await ownsDemoLead(salesOwner, { bookingId }))) return;
 
   // The starting topic is stored as text so a report never has to re-resolve it,
   // but it is chosen by session number: several sessions in a tier share a name
@@ -135,6 +139,9 @@ export default async function DemoFeedbackPage({ params }: { params: { bookingId
   if (!booking || booking.bookingType !== "demo") redirect("/classrooms");
   const coachId = String(booking.assignedCoach?._id || booking.instructor?._id || booking.instructor || "");
   if (role === "instructor" && coachId !== actorId) redirect("/classrooms");
+  // Salespeople see only the demos assigned to them.
+  const salesOwner = await demoOwnerRestriction(actorId);
+  if (salesOwner && !(await ownsDemoLead(salesOwner, { bookingId: params.bookingId }))) redirect("/admin/demo-center");
   const feedback: any = await DemoFeedback.findOne({ booking: booking._id, classroom: booking.classroom }).lean();
   // An assessment is the write-up of a class that actually happened. A demo that
   // was never delivered - a no show, a missed slot, a closed lead - has nothing

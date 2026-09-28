@@ -13,7 +13,7 @@ import { recordActivity } from "@/lib/activity";
 import { formatINR } from "@/lib/utils";
 import { monthlyDueDate, nextMonthlyDueDate } from "@/lib/feesMetrics";
 import { createHash, randomBytes } from "crypto";
-import { importantContactWhatsAppRecipientsByKeys } from "@/lib/importantContacts";
+import { invoiceStaffRecipients } from "@/lib/demoNotificationRecipients";
 import { sendWhatsAppAutomationTemplate, sendWhatsAppAutomationTemplates, whatsappRecipientName } from "@/lib/whatsappAutomationEvents";
 import { raiseCreditsExhaustedTask, resolveInvoiceTasks } from "@/lib/tasks/taskTriggers";
 
@@ -664,7 +664,8 @@ async function notifyCreditRechargeInvoice(input: {
       `Next class: ${nextClassText}`,
       input.invoiceUrl ? `Invoice link: ${input.invoiceUrl}` : "",
     ].filter(Boolean).join("\n");
-    await Notification.create({
+    // A static-list fallback row has no account to hold an in-app notice.
+    if (subAdmin._id) await Notification.create({
       user: subAdmin._id,
       type: "credit_recharge_invoice_admin",
       title: "Student credits finished",
@@ -736,7 +737,15 @@ async function createCreditRechargeInvoiceIfNeeded(input: {
   }
 
   const invoiceUrl = await createPublicInvoiceUrl(invoice._id.toString());
-  const subAdmins: any[] = await User.find({ role: "sub-admin", isActive: { $ne: false } }).select("name email phone countryCode").lean();
+  // Invoice alerts go to the named invoice staff only. `role: "sub-admin"` also
+  // matches every salesperson (they are sub-admins on the Sales role).
+  const subAdmins = (await invoiceStaffRecipients()).map((recipient) => ({
+    _id: recipient.userId || undefined,
+    name: recipient.name,
+    email: recipient.email,
+    phone: recipient.phone,
+    countryCode: recipient.countryCode || undefined,
+  }));
   await notifyCreditRechargeInvoice({ student, subAdmins, invoice, invoiceUrl, nextClass, created: !isOpenInvoice(openInvoice) });
 
   await recordActivity({
@@ -861,7 +870,13 @@ export async function consumeAttendanceCredit(studentId: string, attendanceId: s
     }
     if (nextBalance === 0) await raiseCreditsExhaustedTask({ student: studentForCredits || { _id: studentId }, balance: nextBalance });
     if (nextBalance <= 0) {
-      const creditAlertRecipients = importantContactWhatsAppRecipientsByKeys(["sayan_bose", "saptarshi"]);
+      const creditAlertRecipients = (await invoiceStaffRecipients()).map((recipient) => ({
+        _id: recipient.userId || undefined,
+        name: recipient.name,
+        phone: recipient.phone,
+        countryCode: recipient.countryCode || undefined,
+        email: recipient.email,
+      }));
       await sendWhatsAppAutomationTemplates(creditAlertRecipients.map((recipient) => ({
         user: recipient,
         templateName: "class_credit_empty_staff_alert",

@@ -216,6 +216,9 @@ function canJoinScheduledSession(session: any, now = new Date()) {
 function assignedCoachName(classroom: ClassroomItem, scheduledSession?: any) {
   const substitute = scheduledSession?.substituteCoach;
   if (substitute && typeof substitute === "object" && substitute.name) return substitute.name;
+  // A class held before a permanent coach change keeps its own coach's name.
+  const heldBy = scheduledSession?.assignedCoach;
+  if (heldBy && typeof heldBy === "object" && heldBy.name) return heldBy.name;
   const coach = classroom.coach;
   return coach && typeof coach === "object" ? coach.name || "Coach" : "Coach";
 }
@@ -436,7 +439,9 @@ export default function ClassroomManagementClient({
       if (String(item.status || "") === "completed") return false;
       if (filters.coach) {
         const primaryMatches = String((item.coach as any)?._id || item.coach || "") === filters.coach;
-        const substituteMatches = (item.generatedSessions || []).some((session: any) => String(session?.substituteCoach?._id || session?.substituteCoach || "") === filters.coach);
+        const substituteMatches = (item.generatedSessions || []).some((session: any) =>
+          [session?.substituteCoach, session?.assignedCoach].some((coach: any) => String(coach?._id || coach || "") === filters.coach)
+        );
         if (!primaryMatches && !substituteMatches) return false;
       }
       if (filters.course && item.courseName !== filters.course) return false;
@@ -1276,6 +1281,7 @@ export default function ClassroomManagementClient({
                             {permissions.edit && item.classroomType === "single" && item.status === "scheduled" && <ActionButton icon={<Clock3 size={14} />} label="Reschedule" onClick={() => { setActionModal({ type: "reschedule_class", item }); setActionDraft({ classDate: item.classDate ? formatDateInput(item.classDate) : "", startTime: item.startTime || "", durationMinutes: item.durationMinutes || 60 }); }} />}
                             {permissions.cancel && item.status !== "cancelled" && item.status !== "completed" && <ActionButton icon={<X size={14} />} label={item.classroomType === "series" ? "Cancel Entire Series" : "Cancel Class"} onClick={() => { setActionModal({ type: item.classroomType === "series" ? "cancel_series" : "cancel_class", item }); setActionDraft({}); }} />}
                             {permissions.assign && item.status !== "cancelled" && item.status !== "completed" && <ActionButton icon={<UserCog size={14} />} label="Substitute Coach" onClick={() => { setActionModal({ type: "substitute_coach", item }); setActionDraft({ scope: item.classroomType === "series" ? "future" : "entire", coach: "" }); }} />}
+                            {permissions.assign && item.status !== "cancelled" && item.status !== "completed" && <ActionButton icon={<UserCog size={14} />} label="Permanent Coach Change" onClick={() => { setActionModal({ type: "permanent_coach_change", item }); setActionDraft({ coach: "", updateBatchCoach: true, reason: "" }); }} />}
                             {permissions.edit && item.classroomType === "series" && item.status !== "cancelled" && item.status !== "completed" && <ActionButton icon={<Clock3 size={14} />} label="Permanent Timing" onClick={() => {
                               const futureSession = (item.generatedSessions || []).find((session: any) => isSessionUpcomingLike(deriveScheduledSessionStatus(session, new Date())));
                               setActionModal({ type: "permanent_schedule_change", item });
@@ -1689,6 +1695,32 @@ export default function ClassroomManagementClient({
                     </select>
                   </Field>
                 </>
+              )}
+              {actionModal.type === "permanent_coach_change" && (
+                <div className="grid gap-4">
+                  <div className="rounded-xl bg-slate-50 p-4 text-sm leading-6 text-slate-600">
+                    <span className="font-semibold text-slate-900">{classroomCoachName(actionModal.item) || "The current coach"}</span> hands this
+                    classroom over for good. Every class from the next one onward moves to the new coach. Classes already held stay credited to the
+                    current coach for pay and reports, and a cover already arranged with a different coach is kept.
+                  </div>
+                  <Field label="New coach">
+                    <select className="input h-10" value={actionDraft.coach || ""} onChange={(event) => setActionDraft((current: any) => ({ ...current, coach: event.target.value }))}>
+                      <option value="">Select coach</option>
+                      {targets.coaches
+                        .filter((coach) => String(coach._id) !== classroomCoachId(actionModal.item))
+                        .map((coach) => <option key={coach._id} value={coach._id}>{coach.name}</option>)}
+                    </select>
+                  </Field>
+                  {(actionModal.item?.batches || []).length ? (
+                    <label className="flex items-start gap-2 text-sm text-slate-700">
+                      <input type="checkbox" className="mt-1" checked={actionDraft.updateBatchCoach !== false} onChange={(event) => setActionDraft((current: any) => ({ ...current, updateBatchCoach: event.target.checked }))} />
+                      <span>Also make them the batch coach (only for batches the current coach runs)</span>
+                    </label>
+                  ) : null}
+                  <Field label="Reason (optional)">
+                    <input className="input h-10" value={actionDraft.reason || ""} onChange={(event) => setActionDraft((current: any) => ({ ...current, reason: event.target.value }))} />
+                  </Field>
+                </div>
               )}
               {actionModal.type === "add_extra_class" && (
                 <div className="grid gap-4">
@@ -2742,6 +2774,16 @@ function flattenScheduleSlots(days: Array<{ day: number; slots: Array<{ startTim
   );
 }
 
+function classroomCoachId(item: any) {
+  const coach = item?.coach;
+  return String((coach && typeof coach === "object" ? coach._id : coach) || "");
+}
+
+function classroomCoachName(item: any) {
+  const coach = item?.coach;
+  return coach && typeof coach === "object" ? String(coach.name || "") : "";
+}
+
 function actionTitle(type: string) {
   if (type === "reschedule_class") return "Reschedule Class";
   if (type === "shift_future_sessions") return "Just break";
@@ -2755,6 +2797,7 @@ function actionTitle(type: string) {
   if (type === "cancel_session") return "Cancel This Class";
   if (type === "delete_session") return "Delete This Class";
   if (type === "substitute_coach") return "Substitute Coach";
+  if (type === "permanent_coach_change") return "Permanent Coach Change";
   if (type === "add_extra_class") return "Add Extra Class";
   if (type === "mark_session_outcome") return "Correct Class Outcome";
   if (type === "change_session_topic") return "Change Class Topic";
@@ -2769,6 +2812,7 @@ function actionConfirmLabel(type: string) {
   if (type === "shift_future_sessions") return "Shift Future Classes";
   if (type === "push_session_forward") return "Push to Next Class";
   if (type === "permanent_schedule_change") return "Update Permanent Timing";
+  if (type === "permanent_coach_change") return "Change Coach";
   if (type === "update_session") return "Save Class";
   if (type === "mark_session_outcome") return "Save Outcome";
   if (type === "change_session_topic") return "Save Topic";
@@ -2776,7 +2820,7 @@ function actionConfirmLabel(type: string) {
 }
 
 function actionCanSubmit(type: string, draft: any) {
-  if (type === "substitute_coach") return Boolean(String(draft?.coach || "").trim());
+  if (type === "substitute_coach" || type === "permanent_coach_change") return Boolean(String(draft?.coach || "").trim());
   if (type === "reschedule_class" || type === "reschedule_session") return Boolean(draft?.classDate && draft?.startTime);
   if (type === "shift_future_sessions") return Boolean(draft?.restartDate);
   if (type === "permanent_schedule_change") {
@@ -2805,6 +2849,7 @@ function actionSuccessMessage(type: string) {
   if (type === "add_extra_class") return "Extra class added";
   if (type === "push_session_forward") return "Class pushed forward, later classes moved down, and an extra class added at the end";
   if (type === "substitute_coach") return "Coach assignment updated";
+  if (type === "permanent_coach_change") return "Coach changed for all upcoming classes";
   if (type === "mark_session_outcome") return "Class outcome updated";
   if (type === "change_session_topic") return "Class topic updated";
   return "Class updated";

@@ -8,6 +8,7 @@ import { matchLeadOwner, ownerSignals, type LeadOwnerCandidate } from "@/lib/crm
 import { dbConnect } from "@/lib/db";
 import { SALES_ACCESS_ROLE_NAME_KEY } from "@/lib/demoNotificationRecipients";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
+import { sendWhatsAppAutomationTemplates } from "@/lib/whatsappAutomationEvents";
 import { normalizeGoogleMeetUrl } from "@/lib/meetingUrl";
 import { AccessRole } from "@/models/AccessRole";
 import { Booking } from "@/models/Booking";
@@ -99,6 +100,40 @@ export async function isSalesStaff(userId: string) {
 }
 
 /**
+ * Salespeople see only the demos assigned to them. Admins and other sub-admins
+ * see everything. Returns the salesperson's id when the viewer is restricted,
+ * or "" when they may see every lead.
+ */
+export async function demoOwnerRestriction(userId: unknown): Promise<string> {
+  const id = String(userId || "");
+  return (await isSalesStaff(id)) ? id : "";
+}
+
+/**
+ * Whether a restricted salesperson owns this demo or lead. A booking's stamped
+ * `salesOwner` decides; an unstamped booking, or a lead with no booking, falls
+ * back to the live CRM / manual assignment - the same owner the Demo Center
+ * labels it with.
+ */
+export async function ownsDemoLead(ownerId: string, target: { bookingId?: string; studentId?: string }) {
+  if (!ownerId) return true;
+  await dbConnect();
+  let studentId = String(target.studentId || "");
+  if (target.bookingId) {
+    if (!Types.ObjectId.isValid(target.bookingId)) return false;
+    const booking: any = await Booking.findById(target.bookingId).select("salesOwner student").lean();
+    if (!booking) return false;
+    if (studentId && String(booking.student || "") !== studentId) return false;
+    if (booking.salesOwner) return String(booking.salesOwner) === ownerId;
+    studentId = String(booking.student || "");
+  }
+  if (!studentId || !Types.ObjectId.isValid(studentId)) return false;
+  const student: any = await User.findById(studentId).select(STUDENT_FIELDS).lean();
+  if (!student) return false;
+  return (await leadOwnersForStudents([student])).get(studentId)?.userId === ownerId;
+}
+
+/**
  * The lead owner for each student, from their mirrored CRM record. One pass over
  * the mirror and the staff directory however many students are asked about, so
  * list pages can label every row.
@@ -164,8 +199,10 @@ async function notifyOwner(input: {
   message: string;
   dedupKey: string;
   metadata?: Record<string, unknown>;
+  /** WhatsApp template for the owner; body parameters are built from the owner's name. */
+  whatsapp?: { templateName: string; bodyParameters: (ownerName: string) => string[] };
 }) {
-  const owner: any = await User.findById(input.ownerId).select("_id name email").lean();
+  const owner: any = await User.findById(input.ownerId).select("_id name email phone countryCode isActive").lean();
   if (!owner) return false;
   const inserted = await Notification.updateOne(
     { user: owner._id, "metadata.dedupKey": input.dedupKey },
@@ -181,6 +218,15 @@ async function notifyOwner(input: {
     { upsert: true }
   );
   if (!inserted.upsertedCount) return false;
+
+  if (input.whatsapp && owner.phone && owner.isActive !== false) {
+    await sendWhatsAppAutomationTemplates([{
+      user: owner,
+      templateName: input.whatsapp.templateName,
+      bodyParameters: input.whatsapp.bodyParameters(owner.name || "there"),
+      metadata: { kind: "demo_lead_owner", event: input.type, recipientType: "sales", ...input.metadata, href: LEAD_OWNER_DASHBOARD_HREF, notificationDedupKey: input.dedupKey },
+    }]).catch((error) => console.error("Lead owner WhatsApp failed", error));
+  }
 
   if (owner.email) {
     await sendAutomationEmail({
@@ -215,12 +261,20 @@ async function notifyOwnerOfBooking(input: { ownerId: string; booking: any; even
       message: `${studentName}'s demo is confirmed for ${time}${input.coachName ? ` with ${input.coachName}` : ""}. Join the Google Meet from your dashboard.`,
     },
   };
+  // The same templates the whole sales bench used to get, now sent to the
+  // assigned salesperson alone: "requested" fires when the demo gains an owner,
+  // not when the parent submits it.
+  const whatsapp: Partial<Record<LeadOwnerEvent, { templateName: string; bodyParameters: (ownerName: string) => string[] }>> = {
+    booked: { templateName: "demo_booking_received_sales_alert", bodyParameters: (ownerName) => [ownerName, studentName, time] },
+    confirmed: { templateName: "demo_class_approved_staff_alert", bodyParameters: (ownerName) => [ownerName, studentName, time, input.coachName || "coach"] },
+  };
   const bookingId = idOf(booking._id);
   return notifyOwner({
     ownerId: input.ownerId,
     student,
     type: `demo.lead_owner.${event}`,
     ...copy[event],
+    whatsapp: whatsapp[event],
     // One notice per event per slot: a repeat approve on the same time is not
     // news, but a move to a new time is.
     dedupKey: `demo_lead_owner:${event}:${bookingId}:${new Date(booking.startAt).toISOString()}:${input.ownerId}`,
@@ -464,7 +518,13 @@ function toDemoView(booking: any, ownerName: string): LeadOwnerDemoView {
  * unbooked accounts; `all` is the whole academy for admins, labelled with the
  * salesperson so they can see who is holding what.
  */
+/** The board a viewer may see: a salesperson never gets the academy-wide one. */
+export async function effectiveDemoBoardScope(viewerId: string, requested: DemoBoardScope): Promise<DemoBoardScope> {
+  return requested === "all" && (await demoOwnerRestriction(viewerId)) ? "mine" : requested;
+}
+
 export async function getDemoBoard(input: { viewerId: string; scope: DemoBoardScope }) {
+  input = { ...input, scope: await effectiveDemoBoardScope(input.viewerId, input.scope) };
   const empty = { upcoming: [] as LeadOwnerDemoView[], recent: [] as LeadOwnerDemoView[], unbooked: [] as UnbookedAccountView[] };
   if (input.scope === "mine" && !Types.ObjectId.isValid(String(input.viewerId))) return empty;
   await dbConnect();
@@ -621,6 +681,12 @@ export async function assignLeadOwnerManually(input: { studentId: string; ownerI
       : bookings.length
         ? "Their demo has already taken place - please follow up on the outcome."
         : "They have not requested a demo yet - please call them.";
+    // Setting the salesperson is what releases the "demo requested" alert that
+    // was held back while the demo had no owner.
+    if (openDemo) {
+      const openBooking: any = await Booking.findById(openDemo._id).select("startAt requestedIstDateTime student").populate("student", STUDENT_FIELDS).lean();
+      if (openBooking) await notifyOwnerOfBooking({ ownerId: owner.id, booking: openBooking, event: "booked" }).catch(() => false);
+    }
     await notifyOwner({
       ownerId: owner.id,
       student,

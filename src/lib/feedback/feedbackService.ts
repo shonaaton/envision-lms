@@ -43,6 +43,7 @@ import { FeedbackCycle } from "@/models/FeedbackCycle";
 import { Notification } from "@/models/Fee";
 import { MonthlyFeedback } from "@/models/MonthlyFeedback";
 import { StudentPause } from "@/models/StudentPause";
+import { reassignAutoTasks } from "@/lib/tasks/taskService";
 import { User } from "@/models/User";
 
 export class FeedbackError extends Error {
@@ -177,7 +178,10 @@ export async function processMonthlyFeedbackCycle(now = new Date(), options: { m
       if (!student || student.role !== "student" || student.isActive === false) continue;
       if (paused.has(studentId) || closed.has(studentId) || hasStudentExited(classroom, studentId)) continue;
 
-      const exists = await MonthlyFeedback.exists({ month, student: studentId, coach: coachId });
+      // Per classroom as well as per coach: after a coach change the classroom's
+      // report for this month already exists (moved to, or written by, the
+      // previous coach) and must not be raised a second time.
+      const exists = await MonthlyFeedback.exists({ month, student: studentId, $or: [{ coach: coachId }, { classroom: classroom._id }] });
       if (exists) continue;
       const stats = await computeMonthStats(classroom, studentId, month);
       const result: any = await MonthlyFeedback.findOneAndUpdate(
@@ -501,3 +505,45 @@ async function releaseToFamily(doc: any, options: { resend?: boolean } = {}) {
   }
 }
 
+
+/**
+ * A classroom changed coach: its unfinished reports, and their tasks, go to the
+ * new coach. Anything already submitted, approved or sent stays with the coach
+ * who wrote it. A draft keeps its content so the new coach can finish it.
+ *
+ * A report is left where it is when the new coach already has one for that
+ * student and month (they teach the student in another classroom too) - the
+ * unique {month, student, coach} index allows only one.
+ */
+export async function transferPendingFeedbackToCoach(input: { classroomId: unknown; fromCoachId: unknown; toCoachId: unknown }) {
+  const classroomId = idOf(input.classroomId);
+  const fromCoachId = idOf(input.fromCoachId);
+  const toCoachId = idOf(input.toCoachId);
+  if (![classroomId, fromCoachId, toCoachId].every((id) => Types.ObjectId.isValid(id)) || fromCoachId === toCoachId) {
+    return { moved: 0, kept: 0 };
+  }
+  await dbConnect();
+  const coach: any = await User.findById(toCoachId).select("name username").lean();
+  if (!coach) return { moved: 0, kept: 0 };
+  const reports: any[] = await MonthlyFeedback.find({ classroom: classroomId, coach: fromCoachId, status: { $in: COACH_EDITABLE_STATUSES } })
+    .select("_id month student")
+    .lean();
+
+  const movedIds: string[] = [];
+  let kept = 0;
+  for (const report of reports) {
+    const clash = await MonthlyFeedback.exists({ month: report.month, student: report.student, coach: toCoachId });
+    if (clash) {
+      kept += 1;
+      continue;
+    }
+    const updated = await MonthlyFeedback.updateOne(
+      { _id: report._id, coach: fromCoachId, status: { $in: COACH_EDITABLE_STATUSES } },
+      { $set: { coach: toCoachId, coachName: String(coach.name || coach.username || "Coach") } }
+    ).catch(() => null);
+    if (updated?.modifiedCount) movedIds.push(String(report._id));
+    else kept += 1;
+  }
+  if (movedIds.length) await reassignAutoTasks("MonthlyFeedback", movedIds, toCoachId, "Classroom coach change");
+  return { moved: movedIds.length, kept };
+}

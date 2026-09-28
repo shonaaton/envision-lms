@@ -19,31 +19,42 @@ describe("named role permission boundary", () => {
   });
   it("ignores stale per-user allows and denies from access templates", () => {
     expect(evaluateFeatureState({ feature: feature("fees", { userOverrides: [{ user: sales.id, access: "allow", permissions: [] }] }), user: sales })).toBe(false);
-    expect(evaluateFeatureState({ feature: feature("salesCrm", { userOverrides: [{ user: sales.id, access: "deny", permissions: [] }] }), user: sales })).toBe(true);
+    expect(evaluateFeatureState({ feature: feature("batchVacancy", { userOverrides: [{ user: sales.id, access: "deny", permissions: [] }] }), user: sales })).toBe(true);
   });
   it("gives the separate Marketing role sales and Demo Center access without conversion", () => {
     const marketing = { ...sales, roleGrants: MARKETING_ROLE_GRANTS };
     expect(evaluateFeatureState({ feature: feature("marketingAnalytics"), user: marketing })).toBe(true);
-    expect(evaluateFeatureState({ feature: feature("salesCrm"), user: marketing })).toBe(true);
+    expect(evaluateFeatureState({ feature: feature("batchVacancy"), user: marketing })).toBe(true);
     expect(evaluateFeatureState({ feature: feature("demoCenter"), user: marketing, permission: "approve" })).toBe(true);
     expect(evaluateFeatureState({ feature: feature("demoCenter"), user: marketing, permission: "convert" })).toBe(false);
     expect(evaluateFeatureState({ feature: feature("marketingAnalytics"), user: sales })).toBe(false);
   });
   it.each(["disabled", "coming_soon", "testing"] as const)("respects %s release state", status => {
-    expect(evaluateFeatureState({ feature: feature("salesCrm", { status }), user: sales })).toBe(false);
+    expect(evaluateFeatureState({ feature: feature("batchVacancy", { status }), user: sales })).toBe(false);
   });
   it("allows explicit pilot membership but requires the role permission", () => {
-    expect(evaluateFeatureState({ feature: feature("salesCrm", { status: "testing", pilotUsers: [sales.id] }), user: sales })).toBe(true);
+    expect(evaluateFeatureState({ feature: feature("batchVacancy", { status: "testing", pilotUsers: [sales.id] }), user: sales })).toBe(true);
     expect(evaluateFeatureState({ feature: feature("fees", { status: "testing", pilotUsers: [sales.id] }), user: sales })).toBe(false);
   });
   it("deactivation or a missing role never falls back to Sub Admin grants", () => {
-    expect(evaluateFeatureState({ feature: feature("salesCrm"), user: { ...sales, roleEnabled: false } })).toBe(false);
-    expect(evaluateFeatureState({ feature: feature("salesCrm"), user: { ...sales, roleGrants: {} } })).toBe(false);
+    expect(evaluateFeatureState({ feature: feature("batchVacancy"), user: { ...sales, roleEnabled: false } })).toBe(false);
+    expect(evaluateFeatureState({ feature: feature("batchVacancy"), user: { ...sales, roleGrants: {} } })).toBe(false);
     expect(evaluateFeatureState({ feature: feature("accountSettings"), user: { ...sales, roleEnabled: false }, permission: "security" })).toBe(true);
   });
   it("preserves built-in role behavior", () => {
     expect(evaluateFeatureState({ feature: feature("fees"), user: { id: "legacy", role: "sub-admin" } })).toBe(true);
     expect(evaluateFeatureState({ feature: feature("fees", { status: "disabled" }), user: { id: "owner", role: "admin", isSuperAdmin: true } })).toBe(true);
+  });
+});
+
+describe("admin-only sales pages", () => {
+  it.each(["salesPerformance", "salesDirectory", "salesCrm"])("%s is closed to every named role but open to built-in staff", key => {
+    const stale = { ...sales, roleGrants: { ...SALES_ROLE_GRANTS, [key]: ["view"] } };
+    expect(evaluateFeatureState({ feature: feature(key), user: stale })).toBe(false);
+    expect(evaluateFeatureState({ feature: feature(key), user: { ...sales, roleGrants: MARKETING_ROLE_GRANTS } })).toBe(false);
+    expect(evaluateFeatureState({ feature: feature(key), user: { id: "sub", role: "sub-admin" } })).toBe(true);
+    expect(evaluateFeatureState({ feature: feature(key), user: { id: "adm", role: "admin" } })).toBe(true);
+    expect(validateRoleGrants({ [key]: ["view"] })[key]).toBeUndefined();
   });
 });
 

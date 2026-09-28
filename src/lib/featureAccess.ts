@@ -143,7 +143,7 @@ export async function seedPermissionTemplates(actorId?: string) {
     { name: "Content Admin", role: "admin", description: "Courses, PGNs, homework, announcements, and learning content." },
     { name: "Super Admin", role: "admin", description: "Full portal administration and protected feature access controls." },
     { name: "Standard Sub Admin", role: "sub-admin", description: "Starts with no access. Super Admins can grant selected modules from Feature Access." },
-    { name: "Sales & Relationship", role: "sub-admin", description: "Sales and relationship team: performance, contacts, batch vacancy, and lead CRM. Read-only, with no export anywhere." },
+    { name: "Sales & Relationship", role: "sub-admin", description: "Sales and relationship team: batch vacancy. Read-only, with no export anywhere." },
   ] as const;
 
   const featureDefaults = FEATURE_DEFINITIONS.reduce<Record<string, string[]>>((acc, feature) => {
@@ -164,10 +164,7 @@ export async function seedPermissionTemplates(actorId?: string) {
               // no `export` on any key, and no fees, users, or academics at all.
               template.name === "Sales & Relationship"
                 ? {
-                    salesPerformance: ["view"],
-                    salesDirectory: ["view"],
                     batchVacancy: ["view"],
-                    salesCrm: ["view", "stage", "note"],
                   }
                 : template.name === "Finance Admin"
                 ? { fees: featureDefaults.fees || [], reports: ["view", "export"] }

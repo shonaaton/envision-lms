@@ -24,6 +24,7 @@ import { normalizeGoogleMeetUrl } from "@/lib/meetingUrl";
 import { sendWhatsAppAutomationTemplates } from "@/lib/whatsappAutomationEvents";
 import { notifyClassroomCoachAssigned, notifyClassroomCoachReleased } from "@/lib/classroomCoachNotifications";
 import { applyPermanentCoachChange, type CoachChangeResult } from "@/lib/classroomCoachChange";
+import { transferPendingFeedbackToCoach } from "@/lib/feedback/feedbackService";
 import { notifyCourseCompleted, notifySessionCancelled } from "@/lib/classSessionNotifications";
 import { writeRuntimeLog } from "@/lib/runtimeLogger";
 import { raiseSubstituteTask, resolveCoachMissingTask } from "@/lib/tasks/taskTriggers";
@@ -1248,6 +1249,17 @@ async function patchClassroom(req: Request, { params }: { params: { id: string }
     ]);
   }
   await syncClassroomSessionInstances(params.id);
+  // Whichever way the coach changed (permanent change, "entire series"
+  // substitute, or the edit form), the new coach inherits the feedback still owed.
+  const currentCoachId = recordId(existing.coach || existing.instructor);
+  let feedbackTransfer = { moved: 0, kept: 0 };
+  if (previousCoachId && currentCoachId && currentCoachId !== previousCoachId) {
+    feedbackTransfer = await transferPendingFeedbackToCoach({ classroomId: params.id, fromCoachId: previousCoachId, toCoachId: currentCoachId })
+      .catch((error) => {
+        console.error("Feedback transfer on coach change failed", error);
+        return { moved: 0, kept: 0 };
+      });
+  }
   let batchesUpdated = 0;
   if (coachChange && body.updateBatchCoach !== false && (existing.batches || []).length) {
     // Only batches the old coach was running; a batch shared with another
@@ -1423,6 +1435,8 @@ async function patchClassroom(req: Request, { params }: { params: { id: string }
           pinnedSessionIds: coachChange.pinnedSessionIds,
           keptCoverSessionIds: coachChange.keptCoverSessionIds,
           batchesUpdated,
+          feedbackReportsMoved: feedbackTransfer.moved,
+          feedbackReportsKept: feedbackTransfer.kept,
         },
       });
     } else if (activityAction === "add_extra_class") {

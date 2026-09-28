@@ -10,7 +10,7 @@ export async function ensureSalesRole() {
   await dbConnect();
   await AccessRole.updateOne({ nameKey: "sales and relationship management" }, { $setOnInsert: {
     name: "Sales and Relationship Management", nameKey: "sales and relationship management",
-    description: "Lead CRM, calls and notes, contacts, batch vacancies, and sales performance.",
+    description: "Batch vacancies and contact enquiries.",
     permissions: SALES_ROLE_GRANTS,
   } }, { upsert: true });
 }

@@ -23,9 +23,9 @@ describe("role administration routes", () => {
   });
   it("creates a named role with explicit grants and an audit record", async () => {
     mocks.create.mockImplementation(async input => ({ ...input, _id: id, toObject: () => input }));
-    const response = await POST(req({ name: "  Relationship Team  ", permissions: { salesDirectory: ["view"] } }));
+    const response = await POST(req({ name: "  Relationship Team  ", permissions: { batchVacancy: ["view"] } }));
     expect(response.status).toBe(201);
-    expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ name: "Relationship Team", nameKey: "relationship team", permissions: expect.objectContaining({ salesDirectory: ["view"], accountSettings: ["view", "edit", "security"] }) }));
+    expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ name: "Relationship Team", nameKey: "relationship team", permissions: expect.objectContaining({ batchVacancy: ["view"], accountSettings: ["view", "edit", "security"] }) }));
     expect(mocks.audit).toHaveBeenCalledWith(expect.objectContaining({ targetType: "role", actor: id }));
   });
   it("handles duplicate names and invalid permissions without silently granting access", async () => {

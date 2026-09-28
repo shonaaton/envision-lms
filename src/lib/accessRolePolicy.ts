@@ -4,13 +4,15 @@ import { FEATURE_DEFINITIONS } from "@/lib/featureRegistry";
 export type RoleGrants = Record<string, string[]>;
 export type NamedRole = { _id: string; name: string; description: string; permissions: RoleGrants; isActive: boolean; updatedAt: string; memberCount: number };
 export const PROTECTED_ROLE_FEATURES = ["featureAccess", "roleManagement"];
+// Kept to built-in Admins and Sub Admins. A named role can never carry them,
+// whatever an older saved role document still lists.
+export const ADMIN_ONLY_ROLE_FEATURES = ["salesPerformance", "salesDirectory", "salesCrm"];
 export const ESSENTIAL_ROLE_GRANTS: RoleGrants = {
   dashboard: ["view"], accountSettings: ["view", "edit", "security"], notifications: ["view"],
   taskManager: ["view", "create", "edit"],
 };
 export const SALES_ROLE_GRANTS: RoleGrants = {
-  ...ESSENTIAL_ROLE_GRANTS, salesPerformance: ["view"], salesDirectory: ["view"],
-  batchVacancy: ["view"], salesCrm: ["view", "stage", "note"],
+  ...ESSENTIAL_ROLE_GRANTS, batchVacancy: ["view"],
   contactEnquiries: ["view", "manage"],
 };
 export const MARKETING_ROLE_GRANTS: RoleGrants = {
@@ -30,6 +32,7 @@ export function validateRoleGrants(input: RoleGrants): RoleGrants {
     const feature = FEATURE_DEFINITIONS.find(item => item.key === key);
     if (!feature || values.some(value => !feature.permissions.some(permission => permission.id === value))) throw new Error(`Invalid feature or permission: ${key}`);
     if (PROTECTED_ROLE_FEATURES.includes(key) && values.length) throw new Error("Security administration is reserved for Super Admins.");
+    if (ADMIN_ONLY_ROLE_FEATURES.includes(key)) continue;
     if (values.length) output[key] = Array.from(new Set(["view", ...values]));
   }
   for (const [key, values] of Object.entries(ESSENTIAL_ROLE_GRANTS)) output[key] = Array.from(new Set([...(output[key] || []), ...values]));
@@ -37,7 +40,7 @@ export function validateRoleGrants(input: RoleGrants): RoleGrants {
 }
 
 export function roleHasPermission(grants: RoleGrants | undefined, key: string, permission: string) {
-  if (PROTECTED_ROLE_FEATURES.includes(key)) return false;
+  if (PROTECTED_ROLE_FEATURES.includes(key) || ADMIN_ONLY_ROLE_FEATURES.includes(key)) return false;
   // Essentials are merged in on save, but roles saved before an essential was
   // added would otherwise lack it until someone re-saved them.
   if (ESSENTIAL_ROLE_GRANTS[key]?.includes(permission)) return true;

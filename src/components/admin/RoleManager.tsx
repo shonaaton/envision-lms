@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Copy, Plus, Search, ShieldCheck, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { FEATURE_CATEGORIES, FEATURE_DEFINITIONS } from "@/lib/featureRegistry";
-import { ESSENTIAL_ROLE_GRANTS, PROTECTED_ROLE_FEATURES, type NamedRole, type RoleGrants } from "@/lib/accessRolePolicy";
+import { ADMIN_ONLY_ROLE_FEATURES, ESSENTIAL_ROLE_GRANTS, PROTECTED_ROLE_FEATURES, type NamedRole, type RoleGrants } from "@/lib/accessRolePolicy";
 
 type Draft = { _id?: string; name: string; description: string; permissions: RoleGrants; isActive: boolean; updatedAt?: string; memberCount?: number };
 
@@ -68,7 +68,7 @@ export default function RoleManager() {
     setDraft(current => {
       if (!current) return current;
       const permissions = { ...current.permissions };
-      FEATURE_DEFINITIONS.filter(feature => feature.category === category && !PROTECTED_ROLE_FEATURES.includes(feature.key)).forEach(feature => {
+      FEATURE_DEFINITIONS.filter(feature => feature.category === category && !PROTECTED_ROLE_FEATURES.includes(feature.key) && !ADMIN_ONLY_ROLE_FEATURES.includes(feature.key)).forEach(feature => {
         permissions[feature.key] = selected ? feature.permissions.map(item => item.id) : [...(ESSENTIAL_ROLE_GRANTS[feature.key] || [])];
       });
       return { ...current, permissions };
@@ -106,8 +106,8 @@ export default function RoleManager() {
             const features = FEATURE_DEFINITIONS.filter(feature => feature.category === category && `${category} ${feature.label} ${feature.description} ${feature.permissions.map(item => item.label).join(" ")}`.toLowerCase().includes(search.toLowerCase()));
             if (!features.length) return null;
             return <section key={category} className="overflow-hidden rounded-lg border border-slate-200"><div className="flex flex-wrap items-center gap-3 bg-slate-50 px-3 py-2"><h3 className="mr-auto text-sm font-semibold">{category}</h3><button type="button" className="text-xs text-purple-700" onClick={() => selectCategory(category, true)}>Allow category</button><button type="button" className="text-xs text-slate-600" onClick={() => selectCategory(category, false)}>Clear category</button></div>
-              {features.map(feature => { const protectedFeature = PROTECTED_ROLE_FEATURES.includes(feature.key); const status = statuses[feature.key] || feature.defaultStatus || "disabled";
-                return <div key={feature.key} className="grid gap-2 border-t border-slate-100 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)]"><div><h4 className="text-sm font-medium">{feature.label} {protectedFeature && <span className="text-xs text-amber-700">· Super Admin only</span>}{status !== "enabled" && <span className="text-xs text-slate-500"> · {status.replace("_", " ")}</span>}</h4><p className="mt-0.5 text-xs text-slate-500">{feature.description}</p></div><div className="flex flex-wrap items-center gap-x-4 gap-y-2">{feature.permissions.map(permission => <label key={permission.id} className={`flex items-center gap-1.5 text-xs ${protectedFeature ? "text-slate-400" : "text-slate-700"}`}><input type="checkbox" disabled={protectedFeature || ESSENTIAL_ROLE_GRANTS[feature.key]?.includes(permission.id)} checked={draft.permissions[feature.key]?.includes(permission.id) || false} onChange={event => toggle(feature.key, permission.id, event.target.checked)} />{permission.label}</label>)}</div></div>;
+              {features.map(feature => { const superAdminOnly = PROTECTED_ROLE_FEATURES.includes(feature.key); const adminOnly = ADMIN_ONLY_ROLE_FEATURES.includes(feature.key); const protectedFeature = superAdminOnly || adminOnly; const status = statuses[feature.key] || feature.defaultStatus || "disabled";
+                return <div key={feature.key} className="grid gap-2 border-t border-slate-100 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)]"><div><h4 className="text-sm font-medium">{feature.label} {superAdminOnly && <span className="text-xs text-amber-700">· Super Admin only</span>}{adminOnly && <span className="text-xs text-amber-700">· Admins & Sub Admins only</span>}{status !== "enabled" && <span className="text-xs text-slate-500"> · {status.replace("_", " ")}</span>}</h4><p className="mt-0.5 text-xs text-slate-500">{feature.description}</p></div><div className="flex flex-wrap items-center gap-x-4 gap-y-2">{feature.permissions.map(permission => <label key={permission.id} className={`flex items-center gap-1.5 text-xs ${protectedFeature ? "text-slate-400" : "text-slate-700"}`}><input type="checkbox" disabled={protectedFeature || ESSENTIAL_ROLE_GRANTS[feature.key]?.includes(permission.id)} checked={(!adminOnly && draft.permissions[feature.key]?.includes(permission.id)) || false} onChange={event => toggle(feature.key, permission.id, event.target.checked)} />{permission.label}</label>)}</div></div>;
               })}</section>;
           })}
         </div>

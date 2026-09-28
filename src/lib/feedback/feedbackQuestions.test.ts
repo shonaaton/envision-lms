@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { COURSE_TIERS } from "@/lib/courseTiers";
-import { EFFORT_SKILL, questionSetFor, requiredRatingKeys } from "@/lib/feedback/feedbackQuestions";
+import { EFFORT_SKILL, questionSetFor, reportTier, requiredRatingKeys } from "@/lib/feedback/feedbackQuestions";
 
 describe("monthly feedback question sets", () => {
   it("gives every live tier four skills plus effort, with unique keys", () => {
@@ -26,5 +26,18 @@ describe("monthly feedback question sets", () => {
     expect(questionSetFor("mixed").tier).toBe("beginner");
     expect(questionSetFor("nonsense").tier).toBe("beginner");
     expect(questionSetFor(undefined).tier).toBe("beginner");
+  });
+
+  it("takes the tier from the course, not the classroom's stale copy", () => {
+    // Live data 2026-09-29: Intermediate course, classroom built while the course still said Beginner.
+    expect(reportTier({ courseLevel: "intermediate", classroomLevel: "beginner" })).toBe("intermediate");
+    expect(reportTier({ courseLevel: "semi_pro", classroomLevel: "beginner" })).toBe("semi_pro");
+    expect(reportTier({ courseLevel: "masters", classroomLevel: "masters" })).toBe("masters");
+  });
+
+  it("falls back to the classroom only when the course says nothing specific", () => {
+    expect(reportTier({ courseLevel: "mixed", classroomLevel: "pro" })).toBe("pro");
+    expect(reportTier({ courseLevel: undefined, classroomLevel: "intermediate" })).toBe("intermediate");
+    expect(reportTier({})).toBe("beginner");
   });
 });

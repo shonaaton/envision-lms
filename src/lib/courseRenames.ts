@@ -16,7 +16,7 @@ import { AssignmentTemplate } from "@/models/AssignmentTemplate";
 import { Classroom } from "@/models/Classroom";
 import { User } from "@/models/User";
 import { normalizeTopicKey } from "@/lib/assignmentAutomation";
-import { classroomTier } from "@/lib/courseTiers";
+import { MIXED_TIER, classroomTier, isCourseTier } from "@/lib/courseTiers";
 
 export type Rename = { from: string; to: string };
 
@@ -204,4 +204,23 @@ export async function applyCourseRenames(courseId: any, previousCourseName: stri
     students,
     plan,
   };
+}
+
+/**
+ * Brings every classroom of a course back to the course's tier, on every save.
+ *
+ * The tier rename above only moves classrooms that still hold the old value, so
+ * a classroom built before its course's tier was set correctly never caught up:
+ * on 2026-09-29 eleven Intermediate classrooms still said Beginner, and the
+ * sales directory and monthly feedback read them that way. A classroom takes
+ * its tier from its course and nothing else, so it can simply be reset. A
+ * "mixed" course leaves its classrooms alone - they were folded to beginner on
+ * purpose and the course says nothing more specific.
+ */
+export async function syncClassroomTiers(courseId: any, courseLevel: unknown) {
+  const level = String(courseLevel || "").trim();
+  if (!level || level === MIXED_TIER || !isCourseTier(level)) return 0;
+  const tier = classroomTier(level);
+  const result = await Classroom.updateMany({ course: courseId, level: { $ne: tier } }, { $set: { level: tier } });
+  return Number(result?.modifiedCount || 0);
 }

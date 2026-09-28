@@ -4,7 +4,7 @@ import { dbConnect } from "@/lib/db";
 import { recordActivity } from "@/lib/activity";
 import { Course } from "@/models/Course";
 import { requireAdminApiAccess } from "@/lib/adminApiAccess";
-import { applyCourseRenames, hasRenames, planCourseRenames } from "@/lib/courseRenames";
+import { applyCourseRenames, hasRenames, planCourseRenames, syncClassroomTiers } from "@/lib/courseRenames";
 import { isCourseTierOrMixed } from "@/lib/courseTiers";
 
 export const dynamic = "force-dynamic";
@@ -68,6 +68,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     if (!course) return NextResponse.json({ error: "Course not found" }, { status: 404 });
 
     const renameSummary = await applyCourseRenames(course._id, String(previous.name || ""), plan);
+    const syncedClassroomTiers = await syncClassroomTiers(course._id, course.level);
 
     await recordActivity({
       actor: actorId,
@@ -87,6 +88,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
         cascadedClassrooms: renameSummary.classrooms,
         cascadedTemplates: renameSummary.templates,
         cascadedStudents: renameSummary.students,
+        syncedClassroomTiers: syncedClassroomTiers || undefined,
       },
     });
     return NextResponse.json({ ...course.toObject(), renameSummary });

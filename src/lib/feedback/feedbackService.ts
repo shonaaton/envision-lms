@@ -3,7 +3,6 @@ import "server-only";
 import { Types } from "mongoose";
 import { resolvePublicAppUrl } from "@/lib/appUrl";
 import { hasStudentExited } from "@/lib/classroomStudentExits";
-import { classroomTier } from "@/lib/courseTiers";
 import { dbConnect } from "@/lib/db";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
 import { feedbackEmailHtml, feedbackEmailSubject, feedbackEmailText } from "@/lib/feedback/feedbackEmail";
@@ -17,7 +16,7 @@ import {
   openCycleMonth,
   shiftMonth,
 } from "@/lib/feedback/feedbackCycleDates";
-import { QUESTION_SET_VERSION } from "@/lib/feedback/feedbackQuestions";
+import { QUESTION_SET_VERSION, reportTier } from "@/lib/feedback/feedbackQuestions";
 import {
   COACH_EDITABLE_STATUSES,
   SKIP_REASONS,
@@ -39,6 +38,7 @@ import {
 } from "@/lib/tasks/taskTriggers";
 import { Attendance } from "@/models/Attendance";
 import { Classroom } from "@/models/Classroom";
+import { Course } from "@/models/Course";
 import { FeedbackCycle } from "@/models/FeedbackCycle";
 import { Notification } from "@/models/Fee";
 import { MonthlyFeedback } from "@/models/MonthlyFeedback";
@@ -152,9 +152,10 @@ export async function processMonthlyFeedbackCycle(now = new Date(), options: { m
       { $or: [{ "generatedSessions.scheduledFor": { $gte: start, $lte: end } }, { classDate: { $gte: start, $lte: end } }] },
     ],
   })
-    .select("title level levelName courseName coach instructor students studentExits closedForStudents generatedSessions")
+    .select("title level course levelName courseName coach instructor students studentExits closedForStudents generatedSessions")
     .lean();
-  if (!classrooms.length) return { month, created: 0 };
+  if (!classrooms.length) return { month, created: 0, retiered: 0 };
+  const tierOf = await classroomTierResolver(classrooms);
 
   // Read directly rather than via studentPause.ts: that module pulls in the fees
   // code (and Node's crypto), which the instrumentation bundle cannot load.
@@ -193,7 +194,7 @@ export async function processMonthlyFeedbackCycle(now = new Date(), options: { m
             coach: coachId,
             classroom: classroom._id,
             cycle: cycle?._id,
-            tier: classroomTier(classroom.level),
+            tier: tierOf(classroom),
             questionSetVersion: QUESTION_SET_VERSION,
             studentName: String(student.name || student.username || "Student"),
             coachName: String(coach.name || coach.username || "Coach"),
@@ -217,8 +218,46 @@ export async function processMonthlyFeedbackCycle(now = new Date(), options: { m
   for (const [coachId, count] of Array.from(createdByCoach.entries())) {
     await notifyCoachOfNewReports({ coachId, count, month, label, dueLabel }).catch((error) => console.error("[feedback] coach notice failed", error));
   }
+  // Reports raised before a course's tier was corrected carry the wrong
+  // questions. Any the coach has not submitted yet move to the right tier.
+  let retiered = 0;
+  for (const classroom of classrooms) {
+    const tier = tierOf(classroom);
+    const stale: any[] = await MonthlyFeedback.find({ month, classroom: classroom._id, status: { $in: COACH_EDITABLE_STATUSES }, tier: { $ne: tier } });
+    for (const doc of stale) {
+      applyTier(doc, tier);
+      await doc.save();
+      retiered += 1;
+    }
+  }
+
   await FeedbackCycle.updateOne({ _id: cycle?._id }, { $set: { lastSweepAt: new Date() } });
-  return { month, created };
+  return { month, created, retiered };
+}
+
+/** Looks each classroom's course up once, so the tier comes from the course, not the classroom's stale copy. */
+async function classroomTierResolver(classrooms: any[]) {
+  const courseIds = Array.from(new Set(classrooms.map((row) => idOf(row.course)).filter(Boolean)));
+  const courses: any[] = courseIds.length ? await Course.find({ _id: { $in: courseIds } }).select("level").lean() : [];
+  const courseLevel = new Map(courses.map((course) => [idOf(course), course.level]));
+  return (classroom: any) => reportTier({ courseLevel: courseLevel.get(idOf(classroom.course)), classroomLevel: classroom.level });
+}
+
+/** Moves a not-yet-submitted report to another tier, keeping only ratings that still have a question. */
+function applyTier(doc: any, tier: string) {
+  const ratings = doc.ratings instanceof Map ? Object.fromEntries(doc.ratings) : { ...(doc.ratings || {}) };
+  doc.tier = tier;
+  doc.questionSetVersion = QUESTION_SET_VERSION;
+  doc.ratings = cleanRatings(tier, ratings);
+}
+
+/** Before a report goes back to its coach, make sure it asks the questions for the student's real tier. */
+async function refreshTier(doc: any) {
+  if (!doc.classroom) return;
+  const classroom: any = await Classroom.findById(doc.classroom).select("level course").lean();
+  if (!classroom) return;
+  const tier = (await classroomTierResolver([classroom]))(classroom);
+  if (tier !== doc.tier) applyTier(doc, tier);
 }
 
 /**
@@ -411,6 +450,7 @@ export async function applyFeedbackAction(id: string, input: FeedbackActionInput
       if (doc.status !== "submitted") throw new FeedbackError("Only submitted reports can be sent back.", 409);
       doc.status = "changes_requested";
       doc.reviewNote = input.note;
+      await refreshTier(doc);
       doc.reviewedBy = toObjectId(viewer.id);
       doc.reviewedAt = new Date();
       await doc.save();
@@ -429,6 +469,7 @@ export async function applyFeedbackAction(id: string, input: FeedbackActionInput
       if (doc.status !== "skipped") throw new FeedbackError("Only skipped reports can be reopened.", 409);
       doc.status = "pending";
       doc.skipReason = "";
+      await refreshTier(doc);
       await doc.save();
       await reopenMonthlyFeedbackTask({ feedback: doc, monthLabel: label, note: "This report was reopened - please fill it in." });
       break;

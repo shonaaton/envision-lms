@@ -12,7 +12,7 @@
  * bump QUESTION_SET_VERSION) rather than renaming one.
  */
 
-import { classroomTier, courseTierLabel } from "@/lib/courseTiers";
+import { MIXED_TIER, classroomTier, courseTierLabel, isCourseTier } from "@/lib/courseTiers";
 
 export const QUESTION_SET_VERSION = 1;
 
@@ -172,6 +172,23 @@ function setKeyFor(tier: unknown) {
   const raw = String(tier || "").trim();
   if (raw === "advanced") return "semi_pro";
   return classroomTier(raw);
+}
+
+/**
+ * The tier a student's report is written at: the level of the course their
+ * classroom runs, read from the course itself.
+ *
+ * A classroom's own `level` is a copy taken when the classroom was created, and
+ * it goes stale when the course's tier is corrected afterwards - on 2026-09-29
+ * eleven Intermediate classrooms still said Beginner because the course had
+ * been fixed after they were built. So the course wins. Only a "mixed" course
+ * (which says nothing about the student) or a classroom with no course falls
+ * back to the classroom's copy.
+ */
+export function reportTier(input: { courseLevel?: unknown; classroomLevel?: unknown }) {
+  const course = String(input.courseLevel || "").trim();
+  if (course && course !== MIXED_TIER && isCourseTier(course)) return classroomTier(course);
+  return classroomTier(input.classroomLevel);
 }
 
 export function questionSetFor(tier: unknown): FeedbackQuestionSet {

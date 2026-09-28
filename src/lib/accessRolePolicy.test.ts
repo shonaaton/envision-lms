@@ -47,8 +47,8 @@ describe("named role permission boundary", () => {
   });
 });
 
-describe("admin-only sales pages", () => {
-  it.each(["salesPerformance", "salesDirectory", "salesCrm"])("%s is closed to every named role but open to built-in staff", key => {
+describe("admin-only pages", () => {
+  it.each(["salesPerformance", "salesDirectory", "salesCrm", "studentPause", "onboarding"])("%s is closed to every named role but open to built-in staff", key => {
     const stale = { ...sales, roleGrants: { ...SALES_ROLE_GRANTS, [key]: ["view"] } };
     expect(evaluateFeatureState({ feature: feature(key), user: stale })).toBe(false);
     expect(evaluateFeatureState({ feature: feature(key), user: { ...sales, roleGrants: MARKETING_ROLE_GRANTS } })).toBe(false);

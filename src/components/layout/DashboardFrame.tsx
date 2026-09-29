@@ -18,6 +18,7 @@ export default function DashboardFrame({
   featureState,
   hasCreditPlan,
   hasScheduledClassroom,
+  canLearnChess,
   user,
   children,
 }: {
@@ -27,6 +28,7 @@ export default function DashboardFrame({
   featureState?: Record<string, { visible: boolean; status: "enabled" | "disabled" | "testing" | "coming_soon"; permissions: string[] }>;
   hasCreditPlan?: boolean;
   hasScheduledClassroom?: boolean;
+  canLearnChess?: boolean;
   user: { name?: string | null; role: string; isActive?: boolean; isPaused?: boolean };
   children: ReactNode;
 }) {
@@ -67,6 +69,7 @@ export default function DashboardFrame({
         featureState={featureState}
         hasCreditPlan={hasCreditPlan}
         hasScheduledClassroom={hasScheduledClassroom}
+        canLearnChess={canLearnChess}
         mobileOpen={mobileNavOpen}
         desktopCollapsed={desktopNavCollapsed}
         user={user}

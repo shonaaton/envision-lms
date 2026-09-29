@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { EmptyState, PageHeader } from "@/components/common/PageHeader";
 import { getLearningLessonDetail } from "@/lib/learning/service";
+import { requireLearnChessAccess } from "@/lib/learning/studentAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,7 @@ function difficultyStars(value: number) {
 
 export default async function LearnLessonPage({ params }: { params: { lessonSlug: string } }) {
   const session = await auth();
+  await requireLearnChessAccess(session?.user as any);
   const userId = (session?.user as any)?.id as string | undefined;
   const detail = await getLearningLessonDetail(params.lessonSlug, userId);
   if (!detail) notFound();

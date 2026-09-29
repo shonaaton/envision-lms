@@ -3,12 +3,14 @@ import { ChevronLeft } from "lucide-react";
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { getLearningExerciseDetail } from "@/lib/learning/service";
+import { requireLearnChessAccess } from "@/lib/learning/studentAccess";
 import LearningExercisePlayer from "@/components/learning/LearningExercisePlayer";
 
 export const dynamic = "force-dynamic";
 
 export default async function LearnExercisePage({ params }: { params: { lessonSlug: string; exerciseKey: string } }) {
   const session = await auth();
+  await requireLearnChessAccess(session?.user as any);
   const userId = (session?.user as any)?.id as string | undefined;
   const exercise = await getLearningExerciseDetail(params.lessonSlug, params.exerciseKey, userId);
   if (!exercise) notFound();

@@ -25,6 +25,9 @@ const quietMutationPatterns = [
   // remounts the page mid-flow, closing the coach's "Submit & next" drawer and
   // resetting the admin's filters.
   /^\/api\/feedback(\/|$)/,
+  // Learn Chess shows stars and "Next exercise" from its own state after a solve.
+  // A refresh remounts the player, which snaps the board back to the start.
+  /^\/api\/learn\/attempt$/,
 ];
 
 const liveClassroomPattern = /^\/api\/classrooms\/[^/]+\/live$/;

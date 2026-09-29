@@ -2,6 +2,7 @@ import Link from "next/link";
 import { BookOpenCheck, ChevronRight, Sparkles, Star, Target } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { getLearningCatalog } from "@/lib/learning/service";
+import { requireLearnChessAccess } from "@/lib/learning/studentAccess";
 import { EmptyState, PageHeader, StatCard } from "@/components/common/PageHeader";
 
 export const dynamic = "force-dynamic";
@@ -61,6 +62,7 @@ function SectionCard({ section }: { section: Awaited<ReturnType<typeof getLearni
 
 export default async function LearnChessPage() {
   const session = await auth();
+  await requireLearnChessAccess(session?.user as any);
   const userId = (session?.user as any)?.id as string | undefined;
   const catalog = await getLearningCatalog(userId);
 

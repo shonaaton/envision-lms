@@ -14,8 +14,8 @@
  *   as it did before.
  * - Anything else - a script or a manual database edit - is picked up within
  *   PERMISSION_CACHE_TTL_MS. The academy agreed to that 30 second window.
- * - Batch and course membership (only used for pilot "testing" features) has no
- *   hook and relies on the same 30 second expiry.
+ * - Batch and course membership (only used for pilot "testing" features) and
+ *   Learn Chess eligibility have no hook and rely on the same 30 second expiry.
  *
  * The store lives on `globalThis`: Next.js bundles route handlers, pages and the
  * instrumentation hook separately, and a write in any of them must clear the
@@ -34,7 +34,8 @@ type Entry = { promise: Promise<unknown>; expiresAt: number };
  * - features: the normalised FeatureAccess settings (one entry)
  * - users: the user fields permission checks read, per user
  * - roles: the resolved named access role, per user
- * - cohorts: batch and course ids, per user, for pilot features
+ * - cohorts: batch and course ids, per user, for pilot features; and, keyed
+ *   `learnChess:<id>`, whether a student's classes open Learn Chess
  * - flags: academy-wide facts, such as whether an explicit super admin exists
  */
 type Bucket = "features" | "users" | "roles" | "cohorts" | "flags";

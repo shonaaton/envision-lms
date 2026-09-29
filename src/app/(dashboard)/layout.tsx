@@ -8,6 +8,7 @@ import { isInactiveRestrictedPath } from "@/lib/inactiveAccess";
 import { dbConnect } from "@/lib/db";
 import { FeeAssignment } from "@/models/Fee";
 import { Classroom } from "@/models/Classroom";
+import { canStudentUseLearnChess } from "@/lib/learning/studentAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +27,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
   // academy approves their demo they have a real classroom to join - so
   // Classrooms is added to that list exactly when there is one to show.
   let hasScheduledClassroom = false;
+  // Learn Chess is only for students who have been in a Beginner Level 1 or 2
+  // class (lib/learning/audience.ts). Staff are not filtered.
+  let canLearnChess = true;
   if (role === "student") {
     try {
       await dbConnect();
@@ -33,6 +37,12 @@ export default async function DashboardLayout({ children }: { children: React.Re
     } catch (error) {
       console.error("Dashboard credit-plan lookup failed; continuing without blocking the page.", error);
       hasCreditPlan = true;
+    }
+    try {
+      canLearnChess = await canStudentUseLearnChess((session.user as any).id);
+    } catch (error) {
+      console.error("Learn Chess eligibility lookup failed; hiding the link.", error);
+      canLearnChess = false;
     }
   }
   if (role === "student" && accountStatus === "demo") {
@@ -62,7 +72,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     redirect("/dashboard?restricted=1");
   }
   return (
-    <DashboardFrame role={role} accountStatus={accountStatus} isSuperAdmin={isSuperAdmin} featureState={featureState} hasCreditPlan={hasCreditPlan} hasScheduledClassroom={hasScheduledClassroom} user={{ name: session.user.name, role: (session.user as any).roleName || role, isActive, isPaused }}>
+    <DashboardFrame role={role} accountStatus={accountStatus} isSuperAdmin={isSuperAdmin} featureState={featureState} hasCreditPlan={hasCreditPlan} hasScheduledClassroom={hasScheduledClassroom} canLearnChess={canLearnChess} user={{ name: session.user.name, role: (session.user as any).roleName || role, isActive, isPaused }}>
       {children}
     </DashboardFrame>
   );

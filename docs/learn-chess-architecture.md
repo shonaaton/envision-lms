@@ -11,6 +11,27 @@ Structured learn-to-play curriculum at `/learn`, with coach authoring at `/admin
 - Chess foundation: `chess.js`, `react-chessboard`, and the shared board wrapper
   `src/components/homework/AssignmentChessboard.tsx`.
 
+## Who can see it
+
+For now, students only get Learn Chess once they have been in a **Beginner Level 1 or
+Level 2** classroom (`LEARN_CHESS_AUDIENCE` in `src/lib/learning/audience.ts`). Having been
+in one is enough: moving on to Level 3 or Intermediate keeps access. Cancelled, demo, test
+and per-session classrooms don't count. The tier comes from the linked Course first,
+because the classroom's own copy can be stale. The sub-level is read from `levelName`
+("Level 2"), or from its position in the course's levels if it has a custom name.
+
+`canStudentUseLearnChess` in `src/lib/learning/studentAccess.ts` does the lookup, cached
+30 s per student in the permission cache. It drives three things:
+- the sidebar link, through the dashboard layout;
+- a redirect to `/dashboard?restricted=1` through `requireLearnChessAccess`. Every `/learn`
+  page calls it before loading anything: Next renders a page in parallel with its layout,
+  so a redirect from `learn/layout.tsx` alone still streams the page's content.
+  The layout calls it too, as a safety net for new pages;
+- a 403 from `/api/learn/attempt`.
+
+Admins and sub-admins are never filtered, so they can preview it. Widen the audience by
+editing `LEARN_CHESS_AUDIENCE`.
+
 ## The rules engine
 
 `src/lib/learning/engine.ts` is the single source of truth for what counts as solved.

@@ -222,7 +222,13 @@ export async function getLearningCatalog(userId?: string): Promise<LearningCatal
     exercisesByLessonId.set(key, current);
   });
 
-  const orderedLessons = lessons
+  // Lesson order restarts at 1 in every section, so sort by section first. Sorting on
+  // lesson order alone interleaves the sections (Pawn, Capture, Check, Castling, Rook...)
+  // and the unlock chain below would lock Rook until Castling was finished.
+  const sectionOrderById = new Map(sections.map((section: any) => [toId(section._id), Number(section.order || 0)]));
+  const sectionOrderOf = (lesson: any) => sectionOrderById.get(toId(lesson.sectionId)) ?? 0;
+  const orderedLessons = [...lessons]
+    .sort((a: any, b: any) => sectionOrderOf(a) - sectionOrderOf(b) || Number(a.order || 0) - Number(b.order || 0))
     .map((lesson: any) => {
       const lessonExercises = exercisesByLessonId.get(toId(lesson._id)) || [];
       const completedExercises = lessonExercises.filter((exercise: any) => progressByExerciseId.get(toId(exercise._id))?.completed).length;
@@ -250,8 +256,7 @@ export async function getLearningCatalog(userId?: string): Promise<LearningCatal
         isLocked: false,
         nextExerciseStableKey: nextExercise ? String(nextExercise.stableKey) : undefined,
       } satisfies LessonSummary;
-    })
-    .sort((a, b) => a.order - b.order);
+    });
 
   let previousLessonComplete = true;
   const lessonsWithLocking = orderedLessons.map((lesson) => {

@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { calculateLearningReward } from "@/lib/rewards";
 import { verifyLearningSolution, type LearningExerciseSpec } from "@/lib/learning/engine";
+import { canStudentUseLearnChess } from "@/lib/learning/studentAccess";
 import { StudentReward } from "@/models/ClassroomLive";
 import { LearningAttempt, LearningExercise, LearningExerciseProgress } from "@/models/Learning";
 
@@ -46,6 +47,10 @@ export async function POST(request: Request) {
   const session = await auth();
   const studentId = (session?.user as any)?.id as string | undefined;
   if (!studentId) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+  // Same audience as the /learn pages: students of Beginner Level 1 and 2 only.
+  if ((session?.user as any)?.role === "student" && !(await canStudentUseLearnChess(studentId))) {
+    return NextResponse.json({ error: "Learn Chess is not available for your level yet." }, { status: 403 });
+  }
 
   const body = await request.json().catch(() => null);
   const exerciseId = String(body?.exerciseId || "");

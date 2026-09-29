@@ -80,6 +80,7 @@ import {
   legalCastlingText,
   overlayProtectedPoll,
   placeSetupPiece,
+  pollResponseAction,
   removeObjectsOnPieceSquares,
   selectionAfterSquareClick,
   studentMoveMutation,
@@ -852,6 +853,12 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const lastRenderedSnapshotRef = useRef<string | null>(null);
   const pollFailuresRef = useRef(0);
   const pollRetryAtRef = useRef(0);
+  // One counter orders polls against saves: a poll takes a tick when sent, a
+  // save when it finishes. See pollResponseAction.
+  const liveRequestClockRef = useRef(0);
+  const lastAppliedPollSentAtRef = useRef(0);
+  const lastSaveSettledAtRef = useRef(0);
+  const savesInFlightRef = useRef(0);
   const coach = isCoach(role);
 
   function focusBoard() {
@@ -877,6 +884,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     loadInFlightRef.current = true;
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 12000);
+    const sentAt = ++liveRequestClockRef.current;
     try {
       const res = await fetch(liveUrl("?includeLibrary=false"), { cache: "no-store", signal: controller.signal });
       const nextData = await res.json().catch(() => null);
@@ -891,10 +899,25 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       if (!("pgnLibrary" in nextData)) {
         nextData.pgnLibrary = dataRef.current?.pgnLibrary || [];
       }
+      // Polls overlap (forced refreshes do not wait for the 1s tick), and on a
+      // slow database one can come back seconds late with an older board.
+      // Without this, arrow keys jumped back to wherever that response was.
       const pending = pendingOptimisticLiveRef.current;
-      const studentMovePending = pendingStudentMoveSequenceRef.current !== null;
-      if (pending && (studentMovePending || Date.now() < pendingOptimisticUntilRef.current) && nextData?.live) {
+      const action = pollResponseAction({
+        sentAt,
+        lastAppliedSentAt: lastAppliedPollSentAtRef.current,
+        lastSaveSettledAt: lastSaveSettledAtRef.current,
+        savesOutstanding: savesInFlightRef.current > 0 || navigationPersistTimerRef.current !== null || coachMovePersistTimerRef.current !== null,
+        hasPendingLocalState: Boolean(pending),
+        holdLocalState: pendingStudentMoveSequenceRef.current !== null || Date.now() < pendingOptimisticUntilRef.current,
+      });
+      if (action === "drop") return;
+      lastAppliedPollSentAtRef.current = sentAt;
+      if (action === "overlay") {
         nextData.live = overlayProtectedPoll(nextData.live, { sequence: studentMoveSequenceRef.current, pending });
+      } else if (action === "apply_and_release") {
+        pendingOptimisticLiveRef.current = null;
+        pendingOptimisticUntilRef.current = 0;
       }
       loadedOnceRef.current = true;
       // Skip the render when this poll carries nothing new — see
@@ -1407,24 +1430,26 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     if (options?.optimistic !== false) {
       applyOptimisticLive(update, true);
     }
-    const res = await fetch(liveUrl(), {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(update),
-    });
-    if (!res.ok) {
-      const payload = await res.json().catch(() => null);
-      toast.error(payload?.error || "Could not update classroom");
-      queueRefresh(0);
-      return;
+    // The local copy is not released here: the next poll sent after every save
+    // has finished releases it (see load), so an older poll cannot undo it.
+    savesInFlightRef.current += 1;
+    try {
+      const res = await fetch(liveUrl(), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(update),
+      });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        toast.error(payload?.error || "Could not update classroom");
+        queueRefresh(0);
+        return;
+      }
+      queueRefresh(40);
+    } finally {
+      savesInFlightRef.current -= 1;
+      lastSaveSettledAtRef.current = ++liveRequestClockRef.current;
     }
-    if (pendingOptimisticClearTimerRef.current) window.clearTimeout(pendingOptimisticClearTimerRef.current);
-    pendingOptimisticClearTimerRef.current = window.setTimeout(() => {
-      pendingOptimisticLiveRef.current = null;
-      pendingOptimisticUntilRef.current = 0;
-      pendingOptimisticClearTimerRef.current = null;
-    }, 350);
-    queueRefresh(40);
   }, [liveUrl, queueRefresh]);
 
   function currentLive() {
@@ -1885,7 +1910,9 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     } catch {
       // Try PGN next.
     }
-    const permissiveFen = normalizeBoardResourceFen(value);
+    // Not normalizeBoardResourceFen: it falls back to the raw text, which
+    // turned every pasted PGN into an empty board.
+    const permissiveFen = normalizePermissiveFen(value);
     if (permissiveFen) {
       setSetupPosition(fenToPosition(permissiveFen));
       setSetupCastlingRights(inferCastlingRights(permissiveFen));
@@ -2686,7 +2713,9 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     } catch {
       // Try PGN next.
     }
-    const permissiveFen = normalizeBoardResourceFen(value);
+    // Not normalizeBoardResourceFen: it falls back to the raw text, which
+    // turned every pasted PGN into an empty board.
+    const permissiveFen = normalizePermissiveFen(value);
     if (permissiveFen) {
       patch({
         fen: permissiveFen,

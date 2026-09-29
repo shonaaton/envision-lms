@@ -6,6 +6,7 @@ import { notifyTaskOverdue, sendTaskDigest } from "@/lib/tasks/taskNotifications
 import { poolMembers, type TaskStaffMember } from "@/lib/tasks/taskRecipients";
 import { OPEN_TASK_STATUSES, isOverdue, sortForDigest, taskReminderHour, type TaskPool } from "@/lib/tasks/taskRules";
 import { InternalTask } from "@/models/InternalTask";
+import { moveInvoiceTasksToOwner } from "@/lib/tasks/taskTriggers";
 import { User } from "@/models/User";
 
 const DIGEST_LIMIT = 10;
@@ -31,6 +32,8 @@ export function digestMessage(tasks: any[], now = new Date()) {
  */
 export async function processDailyTaskReminders(now = new Date()) {
   await dbConnect();
+  // Before anything is counted, so the digest already shows them as Saptarshi's.
+  await moveInvoiceTasksToOwner();
   const overdueSent = await processOverdueTasks(now);
 
   const hour = Number(academyTimeOfDay(now).split(":")[0]);

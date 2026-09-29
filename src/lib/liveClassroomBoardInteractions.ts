@@ -171,6 +171,42 @@ export function overlayProtectedPoll<T extends Record<string, any>>(
   return state.pending ? { ...serverLive, ...state.pending } : serverLive;
 }
 
+/**
+ * What to do with a live poll response, judged by when it was sent.
+ *
+ * `sentAt` and `lastSaveSettledAt` are ticks of one counter: a poll takes a
+ * tick when it is sent, a save takes one when it finishes. On a slow database
+ * a response can arrive seconds after it was sent, carrying the board as it was
+ * then. Drawing it would snap the coach's board back to an older move, and the
+ * next arrow press would step from there.
+ *
+ * - `drop`: a newer response has already been used.
+ * - `overlay`: use it, but keep this tab's unsaved or just-saved changes on
+ *   top, because it may predate them.
+ * - `apply_and_release`: sent after every save finished, so it already holds
+ *   those changes and the local copy can go.
+ */
+export function pollResponseAction({
+  sentAt,
+  lastAppliedSentAt,
+  lastSaveSettledAt,
+  savesOutstanding,
+  hasPendingLocalState,
+  holdLocalState,
+}: {
+  sentAt: number;
+  lastAppliedSentAt: number;
+  lastSaveSettledAt: number;
+  savesOutstanding: boolean;
+  hasPendingLocalState: boolean;
+  holdLocalState: boolean;
+}): "drop" | "apply" | "overlay" | "apply_and_release" {
+  if (sentAt < lastAppliedSentAt) return "drop";
+  if (!hasPendingLocalState) return "apply";
+  if (holdLocalState || savesOutstanding || sentAt < lastSaveSettledAt) return "overlay";
+  return "apply_and_release";
+}
+
 export function releaseRefreshProtection<T extends Record<string, any>>(
   state: RefreshProtection<T>,
   sequence: number

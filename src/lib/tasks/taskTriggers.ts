@@ -9,6 +9,9 @@ import {
   resolveAutoTasksWhere,
   type AutoTaskInput,
 } from "@/lib/tasks/taskService";
+import { dbConnect } from "@/lib/db";
+import { OPEN_TASK_STATUSES } from "@/lib/tasks/taskRules";
+import { InternalTask } from "@/models/InternalTask";
 import { User } from "@/models/User";
 
 /**
@@ -386,14 +389,60 @@ export function raiseCoachApplicationTask(application: any, applicant: any) {
   });
 }
 
-export function raiseOverdueInvoiceTask(input: { invoice: any; student: any; daysOverdue: number }) {
+// ---------------------------------------------------------------------------
+// Invoices: Saptarshi's alone
+// ---------------------------------------------------------------------------
+
+/** Payment chasing belongs to one person, not the admin queue. */
+export const INVOICE_TASK_KINDS = ["invoice_overdue", "credits_exhausted"];
+
+export function invoiceTaskOwnerEmail() {
+  return String(process.env.INVOICE_TASK_OWNER_EMAIL || "saptarshi2856@gmail.com").trim().toLowerCase();
+}
+
+/** Saptarshi's account id, or "" if it is missing - then the task falls back to the admin queue rather than vanishing. */
+async function invoiceTaskOwnerId() {
+  try {
+    await dbConnect();
+    const owner: any = await User.findOne({ email: invoiceTaskOwnerEmail(), isActive: { $ne: false } }).select("_id").lean();
+    return owner ? String(owner._id) : "";
+  } catch (error) {
+    console.error("[tasks] could not resolve the invoice task owner", error);
+    return "";
+  }
+}
+
+/**
+ * Hands every open "Chase payment" / "Credits exhausted" task that sits with
+ * anyone else (or in a queue) to Saptarshi. Run from the hourly task sweep, so
+ * tasks raised before this rule existed move over on the first run after
+ * deploy. Silent: the reassigned tasks reach Saptarshi in the daily digest
+ * instead of one notice each.
+ */
+export async function moveInvoiceTasksToOwner() {
+  try {
+    const ownerId = await invoiceTaskOwnerId();
+    if (!ownerId) return { moved: 0 };
+    const result = await InternalTask.updateMany(
+      { kind: { $in: INVOICE_TASK_KINDS }, status: { $in: OPEN_TASK_STATUSES }, assignedTo: { $ne: ownerId } },
+      { $set: { assignedTo: ownerId, pool: null } }
+    );
+    return { moved: result.modifiedCount || 0 };
+  } catch (error) {
+    console.error("[tasks] could not move invoice tasks to their owner", error);
+    return { moved: 0 };
+  }
+}
+
+export async function raiseOverdueInvoiceTask(input: { invoice: any; student: any; daysOverdue: number }) {
+  const ownerId = await invoiceTaskOwnerId();
   return raise({
     kind: "invoice_overdue",
     referenceType: "InvoiceOverdue",
     referenceId: idOf(input.invoice),
     title: `Chase payment: ${nameOf(input.student, "student")} — ${String(input.invoice?.invoiceNumber || "invoice")}`,
     details: `This invoice is ${input.daysOverdue} day(s) overdue. Contact the family about payment.`,
-    pool: "admins",
+    ...(ownerId ? { assignedTo: ownerId } : { pool: "admins" as const }),
     priority: input.daysOverdue >= 7 ? "high" : "normal",
     actionHref: "/fees/invoices",
     metadata: { invoiceId: idOf(input.invoice), studentId: idOf(input.student) },
@@ -407,14 +456,15 @@ export async function resolveInvoiceTasks(invoice: any, by?: unknown) {
   if (studentId && (invoice?.type === "credits" || invoice?.credits)) await settle("CreditsExhausted", studentId, by, "Credits were recharged.");
 }
 
-export function raiseCreditsExhaustedTask(input: { student: any; balance: number }) {
+export async function raiseCreditsExhaustedTask(input: { student: any; balance: number }) {
+  const ownerId = await invoiceTaskOwnerId();
   return raise({
     kind: "credits_exhausted",
     referenceType: "CreditsExhausted",
     referenceId: idOf(input.student),
     title: `Credits exhausted: ${nameOf(input.student, "student")}`,
     details: `Credit balance is ${input.balance}. Arrange a recharge before the next class.`,
-    pool: "admins",
+    ...(ownerId ? { assignedTo: ownerId } : { pool: "admins" as const }),
     priority: "high",
     actionHref: "/fees/credit-monitoring",
     metadata: { studentId: idOf(input.student) },

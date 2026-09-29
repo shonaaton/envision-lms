@@ -4,6 +4,7 @@ import { dbConnect } from "@/lib/db";
 import { importantContactsByKeys, importantContactsByRole, type ImportantContact } from "@/lib/importantContacts";
 import { AccessRole } from "@/models/AccessRole";
 import { User } from "@/models/User";
+import { coreStaffFilter } from "@/lib/staffAudience";
 
 /**
  * Who hears about a new demo, resolved from the platform's own user records.
@@ -168,19 +169,11 @@ export async function demoFeedbackNotificationRecipients() {
 }
 
 /**
- * Admins and sub-admins who are NOT on the Sales role. Salespeople are
- * `sub-admin` accounts carrying the Sales access role, so a plain
- * `role: "sub-admin"` query pages the whole sales bench - which is how invoice
- * and every-demo alerts kept reaching salespeople who do not own the lead.
+ * Admins and plain sub-admins - never sales or marketing staff. See
+ * `coreStaffFilter`; kept under this name for the demo callers.
  */
 export async function nonSalesStaffFilter() {
-  const roles: any[] = await AccessRole.find({ nameKey: SALES_ACCESS_ROLE_NAME_KEY }).select("_id").lean();
-  const salesIds = roles.map((role) => role._id);
-  return {
-    role: { $in: ["admin", "sub-admin"] },
-    isActive: { $ne: false },
-    ...(salesIds.length ? { accessRole: { $nin: salesIds } } : {}),
-  };
+  return coreStaffFilter();
 }
 
 /** Sayan Bose and Saptarshi: the only staff who hear about invoices. */

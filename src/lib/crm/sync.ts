@@ -1,4 +1,5 @@
 import { recordActivity } from "@/lib/activity";
+import { coreStaffFilter } from "@/lib/staffAudience";
 import { isCrmConfigured, pushLeadStage } from "@/lib/crm/client";
 import { contactKeysForUser, crmPhoneNumber } from "@/lib/crm/identity";
 import { cancelDemoClassrooms } from "@/lib/demoClassroom";
@@ -284,7 +285,7 @@ export async function reopenDemoFromCrm(input: { userId: string; stageName: stri
     { upsert: true }
   ).catch(() => undefined);
 
-  const admins: any[] = await User.find({ role: { $in: ["admin", "sub-admin"] }, isActive: { $ne: false } })
+  const admins: any[] = await User.find(coreStaffFilter())
     .select("_id")
     .lean();
   await Notification.insertMany(
@@ -419,7 +420,7 @@ export async function convertStudentFromCrm(input: { userId: string; stageName: 
     ).catch(() => undefined);
   }
 
-  const admins: any[] = await User.find({ role: { $in: ["admin", "sub-admin"] }, isActive: { $ne: false } })
+  const admins: any[] = await User.find(coreStaffFilter())
     .select("_id")
     .lean();
   await Notification.insertMany(

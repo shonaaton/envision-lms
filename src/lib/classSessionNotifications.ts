@@ -1,4 +1,5 @@
 import { ACADEMY_TIME_ZONE, formatAcademyDateTime } from "@/lib/academyTime";
+import { coreStaffFilter } from "@/lib/staffAudience";
 import { resolvePublicAppUrl } from "@/lib/appUrl";
 import { getSessionStart } from "@/lib/classroomSessions";
 import { dbConnect } from "@/lib/db";
@@ -271,7 +272,7 @@ async function sendCoachMissingAlert(classroom: any, session: any, start: Date) 
   }
 
   // Also surface it in the portal for whoever opens it next.
-  const adminUsers = await User.find({ role: { $in: ["admin", "sub-admin"] }, isActive: { $ne: false } }).select("_id").lean();
+  const adminUsers = await User.find(coreStaffFilter()).select("_id").lean();
   if (adminUsers.length) {
     await Notification.insertMany(
       adminUsers.map((admin: any) => ({

@@ -207,9 +207,9 @@ describe("invoiceStaffRecipients", () => {
 });
 
 describe("nonSalesStaffFilter", () => {
-  it("excludes sub-admins on the Sales role", async () => {
+  it("keeps admins and plain sub-admins, and drops anyone on a named role (sales, marketing)", async () => {
     const filter: any = await nonSalesStaffFilter();
-    expect(filter.role).toEqual({ $in: ["admin", "sub-admin"] });
-    expect(filter.accessRole.$nin.map(String)).toEqual([SALES_ROLE_ID]);
+    expect(filter.isActive).toEqual({ $ne: false });
+    expect(filter.$or).toEqual([{ role: "admin" }, { role: "sub-admin", accessRole: null }]);
   });
 });

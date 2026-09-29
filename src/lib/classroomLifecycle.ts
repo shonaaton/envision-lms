@@ -1,4 +1,5 @@
 import { Types } from "mongoose";
+import { coreStaffFilter } from "@/lib/staffAudience";
 import { Attendance } from "@/models/Attendance";
 import { Classroom } from "@/models/Classroom";
 import { Notification } from "@/models/Fee";
@@ -173,7 +174,7 @@ function monthRange(date = new Date()) {
 }
 
 async function notifyAdminsAndSubAdmins(title: string, message: string, metadata: Record<string, unknown>) {
-  const users = await User.find({ role: { $in: ["admin", "sub-admin"] }, isActive: { $ne: false } }).select("_id").lean();
+  const users = await User.find(coreStaffFilter()).select("_id").lean();
   if (!users.length) return;
   await Notification.insertMany(
     users.map((user: any) => ({

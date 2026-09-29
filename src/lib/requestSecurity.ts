@@ -17,6 +17,29 @@ declare global {
 const rateLimitStore = global._requestRateLimits ?? new Map<string, RateLimitRecord>();
 if (!global._requestRateLimits) global._requestRateLimits = rateLimitStore;
 
+/**
+ * Keys are per IP and per login name, so without pruning the store grows with
+ * every visitor for as long as the process runs. Expired records are dropped
+ * once the store passes SWEEP_AT; if a flood from many addresses keeps it above
+ * MAX_KEYS even then, the oldest records go - forgetting a stranger's counter
+ * is better than running out of memory.
+ */
+const SWEEP_AT = 5_000;
+const MAX_KEYS = 50_000;
+
+export function pruneExpiredEntries<T extends { resetAt: number }>(store: Map<string, T>, now = Date.now(), sweepAt = SWEEP_AT, maxKeys = MAX_KEYS) {
+  if (store.size < sweepAt) return;
+  store.forEach((record, key) => {
+    if (record.resetAt <= now) store.delete(key);
+  });
+  if (store.size <= maxKeys) return;
+  // Maps iterate in insertion order, so this drops the longest-held keys first.
+  for (const key of store.keys()) {
+    if (store.size <= maxKeys) break;
+    store.delete(key);
+  }
+}
+
 function normalizeIp(value: string) {
   return String(value || "").trim() || "unknown";
 }
@@ -40,6 +63,7 @@ export function consumeRateLimit(key: string, limit: number, windowMs: number): 
   const normalizedKey = String(key || "").trim();
   const existing = rateLimitStore.get(normalizedKey);
   if (!existing || existing.resetAt <= now) {
+    pruneExpiredEntries(rateLimitStore, now);
     rateLimitStore.set(normalizedKey, { count: 1, resetAt: now + windowMs });
     return { allowed: true, limit, remaining: Math.max(0, limit - 1), retryAfterMs: windowMs };
   }

@@ -1,8 +1,8 @@
 import "server-only";
 
 import { Types } from "mongoose";
-import { unlink } from "fs/promises";
-import path from "path";
+import { removeUpload } from "@/lib/uploads";
+import { isUploadedProfilePhoto } from "@/lib/uploadUrls";
 import { Achievement } from "@/models/Achievement";
 import { Activity } from "@/models/Activity";
 import { Announcement } from "@/models/Announcement";
@@ -261,11 +261,6 @@ export async function deleteUserRecords(userIdValue: string): Promise<CleanupSum
   ]);
 
   await remove(User.deleteOne({ _id: userId }));
-  if (typeof targetUser?.avatar === "string" && targetUser.avatar.startsWith("/images/profiles/")) {
-    const filename = path.basename(targetUser.avatar);
-    if (filename === targetUser.avatar.slice("/images/profiles/".length)) {
-      await unlink(path.join(process.cwd(), "public", "images", "profiles", filename)).catch(() => undefined);
-    }
-  }
+  if (isUploadedProfilePhoto(targetUser?.avatar)) await removeUpload(targetUser.avatar);
   return { deletedRecords, detachedRecords };
 }

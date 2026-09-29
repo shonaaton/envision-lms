@@ -1,4 +1,4 @@
-import { ACADEMY_TIME_ZONE } from "@/lib/academyTime";
+import { ACADEMY_TIME_ZONE, zonedDateTime } from "@/lib/academyTime";
 
 /**
  * The reporting window a payroll screen is looking at.
@@ -48,17 +48,44 @@ function monthKey(year: number, month: number) {
   return `${year}-${String(month).padStart(2, "0")}`;
 }
 
+function pad(value: number) {
+  return String(value).padStart(2, "0");
+}
+
+/**
+ * Midnight in Kolkata on a calendar day, whatever zone the server runs in.
+ *
+ * `new Date(y, m, d)` is midnight in the server's own zone, and the production
+ * container runs UTC - so every payroll month used to open at 05:30 IST on the
+ * 1st, and a class at 01:00 IST on the 1st was billed to the month before.
+ * Month overflow (month 13, day 0) is normalised the same way `Date` does it.
+ */
+function academyMidnight(year: number, month: number, day: number) {
+  const normalized = new Date(Date.UTC(year, month - 1, day));
+  return zonedDateTime(
+    `${normalized.getUTCFullYear()}-${pad(normalized.getUTCMonth() + 1)}-${pad(normalized.getUTCDate())}`,
+    "00:00"
+  );
+}
+
 function startOfMonth(year: number, month: number) {
-  return new Date(year, month - 1, 1, 0, 0, 0, 0);
+  return academyMidnight(year, month, 1);
 }
 
 function endOfMonth(year: number, month: number) {
-  return new Date(year, month, 0, 23, 59, 59, 999);
+  return new Date(academyMidnight(year, month + 1, 1).getTime() - 1);
 }
 
-
 function monthLabel(year: number, month: number) {
-  return startOfMonth(year, month).toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+  return new Date(Date.UTC(year, month - 1, 15)).toLocaleDateString("en-IN", { month: "long", year: "numeric", timeZone: "UTC" });
+}
+
+/** A "YYYY-MM-DD" typed into a date box, as the first or last instant of that day in Kolkata. */
+function academyDayEdge(value: string, edge: "start" | "end") {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  return edge === "start" ? academyMidnight(year, month, day) : new Date(academyMidnight(year, month, day + 1).getTime() - 1);
 }
 
 /**
@@ -106,8 +133,8 @@ export function resolvePayPeriod(
   if (preset === "range") {
     const fromRaw = param(params, "from");
     const toRaw = param(params, "to");
-    const from = fromRaw ? new Date(`${fromRaw}T00:00:00`) : MIN_DATE;
-    const to = toRaw ? new Date(`${toRaw}T23:59:59.999`) : MAX_DATE;
+    const from = (fromRaw && academyDayEdge(fromRaw, "start")) || MIN_DATE;
+    const to = (toRaw && academyDayEdge(toRaw, "end")) || MAX_DATE;
     // An inverted range is a typo, not a request for zero rows - swapping the
     // ends shows what they meant instead of an empty table.
     const ordered = from > to ? { from: to, to: from } : { from, to };
@@ -127,8 +154,8 @@ export function resolvePayPeriod(
     const startYear = Number.isFinite(raw) && raw > 1990 && raw < 2200 ? raw : financialYearOf(now);
     return {
       preset,
-      from: new Date(startYear, 3, 1, 0, 0, 0, 0),
-      to: new Date(startYear + 1, 2, 31, 23, 59, 59, 999),
+      from: startOfMonth(startYear, 4),
+      to: endOfMonth(startYear + 1, 3),
       label: financialYearLabel(startYear),
       month: "",
       fromInput: "",

@@ -11,6 +11,7 @@ import { closedGroupCountsByCoach } from "@/lib/groupLifecycle";
 import { validateRoleAssignment } from "@/lib/accessRoles";
 import { flagDuplicateAccount } from "@/lib/duplicateAccounts";
 import { AccessRole } from "@/models/AccessRole";
+import { withOpenTempPassword } from "@/lib/tempPasswords";
 
 export const dynamic = "force-dynamic";
 
@@ -63,12 +64,14 @@ export async function GET(req: Request) {
 
   const sortObj: any = sort === "name" ? { name: 1 } : { createdAt: -1 };
   const superAdmin = await isSuperAdminSession(session.user as any);
-  const list = await User.find(filter, { passwordHash: 0, passwordResetTokenHash: 0, passwordResetExpiresAt: 0, ...(!superAdmin ? { tempPassword: 0 } : {}) })
+  const found = await User.find(filter, { passwordHash: 0, passwordResetTokenHash: 0, passwordResetExpiresAt: 0, ...(!superAdmin ? { tempPassword: 0 } : {}) })
     .populate("batches", "name")
     .populate({ path: "accessRole", select: "name isActive", model: AccessRole })
     .sort(sortObj)
     .limit(500)
     .lean();
+  // Temporary passwords are stored sealed; a Super Admin copies them in the clear.
+  const list = (found as any[]).map(withOpenTempPassword);
 
   // Coaches carry how many of their groups have been closed by a student
   // deactivation, so the coach list shows the churn sitting under each of them.

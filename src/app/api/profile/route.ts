@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { unlink } from "fs/promises";
-import path from "path";
 import { z } from "zod";
+import { removeUpload } from "@/lib/uploads";
+import { isUploadedProfilePhoto } from "@/lib/uploadUrls";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { User } from "@/models/User";
@@ -50,12 +50,8 @@ export async function PATCH(request: Request) {
 
   if (!updated) return NextResponse.json({ error: "Profile not found." }, { status: 404 });
 
-  if (parsed.data.avatar && typeof previous?.avatar === "string" && previous.avatar.startsWith("/images/profiles/")) {
-    const filename = path.basename(previous.avatar);
-    if (filename === previous.avatar.slice("/images/profiles/".length)) {
-      await unlink(path.join(process.cwd(), "public", "images", "profiles", filename)).catch(() => undefined);
-    }
-  }
+  // Switching to a colour: the old photo is no longer anyone's.
+  if (parsed.data.avatar && isUploadedProfilePhoto(previous?.avatar)) await removeUpload(previous.avatar);
   await recordActivity({
     actor: (session.user as any).id,
     targetUser: (session.user as any).id,

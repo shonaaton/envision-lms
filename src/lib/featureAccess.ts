@@ -7,7 +7,7 @@ import { FeatureAccess, PermissionAudit, PermissionTemplate } from "@/models/Fea
 import { User } from "@/models/User";
 import { Batch } from "@/models/Batch";
 import { Classroom } from "@/models/Classroom";
-import { explicitSuperAdminExists, getAccessUser, resolveAccessRole } from "@/lib/accessRoles";
+import { explicitSuperAdminExists, getAccessUser, grantStaffInvoicesToSalesRole, resolveAccessRole } from "@/lib/accessRoles";
 import { cachedPermissionValue } from "@/lib/permissionCache";
 import { roleHasPermission, type RoleGrants } from "@/lib/accessRolePolicy";
 import {
@@ -194,6 +194,45 @@ export async function getFeatureAccessSnapshot(): Promise<FeatureAccessSnapshot[
   return FEATURE_DEFINITIONS.map((feature) => ({ ...feature, ...structuredClone(states[feature.key]) }));
 }
 
+/**
+ * Coach Pay's first release (db6a192) named the coach grant `view_own` and used
+ * `view` for the academy-wide payroll; 21 minutes later `view` became "open the
+ * area" and `view_all` the payroll. Documents are only written with
+ * $setOnInsert, so one created in that window kept `instructor: ["view_own"]`
+ * and every coach lost the page. Translates one role's list from a document
+ * written by that release (callers check the document carries `view_own`
+ * somewhere): the old `view` was the whole payroll, now `view_all`, and the
+ * old `view_own` is today's `view`.
+ */
+export function migrateLegacyCoachPayPermissions(permissions: string[] | undefined) {
+  const list = (permissions || []).map(String);
+  const next = new Set(list.filter((item) => item !== "view_own"));
+  if (list.includes("view")) next.add("view_all");
+  if (list.includes("view") || list.includes("view_own")) next.add("view");
+  return Array.from(next);
+}
+
+function hasLegacyCoachPayGrant(doc: any) {
+  if (!doc) return false;
+  const roles = Object.values(doc.rolePermissions || {}) as any[];
+  return (
+    roles.some((perms) => Array.isArray(perms) && perms.includes("view_own")) ||
+    (doc.userOverrides || []).some((override: any) => (override.permissions || []).includes("view_own"))
+  );
+}
+
+async function migrateLegacyCoachPayDoc(doc: any) {
+  const rolePermissions = Object.fromEntries(
+    PORTAL_ROLES.map((role) => [role, migrateLegacyCoachPayPermissions(doc.rolePermissions?.[role])])
+  );
+  const userOverrides = (doc.userOverrides || []).map((override: any) => ({
+    ...override,
+    permissions: migrateLegacyCoachPayPermissions(override.permissions),
+  }));
+  await FeatureAccess.updateOne({ _id: doc._id }, { $set: { rolePermissions, userOverrides } });
+  console.info("[featureAccess] migrated legacy coachPay view_own grants", rolePermissions);
+}
+
 async function loadFeatureAccessStates(): Promise<Record<string, FeatureAccessState>> {
   await dbConnect();
   const featureKeys = FEATURE_DEFINITIONS.map((feature) => feature.key);
@@ -217,6 +256,14 @@ async function loadFeatureAccessStates(): Promise<Record<string, FeatureAccessSt
         ),
       ),
     );
+    if (missingFeatures.some((feature) => feature.key === "staffInvoices")) {
+      await grantStaffInvoicesToSalesRole().catch((error) => console.error("[featureAccess] could not grant staff invoices to the Sales role", error));
+    }
+    docs = await FeatureAccess.find({ key: { $in: featureKeys } }).lean();
+  }
+  const legacyCoachPay = docs.find((doc: any) => doc.key === "coachPay" && hasLegacyCoachPayGrant(doc));
+  if (legacyCoachPay) {
+    await migrateLegacyCoachPayDoc(legacyCoachPay);
     docs = await FeatureAccess.find({ key: { $in: featureKeys } }).lean();
   }
   const byKey = new Map(docs.map((doc: any) => [doc.key, doc]));

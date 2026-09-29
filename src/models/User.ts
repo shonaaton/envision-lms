@@ -1,6 +1,7 @@
 import { escapeRegex } from "@/lib/loginIdentity";
 import { canonicalEmail, canonicalPhone } from "@/lib/identityMatch";
 import { WRITE_QUERY_MIDDLEWARE, invalidateUserPermissionCache, userIdsFromFilter } from "@/lib/permissionCache";
+import { sealTempPassword } from "@/lib/tempPasswords";
 import { Schema, model, models, type InferSchemaType } from "mongoose";
 
 const UserSchema = new Schema(
@@ -38,7 +39,9 @@ const UserSchema = new Schema(
       note: String,
     },
     passwordHash: { type: String, required: true },
-    tempPassword: { type: String },
+    // Sealed on every write (create, save and update queries all run setters);
+    // opened only where a Super Admin copies credentials. See lib/tempPasswords.ts.
+    tempPassword: { type: String, set: sealTempPassword },
     passwordChangedAt: { type: Date },
     passwordChangeSource: { type: String, enum: ["registration", "admin_reset", "self_reset"], default: "registration" },
     role: { type: String, enum: ["student", "instructor", "admin", "sub-admin"], default: "student", index: true },

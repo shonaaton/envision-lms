@@ -134,7 +134,7 @@ const NoShowRulingSchema = new Schema(
 
 NoShowRulingSchema.index({ classroom: 1, sessionId: 1 }, { unique: true });
 
-export const PROPOSAL_KINDS = ["session", "classroom_rate"] as const;
+export const PROPOSAL_KINDS = ["session", "classroom_rate", "coach_rate"] as const;
 export type ProposalKind = (typeof PROPOSAL_KINDS)[number];
 
 export const PROPOSAL_STATUSES = ["pending", "approved", "rejected"] as const;
@@ -155,12 +155,22 @@ export type ProposalStatus = (typeof PROPOSAL_STATUSES)[number];
  * - `session`        - one substitution class, at one agreed amount.
  * - `classroom_rate` - the standing rates for one classroom this coach teaches,
  *                      reviewed and approved as a single card.
+ * - `coach_rate`     - a rate for this coach across every classroom, approved
+ *                      into a `coach` scope card. Used for demos: each demo is
+ *                      its own classroom, so a per-classroom rate never fits.
  */
 const CoachPayProposalSchema = new Schema(
   {
     kind: { type: String, enum: PROPOSAL_KINDS, required: true, index: true },
     coach: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
-    classroom: { type: Schema.Types.ObjectId, ref: "Classroom", required: true, index: true },
+    classroom: {
+      type: Schema.Types.ObjectId,
+      ref: "Classroom",
+      index: true,
+      required: function (this: any) {
+        return this?.kind !== "coach_rate";
+      },
+    },
 
     // `session` proposals only.
     sessionId: { type: String, index: true },

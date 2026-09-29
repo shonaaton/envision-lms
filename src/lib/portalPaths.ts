@@ -43,6 +43,7 @@ export const portalPaths = [
   "/profile",
   "/sales",
   "/square-trainer",
+  "/staff-invoices",
   "/tactics-trainer",
   "/tasks",
   "/tournaments",

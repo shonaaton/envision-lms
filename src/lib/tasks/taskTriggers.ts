@@ -361,9 +361,17 @@ export async function raisePayProposalTask(input: { proposal: any; coachName?: s
     referenceType: "CoachPayProposal",
     referenceId: idOf(input.proposal),
     title: `Review pay proposal from ${coachName || "a coach"}`,
-    details: `${input.proposal?.kind === "session" ? "Pay for a substitution class they covered." : "Proposed rates for a classroom they teach."}${input.proposal?.note ? ` Note: ${String(input.proposal.note).slice(0, 500)}` : ""}`,
+    details: `${
+      input.proposal?.kind === "session"
+        ? input.proposal?.payKind === "substitute"
+          ? "Pay for a substitution class they covered."
+          : "Pay for a class they took."
+        : input.proposal?.kind === "coach_rate"
+          ? "Proposed a rate for all their demo classes."
+          : "Proposed rates for a classroom they teach."
+    }${input.proposal?.note ? ` Note: ${String(input.proposal.note).slice(0, 500)}` : ""}`,
     pool: "admins",
-    actionHref: "/coach-pay",
+    actionHref: "/coach-pay/proposals",
     metadata: { proposalId: idOf(input.proposal) },
   });
 }

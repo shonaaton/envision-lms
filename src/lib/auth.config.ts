@@ -58,7 +58,10 @@ export const authConfig = {
         nextUrl.pathname.startsWith("/api/register") ||
         nextUrl.pathname.startsWith("/api/password") ||
         nextUrl.pathname.startsWith("/api/fees/invoices") ||
-        nextUrl.pathname.startsWith("/tournament-join");
+        nextUrl.pathname.startsWith("/tournament-join") ||
+        // Uploaded photos and achievement images, which the public site shows
+        // too. They lived in public/, which middleware never checked.
+        nextUrl.pathname.startsWith("/uploads/");
       // The sales workspace is staff-only. The real gate is the feature check in
       // (dashboard)/layout.tsx; this is the coarse outer shell, same as /admin.
       const isAdminRoute = nextUrl.pathname.startsWith("/admin") || nextUrl.pathname.startsWith("/sales");

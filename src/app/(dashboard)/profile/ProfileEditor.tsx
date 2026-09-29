@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { toast } from "sonner";
+import { isUploadedProfilePhoto } from "@/lib/uploadUrls";
 import {
   BadgeCheck,
   Check,
@@ -95,7 +96,7 @@ export default function ProfileEditor({ initialProfile, permissions }: { initial
   const changed = JSON.stringify(form) !== JSON.stringify(saved);
   const isStudent = initialProfile.role === "student";
   const roleLabel = initialProfile.roleName || (initialProfile.role === "instructor" ? "Coach" : initialProfile.role === "sub-admin" ? "Sub Admin" : titleCase(initialProfile.role));
-  const avatarIsImage = form.avatar.startsWith("/images/profiles/");
+  const avatarIsImage = isUploadedProfilePhoto(form.avatar);
 
   function update<K extends keyof EditableProfile>(key: K, value: EditableProfile[K]) {
     setForm((current) => ({ ...current, [key]: value }));

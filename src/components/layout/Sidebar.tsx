@@ -108,9 +108,6 @@ const sections: NavSection[] = [
       { href: "/analysis", label: "Analysis Board", icon: ListChecks, featureKey: "analysisBoard", roles: ["student", "instructor", "admin", "sub-admin"] },
       { href: "/chess-profile", label: "My Chess Profile", icon: BarChart3, featureKey: "playerAnalytics", roles: ["student"] },
       { href: "/instructor/students", label: "My Students", icon: Users, featureKey: "playerAnalytics", permission: "view_assigned", roles: ["instructor"] },
-      { href: "/coach-pay", label: "My Earnings", icon: BadgeIndianRupee, featureKey: "coachPay", roles: ["instructor"] },
-      { href: "/coach-pay/rates", label: "My Class Rates", icon: Layers, featureKey: "coachPay", roles: ["instructor"] },
-      { href: "/coach-pay/substitutions", label: "My Substitutions", icon: Repeat, featureKey: "coachPay", roles: ["instructor"] },
       { href: "/admin/player-analytics", label: "Player Analytics", icon: BarChart3, featureKey: "playerAnalytics", permission: "view_all", roles: ["admin", "sub-admin"] },
       { href: "/play/tactics-trainer", label: "Tactics Trainer", icon: Target, featureKey: "tacticsTrainer", roles: ["student", "admin", "sub-admin"] },
       { href: "/play/king-hunt", label: "King Hunt", icon: Crown, featureKey: "kingHunt", roles: ["student", "admin", "sub-admin"] },
@@ -136,11 +133,26 @@ const sections: NavSection[] = [
     ],
   },
   {
+    // A person's own pay. Kept out of the admin "Coach Pay" section, which is
+    // the academy's wage bill, and out of "Chess Tools", where coaches never
+    // looked for it.
+    id: "my-pay",
+    title: "My Pay",
+    roles: ["instructor", "sub-admin"],
+    items: [
+      { href: "/coach-pay", label: "My Earnings", icon: BadgeIndianRupee, featureKey: "coachPay", roles: ["instructor"] },
+      { href: "/coach-pay/rates", label: "My Class Rates", icon: Layers, featureKey: "coachPay", roles: ["instructor"] },
+      { href: "/coach-pay/substitutions", label: "My Substitutions", icon: Repeat, featureKey: "coachPay", roles: ["instructor"] },
+      { href: "/staff-invoices", label: "My Invoices", icon: Receipt, featureKey: "staffInvoices", permission: "view" },
+    ],
+  },
+  {
     id: "coach-pay",
     title: "Coach Pay",
     roles: ["admin", "sub-admin"],
     items: [
       { href: "/coach-pay", label: "Coach Pay", icon: BadgeIndianRupee, featureKey: "coachPay", permission: "view_all" },
+      { href: "/staff-invoices/register", label: "Staff Invoices", icon: Receipt, featureKey: "staffInvoices", permission: "view_all" },
       { href: "/coach-pay/rates", label: "Coach Rate Cards", icon: Layers, featureKey: "coachPay", permission: "manage_rates" },
       { href: "/coach-pay/substitutions", label: "Substitutions", icon: Repeat, featureKey: "coachPay", permission: "view_all" },
       { href: "/coach-pay/proposals", label: "Coach Submissions", icon: Inbox, featureKey: "coachPay", permission: "manage_rates" },

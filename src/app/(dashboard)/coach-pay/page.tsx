@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AlertTriangle, BadgeIndianRupee, CalendarClock, Gavel, Inbox, Layers, Repeat, ScrollText, UserCheck, Users } from "lucide-react";
+import { AlertTriangle, BadgeIndianRupee, CalendarClock, Gavel, Inbox, Layers, Receipt, Repeat, ScrollText, UserCheck, Users } from "lucide-react";
 
 import { DataPanel, EmptyState, PageHeader, StatCard } from "@/components/common/PageHeader";
 import { PayPeriodFilter } from "@/components/coach-pay/PayPeriodFilter";
@@ -133,6 +133,11 @@ export default async function CoachPayPage({
       </PageHeader>
 
       <div className="mt-3 flex flex-wrap gap-2">
+        {!viewer.canViewAll && (
+          <Link href="/staff-invoices" className="btn-primary h-9 px-4 text-xs">
+            <Receipt size={14} /> Create my invoice
+          </Link>
+        )}
         <Link href="/coach-pay/rates" className="btn-outline h-9 px-4 text-xs">
           <Layers size={14} /> {viewer.canManageRates ? "Rate cards" : "My class rates"}
         </Link>
@@ -176,6 +181,24 @@ export default async function CoachPayPage({
           showCoachFilter={viewer.canViewAll}
         />
       </div>
+
+      {summary.unpriced > 0 && !viewer.canViewAll && (
+        <div className="mt-3 flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs leading-5 text-rose-900">
+          <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+          <p>
+            <span className="font-bold">{summary.unpriced} of your classes have no rate yet</span>, so they count as zero
+            below.{" "}
+            <Link href="/coach-pay/rates" className="font-bold underline">
+              Enter your rates
+            </Link>{" "}
+            for the academy to approve, or enter them on your{" "}
+            <Link href="/staff-invoices" className="font-bold underline">
+              monthly invoice
+            </Link>
+            .
+          </p>
+        </div>
+      )}
 
       {summary.unpriced > 0 && viewer.canViewAll && (
         <div className="mt-3 flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs leading-5 text-rose-900">

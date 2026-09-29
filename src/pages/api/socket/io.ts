@@ -8,6 +8,7 @@ import { resolvePublicAppUrl } from "@/lib/appUrl";
 import { getTournamentGuestSessionFromCookieHeader } from "@/lib/tournamentGuests";
 import { TournamentGame } from "@/models/TournamentGame";
 import { registerTournamentSocketServer, tournamentGameRoomName, tournamentRoomName } from "@/lib/tournamentSocketServer";
+import { pruneExpiredEntries } from "@/lib/requestSecurity";
 
 type SocketServerWithIO = NextApiResponse["socket"] & {
   server: {
@@ -43,6 +44,8 @@ function consumeSocketAttempt(ip: string) {
   const now = Date.now();
   const existing = socketAttempts.get(ip);
   if (!existing || existing.resetAt <= now) {
+    // One entry per address that ever connected; without this the map only grows.
+    pruneExpiredEntries(socketAttempts, now);
     socketAttempts.set(ip, { count: 1, resetAt: now + SOCKET_ATTEMPT_WINDOW_MS });
     return true;
   }

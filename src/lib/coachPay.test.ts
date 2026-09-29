@@ -347,6 +347,23 @@ describe("resolvePayPeriod", () => {
     expect(period.from.getTime()).toBeLessThan(period.to.getTime());
   });
 
+  it("bounds a month by Kolkata midnights, whatever zone the server runs in", () => {
+    const period = resolvePayPeriod({ period: "month", month: "2026-09" }, now);
+    // 00:00 IST on 1 Sept is 18:30 UTC on 31 Aug; the production container is UTC.
+    expect(period.from.toISOString()).toBe("2026-08-31T18:30:00.000Z");
+    expect(period.to.toISOString()).toBe("2026-09-30T18:29:59.999Z");
+    expect(period.label).toBe("September 2026");
+    // A class at 01:00 IST on 1 Oct belongs to October, not September.
+    const earlyOctober = new Date("2026-09-30T19:30:00.000Z");
+    expect(earlyOctober > period.to).toBe(true);
+  });
+
+  it("reads a typed date range as whole Kolkata days", () => {
+    const period = resolvePayPeriod({ period: "range", from: "2026-05-01", to: "2026-05-31" }, now);
+    expect(period.from.toISOString()).toBe("2026-04-30T18:30:00.000Z");
+    expect(period.to.toISOString()).toBe("2026-05-31T18:29:59.999Z");
+  });
+
   it("puts January in the financial year that opened the previous April", () => {
     expect(financialYearOf(new Date(2026, 0, 15))).toBe(2025);
     expect(financialYearOf(new Date(2026, 4, 15))).toBe(2026);

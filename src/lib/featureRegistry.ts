@@ -411,6 +411,27 @@ export const FEATURE_DEFINITIONS: FeatureDefinition[] = [
     },
   },
   {
+    key: "staffInvoices",
+    label: "Staff Invoices",
+    category: "Payments",
+    description: "Monthly invoices staff raise to the academy for the classes they taught and other agreed work, and the admin register of them.",
+    routes: ["/staff-invoices", "/staff-invoices/register"],
+    apiPrefixes: ["/api/staff-invoices"],
+    // `view` is "raise my own invoice". Reading everyone's - which carries their
+    // PAN and bank details - is the separate `view_all` grant.
+    permissions: [
+      { id: "view", label: "Raise Own Invoice" },
+      { id: "view_all", label: "View All Staff Invoices", critical: true },
+      { id: "manage", label: "Mark Paid / Reopen", critical: true },
+    ],
+    defaultStatus: "enabled",
+    defaultRolePermissions: {
+      instructor: ["view"],
+      admin: ["view", "view_all", "manage"],
+      "sub-admin": ["view"],
+    },
+  },
+  {
     key: "notifications",
     label: "Notifications",
     category: "Communication",

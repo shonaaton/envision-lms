@@ -14,6 +14,7 @@ export const ESSENTIAL_ROLE_GRANTS: RoleGrants = {
 export const SALES_ROLE_GRANTS: RoleGrants = {
   ...ESSENTIAL_ROLE_GRANTS, batchVacancy: ["view"],
   contactEnquiries: ["view", "manage"],
+  staffInvoices: ["view"],
 };
 export const MARKETING_ROLE_GRANTS: RoleGrants = {
   ...SALES_ROLE_GRANTS, demoCenter: ["view", "edit", "approve"], marketingAnalytics: ["view"],

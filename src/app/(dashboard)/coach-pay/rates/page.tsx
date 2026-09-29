@@ -1,18 +1,18 @@
 import Link from "next/link";
-import { ArrowLeft, Inbox, Layers, Repeat, Trash2, UserCog } from "lucide-react";
+import { ArrowLeft, GraduationCap, Inbox, Layers, Repeat, Trash2, UserCog } from "lucide-react";
 
 import { DataPanel, EmptyState, PageHeader } from "@/components/common/PageHeader";
 import { CoachRateMatrix, type MatrixRow } from "@/components/coach-pay/CoachRateMatrix";
 import { RateCardForm } from "@/components/coach-pay/RateCardForm";
 import { RATE_SCOPE_LABELS, type ResolvedRate } from "@/lib/coachPay";
 import { resolveCoachPayViewer } from "@/lib/coachPayAccess";
-import { countPendingProposals, listPayableCoaches, loadCoachAssignments, type CoachAssignmentRow } from "@/lib/coachPayData";
+import { countPendingProposals, listPayableCoaches, loadCoachAssignments, loadCoachDemoRate, type CoachAssignmentRow } from "@/lib/coachPayData";
 import { dbConnect } from "@/lib/db";
 import { formatINR } from "@/lib/utils";
 import { Batch } from "@/models/Batch";
 import { Classroom } from "@/models/Classroom";
 import { CoachRate, type CoachRateScope } from "@/models/CoachPay";
-import { deleteRateCard, saveCoachClassroomRates, saveRateCard, submitClassroomRateProposal, withdrawProposal } from "../actions";
+import { deleteRateCard, saveCoachClassroomRates, saveRateCard, submitClassroomRateProposal, submitCoachDemoRateProposal, withdrawProposal } from "../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -88,7 +88,7 @@ export default async function CoachRatesPage({
 
   // A coach sees exactly one grid: their own, in propose mode.
   if (!viewer.canManageRates) {
-    const rows = await loadCoachAssignments(viewer.userId);
+    const [rows, demoRate] = await Promise.all([loadCoachAssignments(viewer.userId), loadCoachDemoRate(viewer.userId)]);
     return (
       <div className="min-h-screen bg-slate-50 px-4 py-4 text-slate-950 sm:px-6 lg:px-8">
         <PageHeader
@@ -105,6 +105,60 @@ export default async function CoachRatesPage({
             <Repeat size={14} /> My substitutions
           </Link>
         </div>
+        <DataPanel
+          className="mt-3"
+          title="Demo class rate"
+          subtitle="One rate for every demo class you take - each demo is its own classroom, so it is set once here"
+          icon={GraduationCap}
+        >
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div className="text-sm">
+              <div className="text-xs font-bold uppercase tracking-[0.08em] text-slate-500">Paid today</div>
+              {demoRate.effective ? (
+                <div className="mt-0.5 font-bold tabular-nums text-slate-950">
+                  {formatINR(demoRate.effective.amount)}
+                  <span className="ml-1 text-xs font-normal text-slate-500">
+                    {demoRate.effective.unit === "per_hour" ? "per hour" : "per class"} - {RATE_SCOPE_LABELS[demoRate.effective.source]}
+                    {demoRate.effective.kind !== "demo" ? " (your regular rate)" : ""}
+                  </span>
+                </div>
+              ) : (
+                <div className="mt-0.5 font-bold text-rose-700">No demo rate set yet</div>
+              )}
+              {demoRate.pendingProposal && (
+                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-amber-800">
+                  <span>
+                    You proposed {formatINR(Number(demoRate.pendingProposal.amount || 0))}
+                    {demoRate.pendingProposal.unit === "per_hour" ? "/hr" : "/class"} - waiting for an admin
+                  </span>
+                  <form action={withdrawProposal}>
+                    <input type="hidden" name="id" value={demoRate.pendingProposal.id} />
+                    <button type="submit" className="font-bold underline">
+                      Withdraw
+                    </button>
+                  </form>
+                </div>
+              )}
+            </div>
+            <form action={submitCoachDemoRateProposal} className="flex flex-wrap items-end gap-2">
+              <label className="grid gap-1 text-xs font-semibold text-slate-600">
+                Rate (Rs.)
+                <input name="demoAmount" type="number" min="0" step="1" required className="input h-9 w-28" placeholder="e.g. 300" />
+              </label>
+              <label className="grid gap-1 text-xs font-semibold text-slate-600">
+                Per
+                <select name="demoUnit" className="input h-9 w-28" defaultValue="per_class">
+                  <option value="per_class">class</option>
+                  <option value="per_hour">hour</option>
+                </select>
+              </label>
+              <input name="note" className="input h-9 w-48" placeholder="Note (optional)" aria-label="Note for the admin" />
+              <button type="submit" className="btn-primary h-9 px-4 text-xs">
+                Propose
+              </button>
+            </form>
+          </div>
+        </DataPanel>
         <DataPanel className="mt-3" title="Your classes" subtitle="One row per classroom you are assigned to" icon={Layers}>
           <CoachRateMatrix
             coachId={viewer.userId}

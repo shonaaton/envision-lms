@@ -9,6 +9,7 @@ import { consumeAttendanceCredit } from "@/lib/fees";
 import { requireCoachPayPermission, requireCoachSelf } from "@/lib/coachPayAccess";
 import { isValidRateScope } from "@/lib/coachPay";
 import { cancelPayProposalTask, raisePayProposalTask, resolveNoShowRulingTask, resolvePayProposalTask } from "@/lib/tasks/taskTriggers";
+import { upsertCoachDemoRateProposal } from "@/lib/coachPayProposals";
 import { CoachPayProposal, CoachRate, NoShowRuling, SessionPayOverride, PAY_KINDS, RATE_UNITS } from "@/models/CoachPay";
 import { Attendance } from "@/models/Attendance";
 import { Classroom } from "@/models/Classroom";
@@ -630,6 +631,24 @@ export async function submitSessionRateProposal(formData: FormData) {
   refresh();
 }
 
+/**
+ * A coach putting forward one rate for all their demo classes.
+ *
+ * Each demo is its own classroom, so the per-classroom proposal above would
+ * have to be repeated for every trial student. This one becomes a `coach`
+ * scope card on approval, which prices every demo the coach takes.
+ */
+export async function submitCoachDemoRateProposal(formData: FormData) {
+  const coachId = await requireCoachSelf();
+  if (!coachId) throw new Error("Forbidden");
+  await dbConnect();
+
+  const demo = rateValue(formData, "demo");
+  if (demo.amount === null) throw new Error("Enter your demo class rate");
+  await upsertCoachDemoRateProposal({ coachId, demo: demo as any, note: text(formData, "note") });
+  refresh();
+}
+
 /** A coach taking back a submission an admin has not answered yet. */
 export async function withdrawProposal(formData: FormData) {
   const coachId = await requireCoachSelf();
@@ -712,6 +731,29 @@ export async function reviewProposal(formData: FormData) {
           note: proposal.note || "Approved from a coach submission",
           updatedBy: actorId,
           $setOnInsert: { createdBy: actorId },
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
+      appliedTo = card._id;
+    } else if (proposal.kind === "coach_rate") {
+      // Same dating rule as a classroom card. Only the kinds the coach priced are
+      // written: a coach card may already carry other rates an admin set, and a
+      // blank here means "not proposing that", not "clear it".
+      const effectiveRaw = text(formData, "effectiveFrom");
+      const effectiveFrom = effectiveRaw ? new Date(`${effectiveRaw}T00:00:00`) : new Date(0);
+      if (Number.isNaN(effectiveFrom.getTime())) throw new Error("Enter a valid start date for this rate");
+      const key = { scope: "coach" as const, coach: proposal.coach, batch: null, classroom: null, effectiveFrom };
+      const priced: Record<string, unknown> = {};
+      for (const kind of PAY_KINDS) {
+        const value = proposal[kind];
+        if (value && value.amount !== null && value.amount !== undefined) priced[kind] = { amount: value.amount, unit: value.unit || "per_class" };
+      }
+      if (!Object.keys(priced).length) throw new Error("This proposal has no rate in it");
+      const card = await CoachRate.findOneAndUpdate(
+        key,
+        {
+          $set: { ...priced, isActive: true, note: proposal.note || "Approved from a coach submission", updatedBy: actorId },
+          $setOnInsert: { ...key, createdBy: actorId },
         },
         { upsert: true, new: true, setDefaultsOnInsert: true }
       );

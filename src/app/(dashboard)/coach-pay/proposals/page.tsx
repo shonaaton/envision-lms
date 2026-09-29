@@ -92,7 +92,13 @@ export default async function ProposalsPage({
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="text-sm font-bold text-slate-950">{proposal.coachName}</h2>
                     <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-600 ring-1 ring-slate-200">
-                      {proposal.kind === "session" ? "One substitution class" : "Standing classroom rates"}
+                      {proposal.kind === "session"
+                        ? proposal.payKind === "substitute"
+                          ? "One substitution class"
+                          : "One class"
+                        : proposal.kind === "coach_rate"
+                          ? "Rate for all their demo classes"
+                          : "Standing classroom rates"}
                     </span>
                     {proposal.status !== "pending" && (
                       <span
@@ -154,7 +160,7 @@ export default async function ProposalsPage({
                     placeholder="Optional note back to the coach"
                     aria-label="Note back to the coach"
                   />
-                  {proposal.kind === "classroom_rate" && (
+                  {proposal.kind !== "session" && (
                     <label className="flex items-center gap-2 text-xs text-slate-500">
                       <span className="whitespace-nowrap">Applies from</span>
                       <input

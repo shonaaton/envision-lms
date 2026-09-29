@@ -23,6 +23,7 @@ node_modules
 # Logs & local run output
 *.log
 logs
+uploads
 test-results
 playwright-report
 blob-report

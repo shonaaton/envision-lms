@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { mkdir, unlink, writeFile } from "fs/promises";
-import path from "path";
 import { auth } from "@/lib/auth";
+import { removeUpload, saveUpload } from "@/lib/uploads";
+import { isUploadedProfilePhoto } from "@/lib/uploadUrls";
 import { dbConnect } from "@/lib/db";
 import { User } from "@/models/User";
 import { recordActivity } from "@/lib/activity";
@@ -49,27 +49,19 @@ export async function POST(request: Request) {
   if (!existing) return NextResponse.json({ error: "Profile not found." }, { status: 404 });
 
   const filename = `avatar-${userId}-${Date.now()}.${extension}`;
-  const uploadDirectory = path.join(process.cwd(), "public", "images", "profiles");
-  await mkdir(uploadDirectory, { recursive: true });
-  await writeFile(path.join(uploadDirectory, filename), buffer);
-
-  const avatar = `/images/profiles/${filename}`;
+  // Stored outside public/ and served from /uploads (see lib/uploads.ts).
+  const avatar = await saveUpload("profiles", filename, buffer);
   const updated = await User.findOneAndUpdate(
     { _id: userId, role: { $in: ["student", "instructor", "admin", "sub-admin"] } },
     { $set: { avatar } },
     { new: true }
   ).select("_id");
   if (!updated) {
-    await unlink(path.join(uploadDirectory, filename)).catch(() => undefined);
+    await removeUpload(avatar);
     return NextResponse.json({ error: "Profile not found." }, { status: 404 });
   }
 
-  if (typeof existing?.avatar === "string" && existing.avatar.startsWith("/images/profiles/")) {
-    const previousFilename = path.basename(existing.avatar);
-    if (previousFilename === existing.avatar.slice("/images/profiles/".length)) {
-      await unlink(path.join(uploadDirectory, previousFilename)).catch(() => undefined);
-    }
-  }
+  if (isUploadedProfilePhoto(existing?.avatar)) await removeUpload(existing.avatar);
 
   await recordActivity({
     actor: (session.user as any).id,

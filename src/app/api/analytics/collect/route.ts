@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { dbConnect } from "@/lib/db";
 import { AnalyticsEvent } from "@/models/AnalyticsEvent";
+import { consumeRateLimit, getClientIp } from "@/lib/requestSecurity";
 
 export const dynamic = "force-dynamic";
 
@@ -41,8 +42,19 @@ function country(req: Request) {
   return /^[A-Z]{2}$/.test(code) && code !== "XX" ? code : "";
 }
 
+/**
+ * Per address, per minute. A real visitor sends a page view per page plus the
+ * odd click, so this only bites a script replaying fake traffic - which used to
+ * be able to write to the database as fast as it could send. Dropped events get
+ * the same silent 204 as everything else here.
+ */
+const EVENTS_PER_MINUTE_PER_IP = 120;
+
 export async function POST(req: Request) {
   try {
+    if (!consumeRateLimit(`analytics:ip:${getClientIp(req.headers)}`, EVENTS_PER_MINUTE_PER_IP, 60_000).allowed) {
+      return new NextResponse(null, { status: 204 });
+    }
     const body = await req.json().catch(() => null);
     if (!body || typeof body !== "object") return new NextResponse(null, { status: 204 });
 

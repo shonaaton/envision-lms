@@ -21,7 +21,14 @@ declare global {
   var __lmsRuntimeLogInstalled: boolean | undefined;
   var __lmsRuntimeProcessHooksInstalled: boolean | undefined;
   var __lmsRuntimeLogWriteInFlight: boolean | undefined;
+  var __lmsRuntimeLogDir: string | undefined;
 }
+
+const LOG_FILE_NAME = "runtime-errors.log";
+/** Past this size the log rolls over to `runtime-errors.log.1`; one old file is kept. */
+const MAX_LOG_BYTES = 5 * 1024 * 1024;
+/** The admin viewer reads at most this much from the end of the log. */
+const TAIL_BYTES = 512 * 1024;
 
 function nodePath() {
   return eval("require")("path") as typeof import("path");
@@ -31,17 +38,38 @@ function nodeFs() {
   return eval("require")("fs") as typeof import("fs");
 }
 
-function runtimeLogFile() {
+/**
+ * Where the log is written: RUNTIME_LOG_DIR when set, otherwise `logs/` in the
+ * app folder. In the Docker image the app folder belongs to root while the
+ * server runs as `nextjs`, so `logs/` cannot be created there and nothing was
+ * ever written; the system temp folder is the fallback. Chosen once a process.
+ */
+function logDirectory() {
+  if (globalThis.__lmsRuntimeLogDir) return globalThis.__lmsRuntimeLogDir;
   const path = nodePath();
-  return {
-    dir: path.join(process.cwd(), "logs"),
-    file: path.join(process.cwd(), "logs", "runtime-errors.log"),
-  };
+  const { mkdirSync, accessSync, constants } = nodeFs();
+  const os = eval("require")("os") as typeof import("os");
+  const candidates = [process.env.RUNTIME_LOG_DIR, path.join(process.cwd(), "logs"), path.join(os.tmpdir(), "envision-lms-logs")].filter(
+    (dir): dir is string => Boolean(dir)
+  );
+  for (const dir of candidates) {
+    try {
+      mkdirSync(dir, { recursive: true });
+      accessSync(dir, constants.W_OK);
+      globalThis.__lmsRuntimeLogDir = dir;
+      return dir;
+    } catch {
+      // Not writable here; try the next place.
+    }
+  }
+  globalThis.__lmsRuntimeLogDir = candidates[candidates.length - 1];
+  return globalThis.__lmsRuntimeLogDir;
 }
 
-function ensureLogDirectory() {
-  const { mkdirSync } = nodeFs();
-  mkdirSync(runtimeLogFile().dir, { recursive: true });
+function runtimeLogFile() {
+  const path = nodePath();
+  const dir = logDirectory();
+  return { dir, file: path.join(dir, LOG_FILE_NAME), previous: path.join(dir, `${LOG_FILE_NAME}.1`) };
 }
 
 function normalizeError(error: unknown) {
@@ -72,9 +100,15 @@ function appendRuntimeLogLine(line: string) {
   if (globalThis.__lmsRuntimeLogWriteInFlight) return;
   globalThis.__lmsRuntimeLogWriteInFlight = true;
   try {
-    const { appendFileSync } = nodeFs();
-    ensureLogDirectory();
-    appendFileSync(runtimeLogFile().file, line, "utf8");
+    const { appendFileSync, renameSync, statSync } = nodeFs();
+    const { file, previous } = runtimeLogFile();
+    // Roll over instead of growing for as long as the container runs.
+    try {
+      if (statSync(file).size >= MAX_LOG_BYTES) renameSync(file, previous);
+    } catch {
+      // No log file yet.
+    }
+    appendFileSync(file, line, "utf8");
   } catch {
     // Never throw while logging a crash.
   } finally {
@@ -164,11 +198,24 @@ export function installRuntimeStderrCapture() {
 }
 
 export function readRecentRuntimeLogs(limit = 100) {
-  const { existsSync, readFileSync } = nodeFs();
+  const { existsSync, openSync, readSync, closeSync, statSync } = nodeFs();
   const logFile = runtimeLogFile().file;
   if (!existsSync(logFile)) return [];
 
-  const content = readFileSync(logFile, "utf8");
+  // Only the end of the file: the viewer shows the newest lines, and reading
+  // the whole log into memory is what the size cap is there to prevent.
+  const size = statSync(logFile).size;
+  const start = Math.max(0, size - TAIL_BYTES);
+  const buffer = Buffer.alloc(size - start);
+  const fd = openSync(logFile, "r");
+  try {
+    readSync(fd, buffer, 0, buffer.length, start);
+  } finally {
+    closeSync(fd);
+  }
+  let content = buffer.toString("utf8");
+  // Starting mid-file lands inside a line; drop that fragment.
+  if (start > 0) content = content.slice(content.indexOf("\n") + 1);
   const lines = content
     .split(/\r?\n/)
     .map((line) => line.trim())

@@ -367,6 +367,32 @@ export async function loadCoachAssignments(coachId: string, now = new Date()): P
   });
 }
 
+/**
+ * What a coach's demo classes pay, before any single classroom is considered:
+ * the coach-wide card, else the academy default. Plus the demo rate they have
+ * put forward and an admin has not answered yet.
+ */
+export async function loadCoachDemoRate(coachId: string, now = new Date()) {
+  await dbConnect();
+  const [rates, pending] = await Promise.all([
+    CoachRate.find({ isActive: { $ne: false }, scope: { $in: ["coach", "academy"] } }).lean(),
+    CoachPayProposal.findOne({ coach: coachId, kind: "coach_rate", status: "pending" }).lean(),
+  ]);
+  const effective = resolveRate({ kind: "demo", coachId, classroomId: "", batchIds: [], date: now, rates: rates as any[] });
+  const proposal: any = pending;
+  return {
+    effective,
+    pendingProposal: proposal
+      ? {
+          id: idOf(proposal._id),
+          amount: proposal.demo?.amount === null || proposal.demo?.amount === undefined ? null : Number(proposal.demo.amount),
+          unit: (proposal.demo?.unit as RateUnit) || "per_class",
+          submittedAt: new Date(proposal.submittedAt || proposal.createdAt || Date.now()),
+        }
+      : null,
+  };
+}
+
 export type ProposalRow = {
   id: string;
   kind: string;
@@ -409,7 +435,7 @@ export async function loadProposals(filters: { status?: string; coachId?: string
     coachId: idOf(proposal.coach),
     coachName: proposal.coach?.name || proposal.coach?.username || "Coach",
     classroomId: idOf(proposal.classroom),
-    classroomTitle: proposal.classroom?.title || "Classroom",
+    classroomTitle: proposal.kind === "coach_rate" ? "All demo classes" : proposal.classroom?.title || "Classroom",
     sessionId: proposal.sessionId || "",
     sessionDate: proposal.sessionDate ? new Date(proposal.sessionDate) : null,
     payKind: (proposal.payKind as PayKind) || "substitute",

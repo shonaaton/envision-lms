@@ -4,6 +4,7 @@ import { dbConnect } from "@/lib/db";
 import { User } from "@/models/User";
 import ProfileEditor, { type ProfileData } from "./ProfileEditor";
 import { getFeaturePermissionState } from "@/lib/featureAccess";
+import { isUploadedProfilePhoto } from "@/lib/uploadUrls";
 
 export const dynamic = "force-dynamic";
 
@@ -25,8 +26,7 @@ export default async function ProfilePage() {
 
   const storedAvatar = String(user.avatar || "");
   const safeAvatar =
-    /^#[0-9a-fA-F]{6}$/.test(storedAvatar) ||
-    /^\/images\/profiles\/[A-Za-z0-9._-]+$/.test(storedAvatar)
+    /^#[0-9a-fA-F]{6}$/.test(storedAvatar) || isUploadedProfilePhoto(storedAvatar)
       ? storedAvatar
       : "#5a1372";
 

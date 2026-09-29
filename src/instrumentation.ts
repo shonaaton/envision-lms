@@ -21,6 +21,7 @@ export async function register() {
   const { processDueCourseCompletions } = await import("@/lib/courseCompletionSweep");
   const { processDailyTaskReminders } = await import("@/lib/tasks/taskReminders");
   const { processMonthlyFeedbackCycle } = await import("@/lib/feedback/feedbackService");
+  const { sealLegacyTempPasswords } = await import("@/lib/tempPasswordMigration");
 
   installRuntimeProcessLogging();
   installRuntimeStderrCapture();
@@ -99,6 +100,16 @@ export async function register() {
       name: "monthly_feedback_cycle",
       intervalMs: 60 * 60_000,
       run: () => processMonthlyFeedbackCycle(),
+    },
+    {
+      /**
+       * Seals temporary passwords stored in plain text before they were
+       * encrypted. After the first run on a new deploy there is nothing left
+       * to do; the daily sweep costs one scan of the users collection.
+       */
+      name: "seal_legacy_temp_passwords",
+      intervalMs: 24 * 60 * 60_000,
+      run: () => sealLegacyTempPasswords(),
     },
     {
       /** Warns families a week before a paused enrolment restarts billing. */

@@ -15,6 +15,7 @@ import { requestGoogleReview } from "@/lib/reviewRequests";
 import { validateRoleAssignment } from "@/lib/accessRoles";
 import { PermissionAudit } from "@/models/FeatureAccess";
 import { applyUserFeatureAccess } from "@/lib/userFeatureAccess";
+import { withOpenTempPassword } from "@/lib/tempPasswords";
 
 export const dynamic = "force-dynamic";
 
@@ -164,7 +165,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     entityId: params.id,
     metadata: { fields: Object.keys(update) },
   });
-  return NextResponse.json(u);
+  // Stored sealed; only a Super Admin's projection includes it at all.
+  return NextResponse.json(u ? withOpenTempPassword(u.toJSON()) : u);
 }
 
 export async function DELETE(req: Request, { params }: { params: { id: string } }) {

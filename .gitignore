@@ -21,3 +21,6 @@ lichess_db_puzzle*.zst
 
 # Next.js dev distDir (next.config.mjs sets distDir=.next-dev in development)
 .next-dev/
+
+# User uploads written while developing locally (see src/lib/uploads.ts)
+/uploads/

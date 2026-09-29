@@ -15,6 +15,20 @@ export async function ensureSalesRole() {
   } }, { upsert: true });
 }
 
+/**
+ * Salespeople raise a monthly invoice like coaches do, but their access comes
+ * from the saved Sales role, which predates the Staff Invoices feature. Called
+ * once, when that feature's settings are first created, so a later decision to
+ * take it away in Roles & Access is not undone on the next deploy.
+ */
+export async function grantStaffInvoicesToSalesRole() {
+  await dbConnect();
+  await AccessRole.updateOne(
+    { nameKey: "sales and relationship management", "permissions.staffInvoices": { $exists: false } },
+    { $set: { "permissions.staffInvoices": ["view"] } }
+  );
+}
+
 export async function ensureMarketingRole() {
   await dbConnect();
   await AccessRole.updateOne({ nameKey: "marketing" }, {

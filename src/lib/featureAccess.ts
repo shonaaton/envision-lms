@@ -233,6 +233,31 @@ async function migrateLegacyCoachPayDoc(doc: any) {
   console.info("[featureAccess] migrated legacy coachPay view_own grants", rolePermissions);
 }
 
+const COACH_SELF_VIEW_MIGRATION = "coach-self-view-2026-09";
+
+/**
+ * Every coach sees their own pay: each class and substitution they took and
+ * what it earned (`view` on coachPay shows a coach only their own lines). In
+ * production the coach grant had been lost - not in the `view_own` shape the
+ * migration above repairs - so coaches could not see My Earnings at all. This
+ * adds `view` back for coaches once; the marker means a later deliberate change
+ * in Feature Access is left alone.
+ */
+async function grantCoachesTheirOwnPay(doc: any) {
+  const instructor = migrateCoachSelfView(doc.rolePermissions?.instructor);
+  await FeatureAccess.updateOne(
+    { _id: doc._id },
+    { $set: { "rolePermissions.instructor": instructor }, $addToSet: { appliedMigrations: COACH_SELF_VIEW_MIGRATION } }
+  );
+  console.info("[featureAccess] coachPay: coaches can see their own pay", instructor);
+}
+
+/** A coach's coachPay grants with `view` (own earnings) guaranteed. Never adds `view_all`. */
+export function migrateCoachSelfView(permissions: string[] | undefined) {
+  const list = (permissions || []).map(String).filter((item) => item !== "view_own");
+  return list.includes("view") ? list : ["view", ...list];
+}
+
 async function loadFeatureAccessStates(): Promise<Record<string, FeatureAccessState>> {
   await dbConnect();
   const featureKeys = FEATURE_DEFINITIONS.map((feature) => feature.key);
@@ -264,6 +289,11 @@ async function loadFeatureAccessStates(): Promise<Record<string, FeatureAccessSt
   const legacyCoachPay = docs.find((doc: any) => doc.key === "coachPay" && hasLegacyCoachPayGrant(doc));
   if (legacyCoachPay) {
     await migrateLegacyCoachPayDoc(legacyCoachPay);
+    docs = await FeatureAccess.find({ key: { $in: featureKeys } }).lean();
+  }
+  const coachPay: any = docs.find((doc: any) => doc.key === "coachPay");
+  if (coachPay && !(coachPay.appliedMigrations || []).includes(COACH_SELF_VIEW_MIGRATION)) {
+    await grantCoachesTheirOwnPay(coachPay);
     docs = await FeatureAccess.find({ key: { $in: featureKeys } }).lean();
   }
   const byKey = new Map(docs.map((doc: any) => [doc.key, doc]));

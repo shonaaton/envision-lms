@@ -2,7 +2,7 @@ import { deflateSync } from "zlib";
 import { describe, expect, it } from "vitest";
 
 import type { PayEvent } from "@/lib/coachPay";
-import { migrateLegacyCoachPayPermissions } from "@/lib/featureAccess";
+import { migrateCoachSelfView, migrateLegacyCoachPayPermissions } from "@/lib/featureAccess";
 import { buildPdf, PdfCanvas, parsePng } from "@/lib/pdf/simplePdf";
 import {
   ACADEMY_BILL_TO,
@@ -185,6 +185,16 @@ describe("payoutProfileSchema", () => {
     ["accountType", "fixed"],
   ])("rejects a bad %s", (field, value) => {
     expect(payoutProfileSchema.safeParse({ ...valid, [field]: value }).success).toBe(false);
+  });
+});
+
+describe("coaches see their own pay", () => {
+  it("guarantees a coach `view` and never hands them the whole payroll", () => {
+    expect(migrateCoachSelfView([])).toEqual(["view"]);
+    expect(migrateCoachSelfView(undefined)).toEqual(["view"]);
+    expect(migrateCoachSelfView(["view_own"])).toEqual(["view"]);
+    expect(migrateCoachSelfView(["view", "export"])).toEqual(["view", "export"]);
+    expect(migrateCoachSelfView(["export"])).not.toContain("view_all");
   });
 });
 

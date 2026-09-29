@@ -33,6 +33,8 @@ const FeatureAccessSchema = new Schema(
     pilotCourses: [{ type: Schema.Types.ObjectId, ref: "Course", index: true }],
     userOverrides: { type: [userOverrideSchema], default: [] },
     releaseNote: String,
+    /** One-off data fixes already applied to this feature's settings, so each runs exactly once. */
+    appliedMigrations: { type: [String], default: [] },
     updatedBy: { type: Schema.Types.ObjectId, ref: "User" },
   },
   { timestamps: true }

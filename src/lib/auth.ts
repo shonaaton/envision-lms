@@ -8,7 +8,7 @@ import { isInactiveRestrictedPath } from "./inactiveAccess";
 import { consumeRateLimit, getClientIp, releaseRateLimit } from "./requestSecurity";
 import { loginIdentifierFilter } from "./loginIdentity";
 import { requestCache as cache } from "./requestCache";
-import { resolveAccessRole } from "./accessRoles";
+import { getAccessUser, resolveAccessRole } from "./accessRoles";
 import { namedRoleApiFeature, namedRoleApiPermissions } from "./accessRoleRequests";
 
 const LOGIN_IP_WINDOW_MS = 5 * 60 * 1000;
@@ -161,8 +161,35 @@ const nextAuth = NextAuth({
 
 export const { handlers, signIn, signOut } = nextAuth;
 
-// JWT sessions can outlive an admin status change. Re-check the database on every
-// authenticated server request so deactivation and deletion take effect immediately.
+/**
+ * What the session cookie points at: no session, an account that exists, one
+ * that no longer does, or no answer because the database could not be reached.
+ *
+ * `auth()` returns null for both of the last two, and the dashboard sends null
+ * to /login. That is right for a deleted account and wrong for an outage, and
+ * only /api/auth/resume - where middleware sends a signed-in visitor who opens
+ * /login - needs to know which: it signs a deleted account out, and must never
+ * sign anyone out because MongoDB was briefly unreachable.
+ */
+export async function getSessionAccountState(): Promise<"none" | "exists" | "missing" | "unavailable"> {
+  const session = await nextAuth.auth();
+  const userId = String((session?.user as any)?.id || "");
+  if (!userId) return "none";
+  // A token naming something that is not an account id can never match one.
+  if (!/^[a-f0-9]{24}$/i.test(userId)) return "missing";
+  try {
+    return (await getAccessUser(userId)) ? "exists" : "missing";
+  } catch (error) {
+    console.error("Session account check failed; not signing the session out.", error);
+    return "unavailable";
+  }
+}
+
+// JWT sessions can outlive an admin status change, so every authenticated
+// server request re-checks the account. The read goes through the permission
+// cache: a deactivation, deletion, pause or role change saved in the app clears
+// it and applies on the next request; a change made outside the app (a script,
+// a manual database edit) applies within 30 seconds. See lib/permissionCache.ts.
 export const auth = cache(async () => {
   const session = await nextAuth.auth();
   const userId = (session?.user as any)?.id;
@@ -171,10 +198,7 @@ export const auth = cache(async () => {
   const isApiRequest = pathname.startsWith("/api/");
 
   try {
-    const { dbConnect } = await import("./db");
-    const { User } = await import("@/models/User");
-    await dbConnect();
-    const currentUser: any = await User.findById(userId).select("name email role accountStatus isSuperAdmin accessRole isActive isPaused").lean();
+    const currentUser = await getAccessUser(userId);
     if (!currentUser) return null;
 
     const isActive = currentUser.isActive !== false;

@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { ACADEMY_LOGO_URL } from "@/lib/branding";
 import { publicAchievementList } from "@/lib/achievementData";
+import { SESSION_ENDED_COOKIE } from "@/lib/sessionNotices";
 
 const portalBenefits = [
   { label: "Join upcoming classes", value: "Live classroom links and schedule reminders", icon: CalendarDays },
@@ -62,6 +63,16 @@ export default function LoginPage() {
     setRandomizedAchievements(shuffledAchievements());
     setAchievementIndex(0);
     setDisplayedAchievementIndex(0);
+  }, []);
+
+  useEffect(() => {
+    // /api/auth/resume sends people here after clearing a session whose account
+    // no longer exists; say why they are looking at the login form, once.
+    const flagged = document.cookie.split("; ").includes(`${SESSION_ENDED_COOKIE}=1`);
+    if (flagged || new URLSearchParams(window.location.search).get("session") === "ended") {
+      document.cookie = `${SESSION_ENDED_COOKIE}=; Max-Age=0; path=/`;
+      toast.info("Your session has ended. Please sign in again.", { duration: 6000 });
+    }
   }, []);
 
   useEffect(() => {

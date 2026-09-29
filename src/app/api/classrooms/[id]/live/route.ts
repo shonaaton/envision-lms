@@ -19,6 +19,7 @@ import {
 } from "@/lib/classroomLiveSession";
 import { isJoinWindowOpen } from "@/lib/classroomSessions";
 import { isCoachNoShowExpired, notifyCoachNoShowIfThreshold, recalculateFutureSessionTopics } from "@/lib/classroomLifecycle";
+import { presenceHeartbeatIsCurrent } from "@/lib/liveClassroomPoll";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +31,9 @@ type SessionUser = {
 type LiveParticipant = {
   user?: { _id?: { toString(): string }; toString?: () => string } | string;
   role?: AppRole;
+  lastSeenAt?: Date | string;
+  leftAt?: Date | string;
+  presenceStatus?: string;
 };
 
 type LiveSessionRecord = {
@@ -180,7 +184,10 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     const role = (session.user as { role?: AppRole }).role;
     const userId = (session.user as { id?: string }).id || "";
     if (!role || !userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const { classroom, allowed, reason } = await getLiveClassroomForUser(params.id, role, userId, requestedSessionId);
+    // `auth()` read this user's role and active flag from the database for this
+    // very request, so the access check can reuse them instead of reading again.
+    const verifiedUser = { role, isActive: (session.user as { isActive?: boolean }).isActive };
+    const { classroom, allowed, reason } = await getLiveClassroomForUser(params.id, role, userId, requestedSessionId, verifiedUser);
     if (!classroom) return NextResponse.json({ error: "Not found" }, { status: 404 });
     const classroomDoc = classroom as Record<string, any>;
     if (!allowed) {
@@ -216,20 +223,26 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     const existingParticipant = (live?.participants || []).find((participant) => participantUserId(participant) === userId);
     if (live?.status !== "ended") {
       if (canCoach(role) && isJoinWindowOpen(scheduledSession)) {
-        await markScheduledSessionStarted({ classroomId: params.id, scheduledSessionId, actorId: userId });
+        await markScheduledSessionStarted({ classroomId: params.id, scheduledSessionId, actorId: userId, current: classroomDoc });
       }
-      if (existingParticipant) {
-        await ClassroomSession.updateOne(
-          { _id: live?._id, "participants.user": userId },
-          { $set: { "participants.$.lastSeenAt": new Date(), "participants.$.role": role || "student", "participants.$.presenceStatus": "active" }, $unset: { "participants.$.leftAt": "" } }
-        );
-      } else {
-        await ClassroomSession.updateOne(
-          { _id: live?._id },
-          { $push: { participants: { user: userId, role: role || "student", firstSeenAt: new Date(), lastSeenAt: new Date() } } }
-        );
+      // The heartbeat is written at most every 10 seconds (see
+      // LIVE_PRESENCE_WRITE_INTERVAL_MS). A join, a return after leaving, or a
+      // role change is always written at once. With no write there is nothing
+      // new to read back, so the session read above is returned as is.
+      if (!presenceHeartbeatIsCurrent(existingParticipant, role)) {
+        if (existingParticipant) {
+          await ClassroomSession.updateOne(
+            { _id: live?._id, "participants.user": userId },
+            { $set: { "participants.$.lastSeenAt": new Date(), "participants.$.role": role || "student", "participants.$.presenceStatus": "active" }, $unset: { "participants.$.leftAt": "" } }
+          );
+        } else {
+          await ClassroomSession.updateOne(
+            { _id: live?._id },
+            { $push: { participants: { user: userId, role: role || "student", firstSeenAt: new Date(), lastSeenAt: new Date() } } }
+          );
+        }
+        live = await ClassroomSession.findById(live?._id).populate("selectedStudents boardControlStudents challenge.student participants.user", "name username role").lean<LiveSessionRecord | null>();
       }
-      live = await ClassroomSession.findById(live?._id).populate("selectedStudents boardControlStudents challenge.student participants.user", "name username role").lean<LiveSessionRecord | null>();
     }
 
     const activeQuestion = live?.activeQuestion

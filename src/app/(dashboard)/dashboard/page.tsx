@@ -73,6 +73,7 @@ import { canAccessFeature, isSuperAdminSession } from "@/lib/featureAccess";
 import { visibleClassroomFilter } from "@/lib/classroomVisibility";
 import { classroomsAsSeenByStudent } from "@/lib/classroomStudentExits";
 import { studentHomeworkFilter } from "@/lib/studentHomeworkVisibility";
+import { getAcademyRankRows, rankFromRows } from "@/lib/studentRankings";
 import RoleHome from "@/components/admin/RoleHome";
 import LeadOwnerDemosPanel from "@/components/sales/LeadOwnerDemosPanel";
 import MyPendingTasksPanel from "@/components/tasks/MyPendingTasksPanel";
@@ -1100,29 +1101,10 @@ async function PausedStudentDashboard({ userId, userName }: { userId: string; us
   );
 }
 
+// Totals come from MongoDB and are kept for five minutes (lib/studentRankings),
+// instead of loading every submission and reward in the academy per view.
 async function computeStudentRank(userId: string) {
-  const [students, submissions, rewards] = await Promise.all([
-    User.find({ role: "student", isActive: { $ne: false } }).select("_id batches").lean(),
-    Submission.find({}).select("student totalScore").lean(),
-    StudentReward.find({}).select("student xp coins").lean(),
-  ]);
-
-  const rows = students.map((student: any) => {
-    const id = objectId(student._id);
-    const score = submissions.filter((row: any) => objectId(row.student) === id).reduce((sum: number, row: any) => sum + (row.totalScore || 0), 0);
-    const xp = rewards.filter((row: any) => objectId(row.student) === id).reduce((sum: number, row: any) => sum + (row.xp || 0) + (row.coins || 0), 0);
-    return { id, batches: (student.batches || []).map(objectId), total: score + xp };
-  }).sort((a, b) => b.total - a.total);
-
-  const academyRank = rows.findIndex((row) => row.id === userId) + 1;
-  const studentRow = rows.find((row) => row.id === userId);
-  const batchPool = rows.filter((row) => row.batches.some((batch: string) => studentRow?.batches.includes(batch)));
-  const batchRank = batchPool.sort((a, b) => b.total - a.total).findIndex((row) => row.id === userId) + 1;
-
-  return {
-    academyRank: academyRank || "-",
-    batchRank: batchRank || "-",
-  };
+  return rankFromRows(await getAcademyRankRows(), userId);
 }
 
 function sessionTopic(session: any, classroom: any) {

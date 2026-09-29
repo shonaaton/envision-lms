@@ -1,19 +1,13 @@
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
-import { Submission } from "@/models/Homework";
-import { Attendance } from "@/models/Attendance";
-import { LiveQuestionResponse, StudentReward } from "@/models/ClassroomLive";
 import { User } from "@/models/User";
 import { Batch } from "@/models/Batch";
 import { Classroom } from "@/models/Classroom";
+import { buildLeaderboardRow, getStudentActivityTotals } from "@/lib/studentRankings";
 import { Award, Coins, Trophy, Zap } from "lucide-react";
 import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
-
-function pct(value: number, total: number) {
-  return total ? Math.round((value / total) * 100) : 0;
-}
 
 function objectId(value: any) {
   return value?._id?.toString?.() ?? value?.toString?.() ?? "";
@@ -41,12 +35,12 @@ export default async function LeaderboardPage({
   const privilegedViewer = role === "admin" || role === "sub-admin";
 
   await dbConnect();
-  const [students, submissions, attendance, liveResponses, rewards, batches, classrooms] = await Promise.all([
+  // Homework, attendance, live quiz and reward totals are added up by MongoDB
+  // and kept for five minutes (lib/studentRankings), rather than loading all
+  // four collections on every view.
+  const [students, totals, batches, classrooms] = await Promise.all([
     User.find({ role: "student", isActive: { $ne: false } }, { passwordHash: 0 }).populate("batches", "name").lean(),
-    Submission.find({}).lean(),
-    Attendance.find({}).lean(),
-    LiveQuestionResponse.find({}).lean(),
-    StudentReward.find({}).lean(),
+    getStudentActivityTotals(),
     Batch.find({ isActive: true }).sort({ name: 1 }).lean(),
     Classroom.find({ isActive: { $ne: false } }).populate("students", "_id").select("courseName level levelName students title").lean(),
   ]);
@@ -108,52 +102,7 @@ export default async function LeaderboardPage({
     return true;
   });
 
-  const rows = filteredStudents.map((student: any) => {
-    const id = objectId(student._id);
-    const hw = submissions.filter((submission: any) => objectId(submission.student) === id);
-    const live = liveResponses.filter((response: any) => {
-      if (objectId(response.student) !== id) return false;
-      if (scope === "class" || scope === "course" || scope === "level") {
-        return scopedClassroomIds.has(objectId(response.classroom));
-      }
-      return true;
-    });
-    const rewardRows = rewards.filter((reward: any) => objectId(reward.student) === id);
-    const liveQuestionRewards = rewardRows.filter((reward: any) => reward.sourceType === "live_question");
-    const tournamentRewards = rewardRows.filter((reward: any) => reward.sourceType === "tournament_game");
-    const bonusRewards = rewardRows.filter((reward: any) => !["live_question", "tournament_game"].includes(String(reward.sourceType || "")));
-    const attendanceRecords = attendance.flatMap((a: any) => a.records || []).filter((record: any) => objectId(record.student) === id);
-    const present = attendanceRecords.filter((record: any) => record.status === "present" || record.status === "late");
-    const homeworkPoints = hw.reduce((sum: number, item: any) => sum + (item.totalScore || 0), 0);
-    const quizPoints = live.reduce((sum: number, item: any) => sum + (item.score || 0), 0);
-    const tournamentPoints = tournamentRewards.reduce((sum: number, item: any) => sum + Number(item.xp || 0), 0);
-    const bonusXp = bonusRewards.reduce((sum: number, item: any) => sum + Number(item.xp || 0), 0);
-    const liveRewardXp = liveQuestionRewards.reduce((sum: number, item: any) => sum + Number(item.xp || 0), 0);
-    const scopedTournamentPoints = scope === "course" || scope === "level" || scope === "class" ? 0 : tournamentPoints;
-    const totalPoints = homeworkPoints + liveRewardXp + scopedTournamentPoints + bonusXp;
-    const xp = totalPoints;
-    const coins = rewardRows.reduce((sum: number, item: any) => sum + (item.coins || 0), 0);
-    const accuracyValues = [...hw.map((h: any) => h.accuracy || 0), ...live.map((r: any) => (r.correct ? 100 : 0))];
-    const accuracy = accuracyValues.length ? Math.round(accuracyValues.reduce((a, b) => a + b, 0) / accuracyValues.length) : 0;
-    return {
-      id,
-      name: student.name,
-      username: student.username || "",
-      email: student.email || "",
-      batchNames: (student.batches || []).map((batch: any) => batch.name).join(", "),
-      totalPoints,
-      homeworkCompleted: hw.length,
-      quizScore: quizPoints,
-      tournamentPoints: scopedTournamentPoints,
-      accuracy,
-      attendance: pct(present.length, attendanceRecords.length),
-      xp,
-      coins,
-      badges: rewardRows.filter((r: any) => r.badge).length,
-      bonusXp,
-      liveRewardXp,
-    };
-  });
+  const rows = filteredStudents.map((student: any) => buildLeaderboardRow(student, totals, scope, scopedClassroomIds));
 
   rows.sort((a: any, b: any) => (Number(b[rankBy as keyof typeof b] || 0) - Number(a[rankBy as keyof typeof a] || 0)));
   const visibleRows = privilegedViewer ? rows : rows.slice(0, 5);

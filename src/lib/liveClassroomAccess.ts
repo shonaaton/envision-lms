@@ -6,6 +6,7 @@ import { coachCanAccessClassroomSession } from "@/lib/classroomCoachAccess";
 import { getClassroomCreditEligibility } from "@/lib/classroomCreditAccess";
 import { resolveScheduledSession } from "@/lib/classroomLiveSession";
 import { isJoinWindowOpen } from "@/lib/classroomSessions";
+import { attachClassroomPeople, classroomPeopleIds } from "@/lib/liveClassroomPoll";
 
 export type AppRole = "student" | "instructor" | "admin" | "sub-admin";
 
@@ -89,12 +90,29 @@ export const LIVE_CLASSROOM_DENIAL_MESSAGES: Record<LiveClassroomDenial, string>
   left_this_classroom: "You have moved to another batch. Your past classes and homework are still on your account, but this class is not yours to join.",
 };
 
-export async function getLiveClassroomForUser(classroomId: string, role: AppRole, userId: string, scheduledSessionId?: string) {
+const LIVE_PEOPLE_FIELDS = "name email username role";
+
+/**
+ * `verifiedUser` is this user's role and active flag as `auth()` read them from
+ * the database during the same request. Passing it saves the poll a second
+ * read of the same user record; without it the record is read here.
+ */
+export async function getLiveClassroomForUser(
+  classroomId: string,
+  role: AppRole,
+  userId: string,
+  scheduledSessionId?: string,
+  verifiedUser?: { role?: string; isActive?: boolean }
+) {
   const canJoin = await canAccessFeature("classrooms", { id: userId, role }, "join");
-  const classroom: any = await Classroom.findById(classroomId)
-    .populate("coach instructor students", "name email username role")
-    .populate("generatedSessions.students", "name email username role")
+  // Coach, instructor and students come from one user query rather than three
+  // populate queries; `attachClassroomPeople` returns what populate returned.
+  const classroomDoc: any = await Classroom.findById(classroomId)
+    .populate("generatedSessions.students", LIVE_PEOPLE_FIELDS)
     .lean();
+  const peopleIds = classroomDoc ? classroomPeopleIds(classroomDoc) : [];
+  const people = peopleIds.length ? await User.find({ _id: { $in: peopleIds } }).select(LIVE_PEOPLE_FIELDS).lean() : [];
+  const classroom: any = classroomDoc ? attachClassroomPeople(classroomDoc, people as Array<Record<string, any>>) : null;
 
   const deny = (reason: LiveClassroomDenial) => ({ classroom, allowed: false as const, reason });
 
@@ -107,7 +125,7 @@ export async function getLiveClassroomForUser(classroomId: string, role: AppRole
     return { classroom, allowed: true as const, reason: undefined };
   }
   if (role === "student") {
-    const student = await User.findById(userId).select("role isActive").lean();
+    const student = verifiedUser ?? (await User.findById(userId).select("role isActive").lean());
     if ((student as any)?.role !== "student" || (student as any)?.isActive === false) {
       return deny("not_a_current_student");
     }

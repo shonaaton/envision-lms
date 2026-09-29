@@ -1,6 +1,6 @@
 import "server-only";
-import { requestCache as cache } from "./requestCache";
 import { Types } from "mongoose";
+import { cachedPermissionValue } from "@/lib/permissionCache";
 import { dbConnect } from "@/lib/db";
 import { AccessRole } from "@/models/AccessRole";
 import { User } from "@/models/User";
@@ -26,20 +26,77 @@ export async function ensureMarketingRole() {
   }, { upsert: true });
 }
 
-// Request-local only: revocation and role edits take effect on the next request,
-// including sessions issued before this role system was introduced.
-export const resolveAccessRole = cache(async (userId: string) => {
-  await dbConnect();
-  const user: any = await User.findById(userId).select("accessRole").lean();
-  if (!user?.accessRole) return null;
-  const role: any = await AccessRole.findById(user.accessRole).lean();
-  return {
-    accessRoleId: String(user.accessRole),
-    roleName: role?.name || "Unavailable role",
-    roleGrants: role?.isActive && !role.archivedAt ? role.permissions || {} : {},
-    roleEnabled: Boolean(role?.isActive && !role.archivedAt),
-  };
-});
+/** The account fields every permission check reads. */
+export type AccessUser = {
+  name?: string;
+  email?: string;
+  role?: string;
+  accountStatus?: string;
+  isSuperAdmin?: boolean;
+  accessRole?: string;
+  isActive?: boolean;
+  isPaused?: boolean;
+};
+
+/**
+ * This account as permission checks see it, or `null` once it no longer exists.
+ * Cached for up to 30 seconds and cleared by any write to the account (see
+ * lib/permissionCache.ts), so `auth()`, the super admin check and role
+ * resolution share one read instead of making three.
+ */
+export async function getAccessUser(userId: string): Promise<AccessUser | null> {
+  const user = await cachedPermissionValue("users", userId, async (): Promise<AccessUser | null> => {
+    await dbConnect();
+    const doc: any = await User.findById(userId).select("name email role accountStatus isSuperAdmin accessRole isActive isPaused").lean();
+    if (!doc) return null;
+    return {
+      name: doc.name,
+      email: doc.email,
+      role: doc.role,
+      accountStatus: doc.accountStatus,
+      isSuperAdmin: doc.isSuperAdmin,
+      accessRole: doc.accessRole ? String(doc.accessRole) : undefined,
+      isActive: doc.isActive,
+      isPaused: doc.isPaused,
+    };
+  });
+  return user ? { ...user } : null;
+}
+
+/** Whether any active admin is marked as an explicit super admin. */
+export function explicitSuperAdminExists(): Promise<boolean> {
+  return cachedPermissionValue("flags", "explicitSuperAdminExists", async () => {
+    await dbConnect();
+    return Boolean(await User.exists({ role: "admin", isSuperAdmin: true, isActive: { $ne: false } }));
+  });
+}
+
+type ResolvedAccessRole = {
+  accessRoleId: string;
+  roleName: string;
+  roleGrants: Record<string, string[]>;
+  roleEnabled: boolean;
+};
+
+// Revocation and role edits made in the app apply on the next request: a write
+// to the role or to the account clears this (lib/permissionCache.ts). This also
+// covers sessions issued before this role system was introduced.
+export async function resolveAccessRole(userId: string): Promise<ResolvedAccessRole | null> {
+  const resolved = await cachedPermissionValue("roles", userId, async (): Promise<ResolvedAccessRole | null> => {
+    const user = await getAccessUser(userId);
+    if (!user?.accessRole) return null;
+    await dbConnect();
+    const role: any = await AccessRole.findById(user.accessRole).lean();
+    return {
+      accessRoleId: String(user.accessRole),
+      roleName: role?.name || "Unavailable role",
+      roleGrants: role?.isActive && !role.archivedAt ? role.permissions || {} : {},
+      roleEnabled: Boolean(role?.isActive && !role.archivedAt),
+    };
+  });
+  // Callers merge this into the session; give each its own copy of the grants.
+  return resolved ? structuredClone(resolved) : null;
+}
 
 export async function validateRoleAssignment(id: unknown) {
   if (typeof id !== "string" || !Types.ObjectId.isValid(id)) throw new Error("Choose a valid role.");

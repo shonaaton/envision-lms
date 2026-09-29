@@ -6,11 +6,7 @@ import { Batch } from "@/models/Batch";
 import { AskCoachConversation, AskCoachMessage } from "@/models/AskCoach";
 import { Notification } from "@/models/Fee";
 import { createAskCoachMessage, ensureBatchConversation, ensureDirectConversation, notifyUser } from "@/lib/askCoach";
-import {
-  cancelAskCoachUnreadEmails,
-  processDueAskCoachEmailReminders,
-  queueAskCoachUnreadEmail,
-} from "@/lib/askCoachEmailReminders";
+import { cancelAskCoachUnreadEmails, queueAskCoachUnreadEmail } from "@/lib/askCoachEmailReminders";
 import { recordActivity } from "@/lib/activity";
 
 export const dynamic = "force-dynamic";
@@ -99,9 +95,9 @@ export async function GET(req: Request) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   await dbConnect();
-  void processDueAskCoachEmailReminders().catch((error) => {
-    console.error("Ask Coach unread email processing failed", error);
-  });
+  // Unread-message emails are sent by the `ask_coach_email_reminders` job in
+  // instrumentation.ts, every minute. This read used to start the same sweep
+  // too, and it is called every few seconds from every open portal tab.
   const role = userRole(session as AuthSession);
   const id = userId(session);
   const url = new URL(req.url);

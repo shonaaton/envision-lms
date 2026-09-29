@@ -1,4 +1,5 @@
 import { Schema, model, models, type InferSchemaType } from "mongoose";
+import { WRITE_QUERY_MIDDLEWARE, invalidateFeatureAccessCache } from "@/lib/permissionCache";
 
 const rolePermissionSchema = new Schema(
   {
@@ -36,6 +37,21 @@ const FeatureAccessSchema = new Schema(
   },
   { timestamps: true }
 );
+
+// Feature settings are cached for 30 seconds (lib/permissionCache.ts); any write
+// here clears them, so a Feature Access change applies on the next request.
+FeatureAccessSchema.post([...WRITE_QUERY_MIDDLEWARE], function clearFeatureCacheAfterQuery() {
+  invalidateFeatureAccessCache();
+});
+FeatureAccessSchema.post("save", function clearFeatureCacheAfterSave() {
+  invalidateFeatureAccessCache();
+});
+FeatureAccessSchema.post("deleteOne", { document: true, query: false }, function clearFeatureCacheAfterDocumentDelete() {
+  invalidateFeatureAccessCache();
+});
+FeatureAccessSchema.post("insertMany", function clearFeatureCacheAfterInsertMany() {
+  invalidateFeatureAccessCache();
+});
 
 const PermissionTemplateSchema = new Schema(
   {

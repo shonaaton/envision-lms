@@ -9,6 +9,7 @@ import { notifyFailure } from "@/lib/failureNotifications";
 import { ensureTopicContinuationSession, normalizeSessionOutcome, recalculateFutureSessionTopics, shouldContinueTopic, topicCompletedForOutcome } from "@/lib/classroomLifecycle";
 import { actualSessionMinutes, punctualityBreakdown, scheduledPaymentMinutes } from "@/lib/teachingStats";
 import { raiseDemoAssessmentTask, raiseDemoRebookTask } from "@/lib/tasks/taskTriggers";
+import { scheduledSessionStartIsNoop } from "@/lib/liveClassroomPoll";
 
 export function getRequestedSessionId(req: Request) {
   const url = new URL(req.url);
@@ -55,11 +56,19 @@ export async function markScheduledSessionStarted({
   classroomId,
   scheduledSessionId,
   actorId,
+  current,
 }: {
   classroomId: string;
   scheduledSessionId: string;
   actorId?: string;
+  /**
+   * The classroom as the caller has just read it. When it shows the session
+   * already started exactly as this would leave it, the full document is not
+   * loaded and re-saved - the coach's once-a-second poll used to do both.
+   */
+  current?: { status?: unknown; generatedSessions?: unknown[] } | null;
 }) {
+  if (current && scheduledSessionStartIsNoop({ classroom: current, scheduledSessionId, actorId })) return;
   const classroom: any = await Classroom.findById(classroomId);
   if (!classroom) return;
   const target = classroom.generatedSessions?.id?.(scheduledSessionId);

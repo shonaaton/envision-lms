@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Check, CheckCheck, EyeOff, MessageSquare, Search, Send, Shield, Trash2, Users } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { ASK_COACH_READ_EVENT } from "@/components/ask-coach/events";
 
 type Role = "student" | "instructor" | "admin";
 type DeliveryStatus = "sent" | "delivered" | "seen";
@@ -222,6 +223,7 @@ export default function AskCoachClient({ role }: { role: Role }) {
         body: JSON.stringify({ conversationId }),
       });
       if (!res.ok) return;
+      window.dispatchEvent(new Event(ASK_COACH_READ_EVENT));
       const readAt = new Date().toISOString();
       setData((current) => ({
         ...current,

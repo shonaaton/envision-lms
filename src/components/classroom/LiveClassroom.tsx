@@ -850,6 +850,8 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const dataRef = useRef<any>(null);
   const loadedOnceRef = useRef(false);
   const lastRenderedSnapshotRef = useRef<string | null>(null);
+  const pollFailuresRef = useRef(0);
+  const pollRetryAtRef = useRef(0);
   const coach = isCoach(role);
 
   function focusBoard() {
@@ -864,6 +866,10 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   }, [classroomId, sessionId]);
 
   const load = useCallback(async (force = false) => {
+    // After failed polls, the 1s timer backs off (see the catch below) so a
+    // struggling server is not asked again every second by every open tab.
+    // Forced loads - after a move, an action or the refresh button - still go.
+    if (!force && Date.now() < pollRetryAtRef.current) return;
     if (loadInFlightRef.current && !force) {
       refreshQueuedRef.current = true;
       return;
@@ -880,6 +886,8 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       if (!nextData?.classroom || !nextData?.live) {
         throw new Error("Classroom data is incomplete. Please try again.");
       }
+      pollFailuresRef.current = 0;
+      pollRetryAtRef.current = 0;
       if (!("pgnLibrary" in nextData)) {
         nextData.pgnLibrary = dataRef.current?.pgnLibrary || [];
       }
@@ -900,6 +908,11 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
         setData(nextData);
       }
     } catch (error: any) {
+      // One failure changes nothing (the next tick is 1s away anyway); repeated
+      // failures wait 2s, 4s, then 8s between polls until one succeeds.
+      pollFailuresRef.current += 1;
+      const backoffMs = Math.min(8000, 1000 * 2 ** (pollFailuresRef.current - 1));
+      pollRetryAtRef.current = Date.now() + backoffMs - 250;
       if (!loadedOnceRef.current) {
         const message =
           error?.name === "AbortError"
@@ -912,7 +925,9 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       loadInFlightRef.current = false;
       if (refreshQueuedRef.current) {
         refreshQueuedRef.current = false;
-        void load(true);
+        // Only the 1s timer queues a refresh, so after a failure it waits out
+        // the backoff like any other tick instead of firing straight away.
+        if (pollFailuresRef.current === 0) void load(true);
       }
     }
   }, [liveUrl]);

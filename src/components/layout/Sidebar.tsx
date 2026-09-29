@@ -4,6 +4,7 @@ import Link from "next/link";
 import { signOut } from "next-auth/react";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { ASK_COACH_READ_EVENT } from "@/components/ask-coach/events";
 import {
   ActivitySquare,
   Archive,
@@ -360,11 +361,21 @@ export default function Sidebar({
       const data = await res.json().catch(() => ({}));
       if (mounted) setAskCoachUnreadCount(Number(data.unreadCount || 0));
     }
+    // Every 30s while the tab is on screen, and at once when it comes back or
+    // messages are read. A tab in the background asks for nothing: every open
+    // portal tab used to ask every 10s, all day.
+    const refreshIfVisible = () => {
+      if (document.visibilityState === "visible") void loadAskCoachUnreadCount();
+    };
     void loadAskCoachUnreadCount();
-    const timer = window.setInterval(() => void loadAskCoachUnreadCount(), 10000);
+    const timer = window.setInterval(refreshIfVisible, 30_000);
+    document.addEventListener("visibilitychange", refreshIfVisible);
+    window.addEventListener(ASK_COACH_READ_EVENT, refreshIfVisible);
     return () => {
       mounted = false;
       window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refreshIfVisible);
+      window.removeEventListener(ASK_COACH_READ_EVENT, refreshIfVisible);
     };
   }, []);
 
@@ -381,11 +392,17 @@ export default function Sidebar({
       const data = await res.json().catch(() => ({}));
       if (mounted) setPendingTaskCount(Number(data.pendingCount || 0));
     }
+    // Once a minute while the tab is on screen, and at once when it comes back.
+    const refreshIfVisible = () => {
+      if (document.visibilityState === "visible") void loadPendingTaskCount();
+    };
     void loadPendingTaskCount();
-    const timer = window.setInterval(() => void loadPendingTaskCount(), 60000);
+    const timer = window.setInterval(refreshIfVisible, 60_000);
+    document.addEventListener("visibilitychange", refreshIfVisible);
     return () => {
       mounted = false;
       window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refreshIfVisible);
     };
   }, [tasksVisible, pathname]);
 

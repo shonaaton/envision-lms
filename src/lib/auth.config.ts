@@ -124,7 +124,11 @@ export const authConfig = {
       if (isPublic) return true;
       // A valid session is already durable. Keep the login route from mounting
       // for an authenticated user, so it cannot accidentally clear that session.
-      if (isLoginRoute && isLoggedIn) return Response.redirect(new URL("/dashboard", nextUrl));
+      // The cookie alone cannot say whether its account still exists, so the
+      // Node route /api/auth/resume checks and then continues to /dashboard.
+      // Sending a deleted account straight to /dashboard looped: the dashboard
+      // found no account and sent it back here.
+      if (isLoginRoute && isLoggedIn) return Response.redirect(new URL("/api/auth/resume", nextUrl));
       if (isAuthRoute) return true;
       if (!isLoggedIn) return false; // triggers redirect to signIn
       if (isInactiveAccount && isInactiveRestrictedPath(nextUrl.pathname)) return Response.redirect(new URL("/dashboard", nextUrl));

@@ -1,5 +1,6 @@
 import { escapeRegex } from "@/lib/loginIdentity";
 import { canonicalEmail, canonicalPhone } from "@/lib/identityMatch";
+import { WRITE_QUERY_MIDDLEWARE, invalidateUserPermissionCache, userIdsFromFilter } from "@/lib/permissionCache";
 import { Schema, model, models, type InferSchemaType } from "mongoose";
 
 const UserSchema = new Schema(
@@ -170,6 +171,24 @@ UserSchema.pre(["findOneAndUpdate", "updateOne"], async function syncIdentityKey
   }
   this.setUpdate({ ...update, $set: { ...(update.$set || {}), ...patch } });
   next();
+});
+
+/**
+ * Permission checks read this account through a 30 second cache
+ * (lib/permissionCache.ts). Every write clears the entries for the accounts it
+ * touched, so a deactivation, pause or role change applies on the next request.
+ */
+UserSchema.post([...WRITE_QUERY_MIDDLEWARE], function clearPermissionCacheAfterQuery(this: any) {
+  invalidateUserPermissionCache(userIdsFromFilter(this.getFilter()));
+});
+UserSchema.post("save", function clearPermissionCacheAfterSave(this: any) {
+  invalidateUserPermissionCache([String(this._id)]);
+});
+UserSchema.post("deleteOne", { document: true, query: false }, function clearPermissionCacheAfterDocumentDelete(this: any) {
+  invalidateUserPermissionCache([String(this._id)]);
+});
+UserSchema.post("insertMany", function clearPermissionCacheAfterInsertMany() {
+  invalidateUserPermissionCache(null);
 });
 
 export type UserDoc = InferSchemaType<typeof UserSchema> & { _id: any };

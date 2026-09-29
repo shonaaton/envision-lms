@@ -23,6 +23,10 @@ const AttendanceSchema = new Schema(
   { timestamps: true }
 );
 AttendanceSchema.index({ classroom: 1, scheduledSessionId: 1, sessionDate: 1 }, { unique: true });
+// "This student's attendance" - the student dashboard, the attendance page and
+// API, calendar, reports and monthly feedback all filter on it, most sorting by
+// date. Without it each of those read every register in the academy.
+AttendanceSchema.index({ "records.student": 1, sessionDate: -1 });
 
 export type AttendanceDoc = InferSchemaType<typeof AttendanceSchema> & { _id: any };
 export const Attendance = models.Attendance || model("Attendance", AttendanceSchema);

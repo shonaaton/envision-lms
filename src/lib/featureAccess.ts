@@ -1,5 +1,4 @@
 import "server-only";
-import { requestCache as cache } from "./requestCache";
 
 import { Types } from "mongoose";
 import { auth } from "@/lib/auth";
@@ -8,7 +7,8 @@ import { FeatureAccess, PermissionAudit, PermissionTemplate } from "@/models/Fea
 import { User } from "@/models/User";
 import { Batch } from "@/models/Batch";
 import { Classroom } from "@/models/Classroom";
-import { resolveAccessRole } from "@/lib/accessRoles";
+import { explicitSuperAdminExists, getAccessUser, resolveAccessRole } from "@/lib/accessRoles";
+import { cachedPermissionValue } from "@/lib/permissionCache";
 import { roleHasPermission, type RoleGrants } from "@/lib/accessRolePolicy";
 import {
   FEATURE_DEFINITIONS,
@@ -183,7 +183,18 @@ export async function seedPermissionTemplates(actorId?: string) {
   );
 }
 
+/**
+ * Feature settings as every permission check reads them. Cached for up to 30
+ * seconds and cleared by any FeatureAccess write (lib/permissionCache.ts), so a
+ * change saved on the Feature Access screen applies on the next request.
+ */
 export async function getFeatureAccessSnapshot(): Promise<FeatureAccessSnapshot[]> {
+  const states = await cachedPermissionValue("features", "all", loadFeatureAccessStates);
+  // Each caller gets its own copy; the cached states are shared.
+  return FEATURE_DEFINITIONS.map((feature) => ({ ...feature, ...structuredClone(states[feature.key]) }));
+}
+
+async function loadFeatureAccessStates(): Promise<Record<string, FeatureAccessState>> {
   await dbConnect();
   const featureKeys = FEATURE_DEFINITIONS.map((feature) => feature.key);
   let docs = await FeatureAccess.find({ key: { $in: featureKeys } }).lean();
@@ -209,23 +220,22 @@ export async function getFeatureAccessSnapshot(): Promise<FeatureAccessSnapshot[
     docs = await FeatureAccess.find({ key: { $in: featureKeys } }).lean();
   }
   const byKey = new Map(docs.map((doc: any) => [doc.key, doc]));
-  return FEATURE_DEFINITIONS.map((feature) => ({ ...feature, ...normalizeState(feature, byKey.get(feature.key)) }));
+  return Object.fromEntries(FEATURE_DEFINITIONS.map((feature) => [feature.key, normalizeState(feature, byKey.get(feature.key))]));
 }
 
-export const getFeatureAccessMap = cache(async () => {
+export async function getFeatureAccessMap() {
   const snapshot = await getFeatureAccessSnapshot();
   return new Map(snapshot.map((feature) => [feature.key, feature]));
-});
+}
 
 export async function isSuperAdminSession(user?: SessionUser | null) {
   if (!user?.id || user.role !== "admin") return false;
-  await dbConnect();
-  const current: any = await User.findById(user.id).select("role isSuperAdmin isActive accessRole").lean();
+  const current = await getAccessUser(user.id);
   if (!current || current.role !== "admin" || current.accessRole || current.isActive === false) return false;
   if (current.isSuperAdmin) return true;
-  const explicitSuperAdminExists = await User.exists({ role: "admin", isSuperAdmin: true, isActive: { $ne: false } });
-  if (explicitSuperAdminExists) return false;
-  return Boolean(await User.exists({ _id: user.id, role: "admin", isActive: { $ne: false } }));
+  // With no explicit super admin anywhere, every active admin is one (the
+  // bootstrap rule); `current` has already shown this one is an active admin.
+  return !(await explicitSuperAdminExists());
 }
 
 export async function requireSuperAdmin() {
@@ -251,23 +261,42 @@ function activeOverride(state: FeatureAccessState, userId?: string) {
   );
 }
 
+/**
+ * The batches and courses this user belongs to, for features in pilot testing.
+ * Read once per user per 30 seconds (lib/permissionCache.ts) instead of up to
+ * three queries for every permission of every pilot feature on every page.
+ * Batches: the user's own list, plus any batch naming them as student or coach.
+ * Courses: those of active classrooms where they are student, coach or
+ * instructor.
+ */
+function pilotCohorts(userId: string) {
+  return cachedPermissionValue("cohorts", userId, async () => {
+    await dbConnect();
+    const [userDoc, memberBatchIds, courseIds] = await Promise.all([
+      User.findById(userId, { batches: 1 }).lean(),
+      Batch.distinct("_id", { $or: [{ students: userId }, { coach: userId }] }),
+      Classroom.distinct("course", {
+        isActive: { $ne: false },
+        $or: [{ students: userId }, { coach: userId }, { instructor: userId }],
+      }),
+    ]);
+    return {
+      batchIds: new Set([...ids((userDoc as any)?.batches), ...ids(memberBatchIds)]),
+      courseIds: new Set(ids(courseIds.filter(Boolean))),
+    };
+  });
+}
+
 async function isPilotBatchMember(state: FeatureAccessState, user: SessionUser) {
   if (!user.id || !state.pilotBatches.length) return false;
-  const userDoc = await User.findById(user.id, { batches: 1 }).lean();
-  const directBatchIds = ((userDoc as any)?.batches || []).map((value: any) => value?.toString?.() || String(value));
-  if (directBatchIds.some((id: string) => state.pilotBatches.includes(id))) return true;
-  return Boolean(await Batch.exists({ _id: { $in: state.pilotBatches }, $or: [{ students: user.id }, { coach: user.id }] }));
+  const { batchIds } = await pilotCohorts(user.id);
+  return state.pilotBatches.some((id) => batchIds.has(id));
 }
 
 async function isPilotCourseMember(state: FeatureAccessState, user: SessionUser) {
   if (!user.id || !state.pilotCourses.length) return false;
-  return Boolean(
-    await Classroom.exists({
-      course: { $in: state.pilotCourses },
-      isActive: { $ne: false },
-      $or: [{ students: user.id }, { coach: user.id }, { instructor: user.id }],
-    })
-  );
+  const { courseIds } = await pilotCohorts(user.id);
+  return state.pilotCourses.some((id) => courseIds.has(id));
 }
 
 export function evaluateFeatureState({

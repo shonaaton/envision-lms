@@ -299,9 +299,9 @@ export async function GET(req: Request) {
         return [[
           group.coachName,
           "Unassigned",
-          summary.classesConducted,
-          summary.totalHoursConducted.toFixed(2),
-          summary.actualHoursConducted.toFixed(2),
+          summary.regularClassesConducted,
+          summary.regularHoursConducted.toFixed(2),
+          summary.regularActualHoursConducted.toFixed(2),
           summary.demoClassesConducted,
           summary.demoHoursConducted.toFixed(2),
           summary.demoActualHoursConducted.toFixed(2),
@@ -309,7 +309,7 @@ export async function GET(req: Request) {
           summary.averageActualDuration,
           `${summary.punctualityScore}%`,
           summary.attendancePercentage,
-          summary.totalStudentsTaught,
+          summary.regularStudentsTaught,
           summary.classesCancelled,
           summary.classesRescheduled,
         ]];
@@ -327,7 +327,7 @@ export async function GET(req: Request) {
         summary.averageActualDuration,
         `${summary.punctualityScore}%`,
         summary.attendancePercentage,
-        summary.totalStudentsTaught,
+        summary.regularStudentsTaught,
         summary.classesCancelled,
         summary.classesRescheduled,
       ]);

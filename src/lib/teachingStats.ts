@@ -92,6 +92,7 @@ export function summarizeCoachSessions(classrooms: any[], range: RangeLike, opti
   const demoActualMinutes = completedDemo.reduce((sum, { session }) => sum + Number(session.actualTeachingMinutes || actualSessionMinutes(session)), 0);
   const punctualityScores = completed.map(({ classroom, session }) => Number(session.punctualityScore || punctualityBreakdown(session, classroom).punctualityScore || 0));
   const studentIds = new Set(completed.flatMap(({ classroom }) => (classroom.students || []).map(objectId)));
+  const regularStudentIds = new Set(completedRegular.flatMap(({ classroom }) => (classroom.students || []).map(objectId)));
   const batchMap = new Map<string, { batchName: string; classesConducted: number; hoursConducted: number; actualHours: number; students: number }>();
 
   completedRegular.forEach(({ classroom, session }) => {
@@ -126,6 +127,8 @@ export function summarizeCoachSessions(classrooms: any[], range: RangeLike, opti
     punctualityScore: punctualityScores.length ? Math.round(punctualityScores.reduce((sum, value) => sum + value, 0) / punctualityScores.length) : 0,
     attendancePercentage: rows.length ? Math.round((completed.length / rows.length) * 100) : 0,
     totalStudentsTaught: studentIds.size,
+    /** Students taught in regular classes - a demo child is not the coach's student. */
+    regularStudentsTaught: regularStudentIds.size,
     batchRows: Array.from(batchMap.values()).sort((a, b) => b.hoursConducted - a.hoursConducted),
   };
 }

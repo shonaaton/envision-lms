@@ -531,6 +531,11 @@ export function resolveMonthlyFeedbackTask(feedbackId: unknown, by?: unknown, no
   return settle("MonthlyFeedback", feedbackId, by, note);
 }
 
+/** The report was withdrawn (e.g. the student attended too few classes), so the coach's task goes too. */
+export function withdrawMonthlyFeedbackTask(feedbackId: unknown, reason: string) {
+  return withdraw("MonthlyFeedback", feedbackId, reason);
+}
+
 /** The admin sent a report back: the coach's task comes back with the admin's note. */
 export function reopenMonthlyFeedbackTask(input: { feedback: any; monthLabel: string; note: string }) {
   const feedbackId = idOf(input.feedback);

@@ -1921,7 +1921,11 @@ async function CoachDashboardV2({ userId, searchParams, joinAllowed }: { userId:
   const nextSession = sessions[0] || null;
   const todayRows = sessions.filter((row) => row.start && startOfDay(row.start).getTime() === startOfDay(now).getTime());
   const scheduleRows = (todayRows.length ? todayRows : sessions).slice(0, 5);
-  const assignedStudentCount = new Set(classrooms.flatMap((item: any) => (item.students || []).map((student: any) => objectId(student)))).size;
+  // Demos stay on the schedule (the coach has to teach them) but are not counted
+  // as the coach's classes, hours or students.
+  const regularClassrooms = classrooms.filter((item: any) => item.classroomType !== "demo");
+  const upcomingRegularCount = sessions.filter((row) => row.classroom?.classroomType !== "demo").length;
+  const assignedStudentCount = new Set(regularClassrooms.flatMap((item: any) => (item.students || []).map((student: any) => objectId(student)))).size;
   const attendanceDueToday = todayRows.length;
   const weekCounts = Array.from({ length: 7 }).map((_, index) => {
     const date = startOfDay(new Date(now.getTime() + index * DAY));
@@ -1974,9 +1978,9 @@ async function CoachDashboardV2({ userId, searchParams, joinAllowed }: { userId:
             <p className="mt-2 max-w-3xl text-sm leading-6 text-white/80">Track classes, homework, student activity, and upcoming sessions at a glance.</p>
           </div>
           <div className="grid grid-cols-3 gap-2 sm:min-w-[360px]">
-            <CoachHeaderMetric label="Upcoming" value={sessions.length} />
-            <CoachHeaderMetric label="Hours" value={teaching.totalHoursConducted.toFixed(2)} />
-            <CoachHeaderMetric label="Students" value={teaching.totalStudentsTaught || assignedStudentCount} />
+            <CoachHeaderMetric label="Upcoming" value={upcomingRegularCount} />
+            <CoachHeaderMetric label="Hours" value={teaching.regularHoursConducted.toFixed(2)} />
+            <CoachHeaderMetric label="Students" value={teaching.regularStudentsTaught || assignedStudentCount} />
           </div>
         </div>
       </section>
@@ -2503,7 +2507,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
 
   const coachRows = coaches.map((coach: any) => {
     const cid = objectId(coach._id);
-    const coachClasses = classrooms.filter((classroom: any) =>
+    // Demo classrooms are left out of a coach's classes, students and hours.
+    const coachClasses = classrooms.filter((classroom: any) => classroom.classroomType !== "demo").filter((classroom: any) =>
       objectId(classroom.coach || classroom.instructor) === cid ||
       (classroom.generatedSessions || []).some((session: any) => effectiveSessionCoachId(session, classroom) === cid)
     );
@@ -2518,8 +2523,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
       classes: coachClasses.length,
       homework: coachHomework.length,
       sessions: coachAttendance.length,
-      hours: teaching.totalHoursConducted,
-      actualHours: teaching.actualHoursConducted,
+      hours: teaching.regularHoursConducted,
+      actualHours: teaching.regularActualHoursConducted,
       punctualityScore: teaching.punctualityScore,
       attendancePercentage: teaching.attendancePercentage,
       activeBatches: new Set(coachClasses.flatMap((classroom: any) => (classroom.batches || []).map((batch: any) => batch.name || objectId(batch)))).size,

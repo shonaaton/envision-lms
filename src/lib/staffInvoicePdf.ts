@@ -41,7 +41,7 @@ function lineSubtitle(line: any) {
     const kind = KIND_LABELS[line.kind as keyof typeof KIND_LABELS];
     return [line.level ? `${line.level} level` : "", line.unit === "per_hour" && line.note ? `${kind} - ${line.note}` : kind].filter(Boolean).join(" - ");
   }
-  return line.group === "demo" ? "Trial classes taken this month" : "Demo students who enrolled";
+  return line.group === "demo" ? line.note || "Trial classes taken this month" : "Demo students who enrolled";
 }
 
 const UNIT_SUFFIX: Record<string, string> = { per_class: "", per_hour: " /hr", per_month: " /month" };

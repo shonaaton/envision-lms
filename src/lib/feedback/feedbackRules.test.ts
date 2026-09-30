@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cleanRatings, feedbackActionSchema, missingForSubmit, serializeFeedback } from "@/lib/feedback/feedbackRules";
+import { MIN_CLASSES_FOR_FEEDBACK, WITHDRAWABLE_STATUSES, cleanRatings, feedbackActionSchema, hasEnoughClasses, missingForSubmit, serializeFeedback } from "@/lib/feedback/feedbackRules";
 
 const COACH = "aaaaaaaaaaaaaaaaaaaaaaaa";
 const STUDENT = "bbbbbbbbbbbbbbbbbbbbbbbb";
@@ -70,5 +70,20 @@ describe("feedback submission rules", () => {
   it("rejects out-of-range ratings and too many focus areas", () => {
     expect(() => feedbackActionSchema.parse({ action: "submit", ratings: { rules: 6 } })).toThrow();
     expect(() => feedbackActionSchema.parse({ action: "submit", focusAreas: ["a", "b", "c"] })).toThrow();
+  });
+});
+
+describe("minimum attendance", () => {
+  it("holds back a new student until three classes in total", () => {
+    expect(MIN_CLASSES_FOR_FEEDBACK).toBe(3);
+    expect(hasEnoughClasses(2)).toBe(false);
+    expect(hasEnoughClasses(3)).toBe(true);
+    expect(hasEnoughClasses(40)).toBe(true);
+    expect(hasEnoughClasses(undefined)).toBe(false);
+  });
+
+  it("never withdraws a report the family already has", () => {
+    expect(WITHDRAWABLE_STATUSES).not.toContain("sent");
+    expect(WITHDRAWABLE_STATUSES).toContain("submitted");
   });
 });

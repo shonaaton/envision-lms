@@ -20,6 +20,25 @@ import {
 export type FeedbackViewerRole = "student" | "instructor" | "admin" | "sub-admin";
 export type FeedbackViewer = { id: string; role: FeedbackViewerRole | string; canApprove?: boolean; canEdit?: boolean };
 
+/**
+ * A newly joined student gets their first report only once they have attended
+ * this many classes at the academy in total - before that there is nothing for
+ * a coach to judge. Established students are not affected: a regular who
+ * missed most of this month still gets their monthly report.
+ */
+export const MIN_CLASSES_FOR_FEEDBACK = 3;
+/**
+ * Reports that can still be withdrawn when a student turns out to be too new:
+ * everything the family has not received yet. A sent report stays - the family
+ * already has it.
+ */
+export const WITHDRAWABLE_STATUSES = ["pending", "draft", "submitted", "changes_requested"];
+
+/** `lifetimeAttended` is every class the student attended at the academy, not just this month's. */
+export function hasEnoughClasses(lifetimeAttended: number | null | undefined) {
+  return Number(lifetimeAttended || 0) >= MIN_CLASSES_FOR_FEEDBACK;
+}
+
 export const COACH_EDITABLE_STATUSES = ["pending", "draft", "changes_requested"];
 export const REVIEWABLE_STATUSES = ["submitted"];
 /** What a student (and the family) may ever see. */

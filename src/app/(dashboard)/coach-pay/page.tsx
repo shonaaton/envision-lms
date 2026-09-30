@@ -120,8 +120,8 @@ export default async function CoachPayPage({
           />
           <StatCard
             label="Classes paid"
-            value={summary.payableClasses}
-            note={`${formatHours(summary.rows.reduce((sum, row) => sum + row.minutes, 0))} teaching hours`}
+            value={summary.payableClasses - summary.demoClasses}
+            note={`${summary.demoClasses ? `+ ${summary.demoClasses} demo${summary.demoClasses === 1 ? "" : "s"} - ` : ""}${formatHours(summary.rows.reduce((sum, row) => sum + row.minutes, 0))} teaching hours`}
             icon={CalendarClock}
             tone="blue"
           />
@@ -269,7 +269,10 @@ export default async function CoachPayPage({
                           </div>
                         )}
                       </td>
-                      <td className="px-3 py-2 text-right tabular-nums">{row.classes || "-"}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {row.classes || "-"}
+                        {row.demoClasses > 0 && <div className="text-xs text-slate-500">+ {row.demoClasses} demo{row.demoClasses === 1 ? "" : "s"}</div>}
+                      </td>
                       <td className="px-3 py-2 text-right tabular-nums text-slate-600">{row.minutes ? formatHours(row.minutes) : "-"}</td>
                       <td className="px-3 py-2 text-right text-base font-bold tabular-nums text-slate-950">{formatINR(row.earned)}</td>
                       <td className="px-3 py-2 text-xs">

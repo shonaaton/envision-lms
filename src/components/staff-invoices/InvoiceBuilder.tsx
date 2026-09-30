@@ -273,7 +273,7 @@ export function InvoiceBuilder(props: InvoiceBuilderProps) {
                         {group.group === "class"
                           ? [group.level ? `${group.level} level` : "", KIND_LABELS[group.kind], group.unit === "per_hour" ? group.note : ""].filter(Boolean).join(" - ")
                           : group.group === "demo"
-                            ? "Trial classes across all demo classrooms"
+                            ? group.note || "Trial classes across all demo classrooms"
                             : group.group === "bonus"
                               ? "Demo students who enrolled"
                               : group.note}

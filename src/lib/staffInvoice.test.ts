@@ -28,6 +28,7 @@ function event(overrides: Partial<PayEvent>): PayEvent {
     classroomId: "room-a",
     classroomTitle: "Beginner L1 - Mon/Wed",
     isDemoClass: false,
+    demoConverted: false,
     batchName: "Batch A",
     level: "",
     sessionId: Math.random().toString(36),
@@ -128,6 +129,22 @@ describe("groupInvoiceLines", () => {
     ]);
     expect(pending).toEqual({ count: 1, amount: 50000 });
     expect(missing).toEqual([]);
+  });
+
+  it("splits demos into open and converted lines, and never gives a demo classroom its own row", () => {
+    const { groups } = groupInvoiceLines([
+      event({ classroomId: "demo-1", classroomTitle: "Demo - Riya", kind: "demo", isDemoClass: true, amount: 30000, rateAmount: 30000 }),
+      event({ classroomId: "demo-2", classroomTitle: "Demo - Aarav", kind: "demo", isDemoClass: true, demoConverted: true, amount: 30000, rateAmount: 30000 }),
+      event({ classroomId: "demo-3", classroomTitle: "Demo - Isha", kind: "demo", isDemoClass: true, demoConverted: true, amount: 30000, rateAmount: 30000 }),
+      // Taught by a substitute: still a demo line, not a "Demo - Kabir" row.
+      event({ classroomId: "demo-4", classroomTitle: "Demo - Kabir", kind: "substitute", isDemoClass: true, amount: 30000, rateAmount: 30000 }),
+      event({ classroomId: "demo-2", classroomTitle: "Demo - Aarav", kind: "demoConversionBonus", isDemoClass: true, demoConverted: true, amount: 50000, rateAmount: 50000 }),
+    ]);
+    expect(groups.map((group) => [group.group, group.title, group.kind, group.quantity, group.amount, group.note])).toEqual([
+      ["demo", "Demo classes", "demo", 2, 60000, "Trial classes taken this month"],
+      ["demo", "Converted demo classes", "demo", 2, 60000, "Trial classes whose student has enrolled"],
+      ["bonus", "Demo conversion incentive", "demoConversionBonus", 1, 50000, ""],
+    ]);
   });
 
   it("never bills a class the academy has not priced - it is listed as missing instead", () => {

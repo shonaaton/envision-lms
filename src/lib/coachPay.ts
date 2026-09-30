@@ -88,6 +88,8 @@ export type PayEvent = {
   classroomId: string;
   classroomTitle: string;
   isDemoClass: boolean;
+  /** A demo whose student has since enrolled - invoiced on its own line. */
+  demoConverted: boolean;
   batchName: string;
   /** The classroom's course level ("Intermediate"), so a batch that moved up a level reads clearly. */
   level: string;
@@ -340,6 +342,7 @@ export function buildPayEvents(input: BuildPayEventsInput): PayEvent[] {
     if (classroom.isSessionInstance) continue;
     const classroomId = idOf(classroom._id);
     const isDemoClass = classroom.classroomType === "demo";
+    const demoConverted = isDemoClass && conversions.has(idOf(classroom.demoBooking));
     const batchIds = (classroom.batches || []).map(idOf).filter(Boolean);
     const batchName = (classroom.batches || []).map((batch: any) => batch?.name).filter(Boolean).join(", ");
     const level = levelName(classroom.level);
@@ -393,6 +396,7 @@ export function buildPayEvents(input: BuildPayEventsInput): PayEvent[] {
           classroomId,
           classroomTitle: classroom.title || "Classroom",
           isDemoClass,
+          demoConverted,
           batchName: batchName || (isDemoClass ? "Demo" : "Unassigned"),
           level,
           sessionId,
@@ -453,6 +457,7 @@ export function buildPayEvents(input: BuildPayEventsInput): PayEvent[] {
         classroomId,
         classroomTitle: classroom.title || "Classroom",
         isDemoClass,
+        demoConverted,
         batchName: batchName || (isDemoClass ? "Demo" : "Unassigned"),
         level,
         sessionId,
@@ -508,6 +513,7 @@ export function buildPayEvents(input: BuildPayEventsInput): PayEvent[] {
       classroomId,
       classroomTitle: classroom.title || "Demo",
       isDemoClass: true,
+      demoConverted: true,
       batchName: "Demo conversion",
       level: "",
       sessionId: "",
@@ -573,6 +579,7 @@ export function monthlyPayEvents(plans: any[], range: { from: Date; to: Date }, 
         classroomId: "",
         classroomTitle: `Fixed monthly pay - ${monthLabel(month)}`,
         isDemoClass: false,
+        demoConverted: false,
         batchName: "",
         level: "",
         sessionId: "",
@@ -623,6 +630,8 @@ export type CoachPaySummary = {
   totalAmount: number;
   pendingAmount: number;
   payableClasses: number;
+  /** Payable demo classes, included in payableClasses. */
+  demoClasses: number;
   pendingReview: number;
   unpriced: number;
   coachCount: number;
@@ -670,7 +679,8 @@ export function summarizePayEvents(events: PayEvent[]): CoachPaySummary {
       } else if (event.kind === "regular") {
         row.regularClasses += 1;
         row.regularAmount += event.amount;
-      } else if (event.kind === "demo") {
+      } else if (event.kind === "demo" || (event.kind === "substitute" && event.isDemoClass)) {
+        // A demo a substitute taught is still a demo, not a substitution class.
         row.demoClasses += 1;
         row.demoAmount += event.amount;
       } else if (event.kind === "substitute") {
@@ -691,6 +701,7 @@ export function summarizePayEvents(events: PayEvent[]): CoachPaySummary {
     totalAmount: rows.reduce((sum, row) => sum + row.totalAmount, 0),
     pendingAmount: rows.reduce((sum, row) => sum + row.pendingAmount, 0),
     payableClasses: events.filter((event) => event.status === "payable" && event.kind !== "demoConversionBonus" && event.kind !== "monthly").length,
+    demoClasses: rows.reduce((sum, row) => sum + row.demoClasses, 0),
     pendingReview: events.filter((event) => event.status === "pending_review").length,
     unpriced: events.filter((event) => event.status === "unpriced").length,
     coachCount: rows.length,

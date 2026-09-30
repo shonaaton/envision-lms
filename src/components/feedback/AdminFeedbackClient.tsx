@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { PageHeader, StatCard } from "@/components/common/PageHeader";
 import { Avatar, MonthSwitcher, ParentReportCard, StatusBadge, TabBar, dueLabel, isOverdue, patchFeedback, useFeedbackList, type FeedbackItem } from "@/components/feedback/feedbackUi";
 import { PARENT_NOTE_MAX, PARENT_NOTE_MIN, questionSetFor } from "@/lib/feedback/feedbackQuestions";
-import { isParentNoteComplete } from "@/lib/feedback/feedbackRules";
+import { MIN_CLASSES_FOR_FEEDBACK, isParentNoteComplete } from "@/lib/feedback/feedbackRules";
 
 type Tab = "pending" | "submitted" | "changes_requested" | "sent" | "skipped";
 
@@ -279,7 +279,7 @@ export default function AdminFeedbackClient({ canApprove, initialMonth = "", ini
         title={data?.monthLabel ? `${data.monthLabel} feedback` : "Monthly feedback"}
         subtitle={
           <>
-            Coaches rate each student once a month; nothing reaches a family until it is approved here. Internal notes stay inside the academy.
+            Coaches rate each student once a month (new students once they have attended {MIN_CLASSES_FOR_FEEDBACK} classes); nothing reaches a family until it is approved here. Internal notes stay inside the academy.
             {data?.dueAt && <span className="font-semibold text-slate-700"> {dueLabel(data.dueAt)}.</span>}
           </>
         }
@@ -378,7 +378,7 @@ export default function AdminFeedbackClient({ canApprove, initialMonth = "", ini
         {data && !visible.length && (
           <div className="px-4 py-12 text-center">
             <CheckCircle2 size={28} className="mx-auto mb-2 text-slate-300" />
-            <p className="text-sm font-bold text-slate-700">{total === 0 ? "No feedback for this month yet. Reports open automatically on the 25th." : "Nothing in this list."}</p>
+            <p className="text-sm font-bold text-slate-700">{total === 0 ? `No feedback for this month yet. Reports open automatically on the 25th; new students need ${MIN_CLASSES_FOR_FEEDBACK} classes first.` : "Nothing in this list."}</p>
             {total === 0 && canApprove && (
               <button type="button" className="btn btn-primary mt-3" disabled={generating} onClick={() => void generateNow()}>
                 <FilePlus2 size={16} />

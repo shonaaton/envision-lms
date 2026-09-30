@@ -19,6 +19,9 @@ import {
 import { QUESTION_SET_VERSION, reportTier } from "@/lib/feedback/feedbackQuestions";
 import {
   COACH_EDITABLE_STATUSES,
+  MIN_CLASSES_FOR_FEEDBACK,
+  WITHDRAWABLE_STATUSES,
+  hasEnoughClasses,
   SKIP_REASONS,
   cleanRatings,
   isParentNoteComplete,
@@ -35,6 +38,7 @@ import {
   reopenMonthlyFeedbackTask,
   resolveFeedbackReviewTask,
   resolveMonthlyFeedbackTask,
+  withdrawMonthlyFeedbackTask,
 } from "@/lib/tasks/taskTriggers";
 import { Attendance } from "@/models/Attendance";
 import { Classroom } from "@/models/Classroom";
@@ -135,7 +139,7 @@ async function ensureCycle(month: string) {
  */
 export async function processMonthlyFeedbackCycle(now = new Date(), options: { month?: string } = {}) {
   const month = options.month || openCycleMonth(now);
-  if (!month) return { month: null, created: 0 };
+  if (!month) return { month: null, created: 0, retiered: 0, removed: 0 };
   await dbConnect();
   const cycle = await ensureCycle(month);
   const { start, end } = monthBounds(month);
@@ -154,7 +158,10 @@ export async function processMonthlyFeedbackCycle(now = new Date(), options: { m
   })
     .select("title level course levelName courseName coach instructor students studentExits closedForStudents generatedSessions")
     .lean();
-  if (!classrooms.length) return { month, created: 0, retiered: 0 };
+  if (!classrooms.length) {
+    const removed = await withdrawReportsForNewStudents(month);
+    return { month, created: 0, retiered: 0, removed };
+  }
   const tierOf = await classroomTierResolver(classrooms);
 
   // Read directly rather than via studentPause.ts: that module pulls in the fees
@@ -165,6 +172,7 @@ export async function processMonthlyFeedbackCycle(now = new Date(), options: { m
   const coachIds = Array.from(new Set(classrooms.map((row) => idOf(row.coach || row.instructor))));
   const people: any[] = await User.find({ _id: { $in: [...studentIds, ...coachIds] } }).select("name username role isActive").lean();
   const byId = new Map(people.map((person) => [idOf(person), person]));
+  const lifetime = await lifetimeClassesAttended(studentIds, end);
 
   const createdByCoach = new Map<string, number>();
   let created = 0;
@@ -178,6 +186,10 @@ export async function processMonthlyFeedbackCycle(now = new Date(), options: { m
       const student = byId.get(studentId);
       if (!student || student.role !== "student" || student.isActive === false) continue;
       if (paused.has(studentId) || closed.has(studentId) || hasStudentExited(classroom, studentId)) continue;
+      // A newly joined student with fewer than three classes in total has no
+      // report yet. Swept every hour until the due date, so one who reaches
+      // three before then still gets one.
+      if (!hasEnoughClasses(lifetime.get(studentId))) continue;
 
       // Per classroom as well as per coach: after a coach change the classroom's
       // report for this month already exists (moved to, or written by, the
@@ -218,6 +230,8 @@ export async function processMonthlyFeedbackCycle(now = new Date(), options: { m
   for (const [coachId, count] of Array.from(createdByCoach.entries())) {
     await notifyCoachOfNewReports({ coachId, count, month, label, dueLabel }).catch((error) => console.error("[feedback] coach notice failed", error));
   }
+  const removed = await withdrawReportsForNewStudents(month);
+
   // Reports raised before a course's tier was corrected carry the wrong
   // questions. Any the coach has not submitted yet move to the right tier.
   let retiered = 0;
@@ -232,7 +246,71 @@ export async function processMonthlyFeedbackCycle(now = new Date(), options: { m
   }
 
   await FeedbackCycle.updateOne({ _id: cycle?._id }, { $set: { lastSweepAt: new Date() } });
-  return { month, created, retiered };
+  return { month, created, retiered, removed };
+}
+
+/**
+ * Classes each student has attended at the academy in total, up to `until`.
+ * Demo and test classrooms are left out: a demo is a trial, not a class of the
+ * course the student joined.
+ */
+async function lifetimeClassesAttended(studentIds: string[], until: Date) {
+  const ids = studentIds.map(toObjectId).filter(Boolean);
+  if (!ids.length) return new Map<string, number>();
+  const excluded = await Classroom.find({ $or: [{ classroomType: "demo" }, { isTestClassroom: true }] }).distinct("_id");
+  const rows: any[] = await Attendance.aggregate([
+    { $match: { sessionDate: { $lte: until }, classroom: { $nin: excluded }, "records.student": { $in: ids } } },
+    { $unwind: "$records" },
+    { $match: { "records.student": { $in: ids }, "records.status": { $in: ATTENDED } } },
+    { $group: { _id: "$records.student", attended: { $sum: 1 } } },
+  ]);
+  return new Map(rows.map((row) => [idOf(row._id), Number(row.attended || 0)]));
+}
+
+/**
+ * Withdraws every report the family has not received yet whose student is
+ * still too new (fewer than three classes at the academy in total) - including
+ * reports raised before the rule existed. For everyone else the month's
+ * attendance on the report is kept current, as it was snapshotted when the
+ * report was raised.
+ */
+async function withdrawReportsForNewStudents(month: string) {
+  const open: any[] = await MonthlyFeedback.find({ month, status: { $in: WITHDRAWABLE_STATUSES } });
+  if (!open.length) return 0;
+  const lifetime = await lifetimeClassesAttended(Array.from(new Set(open.map((doc) => idOf(doc.student)))), monthBounds(month).end);
+  const classroomIds = Array.from(new Set(open.map((doc) => idOf(doc.classroom)).filter(Boolean)));
+  const rooms: any[] = await Classroom.find({ _id: { $in: classroomIds } }).select("generatedSessions").lean();
+  const roomById = new Map(rooms.map((room) => [idOf(room), room]));
+  const reason = `New student: fewer than ${MIN_CLASSES_FOR_FEEDBACK} classes attended so far.`;
+
+  let removed = 0;
+  let reviewQueueChanged = false;
+  for (const doc of open) {
+    if (hasEnoughClasses(lifetime.get(idOf(doc.student)))) {
+      const classroom = roomById.get(idOf(doc.classroom));
+      if (!classroom || doc.status === "submitted") continue;
+      const stats = await computeMonthStats(classroom, idOf(doc.student), month);
+      const current = doc.stats || {};
+      const changed =
+        Number(current.classesAttended || 0) !== stats.classesAttended ||
+        Number(current.classesScheduled || 0) !== stats.classesScheduled ||
+        (current.topicsCovered || []).length !== stats.topicsCovered.length;
+      if (changed) {
+        doc.stats = stats;
+        await doc.save();
+      }
+      continue;
+    }
+    // Guarded on the status just read, so a report submitted or sent in the
+    // meantime is re-checked next hour rather than deleted from under someone.
+    const result = await MonthlyFeedback.deleteOne({ _id: doc._id, status: doc.status });
+    if (!result.deletedCount) continue;
+    await withdrawMonthlyFeedbackTask(doc._id, reason);
+    if (doc.status === "submitted") reviewQueueChanged = true;
+    removed += 1;
+  }
+  if (reviewQueueChanged) await syncReviewTask(month);
+  return removed;
 }
 
 /** Looks each classroom's course up once, so the tier comes from the course, not the classroom's stale copy. */

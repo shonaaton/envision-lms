@@ -87,8 +87,21 @@ function sessionOf(event: PayEvent): DraftSession[] {
   return event.sessionId ? [{ classroomId: event.classroomId, sessionId: event.sessionId, date: new Date(event.date).toISOString() }] : [];
 }
 
-function groupOf(kind: PayEvent["kind"]): DraftGroup["group"] {
-  return kind === "demo" ? "demo" : kind === "demoConversionBonus" ? "bonus" : kind === "monthly" ? "monthly" : "class";
+function groupOf(event: PayEvent): DraftGroup["group"] {
+  // Every class in a demo classroom is a demo line, even one a substitute taught -
+  // a demo classroom never gets an invoice row of its own.
+  if (event.kind === "demoConversionBonus") return "bonus";
+  if (event.kind === "demo" || event.isDemoClass) return "demo";
+  return event.kind === "monthly" ? "monthly" : "class";
+}
+
+const DEMO_LINE = {
+  open: { base: "demo", title: "Demo classes", note: "Trial classes taken this month" },
+  converted: { base: "demo:converted", title: "Converted demo classes", note: "Trial classes whose student has enrolled" },
+};
+
+function demoLine(event: PayEvent) {
+  return event.demoConverted ? DEMO_LINE.converted : DEMO_LINE.open;
 }
 
 
@@ -117,15 +130,15 @@ export function groupInvoiceLines(events: PayEvent[]): InvoiceDraftGroups {
       continue;
     }
     if (event.status === "declined") continue;
-    const group = groupOf(event.kind);
-    const base = group === "class" ? `${event.kind}:${event.classroomId}` : group;
+    const group = groupOf(event);
+    const base = group === "class" ? `${event.kind}:${event.classroomId}` : group === "demo" ? demoLine(event).base : group;
 
     if (event.status === "unpriced") {
       const key = base;
       const entry = missing.get(key) || {
         key,
-        title: group === "class" ? event.classroomTitle : group === "monthly" ? "Fixed monthly pay" : KIND_LABELS[event.kind],
-        kind: event.kind,
+        title: group === "class" ? event.classroomTitle : group === "monthly" ? "Fixed monthly pay" : group === "demo" ? demoLine(event).title : KIND_LABELS[event.kind],
+        kind: group === "demo" ? "demo" : event.kind,
         count: 0,
         dates: [],
       };
@@ -148,9 +161,9 @@ export function groupInvoiceLines(events: PayEvent[]): InvoiceDraftGroups {
     const row = rows.get(key) || {
       key,
       group,
-      kind: event.kind,
+      kind: group === "demo" ? "demo" : event.kind,
       classroomId: group === "class" ? event.classroomId : "",
-      title: group === "class" || group === "monthly" ? event.classroomTitle : KIND_LABELS[event.kind],
+      title: group === "class" || group === "monthly" ? event.classroomTitle : group === "demo" ? demoLine(event).title : KIND_LABELS[event.kind],
       batchName: group === "class" ? event.batchName : "",
       level: group === "class" ? event.level || "" : "",
       quantity: 0,
@@ -158,7 +171,7 @@ export function groupInvoiceLines(events: PayEvent[]): InvoiceDraftGroups {
       unit,
       rate,
       amount: 0,
-      note: "",
+      note: group === "demo" ? demoLine(event).note : "",
       sessions: [],
     };
     row.quantity += 1;
@@ -185,7 +198,9 @@ export function groupInvoiceLines(events: PayEvent[]): InvoiceDraftGroups {
   const order: Record<DraftGroup["group"], number> = { monthly: 0, class: 1, demo: 2, bonus: 3 };
   groups.sort(
     (a, b) =>
-      order[a.group] - order[b.group] || a.title.localeCompare(b.title) || a.kind.localeCompare(b.kind) || a.rate - b.rate
+      order[a.group] - order[b.group] ||
+      Number(a.key.startsWith(DEMO_LINE.converted.base)) - Number(b.key.startsWith(DEMO_LINE.converted.base)) ||
+      a.title.localeCompare(b.title) || a.kind.localeCompare(b.kind) || a.rate - b.rate
   );
   return { groups, pending, missing: Array.from(missing.values()).sort((a, b) => a.title.localeCompare(b.title)) };
 }

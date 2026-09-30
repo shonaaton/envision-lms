@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/common/PageHeader";
 import FeedbackForm from "@/components/feedback/FeedbackForm";
 import { Avatar, MonthSwitcher, StatusBadge, TabBar, dueLabel, isOverdue, useFeedbackList, type FeedbackItem } from "@/components/feedback/feedbackUi";
 import { questionSetFor } from "@/lib/feedback/feedbackQuestions";
+import { MIN_CLASSES_FOR_FEEDBACK } from "@/lib/feedback/feedbackRules";
 
 type Tab = "todo" | "returned" | "done";
 
@@ -85,7 +86,7 @@ export default function CoachFeedbackClient({ initialMonth = "", initialOpen = n
         eyebrow="Monthly feedback"
         icon={MessageSquareHeart}
         title={data?.monthLabel ? `${data.monthLabel} feedback` : "Monthly feedback"}
-        subtitle="A quick monthly check-in for each student: tap a rating per skill and pick a highlight or two. An admin reviews it before it goes to the family."
+        subtitle={`A quick monthly check-in for each student: tap a rating per skill and pick a highlight or two. An admin reviews it before it goes to the family. New students appear once they have attended ${MIN_CLASSES_FOR_FEEDBACK} classes.`}
       >
         <div className="flex flex-col gap-3 xl:items-end">
           <MonthSwitcher month={month} months={data?.months || []} onChange={changeMonth} />
@@ -143,7 +144,7 @@ export default function CoachFeedbackClient({ initialMonth = "", initialOpen = n
         <div className="rounded-2xl border border-brand/10 bg-white px-4 py-12 text-center shadow-sm">
           <CheckCircle2 size={28} className="mx-auto mb-2 text-emerald-400" />
           <p className="text-sm font-bold text-slate-700">
-            {total === 0 ? "No feedback due for this month. Reports open on the 25th." : tab === "todo" ? "Nothing left to do here." : "Nothing here yet."}
+            {total === 0 ? `No feedback due for this month. Reports open on the 25th; new students need ${MIN_CLASSES_FOR_FEEDBACK} classes first.` : tab === "todo" ? "Nothing left to do here." : "Nothing here yet."}
           </p>
         </div>
       )}

@@ -497,7 +497,9 @@ export type PayOverviewRow = {
   plan: { type: "per_class" | "per_hour" | "monthly"; detail: string } | null;
   /** A plan saved to start after this period - shown so a change dated ahead is not mistaken for a lost save. */
   upcoming: { type: "per_class" | "per_hour" | "monthly"; detail: string; startsLabel: string } | null;
+  /** Regular and substitution classes - demos are counted separately. */
   classes: number;
+  demoClasses: number;
   minutes: number;
   earned: number;
   unpriced: number;
@@ -549,7 +551,8 @@ export async function loadPayOverview(period: PayPeriod, summary: CoachPaySummar
       isActive: person.isActive !== false,
       plan: plan ? { type: plan.type, detail: planDetail(plan) } : null,
       upcoming: next ? { type: next.type, detail: planDetail(next), startsLabel: monthLabel(academyMonthOf(new Date(next.effectiveFrom))) } : null,
-      classes: pay ? pay.regularClasses + pay.demoClasses + pay.substitutionClasses : 0,
+      classes: pay ? pay.regularClasses + pay.substitutionClasses : 0,
+      demoClasses: pay?.demoClasses || 0,
       minutes: pay?.minutes || 0,
       earned: pay?.totalAmount || 0,
       unpriced: pay?.unpriced || 0,

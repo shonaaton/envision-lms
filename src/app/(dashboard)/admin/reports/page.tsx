@@ -59,20 +59,25 @@ export default async function AdminReportsPage() {
 
   await dbConnect();
 
+  // Demo classrooms have their own two cards below, and session instances are
+  // copies of their parent's sessions - neither counts as a regular classroom.
+  const regularClassroomFilter = { classroomType: { $ne: "demo" }, isSessionInstance: { $ne: true } };
+  const demoClassroomIds = (await Classroom.find({ classroomType: "demo" }).select("_id").lean()).map((classroom: any) => classroom._id);
   const [classroomCount, tournamentCount, attendanceCount, coachCount, students, coaches] = await Promise.all([
-    Classroom.countDocuments({}),
+    Classroom.countDocuments(regularClassroomFilter),
     Tournament.countDocuments({}),
-    Attendance.countDocuments({}),
+    Attendance.countDocuments(demoClassroomIds.length ? { classroom: { $nin: demoClassroomIds } } : {}),
     User.countDocuments({ role: "instructor", isActive: { $ne: false } }),
     User.find({ role: "student", isActive: { $ne: false } }, { name: 1, username: 1, email: 1 }).sort({ name: 1 }).lean(),
     User.find({ role: "instructor", isActive: { $ne: false } }, { name: 1, username: 1, email: 1 }).sort({ name: 1 }).lean(),
   ]);
-  const classroomDocs = await Classroom.find({})
+  const classroomDocs = await Classroom.find({ isSessionInstance: { $ne: true } })
     .populate("coach instructor students batches", "name")
     .lean();
   const sessionRows = flattenScheduledSessions(classroomDocs);
-  const upcomingSessions = sessionRows.filter((row) => isSessionUpcomingLike(deriveScheduledSessionStatus(row.session, new Date()))).length;
-  const completedSessions = sessionRows.filter((row) => ["completed", "missed", "cancelled", "rescheduled"].includes(deriveScheduledSessionStatus(row.session, new Date()))).length;
+  const regularSessionRows = sessionRows.filter((row) => row.classroom.classroomType !== "demo");
+  const upcomingSessions = regularSessionRows.filter((row) => isSessionUpcomingLike(deriveScheduledSessionStatus(row.session, new Date()))).length;
+  const completedSessions = regularSessionRows.filter((row) => ["completed", "missed", "cancelled", "rescheduled"].includes(deriveScheduledSessionStatus(row.session, new Date()))).length;
   const completedDemoRows = sessionRows.filter((row) => row.classroom.classroomType === "demo" && deriveScheduledSessionStatus(row.session, new Date()) === "completed");
   const demoHours = Number((completedDemoRows.reduce((sum, row) => sum + scheduledPaymentMinutes(row.session, row.classroom), 0) / 60).toFixed(2));
 

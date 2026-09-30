@@ -4,15 +4,17 @@ import { ArrowLeft, GraduationCap, Inbox, Layers, Repeat, Trash2, UserCog } from
 import { DataPanel, EmptyState, PageHeader } from "@/components/common/PageHeader";
 import { CoachRateMatrix, type MatrixRow } from "@/components/coach-pay/CoachRateMatrix";
 import { RateCardForm } from "@/components/coach-pay/RateCardForm";
-import { RATE_SCOPE_LABELS, type ResolvedRate } from "@/lib/coachPay";
+import { PAY_PLAN_LABELS, RATE_SCOPE_LABELS, type ResolvedRate } from "@/lib/coachPay";
 import { resolveCoachPayViewer } from "@/lib/coachPayAccess";
-import { countPendingProposals, listPayableCoaches, loadCoachAssignments, loadCoachDemoRate, type CoachAssignmentRow } from "@/lib/coachPayData";
+import { countPendingProposals, listPayableCoaches, loadCoachAssignments, loadCoachPayPlans, type CoachAssignmentRow, type PayPlanRow } from "@/lib/coachPayData";
+import { PayPlanForm, type PayPlanFormPlan } from "@/components/coach-pay/PayPlanForm";
+import { academyMonthOf, monthLabel } from "@/lib/feedback/feedbackCycleDates";
 import { dbConnect } from "@/lib/db";
 import { formatINR } from "@/lib/utils";
 import { Batch } from "@/models/Batch";
 import { Classroom } from "@/models/Classroom";
 import { CoachRate, type CoachRateScope } from "@/models/CoachPay";
-import { deleteRateCard, saveCoachClassroomRates, saveRateCard, submitClassroomRateProposal, submitCoachDemoRateProposal, withdrawProposal } from "../actions";
+import { deleteCoachPayPlan, deleteRateCard, saveCoachClassroomRates, saveCoachPayPlan, saveRateCard } from "../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -86,16 +88,31 @@ export default async function CoachRatesPage({
   const params = searchParams ? await searchParams : {};
   await dbConnect();
 
-  // A coach sees exactly one grid: their own, in propose mode.
+  // A coach sees their own rates, read-only: the academy sets every rate.
   if (!viewer.canManageRates) {
-    const [rows, demoRate] = await Promise.all([loadCoachAssignments(viewer.userId), loadCoachDemoRate(viewer.userId)]);
+    const [rows, { current }] = await Promise.all([loadCoachAssignments(viewer.userId), loadCoachPayPlans(viewer.userId)]);
+    const planType = current?.type || "per_class";
+    const planItems: Array<[string, string]> = !current
+      ? []
+      : planType === "monthly"
+        ? [["Fixed monthly amount", formatINR(current.monthlyAmount || 0)], ["Demos, substitutions, conversions", "Included in the monthly amount"]]
+        : [
+            ...(planType === "per_hour"
+              ? ([["Hourly rate (regular and substitution classes)", current.hourlyRate === null ? "Not set yet" : `${formatINR(current.hourlyRate)} per hour`]] as Array<[string, string]>)
+              : []),
+            ["Demo class", current.demoRate === null ? "From the rate cards" : `${formatINR(current.demoRate)} per demo`],
+            ...(planType === "per_class"
+              ? ([["Substitution class", current.substituteRate === null ? "From the rate cards" : `${formatINR(current.substituteRate)} per class`]] as Array<[string, string]>)
+              : []),
+            ["Demo conversion incentive", current.conversionBonus === null ? "From the rate cards" : `${formatINR(current.conversionBonus)} per enrolment`],
+          ];
     return (
       <div className="min-h-screen bg-slate-50 px-4 py-4 text-slate-950 sm:px-6 lg:px-8">
         <PageHeader
           eyebrow="My earnings"
-          title="My Class Rates"
+          title="My Pay Rates"
           icon={Layers}
-          subtitle="What each of your classes pays today, and where that number comes from. You can put forward a different rate for any of them; an admin approves it before it takes effect."
+          subtitle="How the academy pays you and the rate for each of your batches. Rates are set by the academy - if something looks wrong, please speak to an admin."
         />
         <div className="mt-3 flex flex-wrap gap-2">
           <Link href="/coach-pay" className="btn-outline h-9 px-4 text-xs">
@@ -105,70 +122,70 @@ export default async function CoachRatesPage({
             <Repeat size={14} /> My substitutions
           </Link>
         </div>
-        <DataPanel
-          className="mt-3"
-          title="Demo class rate"
-          subtitle="One rate for every demo class you take - each demo is its own classroom, so it is set once here"
-          icon={GraduationCap}
-        >
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div className="text-sm">
-              <div className="text-xs font-bold uppercase tracking-[0.08em] text-slate-500">Paid today</div>
-              {demoRate.effective ? (
-                <div className="mt-0.5 font-bold tabular-nums text-slate-950">
-                  {formatINR(demoRate.effective.amount)}
-                  <span className="ml-1 text-xs font-normal text-slate-500">
-                    {demoRate.effective.unit === "per_hour" ? "per hour" : "per class"} - {RATE_SCOPE_LABELS[demoRate.effective.source]}
-                    {demoRate.effective.kind !== "demo" ? " (your regular rate)" : ""}
-                  </span>
+        <DataPanel className="mt-3" title={`My pay plan: ${PAY_PLAN_LABELS[planType]}`} icon={GraduationCap}>
+          {planItems.length ? (
+            <dl className="grid gap-2 text-sm sm:grid-cols-2">
+              {planItems.map(([label, amount]) => (
+                <div key={label} className="rounded-lg border border-slate-200 bg-white p-3">
+                  <dt className="text-xs font-semibold text-slate-500">{label}</dt>
+                  <dd className="mt-0.5 font-bold tabular-nums text-slate-950">{amount}</dd>
                 </div>
-              ) : (
-                <div className="mt-0.5 font-bold text-rose-700">No demo rate set yet</div>
-              )}
-              {demoRate.pendingProposal && (
-                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-amber-800">
-                  <span>
-                    You proposed {formatINR(Number(demoRate.pendingProposal.amount || 0))}
-                    {demoRate.pendingProposal.unit === "per_hour" ? "/hr" : "/class"} - waiting for an admin
-                  </span>
-                  <form action={withdrawProposal}>
-                    <input type="hidden" name="id" value={demoRate.pendingProposal.id} />
-                    <button type="submit" className="font-bold underline">
-                      Withdraw
-                    </button>
-                  </form>
-                </div>
-              )}
-            </div>
-            <form action={submitCoachDemoRateProposal} className="flex flex-wrap items-end gap-2">
-              <label className="grid gap-1 text-xs font-semibold text-slate-600">
-                Rate (Rs.)
-                <input name="demoAmount" type="number" min="0" step="1" required className="input h-9 w-28" placeholder="e.g. 300" />
-              </label>
-              <label className="grid gap-1 text-xs font-semibold text-slate-600">
-                Per
-                <select name="demoUnit" className="input h-9 w-28" defaultValue="per_class">
-                  <option value="per_class">class</option>
-                  <option value="per_hour">hour</option>
-                </select>
-              </label>
-              <input name="note" className="input h-9 w-48" placeholder="Note (optional)" aria-label="Note for the admin" />
-              <button type="submit" className="btn-primary h-9 px-4 text-xs">
-                Propose
-              </button>
-            </form>
-          </div>
+              ))}
+            </dl>
+          ) : (
+            <p className="text-sm text-slate-600">You are paid per class at each batch&apos;s rate below.</p>
+          )}
         </DataPanel>
-        <DataPanel className="mt-3" title="Your classes" subtitle="One row per classroom you are assigned to" icon={Layers}>
-          <CoachRateMatrix
-            coachId={viewer.userId}
-            coachName={viewer.name}
-            rows={toMatrixRows(rows)}
-            mode="propose"
-            action={submitClassroomRateProposal}
-            withdrawAction={withdrawProposal}
-          />
-        </DataPanel>
+        {planType !== "monthly" && (
+          <DataPanel
+            className="mt-3"
+            title={planType === "per_hour" ? "My batches" : "My batch rates"}
+            subtitle={planType === "per_hour" ? "Paid at your hourly rate" : "What each regular class pays"}
+            icon={Layers}
+          >
+            {rows.filter((row) => row.classroomType !== "demo").length === 0 ? (
+              <EmptyState title="No batches assigned" description="Batches you are assigned to appear here." />
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-left text-sm">
+                  <thead className="text-xs uppercase tracking-[0.08em] text-slate-500">
+                    <tr>
+                      <th className="border-b border-slate-200 px-3 py-2 font-bold">Batch</th>
+                      <th className="border-b border-slate-200 px-3 py-2 text-right font-bold">Rate</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows
+                      .filter((row) => row.classroomType !== "demo")
+                      .map((row) => (
+                        <tr key={row.classroomId} className="border-b border-slate-100 last:border-0">
+                          <td className="px-3 py-2">
+                            <div className="font-semibold text-slate-950">{row.classroomTitle}</div>
+                            <div className="text-xs text-slate-500">
+                              {row.batchName}
+                              {row.isActive ? "" : " - closed"}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 text-right tabular-nums">
+                            {planType === "per_hour" ? (
+                              <span className="text-slate-600">Hourly rate</span>
+                            ) : row.effective.regular ? (
+                              <>
+                                {formatINR(row.effective.regular.amount)}
+                                <span className="ml-1 text-xs text-slate-400">{row.effective.regular.unit === "per_hour" ? "/hr" : "/class"}</span>
+                              </>
+                            ) : (
+                              <span className="font-semibold text-rose-700">Not set yet</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </DataPanel>
+        )}
       </div>
     );
   }
@@ -177,7 +194,7 @@ export default async function CoachRatesPage({
   const selectedCoach = value(params, "coach") || String((coaches as any[])[0]?._id || "");
   const selected = (coaches as any[]).find((coach) => String(coach._id) === selectedCoach);
 
-  const [assignments, cards, batches, classrooms, pendingProposals] = await Promise.all([
+  const [assignments, cards, batches, classrooms, pendingProposals, planState] = await Promise.all([
     selectedCoach ? loadCoachAssignments(selectedCoach) : Promise.resolve([]),
     CoachRate.find({ scope: { $in: FALLBACK_SCOPES } })
       .populate("coach", "name username")
@@ -192,7 +209,12 @@ export default async function CoachRatesPage({
       .limit(500)
       .lean(),
     countPendingProposals(),
+    selectedCoach ? loadCoachPayPlans(selectedCoach) : Promise.resolve({ plans: [], current: null }),
   ]);
+  const toFormPlan = (plan: PayPlanRow): PayPlanFormPlan => {
+    const month = academyMonthOf(plan.effectiveFrom);
+    return { ...plan, month, monthLabel: monthLabel(month) };
+  };
 
   const hasAcademyDefault = (cards as any[]).some((card) => card.scope === "academy");
 
@@ -202,7 +224,7 @@ export default async function CoachRatesPage({
         eyebrow="Payroll workspace"
         title="Coach Rate Cards"
         icon={Layers}
-        subtitle="Rates are set per coach, per class. Pick a coach to price the classes they teach; the fallback cards further down catch anything not priced that way."
+        subtitle="Pick a coach, choose how they are paid - per class, per hour or a fixed monthly amount - and set their rates. Coaches see what they earn but cannot change it."
       />
 
       <div className="mt-3 flex flex-wrap gap-2">
@@ -227,7 +249,7 @@ export default async function CoachRatesPage({
         </div>
       )}
 
-      <DataPanel className="mt-3" title="Rates by coach" subtitle="Each class this coach teaches, priced for them" icon={UserCog}>
+      <DataPanel className="mt-3" title="Pay by coach" subtitle="Their pay plan, then the rate for each batch they teach" icon={UserCog}>
         <form method="get" className="mb-3 flex flex-wrap gap-2">
           <select name="coach" defaultValue={selectedCoach} className="input h-10 w-auto min-w-[220px]" aria-label="Coach">
             {(coaches as any[]).map((coach) => (
@@ -241,7 +263,32 @@ export default async function CoachRatesPage({
           </button>
         </form>
 
+        {selectedCoach && (
+          <div className="mb-4 rounded-xl border border-brand/20 bg-brand/[0.03] p-4">
+            <h3 className="mb-3 text-sm font-bold text-slate-950">
+              How {selected?.name || selected?.username || "this coach"} is paid
+              {!planState.current && <span className="ml-2 text-xs font-normal text-slate-500">(no plan yet - paid per class from the rate cards)</span>}
+            </h3>
+            <PayPlanForm
+              coachId={selectedCoach}
+              coachName={selected?.name || selected?.username || "This coach"}
+              current={planState.current ? toFormPlan(planState.current) : null}
+              plans={planState.plans.map(toFormPlan)}
+              defaultMonth={academyMonthOf(new Date())}
+              saveAction={saveCoachPayPlan}
+              deleteAction={deleteCoachPayPlan}
+            />
+          </div>
+        )}
+
         {selectedCoach ? (
+          planState.current?.type === "per_hour" || planState.current?.type === "monthly" ? (
+            <p className="text-sm text-slate-600">
+              {planState.current.type === "per_hour"
+                ? "This coach is paid by the hour, so batch rates are not used for their regular classes."
+                : "This coach is paid a fixed monthly amount, so batch rates are not used."}
+            </p>
+          ) : (
           <CoachRateMatrix
             coachId={selectedCoach}
             coachName={selected?.name || selected?.username || "This coach"}
@@ -249,6 +296,7 @@ export default async function CoachRatesPage({
             mode="manage"
             action={saveCoachClassroomRates}
           />
+          )
         ) : (
           <EmptyState title="No coaches yet" description="Add a coach account to start setting rates." />
         )}

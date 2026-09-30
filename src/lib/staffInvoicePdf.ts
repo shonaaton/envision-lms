@@ -24,9 +24,9 @@ const BODY_TEXT = "#344054";
 const COLUMNS = {
   index: LEFT + 10,
   description: LEFT + 30,
-  classes: LEFT + 334,
-  hours: LEFT + 376,
-  rate: LEFT + 448,
+  classes: LEFT + 300,
+  hours: LEFT + 344,
+  rate: LEFT + 452,
   amount: RIGHT - 10,
 };
 
@@ -36,9 +36,15 @@ function quantityLabel(value: number) {
 
 function lineSubtitle(line: any) {
   if (line.group === "manual") return "Other item";
-  if (line.group === "class") return [line.batchName, KIND_LABELS[line.kind as keyof typeof KIND_LABELS]].filter(Boolean).join(" - ");
+  if (line.group === "monthly") return line.note || "Fixed amount for the month";
+  if (line.group === "class") {
+    const kind = KIND_LABELS[line.kind as keyof typeof KIND_LABELS];
+    return [line.batchName, line.unit === "per_hour" ? `${kind} (hourly)` : kind].filter(Boolean).join(" - ");
+  }
   return line.group === "demo" ? "Trial classes taken this month" : "Demo students who enrolled";
 }
+
+const UNIT_SUFFIX: Record<string, string> = { per_class: "", per_hour: " /hr", per_month: " /month" };
 
 function tableHeader(canvas: PdfCanvas, top: number) {
   canvas.rect(LEFT, top, WIDTH, 24, BRAND);
@@ -50,7 +56,7 @@ function tableHeader(canvas: PdfCanvas, top: number) {
   canvas.text("Description", COLUMNS.description, y, style);
   canvas.text("Classes", COLUMNS.classes, y, { ...style, align: "right" });
   canvas.text("Hours", COLUMNS.hours, y, { ...style, align: "right" });
-  canvas.text("Rate per class", COLUMNS.rate, y, { ...style, align: "right" });
+  canvas.text("Rate", COLUMNS.rate, y, { ...style, align: "right" });
   canvas.text("Amount", COLUMNS.amount, y, { ...style, align: "right" });
   return top + 24;
 }
@@ -116,11 +122,11 @@ function drawRow(canvas: PdfCanvas, line: any, index: number, top: number) {
   canvas.line(LEFT, top + ROW_HEIGHT, RIGHT, top + ROW_HEIGHT, LINE, 0.6);
   const y = top + 13;
   canvas.text(String(index + 1), COLUMNS.index, y, { size: 8.5, color: MUTED });
-  canvas.text(line.title, COLUMNS.description, y, { size: 8.8, font: "bold", color: INK, maxWidth: 270, maxLines: 1 });
-  canvas.text(lineSubtitle(line), COLUMNS.description, y + 11, { size: 7, color: MUTED, maxWidth: 270, maxLines: 1 });
-  canvas.text(quantityLabel(Number(line.quantity || 0)), COLUMNS.classes, y + 4, { size: 8.8, color: INK, align: "right" });
+  canvas.text(line.title, COLUMNS.description, y, { size: 8.8, font: "bold", color: INK, maxWidth: 240, maxLines: 1 });
+  canvas.text(lineSubtitle(line), COLUMNS.description, y + 11, { size: 7, color: MUTED, maxWidth: 240, maxLines: 1 });
+  canvas.text(line.group === "monthly" ? "-" : quantityLabel(Number(line.quantity || 0)), COLUMNS.classes, y + 4, { size: 8.8, color: INK, align: "right" });
   canvas.text(line.minutes ? hoursLabel(line.minutes) : "-", COLUMNS.hours, y + 4, { size: 8.8, color: INK, align: "right" });
-  canvas.text(invoiceMoney(line.rate), COLUMNS.rate, y + 4, { size: 8.5, color: INK, align: "right" });
+  canvas.text(`${invoiceMoney(line.rate)}${UNIT_SUFFIX[line.unit] || ""}`, COLUMNS.rate, y + 4, { size: 8.5, color: INK, align: "right" });
   canvas.text(invoiceMoney(line.amount), COLUMNS.amount, y + 4, { size: 8.8, font: "bold", color: INK, align: "right" });
 }
 
@@ -129,7 +135,7 @@ function drawClosing(canvas: PdfCanvas, invoice: any, top: number, signature: Pd
   const bank = from.bank || {};
 
   canvas.rect(LEFT, top, WIDTH, 30, "#ffffff", BRAND, 1.2);
-  const classes = (invoice.lines || []).filter((line: any) => line.group !== "manual").reduce((sum: number, line: any) => sum + Number(line.quantity || 0), 0);
+  const classes = (invoice.lines || []).filter((line: any) => line.group !== "manual" && line.group !== "monthly" && line.group !== "bonus").reduce((sum: number, line: any) => sum + Number(line.quantity || 0), 0);
   if (classes) canvas.text(`${classes} class${classes === 1 ? "" : "es"} in total`, LEFT + 14, top + 19, { size: 8, color: MUTED });
   canvas.text("Total", COLUMNS.hours, top + 19, { size: 10, font: "bold", color: BRAND, align: "right" });
   canvas.text(invoiceMoney(invoice.total), COLUMNS.amount, top + 19, { size: 11, font: "bold", color: INK, align: "right" });

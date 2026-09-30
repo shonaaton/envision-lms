@@ -15,7 +15,9 @@ import {
   invoiceEmailSubject,
   invoiceFileName,
   KIND_LABELS,
+  RATE_UNIT_SUFFIX,
   type DraftGroup,
+  type MissingRate,
 } from "@/lib/staffInvoice";
 import { formatINR } from "@/lib/utils";
 
@@ -28,7 +30,7 @@ export type InvoiceBuilderProps = {
   fullName: string;
   groups: DraftGroup[];
   pending: { count: number; amount: number };
-  suggestedRates: Record<string, number>;
+  missing: MissingRate[];
   manual: Array<{ description: string; quantity: number; rate: number }>;
   invoiceNumber: string;
   existing: { id: string; status: string; invoiceNumber: string; generatedAt: string } | null;
@@ -122,39 +124,34 @@ export function InvoiceBuilder(props: InvoiceBuilderProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [invoiceNumber, setInvoiceNumber] = useState(props.invoiceNumber);
-  const [rates, setRates] = useState<Record<string, string>>(() =>
-    Object.fromEntries(props.groups.filter((group) => group.needsRate).map((group) => [group.key, props.suggestedRates[group.key] !== undefined ? rupees(props.suggestedRates[group.key]) : ""]))
-  );
   const [manual, setManual] = useState<ManualRow[]>(() =>
     props.manual.map((item, index) => ({ id: index + 1, description: item.description, quantity: String(item.quantity), rate: rupees(item.rate) }))
   );
   const [result, setResult] = useState<{ id: string; fileName: string; subject: string; total: number } | null>(null);
 
   const isPaid = props.existing?.status === "paid";
-  const needsRate = props.groups.filter((group) => group.needsRate);
+  const blocked = props.missing.length > 0;
 
   const preview = useMemo(() => {
-    const entered = Object.fromEntries(Object.entries(rates).map(([key, value]) => [key, toPaise(value)]));
     const manualLines = manual
       .filter((row) => row.description.trim() || row.rate.trim())
       .map((row) => ({ description: row.description || "Item", quantity: Number(row.quantity) || 0, rate: toPaise(row.rate) || 0 }));
-    return buildInvoiceLines(props.groups, entered, manualLines);
-  }, [rates, manual, props.groups]);
+    return buildInvoiceLines(props.groups, manualLines);
+  }, [manual, props.groups]);
 
   function addManual() {
     setManual((rows) => [...rows, { id: Date.now(), description: "", quantity: "1", rate: "" }]);
   }
 
   function submit() {
-    if (preview.missing.length) {
-      toast.error("Enter your rate for every class marked 'Rate needed'.");
+    if (blocked) {
+      toast.error("The academy still has to set some of your rates. Ask an admin, then generate again.");
       return;
     }
     startTransition(async () => {
       const response = await generateInvoice({
         month: props.month,
         invoiceNumber,
-        rates: Object.fromEntries(Object.entries(rates).map(([key, value]) => [key, Number(value)])),
         manual: manual
           .filter((row) => row.description.trim() || row.rate.trim())
           .map((row) => ({ description: row.description, quantity: Number(row.quantity), rate: Number(row.rate) })),
@@ -222,15 +219,26 @@ export function InvoiceBuilder(props: InvoiceBuilderProps) {
         </div>
       )}
 
-      {needsRate.length > 0 && !isPaid && (
-        <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-900">
+      {blocked && !isPaid && (
+        <div className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm leading-6 text-rose-900">
           <AlertTriangle size={16} className="mt-1 shrink-0" />
-          <p>
-            <span className="font-bold">
-              {needsRate.length} {needsRate.length === 1 ? "row has" : "rows have"} no rate from the academy yet.
-            </span>{" "}
-            Enter what you charge per class. Your rate is used on this invoice and is sent to the academy to approve for payroll.
-          </p>
+          <div>
+            <p className="font-bold">The academy hasn&apos;t set your rate for some classes yet, so this invoice can&apos;t be generated.</p>
+            <ul className="mt-1 list-disc pl-5">
+              {props.missing.map((item) => (
+                <li key={item.key}>
+                  {item.title} - {item.count} {item.count === 1 ? "class" : "classes"}
+                  {item.dates.length
+                    ? ` (${item.dates
+                        .slice(0, 4)
+                        .map((iso) => new Date(iso).toLocaleDateString("en-IN", { day: "2-digit", month: "short", timeZone: "Asia/Kolkata" }))
+                        .join(", ")}${item.dates.length > 4 ? "..." : ""})`
+                    : ""}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-1">Please ask an admin to set it. Once they have, come back and generate your invoice.</p>
+          </div>
         </div>
       )}
 
@@ -241,7 +249,9 @@ export function InvoiceBuilder(props: InvoiceBuilderProps) {
           </h2>
         </div>
         {props.groups.length === 0 ? (
-          <p className="px-4 py-6 text-sm text-slate-500">No classes are recorded for you this month. Add anything you are billing for below.</p>
+          <p className="px-4 py-6 text-sm text-slate-500">
+            {props.missing.length ? "Nothing is priced yet for this month." : "No classes are recorded for you this month. Add anything you are billing for below."}
+          </p>
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full text-left text-sm">
@@ -250,64 +260,34 @@ export function InvoiceBuilder(props: InvoiceBuilderProps) {
                   <th className="border-b border-slate-200 px-4 py-2 font-bold">Classroom</th>
                   <th className="border-b border-slate-200 px-3 py-2 text-right font-bold">Classes</th>
                   <th className="border-b border-slate-200 px-3 py-2 text-right font-bold">Hours</th>
-                  <th className="border-b border-slate-200 px-3 py-2 text-right font-bold">Rate per class</th>
+                  <th className="border-b border-slate-200 px-3 py-2 text-right font-bold">Rate</th>
                   <th className="border-b border-slate-200 px-4 py-2 text-right font-bold">Total</th>
                 </tr>
               </thead>
               <tbody>
-                {props.groups.map((group) => {
-                  const entered = toPaise(rates[group.key] || "");
-                  const total = group.needsRate ? (entered === null ? null : entered * group.quantity) : group.amount;
-                  return (
-                    <tr key={group.key} className={`border-b border-slate-100 last:border-0 ${group.needsRate ? "bg-amber-50/60" : ""}`}>
-                      <td className="px-4 py-2">
-                        <div className="font-semibold text-slate-950">{group.title}</div>
-                        <div className="text-xs text-slate-500">
-                          {group.group === "class"
-                            ? [group.batchName, KIND_LABELS[group.kind]].filter(Boolean).join(" - ")
-                            : group.group === "demo"
-                              ? "Trial classes across all demo classrooms"
-                              : "Demo students who enrolled"}
-                        </div>
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums">{group.quantity}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-slate-600">{hoursLabel(group.minutes)}</td>
-                      <td className="px-3 py-2 text-right">
-                        {group.needsRate ? (
-                          <div className="flex flex-col items-end gap-0.5">
-                            <div className="flex items-center gap-1">
-                              <span className="text-xs text-slate-500">Rs.</span>
-                              <input
-                                type="number"
-                                min="0"
-                                step="1"
-                                inputMode="decimal"
-                                value={rates[group.key] || ""}
-                                onChange={(event) => setRates((current) => ({ ...current, [group.key]: event.target.value }))}
-                                className="input h-9 w-24 text-right"
-                                aria-label={`Your rate per class for ${group.title}`}
-                                placeholder="Rate needed"
-                                disabled={isPaid}
-                              />
-                            </div>
-                            <span className="text-[11px] text-amber-700">Sent to the academy to approve</span>
-                          </div>
-                        ) : (
-                          <div className="flex flex-col items-end gap-0.5">
-                            <span className="tabular-nums">{formatINR(group.rate || 0)}</span>
-                            {group.inferredSessions.length > 0 && (
-                              <span className="max-w-[14rem] text-right text-[11px] leading-4 text-amber-700">
-                                {group.inferredSessions.length} {group.inferredSessions.length === 1 ? "class had" : "classes had"} no rate on record -
-                                billed at this batch&apos;s rate and sent to the academy to approve
-                              </span>
-                            )}
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-4 py-2 text-right font-bold tabular-nums">{total === null ? <span className="text-slate-400">-</span> : formatINR(total)}</td>
-                    </tr>
-                  );
-                })}
+                {props.groups.map((group) => (
+                  <tr key={group.key} className="border-b border-slate-100 last:border-0">
+                    <td className="px-4 py-2">
+                      <div className="font-semibold text-slate-950">{group.title}</div>
+                      <div className="text-xs text-slate-500">
+                        {group.group === "class"
+                          ? [group.batchName, KIND_LABELS[group.kind]].filter(Boolean).join(" - ")
+                          : group.group === "demo"
+                            ? "Trial classes across all demo classrooms"
+                            : group.group === "bonus"
+                              ? "Demo students who enrolled"
+                              : group.note}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">{group.group === "monthly" ? "-" : group.quantity}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-slate-600">{group.minutes ? hoursLabel(group.minutes) : "-"}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
+                      {formatINR(group.rate)}
+                      <span className="ml-0.5 text-xs text-slate-400">{RATE_UNIT_SUFFIX[group.unit]}</span>
+                    </td>
+                    <td className="px-4 py-2 text-right font-bold tabular-nums">{formatINR(group.amount)}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
@@ -401,7 +381,7 @@ export function InvoiceBuilder(props: InvoiceBuilderProps) {
         </p>
         {!isPaid && (
           <div className="mt-1">
-            <button type="button" onClick={submit} disabled={pending} className="btn-primary h-11 px-6 text-sm">
+            <button type="button" onClick={submit} disabled={pending || blocked} className="btn-primary h-11 px-6 text-sm disabled:cursor-not-allowed disabled:opacity-50">
               <Download size={16} /> {pending ? "Generating..." : props.existing ? "Regenerate invoice" : "Generate invoice"}
             </button>
           </div>

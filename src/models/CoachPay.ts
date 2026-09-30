@@ -207,6 +207,43 @@ CoachPayProposalSchema.index(
   { unique: true, partialFilterExpression: { status: "pending" } }
 );
 
+export const PAY_PLAN_TYPES = ["per_class", "per_hour", "monthly"] as const;
+export type PayPlanType = (typeof PAY_PLAN_TYPES)[number];
+
+/**
+ * How a coach (or any paid staff member) is paid, set by an admin.
+ *
+ * - `per_class` - each class at its batch's rate (the classroom rate cards).
+ * - `per_hour`  - regular and substitution classes at `hourlyRate`, pro-rated
+ *                 by class length.
+ * - `monthly`   - `monthlyAmount` for the month, covering every class, demo and
+ *                 substitution; nothing is added on top.
+ *
+ * Per-class and per-hour coaches also earn `demoRate` per demo class and
+ * `conversionBonus` per demo that enrolled; per-class coaches earn
+ * `substituteRate` per substitution. A null amount means "not set here" (the
+ * rate cards decide); 0 means "unpaid". Effective-dated like the rate cards: a
+ * new plan from October leaves September as it was.
+ */
+const CoachPayPlanSchema = new Schema(
+  {
+    coach: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
+    type: { type: String, enum: PAY_PLAN_TYPES, required: true },
+    effectiveFrom: { type: Date, required: true, index: true },
+    hourlyRate: { type: Number, default: null },
+    monthlyAmount: { type: Number, default: null },
+    demoRate: { type: Number, default: null },
+    substituteRate: { type: Number, default: null },
+    conversionBonus: { type: Number, default: null },
+    note: String,
+    createdBy: { type: Schema.Types.ObjectId, ref: "User" },
+    updatedBy: { type: Schema.Types.ObjectId, ref: "User" },
+  },
+  { timestamps: true }
+);
+
+CoachPayPlanSchema.index({ coach: 1, effectiveFrom: 1 }, { unique: true });
+
 export type CoachRateDoc = InferSchemaType<typeof CoachRateSchema> & { _id: any };
 export type SessionPayOverrideDoc = InferSchemaType<typeof SessionPayOverrideSchema> & { _id: any };
 export type NoShowRulingDoc = InferSchemaType<typeof NoShowRulingSchema> & { _id: any };
@@ -216,3 +253,5 @@ export const CoachRate = models.CoachRate || model("CoachRate", CoachRateSchema)
 export const SessionPayOverride = models.SessionPayOverride || model("SessionPayOverride", SessionPayOverrideSchema);
 export const NoShowRuling = models.NoShowRuling || model("NoShowRuling", NoShowRulingSchema);
 export const CoachPayProposal = models.CoachPayProposal || model("CoachPayProposal", CoachPayProposalSchema);
+export const CoachPayPlan = models.CoachPayPlan || model("CoachPayPlan", CoachPayPlanSchema);
+export type CoachPayPlanDoc = InferSchemaType<typeof CoachPayPlanSchema> & { _id: any };

@@ -318,27 +318,27 @@ describe("summarizePayEvents", () => {
 });
 
 describe("resolvePayPeriod", () => {
-  const now = new Date(2026, 4, 15); // 15 May 2026
+  const now = new Date("2026-05-15T06:00:00Z"); // 15 May 2026
 
+  // Bounds are Kolkata midnights (UTC+5:30), checked as instants so the test
+  // means the same on any machine.
   it("defaults to the current month", () => {
     const period = resolvePayPeriod({}, now);
     expect(period.preset).toBe("this_month");
-    expect(period.from.getMonth()).toBe(4);
-    expect(period.to.getDate()).toBe(31);
+    expect(period.from.toISOString()).toBe("2026-04-30T18:30:00.000Z");
+    expect(period.to.toISOString()).toBe("2026-05-31T18:29:59.999Z");
   });
 
   it("walks back a month, across a year boundary", () => {
-    const period = resolvePayPeriod({ period: "last_month" }, new Date(2026, 0, 9));
-    expect(period.from.getFullYear()).toBe(2025);
-    expect(period.from.getMonth()).toBe(11);
-    expect(period.to.getDate()).toBe(31);
+    const period = resolvePayPeriod({ period: "last_month" }, new Date("2026-01-09T06:00:00Z"));
+    expect(period.from.toISOString()).toBe("2025-11-30T18:30:00.000Z");
+    expect(period.to.toISOString()).toBe("2025-12-31T18:29:59.999Z");
   });
 
   it("runs a financial year from April to March", () => {
     const period = resolvePayPeriod({ period: "fy", fy: "2025" }, now);
-    expect([period.from.getFullYear(), period.from.getMonth(), period.from.getDate()]).toEqual([2025, 3, 1]);
-    expect([period.to.getMonth(), period.to.getDate()]).toEqual([2, 31]);
-    expect(period.to.getFullYear()).toBe(2026);
+    expect(period.from.toISOString()).toBe("2025-03-31T18:30:00.000Z");
+    expect(period.to.toISOString()).toBe("2026-03-31T18:29:59.999Z");
     expect(period.label).toBe("FY 2025-26");
   });
 
@@ -405,5 +405,107 @@ describe("permanent coach change", () => {
       { coachId: COACH, kind: "regular", amount: 45000, isSubstitution: false },
       { coachId: OTHER_COACH, kind: "substitute", amount: 20000, isSubstitution: true },
     ]));
+  });
+});
+
+describe("pay plans", () => {
+  const plan = (overrides: Record<string, any>) => ({
+    coach: { _id: COACH, name: "Asha" },
+    effectiveFrom: new Date("2026-04-30T18:30:00.000Z"), // 1 May, Kolkata
+    hourlyRate: null,
+    monthlyAmount: null,
+    demoRate: null,
+    substituteRate: null,
+    conversionBonus: null,
+    ...overrides,
+  });
+  const noCards = { rates: [] as any[] };
+
+  it("pays an hourly coach for regular classes and substitutions by the hour", () => {
+    const events = build({
+      ...noCards,
+      classrooms: [
+        classroom({ generatedSessions: [session({ durationMinutes: 45 })] }),
+        classroom({
+          _id: "other-room",
+          coach: { _id: OTHER_COACH, name: "Ravi" },
+          generatedSessions: [session({ _id: "cover", durationMinutes: 90, substituteCoach: { _id: COACH, name: "Asha" } })],
+        }),
+      ],
+      plans: [plan({ type: "per_hour", hourlyRate: 40000 })],
+    });
+    const mine = events.filter((event) => event.coachId === COACH);
+    expect(mine.map((event) => [event.kind, event.amount, event.unit, event.rateSource]).sort()).toEqual([
+      ["regular", 30000, "per_hour", "pay_plan"],
+      ["substitute", 60000, "per_hour", "pay_plan"],
+    ]);
+  });
+
+  it("pays demos, substitutions and conversions at the plan's amounts for a per-class coach", () => {
+    const events = build({
+      rates: [card({ scope: "academy", regular: money(30000), demo: money(10000) })],
+      classrooms: [
+        classroom({
+          _id: "demo-room",
+          classroomType: "demo",
+          demoBooking: "booking-1",
+          generatedSessions: [session({ _id: "demo-1" })],
+        }),
+      ],
+      conversions: new Map([["booking-1", { convertedAt: new Date("2026-05-20T10:00:00Z"), studentName: "Riya" }]]),
+      plans: [plan({ type: "per_class", demoRate: 25000, conversionBonus: 50000 })],
+    });
+    expect(events.map((event) => [event.kind, event.amount]).sort()).toEqual([
+      ["demo", 25000],
+      ["demoConversionBonus", 50000],
+    ]);
+  });
+
+  it("gives a monthly coach one fixed line and nothing per class", () => {
+    const events = build({
+      classrooms: [classroom({ generatedSessions: [session(), session({ _id: "session-2", scheduledFor: new Date("2026-05-17T00:00:00") })] })],
+      plans: [plan({ type: "monthly", monthlyAmount: 2500000 })],
+      range: { from: new Date("2026-04-30T18:30:00.000Z"), to: new Date("2026-05-31T18:29:59.999Z") },
+    });
+    const monthly = events.filter((event) => event.kind === "monthly");
+    const classes = events.filter((event) => event.kind !== "monthly");
+    expect(monthly).toHaveLength(1);
+    expect(monthly[0]).toMatchObject({ amount: 2500000, status: "payable", classroomTitle: "Fixed monthly pay - May 2026" });
+    expect(classes.every((event) => event.coveredByMonthly && event.amount === 0)).toBe(true);
+    expect(summarizePayEvents(events).rows[0]).toMatchObject({ totalAmount: 2500000, monthlyAmount: 2500000, regularClasses: 2 });
+  });
+
+  it("uses the plan in force on each class date, so a change never rewrites a past month", () => {
+    const events = build({
+      ...noCards,
+      classrooms: [classroom({ generatedSessions: [session({ scheduledFor: new Date("2026-05-10T00:00:00") })] })],
+      plans: [plan({ type: "per_hour", hourlyRate: 40000 }), plan({ type: "per_hour", hourlyRate: 60000, effectiveFrom: new Date("2026-05-31T18:30:00.000Z") })],
+    });
+    expect(events[0].amount).toBe(40000);
+  });
+});
+
+describe("no-show rulings decide before pricing", () => {
+  it("leaves a class ruled unpaid as unpaid even when it has no rate", () => {
+    const events = build({
+      rates: [],
+      classrooms: [classroom({ generatedSessions: [session({ status: "student_no_show" })] })],
+      rulings: [{ classroom: CLASSROOM, sessionId: "session-1", payCoach: false }],
+    });
+    expect(events[0].status).toBe("declined");
+  });
+
+  it("keeps an unruled no-show waiting on a ruling, not asking for a rate", () => {
+    const events = build({ rates: [], classrooms: [classroom({ generatedSessions: [session({ status: "student_no_show" })] })] });
+    expect(events[0].status).toBe("pending_review");
+  });
+});
+
+describe("class start times", () => {
+  it("reads a class's start time in Kolkata, whatever zone the server runs in", async () => {
+    const { scheduledStartDate } = await import("@/lib/teachingStats");
+    // Stored as 18:45 IST on 30 Sept; production read it as 18:45 UTC (1 Oct 00:15 IST).
+    const start = scheduledStartDate({ scheduledFor: new Date("2026-09-30T13:15:00.000Z"), startTime: "18:45" });
+    expect(start.toISOString()).toBe("2026-09-30T13:15:00.000Z");
   });
 });

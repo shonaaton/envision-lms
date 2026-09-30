@@ -31,17 +31,15 @@ export const ACADEMY_BILL_TO = {
 };
 export type AcademyBillTo = typeof ACADEMY_BILL_TO;
 
-export type InvoiceLineGroup = "class" | "demo" | "bonus" | "manual";
-export type InvoiceRateSource = "academy" | "coach_entered" | "manual";
+export type InvoiceLineGroup = "class" | "demo" | "bonus" | "monthly" | "manual";
+export type InvoiceRateSource = "academy" | "manual";
 export type InvoiceLineKind = PayEvent["kind"] | "manual";
+/** How a line's rate reads: per class, per hour, or a month's fixed amount. */
+export type InvoiceRateUnit = "per_class" | "per_hour" | "per_month";
 
 export type DraftSession = { classroomId: string; sessionId: string; date: string };
 
-/**
- * One row of the invoice before the coach has filled anything in. `rate` is
- * null when the academy has no price for these classes yet - the builder then
- * asks the coach for one.
- */
+/** One row of the invoice, calculated from the academy's rates. */
 export type DraftGroup = {
   key: string;
   group: Exclude<InvoiceLineGroup, "manual">;
@@ -51,51 +49,68 @@ export type DraftGroup = {
   batchName: string;
   quantity: number;
   minutes: number;
-  rate: number | null;
+  unit: InvoiceRateUnit;
+  rate: number;
   amount: number;
-  needsRate: boolean;
+  /** Extra line under the title, e.g. what a monthly amount covers. */
+  note: string;
   sessions: DraftSession[];
-  /**
-   * Classes in this row that had no rate on record and were billed at the rate
-   * the batch's other classes carry. Filed for approval so payroll pays them too.
-   */
-  inferredSessions: DraftSession[];
 };
+
+/** Classes the academy has not priced yet. The invoice waits for them. */
+export type MissingRate = { key: string; title: string; kind: PayEvent["kind"]; count: number; dates: string[] };
 
 export type InvoiceDraftGroups = {
   groups: DraftGroup[];
   /** Classes waiting on an admin's no-show ruling: not billable yet. */
   pending: { count: number; amount: number };
+  missing: MissingRate[];
 };
 
 export const KIND_LABELS: Record<PayEvent["kind"], string> = {
   regular: "Regular classes",
   substitute: "Substitution classes",
   demo: "Demo classes",
-  demoConversionBonus: "Demo conversion bonus",
+  demoConversionBonus: "Demo conversion incentive",
+  monthly: "Fixed monthly pay",
+};
+
+export const RATE_UNIT_SUFFIX: Record<InvoiceRateUnit, string> = {
+  per_class: "/class",
+  per_hour: "/hour",
+  per_month: "/month",
 };
 
 function sessionOf(event: PayEvent): DraftSession[] {
   return event.sessionId ? [{ classroomId: event.classroomId, sessionId: event.sessionId, date: new Date(event.date).toISOString() }] : [];
 }
 
+function groupOf(kind: PayEvent["kind"]): DraftGroup["group"] {
+  return kind === "demo" ? "demo" : kind === "demoConversionBonus" ? "bonus" : kind === "monthly" ? "monthly" : "class";
+}
+
+function hoursText(minutes: number) {
+  const hours = minutes / 60;
+  return Number.isInteger(hours) ? String(hours) : hours.toFixed(1);
+}
+
 /**
- * Turns a month of pay events into invoice rows: one per batch (classroom) and
- * type of class, so a row reads "5 classes x INR 600 = INR 3,000". Demos are one
- * row across all demo classrooms (each demo is its own classroom), and
- * conversion bonuses another.
+ * Turns a month of pay events into invoice rows, all priced by the academy:
  *
- * A class with no rate on record joins its batch's row at the rate the batch's
- * other classes carry - a one-off class the office never priced, say, is still
- * the same batch at the same rate. Only when nothing in the batch has a rate
- * does the row ask the coach for one. A batch whose classes genuinely carry two
- * rates in the month (a raise mid-month) keeps one row per rate.
+ * - per-class and per-hour coaches: one row per batch and type of class at one
+ *   rate ("5 classes x INR 600", or "3.8 hours x INR 400/hour"); demos across
+ *   all demo classrooms are one row, conversion incentives another;
+ * - monthly coaches: one row for the month, noting the classes it covers.
  *
- * Pending no-shows are counted but never billed; declined ones are left out.
+ * Classes the academy has not priced are listed in `missing` and are never
+ * billed at a guessed number - the invoice waits for an admin to set them.
+ * Pending no-shows are counted but not billed; declined ones are left out.
  */
 export function groupInvoiceLines(events: PayEvent[]): InvoiceDraftGroups {
   const pending = { count: 0, amount: 0 };
-  const buckets = new Map<string, PayEvent[]>();
+  const covered = { count: 0, minutes: 0 };
+  const rows = new Map<string, DraftGroup>();
+  const missing = new Map<string, MissingRate>();
 
   for (const event of events) {
     if (event.status === "pending_review") {
@@ -103,74 +118,72 @@ export function groupInvoiceLines(events: PayEvent[]): InvoiceDraftGroups {
       pending.amount += event.exposure;
       continue;
     }
-    if (event.status !== "payable" && event.status !== "unpriced") continue;
-    const group = event.kind === "demo" ? "demo" : event.kind === "demoConversionBonus" ? "bonus" : "class";
+    if (event.status === "declined") continue;
+    const group = groupOf(event.kind);
     const base = group === "class" ? `${event.kind}:${event.classroomId}` : group;
-    buckets.set(base, [...(buckets.get(base) || []), event]);
-  }
 
-  const groups: DraftGroup[] = [];
-  for (const [base, bucket] of buckets) {
-    const first = bucket[0];
-    const group: DraftGroup["group"] = first.kind === "demo" ? "demo" : first.kind === "demoConversionBonus" ? "bonus" : "class";
-    const row = (key: string, rate: number | null): DraftGroup => ({
+    if (event.status === "unpriced") {
+      const key = base;
+      const entry = missing.get(key) || {
+        key,
+        title: group === "class" ? event.classroomTitle : group === "monthly" ? "Fixed monthly pay" : KIND_LABELS[event.kind],
+        kind: event.kind,
+        count: 0,
+        dates: [],
+      };
+      entry.count += 1;
+      entry.dates.push(new Date(event.date).toISOString());
+      missing.set(key, entry);
+      continue;
+    }
+    if (event.status !== "payable") continue;
+
+    if (event.coveredByMonthly) {
+      covered.count += 1;
+      covered.minutes += event.minutes;
+      continue;
+    }
+
+    const unit: InvoiceRateUnit = group === "monthly" ? "per_month" : event.unit === "per_hour" ? "per_hour" : "per_class";
+    const rate = unit === "per_hour" ? event.rateAmount : event.amount;
+    const key = `${base}:${unit}:${rate}`;
+    const row = rows.get(key) || {
       key,
       group,
-      kind: first.kind,
-      classroomId: group === "class" ? first.classroomId : "",
-      title: group === "class" ? first.classroomTitle : KIND_LABELS[first.kind],
-      batchName: group === "class" ? first.batchName : "",
+      kind: event.kind,
+      classroomId: group === "class" ? event.classroomId : "",
+      title: group === "class" || group === "monthly" ? event.classroomTitle : KIND_LABELS[event.kind],
+      batchName: group === "class" ? event.batchName : "",
       quantity: 0,
       minutes: 0,
+      unit,
       rate,
       amount: 0,
-      needsRate: rate === null,
+      note: "",
       sessions: [],
-      inferredSessions: [],
-    });
-
-    const priced = bucket.filter((event) => event.status === "payable");
-    const unpriced = bucket.filter((event) => event.status === "unpriced");
-    const amounts = Array.from(new Set(priced.map((event) => event.amount)));
-    const byAmount = new Map<number, DraftGroup>();
-    for (const amount of amounts) byAmount.set(amount, row(`${base}:${amount}`, amount));
-
-    for (const event of priced) {
-      const target = byAmount.get(event.amount)!;
-      target.quantity += 1;
-      target.minutes += event.minutes;
-      target.amount += event.amount;
-      target.sessions.push(...sessionOf(event));
-    }
-
-    if (unpriced.length) {
-      // One rate across the batch: the unpriced classes are billed at it.
-      // None, or several: the coach says what the unpriced ones pay.
-      const target = amounts.length === 1 ? byAmount.get(amounts[0])! : row(`${base}:unpriced`, null);
-      for (const event of unpriced) {
-        target.quantity += 1;
-        target.minutes += event.minutes;
-        target.sessions.push(...sessionOf(event));
-        if (!target.needsRate) {
-          target.amount += target.rate || 0;
-          target.inferredSessions.push(...sessionOf(event));
-        }
-      }
-      if (target.needsRate) groups.push(target);
-    }
-    groups.push(...byAmount.values());
+    };
+    row.quantity += 1;
+    row.minutes += event.minutes;
+    row.amount += event.amount;
+    row.sessions.push(...sessionOf(event));
+    rows.set(key, row);
   }
 
-  const order: Record<DraftGroup["group"], number> = { class: 0, demo: 1, bonus: 2 };
+  const groups = Array.from(rows.values());
+  const monthly = groups.find((row) => row.group === "monthly");
+  if (monthly) {
+    monthly.note = covered.count
+      ? `Covers ${covered.count} class${covered.count === 1 ? "" : "es"} (${hoursText(covered.minutes)} hours) taken this month`
+      : "Fixed amount for the month";
+    monthly.minutes = covered.minutes;
+  }
+
+  const order: Record<DraftGroup["group"], number> = { monthly: 0, class: 1, demo: 2, bonus: 3 };
   groups.sort(
     (a, b) =>
-      order[a.group] - order[b.group] ||
-      a.title.localeCompare(b.title) ||
-      a.kind.localeCompare(b.kind) ||
-      Number(a.needsRate) - Number(b.needsRate) ||
-      (a.rate || 0) - (b.rate || 0)
+      order[a.group] - order[b.group] || a.title.localeCompare(b.title) || a.kind.localeCompare(b.kind) || a.rate - b.rate
   );
-  return { groups, pending };
+  return { groups, pending, missing: Array.from(missing.values()).sort((a, b) => a.title.localeCompare(b.title)) };
 }
 
 export type ManualLineInput = { description: string; quantity: number; rate: number };
@@ -183,47 +196,31 @@ export type InvoiceLine = {
   batchName: string;
   quantity: number;
   minutes: number;
+  unit: InvoiceRateUnit;
   rate: number;
   amount: number;
+  note: string;
   rateSource: InvoiceRateSource;
   sessions: DraftSession[];
 };
 
-/**
- * The finished lines: priced groups as they are, unpriced groups at the rate the
- * coach typed, then manual items. `missing` lists the unpriced groups still
- * without a rate - an invoice is not generated while any remain.
- */
-export function buildInvoiceLines(groups: DraftGroup[], enteredRates: Record<string, number | null | undefined>, manual: ManualLineInput[]) {
-  const missing: string[] = [];
-  const lines: InvoiceLine[] = [];
-  for (const group of groups) {
-    let rate = group.rate;
-    let rateSource: InvoiceRateSource = "academy";
-    if (group.needsRate) {
-      const entered = enteredRates[group.key];
-      if (entered === null || entered === undefined || !Number.isFinite(entered) || entered < 0) {
-        missing.push(group.key);
-        continue;
-      }
-      rate = Math.round(entered);
-      rateSource = "coach_entered";
-    }
-    const unitRate = rate || 0;
-    lines.push({
-      group: group.group,
-      kind: group.kind,
-      classroomId: group.classroomId,
-      title: group.title,
-      batchName: group.batchName,
-      quantity: group.quantity,
-      minutes: group.minutes,
-      rate: unitRate,
-      amount: group.needsRate ? unitRate * group.quantity : group.amount,
-      rateSource,
-      sessions: group.sessions,
-    });
-  }
+/** The finished lines: the academy-priced rows, then the person's other items. */
+export function buildInvoiceLines(groups: DraftGroup[], manual: ManualLineInput[]) {
+  const lines: InvoiceLine[] = groups.map((group) => ({
+    group: group.group,
+    kind: group.kind,
+    classroomId: group.classroomId,
+    title: group.title,
+    batchName: group.batchName,
+    quantity: group.quantity,
+    minutes: group.minutes,
+    unit: group.unit,
+    rate: group.rate,
+    amount: group.amount,
+    note: group.note,
+    rateSource: "academy",
+    sessions: group.sessions,
+  }));
   for (const item of manual) {
     lines.push({
       group: "manual",
@@ -233,14 +230,16 @@ export function buildInvoiceLines(groups: DraftGroup[], enteredRates: Record<str
       batchName: "",
       quantity: item.quantity,
       minutes: 0,
+      unit: "per_class",
       rate: Math.round(item.rate),
       amount: Math.round(item.quantity * item.rate),
+      note: "",
       rateSource: "manual",
       sessions: [],
     });
   }
   const total = lines.reduce((sum, line) => sum + line.amount, 0);
-  return { lines, missing, total };
+  return { lines, total };
 }
 
 // ---------------------------------------------------------------------------

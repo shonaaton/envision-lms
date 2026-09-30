@@ -49,16 +49,19 @@ const BankSnapshotSchema = new Schema(
 
 const StaffInvoiceLineSchema = new Schema(
   {
-    group: { type: String, enum: ["class", "demo", "bonus", "manual"], required: true },
-    kind: { type: String, enum: ["regular", "demo", "demoConversionBonus", "substitute", "manual"], required: true },
+    group: { type: String, enum: ["class", "demo", "bonus", "monthly", "manual"], required: true },
+    kind: { type: String, enum: ["regular", "demo", "demoConversionBonus", "substitute", "monthly", "manual"], required: true },
     classroom: { type: Schema.Types.ObjectId, ref: "Classroom" },
     title: { type: String, required: true },
     batchName: String,
     quantity: { type: Number, required: true },
     minutes: { type: Number, default: 0 },
+    /** How `rate` reads: per class, per hour, or the month's fixed amount. */
+    unit: { type: String, enum: ["per_class", "per_hour", "per_month"], default: "per_class" },
     rate: { type: Number, required: true },
     amount: { type: Number, required: true },
-    /** `coach_entered` lines were priced by the staff member and await an admin's approval in Coach Pay. */
+    note: { type: String, default: "" },
+    /** `academy` lines are priced from the academy's rates; `manual` ones were typed by the staff member. */
     rateSource: { type: String, enum: ["academy", "coach_entered", "manual"], required: true },
     sessionIds: { type: [String], default: [] },
   },

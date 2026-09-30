@@ -35,6 +35,8 @@ function event(overrides: Partial<PayEvent>): PayEvent {
     sessionStatus: "completed",
     kind: "regular",
     status: "payable",
+    planType: "per_class",
+    coveredByMonthly: false,
     minutes: 60,
     unit: "per_class",
     rateAmount: 50000,
@@ -108,85 +110,90 @@ describe("which months can be invoiced", () => {
 });
 
 describe("groupInvoiceLines", () => {
-  it("makes one row per classroom and price, and one row for all demos", () => {
-    const { groups, pending } = groupInvoiceLines([
+  it("makes one row per batch and rate, and one row for all demos", () => {
+    const { groups, pending, missing } = groupInvoiceLines([
       event({}),
       event({}),
       event({ classroomId: "room-b", classroomTitle: "Advanced", amount: 80000, rateAmount: 80000 }),
-      event({ classroomId: "demo-1", classroomTitle: "Demo - Riya", kind: "demo", isDemoClass: true, amount: 30000 }),
-      event({ classroomId: "demo-2", classroomTitle: "Demo - Aarav", kind: "demo", isDemoClass: true, amount: 30000 }),
+      event({ classroomId: "demo-1", classroomTitle: "Demo - Riya", kind: "demo", isDemoClass: true, amount: 30000, rateAmount: 30000 }),
+      event({ classroomId: "demo-2", classroomTitle: "Demo - Aarav", kind: "demo", isDemoClass: true, amount: 30000, rateAmount: 30000 }),
       event({ status: "pending_review", amount: 0, exposure: 50000 }),
       event({ status: "declined", amount: 0, exposure: 50000 }),
     ]);
-    expect(groups.map((group) => [group.title, group.quantity, group.rate, group.amount])).toEqual([
-      ["Advanced", 1, 80000, 80000],
-      ["Beginner L1 - Mon/Wed", 2, 50000, 100000],
-      ["Demo classes", 2, 30000, 60000],
+    expect(groups.map((group) => [group.title, group.quantity, group.rate, group.unit, group.amount])).toEqual([
+      ["Advanced", 1, 80000, "per_class", 80000],
+      ["Beginner L1 - Mon/Wed", 2, 50000, "per_class", 100000],
+      ["Demo classes", 2, 30000, "per_class", 60000],
     ]);
     expect(pending).toEqual({ count: 1, amount: 50000 });
-  });
-
-  it("asks for a rate on unpriced classes, keeping their sessions for the proposal", () => {
-    const { groups } = groupInvoiceLines([
-      event({ status: "unpriced", amount: 0, exposure: 0, rateAmount: 0, rateSource: "none", sessionId: "s1" }),
-      event({ status: "unpriced", amount: 0, exposure: 0, rateAmount: 0, rateSource: "none", sessionId: "s2" }),
-      event({ kind: "demo", isDemoClass: true, classroomId: "demo-1", status: "unpriced", amount: 0, exposure: 0 }),
-    ]);
-    const regular = groups.find((group) => group.kind === "regular")!;
-    expect(regular).toMatchObject({ key: "regular:room-a:unpriced", needsRate: true, rate: null, quantity: 2 });
-    expect(regular.sessions.map((session) => session.sessionId)).toEqual(["s1", "s2"]);
-    expect(groups.find((group) => group.group === "demo")?.key).toBe("demo:unpriced");
-  });
-
-  it("keeps a batch on one row when one of its classes has no rate on record", () => {
-    const priced = { classroomId: "pic-99991", classroomTitle: "PIC-99991", amount: 60000, rateAmount: 60000, minutes: 45 };
-    const { groups } = groupInvoiceLines([
-      event(priced),
-      event(priced),
-      event(priced),
-      event(priced),
-      event({ ...priced, status: "unpriced", amount: 0, exposure: 0, rateAmount: 0, rateSource: "none", sessionId: "moved-class" }),
-    ]);
-    expect(groups).toHaveLength(1);
-    expect(groups[0]).toMatchObject({ title: "PIC-99991", quantity: 5, minutes: 225, rate: 60000, amount: 300000, needsRate: false });
-    expect(groups[0].inferredSessions.map((session) => session.sessionId)).toEqual(["moved-class"]);
-
-    const { lines, missing } = buildInvoiceLines(groups, {}, []);
     expect(missing).toEqual([]);
-    expect(lines[0].amount).toBe(300000);
   });
 
-  it("keeps two rows only when the batch really had two rates in the month", () => {
-    const room = { classroomId: "pic-1", classroomTitle: "PIC-1" };
-    const { groups } = groupInvoiceLines([
-      event({ ...room, amount: 50000 }),
-      event({ ...room, amount: 60000 }),
-      event({ ...room, status: "unpriced", amount: 0, exposure: 0 }),
-    ]);
-    expect(groups.map((group) => [group.rate, group.quantity, group.needsRate])).toEqual([
-      [50000, 1, false],
-      [60000, 1, false],
-      [null, 1, true],
-    ]);
-  });
-
-  it("prices entered rates and adds manual items; missing rates block the invoice", () => {
-    const { groups } = groupInvoiceLines([
+  it("never bills a class the academy has not priced - it is listed as missing instead", () => {
+    const { groups, missing } = groupInvoiceLines([
       event({}),
-      event({ status: "unpriced", amount: 0, exposure: 0, classroomId: "room-c", classroomTitle: "Intermediate" }),
-      event({ status: "unpriced", amount: 0, exposure: 0, classroomId: "room-c", classroomTitle: "Intermediate" }),
+      event({ status: "unpriced", amount: 0, exposure: 0, rateAmount: 0, rateSource: "none", date: new Date("2026-09-01T13:15:00Z") }),
     ]);
-    const blocked = buildInvoiceLines(groups, {}, []);
-    expect(blocked.missing).toEqual(["regular:room-c:unpriced"]);
+    expect(groups.map((group) => [group.title, group.quantity, group.amount])).toEqual([["Beginner L1 - Mon/Wed", 1, 50000]]);
+    expect(missing).toMatchObject([{ title: "Beginner L1 - Mon/Wed", count: 1 }]);
+  });
 
-    const done = buildInvoiceLines(groups, { "regular:room-c:unpriced": 40000 }, [{ description: "Travel", quantity: 2, rate: 15000 }]);
-    expect(done.missing).toEqual([]);
-    expect(done.lines.map((line) => [line.title, line.rateSource, line.amount])).toEqual([
+  it("leaves a class ruled unpaid off the invoice entirely", () => {
+    const { groups, missing, pending } = groupInvoiceLines([event({}), event({ status: "declined", amount: 0, exposure: 0 })]);
+    expect(groups[0].quantity).toBe(1);
+    expect(missing).toEqual([]);
+    expect(pending.count).toBe(0);
+  });
+
+  it("bills an hourly coach by the hour: one row per batch at the hourly rate", () => {
+    const hourly = { planType: "per_hour" as const, unit: "per_hour" as const, rateAmount: 40000, rateSource: "pay_plan" as const };
+    const { groups } = groupInvoiceLines([
+      event({ ...hourly, minutes: 45, amount: 30000 }),
+      event({ ...hourly, minutes: 60, amount: 40000 }),
+      event({ ...hourly, kind: "substitute", classroomId: "room-x", classroomTitle: "Advanced", minutes: 90, amount: 60000 }),
+    ]);
+    expect(groups.map((group) => [group.title, group.kind, group.quantity, group.minutes, group.unit, group.rate, group.amount])).toEqual([
+      ["Advanced", "substitute", 1, 90, "per_hour", 40000, 60000],
+      ["Beginner L1 - Mon/Wed", "regular", 2, 105, "per_hour", 40000, 70000],
+    ]);
+  });
+
+  it("shows a monthly coach one line for the month, noting the classes it covers", () => {
+    const monthly = { planType: "monthly" as const, coveredByMonthly: true, amount: 0, rateAmount: 0, rateSource: "monthly" as const };
+    const { groups, missing } = groupInvoiceLines([
+      event({ ...monthly }),
+      event({ ...monthly, minutes: 30 }),
+      event({
+        kind: "monthly",
+        planType: "monthly",
+        classroomId: "",
+        classroomTitle: "Fixed monthly pay - September 2026",
+        sessionId: "",
+        amount: 2500000,
+        rateAmount: 2500000,
+        minutes: 0,
+        rateSource: "monthly",
+      }),
+    ]);
+    expect(missing).toEqual([]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toMatchObject({
+      group: "monthly",
+      title: "Fixed monthly pay - September 2026",
+      unit: "per_month",
+      amount: 2500000,
+      note: "Covers 2 classes (1.5 hours) taken this month",
+    });
+  });
+
+  it("adds manual items to the academy-priced rows", () => {
+    const { groups } = groupInvoiceLines([event({})]);
+    const { lines, total } = buildInvoiceLines(groups, [{ description: "Travel", quantity: 2, rate: 15000 }]);
+    expect(lines.map((line) => [line.title, line.rateSource, line.amount])).toEqual([
       ["Beginner L1 - Mon/Wed", "academy", 50000],
-      ["Intermediate", "coach_entered", 80000],
       ["Travel", "manual", 30000],
     ]);
-    expect(done.total).toBe(160000);
+    expect(total).toBe(80000);
   });
 });
 
@@ -332,6 +339,7 @@ describe("renderStaffInvoicePdf", () => {
         batchName: "Batch",
         quantity: 4,
         minutes: 240,
+        unit: "per_class",
         rate: 50000,
         amount: 200000,
         rateSource: "academy",

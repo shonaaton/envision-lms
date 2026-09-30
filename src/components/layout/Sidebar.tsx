@@ -141,7 +141,7 @@ const sections: NavSection[] = [
     roles: ["instructor", "sub-admin"],
     items: [
       { href: "/coach-pay", label: "My Earnings", icon: BadgeIndianRupee, featureKey: "coachPay", roles: ["instructor"] },
-      { href: "/coach-pay/rates", label: "My Class Rates", icon: Layers, featureKey: "coachPay", roles: ["instructor"] },
+      { href: "/coach-pay/rates", label: "My Pay Rates", icon: Layers, featureKey: "coachPay", roles: ["instructor"] },
       { href: "/coach-pay/substitutions", label: "My Substitutions", icon: Repeat, featureKey: "coachPay", roles: ["instructor"] },
       { href: "/staff-invoices", label: "My Invoices", icon: Receipt, featureKey: "staffInvoices", permission: "view" },
     ],

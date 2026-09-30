@@ -33,6 +33,7 @@ function kindPill(kind: PayEvent["kind"]) {
   if (kind === "substitute") return "bg-sky-50 text-sky-700 ring-sky-200";
   if (kind === "demo") return "bg-violet-50 text-violet-700 ring-violet-200";
   if (kind === "demoConversionBonus") return "bg-amber-50 text-amber-800 ring-amber-200";
+  if (kind === "monthly") return "bg-emerald-50 text-emerald-700 ring-emerald-200";
   return "bg-slate-100 text-slate-700 ring-slate-200";
 }
 
@@ -96,8 +97,8 @@ export default async function CoachPayPage({
         icon={BadgeIndianRupee}
         subtitle={
           viewer.canViewAll
-            ? "What the academy owes its coaches for the classes they actually taught, priced from the rate cards."
-            : "Every class you taught in this period and what it earned, priced from the rates the academy set for your batches."
+            ? "What the academy owes its coaches and staff: per class, per hour or a fixed monthly amount, as set in each person's pay plan."
+            : "Every class you taught in this period and what it earned, at the rates the academy set for you."
         }
       >
         <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
@@ -139,7 +140,7 @@ export default async function CoachPayPage({
           </Link>
         )}
         <Link href="/coach-pay/rates" className="btn-outline h-9 px-4 text-xs">
-          <Layers size={14} /> {viewer.canManageRates ? "Rate cards" : "My class rates"}
+          <Layers size={14} /> {viewer.canManageRates ? "Pay plans and rates" : "My pay rates"}
         </Link>
         <Link href="/coach-pay/substitutions" className="btn-outline h-9 px-4 text-xs">
           <Repeat size={14} /> {viewer.canViewAll ? "Substitutions" : "My substitutions"}
@@ -186,16 +187,8 @@ export default async function CoachPayPage({
         <div className="mt-3 flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs leading-5 text-rose-900">
           <AlertTriangle size={15} className="mt-0.5 shrink-0" />
           <p>
-            <span className="font-bold">{summary.unpriced} of your classes have no rate yet</span>, so they count as zero
-            below.{" "}
-            <Link href="/coach-pay/rates" className="font-bold underline">
-              Enter your rates
-            </Link>{" "}
-            for the academy to approve, or enter them on your{" "}
-            <Link href="/staff-invoices" className="font-bold underline">
-              monthly invoice
-            </Link>
-            .
+            <span className="font-bold">{summary.unpriced} of your classes have no rate from the academy yet</span>, so they
+            count as zero below and your invoice waits for them. Please ask an admin to set the rate.
           </p>
         </div>
       )}
@@ -226,6 +219,7 @@ export default async function CoachPayPage({
                 <thead className="text-xs uppercase tracking-[0.08em] text-slate-500">
                   <tr>
                     <th className="border-b border-slate-200 px-3 py-2 font-bold">Coach</th>
+                    <th className="border-b border-slate-200 px-3 py-2 text-right font-bold">Monthly</th>
                     <th className="border-b border-slate-200 px-3 py-2 text-right font-bold">Regular</th>
                     <th className="border-b border-slate-200 px-3 py-2 text-right font-bold">Demo</th>
                     <th className="border-b border-slate-200 px-3 py-2 text-right font-bold">Substitution</th>
@@ -248,6 +242,7 @@ export default async function CoachPayPage({
                           </span>
                         )}
                       </td>
+                      <td className="px-3 py-2 text-right tabular-nums">{row.monthlyAmount ? formatINR(row.monthlyAmount) : "-"}</td>
                       <td className="px-3 py-2 text-right tabular-nums">
                         {formatINR(row.regularAmount)}
                         <span className="ml-1 text-xs text-slate-400">({row.regularClasses})</span>
@@ -275,6 +270,7 @@ export default async function CoachPayPage({
                 <tfoot>
                   <tr className="bg-slate-50">
                     <td className="px-3 py-2 text-sm font-bold text-slate-950">Total</td>
+                    <td className="px-3 py-2 text-right font-semibold tabular-nums">{formatINR(summary.monthlyAmount)}</td>
                     <td className="px-3 py-2 text-right font-semibold tabular-nums">{formatINR(summary.regularAmount)}</td>
                     <td className="px-3 py-2 text-right font-semibold tabular-nums">{formatINR(summary.demoAmount)}</td>
                     <td className="px-3 py-2 text-right font-semibold tabular-nums">{formatINR(summary.substitutionAmount)}</td>
@@ -347,14 +343,22 @@ export default async function CoachPayPage({
                         {event.rateAmount ? (
                           <>
                             {formatINR(event.rateAmount)}
-                            <span className="block text-xs text-slate-400">{event.unit === "per_hour" ? `per hour - ${event.minutes}m` : "per class"}</span>
+                            <span className="block text-xs text-slate-400">
+                              {event.kind === "monthly" ? "per month" : event.unit === "per_hour" ? `per hour - ${event.minutes}m` : "per class"}
+                            </span>
                           </>
                         ) : (
                           "-"
                         )}
                       </td>
                       <td className="whitespace-nowrap px-3 py-2 text-right font-bold tabular-nums text-slate-950">
-                        {event.status === "payable" ? formatINR(event.amount) : <span className="text-slate-400">{formatINR(0)}</span>}
+                        {event.coveredByMonthly ? (
+                          <span className="text-xs font-normal text-slate-500">In monthly pay</span>
+                        ) : event.status === "payable" ? (
+                          formatINR(event.amount)
+                        ) : (
+                          <span className="text-slate-400">{formatINR(0)}</span>
+                        )}
                       </td>
                       <td className="px-3 py-2">
                         <span className={`inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-bold ring-1 ${statusPill(event.status)}`}>
@@ -366,7 +370,7 @@ export default async function CoachPayPage({
                       </td>
                       {viewer.canManageRates && (
                         <td className="px-3 py-2">
-                          {event.sessionId && (
+                          {event.sessionId && !event.coveredByMonthly && (
                             <SessionRateDialog
                               classroomId={event.classroomId}
                               sessionId={event.sessionId}

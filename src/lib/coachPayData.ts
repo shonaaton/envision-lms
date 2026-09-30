@@ -4,7 +4,7 @@ import { dbConnect } from "@/lib/db";
 import { Classroom } from "@/models/Classroom";
 import { Booking } from "@/models/Booking";
 import { User } from "@/models/User";
-import { CoachPayProposal, CoachRate, NoShowRuling, SessionPayOverride, type PayKind, type RateUnit } from "@/models/CoachPay";
+import { CoachPayPlan, CoachPayProposal, CoachRate, NoShowRuling, SessionPayOverride, type PayKind, type RateUnit } from "@/models/CoachPay";
 import { buildPayEvents, resolveRate, summarizePayEvents, REVIEWABLE_SESSION_STATUSES, type ResolvedRate } from "@/lib/coachPay";
 import { effectiveSessionCoachId, scheduledPaymentMinutes, scheduledStartDate } from "@/lib/teachingStats";
 import type { PayPeriod } from "@/lib/payPeriods";
@@ -121,6 +121,7 @@ export async function loadCoachPay(period: PayPeriod, filters: CoachPayFilters =
     SessionPayOverride.find({}).lean(),
     NoShowRuling.find({}).lean(),
   ]);
+  const plans = await CoachPayPlan.find(filters.coachId ? { coach: filters.coachId } : {}).populate("coach", "name username").lean();
 
   const bookingIds = (classrooms as any[])
     .filter((classroom) => classroom.classroomType === "demo" && classroom.demoBooking)
@@ -135,6 +136,9 @@ export async function loadCoachPay(period: PayPeriod, filters: CoachPayFilters =
     conversions,
     range: { from: period.from, to: period.to },
     coachId: filters.coachId,
+    plans: plans as any[],
+    // A month's fixed pay belongs to no batch or classroom.
+    skipMonthly: Boolean(filters.batchId || filters.classroomId),
   });
 
   return {
@@ -367,30 +371,38 @@ export async function loadCoachAssignments(coachId: string, now = new Date()): P
   });
 }
 
-/**
- * What a coach's demo classes pay, before any single classroom is considered:
- * the coach-wide card, else the academy default. Plus the demo rate they have
- * put forward and an admin has not answered yet.
- */
-export async function loadCoachDemoRate(coachId: string, now = new Date()) {
+export type PayPlanRow = {
+  id: string;
+  type: "per_class" | "per_hour" | "monthly";
+  effectiveFrom: Date;
+  hourlyRate: number | null;
+  monthlyAmount: number | null;
+  demoRate: number | null;
+  substituteRate: number | null;
+  conversionBonus: number | null;
+  note: string;
+};
+
+function nullable(value: unknown) {
+  return value === null || value === undefined ? null : Number(value);
+}
+
+/** A coach's pay plans, newest first, and the one in force now. */
+export async function loadCoachPayPlans(coachId: string, now = new Date()) {
   await dbConnect();
-  const [rates, pending] = await Promise.all([
-    CoachRate.find({ isActive: { $ne: false }, scope: { $in: ["coach", "academy"] } }).lean(),
-    CoachPayProposal.findOne({ coach: coachId, kind: "coach_rate", status: "pending" }).lean(),
-  ]);
-  const effective = resolveRate({ kind: "demo", coachId, classroomId: "", batchIds: [], date: now, rates: rates as any[] });
-  const proposal: any = pending;
-  return {
-    effective,
-    pendingProposal: proposal
-      ? {
-          id: idOf(proposal._id),
-          amount: proposal.demo?.amount === null || proposal.demo?.amount === undefined ? null : Number(proposal.demo.amount),
-          unit: (proposal.demo?.unit as RateUnit) || "per_class",
-          submittedAt: new Date(proposal.submittedAt || proposal.createdAt || Date.now()),
-        }
-      : null,
-  };
+  const plans = (await CoachPayPlan.find({ coach: coachId }).sort({ effectiveFrom: -1 }).lean()) as any[];
+  const rows: PayPlanRow[] = plans.map((plan) => ({
+    id: idOf(plan._id),
+    type: plan.type,
+    effectiveFrom: new Date(plan.effectiveFrom),
+    hourlyRate: nullable(plan.hourlyRate),
+    monthlyAmount: nullable(plan.monthlyAmount),
+    demoRate: nullable(plan.demoRate),
+    substituteRate: nullable(plan.substituteRate),
+    conversionBonus: nullable(plan.conversionBonus),
+    note: plan.note || "",
+  }));
+  return { plans: rows, current: rows.find((row) => row.effectiveFrom <= now) || null };
 }
 
 export type ProposalRow = {

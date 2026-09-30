@@ -4,7 +4,6 @@ import { Types, isValidObjectId } from "mongoose";
 
 import { recordActivity } from "@/lib/activity";
 import { loadCoachPay } from "@/lib/coachPayData";
-import { upsertClassroomRateKindProposal, upsertCoachDemoRateProposal, upsertSessionProposal } from "@/lib/coachPayProposals";
 import { dbConnect } from "@/lib/db";
 import { resolvePayPeriod } from "@/lib/payPeriods";
 import { dataUrlToBuffer, parsePng } from "@/lib/pdf/simplePdf";
@@ -24,9 +23,9 @@ import {
   payoutProfileSchema,
   type DraftGroup,
   type ManualLineInput,
+  type MissingRate,
 } from "@/lib/staffInvoice";
-import { Classroom } from "@/models/Classroom";
-import { CoachPayProposal } from "@/models/CoachPay";
+import type { PayPlanType } from "@/models/CoachPay";
 import { Notification } from "@/models/Fee";
 import { StaffInvoice, StaffPayoutProfile } from "@/models/StaffInvoice";
 import { User } from "@/models/User";
@@ -128,50 +127,6 @@ function payPeriodFor(month: string) {
   return resolvePayPeriod({ period: "month", month });
 }
 
-function unpricedKeyForLine(line: any) {
-  if (line.rateSource !== "coach_entered") return "";
-  if (line.group === "demo") return "demo:unpriced";
-  if (line.group === "class") return `${line.kind}:${idOf(line.classroom)}:unpriced`;
-  return "";
-}
-
-/**
- * Rates to suggest for classes with no academy price: what the person typed on
- * this month's invoice last time, else what they already proposed in Coach Pay
- * and nobody has answered yet. Paise.
- */
-async function suggestedRates(userId: string, groups: DraftGroup[], invoice: any) {
-  const suggestions: Record<string, number> = {};
-  for (const line of invoice?.lines || []) {
-    const key = unpricedKeyForLine(line);
-    if (key) suggestions[key] = Number(line.rate || 0);
-  }
-  const unpriced = groups.filter((group) => group.needsRate && suggestions[group.key] === undefined);
-  if (!unpriced.length) return suggestions;
-
-  const proposals: any[] = await CoachPayProposal.find({ coach: userId, status: "pending" }).lean();
-  for (const group of unpriced) {
-    if (group.group === "demo") {
-      const coachRate = proposals.find((item) => item.kind === "coach_rate" && item.demo?.amount !== null && item.demo?.amount !== undefined);
-      if (coachRate && coachRate.demo?.unit !== "per_hour") suggestions[group.key] = Number(coachRate.demo.amount);
-      continue;
-    }
-    const classroomRate = proposals.find((item) => item.kind === "classroom_rate" && idOf(item.classroom) === group.classroomId);
-    const value = classroomRate?.[group.kind];
-    if (value && value.amount !== null && value.amount !== undefined && value.unit !== "per_hour") {
-      suggestions[group.key] = Number(value.amount);
-      continue;
-    }
-    const sessionAmounts = new Set(
-      proposals
-        .filter((item) => item.kind === "session" && group.sessions.some((s) => s.sessionId === String(item.sessionId)) && item.unit !== "per_hour")
-        .map((item) => Number(item.amount))
-    );
-    if (sessionAmounts.size === 1) suggestions[group.key] = Array.from(sessionAmounts)[0];
-  }
-  return suggestions;
-}
-
 export type InvoiceHistoryRow = {
   id: string;
   month: string;
@@ -205,7 +160,8 @@ export type InvoiceDraft = {
   month: string;
   groups: DraftGroup[];
   pending: { count: number; amount: number };
-  suggestedRates: Record<string, number>;
+  /** Classes the academy has not priced yet; the invoice cannot be generated until they are. */
+  missing: MissingRate[];
   manual: ManualLineInput[];
   invoiceNumber: string;
   existing: { id: string; status: string; invoiceNumber: string; generatedAt: string } | null;
@@ -218,12 +174,12 @@ export async function loadInvoiceDraft(userId: string, month: string): Promise<I
     StaffInvoice.findOne({ staff: userId, month }).lean(),
     loadCoachPay(payPeriodFor(month), { coachId: userId }),
   ]);
-  const { groups, pending } = groupInvoiceLines(pay.events);
+  const { groups, pending, missing } = groupInvoiceLines(pay.events);
   return {
     month,
     groups,
     pending,
-    suggestedRates: await suggestedRates(userId, groups, invoice),
+    missing,
     manual: (invoice?.lines || [])
       .filter((line: any) => line.group === "manual")
       .map((line: any) => ({ description: line.title, quantity: Number(line.quantity), rate: Number(line.rate) })),
@@ -242,59 +198,21 @@ export async function loadInvoiceDraft(userId: string, month: string): Promise<I
 export type GenerateInvoiceInput = {
   month: string;
   invoiceNumber: string;
-  /** Group key -> rupees typed for a class that has no academy rate. */
-  rates: Record<string, number>;
   /** Rupees. */
   manual: Array<{ description: string; quantity: number; rate: number }>;
 };
 
-/**
- * Files the pay proposals behind the rates a person typed on their invoice, so
- * the academy approves (or corrects) them in Coach Submissions. The invoice
- * uses the typed numbers straight away; payroll counts them only on approval.
- */
-async function proposeEnteredRates(userId: string, month: string, invoiceNumber: string, groups: DraftGroup[], rates: Record<string, number>) {
-  const note = `Entered on invoice ${invoiceNumber} for ${month}`;
-  const ids: string[] = [];
-  for (const group of groups) {
-    // Classes the person priced, or classes with no rate on record that were
-    // billed at the rate the rest of their batch carries.
-    const amount = group.needsRate ? rates[group.key] : group.inferredSessions.length ? group.rate ?? undefined : undefined;
-    if (amount === undefined) continue;
-    const sessions = group.needsRate ? group.sessions : group.inferredSessions;
-    const value = { amount, unit: "per_class" as const };
-
-    if (group.group === "demo") {
-      ids.push(idOf(await upsertCoachDemoRateProposal({ coachId: userId, demo: value, note })));
-      continue;
-    }
-    if (group.kind === "regular" && isValidObjectId(group.classroomId)) {
-      const teaches = await Classroom.exists({ _id: group.classroomId, $or: [{ coach: userId }, { instructor: userId }] });
-      if (teaches) {
-        ids.push(idOf(await upsertClassroomRateKindProposal({ coachId: userId, classroomId: group.classroomId, kind: "regular", value, note })));
-        continue;
-      }
-    }
-    // A substitution, or a regular class in a classroom they no longer hold:
-    // priced one class at a time.
-    for (const session of sessions) {
-      if (!isValidObjectId(session.classroomId)) continue;
-      ids.push(
-        idOf(
-          await upsertSessionProposal({
-            coachId: userId,
-            classroomId: session.classroomId,
-            sessionId: session.sessionId,
-            sessionDate: new Date(session.date),
-            payKind: group.kind,
-            amount,
-            note,
-          })
-        )
-      );
-    }
-  }
-  return ids.filter(Boolean);
+/** "PIC-99994 (1 class on 01 Sep)" - for telling someone what is still unpriced. */
+export function describeMissing(missing: MissingRate[]) {
+  return missing
+    .map((item) => {
+      const dates = item.dates
+        .slice(0, 3)
+        .map((iso) => new Date(iso).toLocaleDateString("en-IN", { day: "2-digit", month: "short", timeZone: "Asia/Kolkata" }))
+        .join(", ");
+      return `${item.title} (${item.count} class${item.count === 1 ? "" : "es"}${dates ? ` on ${dates}${item.count > 3 ? "..." : ""}` : ""})`;
+    })
+    .join("; ");
 }
 
 export async function generateStaffInvoice(userId: string, input: GenerateInvoiceInput) {
@@ -318,15 +236,13 @@ export async function generateStaffInvoice(userId: string, input: GenerateInvoic
   const clash = await StaffInvoice.exists({ staff: userId, invoiceNumber, month: { $ne: month } });
   if (clash) throw new StaffInvoiceError(`You already used invoice number ${invoiceNumber} for another month.`);
 
-  // Recomputed here, never taken from the form: the person can only price the
-  // classes that genuinely have no academy rate.
+  // Every amount comes from the academy's rates, recomputed here - nothing the
+  // form sends can change what a class pays. A class the academy has not
+  // priced yet holds the whole invoice back rather than going out at a guess.
   const pay = await loadCoachPay(payPeriodFor(month), { coachId: userId });
-  const { groups, pending } = groupInvoiceLines(pay.events);
-  const rates: Record<string, number> = {};
-  for (const group of groups) {
-    if (!group.needsRate) continue;
-    const rupees = Number(input.rates?.[group.key]);
-    if (Number.isFinite(rupees) && rupees >= 0 && rupees <= 1_000_000) rates[group.key] = Math.round(rupees * 100);
+  const { groups, pending, missing } = groupInvoiceLines(pay.events);
+  if (missing.length) {
+    throw new StaffInvoiceError(`The academy has not set your rate for: ${describeMissing(missing)}. Please ask an admin to set it, then generate again.`);
   }
 
   const manual: ManualLineInput[] = [];
@@ -342,14 +258,8 @@ export async function generateStaffInvoice(userId: string, input: GenerateInvoic
   }
   if (manual.length > 30) throw new StaffInvoiceError("Keep extra items to 30 or fewer.");
 
-  const { lines, missing, total } = buildInvoiceLines(groups, rates, manual);
-  if (missing.length) {
-    const titles = groups.filter((group) => missing.includes(group.key)).map((group) => group.title);
-    throw new StaffInvoiceError(`Enter your rate for: ${titles.join(", ")}.`);
-  }
-  if (!lines.length) throw new StaffInvoiceError("There is nothing to invoice for this month. Add an item below.");
-
-  const proposalIds = await proposeEnteredRates(userId, month, invoiceNumber, groups, rates);
+  const { lines, total } = buildInvoiceLines(groups, manual);
+  if (!lines.length) throw new StaffInvoiceError("There is nothing to invoice for this month.");
 
   const phone = user?.phone ? `${user.countryCode ? `${user.countryCode} ` : ""}${user.phone}` : "";
   const fields = {
@@ -380,15 +290,16 @@ export async function generateStaffInvoice(userId: string, input: GenerateInvoic
       batchName: line.batchName,
       quantity: line.quantity,
       minutes: line.minutes,
+      unit: line.unit,
       rate: line.rate,
       amount: line.amount,
+      note: line.note,
       rateSource: line.rateSource,
       sessionIds: line.sessions.map((session) => session.sessionId),
     })),
     excludedPending: pending,
     total,
     totalInWords: amountInWordsINR(total),
-    proposals: proposalIds.map((id) => new Types.ObjectId(id)),
     generatedAt: new Date(),
   };
 
@@ -409,7 +320,7 @@ export async function generateStaffInvoice(userId: string, input: GenerateInvoic
     label: `${existing ? "Regenerated" : "Generated"} invoice ${invoiceNumber} for ${month}`,
     entityType: "StaffInvoice",
     entityId: idOf(saved._id),
-    metadata: { month, total, coachEnteredLines: lines.filter((line) => line.rateSource === "coach_entered").length },
+    metadata: { month, total, otherItems: lines.filter((line) => line.rateSource === "manual").length },
   });
 
   return {
@@ -432,8 +343,7 @@ export type RegisterRow = {
   manualTotal: number;
   classTotal: number;
   payrollTotal: number | null;
-  coachEnteredLines: number;
-  pendingProposals: number;
+  planType: PayPlanType;
   status: string;
   generatedAt: string;
   paidAt: string;
@@ -447,12 +357,10 @@ export async function loadInvoiceRegister(month: string) {
     loadCoachPay(payPeriodFor(month)),
   ]);
   const payrollByCoach = new Map(pay.summary.rows.map((row) => [row.coachId, row]));
-  const proposalIds = invoices.flatMap((invoice) => (invoice.proposals || []).map(idOf));
-  const pendingIds = new Set(
-    proposalIds.length
-      ? (await CoachPayProposal.find({ _id: { $in: proposalIds }, status: "pending" }).select("_id").lean()).map((item: any) => idOf(item._id))
-      : []
-  );
+  // The plan each person was on this month, read off their pay lines (the
+  // month's last line wins, matching the plan in force on the invoice date).
+  const planByCoach = new Map<string, PayPlanType>();
+  for (const event of [...pay.events].sort((a, b) => a.date.getTime() - b.date.getTime())) planByCoach.set(event.coachId, event.planType);
 
   const rows: RegisterRow[] = invoices.map((invoice) => {
     const staffId = idOf(invoice.staff);
@@ -467,8 +375,7 @@ export async function loadInvoiceRegister(month: string) {
       manualTotal,
       classTotal: Number(invoice.total || 0) - manualTotal,
       payrollTotal: payroll ? payroll.totalAmount : null,
-      coachEnteredLines: (invoice.lines || []).filter((line: any) => line.rateSource === "coach_entered").length,
-      pendingProposals: (invoice.proposals || []).filter((id: any) => pendingIds.has(idOf(id))).length,
+      planType: planByCoach.get(staffId) || "per_class",
       status: invoice.status,
       generatedAt: invoice.generatedAt ? new Date(invoice.generatedAt).toISOString() : "",
       paidAt: invoice.paidAt ? new Date(invoice.paidAt).toISOString() : "",

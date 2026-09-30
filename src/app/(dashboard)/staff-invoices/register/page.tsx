@@ -4,6 +4,7 @@ import { AlertTriangle, CheckCircle2, Download, Inbox, Receipt, RotateCcw, Users
 import { DataPanel, EmptyState, PageHeader, StatCard } from "@/components/common/PageHeader";
 import { academyDateKey } from "@/lib/academyTime";
 import { academyMonthOf, monthLabel, shiftMonth } from "@/lib/feedback/feedbackCycleDates";
+import { PAY_PLAN_LABELS } from "@/lib/coachPay";
 import { isMonthKey } from "@/lib/staffInvoice";
 import { resolveStaffInvoiceViewer } from "@/lib/staffInvoiceAccess";
 import { loadInvoiceRegister } from "@/lib/staffInvoiceData";
@@ -48,7 +49,7 @@ export default async function StaffInvoiceRegisterPage({
         eyebrow="Payroll workspace"
         title="Staff Invoices"
         icon={Receipt}
-        subtitle="Invoices coaches and staff raised for a month, checked against what Coach Pay says their classes cost."
+        subtitle="Invoices coaches and staff raised for a month, checked against what Coach Pay says they are owed."
       >
         <div className="grid gap-2 sm:grid-cols-3">
           <StatCard label="Invoiced" value={formatINR(total)} note={`${rows.length} invoices - ${monthLabel(month)}`} icon={Receipt} tone="purple" />
@@ -71,8 +72,8 @@ export default async function StaffInvoiceRegisterPage({
         <button type="submit" className="btn-outline h-9 px-4 text-xs">
           Show
         </button>
-        <Link href="/coach-pay/proposals" className="btn-ghost h-9 px-4 text-xs">
-          <Inbox size={14} /> Coach submissions
+        <Link href="/coach-pay/rates" className="btn-ghost h-9 px-4 text-xs">
+          <Inbox size={14} /> Pay plans and rates
         </Link>
       </form>
 
@@ -103,19 +104,7 @@ export default async function StaffInvoiceRegisterPage({
                       <td className="px-3 py-2">
                         <div className="font-semibold text-slate-950">{row.staffName}</div>
                         <div className="text-xs text-slate-500">Generated {formatDate(row.generatedAt)}</div>
-                        {row.coachEnteredLines > 0 && (
-                          <div className="mt-0.5 text-xs text-amber-700">
-                            {row.coachEnteredLines} {row.coachEnteredLines === 1 ? "row" : "rows"} priced by them
-                            {row.pendingProposals > 0 && (
-                              <>
-                                {" - "}
-                                <Link href="/coach-pay/proposals" className="font-bold underline">
-                                  {row.pendingProposals} awaiting approval
-                                </Link>
-                              </>
-                            )}
-                          </div>
-                        )}
+                        <div className="mt-0.5 text-xs text-slate-500">{PAY_PLAN_LABELS[row.planType]}</div>
                       </td>
                       <td className="px-3 py-2">{row.invoiceNumber}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{formatINR(row.classTotal)}</td>

@@ -1,3 +1,5 @@
+import { academyDateKey, zonedDateTime } from "@/lib/academyTime";
+
 type RangeLike = { from: Date; to: Date };
 type CoachSessionSummaryOptions = { coachId?: string };
 
@@ -21,13 +23,19 @@ export function actualSessionMinutes(session: any) {
   return Math.max(0, Math.round((new Date(session.actualEndedAt).getTime() - new Date(session.actualStartedAt).getTime()) / 60000));
 }
 
+/**
+ * When a class starts: its academy calendar day at its start time, in Kolkata.
+ *
+ * This used `setHours` on the stored instant, which is server-local time - UTC
+ * in production - so a 17:45 IST class was placed at 17:45 UTC (23:15 IST), and
+ * an 18:45 class on the last day of a month landed in the next month.
+ */
 export function scheduledStartDate(session: any, classroom?: any) {
   const base = new Date(session?.scheduledFor || classroom?.classDate || classroom?.startDate || Date.now());
-  const [hours, minutes] = String(session?.startTime || classroom?.startTime || "00:00")
-    .split(":")
-    .map((part) => Number(part || 0));
-  base.setHours(Number.isFinite(hours) ? hours : 0, Number.isFinite(minutes) ? minutes : 0, 0, 0);
-  return base;
+  if (Number.isNaN(base.getTime())) return new Date();
+  const time = String(session?.startTime || classroom?.startTime || "");
+  if (!/^\d{1,2}:\d{2}$/.test(time)) return base;
+  return zonedDateTime(academyDateKey(base), time);
 }
 
 export function effectiveSessionCoachId(session: any, classroom?: any) {

@@ -4,13 +4,13 @@ import { revalidatePath } from "next/cache";
 import { Types, isValidObjectId } from "mongoose";
 
 import { dbConnect } from "@/lib/db";
+import { monthBounds } from "@/lib/feedback/feedbackCycleDates";
 import { recordActivity } from "@/lib/activity";
 import { consumeAttendanceCredit } from "@/lib/fees";
 import { requireCoachPayPermission, requireCoachSelf } from "@/lib/coachPayAccess";
 import { isValidRateScope } from "@/lib/coachPay";
 import { cancelPayProposalTask, raisePayProposalTask, resolveNoShowRulingTask, resolvePayProposalTask } from "@/lib/tasks/taskTriggers";
-import { upsertCoachDemoRateProposal } from "@/lib/coachPayProposals";
-import { CoachPayProposal, CoachRate, NoShowRuling, SessionPayOverride, PAY_KINDS, RATE_UNITS } from "@/models/CoachPay";
+import { CoachPayPlan, CoachPayProposal, CoachRate, PAY_PLAN_TYPES, NoShowRuling, SessionPayOverride, PAY_KINDS, RATE_UNITS } from "@/models/CoachPay";
 import { Attendance } from "@/models/Attendance";
 import { Classroom } from "@/models/Classroom";
 import { CreditLedger, FeeAssignment } from "@/models/Fee";
@@ -509,144 +509,93 @@ export async function saveCoachClassroomRates(formData: FormData) {
   refresh();
 }
 
+// Coaches no longer put forward their own rates: the academy sets every rate
+// (the pay plan and the batch rate cards) and coaches only see what they earn.
+// These stay as named exports so an old form posting to them fails with a
+// clear message instead of an unknown-action error.
+const RATES_SET_BY_ACADEMY = "Rates are set by the academy. Please ask an admin if a rate looks wrong.";
+
+export async function submitClassroomRateProposal(_formData: FormData) {
+  throw new Error(RATES_SET_BY_ACADEMY);
+}
+
+export async function submitSessionRateProposal(_formData: FormData) {
+  throw new Error(RATES_SET_BY_ACADEMY);
+}
+
 /**
- * A coach putting forward what one of their classrooms should pay.
- *
- * Saved as a proposal and nothing more. The payroll engine never reads this
- * collection, so until an admin approves it the coach's total is unchanged -
- * which is the whole point of letting them enter it in the first place.
+ * An admin setting how a coach (or other paid staff member) is paid: per class,
+ * per hour, or a fixed monthly amount, plus the demo, substitution and demo-
+ * conversion amounts. Dated from the first of a month, so changing a plan in
+ * October leaves September's pay exactly as it was.
  */
-export async function submitClassroomRateProposal(formData: FormData) {
-  const coachId = await requireCoachSelf();
-  if (!coachId) throw new Error("Forbidden");
+export async function saveCoachPayPlan(formData: FormData) {
+  const session = await requireCoachPayPermission("manage_rates");
+  if (!session?.user) throw new Error("Forbidden");
   await dbConnect();
 
-  const classroom = text(formData, "classroom");
-  if (!isValidObjectId(classroom)) throw new Error("Unknown classroom");
-
-  // The coach must actually teach it. Without this the classroom id is just a
-  // number in a form, and any coach could propose rates on anyone's class.
-  const teaches = await Classroom.exists({
-    _id: classroom,
-    $or: [{ coach: coachId }, { instructor: coachId }],
-  });
-  if (!teaches) throw new Error("You are not assigned to that classroom");
+  const coach = text(formData, "coach");
+  if (!isValidObjectId(coach)) throw new Error("Choose a coach");
+  const type = text(formData, "type");
+  if (!(PAY_PLAN_TYPES as readonly string[]).includes(type)) throw new Error("Choose how this coach is paid");
+  const month = text(formData, "effectiveMonth");
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new Error("Choose the month this applies from");
+  const effectiveFrom = monthBounds(month).start;
 
   const values = {
-    regular: rateValue(formData, "regular"),
-    demo: rateValue(formData, "demo"),
-    demoConversionBonus: rateValue(formData, "demoConversionBonus"),
-    substitute: rateValue(formData, "substitute"),
+    hourlyRate: type === "per_hour" ? paise(formData, "hourlyRate") : null,
+    monthlyAmount: type === "monthly" ? paise(formData, "monthlyAmount") : null,
+    demoRate: type === "monthly" ? null : paise(formData, "demoRate"),
+    // Hourly coaches' substitutions count as hours; only per-class coaches have a substitution rate.
+    substituteRate: type === "per_class" ? paise(formData, "substituteRate") : null,
+    conversionBonus: type === "monthly" ? null : paise(formData, "conversionBonus"),
   };
-  if (Object.values(values).every((entry) => entry.amount === null)) {
-    throw new Error("Enter at least one rate to propose");
+  if (type === "per_hour" && values.hourlyRate === null) throw new Error("Enter the hourly rate");
+  if (type === "monthly" && values.monthlyAmount === null) throw new Error("Enter the monthly amount");
+
+  const actorId = (session.user as any).id;
+  const saved = await CoachPayPlan.findOneAndUpdate(
+    { coach: new Types.ObjectId(coach), effectiveFrom },
+    {
+      $set: { type, ...values, note: text(formData, "note"), updatedBy: actorId },
+      $setOnInsert: { coach: new Types.ObjectId(coach), effectiveFrom, createdBy: actorId },
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  );
+
+  await recordActivity({
+    actor: actorId,
+    targetUser: coach,
+    type: "coachPay.plan.saved",
+    label: `Set a coach's pay plan (${type}) from ${month}`,
+    entityType: "CoachPayPlan",
+    entityId: saved._id.toString(),
+    metadata: { coach, type, month, ...values },
+  });
+  refresh();
+  revalidatePath("/staff-invoices");
+}
+
+export async function deleteCoachPayPlan(formData: FormData) {
+  const session = await requireCoachPayPermission("manage_rates");
+  if (!session?.user) throw new Error("Forbidden");
+  const id = text(formData, "id");
+  if (!isValidObjectId(id)) throw new Error("Unknown plan");
+  await dbConnect();
+  const removed: any = await CoachPayPlan.findByIdAndDelete(id).lean();
+  if (removed) {
+    await recordActivity({
+      actor: (session.user as any).id,
+      targetUser: removed.coach?.toString?.(),
+      type: "coachPay.plan.deleted",
+      label: "Removed a coach pay plan",
+      entityType: "CoachPayPlan",
+      entityId: id,
+      metadata: { plan: removed },
+    });
   }
-
-  const saved = await CoachPayProposal.findOneAndUpdate(
-    { coach: new Types.ObjectId(coachId), classroom: new Types.ObjectId(classroom), kind: "classroom_rate", status: "pending" },
-    {
-      kind: "classroom_rate",
-      coach: new Types.ObjectId(coachId),
-      classroom: new Types.ObjectId(classroom),
-      ...values,
-      note: text(formData, "note"),
-      status: "pending",
-      submittedBy: coachId,
-      submittedAt: new Date(),
-    },
-    { upsert: true, new: true, setDefaultsOnInsert: true }
-  );
-
-  await recordActivity({
-    actor: coachId,
-    targetUser: coachId,
-    type: "coachPay.proposal.submitted",
-    label: "Proposed rates for a classroom they teach",
-    entityType: "CoachPayProposal",
-    entityId: saved._id.toString(),
-    metadata: { classroom, ...values },
-  });
-  await raisePayProposalTask({ proposal: saved });
-
   refresh();
-}
-
-/** A coach putting forward what one substitution class they covered should pay. */
-export async function submitSessionRateProposal(formData: FormData) {
-  const coachId = await requireCoachSelf();
-  if (!coachId) throw new Error("Forbidden");
-  await dbConnect();
-
-  const classroom = text(formData, "classroom");
-  const sessionId = text(formData, "sessionId");
-  if (!isValidObjectId(classroom) || !sessionId) throw new Error("Unknown class");
-
-  const amount = paise(formData, "amount");
-  if (amount === null) throw new Error("Enter the amount for this class");
-
-  // Only for a class this coach actually took: they must be named on the
-  // session itself as the substitute or as whoever conducted it.
-  const covered = await Classroom.exists({
-    _id: classroom,
-    generatedSessions: {
-      $elemMatch: {
-        _id: sessionId,
-        $or: [{ substituteCoach: coachId }, { conductedBy: coachId }],
-      },
-    },
-  });
-  if (!covered) throw new Error("You are not recorded as having taken that class");
-
-  const sessionDateRaw = text(formData, "sessionDate");
-  const saved = await CoachPayProposal.findOneAndUpdate(
-    { coach: new Types.ObjectId(coachId), classroom: new Types.ObjectId(classroom), sessionId, kind: "session", status: "pending" },
-    {
-      kind: "session",
-      coach: new Types.ObjectId(coachId),
-      classroom: new Types.ObjectId(classroom),
-      sessionId,
-      sessionDate: sessionDateRaw ? new Date(sessionDateRaw) : undefined,
-      payKind: "substitute",
-      amount,
-      unit: unit(formData, "unit"),
-      note: text(formData, "note"),
-      status: "pending",
-      submittedBy: coachId,
-      submittedAt: new Date(),
-    },
-    { upsert: true, new: true, setDefaultsOnInsert: true }
-  );
-
-  await recordActivity({
-    actor: coachId,
-    targetUser: coachId,
-    type: "coachPay.proposal.submitted",
-    label: `Proposed ${(amount / 100).toFixed(2)} for a substitution class they covered`,
-    entityType: "CoachPayProposal",
-    entityId: saved._id.toString(),
-    metadata: { classroom, sessionId, amount },
-  });
-  await raisePayProposalTask({ proposal: saved });
-
-  refresh();
-}
-
-/**
- * A coach putting forward one rate for all their demo classes.
- *
- * Each demo is its own classroom, so the per-classroom proposal above would
- * have to be repeated for every trial student. This one becomes a `coach`
- * scope card on approval, which prices every demo the coach takes.
- */
-export async function submitCoachDemoRateProposal(formData: FormData) {
-  const coachId = await requireCoachSelf();
-  if (!coachId) throw new Error("Forbidden");
-  await dbConnect();
-
-  const demo = rateValue(formData, "demo");
-  if (demo.amount === null) throw new Error("Enter your demo class rate");
-  await upsertCoachDemoRateProposal({ coachId, demo: demo as any, note: text(formData, "note") });
-  refresh();
+  revalidatePath("/staff-invoices");
 }
 
 /** A coach taking back a submission an admin has not answered yet. */

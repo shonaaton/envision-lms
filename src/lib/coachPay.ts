@@ -1,5 +1,6 @@
+import { academyMonthOf, monthBounds, monthLabel, shiftMonth } from "@/lib/feedback/feedbackCycleDates";
 import { effectiveSessionCoachId, scheduledPaymentMinutes, scheduledStartDate } from "@/lib/teachingStats";
-import { COACH_RATE_SCOPES, type CoachRateScope, type PayKind, type RateUnit } from "@/models/CoachPay";
+import { COACH_RATE_SCOPES, type CoachRateScope, type PayKind, type PayPlanType, type RateUnit } from "@/models/CoachPay";
 
 /**
  * Turning a term's teaching into a payroll bill.
@@ -26,8 +27,12 @@ export const RATE_LADDER: CoachRateScope[] = [
   "academy",
 ];
 
-export const RATE_SCOPE_LABELS: Record<CoachRateScope | "session_override", string> = {
+export type RateSource = CoachRateScope | "session_override" | "pay_plan" | "monthly";
+
+export const RATE_SCOPE_LABELS: Record<RateSource, string> = {
   session_override: "This class only",
+  pay_plan: "Coach's pay plan",
+  monthly: "Fixed monthly pay",
   classroom_coach: "Coach in this classroom",
   classroom: "Classroom default",
   batch_coach: "Coach in this batch",
@@ -67,10 +72,13 @@ export type PayEventStatus = "payable" | "pending_review" | "declined" | "unpric
 export type ResolvedRate = {
   amount: number;
   unit: RateUnit;
-  source: CoachRateScope | "session_override";
+  source: CoachRateScope | "session_override" | "pay_plan";
   kind: PayKind;
   rateId: string;
 };
+
+/** A class kind, or the fixed amount of a monthly-paid coach. */
+export type PayEventKind = PayKind | "monthly";
 
 export type PayEvent = {
   id: string;
@@ -85,8 +93,12 @@ export type PayEvent = {
   sessionNumber: number;
   topicName: string;
   sessionStatus: string;
-  kind: PayKind;
+  kind: PayEventKind;
   status: PayEventStatus;
+  /** How this coach was paid when the class happened. */
+  planType: PayPlanType;
+  /** A class of a monthly-paid coach: counted, but paid through the monthly line. */
+  coveredByMonthly: boolean;
   minutes: number;
   unit: RateUnit;
   rateAmount: number;
@@ -94,7 +106,7 @@ export type PayEvent = {
   amount: number;
   /** Paise this line is worth if it becomes payable. Equals `amount` when it already is. */
   exposure: number;
-  rateSource: CoachRateScope | "session_override" | "none";
+  rateSource: RateSource | "none";
   isSubstitution: boolean;
   substitutedForName: string;
   studentCount: number;
@@ -211,6 +223,47 @@ function rulingFor(rulings: any[], classroomId: string, sessionId: string) {
   return rulings.find((item) => idOf(item.classroom) === classroomId && String(item.sessionId) === sessionId);
 }
 
+/** The pay plan in force for a coach on a date, or null (paid from the rate cards alone). */
+export function planFor(plans: any[], coachId: string, date: Date) {
+  let best: any = null;
+  for (const plan of plans) {
+    if (idOf(plan.coach) !== coachId) continue;
+    if (new Date(plan.effectiveFrom) > date) continue;
+    if (!best || new Date(plan.effectiveFrom) > new Date(best.effectiveFrom)) best = plan;
+  }
+  return best;
+}
+
+function planAmount(value: unknown) {
+  if (value === null || value === undefined || value === "") return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric >= 0 ? numeric : null;
+}
+
+function fromPlan(amount: number | null, unit: RateUnit, kind: PayKind): ResolvedRate | null {
+  return amount === null ? null : { amount, unit, source: "pay_plan", kind, rateId: "" };
+}
+
+/**
+ * The price of one class under the coach's plan. Per hour: regular classes and
+ * substitutions at the hourly rate; demos at the plan's demo rate. Per class:
+ * regular classes from the batch rate cards; demos and substitutions at the
+ * plan's amounts when set. Anything the plan leaves blank falls back to the
+ * rate cards, as it did before plans existed.
+ */
+export function priceWithPlan(plan: any, input: RateLookupInput): ResolvedRate | null {
+  const type: PayPlanType = plan?.type || "per_class";
+  if (type === "per_hour" && (input.kind === "regular" || input.kind === "substitute")) {
+    return fromPlan(planAmount(plan.hourlyRate), "per_hour", input.kind);
+  }
+  if (input.kind === "demo") return fromPlan(planAmount(plan?.demoRate), "per_class", "demo") || resolveRate(input);
+  if (input.kind === "substitute") return fromPlan(planAmount(plan?.substituteRate), "per_class", "substitute") || resolveRate(input);
+  if (input.kind === "demoConversionBonus") {
+    return fromPlan(planAmount(plan?.conversionBonus), "per_class", "demoConversionBonus") || resolveRate(input);
+  }
+  return resolveRate(input);
+}
+
 export type BuildPayEventsInput = {
   classrooms: any[];
   rates: any[];
@@ -219,6 +272,10 @@ export type BuildPayEventsInput = {
   /** Demo booking id -> the moment that demo turned into an enrolment. */
   conversions: Map<string, { convertedAt: Date; studentName: string }>;
   range: { from: Date; to: Date };
+  /** Coach pay plans (CoachPayPlan), with `coach` populated for names. */
+  plans?: any[];
+  /** Leave out monthly lines - for views filtered to one batch or classroom. */
+  skipMonthly?: boolean;
   /** Limits the result to one coach - what an instructor is allowed to see. */
   coachId?: string;
 };
@@ -235,6 +292,7 @@ function withinRange(date: Date, range: { from: Date; to: Date }) {
  */
 export function buildPayEvents(input: BuildPayEventsInput): PayEvent[] {
   const { classrooms, rates, overrides, rulings, conversions, range } = input;
+  const plans = input.plans || [];
   const onlyCoach = input.coachId ? String(input.coachId) : "";
   const events: PayEvent[] = [];
 
@@ -279,6 +337,44 @@ export function buildPayEvents(input: BuildPayEventsInput): PayEvent[] {
       if (!isPayableStatus && !isReviewable) continue;
 
       const kind: PayKind = isSubstitution ? "substitute" : isDemoClass ? "demo" : "regular";
+      const plan = planFor(plans, coachId, date);
+      const planType: PayPlanType = plan?.type || "per_class";
+
+      // A monthly-paid coach's classes are counted (hours, attendance) but earn
+      // nothing on their own: the month's fixed amount covers them.
+      if (planType === "monthly") {
+        if (!isPayableStatus) continue;
+        events.push({
+          id: `${classroomId}:${sessionId}:${coachId}`,
+          date,
+          coachId,
+          coachName,
+          classroomId,
+          classroomTitle: classroom.title || "Classroom",
+          isDemoClass,
+          batchName: batchName || (isDemoClass ? "Demo" : "Unassigned"),
+          sessionId,
+          sessionNumber: Number(session.sessionNumber || 0),
+          topicName: session.topicName || "",
+          sessionStatus: status,
+          kind,
+          status: "payable",
+          planType,
+          coveredByMonthly: true,
+          minutes,
+          unit: "per_class",
+          rateAmount: 0,
+          amount: 0,
+          exposure: 0,
+          rateSource: "monthly",
+          isSubstitution,
+          substitutedForName: isSubstitution ? nameOf(assignedCoach, "") : "",
+          studentCount: (classroom.students || []).length,
+          note: "",
+        });
+        continue;
+      }
+
       const override = overrideFor(overrides, classroomId, sessionId, coachId);
       const resolved: ResolvedRate | null = override
         ? {
@@ -288,19 +384,24 @@ export function buildPayEvents(input: BuildPayEventsInput): PayEvent[] {
             kind: (override.kind as PayKind) || kind,
             rateId: idOf(override._id),
           }
-        : resolveRate({ kind, coachId, classroomId, batchIds, date, rates });
+        : priceWithPlan(plan, { kind, coachId, classroomId, batchIds, date, rates });
 
       const exposure = resolved ? amountForRate(resolved, minutes) : 0;
       const ruling = isReviewable ? rulingFor(rulings, classroomId, sessionId) : null;
-      const eventStatus: PayEventStatus = !resolved
-        ? "unpriced"
-        : isPayableStatus
-          ? "payable"
-          : !ruling
-            ? "pending_review"
-            : ruling.payCoach
+      // The ruling decides first: a class ruled unpaid is unpaid whether or not
+      // it has a rate, and one still awaiting a ruling is waiting either way.
+      // Only a class that is actually payable can be missing a rate.
+      const eventStatus: PayEventStatus = isReviewable
+        ? !ruling
+          ? "pending_review"
+          : !ruling.payCoach
+            ? "declined"
+            : resolved
               ? "payable"
-              : "declined";
+              : "unpriced"
+        : resolved
+          ? "payable"
+          : "unpriced";
 
       events.push({
         id: `${classroomId}:${sessionId}:${coachId}`,
@@ -317,6 +418,8 @@ export function buildPayEvents(input: BuildPayEventsInput): PayEvent[] {
         sessionStatus: status,
         kind,
         status: eventStatus,
+        planType,
+        coveredByMonthly: false,
         minutes,
         unit: resolved?.unit || "per_class",
         rateAmount: resolved?.amount || 0,
@@ -340,7 +443,10 @@ export function buildPayEvents(input: BuildPayEventsInput): PayEvent[] {
     if (!withinRange(convertedAt, range)) continue;
     if (onlyCoach && demoTaughtBy.coachId !== onlyCoach) continue;
 
-    const bonusRate = resolveRate({
+    const bonusPlan = planFor(plans, demoTaughtBy.coachId, convertedAt);
+    // A monthly amount covers everything, conversions included.
+    if (bonusPlan?.type === "monthly") continue;
+    const bonusRate = priceWithPlan(bonusPlan, {
       kind: "demoConversionBonus",
       coachId: demoTaughtBy.coachId,
       classroomId,
@@ -366,6 +472,8 @@ export function buildPayEvents(input: BuildPayEventsInput): PayEvent[] {
       sessionStatus: "converted",
       kind: "demoConversionBonus",
       status: "payable",
+      planType: bonusPlan?.type || "per_class",
+      coveredByMonthly: false,
       minutes: demoTaughtBy.minutes,
       unit: bonusRate.unit,
       rateAmount: bonusRate.amount,
@@ -379,7 +487,71 @@ export function buildPayEvents(input: BuildPayEventsInput): PayEvent[] {
     });
   }
 
+  if (!input.skipMonthly) events.push(...monthlyPayEvents(plans, range, onlyCoach));
+
   return events.sort((a, b) => b.date.getTime() - a.date.getTime());
+}
+
+const MAX_MONTHS = 240;
+
+/**
+ * One line per month for each coach on a fixed monthly plan, dated on the
+ * month's last day. The plan in force on that day decides the month. A plan
+ * with no amount yet is "unpriced", which blocks that coach's invoice until an
+ * admin fills it in.
+ */
+export function monthlyPayEvents(plans: any[], range: { from: Date; to: Date }, onlyCoach = "", now = new Date()): PayEvent[] {
+  const monthlyCoaches = Array.from(new Set(plans.filter((plan) => plan.type === "monthly").map((plan) => idOf(plan.coach)))).filter(
+    (coachId) => !onlyCoach || coachId === onlyCoach
+  );
+  if (!monthlyCoaches.length) return [];
+
+  const earliest = plans.reduce((min, plan) => Math.min(min, new Date(plan.effectiveFrom).getTime()), Infinity);
+  const from = new Date(Math.max(range.from.getTime(), earliest));
+  const to = new Date(Math.min(range.to.getTime(), monthBounds(academyMonthOf(now)).end.getTime()));
+  if (!(from <= to)) return [];
+
+  const events: PayEvent[] = [];
+  let month = academyMonthOf(from);
+  for (let guard = 0; guard < MAX_MONTHS; guard += 1, month = shiftMonth(month, 1)) {
+    const { start, end } = monthBounds(month);
+    if (start > to) break;
+    if (end < range.from || end > range.to) continue;
+    for (const coachId of monthlyCoaches) {
+      const plan = planFor(plans, coachId, end);
+      if (plan?.type !== "monthly") continue;
+      const amount = planAmount(plan.monthlyAmount);
+      events.push({
+        id: `monthly:${coachId}:${month}`,
+        date: end,
+        coachId,
+        coachName: nameOf(plan.coach, "Coach"),
+        classroomId: "",
+        classroomTitle: `Fixed monthly pay - ${monthLabel(month)}`,
+        isDemoClass: false,
+        batchName: "",
+        sessionId: "",
+        sessionNumber: 0,
+        topicName: "",
+        sessionStatus: "",
+        kind: "monthly",
+        status: amount === null ? "unpriced" : "payable",
+        planType: "monthly",
+        coveredByMonthly: false,
+        minutes: 0,
+        unit: "per_class",
+        rateAmount: amount || 0,
+        amount: amount || 0,
+        exposure: amount || 0,
+        rateSource: "monthly",
+        isSubstitution: false,
+        substitutedForName: "",
+        studentCount: 0,
+        note: plan.note || "",
+      });
+    }
+  }
+  return events;
 }
 
 export type CoachPaySummaryRow = {
@@ -395,6 +567,7 @@ export type CoachPaySummaryRow = {
   demoAmount: number;
   substitutionAmount: number;
   bonusAmount: number;
+  monthlyAmount: number;
   pendingAmount: number;
   totalAmount: number;
   minutes: number;
@@ -412,6 +585,7 @@ export type CoachPaySummary = {
   demoAmount: number;
   substitutionAmount: number;
   bonusAmount: number;
+  monthlyAmount: number;
 };
 
 export function summarizePayEvents(events: PayEvent[]): CoachPaySummary {
@@ -431,6 +605,7 @@ export function summarizePayEvents(events: PayEvent[]): CoachPaySummary {
       demoAmount: 0,
       substitutionAmount: 0,
       bonusAmount: 0,
+      monthlyAmount: 0,
       pendingAmount: 0,
       totalAmount: 0,
       minutes: 0,
@@ -444,8 +619,10 @@ export function summarizePayEvents(events: PayEvent[]): CoachPaySummary {
 
     if (event.status === "payable") {
       row.totalAmount += event.amount;
-      row.minutes += event.kind === "demoConversionBonus" ? 0 : event.minutes;
-      if (event.kind === "regular") {
+      row.minutes += event.kind === "demoConversionBonus" || event.kind === "monthly" ? 0 : event.minutes;
+      if (event.kind === "monthly") {
+        row.monthlyAmount += event.amount;
+      } else if (event.kind === "regular") {
         row.regularClasses += 1;
         row.regularAmount += event.amount;
       } else if (event.kind === "demo") {
@@ -468,7 +645,7 @@ export function summarizePayEvents(events: PayEvent[]): CoachPaySummary {
     rows,
     totalAmount: rows.reduce((sum, row) => sum + row.totalAmount, 0),
     pendingAmount: rows.reduce((sum, row) => sum + row.pendingAmount, 0),
-    payableClasses: events.filter((event) => event.status === "payable" && event.kind !== "demoConversionBonus").length,
+    payableClasses: events.filter((event) => event.status === "payable" && event.kind !== "demoConversionBonus" && event.kind !== "monthly").length,
     pendingReview: events.filter((event) => event.status === "pending_review").length,
     unpriced: events.filter((event) => event.status === "unpriced").length,
     coachCount: rows.length,
@@ -476,10 +653,12 @@ export function summarizePayEvents(events: PayEvent[]): CoachPaySummary {
     demoAmount: rows.reduce((sum, row) => sum + row.demoAmount, 0),
     substitutionAmount: rows.reduce((sum, row) => sum + row.substitutionAmount, 0),
     bonusAmount: rows.reduce((sum, row) => sum + row.bonusAmount, 0),
+    monthlyAmount: rows.reduce((sum, row) => sum + row.monthlyAmount, 0),
   };
 }
 
-export const PAY_KIND_LABELS: Record<PayKind, string> = {
+export const PAY_KIND_LABELS: Record<PayEventKind, string> = {
+  monthly: "Fixed monthly pay",
   regular: "Regular class",
   demo: "Demo class",
   substitute: "Substitution",
@@ -491,6 +670,12 @@ export const PAY_STATUS_LABELS: Record<PayEventStatus, string> = {
   pending_review: "Awaiting ruling",
   declined: "Not paid",
   unpriced: "No rate set",
+};
+
+export const PAY_PLAN_LABELS: Record<PayPlanType, string> = {
+  per_class: "Per class",
+  per_hour: "Per hour",
+  monthly: "Fixed monthly",
 };
 
 export function isValidRateScope(value: unknown): value is CoachRateScope {

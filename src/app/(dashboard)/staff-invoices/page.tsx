@@ -71,7 +71,7 @@ export default async function StaffInvoicesPage({
         eyebrow="My invoices"
         title="Monthly Invoice"
         icon={Receipt}
-        subtitle="Your invoice to the academy for a month, dated on its last day. Classes are priced from Coach Pay; you fill in anything without a rate and add other agreed items."
+        subtitle="Your invoice to the academy for a month, dated on its last day. Everything is calculated from the pay plan and rates the academy set for you; you can add other agreed items."
       >
         <div className="flex flex-wrap items-start gap-4 rounded-lg border border-slate-200 bg-white p-3 text-xs leading-5 text-slate-600">
           <div>
@@ -109,7 +109,7 @@ export default async function StaffInvoicesPage({
           fullName={profile.fullName}
           groups={draft.groups}
           pending={draft.pending}
-          suggestedRates={draft.suggestedRates}
+          missing={draft.missing}
           manual={draft.manual}
           invoiceNumber={draft.invoiceNumber}
           existing={draft.existing}

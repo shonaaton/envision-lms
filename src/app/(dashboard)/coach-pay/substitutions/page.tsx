@@ -8,7 +8,7 @@ import { resolveCoachPayViewer } from "@/lib/coachPayAccess";
 import { loadCoachPay, loadProposals } from "@/lib/coachPayData";
 import { financialYearLabel, financialYearOptions, resolvePayPeriod } from "@/lib/payPeriods";
 import { formatINR } from "@/lib/utils";
-import { saveSessionOverride, submitSessionRateProposal, withdrawProposal } from "../actions";
+import { saveSessionOverride, withdrawProposal } from "../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -58,7 +58,7 @@ export default async function SubstitutionsPage({
         subtitle={
           viewer.canViewAll
             ? "Every class taken by a coach it was not assigned to, grouped by who covered it. Rates are typed here because cover is agreed case by case."
-            : "Every class you covered for another coach. Enter what was agreed and an admin will approve it before it is paid."
+            : "Every class you covered for another coach and what it earned, at the rates the academy set for you."
         }
       >
         <div className="grid gap-2 sm:grid-cols-3">
@@ -162,6 +162,15 @@ export default async function SubstitutionsPage({
                               {event.status === "payable" ? formatINR(event.amount) : <span className="text-slate-400">{formatINR(0)}</span>}
                             </td>
                             <td className="px-3 py-2">
+                              {!viewer.canManageRates ? (
+                                <span className="text-xs text-slate-500">
+                                  {event.status === "unpriced"
+                                    ? "Rate not set yet - the academy sets it"
+                                    : event.rateSource === "none"
+                                      ? "-"
+                                      : RATE_SCOPE_LABELS[event.rateSource]}
+                                </span>
+                              ) : (
                               <SubstitutionRateForm
                                 classroomId={event.classroomId}
                                 sessionId={event.sessionId}
@@ -172,13 +181,14 @@ export default async function SubstitutionsPage({
                                 currentUnit={event.unit}
                                 sourceLabel={event.rateSource === "none" ? "not priced" : RATE_SCOPE_LABELS[event.rateSource]}
                                 hasOverride={Boolean(override)}
-                                mode={viewer.canManageRates ? "manage" : "propose"}
-                                action={viewer.canManageRates ? saveSessionOverride : submitSessionRateProposal}
+                                mode="manage"
+                                action={saveSessionOverride}
                                 pendingProposal={
                                   proposal ? { id: proposal.id, amount: Number(proposal.amount || 0), unit: proposal.unit, note: proposal.note } : null
                                 }
                                 withdrawAction={withdrawProposal}
                               />
+                              )}
                             </td>
                           </tr>
                         );

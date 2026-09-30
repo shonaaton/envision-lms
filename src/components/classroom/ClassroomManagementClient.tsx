@@ -111,6 +111,8 @@ type ClassroomItem = {
   _id: string;
   title: string;
   classroomType: "single" | "series";
+  /** A demo classroom - shown as a single class, but tagged and warned about. */
+  isDemo?: boolean;
   status: "scheduled" | "ongoing" | "completed" | "cancelled";
   courseName?: string;
   course?: { _id?: string } | string;
@@ -945,7 +947,10 @@ export default function ClassroomManagementClient({
 
   async function deleteItem(item: ClassroomItem) {
     const target = item.classroomType === "series" ? `the entire series “${item.title}” and all of its classes` : `“${item.title}”`;
-    if (!window.confirm(`Permanently delete ${target}? This also removes its classroom records and cannot be undone.`)) return;
+    const demoNote = item.isDemo
+      ? "\n\nThis is a demo classroom. Its demo request stays in Demo Center - to remove a test demo completely, delete it from Demo Center > History instead."
+      : "";
+    if (!window.confirm(`Permanently delete ${target}? This also removes its classroom records and cannot be undone.${demoNote}`)) return;
     await withBusy("Deleting classroom...", async () => {
       const response = await fetch(`/api/classrooms/${item._id}`, { method: "DELETE" });
       const data = await response.json().catch(() => ({}));
@@ -1107,6 +1112,7 @@ export default function ClassroomManagementClient({
                 loading={loading}
                 batches={targets.batches}
                 onReopen={(item) => setCourseCompletion(item, "reopen_classroom")}
+                onDelete={permissions.cancel ? deleteItem : undefined}
               />
             ) : overviewTab === "closed" || overviewTab === "paused" ? (
               <InactiveGroupsPanel
@@ -2752,6 +2758,7 @@ function normalizeClassroomItem(item: any): ClassroomItem {
     meetingProvider: item?.meetingProvider === "meet" ? "meet" : undefined,
     meetingUrl: item?.meetingUrl ? String(item.meetingUrl) : "",
     isTestClassroom: Boolean(item?.isTestClassroom),
+    isDemo: item?.classroomType === "demo",
   };
 }
 
@@ -2872,11 +2879,14 @@ function CompletedCoursesPanel({
   loading,
   batches,
   onReopen,
+  onDelete,
 }: {
   items: ClassroomItem[];
   loading: boolean;
   batches: BatchOption[];
   onReopen: (item: ClassroomItem) => void;
+  /** Present only for someone allowed to delete classes. */
+  onDelete?: (item: ClassroomItem) => void;
 }) {
   return (
     <>
@@ -2902,7 +2912,10 @@ function CompletedCoursesPanel({
               <div key={item._id} className="rounded-md border border-emerald-200 bg-emerald-50/40 px-3 py-2.5">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <div className="truncate text-sm font-bold text-slate-950">{item.title}</div>
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      <div className="truncate text-sm font-bold text-slate-950">{item.title}</div>
+                      {item.isDemo && <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-800">Demo</span>}
+                    </div>
                     <div className="mt-0.5 text-xs text-slate-600">
                       {[item.courseName, item.levelName].filter(Boolean).join(" - ") || "No course linked"}
                       {batchNames ? ` - ${batchNames}` : ""}
@@ -2923,6 +2936,15 @@ function CompletedCoursesPanel({
                     >
                       Reopen
                     </button>
+                    {onDelete && (
+                      <button
+                        type="button"
+                        onClick={() => onDelete(item)}
+                        className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-white px-2.5 py-1 text-xs font-bold text-rose-700 hover:bg-rose-50"
+                      >
+                        <Trash2 size={13} /> Delete
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

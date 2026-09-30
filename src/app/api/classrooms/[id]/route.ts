@@ -3,9 +3,10 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { Classroom } from "@/models/Classroom";
 import { Attendance } from "@/models/Attendance";
-import { ClassroomChatMessage, ClassroomSession, LiveQuestion, LiveQuestionResponse } from "@/models/ClassroomLive";
+import { ClassroomChatMessage, ClassroomSession, LiveQuestion } from "@/models/ClassroomLive";
 import { buildGeneratedSessions, CLASS_TIME_PATTERN, resolveClassStartTime, scheduleDatesFrom } from "@/lib/classroomSchedule";
 import { deleteClassroomSessionInstances, syncClassroomSessionInstances } from "@/lib/classroomSessionInstances";
+import { deleteClassroomRecords } from "@/lib/deleteClassroomRecords";
 import { canAccessFeature, isSuperAdminSession } from "@/lib/featureAccess";
 import { ACADEMY_TIME_ZONE, academyDateKey, academyDateTime, formatAcademyDateTime } from "@/lib/academyTime";
 import { coachCanAccessClassroomSession, coachCanViewClassroomSession, isFormerSessionCoach, isPrimaryClassroomCoach, limitClassroomToCoachSessions } from "@/lib/classroomCoachAccess";
@@ -13,11 +14,8 @@ import { ensureTopicContinuationSession, hasClassesLeftToTeach, recalculateFutur
 import { recordActivity } from "@/lib/activity";
 import { User } from "@/models/User";
 import { Notification } from "@/models/Fee";
-import { Homework, Submission } from "@/models/Homework";
+import { Homework } from "@/models/Homework";
 import { AssignmentAutomationLog } from "@/models/AssignmentTemplate";
-import { PGN } from "@/models/PGN";
-import { Booking } from "@/models/Booking";
-import { DemoBooking } from "@/models/Onboarding";
 import { Batch } from "@/models/Batch";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
 import { normalizeGoogleMeetUrl } from "@/lib/meetingUrl";
@@ -30,26 +28,6 @@ import { writeRuntimeLog } from "@/lib/runtimeLogger";
 import { raiseSubstituteTask, resolveCoachMissingTask } from "@/lib/tasks/taskTriggers";
 
 export const dynamic = "force-dynamic";
-
-async function deleteClassroomRecords(classroomId: string) {
-  const questions = await LiveQuestion.find({ classroom: classroomId }).select("_id").lean();
-  const questionIds = questions.map((question: any) => question._id);
-  const homework = await Homework.find({ classroom: classroomId }).select("_id").lean();
-  const homeworkIds = homework.map((item: any) => item._id);
-  await Promise.all([
-    Attendance.deleteMany({ classroom: classroomId }),
-    ClassroomSession.deleteMany({ classroom: classroomId }),
-    ClassroomChatMessage.deleteMany({ classroom: classroomId }),
-    questionIds.length ? LiveQuestionResponse.deleteMany({ question: { $in: questionIds } }) : Promise.resolve(),
-    LiveQuestion.deleteMany({ classroom: classroomId }),
-    homeworkIds.length ? Submission.deleteMany({ homework: { $in: homeworkIds } }) : Promise.resolve(),
-    Homework.deleteMany({ classroom: classroomId }),
-    AssignmentAutomationLog.deleteMany({ classroom: classroomId }),
-    PGN.updateMany({ classroom: classroomId }, { $unset: { classroom: 1 }, $set: { visibility: "private" } }),
-    Booking.updateMany({ classroom: classroomId }, { $unset: { classroom: 1 } }),
-    DemoBooking.updateMany({ classroom: classroomId }, { $unset: { classroom: 1 } }),
-  ]);
-}
 
 async function sessionHasRecords(classroomId: string, scheduledSessionId: string) {
   const [attendance, liveSession, chat, question, homework, automation] = await Promise.all([

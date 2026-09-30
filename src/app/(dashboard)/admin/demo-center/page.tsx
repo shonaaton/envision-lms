@@ -16,6 +16,7 @@ import { recordActivity } from "@/lib/activity";
 import { cancelDemoClassrooms, isConfirmedDemo, markDemoClassroomDelivered, markDemoClassroomMissed, upsertDemoClassroom } from "@/lib/demoClassroom";
 import { COURSE_TIER_LABELS } from "@/lib/courseTiers";
 import { bookDemoForAccount, changeDemoCoach, coachClash, confirmDemoBooking } from "@/lib/demoScheduling";
+import { deleteDemoRecords } from "@/lib/deleteDemoRecords";
 import { normalizeGoogleMeetUrl, parseMeetingUrlInput } from "@/lib/meetingUrl";
 import { PopupShell, PopupTrigger } from "@/components/HashPopup";
 import {
@@ -597,6 +598,41 @@ async function restoreDemo(formData: FormData) {
   revalidatePath("/admin/demo-center");
 }
 
+/**
+ * Permanently delete an archived demo - for test runs and junk, where History
+ * would only be clutter. Admins only, and only from History, so a real lead
+ * always passes through the reversible archive first.
+ */
+async function deleteDemoPermanently(formData: FormData) {
+  "use server";
+  const session = await requireDemoManager("edit", formData);
+  if ((session.user as any).role !== "admin") return demoCenterOutcome("history", "Only admins can permanently delete a demo.");
+  await dbConnect();
+  const actorId = String((session.user as any).id || "");
+  const bookingId = String(formData.get("booking") || "");
+  const booking: any = bookingId ? await Booking.findById(bookingId).select("bookingType archivedAt student").populate("student", "name").lean() : null;
+  if (!booking || booking.bookingType !== "demo") return demoCenterOutcome("history", "That demo request no longer exists.");
+  if (!booking.archivedAt) return demoCenterOutcome("history", "Move the demo to History before deleting it permanently.");
+  const studentName = String(booking.student?.name || "Demo student");
+  const summary = await deleteDemoRecords(bookingId, {
+    includeAssessment: formData.get("includeAssessment") === "on",
+    includeAccount: formData.get("includeAccount") === "on",
+  });
+  await recordActivity({
+    actor: actorId,
+    type: "demo.booking.deleted",
+    label: `Permanently deleted demo for ${studentName}`,
+    metadata: { ...summary, studentName, event: "DEMO_DELETED" },
+  });
+  revalidatePath("/admin/demo-center");
+  revalidatePath("/classrooms");
+  demoCenterOutcome(
+    "history",
+    "",
+    `Deleted ${studentName}'s demo permanently${summary.accountDeleted ? ", along with the demo account" : ""}.`
+  );
+}
+
 async function convertDemoStudent(formData: FormData) {
   "use server";
   const session = await requireDemoManager("convert", formData);
@@ -869,6 +905,17 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
     const key = String(item.entityId);
     activityByBooking.set(key, [...(activityByBooking.get(key) || []), item]);
   }
+  // Permanent delete is admin-only. A demo account can go with its demo only
+  // while it is still a demo and has no other booking - see deleteDemoRecords.
+  const canDeletePermanently = (session.user as any).role === "admin";
+  const historyDemoStudentIds = canDeletePermanently
+    ? archivedBookings.filter((booking: any) => booking.student?.accountStatus === "demo").map((booking: any) => booking.student._id)
+    : [];
+  const bookingsPerStudent = new Map<string, number>();
+  if (historyDemoStudentIds.length) {
+    const studentBookings: any[] = await Booking.find({ student: { $in: historyDemoStudentIds } }).select("student").lean();
+    for (const item of studentBookings) bookingsPerStudent.set(String(item.student), (bookingsPerStudent.get(String(item.student)) || 0) + 1);
+  }
 
   return (
     <div className="space-y-5 p-2 text-slate-950">
@@ -933,7 +980,13 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
       ) : activeTab === "history" ? (
         <section className="grid gap-3">
           {archivedBookings.map((booking: any) => (
-            <HistoryCard key={booking._id.toString()} booking={booking} activities={activityByBooking.get(String(booking._id)) || []} />
+            <HistoryCard
+              key={booking._id.toString()}
+              booking={booking}
+              activities={activityByBooking.get(String(booking._id)) || []}
+              canDelete={canDeletePermanently}
+              canDeleteAccount={booking.student?.accountStatus === "demo" && bookingsPerStudent.get(String(booking.student?._id)) === 1}
+            />
           ))}
           {!archivedBookings.length ? <Empty text="Nothing in History yet. Deleting a demo request moves it here." /> : null}
         </section>
@@ -1520,8 +1573,9 @@ function DuplicateCard({ student }: { student: any }) {
   );
 }
 
-function HistoryCard({ booking, activities }: { booking: any; activities: any[] }) {
+function HistoryCard({ booking, activities, canDelete, canDeleteAccount }: { booking: any; activities: any[]; canDelete: boolean; canDeleteAccount: boolean }) {
   const student = booking.student || {};
+  const deleteModalId = `delete-demo-${booking._id.toString()}`;
   return (
     <article className="rounded-xl border border-slate-200/80 bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
       <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
@@ -1537,11 +1591,44 @@ function HistoryCard({ booking, activities }: { booking: any; activities: any[] 
             {student.email ? <><Dot /><span>{student.email}</span></> : null}
           </div>
         </div>
-        <form action={restoreDemo}>
-          <input type="hidden" name="booking" value={booking._id.toString()} />
-          <button className="btn-outline bg-white"><RotateCcw size={15} /> Restore</button>
-        </form>
+        <div className="flex flex-wrap gap-2">
+          <form action={restoreDemo}>
+            <input type="hidden" name="booking" value={booking._id.toString()} />
+            <button className="btn-outline bg-white"><RotateCcw size={15} /> Restore</button>
+          </form>
+          {canDelete ? (
+            <PopupTrigger id={deleteModalId} className="btn-outline border-rose-200 bg-white text-rose-700">
+              <Trash2 size={15} /> Delete permanently
+            </PopupTrigger>
+          ) : null}
+        </div>
       </div>
+      {canDelete ? (
+        <PopupShell id={deleteModalId} title="Delete this demo permanently?" subtitle={`${student.name || "Demo student"} · ${formatAcademyDateTime(booking.startAt)}`}>
+          <form action={deleteDemoPermanently} className="grid gap-4">
+            <input type="hidden" name="booking" value={booking._id.toString()} />
+            <input type="hidden" name="tab" value="history" />
+            <div className="rounded-lg border border-rose-100 bg-rose-50 p-3 text-sm leading-6 text-rose-900">
+              For test runs and junk requests. This removes the demo request, its demo classroom with attendance, homework and coach-pay records,
+              the tasks raised about it and its history. It cannot be undone. The CRM is not updated - a lead already in Kraya stays there.
+            </div>
+            <label className="flex items-start gap-2 text-sm text-slate-700">
+              <input type="checkbox" name="includeAssessment" className="mt-1" />
+              <span>Also delete the coach&apos;s assessment. Leave this off for a real child - the assessment stays on the Assessments tab.</span>
+            </label>
+            {canDeleteAccount ? (
+              <label className="flex items-start gap-2 text-sm text-slate-700">
+                <input type="checkbox" name="includeAccount" className="mt-1" />
+                <span>Also delete the demo account{student.email ? ` (${student.email})` : ""}. It has no other bookings and was never converted.</span>
+              </label>
+            ) : null}
+            <div className="flex justify-end gap-2">
+              <a href="#" className="btn-outline bg-white">Cancel</a>
+              <button className="btn-outline border-rose-300 bg-rose-600 text-white hover:bg-rose-700"><Trash2 size={15} /> Delete permanently</button>
+            </div>
+          </form>
+        </PopupShell>
+      ) : null}
 
       <dl className="mt-4 grid gap-x-6 gap-y-3.5 border-t border-slate-100 pt-4 sm:grid-cols-2 lg:grid-cols-4">
         <Field label="Archived" value={booking.archivedAt ? formatAcademyDateTime(booking.archivedAt) : ""} />

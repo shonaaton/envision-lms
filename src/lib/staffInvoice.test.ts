@@ -138,6 +138,38 @@ describe("groupInvoiceLines", () => {
     expect(groups.find((group) => group.group === "demo")?.key).toBe("demo:unpriced");
   });
 
+  it("keeps a batch on one row when one of its classes has no rate on record", () => {
+    const priced = { classroomId: "pic-99991", classroomTitle: "PIC-99991", amount: 60000, rateAmount: 60000, minutes: 45 };
+    const { groups } = groupInvoiceLines([
+      event(priced),
+      event(priced),
+      event(priced),
+      event(priced),
+      event({ ...priced, status: "unpriced", amount: 0, exposure: 0, rateAmount: 0, rateSource: "none", sessionId: "moved-class" }),
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toMatchObject({ title: "PIC-99991", quantity: 5, minutes: 225, rate: 60000, amount: 300000, needsRate: false });
+    expect(groups[0].inferredSessions.map((session) => session.sessionId)).toEqual(["moved-class"]);
+
+    const { lines, missing } = buildInvoiceLines(groups, {}, []);
+    expect(missing).toEqual([]);
+    expect(lines[0].amount).toBe(300000);
+  });
+
+  it("keeps two rows only when the batch really had two rates in the month", () => {
+    const room = { classroomId: "pic-1", classroomTitle: "PIC-1" };
+    const { groups } = groupInvoiceLines([
+      event({ ...room, amount: 50000 }),
+      event({ ...room, amount: 60000 }),
+      event({ ...room, status: "unpriced", amount: 0, exposure: 0 }),
+    ]);
+    expect(groups.map((group) => [group.rate, group.quantity, group.needsRate])).toEqual([
+      [50000, 1, false],
+      [60000, 1, false],
+      [null, 1, true],
+    ]);
+  });
+
   it("prices entered rates and adds manual items; missing rates block the invoice", () => {
     const { groups } = groupInvoiceLines([
       event({}),

@@ -719,18 +719,20 @@ export async function reviewProposal(formData: FormData) {
         classroom: proposal.classroom,
         effectiveFrom,
       };
+      // Only the kinds the coach priced. A proposal filed from an invoice carries
+      // just the regular rate, and approving it must not blank the demo or
+      // substitution rate an admin already set on the same card.
+      const priced: Record<string, unknown> = {};
+      for (const kind of PAY_KINDS) {
+        const value = proposal[kind];
+        if (value && value.amount !== null && value.amount !== undefined) priced[kind] = { amount: value.amount, unit: value.unit || "per_class" };
+      }
+      if (!Object.keys(priced).length) throw new Error("This proposal has no rate in it");
       const card = await CoachRate.findOneAndUpdate(
         key,
         {
-          ...key,
-          regular: proposal.regular,
-          demo: proposal.demo,
-          demoConversionBonus: proposal.demoConversionBonus,
-          substitute: proposal.substitute,
-          isActive: true,
-          note: proposal.note || "Approved from a coach submission",
-          updatedBy: actorId,
-          $setOnInsert: { createdBy: actorId },
+          $set: { ...priced, isActive: true, note: proposal.note || "Approved from a coach submission", updatedBy: actorId },
+          $setOnInsert: { ...key, createdBy: actorId },
         },
         { upsert: true, new: true, setDefaultsOnInsert: true }
       );

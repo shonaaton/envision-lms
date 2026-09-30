@@ -55,6 +55,11 @@ export type DraftGroup = {
   amount: number;
   needsRate: boolean;
   sessions: DraftSession[];
+  /**
+   * Classes in this row that had no rate on record and were billed at the rate
+   * the batch's other classes carry. Filed for approval so payroll pays them too.
+   */
+  inferredSessions: DraftSession[];
 };
 
 export type InvoiceDraftGroups = {
@@ -70,17 +75,27 @@ export const KIND_LABELS: Record<PayEvent["kind"], string> = {
   demoConversionBonus: "Demo conversion bonus",
 };
 
+function sessionOf(event: PayEvent): DraftSession[] {
+  return event.sessionId ? [{ classroomId: event.classroomId, sessionId: event.sessionId, date: new Date(event.date).toISOString() }] : [];
+}
+
 /**
- * Turns a month of pay events into invoice rows: one per classroom and type of
- * class at one price, so a row reads "8 classes x INR 500 = INR 4,000". Demos
- * are one row across all demo classrooms (each demo is its own classroom), and
- * conversion bonuses another. Classes with no rate get a row of their own that
- * needs a price. Pending no-shows are counted but never billed; declined ones
- * are left out entirely.
+ * Turns a month of pay events into invoice rows: one per batch (classroom) and
+ * type of class, so a row reads "5 classes x INR 600 = INR 3,000". Demos are one
+ * row across all demo classrooms (each demo is its own classroom), and
+ * conversion bonuses another.
+ *
+ * A class with no rate on record joins its batch's row at the rate the batch's
+ * other classes carry - a one-off class the office never priced, say, is still
+ * the same batch at the same rate. Only when nothing in the batch has a rate
+ * does the row ask the coach for one. A batch whose classes genuinely carry two
+ * rates in the month (a raise mid-month) keeps one row per rate.
+ *
+ * Pending no-shows are counted but never billed; declined ones are left out.
  */
 export function groupInvoiceLines(events: PayEvent[]): InvoiceDraftGroups {
-  const byKey = new Map<string, DraftGroup>();
   const pending = { count: 0, amount: 0 };
+  const buckets = new Map<string, PayEvent[]>();
 
   for (const event of events) {
     if (event.status === "pending_review") {
@@ -89,40 +104,65 @@ export function groupInvoiceLines(events: PayEvent[]): InvoiceDraftGroups {
       continue;
     }
     if (event.status !== "payable" && event.status !== "unpriced") continue;
+    const group = event.kind === "demo" ? "demo" : event.kind === "demoConversionBonus" ? "bonus" : "class";
+    const base = group === "class" ? `${event.kind}:${event.classroomId}` : group;
+    buckets.set(base, [...(buckets.get(base) || []), event]);
+  }
 
-    const unpriced = event.status === "unpriced";
-    const group: DraftGroup["group"] = event.kind === "demo" ? "demo" : event.kind === "demoConversionBonus" ? "bonus" : "class";
-    const priceKey = unpriced ? "unpriced" : String(event.amount);
-    const key = group === "class" ? `${event.kind}:${event.classroomId}:${priceKey}` : `${group}:${priceKey}`;
+  const groups: DraftGroup[] = [];
+  for (const [base, bucket] of buckets) {
+    const first = bucket[0];
+    const group: DraftGroup["group"] = first.kind === "demo" ? "demo" : first.kind === "demoConversionBonus" ? "bonus" : "class";
+    const row = (key: string, rate: number | null): DraftGroup => ({
+      key,
+      group,
+      kind: first.kind,
+      classroomId: group === "class" ? first.classroomId : "",
+      title: group === "class" ? first.classroomTitle : KIND_LABELS[first.kind],
+      batchName: group === "class" ? first.batchName : "",
+      quantity: 0,
+      minutes: 0,
+      rate,
+      amount: 0,
+      needsRate: rate === null,
+      sessions: [],
+      inferredSessions: [],
+    });
 
-    let row = byKey.get(key);
-    if (!row) {
-      row = {
-        key,
-        group,
-        kind: event.kind,
-        classroomId: group === "class" ? event.classroomId : "",
-        title: group === "class" ? event.classroomTitle : KIND_LABELS[event.kind],
-        batchName: group === "class" ? event.batchName : "",
-        quantity: 0,
-        minutes: 0,
-        rate: unpriced ? null : event.amount,
-        amount: 0,
-        needsRate: unpriced,
-        sessions: [],
-      };
-      byKey.set(key, row);
+    const priced = bucket.filter((event) => event.status === "payable");
+    const unpriced = bucket.filter((event) => event.status === "unpriced");
+    const amounts = Array.from(new Set(priced.map((event) => event.amount)));
+    const byAmount = new Map<number, DraftGroup>();
+    for (const amount of amounts) byAmount.set(amount, row(`${base}:${amount}`, amount));
+
+    for (const event of priced) {
+      const target = byAmount.get(event.amount)!;
+      target.quantity += 1;
+      target.minutes += event.minutes;
+      target.amount += event.amount;
+      target.sessions.push(...sessionOf(event));
     }
-    row.quantity += 1;
-    row.minutes += event.minutes;
-    if (!unpriced) row.amount += event.amount;
-    if (event.sessionId) {
-      row.sessions.push({ classroomId: event.classroomId, sessionId: event.sessionId, date: new Date(event.date).toISOString() });
+
+    if (unpriced.length) {
+      // One rate across the batch: the unpriced classes are billed at it.
+      // None, or several: the coach says what the unpriced ones pay.
+      const target = amounts.length === 1 ? byAmount.get(amounts[0])! : row(`${base}:unpriced`, null);
+      for (const event of unpriced) {
+        target.quantity += 1;
+        target.minutes += event.minutes;
+        target.sessions.push(...sessionOf(event));
+        if (!target.needsRate) {
+          target.amount += target.rate || 0;
+          target.inferredSessions.push(...sessionOf(event));
+        }
+      }
+      if (target.needsRate) groups.push(target);
     }
+    groups.push(...byAmount.values());
   }
 
   const order: Record<DraftGroup["group"], number> = { class: 0, demo: 1, bonus: 2 };
-  const groups = Array.from(byKey.values()).sort(
+  groups.sort(
     (a, b) =>
       order[a.group] - order[b.group] ||
       a.title.localeCompare(b.title) ||

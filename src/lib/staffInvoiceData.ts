@@ -257,9 +257,11 @@ async function proposeEnteredRates(userId: string, month: string, invoiceNumber:
   const note = `Entered on invoice ${invoiceNumber} for ${month}`;
   const ids: string[] = [];
   for (const group of groups) {
-    if (!group.needsRate) continue;
-    const amount = rates[group.key];
+    // Classes the person priced, or classes with no rate on record that were
+    // billed at the rate the rest of their batch carries.
+    const amount = group.needsRate ? rates[group.key] : group.inferredSessions.length ? group.rate ?? undefined : undefined;
     if (amount === undefined) continue;
+    const sessions = group.needsRate ? group.sessions : group.inferredSessions;
     const value = { amount, unit: "per_class" as const };
 
     if (group.group === "demo") {
@@ -275,7 +277,7 @@ async function proposeEnteredRates(userId: string, month: string, invoiceNumber:
     }
     // A substitution, or a regular class in a classroom they no longer hold:
     // priced one class at a time.
-    for (const session of group.sessions) {
+    for (const session of sessions) {
       if (!isValidObjectId(session.classroomId)) continue;
       ids.push(
         idOf(

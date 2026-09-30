@@ -293,7 +293,15 @@ export function InvoiceBuilder(props: InvoiceBuilderProps) {
                             <span className="text-[11px] text-amber-700">Sent to the academy to approve</span>
                           </div>
                         ) : (
-                          <span className="tabular-nums">{formatINR(group.rate || 0)}</span>
+                          <div className="flex flex-col items-end gap-0.5">
+                            <span className="tabular-nums">{formatINR(group.rate || 0)}</span>
+                            {group.inferredSessions.length > 0 && (
+                              <span className="max-w-[14rem] text-right text-[11px] leading-4 text-amber-700">
+                                {group.inferredSessions.length} {group.inferredSessions.length === 1 ? "class had" : "classes had"} no rate on record -
+                                billed at this batch&apos;s rate and sent to the academy to approve
+                              </span>
+                            )}
+                          </div>
                         )}
                       </td>
                       <td className="px-4 py-2 text-right font-bold tabular-nums">{total === null ? <span className="text-slate-400">-</span> : formatINR(total)}</td>

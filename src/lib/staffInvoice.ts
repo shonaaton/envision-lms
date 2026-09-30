@@ -48,6 +48,7 @@ export type DraftGroup = {
   classroomId: string;
   title: string;
   batchName: string;
+  level: string;
   quantity: number;
   minutes: number;
   unit: InvoiceRateUnit;
@@ -151,6 +152,7 @@ export function groupInvoiceLines(events: PayEvent[]): InvoiceDraftGroups {
       classroomId: group === "class" ? event.classroomId : "",
       title: group === "class" || group === "monthly" ? event.classroomTitle : KIND_LABELS[event.kind],
       batchName: group === "class" ? event.batchName : "",
+      level: group === "class" ? event.level || "" : "",
       quantity: 0,
       minutes: 0,
       unit,
@@ -196,6 +198,7 @@ export type InvoiceLine = {
   classroomId: string;
   title: string;
   batchName: string;
+  level: string;
   quantity: number;
   minutes: number;
   unit: InvoiceRateUnit;
@@ -214,6 +217,7 @@ export function buildInvoiceLines(groups: DraftGroup[], manual: ManualLineInput[
     classroomId: group.classroomId,
     title: group.title,
     batchName: group.batchName,
+    level: group.level,
     quantity: group.quantity,
     minutes: group.minutes,
     unit: group.unit,
@@ -230,6 +234,7 @@ export function buildInvoiceLines(groups: DraftGroup[], manual: ManualLineInput[
       classroomId: "",
       title: item.description.trim(),
       batchName: "",
+      level: "",
       quantity: item.quantity,
       minutes: 0,
       unit: "per_class",

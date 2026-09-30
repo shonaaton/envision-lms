@@ -552,3 +552,27 @@ describe("formatHours", () => {
     expect([formatHours(45), formatHours(135), formatHours(60), formatHours(50), formatHours(0)]).toEqual(["0.75", "2.25", "1", "0.83", "0"]);
   });
 });
+
+describe("batches that move up a level", () => {
+  it("keeps the coach's batch rate on the next level's classroom series", async () => {
+    const { coachBatchRate, levelName } = await import("@/lib/coachPay");
+    const rates = [card({ scope: "batch_coach", batch: BATCH, coach: COACH, regular: money(60000) })];
+    const lookup = { coachId: COACH, batchIds: [BATCH], date: new Date("2026-10-09T12:00:00Z"), rates };
+    // September's Intermediate series and October's Semi Pro series share the batch.
+    expect(coachBatchRate({ ...lookup, classroomId: "intermediate-series" })?.amount).toBe(60000);
+    expect(coachBatchRate({ ...lookup, classroomId: "semi-pro-series" })?.amount).toBe(60000);
+    expect(levelName("semi_pro")).toBe("Semi Pro");
+  });
+
+  it("uses the most recently started rate, whether it was set on the batch or one classroom", async () => {
+    const { coachBatchRate } = await import("@/lib/coachPay");
+    const rates = [
+      card({ scope: "classroom_coach", classroom: CLASSROOM, coach: COACH, regular: money(60000), effectiveFrom: new Date("2026-09-11T00:00:00Z") }),
+      card({ scope: "batch_coach", batch: BATCH, coach: COACH, regular: money(65000), effectiveFrom: new Date("2026-09-30T18:30:00Z") }),
+    ];
+    const at = (iso: string) => coachBatchRate({ coachId: COACH, classroomId: CLASSROOM, batchIds: [BATCH], date: new Date(iso), rates })?.amount;
+    expect(at("2026-09-04T12:00:00Z")).toBeUndefined();
+    expect(at("2026-09-18T12:00:00Z")).toBe(60000);
+    expect(at("2026-10-02T12:00:00Z")).toBe(65000);
+  });
+});

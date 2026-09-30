@@ -89,6 +89,8 @@ export type PayEvent = {
   classroomTitle: string;
   isDemoClass: boolean;
   batchName: string;
+  /** The classroom's course level ("Intermediate"), so a batch that moved up a level reads clearly. */
+  level: string;
   sessionId: string;
   sessionNumber: number;
   topicName: string;
@@ -124,6 +126,12 @@ export type RateLookupInput = {
 
 function idOf(value: any) {
   return value?._id?.toString?.() ?? value?.toString?.() ?? "";
+}
+
+/** "semi_pro" -> "Semi Pro". */
+export function levelName(value: unknown) {
+  const text = String(value || "").replace(/[_-]+/g, " ").trim();
+  return text ? text.replace(/\b\w/g, (letter) => letter.toUpperCase()) : "";
 }
 
 function nameOf(value: any, fallback = "") {
@@ -268,8 +276,32 @@ export function priceWithPlan(plan: any, input: RateLookupInput): ResolvedRate |
   if (input.kind === "demo") return fromPlan(planAmount(plan.demoRate), "per_class", "demo");
   if (input.kind === "substitute") return fromPlan(planAmount(plan.substituteRate), "per_class", "substitute");
   if (input.kind === "demoConversionBonus") return fromPlan(planAmount(plan.conversionBonus), "per_class", "demoConversionBonus");
-  const own = cardForScope("classroom_coach", "regular", input);
-  return own ? { amount: own.value.amount, unit: own.value.unit, source: "classroom_coach", kind: "regular", rateId: idOf(own.card._id) } : null;
+  return coachBatchRate(input);
+}
+
+/**
+ * A coach's regular-class rate for a batch on a date: the most recently started
+ * rate set for this coach on the batch (it follows the batch through every
+ * course it moves on to) or on this one classroom. Latest start date wins, so a
+ * rate saved today replaces an older one whichever way the older one was set.
+ */
+export function coachBatchRate(input: Omit<RateLookupInput, "kind">): ResolvedRate | null {
+  let best: { card: any; value: { amount: number; unit: RateUnit } } | null = null;
+  for (const card of input.rates) {
+    if (card.isActive === false) continue;
+    if (idOf(card.coach) !== input.coachId) continue;
+    const matches =
+      (card.scope === "classroom_coach" && idOf(card.classroom) === input.classroomId) ||
+      (card.scope === "batch_coach" && input.batchIds.includes(idOf(card.batch)));
+    if (!matches) continue;
+    if (new Date(card.effectiveFrom || 0) > input.date) continue;
+    const value = rateValueFor(card, "regular");
+    if (!value) continue;
+    if (!best || new Date(card.effectiveFrom || 0) >= new Date(best.card.effectiveFrom || 0)) best = { card, value };
+  }
+  return best
+    ? { amount: best.value.amount, unit: best.value.unit, source: best.card.scope, kind: "regular", rateId: idOf(best.card._id) }
+    : null;
 }
 
 export type BuildPayEventsInput = {
@@ -310,6 +342,7 @@ export function buildPayEvents(input: BuildPayEventsInput): PayEvent[] {
     const isDemoClass = classroom.classroomType === "demo";
     const batchIds = (classroom.batches || []).map(idOf).filter(Boolean);
     const batchName = (classroom.batches || []).map((batch: any) => batch?.name).filter(Boolean).join(", ");
+    const level = levelName(classroom.level);
     const classroomCoach = classroom.coach || classroom.instructor;
     const sessions = Array.isArray(classroom.generatedSessions) ? classroom.generatedSessions : [];
 
@@ -361,6 +394,7 @@ export function buildPayEvents(input: BuildPayEventsInput): PayEvent[] {
           classroomTitle: classroom.title || "Classroom",
           isDemoClass,
           batchName: batchName || (isDemoClass ? "Demo" : "Unassigned"),
+          level,
           sessionId,
           sessionNumber: Number(session.sessionNumber || 0),
           topicName: session.topicName || "",
@@ -420,6 +454,7 @@ export function buildPayEvents(input: BuildPayEventsInput): PayEvent[] {
         classroomTitle: classroom.title || "Classroom",
         isDemoClass,
         batchName: batchName || (isDemoClass ? "Demo" : "Unassigned"),
+        level,
         sessionId,
         sessionNumber: Number(session.sessionNumber || 0),
         topicName: session.topicName || "",
@@ -474,6 +509,7 @@ export function buildPayEvents(input: BuildPayEventsInput): PayEvent[] {
       classroomTitle: classroom.title || "Demo",
       isDemoClass: true,
       batchName: "Demo conversion",
+      level: "",
       sessionId: "",
       sessionNumber: 0,
       topicName: conversion.studentName ? `${conversion.studentName} enrolled` : "Demo converted",
@@ -538,6 +574,7 @@ export function monthlyPayEvents(plans: any[], range: { from: Date; to: Date }, 
         classroomTitle: `Fixed monthly pay - ${monthLabel(month)}`,
         isDemoClass: false,
         batchName: "",
+        level: "",
         sessionId: "",
         sessionNumber: 0,
         topicName: "",

@@ -5,7 +5,7 @@ import { Classroom } from "@/models/Classroom";
 import { Booking } from "@/models/Booking";
 import { User } from "@/models/User";
 import { CoachPayPlan, CoachPayProposal, CoachRate, NoShowRuling, SessionPayOverride, type PayKind, type RateUnit } from "@/models/CoachPay";
-import { buildPayEvents, planFor, resolveRate, summarizePayEvents, REVIEWABLE_SESSION_STATUSES, type CoachPaySummary, type ResolvedRate } from "@/lib/coachPay";
+import { buildPayEvents, coachBatchRate, planFor, resolveRate, summarizePayEvents, REVIEWABLE_SESSION_STATUSES, type CoachPaySummary, type ResolvedRate } from "@/lib/coachPay";
 import { StaffInvoice } from "@/models/StaffInvoice";
 import { academyMonthOf, monthLabel } from "@/lib/feedback/feedbackCycleDates";
 import { effectiveSessionCoachId, scheduledPaymentMinutes, scheduledStartDate } from "@/lib/teachingStats";
@@ -113,7 +113,7 @@ export async function loadCoachPay(period: PayPeriod, filters: CoachPayFilters =
   const [classrooms, rates, overrides, rulings] = await Promise.all([
     Classroom.find(query)
       .select(
-        "title classroomType demoBooking coach instructor batches students durationMinutes classDate startDate startTime generatedSessions isSessionInstance"
+        "title level classroomType demoBooking coach instructor batches students durationMinutes classDate startDate startTime generatedSessions isSessionInstance"
       )
       .populate("coach instructor", "name username")
       .populate("batches", "name")
@@ -371,6 +371,122 @@ export async function loadCoachAssignments(coachId: string, now = new Date()): P
         : null,
     };
   });
+}
+
+export type CoachBatchRateRow = {
+  /** Batch id, or "" for a classroom that belongs to no batch. */
+  batchId: string;
+  /** Set only when `batchId` is "". */
+  classroomId: string;
+  title: string;
+  /** The courses (classroom series) this batch has had with the coach, oldest first. */
+  courses: string[];
+  isActive: boolean;
+  current: { amount: number; unit: RateUnit } | null;
+  history: string[];
+};
+
+function levelLabel(level: unknown) {
+  const text = String(level || "").replace(/_/g, " ").trim();
+  return text ? text.replace(/\b\w/g, (letter) => letter.toUpperCase()) : "";
+}
+
+/**
+ * A coach's regular-class rates, one row per batch. A batch that moved on to a
+ * new course has several classroom series under one batch code; they are one
+ * row, because the coach's rate belongs to the batch.
+ */
+export async function loadCoachBatchRates(coachId: string, now = new Date()): Promise<CoachBatchRateRow[]> {
+  await dbConnect();
+  const [classrooms, cards] = await Promise.all([
+    Classroom.find({
+      isSessionInstance: { $ne: true },
+      isTestClassroom: { $ne: true },
+      classroomType: { $ne: "demo" },
+      $or: [{ coach: coachId }, { instructor: coachId }],
+    })
+      .select("title level batches isActive createdAt generatedSessions.scheduledFor")
+      .populate("batches", "name")
+      .sort({ createdAt: 1 })
+      .lean(),
+    CoachRate.find({ coach: coachId, scope: { $in: ["classroom_coach", "batch_coach"] }, isActive: { $ne: false } }).lean(),
+  ]);
+
+  const groups = new Map<string, any[]>();
+  for (const room of classrooms as any[]) {
+    const batch = (room.batches || [])[0];
+    const key = batch ? `b:${idOf(batch)}` : `c:${idOf(room._id)}`;
+    groups.set(key, [...(groups.get(key) || []), room]);
+  }
+
+  const date = (value: unknown) =>
+    new Date(value as any).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" });
+
+  const rows: CoachBatchRateRow[] = [];
+  for (const [key, rooms] of groups) {
+    const batch = key.startsWith("b:") ? rooms[0].batches[0] : null;
+    const batchId = batch ? idOf(batch) : "";
+    const roomIds = rooms.map((room) => idOf(room._id));
+    const latest = rooms[rooms.length - 1];
+    const firstClass = (room: any) =>
+      Math.min(...(room.generatedSessions || []).map((session: any) => new Date(session.scheduledFor).getTime()).filter(Number.isFinite), Infinity);
+    // "Rate now" is for the level running now; a level that has not started yet
+    // is checked separately so a missing rate there is flagged, not hidden.
+    const running = [...rooms].reverse().find((room) => firstClass(room) <= now.getTime()) || rooms[0];
+    const rateFor = (room: any, date: Date) =>
+      coachBatchRate({ coachId, classroomId: idOf(room._id), batchIds: batchId ? [batchId] : [], date, rates: cards as any[] });
+    const current = rateFor(running, now);
+    const upcoming = rooms.filter((room) => firstClass(room) > now.getTime());
+    const sameTitle = rooms.every((room) => room.title === rooms[0].title);
+    const relevant = (cards as any[])
+      .filter(
+        (card) =>
+          card.regular?.amount !== null &&
+          card.regular?.amount !== undefined &&
+          ((card.scope === "batch_coach" && batchId && idOf(card.batch) === batchId) ||
+            (card.scope === "classroom_coach" && roomIds.includes(idOf(card.classroom))))
+      )
+      .sort((a, b) => new Date(b.effectiveFrom || 0).getTime() - new Date(a.effectiveFrom || 0).getTime());
+    const history = relevant
+      .filter((card) => idOf(card._id) !== current?.rateId || new Date(card.effectiveFrom || 0).getTime() > 0)
+      .map((card) => {
+        const start = new Date(card.effectiveFrom || 0);
+        const when = start.getTime() <= 0 ? "all classes" : `from ${date(start)}`;
+        const room = card.scope === "classroom_coach" && rooms.length > 1 ? rooms.find((item) => idOf(item._id) === idOf(card.classroom)) : null;
+        const course = room ? ` (${levelLabel(room.level) || "one course"})` : "";
+        return `${idOf(card._id) === current?.rateId ? "now: " : ""}Rs. ${Number(card.regular.amount) / 100}${course} ${when}`;
+      });
+    rows.push({
+      batchId,
+      classroomId: batchId ? "" : idOf(latest._id),
+      title: batch?.name || latest.title || "Batch",
+      courses: rooms.map((room) => {
+        const times = (room.generatedSessions || [])
+          .map((session: any) => new Date(session.scheduledFor).getTime())
+          .filter((time: number) => Number.isFinite(time))
+          .sort((a: number, b: number) => a - b);
+        const month = (time: number) => new Date(time).toLocaleDateString("en-IN", { month: "short", year: "numeric", timeZone: "Asia/Kolkata" });
+        const span = times.length
+          ? times[0] > now.getTime()
+            ? `from ${month(times[0])}`
+            : month(times[0]) === month(times[times.length - 1])
+              ? month(times[0])
+              : `${month(times[0])} - ${month(times[times.length - 1])}`
+          : "";
+        const name = sameTitle ? levelLabel(room.level) || room.title : `${room.title}${room.level ? ` (${levelLabel(room.level)})` : ""}`;
+        return `${name}${span ? `: ${span}` : ""}`;
+      }),
+      isActive: rooms.some((room) => room.isActive !== false),
+      current: current ? { amount: current.amount, unit: current.unit } : null,
+      history: [
+        ...(relevant.length > 1 || (relevant[0] && new Date(relevant[0].effectiveFrom || 0).getTime() > 0) ? history : []),
+        ...upcoming
+          .filter((room) => !rateFor(room, new Date(firstClass(room))))
+          .map((room) => `No rate yet for ${levelLabel(room.level) || room.title}, which starts ${date(firstClass(room))}`),
+      ],
+    });
+  }
+  return rows.sort((a, b) => Number(b.isActive) - Number(a.isActive) || a.title.localeCompare(b.title));
 }
 
 export type PayOverviewRow = {

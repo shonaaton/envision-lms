@@ -5,7 +5,7 @@ import { DataPanel, EmptyState, PageHeader } from "@/components/common/PageHeade
 import { BatchRateGrid, type BatchRateRow } from "@/components/coach-pay/BatchRateGrid";
 import { PAY_PLAN_LABELS } from "@/lib/coachPay";
 import { resolveCoachPayViewer } from "@/lib/coachPayAccess";
-import { listPayableCoaches, loadCoachAssignments, loadCoachPayPlans, type CoachAssignmentRow, type PayPlanRow } from "@/lib/coachPayData";
+import { listPayableCoaches, loadCoachBatchRates, loadCoachPayPlans, type CoachBatchRateRow, type PayPlanRow } from "@/lib/coachPayData";
 import { PayPlanForm, type PayPlanFormPlan } from "@/components/coach-pay/PayPlanForm";
 import { academyMonthOf, monthLabel } from "@/lib/feedback/feedbackCycleDates";
 import { dbConnect } from "@/lib/db";
@@ -33,15 +33,8 @@ export default async function CoachRatesPage({
 
   // A coach sees their own rates, read-only: the academy sets every rate.
   if (!viewer.canManageRates) {
-    const [rows, { current }] = await Promise.all([loadCoachAssignments(viewer.userId), loadCoachPayPlans(viewer.userId)]);
-    const planType = current?.type || "per_class";
-    // With a plan, a batch pays only the rate set for this coach there; the old
-    // academy- or batch-wide cards count only for coaches without a plan.
-    const batchRate = (row: CoachAssignmentRow) => {
-      if (!current) return row.effective.regular ? { amount: row.effective.regular.amount, unit: row.effective.regular.unit } : null;
-      const own = row.card?.values.regular;
-      return own && own.amount !== null ? { amount: own.amount, unit: own.unit } : null;
-    };
+    const [rows, { current }] = await Promise.all([loadCoachBatchRates(viewer.userId), loadCoachPayPlans(viewer.userId)]);
+    const planType: keyof typeof PAY_PLAN_LABELS = current?.type || "per_class";
     const planItems: Array<[string, string]> = !current
       ? []
       : planType === "monthly"
@@ -50,11 +43,11 @@ export default async function CoachRatesPage({
             ...(planType === "per_hour"
               ? ([["Hourly rate (regular and substitution classes)", current.hourlyRate === null ? "Not set yet" : `${formatINR(current.hourlyRate)} per hour`]] as Array<[string, string]>)
               : []),
-            ["Demo class", current.demoRate === null ? "From the rate cards" : `${formatINR(current.demoRate)} per demo`],
+            ["Demo class", current.demoRate === null ? "Not set yet" : `${formatINR(current.demoRate)} per demo`],
             ...(planType === "per_class"
-              ? ([["Substitution class", current.substituteRate === null ? "From the rate cards" : `${formatINR(current.substituteRate)} per class`]] as Array<[string, string]>)
+              ? ([["Substitution class", current.substituteRate === null ? "Not set yet" : `${formatINR(current.substituteRate)} per class`]] as Array<[string, string]>)
               : []),
-            ["Demo conversion incentive", current.conversionBonus === null ? "From the rate cards" : `${formatINR(current.conversionBonus)} per enrolment`],
+            ["Demo conversion incentive", current.conversionBonus === null ? "Not set yet" : `${formatINR(current.conversionBonus)} per enrolment`],
           ];
     return (
       <div className="min-h-screen bg-slate-50 px-4 py-4 text-slate-950 sm:px-6 lg:px-8">
@@ -93,7 +86,7 @@ export default async function CoachRatesPage({
             subtitle={planType === "per_hour" ? "Paid at your hourly rate" : "What each regular class pays"}
             icon={Layers}
           >
-            {rows.filter((row) => row.classroomType !== "demo").length === 0 ? (
+            {rows.length === 0 ? (
               <EmptyState title="No batches assigned" description="Batches you are assigned to appear here." />
             ) : (
               <div className="overflow-x-auto">
@@ -105,31 +98,31 @@ export default async function CoachRatesPage({
                     </tr>
                   </thead>
                   <tbody>
-                    {rows
-                      .filter((row) => row.classroomType !== "demo")
-                      .map((row) => (
-                        <tr key={row.classroomId} className="border-b border-slate-100 last:border-0">
-                          <td className="px-3 py-2">
-                            <div className="font-semibold text-slate-950">{row.classroomTitle}</div>
-                            <div className="text-xs text-slate-500">
-                              {row.batchName}
-                              {row.isActive ? "" : " - closed"}
-                            </div>
-                          </td>
-                          <td className="px-3 py-2 text-right tabular-nums">
-                            {planType === "per_hour" ? (
-                              <span className="text-slate-600">Hourly rate</span>
-                            ) : batchRate(row) ? (
-                              <>
-                                {formatINR(batchRate(row)!.amount)}
-                                <span className="ml-1 text-xs text-slate-400">{batchRate(row)!.unit === "per_hour" ? "/hr" : "/class"}</span>
-                              </>
-                            ) : (
-                              <span className="font-semibold text-rose-700">Not set yet</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
+                    {rows.map((row) => (
+                      <tr key={row.batchId || row.classroomId} className="border-b border-slate-100 last:border-0">
+                        <td className="px-3 py-2">
+                          <div className="font-semibold text-slate-950">
+                            {row.title}
+                            {row.isActive ? "" : <span className="ml-1 text-xs font-normal text-slate-500">(closed)</span>}
+                          </div>
+                          {row.courses.length > 0 && (
+                            <div className="mt-0.5 text-xs text-slate-600">{row.courses.join("  →  ")}</div>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums">
+                          {planType === "per_hour" ? (
+                            <span className="text-slate-600">Hourly rate</span>
+                          ) : row.current ? (
+                            <>
+                              {formatINR(row.current.amount)}
+                              <span className="ml-1 text-xs text-slate-400">{row.current.unit === "per_hour" ? "/hr" : "/class"}</span>
+                            </>
+                          ) : (
+                            <span className="font-semibold text-rose-700">Not set yet</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
@@ -145,13 +138,9 @@ export default async function CoachRatesPage({
   const selected = coaches.find((coach) => String(coach._id) === selectedCoach);
   const coachName = selected?.name || selected?.username || "This coach";
 
-  const [assignments, planState, ownCards] = selected
-    ? await Promise.all([
-        loadCoachAssignments(selectedCoach),
-        loadCoachPayPlans(selectedCoach),
-        CoachRate.find({ scope: "classroom_coach", coach: selectedCoach, isActive: { $ne: false } }).sort({ effectiveFrom: -1 }).lean(),
-      ])
-    : [[], { plans: [], current: null }, []];
+  const [batchRates, planState] = selected
+    ? await Promise.all([loadCoachBatchRates(selectedCoach), loadCoachPayPlans(selectedCoach)])
+    : [[], { plans: [], current: null }];
 
   const toFormPlan = (plan: PayPlanRow): PayPlanFormPlan => {
     const month = academyMonthOf(plan.effectiveFrom);
@@ -159,33 +148,15 @@ export default async function CoachRatesPage({
   };
 
   const now = new Date();
-  const batchRows: BatchRateRow[] = (assignments as CoachAssignmentRow[])
-    .filter((row) => row.classroomType !== "demo")
-    .map((row) => {
-      const cards = (ownCards as any[]).filter(
-        (card) => String(card.classroom) === row.classroomId && card.regular?.amount !== null && card.regular?.amount !== undefined
-      );
-      const inForce = cards.find((card) => new Date(card.effectiveFrom) <= now) || null;
-      return {
-        classroomId: row.classroomId,
-        title: row.classroomTitle,
-        batchName: row.batchName,
-        isActive: row.isActive,
-        current: inForce ? Number(inForce.regular.amount) : null,
-        history: cards
-          .filter((card) => card !== inForce)
-          .map((card) => {
-            const start = new Date(card.effectiveFrom);
-            const label = start.getTime() <= 0 ? "all earlier classes" : `from ${monthLabel(academyMonthOf(start))}`;
-            return `${formatINR(Number(card.regular.amount))} ${label}`;
-          })
-          .concat(
-            inForce && new Date(inForce.effectiveFrom).getTime() > 0
-              ? [`current rate applies from ${new Date(inForce.effectiveFrom).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}`]
-              : []
-          ),
-      };
-    });
+  const batchRows: BatchRateRow[] = (batchRates as CoachBatchRateRow[]).map((row) => ({
+    batchId: row.batchId,
+    classroomId: row.classroomId,
+    title: row.title,
+    courses: row.courses,
+    isActive: row.isActive,
+    current: row.current ? row.current.amount : null,
+    history: row.history,
+  }));
 
   const planType = planState.current?.type || null;
 

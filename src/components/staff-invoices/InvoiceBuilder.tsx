@@ -271,7 +271,7 @@ export function InvoiceBuilder(props: InvoiceBuilderProps) {
                       <div className="font-semibold text-slate-950">{group.title}</div>
                       <div className="text-xs text-slate-500">
                         {group.group === "class"
-                          ? [group.batchName, KIND_LABELS[group.kind], group.unit === "per_hour" ? group.note : ""].filter(Boolean).join(" - ")
+                          ? [group.level ? `${group.level} level` : "", KIND_LABELS[group.kind], group.unit === "per_hour" ? group.note : ""].filter(Boolean).join(" - ")
                           : group.group === "demo"
                             ? "Trial classes across all demo classrooms"
                             : group.group === "bonus"

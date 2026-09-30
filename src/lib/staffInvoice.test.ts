@@ -29,6 +29,7 @@ function event(overrides: Partial<PayEvent>): PayEvent {
     classroomTitle: "Beginner L1 - Mon/Wed",
     isDemoClass: false,
     batchName: "Batch A",
+    level: "",
     sessionId: Math.random().toString(36),
     sessionNumber: 1,
     topicName: "",

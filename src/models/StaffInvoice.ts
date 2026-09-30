@@ -54,6 +54,7 @@ const StaffInvoiceLineSchema = new Schema(
     classroom: { type: Schema.Types.ObjectId, ref: "Classroom" },
     title: { type: String, required: true },
     batchName: String,
+    level: { type: String, default: "" },
     quantity: { type: Number, required: true },
     minutes: { type: Number, default: 0 },
     /** How `rate` reads: per class, per hour, or the month's fixed amount. */

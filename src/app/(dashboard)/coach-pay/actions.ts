@@ -13,6 +13,7 @@ import { isValidRateScope } from "@/lib/coachPay";
 import { cancelPayProposalTask, raisePayProposalTask, resolveNoShowRulingTask, resolvePayProposalTask } from "@/lib/tasks/taskTriggers";
 import { CoachPayPlan, CoachPayProposal, CoachRate, PAY_PLAN_TYPES, NoShowRuling, SessionPayOverride, PAY_KINDS, RATE_UNITS } from "@/models/CoachPay";
 import { Attendance } from "@/models/Attendance";
+import { Batch } from "@/models/Batch";
 import { Classroom } from "@/models/Classroom";
 import { CreditLedger, FeeAssignment } from "@/models/Fee";
 
@@ -627,10 +628,14 @@ export async function deleteCoachPayPlan(formData: FormData): Promise<PayPlanAct
 /**
  * A per-class coach's rate for one of their batches (regular classes).
  *
- * "All classes" replaces every dated rate this coach has for the batch with a
- * single one, so an earlier rate that started mid-month can no longer leave the
- * month's first classes unpriced. Choosing a month adds a rate from that month,
- * leaving earlier months as they were.
+ * Set on the batch, not on one classroom: a batch moving on to its next course
+ * gets a new classroom series under the same batch code, and the coach's rate
+ * follows it. "All classes" replaces every rate this coach had on the batch
+ * and its classrooms with one, so an old rate that started mid-month can no
+ * longer leave a month's first classes unpriced. Choosing a month adds a rate
+ * from that month and leaves earlier months as they were.
+ *
+ * A classroom with no batch is priced on its own, as before.
  */
 export async function saveBatchRate(formData: FormData): Promise<PayPlanActionResult> {
   const session = await requireCoachPayPermission("manage_rates");
@@ -638,8 +643,9 @@ export async function saveBatchRate(formData: FormData): Promise<PayPlanActionRe
   await dbConnect();
 
   const coach = text(formData, "coach");
+  const batch = text(formData, "batch");
   const classroom = text(formData, "classroom");
-  if (!isValidObjectId(coach) || !isValidObjectId(classroom)) return { ok: false, error: "Unknown coach or batch." };
+  if (!isValidObjectId(coach) || !(isValidObjectId(batch) || isValidObjectId(classroom))) return { ok: false, error: "Unknown coach or batch." };
   const amount = paise(formData, "amount");
   if (amount === null) return { ok: false, error: "Enter the rate per class." };
   const from = text(formData, "from");
@@ -647,12 +653,28 @@ export async function saveBatchRate(formData: FormData): Promise<PayPlanActionRe
 
   const actorId = (session.user as any).id;
   const coachId = new Types.ObjectId(coach);
-  const classroomId = new Types.ObjectId(classroom);
   const effectiveFrom = from ? monthBounds(from).start : new Date(0);
-  if (!from) {
-    await CoachRate.deleteMany({ scope: "classroom_coach", coach: coachId, classroom: classroomId, effectiveFrom: { $ne: effectiveFrom } });
+
+  let key: Record<string, unknown>;
+  let label = "This batch";
+  if (isValidObjectId(batch)) {
+    const batchId = new Types.ObjectId(batch);
+    const rooms = await Classroom.find({ batches: batchId }).select("_id").lean();
+    const batchDoc: any = await Batch.findById(batchId).select("name").lean();
+    label = batchDoc?.name || label;
+    if (!from) {
+      await CoachRate.deleteMany({ scope: "classroom_coach", coach: coachId, classroom: { $in: rooms.map((room: any) => room._id) } });
+      await CoachRate.deleteMany({ scope: "batch_coach", coach: coachId, batch: batchId, effectiveFrom: { $ne: effectiveFrom } });
+    }
+    key = { scope: "batch_coach", coach: coachId, batch: batchId, classroom: null, effectiveFrom };
+  } else {
+    const classroomId = new Types.ObjectId(classroom);
+    const room: any = await Classroom.findById(classroomId).select("title").lean();
+    label = room?.title || label;
+    if (!from) await CoachRate.deleteMany({ scope: "classroom_coach", coach: coachId, classroom: classroomId, effectiveFrom: { $ne: effectiveFrom } });
+    key = { scope: "classroom_coach", coach: coachId, batch: null, classroom: classroomId, effectiveFrom };
   }
-  const key = { scope: "classroom_coach" as const, coach: coachId, batch: null, classroom: classroomId, effectiveFrom };
+
   const saved = await CoachRate.findOneAndUpdate(
     key,
     {
@@ -668,12 +690,11 @@ export async function saveBatchRate(formData: FormData): Promise<PayPlanActionRe
     label: `Set a coach's batch rate${from ? ` from ${from}` : " for all classes"}`,
     entityType: "CoachRate",
     entityId: saved._id.toString(),
-    metadata: { coach, classroom, amount, from: from || "all" },
+    metadata: { coach, batch, classroom, amount, from: from || "all" },
   });
   refresh();
   revalidatePath("/staff-invoices");
-  const room: any = await Classroom.findById(classroomId).select("title").lean();
-  return { ok: true, message: `Saved. ${room?.title || "This batch"} pays ${rupeeText(amount)} per class ${from ? `from ${monthLabel(from)}` : "for all its classes"}.` };
+  return { ok: true, message: `Saved. ${label} pays ${rupeeText(amount)} per class ${from ? `from ${monthLabel(from)}` : "for all its classes"}.` };
 }
 
 /** A coach taking back a submission an admin has not answered yet. */

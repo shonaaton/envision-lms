@@ -39,7 +39,7 @@ function lineSubtitle(line: any) {
   if (line.group === "monthly") return line.note || "Fixed amount for the month";
   if (line.group === "class") {
     const kind = KIND_LABELS[line.kind as keyof typeof KIND_LABELS];
-    return line.unit === "per_hour" && line.note ? `${kind} - ${line.note}` : [line.batchName, kind].filter(Boolean).join(" - ");
+    return [line.level ? `${line.level} level` : "", line.unit === "per_hour" && line.note ? `${kind} - ${line.note}` : kind].filter(Boolean).join(" - ");
   }
   return line.group === "demo" ? "Trial classes taken this month" : "Demo students who enrolled";
 }

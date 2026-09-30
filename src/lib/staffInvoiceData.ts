@@ -288,6 +288,7 @@ export async function generateStaffInvoice(userId: string, input: GenerateInvoic
       classroom: isValidObjectId(line.classroomId) ? new Types.ObjectId(line.classroomId) : undefined,
       title: line.title,
       batchName: line.batchName,
+      level: line.level,
       quantity: line.quantity,
       minutes: line.minutes,
       unit: line.unit,

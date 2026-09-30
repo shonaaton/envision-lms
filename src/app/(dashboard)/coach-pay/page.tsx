@@ -358,6 +358,7 @@ export default async function CoachPayPage({
                         <div className="font-medium text-slate-950">{event.classroomTitle}</div>
                         <div className="text-xs text-slate-500">
                           {event.batchName}
+                          {event.level ? ` - ${event.level} level` : ""}
                           {event.sessionNumber ? ` - Session ${event.sessionNumber}` : ""}
                           {event.topicName ? ` - ${event.topicName}` : ""}
                         </div>

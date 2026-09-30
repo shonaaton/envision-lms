@@ -10,13 +10,16 @@ import { formatINR } from "@/lib/utils";
 type ActionResult = { ok: true; message: string } | { ok: false; error: string };
 
 export type BatchRateRow = {
+  /** Batch id, or "" for a classroom with no batch (then `classroomId` is set). */
+  batchId: string;
   classroomId: string;
   title: string;
-  batchName: string;
+  /** Levels this batch has had, in order, e.g. "Intermediate: Sep 2026". */
+  courses: string[];
   isActive: boolean;
   /** Paise per class in force today, or null when none is set. */
   current: number | null;
-  /** Other dated rates for this batch, e.g. "Rs. 500 from Aug 2026". */
+  /** The dated rates behind it, e.g. "Rs. 500 from 11 Sept 2026". */
   history: string[];
 };
 
@@ -28,11 +31,23 @@ function Row({ row, coachId, action }: { row: BatchRateRow; coachId: string; act
   return (
     <tr className="border-b border-slate-100 align-top last:border-0">
       <td className="px-3 py-2">
-        <div className="font-semibold text-slate-950">{row.title}</div>
-        <div className="text-xs text-slate-500">
-          {row.batchName}
-          {row.isActive ? "" : " - closed"}
+        <div className="font-semibold text-slate-950">
+          {row.title}
+          {row.isActive ? "" : <span className="ml-1 text-xs font-normal text-slate-500">(closed)</span>}
         </div>
+        {row.courses.length > 0 && (
+          <div className="mt-0.5 flex flex-wrap items-center gap-1 text-xs text-slate-600">
+            {row.courses.map((course, index) => (
+              <span key={`${course}-${index}`} className="flex items-center gap-1">
+                {index > 0 && <span className="text-slate-400" aria-label="then">&rarr;</span>}
+                <span className="rounded-full bg-brand/[0.06] px-2 py-0.5 font-semibold text-brand">{course}</span>
+              </span>
+            ))}
+          </div>
+        )}
+        {row.courses.length > 1 && (
+          <div className="mt-0.5 text-[11px] text-slate-500">One rate covers every level of this batch.</div>
+        )}
       </td>
       <td className="px-3 py-2 text-right">
         {row.current === null ? (
@@ -40,7 +55,11 @@ function Row({ row, coachId, action }: { row: BatchRateRow; coachId: string; act
         ) : (
           <span className="font-bold tabular-nums">{formatINR(row.current)}</span>
         )}
-        {row.history.length > 0 && <div className="mt-0.5 text-[11px] text-slate-500">{row.history.join("; ")}</div>}
+        {row.history.map((line) => (
+          <div key={line} className={`mt-0.5 text-[11px] ${line.startsWith("No rate yet") ? "font-bold text-rose-700" : "text-slate-500"}`}>
+            {line}
+          </div>
+        ))}
       </td>
       <td className="px-3 py-2">
         <form
@@ -59,6 +78,7 @@ function Row({ row, coachId, action }: { row: BatchRateRow; coachId: string; act
           className="flex flex-wrap items-center justify-end gap-2"
         >
           <input type="hidden" name="coach" value={coachId} />
+          <input type="hidden" name="batch" value={row.batchId} />
           <input type="hidden" name="classroom" value={row.classroomId} />
           <div className="flex items-center gap-1">
             <span className="text-xs text-slate-500">Rs.</span>
@@ -117,7 +137,7 @@ export function BatchRateGrid({
         </thead>
         <tbody>
           {rows.map((row) => (
-            <Row key={row.classroomId} row={row} coachId={coachId} action={action} />
+            <Row key={row.batchId || row.classroomId} row={row} coachId={coachId} action={action} />
           ))}
         </tbody>
       </table>

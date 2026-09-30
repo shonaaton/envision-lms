@@ -1,11 +1,14 @@
 "use client";
 
-import { useState } from "react";
-import { Save, Trash2 } from "lucide-react";
+import { useState, useTransition } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { CheckCircle2, Save, Trash2 } from "lucide-react";
 
 import { formatINR } from "@/lib/utils";
 
 type PlanType = "per_class" | "per_hour" | "monthly";
+type ActionResult = { ok: true; message: string } | { ok: false; error: string };
 
 export type PayPlanFormPlan = {
   id: string;
@@ -58,21 +61,59 @@ export function PayPlanForm({
   defaultMonth,
   saveAction,
   deleteAction,
+  savedMessage = "",
 }: {
   coachId: string;
   coachName: string;
   current: PayPlanFormPlan | null;
   plans: PayPlanFormPlan[];
   defaultMonth: string;
-  saveAction: (formData: FormData) => void | Promise<void>;
-  deleteAction: (formData: FormData) => void | Promise<void>;
+  saveAction: (formData: FormData) => Promise<ActionResult>;
+  deleteAction: (formData: FormData) => Promise<ActionResult>;
+  /** A confirmation carried in the address after saving; shown by the form. */
+  savedMessage?: string;
 }) {
+  const router = useRouter();
+  const pathname = usePathname();
   const [type, setType] = useState<PlanType>(current?.type || "per_class");
+  const [saved, setSaved] = useState("");
+  const [error, setError] = useState("");
+  const [pending, startTransition] = useTransition();
+
+  function run(action: (formData: FormData) => Promise<ActionResult>, formData: FormData) {
+    setError("");
+    startTransition(async () => {
+      const result = await action(formData);
+      if (!result.ok) {
+        setSaved("");
+        setError(result.error);
+        toast.error(result.error);
+        if (savedMessage) router.replace(`${pathname}?${new URLSearchParams({ coach: coachId }).toString()}`, { scroll: false });
+        return;
+      }
+      setSaved(result.message);
+      toast.success(result.message);
+      // The confirmation is also carried in the address, so the page shows it
+      // even when saving a first plan re-renders the whole form.
+      router.replace(`${pathname}?${new URLSearchParams({ coach: coachId, saved: result.message }).toString()}`, { scroll: false });
+      router.refresh();
+    });
+  }
   const help = TYPES.find((item) => item.id === type)?.help;
 
   return (
     <div className="grid gap-4">
-      <form action={saveAction} className="grid gap-3" key={`${coachId}:${current?.id || "new"}`}>
+      {(savedMessage || saved) && (
+        <div className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-900" role="status">
+          <CheckCircle2 size={16} className="mt-0.5 shrink-0" /> {savedMessage || saved}
+        </div>
+      )}
+      {error && (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-900" role="alert">
+          {error}
+        </div>
+      )}
+      <form action={(formData) => run(saveAction, formData)} className="grid gap-3" key={`${coachId}:${current?.id || "new"}`}>
         <input type="hidden" name="coach" value={coachId} />
         <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={`How ${coachName} is paid`}>
           {TYPES.map((item) => (
@@ -111,8 +152,8 @@ export function PayPlanForm({
           Leave demo or substitution blank to use the rate cards below instead; enter 0 for unpaid.
         </p>
         <div>
-          <button type="submit" className="btn-primary h-9 px-4 text-xs">
-            <Save size={14} /> Save pay plan
+          <button type="submit" disabled={pending} className="btn-primary h-9 px-4 text-xs">
+            <Save size={14} /> {pending ? "Saving..." : "Save pay plan"}
           </button>
         </div>
       </form>
@@ -148,7 +189,11 @@ export function PayPlanForm({
                   </td>
                   <td className="px-2 py-1.5 text-right tabular-nums">{plan.type === "monthly" ? "Included" : money(plan.conversionBonus)}</td>
                   <td className="px-2 py-1.5 text-right">
-                    <form action={deleteAction}>
+                    <form
+                      action={(formData) => {
+                        if (window.confirm(`Remove the pay plan from ${plan.monthLabel}?`)) run(deleteAction, formData);
+                      }}
+                    >
                       <input type="hidden" name="id" value={plan.id} />
                       <button type="submit" className="btn-ghost h-7 px-2 text-rose-600" aria-label={`Remove the plan from ${plan.monthLabel}`}>
                         <Trash2 size={13} />

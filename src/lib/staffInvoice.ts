@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { ACADEMY_DEFAULTS } from "@/lib/branding";
 import type { PayEvent } from "@/lib/coachPay";
+import { formatHours } from "@/lib/hours";
 import { academyDateKey } from "@/lib/academyTime";
 import { academyMonthOf, monthBounds, monthLabel, shiftMonth } from "@/lib/feedback/feedbackCycleDates";
 
@@ -89,10 +90,6 @@ function groupOf(kind: PayEvent["kind"]): DraftGroup["group"] {
   return kind === "demo" ? "demo" : kind === "demoConversionBonus" ? "bonus" : kind === "monthly" ? "monthly" : "class";
 }
 
-function hoursText(minutes: number) {
-  const hours = minutes / 60;
-  return Number.isInteger(hours) ? String(hours) : hours.toFixed(1);
-}
 
 /**
  * Turns a month of pay events into invoice rows, all priced by the academy:
@@ -170,10 +167,15 @@ export function groupInvoiceLines(events: PayEvent[]): InvoiceDraftGroups {
   }
 
   const groups = Array.from(rows.values());
+  for (const row of groups) {
+    if (row.unit === "per_hour") {
+      row.note = `${row.quantity} class${row.quantity === 1 ? "" : "es"} - ${formatHours(row.minutes)} hours at the hourly rate`;
+    }
+  }
   const monthly = groups.find((row) => row.group === "monthly");
   if (monthly) {
     monthly.note = covered.count
-      ? `Covers ${covered.count} class${covered.count === 1 ? "" : "es"} (${hoursText(covered.minutes)} hours) taken this month`
+      ? `Covers ${covered.count} class${covered.count === 1 ? "" : "es"} (${formatHours(covered.minutes)} hours) taken this month`
       : "Fixed amount for the month";
     monthly.minutes = covered.minutes;
   }
@@ -401,6 +403,5 @@ export function invoiceMoney(paise: number) {
 }
 
 export function hoursLabel(minutes: number) {
-  const hours = (Number(minutes) || 0) / 60;
-  return Number.isInteger(hours) ? String(hours) : hours.toFixed(1);
+  return formatHours(minutes);
 }

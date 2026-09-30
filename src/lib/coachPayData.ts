@@ -5,7 +5,8 @@ import { Classroom } from "@/models/Classroom";
 import { Booking } from "@/models/Booking";
 import { User } from "@/models/User";
 import { CoachPayPlan, CoachPayProposal, CoachRate, NoShowRuling, SessionPayOverride, type PayKind, type RateUnit } from "@/models/CoachPay";
-import { buildPayEvents, resolveRate, summarizePayEvents, REVIEWABLE_SESSION_STATUSES, type ResolvedRate } from "@/lib/coachPay";
+import { buildPayEvents, planFor, resolveRate, summarizePayEvents, REVIEWABLE_SESSION_STATUSES, type CoachPaySummary, type ResolvedRate } from "@/lib/coachPay";
+import { StaffInvoice } from "@/models/StaffInvoice";
 import { effectiveSessionCoachId, scheduledPaymentMinutes, scheduledStartDate } from "@/lib/teachingStats";
 import type { PayPeriod } from "@/lib/payPeriods";
 
@@ -369,6 +370,75 @@ export async function loadCoachAssignments(coachId: string, now = new Date()): P
         : null,
     };
   });
+}
+
+export type PayOverviewRow = {
+  coachId: string;
+  name: string;
+  role: string;
+  isActive: boolean;
+  plan: { type: "per_class" | "per_hour" | "monthly"; detail: string } | null;
+  classes: number;
+  minutes: number;
+  earned: number;
+  unpriced: number;
+  pendingReview: number;
+  invoice: { id: string; number: string; status: string; total: number } | null;
+};
+
+function planDetail(plan: any) {
+  const money = (paise: unknown) =>
+    paise === null || paise === undefined ? "not set" : `₹${new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(Number(paise) / 100)}`;
+  if (plan.type === "monthly") return `${money(plan.monthlyAmount)} a month`;
+  if (plan.type === "per_hour") return `${money(plan.hourlyRate)} an hour`;
+  return "Batch rates";
+}
+
+/**
+ * Everyone the academy pays, in one list: every active coach, plus anyone else
+ * with a pay plan or with classes in the period. Joined to the period's pay
+ * summary, their plan in force at the end of the period, and - for a single
+ * month - their invoice for it.
+ */
+export async function loadPayOverview(period: PayPeriod, summary: CoachPaySummary): Promise<PayOverviewRow[]> {
+  await dbConnect();
+  const monthKey = period.month || "";
+  const [people, plans, invoices] = await Promise.all([
+    User.find({ role: { $in: ["instructor", "admin", "sub-admin"] } }).select("name username role isActive").sort({ name: 1 }).lean(),
+    CoachPayPlan.find({}).lean(),
+    monthKey ? StaffInvoice.find({ month: monthKey }).select("staff invoiceNumber status total").lean() : Promise.resolve([]),
+  ]);
+  const summaryByCoach = new Map(summary.rows.map((row) => [row.coachId, row]));
+  const planAt = new Date(Math.min(period.to.getTime(), Date.now()));
+  const invoiceByStaff = new Map((invoices as any[]).map((invoice) => [idOf(invoice.staff), invoice]));
+
+  const rows: PayOverviewRow[] = [];
+  for (const person of people as any[]) {
+    const coachId = idOf(person._id);
+    const plan = planFor(plans as any[], coachId, planAt);
+    const pay = summaryByCoach.get(coachId);
+    const include = (person.role === "instructor" && person.isActive !== false) || plan || pay;
+    if (!include) continue;
+    const invoice = invoiceByStaff.get(coachId);
+    rows.push({
+      coachId,
+      name: person.name || person.username || "Coach",
+      role: person.role,
+      isActive: person.isActive !== false,
+      plan: plan ? { type: plan.type, detail: planDetail(plan) } : null,
+      classes: pay ? pay.regularClasses + pay.demoClasses + pay.substitutionClasses : 0,
+      minutes: pay?.minutes || 0,
+      earned: pay?.totalAmount || 0,
+      unpriced: pay?.unpriced || 0,
+      pendingReview: pay?.pendingReview || 0,
+      invoice: invoice ? { id: idOf(invoice._id), number: invoice.invoiceNumber, status: invoice.status, total: Number(invoice.total || 0) } : null,
+    });
+  }
+  // People needing attention first, then the biggest amounts.
+  return rows.sort(
+    (a, b) =>
+      Number(b.unpriced > 0 || !b.plan) - Number(a.unpriced > 0 || !a.plan) || b.earned - a.earned || a.name.localeCompare(b.name)
+  );
 }
 
 export type PayPlanRow = {

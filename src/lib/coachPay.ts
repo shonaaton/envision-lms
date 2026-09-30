@@ -245,23 +245,31 @@ function fromPlan(amount: number | null, unit: RateUnit, kind: PayKind): Resolve
 }
 
 /**
- * The price of one class under the coach's plan. Per hour: regular classes and
- * substitutions at the hourly rate; demos at the plan's demo rate. Per class:
- * regular classes from the batch rate cards; demos and substitutions at the
- * plan's amounts when set. Anything the plan leaves blank falls back to the
- * rate cards, as it did before plans existed.
+ * The price of one class under the coach's plan - and only from what the admin
+ * set for that coach, so what the Set Pay screen shows is exactly what is paid:
+ *
+ * - per hour:  regular and substitution classes at the hourly rate; demos and
+ *              conversions at the plan's amounts;
+ * - per class: regular classes at the batch rate set for this coach (the
+ *              coach's batch grid); demos, substitutions and conversions at the
+ *              plan's amounts.
+ *
+ * Nothing falls back to academy-, batch- or classroom-wide cards: an amount the
+ * plan leaves empty is "no rate set", which holds the invoice until an admin
+ * sets it. A coach with no plan at all is still priced the old way, from the
+ * rate cards, until they are given one.
  */
 export function priceWithPlan(plan: any, input: RateLookupInput): ResolvedRate | null {
-  const type: PayPlanType = plan?.type || "per_class";
+  if (!plan) return resolveRate(input);
+  const type: PayPlanType = plan.type || "per_class";
   if (type === "per_hour" && (input.kind === "regular" || input.kind === "substitute")) {
     return fromPlan(planAmount(plan.hourlyRate), "per_hour", input.kind);
   }
-  if (input.kind === "demo") return fromPlan(planAmount(plan?.demoRate), "per_class", "demo") || resolveRate(input);
-  if (input.kind === "substitute") return fromPlan(planAmount(plan?.substituteRate), "per_class", "substitute") || resolveRate(input);
-  if (input.kind === "demoConversionBonus") {
-    return fromPlan(planAmount(plan?.conversionBonus), "per_class", "demoConversionBonus") || resolveRate(input);
-  }
-  return resolveRate(input);
+  if (input.kind === "demo") return fromPlan(planAmount(plan.demoRate), "per_class", "demo");
+  if (input.kind === "substitute") return fromPlan(planAmount(plan.substituteRate), "per_class", "substitute");
+  if (input.kind === "demoConversionBonus") return fromPlan(planAmount(plan.conversionBonus), "per_class", "demoConversionBonus");
+  const own = cardForScope("classroom_coach", "regular", input);
+  return own ? { amount: own.value.amount, unit: own.value.unit, source: "classroom_coach", kind: "regular", rateId: idOf(own.card._id) } : null;
 }
 
 export type BuildPayEventsInput = {
@@ -671,6 +679,8 @@ export const PAY_STATUS_LABELS: Record<PayEventStatus, string> = {
   declined: "Not paid",
   unpriced: "No rate set",
 };
+
+export { formatHours } from "@/lib/hours";
 
 export const PAY_PLAN_LABELS: Record<PayPlanType, string> = {
   per_class: "Per class",

@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { Types, isValidObjectId } from "mongoose";
 
 import { dbConnect } from "@/lib/db";
-import { monthBounds } from "@/lib/feedback/feedbackCycleDates";
+import { monthBounds, monthLabel } from "@/lib/feedback/feedbackCycleDates";
+import { User } from "@/models/User";
 import { recordActivity } from "@/lib/activity";
 import { consumeAttendanceCredit } from "@/lib/fees";
 import { requireCoachPayPermission, requireCoachSelf } from "@/lib/coachPayAccess";
@@ -529,17 +530,23 @@ export async function submitSessionRateProposal(_formData: FormData) {
  * conversion amounts. Dated from the first of a month, so changing a plan in
  * October leaves September's pay exactly as it was.
  */
-export async function saveCoachPayPlan(formData: FormData) {
+export type PayPlanActionResult = { ok: true; message: string } | { ok: false; error: string };
+
+function rupeeText(paise: number | null) {
+  return paise === null ? "" : `Rs. ${new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(paise / 100)}`;
+}
+
+export async function saveCoachPayPlan(formData: FormData): Promise<PayPlanActionResult> {
   const session = await requireCoachPayPermission("manage_rates");
-  if (!session?.user) throw new Error("Forbidden");
+  if (!session?.user) return { ok: false, error: "You do not have permission to set coach pay." };
   await dbConnect();
 
   const coach = text(formData, "coach");
-  if (!isValidObjectId(coach)) throw new Error("Choose a coach");
+  if (!isValidObjectId(coach)) return { ok: false, error: "Choose a coach first." };
   const type = text(formData, "type");
-  if (!(PAY_PLAN_TYPES as readonly string[]).includes(type)) throw new Error("Choose how this coach is paid");
+  if (!(PAY_PLAN_TYPES as readonly string[]).includes(type)) return { ok: false, error: "Choose how this coach is paid." };
   const month = text(formData, "effectiveMonth");
-  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new Error("Choose the month this applies from");
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return { ok: false, error: "Choose the month this applies from." };
   const effectiveFrom = monthBounds(month).start;
 
   const values = {
@@ -550,8 +557,8 @@ export async function saveCoachPayPlan(formData: FormData) {
     substituteRate: type === "per_class" ? paise(formData, "substituteRate") : null,
     conversionBonus: type === "monthly" ? null : paise(formData, "conversionBonus"),
   };
-  if (type === "per_hour" && values.hourlyRate === null) throw new Error("Enter the hourly rate");
-  if (type === "monthly" && values.monthlyAmount === null) throw new Error("Enter the monthly amount");
+  if (type === "per_hour" && values.hourlyRate === null) return { ok: false, error: "Enter the hourly rate." };
+  if (type === "monthly" && values.monthlyAmount === null) return { ok: false, error: "Enter the monthly amount." };
 
   const actorId = (session.user as any).id;
   const saved = await CoachPayPlan.findOneAndUpdate(
@@ -574,13 +581,24 @@ export async function saveCoachPayPlan(formData: FormData) {
   });
   refresh();
   revalidatePath("/staff-invoices");
+
+  const person: any = await User.findById(coach).select("name username").lean();
+  const who = person?.name || person?.username || "This coach";
+  const when = monthLabel(month);
+  const summary =
+    type === "monthly"
+      ? `a fixed ${rupeeText(values.monthlyAmount)} a month`
+      : type === "per_hour"
+        ? `${rupeeText(values.hourlyRate)} per hour`
+        : "per class at their batch rates";
+  return { ok: true, message: `Saved. ${who} is paid ${summary} from ${when}.` };
 }
 
-export async function deleteCoachPayPlan(formData: FormData) {
+export async function deleteCoachPayPlan(formData: FormData): Promise<PayPlanActionResult> {
   const session = await requireCoachPayPermission("manage_rates");
-  if (!session?.user) throw new Error("Forbidden");
+  if (!session?.user) return { ok: false, error: "You do not have permission to set coach pay." };
   const id = text(formData, "id");
-  if (!isValidObjectId(id)) throw new Error("Unknown plan");
+  if (!isValidObjectId(id)) return { ok: false, error: "Unknown plan." };
   await dbConnect();
   const removed: any = await CoachPayPlan.findByIdAndDelete(id).lean();
   if (removed) {
@@ -596,6 +614,59 @@ export async function deleteCoachPayPlan(formData: FormData) {
   }
   refresh();
   revalidatePath("/staff-invoices");
+  return { ok: true, message: "Plan removed." };
+}
+
+/**
+ * A per-class coach's rate for one of their batches (regular classes).
+ *
+ * "All classes" replaces every dated rate this coach has for the batch with a
+ * single one, so an earlier rate that started mid-month can no longer leave the
+ * month's first classes unpriced. Choosing a month adds a rate from that month,
+ * leaving earlier months as they were.
+ */
+export async function saveBatchRate(formData: FormData): Promise<PayPlanActionResult> {
+  const session = await requireCoachPayPermission("manage_rates");
+  if (!session?.user) return { ok: false, error: "You do not have permission to set coach pay." };
+  await dbConnect();
+
+  const coach = text(formData, "coach");
+  const classroom = text(formData, "classroom");
+  if (!isValidObjectId(coach) || !isValidObjectId(classroom)) return { ok: false, error: "Unknown coach or batch." };
+  const amount = paise(formData, "amount");
+  if (amount === null) return { ok: false, error: "Enter the rate per class." };
+  const from = text(formData, "from");
+  if (from && !/^\d{4}-(0[1-9]|1[0-2])$/.test(from)) return { ok: false, error: "Choose a valid month." };
+
+  const actorId = (session.user as any).id;
+  const coachId = new Types.ObjectId(coach);
+  const classroomId = new Types.ObjectId(classroom);
+  const effectiveFrom = from ? monthBounds(from).start : new Date(0);
+  if (!from) {
+    await CoachRate.deleteMany({ scope: "classroom_coach", coach: coachId, classroom: classroomId, effectiveFrom: { $ne: effectiveFrom } });
+  }
+  const key = { scope: "classroom_coach" as const, coach: coachId, batch: null, classroom: classroomId, effectiveFrom };
+  const saved = await CoachRate.findOneAndUpdate(
+    key,
+    {
+      $set: { regular: { amount, unit: "per_class" }, isActive: true, updatedBy: actorId },
+      $setOnInsert: { ...key, createdBy: actorId },
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  );
+  await recordActivity({
+    actor: actorId,
+    targetUser: coach,
+    type: "coachPay.rate.saved",
+    label: `Set a coach's batch rate${from ? ` from ${from}` : " for all classes"}`,
+    entityType: "CoachRate",
+    entityId: saved._id.toString(),
+    metadata: { coach, classroom, amount, from: from || "all" },
+  });
+  refresh();
+  revalidatePath("/staff-invoices");
+  const room: any = await Classroom.findById(classroomId).select("title").lean();
+  return { ok: true, message: `Saved. ${room?.title || "This batch"} pays ${rupeeText(amount)} per class ${from ? `from ${monthLabel(from)}` : "for all its classes"}.` };
 }
 
 /** A coach taking back a submission an admin has not answered yet. */

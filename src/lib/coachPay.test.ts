@@ -509,3 +509,46 @@ describe("class start times", () => {
     expect(start.toISOString()).toBe("2026-09-30T13:15:00.000Z");
   });
 });
+
+describe("a coach with a plan is paid only what the plan and their batch rates say", () => {
+  const perClass = {
+    coach: { _id: COACH, name: "Asha" },
+    type: "per_class",
+    effectiveFrom: new Date("2026-04-30T18:30:00.000Z"),
+    demoRate: null,
+    substituteRate: null,
+    conversionBonus: null,
+  };
+
+  it("ignores academy-wide and batch cards once a coach has a plan", () => {
+    const events = build({
+      rates: [card({ scope: "academy", regular: money(30000) }), card({ scope: "batch", batch: BATCH, regular: money(45000) })],
+      plans: [perClass],
+    });
+    expect(events[0]).toMatchObject({ status: "unpriced", amount: 0 });
+  });
+
+  it("pays a regular class at the rate set for this coach in this batch", () => {
+    const events = build({
+      rates: [card({ scope: "academy", regular: money(30000) }), card({ scope: "classroom_coach", classroom: CLASSROOM, coach: COACH, regular: money(60000) })],
+      plans: [perClass],
+    });
+    expect(events[0]).toMatchObject({ status: "payable", amount: 60000, rateSource: "classroom_coach" });
+  });
+
+  it("leaves a demo unpriced when the plan has no demo amount, rather than using a card", () => {
+    const events = build({
+      rates: [card({ scope: "academy", regular: money(30000), demo: money(10000) })],
+      classrooms: [classroom({ classroomType: "demo" })],
+      plans: [perClass],
+    });
+    expect(events[0].status).toBe("unpriced");
+  });
+});
+
+describe("formatHours", () => {
+  it("shows hours to two decimals, so 45 minutes is 0.75", async () => {
+    const { formatHours } = await import("@/lib/hours");
+    expect([formatHours(45), formatHours(135), formatHours(60), formatHours(50), formatHours(0)]).toEqual(["0.75", "2.25", "1", "0.83", "0"]);
+  });
+});

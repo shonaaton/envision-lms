@@ -151,9 +151,9 @@ const sections: NavSection[] = [
     title: "Coach Pay",
     roles: ["admin", "sub-admin"],
     items: [
-      { href: "/coach-pay", label: "Coach Pay", icon: BadgeIndianRupee, featureKey: "coachPay", permission: "view_all" },
+      { href: "/coach-pay", label: "All Coach Payments", icon: BadgeIndianRupee, featureKey: "coachPay", permission: "view_all" },
       { href: "/staff-invoices/register", label: "Staff Invoices", icon: Receipt, featureKey: "staffInvoices", permission: "view_all" },
-      { href: "/coach-pay/rates", label: "Coach Rate Cards", icon: Layers, featureKey: "coachPay", permission: "manage_rates" },
+      { href: "/coach-pay/rates", label: "Set Coach Pay", icon: Layers, featureKey: "coachPay", permission: "manage_rates" },
       { href: "/coach-pay/substitutions", label: "Substitutions", icon: Repeat, featureKey: "coachPay", permission: "view_all" },
       { href: "/coach-pay/proposals", label: "Coach Submissions", icon: Inbox, featureKey: "coachPay", permission: "manage_rates" },
       { href: "/coach-pay/reviews", label: "No-Show Rulings", icon: Gavel, featureKey: "coachPay", permission: "rule" },

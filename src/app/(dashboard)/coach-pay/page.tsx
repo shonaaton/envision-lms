@@ -4,9 +4,9 @@ import { AlertTriangle, BadgeIndianRupee, CalendarClock, Gavel, Inbox, Layers, R
 import { DataPanel, EmptyState, PageHeader, StatCard } from "@/components/common/PageHeader";
 import { PayPeriodFilter } from "@/components/coach-pay/PayPeriodFilter";
 import { SessionRateDialog } from "@/components/coach-pay/SessionRateDialog";
-import { PAY_KIND_LABELS, PAY_STATUS_LABELS, RATE_SCOPE_LABELS, type PayEvent } from "@/lib/coachPay";
+import { PAY_KIND_LABELS, PAY_PLAN_LABELS, PAY_STATUS_LABELS, RATE_SCOPE_LABELS, formatHours, type PayEvent } from "@/lib/coachPay";
 import { resolveCoachPayViewer } from "@/lib/coachPayAccess";
-import { countPendingProposals, loadCoachPay, listPayableCoaches } from "@/lib/coachPayData";
+import { countPendingProposals, loadCoachPay, loadPayOverview, listPayableCoaches } from "@/lib/coachPayData";
 import { financialYearOptions, resolvePayPeriod } from "@/lib/payPeriods";
 import { dbConnect } from "@/lib/db";
 import { Batch } from "@/models/Batch";
@@ -65,11 +65,20 @@ export default async function CoachPayPage({
     viewer.canManageRates ? countPendingProposals() : Promise.resolve(0),
   ]);
 
+  const overview = viewer.canViewAll && !coachFilter ? await loadPayOverview(period, summary) : [];
+  const selectedName =
+    (coaches as any[]).find((coach) => String(coach._id) === coachFilter)?.name || summary.rows[0]?.coachName || "This coach";
+
   const query = new URLSearchParams();
   Object.entries(params).forEach(([key, raw]) => {
     const single = typeof raw === "string" ? raw : Array.isArray(raw) ? raw[0] : "";
     if (single) query.set(key, single);
   });
+  const allCoachesQuery = (() => {
+    const next = new URLSearchParams(query);
+    next.delete("coach");
+    return next.toString();
+  })();
   // Built here as finished strings rather than handed over as a function: the
   // filter is a client component, and a closure cannot cross that boundary.
   const exportLinks = (["xlsx", "csv", "ods"] as const).map((format) => {
@@ -93,7 +102,7 @@ export default async function CoachPayPage({
     <div className="min-h-screen bg-slate-50 px-4 py-4 text-slate-950 sm:px-6 lg:px-8">
       <PageHeader
         eyebrow={viewer.canViewAll ? "Payroll workspace" : "My earnings"}
-        title={viewer.canViewAll ? "Coach Pay" : "My Teaching Earnings"}
+        title={viewer.canViewAll ? "All Coach Payments" : "My Teaching Earnings"}
         icon={BadgeIndianRupee}
         subtitle={
           viewer.canViewAll
@@ -112,7 +121,7 @@ export default async function CoachPayPage({
           <StatCard
             label="Classes paid"
             value={summary.payableClasses}
-            note={`${Math.round(summary.rows.reduce((sum, row) => sum + row.minutes, 0) / 60)} teaching hours`}
+            note={`${formatHours(summary.rows.reduce((sum, row) => sum + row.minutes, 0))} teaching hours`}
             icon={CalendarClock}
             tone="blue"
           />
@@ -193,91 +202,110 @@ export default async function CoachPayPage({
         </div>
       )}
 
-      {summary.unpriced > 0 && viewer.canViewAll && (
-        <div className="mt-3 flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs leading-5 text-rose-900">
-          <AlertTriangle size={15} className="mt-0.5 shrink-0" />
-          <p>
-            <span className="font-bold">{summary.unpriced} classes have no rate.</span> They are shown below as &quot;No rate
-            set&quot; and are counted as zero, not guessed at.{" "}
+      {viewer.canViewAll && coachFilter && (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-brand/20 bg-white p-3 text-sm">
+          <div>
+            Showing <span className="font-bold">{selectedName}</span>&apos;s classes for {period.label}.
+            {summary.unpriced > 0 && (
+              <span className="ml-2 font-semibold text-rose-700">
+                {summary.unpriced} {summary.unpriced === 1 ? "class has" : "classes have"} no rate - their invoice is on hold.
+              </span>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-2">
             {viewer.canManageRates && (
-              <Link href="/coach-pay/rates" className="font-bold underline">
-                Add a rate card
+              <Link href={`/coach-pay/rates?coach=${coachFilter}`} className="btn-primary h-9 px-4 text-xs">
+                <Layers size={14} /> Set pay
               </Link>
-            )}{" "}
-            covering them, or price them one class at a time.
-          </p>
+            )}
+            <Link href={`/coach-pay?${allCoachesQuery}`} className="btn-outline h-9 px-4 text-xs">
+              <Users size={14} /> All coaches
+            </Link>
+          </div>
         </div>
       )}
 
-      {viewer.canViewAll && (
-        <DataPanel className="mt-3" title="Cost by coach" subtitle={period.label} icon={Users}>
-          {summary.rows.length === 0 ? (
-            <EmptyState title="Nothing to pay in this period" description="No classes were taught in the selected window, or none of them are priced yet." />
+      {viewer.canViewAll && !coachFilter && (
+        <DataPanel className="mt-3" title="All coach payments" subtitle={`${period.label} - pick a coach to see their classes`} icon={Users}>
+          {overview.length === 0 ? (
+            <EmptyState title="No coaches yet" description="Coaches and paid staff appear here." />
           ) : (
             <div className="overflow-x-auto">
               <table className="min-w-full text-left text-sm">
                 <thead className="text-xs uppercase tracking-[0.08em] text-slate-500">
                   <tr>
                     <th className="border-b border-slate-200 px-3 py-2 font-bold">Coach</th>
-                    <th className="border-b border-slate-200 px-3 py-2 text-right font-bold">Monthly</th>
-                    <th className="border-b border-slate-200 px-3 py-2 text-right font-bold">Regular</th>
-                    <th className="border-b border-slate-200 px-3 py-2 text-right font-bold">Demo</th>
-                    <th className="border-b border-slate-200 px-3 py-2 text-right font-bold">Substitution</th>
-                    <th className="border-b border-slate-200 px-3 py-2 text-right font-bold">Conversion bonus</th>
+                    <th className="border-b border-slate-200 px-3 py-2 font-bold">Pay plan</th>
+                    <th className="border-b border-slate-200 px-3 py-2 text-right font-bold">Classes</th>
                     <th className="border-b border-slate-200 px-3 py-2 text-right font-bold">Hours</th>
-                    <th className="border-b border-slate-200 px-3 py-2 text-right font-bold">Awaiting ruling</th>
-                    <th className="border-b border-slate-200 px-3 py-2 text-right font-bold">Total</th>
+                    <th className="border-b border-slate-200 px-3 py-2 text-right font-bold">Earned</th>
+                    <th className="border-b border-slate-200 px-3 py-2 font-bold">Needs attention</th>
+                    <th className="border-b border-slate-200 px-3 py-2 font-bold">Invoice</th>
+                    <th className="border-b border-slate-200 px-3 py-2" />
                   </tr>
                 </thead>
                 <tbody>
-                  {summary.rows.map((row) => (
-                    <tr key={row.coachId} className="border-b border-slate-100 last:border-0 hover:bg-brand/[0.03]">
+                  {overview.map((row) => (
+                    <tr key={row.coachId} className="border-b border-slate-100 align-top last:border-0 hover:bg-brand/[0.03]">
                       <td className="px-3 py-2">
-                        <Link href={`/coach-pay?${new URLSearchParams({ ...Object.fromEntries(query), coach: row.coachId }).toString()}`} className="font-semibold text-slate-950 hover:text-brand hover:underline">
-                          {row.coachName}
-                        </Link>
-                        {row.unpriced > 0 && (
-                          <span className="ml-2 rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-bold text-rose-700 ring-1 ring-rose-200">
-                            {row.unpriced} unpriced
-                          </span>
+                        <div className="font-semibold text-slate-950">{row.name}</div>
+                        <div className="text-xs text-slate-500">
+                          {row.role === "instructor" ? "Coach" : row.role === "sub-admin" ? "Sub-admin" : "Admin"}
+                          {row.isActive ? "" : " - inactive"}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2">
+                        {row.plan ? (
+                          <>
+                            <div className="font-semibold text-slate-950">{PAY_PLAN_LABELS[row.plan.type]}</div>
+                            <div className="text-xs text-slate-500">{row.plan.detail}</div>
+                          </>
+                        ) : (
+                          <span className="rounded-full bg-rose-50 px-2 py-0.5 text-xs font-bold text-rose-700 ring-1 ring-rose-200">No plan</span>
                         )}
                       </td>
-                      <td className="px-3 py-2 text-right tabular-nums">{row.monthlyAmount ? formatINR(row.monthlyAmount) : "-"}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">
-                        {formatINR(row.regularAmount)}
-                        <span className="ml-1 text-xs text-slate-400">({row.regularClasses})</span>
+                      <td className="px-3 py-2 text-right tabular-nums">{row.classes || "-"}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-slate-600">{row.minutes ? formatHours(row.minutes) : "-"}</td>
+                      <td className="px-3 py-2 text-right text-base font-bold tabular-nums text-slate-950">{formatINR(row.earned)}</td>
+                      <td className="px-3 py-2 text-xs">
+                        {row.unpriced > 0 && <div className="font-bold text-rose-700">{row.unpriced} without a rate</div>}
+                        {row.pendingReview > 0 && <div className="font-semibold text-amber-700">{row.pendingReview} awaiting a no-show ruling</div>}
+                        {!row.plan && <div className="text-slate-500">Set how they are paid</div>}
+                        {row.unpriced === 0 && row.pendingReview === 0 && row.plan && <span className="text-slate-400">-</span>}
                       </td>
-                      <td className="px-3 py-2 text-right tabular-nums">
-                        {formatINR(row.demoAmount)}
-                        <span className="ml-1 text-xs text-slate-400">({row.demoClasses})</span>
+                      <td className="px-3 py-2 text-xs">
+                        {!period.month ? (
+                          <span className="text-slate-400">Pick a month</span>
+                        ) : row.invoice ? (
+                          <a href={`/api/staff-invoices/${row.invoice.id}/pdf`} className="font-semibold text-brand underline">
+                            {row.invoice.number} - {row.invoice.status === "paid" ? "Paid" : "Submitted"}
+                          </a>
+                        ) : (
+                          <span className="text-slate-500">Not yet</span>
+                        )}
                       </td>
-                      <td className="px-3 py-2 text-right tabular-nums">
-                        {formatINR(row.substitutionAmount)}
-                        <span className="ml-1 text-xs text-slate-400">({row.substitutionClasses})</span>
+                      <td className="px-3 py-2">
+                        <div className="flex flex-wrap justify-end gap-1">
+                          <Link href={`/coach-pay?${new URLSearchParams({ ...Object.fromEntries(query), coach: row.coachId }).toString()}`} className="btn-outline h-8 px-3 text-xs">
+                            Classes
+                          </Link>
+                          {viewer.canManageRates && (
+                            <Link href={`/coach-pay/rates?coach=${row.coachId}`} className="btn-primary h-8 px-3 text-xs">
+                              Set pay
+                            </Link>
+                          )}
+                        </div>
                       </td>
-                      <td className="px-3 py-2 text-right tabular-nums">
-                        {formatINR(row.bonusAmount)}
-                        <span className="ml-1 text-xs text-slate-400">({row.conversionBonuses})</span>
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums text-slate-600">{(row.minutes / 60).toFixed(1)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-amber-700">
-                        {row.pendingReview ? `${formatINR(row.pendingAmount)} (${row.pendingReview})` : "-"}
-                      </td>
-                      <td className="px-3 py-2 text-right text-base font-bold tabular-nums text-slate-950">{formatINR(row.totalAmount)}</td>
                     </tr>
                   ))}
                 </tbody>
                 <tfoot>
                   <tr className="bg-slate-50">
-                    <td className="px-3 py-2 text-sm font-bold text-slate-950">Total</td>
-                    <td className="px-3 py-2 text-right font-semibold tabular-nums">{formatINR(summary.monthlyAmount)}</td>
-                    <td className="px-3 py-2 text-right font-semibold tabular-nums">{formatINR(summary.regularAmount)}</td>
-                    <td className="px-3 py-2 text-right font-semibold tabular-nums">{formatINR(summary.demoAmount)}</td>
-                    <td className="px-3 py-2 text-right font-semibold tabular-nums">{formatINR(summary.substitutionAmount)}</td>
-                    <td className="px-3 py-2 text-right font-semibold tabular-nums">{formatINR(summary.bonusAmount)}</td>
-                    <td className="px-3 py-2" />
-                    <td className="px-3 py-2 text-right font-semibold tabular-nums text-amber-700">{formatINR(summary.pendingAmount)}</td>
+                    <td className="px-3 py-2 text-sm font-bold text-slate-950" colSpan={4}>
+                      Total
+                    </td>
                     <td className="px-3 py-2 text-right text-base font-black tabular-nums text-slate-950">{formatINR(summary.totalAmount)}</td>
+                    <td colSpan={3} />
                   </tr>
                 </tfoot>
               </table>
@@ -286,6 +314,7 @@ export default async function CoachPayPage({
         </DataPanel>
       )}
 
+      {(!viewer.canViewAll || coachFilter) && (
       <DataPanel
         className="mt-3"
         title="Class by class"
@@ -400,6 +429,7 @@ export default async function CoachPayPage({
           </div>
         )}
       </DataPanel>
+      )}
     </div>
   );
 }

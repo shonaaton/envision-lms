@@ -243,7 +243,7 @@ export default async function CoachRatesPage({
               defaultMonth={academyMonthOf(now)}
               saveAction={saveCoachPayPlan}
               deleteAction={deleteCoachPayPlan}
-              savedMessage={/^(Saved\.|Plan removed\.)/.test(value(params, "saved")) ? value(params, "saved").slice(0, 200) : ""}
+              savedMessage={/^(Saved\.|Plan removed\.)/.test(value(params, "saved")) ? value(params, "saved").slice(0, 400) : ""}
             />
           </DataPanel>
 

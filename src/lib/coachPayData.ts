@@ -7,6 +7,7 @@ import { User } from "@/models/User";
 import { CoachPayPlan, CoachPayProposal, CoachRate, NoShowRuling, SessionPayOverride, type PayKind, type RateUnit } from "@/models/CoachPay";
 import { buildPayEvents, planFor, resolveRate, summarizePayEvents, REVIEWABLE_SESSION_STATUSES, type CoachPaySummary, type ResolvedRate } from "@/lib/coachPay";
 import { StaffInvoice } from "@/models/StaffInvoice";
+import { academyMonthOf, monthLabel } from "@/lib/feedback/feedbackCycleDates";
 import { effectiveSessionCoachId, scheduledPaymentMinutes, scheduledStartDate } from "@/lib/teachingStats";
 import type { PayPeriod } from "@/lib/payPeriods";
 
@@ -378,6 +379,8 @@ export type PayOverviewRow = {
   role: string;
   isActive: boolean;
   plan: { type: "per_class" | "per_hour" | "monthly"; detail: string } | null;
+  /** A plan saved to start after this period - shown so a change dated ahead is not mistaken for a lost save. */
+  upcoming: { type: "per_class" | "per_hour" | "monthly"; detail: string; startsLabel: string } | null;
   classes: number;
   minutes: number;
   earned: number;
@@ -416,8 +419,11 @@ export async function loadPayOverview(period: PayPeriod, summary: CoachPaySummar
   for (const person of people as any[]) {
     const coachId = idOf(person._id);
     const plan = planFor(plans as any[], coachId, planAt);
+    const next = (plans as any[])
+      .filter((item) => idOf(item.coach) === coachId && new Date(item.effectiveFrom) > planAt)
+      .sort((a, b) => new Date(a.effectiveFrom).getTime() - new Date(b.effectiveFrom).getTime())[0];
     const pay = summaryByCoach.get(coachId);
-    const include = (person.role === "instructor" && person.isActive !== false) || plan || pay;
+    const include = (person.role === "instructor" && person.isActive !== false) || plan || next || pay;
     if (!include) continue;
     const invoice = invoiceByStaff.get(coachId);
     rows.push({
@@ -426,6 +432,7 @@ export async function loadPayOverview(period: PayPeriod, summary: CoachPaySummar
       role: person.role,
       isActive: person.isActive !== false,
       plan: plan ? { type: plan.type, detail: planDetail(plan) } : null,
+      upcoming: next ? { type: next.type, detail: planDetail(next), startsLabel: monthLabel(academyMonthOf(new Date(next.effectiveFrom))) } : null,
       classes: pay ? pay.regularClasses + pay.demoClasses + pay.substitutionClasses : 0,
       minutes: pay?.minutes || 0,
       earned: pay?.totalAmount || 0,

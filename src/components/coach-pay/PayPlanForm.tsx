@@ -77,6 +77,7 @@ export function PayPlanForm({
   const pathname = usePathname();
   const [type, setType] = useState<PlanType>(current?.type || "per_class");
   const [saved, setSaved] = useState("");
+  const [month, setMonth] = useState(defaultMonth);
   const [error, setError] = useState("");
   const [pending, startTransition] = useTransition();
 
@@ -140,8 +141,21 @@ export function PayPlanForm({
           )}
           <label className="grid gap-1 text-xs font-semibold text-slate-700">
             Applies from
-            <input name="effectiveMonth" type="month" required defaultValue={defaultMonth} className="input h-9 w-40" />
-            <span className="text-[11px] font-normal text-slate-500">Earlier months keep their old plan</span>
+            <input
+              name="effectiveMonth"
+              type="month"
+              required
+              value={month}
+              onChange={(event) => setMonth(event.target.value)}
+              className={`input h-9 w-40 ${month > defaultMonth ? "border-amber-400 ring-1 ring-amber-300" : ""}`}
+            />
+            {month > defaultMonth ? (
+              <span className="max-w-[14rem] text-[11px] font-bold text-amber-700">
+                Starts in a later month - this month&apos;s pay will not change
+              </span>
+            ) : (
+              <span className="text-[11px] font-normal text-slate-500">Earlier months keep their old plan</span>
+            )}
           </label>
           <label className="grid min-w-[12rem] flex-1 gap-1 text-xs font-semibold text-slate-700">
             Note (optional)

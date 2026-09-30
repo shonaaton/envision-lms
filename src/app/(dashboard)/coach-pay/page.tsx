@@ -263,6 +263,11 @@ export default async function CoachPayPage({
                         ) : (
                           <span className="rounded-full bg-rose-50 px-2 py-0.5 text-xs font-bold text-rose-700 ring-1 ring-rose-200">No plan</span>
                         )}
+                        {row.upcoming && (
+                          <div className="mt-1 rounded-md bg-sky-50 px-2 py-1 text-[11px] font-semibold leading-4 text-sky-800">
+                            From {row.upcoming.startsLabel}: {PAY_PLAN_LABELS[row.upcoming.type]} - {row.upcoming.detail}
+                          </div>
+                        )}
                       </td>
                       <td className="px-3 py-2 text-right tabular-nums">{row.classes || "-"}</td>
                       <td className="px-3 py-2 text-right tabular-nums text-slate-600">{row.minutes ? formatHours(row.minutes) : "-"}</td>
@@ -270,7 +275,7 @@ export default async function CoachPayPage({
                       <td className="px-3 py-2 text-xs">
                         {row.unpriced > 0 && <div className="font-bold text-rose-700">{row.unpriced} without a rate</div>}
                         {row.pendingReview > 0 && <div className="font-semibold text-amber-700">{row.pendingReview} awaiting a no-show ruling</div>}
-                        {!row.plan && <div className="text-slate-500">Set how they are paid</div>}
+                        {!row.plan && <div className="text-slate-500">{row.upcoming ? `No plan for this month - theirs starts ${row.upcoming.startsLabel}` : "Set how they are paid"}</div>}
                         {row.unpriced === 0 && row.pendingReview === 0 && row.plan && <span className="text-slate-400">-</span>}
                       </td>
                       <td className="px-3 py-2 text-xs">

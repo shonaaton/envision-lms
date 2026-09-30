@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { Types, isValidObjectId } from "mongoose";
 
 import { dbConnect } from "@/lib/db";
-import { monthBounds, monthLabel } from "@/lib/feedback/feedbackCycleDates";
+import { academyMonthOf, monthBounds, monthLabel } from "@/lib/feedback/feedbackCycleDates";
 import { User } from "@/models/User";
 import { recordActivity } from "@/lib/activity";
 import { consumeAttendanceCredit } from "@/lib/fees";
@@ -591,7 +591,14 @@ export async function saveCoachPayPlan(formData: FormData): Promise<PayPlanActio
       : type === "per_hour"
         ? `${rupeeText(values.hourlyRate)} per hour`
         : "per class at their batch rates";
-  return { ok: true, message: `Saved. ${who} is paid ${summary} from ${when}.` };
+  const thisMonth = academyMonthOf(new Date());
+  const later =
+    month > thisMonth
+      ? ` This starts in ${when}, so ${monthLabel(thisMonth)} is unchanged - choose ${monthLabel(thisMonth)} in "Applies from" if it should count this month.`
+      : month < thisMonth
+        ? ` Every month from ${when} onwards is recalculated.`
+        : "";
+  return { ok: true, message: `Saved. ${who} is paid ${summary} from ${when}.${later}` };
 }
 
 export async function deleteCoachPayPlan(formData: FormData): Promise<PayPlanActionResult> {

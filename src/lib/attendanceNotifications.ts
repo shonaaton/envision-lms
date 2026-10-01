@@ -1,6 +1,6 @@
 import { academyDateKey, formatAcademyDateTime } from "@/lib/academyTime";
 import { resolvePublicAppUrl } from "@/lib/appUrl";
-import { getSessionEnd } from "@/lib/classroomSessions";
+import { getSessionEnd, isSessionOffSchedule } from "@/lib/classroomSessions";
 import { dbConnect } from "@/lib/db";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
 import { messageFamily, whatsappRecipientName } from "@/lib/familyMessaging";
@@ -117,6 +117,9 @@ export async function processDueAttendanceNudges() {
     // The parent classroom owns the schedule; its per-session mirrors carry a
     // copy of the same session and would nudge the coach a second time.
     isSessionInstance: { $ne: true },
+    // A paused batch holds no classes; its sessions stay `scheduled` only so
+    // they can come back when the student does.
+    isPaused: { $ne: true },
     generatedSessions: {
       $elemMatch: {
         status: { $in: ["scheduled", "ongoing", "in_progress", "completed"] },
@@ -125,7 +128,7 @@ export async function processDueAttendanceNudges() {
       },
     },
   })
-    .select("title courseName coach instructor generatedSessions")
+    .select("title courseName coach instructor status completedAt isActive isPaused pausedFrom generatedSessions")
     .limit(SWEEP_LIMIT)
     .lean();
 
@@ -137,6 +140,9 @@ export async function processDueAttendanceNudges() {
     for (const session of classroom.generatedSessions || []) {
       if (session.attendanceMarkedAt) continue;
       if ((session.notifiedKinds || []).includes("attendance_nudge")) continue;
+      // The leftover classes of a completed course: the batch carried on in
+      // its next classroom, where the coach marked the register.
+      if (isSessionOffSchedule(classroom, session)) continue;
       const end = getSessionEnd(session);
       if (!end || end > nudgeBefore || end < giveUpBefore) continue;
 

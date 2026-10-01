@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { Attendance } from "@/models/Attendance";
 import { Classroom } from "@/models/Classroom";
-import { deriveScheduledSessionStatus, getSessionEnd, getSessionStart } from "@/lib/classroomSessions";
+import { deriveScheduledSessionStatus, getSessionEnd, getSessionStart, isSessionOffSchedule } from "@/lib/classroomSessions";
 import { canAccessFeature } from "@/lib/featureAccess";
 import { coachClassroomQuery, limitClassroomToCoachSessions } from "@/lib/classroomCoachAccess";
 import { academyDateKey, academyDayBounds } from "@/lib/academyTime";
@@ -204,6 +204,9 @@ export async function GET(req: Request) {
       }
       return start ? sameDay(start, selectedDate) : false;
     })
+    // A paused or finished classroom's leftover classes were never held; listing
+    // them showed a second "missed" card beside the batch's real, marked class.
+    .filter(({ classroom, session }) => !isSessionOffSchedule(classroom, session) || attendanceBySession.has(attendanceSessionKey(classroom._id, session?._id)))
     .map(({ classroom, session }) => {
       const attendanceKey = `${objectId(classroom._id)}:${String(session._id || "")}:${new Date(session.scheduledFor || classroom.classDate).toISOString()}`;
       const attendance = attendanceMap.get(attendanceKey) || attendanceBySession.get(attendanceSessionKey(classroom._id, session._id)) || null;
@@ -243,8 +246,9 @@ export async function GET(req: Request) {
     .sort((a, b) => new Date(a.scheduledFor).getTime() - new Date(b.scheduledFor).getTime());
 
   const allPastSessions = flattenClassroomSessions(classrooms)
-    .filter(({ session }) => {
+    .filter(({ classroom, session }) => {
       if (!isTrackableAttendanceSession(session)) return false;
+      if (isSessionOffSchedule(classroom, session) && !attendanceBySession.has(attendanceSessionKey(classroom._id, session?._id))) return false;
       const lifecycle = deriveScheduledSessionStatus(session, now);
       return lifecycle === "completed" || lifecycle === "missed";
     })

@@ -80,6 +80,29 @@ export function deriveScheduledSessionStatus(
   return "missed";
 }
 
+/**
+ * A class that was never going to be held because its classroom stopped
+ * running: paused (from `pausedFrom` on), completed (after `completedAt`),
+ * cancelled or closed.
+ *
+ * None of those touch the sessions - a pause or a "complete now" leaves every
+ * later class `scheduled` so that resuming or reopening puts it straight back -
+ * so a class that went by in one of them looks exactly like an unmarked one.
+ * Those ghosts filled Missed Attendance and nudged coaches for registers that
+ * were already marked in the batch's new classroom. A class that was actually
+ * started still owes its register whatever happened to the classroom after.
+ */
+export function isSessionOffSchedule(classroom: any, session: ScheduledSessionLike) {
+  if (!classroom || session?.actualStartedAt || session?.actualEndedAt) return false;
+  const start = getSessionStart(session);
+  const atOrAfter = (value: unknown) => !value || !start || start.getTime() >= new Date(value as any).getTime();
+  if (classroom.isActive === false) return true;
+  if (classroom.status === "cancelled") return true;
+  if (classroom.isPaused === true && atOrAfter(classroom.pausedFrom)) return true;
+  if (classroom.status === "completed" && atOrAfter(classroom.completedAt)) return true;
+  return false;
+}
+
 export function isSessionUpcomingLike(status: ScheduledSessionStatus) {
   return ["upcoming", "join_available", "ongoing"].includes(status);
 }

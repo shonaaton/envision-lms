@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { Attendance } from "@/models/Attendance";
 import { Classroom } from "@/models/Classroom";
-import { deriveScheduledSessionStatus, getSessionStart } from "@/lib/classroomSessions";
+import { deriveScheduledSessionStatus, getSessionStart, isSessionOffSchedule } from "@/lib/classroomSessions";
 import { canAccessFeature } from "@/lib/featureAccess";
 import { academyDateKey, academyDayBounds } from "@/lib/academyTime";
 
@@ -98,7 +98,9 @@ export async function GET(req: Request) {
       const start = getSessionStart(scheduledSession);
       const lifecycle = deriveScheduledSessionStatus(scheduledSession, now);
       const attendance = attendanceBySession.get(`${objectId(classroom._id)}:${String(scheduledSession._id || "")}`) || null;
-      const isPastTrackable = lifecycle === "completed" || lifecycle === "missed";
+      // A class of a paused or finished classroom was never held, so it owes no
+      // register - unless one was marked anyway, which still counts.
+      const isPastTrackable = (lifecycle === "completed" || lifecycle === "missed") && (Boolean(attendance) || !isSessionOffSchedule(classroom, scheduledSession));
       const isSelectedDay = start ? sameDay(start, selectedDateStart) : false;
 
       if (kind === "completed" && !isPastTrackable) return null;

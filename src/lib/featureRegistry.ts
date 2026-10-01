@@ -462,6 +462,16 @@ export const FEATURE_DEFINITIONS: FeatureDefinition[] = [
     defaultRolePermissions: { student: ["view", "create"], instructor: ["view", "approve"], "sub-admin": ["view", "approve", "edit"], admin: all(view, create, approve, edit) },
   },
   {
+    key: "leaveManagement",
+    label: "Leave",
+    category: "Communication",
+    description: "Staff leave: coaches and sub-admins apply for full or half days, approvers decide, admins arrange substitutes and give leave credits. Marketing staff are outside it.",
+    routes: ["/leave"], apiPrefixes: ["/api/leave"], permissions: [view, create, edit], defaultStatus: "enabled",
+    // Who approves and who manages credits is decided by identity (admins and
+    // LEAVE_APPROVER_EMAILS) in lib/leave/leaveAccess.ts, not by these grants.
+    defaultRolePermissions: { instructor: ["view", "create", "edit"], "sub-admin": ["view", "create", "edit"], admin: all(view, create, edit) },
+  },
+  {
     key: "monthlyFeedback",
     label: "Monthly Feedback",
     category: "Communication",

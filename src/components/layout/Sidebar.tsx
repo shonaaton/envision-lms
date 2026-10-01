@@ -15,6 +15,7 @@ import {
   BookOpen,
   BookOpenCheck,
   CalendarDays,
+  CalendarOff,
   ChevronDown,
   ClipboardList,
   Cpu,
@@ -84,6 +85,7 @@ const sections: NavSection[] = [
       { href: "/tasks", label: "Tasks", icon: ListChecks, featureKey: "taskManager", roles: ["instructor", "admin", "sub-admin"] },
       { href: "/feedback", label: "Monthly Feedback", icon: MessageSquareHeart, featureKey: "monthlyFeedback", roles: ["student", "instructor", "admin", "sub-admin"] },
       { href: "/ptm", label: "PTM", icon: MessageSquareHeart, featureKey: "ptm", roles: ["student", "instructor", "admin", "sub-admin"] },
+      { href: "/leave", label: "Leave", icon: CalendarOff, featureKey: "leaveManagement", roles: ["instructor", "admin", "sub-admin"] },
     ],
   },
   {
@@ -328,7 +330,9 @@ export default function Sidebar({
   const [askCoachUnreadCount, setAskCoachUnreadCount] = useState(0);
   const [pendingTaskCount, setPendingTaskCount] = useState(0);
   const [pendingPtmCount, setPendingPtmCount] = useState(0);
+  const [pendingLeaveCount, setPendingLeaveCount] = useState(0);
   const ptmVisible = visiblePtm(role, featureState);
+  const leaveVisible = role !== "student" && featureState?.leaveManagement?.visible !== false;
   const tasksVisible = role !== "student" && featureState?.taskManager?.visible !== false;
   const [openNotifications, setOpenNotifications] = useState(false);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
@@ -377,6 +381,24 @@ export default function Sidebar({
     window.addEventListener("ptm-updated", refresh);
     return () => { mounted = false; window.clearInterval(timer); document.removeEventListener("visibilitychange", refresh); window.removeEventListener("ptm-updated", refresh); };
   }, [ptmVisible, pathname]);
+
+  // Leave requests waiting for this approver (always 0 for everyone else).
+  useEffect(() => {
+    if (!leaveVisible) return;
+    let mounted = true;
+    const refresh = async () => {
+      if (document.visibilityState !== "visible") return;
+      const response = await fetch("/api/leave?summary=1", { cache: "no-store" }).catch(() => null);
+      if (!response?.ok) return;
+      const data = await response.json().catch(() => ({}));
+      if (mounted) setPendingLeaveCount(Number(data.pendingCount || 0));
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 60_000);
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("leave-updated", refresh);
+    return () => { mounted = false; window.clearInterval(timer); document.removeEventListener("visibilitychange", refresh); window.removeEventListener("leave-updated", refresh); };
+  }, [leaveVisible, pathname]);
 
   async function openBell() {
     const nextOpen = !openNotifications;
@@ -549,6 +571,7 @@ export default function Sidebar({
                               {pendingTaskCount > 99 ? "99+" : pendingTaskCount}
                             </span>
                           )}
+                          {item.href === "/leave" && pendingLeaveCount > 0 && <span className={cn("ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1.5 text-[10px] font-black text-brand", desktopCollapsed ? "md:absolute md:right-1.5 md:top-1.5" : "")}>{pendingLeaveCount > 99 ? "99+" : pendingLeaveCount}</span>}
                           {item.href === "/ptm" && pendingPtmCount > 0 && <span className={cn("ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1.5 text-[10px] font-black text-brand", desktopCollapsed ? "md:absolute md:right-1.5 md:top-1.5" : "")}>{pendingPtmCount > 99 ? "99+" : pendingPtmCount}</span>}
                           {item.href === "/ask-coach" && askCoachUnreadCount > 0 && (
                             <span className={cn(

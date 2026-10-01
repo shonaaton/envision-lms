@@ -9,7 +9,7 @@ import { Batch } from "@/models/Batch";
 import { Classroom } from "@/models/Classroom";
 import { explicitSuperAdminExists, getAccessUser, grantStaffInvoicesToSalesRole, resolveAccessRole } from "@/lib/accessRoles";
 import { cachedPermissionValue } from "@/lib/permissionCache";
-import { roleHasPermission, type RoleGrants } from "@/lib/accessRolePolicy";
+import { isFeatureExcludedForRole, roleHasPermission, type RoleGrants } from "@/lib/accessRolePolicy";
 import {
   FEATURE_DEFINITIONS,
   PORTAL_ROLES,
@@ -45,6 +45,7 @@ export type SessionUser = {
   accessRoleId?: string;
   roleGrants?: RoleGrants;
   roleEnabled?: boolean;
+  roleName?: string;
   id?: string;
   role?: PortalRole;
   isSuperAdmin?: boolean;
@@ -389,6 +390,7 @@ export function evaluateFeatureState({
 }) {
   if (user.isSuperAdmin && user.role === "admin") return true;
   if (user.accessRoleId) {
+    if (isFeatureExcludedForRole(user.roleName, feature.key)) return false;
     if (["dashboard", "accountSettings"].includes(feature.key)) return roleHasPermission({ dashboard: ["view"], accountSettings: ["view", "edit", "security"] }, feature.key, permission);
     if (!user.roleEnabled || !roleHasPermission(user.roleGrants, feature.key, permission)) return false;
     if (feature.status === "disabled") return false;
@@ -422,6 +424,7 @@ async function evaluateFeatureStateWithPilotCohorts({
     return evaluateFeatureState({ feature, user, permission, allowComingSoonView });
   }
   if (!(await isPilotBatchMember(feature, user)) && !(await isPilotCourseMember(feature, user))) return false;
+  if (user.accessRoleId && isFeatureExcludedForRole(user.roleName, feature.key)) return false;
   if (user.accessRoleId) return Boolean(user.roleEnabled && roleHasPermission(user.roleGrants, feature.key, permission));
   return hasPermission(feature.rolePermissions[user.role as PortalRole], permission);
 }

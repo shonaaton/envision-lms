@@ -26,6 +26,7 @@ import { transferPendingFeedbackToCoach } from "@/lib/feedback/feedbackService";
 import { notifyCourseCompleted, notifySessionCancelled } from "@/lib/classSessionNotifications";
 import { writeRuntimeLog } from "@/lib/runtimeLogger";
 import { raiseSubstituteTask, resolveCoachMissingTask } from "@/lib/tasks/taskTriggers";
+import { syncLeaveCoverageForClassroom } from "@/lib/leave/leaveService";
 
 export const dynamic = "force-dynamic";
 
@@ -1227,6 +1228,9 @@ async function patchClassroom(req: Request, { params }: { params: { id: string }
     ]);
   }
   await syncClassroomSessionInstances(params.id);
+  // A substitute, cancellation, reschedule or coach change may have covered a
+  // class on an approved staff leave; this settles its "arrange substitutes" task.
+  syncLeaveCoverageForClassroom(params.id);
   // Whichever way the coach changed (permanent change, "entire series"
   // substitute, or the edit form), the new coach inherits the feedback still owed.
   const currentCoachId = recordId(existing.coach || existing.instructor);

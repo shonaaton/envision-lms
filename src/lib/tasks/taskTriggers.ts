@@ -30,6 +30,27 @@ export function resolvePtmScheduleTask(id: unknown, by?: unknown) { return settl
 export async function cancelPtmTasks(id: unknown, reason: string) { await withdraw("PtmApproval", id, reason); await withdraw("PtmSchedule", id, reason); }
 
 /**
+ * An approved coach leave: admins arrange a substitute for each class on it.
+ * Settled by `syncLeaveCoverage` once every class is taught by someone else,
+ * cancelled or moved off the day. `reopen` is passed only when classes were
+ * added to the leave after the task closed. The leave's own notice already
+ * emails and WhatsApps the admins, so the task itself stays quiet.
+ */
+export function raiseLeaveSubstitutionTask(leave: any, options: { reopen?: boolean } = {}) {
+  const sessions: any[] = [...(leave.sessions || [])].sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+  if (!sessions.length) return Promise.resolve(null);
+  return raise({
+    kind: "leave_substitution", referenceType: "LeaveSubstitution", referenceId: leave._id, pool: "admins", priority: "high",
+    title: `Arrange substitutes — ${leave.applicantName || "Coach"} on leave ${when(leave.startsAt).split(",")[0] || leave.dateKey}`,
+    details: [`${leave.applicantName || "The coach"} has approved ${leave.type === "full_day" ? "full-day" : "half-day"} leave on ${leave.dateKey}.`, "Classes needing a substitute:", ...sessions.map((s) => `• ${when(s.start)} — ${s.title || "Class"}`)].join("\n"),
+    actionHref: `/leave?id=${idOf(leave)}`, dueAt: sessions[0]?.start ? new Date(sessions[0].start) : null,
+    metadata: { leaveId: idOf(leave), applicantId: idOf(leave.applicant) }, reopenIfClosed: Boolean(options.reopen), notify: false,
+  });
+}
+export function resolveLeaveSubstitutionTask(id: unknown, by?: unknown, note = "Every class on the leave is covered.") { return settle("LeaveSubstitution", id, by, note); }
+export function cancelLeaveSubstitutionTask(id: unknown, reason: string) { return withdraw("LeaveSubstitution", id, reason); }
+
+/**
  * One function per app event that should put work in someone's Tasks list,
  * and one per event that settles it. Every function here swallows its own
  * failure: a task is bookkeeping, and must never break the real action it

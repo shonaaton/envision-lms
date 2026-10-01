@@ -10,7 +10,19 @@ export const ADMIN_ONLY_ROLE_FEATURES = ["salesPerformance", "salesDirectory", "
 export const ESSENTIAL_ROLE_GRANTS: RoleGrants = {
   dashboard: ["view"], accountSettings: ["view", "edit", "security"], notifications: ["view"],
   taskManager: ["view", "create", "edit"],
+  leaveManagement: ["view", "create", "edit"],
 };
+/**
+ * Features a named role never gets, whatever its grants or the essentials say:
+ * marketing staff are outside the staff leave system (user, 2026-10-01).
+ * Keyed by the role's nameKey (its lowercased name).
+ */
+export const NAMED_ROLE_EXCLUDED_FEATURES: Record<string, string[]> = {
+  marketing: ["leaveManagement"],
+};
+export function isFeatureExcludedForRole(roleName: unknown, featureKey: string) {
+  return Boolean(NAMED_ROLE_EXCLUDED_FEATURES[String(roleName || "").trim().toLowerCase()]?.includes(featureKey));
+}
 export const SALES_ROLE_GRANTS: RoleGrants = {
   ...ESSENTIAL_ROLE_GRANTS, batchVacancy: ["view"],
   contactEnquiries: ["view", "manage"],

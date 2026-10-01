@@ -2117,6 +2117,97 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
       { "position": 6, "key": "timings", "sample": "Saturday at 18:00 (60 min)" },
       { "position": 7, "key": "next_class_date", "sample": "5 Sep 2026, 6:00 PM IST" }
     ]
+  },
+  {
+    "name": "leave_request_approver_alert",
+    "language": "en",
+    "sourceAutomation": "leaveService.announceRequest",
+    "body": "Hello {{1}}, {{2}} has applied for {{3}} leave on {{4}}.\n\nClasses: {{5}}\nReason: {{6}}\n\nPlease approve or reject it from the Leave page on the academy portal.",
+    "variables": [
+      { "position": 1, "key": "approver_name", "sample": "Sayan Bose" },
+      { "position": 2, "key": "applicant_name", "sample": "Coach Sanjib" },
+      { "position": 3, "key": "leave_type", "sample": "half-day" },
+      { "position": 4, "key": "leave_day", "sample": "Sat, 4 Oct 2026" },
+      { "position": 5, "key": "classes", "sample": "6:00 pm I2-100, 7:30 pm B1-20" },
+      { "position": 6, "key": "reason", "sample": "Family function" }
+    ]
+  },
+  {
+    "name": "leave_request_received_applicant",
+    "language": "en",
+    "sourceAutomation": "leaveService.announceRequest",
+    "body": "Hello {{1}}, your {{2}} leave request for {{3}} has been received and is waiting for approval. You will get a message as soon as it is reviewed.\n\nTeam Envision Chess Academy",
+    "variables": [
+      { "position": 1, "key": "applicant_name", "sample": "Coach Sanjib" },
+      { "position": 2, "key": "leave_type", "sample": "full-day" },
+      { "position": 3, "key": "leave_day", "sample": "Sat, 4 Oct 2026" }
+    ]
+  },
+  {
+    "name": "leave_request_decision_applicant",
+    "language": "en",
+    "sourceAutomation": "leaveService.announceDecision",
+    "body": "Hello {{1}}, your {{2}} leave for {{3}} has been {{4}} by {{5}}.\n\n{{6}}\n\nTeam Envision Chess Academy",
+    "variables": [
+      { "position": 1, "key": "applicant_name", "sample": "Coach Sanjib" },
+      { "position": 2, "key": "leave_type", "sample": "full-day" },
+      { "position": 3, "key": "leave_day", "sample": "Sat, 4 Oct 2026" },
+      { "position": 4, "key": "decision", "sample": "approved" },
+      { "position": 5, "key": "approver_name", "sample": "Sayan Bose" },
+      { "position": 6, "key": "detail", "sample": "The academy will arrange substitutes for your classes. Leave credits left: 2.5." }
+    ]
+  },
+  {
+    "name": "leave_decision_approver_confirmation",
+    "language": "en",
+    "sourceAutomation": "leaveService.announceDecision",
+    "body": "Hello {{1}}, this confirms that you have {{2}} the {{3}} leave of {{4}} for {{5}} on the academy portal.\n\nTeam Envision Chess Academy",
+    "variables": [
+      { "position": 1, "key": "approver_name", "sample": "Dhritabrata" },
+      { "position": 2, "key": "decision", "sample": "approved" },
+      { "position": 3, "key": "leave_type", "sample": "half-day" },
+      { "position": 4, "key": "applicant_name", "sample": "Coach Sanjib" },
+      { "position": 5, "key": "leave_day", "sample": "Sat, 4 Oct 2026" }
+    ]
+  },
+  {
+    "name": "leave_substitution_admin_alert",
+    "language": "en",
+    "sourceAutomation": "leaveService.announceSubstitution",
+    "body": "Hello {{1}}, {{2}}'s {{3}} leave on {{4}} has been approved.\n\nClasses needing a substitute: {{5}}\n\nPlease assign a substitute for each class from the classroom page. The task in Tasks closes once every class is covered.",
+    "variables": [
+      { "position": 1, "key": "staff_name", "sample": "Sayan Bose" },
+      { "position": 2, "key": "applicant_name", "sample": "Coach Sanjib" },
+      { "position": 3, "key": "leave_type", "sample": "full-day" },
+      { "position": 4, "key": "leave_day", "sample": "Sat, 4 Oct 2026" },
+      { "position": 5, "key": "classes", "sample": "6:00 pm I2-100, 7:30 pm B1-20" }
+    ]
+  },
+  {
+    "name": "leave_cancelled_alert",
+    "language": "en",
+    "sourceAutomation": "leaveService.announceClosed",
+    "body": "Hello {{1}}, the {{2}} leave of {{3}} for {{4}} has been {{5}}.\n\n{{6}}\n\nTeam Envision Chess Academy",
+    "variables": [
+      { "position": 1, "key": "recipient_name", "sample": "Sayan Bose" },
+      { "position": 2, "key": "leave_type", "sample": "half-day" },
+      { "position": 3, "key": "applicant_name", "sample": "Coach Sanjib" },
+      { "position": 4, "key": "leave_day", "sample": "Sat, 4 Oct 2026" },
+      { "position": 5, "key": "how", "sample": "cancelled by the applicant" },
+      { "position": 6, "key": "detail", "sample": "No action is needed." }
+    ]
+  },
+  {
+    "name": "leave_credits_updated",
+    "language": "en",
+    "sourceAutomation": "leaveService.applyCreditAction",
+    "body": "Hello {{1}}, {{2}} has updated your leave credits ({{3}}). Your balance is now {{4}} credits.\n\nTeam Envision Chess Academy",
+    "variables": [
+      { "position": 1, "key": "staff_name", "sample": "Coach Sanjib" },
+      { "position": 2, "key": "admin_name", "sample": "Sayantan" },
+      { "position": 3, "key": "change", "sample": "+2" },
+      { "position": 4, "key": "balance", "sample": "4.5" }
+    ]
   }
 ] as const satisfies readonly WhatsAppTemplateDefinition[];
 

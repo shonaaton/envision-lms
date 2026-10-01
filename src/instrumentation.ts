@@ -22,6 +22,7 @@ export async function register() {
   const { processDailyTaskReminders } = await import("@/lib/tasks/taskReminders");
   const { processMonthlyFeedbackCycle } = await import("@/lib/feedback/feedbackService");
   const { processPtmSweep } = await import("@/lib/ptm/ptmService");
+  const { processLeaveSweep } = await import("@/lib/leave/leaveService");
   const { sealLegacyTempPasswords } = await import("@/lib/tempPasswordMigration");
 
   installRuntimeProcessLogging();
@@ -29,6 +30,16 @@ export async function register() {
 
   startScheduler([
     { name: "ptm_sweep", intervalMs: 60 * 60_000, run: () => processPtmSweep() },
+    {
+      /**
+       * Staff leave: closes requests nobody decided on before their day ended,
+       * and re-checks substitute cover on approved leaves (settling or repairing
+       * the "arrange substitutes" task). Every step is a guarded status change.
+       */
+      name: "leave_sweep",
+      intervalMs: 60 * 60_000,
+      run: () => processLeaveSweep(),
+    },
     {
       name: "ask_coach_email_reminders",
       intervalMs: 60_000,

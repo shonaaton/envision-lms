@@ -132,6 +132,31 @@ export function noticeError(
   return null;
 }
 
+/**
+ * Why this person cannot cancel this leave now, or null when they can.
+ *
+ * - The applicant may cancel a request any time, and an approved leave only
+ *   until it starts (IST midnight, or the first chosen class of a half day).
+ *   This holds for an applicant who is also an approver.
+ * - An approver may cancel someone else's approved leave until its day ends
+ *   (e.g. the coach came in after all).
+ */
+export function cancelBlockReason(
+  leave: { applicant: unknown; status: string; startsAt: Date | string | null; dateKey: string },
+  viewer: { id: string; isApprover: boolean },
+  now = new Date()
+) {
+  const own = idOf(leave.applicant) === viewer.id;
+  if (!own && !viewer.isApprover) return "You cannot cancel this leave.";
+  if (leave.status === "requested") return own ? null : "Reject the request instead of cancelling it.";
+  if (leave.status !== "approved") return `This leave is already ${leave.status}.`;
+  if (own) {
+    const started = !leave.startsAt || new Date(leave.startsAt).getTime() <= now.getTime();
+    return started ? "Your leave has already started, so it can no longer be cancelled." : null;
+  }
+  return leave.dateKey < academyDateKey(now) ? "This leave day has already passed." : null;
+}
+
 /** Credits not already promised to other pending requests. */
 export function availableCredits(balance: number, pendingCosts: number[]) {
   const held = pendingCosts.reduce((sum, cost) => sum + Number(cost || 0), 0);

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { CalendarOff, CalendarPlus, CheckCircle2, Clock, Coins, UserRoundCheck } from "lucide-react";
 import { toast } from "sonner";
 import { academyDateKey, academyDateTime } from "@/lib/academyTime";
-import { creditCost, formatCredits, leaveDayLabel, type LeaveViewer, type SerializedLeave } from "@/lib/leave/leaveRules";
+import { cancelBlockReason, creditCost, formatCredits, leaveDayLabel, type LeaveViewer, type SerializedLeave } from "@/lib/leave/leaveRules";
 import LeaveCreditsPanel from "./LeaveCreditsPanel";
 import { Drawer, StatusChip, TypeChip, button, danger, dateTime, field, secondary, sendJson, timeOnly } from "./leaveUi";
 
@@ -169,9 +169,8 @@ function LeaveCard({ leave, viewer, today, busy, highlighted, showApplicant, onA
   onApprove: () => void; onReject: () => void; onCancel: () => void;
 }) {
   const own = leave.applicant === viewer.id;
-  const started = leave.startsAt ? new Date(leave.startsAt).getTime() <= Date.now() : false;
   const canDecide = viewer.isApprover && !own && leave.status === "requested" && leave.dateKey >= today;
-  const canCancel = (own && (leave.status === "requested" || (leave.status === "approved" && !started))) || (viewer.isApprover && leave.status === "approved" && leave.dateKey >= today);
+  const canCancel = !cancelBlockReason(leave, viewer);
   const watchCover = leave.status === "approved" && leave.dateKey >= today && leave.sessions.length > 0;
   const uncovered = leave.sessions.filter((session) => session.covered === false && (!session.end || new Date(session.end).getTime() > Date.now())).length;
   return (

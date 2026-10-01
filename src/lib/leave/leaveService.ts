@@ -18,6 +18,7 @@ import {
   MAX_LEAVE_DAYS_AHEAD,
   applyLeaveSchema,
   availableCredits,
+  cancelBlockReason,
   creditCheckError,
   creditCost,
   describeLeaveSessions,
@@ -258,15 +259,8 @@ async function cancelLeave(id: string, reason: string, viewer: LeaveViewer, now:
   const existing: any = await LeaveRequest.findById(id).lean();
   if (!existing) throw new LeaveError("Leave request not found.", 404);
   const own = idOf(existing.applicant) === viewer.id;
-  const started = new Date(existing.startsAt).getTime() <= now.getTime();
-  const allowed =
-    (own && existing.status === "requested") ||
-    (own && existing.status === "approved" && !started) ||
-    (viewer.isApprover && existing.status === "approved" && existing.dateKey >= academyDateKey(now));
-  if (!allowed) {
-    if (!own && !viewer.isApprover) throw new LeaveError("You cannot cancel this leave.", 403);
-    throw new LeaveError(existing.status === "approved" ? "This leave has already started, so it can no longer be cancelled." : `This leave is already ${existing.status}.`, 409);
-  }
+  const blocked = cancelBlockReason(existing, viewer, now);
+  if (blocked) throw new LeaveError(blocked, !own && !viewer.isApprover ? 403 : 409);
   const leave: any = await LeaveRequest.findOneAndUpdate(
     { _id: id, status: existing.status },
     { $set: { status: "cancelled", cancelledBy: viewer.id, cancelledAt: now, cancelReason: reason || "" } },

@@ -4,6 +4,7 @@ import {
   applyLeaveSchema,
   availableCredits,
   canApplyForLeave,
+  cancelBlockReason,
   creditCheckError,
   creditCost,
   formatCredits,
@@ -98,6 +99,33 @@ describe("credits", () => {
     expect(leaveCreditActionSchema.safeParse({ action: "adjust", userId: COACH, amount: -0.5 }).success).toBe(true);
     expect(leaveCreditActionSchema.safeParse({ action: "adjust", userId: COACH, amount: 0.25 }).success).toBe(false);
     expect(leaveCreditActionSchema.safeParse({ action: "adjust", userId: COACH, amount: 0 }).success).toBe(false);
+  });
+});
+
+describe("cancelling", () => {
+  const day = "2026-10-10";
+  const firstClass = academyDateTime(day, "16:00");
+  const approved = { applicant: COACH, status: "approved", startsAt: firstClass, dateKey: day };
+  const applicant = { id: COACH, isApprover: false };
+  const approverApplicant = { id: COACH, isApprover: true };
+  const otherApprover = { id: SUB, isApprover: true };
+  const before = new Date(firstClass.getTime() - 60_000);
+  const after = new Date(firstClass.getTime() + 60_000);
+
+  it("lets the applicant cancel an approved leave until it starts, and not after", () => {
+    expect(cancelBlockReason(approved, applicant, before)).toBeNull();
+    expect(cancelBlockReason(approved, applicant, after)).toMatch(/already started/);
+  });
+  it("holds the applicant to that even when they are an approver", () => {
+    expect(cancelBlockReason(approved, approverApplicant, after)).toMatch(/already started/);
+  });
+  it("lets the applicant withdraw a request at any time", () => {
+    expect(cancelBlockReason({ ...approved, status: "requested" }, applicant, after)).toBeNull();
+  });
+  it("lets another approver cancel until the day ends, and nobody else at all", () => {
+    expect(cancelBlockReason(approved, otherApprover, after)).toBeNull();
+    expect(cancelBlockReason(approved, otherApprover, new Date(academyDateTime("2026-10-11", "09:00")))).toMatch(/passed/);
+    expect(cancelBlockReason(approved, { id: SUB, isApprover: false }, before)).toMatch(/cannot cancel/);
   });
 });
 

@@ -576,3 +576,16 @@ describe("batches that move up a level", () => {
     expect(at("2026-10-02T12:00:00Z")).toBe(65000);
   });
 });
+
+describe("deleted demos", () => {
+  it("leaves out a demo whose booking was deleted, and keeps every other classroom", async () => {
+    const { withoutDeletedDemos } = await import("@/lib/coachPay");
+    const rooms = [
+      { _id: "regular", classroomType: "series" },
+      { _id: "converted-demo", classroomType: "demo", demoBooking: "booking-live" },
+      { _id: "deleted-demo", classroomType: "demo", demoBooking: "booking-gone" },
+      { _id: "manual-demo", classroomType: "demo" },
+    ];
+    expect(withoutDeletedDemos(rooms, ["booking-live"]).map((room) => room._id)).toEqual(["regular", "converted-demo", "manual-demo"]);
+  });
+});

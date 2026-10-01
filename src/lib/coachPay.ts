@@ -306,6 +306,16 @@ export function coachBatchRate(input: Omit<RateLookupInput, "kind">): ResolvedRa
     : null;
 }
 
+/**
+ * Classrooms minus demos whose booking was deleted from Demo Center. Such a
+ * classroom can outlive its booking (a test demo, usually) and must not be
+ * paid or invoiced. A demo classroom that never had a booking is kept.
+ */
+export function withoutDeletedDemos(classrooms: any[], existingBookingIds: string[]) {
+  const existing = new Set(existingBookingIds);
+  return classrooms.filter((classroom) => classroom.classroomType !== "demo" || !classroom.demoBooking || existing.has(idOf(classroom.demoBooking)));
+}
+
 export type BuildPayEventsInput = {
   classrooms: any[];
   rates: any[];

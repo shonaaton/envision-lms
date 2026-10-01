@@ -5,7 +5,7 @@ import { Classroom } from "@/models/Classroom";
 import { Booking } from "@/models/Booking";
 import { User } from "@/models/User";
 import { CoachPayPlan, CoachPayProposal, CoachRate, NoShowRuling, SessionPayOverride, type PayKind, type RateUnit } from "@/models/CoachPay";
-import { buildPayEvents, coachBatchRate, planFor, resolveRate, summarizePayEvents, REVIEWABLE_SESSION_STATUSES, type CoachPaySummary, type ResolvedRate } from "@/lib/coachPay";
+import { buildPayEvents, coachBatchRate, withoutDeletedDemos, planFor, resolveRate, summarizePayEvents, REVIEWABLE_SESSION_STATUSES, type CoachPaySummary, type ResolvedRate } from "@/lib/coachPay";
 import { StaffInvoice } from "@/models/StaffInvoice";
 import { academyMonthOf, monthLabel } from "@/lib/feedback/feedbackCycleDates";
 import { effectiveSessionCoachId, scheduledPaymentMinutes, scheduledStartDate } from "@/lib/teachingStats";
@@ -128,10 +128,16 @@ export async function loadCoachPay(period: PayPeriod, filters: CoachPayFilters =
   const bookingIds = (classrooms as any[])
     .filter((classroom) => classroom.classroomType === "demo" && classroom.demoBooking)
     .map((classroom) => idOf(classroom.demoBooking));
-  const conversions = await loadConversions(bookingIds);
+  const [conversions, liveBookings] = await Promise.all([
+    loadConversions(bookingIds),
+    bookingIds.length ? Booking.find({ _id: { $in: bookingIds } }).select("_id").lean() : Promise.resolve([]),
+  ]);
+  // A demo whose booking has been deleted was removed from Demo Center (a test,
+  // usually); its classroom can outlive it, but it is not paid or invoiced.
+  const payableClassrooms = withoutDeletedDemos(classrooms as any[], (liveBookings as any[]).map((booking) => idOf(booking._id)));
 
   const events = buildPayEvents({
-    classrooms: classrooms as any[],
+    classrooms: payableClassrooms,
     rates: rates as any[],
     overrides: overrides as any[],
     rulings: rulings as any[],

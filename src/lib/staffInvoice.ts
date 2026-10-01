@@ -175,7 +175,8 @@ export function groupInvoiceLines(events: PayEvent[]): InvoiceDraftGroups {
       sessions: [],
     };
     row.quantity += 1;
-    row.minutes += event.minutes;
+    // An incentive is paid per enrolment, not for time spent: it has no hours.
+    if (group !== "bonus") row.minutes += event.minutes;
     row.amount += event.amount;
     row.sessions.push(...sessionOf(event));
     rows.set(key, row);

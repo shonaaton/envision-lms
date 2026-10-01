@@ -1,5 +1,9 @@
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
+import { requirePtmViewer } from "@/lib/ptm/ptmAccess";
+import { getPtmSummary } from "@/lib/ptm/ptmService";
+import { UpcomingPtm } from "@/components/ptm/ptmUi";
+import { formatAcademyDateTime } from "@/lib/academyTime";
 import { Activity } from "@/models/Activity";
 import { Attendance } from "@/models/Attendance";
 import { Batch } from "@/models/Batch";
@@ -341,21 +345,23 @@ function StudentStatLink({
   value,
   note,
   icon: Icon,
+  compact = false,
 }: {
   href: string;
   label: string;
   value: string | number;
   note: string;
   icon: any;
+  compact?: boolean;
 }) {
   return (
     <Link href={href} className="group flex min-h-[76px] items-center justify-between gap-3 rounded-lg border border-slate-200/80 bg-white/95 p-3 shadow-[0_14px_36px_rgba(15,23,42,0.06)] transition hover:-translate-y-0.5 hover:border-brand/30 hover:shadow-lg hover:shadow-brand-900/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
       <div className="min-w-0">
-        <p className="truncate text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">{label}</p>
+        <p className={`${compact ? "" : "truncate"} text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500`}>{label}</p>
         <p className="mt-1 text-xl font-black leading-none text-slate-950">{value}</p>
-        <p className="mt-1 truncate text-[11px] text-slate-500">{note}</p>
+        <p title={note} className={`mt-1 ${compact ? "line-clamp-2" : "truncate"} text-[11px] text-slate-500`}>{note}</p>
       </div>
-      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-brand-50 text-brand ring-1 ring-brand/10 transition group-hover:bg-brand group-hover:text-white">
+      <span className={`${compact ? "hidden 2xl:grid" : "grid"} h-9 w-9 shrink-0 place-items-center rounded-lg bg-brand-50 text-brand ring-1 ring-brand/10 transition group-hover:bg-brand group-hover:text-white`}>
         <Icon size={17} aria-hidden="true" />
       </span>
     </Link>
@@ -1183,6 +1189,8 @@ function coachSessionDayLabel(date: Date, now: Date) {
 
 async function StudentDashboard({ userId, joinAllowed }: { userId: string; joinAllowed: boolean }) {
   const now = new Date();
+  const ptmViewer = await requirePtmViewer();
+  const ptmSummary = ptmViewer ? await getPtmSummary(ptmViewer) : null;
   // Shared with the homework page and API so a batch change hides the same work
   // everywhere: nothing the old batch was set after the student left.
   const homeworkFilter = await studentHomeworkFilter(userId);
@@ -1354,10 +1362,11 @@ async function StudentDashboard({ userId, joinAllowed }: { userId: string; joinA
             </h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">{currentLevel} • {batchName} • Coach {coachName}</p>
 
-            <div className="mt-5 grid gap-3 sm:grid-cols-3">
-              <StudentStatLink href="/classrooms" label="Classes" value={upcomingSessions.length} note={nextSession ? formatJoinWindowLabel(nextSession.session, now) : "Calendar clear"} icon={Calendar} />
-              <StudentStatLink href="/homework" label="Pending" value={pendingHomework.length} note={`${homeworkCompletion}% homework done`} icon={ClipboardList} />
-              <StudentStatLink href="/leaderboard" label="Rewards" value={totalXp} note={`${totalCoins} coins • ${totalBadges} badges`} icon={Zap} />
+            <div className={`mt-5 grid gap-3 ${ptmSummary ? "sm:grid-cols-4" : "sm:grid-cols-3"}`}>
+              <StudentStatLink compact={Boolean(ptmSummary)} href="/classrooms" label="Classes" value={upcomingSessions.length} note={nextSession ? formatJoinWindowLabel(nextSession.session, now) : "Calendar clear"} icon={Calendar} />
+              <StudentStatLink compact={Boolean(ptmSummary)} href="/homework" label="Pending" value={pendingHomework.length} note={`${homeworkCompletion}% homework done`} icon={ClipboardList} />
+              <StudentStatLink compact={Boolean(ptmSummary)} href="/leaderboard" label="Rewards" value={totalXp} note={`${totalCoins} coins • ${totalBadges} badges`} icon={Zap} />
+              {ptmSummary?.credits && <StudentStatLink compact href="/ptm" label="PTM credits" value={`${ptmSummary.credits.remaining} left`} note={ptmSummary.nextPtm ? `Next: ${formatAcademyDateTime(ptmSummary.nextPtm.scheduledAt)} IST` : ptmSummary.credits.nextEligibleAt ? `From ${formatAcademyDateTime(ptmSummary.credits.nextEligibleAt, { hour: undefined, minute: undefined })}` : "12 per academic year"} icon={MessageSquare} />}
             </div>
           </div>
 
@@ -1384,6 +1393,7 @@ async function StudentDashboard({ userId, joinAllowed }: { userId: string; joinA
         </div>
       </section>
 
+      {ptmSummary?.nextPtm && <StudentCard><UpcomingPtm item={ptmSummary.nextPtm} role="student" /></StudentCard>}
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.65fr)]">
         <div className="space-y-5">
           <section className="overflow-hidden rounded-lg border border-brand/15 bg-[linear-gradient(135deg,#3b0c53_0%,#651587_58%,#2b0a3f_100%)] p-5 text-white shadow-[0_24px_64px_rgba(90,19,114,0.24)] sm:p-6">
@@ -1893,6 +1903,8 @@ async function CoachDashboard({ userId, searchParams, joinAllowed }: { userId: s
 
 async function CoachDashboardV2({ userId, searchParams, joinAllowed }: { userId: string; searchParams: DashboardSearchParams; joinAllowed: boolean }) {
   const now = new Date();
+  const ptmViewer = await requirePtmViewer();
+  const ptmSummary = ptmViewer ? await getPtmSummary(ptmViewer) : null;
   const summaryRange = getTeachingSummaryRange(searchParams);
   const [classroomDocs, homework, unreadMessages] = await Promise.all([
     Classroom.find({
@@ -1967,6 +1979,7 @@ async function CoachDashboardV2({ userId, searchParams, joinAllowed }: { userId:
   return (
     <div className="space-y-6 text-slate-950">
       <MyPendingTasksPanel />
+      {ptmSummary?.nextPtm && <UpcomingPtm item={ptmSummary.nextPtm} role="instructor" />}
       <section className="overflow-hidden rounded-[28px] bg-gradient-to-br from-brand via-purple-800 to-brand-900 px-5 py-6 text-white shadow-[0_24px_60px_rgba(90,19,114,0.24)] sm:px-7">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
@@ -2078,6 +2091,7 @@ async function CoachDashboardV2({ userId, searchParams, joinAllowed }: { userId:
         <aside className="space-y-5">
           <CoachPanel icon={Zap} title="Action Center">
             <CoachActionItem href="/attendance/pending" icon={Users} label="Attendance pending" value={attendanceDueToday} tone="yellow" />
+            {ptmSummary && <CoachActionItem href="/ptm?tab=requested" icon={MessageSquare} label="PTM requests to approve" value={ptmSummary.pendingCount} tone="yellow" />}
             <CoachActionItem href="/homework" icon={ClipboardList} label="Homework to review" value={homework.length} tone="yellow" />
             <CoachActionItem href="/ask-coach" icon={MessageSquare} label="Coach messages unread" value={unreadMessages} tone="yellow" />
             <CoachActionItem href="/classrooms" icon={RotateCcw} label="Reschedule follow-up" value={teaching.classesRescheduled} tone="yellow" />
@@ -2312,6 +2326,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
   // Only the admin branch below needs this, and it costs a lookup - so it is
   // resolved after the student and coach dashboards have already returned.
   const isSuperAdmin = await isSuperAdminSession(session?.user as any);
+  const ptmViewer = await requirePtmViewer();
+  const ptmSummary = ptmViewer ? await getPtmSummary(ptmViewer) : null;
   const { preset, from, to } = getRange(searchParams);
   const focusDate = parseDate(searchParams.date) || new Date();
   const focusFrom = startOfDay(focusDate);
@@ -2863,6 +2879,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
           <AdminPanel icon={Zap} title="Action Center" action={<Link href="/dashboard?tab=activity" className="text-sm font-black text-brand">View all</Link>}>
             <div className="space-y-3">
               <AdminActionItem href="/attendance/pending" icon={ClipboardList} label="Attendance pending" note="Classes need attendance" value={attendancePending} tone="purple" />
+              {ptmSummary && <AdminActionItem href="/ptm?tab=to_schedule" icon={MessageSquare} label="PTMs to schedule" note="Requests awaiting confirmation" value={ptmSummary.pendingCount} tone="purple" />}
               <AdminActionItem href="/homework" icon={ClipboardList} label="Homework to review" note="Submissions awaiting review" value={homeworkToReview} tone="amber" />
               <AdminActionItem href="/ask-coach" icon={MessageSquare} label="Unread messages" note="Students and parents" value={unreadAdminMessages} tone="blue" />
               <AdminActionItem href="/booking" icon={RotateCcw} label="Reschedule requests" note="Requests needing approval" value={rescheduleRequests} tone="rose" />

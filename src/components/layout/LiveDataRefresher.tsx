@@ -17,6 +17,7 @@ type RefreshDetail = {
 const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 const quietMutationPatterns = [
+  /^\/api\/ptm(\/|$)/,
   /^\/api\/classrooms\/[^/]+\/live\/move$/,
   /^\/api\/classrooms\/[^/]+\/live\/chat$/,
   /^\/api\/classrooms\/[^/]+\/live\/responses$/,

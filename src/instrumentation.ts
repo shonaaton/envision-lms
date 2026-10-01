@@ -21,12 +21,14 @@ export async function register() {
   const { processDueCourseCompletions } = await import("@/lib/courseCompletionSweep");
   const { processDailyTaskReminders } = await import("@/lib/tasks/taskReminders");
   const { processMonthlyFeedbackCycle } = await import("@/lib/feedback/feedbackService");
+  const { processPtmSweep } = await import("@/lib/ptm/ptmService");
   const { sealLegacyTempPasswords } = await import("@/lib/tempPasswordMigration");
 
   installRuntimeProcessLogging();
   installRuntimeStderrCapture();
 
   startScheduler([
+    { name: "ptm_sweep", intervalMs: 60 * 60_000, run: () => processPtmSweep() },
     {
       name: "ask_coach_email_reminders",
       intervalMs: 60_000,

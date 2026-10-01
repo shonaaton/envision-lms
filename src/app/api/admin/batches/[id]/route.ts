@@ -8,6 +8,7 @@ import { recordActivity } from "@/lib/activity";
 import { canAccessFeature } from "@/lib/featureAccess";
 import { syncClassroomSessionInstances } from "@/lib/classroomSessionInstances";
 import { notifyBatchCoachAssigned } from "@/lib/batchCoachNotifications";
+import { handOverBatchClassrooms } from "@/lib/batchCoachHandover";
 import { notifyStudentsJoinedBatchCoach, notifyStudentsLeftBatchCoach } from "@/lib/batchMembershipNotifications";
 import { pausedStudentIds } from "@/lib/studentPause";
 import { batchUpdateSchema } from "@/lib/validation";
@@ -258,7 +259,11 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const previousCoachId = idOf(existing.coach);
   const nextCoachId = idOf(b?.coach || body.coach);
   const coachChanged = Boolean(body.coach !== undefined && nextCoachId && previousCoachId !== nextCoachId);
+  let classroomsMoved = 0;
   if (coachChanged) {
+    // The classrooms carry the coach that the Classrooms page, pay and the
+    // coach's own list read, so they move with the batch.
+    ({ classroomsMoved } = await handOverBatchClassrooms({ batchId: params.id, fromCoachId: previousCoachId, toCoachId: nextCoachId, actorId }));
     await notifyBatchCoachAssigned({
       batchId: params.id,
       previousCoachId,
@@ -291,7 +296,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     label: `Updated batch ${b?.name ?? "batch"}`,
     entityType: "Batch",
     entityId: params.id,
-    metadata: { fields: Object.keys(body) },
+    metadata: { fields: Object.keys(body), ...(coachChanged ? { previousCoach: previousCoachId, coach: nextCoachId, classroomsMoved } : {}) },
   });
   return NextResponse.json(b);
 }

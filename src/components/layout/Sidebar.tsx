@@ -62,6 +62,7 @@ type Role = "student" | "instructor" | "admin" | "sub-admin";
 type AccountStatus = "demo" | "enrolled" | "coach_applicant" | "approved" | "rejected";
 type FeatureStatus = "enabled" | "disabled" | "testing" | "coming_soon";
 type FeatureState = Record<string, { visible: boolean; status: FeatureStatus; permissions: string[] }>;
+function visiblePtm(role: Role, state?: FeatureState) { return role !== "student" && state?.ptm?.visible !== false; }
 type NavItem = { href: string; label: string; icon: any; featureKey?: string; permission?: string; roles?: Role[]; demoOnly?: boolean; hideForDemo?: boolean; superAdminOnly?: boolean };
 type NavSection = { id: string; title: string; items: NavItem[]; roles?: Role[]; superAdminOnly?: boolean };
 type NotificationItem = {
@@ -82,6 +83,7 @@ const sections: NavSection[] = [
       { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, featureKey: "dashboard" },
       { href: "/tasks", label: "Tasks", icon: ListChecks, featureKey: "taskManager", roles: ["instructor", "admin", "sub-admin"] },
       { href: "/feedback", label: "Monthly Feedback", icon: MessageSquareHeart, featureKey: "monthlyFeedback", roles: ["student", "instructor", "admin", "sub-admin"] },
+      { href: "/ptm", label: "PTM", icon: MessageSquareHeart, featureKey: "ptm", roles: ["student", "instructor", "admin", "sub-admin"] },
     ],
   },
   {
@@ -325,6 +327,8 @@ export default function Sidebar({
   const pathname = usePathname() || "";
   const [askCoachUnreadCount, setAskCoachUnreadCount] = useState(0);
   const [pendingTaskCount, setPendingTaskCount] = useState(0);
+  const [pendingPtmCount, setPendingPtmCount] = useState(0);
+  const ptmVisible = visiblePtm(role, featureState);
   const tasksVisible = role !== "student" && featureState?.taskManager?.visible !== false;
   const [openNotifications, setOpenNotifications] = useState(false);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
@@ -356,6 +360,23 @@ export default function Sidebar({
     setUnreadCount(nextUnreadCount);
     return nextUnreadCount;
   }
+
+  useEffect(() => {
+    if (!ptmVisible) return;
+    let mounted = true;
+    const refresh = async () => {
+      if (document.visibilityState !== "visible") return;
+      const response = await fetch("/api/ptm?summary=1", { cache: "no-store" }).catch(() => null);
+      if (!response?.ok) return;
+      const data = await response.json().catch(() => ({}));
+      if (mounted) setPendingPtmCount(Number(data.pendingCount || 0));
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 60_000);
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("ptm-updated", refresh);
+    return () => { mounted = false; window.clearInterval(timer); document.removeEventListener("visibilitychange", refresh); window.removeEventListener("ptm-updated", refresh); };
+  }, [ptmVisible, pathname]);
 
   async function openBell() {
     const nextOpen = !openNotifications;
@@ -528,6 +549,7 @@ export default function Sidebar({
                               {pendingTaskCount > 99 ? "99+" : pendingTaskCount}
                             </span>
                           )}
+                          {item.href === "/ptm" && pendingPtmCount > 0 && <span className={cn("ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1.5 text-[10px] font-black text-brand", desktopCollapsed ? "md:absolute md:right-1.5 md:top-1.5" : "")}>{pendingPtmCount > 99 ? "99+" : pendingPtmCount}</span>}
                           {item.href === "/ask-coach" && askCoachUnreadCount > 0 && (
                             <span className={cn(
                               "ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1.5 text-[10px] font-black text-brand shadow-sm",

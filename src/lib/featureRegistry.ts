@@ -454,6 +454,14 @@ export const FEATURE_DEFINITIONS: FeatureDefinition[] = [
     defaultRolePermissions: { instructor: ["view", "edit"], admin: all(view, create, edit), "sub-admin": all(view, create, edit) },
   },
   {
+    key: "ptm",
+    label: "PTM",
+    category: "Communication",
+    description: "Parent–teacher meetings, yearly credits, scheduling, and private feedback.",
+    routes: ["/ptm"], apiPrefixes: ["/api/ptm"], permissions: [view, create, approve, edit], defaultStatus: "enabled",
+    defaultRolePermissions: { student: ["view", "create"], instructor: ["view", "approve"], "sub-admin": ["view", "approve", "edit"], admin: all(view, create, approve, edit) },
+  },
+  {
     key: "monthlyFeedback",
     label: "Monthly Feedback",
     category: "Communication",

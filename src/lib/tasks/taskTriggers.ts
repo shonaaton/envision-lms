@@ -14,6 +14,21 @@ import { OPEN_TASK_STATUSES } from "@/lib/tasks/taskRules";
 import { InternalTask } from "@/models/InternalTask";
 import { User } from "@/models/User";
 
+export function raisePtmApprovalTask(ptm: any) {
+  return raise({ kind: "ptm_approval", referenceType: "PtmApproval", referenceId: ptm._id, assignedTo: ptm.coach,
+    title: `Approve PTM — ${ptm.studentName}`, details: `Preferred: ${when(ptm.preferredAt)}. ${ptm.preferredNote || ""}\nTopic: ${ptm.reason}`,
+    actionHref: "/ptm?tab=requested", dueAt: new Date(new Date(ptm.createdAt).getTime() + 48 * 3600_000) });
+}
+export function resolvePtmApprovalTask(id: unknown, by?: unknown) { return settle("PtmApproval", id, by, "PTM reviewed."); }
+export function raisePtmScheduleTask(ptm: any) {
+  return raise({ kind: "ptm_schedule", referenceType: "PtmSchedule", referenceId: ptm._id, pool: "admins",
+    title: `Confirm PTM timing & add Meet link — ${ptm.studentName} with ${ptm.coachName}`,
+    details: `Preferred: ${when(ptm.preferredAt)}. ${ptm.preferredNote || ""}\nTopic: ${ptm.reason}`,
+    actionHref: `/ptm?tab=to_schedule&id=${idOf(ptm)}` });
+}
+export function resolvePtmScheduleTask(id: unknown, by?: unknown) { return settle("PtmSchedule", id, by, "PTM scheduled."); }
+export async function cancelPtmTasks(id: unknown, reason: string) { await withdraw("PtmApproval", id, reason); await withdraw("PtmSchedule", id, reason); }
+
 /**
  * One function per app event that should put work in someone's Tasks list,
  * and one per event that settles it. Every function here swallows its own

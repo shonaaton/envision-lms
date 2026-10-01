@@ -440,9 +440,12 @@ export default function ClassroomManagementClient({
     return items.filter((item) => {
       if (String(item.status || "") === "completed") return false;
       if (filters.coach) {
+        // A group belongs to the coach who holds it now. `assignedCoach` only
+        // records who held a class before a permanent coach change, so matching
+        // on it kept a handed-over group under the old coach as well.
         const primaryMatches = String((item.coach as any)?._id || item.coach || "") === filters.coach;
         const substituteMatches = (item.generatedSessions || []).some((session: any) =>
-          [session?.substituteCoach, session?.assignedCoach].some((coach: any) => String(coach?._id || coach || "") === filters.coach)
+          String(session?.substituteCoach?._id || session?.substituteCoach || "") === filters.coach
         );
         if (!primaryMatches && !substituteMatches) return false;
       }

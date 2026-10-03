@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AlertTriangle, BadgeIndianRupee, CalendarClock, Gavel, Inbox, Layers, Receipt, Repeat, ScrollText, UserCheck, Users } from "lucide-react";
+import { AlertTriangle, BadgeIndianRupee, CalendarClock, Gavel, Inbox, Languages, Layers, Receipt, Repeat, ScrollText, UserCheck, Users } from "lucide-react";
 
 import { DataPanel, EmptyState, PageHeader, StatCard } from "@/components/common/PageHeader";
 import { PayPeriodFilter } from "@/components/coach-pay/PayPeriodFilter";
@@ -153,6 +153,9 @@ export default async function CoachPayPage({
         </Link>
         <Link href="/coach-pay/substitutions" className="btn-outline h-9 px-4 text-xs">
           <Repeat size={14} /> {viewer.canViewAll ? "Substitutions" : "My substitutions"}
+        </Link>
+        <Link href="/coach-pay/profile" className="btn-outline h-9 px-4 text-xs">
+          <Languages size={14} /> {viewer.canViewAll ? "Coach profiles" : "My teaching profile"}
         </Link>
         {viewer.canManageRates && (
           <Link href="/coach-pay/proposals" className="btn-outline h-9 px-4 text-xs">

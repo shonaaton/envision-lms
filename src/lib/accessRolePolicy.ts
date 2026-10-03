@@ -29,7 +29,7 @@ export const SALES_ROLE_GRANTS: RoleGrants = {
   staffInvoices: ["view"],
 };
 export const MARKETING_ROLE_GRANTS: RoleGrants = {
-  ...SALES_ROLE_GRANTS, demoCenter: ["view", "edit", "approve"], marketingAnalytics: ["view"],
+  ...SALES_ROLE_GRANTS, demoCenter: ["view", "edit", "approve", "export"], marketingAnalytics: ["view"],
 };
 export const roleInputSchema = z.object({
   name: z.string().trim().min(2).max(80).refine(value => !["admin", "super admin", "super-admin", "sub admin", "sub-admin", "student", "instructor", "coach"].includes(value.toLowerCase()), "Choose a name different from a built-in role."),

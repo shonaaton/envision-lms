@@ -10,6 +10,7 @@ import { recordActivity } from "@/lib/activity";
 import { consumeAttendanceCredit } from "@/lib/fees";
 import { requireCoachPayPermission, requireCoachSelf } from "@/lib/coachPayAccess";
 import { isValidRateScope } from "@/lib/coachPay";
+import { MAX_NOTE_LENGTH, normalizeAvailability, normalizeLanguages, weeklyAvailableMinutes } from "@/lib/coachProfile";
 import { cancelPayProposalTask, raisePayProposalTask, resolveNoShowRulingTask, resolvePayProposalTask } from "@/lib/tasks/taskTriggers";
 import { CoachPayPlan, CoachPayProposal, CoachRate, PAY_PLAN_TYPES, NoShowRuling, SessionPayOverride, PAY_KINDS, RATE_UNITS } from "@/models/CoachPay";
 import { Attendance } from "@/models/Attendance";
@@ -847,4 +848,78 @@ export async function reviewProposal(formData: FormData) {
   });
 
   refresh();
+}
+
+export type CoachProfileActionResult = { ok: true; message: string } | { ok: false; error: string };
+
+function parseJson(formData: FormData, key: string): unknown {
+  try {
+    return JSON.parse(text(formData, key) || "[]");
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Languages and weekly availability on a coach's Teaching Profile.
+ *
+ * A coach edits their own; the id comes from their session, never the form.
+ * Editing someone else's needs `manage_rates`, the same grant that sets their pay.
+ */
+export async function saveCoachProfile(formData: FormData): Promise<CoachProfileActionResult> {
+  const selfId = await requireCoachSelf();
+  if (!selfId) return { ok: false, error: "You do not have access to Coach Pay." };
+
+  const requested = text(formData, "coach");
+  let coachId = selfId;
+  let actorId = selfId;
+  if (requested && requested !== selfId) {
+    const session = await requireCoachPayPermission("manage_rates");
+    if (!session?.user) return { ok: false, error: "You can only change your own teaching profile." };
+    if (!isValidObjectId(requested)) return { ok: false, error: "Choose a coach first." };
+    coachId = requested;
+    actorId = String((session.user as any).id);
+  }
+
+  const languagesInput = parseJson(formData, "languages");
+  const availabilityInput = parseJson(formData, "availability");
+  if (!Array.isArray(languagesInput) || !Array.isArray(availabilityInput)) {
+    return { ok: false, error: "The form could not be read. Please reload the page and try again." };
+  }
+  const languages = normalizeLanguages(languagesInput);
+  const availability = normalizeAvailability(availabilityInput);
+  if (!availability.ok) return { ok: false, error: availability.error };
+  const note = text(formData, "availabilityNote").slice(0, MAX_NOTE_LENGTH);
+
+  await dbConnect();
+  const updated: any = await User.findOneAndUpdate(
+    { _id: coachId },
+    {
+      $set: {
+        "coachProfile.languages": languages,
+        "coachProfile.availability": availability.slots,
+        "coachProfile.availabilityNote": note,
+        "coachProfile.updatedAt": new Date(),
+        "coachProfile.updatedBy": actorId,
+      },
+    },
+    { new: true }
+  )
+    .select("name username")
+    .lean();
+  if (!updated) return { ok: false, error: "That coach no longer exists." };
+
+  await recordActivity({
+    actor: actorId,
+    targetUser: coachId,
+    type: "coachPay.profile.saved",
+    label: actorId === coachId ? "Updated their teaching profile" : "Updated a coach's teaching profile",
+    entityType: "User",
+    entityId: coachId,
+    metadata: { languages, slots: availability.slots.length, minutesPerWeek: weeklyAvailableMinutes(availability.slots) },
+  });
+  revalidatePath("/coach-pay/profile");
+
+  const who = actorId === coachId ? "Your" : `${updated.name || updated.username || "The coach"}'s`;
+  return { ok: true, message: `Saved. ${who} languages and available times are up to date.` };
 }

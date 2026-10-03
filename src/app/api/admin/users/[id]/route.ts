@@ -116,7 +116,9 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (update.email && update.email !== (target as any).email && (await User.exists({ email: update.email, _id: { $ne: params.id } }))) return emailTaken();
   let u: any;
   try {
-    u = await User.findByIdAndUpdate(params.id, update, { new: true, runValidators: true, projection: { passwordHash: 0, ...(!actorIsSuperAdmin ? { tempPassword: 0 } : {}) } });
+    // Only a Super Admin reaches here for a staff account, so the grant alone decides.
+    const seesCredentials = actorIsSuperAdmin || (await canAccessFeature("userManagement", session!.user as any, "credentials"));
+    u = await User.findByIdAndUpdate(params.id, update, { new: true, runValidators: true, projection: { passwordHash: 0, ...(!seesCredentials ? { tempPassword: 0 } : {}) } });
   } catch (error: any) {
     if (error?.code === 11000) return emailTaken();
     if (error?.name === "ValidationError" || error?.name === "CastError") return NextResponse.json({ error: error.message }, { status: 400 });
@@ -165,7 +167,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     entityId: params.id,
     metadata: { fields: Object.keys(update) },
   });
-  // Stored sealed; only a Super Admin's projection includes it at all.
+  // Stored sealed; only a Super Admin's or a "credentials" holder's projection includes it.
   return NextResponse.json(u ? withOpenTempPassword(u.toJSON()) : u);
 }
 

@@ -7,7 +7,7 @@ import { FeatureAccess, PermissionAudit, PermissionTemplate } from "@/models/Fea
 import { User } from "@/models/User";
 import { Batch } from "@/models/Batch";
 import { Classroom } from "@/models/Classroom";
-import { explicitSuperAdminExists, getAccessUser, grantStaffInvoicesToSalesRole, resolveAccessRole } from "@/lib/accessRoles";
+import { explicitSuperAdminExists, getAccessUser, grantDemoExportToMarketingRole, grantStaffInvoicesToSalesRole, resolveAccessRole } from "@/lib/accessRoles";
 import { cachedPermissionValue } from "@/lib/permissionCache";
 import { isFeatureExcludedForRole, roleHasPermission, type RoleGrants } from "@/lib/accessRolePolicy";
 import {
@@ -235,6 +235,7 @@ async function migrateLegacyCoachPayDoc(doc: any) {
 }
 
 const COACH_SELF_VIEW_MIGRATION = "coach-self-view-2026-09";
+const MARKETING_DEMO_EXPORT_MIGRATION = "marketing-demo-export-2026-10";
 
 /**
  * Every coach sees their own pay: each class and substitution they took and
@@ -296,6 +297,13 @@ async function loadFeatureAccessStates(): Promise<Record<string, FeatureAccessSt
   if (coachPay && !(coachPay.appliedMigrations || []).includes(COACH_SELF_VIEW_MIGRATION)) {
     await grantCoachesTheirOwnPay(coachPay);
     docs = await FeatureAccess.find({ key: { $in: featureKeys } }).lean();
+  }
+  // Once per database: the Marketing role downloads the demo leads report.
+  const demoCenter: any = docs.find((doc: any) => doc.key === "demoCenter");
+  if (demoCenter && !(demoCenter.appliedMigrations || []).includes(MARKETING_DEMO_EXPORT_MIGRATION)) {
+    await grantDemoExportToMarketingRole();
+    await FeatureAccess.updateOne({ _id: demoCenter._id }, { $addToSet: { appliedMigrations: MARKETING_DEMO_EXPORT_MIGRATION } });
+    console.info("[featureAccess] demoCenter: Marketing role can download the demo leads report");
   }
   const byKey = new Map(docs.map((doc: any) => [doc.key, doc]));
   return Object.fromEntries(FEATURE_DEFINITIONS.map((feature) => [feature.key, normalizeState(feature, byKey.get(feature.key))]));

@@ -789,7 +789,7 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
   const successNotice = String(searchParams?.ok || "").trim();
   // A salesperson sees only the demos and leads assigned to them; "" = sees all.
   const salesOwner = await demoOwnerRestriction((session.user as any).id);
-  // Admins and the demo sub-admin (Saptarshi) only - see canExportDemoAssessments.
+  // Admins, the demo sub-admin (Saptarshi) and the Marketing role - see canExportDemoAssessments.
   const canExportAssessments = await canExportDemoAssessments((session.user as any).id);
   const [allBookings, allDemoStudents, coaches, courses, batches, allConvertedStudents, studentsWithConvertedBooking, allDuplicateFlags] = await Promise.all([
     Booking.find({ bookingType: "demo", ...(salesOwner ? { $or: [{ salesOwner }, { salesOwner: null }] } : {}) }).populate("student instructor assignedCoach", "name email countryCode phone username accountStatus parentName city country studentLevel demoExpiresAt").sort({ createdAt: -1 }).limit(300).lean(),
@@ -927,7 +927,7 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
         <p className="mt-1 max-w-3xl text-[13px] text-slate-500">Manage the full demo journey: requested time, coach assignment, demo classroom, assessment, conversion, and closed leads.</p>
         {canExportAssessments ? (
           <a href="/api/admin/demo-assessments/export?format=xlsx" className="btn-outline mt-3 inline-flex bg-white" download>
-            <Download size={15} /> Download full assessment report (Excel)
+            <Download size={15} /> Download all demo leads (Excel)
           </a>
         ) : null}
         {salesOwner ? (

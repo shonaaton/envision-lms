@@ -109,6 +109,28 @@ const UserSchema = new Schema(
     batches: [{ type: Schema.Types.ObjectId, ref: "Batch", index: true }],
     classrooms: [{ type: Schema.Types.ObjectId, ref: "Classroom" }],
     notes: { type: String },
+    // What a coach tells the academy about themselves on Coach Pay > Teaching
+    // Profile: the languages they can teach in and the hours they are free to
+    // take classes (IST). Information for scheduling only - it is NOT the booking
+    // `Availability` in models/Booking.ts that students book demo slots against.
+    // Arrays default to undefined so student records do not grow empty fields.
+    coachProfile: {
+      languages: { type: [String], default: undefined },
+      availability: {
+        type: [
+          {
+            _id: false,
+            dayOfWeek: { type: Number, min: 0, max: 6 },
+            startTime: String,
+            endTime: String,
+          },
+        ],
+        default: undefined,
+      },
+      availabilityNote: String,
+      updatedAt: Date,
+      updatedBy: { type: Schema.Types.ObjectId, ref: "User" },
+    },
     isActive: { type: Boolean, default: true, index: true },
     // Stamped when `isActive` is turned off so churn reporting knows when a
     // student actually left. Legacy rows fall back to `updatedAt`.

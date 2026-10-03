@@ -49,10 +49,21 @@ export default function AddUserModal({
     setLoading(false);
     const data = await res.json();
     if (!res.ok) return toast.error(data.error || "Failed");
+    const copyCredentials = data.tempPassword
+      ? {
+          action: {
+            label: "Copy",
+            onClick: () => {
+              navigator.clipboard?.writeText(`Username: ${data.username || ""}\nTemporary Password: ${data.tempPassword}`);
+              toast.success("Credentials copied");
+            },
+          },
+        }
+      : {};
     if (data.welcomeEmailDelivered === false) {
-      toast.warning(`${data.username} was created, but the welcome email could not be sent. Temp password: ${data.tempPassword}`, { duration: 9000 });
+      toast.warning(`${data.username} was created, but the welcome email could not be sent. Temp password: ${data.tempPassword}`, { duration: 15000, ...copyCredentials });
     } else if (data.tempPassword) {
-      toast.success(`${data.username} created. Welcome email sent. Temp password: ${data.tempPassword}`, { duration: 7000 });
+      toast.success(`${data.username} created. Welcome email sent. Temp password: ${data.tempPassword}`, { duration: 15000, ...copyCredentials });
     } else {
       toast.success(`${data.username} created`, { duration: 3500 });
     }

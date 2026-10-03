@@ -13,17 +13,20 @@ import {
   scaleLabel,
 } from "@/lib/demoAssessmentScales";
 import { demoSubAdminEmails } from "@/lib/demoNotificationRecipients";
+import { canAccessFeature } from "@/lib/featureAccess";
 import type { Sheet, SheetColumn } from "@/lib/spreadsheet";
+import { Booking } from "@/models/Booking";
 import { DemoFeedback } from "@/models/Onboarding";
 import { User } from "@/models/User";
 
 /**
- * The full demo assessment report as a spreadsheet.
+ * The full demo report as a spreadsheet: every demo lead, assessed or not.
  *
- * Who may download it: every admin, and the demo sub-admin(s) named in
- * `DEMO_SUB_ADMIN_NOTIFY_EMAILS` (Saptarshi by default). Not the rest of the
- * sub-admin bench - salespeople are sub-admins too, and this sheet holds every
- * lead's contact details and the coaches' internal notes.
+ * Who may download it: every admin, the demo sub-admin(s) named in
+ * `DEMO_SUB_ADMIN_NOTIFY_EMAILS` (Saptarshi by default), and any role granted
+ * Demo Center's `export` permission (the Marketing role, by default). Not the
+ * rest of the sub-admin bench - salespeople are sub-admins too, and this sheet
+ * holds every lead's contact details and the coaches' internal notes.
  */
 export async function canExportDemoAssessments(userId: unknown) {
   const id = String(userId || "");
@@ -32,7 +35,8 @@ export async function canExportDemoAssessments(userId: unknown) {
   const user: any = await User.findById(id).select("role email isActive").lean();
   if (!user || user.isActive === false) return false;
   if (user.role === "admin") return true;
-  return user.role === "sub-admin" && demoSubAdminEmails().includes(String(user.email || "").trim().toLowerCase());
+  if (user.role === "sub-admin" && demoSubAdminEmails().includes(String(user.email || "").trim().toLowerCase())) return true;
+  return canAccessFeature("demoCenter", { id, role: user.role } as any, "export");
 }
 
 const CLASS_TYPE_LABELS: Record<string, string> = { group: "Group", individual: "Individual", either: "Either works" };
@@ -62,6 +66,22 @@ function startingPoint(item: any) {
   return session ? `Session ${session} - ${topic}` : topic;
 }
 
+const DEMO_STATUS_LABELS: Record<string, string> = {
+  REQUESTED: "Requested",
+  COACH_ASSIGNED: "Coach assigned",
+  APPROVED: "Approved",
+  CLASSROOM_CREATED: "Classroom created",
+  ASSESSMENT_PENDING: "Assessment pending",
+  COMPLETED: "Completed",
+  STUDENT_NO_SHOW: "Student no-show",
+  ABSENT: "Absent",
+  CANCELLED: "Cancelled",
+  RESCHEDULE_REQUESTED: "Reschedule requested",
+  CONVERTED: "Converted",
+  CLOSED: "Closed",
+  ON_HOLD: "On hold",
+};
+
 const COLUMNS: SheetColumn[] = [
   { label: "Student" },
   { label: "Parent" },
@@ -70,8 +90,10 @@ const COLUMNS: SheetColumn[] = [
   { label: "City" },
   { label: "Country" },
   { label: "Account status" },
+  { label: "Demo requested (IST)" },
   { label: "Demo date (IST)" },
   { label: "Demo status" },
+  { label: "Archived" },
   { label: "Attendance" },
   { label: "Coach" },
   { label: "Salesperson (lead owner)" },
@@ -106,18 +128,48 @@ const COLUMNS: SheetColumn[] = [
   { label: "Submitted (IST)" },
 ];
 
+const NOT_ASSESSED: any = {};
+
+/**
+ * One row per demo booking, archived ones included, so every lead appears
+ * whether or not a coach assessed them - no-shows, upcoming and cancelled demos
+ * too. A booking with more than one assessment (a demo re-run in a new
+ * classroom) gets a row for each. An assessment whose booking has since been
+ * deleted keeps its own row, from the names snapshotted on it.
+ */
 export async function demoAssessmentReportSheet(): Promise<Sheet> {
   await dbConnect();
-  const items: any[] = await DemoFeedback.find({})
-    .populate("demoUser", "name email phone countryCode parentName city country accountStatus")
-    .populate("booking", "startAt demoStatus salesOwnerName parentName")
-    .populate("coach recommendedCoach salesPerson", "name")
-    .sort({ submittedAt: -1, createdAt: -1 })
-    .lean();
+  const [bookings, items]: [any[], any[]] = await Promise.all([
+    Booking.find({ bookingType: "demo" })
+      .select("student instructor assignedCoach startAt demoStatus salesOwnerName parentName city country archivedAt createdAt")
+      .populate("student", "name email phone countryCode parentName city country accountStatus")
+      .populate("instructor assignedCoach", "name")
+      .sort({ startAt: -1, createdAt: -1 })
+      .lean(),
+    DemoFeedback.find({})
+      .populate("demoUser", "name email phone countryCode parentName city country accountStatus")
+      .populate("coach recommendedCoach salesPerson", "name")
+      .sort({ submittedAt: -1, createdAt: -1 })
+      .lean(),
+  ]);
 
-  const rows = items.map((item) => {
-    const student = item.demoUser || {};
-    const booking = item.booking || {};
+  const assessmentsByBooking = new Map<string, any[]>();
+  for (const item of items) {
+    const key = String(item.booking || "");
+    assessmentsByBooking.set(key, [...(assessmentsByBooking.get(key) || []), item]);
+  }
+  const pairs: Array<{ booking: any; item: any }> = [];
+  for (const booking of bookings) {
+    const key = String(booking._id);
+    const assessments = assessmentsByBooking.get(key) || [NOT_ASSESSED];
+    assessmentsByBooking.delete(key);
+    assessments.forEach((item) => pairs.push({ booking, item }));
+  }
+  for (const orphans of Array.from(assessmentsByBooking.values())) orphans.forEach((item) => pairs.push({ booking: {}, item }));
+
+  const rows = pairs.map(({ booking, item }) => {
+    const assessed = item !== NOT_ASSESSED;
+    const student = booking.student || item.demoUser || {};
     // The student, coach and booking can be deleted after the demo; the
     // assessment keeps name snapshots for exactly that case.
     return [
@@ -125,13 +177,15 @@ export async function demoAssessmentReportSheet(): Promise<Sheet> {
       student.parentName || booking.parentName || "",
       contact(student),
       student.email || "",
-      student.city || "",
-      student.country || "",
-      student.accountStatus ? (student.accountStatus === "demo" ? "Demo" : "Enrolled") : item.demoUser ? "" : "Account deleted",
+      student.city || booking.city || "",
+      student.country || booking.country || "",
+      student.accountStatus ? (student.accountStatus === "demo" ? "Demo" : "Enrolled") : booking.student || item.demoUser ? "" : "Account deleted",
+      istLabel(booking.createdAt),
       istLabel(booking.startAt || item.demoStartAt),
-      String(booking.demoStatus || "").replace(/_/g, " ").toLowerCase(),
+      DEMO_STATUS_LABELS[String(booking.demoStatus || "")] || "",
+      booking.archivedAt ? "Yes" : "",
       ATTENDANCE_LABELS[String(item.attendanceStatus || "")] || "",
-      item.coach?.name || item.coachName || "",
+      item.coach?.name || item.coachName || booking.assignedCoach?.name || booking.instructor?.name || "",
       booking.salesOwnerName || "",
       yesNo(item.salesPersonPresent),
       item.salesPerson?.name || item.salesPersonName || "",
@@ -160,10 +214,10 @@ export async function demoAssessmentReportSheet(): Promise<Sheet> {
       item.parentFacingSummary || "",
       item.salesAdminNotes || "",
       item.internalCoachNotes || "",
-      item.status === "submitted" ? "Submitted" : "Draft",
+      !assessed ? "Not assessed" : item.status === "submitted" ? "Submitted" : "Draft",
       istLabel(item.submittedAt),
     ];
   });
 
-  return { name: "Demo assessments", columns: COLUMNS, rows };
+  return { name: "Demo leads", columns: COLUMNS, rows };
 }

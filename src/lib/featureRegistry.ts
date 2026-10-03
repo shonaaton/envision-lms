@@ -388,7 +388,7 @@ export const FEATURE_DEFINITIONS: FeatureDefinition[] = [
     label: "Coach Pay",
     category: "Payments",
     description: "Coach rate cards, teaching cost dashboard, no-show rulings, and each coach's own earnings.",
-    routes: ["/coach-pay", "/coach-pay/rates", "/coach-pay/reviews", "/coach-pay/substitutions", "/coach-pay/proposals"],
+    routes: ["/coach-pay", "/coach-pay/rates", "/coach-pay/reviews", "/coach-pay/substitutions", "/coach-pay/proposals", "/coach-pay/profile"],
     apiPrefixes: ["/api/coach-pay"],
     // `view` only opens the area - for a coach that means their own lines and
     // nothing else. `view_all` is the separate grant that turns it into the
@@ -500,9 +500,11 @@ export const FEATURE_DEFINITIONS: FeatureDefinition[] = [
     description: "User directory, account creation, role changes, activation, and password resets.",
     routes: ["/admin/users"],
     apiPrefixes: ["/api/admin/users"],
-    permissions: [view, create, edit, del, manage, exportRecords],
+    // "credentials" lets a non-Super-Admin see and copy the temporary password of
+    // student and coach accounts. Staff accounts' stay Super Admin only.
+    permissions: [view, create, edit, del, manage, exportRecords, { id: "credentials", label: "View Temporary Passwords", critical: true }],
     defaultStatus: "enabled",
-    defaultRolePermissions: { admin: all(view, create, edit, del, manage, exportRecords) },
+    defaultRolePermissions: { admin: [...all(view, create, edit, del, manage, exportRecords), "credentials"] },
   },
   {
     key: "studentPause",
@@ -531,11 +533,14 @@ export const FEATURE_DEFINITIONS: FeatureDefinition[] = [
     category: "Sales",
     description: "Demo requests, scheduling, follow-up, and demo account management.",
     routes: ["/admin/demo-center"],
-    permissions: [view, approve, edit, { id: "convert", label: "Convert Demo Students", critical: true }],
+    // "export" is the full demo leads Excel. Admins and the demo sub-admin get it
+    // regardless (see canExportDemoAssessments); plain sub-admins do not, since
+    // salespeople are sub-admins and the sheet holds every lead's contacts.
+    permissions: [view, approve, edit, { id: "convert", label: "Convert Demo Students", critical: true }, { id: "export", label: "Download Demo Leads Report", critical: true }],
     defaultStatus: "enabled",
     // Demo follow-up has always been sub-admin work; conversion stays with an
     // admin, matching the Marketing role.
-    defaultRolePermissions: { admin: all(view, approve, edit, { id: "convert", label: "Convert Demo Students", critical: true }), "sub-admin": ["view", "edit", "approve"] },
+    defaultRolePermissions: { admin: all(view, approve, edit, { id: "convert", label: "Convert Demo Students", critical: true }, exportRecords), "sub-admin": ["view", "edit", "approve"] },
   },
   {
     key: "courseManagement",

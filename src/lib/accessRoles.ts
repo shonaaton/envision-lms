@@ -29,6 +29,19 @@ export async function grantStaffInvoicesToSalesRole() {
   );
 }
 
+/**
+ * Marketing downloads the demo leads report (user, 2026-10-03). The saved
+ * Marketing role is rewritten from MARKETING_ROLE_GRANTS only when someone
+ * opens Roles & Access, so this adds the grant once without waiting for that.
+ */
+export async function grantDemoExportToMarketingRole() {
+  await dbConnect();
+  await AccessRole.updateOne(
+    { nameKey: "marketing", archivedAt: null },
+    { $addToSet: { "permissions.demoCenter": { $each: ["view", "export"] } } }
+  );
+}
+
 export async function ensureMarketingRole() {
   await dbConnect();
   await AccessRole.updateOne({ nameKey: "marketing" }, {

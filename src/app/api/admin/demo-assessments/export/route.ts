@@ -6,7 +6,7 @@ import { buildSpreadsheet, resolveFormat, spreadsheetHeaders } from "@/lib/sprea
 
 export const dynamic = "force-dynamic";
 
-/** Full demo assessment report. Admins and the demo sub-admin only. */
+/** Every demo lead with its assessment, if any. See canExportDemoAssessments for who. */
 export async function GET(req: Request) {
   const session = await auth();
   const userId = (session?.user as any)?.id;
@@ -15,5 +15,5 @@ export async function GET(req: Request) {
 
   const format = resolveFormat(new URL(req.url).searchParams.get("format"), "xlsx");
   const body = buildSpreadsheet(format, [await demoAssessmentReportSheet()]);
-  return new NextResponse(body, { headers: spreadsheetHeaders(format, `demo-assessments-${academyDateKey(new Date())}`, body) });
+  return new NextResponse(body, { headers: spreadsheetHeaders(format, `demo-leads-${academyDateKey(new Date())}`, body) });
 }

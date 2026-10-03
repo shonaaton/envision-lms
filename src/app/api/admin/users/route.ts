@@ -15,6 +15,8 @@ import { withOpenTempPassword } from "@/lib/tempPasswords";
 
 export const dynamic = "force-dynamic";
 
+const STAFF_ROLES = ["admin", "sub-admin"];
+
 async function requireUserManagement(permission: "view" | "create") {
   const session = await auth();
   if (!session?.user) return null;
@@ -64,14 +66,22 @@ export async function GET(req: Request) {
 
   const sortObj: any = sort === "name" ? { name: 1 } : { createdAt: -1 };
   const superAdmin = await isSuperAdminSession(session.user as any);
-  const found = await User.find(filter, { passwordHash: 0, passwordResetTokenHash: 0, passwordResetExpiresAt: 0, ...(!superAdmin ? { tempPassword: 0 } : {}) })
+  const seesCredentials = superAdmin || (await canAccessFeature("userManagement", session.user as any, "credentials"));
+  const found = await User.find(filter, { passwordHash: 0, passwordResetTokenHash: 0, passwordResetExpiresAt: 0, ...(!seesCredentials ? { tempPassword: 0 } : {}) })
     .populate("batches", "name")
     .populate({ path: "accessRole", select: "name isActive", model: AccessRole })
     .sort(sortObj)
     .limit(500)
     .lean();
-  // Temporary passwords are stored sealed; a Super Admin copies them in the clear.
-  const list = (found as any[]).map(withOpenTempPassword);
+  // Temporary passwords are stored sealed; a Super Admin, or staff granted
+  // "View Temporary Passwords", copies them in the clear. Staff accounts' stay
+  // Super Admin only.
+  const list = (found as any[]).map((user) => {
+    if (superAdmin || !STAFF_ROLES.includes(user.role)) return withOpenTempPassword(user);
+    const copy = { ...user };
+    delete copy.tempPassword;
+    return copy;
+  });
 
   // Coaches carry how many of their groups have been closed by a student
   // deactivation, so the coach list shows the churn sitting under each of them.

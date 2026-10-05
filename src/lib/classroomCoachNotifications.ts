@@ -5,6 +5,8 @@ import { sendAutomationEmail } from "@/lib/emailAutomation";
 import { ACADEMY_TIME_ZONE, formatAcademyDateTime } from "@/lib/academyTime";
 import { firstClassDateLabel, scheduledDateLabel } from "@/lib/firstClassDate";
 import { sendWhatsAppAutomationTemplate, whatsappRecipientName } from "@/lib/whatsappAutomationEvents";
+import { hasStudentExited, rosterForSession } from "@/lib/classroomStudentExits";
+import { notifyCoachHandover } from "@/lib/coachHandoverNotifications";
 import type { WhatsAppSendResult } from "@/lib/whatsappAutomation";
 
 /**
@@ -154,6 +156,8 @@ export async function notifyClassroomCoachAssigned(input: {
   classroom: any;
   reason: ClassroomCoachNotificationReason;
   session?: any;
+  /** False when the WhatsApp has already gone out another way (see notifyClassroomCoachHandover). */
+  sendWhatsApp?: boolean;
 }) {
   const classroomId = recordId(input.classroom?._id);
   const coachId = recordId(input.classroom?.coach || input.classroom?.instructor);
@@ -219,6 +223,7 @@ export async function notifyClassroomCoachAssigned(input: {
     }).catch((error) => console.error("Coach class assignment email failed", error));
   }
 
+  if (input.sendWhatsApp === false) return { sent: 1, whatsapp: null };
   const whatsapp = await sendCoachClassTemplate({ coach, summary, metadata }).catch((error) => {
     console.error("Coach class assignment WhatsApp failed", error);
     return null;
@@ -227,32 +232,51 @@ export async function notifyClassroomCoachAssigned(input: {
 }
 
 /**
- * Tells the previous coach a classroom has been handed to someone else, so it
- * does not simply vanish from their schedule. In-app and email only.
+ * A classroom's "Permanent Coach Change": the coach handing over hears first,
+ * then the coach taking over, then the families (see coachHandoverNotifications).
+ * The new coach's in-app notice and email still carry the full class details.
  */
-export async function notifyClassroomCoachReleased(input: { classroom: any; previousCoachId: string }) {
+export async function notifyClassroomCoachHandover(input: { classroom: any; previousCoachId: string; session?: any }) {
   const classroomId = recordId(input.classroom?._id);
-  if (!classroomId || !input.previousCoachId) return { sent: 0, skipped: true };
-  const coach: any = await User.findOne({ _id: input.previousCoachId, isActive: { $ne: false } })
-    .select("_id name email")
-    .lean();
-  if (!coach) return { sent: 0, skipped: true };
+  const newCoachId = recordId(input.classroom?.coach || input.classroom?.instructor);
+  if (!classroomId || !newCoachId) return { skipped: true };
 
-  const classTitle = String(input.classroom?.title || "a classroom");
-  const title = "Classroom moved to another coach";
-  const message = [
-    `Hello ${coach.name || "Coach"},`,
-    "",
-    `${classTitle} has been permanently handed over to another coach, starting from its next class.`,
-    "The classes you already taught stay on your record.",
-  ].join("\n");
-  const metadata = { kind: "classroom_coach_released", classroomId, coachId: String(coach._id), href: "/classrooms" };
+  const summary = await classSummary(input.classroom, input.session);
+  const studentIds = (input.session
+    ? rosterForSession(input.classroom, input.session)
+    : (input.classroom?.students || []).filter((student: any) => !hasStudentExited(input.classroom, recordId(student))))
+    .map(recordId)
+    .filter(Boolean);
+  const label = summary.batchLabel === "Not linked to a batch" ? summary.classTitle : summary.batchLabel;
+  const fallbackMetadata = {
+    kind: "classroom_coach_assigned",
+    reason: "coach_changed",
+    recipientType: "coach",
+    classroomId,
+    sessionId: recordId(input.session?._id),
+    coachId: newCoachId,
+    href: `/classrooms/${classroomId}`,
+    notificationDedupKey: `coach_changed:${classroomId}:${recordId(input.session?._id) || "classroom"}:${newCoachId}`,
+  };
 
-  await Notification.create({ user: coach._id, type: "class_coach_released", title, message, metadata })
-    .catch((error) => console.error("Previous coach notification failed", error));
-  if (coach.email) {
-    await sendAutomationEmail({ to: String(coach.email), subject: `${title}: ${classTitle}`, message, metadata })
-      .catch((error) => console.error("Previous coach email failed", error));
-  }
-  return { sent: 1 };
+  const result = await notifyCoachHandover({
+    scope: "classroom",
+    scopeId: classroomId,
+    label,
+    previousCoachId: input.previousCoachId,
+    newCoachId,
+    studentIds: Array.from(new Set(studentIds)),
+    effectiveFrom: input.session?.scheduledFor,
+    course: summary.course,
+    level: summary.level,
+    timings: seriesScheduleLines(input.classroom).filter(Boolean).join("\n") || "Timings not set",
+    nextTopic: summary.topic,
+    studentsLabel: summary.students,
+    newCoachFallback: async () => {
+      const coach: any = await User.findById(newCoachId).select("_id name email phone username countryCode role").lean();
+      return sendCoachClassTemplate({ coach, summary, metadata: fallbackMetadata });
+    },
+  });
+  await notifyClassroomCoachAssigned({ classroom: input.classroom, reason: "coach_changed", session: input.session, sendWhatsApp: false });
+  return result;
 }

@@ -10,6 +10,7 @@ import { recordActivity } from "@/lib/activity";
 import { canAccessFeature, isSuperAdminSession } from "@/lib/featureAccess";
 import { deleteUserRecords } from "@/lib/deleteUserRecords";
 import { applyStudentDeactivation, applyStudentReactivation } from "@/lib/groupLifecycle";
+import { notifyCoachesStudentDiscontinued, studentCoachGroups } from "@/lib/studentDiscontinuedNotifications";
 import { notifyContactDetailsChanged, notifyPasswordChanged } from "@/lib/accountSecurityNotifications";
 import { requestGoogleReview } from "@/lib/reviewRequests";
 import { validateRoleAssignment } from "@/lib/accessRoles";
@@ -134,11 +135,24 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   // close the batches they were the last active member of and void the invoices
   // still ahead of them. Switching it back on undoes exactly those closures.
   if (statusChanged && (target as any)?.role === "student") {
+    // Read before the deactivation closes the groups this student was the last
+    // member of - a closed group no longer shows who was teaching them.
+    const coachGroups = update.isActive === false
+      ? await studentCoachGroups(params.id).catch((error) => {
+          console.error("Could not find the coaches of a deactivated student", error);
+          return null;
+        })
+      : null;
     try {
       if (update.isActive === false) await applyStudentDeactivation(params.id, { id: actorId, role: String((session!.user as any).role || "") });
       else await applyStudentReactivation(params.id, { id: actorId, role: String((session!.user as any).role || "") });
     } catch (error) {
       console.error("Student activation side effects failed", error);
+    }
+    // Every coach still teaching them hears they have discontinued - in-app, email and WhatsApp.
+    if (coachGroups) {
+      await notifyCoachesStudentDiscontinued({ studentId: params.id, groups: coachGroups, effectiveFrom: u?.deactivatedAt || new Date() })
+        .catch((error) => console.error("Student discontinued notice failed", error));
     }
     // A student leaving is one of the two moments the academy asks for a Google
     // review. requestGoogleReview() decides eligibility — it will not ask a

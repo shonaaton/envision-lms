@@ -2147,7 +2147,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
     "name": "leave_request_decision_applicant",
     "language": "en",
     "sourceAutomation": "leaveService.announceDecision",
-    "body": "Hello {{1}}, your {{2}} leave for {{3}} has been {{4}} by {{5}}.\n\n{{6}}\n\nTeam Envision Chess Academy",
+    "body": "Hello {{1}}, your {{2}} leave for {{3}} has been {{4}} by {{5}}.\n\nNote: {{6}}\n\nYou can see the full details on the Leave page of the academy portal.\n\nTeam Envision Chess Academy",
     "variables": [
       { "position": 1, "key": "applicant_name", "sample": "Coach Sanjib" },
       { "position": 2, "key": "leave_type", "sample": "full-day" },
@@ -2187,7 +2187,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
     "name": "leave_cancelled_alert",
     "language": "en",
     "sourceAutomation": "leaveService.announceClosed",
-    "body": "Hello {{1}}, the {{2}} leave of {{3}} for {{4}} has been {{5}}.\n\n{{6}}\n\nTeam Envision Chess Academy",
+    "body": "Hello {{1}}, the {{2}} leave of {{3}} for {{4}} has been {{5}}.\n\nNote: {{6}}\n\nYou can see the full details on the Leave page of the academy portal.\n\nTeam Envision Chess Academy",
     "variables": [
       { "position": 1, "key": "recipient_name", "sample": "Sayan Bose" },
       { "position": 2, "key": "leave_type", "sample": "half-day" },
@@ -2207,6 +2207,62 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
       { "position": 2, "key": "admin_name", "sample": "Sayantan" },
       { "position": 3, "key": "change", "sample": "+2" },
       { "position": 4, "key": "balance", "sample": "4.5" }
+    ]
+  },
+  {
+    "name": "coach_handover_previous_coach",
+    "language": "en",
+    "sourceAutomation": "Permanent Coach Change - Previous Coach",
+    "body": "Hello {{1}},\n\nThank you for all your work with {{2}}. From {{3}}, Coach {{4}} will take over these classes permanently.\n\nThe classes you have already taught stay on your record. Please share any notes on the students' progress with the academy team, so the syllabus carries on smoothly from where you left off.\n\nRegards,\nTeam Envision Chess Academy",
+    "variables": [
+      { "position": 1, "key": "coach_name", "sample": "Coach Sanjib" },
+      { "position": 2, "key": "batch_code", "sample": "I2-100" },
+      { "position": 3, "key": "effective_from", "sample": "Saturday, 11 October" },
+      { "position": 4, "key": "new_coach_name", "sample": "Coach Ritam" }
+    ]
+  },
+  {
+    "name": "coach_handover_new_coach",
+    "language": "en",
+    "sourceAutomation": "Permanent Coach Change - New Coach",
+    "body": "Hello {{1}},\n\nThe {{2}} classes have been permanently handed over to you, starting {{3}}. Coach {{4}} taught them until now.\n\nCourse: {{5}}\nCourse Level: {{6}}\nNext Topic: {{7}}\nTimings: {{8}}\nStudents: {{9}}\n\nPlease review the class history in the academy portal before your first class, and continue from where the class left off so the syllabus stays well-coordinated.\n\nRegards,\nTeam Envision Chess Academy",
+    "variables": [
+      { "position": 1, "key": "coach_name", "sample": "Coach Ritam" },
+      { "position": 2, "key": "batch_code", "sample": "I2-100" },
+      { "position": 3, "key": "effective_from", "sample": "Saturday, 11 October" },
+      { "position": 4, "key": "previous_coach_name", "sample": "Coach Sanjib" },
+      { "position": 5, "key": "course_name", "sample": "Intermediate Chess" },
+      { "position": 6, "key": "course_level", "sample": "I2" },
+      { "position": 7, "key": "next_topic", "sample": "Knight Forks" },
+      { "position": 8, "key": "timings", "sample": "Saturday at 18:00 (60 min)" },
+      { "position": 9, "key": "students", "sample": "Aarav, Riya (2 total)" }
+    ]
+  },
+  {
+    "name": "coach_handover_student",
+    "language": "en",
+    "sourceAutomation": "Permanent Coach Change - Student/Parent",
+    "body": "Hello {{1}},\n\nA quick update on the {{2}} chess classes: from {{3}}, Coach {{4}} will be the permanent coach.\n\nYour syllabus and progress carry over in full, and classes continue from exactly where they left off. Our academy team coordinates every coach handover closely, so the quality of teaching stays the best, as always.\n\nCourse: {{5}}\nCourse Level: {{6}}\nTimings: {{7}}\n\nFor any questions, please contact the academy team.\n\nRegards,\nTeam Envision Chess Academy",
+    "variables": [
+      { "position": 1, "key": "recipient_name", "sample": "Mr. Sharma" },
+      { "position": 2, "key": "batch_code", "sample": "I2-100" },
+      { "position": 3, "key": "effective_from", "sample": "Saturday, 11 October" },
+      { "position": 4, "key": "new_coach_name", "sample": "Coach Ritam" },
+      { "position": 5, "key": "course_name", "sample": "Intermediate Chess" },
+      { "position": 6, "key": "course_level", "sample": "I2" },
+      { "position": 7, "key": "timings", "sample": "Saturday at 18:00 (60 min)" }
+    ]
+  },
+  {
+    "name": "student_discontinued_coach",
+    "language": "en",
+    "sourceAutomation": "Student Deactivated - Coach",
+    "body": "Hello {{1}},\n\n{{2}} has discontinued classes at Envision Chess Academy with effect from {{3}}.\n\nAffected: {{4}}\n\nThey will not attend upcoming classes. The classes you have already taught them stay on your record.\n\nRegards,\nTeam Envision Chess Academy",
+    "variables": [
+      { "position": 1, "key": "coach_name", "sample": "Coach Sanjib" },
+      { "position": 2, "key": "student_name", "sample": "Aarav Sharma" },
+      { "position": 3, "key": "effective_from", "sample": "5 Oct 2026" },
+      { "position": 4, "key": "groups", "sample": "I2-100" }
     ]
   }
 ] as const satisfies readonly WhatsAppTemplateDefinition[];

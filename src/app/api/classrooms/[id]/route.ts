@@ -20,7 +20,7 @@ import { Batch } from "@/models/Batch";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
 import { normalizeGoogleMeetUrl } from "@/lib/meetingUrl";
 import { sendWhatsAppAutomationTemplates } from "@/lib/whatsappAutomationEvents";
-import { notifyClassroomCoachAssigned, notifyClassroomCoachReleased } from "@/lib/classroomCoachNotifications";
+import { notifyClassroomCoachAssigned, notifyClassroomCoachHandover } from "@/lib/classroomCoachNotifications";
 import { applyPermanentCoachChange, type CoachChangeResult } from "@/lib/classroomCoachChange";
 import { transferPendingFeedbackToCoach } from "@/lib/feedback/feedbackService";
 import { notifyCourseCompleted, notifySessionCancelled } from "@/lib/classSessionNotifications";
@@ -1281,10 +1281,9 @@ async function patchClassroom(req: Request, { params }: { params: { id: string }
   }
   if (activityAction === "permanent_coach_change" && coachChange) {
     const firstUpcoming = (existing.generatedSessions || []).find((item: any) => String(item._id) === coachChange?.reassignedSessionIds[0]);
-    await notifyClassroomCoachAssigned({ classroom: existing, reason: "coach_changed", session: firstUpcoming })
-      .catch((error) => console.error("New coach notification failed", error));
-    await notifyClassroomCoachReleased({ classroom: existing, previousCoachId: coachChange.previousCoachId })
-      .catch((error) => console.error("Previous coach notification failed", error));
+    // Previous coach, then the new coach, then the families - in that order.
+    await notifyClassroomCoachHandover({ classroom: existing, previousCoachId: coachChange.previousCoachId, session: firstUpcoming })
+      .catch((error) => console.error("Coach handover notifications failed", error));
     for (const reassignedId of coachChange.reassignedSessionIds.slice(0, 20)) {
       await resolveCoachMissingTask(reassignedId, (session.user as any)?.id, "The classroom has a new coach.");
     }

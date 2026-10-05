@@ -16,6 +16,7 @@ import {
   openCycleMonth,
   shiftMonth,
 } from "@/lib/feedback/feedbackCycleDates";
+import { reportCoachId } from "@/lib/feedback/feedbackCoach";
 import { QUESTION_SET_VERSION, reportTier } from "@/lib/feedback/feedbackQuestions";
 import {
   COACH_EDITABLE_STATUSES,
@@ -139,8 +140,11 @@ async function ensureCycle(month: string) {
  */
 export async function processMonthlyFeedbackCycle(now = new Date(), options: { month?: string } = {}) {
   const month = options.month || openCycleMonth(now);
-  if (!month) return { month: null, created: 0, retiered: 0, removed: 0 };
   await dbConnect();
+  // Runs every hour, cycle open or not: a late report for last month still
+  // belongs to the coach who taught it.
+  const rehomed = await rehomeUnfinishedReports();
+  if (!month) return { month: null, created: 0, retiered: 0, removed: 0, rehomed };
   const cycle = await ensureCycle(month);
   const { start, end } = monthBounds(month);
   const label = monthLabel(month);
@@ -160,7 +164,7 @@ export async function processMonthlyFeedbackCycle(now = new Date(), options: { m
     .lean();
   if (!classrooms.length) {
     const removed = await withdrawReportsForNewStudents(month);
-    return { month, created: 0, retiered: 0, removed };
+    return { month, created: 0, retiered: 0, removed, rehomed };
   }
   const tierOf = await classroomTierResolver(classrooms);
 
@@ -169,16 +173,21 @@ export async function processMonthlyFeedbackCycle(now = new Date(), options: { m
   const pauses: any[] = await StudentPause.find({ status: "active" }).select("student").lean();
   const paused = new Set(pauses.map((row) => idOf(row.student)));
   const studentIds = Array.from(new Set(classrooms.flatMap((row) => (row.students || []).map(idOf))));
-  const coachIds = Array.from(new Set(classrooms.map((row) => idOf(row.coach || row.instructor))));
+  const coachIds = await coachesForMonth(classrooms, { start, end });
   const people: any[] = await User.find({ _id: { $in: [...studentIds, ...coachIds] } }).select("name username role isActive").lean();
   const byId = new Map(people.map((person) => [idOf(person), person]));
+  const isActiveCoach = (coachId: string) => {
+    const person = byId.get(coachId);
+    return Boolean(person && person.isActive !== false && person.role !== "student");
+  };
   const lifetime = await lifetimeClassesAttended(studentIds, end);
 
   const createdByCoach = new Map<string, number>();
   let created = 0;
 
   for (const classroom of classrooms) {
-    const coachId = idOf(classroom.coach || classroom.instructor);
+    // The coach who taught the month, not whoever holds the classroom today.
+    const coachId = reportCoachId(classroom, { start, end }, isActiveCoach);
     const coach = byId.get(coachId);
     if (!coach || coach.isActive === false) continue;
     const closed = new Set((classroom.closedForStudents || []).map(idOf));
@@ -246,7 +255,94 @@ export async function processMonthlyFeedbackCycle(now = new Date(), options: { m
   }
 
   await FeedbackCycle.updateOne({ _id: cycle?._id }, { $set: { lastSweepAt: new Date() } });
-  return { month, created, retiered, removed };
+  return { month, created, retiered, removed, rehomed };
+}
+
+/**
+ * Every unfinished report, any month, goes to the coach who taught that month
+ * in its classroom. Repairs reports raised to - or handed over to - a coach who
+ * only took the group afterwards.
+ */
+async function rehomeUnfinishedReports() {
+  const groups: any[] = await MonthlyFeedback.aggregate([
+    { $match: { status: { $in: COACH_EDITABLE_STATUSES }, classroom: { $ne: null } } },
+    { $group: { _id: { month: "$month", classroom: "$classroom" } } },
+  ]);
+  if (!groups.length) return 0;
+  const classroomIds = Array.from(new Set(groups.map((row) => idOf(row._id.classroom))));
+  const classrooms: any[] = await Classroom.find({ _id: { $in: classroomIds } }).select("coach instructor generatedSessions").lean();
+  const classroomById = new Map(classrooms.map((row) => [idOf(row), row]));
+
+  const owners: { classroom: any; month: string; bounds: { start: Date; end: Date } }[] = [];
+  const candidateIds = new Set<string>();
+  for (const row of groups) {
+    const classroom = classroomById.get(idOf(row._id.classroom));
+    if (!classroom || !isFeedbackMonth(row._id.month)) continue;
+    const bounds = monthBounds(row._id.month);
+    owners.push({ classroom, month: row._id.month, bounds });
+    const taught = reportCoachId(classroom, bounds, () => true);
+    if (taught) candidateIds.add(taught);
+    const current = idOf(classroom.coach || classroom.instructor);
+    if (current) candidateIds.add(current);
+  }
+  const people: any[] = await User.find({ _id: { $in: Array.from(candidateIds) } }).select("name username role isActive").lean();
+  const byId = new Map(people.map((person) => [idOf(person), person]));
+  const isActiveCoach = (coachId: string) => {
+    const person = byId.get(coachId);
+    return Boolean(person && person.isActive !== false && person.role !== "student");
+  };
+
+  let moved = 0;
+  for (const { classroom, month, bounds } of owners) {
+    moved += (await rehomeClassroomReports(classroom, month, reportCoachId(classroom, bounds, isActiveCoach), byId)).moved;
+  }
+  return moved;
+}
+
+/** Today's coach of each classroom plus the coach who taught it this month, for one User lookup. */
+async function coachesForMonth(classrooms: any[], bounds: { start: Date; end: Date }) {
+  const ids = new Set<string>();
+  for (const classroom of classrooms) {
+    const current = idOf(classroom.coach || classroom.instructor);
+    if (current) ids.add(current);
+    const taught = reportCoachId(classroom, bounds, () => true);
+    if (taught) ids.add(taught);
+  }
+  return Array.from(ids);
+}
+
+/**
+ * Moves the classroom's unfinished reports for `month` to `ownerId` - the coach
+ * who taught that month. Submitted, approved and sent reports stay with whoever
+ * wrote them. A report is left where it is if the owner already has one for that
+ * student and month.
+ */
+async function rehomeClassroomReports(classroom: any, month: string, ownerId: string, people?: Map<string, any>) {
+  if (!ownerId || !Types.ObjectId.isValid(ownerId)) return { moved: 0, kept: 0 };
+  const misplaced: any[] = await MonthlyFeedback.find({ month, classroom: classroom._id, coach: { $ne: ownerId }, status: { $in: COACH_EDITABLE_STATUSES } })
+    .select("_id month student coach status")
+    .lean();
+  if (!misplaced.length) return { moved: 0, kept: 0 };
+  const owner: any = people?.get(ownerId) || (await User.findById(ownerId).select("name username").lean());
+  if (!owner) return { moved: 0, kept: misplaced.length };
+
+  const movedIds: string[] = [];
+  let kept = 0;
+  for (const report of misplaced) {
+    const clash = await MonthlyFeedback.exists({ month: report.month, student: report.student, coach: ownerId });
+    if (clash) {
+      kept += 1;
+      continue;
+    }
+    const updated = await MonthlyFeedback.updateOne(
+      { _id: report._id, coach: report.coach, status: { $in: COACH_EDITABLE_STATUSES } },
+      { $set: { coach: ownerId, coachName: String(owner.name || owner.username || "Coach") } }
+    ).catch(() => null);
+    if (updated?.modifiedCount) movedIds.push(String(report._id));
+    else kept += 1;
+  }
+  if (movedIds.length) await reassignAutoTasks("MonthlyFeedback", movedIds, ownerId, "Report follows the coach who taught the month");
+  return { moved: movedIds.length, kept };
 }
 
 /**
@@ -642,27 +738,31 @@ export async function transferPendingFeedbackToCoach(input: { classroomId: unkno
     return { moved: 0, kept: 0 };
   }
   await dbConnect();
-  const coach: any = await User.findById(toCoachId).select("name username").lean();
-  if (!coach) return { moved: 0, kept: 0 };
-  const reports: any[] = await MonthlyFeedback.find({ classroom: classroomId, coach: fromCoachId, status: { $in: COACH_EDITABLE_STATUSES } })
-    .select("_id month student")
-    .lean();
+  const classroom: any = await Classroom.findById(classroomId).select("coach instructor generatedSessions").lean();
+  if (!classroom) return { moved: 0, kept: 0 };
+  const months: string[] = await MonthlyFeedback.distinct("month", { classroom: classroomId, coach: fromCoachId, status: { $in: COACH_EDITABLE_STATUSES } });
 
-  const movedIds: string[] = [];
+  // Each month's reports go to the coach who taught that month. Past classes
+  // were pinned to the outgoing coach before the swap, so last month's reports
+  // stay with them and only a month the new coach mostly teaches moves.
+  const active = new Map<string, boolean>();
+  const isActiveCoach = (coachId: string) => active.get(coachId) !== false;
+  const candidates = Array.from(new Set(months.map((month) => reportCoachId(classroom, monthBounds(month), () => true)).filter(Boolean)));
+  const people: any[] = candidates.length ? await User.find({ _id: { $in: candidates } }).select("name username isActive role").lean() : [];
+  for (const person of people) active.set(idOf(person), person.isActive !== false && person.role !== "student");
+  const byId = new Map(people.map((person) => [idOf(person), person]));
+
+  let moved = 0;
   let kept = 0;
-  for (const report of reports) {
-    const clash = await MonthlyFeedback.exists({ month: report.month, student: report.student, coach: toCoachId });
-    if (clash) {
-      kept += 1;
+  for (const month of months) {
+    const ownerId = reportCoachId(classroom, monthBounds(month), isActiveCoach);
+    if (ownerId !== toCoachId) {
+      kept += await MonthlyFeedback.countDocuments({ month, classroom: classroomId, coach: fromCoachId, status: { $in: COACH_EDITABLE_STATUSES } });
       continue;
     }
-    const updated = await MonthlyFeedback.updateOne(
-      { _id: report._id, coach: fromCoachId, status: { $in: COACH_EDITABLE_STATUSES } },
-      { $set: { coach: toCoachId, coachName: String(coach.name || coach.username || "Coach") } }
-    ).catch(() => null);
-    if (updated?.modifiedCount) movedIds.push(String(report._id));
-    else kept += 1;
+    const result = await rehomeClassroomReports(classroom, month, ownerId, byId);
+    moved += result.moved;
+    kept += result.kept;
   }
-  if (movedIds.length) await reassignAutoTasks("MonthlyFeedback", movedIds, toCoachId, "Classroom coach change");
-  return { moved: movedIds.length, kept };
+  return { moved, kept };
 }

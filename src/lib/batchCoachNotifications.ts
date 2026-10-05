@@ -1,10 +1,9 @@
 import { Batch } from "@/models/Batch";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
-import { resolveAudienceEmails } from "@/lib/studentContact";
 import { batchObjectId as objectId, batchTimingLines, findBatchClassrooms, studentListLabel } from "@/lib/batchSummary";
-import { firstClassDateLabel } from "@/lib/firstClassDate";
-import { sendWhatsAppAutomationTemplates, whatsappRecipientName } from "@/lib/whatsappAutomationEvents";
-import { sendWhatsAppAutomationTemplate } from "@/lib/whatsappAutomationEvents";
+import { firstClassDateLabel, nextScheduledSessionStart } from "@/lib/firstClassDate";
+import { sendWhatsAppAutomationTemplate, whatsappRecipientName } from "@/lib/whatsappAutomationEvents";
+import { notifyCoachHandover } from "@/lib/coachHandoverNotifications";
 import type { WhatsAppSendResult } from "@/lib/whatsappAutomation";
 
 async function batchContext(batchId: string) {
@@ -123,14 +122,15 @@ export async function notifyBatchCoachAssigned(input: {
     "Please review the batch and classroom details in the academy portal.",
   ].join("\n");
 
-  if (coach.email) {
+  const emailCoach = async () => {
+    if (!coach.email) return;
     await sendAutomationEmail({
       to: String(coach.email),
       subject: title,
       message: coachMessage,
       metadata: { kind: input.reason, batchId: input.batchId, coachId: objectId(coach._id), href: "/classrooms" },
     }).catch(() => null);
-  }
+  };
 
   const coachMetadata = {
     kind: input.reason,
@@ -139,70 +139,36 @@ export async function notifyBatchCoachAssigned(input: {
     coachId: objectId(coach._id),
     notificationDedupKey: `${input.reason}:${input.batchId}:${objectId(coach._id)}`,
   };
-  const whatsappInputs: Array<Parameters<typeof sendWhatsAppAutomationTemplates>[0][number]> = [];
 
   if (isChange) {
+    // Previous coach, then the new coach, then the families - in that order.
+    const now = new Date();
+    const nextSession = classrooms
+      .flatMap((classroom: any) => classroom.generatedSessions || [])
+      .filter((session: any) => session?.scheduledFor && new Date(session.scheduledFor).getTime() >= now.getTime() && !["cancelled", "completed"].includes(String(session.status || "")))
+      .sort((a: any, b: any) => new Date(a.scheduledFor).getTime() - new Date(b.scheduledFor).getTime())[0];
     const students = (batch.students || []).filter((student: any) => student?.isActive !== false);
-    await Promise.all(students.map((student: any) => {
-      const message = [
-        `Hello ${student.parentName || student.name || "there"},`,
-        "",
-        `We would like to inform you that Coach ${coach.name || "the assigned coach"} will now be the permanent coach for ${summary.batchCode}.`,
-        `Course: ${summary.course}.`,
-        `Course Level: ${summary.level}.`,
-        "",
-        "Timings:",
-        summary.timings,
-        "",
-        "The curriculum remains well-coordinated and classes will continue through the academy portal.",
-        "",
-        "Regards,",
-        "Team Envision Chess Academy",
-      ].join("\n");
-      const coachUpdateEmails = resolveAudienceEmails(
-        student.email
-          ? {
-              to: String(student.email),
-              subject: `Permanent coach update for ${summary.batchCode}`,
-              message,
-              metadata: { kind: input.reason, batchId: input.batchId, studentId: objectId(student._id), href: "/dashboard" },
-            }
-          : null,
-        student.parentEmail
-          ? {
-              to: String(student.parentEmail),
-              subject: `Permanent coach update for ${summary.batchCode}`,
-              message,
-              metadata: { kind: input.reason, batchId: input.batchId, studentId: objectId(student._id), recipientType: "parent", href: "/dashboard" },
-            }
-          : null,
-      );
-      return Promise.all(coachUpdateEmails.map((coachUpdateEmail) => sendAutomationEmail(coachUpdateEmail).catch(() => null)));
-    }));
-    whatsappInputs.push(...students.map((student: any) => ({
-      user: student,
-      templateName: "batch_permanent_coach_changed_student",
-      bodyParameters: [
-        whatsappRecipientName(student),
-        summary.batchCode,
-        coach.name || "the assigned coach",
-        summary.course,
-        summary.level,
-        summary.timings,
-      ],
-      metadata: {
-        kind: input.reason,
-        recipientType: student.parentName ? "parent" : "student",
-        batchId: input.batchId,
-        studentId: objectId(student._id),
-        coachId: objectId(coach._id),
-        notificationDedupKey: `${input.reason}:${input.batchId}:${objectId(student._id)}`,
-      },
-    })));
+    const result = await notifyCoachHandover({
+      scope: "batch",
+      scopeId: input.batchId,
+      label: summary.batchCode,
+      previousCoachId: input.previousCoachId,
+      newCoachId: objectId(coach._id),
+      studentIds: students.map((student: any) => objectId(student._id)).filter(Boolean),
+      effectiveFrom: nextSession?.scheduledFor || nextScheduledSessionStart(classrooms),
+      course: summary.course,
+      level: summary.level,
+      timings: summary.timings,
+      nextTopic: String(nextSession?.topicName || "Not set"),
+      studentsLabel: summary.students,
+      newCoachFallback: () => sendBatchCoachTemplate({ coach, summary, isChange, metadata: coachMetadata }),
+    });
+    await emailCoach();
+    return { sent: 1 + ("students" in result ? result.students ?? 0 : 0) };
   }
 
+  await emailCoach();
   await sendBatchCoachTemplate({ coach, summary, isChange, metadata: coachMetadata })
     .catch((error) => console.error("Batch coach WhatsApp failed", error));
-  await sendWhatsAppAutomationTemplates(whatsappInputs);
-  return { sent: whatsappInputs.length + 1 };
+  return { sent: 1 };
 }

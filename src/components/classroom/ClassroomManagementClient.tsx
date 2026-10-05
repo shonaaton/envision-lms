@@ -19,6 +19,7 @@ import {
   Plus,
   Search,
   Trash2,
+  UserCheck,
   UserCog,
   Users,
   X,
@@ -1285,13 +1286,13 @@ export default function ClassroomManagementClient({
                           </details>
                         </div>
 
-                        <div className="flex flex-none flex-col gap-2 xl:max-w-[220px] xl:items-end">
-                          <div className="flex flex-wrap justify-start gap-1 xl:justify-end">
-                            {permissions.edit && item.classroomType === "single" && item.status === "scheduled" && <ActionButton icon={<Clock3 size={14} />} label="Reschedule" onClick={() => { setActionModal({ type: "reschedule_class", item }); setActionDraft({ classDate: item.classDate ? formatDateInput(item.classDate) : "", startTime: item.startTime || "", durationMinutes: item.durationMinutes || 60 }); }} />}
-                            {permissions.cancel && item.status !== "cancelled" && item.status !== "completed" && <ActionButton icon={<X size={14} />} label={item.classroomType === "series" ? "Cancel Entire Series" : "Cancel Class"} onClick={() => { setActionModal({ type: item.classroomType === "series" ? "cancel_series" : "cancel_class", item }); setActionDraft({}); }} />}
-                            {permissions.assign && item.status !== "cancelled" && item.status !== "completed" && <ActionButton icon={<UserCog size={14} />} label="Substitute Coach" onClick={() => { setActionModal({ type: "substitute_coach", item }); setActionDraft({ scope: item.classroomType === "series" ? "future" : "entire", coach: "" }); }} />}
-                            {permissions.assign && item.status !== "cancelled" && item.status !== "completed" && <ActionButton icon={<UserCog size={14} />} label="Permanent Coach Change" onClick={() => { setActionModal({ type: "permanent_coach_change", item }); setActionDraft({ coach: "", updateBatchCoach: true, reason: "" }); }} />}
-                            {permissions.edit && item.classroomType === "series" && item.status !== "cancelled" && item.status !== "completed" && <ActionButton icon={<Clock3 size={14} />} label="Permanent Timing" onClick={() => {
+                        <div className="flex flex-none flex-col gap-2 xl:w-[200px]">
+                          <div className="flex flex-wrap justify-start gap-1 xl:flex-col xl:items-stretch">
+                            {permissions.edit && item.classroomType === "single" && item.status === "scheduled" && <ActionButton showLabel icon={<Clock3 size={14} />} label="Reschedule" onClick={() => { setActionModal({ type: "reschedule_class", item }); setActionDraft({ classDate: item.classDate ? formatDateInput(item.classDate) : "", startTime: item.startTime || "", durationMinutes: item.durationMinutes || 60 }); }} />}
+                            {permissions.cancel && item.status !== "cancelled" && item.status !== "completed" && <ActionButton showLabel icon={<X size={14} />} label={item.classroomType === "series" ? "Cancel Entire Series" : "Cancel Class"} onClick={() => { setActionModal({ type: item.classroomType === "series" ? "cancel_series" : "cancel_class", item }); setActionDraft({}); }} />}
+                            {permissions.assign && item.status !== "cancelled" && item.status !== "completed" && <ActionButton showLabel icon={<UserCog size={14} />} label="Substitute Coach" onClick={() => { setActionModal({ type: "substitute_coach", item }); setActionDraft({ scope: item.classroomType === "series" ? "future" : "entire", coach: "" }); }} />}
+                            {permissions.assign && item.status !== "cancelled" && item.status !== "completed" && <ActionButton showLabel icon={<UserCheck size={14} />} label="Permanent Coach Change" onClick={() => { setActionModal({ type: "permanent_coach_change", item }); setActionDraft({ coach: "", updateBatchCoach: true, reason: "" }); }} />}
+                            {permissions.edit && item.classroomType === "series" && item.status !== "cancelled" && item.status !== "completed" && <ActionButton showLabel icon={<Clock3 size={14} />} label="Permanent Timing" onClick={() => {
                               const futureSession = (item.generatedSessions || []).find((session: any) => isSessionUpcomingLike(deriveScheduledSessionStatus(session, new Date())));
                               setActionModal({ type: "permanent_schedule_change", item });
                               setActionDraft({
@@ -1300,8 +1301,8 @@ export default function ClassroomManagementClient({
                                 reason: "",
                               });
                             }} />}
-                            {permissions.edit && item.classroomType === "series" && item.status !== "cancelled" && item.status !== "completed" && <ActionButton icon={<CalendarDays size={14} />} label="Just break" onClick={() => { setActionModal({ type: "shift_future_sessions", item }); setActionDraft({ restartDate: "", reason: "Just break" }); }} />}
-                            {permissions.create && item.classroomType === "series" && item.status !== "cancelled" && item.status !== "completed" && <ActionButton icon={<CopyPlus size={14} />} label="Add Extra Class" onClick={() => { setActionModal({ type: "add_extra_class", item }); setActionDraft({ topicName: "", classDate: "", startTime: item.startTime || "16:00", durationMinutes: item.durationMinutes || 60 }); }} />}
+                            {permissions.edit && item.classroomType === "series" && item.status !== "cancelled" && item.status !== "completed" && <ActionButton showLabel icon={<CalendarDays size={14} />} label="Just break" onClick={() => { setActionModal({ type: "shift_future_sessions", item }); setActionDraft({ restartDate: "", reason: "Just break" }); }} />}
+                            {permissions.create && item.classroomType === "series" && item.status !== "cancelled" && item.status !== "completed" && <ActionButton showLabel icon={<CopyPlus size={14} />} label="Add Extra Class" onClick={() => { setActionModal({ type: "add_extra_class", item }); setActionDraft({ topicName: "", classDate: "", startTime: item.startTime || "16:00", durationMinutes: item.durationMinutes || 60 }); }} />}
                           </div>
                         </div>
                       </div>
@@ -1588,7 +1589,7 @@ export default function ClassroomManagementClient({
 
       {actionModal.item && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
-          <div className="w-full max-w-xl rounded-3xl bg-white p-5 shadow-2xl">
+          <div className="max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-3xl bg-white p-5 shadow-2xl">
             <div className="mb-4 flex items-start justify-between">
               <div>
                 <div className="text-lg font-black text-slate-950">{actionTitle(actionModal.type)}</div>
@@ -1979,7 +1980,21 @@ function CompactInfo({ label, value, tooltip }: { label: string; value: string; 
   );
 }
 
-function ActionButton({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick: () => void }) {
+// Touch screens have no hover, so a title tooltip never shows there: classroom-wide
+// actions print their label instead of relying on the icon alone.
+function ActionButton({ icon, label, onClick, showLabel = false }: { icon: React.ReactNode; label: string; onClick: () => void; showLabel?: boolean }) {
+  if (showLabel) {
+    return (
+      <button
+        onClick={onClick}
+        title={label}
+        className="inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-md border border-slate-200 bg-white px-2.5 text-xs font-bold text-slate-700 shadow-sm transition hover:border-brand/30 hover:bg-brand/5 hover:text-brand"
+      >
+        {icon}
+        {label}
+      </button>
+    );
+  }
   return (
     <button
       onClick={onClick}

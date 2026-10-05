@@ -18,7 +18,7 @@ import {
   kolkataCentres,
 } from "@/lib/centrePages";
 import { courseHub, coursePages } from "@/lib/coursePages";
-import { courseHubLink, courseLinks, demoLink, successStoriesLink } from "@/lib/internalLinks";
+import { courseHubLink, courseLinks, demoLink, kidsClassesLink, successStoriesLink } from "@/lib/internalLinks";
 import { curriculumLevels } from "@/lib/demoCurriculum";
 import { MARKETING_BASE_URL } from "@/lib/publicLinks";
 
@@ -418,7 +418,7 @@ export default function KolkataAcademyPage() {
         eyebrow="The syllabus"
         heading="The five courses taught at every Kolkata centre."
         intro="Offline students work through the same published ladder as our online students. Open any stage to read what a coach teaches, session by session."
-        links={[courseHubLink, ...courseLinks(), successStoriesLink, demoLink]}
+        links={[courseHubLink, ...courseLinks(), kidsClassesLink, successStoriesLink, demoLink]}
       />
 
       {/* -------------------------------------------------------------- FAQ */}

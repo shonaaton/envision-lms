@@ -8,8 +8,9 @@ import { MarketingFooter, MarketingHeader } from "@/components/marketing/Marketi
 import { ACADEMY_DEFAULTS } from "@/lib/branding";
 import { courseHub, coursePages, type CoursePageConfig } from "@/lib/coursePages";
 import { curriculumLevels } from "@/lib/demoCurriculum";
-import { centreHubLink, centreLinks, contactLink, successStoriesLink } from "@/lib/internalLinks";
+import { blogHubLink, centreHubLink, centreLinks, contactLink, guidesForCourse, kidsClassesLink, successStoriesLink } from "@/lib/internalLinks";
 import { MARKETING_BASE_URL } from "@/lib/publicLinks";
+import { ORGANIZATION_ID } from "@/lib/seo";
 
 const demoHref = "/register";
 
@@ -27,6 +28,8 @@ export default function CoursePage({ config }: { config: CoursePageConfig }) {
   const totalSessions = levels.reduce((total, level) => total + level.sessions.length, 0);
   const pageUrl = `${MARKETING_BASE_URL}/${config.slug}`;
   const ctaLabel = config.ctaLabel ?? "Book Demo Class";
+  const stageName = config.eyebrow.replace(" Stage", "").toLowerCase();
+  const guides = guidesForCourse(config.slug);
 
   const courseFacts = [
     { label: `${totalSessions} live sessions`, detail: "Across three levels", icon: ClipboardList },
@@ -53,6 +56,7 @@ export default function CoursePage({ config }: { config: CoursePageConfig }) {
       isAccessibleForFree: false,
       provider: {
         "@type": "EducationalOrganization",
+        "@id": ORGANIZATION_ID,
         name: "Envision Chess Academy",
         url: `${MARKETING_BASE_URL}/`,
         email: ACADEMY_DEFAULTS.email,
@@ -255,11 +259,25 @@ export default function CoursePage({ config }: { config: CoursePageConfig }) {
         offset={coursePages.findIndex((page) => page.slug === config.slug) + 1}
       />
 
+      {/*
+        The blog's guides for this stage. Each one links back here from its own
+        text, so the course page and its supporting articles reinforce each
+        other instead of the guides being reachable only from the blog index.
+      */}
+      {guides.length ? (
+        <RelatedLinks
+          eyebrow="Free guides"
+          heading={`Chess guides for the ${stageName} stage`}
+          intro="Written by our coaches on the same syllabus this course teaches - useful before a demo class, or between lessons."
+          links={[...guides, blogHubLink]}
+        />
+      ) : null}
+
       <RelatedLinks
         eyebrow="Learn in person"
         heading="Prefer to learn at a chess academy in Kolkata?"
         intro={`The ${config.eyebrow.replace(" Stage", "").toLowerCase()} course runs offline too, on the same syllabus and with the same homework, tournaments and progress tracking. Four centres across the city, each with its own coach and batch timings.`}
-        links={[centreHubLink, ...centreLinks(), successStoriesLink, contactLink]}
+        links={[centreHubLink, ...centreLinks(), kidsClassesLink, successStoriesLink, contactLink]}
       />
 
       {/* -------------------------------------------------------------- FAQ */}

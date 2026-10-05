@@ -7,7 +7,7 @@ import { MarketingFooter, MarketingHeader } from "@/components/marketing/Marketi
 import { ACADEMY_DEFAULTS, ACADEMY_LOGO_URL } from "@/lib/branding";
 import { centreHref, centreHub, centreTimeRange, kolkataCentres } from "@/lib/centrePages";
 import { courseHub } from "@/lib/coursePages";
-import { centreHubLink, courseHubLink, courseLinks, demoLink, successStoriesLink } from "@/lib/internalLinks";
+import { centreHubLink, courseHubLink, courseLinks, demoLink, kidsClassesLink, successStoriesLink } from "@/lib/internalLinks";
 import { MARKETING_BASE_URL } from "@/lib/publicLinks";
 
 const pageUrl = `${MARKETING_BASE_URL}/contact-us`;
@@ -198,7 +198,7 @@ export default function ContactUsPage() {
         eyebrow="Before you write"
         heading="You may find the answer here first."
         intro="Most questions we get are about what is taught, where, and what a student starts with. Every one of those has a page."
-        links={[courseHubLink, ...courseLinks(), centreHubLink, successStoriesLink, demoLink]}
+        links={[courseHubLink, ...courseLinks(), centreHubLink, kidsClassesLink, successStoriesLink, demoLink]}
       />
 
       {/* ---------------------------------------------------------- last CTA */}

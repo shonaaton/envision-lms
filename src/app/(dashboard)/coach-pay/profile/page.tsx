@@ -1,14 +1,18 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { isValidObjectId } from "mongoose";
-import { ArrowLeft, CalendarClock, Languages, UserRound, Users } from "lucide-react";
+import { ArrowLeft, CalendarClock, GraduationCap, Languages, UserRound, Users } from "lucide-react";
 
 import { DataPanel, EmptyState, PageHeader, StatCard } from "@/components/common/PageHeader";
 import { CoachProfileForm } from "@/components/coach-pay/CoachProfileForm";
 import { formatHours } from "@/lib/hours";
 import { resolveCoachPayViewer } from "@/lib/coachPayAccess";
 import {
+  LEVEL_GROUPS,
   availabilityByDay,
   formatTime,
+  levelLabel,
+  levelsByTier,
   toCoachProfileView,
   weeklyAvailableMinutes,
   type CoachProfileView,
@@ -29,11 +33,33 @@ function formatUpdated(iso: string | null) {
   return `Updated ${new Date(iso).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}`;
 }
 
-/** Read-only view of a profile: what admins see, and what a coach sees of their own. */
+/** "Beginner L1, L2" per tier: compact enough for a table cell. */
+function LevelList({ levels }: { levels: string[] }) {
+  const groups = levelsByTier(levels);
+  if (!groups.length) return <span className="text-xs text-slate-400">-</span>;
+  return (
+    <div className="grid gap-0.5 text-xs text-slate-700">
+      {groups.map((group) => (
+        <div key={group.tier} className="whitespace-nowrap">
+          <span className="font-semibold text-slate-900">{group.label}</span>{" "}
+          {group.levels.length === 3 ? "all levels" : group.levels.map((level) => level.short).join(", ")}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Read-only view of one coach's profile. */
 function ProfileSummary({ profile }: { profile: CoachProfileView }) {
   const days = availabilityByDay(profile.availability);
   return (
-    <div className="grid gap-4 md:grid-cols-[1fr_2fr]">
+    <div className="grid gap-4 md:grid-cols-[1fr_1fr_2fr]">
+      <div>
+        <div className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Levels they can take</div>
+        <div className="mt-2">
+          {profile.levels.length ? <LevelList levels={profile.levels} /> : <p className="text-sm text-slate-400">Not added yet</p>}
+        </div>
+      </div>
       <div>
         <div className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Languages</div>
         {profile.languages.length ? (
@@ -86,43 +112,14 @@ export default async function CoachProfilePage({
   const params = searchParams ? await searchParams : {};
   await dbConnect();
 
-  // A coach's own profile: view it and change it. The subject is the session's
-  // user, never the query string.
-  if (!viewer.canViewAll) {
-    const me: any = await User.findById(viewer.userId).select("name username coachProfile").lean();
-    const profile = toCoachProfileView(me);
-    return (
-      <div className="min-h-screen bg-slate-50 px-4 py-4 text-slate-950 sm:px-6 lg:px-8">
-        <PageHeader
-          eyebrow="My pay"
-          title="My Teaching Profile"
-          icon={UserRound}
-          subtitle="The languages you teach in and the times you are free to take classes. The academy uses this when assigning batches, demos and substitutions."
-        />
-        <div className="mt-3 flex flex-wrap gap-2">
-          <Link href="/coach-pay" className="btn-outline h-9 px-4 text-xs">
-            <ArrowLeft size={14} /> Back to my earnings
-          </Link>
-        </div>
-        <DataPanel className="mt-3" title="What the academy sees" subtitle={formatUpdated(profile.updatedAt)} icon={UserRound}>
-          <ProfileSummary profile={profile} />
-        </DataPanel>
-        <DataPanel className="mt-3" title="Add or change" subtitle="Save when you are done" icon={CalendarClock}>
-          <CoachProfileForm
-            key={profile.updatedAt || "new"}
-            coachId={viewer.userId}
-            coachName={me?.name || "You"}
-            isSelf
-            profile={profile}
-            saveAction={saveCoachProfile}
-          />
-        </DataPanel>
-      </div>
-    );
-  }
+  // The admin team keeps these profiles; coaches no longer fill in their own.
+  if (!viewer.canViewAll) redirect("/coach-pay");
+  const canEdit = viewer.role === "admin" || viewer.role === "sub-admin";
 
-  // Admins: every coach's profile, filterable by language, with one opened below.
+  // Admins: every coach's profile, filterable by language and level, with one opened below.
   const languageFilter = value(params, "language");
+  const requestedLevel = value(params, "level");
+  const levelFilter = LEVEL_GROUPS.some((group) => group.levels.some((level) => level.key === requestedLevel)) ? requestedLevel : "";
   const requestedId = value(params, "coach");
   const selectedId = isValidObjectId(requestedId) ? requestedId : "";
   const people: any[] = await User.find({
@@ -140,16 +137,17 @@ export default async function CoachProfilePage({
   }));
 
   const allLanguages = Array.from(new Set(rows.flatMap((row) => row.profile.languages))).sort();
-  const visible = languageFilter
-    ? rows.filter((row) => row.profile.languages.some((language) => language.toLowerCase() === languageFilter.toLowerCase()))
-    : rows;
+  const visible = rows
+    .filter((row) => !languageFilter || row.profile.languages.some((language) => language.toLowerCase() === languageFilter.toLowerCase()))
+    .filter((row) => !levelFilter || row.profile.levels.includes(levelFilter));
   const selected = rows.find((row) => row.id === selectedId) || null;
   const filled = rows.filter((row) => row.profile.updatedAt).length;
   const withTimes = rows.filter((row) => row.profile.availability.length > 0).length;
+  const withLevels = rows.filter((row) => row.profile.levels.length > 0).length;
 
   const href = (next: Record<string, string>) => {
     const query = new URLSearchParams();
-    const merged = { language: languageFilter, coach: selectedId, ...next };
+    const merged = { language: languageFilter, level: levelFilter, coach: selectedId, ...next };
     Object.entries(merged).forEach(([key, val]) => val && query.set(key, val));
     const text = query.toString();
     return `/coach-pay/profile${text ? `?${text}` : ""}`;
@@ -161,11 +159,12 @@ export default async function CoachProfilePage({
         eyebrow="Coach Pay"
         title="Coach Teaching Profiles"
         icon={Languages}
-        subtitle="Languages each coach teaches in and the weekly times they are free to teach, as the coaches entered them."
+        subtitle="Languages, course levels and weekly free times for every coach. The admin team keeps these up to date; coaches cannot change them."
       >
-        <div className="grid gap-2 sm:grid-cols-3">
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard label="Coaches" value={rows.length} note="Active coaches and anyone with a profile" icon={Users} tone="blue" />
           <StatCard label="Profiles filled in" value={filled} note={`${rows.length - filled} still to fill in`} icon={UserRound} tone="green" />
+          <StatCard label="With levels set" value={withLevels} note={`${rows.length - withLevels} without levels`} icon={GraduationCap} tone="green" />
           <StatCard label="With available times" value={withTimes} note={`${allLanguages.length} languages between them`} icon={CalendarClock} tone="purple" />
         </div>
       </PageHeader>
@@ -187,8 +186,8 @@ export default async function CoachProfilePage({
           icon={UserRound}
         >
           <ProfileSummary profile={selected.profile} />
-          {(viewer.canManageRates || selected.id === viewer.userId) && (
-            <details className="mt-4 rounded-lg border border-slate-200 bg-slate-50/60 p-3" open={selected.id === viewer.userId && !selected.profile.updatedAt}>
+          {canEdit && (
+            <details className="mt-4 rounded-lg border border-slate-200 bg-slate-50/60 p-3" open={!selected.profile.updatedAt}>
               <summary className="cursor-pointer text-sm font-bold text-brand">
                 {selected.id === viewer.userId ? "Add or change my profile" : `Change ${selected.name}'s profile`}
               </summary>
@@ -215,7 +214,11 @@ export default async function CoachProfilePage({
       <DataPanel
         className="mt-3"
         title="All coaches"
-        subtitle={languageFilter ? `${visible.length} who teach in ${languageFilter}` : "Pick a coach to see their full profile"}
+        subtitle={
+          languageFilter || levelFilter
+            ? `${visible.length} ${visible.length === 1 ? "coach" : "coaches"}${languageFilter ? ` who teach in ${languageFilter}` : ""}${levelFilter ? ` who can take ${levelLabel(levelFilter)}` : ""}`
+            : "Pick a coach to see their full profile"
+        }
         icon={Users}
       >
         {allLanguages.length > 0 && (
@@ -240,8 +243,34 @@ export default async function CoachProfilePage({
             ))}
           </div>
         )}
+        <form method="get" action="/coach-pay/profile" className="mb-3 flex flex-wrap items-center gap-2 text-xs">
+          <label htmlFor="level-filter" className="font-semibold text-slate-500">
+            Can take level:
+          </label>
+          {languageFilter && <input type="hidden" name="language" value={languageFilter} />}
+          <select id="level-filter" name="level" defaultValue={levelFilter} className="input h-8 w-56 py-0 text-xs">
+            <option value="">Any level</option>
+            {LEVEL_GROUPS.map((group) => (
+              <optgroup key={group.tier} label={group.label}>
+                {group.levels.map((level) => (
+                  <option key={level.key} value={level.key}>
+                    {level.label}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+          <button type="submit" className="btn-outline h-8 px-3 text-xs">
+            Show
+          </button>
+          {levelFilter && (
+            <Link href={href({ level: "" })} className="font-semibold text-slate-500 underline">
+              Clear level
+            </Link>
+          )}
+        </form>
         {visible.length === 0 ? (
-          <EmptyState title="No coaches match" description="Try another language, or clear the filter." />
+          <EmptyState title="No coaches match" description="Try another language or level, or clear the filters." />
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full text-left text-sm">
@@ -249,6 +278,7 @@ export default async function CoachProfilePage({
                 <tr>
                   <th className="border-b border-slate-200 px-3 py-2 font-bold">Coach</th>
                   <th className="border-b border-slate-200 px-3 py-2 font-bold">Languages</th>
+                  <th className="border-b border-slate-200 px-3 py-2 font-bold">Levels</th>
                   <th className="border-b border-slate-200 px-3 py-2 font-bold">Available (IST)</th>
                   <th className="border-b border-slate-200 px-3 py-2 text-right font-bold">Hours / week</th>
                   <th className="border-b border-slate-200 px-3 py-2" />
@@ -284,6 +314,9 @@ export default async function CoachProfilePage({
                           <span className="text-xs text-slate-400">-</span>
                         )}
                       </td>
+                      <td className="px-3 py-2">
+                        <LevelList levels={row.profile.levels} />
+                      </td>
                       <td className="px-3 py-2 text-xs text-slate-700">
                         {days.length ? (
                           <div className="grid gap-0.5">
@@ -304,7 +337,7 @@ export default async function CoachProfilePage({
                       </td>
                       <td className="px-3 py-2 text-right">
                         <Link href={href({ coach: row.id })} className="btn-outline h-8 px-3 text-xs">
-                          {viewer.canManageRates ? "View / edit" : "View"}
+                          {canEdit ? "View / edit" : "View"}
                         </Link>
                       </td>
                     </tr>

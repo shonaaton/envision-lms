@@ -7,6 +7,7 @@ import { ACADEMY_DEFAULTS, ACADEMY_LOGO_URL, ACADEMY_SIGNATURE_URL } from "@/lib
 import { Invoice } from "@/models/Fee";
 import { canAccessFeature } from "@/lib/featureAccess";
 import { isFeesManager } from "@/lib/feesAccess";
+import { invoiceReferences } from "@/lib/feesMetrics";
 import {
   ACCENT,
   BRAND,
@@ -109,7 +110,7 @@ async function makeInvoicePdf(invoice: any, settings: any) {
   canvas.meta("Invoice Date", date(invoice.issueDate), 464, 162, 80);
   canvas.meta("Due Date", date(invoice.dueDate), 464, 194, 80);
   canvas.meta("GSTIN", isGstInvoice ? gstNumber : "Not applicable", 464, 226, 80);
-  canvas.meta("Reference No", invoice.referenceNumber || "-", 464, 258, 80);
+  canvas.meta("Reference No", invoiceReferences(invoice).join(", ") || "-", 464, 258, 80);
 
   canvas.rect(34, 310, 527, 52, PANEL, LINE);
   canvas.meta("Tax Mode", taxMode, 52, 333, 95);

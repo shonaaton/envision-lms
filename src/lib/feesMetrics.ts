@@ -49,6 +49,21 @@ export function isOpenInvoice(invoice: any) {
   return invoice?.status !== "paid" && invoice?.status !== "cancelled";
 }
 
+/**
+ * Every reference on an invoice: the one typed when it was created, then each
+ * payment transaction's reference from "Mark paid". Most invoices only carry
+ * the payment ones, so reading `referenceNumber` alone shows nothing.
+ */
+export function invoiceReferences(invoice: any): string[] {
+  const refs = [
+    invoice?.referenceNumber,
+    ...(Array.isArray(invoice?.paymentTransactions) ? invoice.paymentTransactions.map((transaction: any) => transaction?.referenceNumber) : []),
+  ]
+    .map((ref) => String(ref || "").trim())
+    .filter(Boolean);
+  return Array.from(new Set(refs));
+}
+
 export function invoiceIssuedAt(invoice: any) {
   return invoice?.issueDate || invoice?.createdAt;
 }

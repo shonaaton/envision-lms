@@ -4,6 +4,7 @@ import { ChevronDown, Mail, MapPin, Menu, Phone } from "lucide-react";
 import { ACADEMY_DEFAULTS, ACADEMY_LOGO_URL, ACADEMY_PHONE_DISPLAY } from "@/lib/branding";
 import { centreHref, centreHub, kolkataAreasServed, kolkataCentres } from "@/lib/centrePages";
 import { courseHub, coursePages } from "@/lib/coursePages";
+import { blogHubLink, featuredPostLinks, kidsClassesLink } from "@/lib/internalLinks";
 import CookieSettingsLink from "@/components/marketing/CookieSettingsLink";
 
 /**
@@ -37,6 +38,7 @@ export const siteNav: NavEntry[] = [
   ["Why Us", "/#why"],
   "courses",
   "centres",
+  ["Chess Blog", "/blog"],
   ["Contact Us", "/contact-us"],
 ];
 
@@ -203,6 +205,7 @@ export function MarketingHeader({ demoHref, ctaLabel = "Book Free Demo Class" }:
 
 const academyLinks: NavItem[] = [
   ["Learning Portal", "/#platform"],
+  [kidsClassesLink.label, kidsClassesLink.href],
   ["Student Achievements", "/#achievements"],
   ["Student Success Stories", "/success-stories"],
   ["Parent Reviews", "/#reviews"],
@@ -244,6 +247,7 @@ export function MarketingFooter() {
   const telHref = `tel:${ACADEMY_DEFAULTS.phone}`;
   const mailHref = `mailto:${ACADEMY_DEFAULTS.email}`;
   const areas = kolkataAreasServed();
+  const guides = featuredPostLinks(5);
 
   return (
     /*
@@ -349,6 +353,27 @@ export function MarketingFooter() {
             </ul>
           </nav>
         </div>
+
+        {/* ----------------------------------------------------------- guides */}
+        {/* The blog's most important guides on every public page, so a new post
+            is one click from anywhere rather than only from the blog index. */}
+        <nav aria-label="Chess guides" className="mt-10 border-t border-white/12 pt-8">
+          <FooterHeading href={blogHubLink.href}>Chess Guides</FooterHeading>
+          <ul className="grid gap-x-6 gap-y-2.5 sm:grid-cols-2 lg:grid-cols-3">
+            {guides.map((link) => (
+              <li key={link.href}>
+                <Link href={link.href} className={footerLink}>
+                  {link.label}
+                </Link>
+              </li>
+            ))}
+            <li>
+              <Link href={blogHubLink.href} className="text-sm font-bold text-accent transition hover:underline">
+                All chess guides on the blog
+              </Link>
+            </li>
+          </ul>
+        </nav>
 
         {/* ------------------------------------------------------------ areas */}
         <nav aria-label="Areas we serve in Kolkata" className="mt-10 border-t border-white/12 pt-8">

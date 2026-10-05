@@ -25,11 +25,12 @@ const COURSE_SLUG_REDIRECTS = [
  * now does that job, so the link equity and the bookmarks move across instead
  * of dying at a 404.
  *
- * Only pages with a real successor are listed. The old blog (`/post/...`,
- * `/blog`, `/blog/tags/...`, `/blog/categories/...`) has no equivalent here, so
- * those stay 404: funnelling a hundred article URLs into the home page is a
- * soft 404 that Google discards anyway, and it would bury the pages that do
- * rank. Same for the Wix plumbing (`/cart-page`, `/profile/...`,
+ * Only pages with a real successor are listed. `/blog` is a real page again
+ * (the new blog, built from `src/lib/blog`), but the old Wix articles
+ * (`/post/...`, `/blog/tags/...`, `/blog/categories/...`) have no equivalent, so
+ * those stay 404: funnelling a hundred article URLs into one page is a soft 404
+ * that Google discards anyway, and it would bury the pages that do rank. An old
+ * `/post/` slug whose topic a new article covers can be added here, one by one. Same for the Wix plumbing (`/cart-page`, `/profile/...`,
  * `/pages-sitemap.xml` and the other Wix sitemaps) - it should leave the index,
  * not be redirected.
  */
@@ -60,10 +61,21 @@ const LEGACY_WIX_REDIRECTS = [
   ["/terms-and-conditions", "/terms"],
 ].map(([source, destination]) => ({ source, destination, statusCode: 301 }));
 
+/**
+ * Story pages for students who were recorded under two names. Mirrors
+ * `STUDENT_SLUG_ALIASES` in `src/lib/achievementData.ts`, which folds both
+ * names onto the full one - this sends the short URL there too.
+ */
+const STUDENT_STORY_REDIRECTS = [["/success-stories/anish", "/success-stories/anish-bijibilla"]].map(([source, destination]) => ({
+  source,
+  destination,
+  statusCode: 301,
+}));
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   async redirects() {
-    return [...COURSE_SLUG_REDIRECTS, ...LEGACY_WIX_REDIRECTS];
+    return [...COURSE_SLUG_REDIRECTS, ...LEGACY_WIX_REDIRECTS, ...STUDENT_STORY_REDIRECTS];
   },
   distDir: process.env.NODE_ENV === "development" ? ".next-dev" : ".next",
   output: "standalone",

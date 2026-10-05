@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { MARKETING_BASE_URL } from "@/lib/publicLinks";
+import { publicMetadata } from "@/lib/seo";
 
 /**
  * The offline side of the academy: one Kolkata hub page and a page per centre.
@@ -16,12 +16,6 @@ import { MARKETING_BASE_URL } from "@/lib/publicLinks";
  * this one list, so the page, the schema and the footer can never disagree
  * about when a centre actually teaches.
  */
-
-const OG_IMAGE_PATH = "/images/achievements/682626726_122217430778279433_7786835792267057544_n.jpg";
-
-function socialImage(alt: string) {
-  return [{ url: OG_IMAGE_PATH, width: 1200, height: 900, alt }];
-}
 
 export const CENTRE_HUB_SLUG = "chess-academy-in-kolkata";
 
@@ -564,51 +558,21 @@ export function centrePostalAddress(centre: CentreConfig) {
 }
 
 export function centreHubMetadata(): Metadata {
-  const url = `${MARKETING_BASE_URL}/${centreHub.slug}`;
-  return {
-    metadataBase: new URL(MARKETING_BASE_URL),
+  return publicMetadata({
+    path: `/${centreHub.slug}`,
     title: centreHub.title,
     description: centreHub.description,
     keywords: centreHub.keywords,
-    alternates: { canonical: url },
-    openGraph: {
-      title: centreHub.title,
-      description: centreHub.description,
-      url,
-      siteName: "Envision Chess Academy",
-      type: "website",
-      images: socialImage("Envision Chess Academy student with a tournament trophy - chess academy in Kolkata"),
-    },
-    twitter: {
-      card: "summary_large_image",
-      title: centreHub.title,
-      description: centreHub.description,
-      images: [OG_IMAGE_PATH],
-    },
-  };
+    imageAlt: "Envision Chess Academy student with a tournament trophy - chess academy in Kolkata",
+  });
 }
 
 export function centreMetadata(config: CentreConfig): Metadata {
-  const url = `${MARKETING_BASE_URL}${centreHref(config.slug)}`;
-  return {
-    metadataBase: new URL(MARKETING_BASE_URL),
+  return publicMetadata({
+    path: centreHref(config.slug),
     title: config.title,
     description: config.description,
     keywords: config.keywords,
-    alternates: { canonical: url },
-    openGraph: {
-      title: config.title,
-      description: config.description,
-      url,
-      siteName: "Envision Chess Academy",
-      type: "website",
-      images: socialImage(`Envision Chess Academy ${config.name} centre - ${config.keyword}`),
-    },
-    twitter: {
-      card: "summary_large_image",
-      title: config.title,
-      description: config.description,
-      images: [OG_IMAGE_PATH],
-    },
-  };
+    imageAlt: `Envision Chess Academy ${config.name} centre - ${config.keyword}`,
+  });
 }

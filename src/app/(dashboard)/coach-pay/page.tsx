@@ -154,9 +154,11 @@ export default async function CoachPayPage({
         <Link href="/coach-pay/substitutions" className="btn-outline h-9 px-4 text-xs">
           <Repeat size={14} /> {viewer.canViewAll ? "Substitutions" : "My substitutions"}
         </Link>
-        <Link href="/coach-pay/profile" className="btn-outline h-9 px-4 text-xs">
-          <Languages size={14} /> {viewer.canViewAll ? "Coach profiles" : "My teaching profile"}
-        </Link>
+        {viewer.canViewAll && (
+          <Link href="/coach-pay/profile" className="btn-outline h-9 px-4 text-xs">
+            <Languages size={14} /> Coach profiles
+          </Link>
+        )}
         {viewer.canManageRates && (
           <Link href="/coach-pay/proposals" className="btn-outline h-9 px-4 text-xs">
             <Inbox size={14} /> Coach submissions

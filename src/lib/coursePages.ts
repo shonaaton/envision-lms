@@ -1,17 +1,6 @@
 import type { Metadata } from "next";
 import { curriculumLevels } from "@/lib/demoCurriculum";
-import { MARKETING_BASE_URL } from "@/lib/publicLinks";
-
-/**
- * One social card for the whole course tree. Each page supplies its own alt
- * text through `socialImage`, so the card is described by what that page is
- * about rather than by the filename.
- */
-const OG_IMAGE_PATH = "/images/achievements/682626726_122217430778279433_7786835792267057544_n.jpg";
-
-function socialImage(alt: string) {
-  return [{ url: OG_IMAGE_PATH, width: 1200, height: 900, alt }];
-}
+import { publicMetadata } from "@/lib/seo";
 
 /**
  * Per-tier landing pages for the course ladder.
@@ -79,9 +68,7 @@ export const coursePages: CoursePageConfig[] = [
     keywords: [
       "online chess classes for beginners",
       "beginner chess course online",
-      "online chess classes for kids",
       "chess coaching for beginners",
-      "learn chess online for kids",
       "beginner chess coaching",
       "chess lessons for beginners",
     ],
@@ -400,13 +387,16 @@ export const coursePages: CoursePageConfig[] = [
 export const courseHub = {
   slug: "online-chess-coaching-courses",
   navLabel: "Online Chess Coaching Courses",
-  keyword: "online chess coaching courses",
-  h1: "Online Chess Coaching Courses in India",
-  supportingHeading: "Structured online chess coaching for every level, from first move to Masters.",
-  title: "Online Chess Coaching Courses in India | Envision Chess Academy",
+  keyword: "best online chess coaching",
+  h1: "Best Online Chess Coaching in India",
+  supportingHeading: "Five structured courses, 240 live sessions, from first move to Masters.",
+  title: "Best Online Chess Coaching in India | Envision Chess Academy",
   description:
-    "Online chess coaching courses in India: five stages, fifteen levels and 240 live sessions from beginner to Masters, with a free coach-led placement class.",
+    "Best online chess coaching in India: five structured courses, 240 live sessions from beginner to Masters, and a free coach-led class that places you.",
   keywords: [
+    "best online chess coaching",
+    "best online chess coaching in India",
+    "best online chess classes",
     "online chess coaching courses",
     "online chess coaching in India",
     "online chess classes in India",
@@ -414,18 +404,20 @@ export const courseHub = {
     "online chess training",
     "online chess academy in India",
     "chess classes online",
-    "online chess classes for kids",
     "professional chess coaching online",
-    "chess coaching for kids",
     "structured online chess coaching",
   ],
   intro:
-    "One ladder, five stages, 240 taught sessions. Every student is placed by a coach at the session that matches their strength, then works through a syllabus that runs from the first move to elite competitive play. Classes are live and online for students anywhere in India, and the same courses run offline at our four Kolkata centres.",
+    "The best online chess coaching is the kind you can check before you pay for it. Ours is one ladder of five courses and 240 taught sessions, published session by session. Every student is placed by a coach at the session that matches their strength, then works through a syllabus that runs from the first move to elite competitive play. Classes are live and online for students anywhere in India, and the same courses run offline at our four Kolkata centres.",
   /**
    * Hub-level FAQs: the questions asked about the ladder as a whole rather
    * than about one stage. They also feed the FAQPage schema on the hub page.
    */
   faqs: [
+    {
+      q: "What makes the best online chess coaching?",
+      a: "Four things you can check before paying: a published syllabus you can read session by session rather than a vague weekly class, live teaching instead of recordings, a coach who assesses the student and places them at the right level rather than at session one, and progress a parent can see for themselves - attendance, marked homework, tournament results and written feedback. Envision is built around all four, which is the only claim about being best that we think is worth making.",
+    },
     {
       q: "What are the online chess coaching courses at Envision Chess Academy?",
       a: "Five courses form one ladder: Beginner, Intermediate, Semi-Pro, Pro and Masters. Each is three levels of sixteen live sessions, 240 taught sessions end to end, running from how the pieces move through to pawn structure and theoretical endgames.",
@@ -454,28 +446,13 @@ export const courseHub = {
 };
 
 export function courseHubMetadata(): Metadata {
-  const url = `${MARKETING_BASE_URL}/${courseHub.slug}`;
-  return {
-    metadataBase: new URL(MARKETING_BASE_URL),
+  return publicMetadata({
+    path: `/${courseHub.slug}`,
     title: courseHub.title,
     description: courseHub.description,
     keywords: courseHub.keywords,
-    alternates: { canonical: url },
-    openGraph: {
-      title: courseHub.title,
-      description: courseHub.description,
-      url,
-      siteName: "Envision Chess Academy",
-      type: "website",
-      images: socialImage("Envision Chess Academy student with a tournament trophy - online chess coaching courses in India"),
-    },
-    twitter: {
-      card: "summary_large_image",
-      title: courseHub.title,
-      description: courseHub.description,
-      images: [OG_IMAGE_PATH],
-    },
-  };
+    imageAlt: "Envision Chess Academy student with a tournament trophy - online chess coaching courses in India",
+  });
 }
 
 export function getCoursePage(slug: string) {
@@ -489,26 +466,11 @@ export function courseSessionTotal(tier: string) {
 }
 
 export function courseMetadata(config: CoursePageConfig): Metadata {
-  const url = `${MARKETING_BASE_URL}/${config.slug}`;
-  return {
-    metadataBase: new URL(MARKETING_BASE_URL),
+  return publicMetadata({
+    path: `/${config.slug}`,
     title: config.title,
     description: config.description,
     keywords: config.keywords,
-    alternates: { canonical: url },
-    openGraph: {
-      title: config.title,
-      description: config.description,
-      url,
-      siteName: "Envision Chess Academy",
-      type: "website",
-      images: socialImage(`${config.h1} at Envision Chess Academy - ${config.keyword}`),
-    },
-    twitter: {
-      card: "summary_large_image",
-      title: config.title,
-      description: config.description,
-      images: [OG_IMAGE_PATH],
-    },
-  };
+    imageAlt: `${config.h1} at Envision Chess Academy - ${config.keyword}`,
+  });
 }

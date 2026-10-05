@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { ArrowLeft, CalendarDays, MapPin, Trophy } from "lucide-react";
 import { getLandingAchievements } from "@/lib/achievements";
 import { publicAchievementList, studentSlug } from "@/lib/achievementData";
+import { achievementAlt } from "@/lib/achievementCopy";
 import { MarketingFooter, MarketingHeader } from "@/components/marketing/MarketingChrome";
 import RelatedLinks from "@/components/marketing/RelatedLinks";
 import { centreHubLink, contactLink, courseHubLink, courseLinks, demoLink } from "@/lib/internalLinks";
@@ -29,7 +31,10 @@ async function findStudent(slug: string) {
  */
 export async function generateMetadata({ params }: { params: { student: string } }): Promise<Metadata> {
   const { primary } = await findStudent(params.student);
-  if (!primary) return { title: "Student profile not found | Envision Chess Academy" };
+  // An unknown student renders the not-found page, which Next marks noindex.
+  // (The status stays 200 because the root loading boundary starts streaming
+  // first; the noindex is what keeps these URLs out of the index.)
+  if (!primary) notFound();
 
   const pageUrl = `${storiesUrl}/${params.student}`;
   const title = `${primary.studentName} - Chess Achievements | Envision Chess Academy`;
@@ -46,7 +51,7 @@ export async function generateMetadata({ params }: { params: { student: string }
       url: pageUrl,
       siteName: "Envision Chess Academy",
       type: "profile",
-      images: [{ url: primary.achievementImageUrl || OG_IMAGE_PATH, alt: `${primary.studentName} - chess tournament achievement` }],
+      images: [{ url: primary.achievementImageUrl || OG_IMAGE_PATH, alt: achievementAlt(primary) }],
     },
     twitter: { card: "summary_large_image", title, description, images: [primary.achievementImageUrl || OG_IMAGE_PATH] },
   };
@@ -73,16 +78,9 @@ export default async function StudentSuccessPage({ params }: { params: { student
       detail: item.result,
     }));
 
-  if (!primary) {
-    return (
-      <main className="grid min-h-screen place-items-center bg-[#f7f8fb] p-6 text-center">
-        <div>
-          <h1 className="text-3xl font-black text-slate-950">Student profile not found</h1>
-          <Link href="/success-stories" className="btn-primary mt-5"><ArrowLeft size={16} /> Back to Success Stories</Link>
-        </div>
-      </main>
-    );
-  }
+  // A real 404, not a 200 page that says "not found" - Google treats the
+  // latter as a soft 404 and keeps re-crawling it.
+  if (!primary) notFound();
 
   const pageUrl = `${storiesUrl}/${params.student}`;
   const schema = [
@@ -126,7 +124,7 @@ export default async function StudentSuccessPage({ params }: { params: { student
             <p className="mt-5 max-w-2xl text-lg leading-8 text-white/76">{primary.shortDescription}</p>
           </div>
           <div className="relative aspect-[1.12] overflow-hidden rounded-lg border border-white/12 bg-white/10 shadow-2xl shadow-black/25">
-            <Image src={primary.achievementImageUrl} alt={`${primary.studentName} achievement`} fill priority sizes="(min-width: 1024px) 45vw, 100vw" className="object-cover" />
+            <Image src={primary.achievementImageUrl} alt={achievementAlt(primary)} fill priority sizes="(min-width: 1024px) 45vw, 100vw" className="object-cover" />
           </div>
         </div>
       </section>

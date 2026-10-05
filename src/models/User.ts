@@ -116,6 +116,8 @@ const UserSchema = new Schema(
     // Arrays default to undefined so student records do not grow empty fields.
     coachProfile: {
       languages: { type: [String], default: undefined },
+      // Course levels the coach can take, as "tier:n" (lib/coachProfile.ts).
+      levels: { type: [String], default: undefined },
       availability: {
         type: [
           {

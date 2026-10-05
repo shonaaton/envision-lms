@@ -1,14 +1,14 @@
 import type { Metadata } from "next";
 import LegalPage, { InShort, TableOfContents } from "@/components/marketing/LegalPage";
 import { ACADEMY_DEFAULTS } from "@/lib/branding";
-import { MARKETING_BASE_URL } from "@/lib/publicLinks";
+import { publicMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = publicMetadata({
+  path: "/refund-policy",
   title: "Refund Policy | Envision Chess Academy",
   description:
     "When Envisions Chess Academy LLP refunds fees and credits, how to ask for a refund, and how long it takes.",
-  alternates: { canonical: `${MARKETING_BASE_URL}/refund-policy` },
-};
+});
 
 /**
  * The commercial windows in this policy. They mirror the ones in the Terms

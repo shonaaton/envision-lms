@@ -1,11 +1,15 @@
 /**
- * A coach's teaching profile: languages they can teach in and the weekly hours
- * they are free to take classes. Shared by the Teaching Profile page, its form
- * and the save action, so what the form offers and what the server accepts
- * cannot drift apart.
+ * A coach's teaching profile: languages they can teach in, the course levels
+ * they can take and the weekly hours they are free to take classes. Shared by
+ * the Coach Profiles page, its form and the save action, so what the form
+ * offers and what the server accepts cannot drift apart.
+ *
+ * Only the admin team fills these in; coaches do not edit their own.
  *
  * Times are "HH:MM" in IST, the academy's clock.
  */
+
+import { COURSE_TIERS, COURSE_TIER_LABELS } from "@/lib/courseTiers";
 
 export const LANGUAGE_OPTIONS = [
   "English",
@@ -34,6 +38,43 @@ export const WEEK_DAYS = [
   { day: 0, short: "Sun", label: "Sunday" },
 ] as const;
 
+/**
+ * Every tier of the ladder has three sub-levels (demoCurriculum.ts; a test keeps
+ * the two in step). A level is stored as "tier:n", e.g. "intermediate:2".
+ */
+export const SUB_LEVELS_PER_TIER = 3;
+
+export const LEVEL_GROUPS = COURSE_TIERS.map((tier) => ({
+  tier,
+  label: COURSE_TIER_LABELS[tier] || tier,
+  levels: Array.from({ length: SUB_LEVELS_PER_TIER }, (_, index) => ({
+    key: `${tier}:${index + 1}`,
+    short: `L${index + 1}`,
+    label: `${COURSE_TIER_LABELS[tier] || tier} Level ${index + 1}`,
+  })),
+}));
+
+const LEVEL_ORDER: string[] = LEVEL_GROUPS.flatMap((group) => group.levels.map((level) => level.key));
+
+export function levelLabel(key: string) {
+  return LEVEL_GROUPS.flatMap((group) => group.levels).find((level) => level.key === key)?.label || key;
+}
+
+/** Known levels only, in ladder order, without duplicates. */
+export function normalizeLevels(input: unknown): string[] {
+  const wanted = new Set((Array.isArray(input) ? input : []).map((raw) => String(raw ?? "").trim()));
+  return LEVEL_ORDER.filter((key) => wanted.has(key));
+}
+
+/** "Beginner L1-L3", "Intermediate L2": a coach's levels grouped by tier for a table cell. */
+export function levelsByTier(levels: string[]) {
+  return LEVEL_GROUPS.map((group) => ({
+    tier: group.tier,
+    label: group.label,
+    levels: group.levels.filter((level) => levels.includes(level.key)),
+  })).filter((group) => group.levels.length > 0);
+}
+
 export const MAX_LANGUAGES = 15;
 export const MAX_SLOTS = 50;
 export const MAX_NOTE_LENGTH = 500;
@@ -42,6 +83,7 @@ export type AvailabilitySlot = { dayOfWeek: number; startTime: string; endTime: 
 
 export type CoachProfileView = {
   languages: string[];
+  levels: string[];
   availability: AvailabilitySlot[];
   availabilityNote: string;
   updatedAt: string | null;
@@ -144,6 +186,7 @@ export function toCoachProfileView(raw: any): CoachProfileView {
   );
   return {
     languages: normalizeLanguages(profile.languages || []),
+    levels: normalizeLevels(profile.levels || []),
     availability: availability.ok ? availability.slots : [],
     availabilityNote: String(profile.availabilityNote || ""),
     updatedAt: profile.updatedAt ? new Date(profile.updatedAt).toISOString() : null,

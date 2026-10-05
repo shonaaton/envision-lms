@@ -2,13 +2,14 @@ import type { Metadata } from "next";
 import LegalPage, { InShort, TableOfContents } from "@/components/marketing/LegalPage";
 import { ACADEMY_DEFAULTS } from "@/lib/branding";
 import { MARKETING_BASE_URL } from "@/lib/publicLinks";
+import { publicMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = publicMetadata({
+  path: "/privacy",
   title: "Privacy Policy | Envision Chess Academy",
   description:
     "How Envisions Chess Academy LLP collects, uses, shares and protects personal information, including children's data, WhatsApp messages and class recordings.",
-  alternates: { canonical: `${MARKETING_BASE_URL}/privacy` },
-};
+});
 
 /** Termly-hosted request form, kept as an alternative to emailing us. */
 const DSAR_URL = "https://app.termly.io/dsar/270b1c13-cb44-4143-ac67-11e4135d17e4";

@@ -169,9 +169,20 @@ export function publicAchievementList(records: AchievementRecord[] = seededAchie
     .sort((a, b) => Number(b.isFeatured) - Number(a.isFeatured) || a.displayOrder - b.displayOrder);
 }
 
+/**
+ * Students recorded under more than one name. Without this, "Anish" and "Anish
+ * Bijibilla" were two story pages about one child, splitting his results and
+ * competing with each other in search. The short form 301s to the full one in
+ * `next.config.mjs`, so the two lists must agree.
+ */
+export const STUDENT_SLUG_ALIASES: Record<string, string> = {
+  anish: "anish-bijibilla",
+};
+
 export function studentSlug(studentName: string) {
-  return studentName
+  const slug = studentName
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
+  return STUDENT_SLUG_ALIASES[slug] ?? slug;
 }

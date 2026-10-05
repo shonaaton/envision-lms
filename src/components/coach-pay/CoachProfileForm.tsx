@@ -7,6 +7,7 @@ import { CheckCircle2, Plus, Save, Trash2, X } from "lucide-react";
 
 import {
   LANGUAGE_OPTIONS,
+  LEVEL_GROUPS,
   MAX_NOTE_LENGTH,
   WEEK_DAYS,
   normalizeLanguages,
@@ -35,6 +36,7 @@ export function CoachProfileForm({
 }) {
   const router = useRouter();
   const [languages, setLanguages] = useState<string[]>(profile.languages);
+  const [levels, setLevels] = useState<string[]>(profile.levels);
   const [custom, setCustom] = useState("");
   const [slots, setSlots] = useState<DraftSlot[]>(() => profile.availability.map(withKey));
   const [note, setNote] = useState(profile.availabilityNote);
@@ -47,6 +49,17 @@ export function CoachProfileForm({
   function toggleLanguage(language: string) {
     setSaved("");
     setLanguages((current) => (current.includes(language) ? current.filter((item) => item !== language) : [...current, language]));
+  }
+
+  function toggleLevel(key: string) {
+    setSaved("");
+    setLevels((current) => (current.includes(key) ? current.filter((item) => item !== key) : [...current, key]));
+  }
+
+  /** A whole tier at once: select every sub-level, or clear them if all are already on. */
+  function toggleTier(keys: string[]) {
+    setSaved("");
+    setLevels((current) => (keys.every((key) => current.includes(key)) ? current.filter((item) => !keys.includes(item)) : Array.from(new Set([...current, ...keys]))));
   }
 
   function addCustomLanguage() {
@@ -95,6 +108,7 @@ export function CoachProfileForm({
     const formData = new FormData();
     formData.set("coach", coachId);
     formData.set("languages", JSON.stringify(languages));
+    formData.set("levels", JSON.stringify(levels));
     formData.set("availability", JSON.stringify(slots.map(({ dayOfWeek, startTime, endTime }) => ({ dayOfWeek, startTime, endTime }))));
     formData.set("availabilityNote", note);
     startTransition(async () => {
@@ -171,6 +185,49 @@ export function CoachProfileForm({
           <button type="button" onClick={addCustomLanguage} className="btn-outline h-9 px-3 text-xs" disabled={!custom.trim()}>
             <Plus size={14} /> Add
           </button>
+        </div>
+      </section>
+
+      <section className="grid gap-2">
+        <div>
+          <h3 className="text-sm font-bold text-slate-950">Levels {isSelf ? "you can" : `${coachName} can`} take</h3>
+          <p className="text-xs text-slate-500">Tap a level to select it, or the course name to select all three of its levels.</p>
+        </div>
+        <div className="divide-y divide-slate-100 rounded-lg border border-slate-200 bg-white">
+          {LEVEL_GROUPS.map((group) => {
+            const keys = group.levels.map((level) => level.key);
+            const allOn = keys.every((key) => levels.includes(key));
+            return (
+              <div key={group.tier} className="flex flex-wrap items-center gap-2 p-2.5">
+                <button
+                  type="button"
+                  aria-pressed={allOn}
+                  onClick={() => toggleTier(keys)}
+                  className={`w-28 shrink-0 rounded-md px-2 py-1 text-left text-sm font-semibold transition ${allOn ? "text-brand" : "text-slate-800 hover:text-brand"}`}
+                  title={allOn ? `Clear every ${group.label} level` : `Select every ${group.label} level`}
+                >
+                  {group.label}
+                </button>
+                {group.levels.map((level) => {
+                  const active = levels.includes(level.key);
+                  return (
+                    <button
+                      key={level.key}
+                      type="button"
+                      aria-pressed={active}
+                      aria-label={level.label}
+                      onClick={() => toggleLevel(level.key)}
+                      className={`inline-flex h-8 items-center gap-1 rounded-full px-3 text-xs font-semibold ring-1 transition ${
+                        active ? "bg-brand text-white ring-brand" : "bg-white text-slate-700 ring-slate-200 hover:ring-brand/50"
+                      }`}
+                    >
+                      {active && <CheckCircle2 size={13} />} Level {level.short.slice(1)}
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })}
         </div>
       </section>
 

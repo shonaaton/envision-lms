@@ -1,3 +1,4 @@
+import { BLOG_PATH, blogHref, blogPosts, getBlogPost, postsForCourse } from "@/lib/blog";
 import { centreHref, centreHub, centreTimeRange, kolkataCentres } from "@/lib/centrePages";
 import { courseHub, coursePages } from "@/lib/coursePages";
 
@@ -60,6 +61,17 @@ export const successStoriesLink: RelatedLink = {
   detail: "Verified tournament results, ratings and titles won by Envision students.",
 };
 
+/**
+ * The parent-facing page for children's classes. It owns "online chess classes
+ * for kids" and "chess classes for kids", so every block that offers it uses
+ * that phrasing as the anchor text rather than a bare "for kids".
+ */
+export const kidsClassesLink: RelatedLink = {
+  href: "/online-chess-classes-for-kids",
+  label: "Online Chess Classes for Kids",
+  detail: "What a chess class for a child looks like, which stage to start at, and how parents follow the progress.",
+};
+
 export const contactLink: RelatedLink = {
   href: "/contact-us",
   label: "Contact Us",
@@ -86,4 +98,34 @@ export function offlineCluster(): RelatedLink[] {
 /** The online cluster, as an offline or story page should offer it. */
 export function onlineCluster(): RelatedLink[] {
   return [courseHubLink, ...courseLinks()];
+}
+
+export const blogHubLink: RelatedLink = {
+  href: BLOG_PATH,
+  label: "Chess Blog",
+  detail: "Guides to the rules, checkmates, openings and tactics, and advice for parents choosing chess classes.",
+};
+
+function postLink(slug: string): RelatedLink | null {
+  const post = getBlogPost(slug);
+  return post ? { href: blogHref(post.slug), label: post.h1, detail: post.excerpt } : null;
+}
+
+/** Specific posts, in the order given. Unknown slugs drop out rather than 404. */
+export function postLinks(slugs: string[]): RelatedLink[] {
+  return slugs.map(postLink).filter((link): link is RelatedLink => Boolean(link));
+}
+
+/** The highest-priority posts, for the footer and the home page. */
+export function featuredPostLinks(count: number): RelatedLink[] {
+  return postLinks(blogPosts.slice(0, count).map((post) => post.slug));
+}
+
+/**
+ * The guides a course page lists: every post that names this course as
+ * related. The link runs both ways - the post links the course in its text and
+ * its course block, and the course links the post here.
+ */
+export function guidesForCourse(courseSlug: string): RelatedLink[] {
+  return postLinks(postsForCourse(courseSlug).map((post) => post.slug));
 }

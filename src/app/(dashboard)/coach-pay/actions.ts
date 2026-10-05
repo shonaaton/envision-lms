@@ -10,7 +10,7 @@ import { recordActivity } from "@/lib/activity";
 import { consumeAttendanceCredit } from "@/lib/fees";
 import { requireCoachPayPermission, requireCoachSelf } from "@/lib/coachPayAccess";
 import { isValidRateScope } from "@/lib/coachPay";
-import { MAX_NOTE_LENGTH, normalizeAvailability, normalizeLanguages, weeklyAvailableMinutes } from "@/lib/coachProfile";
+import { MAX_NOTE_LENGTH, normalizeAvailability, normalizeLanguages, normalizeLevels, weeklyAvailableMinutes } from "@/lib/coachProfile";
 import { cancelPayProposalTask, raisePayProposalTask, resolveNoShowRulingTask, resolvePayProposalTask } from "@/lib/tasks/taskTriggers";
 import { CoachPayPlan, CoachPayProposal, CoachRate, PAY_PLAN_TYPES, NoShowRuling, SessionPayOverride, PAY_KINDS, RATE_UNITS } from "@/models/CoachPay";
 import { Attendance } from "@/models/Attendance";
@@ -861,32 +861,26 @@ function parseJson(formData: FormData, key: string): unknown {
 }
 
 /**
- * Languages and weekly availability on a coach's Teaching Profile.
+ * Languages, course levels and weekly availability on a coach's Teaching Profile.
  *
- * A coach edits their own; the id comes from their session, never the form.
- * Editing someone else's needs `manage_rates`, the same grant that sets their pay.
+ * Only the admin team (admins and sub-admins who can see every coach's pay)
+ * fills these in; coaches no longer edit their own.
  */
 export async function saveCoachProfile(formData: FormData): Promise<CoachProfileActionResult> {
-  const selfId = await requireCoachSelf();
-  if (!selfId) return { ok: false, error: "You do not have access to Coach Pay." };
-
-  const requested = text(formData, "coach");
-  let coachId = selfId;
-  let actorId = selfId;
-  if (requested && requested !== selfId) {
-    const session = await requireCoachPayPermission("manage_rates");
-    if (!session?.user) return { ok: false, error: "You can only change your own teaching profile." };
-    if (!isValidObjectId(requested)) return { ok: false, error: "Choose a coach first." };
-    coachId = requested;
-    actorId = String((session.user as any).id);
-  }
+  const session = await requireCoachPayPermission("view_all");
+  if (!session?.user) return { ok: false, error: "Only admins and sub-admins can change coach profiles." };
+  const actorId = String((session.user as any).id);
+  const coachId = text(formData, "coach");
+  if (!isValidObjectId(coachId)) return { ok: false, error: "Choose a coach first." };
 
   const languagesInput = parseJson(formData, "languages");
+  const levelsInput = parseJson(formData, "levels");
   const availabilityInput = parseJson(formData, "availability");
-  if (!Array.isArray(languagesInput) || !Array.isArray(availabilityInput)) {
+  if (!Array.isArray(languagesInput) || !Array.isArray(levelsInput) || !Array.isArray(availabilityInput)) {
     return { ok: false, error: "The form could not be read. Please reload the page and try again." };
   }
   const languages = normalizeLanguages(languagesInput);
+  const levels = normalizeLevels(levelsInput);
   const availability = normalizeAvailability(availabilityInput);
   if (!availability.ok) return { ok: false, error: availability.error };
   const note = text(formData, "availabilityNote").slice(0, MAX_NOTE_LENGTH);
@@ -897,6 +891,7 @@ export async function saveCoachProfile(formData: FormData): Promise<CoachProfile
     {
       $set: {
         "coachProfile.languages": languages,
+        "coachProfile.levels": levels,
         "coachProfile.availability": availability.slots,
         "coachProfile.availabilityNote": note,
         "coachProfile.updatedAt": new Date(),
@@ -916,10 +911,10 @@ export async function saveCoachProfile(formData: FormData): Promise<CoachProfile
     label: actorId === coachId ? "Updated their teaching profile" : "Updated a coach's teaching profile",
     entityType: "User",
     entityId: coachId,
-    metadata: { languages, slots: availability.slots.length, minutesPerWeek: weeklyAvailableMinutes(availability.slots) },
+    metadata: { languages, levels, slots: availability.slots.length, minutesPerWeek: weeklyAvailableMinutes(availability.slots) },
   });
   revalidatePath("/coach-pay/profile");
 
   const who = actorId === coachId ? "Your" : `${updated.name || updated.username || "The coach"}'s`;
-  return { ok: true, message: `Saved. ${who} languages and available times are up to date.` };
+  return { ok: true, message: `Saved. ${who} languages, levels and available times are up to date.` };
 }

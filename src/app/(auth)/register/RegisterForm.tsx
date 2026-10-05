@@ -281,7 +281,7 @@ export default function RegisterForm() {
       <div className="relative mx-auto grid min-h-screen max-w-7xl gap-5 px-4 py-5 sm:px-6 lg:h-screen lg:grid-cols-[minmax(330px,0.85fr)_minmax(620px,1.15fr)] lg:px-8">
         <aside className="register-visual-shell overflow-hidden rounded-lg border border-white/10 bg-white/[0.06] p-6 text-white shadow-2xl shadow-black/30 backdrop-blur lg:h-[calc(100vh-40px)] lg:flex-col">
           <div className="relative min-h-0 flex-1 overflow-hidden rounded-lg border border-white/10 bg-[#1a0622] p-5 xl:p-6">
-            <Image src="/images/landing/anish-bijibilla.jpg" alt="Envision Chess Academy student achievement" fill priority sizes="34vw" className="object-cover object-top opacity-22" />
+            <Image src="/images/landing/anish-bijibilla.jpg" alt="Anish Bijibilla, Envision Chess Academy student and England Under-7 No. 1, who learned through online chess classes" fill priority sizes="34vw" className="object-cover object-top opacity-22" />
             <div className="absolute inset-0 bg-[linear-gradient(155deg,#17051f_0%,rgba(43,7,55,0.92)_50%,rgba(12,3,16,0.82)_100%)]" />
             <div className="relative z-10 flex h-full flex-col justify-between gap-4">
               <Image src={ACADEMY_LOGO_URL} alt="Envision Chess Academy" width={270} height={92} priority unoptimized className="h-12 w-auto object-contain xl:h-16" />
@@ -289,7 +289,7 @@ export default function RegisterForm() {
                 <p className="inline-flex items-center gap-2 rounded-full border border-accent/30 bg-accent/10 px-3 py-1 text-xs font-black uppercase text-accent">
                   <Sparkles size={14} /> Guided onboarding
                 </p>
-                <h1 className="mt-3 max-w-[12ch] text-[1.85rem] font-black leading-[1.02] xl:text-[2.15rem] 2xl:text-[2.3rem]">A cleaner start for every academy journey.</h1>
+                <p className="mt-3 max-w-[12ch] text-[1.85rem] font-black leading-[1.02] xl:text-[2.15rem] 2xl:text-[2.3rem]">A cleaner start for every academy journey.</p>
                 <p className="mt-3 max-w-[34ch] text-xs leading-5 text-white/78">
                   Students request a demo. Coaches submit a reviewed application. Every account begins with the right context.
                 </p>
@@ -321,7 +321,7 @@ export default function RegisterForm() {
               </div>
               <div className="min-w-0">
                 <p className="text-xs font-black uppercase text-brand">{role === "student" ? "Student demo onboarding" : "Coach application review"}</p>
-                <h1 className="text-xl font-black leading-tight sm:text-3xl">{role === "student" ? "Create Demo Student Account" : "Submit Coach Application"}</h1>
+                <h1 className="text-xl font-black leading-tight sm:text-3xl">{role === "student" ? "Book a Free Demo Chess Class" : "Submit Coach Application"}</h1>
               </div>
             </div>
             <Link href="/login" className="rounded-lg border border-brand/20 px-4 py-2 text-sm font-black text-brand transition hover:bg-brand-50">

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ArrowRight, MapPin, Trophy } from "lucide-react";
 import { getLandingAchievements } from "@/lib/achievements";
 import { publicAchievementList, studentSlug } from "@/lib/achievementData";
+import { achievementAlt } from "@/lib/achievementCopy";
 import { MarketingFooter, MarketingHeader } from "@/components/marketing/MarketingChrome";
 import RelatedLinks from "@/components/marketing/RelatedLinks";
 import { centreHubLink, centreLinks, contactLink, courseHubLink, courseLinks, demoLink } from "@/lib/internalLinks";
@@ -91,7 +92,7 @@ export default async function SuccessStoriesPage() {
         {students.map((item) => (
           <Link key={studentSlug(item.studentName)} href={`/success-stories/${studentSlug(item.studentName)}`} className="group overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-xl hover:shadow-brand-900/10">
             <div className="relative aspect-[1.08] bg-slate-100">
-              <Image src={item.achievementImageUrl} alt={`${item.studentName} achievement`} fill sizes="(min-width: 1024px) 33vw, 50vw" className="object-cover transition duration-700 group-hover:scale-105" />
+              <Image src={item.achievementImageUrl} alt={achievementAlt(item)} fill sizes="(min-width: 1024px) 33vw, 50vw" className="object-cover transition duration-700 group-hover:scale-105" />
               <span className="absolute left-3 top-3 inline-flex items-center gap-1 rounded-full bg-accent px-2.5 py-1 text-xs font-black text-brand">
                 <Trophy size={13} /> {item.achievementLevel}
               </span>

@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest";
 
-import { formatTime, normalizeAvailability, normalizeLanguages, toCoachProfileView, weeklyAvailableMinutes } from "@/lib/coachProfile";
+import {
+  LEVEL_GROUPS,
+  SUB_LEVELS_PER_TIER,
+  formatTime,
+  levelsByTier,
+  normalizeAvailability,
+  normalizeLanguages,
+  normalizeLevels,
+  toCoachProfileView,
+  weeklyAvailableMinutes,
+} from "@/lib/coachProfile";
+import { curriculumLevels } from "@/lib/demoCurriculum";
 
 describe("normalizeLanguages", () => {
   it("keeps known spellings, drops blanks and case-insensitive duplicates", () => {
@@ -48,6 +59,31 @@ describe("display helpers", () => {
   });
 
   it("reads a user with no profile as an empty one", () => {
-    expect(toCoachProfileView({ name: "Coach" })).toEqual({ languages: [], availability: [], availabilityNote: "", updatedAt: null });
+    expect(toCoachProfileView({ name: "Coach" })).toEqual({ languages: [], levels: [], availability: [], availabilityNote: "", updatedAt: null });
+  });
+});
+
+describe("coach levels", () => {
+  it("keeps known levels only, in ladder order, without duplicates", () => {
+    expect(normalizeLevels(["intermediate:2", "beginner:1", "beginner:1", "beginner:9", "nonsense", 3])).toEqual(["beginner:1", "intermediate:2"]);
+  });
+
+  it("treats a non-array as no levels", () => {
+    expect(normalizeLevels("beginner:1")).toEqual([]);
+  });
+
+  it("groups levels by tier for display", () => {
+    expect(levelsByTier(["beginner:1", "beginner:2", "pro:3"]).map((group) => [group.label, group.levels.map((level) => level.short)])).toEqual([
+      ["Beginner", ["L1", "L2"]],
+      ["Pro", ["L3"]],
+    ]);
+  });
+
+  it("offers the same sub-levels per tier as the taught syllabus", () => {
+    for (const group of LEVEL_GROUPS) {
+      const taught = curriculumLevels(group.tier);
+      if (!taught.length) continue;
+      expect(taught.length, group.tier).toBe(SUB_LEVELS_PER_TIER);
+    }
   });
 });

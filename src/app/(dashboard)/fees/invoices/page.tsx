@@ -23,6 +23,7 @@ import { SendInvoiceWhatsAppButton } from "@/components/fees/SendInvoiceWhatsApp
 import { canAccessFeature, getFeaturePermissionState } from "@/lib/featureAccess";
 import { isFeesManager, requireFeesAccess } from "@/lib/feesAccess";
 import { recordActivity } from "@/lib/activity";
+import { invoiceReferences } from "@/lib/feesMetrics";
 
 export const dynamic = "force-dynamic";
 
@@ -911,7 +912,7 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
                         <div className="flex items-center gap-1.5">
                           {emailStatus === "sent" ? <MailCheck size={14} className="text-emerald-600" /> : <MailWarning size={14} className="text-amber-600" />}
                           <span>{emailStatusCopy(emailStatus)}</span>
-                          {invoice.referenceNumber && <span className="truncate">• Ref {invoice.referenceNumber}</span>}
+                          {invoiceReferences(invoice).length > 0 && <span className="truncate">• Ref {invoiceReferences(invoice).join(", ")}</span>}
                         </div>
                       </div>
                     </div>

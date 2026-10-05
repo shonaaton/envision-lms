@@ -8,7 +8,7 @@ import { MarketingFooter, MarketingHeader } from "@/components/marketing/Marketi
 import { ACADEMY_DEFAULTS } from "@/lib/branding";
 import { courseHub, courseHubMetadata, coursePages } from "@/lib/coursePages";
 import { curriculumLevels } from "@/lib/demoCurriculum";
-import { centreHubLink, centreLinks, contactLink, successStoriesLink } from "@/lib/internalLinks";
+import { blogHubLink, centreHubLink, centreLinks, contactLink, featuredPostLinks, kidsClassesLink, successStoriesLink } from "@/lib/internalLinks";
 import { MARKETING_BASE_URL } from "@/lib/publicLinks";
 
 export const metadata = courseHubMetadata();
@@ -153,7 +153,7 @@ export default function CourseHubPage() {
         <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="mb-10 max-w-3xl">
             <p className="inline-flex rounded-full bg-brand px-3.5 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-white shadow-sm shadow-brand-900/20">The Ladder</p>
-            <h2 className="mt-4 text-2xl font-black leading-tight text-brand-900 sm:text-3xl">Five online chess courses, from first move to elite competitive play.</h2>
+            <h2 className="mt-4 text-2xl font-black leading-tight text-brand-900 sm:text-3xl">Five online chess coaching courses, from first move to elite competitive play.</h2>
             <p className="mt-3 text-sm leading-7 text-brand-900/70">
               Each course is a stage of the same ladder: three levels of sixteen live sessions, taught two classes a week. They are five separate
               courses with five separate syllabuses, so open any one of them to read what a coach actually teaches, session by session.
@@ -200,16 +200,23 @@ export default function CourseHubPage() {
 
       <WhyEnvision
         demoHref={demoHref}
-        heading="Why parents and players choose Envision for online chess coaching."
-        intro="Not a set of loose classes. A published syllabus, a coach who places your child at the right session, and a portal where parents can see every class, score and tournament result."
+        heading="How to judge online chess coaching, and how we measure up."
+        intro="Everyone selling online chess coaching says they are the best at it. These are the six things worth checking before you believe anyone, ours included: a syllabus you can read, a coach who places the student, feedback every week, real competition, and a portal where a parent can see all of it."
         secondary={{ href: "#courses", label: "Compare the five courses" }}
+      />
+
+      <RelatedLinks
+        eyebrow="Free guides"
+        heading="Chess guides from our coaches"
+        intro="Not sure where your child would start? These guides cover the rules, checkmates, openings and tactics the first two stages teach, and what to look for in online chess classes."
+        links={[...featuredPostLinks(5), blogHubLink]}
       />
 
       <RelatedLinks
         eyebrow="Learn in person"
         heading="The same courses, taught offline in Kolkata."
         intro="Every stage of this ladder also runs at our four Kolkata centres, with the same syllabus, homework, tournaments and progress tracking. Open a centre for its batch timings, coach and contact number."
-        links={[centreHubLink, ...centreLinks(), successStoriesLink, contactLink]}
+        links={[centreHubLink, ...centreLinks(), kidsClassesLink, successStoriesLink, contactLink]}
       />
 
       {/*
@@ -221,7 +228,7 @@ export default function CourseHubPage() {
         <div className="absolute inset-0 bg-[linear-gradient(180deg,#f5edf8_0%,#ffffff_100%)]" />
         <div className="relative mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
           <p className="inline-flex rounded-full bg-brand px-3.5 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-white shadow-sm shadow-brand-900/20">Questions</p>
-          <h2 className="mt-4 text-2xl font-black leading-tight text-brand-900 sm:text-3xl">Questions about our online chess coaching courses.</h2>
+          <h2 className="mt-4 text-2xl font-black leading-tight text-brand-900 sm:text-3xl">Questions about the best online chess coaching for your child.</h2>
           <p className="mt-3 text-sm leading-7 text-brand-900/70">
             How the five courses fit together, how long each one takes, and how a student is placed into the right one.
           </p>

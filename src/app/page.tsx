@@ -24,18 +24,21 @@ import {
 import AnimatedImpactCounters from "@/components/marketing/AnimatedImpactCounters";
 import DynamicLandingShowcase from "@/components/marketing/DynamicLandingShowcase";
 import HeroStudentCluster from "@/components/marketing/HeroStudentCluster";
+import RelatedLinks from "@/components/marketing/RelatedLinks";
 import WhyEnvision from "@/components/marketing/WhyEnvision";
 import { MarketingFooter, MarketingHeader } from "@/components/marketing/MarketingChrome";
 import { ACADEMY_ACCREDITATIONS, ACADEMY_DEFAULTS, ACADEMY_LOGO_URL } from "@/lib/branding";
 import { centreHub } from "@/lib/centrePages";
 import { courseTierLabel } from "@/lib/courseTiers";
 import { courseHub, coursePages } from "@/lib/coursePages";
+import { blogHubLink, featuredPostLinks, kidsClassesLink } from "@/lib/internalLinks";
 import { CURRICULUM_TIERS, curriculumLevels } from "@/lib/demoCurriculum";
 import { MARKETING_BASE_URL, OFFLINE_ACADEMY_URL } from "@/lib/publicLinks";
 import { academyBranches, anishStory, impactCounters, publicAchievementList, studentSlug } from "@/lib/achievementData";
 import { achievementAlt, achievementCaption } from "@/lib/achievementCopy";
 import { getLandingAchievements } from "@/lib/achievements";
 import { portalTutorials, youtubeEmbedUrl } from "@/lib/portalTutorials";
+import { ACADEMY_SAME_AS, ORGANIZATION_ID, websiteSchema } from "@/lib/seo";
 
 /**
  * The landing page is regenerated on a timer rather than rendered per request.
@@ -256,6 +259,9 @@ export default async function Home() {
     {
       "@context": "https://schema.org",
       "@type": "EducationalOrganization",
+      // The full description of the academy. Course, centre and blog schema
+      // refer back to this node by its @id instead of restating it.
+      "@id": ORGANIZATION_ID,
       name: "Envision Chess Academy",
       legalName: ACADEMY_DEFAULTS.legalName,
       url: `${MARKETING_BASE_URL}/`,
@@ -282,7 +288,9 @@ export default async function Home() {
       })),
       email: ACADEMY_DEFAULTS.email,
       telephone: ACADEMY_DEFAULTS.phone,
+      ...(ACADEMY_SAME_AS.length ? { sameAs: ACADEMY_SAME_AS } : {}),
     },
+    websiteSchema(),
     {
       "@context": "https://schema.org",
       "@type": "FAQPage",
@@ -456,6 +464,9 @@ export default async function Home() {
             <Link href={`/${courseHub.slug}`} className="btn-accent">
               See all online chess coaching courses <ArrowRight size={16} />
             </Link>
+            <Link href={kidsClassesLink.href} className="btn border border-brand/25 bg-white text-brand shadow-sm shadow-brand-900/5 hover:border-brand/50 hover:bg-brand-50">
+              Online chess classes for kids
+            </Link>
             <Link href={demoHref} className="btn border border-brand/25 bg-white text-brand shadow-sm shadow-brand-900/5 hover:border-brand/50 hover:bg-brand-50">
               Book Free Demo Class
             </Link>
@@ -622,7 +633,7 @@ export default async function Home() {
               <JourneyStat label="Current Level" value={anishStory.currentLevel} />
               <JourneyStat label="Coaching Duration" value={anishStory.coachingDuration} />
             </div>
-            <Link href="/success-stories/anish" className="mt-5 inline-flex items-center gap-1 text-sm font-black text-brand">
+            <Link href="/success-stories/anish-bijibilla" className="mt-5 inline-flex items-center gap-1 text-sm font-black text-brand">
               Read the full story <ArrowRight size={16} />
             </Link>
           </div>
@@ -783,6 +794,18 @@ export default async function Home() {
           </div>
         </div>
       </section>
+
+      {/*
+        The blog's leading guides. The home page is the strongest page on the
+        site, so a link from here is the quickest way to get a new guide crawled
+        and ranked.
+      */}
+      <RelatedLinks
+        eyebrow="Free chess guides"
+        heading="Learn from our coaches: free chess guides."
+        intro="Step-by-step guides with board diagrams, written on the same syllabus our coaches teach, plus straight answers for parents choosing chess classes."
+        links={[...featuredPostLinks(5), blogHubLink]}
+      />
 
       {/*
         The FAQ answers the questions a parent types into search before they

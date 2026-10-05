@@ -2,13 +2,14 @@ import type { Metadata } from "next";
 import LegalPage, { InShort, TableOfContents } from "@/components/marketing/LegalPage";
 import { ACADEMY_DEFAULTS } from "@/lib/branding";
 import { MARKETING_BASE_URL } from "@/lib/publicLinks";
+import { publicMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = publicMetadata({
+  path: "/terms",
   title: "Terms and Conditions | Envision Chess Academy",
   description:
     "The terms on which Envisions Chess Academy LLP provides chess coaching, classes, and the Envision Chess Academy learning platform.",
-  alternates: { canonical: `${MARKETING_BASE_URL}/terms` },
-};
+});
 
 /**
  * Commercial terms that are the academy's call rather than the platform's.

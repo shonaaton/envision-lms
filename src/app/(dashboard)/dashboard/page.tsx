@@ -70,10 +70,12 @@ import {
   Trophy,
   WalletCards,
   Zap,
+  HeartHandshake,
 } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { canAccessFeature, isSuperAdminSession } from "@/lib/featureAccess";
+import { retentionCounts } from "@/lib/retention/retentionService";
 import { visibleClassroomFilter } from "@/lib/classroomVisibility";
 import { classroomsAsSeenByStudent } from "@/lib/classroomStudentExits";
 import { studentHomeworkFilter } from "@/lib/studentHomeworkVisibility";
@@ -2328,6 +2330,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
   const isSuperAdmin = await isSuperAdminSession(session?.user as any);
   const ptmViewer = await requirePtmViewer();
   const ptmSummary = ptmViewer ? await getPtmSummary(ptmViewer) : null;
+  const retention = (await canAccessFeature("retention", session?.user as any, "view"))
+    ? await retentionCounts().catch(() => null)
+    : null;
   const { preset, from, to } = getRange(searchParams);
   const focusDate = parseDate(searchParams.date) || new Date();
   const focusFrom = startOfDay(focusDate);
@@ -2878,6 +2883,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
 
           <AdminPanel icon={Zap} title="Action Center" action={<Link href="/dashboard?tab=activity" className="text-sm font-black text-brand">View all</Link>}>
             <div className="space-y-3">
+              {retention && <AdminActionItem href="/admin/retention" icon={HeartHandshake} label="Students at risk" note={retention.high ? `${retention.high} high risk - call the families` : "Families to call before they leave"} value={retention.atRisk} tone="rose" />}
               <AdminActionItem href="/attendance/pending" icon={ClipboardList} label="Attendance pending" note="Classes need attendance" value={attendancePending} tone="purple" />
               {ptmSummary && <AdminActionItem href="/ptm?tab=to_schedule" icon={MessageSquare} label="PTMs to schedule" note="Requests awaiting confirmation" value={ptmSummary.pendingCount} tone="purple" />}
               <AdminActionItem href="/homework" icon={ClipboardList} label="Homework to review" note="Submissions awaiting review" value={homeworkToReview} tone="amber" />

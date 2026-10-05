@@ -65,6 +65,7 @@ export async function POST(req: Request) {
       pausedUntil: body.pausedUntil,
       expectedRestartDate: body.expectedRestartDate,
       reason: body.reason ? String(body.reason) : undefined,
+      reasonCategory: body.reasonCategory ? String(body.reasonCategory) : undefined,
       actor: pauseActorFromSession(session),
     });
     const pause: any = await StudentPause.findById(result.pause._id)

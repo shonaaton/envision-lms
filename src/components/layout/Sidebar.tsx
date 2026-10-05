@@ -54,6 +54,7 @@ import {
   PauseCircle,
   LogOut,
   X,
+  HeartHandshake,
 } from "lucide-react";
 import Logo from "./Logo";
 import { cn } from "@/lib/utils";
@@ -183,6 +184,7 @@ const sections: NavSection[] = [
     items: [
       { href: "/admin/users", label: "Users", icon: Users, featureKey: "userManagement" },
       { href: "/admin/paused-students", label: "Paused Students", icon: PauseCircle, featureKey: "studentPause" },
+      { href: "/admin/retention", label: "Retention", icon: HeartHandshake, featureKey: "retention" },
       { href: "/admin/coach-applications", label: "Coach Applications", icon: UserPlus, featureKey: "onboarding" },
     ],
   },

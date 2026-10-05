@@ -31,6 +31,8 @@ const quietMutationPatterns = [
   // Learn Chess shows stars and "Next exercise" from its own state after a solve.
   // A refresh remounts the player, which snaps the board back to the start.
   /^\/api\/learn\/attempt$/,
+  // The Retention page reloads its own lists; a refresh would close the open flag.
+  /^\/api\/admin\/retention(\/|$)/,
 ];
 
 const liveClassroomPattern = /^\/api\/classrooms\/[^/]+\/live$/;

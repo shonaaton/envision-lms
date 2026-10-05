@@ -6,7 +6,7 @@ export type NamedRole = { _id: string; name: string; description: string; permis
 export const PROTECTED_ROLE_FEATURES = ["featureAccess", "roleManagement"];
 // Kept to built-in Admins and Sub Admins. A named role can never carry them,
 // whatever an older saved role document still lists.
-export const ADMIN_ONLY_ROLE_FEATURES = ["salesPerformance", "salesDirectory", "salesCrm", "studentPause", "onboarding"];
+export const ADMIN_ONLY_ROLE_FEATURES = ["salesPerformance", "salesDirectory", "salesCrm", "studentPause", "onboarding", "retention"];
 export const ESSENTIAL_ROLE_GRANTS: RoleGrants = {
   dashboard: ["view"], accountSettings: ["view", "edit", "security"], notifications: ["view"],
   taskManager: ["view", "create", "edit"],

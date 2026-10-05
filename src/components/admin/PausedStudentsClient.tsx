@@ -14,6 +14,7 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { PAUSE_REASONS, pauseReasonLabel } from "@/lib/retention/exitReasons";
 
 export type PauseBatch = { _id: string; name: string; isActive?: boolean };
 
@@ -56,6 +57,7 @@ export type PauseRecord = {
   pausedUntil: string;
   expectedRestartDate?: string;
   reason?: string;
+  reasonCategory?: string;
   pausedByName?: string;
   pausedAt?: string;
   voidedInvoices?: VoidedInvoice[];
@@ -438,6 +440,7 @@ export function PauseStudentModal({
   const [pausedUntil, setPausedUntil] = useState("");
   const [expectedRestartDate, setExpectedRestartDate] = useState("");
   const [reason, setReason] = useState("");
+  const [reasonCategory, setReasonCategory] = useState("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -475,6 +478,7 @@ export function PauseStudentModal({
         pausedUntil,
         expectedRestartDate: expectedRestartDate || undefined,
         reason,
+        reasonCategory: reasonCategory || undefined,
       }),
     });
     const data = await response.json().catch(() => ({}));
@@ -541,7 +545,8 @@ export function PauseStudentModal({
         </Field>
 
         <Field label="Reason">
-          <textarea className="input min-h-[70px]" value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Exams, travel, medical…" />
+          <PauseReasonSelect value={reasonCategory} onChange={setReasonCategory} />
+          <textarea className="input mt-2 min-h-[70px]" value={reason} onChange={(event) => setReason(event.target.value)} placeholder="What the family said, e.g. board exams until March" />
         </Field>
 
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
@@ -655,10 +660,20 @@ function ResumeStudentModal({
   );
 }
 
+function PauseReasonSelect({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return (
+    <select className="input" value={value} onChange={(event) => onChange(event.target.value)}>
+      <option value="">Choose a reason</option>
+      {PAUSE_REASONS.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
+    </select>
+  );
+}
+
 function EditPauseModal({ pause, onClose, onDone }: { pause: PauseRecord; onClose: () => void; onDone: () => void }) {
   const [pausedUntil, setPausedUntil] = useState(dateInputValue(pause.pausedUntil));
   const [expectedRestartDate, setExpectedRestartDate] = useState(dateInputValue(pause.expectedRestartDate));
   const [reason, setReason] = useState(pause.reason || "");
+  const [reasonCategory, setReasonCategory] = useState(pause.reasonCategory || "");
   const [saving, setSaving] = useState(false);
 
   async function submit() {
@@ -666,7 +681,7 @@ function EditPauseModal({ pause, onClose, onDone }: { pause: PauseRecord; onClos
     const response = await fetch(`/api/admin/student-pauses/${pause._id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pausedUntil, expectedRestartDate: expectedRestartDate || null, reason }),
+      body: JSON.stringify({ pausedUntil, expectedRestartDate: expectedRestartDate || null, reason, reasonCategory }),
     });
     const data = await response.json().catch(() => ({}));
     setSaving(false);
@@ -688,7 +703,8 @@ function EditPauseModal({ pause, onClose, onDone }: { pause: PauseRecord; onClos
           <input type="date" className="input" value={expectedRestartDate} onChange={(event) => setExpectedRestartDate(event.target.value)} />
         </Field>
         <Field label="Reason">
-          <textarea className="input min-h-[70px]" value={reason} onChange={(event) => setReason(event.target.value)} />
+          <PauseReasonSelect value={reasonCategory} onChange={setReasonCategory} />
+          <textarea className="input mt-2 min-h-[70px]" value={reason} onChange={(event) => setReason(event.target.value)} />
         </Field>
         <div className="flex justify-end gap-2 pt-1">
           <button type="button" className="btn btn-outline" onClick={onClose}>Cancel</button>
@@ -714,10 +730,11 @@ function PauseDetailModal({ pause, onClose }: { pause: PauseRecord; onClose: () 
           <Detail label="Status" value={pause.status === "active" ? "Currently paused" : pause.status === "resumed" ? "Reinstated" : "Cancelled"} />
         </div>
 
-        {pause.reason && (
+        {(pause.reason || pause.reasonCategory) && (
           <div>
             <p className="mb-1 text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Reason</p>
-            <p className="rounded-lg bg-slate-50 p-3 text-sm leading-6 text-slate-700">{pause.reason}</p>
+            {pause.reasonCategory && <p className="mb-1 font-semibold text-slate-800">{pauseReasonLabel(pause.reasonCategory)}</p>}
+            {pause.reason && <p className="rounded-lg bg-slate-50 p-3 text-sm leading-6 text-slate-700">{pause.reason}</p>}
           </div>
         )}
 

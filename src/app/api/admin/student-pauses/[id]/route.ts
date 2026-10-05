@@ -32,6 +32,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       pausedUntil: body.pausedUntil,
       expectedRestartDate: body.expectedRestartDate,
       reason: body.reason,
+      reasonCategory: body.reasonCategory,
       actor: pauseActorFromSession(session),
     });
     return NextResponse.json(pause);

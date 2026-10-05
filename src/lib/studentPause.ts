@@ -12,6 +12,7 @@ import { FeeAssignment, FeePlan, Invoice, Notification } from "@/models/Fee";
 import { StudentPause } from "@/models/StudentPause";
 import { User } from "@/models/User";
 import { cancelPauseReinstateTask, resolvePauseReinstateTask } from "@/lib/tasks/taskTriggers";
+import { isPauseReason } from "@/lib/retention/exitReasons";
 
 // Invoices in these states have not been settled, so a pause can still move them.
 const SHIFTABLE_INVOICE_STATUSES = ["draft", "unpaid", "overdue"];
@@ -432,6 +433,7 @@ export type PauseStudentInput = {
   pausedUntil: string | Date;
   expectedRestartDate?: string | Date;
   reason?: string;
+  reasonCategory?: string;
   actor: PauseActor;
 };
 
@@ -478,6 +480,7 @@ export async function pauseStudent(input: PauseStudentInput) {
     pausedUntil,
     expectedRestartDate,
     reason: input.reason?.trim() || "",
+    reasonCategory: isPauseReason(input.reasonCategory) ? input.reasonCategory : undefined,
     pausedAt: new Date(),
     pausedBy: input.actor?.id,
     pausedByName: input.actor?.name || "",
@@ -555,6 +558,7 @@ export type UpdatePauseInput = {
   pausedUntil?: string | Date;
   expectedRestartDate?: string | Date;
   reason?: string;
+  reasonCategory?: string;
   actor: PauseActor;
 };
 
@@ -575,6 +579,7 @@ export async function updatePause(input: UpdatePauseInput) {
     pause.expectedRestartDate = pauseDayStart(input.expectedRestartDate);
   }
   if (input.reason !== undefined) pause.reason = input.reason.trim();
+  if (input.reasonCategory !== undefined) pause.reasonCategory = isPauseReason(input.reasonCategory) ? input.reasonCategory : undefined;
   await pause.save();
 
   await User.updateOne(

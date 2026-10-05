@@ -30,6 +30,7 @@ import { PauseStudentModal } from "@/components/admin/PausedStudentsClient";
 import RoleManager from "@/components/admin/RoleManager";
 import StaffRoleSelect from "@/components/admin/StaffRoleSelect";
 import { COURSE_TIER_OPTIONS } from "@/lib/courseTiers";
+import { EXIT_REASONS, REASON_NOTE_MAX, type ExitReasonKey } from "@/lib/retention/exitReasons";
 
 export const dynamic = "force-dynamic";
 
@@ -125,6 +126,7 @@ export default function AdminUsersPage() {
   const [reportUser, setReportUser] = useState<AdminUser | null>(null);
   const [assignCoach, setAssignCoach] = useState<AdminUser | null>(null);
   const [deleteUserTarget, setDeleteUserTarget] = useState<AdminUser | null>(null);
+  const [deactivateTarget, setDeactivateTarget] = useState<AdminUser | null>(null);
   const [pauseTarget, setPauseTarget] = useState<AdminUser | null>(null);
   const [changeBatchTarget, setChangeBatchTarget] = useState<AdminUser | null>(null);
   const [detailBatch, setDetailBatch] = useState<BatchItem | null>(null);
@@ -201,7 +203,7 @@ export default function AdminUsersPage() {
   const openMenuUser = users.find((u) => menu?.type === "user" && menu.id === u._id);
   const openMenuBatch = batches.find((b) => menu?.type === "batch" && menu.id === b._id);
 
-  async function updateUser(id: string, payload: Partial<AdminUser> & { resetPassword?: boolean; password?: string }) {
+  async function updateUser(id: string, payload: Partial<AdminUser> & { resetPassword?: boolean; password?: string; exitReason?: { category: ExitReasonKey; note: string } }) {
     const response = await fetch(`/api/admin/users/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -218,6 +220,8 @@ export default function AdminUsersPage() {
 
   async function toggleUserAccess(user: AdminUser) {
     if (!userPermissions.edit || (["admin", "sub-admin"].includes(user.role) && !canManageStaff)) return;
+    // A student leaving is asked why; staff accounts keep the plain confirm.
+    if (user.isActive && user.role === "student") return setDeactivateTarget(user);
     if (user.isActive && !window.confirm(`Deactivate ${user.name}? They will still be able to sign in, but class-related features will be unavailable.`)) return;
     await updateUser(user._id, { isActive: !user.isActive });
   }
@@ -583,6 +587,18 @@ Delete anyway?`
       <AddBatchModal open={openBatchModal} onClose={() => setOpenBatchModal(false)} onCreated={loadBatches} />
       {detailUser && <UserDetailsModal user={detailUser} batches={batches} onClose={() => setDetailUser(null)} onCopy={() => copyCredentials(detailUser)} />}
       {editUser && <EditUserModal user={editUser} onClose={() => setEditUser(null)} onSave={async (payload) => { if (await updateUser(editUser._id, payload)) setEditUser(null); }} />}
+      {deactivateTarget && (
+        <DeactivateStudentModal
+          user={deactivateTarget}
+          onClose={() => setDeactivateTarget(null)}
+          onConfirm={async (exitReason) => {
+            // updateUser hands back the toast id on failure, so only an object is success.
+            const done = typeof (await updateUser(deactivateTarget._id, { isActive: false, exitReason })) === "object";
+            if (done) setDeactivateTarget(null);
+            return done;
+          }}
+        />
+      )}
       {deleteUserTarget && <PermanentDeleteUserModal user={deleteUserTarget} onClose={() => setDeleteUserTarget(null)} onDelete={(confirmName) => permanentlyDeleteUser(deleteUserTarget, confirmName)} />}
       {changeBatchTarget && (
         <ChangeBatchModal
@@ -661,6 +677,47 @@ function PermanentDeleteUserModal({ user, onClose, onDelete }: { user: AdminUser
           <button className="btn-outline" type="button" onClick={onClose} disabled={deleting}>Cancel</button>
           <button className="btn bg-red-700 text-white hover:bg-red-800" type="submit" disabled={!confirmed || deleting}>
             <Trash2 size={16} /> {deleting ? "Deleting everything…" : "Delete permanently"}
+          </button>
+        </div>
+      </form>
+    </ModalShell>
+  );
+}
+
+function DeactivateStudentModal({ user, onClose, onConfirm }: { user: AdminUser; onClose: () => void; onConfirm: (reason: { category: ExitReasonKey; note: string }) => Promise<boolean> }) {
+  const [category, setCategory] = useState<ExitReasonKey | "">("");
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!category || saving) return;
+    setSaving(true);
+    const done = await onConfirm({ category, note: note.trim() });
+    if (!done) setSaving(false);
+  }
+
+  return (
+    <ModalShell title={`Deactivate ${user.name}`} onClose={saving ? () => undefined : onClose}>
+      <form onSubmit={submit} className="space-y-4">
+        <p className="text-sm leading-6 text-slate-600">
+          They will still be able to sign in, but class-related features will be unavailable. Their groups close if they were the last member, and invoices from today on are voided.
+        </p>
+        <label className="block">
+          <span className="text-sm font-semibold text-slate-700">Why are they leaving?</span>
+          <select className="input mt-2" value={category} onChange={(event) => setCategory(event.target.value as ExitReasonKey)} required autoFocus>
+            <option value="">Choose a reason</option>
+            {EXIT_REASONS.map((reason) => <option key={reason.key} value={reason.key}>{reason.label}</option>)}
+          </select>
+        </label>
+        <label className="block">
+          <span className="text-sm font-semibold text-slate-700">What did the family say? <span className="font-normal text-slate-500">(optional)</span></span>
+          <textarea className="input mt-2 min-h-24" value={note} maxLength={REASON_NOTE_MAX} onChange={(event) => setNote(event.target.value)} placeholder="e.g. Board exams until March, may return after" />
+        </label>
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button className="btn-outline" type="button" onClick={onClose} disabled={saving}>Cancel</button>
+          <button className="btn bg-red-700 text-white hover:bg-red-800" type="submit" disabled={!category || saving}>
+            <UserX size={16} /> {saving ? "Deactivating…" : "Deactivate"}
           </button>
         </div>
       </form>

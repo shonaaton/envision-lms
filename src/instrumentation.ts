@@ -24,6 +24,7 @@ export async function register() {
   const { processPtmSweep } = await import("@/lib/ptm/ptmService");
   const { processLeaveSweep } = await import("@/lib/leave/leaveService");
   const { sealLegacyTempPasswords } = await import("@/lib/tempPasswordMigration");
+  const { processRetentionSweep } = await import("@/lib/retention/retentionSweep");
 
   installRuntimeProcessLogging();
   installRuntimeStderrCapture();
@@ -129,6 +130,17 @@ export async function register() {
       name: "pause_expiry_notices",
       intervalMs: 6 * 60 * 60_000,
       run: () => processDuePauseExpiryNotices(),
+    },
+    {
+      /**
+       * Flags students who look like they are about to leave and puts a "call
+       * this family" task in front of the admins. Hourly, but claimed once per
+       * academy day from RETENTION_SWEEP_HOUR (08:00 IST), so the tasks are
+       * there when the 09:00 digest goes out.
+       */
+      name: "retention_risk_sweep",
+      intervalMs: 60 * 60_000,
+      run: () => processRetentionSweep(),
     },
     {
       /**

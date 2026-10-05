@@ -518,6 +518,17 @@ export const FEATURE_DEFINITIONS: FeatureDefinition[] = [
     defaultRolePermissions: { admin: ["view", "manage"], "sub-admin": ["view", "manage"] },
   },
   {
+    key: "retention",
+    label: "Retention",
+    category: "Administration",
+    description: "Students who may be about to leave, the calls made to their families, and why families leave or pause.",
+    routes: ["/admin/retention"],
+    apiPrefixes: ["/api/admin/retention"],
+    permissions: [view, { id: "manage", label: "Log Calls and Settle Flags" }],
+    defaultStatus: "enabled",
+    defaultRolePermissions: { admin: ["view", "manage"], "sub-admin": ["view", "manage"] },
+  },
+  {
     key: "onboarding",
     label: "Onboarding",
     category: "Administration",

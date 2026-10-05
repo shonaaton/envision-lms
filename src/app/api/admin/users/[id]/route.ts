@@ -17,6 +17,8 @@ import { validateRoleAssignment } from "@/lib/accessRoles";
 import { PermissionAudit } from "@/models/FeatureAccess";
 import { applyUserFeatureAccess } from "@/lib/userFeatureAccess";
 import { withOpenTempPassword } from "@/lib/tempPasswords";
+import { REASON_NOTE_MAX, exitReasonLabel, isExitReason } from "@/lib/retention/exitReasons";
+import { closeFlagForDepartedStudent } from "@/lib/retention/retentionService";
 
 export const dynamic = "force-dynamic";
 
@@ -106,6 +108,20 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (statusChanged) {
     update.deactivatedAt = update.isActive === false ? new Date() : null;
   }
+  // Nobody learns why families leave unless it is asked at the moment they do.
+  // Staff accounts are switched off for other reasons and are not asked.
+  const leaving = statusChanged && update.isActive === false && (target as any).role === "student";
+  if (leaving) {
+    const category = body.exitReason?.category;
+    if (!isExitReason(category)) return NextResponse.json({ error: "Choose why the student is leaving." }, { status: 400 });
+    update.exitReason = {
+      category,
+      note: String(body.exitReason?.note || "").trim().slice(0, REASON_NOTE_MAX),
+      recordedBy: actorId,
+      recordedByName: String((session!.user as any).name || ""),
+      recordedAt: new Date(),
+    };
+  }
   const removingSuperAdmin =
     (await isSuperAdminSession({ id: params.id, role: (target as any).role })) &&
     (update.isSuperAdmin === false || update.role !== undefined && update.role !== "admin" || update.isActive === false);
@@ -160,6 +176,9 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     if (update.isActive === false) {
       void requestGoogleReview({ student: u, trigger: "student_left" })
         .catch((error) => console.error("Review request failed", error));
+      // An open "may leave" flag ends here, as a loss, with the reason given.
+      await closeFlagForDepartedStudent(params.id, update.exitReason, { id: actorId, name: String((session!.user as any).name || "") })
+        .catch((error) => console.error("Retention flag close failed", error));
     }
   }
   // Contact-detail changes go to both the new and previous address, so a
@@ -179,7 +198,10 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     label: `Updated ${u?.name ?? "user"} profile`,
     entityType: "User",
     entityId: params.id,
-    metadata: { fields: Object.keys(update) },
+    metadata: {
+      fields: Object.keys(update),
+      ...(leaving ? { exitReason: update.exitReason.category, exitReasonLabel: exitReasonLabel(update.exitReason.category), exitNote: update.exitReason.note } : {}),
+    },
   });
   // Stored sealed; only a Super Admin's or a "credentials" holder's projection includes it.
   return NextResponse.json(u ? withOpenTempPassword(u.toJSON()) : u);

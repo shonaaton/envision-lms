@@ -137,6 +137,16 @@ const UserSchema = new Schema(
     // Stamped when `isActive` is turned off so churn reporting knows when a
     // student actually left. Legacy rows fall back to `updatedAt`.
     deactivatedAt: { type: Date, index: true },
+    // Why the family left, asked for every time a student is deactivated. Keys
+    // in lib/retention/exitReasons.ts. Kept on reactivation as history; the next
+    // deactivation overwrites it.
+    exitReason: {
+      category: { type: String, index: true },
+      note: String,
+      recordedBy: { type: Schema.Types.ObjectId, ref: "User" },
+      recordedByName: String,
+      recordedAt: Date,
+    },
     // Batch pause — the student stays enrolled but is out of classes and billing
     // until `pausedUntil`. Full detail (dates, voided invoices, restart plan)
     // lives on the StudentPause record referenced by `pauseRecord`.

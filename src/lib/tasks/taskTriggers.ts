@@ -522,7 +522,8 @@ export function raisePauseReinstateTask(input: { pause: any; student: any }) {
     referenceType: "PauseReinstate",
     referenceId: idOf(input.pause),
     title: `Reinstate ${nameOf(input.student, "student")} after pause`,
-    details: `The pause ends on ${when(input.pause?.pausedUntil)}. Confirm the restart batch and reinstate the student so billing resumes correctly.`,
+    // Families most often drift away at the end of a pause, so the call comes first.
+    details: `The pause ends on ${when(input.pause?.pausedUntil)}. Call the family to confirm they are coming back, then confirm the restart batch and reinstate the student so billing resumes correctly.`,
     pool: "admins",
     dueAt: input.pause?.pausedUntil ? new Date(input.pause.pausedUntil) : null,
     actionHref: "/admin/paused-students",
@@ -536,6 +537,54 @@ export function resolvePauseReinstateTask(pauseId: unknown, by?: unknown) {
 
 export function cancelPauseReinstateTask(pauseId: unknown) {
   return withdraw("PauseReinstate", pauseId, "The pause was cancelled.");
+}
+
+// ---------------------------------------------------------------------------
+// Retention
+// ---------------------------------------------------------------------------
+
+type RetentionReasonLine = { label: string; detail?: string };
+
+function retentionDetails(level: string, reasons: RetentionReasonLine[]) {
+  const lines = reasons.map((reason) => `• ${reason.label}${reason.detail ? ` - ${reason.detail}` : ""}`);
+  return [
+    level === "high" ? "Strong signs this family may leave." : "This family may be about to leave.",
+    ...lines,
+    "Call the family: ask how classes are going, listen, and log the call on the Retention page.",
+  ].join("\n");
+}
+
+/**
+ * One task per flag, not per student: a family who wobbles again months later
+ * is a new conversation, and its own task keeps the old call notes apart.
+ * Re-raised every day the flag stays open, which refreshes the reasons and
+ * lifts the priority if it got worse.
+ */
+export async function raiseRetentionRiskTask(input: { flag: any; student: any; level: string; reasons: RetentionReasonLine[] }) {
+  const flagId = idOf(input.flag);
+  const title = `${input.level === "high" ? "High risk" : "At risk"}: call ${nameOf(input.student, "student")}'s family`;
+  const details = retentionDetails(input.level, input.reasons);
+  const priority = input.level === "high" ? "high" as const : "normal" as const;
+  const task = await raise({
+    kind: "retention_risk",
+    referenceType: "RetentionRisk",
+    referenceId: flagId,
+    title,
+    details,
+    pool: "admins",
+    priority,
+    actionHref: `/admin/retention?flag=${flagId}`,
+    metadata: { flagId, studentId: idOf(input.student) },
+  });
+  // ensureAutoTask only writes on insert; keep an open task's reasons current.
+  if (task && OPEN_TASK_STATUSES.includes(task.status) && (task.details !== details || task.priority !== priority)) {
+    await InternalTask.updateOne({ _id: task._id }, { $set: { title, details, priority } }).catch((error: unknown) => console.error("[tasks] could not refresh retention task", error));
+  }
+  return task;
+}
+
+export function resolveRetentionRiskTask(flagId: unknown, by?: unknown, note = "Retention flag settled.") {
+  return settle("RetentionRisk", flagId, by, note);
 }
 
 // ---------------------------------------------------------------------------

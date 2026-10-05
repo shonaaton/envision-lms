@@ -1,3 +1,4 @@
+import { dbConnect } from "@/lib/db";
 import { Tournament } from "@/models/Tournament";
 import { TournamentGame } from "@/models/TournamentGame";
 import {
@@ -261,6 +262,9 @@ async function processTournamentOnce(tournamentId: string, options: { force?: bo
  * scheduled worker and by the cron-protected endpoint.
  */
 export async function runTournamentTick(): Promise<TickSummary> {
+  // The heartbeat runs at boot, before any request has opened the connection;
+  // without this the first query just buffers for 10s and fails.
+  await dbConnect();
   const tournaments: any[] = await Tournament.find({ status: { $in: ACTIVE_STATUSES } }, "_id").lean();
   const summary: TickSummary = {
     checked: tournaments.length,

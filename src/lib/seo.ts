@@ -87,10 +87,15 @@ export const ORGANIZATION_ID = `${MARKETING_BASE_URL}/#organization`;
 export const WEBSITE_ID = `${MARKETING_BASE_URL}/#website`;
 
 /**
- * Social profiles for `sameAs`. Empty until the academy's real profile URLs are
- * confirmed - a guessed handle that belongs to someone else is worse than none.
+ * The academy's own social profiles, for `sameAs`. They tell Google these
+ * accounts and this site are one organisation, which is what lets it show them
+ * together in the knowledge panel. Confirmed by the owner on 2026-10-05.
  */
-export const ACADEMY_SAME_AS: string[] = [];
+export const ACADEMY_SAME_AS: string[] = [
+  "https://www.facebook.com/envisionchess",
+  "https://www.instagram.com/envisionchessacademy",
+  "https://www.youtube.com/@EnvisionChessAcademy",
+];
 
 export function organizationSchema() {
   return {

@@ -132,7 +132,7 @@ async function markInvoicePaid(formData: FormData) {
   const rawTransactions = rawTransactionsFromJson.length ? rawTransactionsFromJson : rawTransactionsFromFields;
   const transactions = rawTransactions
     .map((transaction: any) => {
-      const mode = transaction?.mode === "upi" || transaction?.mode === "bank_transfer" ? transaction.mode : "other";
+      const mode: "upi" | "bank_transfer" | "cash" | "other" = ["upi", "bank_transfer", "cash"].includes(transaction?.mode) ? transaction.mode : "other";
       const amount = paise(transaction?.amount ?? 0);
       const paidAt = new Date(String(transaction?.paidAt || ""));
       const referenceNumber = String(transaction?.referenceNumber || "").trim();

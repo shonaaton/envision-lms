@@ -7,7 +7,7 @@ import { formatINR } from "@/lib/utils";
 type ServerAction = (formData: FormData) => Promise<void>;
 type TransactionDraft = {
   id: string;
-  mode: "upi" | "bank_transfer" | "other";
+  mode: "upi" | "bank_transfer" | "cash" | "other";
   amount: string;
   paidAt: string;
   referenceNumber: string;
@@ -164,6 +164,7 @@ export function InvoicePaymentModal({
                       <select value={transaction.mode} onChange={(event) => update(transaction.id, { mode: event.target.value as TransactionDraft["mode"] })} className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm">
                         <option value="upi">UPI</option>
                         <option value="bank_transfer">Bank Transfer</option>
+                        <option value="cash">Cash</option>
                         <option value="other">Others</option>
                       </select>
                     </label>

@@ -55,6 +55,7 @@ import {
   LogOut,
   X,
   HeartHandshake,
+  Landmark,
 } from "lucide-react";
 import Logo from "./Logo";
 import { cn } from "@/lib/utils";
@@ -137,6 +138,14 @@ const sections: NavSection[] = [
       { href: "/fees/invoices", label: "Invoices", icon: Receipt, featureKey: "invoices" },
       { href: "/fees/reports", label: "Fee Reports", icon: BarChart3, featureKey: "feeReports" },
     ],
+  },
+  {
+    // The academy's books. Admins only, and deliberately not a feature key:
+    // anything in the feature registry can be granted to sub-admins.
+    id: "accounts",
+    title: "Accounts",
+    roles: ["admin"],
+    items: [{ href: "/admin/accounts", label: "Accounts", icon: Landmark, roles: ["admin"] }],
   },
   {
     // A person's own pay. Kept out of the admin "Coach Pay" section, which is

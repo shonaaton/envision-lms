@@ -14,7 +14,7 @@ const PaymentSchema = new Schema(
     method: { type: String, enum: ["upi", "bank_transfer", "cash", "card", "cheque", "other"], default: "other", index: true },
     referenceNumber: { type: String, trim: true, index: true },
     manualTransactions: [{
-      mode: { type: String, enum: ["upi", "bank_transfer", "other"], required: true },
+      mode: { type: String, enum: ["upi", "bank_transfer", "cash", "other"], required: true },
       amount: { type: Number, required: true },
       paidAt: { type: Date, required: true },
       referenceNumber: { type: String, trim: true },

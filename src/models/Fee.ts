@@ -107,7 +107,7 @@ const InvoiceSchema = new Schema(
     paidAt: Date,
     payment: { type: Schema.Types.ObjectId, ref: "Payment" },
     paymentTransactions: [{
-      mode: { type: String, enum: ["upi", "bank_transfer", "other"], required: true },
+      mode: { type: String, enum: ["upi", "bank_transfer", "cash", "other"], required: true },
       amount: { type: Number, required: true },
       paidAt: { type: Date, required: true },
       referenceNumber: { type: String, trim: true },

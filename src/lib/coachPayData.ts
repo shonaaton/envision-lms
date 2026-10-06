@@ -2,6 +2,9 @@ import "server-only";
 
 import { dbConnect } from "@/lib/db";
 import { Classroom } from "@/models/Classroom";
+// Registered for `populate("batches")`: a route that reaches Coach Pay without
+// loading Batch anywhere else (Accounts) otherwise fails with MissingSchemaError.
+import "@/models/Batch";
 import { Booking } from "@/models/Booking";
 import { User } from "@/models/User";
 import { CoachPayPlan, CoachPayProposal, CoachRate, NoShowRuling, SessionPayOverride, type PayKind, type RateUnit } from "@/models/CoachPay";

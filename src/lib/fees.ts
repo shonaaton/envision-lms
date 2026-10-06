@@ -294,7 +294,7 @@ export async function ensureMonthlyInvoices(now = new Date()) {
 }
 
 type ManualPaymentTransaction = {
-  mode: "upi" | "bank_transfer" | "other";
+  mode: "upi" | "bank_transfer" | "cash" | "other";
   amount: number;
   paidAt: Date;
   referenceNumber?: string;

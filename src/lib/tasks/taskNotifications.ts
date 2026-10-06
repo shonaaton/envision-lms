@@ -125,15 +125,22 @@ export async function notifyTaskReassigned(task: any, actorName: string) {
   }).catch(() => false);
 }
 
+/** Tells the owner (when someone else cancelled) and the assigner of a manual task, never the canceller. */
 export async function notifyTaskCancelled(task: any, actorName: string) {
-  const audience = (await taskAudience(task)).filter((person) => person._id !== String(task.cancelledBy || ""));
+  const canceller = String(task.cancelledBy || "");
+  const people = await taskAudience(task);
+  if (task.source === "manual" && task.createdBy) {
+    const creator = await userRecipient(task.createdBy);
+    if (creator && !people.some((person) => person._id === creator._id)) people.push(creator);
+  }
+  const audience = people.filter((person) => person._id !== canceller);
   await Promise.all(
     audience.map((person) =>
       deliver(person, {
         type: "task_cancelled",
         title: "Task cancelled",
         message: `${actorName || "A colleague"} cancelled "${task.title}".${task.cancelReason ? ` Reason: ${task.cancelReason}` : ""}`,
-        dedupKey: `task_cancelled:${task._id}:${person._id}`,
+        dedupKey: `task_cancelled:${task._id}:${person._id}:${new Date(task.cancelledAt || Date.now()).getTime()}`,
         href: taskHref(task._id),
         metadata: { taskId: String(task._id) },
       }).catch(() => false)

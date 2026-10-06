@@ -42,6 +42,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.notifyTaskCreated.mockResolvedValue(undefined);
   mocks.notifyTaskCompleted.mockResolvedValue(undefined);
+  mocks.notifyTaskCancelled.mockResolvedValue(undefined);
   mocks.poolsForActor.mockResolvedValue([]);
 });
 
@@ -139,9 +140,21 @@ describe("manual tasks", () => {
     await expect(applyTaskAction(TASK, { action: "complete", notes: "done" }, { id: ME, role: "sub-admin" })).rejects.toMatchObject({ status: 409 });
   });
 
-  it("does not let the assignee cancel what they were asked to do", async () => {
+  it("lets the assignee cancel a task that cannot be done, keeping the reason", async () => {
     mocks.findById.mockReturnValue(chain(manualTask));
-    await expect(applyTaskAction(TASK, { action: "cancel" }, { id: ME, role: "sub-admin" })).rejects.toMatchObject({ status: 403 });
+    const saved = { ...manualTask, status: "cancelled", cancelReason: "Parent moved abroad", cancelledBy: ME };
+    mocks.findOneAndUpdate.mockReturnValueOnce({ lean: () => Promise.resolve(saved) });
+    await applyTaskAction(TASK, { action: "cancel", reason: "Parent moved abroad" }, { id: ME, name: "Me", role: "sub-admin" });
+    const [filter, update] = mocks.findOneAndUpdate.mock.calls[0];
+    expect(filter).toMatchObject({ status: "pending" });
+    expect(update.$set).toMatchObject({ status: "cancelled", cancelReason: "Parent moved abroad" });
+    expect(String(update.$set.cancelledBy)).toBe(ME);
+    expect(mocks.notifyTaskCancelled).toHaveBeenCalledWith(saved, "Me");
+  });
+
+  it("will not cancel a task that is already closed", async () => {
+    mocks.findById.mockReturnValue(chain({ ...manualTask, status: "completed" }));
+    await expect(applyTaskAction(TASK, { action: "cancel", reason: "Not needed" }, { id: ME, role: "sub-admin" })).rejects.toThrow(/already closed/);
   });
 
   it("hides a task from people it has nothing to do with", async () => {

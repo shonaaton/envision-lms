@@ -85,4 +85,10 @@ describe("task schemas", () => {
     expect(taskActionSchema.safeParse({ action: "reassign", assignedTo: "x" }).success).toBe(false);
     expect(taskActionSchema.parse({ action: "update", dueAt: "" })).toMatchObject({ action: "update", dueAt: null });
   });
+
+  it("needs a real reason to cancel", () => {
+    expect(taskActionSchema.safeParse({ action: "cancel" }).success).toBe(false);
+    expect(taskActionSchema.safeParse({ action: "cancel", reason: "   " }).success).toBe(false);
+    expect(taskActionSchema.parse({ action: "cancel", reason: "  Student left the academy " })).toMatchObject({ reason: "Student left the academy" });
+  });
 });

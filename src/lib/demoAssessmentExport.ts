@@ -137,6 +137,10 @@ const LEAD_COLUMNS: SheetColumn[] = [
   { label: "Attendance" },
   { label: "Coach" },
   { label: "Salesperson (lead owner)" },
+];
+
+/** The coach's assessment, shared by the leads sheet and the assessments sheet. */
+const ASSESSMENT_COLUMNS: SheetColumn[] = [
   { label: "Salesperson present" },
   { label: "Salesperson in call" },
   { label: "Chess level" },
@@ -166,8 +170,21 @@ const LEAD_COLUMNS: SheetColumn[] = [
   { label: "Internal coach notes" },
   { label: "Assessment status" },
   { label: "Submitted (IST)" },
-  { label: "Last activity (IST)" },
-  { label: "Journey" },
+];
+
+const LEAD_SHEET_COLUMNS: SheetColumn[] = [...LEAD_COLUMNS, ...ASSESSMENT_COLUMNS, { label: "Last activity (IST)" }, { label: "Journey" }];
+
+const ASSESSMENT_SHEET_COLUMNS: SheetColumn[] = [
+  { label: "Student" },
+  { label: "Parent" },
+  { label: "Phone" },
+  { label: "Email" },
+  { label: "Current stage" },
+  { label: "Demo date (IST)" },
+  { label: "Attendance" },
+  { label: "Coach" },
+  { label: "Salesperson (lead owner)" },
+  ...ASSESSMENT_COLUMNS,
 ];
 
 const JOURNEY_COLUMNS: SheetColumn[] = [
@@ -329,16 +346,54 @@ async function loadDemoLeads() {
   return { leads, crmByStudent, eventsByLead, leadKey };
 }
 
-/** The two sheets of the Demo Center download: one row per lead, then every step of every lead's journey. */
+/** One assessment's cells, in ASSESSMENT_COLUMNS order. A lead with none reads "Not assessed". */
+function assessmentCells(item: any): unknown[] {
+  return [
+    yesNo(item.salesPersonPresent),
+    item.salesPerson?.name || item.salesPersonName || "",
+    item.chessLevel || "",
+    item.playingStrength || "",
+    yesNo(item.hasFideRating),
+    item.fideRating ?? "",
+    item.chessComRating ?? "",
+    item.lichessRating ?? "",
+    scaleLabel(CALCULATION_POWER, item.calculationPower),
+    scaleLabel(TACTICAL_STRENGTH, item.tacticalStrength),
+    scaleLabel(ENDGAME_KNOWLEDGE, item.endgameKnowledge),
+    scaleLabel(POSITIONAL_SENSE, item.positionalSense),
+    scaleLabel(OVERALL_STRENGTH, item.overallStrength),
+    ENGAGEMENT_LABELS[String(item.studentEngagement || "")] || "",
+    CLASS_TYPE_LABELS[String(item.coachRecommendation || "")] || "",
+    courseTierLabel(item.recommendedCourseLevel) || item.recommendedCourseLevel || "",
+    item.recommendedSubLevel || "",
+    startingPoint(item),
+    item.suggestedClassFrequency || "",
+    item.recommendedCoach?.name || "",
+    item.strengths || "",
+    item.weaknesses || "",
+    item.assessmentNotes || "",
+    item.coachComments || "",
+    item.parentFacingSummary || "",
+    item.salesAdminNotes || "",
+    item.internalCoachNotes || "",
+    item === NOT_ASSESSED ? "Not assessed" : item.status === "submitted" ? "Submitted" : "Draft",
+    istLabel(item.submittedAt),
+  ];
+}
+
+/**
+ * The Demo Center download, all in one file: every lead (with its assessment,
+ * if any), every assessment on its own, then every step of every lead's journey.
+ */
 export async function demoLeadReportSheets(now = Date.now()): Promise<Sheet[]> {
   const { leads, crmByStudent, eventsByLead, leadKey } = await loadDemoLeads();
   const leadRows: unknown[][] = [];
+  const assessmentRows: unknown[][] = [];
   const journeyRows: unknown[][] = [];
   // A booking with two assessments is two lead rows; its journey is listed once.
   const journeyListed = new Set<string>();
 
   for (const { booking, item, student } of leads) {
-    const assessed = item !== NOT_ASSESSED;
     const stage = demoLeadStage(booking, student, now);
     const crm = crmByStudent.get(idOf(student));
     const key = leadKey({ booking, student });
@@ -346,12 +401,19 @@ export async function demoLeadReportSheets(now = Date.now()): Promise<Sheet[]> {
     const lastEvent = events[events.length - 1];
     const name = student.name || item.studentName || "";
     const demoDate = istLabel(booking.startAt || item.demoStartAt);
+    const parent = student.parentName || booking.parentName || "";
+    const attendance = ATTENDANCE_LABELS[String(item.attendanceStatus || "")] || "";
+    const coach = item.coach?.name || item.coachName || booking.assignedCoach?.name || booking.instructor?.name || "";
+
+    if (item !== NOT_ASSESSED) {
+      assessmentRows.push([name, parent, contact(student), student.email || "", stage, demoDate, attendance, coach, booking.salesOwnerName || "", ...assessmentCells(item)]);
+    }
 
     // The student, coach and booking can be deleted after the demo; the
     // assessment keeps name snapshots for exactly that case.
     leadRows.push([
       name,
-      student.parentName || booking.parentName || "",
+      parent,
       contact(student),
       student.email || "",
       stage,
@@ -367,38 +429,10 @@ export async function demoLeadReportSheets(now = Date.now()): Promise<Sheet[]> {
       booking.cancellationReason || booking.previousCloseReason || booking.holdReason || booking.archiveReason || "",
       booking._id ? Number(booking.rescheduleCount || 0) : "",
       istLabel(student.conversionSetup?.convertedAt),
-      ATTENDANCE_LABELS[String(item.attendanceStatus || "")] || "",
-      item.coach?.name || item.coachName || booking.assignedCoach?.name || booking.instructor?.name || "",
+      attendance,
+      coach,
       booking.salesOwnerName || "",
-      yesNo(item.salesPersonPresent),
-      item.salesPerson?.name || item.salesPersonName || "",
-      item.chessLevel || "",
-      item.playingStrength || "",
-      yesNo(item.hasFideRating),
-      item.fideRating ?? "",
-      item.chessComRating ?? "",
-      item.lichessRating ?? "",
-      scaleLabel(CALCULATION_POWER, item.calculationPower),
-      scaleLabel(TACTICAL_STRENGTH, item.tacticalStrength),
-      scaleLabel(ENDGAME_KNOWLEDGE, item.endgameKnowledge),
-      scaleLabel(POSITIONAL_SENSE, item.positionalSense),
-      scaleLabel(OVERALL_STRENGTH, item.overallStrength),
-      ENGAGEMENT_LABELS[String(item.studentEngagement || "")] || "",
-      CLASS_TYPE_LABELS[String(item.coachRecommendation || "")] || "",
-      courseTierLabel(item.recommendedCourseLevel) || item.recommendedCourseLevel || "",
-      item.recommendedSubLevel || "",
-      startingPoint(item),
-      item.suggestedClassFrequency || "",
-      item.recommendedCoach?.name || "",
-      item.strengths || "",
-      item.weaknesses || "",
-      item.assessmentNotes || "",
-      item.coachComments || "",
-      item.parentFacingSummary || "",
-      item.salesAdminNotes || "",
-      item.internalCoachNotes || "",
-      !assessed ? "Not assessed" : item.status === "submitted" ? "Submitted" : "Draft",
-      istLabel(item.submittedAt),
+      ...assessmentCells(item),
       istLabel(lastEvent?.at),
       journeyText(events),
     ]);
@@ -411,7 +445,8 @@ export async function demoLeadReportSheets(now = Date.now()): Promise<Sheet[]> {
   }
 
   return [
-    { name: "Demo leads", columns: LEAD_COLUMNS, rows: leadRows },
+    { name: "Demo leads", columns: LEAD_SHEET_COLUMNS, rows: leadRows },
+    { name: "Assessments", columns: ASSESSMENT_SHEET_COLUMNS, rows: assessmentRows },
     { name: "Demo journey", columns: JOURNEY_COLUMNS, rows: journeyRows },
   ];
 }

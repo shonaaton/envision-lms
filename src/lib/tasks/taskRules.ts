@@ -52,7 +52,10 @@ export function canActOnTask(task: TaskAccessSubject, actor: TaskAccessActor) {
   return Boolean(!task.assignedTo && actor.pools.includes(task.pool || "admins"));
 }
 
-/** Only the person who assigned it (or an admin) can edit, reassign, cancel or reopen. */
+/**
+ * Only the person who assigned it (or an admin) can edit, reassign or reopen.
+ * Cancelling is open to anyone who can act on the task, with a required reason.
+ */
 export function canManageTask(task: TaskAccessSubject, actor: TaskAccessActor) {
   return isTaskAdmin(actor) || (Boolean(task.createdBy) && idOf(task.createdBy) === actor.id);
 }
@@ -83,7 +86,10 @@ export const taskActionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("complete"), notes: optionalText(2000) }),
   z.object({ action: z.literal("start") }),
   z.object({ action: z.literal("reopen") }),
-  z.object({ action: z.literal("cancel"), reason: optionalText(500) }),
+  z.object({
+    action: z.literal("cancel"),
+    reason: z.string({ required_error: "Give a reason for cancelling." }).trim().min(5, "Give a reason for cancelling (at least 5 characters).").max(500),
+  }),
   z.object({ action: z.literal("reassign"), assignedTo: objectId }),
   z.object({
     action: z.literal("update"),

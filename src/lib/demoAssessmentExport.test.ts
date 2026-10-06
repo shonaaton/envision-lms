@@ -171,7 +171,10 @@ describe("demoLeadReportSheets", () => {
         createdAt: new Date("2026-09-28T05:00:00Z"),
       },
     ]));
-    (DemoFeedback.find as any).mockReturnValue(chain([]));
+    (DemoFeedback.find as any).mockReturnValue(chain([
+      { booking: bookingId, demoUser: { _id: studentId, name: "Riya" }, coach: { name: "Coach A" }, status: "submitted", strengths: "Tactics" },
+      { booking: null, demoUser: null, studentName: "Old Lead", coachName: "Coach B", status: "draft" },
+    ]));
     (User.find as any).mockReturnValue(chain([
       { _id: studentId, name: "Riya", accountStatus: "demo" },
       { _id: "64a0000000000000000000a2", name: "CRM Only", accountStatus: "demo" },
@@ -192,15 +195,27 @@ describe("demoLeadReportSheets", () => {
       },
     ]));
 
-    const [leads, journey] = await demoLeadReportSheets(new Date("2026-10-06T09:00:00Z").getTime());
+    const sheets = await demoLeadReportSheets(new Date("2026-10-06T09:00:00Z").getTime());
+    expect(sheets.map((sheet) => sheet.name)).toEqual(["Demo leads", "Assessments", "Demo journey"]);
+    const [leads, assessments, journey] = sheets;
     const col = (label: string) => leads.columns.findIndex((column) => column.label === label);
-    expect(leads.rows).toHaveLength(2);
+    // Riya, the assessment whose booking was deleted, and the CRM-only account.
+    expect(leads.rows.map((row) => row[col("Student")])).toEqual(["Riya", "Old Lead", "CRM Only"]);
     leads.rows.forEach((row) => expect(row).toHaveLength(leads.columns.length));
     expect(leads.rows[0][col("Current stage")]).toBe("Completed");
     expect(leads.rows[0][col("CRM stage")]).toBe("Demo Done");
+    expect(leads.rows[0][col("Strengths")]).toBe("Tactics");
     expect(String(leads.rows[0][col("Journey")]).split("\n")).toHaveLength(3);
-    expect(leads.rows[1][col("Student")]).toBe("CRM Only");
-    expect(leads.rows[1][col("Current stage")]).toBe("Demo account - no demo booked");
+    expect(leads.rows[2][col("Current stage")]).toBe("Demo account - no demo booked");
+    expect(leads.rows[2][col("Assessment status")]).toBe("Not assessed");
+
+    // Every assessment, and only assessments.
+    const acol = (label: string) => assessments.columns.findIndex((column) => column.label === label);
+    expect(assessments.rows.map((row) => row[acol("Student")])).toEqual(["Riya", "Old Lead"]);
+    assessments.rows.forEach((row) => expect(row).toHaveLength(assessments.columns.length));
+    expect(assessments.rows[0][acol("Coach")]).toBe("Coach A");
+    expect(assessments.rows[0][acol("Current stage")]).toBe("Completed");
+    expect(assessments.rows[1][acol("Assessment status")]).toBe("Draft");
 
     const step = journey.columns.findIndex((column) => column.label === "Step");
     // The portal's own CRM push is not listed twice; the Kraya-side move is.
@@ -209,6 +224,6 @@ describe("demoLeadReportSheets", () => {
       "Approved demo and created classroom",
       "CRM stage moved to Demo Done",
     ]);
-    expect(buildSpreadsheet("xlsx", [leads, journey]).subarray(0, 2).toString()).toBe("PK");
+    expect(buildSpreadsheet("xlsx", sheets).subarray(0, 2).toString()).toBe("PK");
   });
 });

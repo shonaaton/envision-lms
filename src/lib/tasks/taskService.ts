@@ -389,9 +389,11 @@ export async function applyTaskAction(id: string, input: TaskActionInput, actor:
       update = { status: "pending", completedAt: null, completedBy: null, completionNotes: "", completionAuto: false, cancelledAt: null, cancelledBy: null, cancelReason: "", overdueNotifiedAt: null };
       break;
     case "cancel":
+      // Anyone working the task may close it when it cannot be done; the
+      // required reason stays on the task for admins to review later.
       if (!open) throw new TaskError("This task is already closed.");
-      if (!manager) throw new TaskError("Only the person who assigned this task can cancel it.", 403);
-      update = { status: "cancelled", cancelledAt: new Date(), cancelledBy: me, cancelReason: input.reason || "" };
+      update = { status: "cancelled", cancelledAt: new Date(), cancelledBy: me, cancelReason: input.reason };
+      if (!task.assignedTo) update.assignedTo = me;
       break;
     case "reassign": {
       if (!open) throw new TaskError("Reopen the task before reassigning it.");

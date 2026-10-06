@@ -50,7 +50,7 @@ export type TaskRow = {
 
 type Assignee = { _id: string; name: string; email: string; label: string };
 type Summary = { pendingCount: number; overdueCount: number; completedThisWeek: number; assignedByMeOpen: number };
-type TabKey = "open" | "completed" | "assigned" | "all";
+type TabKey = "open" | "completed" | "cancelled" | "assigned" | "all";
 
 const POOL_LABEL: Record<string, string> = { admins: "Admin team", sales: "Sales team" };
 
@@ -114,11 +114,13 @@ export default function TasksClient({ canCreate, isAdmin, currentUserId }: { can
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [completeTarget, setCompleteTarget] = useState<TaskRow | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<TaskRow | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
 
   const tabs: Array<{ key: TabKey; label: string }> = [
     { key: "open", label: "Pending" },
     { key: "completed", label: "Completed" },
+    { key: "cancelled", label: "Cancelled" },
     ...(canCreate ? [{ key: "assigned" as TabKey, label: "Assigned by me" }] : []),
     ...(isAdmin ? [{ key: "all" as TabKey, label: "All tasks" }] : []),
   ];
@@ -128,6 +130,11 @@ export default function TasksClient({ canCreate, isAdmin, currentUserId }: { can
     const params = new URLSearchParams();
     if (tab === "open") params.set("status", "open");
     if (tab === "completed") params.set("status", "completed");
+    // Admins review every cancellation and its reason; others see their own.
+    if (tab === "cancelled") {
+      params.set("status", "cancelled");
+      if (isAdmin) params.set("scope", "all");
+    }
     if (tab === "assigned") {
       params.set("scope", "assigned_by_me");
       params.set("status", "any");
@@ -152,7 +159,7 @@ export default function TasksClient({ canCreate, isAdmin, currentUserId }: { can
     setTasks(data.tasks || []);
     setTotal(data.total || 0);
     if (summaryResponse.ok) setSummary(await summaryResponse.json());
-  }, [priority, q, source, tab]);
+  }, [isAdmin, priority, q, source, tab]);
 
   useEffect(() => {
     const timer = setTimeout(load, q ? 300 : 0);
@@ -259,8 +266,12 @@ export default function TasksClient({ canCreate, isAdmin, currentUserId }: { can
                     <span>Owner: {ownerLabel(task)}</span>
                     {task.dueAt && <span className={isOverdue(task) ? "font-bold text-rose-600" : ""}>Due {formatWhen(task.dueAt)}</span>}
                     {task.completedAt && <span>Done {formatWhen(task.completedAt)}{task.completedBy?.name ? ` by ${task.completedBy.name}` : ""}</span>}
-                    {!task.completedAt && task.createdAt && <span>Raised {formatWhen(task.createdAt)}</span>}
+                    {task.cancelledAt && <span>Cancelled {formatWhen(task.cancelledAt)}{task.cancelledBy?.name ? ` by ${task.cancelledBy.name}` : ""}</span>}
+                    {!task.completedAt && !task.cancelledAt && task.createdAt && <span>Raised {formatWhen(task.createdAt)}</span>}
                   </div>
+                  {task.status === "cancelled" && task.cancelReason && (
+                    <p className="mt-1 line-clamp-2 break-words text-xs text-rose-700"><span className="font-bold">Reason:</span> {task.cancelReason}</p>
+                  )}
                 </button>
                 <div className="flex shrink-0 flex-wrap gap-2">
                   {task.actionHref && (
@@ -271,6 +282,11 @@ export default function TasksClient({ canCreate, isAdmin, currentUserId }: { can
                   {task.status === "pending" && (
                     <button type="button" className="btn btn-ghost px-3 py-1.5 text-xs" onClick={() => quickStart(task)}>
                       Start
+                    </button>
+                  )}
+                  {isOpen(task) && (
+                    <button type="button" className="btn btn-ghost px-3 py-1.5 text-xs text-rose-700" onClick={() => setCancelTarget(task)}>
+                      <XCircle size={14} /> Cancel
                     </button>
                   )}
                   {isOpen(task) && (
@@ -308,6 +324,16 @@ export default function TasksClient({ canCreate, isAdmin, currentUserId }: { can
           }}
         />
       )}
+      {cancelTarget && (
+        <CancelTaskModal
+          task={cancelTarget}
+          onClose={() => setCancelTarget(null)}
+          onDone={() => {
+            setCancelTarget(null);
+            load();
+          }}
+        />
+      )}
       {detailId && (
         <TaskDetailModal
           taskId={detailId}
@@ -317,6 +343,10 @@ export default function TasksClient({ canCreate, isAdmin, currentUserId }: { can
           onComplete={(task) => {
             closeDetail();
             setCompleteTarget(task);
+          }}
+          onCancel={(task) => {
+            closeDetail();
+            setCancelTarget(task);
           }}
           onChanged={load}
         />
@@ -436,12 +466,61 @@ function CompleteTaskModal({ task, onClose, onDone }: { task: TaskRow; onClose: 
   );
 }
 
+function CancelTaskModal({ task, onClose, onDone }: { task: TaskRow; onClose: () => void; onDone: () => void }) {
+  const [reason, setReason] = useState("");
+  const [saving, setSaving] = useState(false);
+  const tooShort = reason.trim().length < 5;
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    if (tooShort) return toast.error("Give a reason for cancelling (at least 5 characters).");
+    setSaving(true);
+    try {
+      await patchTask(task._id, { action: "cancel", reason: reason.trim() });
+      toast.success("Task cancelled. The reason is saved for the admins.");
+      onDone();
+    } catch (error: any) {
+      toast.error(error.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal title="Cancel task" subtitle={task.title} onClose={onClose}>
+      <form className="space-y-3" onSubmit={submit}>
+        <p className="rounded-xl bg-rose-50 p-3 text-sm text-rose-800">
+          Use this only when the task cannot be done because of circumstances outside your control. The task closes, and admins can see who cancelled it and why.
+        </p>
+        <Field label="Why can't this be done?" hint="Required. Saved on the task for the admins to review.">
+          <textarea
+            className="input min-h-[110px]"
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            maxLength={500}
+            required
+            autoFocus
+            placeholder="e.g. Parent has moved abroad and asked us to stop calling."
+          />
+        </Field>
+        <div className="flex justify-end gap-2 pt-2">
+          <button type="button" className="btn btn-ghost" onClick={onClose}>Keep task</button>
+          <button type="submit" className="btn btn-primary bg-rose-600 hover:bg-rose-700" disabled={saving || tooShort}>
+            {saving ? "Cancelling…" : "Cancel task"}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
 function TaskDetailModal({
   taskId,
   canCreate,
   currentUserId,
   onClose,
   onComplete,
+  onCancel,
   onChanged,
 }: {
   taskId: string;
@@ -449,6 +528,7 @@ function TaskDetailModal({
   currentUserId: string;
   onClose: () => void;
   onComplete: (task: TaskRow) => void;
+  onCancel: (task: TaskRow) => void;
   onChanged: () => void;
 }) {
   const [task, setTask] = useState<TaskRow | null>(null);
@@ -530,7 +610,14 @@ function TaskDetailModal({
             <p className="mt-1 whitespace-pre-wrap break-words text-sm text-slate-800">{task.completionNotes}</p>
           </div>
         )}
-        {task.cancelReason && <p className="text-xs text-slate-600">Cancel reason: {task.cancelReason}</p>}
+        {task.status === "cancelled" && (
+          <div className="rounded-xl border border-rose-100 bg-rose-50/60 p-3">
+            <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-rose-700">
+              Cancellation reason{task.cancelledBy?.name ? ` · ${task.cancelledBy.name}` : ""}
+            </div>
+            <p className="mt-1 whitespace-pre-wrap break-words text-sm text-slate-800">{task.cancelReason || "No reason was recorded."}</p>
+          </div>
+        )}
 
         <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-3">
           {task.actionHref && (
@@ -543,16 +630,8 @@ function TaskDetailModal({
               <CheckCircle2 size={16} /> Complete
             </button>
           )}
-          {open && canManage && (
-            <button
-              type="button"
-              className="btn btn-ghost text-rose-700"
-              disabled={busy}
-              onClick={() => {
-                const reason = window.prompt("Cancel this task? The assignee will be told.\n\nReason (optional):");
-                if (reason !== null) act({ action: "cancel", reason }, "Task cancelled.");
-              }}
-            >
+          {open && (
+            <button type="button" className="btn btn-ghost text-rose-700" disabled={busy} onClick={() => onCancel(task)}>
               <XCircle size={16} /> Cancel task
             </button>
           )}

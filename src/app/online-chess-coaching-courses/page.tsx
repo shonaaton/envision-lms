@@ -10,6 +10,7 @@ import { courseHub, courseHubMetadata, coursePages } from "@/lib/coursePages";
 import { curriculumLevels } from "@/lib/demoCurriculum";
 import { blogHubLink, centreHubLink, centreLinks, contactLink, featuredPostLinks, kidsClassesLink, successStoriesLink } from "@/lib/internalLinks";
 import { MARKETING_BASE_URL } from "@/lib/publicLinks";
+import { courseOffer, onlineCourseInstance } from "@/lib/seo";
 
 export const metadata = courseHubMetadata();
 
@@ -48,7 +49,8 @@ export default function CourseHubPage() {
           url: `${MARKETING_BASE_URL}/${stage.slug}`,
           educationalLevel: stage.educationalLevel,
           inLanguage: "en",
-          courseMode: "online",
+          offers: courseOffer(`/${stage.slug}`),
+          hasCourseInstance: onlineCourseInstance(stage.sessions),
           provider: {
             "@type": "EducationalOrganization",
             name: "Envision Chess Academy",

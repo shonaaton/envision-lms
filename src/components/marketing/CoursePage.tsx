@@ -10,7 +10,7 @@ import { courseHub, coursePages, type CoursePageConfig } from "@/lib/coursePages
 import { curriculumLevels } from "@/lib/demoCurriculum";
 import { blogHubLink, centreHubLink, centreLinks, contactLink, guidesForCourse, kidsClassesLink, successStoriesLink } from "@/lib/internalLinks";
 import { MARKETING_BASE_URL } from "@/lib/publicLinks";
-import { ORGANIZATION_ID } from "@/lib/seo";
+import { courseOffer, onlineCourseInstance, ORGANIZATION_ID } from "@/lib/seo";
 
 const demoHref = "/register";
 
@@ -66,13 +66,13 @@ export default function CoursePage({ config }: { config: CoursePageConfig }) {
           { "@type": "City", name: "Kolkata" },
         ],
       },
-      hasCourseInstance: levels.map((level) => ({
-        "@type": "CourseInstance",
-        name: `${config.eyebrow.replace(" Stage", "")} ${level.name}`,
-        description: config.levelBlurb[level.name],
-        courseMode: "online",
-        courseWorkload: `PT${level.sessions.length}H`,
-      })),
+      offers: courseOffer(`/${config.slug}`),
+      hasCourseInstance: levels.map((level) =>
+        onlineCourseInstance(level.sessions.length, {
+          name: `${config.eyebrow.replace(" Stage", "")} ${level.name}`,
+          description: config.levelBlurb[level.name],
+        }),
+      ),
     },
     {
       "@context": "https://schema.org",

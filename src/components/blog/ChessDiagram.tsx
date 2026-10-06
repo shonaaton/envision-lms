@@ -5,6 +5,44 @@ import { PIECE_SVG } from "@/components/blog/pieceSvg";
 const SQ = 45;
 const LIGHT = "#f0d9b5";
 const DARK = "#b58863";
+const BOARD_PATTERN_ID = "ecb-board";
+const pieceSymbolId = (key: string) => `ecb-piece-${key}`;
+
+/**
+ * The board pattern and the twelve pieces, defined once per page.
+ *
+ * Every diagram used to carry its own copy of each piece's artwork - about a
+ * kilobyte per piece, and twice over because the page's hydration payload
+ * repeats the HTML. The blog index alone came to 790 KB. Boards now point at
+ * these definitions with `<use>`, so a piece costs one short tag. Any page that
+ * renders a `BoardSvg` must render this once; without it the boards are blank.
+ *
+ * Hidden by size rather than `display: none`, which would also disable the
+ * pattern and symbols it holds in some browsers.
+ *
+ * `fens` limits the symbols to the pieces those positions use, so a post with
+ * one knight diagram does not ship all twelve pieces.
+ */
+export function ChessDiagramDefs({ fens }: { fens: string[] }) {
+  if (!fens.length) return null;
+  const used = new Set(fens.flatMap((fen) => Array.from(parsePlacement(fen).values()).map(pieceKey)));
+  return (
+    <svg width="0" height="0" aria-hidden="true" focusable="false" style={{ position: "absolute", width: 0, height: 0, overflow: "hidden" }}>
+      <defs>
+        <pattern id={BOARD_PATTERN_ID} width={SQ * 2} height={SQ * 2} patternUnits="userSpaceOnUse">
+          <rect width={SQ * 2} height={SQ * 2} fill={LIGHT} />
+          <rect x={SQ} width={SQ} height={SQ} fill={DARK} />
+          <rect y={SQ} width={SQ} height={SQ} fill={DARK} />
+        </pattern>
+        {Object.entries(PIECE_SVG)
+          .filter(([key]) => used.has(key))
+          .map(([key, art]) => (
+            <symbol key={key} id={pieceSymbolId(key)} viewBox={`0 0 ${SQ} ${SQ}`} dangerouslySetInnerHTML={{ __html: art }} />
+          ))}
+      </defs>
+    </svg>
+  );
+}
 
 /**
  * A chess diagram rendered on the server as inline SVG.
@@ -49,13 +87,6 @@ export function BoardSvg({ diagram, decorative = false, className = "" }: { diag
     return at ? { x: at.x + SQ / 2, y: at.y + SQ / 2 } : null;
   };
 
-  const squares = [];
-  for (let row = 0; row < 8; row += 1) {
-    for (let col = 0; col < 8; col += 1) {
-      squares.push(<rect key={`${row}-${col}`} x={col * SQ} y={row * SQ} width={SQ} height={SQ} fill={(row + col) % 2 === 0 ? LIGHT : DARK} />);
-    }
-  }
-
   const files = flipped ? "hgfedcba" : "abcdefgh";
   const ranks = flipped ? "12345678" : "87654321";
 
@@ -66,7 +97,8 @@ export function BoardSvg({ diagram, decorative = false, className = "" }: { diag
       className={`block h-auto w-full ${className}`}
     >
       {decorative ? null : <title>{diagram.alt}</title>}
-      {squares}
+      {/* The top-left square is light from either side of the board, so one pattern serves both orientations. */}
+      <rect width={SQ * 8} height={SQ * 8} fill={`url(#${BOARD_PATTERN_ID})`} />
 
       {(diagram.highlight ?? []).map((square) => {
         const at = origin(square);
@@ -87,9 +119,9 @@ export function BoardSvg({ diagram, decorative = false, className = "" }: { diag
 
       {Array.from(board.entries()).map(([square, piece]) => {
         const at = origin(square);
-        const art = PIECE_SVG[pieceKey(piece)];
-        if (!at || !art) return null;
-        return <g key={`p-${square}`} transform={`translate(${at.x} ${at.y})`} dangerouslySetInnerHTML={{ __html: art }} />;
+        const key = pieceKey(piece);
+        if (!at || !PIECE_SVG[key]) return null;
+        return <use key={`p-${square}`} href={`#${pieceSymbolId(key)}`} x={at.x} y={at.y} width={SQ} height={SQ} />;
       })}
 
       {(diagram.dots ?? []).map((square) => {

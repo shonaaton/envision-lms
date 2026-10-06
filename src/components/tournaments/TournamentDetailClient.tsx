@@ -19,6 +19,8 @@ import { useTournamentSocket } from "@/lib/useTournamentSocket";
 import { applyLeaderboardRows, rankOf } from "@/lib/tournament/leaderboard";
 import { describeTournament, relativeTime, resolvePlayerAction } from "@/lib/tournament/playerAction";
 import { useNow } from "@/lib/useLiveClock";
+import { formatAcademyDateTime } from "@/lib/academyTime";
+import { useViewerTimeZone, zoneAbbreviation } from "@/lib/viewerTime";
 import { TournamentAdminPanel } from "./TournamentAdminPanel";
 
 type DetailState = {
@@ -86,6 +88,7 @@ export function TournamentDetailClient({
   const [pending, startTransition] = useTransition();
   const autoOpenedGameRef = useRef("");
   const now = useNow(1000);
+  const { timeZone: viewerTimeZone } = useViewerTimeZone(role);
 
   const refresh = useCallback(async () => {
     const response = await fetch(`/api/tournaments/${tournamentId}/state`, { cache: "no-store" });
@@ -280,7 +283,7 @@ export function TournamentDetailClient({
                 : startsIn > 0
                   ? relativeTime(tournament.startAt, now)
                   : tournament.startAt
-                    ? new Date(tournament.startAt).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })
+                    ? `${formatAcademyDateTime(tournament.startAt, { year: undefined }, viewerTimeZone)} ${zoneAbbreviation(tournament.startAt, viewerTimeZone)}`
                     : "-"
             }
           />

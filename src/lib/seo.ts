@@ -127,6 +127,24 @@ export function websiteSchema() {
   };
 }
 
+/**
+ * The parts of a `Course` that Google's course rich results require, shared by
+ * every page that describes one - the course pages themselves and the course
+ * lists on the hub and the kids page.
+ *
+ * `courseMode` belongs on the CourseInstance, not the Course: schema.org has no
+ * such property on Course, and validators count it as an error on every item.
+ * `offers.category` is the one Offer field Google requires; no price is given
+ * because fees depend on format and are quoted after the demo class.
+ */
+export function courseOffer(path: string) {
+  return { "@type": "Offer", category: "Paid", url: absoluteUrl(path) };
+}
+
+export function onlineCourseInstance(sessions: number, extra: Record<string, unknown> = {}) {
+  return { "@type": "CourseInstance", courseMode: "online", courseWorkload: `PT${sessions}H`, ...extra };
+}
+
 export type Crumb = { name: string; path: string };
 
 export function breadcrumbSchema(crumbs: Crumb[]) {

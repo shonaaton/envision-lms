@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowRight, CalendarDays, Clock3, GraduationCap } from "lucide-react";
+import { ChessDiagramDefs } from "@/components/blog/ChessDiagram";
 import PostBody from "@/components/blog/PostBody";
 import TableOfContents from "@/components/blog/TableOfContents";
 import RelatedLinks from "@/components/marketing/RelatedLinks";
@@ -83,6 +84,7 @@ export default function BlogPostPage({ params }: { params: { slug: string } }) {
     <main className="landing-compact min-h-screen bg-white text-brand-900">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }} />
       <MarketingHeader demoHref={demoLink.href} />
+      <ChessDiagramDefs fens={post.body.flatMap((block) => (block.type === "diagram" ? [block.fen] : []))} />
 
       {/* ------------------------------------------------------------- hero */}
       <header className="relative isolate overflow-hidden bg-[#f5edf8]">

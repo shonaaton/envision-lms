@@ -22,7 +22,7 @@ import { centreHref, centreHub, kolkataCentres } from "@/lib/centrePages";
 import { courseHub, coursePages } from "@/lib/coursePages";
 import { blogHubLink, centreHubLink, courseHubLink, courseLinks, demoLink, successStoriesLink } from "@/lib/internalLinks";
 import { curriculumLevels } from "@/lib/demoCurriculum";
-import { absoluteUrl, breadcrumbSchema, faqSchema, organizationRef, publicMetadata } from "@/lib/seo";
+import { absoluteUrl, breadcrumbSchema, courseOffer, faqSchema, onlineCourseInstance, organizationRef, publicMetadata } from "@/lib/seo";
 
 /**
  * The parent-facing landing page for chess classes for children.
@@ -234,7 +234,8 @@ export default function OnlineChessClassesForKidsPage() {
           description: band.detail,
           url: absoluteUrl(`/${band.slug}`),
           inLanguage: "en",
-          courseMode: "online",
+          offers: courseOffer(`/${band.slug}`),
+          hasCourseInstance: onlineCourseInstance(band.sessions),
           audience: { "@type": "EducationalAudience", educationalRole: "student" },
           provider: organizationRef,
         },

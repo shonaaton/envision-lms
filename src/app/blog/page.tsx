@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowRight, Clock3 } from "lucide-react";
-import { BoardSvg } from "@/components/blog/ChessDiagram";
+import { BoardSvg, ChessDiagramDefs } from "@/components/blog/ChessDiagram";
 import RelatedLinks from "@/components/marketing/RelatedLinks";
 import { MarketingFooter, MarketingHeader } from "@/components/marketing/MarketingChrome";
 import { BLOG_PATH, blogCategories, blogHref, blogPosts, categoryLabel, postsByCategory, readingMinutes } from "@/lib/blog";
@@ -101,6 +101,7 @@ export default function BlogIndexPage() {
     <main className="landing-compact min-h-screen bg-white text-brand-900">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }} />
       <MarketingHeader demoHref={demoLink.href} />
+      <ChessDiagramDefs fens={blogPosts.map((post) => thumbnail(post).fen)} />
 
       <header className="relative isolate overflow-hidden bg-[#f5edf8]">
         <div className="absolute inset-0 bg-[linear-gradient(118deg,#ffffff_0%,#f5edf8_55%,#e8d4f0_100%)]" />

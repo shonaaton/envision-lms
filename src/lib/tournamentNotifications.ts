@@ -2,6 +2,7 @@ import { Notification } from "@/models/Fee";
 import { User } from "@/models/User";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
 import { sendWhatsAppAutomationTemplates } from "@/lib/whatsappAutomationEvents";
+import { formatAcademyDateTime } from "@/lib/academyTime";
 
 function objectId(value: any) {
   return value?._id?.toString?.() ?? value?.toString?.() ?? "";
@@ -47,7 +48,7 @@ export async function notifyTournamentUsers(tournament: any, input: {
         user: recipient,
         templateName,
         bodyParameters: templateName === "tournament_registration_confirmed" || templateName === "tournament_starting_soon"
-          ? [recipient.name || recipient.username || "there", tournament.name || tournament.title || "Tournament", tournament.startsAt ? new Date(tournament.startsAt).toLocaleString("en-IN") : "the scheduled time"]
+          ? [recipient.name || recipient.username || "there", tournament.name || tournament.title || "Tournament", tournament.startAt ? `${formatAcademyDateTime(tournament.startAt)} IST` : "the scheduled time"]
           : [recipient.name || recipient.username || "there", tournament.name || tournament.title || "Tournament"],
         metadata: { kind: "tournament_notification", tournament: objectId(tournament), href: input.href || `/tournaments/${objectId(tournament)}` },
       })));

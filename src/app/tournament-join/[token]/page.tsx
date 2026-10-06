@@ -9,6 +9,7 @@ import { getTournamentGuestUsername, setTournamentGuestUsername } from "@/lib/to
 import { playerKeyForExternal, recalculateTournamentStandings, setTournamentPlayerState, syncArenaPairings } from "@/lib/tournamentEngine";
 import { notifyAdmins, notifyExternalTournamentParticipant } from "@/lib/tournamentNotifications";
 import { getTurnstileSiteKey, isTurnstileEnabled, verifyTurnstileToken } from "@/lib/humanVerification";
+import { formatAcademyDateTime } from "@/lib/academyTime";
 
 export const dynamic = "force-dynamic";
 
@@ -66,7 +67,7 @@ async function joinExternalTournament(formData: FormData) {
     name: displayName || username,
     tournamentName: tournament.name,
     subject: `Registration confirmed: ${tournament.name}`,
-    message: `Hello ${displayName || username},\n\nYour registration for ${tournament.name} is confirmed.\n\nStart: ${new Date(tournament.startAt).toLocaleString("en-IN")}\nTime control: ${tournament.timeControlMinutes}+${tournament.incrementSeconds}\n\nUse your invitation link to enter the tournament lobby.`,
+    message: `Hello ${displayName || username},\n\nYour registration for ${tournament.name} is confirmed.\n\nStart: ${`${formatAcademyDateTime(tournament.startAt)} IST`}\nTime control: ${tournament.timeControlMinutes}+${tournament.incrementSeconds}\n\nUse your invitation link to enter the tournament lobby.`,
     href: `/tournament-join/${token}/play`,
     tournamentId: tournament._id.toString(),
   });
@@ -130,7 +131,7 @@ export default async function ExternalTournamentJoinPage({
 
         <div className="mb-6 grid grid-cols-1 gap-3 rounded-md bg-slate-50 p-4 text-sm sm:grid-cols-2">
           <div><div className="text-xs text-slate-500">Type</div><b>{tournament.type === "arena" ? "Arena" : "Swiss"}</b></div>
-          <div><div className="text-xs text-slate-500">Start</div><b>{new Date(tournament.startAt).toLocaleString("en-IN")}</b></div>
+          <div><div className="text-xs text-slate-500">Start</div><b>{`${formatAcademyDateTime(tournament.startAt)} IST`}</b></div>
           <div><div className="text-xs text-slate-500">Time Control</div><b>{tournament.timeControlMinutes}+{tournament.incrementSeconds}</b></div>
           <div><div className="text-xs text-slate-500">Format</div><b>{tournament.type === "arena" ? `${tournament.arenaDurationMinutes} min Arena` : `${tournament.rounds} rounds`}</b></div>
           <div><div className="text-xs text-slate-500">Guests Joined</div><b>{tournament.externalParticipants?.length || 0}</b></div>

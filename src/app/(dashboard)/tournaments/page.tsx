@@ -6,6 +6,7 @@ import { User } from "@/models/User";
 import Link from "next/link";
 import { CalendarClock, CheckCircle2, Clock3, Plus, Trophy, Users } from "lucide-react";
 import { describeTournament, relativeTime, type TournamentSummary } from "@/lib/tournament/playerAction";
+import { formatAcademyDateTime } from "@/lib/academyTime";
 
 export const dynamic = "force-dynamic";
 
@@ -65,7 +66,7 @@ function TournamentCard({ tournament, joined, now }: { tournament: any; joined: 
               {summary.tone === "upcoming" || summary.tone === "soon" ? (
                 <span className="font-semibold text-slate-700">{relativeTime(startAt, now)}</span>
               ) : (
-                startAt.toLocaleDateString(undefined, { day: "numeric", month: "short" })
+                formatAcademyDateTime(startAt, { year: undefined, hour: undefined, minute: undefined })
               )}
             </dd>
           </div>

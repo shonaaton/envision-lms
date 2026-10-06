@@ -47,10 +47,11 @@ import {
 
 export const dynamic = "force-dynamic";
 
-type DemoTab = "requested" | "upcoming" | "completed" | "missed" | "converted" | "closed" | "duplicates" | "assessments" | "history";
+type DemoTab = "accounts" | "requested" | "upcoming" | "completed" | "missed" | "converted" | "closed" | "duplicates" | "assessments" | "history";
 type DemoManagerSession = Awaited<ReturnType<typeof auth>> & { user: { id?: string; role?: string } };
 
 const tabs: Array<{ id: DemoTab; label: string }> = [
+  { id: "accounts", label: "Signed Up (No Demo)" },
   { id: "requested", label: "Requested" },
   { id: "upcoming", label: "Booked / Upcoming" },
   { id: "completed", label: "Completed" },
@@ -829,7 +830,11 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
   // so without this it vanished from the Demo Center altogether.
   const convertedBookingStudents = new Set(studentsWithConvertedBooking.map((id: any) => String(id)));
   const convertedWithoutBooking = convertedStudents.filter((student: any) => !convertedBookingStudents.has(String(student._id)));
-  const visibleBookings = activeTab === "assessments" || activeTab === "history" || activeTab === "duplicates"
+  // Signed-up demo accounts with no open demo request - the Signed Up (No Demo) tab.
+  const accountsWithoutRequest = demoStudents.filter(
+    (student: any) => !bookings.some((booking: any) => String(booking.student?._id || booking.student) === String(student._id) && !booking.archivedAt && ["pending", "confirmed"].includes(String(booking.status || "")))
+  );
+  const visibleBookings = activeTab === "assessments" || activeTab === "history" || activeTab === "duplicates" || activeTab === "accounts"
     ? []
     : bookings.filter((booking: any) => classifyDemo(booking) === activeTab);
   const counts = Object.fromEntries(tabs.map((tab) => [
@@ -838,7 +843,9 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
       ? assessmentTotal
       : tab.id === "duplicates"
         ? duplicateFlags.length
-        : bookings.filter((booking: any) => classifyDemo(booking) === tab.id).length + (tab.id === "converted" ? convertedWithoutBooking.length : 0),
+        : tab.id === "accounts"
+          ? accountsWithoutRequest.length
+          : bookings.filter((booking: any) => classifyDemo(booking) === tab.id).length + (tab.id === "converted" ? convertedWithoutBooking.length : 0),
   ]));
   const feedbackByBooking = new Map(cardFeedback.map((item: any) => [String(item.booking?._id || item.booking), item]));
   // A converted student with no booking left can still have an assessment - the
@@ -949,20 +956,7 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
           ))}
           {!duplicateFlags.length ? <Empty text="No accounts waiting on a duplicate decision." /> : null}
         </section>
-      ) : activeTab === "history" ? (
-        <section className="grid gap-3">
-          {archivedBookings.map((booking: any) => (
-            <HistoryCard
-              key={booking._id.toString()}
-              booking={booking}
-              activities={activityByBooking.get(String(booking._id)) || []}
-              canDelete={canDeletePermanently}
-              canDeleteAccount={booking.student?.accountStatus === "demo" && bookingsPerStudent.get(String(booking.student?._id)) === 1}
-            />
-          ))}
-          {!archivedBookings.length ? <Empty text="Nothing in History yet. Deleting a demo request moves it here." /> : null}
-        </section>
-      ) : activeTab !== "assessments" ? (
+      ) : activeTab === "accounts" ? (
         <section className="grid gap-3">
           {errorNotice || successNotice ? (
             <div
@@ -972,70 +966,9 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
               {errorNotice || successNotice}
             </div>
           ) : null}
-          {visibleBookings.map((booking: any) => (
-            <DemoCard key={booking._id.toString()} booking={booking} activeTab={activeTab} coaches={coaches} courses={courses} batches={batches} feedback={feedbackByBooking.get(String(booking._id))} salesOwnerName={salesOwnerOf(booking)} salesOwnerManualId={booking.salesOwnerSource === "manual" ? String(booking.salesOwner || "") : ""} ownerOptions={ownerOptions} canConvertDemo={canConvertDemo} />
-          ))}
-          {activeTab === "converted"
-            ? convertedWithoutBooking.map((student: any) => (
-                <ConvertedStudentCard
-                  key={student._id.toString()}
-                  student={student}
-                  batches={batches}
-                  feedback={feedbackByStudent.get(String(student._id))}
-                  salesOwnerName={ownerLabel(leadOwners.get(String(student._id))?.name || "", leadOwners.get(String(student._id))?.source)}
-                />
-              ))
-            : null}
-          {!visibleBookings.length && !(activeTab === "converted" && convertedWithoutBooking.length) ? <Empty text={`No demos in ${tabs.find((tab) => tab.id === activeTab)?.label || "this tab"}.`} /> : null}
-        </section>
-      ) : (
-        <section className="grid gap-3">
-          {errorNotice || successNotice ? (
-            <div
-              role="status"
-              className={`rounded-lg border px-4 py-3 text-sm font-semibold ${errorNotice ? "border-rose-200 bg-rose-50 text-rose-800" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`}
-            >
-              {errorNotice || successNotice}
-            </div>
-          ) : null}
-          {feedback.map((item: any) => (
-            <article key={item._id.toString()} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <div className="font-semibold text-slate-950">{item.demoUser?.name || item.studentName || "Demo student"}</div>
-                  <div className="mt-1 text-sm text-slate-500">Coach: {item.coach?.name || item.coachName || "-"} · Recommended: {levelLabel(item.recommendedCourseLevel) || "-"}</div>
-                  <div className="mt-1 text-xs font-bold uppercase text-slate-400">{item.status === "submitted" ? "Submitted" : "Draft / waiting for coach"}</div>
-                  <div className="mt-1 text-sm text-slate-600">Overall: {scaleLabel(OVERALL_STRENGTH, item.overallStrength) || titleCase(item.studentEngagement) || "-"} · Format: {titleCase(item.coachRecommendation) || "-"} · Starts at: {startingSessionLabel(item) || "-"}</div>
-                  <p className="mt-2 text-sm leading-6 text-slate-700">{item.salesAdminNotes || item.parentFacingSummary || item.assessmentNotes || "No notes for sales yet."}</p>
-                </div>
-                {item.booking ? <Link href={`/demo-feedback/${item.booking?._id || item.booking}`} className="btn-outline bg-white">Open Assessment</Link> : <span className="text-xs font-semibold text-slate-400">Demo booking deleted</span>}
-              </div>
-              {/* The form needs the booking; the assessment does not. Show it in full here. */}
-              {item.booking ? null : <AssessmentSummary feedback={item} />}
-            </article>
-          ))}
-          {!assessmentTotal ? <Empty text="No submitted demo assessments yet." /> : null}
-          {assessmentTotal > ASSESSMENTS_PAGE_SIZE ? (
-            <nav className="flex flex-wrap items-center justify-between gap-2 text-[13px] text-slate-500">
-              <span>
-                Showing {(assessmentPage - 1) * ASSESSMENTS_PAGE_SIZE + 1}-{Math.min(assessmentPage * ASSESSMENTS_PAGE_SIZE, assessmentTotal)} of {assessmentTotal}
-              </span>
-              <div className="flex gap-2">
-                {assessmentPage > 1 ? <Link href={`/admin/demo-center?tab=assessments&page=${assessmentPage - 1}`} className="btn-outline bg-white">Newer</Link> : null}
-                {assessmentPage < assessmentPageCount ? <Link href={`/admin/demo-center?tab=assessments&page=${assessmentPage + 1}`} className="btn-outline bg-white">Older</Link> : null}
-              </div>
-            </nav>
-          ) : null}
-        </section>
-      )}
-
-      <section className="rounded-xl border border-slate-200/80 bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-        <h2 className="text-base font-semibold tracking-tight text-slate-900">Demo Accounts Without Active Request</h2>
-        <p className="mt-0.5 text-[13px] text-slate-500">Signed-up demo accounts that have not booked a demo class yet. Use Assign Demo to book one for the family directly.</p>
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
-          {demoStudents
-            .filter((student: any) => !bookings.some((booking: any) => String(booking.student?._id || booking.student) === String(student._id) && !booking.archivedAt && ["pending", "confirmed"].includes(String(booking.status || ""))))
-            .map((student: any) => {
+          <p className="text-[13px] leading-6 text-slate-500">Signed-up demo accounts that have not booked a demo class yet. Use Assign Demo to book one for the family directly.</p>
+          <div className="grid gap-3 md:grid-cols-2">
+            {accountsWithoutRequest.map((student: any) => {
               const extendModalId = `extend-demo-account-${student._id.toString()}`;
               const assignDemoModalId = `assign-demo-account-${student._id.toString()}`;
               const accountExpired = student.demoExpiresAt && new Date(student.demoExpiresAt).getTime() < Date.now();
@@ -1120,8 +1053,89 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
                 </div>
               );
             })}
-        </div>
-      </section>
+          </div>
+          {!accountsWithoutRequest.length ? <Empty text="Every signed-up demo account has a demo request." /> : null}
+        </section>
+      ) : activeTab === "history" ? (
+        <section className="grid gap-3">
+          {archivedBookings.map((booking: any) => (
+            <HistoryCard
+              key={booking._id.toString()}
+              booking={booking}
+              activities={activityByBooking.get(String(booking._id)) || []}
+              canDelete={canDeletePermanently}
+              canDeleteAccount={booking.student?.accountStatus === "demo" && bookingsPerStudent.get(String(booking.student?._id)) === 1}
+            />
+          ))}
+          {!archivedBookings.length ? <Empty text="Nothing in History yet. Deleting a demo request moves it here." /> : null}
+        </section>
+      ) : activeTab !== "assessments" ? (
+        <section className="grid gap-3">
+          {errorNotice || successNotice ? (
+            <div
+              role="status"
+              className={`rounded-lg border px-4 py-3 text-sm font-semibold ${errorNotice ? "border-rose-200 bg-rose-50 text-rose-800" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`}
+            >
+              {errorNotice || successNotice}
+            </div>
+          ) : null}
+          {visibleBookings.map((booking: any) => (
+            <DemoCard key={booking._id.toString()} booking={booking} activeTab={activeTab} coaches={coaches} courses={courses} batches={batches} feedback={feedbackByBooking.get(String(booking._id))} salesOwnerName={salesOwnerOf(booking)} salesOwnerManualId={booking.salesOwnerSource === "manual" ? String(booking.salesOwner || "") : ""} ownerOptions={ownerOptions} canConvertDemo={canConvertDemo} />
+          ))}
+          {activeTab === "converted"
+            ? convertedWithoutBooking.map((student: any) => (
+                <ConvertedStudentCard
+                  key={student._id.toString()}
+                  student={student}
+                  batches={batches}
+                  feedback={feedbackByStudent.get(String(student._id))}
+                  salesOwnerName={ownerLabel(leadOwners.get(String(student._id))?.name || "", leadOwners.get(String(student._id))?.source)}
+                />
+              ))
+            : null}
+          {!visibleBookings.length && !(activeTab === "converted" && convertedWithoutBooking.length) ? <Empty text={`No demos in ${tabs.find((tab) => tab.id === activeTab)?.label || "this tab"}.`} /> : null}
+        </section>
+      ) : (
+        <section className="grid gap-3">
+          {errorNotice || successNotice ? (
+            <div
+              role="status"
+              className={`rounded-lg border px-4 py-3 text-sm font-semibold ${errorNotice ? "border-rose-200 bg-rose-50 text-rose-800" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`}
+            >
+              {errorNotice || successNotice}
+            </div>
+          ) : null}
+          {feedback.map((item: any) => (
+            <article key={item._id.toString()} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="font-semibold text-slate-950">{item.demoUser?.name || item.studentName || "Demo student"}</div>
+                  <div className="mt-1 text-sm text-slate-500">Coach: {item.coach?.name || item.coachName || "-"} · Recommended: {levelLabel(item.recommendedCourseLevel) || "-"}</div>
+                  <div className="mt-1 text-xs font-bold uppercase text-slate-400">{item.status === "submitted" ? "Submitted" : "Draft / waiting for coach"}</div>
+                  <div className="mt-1 text-sm text-slate-600">Overall: {scaleLabel(OVERALL_STRENGTH, item.overallStrength) || titleCase(item.studentEngagement) || "-"} · Format: {titleCase(item.coachRecommendation) || "-"} · Starts at: {startingSessionLabel(item) || "-"}</div>
+                  <p className="mt-2 text-sm leading-6 text-slate-700">{item.salesAdminNotes || item.parentFacingSummary || item.assessmentNotes || "No notes for sales yet."}</p>
+                </div>
+                {item.booking ? <Link href={`/demo-feedback/${item.booking?._id || item.booking}`} className="btn-outline bg-white">Open Assessment</Link> : <span className="text-xs font-semibold text-slate-400">Demo booking deleted</span>}
+              </div>
+              {/* The form needs the booking; the assessment does not. Show it in full here. */}
+              {item.booking ? null : <AssessmentSummary feedback={item} />}
+            </article>
+          ))}
+          {!assessmentTotal ? <Empty text="No submitted demo assessments yet." /> : null}
+          {assessmentTotal > ASSESSMENTS_PAGE_SIZE ? (
+            <nav className="flex flex-wrap items-center justify-between gap-2 text-[13px] text-slate-500">
+              <span>
+                Showing {(assessmentPage - 1) * ASSESSMENTS_PAGE_SIZE + 1}-{Math.min(assessmentPage * ASSESSMENTS_PAGE_SIZE, assessmentTotal)} of {assessmentTotal}
+              </span>
+              <div className="flex gap-2">
+                {assessmentPage > 1 ? <Link href={`/admin/demo-center?tab=assessments&page=${assessmentPage - 1}`} className="btn-outline bg-white">Newer</Link> : null}
+                {assessmentPage < assessmentPageCount ? <Link href={`/admin/demo-center?tab=assessments&page=${assessmentPage + 1}`} className="btn-outline bg-white">Older</Link> : null}
+              </div>
+            </nav>
+          ) : null}
+        </section>
+      )}
+
     </div>
   );
 }

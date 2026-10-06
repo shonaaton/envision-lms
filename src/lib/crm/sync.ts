@@ -22,7 +22,7 @@ function idOf(value: any) {
 }
 
 /** Demo states that still represent a live lead the CRM is allowed to close. */
-const OPEN_DEMO_STATUSES = [
+export const OPEN_DEMO_STATUSES = [
   "REQUESTED",
   "COACH_ASSIGNED",
   "APPROVED",

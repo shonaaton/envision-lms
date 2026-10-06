@@ -10,6 +10,7 @@ import { academyDateTimeLocalInput, formatAcademyDateTime, parseAcademyDateTimeL
 import { notifyDemoConverted, notifyDemoMissed } from "@/lib/demoWorkflow";
 import { canExportDemoAssessments } from "@/lib/demoAssessmentExport";
 import { crmStagesForStudents, type StudentCrmStage } from "@/lib/crm/leadStage";
+import { reconcileDemoStagesFromCrm } from "@/lib/crm/reconcile";
 import { raiseDemoAssessmentTask, resolveConversionCallTasks } from "@/lib/tasks/taskTriggers";
 import { pendingDuplicateReviews, reviewDuplicateFlag } from "@/lib/duplicateAccounts";
 import { duplicateReasonSummary } from "@/lib/identityMatch";
@@ -679,16 +680,20 @@ async function syncSalesOwners(formData: FormData) {
   const session = await requireDemoManager();
   const tab = String(formData.get("tab") || "requested");
   // An academy-wide backfill that notifies other salespeople's leads is not a sales action.
-  if (await demoOwnerRestriction((session.user as any).id)) demoCenterOutcome(tab, "Only admins can sync salespeople from the CRM.");
+  if (await demoOwnerRestriction((session.user as any).id)) demoCenterOutcome(tab, "Only admins can sync with the CRM.");
   let result: Awaited<ReturnType<typeof syncDemoSalesOwners>>;
+  let stages: Awaited<ReturnType<typeof reconcileDemoStagesFromCrm>>;
   try {
     result = await syncDemoSalesOwners();
+    // Demos still open here whose lead is already Dead / No Response in Kraya.
+    stages = await reconcileDemoStagesFromCrm();
   } catch (error) {
-    console.error("Salesperson sync failed", error);
-    demoCenterOutcome(tab, "Could not sync salespeople from the CRM. Try again.");
+    console.error("CRM sync failed", error);
+    demoCenterOutcome(tab, "Could not sync with the CRM. Try again.");
   }
   revalidatePath("/admin/demo-center");
   const parts = [
+    stages.closed ? `Moved ${stages.closed} ${stages.closed === 1 ? "demo" : "demos"} to Demo Closed - the lead is closed in the CRM.` : "Every open demo matches its CRM stage.",
     `Matched ${result.assigned} of ${result.scanned} unassigned demos to a salesperson from the CRM.`,
     result.notified ? `${result.notified} upcoming ${result.notified === 1 ? "demo was" : "demos were"} sent to the salesperson.` : "",
     result.unmatched ? `${result.unmatched} have no salesperson in the CRM - pick one on the card.` : "",
@@ -920,8 +925,8 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
         ) : (
           <form action={syncSalesOwners} className="mt-3 flex flex-wrap items-center gap-3">
             <input type="hidden" name="tab" value={activeTab} />
-            <button className="btn-outline bg-white"><RefreshCw size={15} /> Sync salespeople from CRM</button>
-            <span className="text-[12px] text-slate-500">Assigns every existing demo - done or pending - to the salesperson on its CRM lead. Past demos are assigned without notifying anyone.</span>
+            <button className="btn-outline bg-white"><RefreshCw size={15} /> Sync with CRM</button>
+            <span className="text-[12px] text-slate-500">Moves demos whose lead is Dead or No Response in the CRM to Demo Closed, and assigns every demo to the salesperson on its CRM lead. Past demos are assigned without notifying anyone. The closed-lead check also runs by itself every hour.</span>
           </form>
         )}
       </header>

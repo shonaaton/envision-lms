@@ -39,14 +39,31 @@ describe("crmStagesForStudents", () => {
     expect((await crmStagesForStudents([LEAD])).get(LEAD._id)?.closed).toBe(true);
   });
 
-  it("matches an unlinked lead by phone, but never borrows a sibling's linked lead", async () => {
-    // Newest first: the sibling's own lead is dead; the lead has no linked lead.
+  it("follows the family's lead by phone when it is linked to a sibling's account", async () => {
+    // Kraya has one lead per phone; here it is linked to the sibling, and Dead.
+    (CrmLeadRecord.find as any).mockReturnValue(chain([{ portalUser: SIBLING._id, phoneKey: phoneKey("9000000001"), stage: "Dead" }]));
+    process.env.CRM_CLOSED_STAGES = "No Response,Deleted,Dead";
+    const stages = await crmStagesForStudents([{ ...LEAD, phone: "+91 9000000001" }]);
+    expect(stages.get(LEAD._id)).toMatchObject({ stage: "Dead", closed: true });
+  });
+
+  it("prefers the student's own linked lead over the family phone", async () => {
     (CrmLeadRecord.find as any).mockReturnValue(chain([
       { portalUser: SIBLING._id, phoneKey: phoneKey("9000000001"), stage: "Dead" },
-      { phoneKey: phoneKey("9000000001"), stage: "Interested" },
+      { portalUser: LEAD._id, phoneKey: phoneKey("9000000001"), stage: "Demo Requested" },
     ]));
-    const stages = await crmStagesForStudents([{ ...LEAD, phone: "+91 9000000001" }]);
-    expect(stages.get(LEAD._id)).toMatchObject({ stage: "Interested", closed: false });
+    const stages = await crmStagesForStudents([LEAD]);
+    expect(stages.get(LEAD._id)).toMatchObject({ stage: "Demo Requested", closed: false });
+  });
+
+  it("honours a pinned closed-stage list: only the stages on it close", async () => {
+    process.env.CRM_CLOSED_STAGES = "No Response,Deleted";
+    (CrmLeadRecord.find as any).mockReturnValue(chain([{ portalUser: LEAD._id, stage: "Dead" }]));
+    expect((await crmStagesForStudents([LEAD])).get(LEAD._id)?.closed).toBe(false);
+    process.env.CRM_CLOSED_STAGES = "No Response,Deleted,Dead,Not Intersted";
+    expect((await crmStagesForStudents([LEAD])).get(LEAD._id)?.closed).toBe(true);
+    (CrmLeadRecord.find as any).mockReturnValue(chain([{ portalUser: LEAD._id, stage: "Not Intersted" }]));
+    expect((await crmStagesForStudents([LEAD])).get(LEAD._id)?.closed).toBe(true);
   });
 
   it("leaves a student with no CRM lead out of the map", async () => {

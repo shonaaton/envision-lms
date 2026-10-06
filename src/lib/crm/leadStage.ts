@@ -15,6 +15,11 @@ export type StudentCrmStage = {
  * Each student's current stage in Kraya, from the mirrored CRM lead. The linked
  * account wins, then phone, then email - the same strength order the lead-owner
  * lookup uses (demoLeadOwner.ts), newest lead first when a family has several.
+ *
+ * Kraya keeps one lead per phone number, so a family is one lead there even
+ * when it holds two portal accounts (siblings, or a parent who signed up twice).
+ * The lead can only be linked to one of them; the others still follow its stage
+ * by phone, or a Dead family would stay open on every account but one.
  */
 export async function crmStagesForStudents(students: any[]): Promise<Map<string, StudentCrmStage>> {
   const result = new Map<string, StudentCrmStage>();
@@ -39,10 +44,8 @@ export async function crmStagesForStudents(students: any[]): Promise<Map<string,
     const email = emailKey(student.email);
     const record =
       records.find((row) => String(row.portalUser || "") === studentId) ||
-      // A lead linked to another account is that account's, even on a shared
-      // family phone - only unlinked leads are matched by contact details.
-      (phone ? records.find((row) => !row.portalUser && row.phoneKey === phone) : undefined) ||
-      (email ? records.find((row) => !row.portalUser && row.emailKey === email) : undefined);
+      (phone ? records.find((row) => row.phoneKey === phone) : undefined) ||
+      (email ? records.find((row) => row.emailKey === email) : undefined);
     if (!record) continue;
     const stage = String(record.stage || "");
     result.set(studentId, { stage, stageChangedAt: record.stageChangedAt || undefined, closed: classifyCrmStage(stage) === "closed" });

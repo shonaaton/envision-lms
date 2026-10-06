@@ -25,6 +25,7 @@ export async function register() {
   const { processLeaveSweep } = await import("@/lib/leave/leaveService");
   const { sealLegacyTempPasswords } = await import("@/lib/tempPasswordMigration");
   const { processRetentionSweep } = await import("@/lib/retention/retentionSweep");
+  const { processCrmDemoStageReconcile } = await import("@/lib/crm/reconcile");
 
   installRuntimeProcessLogging();
   installRuntimeStderrCapture();
@@ -141,6 +142,16 @@ export async function register() {
       name: "retention_risk_sweep",
       intervalMs: 60 * 60_000,
       run: () => processRetentionSweep(),
+    },
+    {
+      /**
+       * Keeps the Demo Center in step with Kraya: closes open demos whose lead
+       * is already in a closed CRM stage (Dead, No Response...) but whose
+       * webhook was missed or arrived before that stage counted as closed.
+       */
+      name: "crm_demo_stage_reconcile",
+      intervalMs: 60 * 60_000,
+      run: () => processCrmDemoStageReconcile(),
     },
     {
       /**

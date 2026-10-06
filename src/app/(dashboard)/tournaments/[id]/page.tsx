@@ -7,6 +7,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { Link2, Trophy } from "lucide-react";
 import { TournamentDetailClient } from "@/components/tournaments/TournamentDetailClient";
+import { SelectOnFocusInput } from "@/components/tournaments/SelectOnFocusInput";
 import { TournamentGame } from "@/models/TournamentGame";
 import { playerKeyForUser } from "@/lib/tournamentEngine";
 
@@ -142,7 +143,7 @@ export default async function TournamentDetailPage({ params }: { params: { id: s
             <div className="mt-3 grid gap-2 md:grid-cols-[1fr_200px]">
               <label className="block text-xs font-semibold text-brand-700">
                 Link
-                <input readOnly className="input mt-1" value={externalInviteUrl} onFocus={(event) => event.currentTarget.select()} />
+                <SelectOnFocusInput className="input mt-1" value={externalInviteUrl} />
               </label>
               {tournament.externalInvite?.accessMode === "password" ? (
                 <label className="block text-xs font-semibold text-brand-700">

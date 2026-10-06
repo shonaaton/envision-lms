@@ -12,10 +12,13 @@ import {
   TACTICAL_STRENGTH,
   scaleLabel,
 } from "@/lib/demoAssessmentScales";
+import { isConfirmedDemo } from "@/lib/demoClassroom";
 import { demoSubAdminEmails } from "@/lib/demoNotificationRecipients";
 import { canAccessFeature } from "@/lib/featureAccess";
 import type { Sheet, SheetColumn } from "@/lib/spreadsheet";
+import { Activity } from "@/models/Activity";
 import { Booking } from "@/models/Booking";
+import { CrmLeadRecord } from "@/models/CrmLeadRecord";
 import { DemoFeedback } from "@/models/Onboarding";
 import { User } from "@/models/User";
 
@@ -66,6 +69,10 @@ function startingPoint(item: any) {
   return session ? `Session ${session} - ${topic}` : topic;
 }
 
+function idOf(value: any) {
+  return String(value?._id || value || "");
+}
+
 const DEMO_STATUS_LABELS: Record<string, string> = {
   REQUESTED: "Requested",
   COACH_ASSIGNED: "Coach assigned",
@@ -78,15 +85,45 @@ const DEMO_STATUS_LABELS: Record<string, string> = {
   CANCELLED: "Cancelled",
   RESCHEDULE_REQUESTED: "Reschedule requested",
   CONVERTED: "Converted",
-  CLOSED: "Closed",
-  ON_HOLD: "On hold",
+  CLOSED: "Demo Closed",
+  // The retired Demo Hold status, folded into Demo Closed.
+  ON_HOLD: "Demo Closed",
 };
 
-const COLUMNS: SheetColumn[] = [
+/**
+ * Where a lead sits in the Demo Center today, named after the tab it appears
+ * in. Follows `classifyDemo` in app/(dashboard)/admin/demo-center/page.tsx -
+ * keep the two in step. A lead with no demo booking (an account created or
+ * converted straight from the CRM) is named for what its account shows.
+ */
+export function demoLeadStage(booking: any, student: any, now = Date.now()) {
+  if (booking?._id) {
+    const status = String(booking.demoStatus || "");
+    if (booking.archivedAt) return "History (archived)";
+    if (status === "CONVERTED") return "Converted";
+    if (["CLOSED", "CANCELLED", "ON_HOLD"].includes(status) || booking.status === "cancelled") return "Demo Closed";
+    if (status === "STUDENT_NO_SHOW" || status === "ABSENT") return "No Show / Missed";
+    if (status === "ASSESSMENT_PENDING") return "Completed - assessment pending";
+    if (booking.feedbackStatus === "submitted" || status === "COMPLETED") return "Completed";
+    if (isConfirmedDemo(booking)) {
+      const over = new Date(booking.endAt || booking.startAt || 0).getTime() < now;
+      return over ? "Booked - demo time passed, outcome not marked" : "Booked / Upcoming";
+    }
+    return booking.needsNewTime ? "Requested - needs a new time" : "Requested";
+  }
+  if (!student?._id) return "Demo deleted";
+  if (student.conversionSetup?.convertedAt || student.accountStatus !== "demo") return "Converted (no demo booking)";
+  return "Demo account - no demo booked";
+}
+
+const LEAD_COLUMNS: SheetColumn[] = [
   { label: "Student" },
   { label: "Parent" },
   { label: "Phone" },
   { label: "Email" },
+  { label: "Current stage" },
+  { label: "CRM stage" },
+  { label: "CRM stage since (IST)" },
   { label: "City" },
   { label: "Country" },
   { label: "Account status" },
@@ -94,6 +131,9 @@ const COLUMNS: SheetColumn[] = [
   { label: "Demo date (IST)" },
   { label: "Demo status" },
   { label: "Archived" },
+  { label: "Close / cancel reason" },
+  { label: "Reschedules", type: "number" },
+  { label: "Converted (IST)" },
   { label: "Attendance" },
   { label: "Coach" },
   { label: "Salesperson (lead owner)" },
@@ -126,28 +166,57 @@ const COLUMNS: SheetColumn[] = [
   { label: "Internal coach notes" },
   { label: "Assessment status" },
   { label: "Submitted (IST)" },
+  { label: "Last activity (IST)" },
+  { label: "Journey" },
+];
+
+const JOURNEY_COLUMNS: SheetColumn[] = [
+  { label: "Student" },
+  { label: "Phone" },
+  { label: "Demo date (IST)" },
+  { label: "Current stage" },
+  { label: "When (IST)" },
+  { label: "Step" },
+  { label: "By" },
+  { label: "Where" },
+  { label: "Details" },
 ];
 
 const NOT_ASSESSED: any = {};
+// Excel refuses a cell longer than this.
+const MAX_CELL = 32000;
+
+// Conversions are recorded against the student, not the booking.
+const CONVERSION_TYPES = ["demo.student.converted", "demo.converted.crm"];
+
+type JourneyEvent = { at: Date; step: string; by: string; where: string; details: string };
+
+function activityDetails(activity: any) {
+  const meta = activity.metadata || {};
+  return String(meta.reason || meta.previousCloseReason || meta.stage || "").trim();
+}
+
+function journeyText(events: JourneyEvent[]) {
+  const text = events.map((event) => [istLabel(event.at), event.step, event.by ? `by ${event.by}` : ""].filter(Boolean).join(" - ")).join("\n");
+  return text.length > MAX_CELL ? `${text.slice(0, MAX_CELL)}\n...` : text;
+}
 
 /**
- * One row per demo booking, archived ones included, so every lead appears
- * whether or not a coach assessed them - no-shows, upcoming and cancelled demos
- * too. A booking with more than one assessment (a demo re-run in a new
- * classroom) gets a row for each. An assessment whose booking has since been
- * deleted keeps its own row, from the names snapshotted on it.
+ * Everything the report needs, read once for both sheets. One lead per demo
+ * booking (archived ones included), a lead per assessment whose booking was
+ * deleted, and a lead per demo or converted account that never booked a demo.
  */
-export async function demoAssessmentReportSheet(): Promise<Sheet> {
+async function loadDemoLeads() {
   await dbConnect();
   const [bookings, items]: [any[], any[]] = await Promise.all([
     Booking.find({ bookingType: "demo" })
-      .select("student instructor assignedCoach startAt demoStatus salesOwnerName parentName city country archivedAt createdAt")
-      .populate("student", "name email phone countryCode parentName city country accountStatus")
+      .select("student instructor assignedCoach startAt endAt status demoStatus feedbackStatus needsNewTime cancellationReason previousCloseReason holdReason archiveReason rescheduleCount salesOwnerName parentName city country archivedAt createdAt")
+      .populate("student", "name email phone countryCode parentName city country accountStatus conversionSetup.convertedAt")
       .populate("instructor assignedCoach", "name")
       .sort({ startAt: -1, createdAt: -1 })
       .lean(),
     DemoFeedback.find({})
-      .populate("demoUser", "name email phone countryCode parentName city country accountStatus")
+      .populate("demoUser", "name email phone countryCode parentName city country accountStatus conversionSetup.convertedAt")
       .populate("coach recommendedCoach salesPerson", "name")
       .sort({ submittedAt: -1, createdAt: -1 })
       .lean(),
@@ -158,32 +227,146 @@ export async function demoAssessmentReportSheet(): Promise<Sheet> {
     const key = String(item.booking || "");
     assessmentsByBooking.set(key, [...(assessmentsByBooking.get(key) || []), item]);
   }
-  const pairs: Array<{ booking: any; item: any }> = [];
+  const leads: Array<{ booking: any; item: any; student: any }> = [];
   for (const booking of bookings) {
     const key = String(booking._id);
     const assessments = assessmentsByBooking.get(key) || [NOT_ASSESSED];
     assessmentsByBooking.delete(key);
-    assessments.forEach((item) => pairs.push({ booking, item }));
+    assessments.forEach((item) => leads.push({ booking, item, student: booking.student || item.demoUser || {} }));
   }
-  for (const orphans of Array.from(assessmentsByBooking.values())) orphans.forEach((item) => pairs.push({ booking: {}, item }));
+  for (const orphans of Array.from(assessmentsByBooking.values())) orphans.forEach((item) => leads.push({ booking: {}, item, student: item.demoUser || {} }));
 
-  const rows = pairs.map(({ booking, item }) => {
+  // Leads the CRM created or converted without a demo ever being booked.
+  const coveredStudents = new Set(leads.map((lead) => idOf(lead.student)).filter(Boolean));
+  const unbooked: any[] = await User.find({
+    role: "student",
+    $or: [{ accountStatus: "demo" }, { "conversionSetup.convertedAt": { $exists: true } }],
+  })
+    .select("name email phone countryCode parentName city country accountStatus conversionSetup.convertedAt createdAt")
+    .sort({ createdAt: -1 })
+    .lean();
+  for (const student of unbooked) {
+    if (!coveredStudents.has(idOf(student))) leads.push({ booking: {}, item: NOT_ASSESSED, student });
+  }
+
+  const bookingIds = bookings.map((booking) => booking._id);
+  const studentIds = Array.from(new Set(leads.map((lead) => idOf(lead.student)).filter((id) => Types.ObjectId.isValid(id))));
+  const [activities, crmRecords]: [any[], any[]] = await Promise.all([
+    Activity.find({
+      $or: [
+        { entityType: "Booking", entityId: { $in: bookingIds } },
+        { entityType: "User", entityId: { $in: studentIds }, type: { $in: CONVERSION_TYPES } },
+      ],
+    })
+      .select("actor type label entityType entityId metadata occurredAt")
+      .populate("actor", "name")
+      .sort({ occurredAt: 1 })
+      .lean(),
+    CrmLeadRecord.find({ portalUser: { $in: studentIds } })
+      .select("portalUser stage stageChangedAt stageHistory lastEventAt")
+      .sort({ lastEventAt: -1 })
+      .lean(),
+  ]);
+
+  // The newest CRM lead per student, when a family has more than one.
+  const crmByStudent = new Map<string, any>();
+  for (const record of crmRecords) {
+    const key = idOf(record.portalUser);
+    if (!crmByStudent.has(key)) crmByStudent.set(key, record);
+  }
+
+  // Student-level events (conversions, CRM moves) belong to one lead row each:
+  // the booking a conversion names, otherwise the student's latest demo.
+  const leadKey = (lead: { booking: any; student: any }) => (lead.booking?._id ? `b:${lead.booking._id}` : `s:${idOf(lead.student)}`);
+  const latestLeadOfStudent = new Map<string, string>();
+  for (const lead of leads) {
+    const studentId = idOf(lead.student);
+    if (studentId && !latestLeadOfStudent.has(studentId)) latestLeadOfStudent.set(studentId, leadKey(lead));
+  }
+  const eventsByLead = new Map<string, JourneyEvent[]>();
+  const addEvent = (key: string | undefined, event: JourneyEvent) => {
+    if (!key || !event.at) return;
+    eventsByLead.set(key, [...(eventsByLead.get(key) || []), event]);
+  };
+  const bookingKeys = new Set(bookingIds.map((id) => `b:${id}`));
+
+  for (const activity of activities) {
+    const event = {
+      at: activity.occurredAt,
+      step: String(activity.label || activity.type || ""),
+      by: activity.actor?.name || "",
+      where: String(activity.type || "").startsWith("crm.") || activity.type === "demo.converted.crm" ? "CRM sync" : "Portal",
+      details: activityDetails(activity),
+    };
+    if (activity.entityType === "Booking") {
+      addEvent(`b:${activity.entityId}`, event);
+    } else {
+      const named = activity.metadata?.booking ? `b:${activity.metadata.booking}` : "";
+      addEvent(bookingKeys.has(named) ? named : latestLeadOfStudent.get(idOf(activity.entityId)), event);
+    }
+  }
+  // Moves made inside Kraya. The portal's own pushes are already in Activity
+  // as "CRM stage set to ...", so only the CRM side's are added here.
+  for (const [studentId, record] of Array.from(crmByStudent.entries())) {
+    for (const move of record.stageHistory || []) {
+      if (move.source === "portal") continue;
+      addEvent(latestLeadOfStudent.get(studentId), {
+        at: move.at,
+        step: `CRM stage moved to ${move.stage}`,
+        by: move.actorName || "",
+        where: move.source === "import" ? "CRM import" : "CRM (Kraya)",
+        details: "",
+      });
+    }
+  }
+  // Older bookings predate the activity log; their request still starts the story.
+  for (const booking of bookings) {
+    const key = `b:${booking._id}`;
+    if (!eventsByLead.has(key) && booking.createdAt) addEvent(key, { at: booking.createdAt, step: "Demo request created", by: "", where: "Portal", details: "" });
+  }
+  for (const events of Array.from(eventsByLead.values())) events.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
+
+  return { leads, crmByStudent, eventsByLead, leadKey };
+}
+
+/** The two sheets of the Demo Center download: one row per lead, then every step of every lead's journey. */
+export async function demoLeadReportSheets(now = Date.now()): Promise<Sheet[]> {
+  const { leads, crmByStudent, eventsByLead, leadKey } = await loadDemoLeads();
+  const leadRows: unknown[][] = [];
+  const journeyRows: unknown[][] = [];
+  // A booking with two assessments is two lead rows; its journey is listed once.
+  const journeyListed = new Set<string>();
+
+  for (const { booking, item, student } of leads) {
     const assessed = item !== NOT_ASSESSED;
-    const student = booking.student || item.demoUser || {};
+    const stage = demoLeadStage(booking, student, now);
+    const crm = crmByStudent.get(idOf(student));
+    const key = leadKey({ booking, student });
+    const events = eventsByLead.get(key) || [];
+    const lastEvent = events[events.length - 1];
+    const name = student.name || item.studentName || "";
+    const demoDate = istLabel(booking.startAt || item.demoStartAt);
+
     // The student, coach and booking can be deleted after the demo; the
     // assessment keeps name snapshots for exactly that case.
-    return [
-      student.name || item.studentName || "",
+    leadRows.push([
+      name,
       student.parentName || booking.parentName || "",
       contact(student),
       student.email || "",
+      stage,
+      crm?.stage || "",
+      istLabel(crm?.stageChangedAt),
       student.city || booking.city || "",
       student.country || booking.country || "",
       student.accountStatus ? (student.accountStatus === "demo" ? "Demo" : "Enrolled") : booking.student || item.demoUser ? "" : "Account deleted",
       istLabel(booking.createdAt),
-      istLabel(booking.startAt || item.demoStartAt),
+      demoDate,
       DEMO_STATUS_LABELS[String(booking.demoStatus || "")] || "",
       booking.archivedAt ? "Yes" : "",
+      booking.cancellationReason || booking.previousCloseReason || booking.holdReason || booking.archiveReason || "",
+      booking._id ? Number(booking.rescheduleCount || 0) : "",
+      istLabel(student.conversionSetup?.convertedAt),
       ATTENDANCE_LABELS[String(item.attendanceStatus || "")] || "",
       item.coach?.name || item.coachName || booking.assignedCoach?.name || booking.instructor?.name || "",
       booking.salesOwnerName || "",
@@ -216,8 +399,25 @@ export async function demoAssessmentReportSheet(): Promise<Sheet> {
       item.internalCoachNotes || "",
       !assessed ? "Not assessed" : item.status === "submitted" ? "Submitted" : "Draft",
       istLabel(item.submittedAt),
-    ];
-  });
+      istLabel(lastEvent?.at),
+      journeyText(events),
+    ]);
 
-  return { name: "Demo leads", columns: COLUMNS, rows };
+    if (journeyListed.has(key)) continue;
+    journeyListed.add(key);
+    for (const event of events) {
+      journeyRows.push([name, contact(student), demoDate, stage, istLabel(event.at), event.step, event.by, event.where, event.details]);
+    }
+  }
+
+  return [
+    { name: "Demo leads", columns: LEAD_COLUMNS, rows: leadRows },
+    { name: "Demo journey", columns: JOURNEY_COLUMNS, rows: journeyRows },
+  ];
+}
+
+/** Just the per-lead sheet. */
+export async function demoAssessmentReportSheet(): Promise<Sheet> {
+  const [leads] = await demoLeadReportSheets();
+  return leads;
 }

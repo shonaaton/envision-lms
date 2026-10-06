@@ -3,7 +3,7 @@ import { classifyCrmStage, crmStageLabel, demoStatusToStage, shouldSkipCrmPush }
 import { crmClientConfig, pushLeadStage } from "@/lib/crm/client";
 import { crmPhoneNumber, emailKey, phoneKey, phoneVariants } from "@/lib/crm/identity";
 
-const ENV_KEYS = ["CRM_STAGE_DEMO_REQUESTED", "CRM_STAGE_DEMO_HOLD", "CRM_HOLD_STAGES", "CRM_DEMO_STAGES", "CRM_CONVERTED_STAGES", "CRM_CLOSED_STAGES", "CRM_DEFAULT_COUNTRY_CODE"];
+const ENV_KEYS = ["CRM_STAGE_DEMO_REQUESTED", "CRM_HOLD_STAGES", "CRM_DEMO_STAGES", "CRM_CONVERTED_STAGES", "CRM_CLOSED_STAGES", "CRM_DEFAULT_COUNTRY_CODE"];
 
 afterEach(() => {
   for (const key of ENV_KEYS) delete process.env[key];
@@ -55,22 +55,28 @@ describe("demoStatusToStage", () => {
   });
 });
 
-describe("demo hold", () => {
-  it("pushes a held demo to the Demo Hold stage", () => {
-    expect(demoStatusToStage("ON_HOLD")).toBe("DEMO_HOLD");
-    expect(crmStageLabel("DEMO_HOLD")).toBe("Demo Hold");
+describe("Demo Closed (formerly Demo Hold)", () => {
+  it("pushes a legacy held demo as a closure, since Demo Hold no longer exists", () => {
+    expect(demoStatusToStage("ON_HOLD")).toBe("CLOSED_NO_RESPONSE");
+    expect(demoStatusToStage("ON_HOLD", "Duplicate lead")).toBe("CLOSED_DELETED");
   });
 
-  it("reads Demo Hold as hold, not as a demo revival, so the echo does not reopen it", () => {
-    expect(classifyCrmStage(crmStageLabel("DEMO_HOLD"))).toBe("hold");
-    expect(classifyCrmStage("demo  hold")).toBe("hold");
-    expect(classifyCrmStage("Demo On Hold")).toBe("hold");
+  it("reads Demo Closed and the old Demo Hold as closures, not as a demo revival", () => {
+    expect(classifyCrmStage("Demo Closed")).toBe("closed");
+    expect(classifyCrmStage("demo  closed")).toBe("closed");
+    expect(classifyCrmStage("Demo Hold")).toBe("closed");
+    expect(classifyCrmStage("Demo On Hold")).toBe("closed");
   });
 
-  it("follows a renamed hold stage from the environment", () => {
-    process.env.CRM_STAGE_DEMO_HOLD = "Parked Demo";
-    expect(crmStageLabel("DEMO_HOLD")).toBe("Parked Demo");
-    expect(classifyCrmStage("Parked Demo")).toBe("hold");
+  it("closes on them even when the closure list is pinned", () => {
+    process.env.CRM_CLOSED_STAGES = "No Response,Deleted";
+    expect(classifyCrmStage("Demo Closed")).toBe("closed");
+    expect(classifyCrmStage("Demo Hold")).toBe("closed");
+  });
+
+  it("reads a pinned legacy hold stage as a closure", () => {
+    process.env.CRM_HOLD_STAGES = "Parked Demo";
+    expect(classifyCrmStage("Parked Demo")).toBe("closed");
   });
 });
 

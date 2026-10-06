@@ -75,8 +75,9 @@ const DEMO_STATUS_LABELS: Record<string, string> = {
   RESCHEDULE_REQUESTED: "Reschedule requested",
   CANCELLED: "Cancelled",
   CONVERTED: "Converted",
-  ON_HOLD: "Demo hold",
-  CLOSED: "Closed",
+  // The retired Demo Hold status, folded into Demo Closed.
+  ON_HOLD: "Demo Closed",
+  CLOSED: "Demo Closed",
 };
 
 function id(value: any) {

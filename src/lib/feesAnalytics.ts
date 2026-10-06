@@ -705,10 +705,10 @@ export async function getFeesAnalytics(options: { from: Date; to: Date; gst: Gst
     if (booking.demoStatus === "COMPLETED") return "Demo done";
     if (booking.demoStatus === "STUDENT_NO_SHOW") return "No show";
     if (booking.demoStatus === "ABSENT") return "Missed";
-    if (booking.demoStatus === "CLOSED" || booking.status === "cancelled") return "Closed";
+    // ON_HOLD is the retired Demo Hold status, folded into Demo Closed.
+    if (["CLOSED", "ON_HOLD"].includes(booking.demoStatus) || booking.status === "cancelled") return "Demo Closed";
     if (booking.demoStatus === "ASSESSMENT_PENDING") return "Assessment pending";
     if (booking.demoStatus === "CLASSROOM_CREATED") return "Scheduled";
-    if (booking.demoStatus === "ON_HOLD") return "Demo hold";
     return "Requested";
   };
 

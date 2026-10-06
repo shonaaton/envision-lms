@@ -22,6 +22,7 @@ import {
   COACH_EDITABLE_STATUSES,
   MIN_CLASSES_FOR_FEEDBACK,
   WITHDRAWABLE_STATUSES,
+  duplicateReportsToWithdraw,
   hasEnoughClasses,
   SKIP_REASONS,
   cleanRatings,
@@ -143,8 +144,9 @@ export async function processMonthlyFeedbackCycle(now = new Date(), options: { m
   await dbConnect();
   // Runs every hour, cycle open or not: a late report for last month still
   // belongs to the coach who taught it.
+  const duplicates = await withdrawDuplicateReports();
   const rehomed = await rehomeUnfinishedReports();
-  if (!month) return { month: null, created: 0, retiered: 0, removed: 0, rehomed };
+  if (!month) return { month: null, created: 0, retiered: 0, removed: 0, rehomed, duplicates };
   const cycle = await ensureCycle(month);
   const { start, end } = monthBounds(month);
   const label = monthLabel(month);
@@ -164,7 +166,7 @@ export async function processMonthlyFeedbackCycle(now = new Date(), options: { m
     .lean();
   if (!classrooms.length) {
     const removed = await withdrawReportsForNewStudents(month);
-    return { month, created: 0, retiered: 0, removed, rehomed };
+    return { month, created: 0, retiered: 0, removed, rehomed, duplicates };
   }
   const tierOf = await classroomTierResolver(classrooms);
 
@@ -200,10 +202,11 @@ export async function processMonthlyFeedbackCycle(now = new Date(), options: { m
       // three before then still gets one.
       if (!hasEnoughClasses(lifetime.get(studentId))) continue;
 
-      // Per classroom as well as per coach: after a coach change the classroom's
-      // report for this month already exists (moved to, or written by, the
-      // previous coach) and must not be raised a second time.
-      const exists = await MonthlyFeedback.exists({ month, student: studentId, $or: [{ coach: coachId }, { classroom: classroom._id }] });
+      // One report per student per month, whichever group raised it first. A
+      // student who moves to a new group mid-cycle must not get a second one
+      // (2026-10-05: five students got a second September report from their new
+      // group after the first had already gone to their families).
+      const exists = await MonthlyFeedback.exists({ month, student: studentId });
       if (exists) continue;
       const stats = await computeMonthStats(classroom, studentId, month);
       const result: any = await MonthlyFeedback.findOneAndUpdate(
@@ -255,7 +258,49 @@ export async function processMonthlyFeedbackCycle(now = new Date(), options: { m
   }
 
   await FeedbackCycle.updateOne({ _id: cycle?._id }, { $set: { lastSweepAt: new Date() } });
-  return { month, created, retiered, removed, rehomed };
+  return { month, created, retiered, removed, rehomed, duplicates };
+}
+
+/**
+ * Withdraws extra reports where a student has more than one for the same month
+ * (see `duplicateReportsToWithdraw` for which one stays), with their tasks.
+ */
+async function withdrawDuplicateReports() {
+  const groups: any[] = await MonthlyFeedback.aggregate([
+    { $group: { _id: { month: "$month", student: "$student" }, ids: { $push: "$_id" }, count: { $sum: 1 } } },
+    { $match: { count: { $gt: 1 } } },
+  ]);
+  if (!groups.length) return 0;
+  const docs: any[] = await MonthlyFeedback.find({ _id: { $in: groups.flatMap((group) => group.ids) } })
+    .select("_id month student coach classroom status createdAt")
+    .lean();
+  const classrooms: any[] = await Classroom.find({ _id: { $in: Array.from(new Set(docs.map((doc) => idOf(doc.classroom)).filter(Boolean))) } })
+    .select("coach instructor generatedSessions")
+    .lean();
+  const classroomById = new Map(classrooms.map((row) => [idOf(row), row]));
+
+  let removed = 0;
+  const reviewMonths = new Set<string>();
+  for (const group of groups) {
+    const members = docs.filter((doc) => group.ids.some((id: any) => idOf(id) === idOf(doc)));
+    const withdraw = duplicateReportsToWithdraw(
+      members.map((doc) => {
+        const classroom = classroomById.get(idOf(doc.classroom));
+        const taughtCoachId = classroom && isFeedbackMonth(doc.month) ? reportCoachId(classroom, monthBounds(doc.month), () => true) : "";
+        return { id: idOf(doc), status: String(doc.status), coachId: idOf(doc.coach), taughtCoachId, createdAt: doc.createdAt };
+      })
+    );
+    for (const id of withdraw) {
+      const doc = members.find((row) => idOf(row) === id);
+      const result = await MonthlyFeedback.deleteOne({ _id: doc._id, status: doc.status });
+      if (!result.deletedCount) continue;
+      await withdrawMonthlyFeedbackTask(doc._id, "Duplicate: this student already has a report for this month.");
+      if (doc.status === "submitted") reviewMonths.add(String(doc.month));
+      removed += 1;
+    }
+  }
+  for (const month of Array.from(reviewMonths)) await syncReviewTask(month);
+  return removed;
 }
 
 /**
@@ -608,6 +653,8 @@ export async function applyFeedbackAction(id: string, input: FeedbackActionInput
     case "approve": {
       if (!reviewer) throw new FeedbackError("Only admins can approve feedback.", 403);
       if (!["submitted", "approved"].includes(doc.status)) throw new FeedbackError("Only submitted reports can be approved.", 409);
+      const alreadySent = await MonthlyFeedback.exists({ _id: { $ne: doc._id }, month: doc.month, student: doc.student, status: { $in: ["approved", "sent"] } });
+      if (alreadySent) throw new FeedbackError(`${doc.studentName || "This student"}'s report for this month has already been sent to the family.`, 409);
       if (typeof input.parentNote === "string") doc.parentNote = input.parentNote;
       // Reports submitted before the note became required may still lack one.
       if (!isParentNoteComplete(doc.parentNote)) throw new FeedbackError("Write the note for parents before approving.");

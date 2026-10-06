@@ -88,9 +88,8 @@ const BookingSchema = new Schema(
     // Archived demos are hidden from the working tabs but never dropped, so
     // conversion reporting and the audit trail stay intact. Restoring is just
     // clearing these fields.
-    // Demo Hold: the lead is parked - the parent asked to wait, exams, travel -
-    // without being written off. The classroom is cancelled, the booking drops
-    // out of the working tabs and the CRM moves to its "Demo Hold" stage.
+    // Retired Demo Hold status (`ON_HOLD`). It was folded into Demo Closed and
+    // nothing sets it any more; the fields stay so older bookings still read.
     heldAt: Date,
     heldBy: { type: Schema.Types.ObjectId, ref: "User" },
     holdReason: String,

@@ -252,8 +252,8 @@ export async function POST(req: Request) {
         existingActive.requestedLocalDateTime = requested.localLabel;
         existingActive.requestedIstDateTime = requested.istLabel;
         existingActive.requestedAt = new Date();
-        // The parent picking a time is what a held or reopened demo was waiting
-        // for, so it comes off Demo Hold and loses the "needs a new time" flag.
+        // The parent picking a time is what a reopened demo was waiting for, so
+        // it loses the "needs a new time" flag (and any legacy Demo Hold fields).
         existingActive.needsNewTime = false;
         existingActive.heldAt = undefined;
         existingActive.heldBy = undefined;

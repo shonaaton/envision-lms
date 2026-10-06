@@ -2,7 +2,7 @@ import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
-import { CalendarCheck, CheckCircle2, Clock3, Copy, Download, GraduationCap, History, Link as LinkIcon, MessageSquareText, PauseCircle, PlayCircle, RefreshCw, RotateCcw, Trash2, UserCheck, UserX, Users, XCircle } from "lucide-react";
+import { CalendarCheck, CheckCircle2, Clock3, Copy, Download, GraduationCap, History, Link as LinkIcon, MessageSquareText, PlayCircle, RefreshCw, RotateCcw, Trash2, UserCheck, UserX, Users, XCircle } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { canAccessFeature } from "@/lib/featureAccess";
 import { dbConnect } from "@/lib/db";
@@ -47,7 +47,7 @@ import {
 
 export const dynamic = "force-dynamic";
 
-type DemoTab = "requested" | "upcoming" | "completed" | "missed" | "hold" | "converted" | "closed" | "duplicates" | "assessments" | "history";
+type DemoTab = "requested" | "upcoming" | "completed" | "missed" | "converted" | "closed" | "duplicates" | "assessments" | "history";
 type DemoManagerSession = Awaited<ReturnType<typeof auth>> & { user: { id?: string; role?: string } };
 
 const tabs: Array<{ id: DemoTab; label: string }> = [
@@ -55,9 +55,8 @@ const tabs: Array<{ id: DemoTab; label: string }> = [
   { id: "upcoming", label: "Booked / Upcoming" },
   { id: "completed", label: "Completed" },
   { id: "missed", label: "No Shows/Missed" },
-  { id: "hold", label: "Demo Hold" },
   { id: "converted", label: "Converted" },
-  { id: "closed", label: "Closed" },
+  { id: "closed", label: "Demo Closed" },
   { id: "duplicates", label: "Duplicates" },
   { id: "assessments", label: "Assessments" },
   { id: "history", label: "History" },
@@ -85,8 +84,7 @@ function demoStatusLabel(booking: any) {
   if (booking.demoStatus === "STUDENT_NO_SHOW") return "Demo No Show";
   if (booking.demoStatus === "ABSENT") return "Demo Missed";
   if (booking.demoStatus === "CONVERTED") return "Converted";
-  if (booking.demoStatus === "CLOSED") return "Closed";
-  if (booking.demoStatus === "ON_HOLD") return "Demo Hold";
+  if (isDemoClosed(booking)) return "Demo Closed";
   return "Demo Requested";
 }
 
@@ -138,13 +136,21 @@ function demoWasWrittenOff(booking: any) {
   return ["STUDENT_NO_SHOW", "ABSENT"].includes(String(booking?.demoStatus || ""));
 }
 
+/**
+ * A lead whose demo process is over without a conversion. `ON_HOLD` is the
+ * retired Demo Hold status: it was folded into Demo Closed, so bookings parked
+ * on it before then are read as closed rather than left in a tab that is gone.
+ */
+function isDemoClosed(booking: any) {
+  return ["CLOSED", "CANCELLED", "ON_HOLD"].includes(String(booking?.demoStatus || "")) || booking?.status === "cancelled";
+}
+
 function classifyDemo(booking: any): DemoTab {
   // Archived wins over every other state so a deleted request leaves the working
-  // tabs entirely, rather than lingering in Closed or Requested.
+  // tabs entirely, rather than lingering in Demo Closed or Requested.
   if (booking.archivedAt) return "history";
   if (booking.demoStatus === "CONVERTED") return "converted";
-  if (booking.demoStatus === "CLOSED" || booking.status === "cancelled" || booking.demoStatus === "CANCELLED") return "closed";
-  if (booking.demoStatus === "ON_HOLD") return "hold";
+  if (isDemoClosed(booking)) return "closed";
   if (booking.demoStatus === "STUDENT_NO_SHOW" || booking.demoStatus === "ABSENT") return "missed";
   if (booking.demoStatus === "ASSESSMENT_PENDING") return "assessments";
   if (booking.feedbackStatus === "submitted" || booking.demoStatus === "COMPLETED") return "completed";
@@ -328,7 +334,7 @@ async function scheduleDemoForAccount(formData: FormData) {
  * in Booked/Upcoming and No Shows/Missed stays empty, so nobody is prompted to
  * rebook or close it. This puts the booking in the same state the coach's close
  * flow would - back with admin, awaiting a new time - so the existing Assign /
- * Confirm Demo and Close Demo actions on the card take it from there.
+ * Confirm Demo and Move to Demo Closed actions on the card take it from there.
  */
 async function markDemoMissed(formData: FormData) {
   "use server";
@@ -344,9 +350,9 @@ async function markDemoMissed(formData: FormData) {
   // A demo that was taught cannot retroactively have been missed. Without this a
   // mis-click on a completed demo silently zeroed the coach's teaching minutes
   // and sent the parent a "you missed your demo" message. A lead that went cold
-  // after the demo belongs in Closed, not here.
+  // after the demo belongs in Demo Closed, not here.
   if (demoWasDelivered(booking)) {
-    return demoCenterOutcome(tab, "This demo was already delivered - use Close Demo if the lead is no longer active.");
+    return demoCenterOutcome(tab, "This demo was already delivered - use Move to Demo Closed if the lead is no longer active.");
   }
   await Booking.findByIdAndUpdate(booking._id, {
     status: "pending",
@@ -480,75 +486,41 @@ async function closeDemo(formData: FormData) {
   // Cancel the demo classroom too, otherwise the coach keeps an upcoming class
   // on the schedule for a lead that is no longer being pursued.
   await cancelDemoClassrooms({ bookingIds: [bookingId], reason }).catch(() => undefined);
-  await recordActivity({ actor: actorId, type: "demo.booking.closed", label: "Closed demo lead", entityType: "Booking", entityId: bookingId, metadata: { reason, event: "DEMO_CLOSED" } });
+  await recordActivity({ actor: actorId, type: "demo.booking.closed", label: "Moved demo to Demo Closed", entityType: "Booking", entityId: bookingId, metadata: { reason, event: "DEMO_CLOSED" } });
   revalidatePath("/admin/demo-center");
   revalidatePath("/classrooms");
 }
 
-/** Statuses a lead can be parked on Demo Hold from: anything still in play. */
-const HOLDABLE_DEMO_STATUSES = ["REQUESTED", "COACH_ASSIGNED", "APPROVED", "CLASSROOM_CREATED", "RESCHEDULE_REQUESTED", "ASSESSMENT_PENDING", "COMPLETED", "STUDENT_NO_SHOW", "ABSENT"];
-
 /**
- * Park a lead on Demo Hold - the parent wants to wait, not walk away. The
- * classroom goes, as it does on close, so the coach is not left holding a slot;
- * the booking itself stays open and the schema hook moves Kraya to "Demo Hold".
+ * Take a lead back out of Demo Closed - the parent came back after all. The old
+ * slot went with its classroom, so it returns to Requested flagged for a new
+ * time: the same state a CRM revival lands in.
  */
-async function holdDemo(formData: FormData) {
-  "use server";
-  const session = await requireDemoManager("edit", formData);
-  await dbConnect();
-  const actorId = String((session.user as any).id || "");
-  const bookingId = String(formData.get("booking") || "");
-  const tab = String(formData.get("tab") || "requested");
-  const reason = String(formData.get("holdReason") || "").trim() || "Parent asked to wait";
-  const booking: any = await Booking.findById(bookingId);
-  if (!booking) return demoCenterOutcome(tab, "That demo request no longer exists.");
-  if (!HOLDABLE_DEMO_STATUSES.includes(String(booking.demoStatus || ""))) {
-    return demoCenterOutcome(tab, "Only an open demo can be moved to Demo Hold.");
-  }
-  booking.status = "pending";
-  booking.approvalStatus = "pending_admin";
-  booking.demoStatus = "ON_HOLD";
-  booking.heldAt = new Date();
-  booking.heldBy = actorId;
-  booking.holdReason = reason;
-  booking.needsNewTime = false;
-  await booking.save();
-  await cancelDemoClassrooms({ bookingIds: [bookingId], reason: `Demo on hold: ${reason}` }).catch(() => undefined);
-  await recordActivity({ actor: actorId, targetUser: String(booking.student || ""), type: "demo.booking.held", label: "Moved demo to Demo Hold", entityType: "Booking", entityId: bookingId, metadata: { reason, event: "DEMO_HOLD" } });
-  revalidatePath("/admin/demo-center");
-  revalidatePath("/classrooms");
-  demoCenterOutcome(tab, "", "Moved to Demo Hold. The CRM stage follows - find it on the Demo Hold tab.");
-}
-
-/**
- * Take a lead off Demo Hold. The old slot went with its classroom, so it returns
- * to Requested flagged for a new time - the same state a CRM revival lands in.
- */
-async function resumeDemo(formData: FormData) {
+async function reopenDemo(formData: FormData) {
   "use server";
   const session = await requireDemoManager("edit", formData);
   await dbConnect();
   const actorId = String((session.user as any).id || "");
   const bookingId = String(formData.get("booking") || "");
   const booking: any = await Booking.findById(bookingId);
-  if (!booking || booking.demoStatus !== "ON_HOLD") return demoCenterOutcome("hold", "That demo is no longer on hold.");
-  const heldFor = String(booking.holdReason || "");
+  if (!booking || booking.archivedAt || !isDemoClosed(booking)) return demoCenterOutcome("closed", "That demo is no longer in Demo Closed.");
+  const closedFor = String(booking.cancellationReason || booking.holdReason || "");
   booking.status = "pending";
   booking.approvalStatus = "pending_admin";
   booking.demoStatus = "REQUESTED";
   booking.feedbackStatus = "not_required";
   booking.needsNewTime = true;
   booking.reopenedAt = new Date();
-  booking.reopenedFromStage = "Demo Hold";
-  booking.previousCloseReason = heldFor ? `On hold: ${heldFor}` : "On hold";
+  booking.reopenedFromStage = "Demo Closed";
+  booking.previousCloseReason = closedFor || "No reason recorded";
+  booking.cancellationReason = undefined;
   booking.heldAt = undefined;
   booking.heldBy = undefined;
   booking.holdReason = undefined;
   await booking.save();
-  await recordActivity({ actor: actorId, targetUser: String(booking.student || ""), type: "demo.booking.resumed", label: "Took demo off Demo Hold", entityType: "Booking", entityId: bookingId, metadata: { holdReason: heldFor, event: "DEMO_RESUMED" } });
+  await recordActivity({ actor: actorId, targetUser: String(booking.student || ""), type: "demo.booking.reopened", label: "Reopened demo from Demo Closed", entityType: "Booking", entityId: bookingId, metadata: { previousCloseReason: closedFor, event: "DEMO_REOPENED" } });
   revalidatePath("/admin/demo-center");
-  demoCenterOutcome("requested", "", "Taken off hold - the demo is back in Requested and needs a new time.");
+  demoCenterOutcome("requested", "", "Reopened - the demo is back in Requested and needs a new time.");
 }
 
 /**
@@ -1200,8 +1172,9 @@ function DemoCard({
     new Date(booking.endAt || booking.startAt || 0).getTime() < Date.now();
   // The way back out of No Shows/Missed when the marking was the mistake.
   const demoWrittenOff = demoWasWrittenOff(booking);
-  const onHold = booking.demoStatus === "ON_HOLD";
-  const canHold = HOLDABLE_DEMO_STATUSES.includes(String(booking.demoStatus || "")) && booking.status !== "cancelled";
+  const demoClosed = isDemoClosed(booking);
+  // Bookings parked on the retired Demo Hold status kept their reason there.
+  const closedReason = booking.cancellationReason || (booking.demoStatus === "ON_HOLD" ? booking.holdReason : "");
   const cardId = booking._id.toString();
   const assignModalId = `assign-demo-${cardId}`;
   // Every demo card carries the same four scheduling fields, so a browser that
@@ -1268,9 +1241,7 @@ function DemoCard({
               : <span className="text-rose-700">Not a Google Meet room link ({booking.meetingUrl}) - edit the demo to fix it</span>}
           />
         ) : null}
-        {booking.cancellationReason ? <Field label="Closed reason" value={booking.cancellationReason} className="lg:col-span-2" /> : null}
-        {onHold ? <Field label="On hold since" value={booking.heldAt ? formatAcademyDateTime(booking.heldAt) : ""} /> : null}
-        {onHold ? <Field label="Hold reason" value={booking.holdReason} className="lg:col-span-2" /> : null}
+        {closedReason ? <Field label="Demo Closed reason" value={closedReason} className="lg:col-span-2" /> : null}
       </dl>
 
       {awaitingNewTime ? (
@@ -1282,7 +1253,7 @@ function DemoCard({
             <Field label="Previous time" value={formatAcademyDateTime(booking.startAt)} />
             <Field label="Previous coach" value={booking.assignedCoach?.name || booking.instructor?.name} />
             <Field label="Reopened" value={booking.reopenedAt ? formatAcademyDateTime(booking.reopenedAt) : ""} />
-            <Field label={booking.reopenedFromStage === "Demo Hold" ? "Revived from" : "Revived from CRM"} value={booking.reopenedFromStage} />
+            <Field label={["Demo Closed", "Demo Hold"].includes(booking.reopenedFromStage) ? "Revived from" : "Revived from CRM"} value={booking.reopenedFromStage} />
             {booking.previousCloseReason ? <Field label="Was closed because" value={booking.previousCloseReason} className="lg:col-span-2" /> : null}
           </dl>
         </div>
@@ -1369,42 +1340,30 @@ function DemoCard({
             </button>
           </form>
         ) : null}
-        {canHold ? (
-          <form action={holdDemo} className="flex flex-wrap gap-2">
-            <input type="hidden" name="booking" value={booking._id.toString()} />
-            <input type="hidden" name="tab" value={activeTab} />
-            <select name="holdReason" defaultValue="Parent asked to wait" className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm">
-              <option>Parent asked to wait</option>
-              <option>Exams / school schedule</option>
-              <option>Travelling</option>
-              <option>Student unwell</option>
-              <option>Fees / budget discussion</option>
-              <option>Other</option>
-            </select>
-            <button className="btn-outline border-sky-200 bg-white text-sky-700"><PauseCircle size={15} /> Move to Demo Hold</button>
-          </form>
-        ) : null}
-        {onHold ? (
-          <form action={resumeDemo}>
+        {demoClosed ? (
+          <form action={reopenDemo}>
             <input type="hidden" name="booking" value={booking._id.toString()} />
             <button className="btn-outline border-emerald-200 bg-white text-emerald-700" title="Back to Requested, flagged for a new time">
-              <PlayCircle size={15} /> Take Off Hold
+              <PlayCircle size={15} /> Reopen Demo
             </button>
           </form>
-        ) : null}
-        <form action={closeDemo} className="flex flex-wrap gap-2">
-          <input type="hidden" name="booking" value={booking._id.toString()} />
-          <select name="reason" defaultValue="Not interested" className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm">
-            <option>Student requested cancellation</option>
-            <option>Unable to contact</option>
-            <option>Not interested</option>
-            <option>Already joined another academy</option>
-            <option>Duplicate lead</option>
-            <option>Incorrect details</option>
-            <option>Other</option>
-          </select>
-          <button className="btn-outline border-rose-200 bg-white text-rose-700"><XCircle size={15} /> Close Demo</button>
-        </form>
+        ) : (
+          <form action={closeDemo} className="flex flex-wrap gap-2">
+            <input type="hidden" name="booking" value={booking._id.toString()} />
+            <select name="reason" defaultValue="Not interested" className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm">
+              <option>Student requested cancellation</option>
+              <option>Unable to contact</option>
+              <option>Not interested</option>
+              <option>Parent asked to wait</option>
+              <option>Fees / budget concerns</option>
+              <option>Already joined another academy</option>
+              <option>Duplicate lead</option>
+              <option>Incorrect details</option>
+              <option>Other</option>
+            </select>
+            <button className="btn-outline border-rose-200 bg-white text-rose-700"><XCircle size={15} /> Move to Demo Closed</button>
+          </form>
+        )}
         {/* Archive, not destroy - the record stays in History for reporting and
             can be restored. Closing reflects in the CRM; deleting does not. */}
         <form action={archiveDemo}>
@@ -1637,7 +1596,7 @@ function HistoryCard({ booking, activities, canDelete, canDeleteAccount }: { boo
         <Field label="Coach" value={booking.assignedCoach?.name || booking.instructor?.name} />
         <Field label="Chess level" value={levelLabel(booking.level || student.studentLevel)} />
         <Field label="Submitted" value={booking.createdAt ? formatAcademyDateTime(booking.createdAt) : ""} />
-        {booking.cancellationReason ? <Field label="Closed reason" value={booking.cancellationReason} className="lg:col-span-2" /> : null}
+        {booking.cancellationReason ? <Field label="Demo Closed reason" value={booking.cancellationReason} className="lg:col-span-2" /> : null}
       </dl>
 
       <div className="mt-4 border-t border-slate-100 pt-4">

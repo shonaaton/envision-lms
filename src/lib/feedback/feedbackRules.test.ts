@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MIN_CLASSES_FOR_FEEDBACK, WITHDRAWABLE_STATUSES, cleanRatings, feedbackActionSchema, hasEnoughClasses, missingForSubmit, serializeFeedback } from "@/lib/feedback/feedbackRules";
+import { MIN_CLASSES_FOR_FEEDBACK, WITHDRAWABLE_STATUSES, cleanRatings, duplicateReportsToWithdraw, feedbackActionSchema, hasEnoughClasses, missingForSubmit, serializeFeedback } from "@/lib/feedback/feedbackRules";
 
 const COACH = "aaaaaaaaaaaaaaaaaaaaaaaa";
 const STUDENT = "bbbbbbbbbbbbbbbbbbbbbbbb";
@@ -85,5 +85,34 @@ describe("minimum attendance", () => {
   it("never withdraws a report the family already has", () => {
     expect(WITHDRAWABLE_STATUSES).not.toContain("sent");
     expect(WITHDRAWABLE_STATUSES).toContain("submitted");
+  });
+});
+
+describe("one report per student per month", () => {
+  const OLD = "old";
+  const NEW = "new";
+
+  it("withdraws the new group's copy when the family already has the old coach's report (live, 2026-10-05)", () => {
+    const withdraw = duplicateReportsToWithdraw([
+      { id: "akkula", status: "sent", coachId: OLD, taughtCoachId: OLD, createdAt: "2026-09-25" },
+      { id: "shreyash", status: "submitted", coachId: NEW, taughtCoachId: OLD, createdAt: "2026-10-03" },
+    ]);
+    expect(withdraw).toEqual(["shreyash"]);
+  });
+
+  it("keeps the copy with the coach who taught the month when neither is started", () => {
+    const withdraw = duplicateReportsToWithdraw([
+      { id: "shanthosh", status: "pending", coachId: NEW, taughtCoachId: OLD, createdAt: "2026-10-04" },
+      { id: "bhavya", status: "pending", coachId: OLD, taughtCoachId: OLD, createdAt: "2026-09-25" },
+    ]);
+    expect(withdraw).toEqual(["shanthosh"]);
+  });
+
+  it("never withdraws a report that was already sent, even as the extra copy", () => {
+    expect(duplicateReportsToWithdraw([
+      { id: "a", status: "sent", coachId: OLD, createdAt: "2026-09-25" },
+      { id: "b", status: "sent", coachId: NEW, createdAt: "2026-10-03" },
+    ])).toEqual([]);
+    expect(duplicateReportsToWithdraw([{ id: "only", status: "pending", coachId: OLD }])).toEqual([]);
   });
 });

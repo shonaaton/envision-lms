@@ -32,11 +32,7 @@ const OPEN_DEMO_STATUSES = [
   "STUDENT_NO_SHOW",
   "ABSENT",
   "RESCHEDULE_REQUESTED",
-  "ON_HOLD",
 ];
-
-/** Open demos that are still being worked, as opposed to parked on Demo Hold. */
-const LIVE_DEMO_STATUSES = OPEN_DEMO_STATUSES.filter((status) => status !== "ON_HOLD");
 
 async function resolveLead(user: any) {
   const keys = contactKeysForUser(user);
@@ -210,16 +206,16 @@ const DEMO_ACCESS_EXTENSION_DAYS = 14;
  * Closure was previously one-way: sales could kill a demo from the CRM but not
  * revive it, leaving the lead sitting in a demo stage with nothing on the portal
  * for anyone to action. This reopens it to REQUESTED so it returns to the Demo
- * Center queue. A live demo is never touched - only a closed or held one is
+ * Center queue. A live demo is never touched - only a Demo Closed one is
  * revived, so the portal still owns the outcome of demos that are actually
- * running. Moving a held lead back to any demo stage is how sales takes it off
- * Demo Hold from inside the CRM.
+ * running. `ON_HOLD` is the retired Demo Hold status; bookings parked on it
+ * before it was folded into Demo Closed are revived the same way.
  */
 export async function reopenDemoFromCrm(input: { userId: string; stageName: string; crmLeadId?: string }) {
   const active = await Booking.exists({
     student: input.userId,
     bookingType: "demo",
-    demoStatus: { $in: LIVE_DEMO_STATUSES },
+    demoStatus: { $in: OPEN_DEMO_STATUSES },
   });
   if (active) return { reopened: false, reason: "An active demo already exists." };
 
@@ -316,48 +312,6 @@ export async function reopenDemoFromCrm(input: { userId: string; stageName: stri
   });
 
   return { reopened: true, bookingId: idOf(booking._id) };
-}
-
-/**
- * CRM moved the lead to "Demo Hold". The running demo is parked the same way the
- * Demo Center's "Move to Demo Hold" does it: the classroom is cancelled so the
- * coach is not left holding a slot, and the booking waits on the On Hold tab.
- *
- * Only a live demo is held. The echo of the portal's own push finds the demo
- * already on hold and stops here; a closed lead is not revived into hold.
- */
-export async function holdDemoFromCrm(input: { userId: string; stageName: string; crmLeadId?: string }) {
-  const bookings: any[] = await Booking.find({
-    student: input.userId,
-    bookingType: "demo",
-    demoStatus: { $in: LIVE_DEMO_STATUSES },
-    archivedAt: { $exists: false },
-  })
-    .select("_id")
-    .lean();
-  if (!bookings.length) return { held: 0 };
-
-  const reason = `Put on hold from CRM (stage: ${input.stageName})`;
-  await Booking.updateMany(
-    { _id: { $in: bookings.map((booking) => booking._id) } },
-    { status: "pending", approvalStatus: "pending_admin", demoStatus: "ON_HOLD", heldAt: new Date(), holdReason: reason, $unset: { heldBy: "" } }
-  );
-  await cancelDemoClassrooms({ bookingIds: bookings.map((booking) => booking._id), reason }).catch(() => undefined);
-
-  await Promise.all(
-    bookings.map((booking) =>
-      recordActivity({
-        targetUser: input.userId,
-        type: "demo.booking.held",
-        label: "Moved demo to Demo Hold from CRM",
-        entityType: "Booking",
-        entityId: idOf(booking._id),
-        metadata: { reason, source: "crm", crmStage: input.stageName, crmLeadId: input.crmLeadId || "", event: "DEMO_HOLD" },
-      })
-    )
-  );
-
-  return { held: bookings.length };
 }
 
 /**

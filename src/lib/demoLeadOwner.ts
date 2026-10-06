@@ -44,7 +44,8 @@ const DEMO_ACCOUNT_WINDOW_MS = 14 * DAY_MS;
 
 /** Demos still ahead of the class - the only ones worth routing to an owner. */
 const ATTRIBUTABLE_DEMO_STATUSES = ["REQUESTED", "COACH_ASSIGNED", "APPROVED", "CLASSROOM_CREATED", "RESCHEDULE_REQUESTED"];
-const HIDDEN_DEMO_STATUSES = ["CLOSED", "CANCELLED"];
+// ON_HOLD is the retired Demo Hold status, folded into Demo Closed.
+const HIDDEN_DEMO_STATUSES = ["CLOSED", "CANCELLED", "ON_HOLD"];
 const STUDENT_FIELDS = "name email phone countryCode parentName createdAt demoExpiresAt";
 
 export type LeadOwnerEvent = "booked" | "rescheduled" | "confirmed";
@@ -459,7 +460,6 @@ const DEMO_STATUS_LABELS: Record<string, string> = {
   STUDENT_NO_SHOW: "Student no-show",
   ABSENT: "Absent",
   CONVERTED: "Converted",
-  ON_HOLD: "Demo hold",
 };
 
 export type DemoBoardScope = "mine" | "all";

@@ -39,6 +39,34 @@ export function hasEnoughClasses(lifetimeAttended: number | null | undefined) {
   return Number(lifetimeAttended || 0) >= MIN_CLASSES_FOR_FEEDBACK;
 }
 
+/** How far along a report is - the furthest-along copy is the one a duplicate gives way to. */
+const PROGRESS_RANK: Record<string, number> = { sent: 5, approved: 4, submitted: 3, changes_requested: 2, draft: 1, pending: 0, skipped: -1 };
+
+export type DuplicateCandidate = { id: string; status: string; coachId: string; taughtCoachId?: string; createdAt?: Date | string | null };
+
+/**
+ * A student gets one report per month. When there are several (a student moved
+ * to a new group, and the new group raised its own), keep the one furthest
+ * along - one already sent to the family always wins - then the one written by
+ * the coach who taught the month, then the oldest. Returns the ids to withdraw:
+ * never a sent or approved report, which the family has (or is getting).
+ */
+export function duplicateReportsToWithdraw(reports: DuplicateCandidate[]) {
+  if (reports.length < 2) return [];
+  const score = (row: DuplicateCandidate) => [
+    PROGRESS_RANK[row.status] ?? -1,
+    row.taughtCoachId && row.coachId === row.taughtCoachId ? 1 : 0,
+    -new Date(row.createdAt || 0).getTime(),
+  ];
+  const ranked = reports.slice().sort((a, b) => {
+    const x = score(a);
+    const y = score(b);
+    for (let i = 0; i < x.length; i += 1) if (x[i] !== y[i]) return y[i] - x[i];
+    return 0;
+  });
+  return ranked.slice(1).filter((row) => WITHDRAWABLE_STATUSES.includes(row.status)).map((row) => row.id);
+}
+
 export const COACH_EDITABLE_STATUSES = ["pending", "draft", "changes_requested"];
 export const REVIEWABLE_STATUSES = ["submitted"];
 /** What a student (and the family) may ever see. */

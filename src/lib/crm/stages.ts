@@ -11,7 +11,6 @@ export type DemoStage =
   | "DEMO_BOOKED"
   | "DEMO_NO_SHOW"
   | "DEMO_COMPLETED"
-  | "DEMO_HOLD"
   | "CURRENT_STUDENT"
   | "CLOSED_NO_RESPONSE"
   | "CLOSED_DELETED";
@@ -26,7 +25,6 @@ const DEFAULT_STAGE_LABELS: Record<DemoStage, string> = {
   DEMO_BOOKED: "Demo Booked/Upcoming Demo",
   DEMO_NO_SHOW: "Demo Class No Shows/Missed",
   DEMO_COMPLETED: "Demo Completed",
-  DEMO_HOLD: "Demo Hold",
   CURRENT_STUDENT: "Current Student",
   CLOSED_NO_RESPONSE: "No Response",
   CLOSED_DELETED: "Deleted",
@@ -37,7 +35,6 @@ const STAGE_ENV_KEYS: Record<DemoStage, string> = {
   DEMO_BOOKED: "CRM_STAGE_DEMO_BOOKED",
   DEMO_NO_SHOW: "CRM_STAGE_DEMO_NO_SHOW",
   DEMO_COMPLETED: "CRM_STAGE_DEMO_COMPLETED",
-  DEMO_HOLD: "CRM_STAGE_DEMO_HOLD",
   CURRENT_STUDENT: "CRM_STAGE_CURRENT_STUDENT",
   CLOSED_NO_RESPONSE: "CRM_STAGE_CLOSED_NO_RESPONSE",
   CLOSED_DELETED: "CRM_STAGE_CLOSED_DELETED",
@@ -115,12 +112,12 @@ export function demoStatusToStage(demoStatus?: string | null, cancellationReason
     case "ASSESSMENT_PENDING":
     case "COMPLETED":
       return "DEMO_COMPLETED";
-    case "ON_HOLD":
-      return "DEMO_HOLD";
     case "CONVERTED":
       return "CURRENT_STUDENT";
     case "CLOSED":
     case "CANCELLED":
+    // Demo Hold was retired into Demo Closed; bookings parked before then are closures too.
+    case "ON_HOLD":
       return closureStageForReason(cancellationReason);
     default:
       return null;
@@ -141,7 +138,7 @@ function envStageList(key: string) {
     .filter(Boolean);
 }
 
-export type InboundStageKind = "demo" | "hold" | "converted" | "closed" | "ignore";
+export type InboundStageKind = "demo" | "converted" | "closed" | "ignore";
 
 const CONVERTED_PATTERNS = ["current student", "converted", "enrolled", "active student", "paid student"];
 
@@ -178,8 +175,11 @@ const CLOSED_PATTERNS = [
  * CRM UI. Exact names can be pinned with CRM_DEMO_STAGES, CRM_CONVERTED_STAGES
  * and CRM_CLOSED_STAGES.
  *
- * "Demo Hold" contains "demo" but means the opposite of reviving one: the lead
- * is parked, so it is matched before the generic demo check.
+ * "Demo Closed" - and "Demo Hold", the stage it replaced - contain "demo" but
+ * mean the opposite of reviving one, so they are matched as closures before the
+ * generic demo check. They name the demo outright, so they close even when
+ * CRM_CLOSED_STAGES is pinned; CRM_HOLD_STAGES is still read as a closing list
+ * for deployments that pinned the old hold stage.
  */
 export function classifyCrmStage(stageName: string): InboundStageKind {
   const normalized = normalizeStageName(stageName);
@@ -188,9 +188,9 @@ export function classifyCrmStage(stageName: string): InboundStageKind {
   const pinnedConverted = envStageList("CRM_CONVERTED_STAGES");
   const pinnedDemo = envStageList("CRM_DEMO_STAGES");
   const pinnedClosed = envStageList("CRM_CLOSED_STAGES");
-  const pinnedHold = envStageList("CRM_HOLD_STAGES");
+  const pinnedDemoClosed = envStageList("CRM_HOLD_STAGES");
   if (pinnedConverted.includes(normalized)) return "converted";
-  if (pinnedHold.includes(normalized)) return "hold";
+  if (pinnedDemoClosed.includes(normalized)) return "closed";
   if (pinnedDemo.includes(normalized)) return "demo";
   if (pinnedClosed.includes(normalized)) return "closed";
   // A pinned closure list is authoritative: if it is set and this stage is not
@@ -198,7 +198,7 @@ export function classifyCrmStage(stageName: string): InboundStageKind {
   const hasPinnedClosed = pinnedClosed.length > 0;
 
   if (CONVERTED_PATTERNS.some((pattern) => normalized.includes(pattern))) return "converted";
-  if (normalized === normalizeStageName(crmStageLabel("DEMO_HOLD")) || /\bon hold\b|\bdemo hold\b/.test(normalized)) return "hold";
+  if (/\bon hold\b|\bdemo (hold|closed)\b/.test(normalized)) return "closed";
   if (normalized.includes("demo") || normalized.includes("trial")) return "demo";
   if (!hasPinnedClosed && CLOSED_PATTERNS.some((pattern) => normalized.includes(pattern))) return "closed";
   return "ignore";

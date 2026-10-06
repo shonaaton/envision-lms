@@ -63,7 +63,7 @@ function bump(record: Record<string, number>, key: string, amount: number) {
   record[key] = (record[key] || 0) + amount;
 }
 
-export type TeacherGap = { month: string; coachId: string; coachName: string; amount: number; unpriced: number };
+export type TeacherGap = { month: string; coachId: string; coachName: string; amount: number; unpriced: number; job?: string };
 
 /**
  * Coach pay the portal knows about, per month: staff invoices raised, and pay
@@ -146,7 +146,7 @@ async function portalTeacherCost(months: string[]) {
         staffInvoiced[row.month] = staffInvoiced[row.month] || {};
         bump(staffInvoiced[row.month], job, row.amount);
       }
-      gaps.push(row);
+      gaps.push({ ...row, job });
     }
   } catch (error) {
     // Coach Pay failing must not take the books down with it; the invoiced

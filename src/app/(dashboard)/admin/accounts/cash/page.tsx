@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Landmark, Wallet } from "lucide-react";
 
 import { AccountsNav, Forbidden } from "@/components/accounts/AccountsNav";
@@ -77,7 +78,7 @@ export default async function CashBookPage({ searchParams }: { searchParams?: Pr
         </button>
       </form>
 
-      <DataPanel className="mt-3" title="Month by month" subtitle="A negative balance means the holder paid academy costs from his own money" icon={Wallet}>
+      <DataPanel className="mt-3" title="Month by month" subtitle="Click a month for every cash item in it. A negative balance means the holder paid academy costs from his own money." icon={Wallet}>
         <div className="overflow-x-auto">
           <table className="min-w-full text-right text-sm tabular-nums">
             <thead className="text-xs uppercase tracking-[0.06em] text-slate-500">
@@ -85,7 +86,9 @@ export default async function CashBookPage({ searchParams }: { searchParams?: Pr
                 <th className="sticky left-0 border-b border-slate-200 bg-white px-3 py-2 text-left" />
                 {book.rows.map((row) => (
                   <th key={row.month} className="whitespace-nowrap border-b border-slate-200 px-3 py-2 font-bold">
-                    {shortMonth(row.month)}
+                    <Link href={`/admin/accounts/cash/${row.month}`} className="text-brand hover:underline" title="Every cash item this month">
+                      {shortMonth(row.month)}
+                    </Link>
                   </th>
                 ))}
               </tr>

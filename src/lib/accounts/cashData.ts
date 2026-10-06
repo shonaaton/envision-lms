@@ -44,10 +44,13 @@ async function cashMovements(until: Date): Promise<CashMovement[]> {
   const start = monthBounds(ACCOUNTS_START_MONTH).start;
   const [invoices, payments, entries]: any[][] = await Promise.all([
     Invoice.find({ status: "paid", "paymentTransactions.mode": "cash", paidAt: { $gte: start, $lte: until } })
-      .select("paymentTransactions")
+      .select("paymentTransactions invoiceNumber student")
+      .populate("student", "name")
       .lean(),
-    Payment.find({ status: "paid", purpose: { $ne: "invoice" }, method: "cash", paidAt: { $gte: start, $lte: until } }).select("amount paidAt").lean(),
-    AccountEntry.find({ voidedAt: null, account: "cash", date: { $gte: start, $lte: until } }).select("category kind amount flow date invoices").lean(),
+    Payment.find({ status: "paid", purpose: { $ne: "invoice" }, method: "cash", paidAt: { $gte: start, $lte: until } }).select("amount paidAt purpose").lean(),
+    AccountEntry.find({ voidedAt: null, account: "cash", date: { $gte: start, $lte: until } })
+      .select("category kind amount flow date invoices description counterparty studentName")
+      .lean(),
   ]);
   const coveredByEntry = new Set(entries.flatMap((entry) => (entry.invoices || []).map(idOf)));
   const moves: CashMovement[] = [];
@@ -57,26 +60,69 @@ async function cashMovements(until: Date): Promise<CashMovement[]> {
       if (transaction.mode !== "cash") continue;
       const paidAt = new Date(transaction.paidAt);
       if (paidAt < start || paidAt > until) continue;
-      moves.push({ month: academyMonthOf(paidAt), flow: "in", amount: Number(transaction.amount || 0), group: "fees" });
+      moves.push({
+        month: academyMonthOf(paidAt),
+        flow: "in",
+        amount: Number(transaction.amount || 0),
+        group: "fees",
+        date: paidAt,
+        label: `${invoice.student?.name || "Student"} - portal bill ${invoice.invoiceNumber || ""} paid in cash`,
+        category: "fees",
+        source: "portal",
+      });
     }
   }
-  for (const payment of payments) moves.push({ month: academyMonthOf(new Date(payment.paidAt)), flow: "in", amount: Number(payment.amount || 0), group: "fees" });
+  for (const payment of payments) {
+    const date = new Date(payment.paidAt);
+    moves.push({ month: academyMonthOf(date), flow: "in", amount: Number(payment.amount || 0), group: "fees", date, label: `Portal ${payment.purpose} payment in cash`, category: "fees", source: "portal" });
+  }
   for (const entry of entries) {
     const flow = entry.flow || defaultFlow(entry.category, Number(entry.amount) < 0);
     const group = flow === "in" ? (entry.category === "offline_fees" || entry.category === "portal_cash_fee" ? "fees" : "other_in") : entry.category;
-    moves.push({ month: academyMonthOf(new Date(entry.date)), flow, amount: Number(entry.amount || 0), group });
+    const date = new Date(entry.date);
+    const who = [entry.studentName, entry.counterparty].filter(Boolean).join(", ");
+    moves.push({
+      month: academyMonthOf(date),
+      flow,
+      amount: Number(entry.amount || 0),
+      group,
+      date,
+      label: [entry.description, who && !String(entry.description || "").includes(who) ? who : ""].filter(Boolean).join(" - ") || entry.category,
+      category: entry.category,
+      source: "ledger",
+    });
   }
   return moves;
 }
 
-export async function loadCashBook(months: string[], now = new Date()) {
+export async function loadCashBook(months: string[]) {
   const settings = await getAccountsSettings();
-  const until = monthBounds(months[months.length - 1]).end;
-  const moves = await cashMovements(until < now ? until : now);
+  // To the end of the last month shown, not "now": entries are dated at noon,
+  // so a cost entered at 2 am for today was left out until midday.
+  const moves = await cashMovements(monthBounds(months[months.length - 1]).end);
   // The balance has to start where the books start, even when a later year is shown.
   const allMonths = monthsBetween(ACCOUNTS_START_MONTH, months[months.length - 1]);
   const book = buildCashBook(settings.openingCash, moves, allMonths);
   return { ...book, rows: book.rows.filter((row) => months.includes(row.month)), holder: settings.cashHolder, openingCash: settings.openingCash };
+}
+
+/** One month of cash, item by item, with the balance after each. */
+export async function loadCashMonth(month: string) {
+  const settings = await getAccountsSettings();
+  const moves = await cashMovements(monthBounds(month).end);
+  const allMonths = monthsBetween(ACCOUNTS_START_MONTH, month);
+  const book = buildCashBook(settings.openingCash, moves, allMonths);
+  const row = book.rows.find((item) => item.month === month);
+  let balance = row?.opening ?? settings.openingCash;
+  const items = moves
+    .filter((move) => move.month === month)
+    .sort((a, b) => (a.date?.getTime() || 0) - (b.date?.getTime() || 0) || (a.flow === b.flow ? 0 : a.flow === "in" ? -1 : 1))
+    .map((move) => {
+      const amount = Math.abs(move.amount);
+      balance += move.flow === "in" ? amount : -amount;
+      return { ...move, amount, balance, date: move.date ? move.date.toISOString() : "" };
+    });
+  return { month, holder: settings.cashHolder, opening: row?.opening ?? settings.openingCash, closing: balance, row, items };
 }
 
 export async function loadReceivables(now = new Date()) {

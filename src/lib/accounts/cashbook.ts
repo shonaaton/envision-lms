@@ -15,6 +15,11 @@ export type CashMovement = {
   amount: number;
   /** "fees" (portal or offline student fees), "other_in", or a cost category key. */
   group: string;
+  /** For the month's detail list. */
+  date?: Date;
+  label?: string;
+  category?: string;
+  source?: "portal" | "ledger";
 };
 
 export type CashMonth = {

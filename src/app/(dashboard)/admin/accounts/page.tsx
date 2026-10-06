@@ -32,6 +32,8 @@ type Row = {
   note?: string;
   /** A section label: no figures on its row. */
   heading?: boolean;
+  /** Where on the month page this figure is broken down. */
+  anchor?: string;
 };
 
 function show(value: number | null, format: Row["format"] = "money") {
@@ -50,7 +52,9 @@ function MonthTable({ months, total, rows, totalLabel = "Total" }: { months: Mon
             <th className="sticky left-0 border-b border-slate-200 bg-white px-3 py-2 text-left font-bold" />
             {months.map((month) => (
               <th key={month.month} className="whitespace-nowrap border-b border-slate-200 px-3 py-2 font-bold">
-                {shortMonth(month.month)}
+                <Link href={`/admin/accounts/month/${month.month}`} className="text-brand hover:underline" title="Open this month in detail">
+                  {shortMonth(month.month)}
+                </Link>
               </th>
             ))}
             <th className="whitespace-nowrap border-b border-slate-200 bg-slate-50 px-3 py-2 font-black text-slate-700">{totalLabel}</th>
@@ -82,7 +86,15 @@ function MonthTable({ months, total, rows, totalLabel = "Total" }: { months: Mon
                       row.signed && value !== null && value > 0 && "text-emerald-700"
                     )}
                   >
-                    {row.heading ? "" : show(value, row.format)}
+                    {row.heading ? (
+                      ""
+                    ) : row.anchor && month.month !== "total" && value ? (
+                      <Link href={`/admin/accounts/month/${month.month}#${row.anchor}`} className="decoration-dotted underline-offset-2 hover:underline" title="See what makes up this figure">
+                        {show(value, row.format)}
+                      </Link>
+                    ) : (
+                      show(value, row.format)
+                    )}
                   </td>
                 );
               })}
@@ -115,27 +127,28 @@ export default async function AccountsPage({ searchParams }: { searchParams?: Pr
   const hasOther = total.revenue.otherPortal !== 0 || total.revenue.refunds !== 0 || total.revenue.otherIncome !== 0;
 
   const pnl: Row[] = [
-    { label: "GST invoices (net of GST)", value: (m) => m.revenue.gstPortalNet, indent: true },
-    { label: "Non-GST invoices (portal)", value: (m) => m.revenue.nonGstPortal, indent: true },
-    { label: "Offline fees (non-GST)", value: (m) => m.revenue.offline, indent: true },
+    { label: "GST invoices (net of GST)", value: (m) => m.revenue.gstPortalNet, indent: true, anchor: "revenue-gst" },
+    { label: "Non-GST invoices (portal)", value: (m) => m.revenue.nonGstPortal, indent: true, anchor: "revenue-nongst" },
+    { label: "Offline fees (non-GST)", value: (m) => m.revenue.offline, indent: true, anchor: "revenue-offline" },
     {
       label: "Bank fees not in the portal",
       value: (m) => m.revenue.bankNotInPortal,
       indent: true,
+      anchor: "revenue-bank",
       note: "Student fees that reached HDFC beyond the portal's paid bills (students never billed in the portal), less the GST paid beyond the portal's GST bills. A negative month gives back an earlier surplus when the portal's payment dates trail the bank.",
     },
     ...(hasOther
       ? ([
-          { label: "Other portal payments", value: (m) => m.revenue.otherPortal, indent: true, note: "Razorpay payments with no invoice: enrolments, bookings, tournaments" },
-          { label: "Refunds", value: (m) => (m.revenue.refunds ? -m.revenue.refunds : 0), indent: true },
-          { label: "Other income", value: (m) => m.revenue.otherIncome, indent: true },
+          { label: "Other portal payments", value: (m) => m.revenue.otherPortal, indent: true, anchor: "revenue-other", note: "Razorpay payments with no invoice: enrolments, bookings, tournaments" },
+          { label: "Refunds", value: (m) => (m.revenue.refunds ? -m.revenue.refunds : 0), indent: true, anchor: "revenue-other" },
+          { label: "Other income", value: (m) => m.revenue.otherIncome, indent: true, anchor: "revenue-other" },
         ] as Row[])
       : []),
     { label: "Revenue", value: (m) => m.revenue.total, strong: true },
-    { label: "Teacher pay (gross)", value: (m) => m.cost.teacher, indent: true, note: `From portal staff invoices from ${monthLabel(PORTAL_TEACHER_COST_FROM)}; entered by hand before` },
+    { label: "Teacher pay (gross)", value: (m) => m.cost.teacher, indent: true, anchor: "cost-teacher_pay", note: `From portal staff invoices from ${monthLabel(PORTAL_TEACHER_COST_FROM)}; entered by hand before` },
     { label: "Gross profit", value: (m) => m.grossProfit, strong: true, signed: true },
     { label: "Gross margin", value: (m) => m.grossMargin, format: "percent", indent: true },
-    ...usedCategories.map((category) => ({ label: category.label, value: (m: MonthAccounts) => m.cost.byCategory[category.key] || 0, indent: true })),
+    ...usedCategories.map((category) => ({ label: category.label, value: (m: MonthAccounts) => m.cost.byCategory[category.key] || 0, indent: true, anchor: `cost-${category.key}` })),
     { label: "Total cost", value: (m) => m.cost.total, strong: true },
     { label: "Net profit / loss", value: (m) => m.netProfit, strong: true, signed: true },
     { label: "Net margin", value: (m) => m.netMargin, format: "percent", indent: true },
@@ -328,7 +341,7 @@ export default async function AccountsPage({ searchParams }: { searchParams?: Pr
         </DataPanel>
       </div>
 
-      <DataPanel className="mt-3" title="Profit and loss" subtitle="Hover a row name for how it is counted" icon={Calculator}>
+      <DataPanel className="mt-3" title="Profit and loss" subtitle="Click any figure to see what makes it up, or a month to open it. Hover a row name for how it is counted." icon={Calculator}>
         <MonthTable months={months} total={total} rows={pnl} />
       </DataPanel>
 

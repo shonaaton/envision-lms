@@ -159,9 +159,9 @@ export async function closeDemoFromCrm(input: { userId: string; stageName: strin
   })
     .select("_id demoStatus")
     .lean();
-  if (!bookings.length) return { closed: 0 };
-
   const reason = `Closed from CRM (stage: ${input.stageName})`;
+  if (!bookings.length) return closeDemoAccountFromCrm(input, reason);
+
   await Booking.updateMany(
     { _id: { $in: bookings.map((booking) => booking._id) } },
     { status: "cancelled", approvalStatus: "rejected", demoStatus: "CLOSED", cancellationReason: reason }
@@ -196,6 +196,27 @@ export async function closeDemoFromCrm(input: { userId: string; stageName: strin
   await cancelLeadTasks(input.userId, bookings.map((booking) => booking._id), reason);
 
   return { closed: bookings.length };
+}
+
+/**
+ * The lead never booked a demo: there is nothing to cancel, but the follow-up
+ * calls to get one booked are now dead work. The Demo Center reads the CRM stage
+ * itself to move the account from Signed Up (No Demo) to Demo Closed, so nothing
+ * is stored here and a move back to a demo stage undoes it on its own.
+ */
+async function closeDemoAccountFromCrm(input: { userId: string; stageName: string; crmLeadId?: string }, reason: string) {
+  const user: any = await User.findById(input.userId).select("accountStatus").lean();
+  if (user?.accountStatus !== "demo") return { closed: 0 };
+  await cancelLeadTasks(input.userId, [], reason);
+  await recordActivity({
+    targetUser: input.userId,
+    type: "demo.account.closed",
+    label: "Closed demo account from CRM (no demo booked)",
+    entityType: "User",
+    entityId: input.userId,
+    metadata: { reason, source: "crm", crmStage: input.stageName, crmLeadId: input.crmLeadId || "", event: "DEMO_ACCOUNT_CLOSED" },
+  });
+  return { closed: 0, accountClosed: true };
 }
 
 const DEMO_ACCESS_EXTENSION_DAYS = 14;

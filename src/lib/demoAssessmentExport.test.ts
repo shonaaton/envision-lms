@@ -227,3 +227,14 @@ describe("demoLeadReportSheets", () => {
     expect(buildSpreadsheet("xlsx", sheets).subarray(0, 2).toString()).toBe("PK");
   });
 });
+
+describe("demoLeadStage with a CRM stage", () => {
+  it("names a demo account Kraya closed, matching its place under Demo Closed", () => {
+    const account = { _id: "s", accountStatus: "demo" };
+    expect(demoLeadStage({}, account, Date.now(), "Dead")).toBe("Demo account - closed in CRM");
+    expect(demoLeadStage({}, account, Date.now(), "No Response")).toBe("Demo account - closed in CRM");
+    expect(demoLeadStage({}, account, Date.now(), "Fresh Lead")).toBe("Demo account - no demo booked");
+    // A booked demo's stage is the Demo Center's own, whatever the CRM says.
+    expect(demoLeadStage({ _id: "b", demoStatus: "REQUESTED" }, account, Date.now(), "Dead")).toBe("Requested");
+  });
+});

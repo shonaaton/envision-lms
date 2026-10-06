@@ -80,6 +80,8 @@ describe("API mapping", () => {
     expect(namedRoleApiFeature("/api/fees/invoices/123/pdf")).toBe("invoices");
     expect(namedRoleApiFeature("/api/admin/activity-tracker/export")).toBe("activityTracker");
     expect(namedRoleApiFeature("/api/admin/reports")).toBe("reportsCenter");
+    expect(namedRoleApiFeature("/api/admin/demo-assessments/export")).toBe("demoCenter");
+    expect(namedRoleApiPermissions("/api/admin/demo-assessments/export", "GET")).toEqual(["export"]);
     expect(namedRoleApiFeature("/api/admin/unregistered-tool")).toBeUndefined();
     expect(namedRoleApiFeature("/api/sales/directory-escape")).toBeUndefined();
   });

@@ -9,6 +9,7 @@ import { dbConnect } from "@/lib/db";
 import { academyDateTimeLocalInput, formatAcademyDateTime, parseAcademyDateTimeLocal } from "@/lib/academyTime";
 import { notifyDemoConverted, notifyDemoMissed } from "@/lib/demoWorkflow";
 import { canExportDemoAssessments } from "@/lib/demoAssessmentExport";
+import { crmStagesForStudents, type StudentCrmStage } from "@/lib/crm/leadStage";
 import { raiseDemoAssessmentTask, resolveConversionCallTasks } from "@/lib/tasks/taskTriggers";
 import { pendingDuplicateReviews, reviewDuplicateFlag } from "@/lib/duplicateAccounts";
 import { duplicateReasonSummary } from "@/lib/identityMatch";
@@ -830,10 +831,15 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
   // so without this it vanished from the Demo Center altogether.
   const convertedBookingStudents = new Set(studentsWithConvertedBooking.map((id: any) => String(id)));
   const convertedWithoutBooking = convertedStudents.filter((student: any) => !convertedBookingStudents.has(String(student._id)));
-  // Signed-up demo accounts with no open demo request - the Signed Up (No Demo) tab.
-  const accountsWithoutRequest = demoStudents.filter(
+  // Signed-up demo accounts with no open demo request. Those Kraya has written
+  // off (Dead, No Response, Lost...) leave the Signed Up (No Demo) tab for Demo
+  // Closed; moving the lead back to a demo stage in Kraya brings it back.
+  const unrequestedAccounts = demoStudents.filter(
     (student: any) => !bookings.some((booking: any) => String(booking.student?._id || booking.student) === String(student._id) && !booking.archivedAt && ["pending", "confirmed"].includes(String(booking.status || "")))
   );
+  const accountCrmStages = await crmStagesForStudents(unrequestedAccounts).catch(() => new Map<string, StudentCrmStage>());
+  const accountsWithoutRequest = unrequestedAccounts.filter((student: any) => !accountCrmStages.get(String(student._id))?.closed);
+  const crmClosedAccounts = unrequestedAccounts.filter((student: any) => accountCrmStages.get(String(student._id))?.closed);
   const visibleBookings = activeTab === "assessments" || activeTab === "history" || activeTab === "duplicates" || activeTab === "accounts"
     ? []
     : bookings.filter((booking: any) => classifyDemo(booking) === activeTab);
@@ -845,7 +851,7 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
         ? duplicateFlags.length
         : tab.id === "accounts"
           ? accountsWithoutRequest.length
-          : bookings.filter((booking: any) => classifyDemo(booking) === tab.id).length + (tab.id === "converted" ? convertedWithoutBooking.length : 0),
+          : bookings.filter((booking: any) => classifyDemo(booking) === tab.id).length + (tab.id === "converted" ? convertedWithoutBooking.length : 0) + (tab.id === "closed" ? crmClosedAccounts.length : 0),
   ]));
   const feedbackByBooking = new Map(cardFeedback.map((item: any) => [String(item.booking?._id || item.booking), item]));
   // A converted student with no booking left can still have an assessment - the
@@ -1093,7 +1099,23 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
                 />
               ))
             : null}
-          {!visibleBookings.length && !(activeTab === "converted" && convertedWithoutBooking.length) ? <Empty text={`No demos in ${tabs.find((tab) => tab.id === activeTab)?.label || "this tab"}.`} /> : null}
+          {activeTab === "closed" && crmClosedAccounts.length ? (
+            <>
+              <h2 className="mt-2 text-sm font-semibold text-slate-900">Demo accounts closed in CRM</h2>
+              <p className="-mt-2 text-[13px] text-slate-500">Signed up but never booked a demo, and Kraya has since moved the lead to a closed stage. Moving the lead back to a demo stage in Kraya returns it to Signed Up (No Demo).</p>
+              <div className="grid gap-3 md:grid-cols-2">
+                {crmClosedAccounts.map((student: any) => (
+                  <CrmClosedAccountCard
+                    key={student._id.toString()}
+                    student={student}
+                    crm={accountCrmStages.get(String(student._id))!}
+                    salesOwnerName={ownerLabel(leadOwners.get(String(student._id))?.name || "", leadOwners.get(String(student._id))?.source)}
+                  />
+                ))}
+              </div>
+            </>
+          ) : null}
+          {!visibleBookings.length && !(activeTab === "converted" && convertedWithoutBooking.length) && !(activeTab === "closed" && crmClosedAccounts.length) ? <Empty text={`No demos in ${tabs.find((tab) => tab.id === activeTab)?.label || "this tab"}.`} /> : null}
         </section>
       ) : (
         <section className="grid gap-3">
@@ -1136,6 +1158,29 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
         </section>
       )}
 
+    </div>
+  );
+}
+
+/** A demo account with no booking whose lead Kraya has closed. Read-only: Kraya owns the stage. */
+function CrmClosedAccountCard({ student, crm, salesOwnerName }: { student: any; crm: StudentCrmStage; salesOwnerName: string }) {
+  return (
+    <div className="rounded-lg border border-slate-200/80 bg-white p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="text-[15px] font-semibold tracking-tight text-slate-900">{student.name}</div>
+        <Tag tone="slate">Closed in CRM: {crm.stage}</Tag>
+      </div>
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[13px] text-slate-500">
+        {student.parentName ? <><span>Parent: {student.parentName}</span><Dot /></> : null}
+        <a href={`mailto:${student.email}`} className="hover:text-brand">{student.email}</a>
+        <Dot />
+        <span>{contactNumber(student)}</span>
+      </div>
+      <dl className="mt-3 grid gap-x-5 gap-y-3 sm:grid-cols-3">
+        <Field label="Signed up" value={student.createdAt ? formatAcademyDateTime(student.createdAt) : ""} />
+        <Field label="Closed in CRM" value={crm.stageChangedAt ? formatAcademyDateTime(crm.stageChangedAt) : ""} />
+        <Field label="Salesperson" value={salesOwnerName} />
+      </dl>
     </div>
   );
 }

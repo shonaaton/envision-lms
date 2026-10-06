@@ -12,6 +12,7 @@ import {
   TACTICAL_STRENGTH,
   scaleLabel,
 } from "@/lib/demoAssessmentScales";
+import { classifyCrmStage } from "@/lib/crm/stages";
 import { isConfirmedDemo } from "@/lib/demoClassroom";
 import { demoSubAdminEmails } from "@/lib/demoNotificationRecipients";
 import { canAccessFeature } from "@/lib/featureAccess";
@@ -96,7 +97,7 @@ const DEMO_STATUS_LABELS: Record<string, string> = {
  * keep the two in step. A lead with no demo booking (an account created or
  * converted straight from the CRM) is named for what its account shows.
  */
-export function demoLeadStage(booking: any, student: any, now = Date.now()) {
+export function demoLeadStage(booking: any, student: any, now = Date.now(), crmStage = "") {
   if (booking?._id) {
     const status = String(booking.demoStatus || "");
     if (booking.archivedAt) return "History (archived)";
@@ -113,6 +114,8 @@ export function demoLeadStage(booking: any, student: any, now = Date.now()) {
   }
   if (!student?._id) return "Demo deleted";
   if (student.conversionSetup?.convertedAt || student.accountStatus !== "demo") return "Converted (no demo booking)";
+  // The Demo Center lists these under Demo Closed rather than Signed Up (No Demo).
+  if (crmStage && classifyCrmStage(crmStage) === "closed") return "Demo account - closed in CRM";
   return "Demo account - no demo booked";
 }
 
@@ -203,8 +206,8 @@ const NOT_ASSESSED: any = {};
 // Excel refuses a cell longer than this.
 const MAX_CELL = 32000;
 
-// Conversions are recorded against the student, not the booking.
-const CONVERSION_TYPES = ["demo.student.converted", "demo.converted.crm"];
+// Conversions and CRM closures of unbooked accounts are recorded against the student, not a booking.
+const CONVERSION_TYPES = ["demo.student.converted", "demo.converted.crm", "demo.account.closed"];
 
 type JourneyEvent = { at: Date; step: string; by: string; where: string; details: string };
 
@@ -312,7 +315,7 @@ async function loadDemoLeads() {
       at: activity.occurredAt,
       step: String(activity.label || activity.type || ""),
       by: activity.actor?.name || "",
-      where: String(activity.type || "").startsWith("crm.") || activity.type === "demo.converted.crm" ? "CRM sync" : "Portal",
+      where: String(activity.type || "").startsWith("crm.") || activity.type === "demo.converted.crm" || activity.metadata?.source === "crm" ? "CRM sync" : "Portal",
       details: activityDetails(activity),
     };
     if (activity.entityType === "Booking") {
@@ -394,8 +397,8 @@ export async function demoLeadReportSheets(now = Date.now()): Promise<Sheet[]> {
   const journeyListed = new Set<string>();
 
   for (const { booking, item, student } of leads) {
-    const stage = demoLeadStage(booking, student, now);
     const crm = crmByStudent.get(idOf(student));
+    const stage = demoLeadStage(booking, student, now, crm?.stage || "");
     const key = leadKey({ booking, student });
     const events = eventsByLead.get(key) || [];
     const lastEvent = events[events.length - 1];

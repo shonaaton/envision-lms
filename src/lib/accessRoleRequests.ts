@@ -9,6 +9,9 @@ export function namedRoleApiFeature(path: string) {
     ["/api/admin/activity-tracker", "activityTracker"], ["/api/admin/reports", "reportsCenter"],
     ["/api/admin/attendance-diagnostics", "attendance"],
     ["/api/coach-pay", "coachPay"],
+    // The Demo Center's leads Excel. Unmapped, auth() dropped the session for any
+    // named role, so Marketing saw the button but got a 401 saved as export.json.
+    ["/api/admin/demo-assessments", "demoCenter"],
   ];
   return mappings.find(([prefix]) => path === prefix || path.startsWith(prefix + "/"))?.[1] || findFeatureByApiPath(path)?.key;
 }

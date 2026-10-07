@@ -14,5 +14,9 @@ export default middleware((request) => {
 
 export const config = {
   // Skip static assets, _next internals, and the NextAuth API itself.
-  matcher: ["/((?!_next/static|_next/image|favicon|logo|stockfish|api/auth).*)"],
+  // api/socket must stay out: Next runs middleware on WebSocket upgrades too,
+  // with the raw socket as the response, crashes on it, and writes an HTTP 500
+  // onto the connection socket.io just accepted. The socket authenticates every
+  // handshake itself (see pages/api/socket/io.ts).
+  matcher: ["/((?!_next/static|_next/image|favicon|logo|stockfish|api/auth|api/socket).*)"],
 };

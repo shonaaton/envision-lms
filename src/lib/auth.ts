@@ -6,7 +6,7 @@ import { headers } from "next/headers";
 import { authConfig } from "./auth.config";
 import { isInactiveRestrictedPath } from "./inactiveAccess";
 import { consumeRateLimit, getClientIp, releaseRateLimit } from "./requestSecurity";
-import { loginIdentifierFilter } from "./loginIdentity";
+import { loginIdentifierFilter, loginKey } from "./loginIdentity";
 import { requestCache as cache } from "./requestCache";
 import { getAccessUser, resolveAccessRole } from "./accessRoles";
 import { namedRoleApiFeature, namedRoleApiPermissions } from "./accessRoleRequests";
@@ -82,7 +82,7 @@ const nextAuth = NextAuth({
         const { User } = await import("@/models/User");
         await dbConnect();
         const loginValue = String(creds.email).trim();
-        const normalized = loginValue.toLowerCase();
+        const normalized = loginKey(loginValue);
         const requestHeaders = headers();
         const clientIp = getClientIp(requestHeaders);
         const ipLimit = consumeRateLimit(`login:ip:${clientIp}`, MAX_LOGIN_ATTEMPTS_PER_IP, LOGIN_IP_WINDOW_MS);

@@ -45,7 +45,14 @@ async function joinExternalTournament(formData: FormData) {
     tournament.externalParticipants.push({ username, displayName: displayName || username, email, entryCode: mode === "entry_code" ? password : "", joinedAt: new Date() });
   }
   const isPlaying = ["live", "playing"].includes(String(tournament.status || ""));
-  setTournamentPlayerState(tournament, playerKeyForExternal(username), tournament.type === "arena" && isPlaying ? "queued" : "joined");
+  // A guest coming back on another device mid-game keeps their board; only a
+  // player who is not on one is (re)queued.
+  const currentState = (tournament.participantStates || []).find(
+    (entry: any) => entry.playerKey === playerKeyForExternal(username)
+  );
+  if (!(alreadyJoined && currentState?.status === "playing")) {
+    setTournamentPlayerState(tournament, playerKeyForExternal(username), tournament.type === "arena" && isPlaying ? "queued" : "joined");
+  }
   await recalculateTournamentStandings(tournament);
   tournament.adminActions = [...(tournament.adminActions || []), {
     action: "external.registration",
@@ -67,7 +74,7 @@ async function joinExternalTournament(formData: FormData) {
     name: displayName || username,
     tournamentName: tournament.name,
     subject: `Registration confirmed: ${tournament.name}`,
-    message: `Hello ${displayName || username},\n\nYour registration for ${tournament.name} is confirmed.\n\nStart: ${`${formatAcademyDateTime(tournament.startAt)} IST`}\nTime control: ${tournament.timeControlMinutes}+${tournament.incrementSeconds}\n\nUse your invitation link to enter the tournament lobby.`,
+    message: `Hello ${displayName || username},\n\nYour registration for ${tournament.name} is confirmed.\n\nStart: ${`${formatAcademyDateTime(tournament.startAt)} IST`}\nTime control: ${tournament.timeControlMinutes}+${tournament.incrementSeconds}\nYour username: ${username}\n\nNo login or account is needed. Tap Enter Tournament Room below to play. On a different phone or computer, open the invitation link again and enter the same username.`,
     href: `/tournament-join/${token}/play`,
     tournamentId: tournament._id.toString(),
   });
@@ -142,6 +149,12 @@ export default async function ExternalTournamentJoinPage({
           <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             {errorMessage}
           </div>
+        ) : null}
+
+        {!joinedGuest ? (
+          <p className="mb-4 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+            No account or login needed. Already registered on another device? Enter the same username to get back to your board.
+          </p>
         ) : null}
 
         <form action={joinExternalTournament} className="space-y-4">

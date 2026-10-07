@@ -128,13 +128,36 @@ export const config = {
   },
 };
 
+const SOCKET_PATH = "/api/socket/io";
+
+/**
+ * Next registers its own "upgrade" listener on the HTTP server. For a path it
+ * recognises as a route - and /api/socket/io is one, this file - it calls
+ * socket.end() a few milliseconds after socket.io has accepted the WebSocket,
+ * so every tournament client dropped before its handshake finished. engine.io
+ * already shields its path from Next's "request" listener; this does the same
+ * for upgrades, leaving every other upgrade (dev HMR included) to Next.
+ */
+function shieldSocketPathFromNextUpgrades(server: any) {
+  const nextListeners = server.listeners("upgrade") as Array<(...args: any[]) => void>;
+  for (const listener of nextListeners) {
+    server.off("upgrade", listener);
+    server.on("upgrade", (req: any, rawSocket: any, head: any) => {
+      const pathname = String(req.url || "").split("?")[0];
+      if (pathname === SOCKET_PATH || pathname.startsWith(`${SOCKET_PATH}/`)) return;
+      listener.call(server, req, rawSocket, head);
+    });
+  }
+}
+
 export default function handler(_: NextApiRequest, res: NextApiResponse) {
   const socket = res.socket as SocketServerWithIO;
 
   if (!socket.server.io) {
     const allowedOrigins = socketCorsOrigins();
+    shieldSocketPathFromNextUpgrades(socket.server);
     const io = new SocketIOServer(socket.server as any, {
-      path: "/api/socket/io",
+      path: SOCKET_PATH,
       addTrailingSlash: false,
       cors: {
         origin: allowedOrigins.length ? allowedOrigins : undefined,

@@ -22,10 +22,23 @@ export function escapeRegex(value: string) {
  */
 export function loginIdentifierFilter(loginValue: string) {
   const trimmed = String(loginValue || "").trim();
-  const normalized = trimmed.toLowerCase();
-  const or: Array<Record<string, unknown>> = [{ email: normalized }];
+  const compact = loginKey(trimmed);
+  const or: Array<Record<string, unknown>> = [{ email: compact }];
   if (trimmed) {
     or.push({ username: new RegExp(`^${escapeRegex(trimmed)}$`, "i") });
+    if (compact !== trimmed.toLowerCase()) {
+      or.push({ username: new RegExp(`^${escapeRegex(compact)}$`, "i") });
+    }
   }
   return { $or: or };
+}
+
+/**
+ * The login value as it is stored: lowercased, with every space removed. No
+ * email or generated user ID contains whitespace, but phone keyboards add one
+ * after "@" or before ".com" (`name@ gmail.com`), and that was refused as an
+ * unknown account. Also the rate-limit key, so spacing variants share a budget.
+ */
+export function loginKey(loginValue: string) {
+  return String(loginValue || "").replace(/\s+/g, "").toLowerCase();
 }

@@ -112,6 +112,9 @@ export async function notifyExternalTournamentParticipant(input: {
     metadata: {
       tournament: input.tournamentId,
       href: input.href,
+      // Not the generic "Open in LMS": guests have no account, and that label
+      // sent them to the login page.
+      actionLabel: "Enter Tournament Room",
       participantName: input.name,
       channel: "external_tournament",
     },

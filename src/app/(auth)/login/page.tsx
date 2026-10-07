@@ -44,6 +44,7 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loginId, setLoginId] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
+  const [signInFailed, setSignInFailed] = useState(false);
   const [randomizedAchievements, setRandomizedAchievements] = useState(achievementSlides);
   const [achievementIndex, setAchievementIndex] = useState(0);
   const [displayedAchievementIndex, setDisplayedAchievementIndex] = useState(0);
@@ -105,6 +106,7 @@ export default function LoginPage() {
     });
     setLoading(false);
     if (res?.error) {
+      setSignInFailed(true);
       if (res.code === "too_many_attempts") {
         return toast.error("Too many sign-in attempts. Please wait 15 minutes, or use Forgot password to set a new one now.");
       }
@@ -359,6 +361,22 @@ export default function LoginPage() {
                   {loading ? "Signing in..." : "Sign in securely"} {!loading && <ArrowRight size={17} />}
                 </button>
               </form>
+
+              {/* Guest tournament players have no portal account, so signing in
+                  here can only fail - and repeated tries lock the identifier. */}
+              <div
+                role={signInFailed ? "status" : undefined}
+                className={`mt-4 flex gap-2 border p-3 text-sm leading-6 ${
+                  signInFailed ? "border-amber-300 bg-amber-50 text-amber-900" : "border-slate-200 bg-white text-slate-600"
+                }`}
+              >
+                <Trophy size={16} className="mt-1 shrink-0 text-brand" />
+                <p>
+                  <span className="font-semibold">Playing a tournament as a guest?</span> You don&apos;t need to sign in.
+                  Open your tournament invite link, or tap <span className="font-semibold">Enter Tournament Room</span> in
+                  your registration email. On a new phone or computer, enter the same username you joined with.
+                </p>
+              </div>
 
               <div className="mt-5 grid gap-2 border border-slate-200 bg-slate-50/80 p-3 text-sm text-slate-600">
                 {[

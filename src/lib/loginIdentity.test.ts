@@ -35,6 +35,17 @@ describe("loginIdentifierFilter", () => {
     expect(usernamePattern("rahul2@env")?.test("Rahul@ENV")).toBe(false);
   });
 
+  it("ignores spaces a phone keyboard put inside an email", () => {
+    for (const typed of ["82400manas@ gmail.com", "82400manas @gmail.com", " 82400Manas@gmail .com "]) {
+      expect(loginIdentifierFilter(typed).$or[0]).toEqual({ email: "82400manas@gmail.com" });
+    }
+  });
+
+  it("matches a user ID typed with a stray space", () => {
+    const clauses = loginIdentifierFilter("Rahul @ENV").$or.filter((entry: any) => entry.username) as any[];
+    expect(clauses.some((clause) => clause.username.test("Rahul@ENV"))).toBe(true);
+  });
+
   it("omits the username clause when nothing was typed", () => {
     expect(loginIdentifierFilter("   ").$or).toHaveLength(1);
   });

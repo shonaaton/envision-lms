@@ -1680,7 +1680,7 @@ export default function ClassroomManagementClient({
                     <textarea className="input min-h-20 py-2" value={actionDraft.reason || ""} onChange={(event) => setActionDraft((current: any) => ({ ...current, reason: event.target.value }))} placeholder="Optional reason for the timing change" />
                   </Field>
                   <div className="rounded-xl bg-sky-50 p-4 text-sm font-semibold text-sky-800">
-                    Future not-yet-started classes will follow these weekly timings. Completed and already-started classes stay unchanged.
+                    Upcoming classes from the Apply From date onward will follow these weekly timings. Classes before that date, and every past class (marked or not), stay where they are.
                   </div>
                 </div>
               )}

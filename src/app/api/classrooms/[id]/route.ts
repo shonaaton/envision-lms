@@ -27,6 +27,7 @@ import { notifyCourseCompleted, notifySessionCancelled } from "@/lib/classSessio
 import { writeRuntimeLog } from "@/lib/runtimeLogger";
 import { raiseSubstituteTask, resolveCoachMissingTask } from "@/lib/tasks/taskTriggers";
 import { syncLeaveCoverageForClassroom } from "@/lib/leave/leaveService";
+import { planPermanentTimingChange, upcomingMovableSessions } from "@/lib/seriesTimingChange";
 
 export const dynamic = "force-dynamic";
 
@@ -113,11 +114,6 @@ function academyDayOffset(from: string | Date, to: string | Date) {
   return Math.round((toUtc - fromUtc) / 86400000);
 }
 
-function isShiftableScheduledSession(session: any) {
-  const status = String(session?.status || "scheduled").toLowerCase();
-  return ["scheduled", "rescheduled"].includes(status) && !session?.actualStartedAt && !session?.actualEndedAt;
-}
-
 /**
  * A class that has not been taught, whatever the roster says happened on the
  * day. A missed or abandoned class still owes its topic, so it is pushable even
@@ -159,33 +155,6 @@ function normalizePermanentScheduleSlots(value: any) {
       slots: slots.sort((a: any, b: any) => a.startTime.localeCompare(b.startTime)),
     }))
     .sort((a: any, b: any) => a.day - b.day);
-}
-
-function buildPermanentScheduleOccurrences(daysOfWeek: any[], effectiveDate: string, count: number) {
-  const startUtc = dateKeyToUtc(effectiveDate);
-  if (startUtc === null || count <= 0) return [];
-  const slots = daysOfWeek
-    .flatMap((day: any) => (day.slots || []).map((slot: any) => ({ day: Number(day.day), ...slot })))
-    .sort((a: any, b: any) => (a.day - b.day) || String(a.startTime).localeCompare(String(b.startTime)));
-  const occurrences: Array<{ dateKey: string; startTime: string; durationMinutes: number }> = [];
-  let cursor = new Date(startUtc);
-  let guard = 0;
-
-  while (occurrences.length < count && guard < 3700) {
-    const dateKey = academyDateKey(cursor);
-    const weekDay = cursor.getUTCDay();
-    slots
-      .filter((slot: any) => slot.day === weekDay)
-      .forEach((slot: any) => {
-        if (occurrences.length < count) {
-          occurrences.push({ dateKey, startTime: slot.startTime, durationMinutes: slot.durationMinutes });
-        }
-      });
-    cursor.setUTCDate(cursor.getUTCDate() + 1);
-    guard += 1;
-  }
-
-  return occurrences;
 }
 
 async function canAccessRecord(doc: any, user: any, allowSubstitute = false, scheduledSessionId?: string, viewOnly = false) {
@@ -860,9 +829,8 @@ async function patchClassroom(req: Request, { params }: { params: { id: string }
     }
     const restartKey = academyDateKey(String(body.restartDate));
     if (dateKeyToUtc(restartKey) === null) return NextResponse.json({ error: "Select a valid class restart date" }, { status: 400 });
-    const movable = (existing.generatedSessions || [])
-      .filter(isShiftableScheduledSession)
-      .sort((a: any, b: any) => new Date(a.scheduledFor || 0).getTime() - new Date(b.scheduledFor || 0).getTime());
+    // Only classes still ahead of us move; an unmarked past class is history.
+    const movable = upcomingMovableSessions(existing.generatedSessions || [], new Date());
     if (!movable.length) return NextResponse.json({ error: "This series has no future scheduled classes to shift" }, { status: 409 });
 
     const firstOriginalDate = movable[0].scheduledFor;
@@ -990,23 +958,25 @@ async function patchClassroom(req: Request, { params }: { params: { id: string }
     if (nextDays.some((day: any) => new Set((day.slots || []).map((slot: any) => slot.startTime)).size !== (day.slots || []).length)) {
       return NextResponse.json({ error: "Remove duplicate time slots from the same day" }, { status: 400 });
     }
-    const movable = (existing.generatedSessions || [])
-      .filter(isShiftableScheduledSession)
-      .sort((a: any, b: any) => new Date(a.scheduledFor || 0).getTime() - new Date(b.scheduledFor || 0).getTime());
-    if (!movable.length) return NextResponse.json({ error: "This series has no future scheduled classes available for a permanent timing change" }, { status: 409 });
+    const now = new Date();
+    const upcoming = upcomingMovableSessions(existing.generatedSessions || [], now);
+    if (!upcoming.length) return NextResponse.json({ error: "This series has no future scheduled classes available for a permanent timing change" }, { status: 409 });
     const effectiveKey = String(body.effectiveDate || "").trim()
       ? academyDateKey(String(body.effectiveDate))
-      : academyDateKey(movable[0].scheduledFor);
+      : academyDateKey(upcoming[0].scheduledFor);
     if (dateKeyToUtc(effectiveKey) === null) return NextResponse.json({ error: "Select a valid effective date" }, { status: 400 });
-    const occurrences = buildPermanentScheduleOccurrences(nextDays, effectiveKey, movable.length);
+    if (effectiveKey < academyDateKey(now)) return NextResponse.json({ error: "The new timing cannot apply from a date in the past" }, { status: 400 });
+    // Classes before the "apply from" date keep their timing, and past classes
+    // - marked or not - are never moved.
+    const { moving: movable, occurrences } = planPermanentTimingChange({ sessions: existing.generatedSessions || [], daysOfWeek: nextDays, effectiveKey, now });
+    if (!movable.length) return NextResponse.json({ error: "No upcoming classes fall on or after the selected date" }, { status: 409 });
     if (occurrences.length !== movable.length) {
       return NextResponse.json({ error: "The updated weekly timing could not cover all future classes" }, { status: 400 });
     }
 
     movable.forEach((item: any, index: number) => {
       const occurrence = occurrences[index];
-      const scheduledFor = safeAcademyDateTime(occurrence.dateKey, occurrence.startTime);
-      if (!scheduledFor) return;
+      const scheduledFor = occurrence.scheduledFor;
       if (!item.originalDate) item.originalDate = item.scheduledFor;
       item.scheduledFor = scheduledFor;
       item.startTime = occurrence.startTime;

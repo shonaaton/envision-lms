@@ -3,7 +3,7 @@ import "server-only";
 import { auth } from "@/lib/auth";
 import { resolveAccessRole } from "@/lib/accessRoles";
 import { canAccessFeature } from "@/lib/featureAccess";
-import { canApplyForLeave, isMarketingRoleName, type LeaveViewer } from "./leaveRules";
+import { canApplyForLeave, canFileLeaveForOthers, isMarketingRoleName, type LeaveViewer } from "./leaveRules";
 import { isNamedLeaveApprover } from "./leaveRecipients";
 
 /**
@@ -23,6 +23,7 @@ export async function resolveLeaveViewer(): Promise<LeaveViewer | null> {
     name: String(user.name || ""),
     role: user.role,
     canApply: canCreate && canApplyForLeave(user.role, roleName),
+    canApplyForOthers: canCreate && canFileLeaveForOthers(user.role, roleName),
     isApprover: user.role === "admin" || isNamedLeaveApprover(user.email),
     canManageCredits: user.role === "admin",
   };

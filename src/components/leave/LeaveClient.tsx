@@ -10,7 +10,8 @@ import { Drawer, StatusChip, TypeChip, button, danger, dateTime, field, secondar
 
 type Credits = { limited: boolean; balance: number; held: number; available: number } | null;
 type Rules = { fullDayNoticeHours: number; halfDayNoticeHours: number; maxHalfDayClasses: number; maxDaysAhead: number };
-type Data = { mine: SerializedLeave[]; leaves: SerializedLeave[]; credits: Credits; rules: Rules; today: string };
+type StaffRow = { userId: string; name: string; role: string; limited: boolean; balance: number | null; held: number };
+type Data = { mine: SerializedLeave[]; leaves: SerializedLeave[]; credits: Credits; rules: Rules; today: string; staff?: StaffRow[] };
 type TeachingClass = { classroom: string; sessionId: string; title: string; start: string; end: string; studentCount: number };
 type Drawer = { mode: "apply" } | { mode: "reject" | "cancel"; leave: SerializedLeave } | null;
 
@@ -20,7 +21,7 @@ export default function LeaveClient({ viewer, initialId = "", initialTab = "" }:
   const [data, setData] = useState<Data>({ mine: [], leaves: [], credits: null, rules: DEFAULT_RULES, today: academyDateKey(new Date()) });
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
-  const [tab, setTab] = useState(initialTab || (viewer.isApprover ? "pending" : "mine"));
+  const [tab, setTab] = useState(initialTab || (viewer.isApprover || !viewer.canApply ? "pending" : "mine"));
   const [drawer, setDrawer] = useState<Drawer>(null);
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState("");
@@ -51,7 +52,8 @@ export default function LeaveClient({ viewer, initialId = "", initialTab = "" }:
   const history = data.leaves.filter((leave) => !pending.includes(leave) && !upcoming.includes(leave)).sort((a, b) => b.dateKey.localeCompare(a.dateKey));
   const tabs = useMemo(() => {
     const list: [string, string, number | null][] = [];
-    if (viewer.isApprover) list.push(["pending", "Pending", pending.length], ["upcoming", "Upcoming", upcoming.length], ["history", "History", null]);
+    // A Sub Admin who records leave for others sees the leave they recorded here.
+    if (viewer.isApprover || viewer.canApplyForOthers) list.push(["pending", "Pending", pending.length], ["upcoming", "Upcoming", upcoming.length], ["history", "History", null]);
     if (viewer.canApply) list.push(["mine", "My leave", null]);
     if (viewer.canManageCredits) list.push(["credits", "Credits", null]);
     return list;
@@ -90,10 +92,14 @@ export default function LeaveClient({ viewer, initialId = "", initialTab = "" }:
         <div>
           <div className="flex items-center gap-2 text-brand"><CalendarOff size={22} /><h1 className="text-2xl font-black">Leave</h1></div>
           <p className="mt-1 text-sm text-slate-500">
-            {viewer.isApprover ? "Approve staff leave, and make sure every class on an approved leave has a substitute." : "Apply for a full or half day off. You will be told as soon as it is reviewed."}
+            {viewer.isApprover
+              ? "Approve staff leave, record leave for coaches and staff, and make sure every class on an approved leave has a substitute."
+              : viewer.canApplyForOthers
+                ? "Apply for your own leave, or record leave for a coach or staff member. Approvers decide on both."
+                : "Apply for a full or half day off. You will be told as soon as it is reviewed."}
           </p>
         </div>
-        {viewer.canApply && <button className={button} onClick={() => { setFormError(""); setDrawer({ mode: "apply" }); }}><CalendarPlus size={16} />Apply for leave</button>}
+        {(viewer.canApply || viewer.canApplyForOthers) && <button className={button} onClick={() => { setFormError(""); setDrawer({ mode: "apply" }); }}><CalendarPlus size={16} />{viewer.canApply ? "Apply for leave" : "Record leave for staff"}</button>}
       </div>
 
       {error && <p role="alert" className="rounded-lg bg-rose-50 p-3 text-rose-700">{error} <button onClick={() => void load()} className="underline">Retry</button></p>}
@@ -128,7 +134,7 @@ export default function LeaveClient({ viewer, initialId = "", initialTab = "" }:
         <div className="rounded-xl border border-dashed border-brand/20 bg-white p-10 text-center">
           <CalendarOff className="mx-auto text-purple-300" size={30} />
           <p className="mt-3 font-bold">{tab === "pending" ? "No leave waiting for approval" : tab === "upcoming" ? "No upcoming approved leave" : "No leave here yet"}</p>
-          <p className="mt-1 text-sm text-slate-500">{tab === "mine" ? "Use “Apply for leave” to ask for a day off." : "Requests from coaches and sub-admins will appear here."}</p>
+          <p className="mt-1 text-sm text-slate-500">{tab === "mine" ? "Use “Apply for leave” to ask for a day off." : viewer.isApprover ? "Requests from coaches and sub-admins will appear here." : "Leave you record for coaches and staff will appear here."}</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -139,8 +145,9 @@ export default function LeaveClient({ viewer, initialId = "", initialTab = "" }:
         </div>
       )}
 
-      <Drawer open={drawer?.mode === "apply"} busy={busy} onClose={() => setDrawer(null)} title="Apply for leave" description="All dates and times are IST.">
-        {drawer?.mode === "apply" && <ApplyForm rules={data.rules} credits={credits} today={today} busy={busy} setBusy={setBusy} onDone={async () => { setDrawer(null); setTab("mine"); await load(); window.dispatchEvent(new Event("leave-updated")); }} />}
+      <Drawer open={drawer?.mode === "apply"} busy={busy} onClose={() => setDrawer(null)} title={viewer.canApply ? "Apply for leave" : "Record leave for staff"} description="All dates and times are IST.">
+        {drawer?.mode === "apply" && <ApplyForm viewer={viewer} staff={data.staff || []} rules={data.rules} credits={credits} today={today} busy={busy} setBusy={setBusy}
+          onDone={async (forOther) => { setDrawer(null); setTab(!forOther ? "mine" : viewer.isApprover ? "upcoming" : "pending"); await load(); window.dispatchEvent(new Event("leave-updated")); }} />}
       </Drawer>
 
       <Drawer open={drawer?.mode === "reject" || drawer?.mode === "cancel"} busy={busy} onClose={() => setDrawer(null)}
@@ -188,6 +195,7 @@ function LeaveCard({ leave, viewer, today, busy, highlighted, showApplicant, onA
           <p className="mt-1 text-xs text-slate-500">
             Applied {dateTime(leave.createdAt)} IST{leave.creditCharged > 0 ? ` · ${formatCredits(leave.creditCharged)} credit${leave.creditCharged === 1 ? "" : "s"} used` : ""}
           </p>
+          {leave.filedByName && <p className="mt-1 text-xs text-slate-500">Recorded by {leave.filedByName}{leave.filedBy === viewer.id ? " (you)" : ""} on {own ? "your" : "their"} behalf</p>}
           {leave.decidedByName && leave.status !== "requested" && leave.status !== "expired" && <p className="mt-1 text-xs text-slate-500">{leave.status === "rejected" ? "Rejected" : "Approved"} by {leave.decidedByName}{leave.decidedAt ? ` · ${dateTime(leave.decidedAt)} IST` : ""}</p>}
           {leave.rejectionReason && <p className="mt-2 text-sm text-rose-700">Reason: {leave.rejectionReason}</p>}
           {leave.status === "cancelled" && <p className="mt-2 text-sm text-slate-500">Cancelled {dateTime(leave.cancelledAt)} IST{leave.cancelReason ? `: ${leave.cancelReason}` : ""}</p>}
@@ -223,7 +231,17 @@ function LeaveCard({ leave, viewer, today, busy, highlighted, showApplicant, onA
   );
 }
 
-function ApplyForm({ rules, credits, today, busy, setBusy, onDone }: { rules: Rules; credits: Credits; today: string; busy: boolean; setBusy: (value: boolean) => void; onDone: () => Promise<void> }) {
+function ApplyForm({ viewer, staff, rules, credits: ownCredits, today, busy, setBusy, onDone }: {
+  viewer: LeaveViewer; staff: StaffRow[]; rules: Rules; credits: Credits; today: string; busy: boolean; setBusy: (value: boolean) => void; onDone: (forOther: boolean) => Promise<void>;
+}) {
+  // "" is the viewer themselves; anything else is the staff member the leave is recorded for.
+  const [applicantId, setApplicantId] = useState("");
+  const person = staff.find((row) => row.userId === applicantId) || null;
+  const forOther = Boolean(applicantId);
+  const credits: Credits = person
+    ? { limited: person.limited, balance: Number(person.balance || 0), held: person.held, available: Math.max(0, Number(person.balance || 0) - person.held) }
+    : ownCredits;
+  const who = person?.name || "They";
   const [type, setType] = useState<"full_day" | "half_day">("full_day");
   const [date, setDate] = useState("");
   const [classes, setClasses] = useState<TeachingClass[] | null>(null);
@@ -236,19 +254,20 @@ function ApplyForm({ rules, credits, today, busy, setBusy, onDone }: { rules: Ru
   useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 30_000); return () => window.clearInterval(timer); }, []);
   useEffect(() => {
     setChosen([]); setClasses(null); setClassesError("");
-    if (!date) return;
+    if (!date || (!viewer.canApply && !applicantId)) return;
     let alive = true;
-    fetch(`/api/leave/classes?date=${encodeURIComponent(date)}`, { cache: "no-store" })
+    fetch(`/api/leave/classes?date=${encodeURIComponent(date)}${applicantId ? `&user=${encodeURIComponent(applicantId)}` : ""}`, { cache: "no-store" })
       .then(async (response) => { const result = await response.json(); if (!response.ok) throw new Error(result.error); if (alive) setClasses(result.classes || []); })
-      .catch((e) => { if (alive) setClassesError(e instanceof Error ? e.message : "Could not load your classes."); });
+      .catch((e) => { if (alive) setClassesError(e instanceof Error ? e.message : "Could not load the classes."); });
     return () => { alive = false; };
-  }, [date]);
+  }, [date, applicantId, viewer.canApply]);
 
   const maxDate = academyDateKey(new Date(now + rules.maxDaysAhead * 86400_000));
   const selected = (classes || []).filter((item) => chosen.includes(item.sessionId));
   const cost = creditCost(type);
   const notice = (() => {
-    if (!date) return null;
+    // Notice rules are for asking ahead, not for leave recorded on someone's behalf.
+    if (!date || forOther) return null;
     if (type === "full_day") {
       const deadline = academyDateTime(date, "00:00").getTime() - rules.fullDayNoticeHours * 3600_000;
       return now > deadline ? `Full-day leave needs ${rules.fullDayNoticeHours} hours' notice before the day starts. For ${leaveDayLabel(date)} it had to be applied for by ${dateTime(new Date(deadline))} IST.` : null;
@@ -259,8 +278,10 @@ function ApplyForm({ rules, credits, today, busy, setBusy, onDone }: { rules: Ru
     return now > deadline ? `Half-day leave needs ${rules.halfDayNoticeHours} hours' notice before your first chosen class (by ${dateTime(new Date(deadline))} IST).` : null;
   })();
   const needsClasses = type === "half_day" && Boolean(classes?.length);
-  const creditProblem = credits?.limited && credits.available + 1e-9 < cost ? `You have ${formatCredits(credits.available)} credit(s) available and this leave needs ${formatCredits(cost)}.` : null;
-  const canSubmit = Boolean(date) && classes !== null && !notice && !creditProblem && reason.trim().length >= 5 && (!needsClasses || (selected.length >= 1 && selected.length <= rules.maxHalfDayClasses));
+  const creditProblem = credits?.limited && credits.available + 1e-9 < cost
+    ? `${forOther ? `${who} has` : "You have"} ${formatCredits(credits.available)} credit(s) available and this leave needs ${formatCredits(cost)}.${forOther && viewer.canManageCredits ? " Add credits on the Credits tab first." : ""}`
+    : null;
+  const canSubmit = (viewer.canApply || forOther) && Boolean(date) && classes !== null && !notice && !creditProblem && reason.trim().length >= 5 && (!needsClasses || (selected.length >= 1 && selected.length <= rules.maxHalfDayClasses));
 
   function toggle(sessionId: string) {
     setChosen((current) => current.includes(sessionId) ? current.filter((id) => id !== sessionId) : current.length >= rules.maxHalfDayClasses ? current : [...current, sessionId]);
@@ -270,9 +291,9 @@ function ApplyForm({ rules, credits, today, busy, setBusy, onDone }: { rules: Ru
     event.preventDefault();
     setBusy(true); setError("");
     try {
-      await sendJson("/api/leave", "POST", { type, date, sessionIds: type === "half_day" ? chosen : [], reason });
-      toast.success("Leave request sent for approval.");
-      await onDone();
+      await sendJson("/api/leave", "POST", { ...(forOther ? { applicantId } : {}), type, date, sessionIds: type === "half_day" ? chosen : [], reason });
+      toast.success(forOther && viewer.isApprover ? `Leave recorded and approved for ${who}.` : forOther ? `Leave request for ${who} sent for approval.` : "Leave request sent for approval.");
+      await onDone(forOther);
     } catch (e) {
       const message = e instanceof Error ? e.message : "Could not send the request.";
       setError(message); toast.error(message);
@@ -281,10 +302,19 @@ function ApplyForm({ rules, credits, today, busy, setBusy, onDone }: { rules: Ru
 
   return (
     <form className="space-y-4" onSubmit={submit}>
+      {viewer.canApplyForOthers && (
+        <label className="block text-sm font-semibold">Leave for
+          <select className={field} value={applicantId} required={!viewer.canApply} onChange={(e) => { setApplicantId(e.target.value); setChosen([]); }}>
+            {viewer.canApply ? <option value="">Myself</option> : <option value="" disabled>Choose a coach or staff member</option>}
+            {staff.map((row) => <option key={row.userId} value={row.userId}>{row.name} ({row.role === "instructor" ? "Coach" : "Sub-admin"})</option>)}
+          </select>
+        </label>
+      )}
+      {forOther && <p className="rounded-lg bg-purple-50 p-3 text-xs text-brand">Notice rules do not apply when you record leave for someone else. {viewer.isApprover ? `It is approved straight away, and ${who} is told by email and WhatsApp.` : `It goes to the approvers, and ${who} is told it was filed.`}</p>}
       <fieldset>
         <legend className="text-sm font-semibold">Leave type</legend>
         <div className="mt-2 grid grid-cols-2 gap-2">
-          {([["full_day", "Full day", `1 credit · ${rules.fullDayNoticeHours}h notice`], ["half_day", "Half day", `0.5 credit · up to ${rules.maxHalfDayClasses} classes`]] as const).map(([value, label, hint]) => (
+          {([["full_day", "Full day", forOther ? "1 credit" : `1 credit · ${rules.fullDayNoticeHours}h notice`], ["half_day", "Half day", `0.5 credit · up to ${rules.maxHalfDayClasses} classes`]] as const).map(([value, label, hint]) => (
             <label key={value} className={`cursor-pointer rounded-lg border p-3 text-sm ${type === value ? "border-brand bg-purple-50" : "border-slate-200"}`}>
               <input type="radio" name="type" value={value} checked={type === value} onChange={() => { setType(value); setChosen([]); }} className="sr-only" />
               <span className="block font-bold text-brand">{label}</span>
@@ -298,9 +328,9 @@ function ApplyForm({ rules, credits, today, busy, setBusy, onDone }: { rules: Ru
 
       {date && (
         <div className="rounded-lg border border-slate-200 p-3">
-          <p className="text-sm font-semibold">{type === "half_day" && classes?.length ? `Choose the class${rules.maxHalfDayClasses > 1 ? "es" : ""} you will miss (up to ${rules.maxHalfDayClasses})` : "Your classes that day"}</p>
-          {classesError ? <p className="mt-2 text-sm text-rose-700">{classesError}</p> : classes === null ? <p className="mt-2 text-sm text-slate-500">Loading your classes…</p> : !classes.length ? (
-            <p className="mt-2 text-sm text-slate-500">You have no classes on {leaveDayLabel(date)}.{type === "half_day" ? " No class needs to be chosen." : ""}</p>
+          <p className="text-sm font-semibold">{type === "half_day" && classes?.length ? `Choose the class${rules.maxHalfDayClasses > 1 ? "es" : ""} ${forOther ? `${who} will` : "you will"} miss (up to ${rules.maxHalfDayClasses})` : forOther ? `${who}'s classes that day` : "Your classes that day"}</p>
+          {!viewer.canApply && !forOther ? <p className="mt-2 text-sm text-slate-500">Choose who the leave is for.</p> : classesError ? <p className="mt-2 text-sm text-rose-700">{classesError}</p> : classes === null ? <p className="mt-2 text-sm text-slate-500">Loading classes…</p> : !classes.length ? (
+            <p className="mt-2 text-sm text-slate-500">{forOther ? `${who} has` : "You have"} no classes on {leaveDayLabel(date)}.{type === "half_day" ? " No class needs to be chosen." : ""}</p>
           ) : (
             <ul className="mt-2 space-y-1.5">
               {classes.map((item) => {
@@ -323,12 +353,15 @@ function ApplyForm({ rules, credits, today, busy, setBusy, onDone }: { rules: Ru
         </div>
       )}
 
-      <label className="block text-sm font-semibold">Reason<textarea className={field} required minLength={5} maxLength={1000} rows={3} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why you need the leave" /></label>
+      <label className="block text-sm font-semibold">Reason<textarea className={field} required minLength={5} maxLength={1000} rows={3} value={reason} onChange={(e) => setReason(e.target.value)} placeholder={forOther ? `Why ${who} needs the leave` : "Why you need the leave"} /></label>
 
       {(notice || creditProblem) && <p role="alert" className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">{notice || creditProblem}</p>}
       {error && <p role="alert" className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}
-      <p className="text-xs text-slate-500">{credits?.limited ? `Uses ${formatCredits(cost)} credit when approved.` : "No credit limit applies to you."} Your approvers are told by email and WhatsApp.</p>
-      <button className={button} type="submit" disabled={busy || !canSubmit}>{busy ? "Sending…" : "Send for approval"}</button>
+      <p className="text-xs text-slate-500">
+        {credits?.limited ? `Uses ${formatCredits(cost)} credit when approved.` : forOther ? `No credit limit applies to ${who}.` : "No credit limit applies to you."}
+        {forOther && viewer.isApprover ? "" : " Your approvers are told by email and WhatsApp."}
+      </p>
+      <button className={button} type="submit" disabled={busy || !canSubmit}>{busy ? "Sending…" : forOther && viewer.isApprover ? "Record approved leave" : "Send for approval"}</button>
     </form>
   );
 }

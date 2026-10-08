@@ -16,6 +16,7 @@ import {
   MARKETING_ACCESS_ROLE_NAME_KEY,
   MAX_HALF_DAY_CLASSES,
   MAX_LEAVE_DAYS_AHEAD,
+  OPEN_LEAVE_STATUSES,
   applyLeaveSchema,
   availableCredits,
   cancelBlockReason,
@@ -132,8 +133,12 @@ function creditLine(state: LeaveCreditState | null) {
 // ---------------------------------------------------------------------------
 
 export async function applyForLeave(viewer: LeaveViewer, raw: unknown, now = new Date()) {
-  if (!viewer.canApply) throw new LeaveError("You cannot apply for leave.", 403);
   const input = applyLeaveSchema.parse(raw);
+  const forOther = Boolean(input.applicantId) && input.applicantId !== viewer.id;
+  if (forOther ? !viewer.canApplyForOthers : !viewer.canApply) {
+    throw new LeaveError(forOther ? "You cannot record leave for other staff." : "You cannot apply for leave.", 403);
+  }
+  const applicantId = forOther ? String(input.applicantId) : viewer.id;
   const dateKey = input.date;
   if (dateKey < academyDateKey(now)) throw new LeaveError("Choose today or a later date.");
   if (dateKey > academyDateKey(new Date(now.getTime() + MAX_LEAVE_DAYS_AHEAD * DAY_MS))) {
@@ -141,35 +146,58 @@ export async function applyForLeave(viewer: LeaveViewer, raw: unknown, now = new
   }
   await dbConnect();
 
-  const classes = await teachingClassesOn(viewer.id, dateKey);
+  const applicant: any = forOther
+    ? (await eligibleStaff(applicantId))[0]
+    : await User.findById(viewer.id).select("name username role").lean();
+  if (!applicant) {
+    throw new LeaveError(forOther ? "Leave can be recorded for active coaches and sub-admins only (not marketing staff)." : "Your account was not found.", 404);
+  }
+  const applicantName = applicant.name || applicant.username || "Staff member";
+  const their = forOther ? "their" : "your";
+  if (await LeaveRequest.exists({ applicant: applicantId, dateKey, status: { $in: OPEN_LEAVE_STATUSES } })) {
+    throw new LeaveError(`${forOther ? `${applicantName} already has` : "You already have"} an open leave for that day. Cancel it first to apply again.`, 409);
+  }
+
+  const classes = await teachingClassesOn(applicantId, dateKey);
   let sessions: TeachingClass[] = [];
   if (input.type === "full_day") {
     sessions = classes;
   } else if (classes.length) {
     const chosen = Array.from(new Set(input.sessionIds));
-    if (!chosen.length) throw new LeaveError(`Choose the class${MAX_HALF_DAY_CLASSES > 1 ? "es" : ""} you will miss (at most ${MAX_HALF_DAY_CLASSES}).`);
+    if (!chosen.length) throw new LeaveError(`Choose the class${MAX_HALF_DAY_CLASSES > 1 ? "es" : ""} ${forOther ? `${applicantName} will` : "you will"} miss (at most ${MAX_HALF_DAY_CLASSES}).`);
     if (chosen.length > MAX_HALF_DAY_CLASSES) throw new LeaveError(`A half day covers at most ${MAX_HALF_DAY_CLASSES} classes. Apply for a full day instead.`);
     const byId = new Map(classes.map((item) => [item.sessionId, item]));
     sessions = chosen.map((id) => byId.get(id)).filter(Boolean) as TeachingClass[];
-    if (sessions.length !== chosen.length) throw new LeaveError("One of the chosen classes is no longer on your schedule for that day. Refresh and choose again.");
+    if (sessions.length !== chosen.length) throw new LeaveError(`One of the chosen classes is no longer on ${their} schedule for that day. Refresh and choose again.`);
   } else if (input.sessionIds.length) {
-    throw new LeaveError("Those classes are no longer on your schedule for that day. Refresh and choose again.");
+    throw new LeaveError(`Those classes are no longer on ${their} schedule for that day. Refresh and choose again.`);
   }
 
-  const notice = noticeError({ type: input.type, dateKey, sessions }, now);
-  if (notice) throw new LeaveError(notice);
+  // Notice is for asking ahead. Someone recording a colleague's leave (a coach
+  // who phoned in sick this morning) is not asking, so it does not apply.
+  if (!forOther) {
+    const notice = noticeError({ type: input.type, dateKey, sessions }, now);
+    if (notice) throw new LeaveError(notice);
+  }
 
   const cost = creditCost(input.type);
-  const account: any = await LeaveCreditAccount.findOne({ user: viewer.id }).lean();
-  const creditError = creditCheckError(account ? { balance: Number(account.balance || 0) } : null, await pendingCosts(viewer.id), cost);
-  if (creditError) throw new LeaveError(creditError);
+  const account: any = await LeaveCreditAccount.findOne({ user: applicantId }).lean();
+  const pending = await pendingCosts(applicantId);
+  if (forOther) {
+    const available = account ? availableCredits(Number(account.balance || 0), pending).available : Infinity;
+    if (available + 1e-9 < cost) {
+      throw new LeaveError(`${applicantName} has ${formatCredits(available)} leave credit(s) available and this leave needs ${formatCredits(cost)}. Add credits on the Credits tab first.`);
+    }
+  } else {
+    const creditError = creditCheckError(account ? { balance: Number(account.balance || 0) } : null, pending, cost);
+    if (creditError) throw new LeaveError(creditError);
+  }
 
-  const applicant: any = await User.findById(viewer.id).select("name username role").lean();
-  if (!applicant) throw new LeaveError("Your account was not found.", 404);
   const leave: any = await LeaveRequest.create({
-    applicant: viewer.id,
-    applicantName: applicant.name || applicant.username || "Staff member",
+    applicant: applicantId,
+    applicantName,
     applicantRole: applicant.role === "instructor" ? "instructor" : "sub-admin",
+    ...(forOther ? { filedBy: viewer.id, filedByName: viewer.name || "Admin" } : {}),
     type: input.type,
     dateKey,
     startsAt: leaveStartsAt({ type: input.type, dateKey, sessions }),
@@ -177,7 +205,18 @@ export async function applyForLeave(viewer: LeaveViewer, raw: unknown, now = new
     reason: input.reason,
     creditCost: cost,
   });
-  await announceRequest(leave, await getCreditState(viewer.id)).catch((error) => console.error("[leave] request notices failed", error));
+
+  // An approver recording someone's leave has decided on it already.
+  if (forOther && viewer.isApprover) {
+    try {
+      return await approveLeave(idOf(leave), viewer, now);
+    } catch (error) {
+      // Approval never happened (e.g. the credits went meanwhile): leave no orphan request behind.
+      await LeaveRequest.deleteOne({ _id: leave._id, status: "requested" });
+      throw error;
+    }
+  }
+  await announceRequest(leave, await getCreditState(applicantId)).catch((error) => console.error("[leave] request notices failed", error));
   return serializeLeave(leave);
 }
 
@@ -189,6 +228,19 @@ export async function applyLeaveAction(id: string, raw: unknown, viewer: LeaveVi
   validId(id);
   const input = leaveActionSchema.parse(raw);
   if (input.action === "cancel") return cancelLeave(id, input.reason, viewer, now);
+  if (input.action === "approve") return approveLeave(id, viewer, now);
+  await decidableLeave(id, viewer, now);
+  const leave: any = await LeaveRequest.findOneAndUpdate(
+    { _id: id, status: "requested" },
+    { $set: { decidedBy: viewer.id, decidedByName: viewer.name || "Admin", decidedAt: now, status: "rejected", rejectionReason: input.reason } },
+    { new: true }
+  ).lean();
+  if (!leave) throw new LeaveError("Someone else has just decided on this leave. Refresh to see it.", 409);
+  await announceDecision(leave, viewer, null).catch((error) => console.error("[leave] decision notices failed", error));
+  return serializeLeave(leave);
+}
+
+async function decidableLeave(id: string, viewer: LeaveViewer, now: Date) {
   if (!viewer.isApprover) throw new LeaveError("Only admins and leave approvers can approve or reject leave.", 403);
   await dbConnect();
   const existing: any = await LeaveRequest.findById(id).lean();
@@ -196,18 +248,12 @@ export async function applyLeaveAction(id: string, raw: unknown, viewer: LeaveVi
   if (idOf(existing.applicant) === viewer.id) throw new LeaveError("You cannot approve or reject your own leave.", 403);
   if (existing.status !== "requested") throw new LeaveError(`This leave has already been ${existing.status}.`, 409);
   if (existing.dateKey < academyDateKey(now)) throw new LeaveError("This leave day has already passed.", 409);
-  const decided = { decidedBy: viewer.id, decidedByName: viewer.name || "Admin", decidedAt: now };
+  return existing;
+}
 
-  if (input.action === "reject") {
-    const leave: any = await LeaveRequest.findOneAndUpdate(
-      { _id: id, status: "requested" },
-      { $set: { ...decided, status: "rejected", rejectionReason: input.reason } },
-      { new: true }
-    ).lean();
-    if (!leave) throw new LeaveError("Someone else has just decided on this leave. Refresh to see it.", 409);
-    await announceDecision(leave, viewer, null).catch((error) => console.error("[leave] decision notices failed", error));
-    return serializeLeave(leave);
-  }
+async function approveLeave(id: string, viewer: LeaveViewer, now: Date) {
+  const existing = await decidableLeave(id, viewer, now);
+  const decided = { decidedBy: viewer.id, decidedByName: viewer.name || "Admin", decidedAt: now };
 
   // A full day takes the applicant's whole day as it stands now, including
   // classes scheduled after they applied.
@@ -393,11 +439,14 @@ export async function listLeaves(viewer: LeaveViewer, now = new Date()) {
   const mine: any[] = viewer.canApply
     ? await LeaveRequest.find({ applicant: viewer.id }).sort({ dateKey: -1, createdAt: -1 }).limit(100).lean()
     : [];
+  // Approvers see everyone's leave; a Sub Admin who records leave for others sees what they recorded.
   const all: any[] = viewer.isApprover
     ? await LeaveRequest.find({
         $or: [{ status: "requested" }, { dateKey: { $gte: todayKey } }, { createdAt: { $gte: new Date(now.getTime() - 120 * DAY_MS) } }],
       }).sort({ dateKey: 1, createdAt: 1 }).limit(500).lean()
-    : [];
+    : viewer.canApplyForOthers
+      ? await LeaveRequest.find({ filedBy: viewer.id }).sort({ dateKey: 1, createdAt: 1 }).limit(200).lean()
+      : [];
   const yesterdayKey = academyDateKey(new Date(now.getTime() - DAY_MS));
   const needsCoverage = [...mine, ...all].filter((leave) => leave.status === "approved" && leave.dateKey >= yesterdayKey && leave.sessions?.length);
   const coverage = await coverageFor(needsCoverage);
@@ -406,6 +455,7 @@ export async function listLeaves(viewer: LeaveViewer, now = new Date()) {
     mine: mine.map(serialize),
     leaves: all.map(serialize),
     credits: viewer.canApply ? await getCreditState(viewer.id) : null,
+    staff: viewer.canApplyForOthers ? (await staffCreditRows(await eligibleStaff())).filter((row) => row.userId !== viewer.id) : [],
     rules: { fullDayNoticeHours: FULL_DAY_NOTICE_HOURS, halfDayNoticeHours: halfDayNoticeHours(), maxHalfDayClasses: MAX_HALF_DAY_CLASSES, maxDaysAhead: MAX_LEAVE_DAYS_AHEAD },
     today: todayKey,
   };
@@ -436,29 +486,31 @@ async function eligibleStaff(userId?: string) {
 export async function listCreditAccounts(viewer: LeaveViewer) {
   if (!viewer.canManageCredits) throw new LeaveError("Only admins manage leave credits.", 403);
   await dbConnect();
-  const staff = await eligibleStaff();
+  return { staff: await staffCreditRows(await eligibleStaff()) };
+}
+
+/** Each staff member with their credit limit (if any) and what their pending requests hold. */
+async function staffCreditRows(staff: any[]) {
   const ids = staff.map((user) => user._id);
   const [accounts, pending] = await Promise.all([
     LeaveCreditAccount.find({ user: { $in: ids } }).lean() as Promise<any[]>,
     LeaveRequest.find({ status: "requested", applicant: { $in: ids } }).select("applicant creditCost").lean() as Promise<any[]>,
   ]);
   const accountBy = new Map(accounts.map((account) => [idOf(account.user), account]));
-  return {
-    staff: staff.map((user) => {
-      const account = accountBy.get(idOf(user._id));
-      const held = pending.filter((leave) => idOf(leave.applicant) === idOf(user._id)).reduce((sum, leave) => sum + Number(leave.creditCost || 0), 0);
-      return {
-        userId: idOf(user._id),
-        name: user.name || user.username || "Staff member",
-        email: user.email || "",
-        role: user.role,
-        limited: Boolean(account),
-        balance: account ? Number(account.balance || 0) : null,
-        totalGranted: account ? Number(account.totalGranted || 0) : null,
-        held,
-      };
-    }),
-  };
+  return staff.map((user) => {
+    const account = accountBy.get(idOf(user._id));
+    const held = pending.filter((leave) => idOf(leave.applicant) === idOf(user._id)).reduce((sum, leave) => sum + Number(leave.creditCost || 0), 0);
+    return {
+      userId: idOf(user._id),
+      name: user.name || user.username || "Staff member",
+      email: user.email || "",
+      role: user.role,
+      limited: Boolean(account),
+      balance: account ? Number(account.balance || 0) : null,
+      totalGranted: account ? Number(account.totalGranted || 0) : null,
+      held,
+    };
+  });
 }
 
 export async function creditLedger(viewer: LeaveViewer, userId: string) {
@@ -549,22 +601,30 @@ async function announceRequest(leave: any, credits: LeaveCreditState) {
   const type = lowerType(leave.type);
   const [named, admins, applicant] = await Promise.all([namedApproverRecipients(applicantId), adminRecipients(applicantId), leaveUserRecipient(applicantId)]);
   const namedIds = new Set(named.map((r) => r.userId).filter(Boolean));
+  const filer = leave.filedByName ? String(leave.filedByName) : "";
+  const reason = filer ? `${leave.reason} (recorded by ${filer})` : leave.reason;
   const base = {
     href: hrefFor(leave), leaveId: idOf(leave), event: "requested",
     title: `Leave request: ${leave.applicantName} (${leaveTypeLabel(leave.type)}, ${day})`,
-    message: () => [`${leave.applicantName} has applied for ${type} leave on ${day}.`, classesLine(leave), `Reason: ${leave.reason}`, creditLine(credits), "Please approve or reject it on the Leave page."].filter(Boolean).join("\n"),
+    message: () => [
+      filer ? `${filer} has applied for ${type} leave on ${day} on behalf of ${leave.applicantName}.` : `${leave.applicantName} has applied for ${type} leave on ${day}.`,
+      classesLine(leave), `Reason: ${leave.reason}`, creditLine(credits), "Please approve or reject it on the Leave page.",
+    ].filter(Boolean).join("\n"),
     dedupKey: `leave:${idOf(leave)}:requested`,
   };
   await notifyLeave(named, {
     ...base, channels: { inApp: true, email: true, whatsapp: true }, templateName: "leave_request_approver_alert",
-    bodyParameters: (r) => [r.name || "there", leave.applicantName, type, day, leave.sessions?.length ? describeLeaveSessions(leave.sessions) : "None", leave.reason],
+    bodyParameters: (r) => [r.name || "there", leave.applicantName, type, day, leave.sessions?.length ? describeLeaveSessions(leave.sessions) : "None", reason],
   });
   await notifyLeave(admins.filter((r) => !namedIds.has(r.userId)), { ...base, channels: { inApp: true } });
   if (applicant) {
     await notifyLeave([applicant], {
       href: hrefFor(leave), leaveId: idOf(leave), event: "received", dedupKey: `leave:${idOf(leave)}:received`,
-      title: `Leave request received (${day})`,
-      message: () => [`Your ${type} leave request for ${day} has been received and is waiting for approval.`, classesLine(leave), "You will be told as soon as it is reviewed."].filter(Boolean).join("\n"),
+      title: filer ? `Leave request filed for you (${day})` : `Leave request received (${day})`,
+      message: () => [
+        filer ? `${filer} has applied for ${type} leave for you on ${day}. It is waiting for approval.` : `Your ${type} leave request for ${day} has been received and is waiting for approval.`,
+        classesLine(leave), "You will be told as soon as it is reviewed.",
+      ].filter(Boolean).join("\n"),
       channels: { email: true, whatsapp: true }, templateName: "leave_request_received_applicant",
       bodyParameters: (r) => [r.name || "there", type, day],
     });
@@ -578,20 +638,26 @@ async function announceDecision(leave: any, approver: LeaveViewer, credits: Leav
   const type = lowerType(leave.type);
   const approved = leave.status === "approved";
   const verdict = approved ? "approved" : "rejected";
-  const detail = approved
-    ? [classesLine(leave) && "The academy will arrange substitutes for your classes.", credits?.limited ? `Leave credits left: ${formatCredits(credits.balance)}.` : ""].filter(Boolean).join(" ") || "Enjoy your time off."
-    : `Reason: ${leave.rejectionReason}`;
+  // The approver entered this leave for the applicant, rather than deciding on their request.
+  const recorded = approved && Boolean(leave.filedBy) && idOf(leave.filedBy) === approver.id;
+  const detail = [
+    recorded ? `${approver.name || "An admin"} recorded this leave for you.` : "",
+    approved
+      ? [classesLine(leave) && "The academy will arrange substitutes for your classes.", credits?.limited ? `Leave credits left: ${formatCredits(credits.balance)}.` : ""].filter(Boolean).join(" ") || "Enjoy your time off."
+      : `Reason: ${leave.rejectionReason}`,
+  ].filter(Boolean).join(" ");
   const [applicant, self, approvers] = await Promise.all([leaveUserRecipient(applicantId), leaveUserRecipient(approver.id), approverRecipients(applicantId)]);
   if (applicant) {
     await notifyLeave([applicant], {
       href: hrefFor(leave), leaveId: idOf(leave), event: verdict, dedupKey: `leave:${idOf(leave)}:${verdict}`,
-      title: `Your leave on ${day} was ${verdict}`,
+      title: recorded ? `Leave recorded for you on ${day}` : `Your leave on ${day} was ${verdict}`,
       message: () => [`Your ${type} leave on ${day} has been ${verdict} by ${approver.name || "an admin"}.`, detail].join("\n"),
       channels: { inApp: true, email: true, whatsapp: true }, templateName: "leave_request_decision_applicant",
       bodyParameters: (r) => [r.name || "there", type, day, verdict, approver.name || "an admin", detail],
     });
   }
-  if (self) {
+  // Someone who just entered the leave themselves needs no confirmation of it.
+  if (self && !recorded) {
     await notifyLeave([self], {
       href: hrefFor(leave), leaveId: idOf(leave), event: `${verdict}_confirmation`, dedupKey: `leave:${idOf(leave)}:${verdict}:confirmation`,
       title: `You ${verdict} ${leave.applicantName}'s leave (${day})`,
@@ -603,7 +669,9 @@ async function announceDecision(leave: any, approver: LeaveViewer, credits: Leav
   await notifyLeave(approvers.filter((r) => r.userId !== approver.id), {
     href: hrefFor(leave), leaveId: idOf(leave), event: `${verdict}_fyi`, dedupKey: `leave:${idOf(leave)}:${verdict}:fyi`,
     title: `Leave ${verdict}: ${leave.applicantName} (${day})`,
-    message: () => `${approver.name || "An approver"} ${verdict} the ${type} leave of ${leave.applicantName} for ${day}.`,
+    message: () => recorded
+      ? `${approver.name || "An approver"} recorded an approved ${type} leave for ${leave.applicantName} on ${day}.`
+      : `${approver.name || "An approver"} ${verdict} the ${type} leave of ${leave.applicantName} for ${day}.`,
     channels: { inApp: true },
   });
 }

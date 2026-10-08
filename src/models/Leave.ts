@@ -17,6 +17,8 @@ const LeaveRequestSchema = new Schema({
   applicant: { ...ref(), required: true },
   applicantName: String,
   applicantRole: { type: String, enum: ["instructor", "sub-admin"], required: true },
+  /** Set when an admin or Sub Admin recorded the leave for the applicant. */
+  filedBy: ref(), filedByName: String,
   type: { type: String, enum: LEAVE_TYPES, required: true },
   /** The leave day as an academy (IST) calendar date, `YYYY-MM-DD`. */
   dateKey: { type: String, required: true },

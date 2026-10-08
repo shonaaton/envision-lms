@@ -5,6 +5,8 @@ import { getSessionStart } from "@/lib/classroomSessions";
 /**
  * Staff leave: coaches and sub-admins (never marketing staff) ask for a full or
  * half day off, an approver decides, and a coach's classes get a substitute.
+ * Admins and Sub Admins may also record a leave for someone else (a coach who
+ * phoned in sick): no notice rules, and an approver's entry is approved at once.
  *
  * Credits are optional per person. An admin who never grants someone credits
  * leaves them unlimited; once granted, the balance is a running one (it never
@@ -32,6 +34,8 @@ export type LeaveViewer = {
   name: string;
   role: "instructor" | "admin" | "sub-admin";
   canApply: boolean;
+  /** May record leave for coaches and other staff. */
+  canApplyForOthers: boolean;
   isApprover: boolean;
   canManageCredits: boolean;
 };
@@ -59,6 +63,15 @@ export function isMarketingRoleName(roleName: unknown) {
 export function canApplyForLeave(role: unknown, accessRoleName?: unknown) {
   if (isMarketingRoleName(accessRoleName)) return false;
   return role === "instructor" || role === "sub-admin";
+}
+
+/**
+ * Admins and built-in Sub Admins record leave for others. A sub-admin on a
+ * named access role (sales and the like) only applies for their own.
+ */
+export function canFileLeaveForOthers(role: unknown, accessRoleName?: unknown) {
+  if (role === "admin") return true;
+  return role === "sub-admin" && !String(accessRoleName || "").trim();
 }
 
 export function leaveTypeLabel(type: string) {
@@ -138,22 +151,26 @@ export function noticeError(
  * - The applicant may cancel a request any time, and an approved leave only
  *   until it starts (IST midnight, or the first chosen class of a half day).
  *   This holds for an applicant who is also an approver.
+ * - Whoever recorded a leave for someone else may withdraw it while it waits
+ *   for approval.
  * - An approver may cancel someone else's approved leave until its day ends
  *   (e.g. the coach came in after all).
  */
 export function cancelBlockReason(
-  leave: { applicant: unknown; status: string; startsAt: Date | string | null; dateKey: string },
+  leave: { applicant: unknown; filedBy?: unknown; status: string; startsAt: Date | string | null; dateKey: string },
   viewer: { id: string; isApprover: boolean },
   now = new Date()
 ) {
   const own = idOf(leave.applicant) === viewer.id;
-  if (!own && !viewer.isApprover) return "You cannot cancel this leave.";
-  if (leave.status === "requested") return own ? null : "Reject the request instead of cancelling it.";
+  const filer = !own && Boolean(leave.filedBy) && idOf(leave.filedBy) === viewer.id;
+  if (!own && !filer && !viewer.isApprover) return "You cannot cancel this leave.";
+  if (leave.status === "requested") return own || filer ? null : "Reject the request instead of cancelling it.";
   if (leave.status !== "approved") return `This leave is already ${leave.status}.`;
   if (own) {
     const started = !leave.startsAt || new Date(leave.startsAt).getTime() <= now.getTime();
     return started ? "Your leave has already started, so it can no longer be cancelled." : null;
   }
+  if (!viewer.isApprover) return "Only an approver can cancel an approved leave.";
   return leave.dateKey < academyDateKey(now) ? "This leave day has already passed." : null;
 }
 
@@ -190,7 +207,10 @@ export function isSessionCovered(session: any, classroom: any, applicantId: stri
 }
 
 const dateKeySchema = z.string().trim().refine(isValidDateKey, "Choose a valid date.");
+const userIdSchema = z.string().regex(/^[a-f0-9]{24}$/i, "Choose a staff member.");
 export const applyLeaveSchema = z.object({
+  /** Someone else's id when an admin or Sub Admin records the leave for them. */
+  applicantId: userIdSchema.optional(),
   type: z.enum(LEAVE_TYPES),
   date: dateKeySchema,
   sessionIds: z.array(z.string().trim().min(1).max(80)).max(20).default([]),
@@ -201,7 +221,6 @@ export const leaveActionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("reject"), reason: z.string({ required_error: "Enter a reason for rejecting." }).trim().min(1, "Enter a reason for rejecting.").max(1000) }),
   z.object({ action: z.literal("cancel"), reason: z.string().trim().max(1000).optional().default("") }),
 ]);
-const userIdSchema = z.string().regex(/^[a-f0-9]{24}$/i, "Choose a staff member.");
 export const leaveCreditActionSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("adjust"),
@@ -238,6 +257,8 @@ export function serializeLeave(source: any, coverage?: LeaveCoverage) {
     applicant: idOf(leave.applicant),
     applicantName: leave.applicantName || "",
     applicantRole: leave.applicantRole,
+    filedBy: leave.filedBy ? idOf(leave.filedBy) : null,
+    filedByName: leave.filedByName || "",
     type: leave.type as LeaveType,
     dateKey: leave.dateKey as string,
     startsAt: iso(leave.startsAt),

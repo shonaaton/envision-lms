@@ -4,6 +4,7 @@ import {
   applyLeaveSchema,
   availableCredits,
   canApplyForLeave,
+  canFileLeaveForOthers,
   cancelBlockReason,
   creditCheckError,
   creditCost,
@@ -32,6 +33,20 @@ describe("who can apply", () => {
     expect(canApplyForLeave("sub-admin", " marketing ")).toBe(false);
     expect(canApplyForLeave("admin")).toBe(false);
     expect(canApplyForLeave("student")).toBe(false);
+  });
+});
+
+describe("who can record leave for others", () => {
+  it("lets admins and built-in Sub Admins do it", () => {
+    expect(canFileLeaveForOthers("admin")).toBe(true);
+    expect(canFileLeaveForOthers("sub-admin")).toBe(true);
+    expect(canFileLeaveForOthers("sub-admin", "")).toBe(true);
+  });
+  it("keeps sub-admins on a named role, coaches and students out", () => {
+    expect(canFileLeaveForOthers("sub-admin", "Sales and Relationship Management")).toBe(false);
+    expect(canFileLeaveForOthers("sub-admin", "Marketing")).toBe(false);
+    expect(canFileLeaveForOthers("instructor")).toBe(false);
+    expect(canFileLeaveForOthers("student")).toBe(false);
   });
 });
 
@@ -127,6 +142,11 @@ describe("cancelling", () => {
     expect(cancelBlockReason(approved, otherApprover, new Date(academyDateTime("2026-10-11", "09:00")))).toMatch(/passed/);
     expect(cancelBlockReason(approved, { id: SUB, isApprover: false }, before)).toMatch(/cannot cancel/);
   });
+  it("lets whoever recorded a leave withdraw it while it waits, but not cancel it once approved", () => {
+    const filed = { ...approved, filedBy: SUB };
+    expect(cancelBlockReason({ ...filed, status: "requested" }, { id: SUB, isApprover: false }, after)).toBeNull();
+    expect(cancelBlockReason(filed, { id: SUB, isApprover: false }, before)).toMatch(/Only an approver/);
+  });
 });
 
 describe("action schema", () => {
@@ -143,6 +163,10 @@ describe("apply schema", () => {
     expect(applyLeaveSchema.safeParse({ type: "full_day", date: "2026-02-30", reason: "Family function" }).success).toBe(false);
     expect(applyLeaveSchema.safeParse({ type: "full_day", date: "2026-10-10", reason: "ok" }).success).toBe(false);
     expect(applyLeaveSchema.safeParse({ type: "half_day", date: "2026-10-10", reason: "Doctor visit", sessionIds: ["a", "b"] }).success).toBe(true);
+  });
+  it("takes an optional staff member to record the leave for", () => {
+    expect(applyLeaveSchema.safeParse({ applicantId: COACH, type: "full_day", date: "2026-10-10", reason: "Down with fever" }).success).toBe(true);
+    expect(applyLeaveSchema.safeParse({ applicantId: "someone", type: "full_day", date: "2026-10-10", reason: "Down with fever" }).success).toBe(false);
   });
 });
 

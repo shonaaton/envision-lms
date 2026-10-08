@@ -16,12 +16,14 @@ import {
   Users,
 } from "lucide-react";
 import { useTournamentSocket } from "@/lib/useTournamentSocket";
-import { applyLeaderboardRows, rankOf } from "@/lib/tournament/leaderboard";
+import { applyLeaderboardRows, findMyPairing, rankOf } from "@/lib/tournament/leaderboard";
 import { describeTournament, relativeTime, resolvePlayerAction } from "@/lib/tournament/playerAction";
 import { useNow } from "@/lib/useLiveClock";
 import { formatAcademyDateTime } from "@/lib/academyTime";
 import { useViewerTimeZone, zoneAbbreviation } from "@/lib/viewerTime";
 import { TournamentAdminPanel } from "./TournamentAdminPanel";
+
+const LOBBY_REFRESH_SPACING_MS = 3_000;
 
 type DetailState = {
   tournament: any;
@@ -90,11 +92,36 @@ export function TournamentDetailClient({
   const now = useNow(1000);
   const { timeZone: viewerTimeZone } = useViewerTimeZone(role);
 
+  const lastRefreshAtRef = useRef(0);
+  const refreshTimerRef = useRef<number | null>(null);
+  const myPlayerKeyRef = useRef("");
+  myPlayerKeyRef.current = state.myPlayerKey || "";
+
   const refresh = useCallback(async () => {
+    lastRefreshAtRef.current = Date.now();
     const response = await fetch(`/api/tournaments/${tournamentId}/state`, { cache: "no-store" });
     if (!response.ok) return;
     setState(await response.json());
   }, [tournamentId]);
+
+  /* A busy arena finishes a board or pairs a player every few seconds, and
+     each used to refetch this page's state. Those are coalesced to one refetch
+     per few seconds; nothing on the lobby needs them sooner. */
+  const refreshSoon = useCallback(() => {
+    if (refreshTimerRef.current !== null) return;
+    const wait = Math.max(0, lastRefreshAtRef.current + LOBBY_REFRESH_SPACING_MS - Date.now());
+    refreshTimerRef.current = window.setTimeout(() => {
+      refreshTimerRef.current = null;
+      void refresh();
+    }, wait);
+  }, [refresh]);
+
+  useEffect(
+    () => () => {
+      if (refreshTimerRef.current !== null) window.clearTimeout(refreshTimerRef.current);
+    },
+    []
+  );
 
   /* The lobby cares about pairings, standings, rounds and status - never about
      individual moves - so it subscribes to no game room and a move on any board
@@ -107,15 +134,19 @@ export function TournamentDetailClient({
             ? { ...current, tournament: { ...current.tournament, standings: applyLeaderboardRows(current.tournament?.standings || [], payload.rows || []) } }
             : current
         ),
-      onPairingCreated: () => void refresh(),
-      onGameEnded: () => void refresh(),
+      // A pairing that seats me must reach the board at once; the rest can wait.
+      onPairingCreated: (payload: any) => {
+        if (myPlayerKeyRef.current && findMyPairing(payload?.pairings || [], myPlayerKeyRef.current)) void refresh();
+        else refreshSoon();
+      },
+      onGameEnded: () => refreshSoon(),
       onRoundStarted: () => void refresh(),
       onRoundCompleted: () => void refresh(),
       onTournamentStatus: () => void refresh(),
       onTournamentEnded: () => void refresh(),
       onResync: () => void refresh(),
     }),
-    [refresh]
+    [refresh, refreshSoon]
   );
   const { connected } = useTournamentSocket({ tournamentId, handlers });
 

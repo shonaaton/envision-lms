@@ -125,14 +125,28 @@ export function TournamentPlayClient({
   }
 
   const gameId = game?._id ? String(game._id) : "";
+  const gameIdRef = useRef("");
+  gameIdRef.current = gameId;
   const gameIsActive = game?.status === "active";
   /* Derived from a value that changes every tick, so the clock actually counts
      down instead of freezing until the next server response. */
   const now = useNow(200, gameIsActive);
   const clocks = useMemo(() => deriveClocks(clockBaseline, now), [clockBaseline, now]);
 
-  const refresh = useCallback(async () => {
+  const retryTimerRef = useRef<number | null>(null);
+  const refresh = useCallback(async (): Promise<void> => {
     const response = await fetch(`/api/tournaments/${tournamentId}/state`, { cache: "no-store" });
+    if (response.status === 429) {
+      /* Throttled: this fetch may be the one carrying a new pairing, so try
+         again shortly rather than leave the player without their board. */
+      if (retryTimerRef.current === null) {
+        retryTimerRef.current = window.setTimeout(() => {
+          retryTimerRef.current = null;
+          void refresh();
+        }, 2_000);
+      }
+      return;
+    }
     if (!response.ok) {
       const payload = await response.json().catch(() => null);
       setError(payload?.error || "Could not load the tournament room.");
@@ -148,6 +162,13 @@ export function TournamentPlayClient({
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(
+    () => () => {
+      if (retryTimerRef.current !== null) window.clearTimeout(retryTimerRef.current);
+    },
+    []
+  );
 
   /* A premove belongs to one position on one board, so anything that changes
      which board we are looking at discards it. */
@@ -227,7 +248,19 @@ export function TournamentPlayClient({
           running: true,
         });
       },
-      onGameEnded: () => {
+      /* Both game:ended (my board) and tournament:game-ended (every board in
+         the event) land here. Only my own board needs the server; refetching
+         for every board meant a busy arena sent each player's heaviest read
+         dozens of times a minute and tripped the rate limit. Another board
+         finishing just leaves the live list. */
+      onGameEnded: (payload: any) => {
+        const endedId = String(payload?.gameId || "");
+        if (endedId && endedId !== gameIdRef.current) {
+          setState((current) =>
+            current ? { ...current, liveGames: (current.liveGames || []).filter((entry: any) => String(entry._id) !== endedId) } : current
+          );
+          return;
+        }
         setPremove(null);
         void refresh();
       },

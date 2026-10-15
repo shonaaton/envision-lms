@@ -29,7 +29,7 @@ type Announcement = {
   title: string;
   message: string;
   priority: "normal" | "high";
-  targetType: TargetType;
+  targetType: TargetType | "everyone";
   targetBatch?: BatchOption;
   targetUser?: UserOption;
   recipientCount: number;
@@ -48,12 +48,13 @@ const targetOptions: Array<{ type: TargetType; title: string; description: strin
   { type: "coach", title: "Coach", description: "One selected coach", icon: BellRing, needsPick: "coach" },
 ];
 
-const targetLabels: Record<TargetType, string> = {
+const targetLabels: Record<TargetType | "everyone", string> = {
   batch: "Batch",
   all_students: "All Students",
   student: "Student",
   all_coaches: "All Coaches",
   coach: "Coach",
+  everyone: "Everyone (academy holiday)",
 };
 
 export const dynamic = "force-dynamic";

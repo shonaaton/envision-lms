@@ -2119,6 +2119,31 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
     ]
   },
   {
+    "name": "academy_holiday_notice",
+    "language": "en",
+    "sourceAutomation": "holidayNotifications.deliverTo",
+    "body": "Hello {{1}}, Envision Chess Academy will be closed from {{2}} to {{3}} for {{4}}.\n\nMessage from the academy: {{5}}\n\nClasses on these days move to the next scheduled class, and every course continues from the same topic. Your updated schedule is on the academy portal calendar.\n\nTeam Envision Chess Academy",
+    "variables": [
+      { "position": 1, "key": "recipient_name", "sample": "Aarav" },
+      { "position": 2, "key": "start_day", "sample": "Mon, 20 Oct 2026" },
+      { "position": 3, "key": "end_day", "sample": "Wed, 22 Oct 2026" },
+      { "position": 4, "key": "reason", "sample": "Diwali" },
+      { "position": 5, "key": "message", "sample": "Wishing all our students and families a very happy Diwali!" }
+    ]
+  },
+  {
+    "name": "academy_holiday_cancelled",
+    "language": "en",
+    "sourceAutomation": "holidayNotifications.deliverTo",
+    "body": "Hello {{1}}, the academy holiday planned from {{2}} to {{3}} has been cancelled.\n\nMessage from the academy: {{4}}\n\nClasses go back to their original dates. Please check the academy portal calendar.\n\nTeam Envision Chess Academy",
+    "variables": [
+      { "position": 1, "key": "recipient_name", "sample": "Aarav" },
+      { "position": 2, "key": "start_day", "sample": "Mon, 20 Oct 2026" },
+      { "position": 3, "key": "end_day", "sample": "Wed, 22 Oct 2026" },
+      { "position": 4, "key": "message", "sample": "Classes will run as usual this week." }
+    ]
+  },
+  {
     "name": "leave_request_approver_alert",
     "language": "en",
     "sourceAutomation": "leaveService.announceRequest",

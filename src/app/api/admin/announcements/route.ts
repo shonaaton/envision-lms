@@ -16,6 +16,7 @@ const targetLabels: Record<string, string> = {
   student: "Student",
   all_coaches: "All coaches",
   coach: "Coach",
+  everyone: "Everyone",
 };
 
 function uniqueIds(ids: any[]) {

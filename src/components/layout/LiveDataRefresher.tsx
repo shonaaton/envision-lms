@@ -33,6 +33,9 @@ const quietMutationPatterns = [
   /^\/api\/learn\/attempt$/,
   // The Retention page reloads its own lists; a refresh would close the open flag.
   /^\/api\/admin\/retention(\/|$)/,
+  // Academy Holidays reloads its own list. Its preview is a POST, and a refresh
+  // would close the drawer the moment the preview came back.
+  /^\/api\/admin\/holidays(\/|$)/,
 ];
 
 const liveClassroomPattern = /^\/api\/classrooms\/[^/]+\/live$/;

@@ -618,6 +618,19 @@ export const FEATURE_DEFINITIONS: FeatureDefinition[] = [
     defaultRolePermissions: { admin: all(view, create, edit, del, share) },
   },
   {
+    key: "academyHolidays",
+    label: "Academy Holidays",
+    category: "Communication",
+    description: "Close the whole academy for a holiday: classes on those days move to each batch's next class with their topics, and everyone is told.",
+    routes: ["/admin/holidays"],
+    apiPrefixes: ["/api/admin/holidays"],
+    permissions: [view, create, edit],
+    defaultStatus: "enabled",
+    // Named roles (sales, marketing) never reach it: requireAdminApiAccess only
+    // lets them through to features their role maps to.
+    defaultRolePermissions: { "sub-admin": ["view", "create", "edit"], admin: all(view, create, edit) },
+  },
+  {
     key: "academySettings",
     label: "Academy Setup",
     category: "Settings",

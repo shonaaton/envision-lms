@@ -23,6 +23,7 @@ export async function register() {
   const { processMonthlyFeedbackCycle } = await import("@/lib/feedback/feedbackService");
   const { processPtmSweep } = await import("@/lib/ptm/ptmService");
   const { processLeaveSweep } = await import("@/lib/leave/leaveService");
+  const { processHolidayAnnouncements } = await import("@/lib/holidays/holidayNotifications");
   const { sealLegacyTempPasswords } = await import("@/lib/tempPasswordMigration");
   const { processRetentionSweep } = await import("@/lib/retention/retentionSweep");
   const { processCrmDemoStageReconcile } = await import("@/lib/crm/reconcile");
@@ -41,6 +42,16 @@ export async function register() {
       name: "leave_sweep",
       intervalMs: 60 * 60_000,
       run: () => processLeaveSweep(),
+    },
+    {
+      /**
+       * Academy holiday announcements and cancellations. Normally sent the
+       * moment the holiday is saved; this picks up any send a restart cut short,
+       * resuming from the last recipient it finished.
+       */
+      name: "academy_holiday_announcements",
+      intervalMs: 2 * 60_000,
+      run: () => processHolidayAnnouncements(),
     },
     {
       name: "ask_coach_email_reminders",

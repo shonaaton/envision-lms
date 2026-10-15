@@ -7,7 +7,7 @@ const AnnouncementSchema = new Schema(
     priority: { type: String, enum: ["normal", "high"], default: "normal", index: true },
     targetType: {
       type: String,
-      enum: ["batch", "all_students", "student", "all_coaches", "coach"],
+      enum: ["batch", "all_students", "student", "all_coaches", "coach", "everyone"],
       required: true,
       index: true,
     },

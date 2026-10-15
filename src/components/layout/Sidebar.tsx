@@ -16,6 +16,7 @@ import {
   BookOpenCheck,
   CalendarDays,
   CalendarOff,
+  CalendarX,
   ChevronDown,
   ClipboardList,
   Cpu,
@@ -242,6 +243,7 @@ const sections: NavSection[] = [
     roles: ["admin", "sub-admin"],
     items: [
       { href: "/admin/announcements", label: "Announcements", icon: Megaphone, featureKey: "announcements" },
+      { href: "/admin/holidays", label: "Holidays", icon: CalendarX, featureKey: "academyHolidays" },
       { href: "/admin/notifications", label: "Notifications", icon: Bell, featureKey: "notifications", permission: "manage" },
       { href: "/admin/whatsapp", label: "WhatsApp", icon: MessageCircle, featureKey: "whatsapp" },
     ],

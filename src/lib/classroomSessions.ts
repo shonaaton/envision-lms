@@ -103,6 +103,18 @@ export function isSessionOffSchedule(classroom: any, session: ScheduledSessionLi
   return false;
 }
 
+/**
+ * The classes of these classrooms that were, or will be, actually held - for
+ * schedules and calendars. A batch moved into a new classroom leaves its old,
+ * completed one with "scheduled" ghosts on the same dates under the old coach;
+ * listing them showed that coach still teaching the batch.
+ */
+export function flattenHeldSessions(classrooms: any[]) {
+  return flattenScheduledSessions(classrooms).filter(
+    ({ classroom, session }) => !isSessionOffSchedule(classroom, session) || Boolean(session?.attendanceMarkedAt)
+  );
+}
+
 export function isSessionUpcomingLike(status: ScheduledSessionStatus) {
   return ["upcoming", "join_available", "ongoing"].includes(status);
 }

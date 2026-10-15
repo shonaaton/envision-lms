@@ -28,6 +28,7 @@ export async function POST(req: Request) {
     const name = file.name || "upload";
     const action = String(form.get("action") || "");
     const kind = form.get("kind") === "income" ? "income" : "expense";
+    const options = { costsForPreviousMonth: form.get("previousMonth") === "1" };
 
     if (action === "statement") {
       const result = await importStatement({ buffer, fileName: name, accountLabel: String(form.get("accountLabel") || ""), actorId: viewer.userId });
@@ -35,10 +36,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, ...result });
     }
     if (action === "preview") {
-      return NextResponse.json({ ok: true, rows: await previewLedgerImport(buffer, name, kind) });
+      return NextResponse.json({ ok: true, rows: await previewLedgerImport(buffer, name, kind, options) });
     }
     if (action === "commit") {
-      const result = await commitLedgerImport(buffer, name, kind, viewer.userId);
+      const result = await commitLedgerImport(buffer, name, kind, viewer.userId, options);
       await refreshSuggestions();
       revalidatePath("/admin/accounts", "layout");
       return NextResponse.json({ ok: true, ...result });

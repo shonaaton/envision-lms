@@ -4,7 +4,7 @@ import { auth } from "@/lib/auth";
 import { resolveAccessRole } from "@/lib/accessRoles";
 import { canAccessFeature } from "@/lib/featureAccess";
 import { canApplyForLeave, canFileLeaveForOthers, isMarketingRoleName, type LeaveViewer } from "./leaveRules";
-import { isNamedLeaveApprover } from "./leaveRecipients";
+import { isLeaveScheduler, isNamedLeaveApprover } from "./leaveRecipients";
 
 /**
  * The signed-in staff member as the leave system sees them, or null when the
@@ -25,6 +25,7 @@ export async function resolveLeaveViewer(): Promise<LeaveViewer | null> {
     canApply: canCreate && canApplyForLeave(user.role, roleName),
     canApplyForOthers: canCreate && canFileLeaveForOthers(user.role, roleName),
     isApprover: user.role === "admin" || isNamedLeaveApprover(user.email),
+    isScheduler: isLeaveScheduler(user.email),
     canManageCredits: user.role === "admin",
   };
 }

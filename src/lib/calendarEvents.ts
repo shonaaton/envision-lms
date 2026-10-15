@@ -7,7 +7,7 @@ import { Attendance } from "@/models/Attendance";
 import { User } from "@/models/User";
 import {
   deriveScheduledSessionStatus,
-  flattenScheduledSessions,
+  flattenHeldSessions,
   isJoinWindowOpen,
 } from "@/lib/classroomSessions";
 import { classroomsAsSeenByStudent } from "@/lib/classroomStudentExits";
@@ -242,7 +242,7 @@ async function getStudentEvents(userId: string, canJoin: boolean) {
   });
 
   const submissionByHomework = new Map(submissions.map((item: any) => [objectId(item.homework), item]));
-  const classEvents = flattenScheduledSessions(classrooms).map(({ classroom, session }: any) => {
+  const classEvents = flattenHeldSessions(classrooms).map(({ classroom, session }: any) => {
     const status = deriveScheduledSessionStatus(session, new Date(), {
       attendanceStatus: attendanceBySession.get(`${objectId(classroom._id)}-${dateKey(session.scheduledFor)}`),
     });
@@ -283,7 +283,7 @@ async function getCoachEvents(userId: string, canJoin: boolean) {
   ]);
 
   const attendanceKeys = new Set(attendance.map((item: any) => `${objectId(item.classroom)}-${dateKey(item.sessionDate)}`));
-  const sessions = flattenScheduledSessions(classrooms);
+  const sessions = flattenHeldSessions(classrooms);
 
   const classEvents = sessions.map(({ classroom, session }: any) =>
     buildClassEvent({
@@ -329,7 +329,7 @@ async function getAdminEvents(canJoin: boolean) {
   ]);
 
   const attendanceKeys = new Set(attendance.map((item: any) => `${objectId(item.classroom)}-${dateKey(item.sessionDate)}`));
-  const sessions = flattenScheduledSessions(classrooms);
+  const sessions = flattenHeldSessions(classrooms);
 
   const classEvents = sessions.map(({ classroom, session }: any) =>
     buildClassEvent({

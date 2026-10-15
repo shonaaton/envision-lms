@@ -305,6 +305,7 @@ export function LedgerImport() {
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<PreviewRow[] | null>(null);
   const [busy, setBusy] = useState(false);
+  const [previousMonth, setPreviousMonth] = useState(false);
 
   async function send(action: "preview" | "commit") {
     if (!file) return;
@@ -314,6 +315,7 @@ export function LedgerImport() {
       body.set("file", file);
       body.set("kind", kind);
       body.set("action", action);
+      if (previousMonth) body.set("previousMonth", "1");
       const response = await fetch("/api/admin/accounts/upload", { method: "POST", body });
       const result = await response.json().catch(() => ({ ok: false, error: "Upload failed." }));
       if (!result.ok) {
@@ -377,6 +379,19 @@ export function LedgerImport() {
         <button type="button" className="btn-outline h-9 px-4 text-xs" disabled={!file || busy} onClick={() => send("preview")}>
           <Upload size={14} /> {busy && !preview ? "Reading..." : "Preview"}
         </button>
+        {kind === "expense" && (
+          <label className="flex items-center gap-1.5 pb-2 text-xs font-semibold text-slate-700" title="Rows with their own For month keep it">
+            <input
+              type="checkbox"
+              checked={previousMonth}
+              onChange={(event) => {
+                setPreviousMonth(event.target.checked);
+                setPreview(null);
+              }}
+            />
+            Costs are for the month before they were paid
+          </label>
+        )}
         <a className="btn-ghost h-9 px-3 text-xs" href={`/api/admin/accounts/export?template=${kind}`}>
           Download template
         </a>

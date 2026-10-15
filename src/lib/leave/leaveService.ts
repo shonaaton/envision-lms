@@ -38,7 +38,7 @@ import {
   type LeaveCoverage,
   type LeaveViewer,
 } from "./leaveRules";
-import { adminRecipients, approverRecipients, leaveUserRecipient, namedApproverRecipients, type LeaveRecipient } from "./leaveRecipients";
+import { adminRecipients, approverRecipients, leaveSchedulerId, leaveUserRecipient, namedApproverRecipients, type LeaveRecipient } from "./leaveRecipients";
 import { notifyLeave } from "./leaveNotifications";
 
 export class LeaveError extends Error {
@@ -291,7 +291,7 @@ async function approveLeave(id: string, viewer: LeaveViewer, now: Date) {
   const credits = await getCreditState(applicantId);
   await announceDecision(leave, viewer, credits).catch((error) => console.error("[leave] decision notices failed", error));
   if (leave.sessions?.length) {
-    await raiseLeaveSubstitutionTask(leave);
+    await raiseLeaveSubstitutionTask(leave, { assignedTo: await leaveSchedulerId(applicantId) });
     await announceSubstitution(leave).catch((error) => console.error("[leave] substitution notices failed", error));
     // Some classes may already have a substitute; settle what is covered now.
     await syncLeaveCoverage({ leaveId: id }, now);
@@ -397,7 +397,7 @@ export async function syncLeaveCoverage(scope: { classroomId?: string; leaveId?:
         await resolveLeaveSubstitutionTask(leave._id, undefined, allCovered ? "Every class on the leave is covered." : "The classes on this leave have gone by.");
         settled += 1;
       } else {
-        await raiseLeaveSubstitutionTask(current, { reopen: added > 0 });
+        await raiseLeaveSubstitutionTask(current, { reopen: added > 0, assignedTo: await leaveSchedulerId(idOf(leave.applicant)) });
       }
     } catch (error) {
       console.error("[leave] coverage sync failed", { leave: idOf(leave._id), error });
@@ -439,8 +439,8 @@ export async function listLeaves(viewer: LeaveViewer, now = new Date()) {
   const mine: any[] = viewer.canApply
     ? await LeaveRequest.find({ applicant: viewer.id }).sort({ dateKey: -1, createdAt: -1 }).limit(100).lean()
     : [];
-  // Approvers see everyone's leave; a Sub Admin who records leave for others sees what they recorded.
-  const all: any[] = viewer.isApprover
+  // Approvers and the scheduler see everyone's leave; a Sub Admin who records leave for others sees what they recorded.
+  const all: any[] = viewer.isApprover || viewer.isScheduler
     ? await LeaveRequest.find({
         $or: [{ status: "requested" }, { dateKey: { $gte: todayKey } }, { createdAt: { $gte: new Date(now.getTime() - 120 * DAY_MS) } }],
       }).sort({ dateKey: 1, createdAt: 1 }).limit(500).lean()
@@ -661,7 +661,7 @@ async function announceDecision(leave: any, approver: LeaveViewer, credits: Leav
     await notifyLeave([self], {
       href: hrefFor(leave), leaveId: idOf(leave), event: `${verdict}_confirmation`, dedupKey: `leave:${idOf(leave)}:${verdict}:confirmation`,
       title: `You ${verdict} ${leave.applicantName}'s leave (${day})`,
-      message: () => [`You have ${verdict} the ${type} leave of ${leave.applicantName} for ${day}.`, approved && leave.sessions?.length ? "A task to arrange substitutes has been added to Tasks." : ""].filter(Boolean).join("\n"),
+      message: () => [`You have ${verdict} the ${type} leave of ${leave.applicantName} for ${day}.`, approved && leave.sessions?.length ? "A task to reschedule or cover the classes has been added to Tasks." : ""].filter(Boolean).join("\n"),
       channels: { email: true, whatsapp: true }, templateName: "leave_decision_approver_confirmation",
       bodyParameters: (r) => [r.name || "there", verdict, type, leave.applicantName, day],
     });
@@ -687,7 +687,7 @@ async function announceSubstitution(leave: any) {
     message: () => [
       `${leave.applicantName}'s ${lowerType(leave.type)} leave on ${day} is approved.`,
       `Classes needing a substitute: ${classes}.`,
-      "Assign a substitute on each classroom; the task in Tasks closes on its own once every class is covered.",
+      "Each class needs to be rescheduled or given a substitute on its classroom; the task in Tasks closes on its own once every class is handled.",
     ].join("\n"),
     channels: { inApp: true, email: true, whatsapp: true }, templateName: "leave_substitution_admin_alert",
     bodyParameters: (r) => [r.name || "there", leave.applicantName, lowerType(leave.type), day, classes],

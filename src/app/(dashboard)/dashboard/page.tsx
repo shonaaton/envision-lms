@@ -20,6 +20,7 @@ import { ChessAccount } from "@/models/Chess";
 import { ClassroomSession, StudentReward } from "@/models/ClassroomLive";
 import {
   deriveScheduledSessionStatus,
+  flattenHeldSessions,
   flattenScheduledSessions,
   formatJoinWindowLabel,
   isJoinWindowOpen,
@@ -2642,7 +2643,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
     return `/dashboard?${params.toString()}`;
   };
 
-  const scheduledRows = flattenScheduledSessions(activeClassrooms).sort((a, b) => a.start.getTime() - b.start.getTime());
+  const scheduledRows = flattenHeldSessions(activeClassrooms).sort((a, b) => a.start.getTime() - b.start.getTime());
   const todayRows = scheduledRows.filter((row) => row.start >= focusFrom && row.start <= focusTo);
   const todaySessionQueries = todayRows.map((row) => ({
     classroom: row.classroom._id,

@@ -29,6 +29,35 @@ export function isNamedLeaveApprover(email: unknown) {
   return Boolean(clean) && leaveApproverEmails().includes(clean);
 }
 
+/**
+ * Who reschedules (or finds a substitute for) the classes on an approved
+ * leave: Saptarshi by default (user, 2026-10-08), or `LEAVE_SCHEDULER_EMAILS`.
+ */
+const DEFAULT_LEAVE_SCHEDULER_EMAILS = ["saptarshi2856@gmail.com"];
+
+export function leaveSchedulerEmails() {
+  const configured = String(process.env.LEAVE_SCHEDULER_EMAILS || "")
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+  return configured.length ? configured : DEFAULT_LEAVE_SCHEDULER_EMAILS;
+}
+
+export function isLeaveScheduler(email: unknown) {
+  const clean = String(email || "").trim().toLowerCase();
+  return Boolean(clean) && leaveSchedulerEmails().includes(clean);
+}
+
+/** The first listed scheduler with an active account who is not the person on leave, or null. */
+export async function leaveSchedulerId(excludeUserId = ""): Promise<string | null> {
+  await dbConnect();
+  const emails = leaveSchedulerEmails();
+  const users: any[] = await User.find({ email: { $in: emails }, isActive: { $ne: false } }).select("_id email").lean();
+  const ordered = emails.map((email) => users.find((user) => String(user.email || "").toLowerCase() === email)).filter(Boolean);
+  const pick = ordered.find((user: any) => String(user._id) !== excludeUserId);
+  return pick ? String(pick._id) : null;
+}
+
 function toRecipient(user: any): LeaveRecipient {
   return {
     userId: String(user?._id || ""),

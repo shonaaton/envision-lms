@@ -37,6 +37,8 @@ export type LeaveViewer = {
   /** May record leave for coaches and other staff. */
   canApplyForOthers: boolean;
   isApprover: boolean;
+  /** Reschedules or covers the classes on approved leave (Saptarshi); sees all leave, decides none. */
+  isScheduler: boolean;
   canManageCredits: boolean;
 };
 

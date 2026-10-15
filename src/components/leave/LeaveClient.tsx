@@ -53,7 +53,7 @@ export default function LeaveClient({ viewer, initialId = "", initialTab = "" }:
   const tabs = useMemo(() => {
     const list: [string, string, number | null][] = [];
     // A Sub Admin who records leave for others sees the leave they recorded here.
-    if (viewer.isApprover || viewer.canApplyForOthers) list.push(["pending", "Pending", pending.length], ["upcoming", "Upcoming", upcoming.length], ["history", "History", null]);
+    if (viewer.isApprover || viewer.isScheduler || viewer.canApplyForOthers) list.push(["pending", "Pending", pending.length], ["upcoming", "Upcoming", upcoming.length], ["history", "History", null]);
     if (viewer.canApply) list.push(["mine", "My leave", null]);
     if (viewer.canManageCredits) list.push(["credits", "Credits", null]);
     return list;
@@ -210,7 +210,7 @@ function LeaveCard({ leave, viewer, today, busy, highlighted, showApplicant, onA
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Classes on this leave</p>
             {watchCover && (uncovered > 0
-              ? <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">{uncovered} need{uncovered === 1 ? "s" : ""} a substitute</span>
+              ? <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">{uncovered} still to reschedule or cover</span>
               : <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800">All covered</span>)}
           </div>
           <ul className="mt-2 space-y-1.5">
@@ -219,9 +219,9 @@ function LeaveCard({ leave, viewer, today, busy, highlighted, showApplicant, onA
                 <span className="flex items-center gap-2"><Clock size={14} className="text-slate-400" /><span className="font-semibold">{timeOnly(session.start)}</span> {session.title}{session.studentCount ? <span className="text-xs text-slate-500">· {session.studentCount} student{session.studentCount === 1 ? "" : "s"}</span> : null}</span>
                 {watchCover && (session.covered
                   ? <span className="flex items-center gap-1 text-xs font-semibold text-emerald-700"><UserRoundCheck size={14} />{session.substituteName ? `Substitute: ${session.substituteName}` : "Covered"}</span>
-                  : viewer.isApprover
-                    ? <Link className="text-xs font-semibold text-brand underline" href={`/classrooms/${session.classroom}`}>Assign substitute</Link>
-                    : <span className="text-xs text-amber-700">Substitute being arranged</span>)}
+                  : viewer.isApprover || viewer.isScheduler
+                    ? <Link className="text-xs font-semibold text-brand underline" href={`/classrooms/${session.classroom}`}>Reschedule or assign substitute</Link>
+                    : <span className="text-xs text-amber-700">Being rescheduled or covered</span>)}
               </li>
             ))}
           </ul>

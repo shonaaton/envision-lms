@@ -133,13 +133,25 @@ function yes(value: string) {
 }
 
 /** One sheet row as an entry. A negative amount is money going the other way: a refund. */
-function rowInput(cell: (field: string) => string, category: AccountCategory | null): EntryInput {
+export type ImportOptions = {
+  /** Costs in the sheet are for the month before they were paid (the academy's cash sheet). Rows with a For month keep it. */
+  costsForPreviousMonth?: boolean;
+};
+
+function monthBefore(month: string) {
+  const [year, m] = month.split("-").map(Number);
+  return m === 1 ? `${year - 1}-12` : `${year}-${String(m - 1).padStart(2, "0")}`;
+}
+
+function rowInput(cell: (field: string) => string, category: AccountCategory | null, options: ImportOptions = {}): EntryInput {
   const raw = cell("amount");
   const signed = parseEntryAmount(raw);
   const refund = signed !== null && signed < 0;
   const monthText = cell("month");
   const month = monthText ? parseMonthKey(monthText) : null;
   if (monthText && !month) throw new AccountsError(`Could not read the month "${monthText}" - write it like Apr 2026.`);
+  const paid = parseEntryDate(cell("date"));
+  const forMonth = month || (options.costsForPreviousMonth && category && category.kind !== "income" && paid ? monthBefore(academyMonthOf(paid)) : null);
   return {
     category: category?.key || "",
     date: cell("date"),
@@ -152,7 +164,7 @@ function rowInput(cell: (field: string) => string, category: AccountCategory | n
     counterparty: cell("counterparty"),
     paymentMode: cell("mode"),
     student: cell("student"),
-    month: month || undefined,
+    month: forMonth || undefined,
     // No account column: a payment mode of cash still says where the money went.
     account: /cash/i.test(cell("account") || cell("mode")) ? "cash" : "bank",
   };
@@ -176,7 +188,7 @@ async function readRows(buffer: Buffer, fileName: string, kind: LedgerImportKind
   return { rows, headerIndex, map: headerMap(rows[headerIndex]) };
 }
 
-export async function previewLedgerImport(buffer: Buffer, fileName: string, kind: LedgerImportKind) {
+export async function previewLedgerImport(buffer: Buffer, fileName: string, kind: LedgerImportKind, options: ImportOptions = {}) {
   await dbConnect();
   const { rows, headerIndex, map } = await readRows(buffer, fileName, kind);
   const cell = (row: string[], field: string) => (map[field] === undefined ? "" : String(row[map[field]] ?? "").trim());
@@ -210,7 +222,7 @@ export async function previewLedgerImport(buffer: Buffer, fileName: string, kind
         );
       }
       if (category.kind === "income" && kind === "expense") throw new AccountsError("Income in the costs file - use the offline income import.");
-      const entry = await buildEntry(rowInput((field) => cell(row, field), category));
+      const entry = await buildEntry(rowInput((field) => cell(row, field), category, options));
       base.date = entry.date.toISOString();
       base.amount = entry.amount;
       base.tdsAmount = entry.tdsAmount;
@@ -300,9 +312,9 @@ export async function commitLedgerImport(
   kind: LedgerImportKind,
   actorId: string,
   // "other" while a server still runs a Fees schema without the cash mode.
-  options: { cashPaymentMode?: "cash" | "other" } = {}
+  options: ImportOptions & { cashPaymentMode?: "cash" | "other" } = {}
 ) {
-  const preview = await previewLedgerImport(buffer, fileName, kind);
+  const preview = await previewLedgerImport(buffer, fileName, kind, options);
   const { rows, headerIndex, map } = await readRows(buffer, fileName, kind);
   const cell = (row: string[], field: string) => (map[field] === undefined ? "" : String(row[map[field]] ?? "").trim());
   const batch = randomUUID();
@@ -324,7 +336,7 @@ export async function commitLedgerImport(
   for (const item of preview.filter((row) => row.status === "ok")) {
     const row = rows[item.line - 1];
     const category = kind === "income" ? resolveCategory(cell(row, "category") || "offline_fees") : resolveCategory(cell(row, "category"));
-    const entry = await buildEntry({ ...rowInput((field) => cell(row, field), category), source: "csv_import", importBatch: batch });
+    const entry = await buildEntry({ ...rowInput((field) => cell(row, field), category, options), source: "csv_import", importBatch: batch });
     docs.push({ ...entry, createdBy: actorId, updatedBy: actorId });
   }
   for (const item of preview.filter((row) => row.status === "in_portal" && row.invoiceIds?.length)) {

@@ -30,21 +30,30 @@ export function resolvePtmScheduleTask(id: unknown, by?: unknown) { return settl
 export async function cancelPtmTasks(id: unknown, reason: string) { await withdraw("PtmApproval", id, reason); await withdraw("PtmSchedule", id, reason); }
 
 /**
- * An approved coach leave: admins arrange a substitute for each class on it.
- * Settled by `syncLeaveCoverage` once every class is taught by someone else,
- * cancelled or moved off the day. `reopen` is passed only when classes were
- * added to the leave after the task closed. The leave's own notice already
- * emails and WhatsApps the admins, so the task itself stays quiet.
+ * An approved coach leave: each class on it is rescheduled or given a
+ * substitute. Assigned to the leave scheduler (Saptarshi) when there is one,
+ * otherwise left in the admins' pool. Settled by `syncLeaveCoverage` once every
+ * class is taught by someone else, cancelled or moved off the day. `reopen` is
+ * passed only when classes were added to the leave after the task closed. The
+ * admins already hear of the leave by email and WhatsApp, so a pool task stays
+ * quiet; an assigned one tells its assignee.
  */
-export function raiseLeaveSubstitutionTask(leave: any, options: { reopen?: boolean } = {}) {
+export function raiseLeaveSubstitutionTask(leave: any, options: { reopen?: boolean; assignedTo?: string | null } = {}) {
   const sessions: any[] = [...(leave.sessions || [])].sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
   if (!sessions.length) return Promise.resolve(null);
+  const assignee = options.assignedTo || null;
   return raise({
-    kind: "leave_substitution", referenceType: "LeaveSubstitution", referenceId: leave._id, pool: "admins", priority: "high",
-    title: `Arrange substitutes — ${leave.applicantName || "Coach"} on leave ${when(leave.startsAt).split(",")[0] || leave.dateKey}`,
-    details: [`${leave.applicantName || "The coach"} has approved ${leave.type === "full_day" ? "full-day" : "half-day"} leave on ${leave.dateKey}.`, "Classes needing a substitute:", ...sessions.map((s) => `• ${when(s.start)} — ${s.title || "Class"}`)].join("\n"),
+    kind: "leave_substitution", referenceType: "LeaveSubstitution", referenceId: leave._id, priority: "high",
+    ...(assignee ? { assignedTo: assignee, pool: null } : { pool: "admins" as const }),
+    title: `Reschedule or cover classes — ${leave.applicantName || "Coach"} on leave ${when(leave.startsAt).split(",")[0] || leave.dateKey}`,
+    details: [
+      `${leave.applicantName || "The coach"} has approved ${leave.type === "full_day" ? "full-day" : "half-day"} leave on ${leave.dateKey}.`,
+      "Reschedule each class to another day, or assign a substitute on the classroom:",
+      ...sessions.map((s) => `• ${when(s.start)} — ${s.title || "Class"}`),
+      "This task closes on its own once every class is handled.",
+    ].join("\n"),
     actionHref: `/leave?id=${idOf(leave)}`, dueAt: sessions[0]?.start ? new Date(sessions[0].start) : null,
-    metadata: { leaveId: idOf(leave), applicantId: idOf(leave.applicant) }, reopenIfClosed: Boolean(options.reopen), notify: false,
+    metadata: { leaveId: idOf(leave), applicantId: idOf(leave.applicant) }, reopenIfClosed: Boolean(options.reopen), notify: Boolean(assignee),
   });
 }
 export function resolveLeaveSubstitutionTask(id: unknown, by?: unknown, note = "Every class on the leave is covered.") { return settle("LeaveSubstitution", id, by, note); }

@@ -2235,15 +2235,14 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
     ]
   },
   {
-    "name": "coach_handover_previous_coach",
+    "name": "coach_class_released",
     "language": "en",
     "sourceAutomation": "Permanent Coach Change - Previous Coach",
-    "body": "Hello {{1}},\n\nThank you for all your work with {{2}}. From {{3}}, Coach {{4}} will take over these classes permanently.\n\nThe classes you have already taught stay on your record. Please share any notes on the students' progress with the academy team, so the syllabus carries on smoothly from where you left off.\n\nRegards,\nTeam Envision Chess Academy",
+    "body": "Hello {{1}},\n\nFrom {{2}}, you no longer need to take the {{3}} classes. They have been removed from your schedule.\n\nThank you for all your work with this class. The classes you have already taught stay on your record. Please share any notes on the students' progress with the academy team.\n\nRegards,\nTeam Envision Chess Academy",
     "variables": [
       { "position": 1, "key": "coach_name", "sample": "Coach Sanjib" },
-      { "position": 2, "key": "batch_code", "sample": "I2-100" },
-      { "position": 3, "key": "effective_from", "sample": "Saturday, 11 October" },
-      { "position": 4, "key": "new_coach_name", "sample": "Coach Ritam" }
+      { "position": 2, "key": "effective_from", "sample": "Saturday, 11 October" },
+      { "position": 3, "key": "batch_code", "sample": "I2-100" }
     ]
   },
   {

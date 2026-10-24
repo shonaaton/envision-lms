@@ -89,15 +89,16 @@ export async function notifyCoachHandover(input: CoachHandoverInput) {
   const handoverKey = `coach_handover:${input.scope}:${input.scopeId}:${previousCoachId || "none"}:${newCoachId}:${new Date(input.effectiveFrom || 0).getTime() || "next"}`;
   const href = input.scope === "classroom" ? `/classrooms/${input.scopeId}` : "/classrooms";
 
-  // 1. The coach handing over - thanked first, before anyone else hears.
+  // 1. The coach handing over - thanked first, before anyone else hears. They are
+  // told only that the class is off their schedule: never who takes it over.
   if (previousCoach && previousCoach.isActive !== false) {
-    const title = "Your class is moving to another coach";
+    const title = "You no longer need to take this class";
     const message = [
       `Hello ${previousCoach.name || "Coach"},`,
       "",
-      `Thank you for all your work with ${label}. From ${effectiveFrom}, Coach ${newCoachName} will take over these classes permanently.`,
+      `From ${effectiveFrom}, you no longer need to take the ${label} classes. They have been removed from your schedule.`,
       "",
-      "The classes you have already taught stay on your record. Please share any notes on the students' progress with the academy team, so the syllabus carries on smoothly from where you left off.",
+      "Thank you for all your work with this class. The classes you have already taught stay on your record. Please share any notes on the students' progress with the academy team.",
       "",
       "Regards,",
       "Team Envision Chess Academy",
@@ -111,8 +112,8 @@ export async function notifyCoachHandover(input: CoachHandoverInput) {
     }
     await sendWhatsAppAutomationTemplate({
       user: previousCoach,
-      templateName: "coach_handover_previous_coach",
-      bodyParameters: [whatsappRecipientName(previousCoach, "Coach"), label, effectiveFrom, newCoachName],
+      templateName: "coach_class_released",
+      bodyParameters: [whatsappRecipientName(previousCoach, "Coach"), effectiveFrom, label],
       metadata: { ...metadata, notificationDedupKey: `${handoverKey}:previous_coach` },
     }).catch((error) => console.error("Handover WhatsApp to previous coach failed", error));
   }

@@ -72,13 +72,13 @@ describe("permanent coach handover", () => {
   it("messages the previous coach, then the new coach, then the family - on WhatsApp", async () => {
     await handover();
     expect(mocks.sendWhatsApp.mock.calls.map(([call]) => call.templateName)).toEqual([
-      "coach_handover_previous_coach",
+      "coach_class_released",
       "coach_handover_new_coach",
       "coach_handover_student",
     ]);
     const [previous, next, family] = mocks.sendWhatsApp.mock.calls.map(([call]) => call);
     expect(previous.user._id).toBe(OLD_COACH);
-    expect(previous.bodyParameters).toEqual(["Coach Sanjib", "I2-100", "Saturday, 5 January", "Coach Ritu"]);
+    expect(previous.bodyParameters).toEqual(["Coach Sanjib", "Saturday, 5 January", "I2-100"]);
     expect(next.user._id).toBe(NEW_COACH);
     expect(next.bodyParameters).toContain("Coach Sanjib");
     expect(next.bodyParameters).toContain("Knight Forks");
@@ -98,6 +98,16 @@ describe("permanent coach handover", () => {
     await handover();
     expect(mocks.notificationCreate).toHaveBeenCalledWith(expect.objectContaining({ user: OLD_COACH, type: "class_coach_released" }));
     expect(mocks.sendEmail).toHaveBeenCalledWith(expect.objectContaining({ to: "sanjib@example.com" }));
+  });
+
+  it("never tells the previous coach who takes the class over", async () => {
+    await handover();
+    const notice = mocks.notificationCreate.mock.calls[0][0];
+    const email = mocks.sendEmail.mock.calls.map(([call]) => call).find((call) => call.to === "sanjib@example.com");
+    for (const text of [notice.title, notice.message, email.subject, email.message]) expect(text).not.toMatch(/Ritu/);
+    expect(notice.message).toMatch(/no longer need to take the I2-100 classes/);
+    const previous = mocks.sendWhatsApp.mock.calls[0][0];
+    expect(previous.bodyParameters).not.toContain("Coach Ritu");
   });
 
   it("falls back to the approved templates while Meta has not approved the new ones", async () => {

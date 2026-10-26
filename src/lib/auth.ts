@@ -137,11 +137,16 @@ const nextAuth = NextAuth({
         }
         releaseRateLimit(`login:ip:${clientIp}`);
         releaseRateLimit(`login:identifier:${normalized}`);
+        const signedInAt = new Date();
         if ((user.failedLoginAttempts || 0) > 0 || user.loginLockedUntil || user.lastFailedLoginAt) {
           await User.updateOne(
             { _id: user._id },
-            { $set: { failedLoginAttempts: 0 }, $unset: { loginLockedUntil: 1, lastFailedLoginAt: 1 } }
+            { $set: { failedLoginAttempts: 0, lastLoginAt: signedInAt, lastSeenAt: signedInAt }, $unset: { loginLockedUntil: 1, lastFailedLoginAt: 1 } }
           );
+        } else {
+          await User.updateOne({ _id: user._id }, { $set: { lastLoginAt: signedInAt, lastSeenAt: signedInAt } }).catch((error) => {
+            console.error("lastLoginAt stamp failed", error);
+          });
         }
         const explicitSuperAdminExists = await User.exists({ role: "admin", isSuperAdmin: true, isActive: { $ne: false } });
         const isBootstrapSuperAdmin = user.role === "admin" && !user.accessRole && !explicitSuperAdminExists;

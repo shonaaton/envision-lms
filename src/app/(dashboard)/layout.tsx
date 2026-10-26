@@ -9,6 +9,7 @@ import { dbConnect } from "@/lib/db";
 import { FeeAssignment } from "@/models/Fee";
 import { Classroom } from "@/models/Classroom";
 import { canStudentUseLearnChess } from "@/lib/learning/studentAccess";
+import { touchLastSeen } from "@/lib/engagement/lastSeen";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +34,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   if (role === "student") {
     try {
       await dbConnect();
+      await touchLastSeen((session.user as any).id);
       hasCreditPlan = Boolean(await FeeAssignment.exists({ student: (session.user as any).id, type: "credits" }));
     } catch (error) {
       console.error("Dashboard credit-plan lookup failed; continuing without blocking the page.", error);

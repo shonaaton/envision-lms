@@ -27,6 +27,7 @@ export async function register() {
   const { sealLegacyTempPasswords } = await import("@/lib/tempPasswordMigration");
   const { processRetentionSweep } = await import("@/lib/retention/retentionSweep");
   const { processCrmDemoStageReconcile } = await import("@/lib/crm/reconcile");
+  const { processWeeklyEngagement } = await import("@/lib/engagement/weeklyEngagementJob");
 
   installRuntimeProcessLogging();
   installRuntimeStderrCapture();
@@ -153,6 +154,16 @@ export async function register() {
       name: "retention_risk_sweep",
       intervalMs: 60 * 60_000,
       run: () => processRetentionSweep(),
+    },
+    {
+      /**
+       * The Sunday-evening WhatsApp to each family: a progress digest, or a
+       * practice nudge for a child who has gone quiet - one per student per
+       * week, claimed per student. Off unless ENGAGEMENT_WHATSAPP_ENABLED=true.
+       */
+      name: "weekly_engagement_messages",
+      intervalMs: 60 * 60_000,
+      run: () => processWeeklyEngagement(),
     },
     {
       /**

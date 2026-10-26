@@ -2288,6 +2288,33 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
       { "position": 3, "key": "effective_from", "sample": "5 Oct 2026" },
       { "position": 4, "key": "groups", "sample": "I2-100" }
     ]
+  },
+  {
+    "name": "weekly_progress_digest",
+    "language": "en",
+    "sourceAutomation": "weeklyEngagementJob.deliver",
+    "body": "Hello! Here is {{1}}'s week at Envision Chess Academy.\n\nClasses attended: {{2}} of {{3}}\nHomework completed: {{4}}\nPuzzles and lessons solved: {{5}}\nNext class: {{6}}\n\nSee the full progress on the academy portal: {{7}}\n\nReply STOP to stop these weekly updates. Class and fee messages will continue.\n\nTeam Envision Chess Academy",
+    "variables": [
+      { "position": 1, "key": "student_name", "sample": "Aarav" },
+      { "position": 2, "key": "classes_attended", "sample": "2" },
+      { "position": 3, "key": "classes_scheduled", "sample": "2" },
+      { "position": 4, "key": "homework_completed", "sample": "1" },
+      { "position": 5, "key": "puzzles_solved", "sample": "14" },
+      { "position": 6, "key": "next_class", "sample": "Sat, 1 Nov, 5:00 pm" },
+      { "position": 7, "key": "portal_link", "sample": "https://envisionchessacademy.com/dashboard" }
+    ]
+  },
+  {
+    "name": "practice_nudge",
+    "language": "en",
+    "sourceAutomation": "weeklyEngagementJob.deliver",
+    "body": "Hello! {{1}} has not practised on the Envision Chess Academy portal for {{2}} days. A short practice keeps what they learn in class fresh.\n\nSuggested next step: {{3}}\n\nOpen it here: {{4}}\n\nReply STOP to stop these weekly updates. Class and fee messages will continue.\n\nTeam Envision Chess Academy",
+    "variables": [
+      { "position": 1, "key": "student_name", "sample": "Aarav" },
+      { "position": 2, "key": "idle_days", "sample": "9" },
+      { "position": 3, "key": "task", "sample": "the next Learn Chess lesson" },
+      { "position": 4, "key": "task_link", "sample": "https://envisionchessacademy.com/learn" }
+    ]
   }
 ] as const satisfies readonly WhatsAppTemplateDefinition[];
 

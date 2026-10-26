@@ -5,6 +5,7 @@ import { Suspense, useEffect, useState } from "react";
 import { Menu } from "lucide-react";
 import { usePathname } from "next/navigation";
 import LiveDataRefresher from "@/components/layout/LiveDataRefresher";
+import LoginPopup from "@/components/popups/LoginPopup";
 import PopupTargetReset from "@/components/layout/PopupTargetReset";
 import Sidebar from "@/components/layout/Sidebar";
 
@@ -95,6 +96,7 @@ export default function DashboardFrame({
         </main>
       </div>
       <LiveDataRefresher />
+      {role === "student" && <LoginPopup />}
     </div>
   );
 }

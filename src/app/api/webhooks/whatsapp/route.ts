@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { NextResponse } from "next/server";
 import { dbConnect } from "@/lib/db";
 import { findWhatsAppUserByPhone, normalizeWhatsAppNumber } from "@/lib/whatsappAutomation";
+import { handleOptOutReply } from "@/lib/engagement/optOut";
 import { WhatsAppMessage } from "@/models/WhatsApp";
 
 export const dynamic = "force-dynamic";
@@ -194,7 +195,7 @@ export async function POST(req: Request) {
         const profileName = String(contact.profile?.name || "");
         const matchedUser: any = await findWhatsAppUserByPhone(phoneNumber);
         const media = mediaPart(message);
-        await WhatsAppMessage.updateOne(
+        const stored = await WhatsAppMessage.updateOne(
           { metaMessageId },
           {
             $setOnInsert: {
@@ -219,6 +220,13 @@ export async function POST(req: Request) {
           },
           { upsert: true }
         );
+        // Only on first delivery: Meta and n8n retry webhooks, and a retried STOP
+        // must not send the family a second confirmation.
+        if (stored.upsertedCount && (message.type === "text" || message.type === "button")) {
+          await handleOptOutReply(phoneNumber, messageText(message)).catch((error) => {
+            console.error("WhatsApp opt-out handling failed", { error, phoneNumber });
+          });
+        }
       }
     }
   }

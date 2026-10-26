@@ -4,6 +4,7 @@ import { sendAutomationEmail } from "@/lib/emailAutomation";
 import { formatAcademyDateTime } from "@/lib/academyTime";
 import { resolveAudienceEmails } from "@/lib/studentContact";
 import { sendWhatsAppAutomationTemplate, whatsappRecipientName } from "@/lib/whatsappAutomationEvents";
+import { templateUnavailable } from "@/lib/whatsappTemplateErrors";
 import type { WhatsAppSendResult } from "@/lib/whatsappAutomation";
 
 /**
@@ -18,17 +19,6 @@ import type { WhatsAppSendResult } from "@/lib/whatsappAutomation";
  * The callers still send the incoming coach's in-app notice and email themselves
  * (with the full class details); this owns only that coach's WhatsApp.
  */
-
-/** Same Meta codes the other coach notices treat as "template not usable yet". */
-const TEMPLATE_UNAVAILABLE_META_CODES = new Set([132001, 132015, 132016]);
-
-function templateUnavailable(result: WhatsAppSendResult) {
-  if (result.delivered || result.skipped) return false;
-  const code = Number((result.payload as any)?.error?.code || 0);
-  if (TEMPLATE_UNAVAILABLE_META_CODES.has(code)) return true;
-  const text = `${result.errorMessage || ""} ${result.error || ""}`;
-  return /does not exist|not been approved|template.{0,40}(missing|not found)|paused|disabled/i.test(text);
-}
 
 function recordId(value: any) {
   return value?._id?.toString?.() ?? value?.toString?.() ?? "";

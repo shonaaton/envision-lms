@@ -154,6 +154,19 @@ const UserSchema = new Schema(
     pausedUntil: { type: Date, index: true },
     pauseExpectedRestartDate: { type: Date },
     pauseRecord: { type: Schema.Types.ObjectId, ref: "StudentPause", index: true },
+    // Engagement signals. `lastLoginAt` is a password sign-in; sessions last for
+    // weeks, so `lastSeenAt` (stamped at most hourly by the dashboard layout) is
+    // the one that says whether the family still opens the portal.
+    lastLoginAt: { type: Date },
+    lastSeenAt: { type: Date, index: true },
+    // The weekly progress WhatsApp (lib/engagement). Replying STOP sets this on
+    // every account behind that number, so siblings stop together; an admin can
+    // also set it. Class, fee and schedule messages ignore it.
+    engagementOptOut: {
+      optedOut: { type: Boolean, default: false, index: true },
+      at: Date,
+      via: { type: String, enum: ["whatsapp_stop", "admin"] },
+    },
     failedLoginAttempts: { type: Number, default: 0 },
     lastFailedLoginAt: { type: Date },
     loginLockedUntil: { type: Date },

@@ -122,7 +122,9 @@ export const authConfig = {
         // Every dashboard page renders the shared frame, which reads the academy
         // branding and the account's own notifications.
         nextUrl.pathname.startsWith("/api/branding") ||
-        nextUrl.pathname.startsWith("/api/notifications");
+        nextUrl.pathname.startsWith("/api/notifications") ||
+        // The frame also asks for the account's own pop-up (demo-student campaigns).
+        nextUrl.pathname.startsWith("/api/popups");
 
       if (isPublic) return true;
       // A valid session is already durable. Keep the login route from mounting

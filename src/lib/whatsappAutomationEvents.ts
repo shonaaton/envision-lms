@@ -1,6 +1,6 @@
 import { normalizeWhatsAppRecipient, resolveWhatsAppCountryCode, sendWhatsAppTemplateMessage, type WhatsAppSendResult } from "@/lib/whatsappAutomation";
 import { isWhatsAppAutomationTemplateEnabled } from "@/lib/whatsappAutomationSettings";
-import { renderWhatsAppTemplatePreview } from "@/lib/whatsappTemplateRegistry";
+import { getWhatsAppTemplateDefinition, renderWhatsAppTemplatePreview } from "@/lib/whatsappTemplateRegistry";
 
 export const WHATSAPP_AUTOMATION_LANGUAGE = "en";
 
@@ -24,6 +24,23 @@ export function whatsappRecipientName(user: WhatsAppAutomationRecipient, fallbac
 
 export function canSendWhatsAppTo(user?: WhatsAppAutomationRecipient | null) {
   return Boolean(String(user?.phone || "").replace(/[^\d]/g, ""));
+}
+
+/**
+ * Template variables are positional: dropping an empty {{3}} would slide {{4}}
+ * into its slot and send a wrong message. Interior blanks become "-"; trailing
+ * blanks are dropped. The one exception keeps the old behaviour where a caller
+ * may depend on it: when the template declares fewer variables than were passed
+ * and dropping the blanks gives exactly that many, the blanks are dropped.
+ */
+export function positionalParameters(values: unknown[], expectedCount?: number) {
+  const trimmed = values.map((value) => String(value ?? "").trim());
+  while (trimmed.length && !trimmed[trimmed.length - 1]) trimmed.pop();
+  if (expectedCount && trimmed.length > expectedCount) {
+    const filled = trimmed.filter(Boolean);
+    if (filled.length === expectedCount) return filled;
+  }
+  return trimmed.map((value) => value || "-");
 }
 
 function recipientTypePriority(input: Parameters<typeof sendWhatsAppAutomationTemplate>[0]) {
@@ -128,7 +145,7 @@ export async function sendWhatsAppAutomationTemplate(input: {
     countryCode,
     templateName: input.templateName,
     language: WHATSAPP_AUTOMATION_LANGUAGE,
-    bodyParameters: (input.bodyParameters || []).map((value) => String(value || "").trim()).filter(Boolean),
+    bodyParameters: positionalParameters(input.bodyParameters || [], getWhatsAppTemplateDefinition(input.templateName)?.variables?.length),
     metadata: {
       ...(input.metadata || {}),
       userId: input.user ? recipientId(input.user) : input.metadata?.userId,

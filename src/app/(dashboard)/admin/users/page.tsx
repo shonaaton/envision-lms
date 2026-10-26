@@ -61,12 +61,17 @@ type AdminUser = {
   isActive: boolean;
   isPaused?: boolean;
   pausedUntil?: string;
+  lastSeenAt?: string;
+  engagementOptOut?: { optedOut?: boolean; via?: "whatsapp_stop" | "admin" };
   duplicateReview?: {
     status?: "pending" | "cleared" | "confirmed";
     reasons?: string[];
     matches?: Array<{ name?: string; email?: string; username?: string }>;
   };
 };
+
+/** What the edit form sends: the record's fields, with the weekly-WhatsApp switch as a plain on/off. */
+type UserUpdate = Omit<Partial<AdminUser>, "engagementOptOut"> & { engagementOptOut?: boolean };
 
 type BatchItem = {
   _id: string;
@@ -203,7 +208,7 @@ export default function AdminUsersPage() {
   const openMenuUser = users.find((u) => menu?.type === "user" && menu.id === u._id);
   const openMenuBatch = batches.find((b) => menu?.type === "batch" && menu.id === b._id);
 
-  async function updateUser(id: string, payload: Partial<AdminUser> & { resetPassword?: boolean; password?: string; exitReason?: { category: ExitReasonKey; note: string } }) {
+  async function updateUser(id: string, payload: UserUpdate & { resetPassword?: boolean; password?: string; exitReason?: { category: ExitReasonKey; note: string } }) {
     const response = await fetch(`/api/admin/users/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -752,6 +757,8 @@ function UserDetailsModal({ user, batches, onClose, onCopy }: { user: AdminUser;
           <InfoRow label="Password" value={user.tempPassword ? "Temporary password available to admin" : passwordStatus(user)} />
           <InfoRow label="Contact No." value={contactNumber(user)} />
           <InfoRow label="Status" value={user.isActive ? "Active" : "Inactive"} />
+          {user.role === "student" && <InfoRow label="Last seen" value={user.lastSeenAt ? new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric" }).format(new Date(user.lastSeenAt)) : "Not yet recorded"} />}
+          {user.role === "student" && <InfoRow label="Weekly updates" value={weeklyUpdatesLabel(user)} />}
           {user.tempPassword ? <button className="btn-primary gap-2" onClick={onCopy}><Copy size={15} /> Copy temporary credentials</button> : null}
         </div>
       </div>
@@ -761,6 +768,11 @@ function UserDetailsModal({ user, batches, onClose, onCopy }: { user: AdminUser;
       </div>
     </ModalShell>
   );
+}
+
+function weeklyUpdatesLabel(user: AdminUser) {
+  if (!user.engagementOptOut?.optedOut) return "On";
+  return user.engagementOptOut.via === "whatsapp_stop" ? "Off - family replied STOP" : "Off - switched off by an admin";
 }
 
 function InfoRow({ label, value }: { label: string; value: string }) {
@@ -813,7 +825,7 @@ function passwordStatus(user: AdminUser) {
   return `${user.passwordChangeSource === "self_reset" ? "Updated by user" : "Updated"} ${changed}`;
 }
 
-function EditUserModal({ user, onClose, onSave }: { user: AdminUser; onClose: () => void; onSave: (payload: Partial<AdminUser>) => void }) {
+function EditUserModal({ user, onClose, onSave }: { user: AdminUser; onClose: () => void; onSave: (payload: UserUpdate) => void }) {
   const currentStaffRole = typeof user.accessRole === "object" && user.accessRole ? user.accessRole._id : typeof user.accessRole === "string" ? user.accessRole : user.role;
   return (
     <ModalShell title={`Edit ${userRoleLabel(user.role)}`} onClose={onClose}>
@@ -832,6 +844,7 @@ function EditUserModal({ user, onClose, onSave }: { user: AdminUser; onClose: ()
           tags: String(fd.get("tags") || "").split(",").map((s) => s.trim()).filter(Boolean),
           notes: String(fd.get("notes") || ""),
           isActive: fd.get("isActive") === "on",
+          ...(user.role === "student" ? { engagementOptOut: fd.get("weeklyUpdates") !== "on" } : {}),
         });
       }}>
         {["admin", "sub-admin"].includes(user.role) && <StaffRoleSelect defaultValue={currentStaffRole} />}
@@ -844,6 +857,17 @@ function EditUserModal({ user, onClose, onSave }: { user: AdminUser; onClose: ()
         <input className="input bg-white text-slate-950" name="tags" defaultValue={(user.tags || []).join(", ")} />
         <textarea className="input min-h-24 bg-white text-slate-950" name="notes" defaultValue={user.notes || ""} />
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="isActive" defaultChecked={user.isActive} /> Active</label>
+        {user.role === "student" && (
+          <label className="flex items-start gap-2 text-sm">
+            <input type="checkbox" name="weeklyUpdates" className="mt-0.5" defaultChecked={!user.engagementOptOut?.optedOut} />
+            <span>
+              Weekly progress WhatsApp
+              <span className="block text-xs text-slate-500">
+                {user.engagementOptOut?.via === "whatsapp_stop" && user.engagementOptOut?.optedOut ? "The family replied STOP. Only switch this back on if they ask." : "Sunday digest or practice nudge. Class and fee messages are not affected."}
+              </span>
+            </span>
+          </label>
+        )}
         <div className="flex justify-end gap-2"><button className="btn border border-slate-200" type="button" onClick={onClose}>Cancel</button><button className="btn-primary">Save</button></div>
       </form>
     </ModalShell>

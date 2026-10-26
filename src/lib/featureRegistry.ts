@@ -631,6 +631,17 @@ export const FEATURE_DEFINITIONS: FeatureDefinition[] = [
     defaultRolePermissions: { "sub-admin": ["view", "create", "edit"], admin: all(view, create, edit) },
   },
   {
+    key: "engagement",
+    label: "Pop-ups & Engagement",
+    category: "Communication",
+    description: "Pop-ups students see when they open the portal, and the weekly progress WhatsApp to families (sent, nudged, opted out).",
+    routes: ["/admin/popups"],
+    apiPrefixes: ["/api/admin/popups"],
+    permissions: [view, create, edit],
+    defaultStatus: "enabled",
+    defaultRolePermissions: { "sub-admin": ["view", "create", "edit"], admin: all(view, create, edit) },
+  },
+  {
     key: "academySettings",
     label: "Academy Setup",
     category: "Settings",

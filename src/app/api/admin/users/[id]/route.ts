@@ -41,7 +41,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const actorId = (session!.user as any).id;
   await dbConnect();
   const actorIsSuperAdmin = await isSuperAdminSession(session!.user as any);
-  const target = await User.findById(params.id).select("name email phone role accessRole isSuperAdmin isActive").lean();
+  const target = await User.findById(params.id).select("name email phone role accessRole isSuperAdmin isActive engagementOptOut").lean();
   if (!target) return NextResponse.json({ error: "User not found." }, { status: 404 });
   if (!actorIsSuperAdmin && ["admin", "sub-admin"].includes((target as any).role)) return NextResponse.json({ error: "Only Super Admins can change staff accounts." }, { status: 403 });
   if ((target as any)?.isSuperAdmin && !actorIsSuperAdmin) return NextResponse.json({ error: "Only Super Admins can update another Super Admin." }, { status: 403 });
@@ -86,6 +86,15 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const allowed =["name", "email", "countryCode", "phone", "role", "tags", "batches", "fideId", "rating", "notes", "isActive", "isSuperAdmin"];
   const update: any = {};
   for (const k of allowed) if (k in body) update[k] = body[k];
+  // Weekly progress WhatsApp on/off (lib/engagement). Families can also reply STOP.
+  // The edit form always posts it, so only an actual change is stamped - an
+  // unrelated edit must not turn "the family replied STOP" into "an admin did".
+  if (typeof body.engagementOptOut === "boolean" && body.engagementOptOut !== Boolean((target as any).engagementOptOut?.optedOut)) {
+    update["engagementOptOut.optedOut"] = body.engagementOptOut;
+    update["engagementOptOut.at"] = new Date();
+    if (body.engagementOptOut) update["engagementOptOut.via"] = "admin";
+    else update.$unset = { "engagementOptOut.via": 1 };
+  }
   if (body.role !== undefined && !["student", "instructor", "admin", "sub-admin"].includes(body.role)) return NextResponse.json({ error: "Invalid role." }, { status: 400 });
   if ("accessRole" in body) {
     if (!actorIsSuperAdmin) return NextResponse.json({ error: "Only Super Admins can assign roles." }, { status: 403 });

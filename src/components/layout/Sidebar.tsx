@@ -17,6 +17,7 @@ import {
   CalendarDays,
   CalendarOff,
   CalendarX,
+  Sparkles,
   ChevronDown,
   ClipboardList,
   Cpu,
@@ -244,6 +245,7 @@ const sections: NavSection[] = [
     items: [
       { href: "/admin/announcements", label: "Announcements", icon: Megaphone, featureKey: "announcements" },
       { href: "/admin/holidays", label: "Holidays", icon: CalendarX, featureKey: "academyHolidays" },
+      { href: "/admin/popups", label: "Pop-ups & Engagement", icon: Sparkles, featureKey: "engagement" },
       { href: "/admin/notifications", label: "Notifications", icon: Bell, featureKey: "notifications", permission: "manage" },
       { href: "/admin/whatsapp", label: "WhatsApp", icon: MessageCircle, featureKey: "whatsapp" },
     ],

@@ -25,6 +25,9 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/scripts ./scripts
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+# The uploads volume (docker-compose.yml) takes this folder's owner when first
+# created, so the server user can write to it.
+RUN mkdir -p /app/data/uploads && chown -R nextjs:nodejs /app/data
 USER nextjs
 EXPOSE 3000
 CMD ["node", "server.js"]

@@ -1,12 +1,22 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import type { KeyboardEvent, UIEvent } from "react";
+import type { ChangeEvent, KeyboardEvent, UIEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Check, CheckCheck, EyeOff, MessageSquare, Search, Send, Shield, Trash2, Users } from "lucide-react";
+import { AlertTriangle, Check, CheckCheck, Download, ExternalLink, EyeOff, FileText, Image as ImageIcon, Link2, MessageSquare, Paperclip, Search, Send, Shield, Trash2, Users, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ASK_COACH_READ_EVENT } from "@/components/ask-coach/events";
+import {
+  ASK_COACH_ACCEPT,
+  ASK_COACH_MAX_LINKS,
+  attachmentSummary,
+  fileListProblem,
+  fileRuleFor,
+  formatFileSize,
+  linkifySegments,
+  normalizeLinkUrl,
+} from "@/lib/askCoachAttachmentRules";
 
 type Role = "student" | "instructor" | "admin";
 type DeliveryStatus = "sent" | "delivered" | "seen";
@@ -23,12 +33,24 @@ type ConversationRecord = {
   student?: UserRef;
   batch?: { name?: string } | null;
 };
+type AttachmentRecord = {
+  _id: string;
+  kind: "image" | "document" | "link";
+  name?: string;
+  label?: string;
+  url?: string;
+  href?: string;
+  mimeType?: string;
+  size?: number;
+};
+type DraftLink = { url: string; label: string };
 type ReadReceipt = { user?: string | { _id?: string }; readAt?: string };
 type MessageRecord = {
   _id: string;
   conversation?: string | { _id?: string };
   sender?: UserRef;
   body?: string;
+  attachments?: AttachmentRecord[];
   createdAt?: string;
   flagged?: boolean;
   moderationStatus?: string;
@@ -125,6 +147,96 @@ function statusLabel(status?: DeliveryStatus) {
   return "Sent";
 }
 
+function MessageBody({ text, mine }: { text: string; mine: boolean }) {
+  return (
+    <>
+      {linkifySegments(text).map((segment, index) =>
+        segment.type === "link" ? (
+          <a
+            key={index}
+            href={segment.href}
+            target="_blank"
+            rel="noopener noreferrer nofollow"
+            className={cn("break-all font-semibold underline underline-offset-2", mine ? "text-white" : "text-brand")}
+          >
+            {segment.text}
+          </a>
+        ) : (
+          <span key={index} className="whitespace-pre-wrap">{segment.text}</span>
+        )
+      )}
+    </>
+  );
+}
+
+function linkHost(url?: string) {
+  try {
+    return url ? new URL(url).hostname.replace(/^www\./, "") : "";
+  } catch {
+    return "";
+  }
+}
+
+function MessageAttachments({ attachments, mine }: { attachments: AttachmentRecord[]; mine: boolean }) {
+  const images = attachments.filter((item) => item.kind === "image" && item.href);
+  const others = attachments.filter((item) => !(item.kind === "image" && item.href));
+  return (
+    <div className="mt-2 space-y-2">
+      {images.length > 0 && (
+        <div className={cn("grid gap-1.5", images.length > 1 ? "grid-cols-2" : "grid-cols-1")}>
+          {images.map((item) => (
+            <a key={item._id} href={item.href} target="_blank" rel="noopener noreferrer" className={cn("block overflow-hidden rounded-md bg-slate-100 ring-1 ring-black/5", images.length === 1 && "w-fit max-w-full")}>
+              {/* eslint-disable-next-line @next/next/no-img-element -- access-checked API file, not an optimisable static image */}
+              <img
+                src={item.href}
+                alt={item.name || "Image"}
+                loading="lazy"
+                className={images.length > 1 ? "h-36 w-full object-cover" : "block h-auto max-h-72 w-auto min-w-24 max-w-full object-contain"}
+              />
+            </a>
+          ))}
+        </div>
+      )}
+      {others.map((item) => {
+        const isLink = item.kind === "link";
+        const href = isLink ? item.url : item.href;
+        if (!href) return null;
+        return (
+          <div
+            key={item._id}
+            className={cn(
+              "flex min-w-0 items-center gap-2.5 rounded-md border px-2.5 py-2",
+              mine ? "border-white/25 bg-white/10" : "border-slate-200 bg-slate-50"
+            )}
+          >
+            <span className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-md", mine ? "bg-white/15 text-white" : "bg-brand/10 text-brand")}>
+              {isLink ? <Link2 size={17} /> : <FileText size={17} />}
+            </span>
+            <a href={href} target="_blank" rel={isLink ? "noopener noreferrer nofollow" : "noopener noreferrer"} className="min-w-0 flex-1">
+              <span className={cn("block truncate text-sm font-bold", mine ? "text-white" : "text-slate-900")}>
+                {isLink ? item.label || linkHost(item.url) || item.url : item.name}
+              </span>
+              <span className={cn("block truncate text-[11px]", mine ? "text-white/70" : "text-slate-500")}>
+                {isLink ? item.url : `${(item.name?.split(".").pop() || "file").toUpperCase()} - ${formatFileSize(item.size || 0)}`}
+              </span>
+            </a>
+            <a
+              href={isLink ? href : `${href}?download=1`}
+              target="_blank"
+              rel={isLink ? "noopener noreferrer nofollow" : "noopener noreferrer"}
+              aria-label={isLink ? "Open link" : `Download ${item.name}`}
+              title={isLink ? "Open link" : "Download"}
+              className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-md", mine ? "text-white/80 hover:bg-white/15" : "text-slate-500 hover:bg-slate-200")}
+            >
+              {isLink ? <ExternalLink size={15} /> : <Download size={15} />}
+            </a>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function MessageStatus({ message }: { message: MessageRecord }) {
   const title = `${statusLabel(message.deliveryStatus)}${
     message.recipientCount ? ` - read by ${message.readByCount || 0} of ${message.recipientCount}` : ""
@@ -144,6 +256,11 @@ export default function AskCoachClient({ role }: { role: Role }) {
   const [activeId, setActiveId] = useState("");
   const [mobilePanel, setMobilePanel] = useState<"conversations" | "chat" | "compose">("chat");
   const [message, setMessage] = useState("");
+  const [files, setFiles] = useState<File[]>([]);
+  const [links, setLinks] = useState<DraftLink[]>([]);
+  const [linkFormOpen, setLinkFormOpen] = useState(false);
+  const [linkUrl, setLinkUrl] = useState("");
+  const [linkLabel, setLinkLabel] = useState("");
   const [receiver, setReceiver] = useState("");
   const [batch, setBatch] = useState("");
   const [query, setQuery] = useState("");
@@ -292,20 +409,65 @@ export default function AskCoachClient({ role }: { role: Role }) {
     }
   }, [activeConversation?._id, activeConversation?.unreadCount, markConversationRead]);
 
+  const canAttach = role !== "student";
+  const hasDraft = Boolean(message.trim() || files.length || links.length);
+
+  function addFiles(event: ChangeEvent<HTMLInputElement>) {
+    const picked = Array.from(event.target.files || []);
+    event.target.value = "";
+    if (!picked.length) return;
+    const next = [...files, ...picked];
+    const problem = fileListProblem(next);
+    if (problem) {
+      toast.error(problem);
+      return;
+    }
+    setFiles(next);
+  }
+
+  function addLink() {
+    const url = normalizeLinkUrl(linkUrl);
+    if (!url) {
+      toast.error("Enter a valid web address, for example https://lichess.org/study/...");
+      return;
+    }
+    if (links.length >= ASK_COACH_MAX_LINKS) {
+      toast.error(`You can add up to ${ASK_COACH_MAX_LINKS} links to one message.`);
+      return;
+    }
+    setLinks((current) => [...current, { url, label: linkLabel.trim() }]);
+    setLinkUrl("");
+    setLinkLabel("");
+    setLinkFormOpen(false);
+  }
+
   async function sendMessage() {
-    if (!message.trim()) return;
+    if (!hasDraft || loading) return;
     setLoading(true);
     const startNewThread = Boolean(batch || receiver);
     const payload: Record<string, string> = { message };
     if (!startNewThread && activeConversation?._id) payload.conversationId = activeConversation._id;
     if (batch) payload.batch = batch;
     else if (receiver) payload.receiver = receiver;
-    const res = await fetch("/api/ask-coach", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    let requestBody: BodyInit;
+    const headers: Record<string, string> = {};
+    if (files.length) {
+      // Multipart only when there are files; the browser sets the boundary header.
+      const form = new FormData();
+      Object.entries(payload).forEach(([key, value]) => form.append(key, value));
+      files.forEach((file) => form.append("files", file));
+      if (links.length) form.append("links", JSON.stringify(links));
+      requestBody = form;
+    } else {
+      headers["Content-Type"] = "application/json";
+      requestBody = JSON.stringify(links.length ? { ...payload, links } : payload);
+    }
+    const res = await fetch("/api/ask-coach", { method: "POST", headers, body: requestBody }).catch(() => null);
     setLoading(false);
+    if (!res) {
+      toast.error("Could not send message. Check your connection and try again.");
+      return;
+    }
     if (!res.ok) {
       const error = await res.json().catch(() => ({}));
       toast.error(error.error || "Could not send message");
@@ -314,6 +476,9 @@ export default function AskCoachClient({ role }: { role: Role }) {
     const created: MessageRecord = await res.json();
     const nextConversationId = conversationIdOf(created) || activeConversation?._id || "";
     setMessage("");
+    setFiles([]);
+    setLinks([]);
+    setLinkFormOpen(false);
     setBatch("");
     setReceiver("");
     setHasNewMessages(false);
@@ -373,6 +538,95 @@ export default function AskCoachClient({ role }: { role: Role }) {
     { id: "chat" as const, label: "Open", count: activeConversation?.unreadCount || 0 },
     { id: "compose" as const, label: role === "student" ? "Ask" : "New", count: 0 },
   ];
+
+  // The same draft is shown in the chat composer and the mobile "New" panel.
+  const attachButtons = (
+    <div className="flex gap-1.5">
+      <label
+        title="Attach images or documents"
+        className="inline-flex h-12 w-11 cursor-pointer items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-brand/30 hover:text-brand"
+      >
+        <Paperclip size={18} />
+        <span className="sr-only">Attach images or documents</span>
+        <input type="file" multiple accept={ASK_COACH_ACCEPT} onChange={addFiles} className="sr-only" />
+      </label>
+      <button
+        type="button"
+        title="Add a link"
+        aria-label="Add a link"
+        aria-expanded={linkFormOpen}
+        onClick={() => setLinkFormOpen((open) => !open)}
+        className={cn(
+          "inline-flex h-12 w-11 items-center justify-center rounded-lg border bg-white shadow-sm transition hover:border-brand/30 hover:text-brand",
+          linkFormOpen ? "border-brand/40 text-brand" : "border-slate-200 text-slate-600"
+        )}
+      >
+        <Link2 size={18} />
+      </button>
+    </div>
+  );
+
+  const attachmentTray = (linkFormOpen || files.length > 0 || links.length > 0) ? (
+    <div className="mb-2 space-y-2">
+      {linkFormOpen && (
+        <div className="flex flex-col gap-2 rounded-lg border border-brand/20 bg-brand/5 p-2 sm:flex-row">
+          <input
+            value={linkUrl}
+            onChange={(event) => setLinkUrl(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                addLink();
+              }
+            }}
+            inputMode="url"
+            autoFocus
+            placeholder="Paste a link (https://...)"
+            aria-label="Link address"
+            className="h-10 min-w-0 flex-[2] rounded-md border border-slate-200 bg-white px-3 text-sm outline-none focus:border-brand/40 focus:ring-4 focus:ring-brand/10"
+          />
+          <input
+            value={linkLabel}
+            onChange={(event) => setLinkLabel(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                addLink();
+              }
+            }}
+            maxLength={120}
+            placeholder="Title (optional)"
+            aria-label="Link title"
+            className="h-10 min-w-0 flex-1 rounded-md border border-slate-200 bg-white px-3 text-sm outline-none focus:border-brand/40 focus:ring-4 focus:ring-brand/10"
+          />
+          <button type="button" onClick={addLink} className="h-10 shrink-0 rounded-md bg-brand px-4 text-sm font-black text-white">Add link</button>
+        </div>
+      )}
+      {(files.length > 0 || links.length > 0) && (
+        <ul className="flex flex-wrap gap-2" aria-label="Attachments to send">
+          {files.map((file, index) => (
+            <li key={`${file.name}-${index}`} className="flex max-w-full items-center gap-2 rounded-full border border-slate-200 bg-white py-1 pl-2.5 pr-1 text-xs font-semibold text-slate-700 shadow-sm">
+              {fileRuleFor(file.name)?.kind === "image" ? <ImageIcon size={14} className="shrink-0 text-brand" /> : <FileText size={14} className="shrink-0 text-brand" />}
+              <span className="max-w-[12rem] truncate">{file.name}</span>
+              <span className="shrink-0 text-slate-400">{formatFileSize(file.size)}</span>
+              <button type="button" aria-label={`Remove ${file.name}`} onClick={() => setFiles((current) => current.filter((_, i) => i !== index))} className="grid h-6 w-6 place-items-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+                <X size={13} />
+              </button>
+            </li>
+          ))}
+          {links.map((link, index) => (
+            <li key={`${link.url}-${index}`} className="flex max-w-full items-center gap-2 rounded-full border border-slate-200 bg-white py-1 pl-2.5 pr-1 text-xs font-semibold text-slate-700 shadow-sm">
+              <Link2 size={14} className="shrink-0 text-brand" />
+              <span className="max-w-[14rem] truncate">{link.label || link.url}</span>
+              <button type="button" aria-label={`Remove link ${link.label || link.url}`} onClick={() => setLinks((current) => current.filter((_, i) => i !== index))} className="grid h-6 w-6 place-items-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+                <X size={13} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  ) : null;
 
   return (
     <div className="flex h-[calc(100dvh-72px)] min-h-[520px] flex-col overflow-hidden rounded-lg border border-white/70 bg-slate-100 shadow-[0_28px_80px_rgba(47,23,65,0.18)] ring-1 ring-brand/10 sm:h-[calc(100dvh-88px)] sm:min-h-[560px] lg:h-[calc(100vh-92px)]">
@@ -516,9 +770,16 @@ export default function AskCoachClient({ role }: { role: Role }) {
                           <span className="min-w-0 truncate">{mine ? "You" : item.sender?.name || "User"}</span>
                           {item.flagged && <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700"><AlertTriangle size={13} /> Flagged</span>}
                         </div>
-                        <div className={cn("break-words text-sm leading-relaxed", item.status === "hidden" && role !== "admin" ? "italic opacity-70" : "")}>
-                          {item.status === "hidden" && role !== "admin" ? "Hidden pending admin review" : item.body}
-                        </div>
+                        {item.status === "hidden" && role !== "admin" ? (
+                          <div className="break-words text-sm italic leading-relaxed opacity-70">Hidden pending admin review</div>
+                        ) : (
+                          <>
+                            {item.body ? (
+                              <div className="break-words text-sm leading-relaxed"><MessageBody text={item.body} mine={mine} /></div>
+                            ) : null}
+                            {item.attachments?.length ? <MessageAttachments attachments={item.attachments} mine={mine} /> : null}
+                          </>
+                        )}
                         {item.flagReasons?.length ? <div className={cn("mt-2 text-xs", mine ? "text-amber-100" : "text-amber-700")}>Reasons: {item.flagReasons.join(", ")}</div> : null}
                         <div className={cn("mt-2 flex items-center justify-end gap-1 text-[11px] font-semibold", mine ? "text-white/75" : "text-slate-500")}>
                           <span>{messageTime(item.createdAt)}</span>
@@ -556,7 +817,9 @@ export default function AskCoachClient({ role }: { role: Role }) {
             )}
           </div>
           <div className="sticky bottom-0 z-10 flex-none border-t border-slate-200 bg-white/95 p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-12px_28px_rgba(15,23,42,0.06)] backdrop-blur lg:static">
-            <div className="mx-auto flex max-w-3xl flex-col gap-2 sm:flex-row sm:items-end">
+            {canAttach && <div className="mx-auto max-w-3xl">{attachmentTray}</div>}
+            {/* Coaches get a toolbar row under the text box, so the attach buttons never squeeze it. */}
+            <div className={cn("mx-auto flex max-w-3xl flex-col gap-2", !canAttach && "sm:flex-row sm:items-end")}>
               <textarea
                 value={message}
                 onChange={(event) => setMessage(event.target.value)}
@@ -565,7 +828,11 @@ export default function AskCoachClient({ role }: { role: Role }) {
                 placeholder="Type your message. Press Enter to send, Shift+Enter for a new line."
                 rows={2}
               />
-              <button disabled={loading || !message.trim()} onClick={sendMessage} className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-lg bg-brand px-5 text-sm font-black text-white shadow-lg shadow-brand/25 transition hover:-translate-y-0.5 disabled:translate-y-0 disabled:opacity-60"><Send size={16} /> Send</button>
+              <div className="flex items-center gap-2">
+                {canAttach && attachButtons}
+                {canAttach && <span className="hidden min-w-0 flex-1 truncate text-[11px] font-semibold text-slate-400 xl:block">Images, PDF, Word, Excel, PowerPoint, PGN - up to 10 MB each</span>}
+                <button disabled={loading || !hasDraft} onClick={sendMessage} className={cn("inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-lg bg-brand px-5 text-sm font-black text-white shadow-lg shadow-brand/25 transition hover:-translate-y-0.5 disabled:translate-y-0 disabled:opacity-60", canAttach ? "ml-auto flex-1 xl:flex-none" : "flex-1 sm:flex-none")}><Send size={16} /> {loading ? "Sending..." : "Send"}</button>
+              </div>
             </div>
           </div>
         </main>
@@ -603,7 +870,11 @@ export default function AskCoachClient({ role }: { role: Role }) {
                   placeholder={role === "student" ? "Ask your coach a question..." : "Write the new message..."}
                   rows={4}
                 />
-                <button disabled={loading || !message.trim()} onClick={sendMessage} className="inline-flex h-12 items-center justify-center gap-2 rounded-lg bg-brand px-5 text-sm font-black text-white shadow-lg shadow-brand/25 disabled:opacity-60"><Send size={16} /> Send</button>
+                {canAttach && attachmentTray}
+                <div className="flex gap-2">
+                  {canAttach && attachButtons}
+                  <button disabled={loading || !hasDraft} onClick={sendMessage} className="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-lg bg-brand px-5 text-sm font-black text-white shadow-lg shadow-brand/25 disabled:opacity-60"><Send size={16} /> {loading ? "Sending..." : "Send"}</button>
+                </div>
               </div>
             </section>
 
@@ -614,7 +885,7 @@ export default function AskCoachClient({ role }: { role: Role }) {
                   {flaggedMessages.length ? flaggedMessages.slice(0, 8).map((item) => (
                     <button key={item._id} onClick={() => setActiveId(conversationIdOf(item))} className="w-full rounded-xl bg-white p-2 text-left text-xs text-amber-900 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
                       <div className="font-semibold">{item.sender?.name}</div>
-                      <div className="truncate">{item.body}</div>
+                      <div className="truncate">{item.body || attachmentSummary(item.attachments || [])}</div>
                     </button>
                   )) : <div className="text-sm text-amber-800">No flagged messages.</div>}
                 </div>

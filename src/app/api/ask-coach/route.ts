@@ -8,6 +8,8 @@ import { Notification } from "@/models/Fee";
 import { createAskCoachMessage, ensureBatchConversation, ensureDirectConversation, notifyUser } from "@/lib/askCoach";
 import { cancelAskCoachUnreadEmails, queueAskCoachUnreadEmail } from "@/lib/askCoachEmailReminders";
 import { recordActivity } from "@/lib/activity";
+import { attachmentSummary, canAttachToAskCoach, parseLinkAttachments } from "@/lib/askCoachAttachmentRules";
+import { linkAttachments, removeAskCoachFiles, saveAskCoachFiles, type StoredAttachment } from "@/lib/askCoachAttachments";
 
 export const dynamic = "force-dynamic";
 
@@ -82,6 +84,54 @@ function toId(value: unknown) {
   }
   const candidate = value as { _id?: { toString?: () => string }; toString?: () => string };
   return candidate._id?.toString?.() || candidate.toString?.() || "";
+}
+
+/**
+ * What the chat sees of an attachment: never the stored file name, and a file
+ * only by the access-checked download route.
+ */
+function publicAttachments(message: any) {
+  const messageId = toId(message._id);
+  return (message.attachments || []).map((item: any) => {
+    const id = toId(item._id);
+    return item.kind === "link"
+      ? { _id: id, kind: "link", name: item.name || item.url, label: item.label || "", url: item.url }
+      : {
+        _id: id,
+        kind: item.kind,
+        name: item.name,
+        mimeType: item.mimeType,
+        size: item.size || 0,
+        href: `/api/ask-coach/attachments/${messageId}/${id}`,
+      };
+  });
+}
+
+/**
+ * The POST body: JSON for text only, multipart when files are attached. Links
+ * travel as a JSON string in either.
+ */
+async function readMessageInput(req: Request) {
+  if ((req.headers.get("content-type") || "").includes("multipart/form-data")) {
+    const form = await req.formData();
+    const text = (key: string) => {
+      const value = form.get(key);
+      return typeof value === "string" ? value : "";
+    };
+    let links: unknown = [];
+    try {
+      links = text("links") ? JSON.parse(text("links")) : [];
+    } catch {
+      throw new Error("One of the links is not a valid web address.");
+    }
+    return {
+      body: { message: text("message"), conversationId: text("conversationId"), batch: text("batch"), receiver: text("receiver") } as Record<string, string>,
+      files: form.getAll("files").filter((value): value is File => value instanceof File && value.size > 0),
+      links,
+    };
+  }
+  const body = await req.json();
+  return { body, files: [] as File[], links: body.links || [] };
 }
 
 async function studentCoach(studentId: string) {
@@ -209,6 +259,7 @@ export async function GET(req: Request) {
     }).length;
     return {
       ...message,
+      attachments: publicAttachments(message),
       deliveryStatus: messageDeliveryStatus(message, conversation, id),
       readByCount: readers.size,
       recipientCount,
@@ -230,9 +281,21 @@ export async function POST(req: Request) {
   await dbConnect();
   const role = userRole(session as AuthSession);
   const sender = userId(session);
-  const body = await req.json();
+  let input: Awaited<ReturnType<typeof readMessageInput>>;
+  let links: ReturnType<typeof parseLinkAttachments>;
+  try {
+    input = await readMessageInput(req);
+    links = parseLinkAttachments(input.links);
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Invalid message" }, { status: 400 });
+  }
+  const { body, files } = input;
   const messageText = String(body.message || "").trim();
-  if (!messageText) return NextResponse.json({ error: "Message required" }, { status: 400 });
+  const hasAttachments = files.length > 0 || links.length > 0;
+  if (!messageText && !hasAttachments) return NextResponse.json({ error: "Message required" }, { status: 400 });
+  if (hasAttachments && !canAttachToAskCoach(role)) {
+    return NextResponse.json({ error: "Only coaches can send files and links." }, { status: 403 });
+  }
 
   let conversation: ConversationRecord | null = null;
   let receiver: string | undefined;
@@ -298,7 +361,22 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Conversation could not be created" }, { status: 500 });
   }
 
-  const created = await createAskCoachMessage({ conversation, sender, receiver, batch: batchId, body: messageText });
+  // Files are written only once the conversation is known to be the sender's.
+  let attachments: StoredAttachment[] = [];
+  try {
+    attachments = [...(await saveAskCoachFiles(files)), ...linkAttachments(links)];
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Could not save the attachments" }, { status: 400 });
+  }
+  let created: any;
+  try {
+    created = await createAskCoachMessage({ conversation, sender, receiver, batch: batchId, body: messageText, attachments: attachments as any });
+  } catch (error) {
+    await removeAskCoachFiles(attachments);
+    throw error;
+  }
+  // Emails and previews need words; an attachment-only message is described.
+  const notificationText = messageText || attachmentSummary(attachments);
   await recordActivity({
     actor: sender,
     targetUser: receiver || sender,
@@ -317,6 +395,7 @@ export async function POST(req: Request) {
       messageType: batchId ? "batch" : "direct",
       flagged: Boolean(created.flagged),
       flagReasons: created.flagReasons || [],
+      attachments: attachments.map((item) => item.kind),
       source: "ask_coach",
     },
   });
@@ -336,7 +415,7 @@ export async function POST(req: Request) {
       await queueAskCoachUnreadEmail({
         messageId: created._id,
         conversationId: conversation._id,
-        messageBody: messageText,
+        messageBody: notificationText,
         href,
         sender: senderUser,
         recipient: receiverUser,
@@ -358,7 +437,7 @@ export async function POST(req: Request) {
           await queueAskCoachUnreadEmail({
             messageId: created._id,
             conversationId: conversation._id,
-            messageBody: messageText,
+            messageBody: notificationText,
             href,
             sender: senderUser,
             recipient: student,
@@ -366,7 +445,8 @@ export async function POST(req: Request) {
         }
       }));
   }
-  return NextResponse.json(created);
+  const createdObject = typeof created.toObject === "function" ? created.toObject() : created;
+  return NextResponse.json({ ...createdObject, attachments: publicAttachments(createdObject) });
 }
 
 export async function PATCH(req: Request) {

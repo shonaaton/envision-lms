@@ -6,6 +6,7 @@ import { recordActivity } from "@/lib/activity";
 import { AskCoachMessage } from "@/models/AskCoach";
 import { notifyUser } from "@/lib/askCoach";
 import { resolveModerationTask } from "@/lib/tasks/taskTriggers";
+import { removeAskCoachFiles } from "@/lib/askCoachAttachments";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +31,7 @@ export async function PATCH(req: Request) {
   };
   if (action === "approve") update.$set = { status: "sent", moderationStatus: "approved", flagged: false };
   if (action === "hide") update.$set = { status: "hidden", moderationStatus: "hidden" };
-  if (action === "delete") update.$set = { status: "deleted", moderationStatus: "deleted", body: "[Deleted by admin]" };
+  if (action === "delete") update.$set = { status: "deleted", moderationStatus: "deleted", body: "[Deleted by admin]", attachments: [] };
   if (action === "review") update.$set = { moderationStatus: "reviewed" };
   if (action === "warn") {
     update.$set = { moderationStatus: "reviewed" };
@@ -41,6 +42,8 @@ export async function PATCH(req: Request) {
     .populate("sender receiver", "name username email role")
     .populate("batch", "name")
     .lean();
+  // A deleted message keeps no files: the record says it was deleted, the content goes.
+  if (action === "delete") await removeAskCoachFiles(message.attachments || []);
   if (["approve", "hide", "delete", "review", "warn"].includes(action)) await resolveModerationTask(message._id, adminId, action);
   await recordActivity({
     actor: adminId,

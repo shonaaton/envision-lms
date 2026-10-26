@@ -29,6 +29,11 @@ services:
       - .env
     environment:
       REDIS_URL: redis://engine-redis:6379
+      # Profile photos, achievement images and Ask Coach files. Without the
+      # volume they sat in the container's temp folder and every deploy wiped them.
+      UPLOADS_DIR: /app/data/uploads
+    volumes:
+      - lms_uploads:/app/data/uploads
     expose:
       - "3000"
     networks:
@@ -128,3 +133,4 @@ networks:
 
 volumes:
   engine_redis_data:
+  lms_uploads:

@@ -7,6 +7,7 @@ import { sendEmailAutomation } from "@/lib/emailAutomation";
 import { resolvePublicAppUrl } from "@/lib/appUrl";
 import { sendWhatsAppAutomationTemplate } from "@/lib/whatsappAutomationEvents";
 import { raiseModerationTask } from "@/lib/tasks/taskTriggers";
+import { attachmentSummary, type AskCoachAttachmentKind } from "@/lib/askCoachAttachmentRules";
 
 const badWords = ["abuse", "idiot", "stupid", "shut up", "bloody", "damn"];
 
@@ -128,6 +129,12 @@ export async function ensureBatchConversation(batchId: string) {
   );
 }
 
+/** The text plus every attachment spelled out, for the moderator who has to judge it. */
+function summaryWithLinks(body: string, attachments: Array<{ kind: string; name: string; url?: string }>) {
+  const lines = attachments.map((item) => (item.kind === "link" ? `Link: ${item.url}${item.name && item.name !== item.url ? ` (${item.name})` : ""}` : `${item.kind === "image" ? "Image" : "Document"}: ${item.name}`));
+  return [body, ...lines].filter(Boolean).join("\n");
+}
+
 export async function createAskCoachMessage(input: {
   conversation: any;
   sender: string;
@@ -135,8 +142,15 @@ export async function createAskCoachMessage(input: {
   batch?: string;
   body: string;
   messageType?: "direct" | "batch";
+  attachments?: Array<{ kind: AskCoachAttachmentKind; name: string; mimeType?: string; size?: number; storedName?: string; url?: string; label?: string }>;
 }) {
-  const safety = checkMessageSafety(input.body);
+  const attachments = input.attachments || [];
+  // Link addresses, link labels and file names are checked like typed text:
+  // a wa.me link or a file called "call me 98xxxxxx.pdf" is still a contact detail.
+  const safety = checkMessageSafety(
+    [input.body, ...attachments.flatMap((item) => [item.name, item.label || "", item.url || ""])].filter(Boolean).join("\n")
+  );
+  const summary = input.body || attachmentSummary(attachments);
   const message = await AskCoachMessage.create({
     conversation: input.conversation._id,
     type: input.messageType || input.conversation.type,
@@ -144,6 +158,7 @@ export async function createAskCoachMessage(input: {
     receiver: input.receiver,
     batch: input.batch,
     body: input.body,
+    attachments,
     flagged: safety.flagged,
     flagReasons: safety.reasons,
     status: safety.flagged ? "hidden" : "sent",
@@ -152,7 +167,7 @@ export async function createAskCoachMessage(input: {
   });
   await AskCoachConversation.findByIdAndUpdate(input.conversation._id, {
     lastMessageAt: new Date(),
-    lastMessagePreview: safety.flagged ? "Message pending admin review" : input.body.slice(0, 120),
+    lastMessagePreview: safety.flagged ? "Message pending admin review" : summary.slice(0, 120),
   });
   if (safety.flagged) {
     const sender: any = await User.findById(input.sender).select("name username email role").lean();
@@ -174,13 +189,13 @@ export async function createAskCoachMessage(input: {
       flaggedByEmail: sender?.email || "",
       coachName: coach?.name || coach?.username || "Not assigned",
       coachEmail: coach?.email || "",
-      flaggedContent: input.body,
+      flaggedContent: summaryWithLinks(input.body, attachments),
       classroomDetails: context,
       htmlBody: `<p><strong>User:</strong> ${escapeHtml(sender?.name || sender?.username || "Unknown user")}</p>
         <p><strong>Coach:</strong> ${escapeHtml(coach?.name || coach?.username || "Not assigned")}</p>
         <p><strong>Context:</strong> ${escapeHtml(context)}</p>
         <p><strong>Reasons:</strong> ${escapeHtml(safety.reasons.join(", "))}</p>
-        <p><strong>Flagged message:</strong></p><blockquote>${escapeHtml(input.body)}</blockquote>
+        <p><strong>Flagged message:</strong></p><blockquote>${escapeHtml(summaryWithLinks(input.body, attachments))}</blockquote>
         <p><a href="${reviewUrl}">Review the flagged message</a></p>`,
     });
     await raiseModerationTask(message, safety.reasons, href);

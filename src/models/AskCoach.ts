@@ -24,7 +24,22 @@ const AskCoachMessageSchema = new Schema(
     sender: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
     receiver: { type: Schema.Types.ObjectId, ref: "User", index: true },
     batch: { type: Schema.Types.ObjectId, ref: "Batch", index: true },
-    body: { type: String, required: true },
+    // Empty when the message is only attachments.
+    body: { type: String, default: "" },
+    // Coaches and admins only (lib/askCoachAttachmentRules.ts). Files are
+    // stored by `storedName` and served by /api/ask-coach/attachments, never
+    // by a public URL; links keep the checked http(s) `url`.
+    attachments: [
+      {
+        kind: { type: String, enum: ["image", "document", "link"], required: true },
+        name: { type: String, default: "" },
+        mimeType: String,
+        size: Number,
+        storedName: String,
+        url: String,
+        label: String,
+      },
+    ],
     readBy: [{ user: { type: Schema.Types.ObjectId, ref: "User" }, readAt: Date }],
     flagged: { type: Boolean, default: false, index: true },
     flagReasons: [String],

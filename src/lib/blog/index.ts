@@ -18,6 +18,13 @@ import onlineVsOffline from "@/lib/blog/posts/online-vs-offline-chess-classes";
 import schoolClubVsCoaching from "@/lib/blog/posts/school-chess-club-vs-chess-coaching";
 import whyChennai from "@/lib/blog/posts/why-chennai-is-the-chess-capital-of-india";
 import topKolkataAcademies from "@/lib/blog/posts/top-chess-academies-in-kolkata";
+import topAcademiesMumbai from "@/lib/blog/posts/top-chess-academies-in-mumbai";
+import topAcademiesDelhi from "@/lib/blog/posts/top-chess-academies-in-delhi";
+import topAcademiesBangalore from "@/lib/blog/posts/top-chess-academies-in-bangalore";
+import topAcademiesHyderabad from "@/lib/blog/posts/top-chess-academies-in-hyderabad";
+import topAcademiesChennai from "@/lib/blog/posts/top-chess-academies-in-chennai";
+import topAcademiesPune from "@/lib/blog/posts/top-chess-academies-in-pune";
+import topAcademiesAhmedabad from "@/lib/blog/posts/top-chess-academies-in-ahmedabad";
 
 /**
  * Every published post. A post exists on the site, in the sitemap, on the blog
@@ -39,6 +46,13 @@ const ALL_POSTS: BlogPost[] = [
   // of them) without targeting that page's own phrases.
   onlineVsOffline,
   topKolkataAcademies,
+  topAcademiesMumbai,
+  topAcademiesDelhi,
+  topAcademiesBangalore,
+  topAcademiesHyderabad,
+  topAcademiesChennai,
+  topAcademiesPune,
+  topAcademiesAhmedabad,
   whyChennai,
   indoorDelhi,
   monsoonMumbai,

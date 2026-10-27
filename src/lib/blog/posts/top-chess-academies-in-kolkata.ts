@@ -167,6 +167,11 @@ const post: BlogPost = {
         "Can my child switch between batches, centres or online classes later?",
       ],
     },
+    { type: "h2", id: "other-cities", text: "Chess academy guides for other cities" },
+    {
+      type: "p",
+      text: "Outside Kolkata, Envision teaches through live online classes, and we have written the same kind of guide for India's other big cities: the [top chess academies in Mumbai](/blog/top-chess-academies-in-mumbai), [Delhi](/blog/top-chess-academies-in-delhi), [Bangalore](/blog/top-chess-academies-in-bangalore), [Hyderabad](/blog/top-chess-academies-in-hyderabad), [Chennai](/blog/top-chess-academies-in-chennai), [Pune](/blog/top-chess-academies-in-pune) and [Ahmedabad](/blog/top-chess-academies-in-ahmedabad).",
+    },
     {
       type: "cta",
       heading: "Visit an Envision centre - or try a class online",

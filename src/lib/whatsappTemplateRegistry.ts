@@ -1492,6 +1492,64 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
       { "position": 6, "key": "invoice_url", "sample": "https://envisionchessacademy.com/invoice" }
     ]
   },
+  // The monthly reminders with the Razorpay link for the exact amount. They
+  // start switched off and replace invoice_due_soon / invoice_due_today /
+  // invoice_overdue_reminder once turned on (lib/whatsappAutomationSettings.ts).
+  {
+    "name": "invoice_due_soon_pay",
+    "language": "en",
+    "sourceAutomation": "Monthly Invoice Reminder",
+    "body": "Hello {{1}}, invoice {{2}} for {{3}} is due on {{4}}. The amount due is {{5}}. You can pay securely online here: {{6}} and the payment is recorded automatically.",
+    "variables": [
+      { "position": 1, "key": "recipient_name", "sample": "Aarav" },
+      { "position": 2, "key": "invoice_number", "sample": "ECA-2026-1042" },
+      { "position": 3, "key": "student_or_invoice_title", "sample": "August Group Classes" },
+      { "position": 4, "key": "due_date", "sample": "31 Aug 2026" },
+      { "position": 5, "key": "amount", "sample": "₹2,500" },
+      { "position": 6, "key": "pay_url", "sample": "https://rzp.io/rzp/abc123" }
+    ]
+  },
+  {
+    "name": "invoice_due_today_pay",
+    "language": "en",
+    "sourceAutomation": "Monthly Invoice Reminder",
+    "body": "Hello {{1}}, invoice {{2}} for {{3}} is due today, {{4}}. The amount due is {{5}}. You can pay securely online here: {{6}} and the payment is recorded automatically.",
+    "variables": [
+      { "position": 1, "key": "recipient_name", "sample": "Aarav" },
+      { "position": 2, "key": "invoice_number", "sample": "ECA-2026-1042" },
+      { "position": 3, "key": "student_or_invoice_title", "sample": "August Group Classes" },
+      { "position": 4, "key": "due_date", "sample": "31 Aug 2026" },
+      { "position": 5, "key": "amount", "sample": "₹2,500" },
+      { "position": 6, "key": "pay_url", "sample": "https://rzp.io/rzp/abc123" }
+    ]
+  },
+  {
+    "name": "invoice_overdue_pay",
+    "language": "en",
+    "sourceAutomation": "Monthly Invoice Reminder",
+    "body": "Hello {{1}}, invoice {{2}} for {{3}} was due on {{4}} and is now overdue. The amount due is {{5}}. Please pay securely online here: {{6}} and the payment is recorded automatically.",
+    "variables": [
+      { "position": 1, "key": "recipient_name", "sample": "Aarav" },
+      { "position": 2, "key": "invoice_number", "sample": "ECA-2026-1042" },
+      { "position": 3, "key": "student_or_invoice_title", "sample": "August Group Classes" },
+      { "position": 4, "key": "due_date", "sample": "31 Aug 2026" },
+      { "position": 5, "key": "amount", "sample": "₹2,500" },
+      { "position": 6, "key": "pay_url", "sample": "https://rzp.io/rzp/abc123" }
+    ]
+  },
+  {
+    // Sales sends this to a new family from Sales > Payment Links.
+    "name": "sales_payment_link",
+    "language": "en",
+    "sourceAutomation": "Sales Payment Links",
+    "body": "Hello {{1}}, thank you for choosing Envision Chess Academy. Your payment link for {{2}} is ready and the amount is {{3}}. Please pay securely online here: {{4}} and reply to this message if you have any questions.",
+    "variables": [
+      { "position": 1, "key": "customer_name", "sample": "Mr. Sharma" },
+      { "position": 2, "key": "description", "sample": "Group classes, 8 sessions" },
+      { "position": 3, "key": "amount", "sample": "₹2,500" },
+      { "position": 4, "key": "pay_url", "sample": "https://rzp.io/rzp/abc123" }
+    ]
+  },
   {
     "name": "class_credit_low",
     "language": "en",

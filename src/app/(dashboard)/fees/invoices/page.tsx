@@ -24,6 +24,7 @@ import { canAccessFeature, getFeaturePermissionState } from "@/lib/featureAccess
 import { isFeesManager, requireFeesAccess } from "@/lib/feesAccess";
 import { recordActivity } from "@/lib/activity";
 import { invoiceReferences } from "@/lib/feesMetrics";
+import { retireInvoicePaymentLink } from "@/lib/payments/invoicePaymentLink";
 
 export const dynamic = "force-dynamic";
 
@@ -270,6 +271,7 @@ async function cancelInvoice(formData: FormData) {
   await dbConnect();
   const invoice: any = await Invoice.findByIdAndUpdate(formData.get("invoice"), { status: "cancelled" }, { new: true }).lean();
   if (invoice) {
+    await retireInvoicePaymentLink(invoice);
     await recordActivity({
       actor: (session.user as any).id,
       targetUser: invoice.student?.toString?.() || String(invoice.student || ""),
@@ -363,6 +365,7 @@ async function deleteInvoice(formData: FormData) {
     creditReversal,
     invoiceSnapshot: invoice,
   });
+  await retireInvoicePaymentLink(invoice);
   await Promise.all([
     CreditLedger.deleteMany({ invoice: invoice._id }),
     Invoice.findByIdAndDelete(invoice._id),

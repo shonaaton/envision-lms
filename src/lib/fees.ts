@@ -16,6 +16,7 @@ import { createHash, randomBytes } from "crypto";
 import { invoiceStaffRecipients } from "@/lib/demoNotificationRecipients";
 import { sendWhatsAppAutomationTemplate, sendWhatsAppAutomationTemplates, whatsappRecipientName } from "@/lib/whatsappAutomationEvents";
 import { raiseCreditsExhaustedTask, resolveInvoiceTasks } from "@/lib/tasks/taskTriggers";
+import { retireInvoicePaymentLink } from "@/lib/payments/invoicePaymentLink";
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -338,7 +339,7 @@ export function adjustedInvoicePayment(input: {
 export async function markInvoicePaid(
   invoiceId: string,
   paymentId?: string,
-  activity?: { actor?: string; source?: "manual_admin" | "razorpay_checkout" | "razorpay_webhook" | "backend"; label?: string },
+  activity?: { actor?: string; source?: "manual_admin" | "razorpay_checkout" | "razorpay_webhook" | "razorpay_payment_link" | "backend"; label?: string },
   transactions: ManualPaymentTransaction[] = [],
   adjustment: InvoicePaymentAdjustment = {},
   // Back-dated imports replay payments that were settled long ago, so the
@@ -404,6 +405,8 @@ export async function markInvoicePaid(
     { new: true }
   );
   if (!invoice) return invoice;
+  // Settled another way: the link from an earlier reminder must not take a second payment.
+  if (activity?.source !== "razorpay_payment_link") await retireInvoicePaymentLink(existing);
   await resolveInvoiceTasks(invoice, activity?.actor);
   await recordActivity({
     actor: activity?.actor,

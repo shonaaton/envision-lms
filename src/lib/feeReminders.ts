@@ -18,6 +18,7 @@ import {
   type FeeReminderType,
 } from "@/lib/feeReminderRules";
 import { createPublicInvoiceUrl } from "@/lib/fees";
+import { ensureInvoicePaymentLink } from "@/lib/payments/invoicePaymentLink";
 import { normalizeWhatsAppRecipient } from "@/lib/whatsappAutomation";
 import { sendWhatsAppAutomationTemplate } from "@/lib/whatsappAutomationEvents";
 import { formatINR } from "@/lib/utils";
@@ -240,6 +241,9 @@ async function reminderContent(recipient: FeeReminderRecipient) {
     };
   }
   const invoiceUrl = recipient.invoiceId ? await createPublicInvoiceUrl(recipient.invoiceId) : "";
+  // A Razorpay link for the invoice's exact total. Empty when Razorpay is not
+  // configured, and the reminder then carries the invoice link as before.
+  const payUrl = recipient.invoiceId ? await ensureInvoicePaymentLink(recipient.invoiceId) : "";
   const dueDate = recipient.dueDate ? formatAcademyDate(recipient.dueDate) : "";
   const overdue = recipient.category === "invoice_overdue";
   return {
@@ -249,11 +253,15 @@ async function reminderContent(recipient: FeeReminderRecipient) {
       `${recipient.invoiceNumber} for ${recipient.studentName} is ${overdue ? "overdue" : recipient.timingLabel?.toLowerCase()}.`,
       `Outstanding amount: ${formatINR(recipient.invoiceAmount || 0)}.`,
       `Due date: ${dueDate}.`,
-      invoiceUrl ? `Invoice and payment details: ${invoiceUrl}` : "Please open the academy billing portal to review the invoice.",
-    ].join("\n\n"),
+      payUrl ? `Pay online: ${payUrl}` : "",
+      invoiceUrl ? `Invoice${payUrl ? "" : " and payment details"}: ${invoiceUrl}` : "Please open the academy billing portal to review the invoice.",
+    ].filter(Boolean).join("\n\n"),
     templateName: feeReminderWhatsAppTemplate(recipient.category),
-    parameters: [recipient.contactName, recipient.studentName, recipient.invoiceNumber || "Invoice", formatINR(recipient.invoiceAmount || 0), dueDate, invoiceUrl || "Academy billing portal"],
-    actionUrl: invoiceUrl,
+    // {{6}} reads "View invoice and payment details", which fits the pay link as
+    // well, so the approved template needs no change to carry it.
+    parameters: [recipient.contactName, recipient.studentName, recipient.invoiceNumber || "Invoice", formatINR(recipient.invoiceAmount || 0), dueDate, payUrl || invoiceUrl || "Academy billing portal"],
+    actionUrl: payUrl || invoiceUrl,
+    actionLabel: payUrl ? "Pay Now" : "View Invoice",
   };
 }
 
@@ -326,7 +334,7 @@ export async function sendFeeReminders({
               subject: content.subject,
               message: content.message,
               actionUrl: content.actionUrl,
-              actionLabel: recipient.feeModel === "invoice" ? "View Invoice" : "View Credits",
+              actionLabel: "actionLabel" in content ? content.actionLabel : recipient.feeModel === "invoice" ? "View Invoice" : "View Credits",
               metadata: { kind: recipient.feeModel === "invoice" ? "invoice_reminder" : "credit_reminder", reminderType: recipient.category, recipientId: recipient.id },
             }));
         } catch (error) {

@@ -9,6 +9,7 @@ import { Classroom } from "@/models/Classroom";
 import { Invoice, Notification } from "@/models/Fee";
 import { StudentPause } from "@/models/StudentPause";
 import { User } from "@/models/User";
+import { retireInvoicePaymentLink } from "@/lib/payments/invoicePaymentLink";
 
 /**
  * The two ways a student leaves circulation, and what each does to the groups
@@ -648,6 +649,7 @@ async function voidUpcomingInvoices(studentId: string, fromDate: Date, actor?: C
       .filter(Boolean)
       .join(" ");
     await invoice.save();
+    await retireInvoicePaymentLink(invoice);
     await recordActivity({
       actor: actor?.id,
       targetUser: studentId,

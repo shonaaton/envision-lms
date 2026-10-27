@@ -760,6 +760,24 @@ export const FEATURE_DEFINITIONS: FeatureDefinition[] = [
     defaultRolePermissions: { admin: ["view", "manage"] },
   },
   {
+    key: "salesPaymentLinks",
+    label: "Payment Links",
+    category: "Sales",
+    description: "Razorpay payment links for new families, sent on the academy WhatsApp. Salespeople see the links they sent; attaching a paid link to a student raises their paid invoice.",
+    routes: ["/sales/payment-links"],
+    // Deliberately NOT under /api/payments: named roles need `payment` there
+    // (lib/accessRoleRequests.ts), which is the fees team's permission.
+    apiPrefixes: ["/api/sales/payment-links"],
+    permissions: [
+      view,
+      create,
+      { id: "cancel", label: "Cancel Links" },
+      { id: "attach", label: "Attach Payments to Students", critical: true },
+    ],
+    defaultStatus: "enabled",
+    defaultRolePermissions: { admin: ["view", "create", "cancel", "attach"] },
+  },
+  {
     key: "crmAdmin",
     label: "CRM Sync & Settings",
     category: "Sales",

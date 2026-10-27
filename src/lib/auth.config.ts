@@ -55,6 +55,10 @@ export const authConfig = {
         // this line middleware answers Kraya with a redirect to /login, and Kraya
         // treats any non-200 as a delivery failure.
         nextUrl.pathname.startsWith("/api/crm/kraya/webhook") ||
+        // Razorpay's webhook, same reason: it carries no session and the route
+        // checks X-Razorpay-Signature. Without it payments made through a link
+        // were never recorded, because Razorpay was answered with /login.
+        nextUrl.pathname === "/api/payments/webhook" ||
         nextUrl.pathname.startsWith("/api/register") ||
         nextUrl.pathname.startsWith("/api/password") ||
         nextUrl.pathname.startsWith("/api/fees/invoices") ||

@@ -30,6 +30,19 @@ export async function grantStaffInvoicesToSalesRole() {
 }
 
 /**
+ * Sales sends payment links to new families (user, 2026-10-27). Same reason as
+ * above: the saved Sales role predates the feature, so it is granted once, when
+ * the feature's settings are first created.
+ */
+export async function grantPaymentLinksToSalesRole() {
+  await dbConnect();
+  await AccessRole.updateOne(
+    { nameKey: "sales and relationship management", "permissions.salesPaymentLinks": { $exists: false } },
+    { $set: { "permissions.salesPaymentLinks": ["view", "create", "cancel"] } }
+  );
+}
+
+/**
  * Marketing downloads the demo leads report (user, 2026-10-03). The saved
  * Marketing role is rewritten from MARKETING_ROLE_GRANTS only when someone
  * opens Roles & Access, so this adds the grant once without waiting for that.

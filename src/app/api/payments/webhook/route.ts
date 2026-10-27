@@ -4,6 +4,7 @@ import { Payment } from "@/models/Payment";
 import { verifyWebhookSignature } from "@/lib/payments/razorpay";
 import { markInvoicePaid } from "@/lib/fees";
 import { recordActivity } from "@/lib/activity";
+import { handlePaymentLinkClosed, handlePaymentLinkPaid } from "@/lib/payments/paymentLinkWebhook";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +42,10 @@ export async function POST(req: Request) {
         },
       });
     }
+  } else if (event.event === "payment_link.paid") {
+    await handlePaymentLinkPaid(event.payload?.payment_link?.entity || {}, event.payload?.payment?.entity || {});
+  } else if (event.event === "payment_link.cancelled" || event.event === "payment_link.expired") {
+    await handlePaymentLinkClosed(event.payload?.payment_link?.entity || {}, event.event === "payment_link.expired" ? "expired" : "cancelled");
   } else if (event.event === "payment.failed") {
     const payment = event.payload.payment.entity;
     const pay = await Payment.findOneAndUpdate({ razorpayOrderId: payment.order_id }, { status: "failed" }, { new: true });

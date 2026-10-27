@@ -11,6 +11,8 @@ import { sendInvoiceOverdueEscalationEmail } from "@/lib/studentCommunicationEma
 import { invoiceStaffRecipients } from "@/lib/demoNotificationRecipients";
 import { sendWhatsAppAutomationTemplate, sendWhatsAppAutomationTemplates } from "@/lib/whatsappAutomationEvents";
 import { raiseOverdueInvoiceTask } from "@/lib/tasks/taskTriggers";
+import { ensureInvoicePaymentLink } from "@/lib/payments/invoicePaymentLink";
+import { isWhatsAppAutomationTemplateEnabled } from "@/lib/whatsappAutomationSettings";
 
 export const dynamic = "force-dynamic";
 
@@ -37,7 +39,7 @@ function reminderKind(days: number) {
   return "";
 }
 
-function studentMessage(invoice: any, invoiceUrl: string, days: number) {
+function studentMessage(invoice: any, invoiceUrl: string, days: number, payUrl = "") {
   const dueText = new Date(invoice.dueDate).toLocaleDateString("en-IN");
   const timing = days > 0 ? `due in ${days} days` : days === 0 ? "due today" : `overdue by ${Math.abs(days)} day${Math.abs(days) === 1 ? "" : "s"}`;
   return [
@@ -45,8 +47,21 @@ function studentMessage(invoice: any, invoiceUrl: string, days: number) {
     `Invoice ${invoice.invoiceNumber} for ${invoice.title} is ${timing}.`,
     `Amount: ${formatINR(invoice.totalAmount)}.`,
     `Due date: ${dueText}.`,
+    payUrl ? `Pay online: ${payUrl}` : "",
     invoiceUrl ? `Download invoice: ${invoiceUrl}` : "Please log in to the student portal to view and pay the invoice.",
-  ].join("\n\n");
+  ].filter(Boolean).join("\n\n");
+}
+
+/**
+ * The template for this reminder. The _pay versions carry the Razorpay link as
+ * {{6}}; they start switched off (lib/whatsappAutomationSettings.ts) and are
+ * used only once an admin turns them on after Meta approves them.
+ */
+async function invoiceReminderTemplate(days: number, payUrl: string) {
+  const base = days < 0 ? "invoice_overdue" : days === 0 ? "invoice_due_today" : "invoice_due_soon";
+  const legacy = days < 0 ? "invoice_overdue_reminder" : base;
+  if (payUrl && (await isWhatsAppAutomationTemplateEnabled(`${base}_pay`))) return { templateName: `${base}_pay`, withLink: true };
+  return { templateName: legacy, withLink: false };
 }
 
 /**
@@ -160,6 +175,7 @@ async function processReminders(req: Request) {
     const key = `${dateKey(now)}:${kind}`;
     if (invoice.lastReminderKey === key) continue;
     const invoiceUrl = baseUrl ? `${baseUrl}/fees/invoices?student=${invoice.student._id.toString()}` : "";
+    const payUrl = await ensureInvoicePaymentLink(invoice._id.toString());
 
     await Notification.create({
       user: invoice.student._id,
@@ -175,7 +191,7 @@ async function processReminders(req: Request) {
         ? {
             to: invoice.student.email,
             subject: days < 0 ? `Overdue invoice reminder: ${invoice.invoiceNumber}` : `Invoice reminder: ${invoice.invoiceNumber}`,
-            message: studentMessage(invoice, invoiceUrl, days),
+            message: studentMessage(invoice, invoiceUrl, days, payUrl),
             metadata: { kind: "monthly_invoice_student_reminder", invoiceId: invoice._id.toString(), days },
           }
         : null,
@@ -183,7 +199,7 @@ async function processReminders(req: Request) {
         ? {
             to: invoice.student.parentEmail,
             subject: days < 0 ? `Overdue invoice for ${invoice.student.name}` : `Invoice reminder for ${invoice.student.name}`,
-            message: studentMessage(invoice, invoiceUrl, days).replace(`Hello ${invoice.student.name},`, `Hello ${invoice.student.parentName || "Parent"},`),
+            message: studentMessage(invoice, invoiceUrl, days, payUrl).replace(`Hello ${invoice.student.name},`, `Hello ${invoice.student.parentName || "Parent"},`),
             metadata: { kind: "monthly_invoice_parent_reminder", invoiceId: invoice._id.toString(), days },
           }
         : null,
@@ -191,15 +207,21 @@ async function processReminders(req: Request) {
     for (const invoiceEmail of invoiceEmails) {
       await sendAutomationEmail(invoiceEmail);
     }
+    const whatsappTemplate = await invoiceReminderTemplate(days, payUrl);
+    const dueText = new Date(invoice.dueDate).toLocaleDateString("en-IN");
+    const amountText = formatINR(invoice.totalAmount);
+    // invoice_overdue_reminder alone takes the amount as {{4}} and the date as
+    // {{5}}; sending them the other way round told parents "the amount due is 12/10/2026".
+    const amountFirst = whatsappTemplate.templateName === "invoice_overdue_reminder";
     await sendWhatsAppAutomationTemplate({
       user: invoice.student,
-      templateName: days < 0 ? "invoice_overdue_reminder" : days === 0 ? "invoice_due_today" : "invoice_due_soon",
+      templateName: whatsappTemplate.templateName,
       bodyParameters: [
         invoice.student.name || "there",
         invoice.invoiceNumber,
         invoice.title || "Invoice",
-        new Date(invoice.dueDate).toLocaleDateString("en-IN"),
-        formatINR(invoice.totalAmount),
+        ...(amountFirst ? [amountText, dueText] : [dueText, amountText]),
+        ...(whatsappTemplate.withLink ? [payUrl] : []),
       ],
       metadata: { kind: "monthly_invoice_student_reminder", invoiceId: invoice._id.toString(), days, href: "/fees/invoices" },
     });
@@ -209,6 +231,7 @@ async function processReminders(req: Request) {
       await sendInvoiceOverdueEscalationEmail({
         invoice,
         invoiceUrl,
+        payUrl,
         daysOverdue: Math.abs(days),
       });
     }

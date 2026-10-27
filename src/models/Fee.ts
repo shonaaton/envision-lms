@@ -118,6 +118,18 @@ const InvoiceSchema = new Schema(
     notes: String,
     publicDownloadTokenHash: { type: String, index: true },
     publicDownloadTokenExpiresAt: Date,
+    // The Razorpay payment link reminders send. It is for one exact amount, so a
+    // late fee replaces it (lib/payments/invoicePaymentLink.ts); the counter keeps
+    // each replacement's reference_id unique, which Razorpay requires.
+    razorpayLink: {
+      id: { type: String, index: true },
+      shortUrl: String,
+      amount: Number,
+      referenceId: String,
+      status: { type: String, enum: ["active", "paid", "cancelled"] },
+      createdAt: Date,
+    },
+    razorpayLinkSeq: { type: Number, default: 0 },
     lastSentAt: Date,
     lastSentTo: String,
     lastEmailStatus: { type: String, enum: ["sent", "failed", "skipped", "missing_email", "not_configured"], default: undefined },

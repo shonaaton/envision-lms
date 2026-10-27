@@ -7,7 +7,7 @@ import { FeatureAccess, PermissionAudit, PermissionTemplate } from "@/models/Fea
 import { User } from "@/models/User";
 import { Batch } from "@/models/Batch";
 import { Classroom } from "@/models/Classroom";
-import { explicitSuperAdminExists, getAccessUser, grantDemoExportToMarketingRole, grantStaffInvoicesToSalesRole, resolveAccessRole } from "@/lib/accessRoles";
+import { explicitSuperAdminExists, getAccessUser, grantDemoExportToMarketingRole, grantPaymentLinksToSalesRole, grantStaffInvoicesToSalesRole, resolveAccessRole } from "@/lib/accessRoles";
 import { cachedPermissionValue } from "@/lib/permissionCache";
 import { isFeatureExcludedForRole, roleHasPermission, type RoleGrants } from "@/lib/accessRolePolicy";
 import {
@@ -285,6 +285,9 @@ async function loadFeatureAccessStates(): Promise<Record<string, FeatureAccessSt
     );
     if (missingFeatures.some((feature) => feature.key === "staffInvoices")) {
       await grantStaffInvoicesToSalesRole().catch((error) => console.error("[featureAccess] could not grant staff invoices to the Sales role", error));
+    }
+    if (missingFeatures.some((feature) => feature.key === "salesPaymentLinks")) {
+      await grantPaymentLinksToSalesRole().catch((error) => console.error("[featureAccess] could not grant payment links to the Sales role", error));
     }
     docs = await FeatureAccess.find({ key: { $in: featureKeys } }).lean();
   }

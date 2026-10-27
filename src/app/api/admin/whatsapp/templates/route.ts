@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { resolveWhatsAppMetaTemplateName, WHATSAPP_TEMPLATE_DEFINITIONS, type WhatsAppTemplateDefinition } from "@/lib/whatsappTemplateRegistry";
 import { WhatsAppAutomationSetting } from "@/models/WhatsAppAutomationSetting";
+import { defaultTemplateEnabled } from "@/lib/whatsappAutomationSettings";
 
 export const dynamic = "force-dynamic";
 
@@ -111,7 +112,7 @@ async function templatesWithSettings(templates: readonly WhatsAppTemplateWithMet
   const settingMap = new Map(settings.map((setting: any) => [String(setting.templateName), setting.enabled !== false]));
   return templates.map((template) => ({
     ...template,
-    automationEnabled: settingMap.get(template.name) ?? true,
+    automationEnabled: settingMap.get(template.name) ?? defaultTemplateEnabled(template.name),
   }));
 }
 

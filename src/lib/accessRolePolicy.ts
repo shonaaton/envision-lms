@@ -27,6 +27,7 @@ export const SALES_ROLE_GRANTS: RoleGrants = {
   ...ESSENTIAL_ROLE_GRANTS, batchVacancy: ["view"],
   contactEnquiries: ["view", "manage"],
   staffInvoices: ["view"],
+  salesPaymentLinks: ["view", "create", "cancel"],
 };
 export const MARKETING_ROLE_GRANTS: RoleGrants = {
   ...SALES_ROLE_GRANTS, demoCenter: ["view", "edit", "approve", "export"], marketingAnalytics: ["view"],

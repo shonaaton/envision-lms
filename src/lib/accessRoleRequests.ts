@@ -22,6 +22,7 @@ export function namedRoleApiPermissions(path: string, method: string): string[] 
   if (path.startsWith("/api/profile")) return ["edit"];
   if (path === "/api/notifications" && method === "PATCH") return ["view"]; // Own read receipts only; handler enforces ownership.
   if (path.startsWith("/api/sales/crm/")) return ["stage", "note"]; // Handler checks the selected action.
+  if (path.startsWith("/api/sales/payment-links/")) return ["create", "cancel", "attach"]; // Handler checks the selected action.
   if (path.startsWith("/api/admin/crm")) return ["manage"];
   if (path.startsWith("/api/admin/whatsapp/templates")) return ["manage"];
   if (path.startsWith("/api/admin/whatsapp/")) return ["create"];

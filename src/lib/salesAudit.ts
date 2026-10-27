@@ -4,7 +4,7 @@ import { auth } from "@/lib/auth";
 import { canAccessFeature } from "@/lib/featureAccess";
 import { recordActivity } from "@/lib/activity";
 
-export type SalesSurface = "salesPerformance" | "salesDirectory" | "batchVacancy" | "salesCrm" | "contactEnquiries";
+export type SalesSurface = "salesPerformance" | "salesDirectory" | "batchVacancy" | "salesCrm" | "contactEnquiries" | "salesPaymentLinks";
 
 const SURFACE_LABELS: Record<SalesSurface, string> = {
   salesPerformance: "Sales performance dashboard",
@@ -12,6 +12,7 @@ const SURFACE_LABELS: Record<SalesSurface, string> = {
   batchVacancy: "Batch vacancy board",
   salesCrm: "Lead CRM",
   contactEnquiries: "Contact enquiries inbox",
+  salesPaymentLinks: "Payment links",
 };
 
 export type SalesViewer = {

@@ -40,6 +40,8 @@ const quietMutationPatterns = [
   // Academy Holidays reloads its own list. Its preview is a POST, and a refresh
   // would close the drawer the moment the preview came back.
   /^\/api\/admin\/holidays(\/|$)/,
+  // Payment Links reloads its own list; a refresh would close the attach dialog.
+  /^\/api\/sales\/payment-links(\/|$)/,
 ];
 
 const liveClassroomPattern = /^\/api\/classrooms\/[^/]+\/live$/;

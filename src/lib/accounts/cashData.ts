@@ -13,6 +13,7 @@ import { bucketFor, classifyStudent, summarizeReceivables, type ReceivableStuden
 import { AccountEntry, AccountsSettings } from "@/models/Accounts";
 import { Invoice } from "@/models/Fee";
 import { Payment } from "@/models/Payment";
+import { retireInvoicePaymentLink } from "@/lib/payments/invoicePaymentLink";
 
 function idOf(value: any) {
   return String(value?._id || value || "");
@@ -201,6 +202,7 @@ export async function cancelOpenInvoices(invoiceIds: string[], reason: string, a
       { _id: invoice._id, status: invoice.status },
       { $set: { status: "cancelled", cancellationReason: why, cancellationPreviousStatus: invoice.status } }
     );
+    await retireInvoicePaymentLink(invoice);
     await recordActivity({
       actor: actorId,
       targetUser: idOf(invoice.student),

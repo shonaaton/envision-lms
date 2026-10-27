@@ -348,6 +348,7 @@ export async function sendHomeworkSubmittedConfirmationEmail(input: {
 export async function sendInvoiceOverdueEscalationEmail(input: {
   invoice: any;
   invoiceUrl: string;
+  payUrl?: string;
   daysOverdue: number;
 }) {
   const invoice = input.invoice;
@@ -363,7 +364,8 @@ export async function sendInvoiceOverdueEscalationEmail(input: {
     `Details: ${invoice.title}`,
     `Amount: ${formatINR(invoice.totalAmount)}`,
     `Due date: ${dueDate}`,
-    input.invoiceUrl ? `Payment / invoice link: ${input.invoiceUrl}` : "Please log in to your student portal to view and pay the invoice.",
+    ...(input.payUrl ? [`Pay online: ${input.payUrl}`] : []),
+    input.invoiceUrl ? `${input.payUrl ? "Invoice" : "Payment / invoice"} link: ${input.invoiceUrl}` : "Please log in to your student portal to view and pay the invoice.",
     "",
     "If you have already paid, please share the payment reference with the academy team.",
   ].join("\n");

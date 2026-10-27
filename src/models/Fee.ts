@@ -116,6 +116,9 @@ const InvoiceSchema = new Schema(
     lastReminderKey: { type: String, index: true },
     lastReminderAt: Date,
     notes: String,
+    // One key per submission of the manual invoice form, so a double click or a
+    // retried request returns the invoice already made instead of a second one.
+    creationKey: { type: String, index: { unique: true, sparse: true } },
     publicDownloadTokenHash: { type: String, index: true },
     publicDownloadTokenExpiresAt: Date,
     // The Razorpay payment link reminders send. It is for one exact amount, so a

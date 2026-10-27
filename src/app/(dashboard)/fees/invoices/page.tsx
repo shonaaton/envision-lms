@@ -1,21 +1,20 @@
 import { auth } from "@/lib/auth";
 import { resolvePublicAppUrl } from "@/lib/appUrl";
 import { dbConnect } from "@/lib/db";
-import { adjustedInvoicePayment, createInvoice, createNextMonthlyInvoiceAfterPayment, createPublicInvoiceUrl, ensureMonthlyInvoices, markInvoicePaid as applyInvoicePayment } from "@/lib/fees";
+import { adjustedInvoicePayment, createNextMonthlyInvoiceAfterPayment, createPublicInvoiceUrl, ensureMonthlyInvoices, markInvoicePaid as applyInvoicePayment } from "@/lib/fees";
 import { reverseCreditPurchase } from "@/lib/creditReversal";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
 import { resolveAudienceEmails } from "@/lib/studentContact";
 import { notifyCreditReversal } from "@/lib/studentLifecycleNotifications";
 import { sendWhatsAppReminder } from "@/lib/whatsappAutomation";
 import { formatINR } from "@/lib/utils";
-import { CreditLedger, DeletedInvoice, FeeAssignment, FeePlan, Invoice, Notification } from "@/models/Fee";
+import { CreditLedger, DeletedInvoice, FeeAssignment, Invoice, Notification } from "@/models/Fee";
 import { Payment } from "@/models/Payment";
 import { User } from "@/models/User";
 import PayButton from "@/components/PayButton";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { AlertCircle, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Download, Eye, FileText, IndianRupee, MailCheck, MailWarning, MessageCircle, Printer, Receipt, Send, Trash2, XCircle } from "lucide-react";
-import { InvoiceCreationForm } from "@/components/fees/InvoiceCreationForm";
+import { AlertCircle, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Download, Eye, FileText, IndianRupee, MailCheck, Plus, MailWarning, MessageCircle, Printer, Receipt, Send, Trash2, XCircle } from "lucide-react";
 import { InvoicePaymentModal } from "@/components/fees/InvoicePaymentModal";
 import { DeleteInvoiceButton } from "@/components/fees/DeleteInvoiceButton";
 import { UpdateIssueDateButton } from "@/components/fees/UpdateIssueDateButton";
@@ -65,38 +64,6 @@ function invoiceReminderMessage(invoice: any, invoiceUrl: string) {
     invoiceUrl ? `Download invoice: ${invoiceUrl}` : "Please log in to your student portal to view and pay the invoice.",
     "If you have already paid, please ignore this message or share the payment reference with the academy.",
   ].join("\n\n");
-}
-
-async function createManualInvoice(formData: FormData) {
-  "use server";
-  const session = await requireFeesAccess("invoice", "invoices");
-  if (!session) throw new Error("Forbidden");
-  await dbConnect();
-  const invoiceType = String(formData.get("type") || "manual");
-  const plan: any = invoiceType === "manual" ? null : await FeePlan.findById(formData.get("plan"));
-  if (invoiceType !== "manual" && !plan) return;
-  const amount = formData.get("amount") ? paise(formData.get("amount")) : Number(plan?.amount || 0);
-  if (amount <= 0) return;
-  await createInvoice({
-    student: String(formData.get("student")),
-    plan: plan?._id?.toString(),
-    type: invoiceType === "manual" ? "manual" : plan.type,
-    title: String(formData.get("title") || plan?.name || "Custom Invoice"),
-    amount,
-    issueDate: new Date(String(formData.get("invoiceDate") || "")),
-    dueDate: new Date(String(formData.get("dueDate"))),
-    referenceNumber: String(formData.get("referenceNumber") || ""),
-    credits: invoiceType !== "manual" && plan.type === "credits" ? plan.credits : 0,
-    notes: String(formData.get("notes") || ""),
-    invoiceMode: String(formData.get("invoiceMode") || plan?.gstMode || "non_gst") as any,
-    gstPercentage: Number(formData.get("gstPercentage") || plan?.gstPercentage || 0),
-    activity: {
-      actor: (session.user as any).id,
-      source: "manual_admin",
-      label: `Created ${invoiceType === "manual" ? "manual" : invoiceType} invoice`,
-    },
-  });
-  revalidatePath("/fees/invoices");
 }
 
 async function markInvoicePaid(formData: FormData) {
@@ -735,13 +702,11 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
     : { student: userId };
   const invoiceFilter = { ...scopeFilter, ...statusFilter };
   const invoiceLimit = selectedStudent || selectedStatus !== "all" ? 1000 : 500;
-  const [invoices, scopedStatuses, deletedInvoiceCount, students, plans, assignments] = await Promise.all([
+  const [invoices, scopedStatuses, deletedInvoiceCount, students] = await Promise.all([
     Invoice.find(invoiceFilter).populate("student plan").sort(selectedStatus === "paid" ? { paidAt: -1, createdAt: -1 } : { createdAt: -1 }).limit(invoiceLimit).lean(),
     Invoice.find(scopeFilter, { status: 1, dueDate: 1 }).lean(),
     manager ? DeletedInvoice.countDocuments(scopeFilter) : Promise.resolve(0),
     manager ? User.find({ role: "student" }, { passwordHash: 0 }).sort({ name: 1 }).lean() : Promise.resolve([]),
-    manager ? FeePlan.find({ isActive: true }).sort({ name: 1 }).lean() : Promise.resolve([]),
-    manager ? FeeAssignment.find({}).lean() : Promise.resolve([]),
   ]);
   const sendStatus = queryValue(params, "send");
   const banner = sendBanner(sendStatus);
@@ -769,13 +734,20 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
             <div>
               <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-brand/70">Billing workspace</p>
               <h1 className="text-2xl font-semibold text-slate-950">Fee Invoices</h1>
-              <p className="mt-1 text-sm text-slate-500">Create, filter, send, and reconcile invoices from one compact workspace.</p>
+              <p className="mt-1 text-sm text-slate-500">Filter, send, and reconcile invoices.</p>
             </div>
           </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
+          {permissions.invoice && (
+            <a href="/fees/invoices/new" className="inline-flex h-auto min-h-11 items-center justify-center gap-2 rounded-lg bg-brand px-5 text-sm font-bold text-white shadow-sm shadow-brand-900/20 transition hover:bg-brand-700">
+              <Plus size={16} /> Create invoice
+            </a>
+          )}
           <div className="grid gap-2 sm:grid-cols-3">
             <MiniMetric label="Total Value" value={formatINR(totalValue)} icon={<IndianRupee size={15} />} />
             <MiniMetric label="Due" value={dueCount} icon={<Clock3 size={15} />} />
             <MiniMetric label="Paid" value={paidCount} icon={<CheckCircle2 size={15} />} />
+          </div>
           </div>
         </div>
       </section>
@@ -812,36 +784,10 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
       )}
 
       {permissions.invoice && (
-        <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm shadow-brand-900/5">
-            <div className="mb-4 flex items-start justify-between gap-3">
-              <div>
-                <h2 className="text-base font-semibold text-slate-950">Create Manual Invoice</h2>
-                <p className="mt-1 text-xs leading-5 text-slate-500">Choose a student, plan, invoice type, and due date.</p>
-              </div>
-              <span className="hidden rounded-full bg-brand/10 px-3 py-1 text-xs font-bold text-brand sm:inline-flex">Card flow</span>
-            </div>
-            <InvoiceCreationForm
-              action={createManualInvoice}
-              students={students.map((student: any) => ({ id: student._id.toString(), name: student.name }))}
-              plans={plans.map((plan: any) => ({ id: plan._id.toString(), name: plan.name, type: plan.type, amount: plan.amount, credits: plan.credits || 0, gstMode: plan.gstMode || "non_gst", gstPercentage: plan.gstPercentage || 0 }))}
-              assignments={assignments.map((assignment: any) => ({ studentId: assignment.student?.toString(), planId: assignment.plan?.toString() }))}
-            />
-          </div>
-
-          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
-            <div className="flex items-start gap-3">
-              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-white text-amber-700 shadow-sm"><MailWarning size={17} /></span>
-              <div>
-                <h2 className="text-base font-semibold text-amber-950">Bulk reminders</h2>
-                <p className="mt-1 text-xs leading-5 text-amber-800">Send invoice emails through the active workflow.</p>
-              </div>
-            </div>
-            <a href="/fees/reminders" className="btn-primary mt-4 w-full" title="Open Fee Reminders">
-              <Send size={15} /> Open Fee Reminders
-            </a>
-          </div>
-        </section>
+        <a href="/fees/reminders" className="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-900 shadow-sm transition hover:border-amber-300 hover:bg-amber-100">
+          <span className="flex items-center gap-2"><MailWarning size={16} className="text-amber-700" /> <b>Bulk reminders</b> <span className="hidden text-amber-800 sm:inline">Send invoice emails through the active workflow.</span></span>
+          <span className="inline-flex items-center gap-1.5 font-semibold"><Send size={14} /> Open Fee Reminders</span>
+        </a>
       )}
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm shadow-brand-900/5">

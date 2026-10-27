@@ -17,6 +17,7 @@ import { invoiceStaffRecipients } from "@/lib/demoNotificationRecipients";
 import { sendWhatsAppAutomationTemplate, sendWhatsAppAutomationTemplates, whatsappRecipientName } from "@/lib/whatsappAutomationEvents";
 import { raiseCreditsExhaustedTask, resolveInvoiceTasks } from "@/lib/tasks/taskTriggers";
 import { retireInvoicePaymentLink } from "@/lib/payments/invoicePaymentLink";
+import { invoiceBreakup } from "@/lib/invoiceMath";
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -50,38 +51,7 @@ export async function getAcademySettings() {
   return created.toObject();
 }
 
-function resolveTaxMode(settings: any, options?: { gstMode?: string; gstPercentage?: number }) {
-  const invoiceMode = options?.gstMode || (settings.invoiceMode === "gst" ? "excluded" : "non_gst");
-  const gstPercentage = Number(options?.gstPercentage ?? settings.gstPercentage ?? 0);
-  return {
-    invoiceMode,
-    gstPercentage: invoiceMode === "non_gst" ? 0 : gstPercentage,
-  };
-}
-
-export function invoiceBreakup(amount: number, lateFee: number, settings: any, options?: { gstMode?: string; gstPercentage?: number }) {
-  const grossAmount = amount + lateFee;
-  const { invoiceMode, gstPercentage } = resolveTaxMode(settings, options);
-  const divisor = 100 + gstPercentage;
-  const taxableAmount = invoiceMode === "included" && gstPercentage > 0
-    ? Math.round((grossAmount * 100) / divisor)
-    : grossAmount;
-  const gstAmount = invoiceMode === "non_gst" || gstPercentage <= 0
-    ? 0
-    : invoiceMode === "included"
-      ? Math.max(0, grossAmount - taxableAmount)
-      : Math.round((grossAmount * gstPercentage) / 100);
-  const totalAmount = invoiceMode === "excluded" ? taxableAmount + gstAmount : grossAmount;
-  return {
-    invoiceMode,
-    taxableAmount,
-    gstPercentage,
-    gstAmount,
-    cgstAmount: Math.round(gstAmount / 2),
-    sgstAmount: gstAmount - Math.round(gstAmount / 2),
-    totalAmount,
-  };
-}
+export { invoiceBreakup };
 
 export async function nextInvoiceNumber() {
   const settings: any = await getAcademySettings();
@@ -175,6 +145,7 @@ export async function createInvoice(input: {
   notes?: string;
   invoiceMode?: "included" | "excluded" | "non_gst";
   gstPercentage?: number;
+  creationKey?: string;
   activity?: {
     actor?: string;
     source?: "manual_admin" | "plan_assignment" | "monthly_system" | "backend";

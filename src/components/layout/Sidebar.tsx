@@ -59,6 +59,7 @@ import {
   X,
   HeartHandshake,
   Landmark,
+  FilePlus2,
 } from "lucide-react";
 import Logo from "./Logo";
 import { cn } from "@/lib/utils";
@@ -139,6 +140,7 @@ const sections: NavSection[] = [
       { href: "/fees/credit-monitoring", label: "Credit Monitoring", icon: WalletCards, featureKey: "creditMonitoring" },
       { href: "/fees/reminders", label: "Fee Reminders", icon: Send, featureKey: "fees", permission: "view" },
       { href: "/fees/invoices", label: "Invoices", icon: Receipt, featureKey: "invoices" },
+      { href: "/fees/invoices/new", label: "Create Invoice", icon: FilePlus2, featureKey: "invoices", permission: "invoice" },
       { href: "/fees/reports", label: "Fee Reports", icon: BarChart3, featureKey: "feeReports" },
     ],
   },
@@ -305,8 +307,15 @@ function canSee(role: Role, accountStatus: AccountStatus | undefined, isActive: 
   return !item.roles || item.roles.includes(role);
 }
 
+function matchesPath(pathname: string, href: string) {
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+// A nested link (Create Invoice under Invoices) owns its page, so only the
+// longest matching link is highlighted.
 function isActive(pathname: string, item: NavItem) {
-  return pathname === item.href || pathname.startsWith(`${item.href}/`);
+  if (!matchesPath(pathname, item.href)) return false;
+  return !sections.some((section) => section.items.some((other) => other.href.length > item.href.length && other.href.startsWith(`${item.href}/`) && matchesPath(pathname, other.href)));
 }
 
 function notificationHref(item: NotificationItem) {

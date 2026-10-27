@@ -31,6 +31,9 @@ const quietMutationPatterns = [
   // Learn Chess shows stars and "Next exercise" from its own state after a solve.
   // A refresh remounts the player, which snaps the board back to the start.
   /^\/api\/learn\/attempt$/,
+  // The openings player saves progress on every step; a refresh would remount it
+  // and throw away a half-solved quiz.
+  /^\/api\/openings(\/|$)/,
   // Closing a pop-up records it; a refresh would remount the frame and re-open it.
   // The admin Pop-ups page reloads its own lists.
   /^\/api\/popups(\/|$)/,

@@ -39,6 +39,7 @@ export const portalPaths = [
   "/leaderboard",
   "/learn",
   "/leave",
+  "/openings",
   "/pgn",
   "/play",
   "/profile",

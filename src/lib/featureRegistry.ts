@@ -310,6 +310,24 @@ export const FEATURE_DEFINITIONS: FeatureDefinition[] = [
     },
   },
   {
+    key: "chessOpenings",
+    label: "Chess Openings",
+    category: "Training Tools",
+    description: "Paid opening courses: history, ideas and move-by-move walkthroughs. The first chapter of each opening is free.",
+    routes: ["/openings"],
+    apiPrefixes: ["/api/openings"],
+    permissions: [view, manage],
+    // Testing until buying and the students' free picks are built: only super
+    // admins (and pilots added on the Feature Access page) see it until then.
+    defaultStatus: "testing",
+    defaultRolePermissions: {
+      student: ["view"],
+      instructor: ["view"],
+      admin: ["view", "manage"],
+      "sub-admin": ["view", "manage"],
+    },
+  },
+  {
     key: "fees",
     label: "Fees Management",
     category: "Payments",

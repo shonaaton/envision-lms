@@ -6,6 +6,9 @@ import { courseHub, coursePages } from "@/lib/coursePages";
 import { MARKETING_BASE_URL } from "@/lib/publicLinks";
 import { BLOG_PATH, blogHref, blogPosts } from "@/lib/blog";
 import { cityHref, cityPages } from "@/lib/cityPages";
+import { OPENINGS } from "@/lib/openings/content";
+import { OPENINGS_PUBLIC_PATH, publicOpeningHref } from "@/lib/openings/paths";
+import { OPENINGS_ON_SALE } from "@/lib/openings/pricing";
 
 /**
  * The public sitemap.
@@ -32,6 +35,8 @@ const url = (path: string) => `${MARKETING_BASE_URL}${path}`;
 const SITE_CONTENT_UPDATED = new Date("2026-10-05");
 /** The city pages were added later and carry their own date. */
 const CITY_PAGES_UPDATED = new Date("2026-10-27");
+/** The openings pages; bump when an opening is added or rewritten. */
+const OPENINGS_PAGES_UPDATED = new Date("2026-10-28");
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
@@ -108,5 +113,18 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     })),
   ];
 
-  return [...core, ...courses, ...centres, ...cities, ...blog, ...stories, ...legal];
+  // The openings courses, once they can be bought (the pages are noindex until then).
+  const openings: MetadataRoute.Sitemap = OPENINGS_ON_SALE
+    ? [
+        { url: url(OPENINGS_PUBLIC_PATH), lastModified: OPENINGS_PAGES_UPDATED, changeFrequency: "weekly", priority: 0.8 },
+        ...OPENINGS.map((opening) => ({
+          url: url(publicOpeningHref(opening.slug)),
+          lastModified: OPENINGS_PAGES_UPDATED,
+          changeFrequency: "monthly" as const,
+          priority: 0.7,
+        })),
+      ]
+    : [];
+
+  return [...core, ...courses, ...centres, ...cities, ...blog, ...openings, ...stories, ...legal];
 }

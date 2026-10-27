@@ -66,6 +66,10 @@ export const authConfig = {
         nextUrl.pathname.startsWith("/api/password") ||
         nextUrl.pathname.startsWith("/api/fees/invoices") ||
         nextUrl.pathname.startsWith("/tournament-join") ||
+        // The openings sales pages and their free preview chapter. Listed so a
+        // signed-in demo account is not bounced to /dashboard from them.
+        nextUrl.pathname === "/chess-openings" ||
+        nextUrl.pathname.startsWith("/chess-openings/") ||
         // Uploaded photos and achievement images, which the public site shows
         // too. They lived in public/, which middleware never checked.
         nextUrl.pathname.startsWith("/uploads/");

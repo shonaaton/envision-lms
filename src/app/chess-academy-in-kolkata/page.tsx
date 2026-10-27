@@ -18,7 +18,7 @@ import {
   kolkataCentres,
 } from "@/lib/centrePages";
 import { courseHub, coursePages } from "@/lib/coursePages";
-import { courseHubLink, courseLinks, demoLink, kidsClassesLink, successStoriesLink } from "@/lib/internalLinks";
+import { courseHubLink, courseLinks, demoLink, kidsClassesLink, postLinks, successStoriesLink } from "@/lib/internalLinks";
 import { curriculumLevels } from "@/lib/demoCurriculum";
 import { MARKETING_BASE_URL } from "@/lib/publicLinks";
 
@@ -412,6 +412,15 @@ export default function KolkataAcademyPage() {
         heading="What students from our Kolkata centres go on to win."
         intro="Every result below belongs to a student trained on the Envision syllabus, at a Kolkata centre or in a live online batch."
         offset={0}
+      />
+
+      {/* The comparison guide answers the "top academies in Kolkata" search this
+          page cannot - it sends that traffic back here and to each centre. */}
+      <RelatedLinks
+        eyebrow="Choosing an academy"
+        heading="Guides for Kolkata parents"
+        links={postLinks(["top-chess-academies-in-kolkata", "online-vs-offline-chess-classes", "how-to-choose-a-chess-coach", "school-chess-club-vs-chess-coaching"])}
+        columns={2}
       />
 
       <RelatedLinks

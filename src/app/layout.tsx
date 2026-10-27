@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { Caveat } from "next/font/google";
 import { Toaster } from "sonner";
 import PublicPageTracking from "@/components/marketing/PublicPageTracking";
+import WhatsAppButton from "@/components/marketing/WhatsAppButton";
 import Providers from "./providers";
 import { ACADEMY_FAVICON_URL } from "@/lib/branding";
 import { MARKETING_BASE_URL } from "@/lib/publicLinks";
@@ -44,6 +45,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <Providers>{children}</Providers>
         <PublicPageTracking pixelId={metaPixelId} googleAnalyticsId={googleAnalyticsId} />
+        <WhatsAppButton />
         <Toaster
           richColors
           theme="light"

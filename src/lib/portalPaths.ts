@@ -68,3 +68,25 @@ export function isPortalPath(pathname: string | null | undefined) {
   const path = pathname.split("?")[0].split("#")[0];
   return portalPaths.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
 }
+
+/**
+ * Transactional public pages that are not marketing: the UPI payment page
+ * already carries its own WhatsApp link, pre-filled with the invoice number.
+ */
+const transactionalPaths = ["/pay"] as const;
+
+/**
+ * True when `pathname` is a marketing or landing page - public, and not a
+ * sign-in screen, a machine endpoint or a payment page. The floating WhatsApp
+ * button shows only here; it would sit over the board in a live classroom.
+ */
+export function isMarketingPath(pathname: string | null | undefined) {
+  if (!pathname) return false;
+  const path = pathname.split("?")[0].split("#")[0];
+  if (isPortalPath(path)) return false;
+  const matches = (prefix: string) => {
+    const bare = prefix.replace(/\/$/, "");
+    return path === bare || path.startsWith(`${bare}/`);
+  };
+  return ![...authPaths, ...machinePaths, ...transactionalPaths].some(matches);
+}

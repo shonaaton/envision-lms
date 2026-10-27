@@ -21,7 +21,7 @@ const post: BlogPost = {
   publishedAt: "2026-10-05",
   updatedAt: "2026-10-05",
   relatedCourses: ["beginner-chess-course"],
-  relatedPosts: ["how-online-chess-classes-work", "best-age-to-start-chess", "online-chess-classes-abroad-time-zones"],
+  relatedPosts: ["how-online-chess-classes-work", "best-age-to-start-chess", "online-chess-classes-abroad-time-zones", "top-chess-academies-in-kolkata"],
   priority: 50,
   body: [
     {

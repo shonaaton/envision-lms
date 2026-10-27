@@ -17,6 +17,7 @@ import monsoonMumbai from "@/lib/blog/posts/monsoon-indoor-activities-for-kids-m
 import onlineVsOffline from "@/lib/blog/posts/online-vs-offline-chess-classes";
 import schoolClubVsCoaching from "@/lib/blog/posts/school-chess-club-vs-chess-coaching";
 import whyChennai from "@/lib/blog/posts/why-chennai-is-the-chess-capital-of-india";
+import topKolkataAcademies from "@/lib/blog/posts/top-chess-academies-in-kolkata";
 
 /**
  * Every published post. A post exists on the site, in the sitemap, on the blog
@@ -37,6 +38,7 @@ const ALL_POSTS: BlogPost[] = [
   // City guides: each supports one city page (or, for online vs offline, all
   // of them) without targeting that page's own phrases.
   onlineVsOffline,
+  topKolkataAcademies,
   whyChennai,
   indoorDelhi,
   monsoonMumbai,

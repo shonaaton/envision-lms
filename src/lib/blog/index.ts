@@ -10,6 +10,13 @@ import howToChooseACoach from "@/lib/blog/posts/how-to-choose-a-chess-coach";
 import howToGetFideRating from "@/lib/blog/posts/how-to-get-fide-rating-india";
 import onlineClassesAbroad from "@/lib/blog/posts/online-chess-classes-abroad-time-zones";
 import howOnlineClassesWork from "@/lib/blog/posts/how-online-chess-classes-work";
+import afterSchoolBangalore from "@/lib/blog/posts/after-school-activities-for-kids-bangalore";
+import balanceChessStudies from "@/lib/blog/posts/how-to-balance-chess-and-studies";
+import indoorDelhi from "@/lib/blog/posts/indoor-activities-for-kids-delhi-pollution";
+import monsoonMumbai from "@/lib/blog/posts/monsoon-indoor-activities-for-kids-mumbai";
+import onlineVsOffline from "@/lib/blog/posts/online-vs-offline-chess-classes";
+import schoolClubVsCoaching from "@/lib/blog/posts/school-chess-club-vs-chess-coaching";
+import whyChennai from "@/lib/blog/posts/why-chennai-is-the-chess-capital-of-india";
 
 /**
  * Every published post. A post exists on the site, in the sitemap, on the blog
@@ -27,6 +34,15 @@ const ALL_POSTS: BlogPost[] = [
   howToGetFideRating,
   onlineClassesAbroad,
   howToChooseACoach,
+  // City guides: each supports one city page (or, for online vs offline, all
+  // of them) without targeting that page's own phrases.
+  onlineVsOffline,
+  whyChennai,
+  indoorDelhi,
+  monsoonMumbai,
+  afterSchoolBangalore,
+  schoolClubVsCoaching,
+  balanceChessStudies,
 ];
 
 export const blogPosts: BlogPost[] = [...ALL_POSTS].sort(
@@ -50,6 +66,12 @@ export const blogCategories: { id: BlogCategory; label: string; heading: string;
     intro: "Honest answers to the questions parents ask before they book a first chess class, online or abroad.",
   },
   {
+    id: "city-guides",
+    label: "City Guides",
+    heading: "City guides: chess for families across India",
+    intro: "Practical guides for parents in India's big cities - smog days, monsoons, after-school schedules, exams and local chess history.",
+  },
+  {
     id: "tournaments-and-ratings",
     label: "Tournaments & Ratings",
     heading: "Tournaments and FIDE ratings",
@@ -67,6 +89,11 @@ export function getBlogPost(slug: string) {
 
 export function postsByCategory(category: BlogCategory) {
   return blogPosts.filter((post) => post.category === category);
+}
+
+/** Posts that support this city page - the city page lists them back. */
+export function postsForCity(citySlug: string) {
+  return blogPosts.filter((post) => post.relatedCities?.includes(citySlug));
 }
 
 /** Posts that name this course page as related - the course page lists them back. */

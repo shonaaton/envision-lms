@@ -1,4 +1,4 @@
-import { BLOG_PATH, blogHref, blogPosts, getBlogPost, postsForCourse } from "@/lib/blog";
+import { BLOG_PATH, blogHref, blogPosts, getBlogPost, postsForCity, postsForCourse } from "@/lib/blog";
 import { centreHref, centreHub, centreTimeRange, kolkataCentres } from "@/lib/centrePages";
 import { cityHref, cityPages } from "@/lib/cityPages";
 import { courseHub, coursePages } from "@/lib/coursePages";
@@ -135,12 +135,19 @@ export function guidesForCourse(courseSlug: string): RelatedLink[] {
  * The city pages, anchored on the phrase each one targets ("Best Chess Coaching
  * in Mumbai") so every block that links them tells a crawler what the page is.
  */
-export function cityLinks(exceptSlug?: string): RelatedLink[] {
+export function cityLinks(exceptSlug?: string, anchor: "classes" | "coaching" = "classes"): RelatedLink[] {
   return cityPages
     .filter((page) => page.slug !== exceptSlug)
     .map((page) => ({
       href: cityHref(page.slug),
-      label: `Best Chess Coaching in ${page.city}`,
+      // Both phrases the page owns get used as anchor text somewhere on the
+      // site: the footer says "coaching", the in-page blocks say "classes".
+      label: anchor === "classes" ? `Best Online Chess Classes in ${page.city}` : `Best Chess Coaching in ${page.city}`,
       detail: `Live online chess classes for families across ${page.areas.slice(0, 3).join(", ")} and the rest of ${page.city}.`,
     }));
+}
+
+/** The city guides that support one city page, for that page's guides block. */
+export function guidesForCity(citySlug: string): RelatedLink[] {
+  return postLinks(postsForCity(citySlug).map((post) => post.slug));
 }

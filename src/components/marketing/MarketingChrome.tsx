@@ -381,7 +381,7 @@ export function MarketingFooter() {
         <nav aria-label="Chess coaching by city" className="mt-10 border-t border-white/12 pt-8">
           <h2 className="text-xs font-black uppercase tracking-[0.14em] text-accent">Chess Coaching Across India</h2>
           <ul className="mt-4 flex flex-wrap gap-2">
-            {[...cityLinks(), { href: centreHubHref, label: "Best Chess Coaching in Kolkata" }].map((link) => (
+            {[...cityLinks(undefined, "coaching"), { href: centreHubHref, label: "Best Chess Coaching in Kolkata" }].map((link) => (
               <li key={link.href}>
                 <Link
                   href={link.href}

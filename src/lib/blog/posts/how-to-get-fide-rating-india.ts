@@ -22,7 +22,7 @@ const post: BlogPost = {
   publishedAt: "2026-10-05",
   updatedAt: "2026-10-05",
   relatedCourses: ["semi-pro-chess-course", "pro-chess-course", "intermediate-chess-course"],
-  relatedPosts: ["chess-tactics-forks-pins-skewers", "how-to-choose-a-chess-coach", "how-online-chess-classes-work"],
+  relatedPosts: ["chess-tactics-forks-pins-skewers", "how-to-choose-a-chess-coach", "how-online-chess-classes-work", "why-chennai-is-the-chess-capital-of-india"],
   priority: 60,
   body: [
     {

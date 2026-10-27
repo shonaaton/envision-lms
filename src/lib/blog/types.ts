@@ -12,7 +12,7 @@
  * pulling a markdown parser into the bundle.
  */
 
-export type BlogCategory = "learn-chess" | "for-parents" | "tournaments-and-ratings";
+export type BlogCategory = "learn-chess" | "for-parents" | "tournaments-and-ratings" | "city-guides";
 
 /** A square name, a1..h8. */
 export type Square = string;
@@ -67,6 +67,13 @@ export type BlogPost = {
   updatedAt: string;
   /** Course pages this post sends readers to, and that list this post back. */
   relatedCourses: string[];
+  /**
+   * City pages (`cityPages` slugs) this post supports. The city page lists the
+   * post back. A post here answers a question families in that city ask - it
+   * never targets the city page's own "best chess coaching / online chess
+   * classes in <city>" phrases, which `content.test.ts` enforces.
+   */
+  relatedCities?: string[];
   /** Sibling posts for the "keep reading" block. */
   relatedPosts: string[];
   /** Higher sorts first on the blog index, the footer and the home strip. */

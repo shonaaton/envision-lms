@@ -5,7 +5,7 @@ import { inlineHrefs } from "@/lib/blog/inline";
 import type { Block, BlogPost } from "@/lib/blog/types";
 import { publicAchievementList, seededAchievements, studentSlug } from "@/lib/achievementData";
 import { centreHref, centreHub, kolkataCentres } from "@/lib/centrePages";
-import { cityHref, cityPages } from "@/lib/cityPages";
+import { cityHref, cityPages, classesKeyword } from "@/lib/cityPages";
 import { courseHub, coursePages } from "@/lib/coursePages";
 
 /**
@@ -155,6 +155,14 @@ describe.each(blogPosts.map((post) => [post.slug, post] as const))("blog post %s
     }
   });
 
+  it("supports only city pages that exist, and links to each one in its text", () => {
+    for (const slug of post.relatedCities ?? []) {
+      expect(cityPages.some((page) => page.slug === slug), slug).toBe(true);
+      expect(internalHrefs(post), `${post.slug} never links to ${slug}`).toContain(cityHref(slug));
+    }
+    if (post.category === "city-guides") expect(post.relatedCities?.length ?? 0).toBeGreaterThan(0);
+  });
+
   it("has dates in order and FAQs for the FAQ schema", () => {
     expect(post.publishedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(post.updatedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);
@@ -181,7 +189,7 @@ describe("the blog as a whole", () => {
       courseHub.keyword,
       ...coursePages.map((page) => page.keyword),
       ...kolkataCentres.map((centre) => centre.keyword),
-      ...cityPages.map((page) => page.keyword),
+      ...cityPages.flatMap((page) => [page.keyword, classesKeyword(page)]),
     ].map((phrase) => phrase.toLowerCase());
     for (const post of blogPosts) expect(pagePhrases).not.toContain(post.keyword.toLowerCase());
   });

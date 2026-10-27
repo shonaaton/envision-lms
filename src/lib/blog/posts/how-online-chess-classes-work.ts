@@ -21,7 +21,7 @@ const post: BlogPost = {
   publishedAt: "2026-10-05",
   updatedAt: "2026-10-05",
   relatedCourses: ["beginner-chess-course", "intermediate-chess-course"],
-  relatedPosts: ["best-age-to-start-chess", "how-to-choose-a-chess-coach", "online-chess-classes-abroad-time-zones"],
+  relatedPosts: ["best-age-to-start-chess", "how-to-choose-a-chess-coach", "online-chess-classes-abroad-time-zones", "online-vs-offline-chess-classes"],
   priority: 100,
   body: [
     {

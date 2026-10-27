@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { blogHref, blogPosts } from "@/lib/blog";
 import { inlineHrefs, plainText } from "@/lib/blog/inline";
 import { centreHub } from "@/lib/centrePages";
-import { cityFaqs, cityHref, cityPages, type CityPageConfig } from "@/lib/cityPages";
+import { cityFaqs, cityHref, cityPages, classesKeyword, type CityPageConfig } from "@/lib/cityPages";
 import { courseHub, coursePages } from "@/lib/coursePages";
 
 /**
@@ -76,6 +76,15 @@ describe.each(cityPages.map((page) => [page.city, page] as const))("city page %s
     expect(mentions(page.description)).toBe(true);
     expect(mentions(page.keyword)).toBe(true);
     expect(page.keywords[0]).toBe(page.keyword);
+  });
+
+  it("also owns the 'best online chess classes in <city>' search", () => {
+    const phrase = classesKeyword(page);
+    expect(phrase).toMatch(/^best online chess classes in /);
+    expect(page.keywords).toContain(phrase);
+    expect(page.title.toLowerCase()).toContain("online chess classes");
+    expect(page.description.toLowerCase()).toMatch(/^best online chess classes in /);
+    expect(cityFaqs(page).some((faq) => faq.q.toLowerCase().includes("best online chess classes"))).toBe(true);
   });
 
   it("has enough city-specific substance to stand on its own", () => {

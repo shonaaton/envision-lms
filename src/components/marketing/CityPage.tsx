@@ -6,10 +6,10 @@ import HeroStudentCluster from "@/components/marketing/HeroStudentCluster";
 import RelatedLinks from "@/components/marketing/RelatedLinks";
 import { MarketingFooter, MarketingHeader } from "@/components/marketing/MarketingChrome";
 import { blogHref } from "@/lib/blog";
-import { cityDisplayName, cityFaqs, cityHref, cityPages, type CityPageConfig } from "@/lib/cityPages";
+import { cityDisplayName, cityFaqs, cityHref, cityPages, classesKeyword, type CityPageConfig } from "@/lib/cityPages";
 import { courseHub, coursePages } from "@/lib/coursePages";
 import { curriculumLevels } from "@/lib/demoCurriculum";
-import { centreHubLink, cityLinks, courseHubLink, demoLink, kidsClassesLink, postLinks, successStoriesLink } from "@/lib/internalLinks";
+import { centreHubLink, cityLinks, courseHubLink, demoLink, guidesForCity, kidsClassesLink, postLinks, successStoriesLink } from "@/lib/internalLinks";
 import { absoluteUrl, breadcrumbSchema, courseOffer, faqSchema, organizationRef } from "@/lib/seo";
 
 const demoHref = demoLink.href;
@@ -65,7 +65,8 @@ export default function CityPage({ config }: { config: CityPageConfig }) {
       "@context": "https://schema.org",
       "@type": "Service",
       "@id": `${absoluteUrl(path)}#service`,
-      name: `Online chess coaching in ${config.city}`,
+      name: `Online chess classes and coaching in ${config.city}`,
+      alternateName: classesKeyword(config).replace(/^best /, ""),
       serviceType: "Chess coaching",
       description: config.description,
       url: absoluteUrl(path),
@@ -82,7 +83,7 @@ export default function CityPage({ config }: { config: CityPageConfig }) {
     },
     breadcrumbSchema([
       { name: "Home", path: "/" },
-      { name: `Chess Coaching in ${config.city}`, path },
+      { name: `Online Chess Classes in ${config.city}`, path },
     ]),
     faqSchema(faqs),
   ];
@@ -104,12 +105,14 @@ export default function CityPage({ config }: { config: CityPageConfig }) {
             <nav aria-label="Breadcrumb" className="mb-4 flex flex-wrap items-center gap-x-1.5 text-xs font-bold text-brand-900/60">
               <Link href="/" className="hover:text-brand">Home</Link>
               <span>/</span>
-              <span className="text-brand">Chess Coaching in {config.city}</span>
+              <span className="text-brand">Online Chess Classes in {config.city}</span>
             </nav>
             <p className="inline-flex items-center gap-2 rounded-full bg-accent px-3.5 py-1.5 text-[10px] font-extrabold uppercase tracking-[0.12em] text-brand-900 shadow-sm shadow-accent-600/30">
               <CheckCircle2 size={15} /> Live Online Classes &middot; {config.city}
             </p>
-            <h1 className="mt-4 text-[1.85rem] font-bold leading-[1.08] text-brand-900 sm:text-[2.25rem] lg:text-[2.6rem]">Best Chess Coaching in {display}</h1>
+            <h1 className="mt-4 text-[1.85rem] font-bold leading-[1.08] text-brand-900 sm:text-[2.25rem] lg:text-[2.6rem]">
+              Best Online Chess Classes &amp; Coaching in {display}
+            </h1>
             <h2 className="mt-2.5 max-w-lg text-base font-black leading-snug text-brand sm:text-lg">{config.supportingHeading}</h2>
             {config.intro.map((paragraph) => (
               <p key={paragraph.slice(0, 32)} className="mt-4 max-w-lg text-sm leading-7 text-brand-900/70 sm:text-[0.95rem]">
@@ -167,7 +170,7 @@ export default function CityPage({ config }: { config: CityPageConfig }) {
       <section className="relative bg-white py-16 lg:py-20">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <h2 className="max-w-3xl text-2xl font-black leading-tight text-brand-900 sm:text-3xl">
-            Why {config.city} families choose online chess coaching with Envision
+            Why {config.city} families choose our online chess classes
           </h2>
           <div className="mt-8 grid gap-4 md:grid-cols-3">
             {config.reasons.map((reason) => (
@@ -261,7 +264,7 @@ export default function CityPage({ config }: { config: CityPageConfig }) {
 
       <RelatedLinks
         eyebrow="Other cities"
-        heading="Chess coaching in other cities"
+        heading="Online chess classes in other cities"
         intro="The same live online classes run for families across India. In Kolkata, students can also learn in person at our four centres."
         links={[...otherCities, centreHubLink]}
       />
@@ -270,6 +273,9 @@ export default function CityPage({ config }: { config: CityPageConfig }) {
         eyebrow="Before you book"
         heading="Guides for parents"
         links={[
+          // This city's own guides first: they are the posts written to send
+          // readers here, so the link back completes the pair.
+          ...guidesForCity(config.slug),
           kidsClassesLink,
           ...postLinks(["best-age-to-start-chess", "how-to-choose-a-chess-coach", "how-chess-pieces-move"]),
           successStoriesLink,

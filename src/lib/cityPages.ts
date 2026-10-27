@@ -54,11 +54,12 @@ export const cityPages: CityPageConfig[] = [
     city: "Mumbai",
     state: "Maharashtra",
     keyword: "best chess coaching in Mumbai",
-    title: "Best Chess Coaching in Mumbai - Online Classes | Envision",
+    title: "Best Online Chess Classes & Coaching in Mumbai | Envision",
     description:
-      "Live online chess coaching for kids across Mumbai, Thane and Navi Mumbai: a 240-session syllabus, FIDE-rated coaches, weekly tournaments and a free demo class.",
+      "Best online chess classes in Mumbai, Thane and Navi Mumbai: live chess coaching for kids, a 240-session syllabus, weekly tournaments and a free demo class.",
     keywords: [
       "best chess coaching in Mumbai",
+      "best online chess classes in Mumbai",
       "chess classes in Mumbai",
       "online chess classes in Mumbai",
       "chess coaching for kids in Mumbai",
@@ -106,11 +107,12 @@ export const cityPages: CityPageConfig[] = [
     altName: "New Delhi",
     state: "Delhi",
     keyword: "best chess coaching in Delhi",
-    title: "Best Chess Coaching in Delhi - Online Classes | Envision",
+    title: "Best Online Chess Classes & Coaching in Delhi | Envision",
     description:
-      "Live online chess classes for kids in Delhi, Gurugram, Noida and the NCR, taught in English and Hindi on a 240-session syllabus. Book a free demo chess class.",
+      "Best online chess classes in Delhi, Gurugram and Noida: live chess coaching for kids in English and Hindi, a 240-session syllabus and a free demo class.",
     keywords: [
       "best chess coaching in Delhi",
+      "best online chess classes in Delhi",
       "chess classes in Delhi",
       "online chess classes in Delhi",
       "chess coaching in New Delhi",
@@ -158,11 +160,12 @@ export const cityPages: CityPageConfig[] = [
     altName: "Bangalore",
     state: "Karnataka",
     keyword: "best chess coaching in Bangalore",
-    title: "Best Chess Coaching in Bangalore - Online Classes | Envision",
+    title: "Best Online Chess Classes & Coaching in Bangalore | Envision",
     description:
-      "Online chess coaching for kids in Bengaluru (Bangalore): live classes on a 240-session syllabus, scheduled around busy families. Book a free demo chess class.",
+      "Best online chess classes in Bengaluru (Bangalore): live chess coaching for kids on a 240-session syllabus, weekly tournaments and a free demo class.",
     keywords: [
       "best chess coaching in Bangalore",
+      "best online chess classes in Bangalore",
       "chess classes in Bangalore",
       "chess coaching in Bengaluru",
       "online chess classes in Bangalore",
@@ -209,11 +212,12 @@ export const cityPages: CityPageConfig[] = [
     city: "Hyderabad",
     state: "Telangana",
     keyword: "best chess coaching in Hyderabad",
-    title: "Best Chess Coaching in Hyderabad - Online Classes | Envision",
+    title: "Best Online Chess Classes & Coaching in Hyderabad | Envision",
     description:
-      "Online chess coaching for kids in Hyderabad and Secunderabad: live classes in English and Hindi, a 240-session syllabus and weekly tournaments. Free demo class.",
+      "Best online chess classes in Hyderabad and Secunderabad: live chess coaching for kids in English and Hindi, weekly tournaments and a free demo class.",
     keywords: [
       "best chess coaching in Hyderabad",
+      "best online chess classes in Hyderabad",
       "chess classes in Hyderabad",
       "online chess classes in Hyderabad",
       "chess coaching for kids in Hyderabad",
@@ -260,11 +264,12 @@ export const cityPages: CityPageConfig[] = [
     city: "Chennai",
     state: "Tamil Nadu",
     keyword: "best chess coaching in Chennai",
-    title: "Best Chess Coaching in Chennai - Online Classes | Envision",
+    title: "Best Online Chess Classes & Coaching in Chennai | Envision",
     description:
-      "Online chess coaching for kids in Chennai, India's chess capital: live classes, a 240-session syllabus, weekly tournaments and a free demo chess class.",
+      "Best online chess classes in Chennai, India's chess capital: live chess coaching for kids, a 240-session syllabus, weekly tournaments and a free demo.",
     keywords: [
       "best chess coaching in Chennai",
+      "best online chess classes in Chennai",
       "chess classes in Chennai",
       "online chess classes in Chennai",
       "chess academy in Chennai",
@@ -311,11 +316,12 @@ export const cityPages: CityPageConfig[] = [
     city: "Pune",
     state: "Maharashtra",
     keyword: "best chess coaching in Pune",
-    title: "Best Chess Coaching in Pune - Online Classes | Envision",
+    title: "Best Online Chess Classes & Coaching in Pune | Envision",
     description:
-      "Live online chess classes for kids in Pune and Pimpri-Chinchwad, in English and Hindi, on a 240-session syllabus with weekly tournaments. Free demo class.",
+      "Best online chess classes in Pune and Pimpri-Chinchwad: live chess coaching for kids in English and Hindi, a 240-session syllabus and a free demo class.",
     keywords: [
       "best chess coaching in Pune",
+      "best online chess classes in Pune",
       "chess classes in Pune",
       "online chess classes in Pune",
       "chess coaching for kids in Pune",
@@ -362,11 +368,12 @@ export const cityPages: CityPageConfig[] = [
     city: "Ahmedabad",
     state: "Gujarat",
     keyword: "best chess coaching in Ahmedabad",
-    title: "Best Chess Coaching in Ahmedabad - Online Classes | Envision",
+    title: "Best Online Chess Classes & Coaching in Ahmedabad | Envision",
     description:
-      "Online chess coaching for kids in Ahmedabad and Gandhinagar: live classes in English and Hindi, a 240-session syllabus and weekly tournaments. Free demo class.",
+      "Best online chess classes in Ahmedabad and Gandhinagar: live chess coaching for kids in English and Hindi, weekly tournaments and a free demo class.",
     keywords: [
       "best chess coaching in Ahmedabad",
+      "best online chess classes in Ahmedabad",
       "chess classes in Ahmedabad",
       "online chess classes in Ahmedabad",
       "chess coaching for kids in Ahmedabad",
@@ -423,6 +430,16 @@ export function cityDisplayName(config: CityPageConfig) {
   return config.altName && config.altName !== config.city ? `${config.city} (${config.altName})` : config.city;
 }
 
+/**
+ * The second phrase every city page targets. "Best chess coaching in Mumbai"
+ * and "best online chess classes in Mumbai" are the same need in different
+ * words, so one page owns both - a second page per city would only compete
+ * with the first. Derived from `keyword` so the city spelling always matches.
+ */
+export function classesKeyword(config: CityPageConfig) {
+  return config.keyword.replace(/^best chess coaching in/, "best online chess classes in");
+}
+
 export function cityMetadata(config: CityPageConfig): Metadata {
   return publicMetadata({
     path: cityHref(config.slug),
@@ -446,6 +463,10 @@ export function cityFaqs(config: CityPageConfig) {
       a: `No. Families in ${name} learn with us through live online classes, taught by the same coaches and on the same syllabus as our four offline centres in Kolkata. Every class is live with a coach - never a recording.`,
     },
     ...config.faqs,
+    {
+      q: `What makes these the best online chess classes in ${name}?`,
+      a: `Structure you can check. Every class is live with a coach, the full ${name} course follows a published 240-session syllabus from the first move to Masters, homework is reviewed by the coach, students play weekly tournaments, and parents see attendance, scores and results in one portal. A free demo class lets you judge it for yourself before paying anything.`,
+    },
     {
       q: `What age can children start chess coaching in ${name}?`,
       a: "Most children are ready for structured classes between five and seven, once they can concentrate for 30-45 minutes. Older beginners are welcome too - the demo class places every child at the right point in the syllabus.",

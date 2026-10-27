@@ -386,7 +386,7 @@ export function InvoiceCreationForm({
             <StudentPicker students={students} selected={student} onSelect={selectStudent} />
           </section>
 
-          <section className={student ? "" : "pointer-events-none opacity-50"} aria-disabled={!student}>
+          <section className={student ? "" : "pointer-events-none opacity-50"}>
             <SectionTitle step={2} title="What are you billing?" />
             <div className="grid gap-2 sm:grid-cols-2">
               {([
@@ -440,7 +440,7 @@ export function InvoiceCreationForm({
             ) : null}
           </section>
 
-          <section className={student ? "" : "pointer-events-none opacity-50"} aria-disabled={!student}>
+          <section className={student ? "" : "pointer-events-none opacity-50"}>
             <SectionTitle step={3} title="Amount and GST" hint={plan ? "Filled in from the plan. Change anything that is different this time." : undefined} />
             <div className="grid gap-2 sm:grid-cols-3" role="radiogroup" aria-label="GST treatment">
               {TAX_OPTIONS.map((option) => {
@@ -531,7 +531,7 @@ export function InvoiceCreationForm({
             ) : null}
           </section>
 
-          <section className={student ? "" : "pointer-events-none opacity-50"} aria-disabled={!student}>
+          <section className={student ? "" : "pointer-events-none opacity-50"}>
             <SectionTitle step={4} title="Invoice details" />
             <div className="grid gap-3 md:grid-cols-2">
               <div className="md:col-span-2">
@@ -623,7 +623,7 @@ export function InvoiceCreationForm({
                   ))}
                 </ul>
                 <div className="mt-2 flex gap-2">
-                  <button type="button" onClick={() => setDuplicates([])} className="h-9 flex-1 rounded-lg border border-amber-300 bg-white text-xs font-bold text-amber-900">Don't create</button>
+                  <button type="button" onClick={() => setDuplicates([])} className="h-9 flex-1 rounded-lg border border-amber-300 bg-white text-xs font-bold text-amber-900">Don&apos;t create</button>
                   <button type="button" disabled={pending} onClick={() => submit(true)} className="h-9 flex-1 rounded-lg bg-amber-600 text-xs font-bold text-white hover:bg-amber-700 disabled:opacity-60">Create anyway</button>
                 </div>
               </div>

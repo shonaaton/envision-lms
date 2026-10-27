@@ -8,6 +8,7 @@ import {
   cancelBlockReason,
   creditCheckError,
   creditCost,
+  describeLeaveSessionsInDetail,
   formatCredits,
   halfDayNoticeHours,
   isSessionCovered,
@@ -201,5 +202,21 @@ describe("serializeLeave", () => {
     expect(out.applicant).toBe(COACH);
     expect((out as any).secret).toBeUndefined();
     expect(out.sessions[0]).toMatchObject({ classroom: "c1", sessionId: "s1", covered: true, substituteName: "Sub" });
+  });
+});
+
+describe("class details for whoever covers them", () => {
+  it("lists each class in time order with its end time and students", () => {
+    const evening = { ...classOn("2026-11-07", "18:00"), end: academyDateTime("2026-11-07", "19:00"), studentCount: 4 };
+    const later = { ...classOn("2026-11-07", "19:30"), studentCount: 1 };
+    const text = describeLeaveSessionsInDetail([later, evening]);
+    expect(text.indexOf("Class 18:00")).toBeLessThan(text.indexOf("Class 19:30"));
+    expect(text).toContain("Class 18:00 (4 students); ");
+    expect(text).toContain("Class 19:30 (1 student)");
+    expect(text.split(";")[0]).toMatch(/6:00.*-7:00/i);
+  });
+
+  it("says so when there are no classes", () => {
+    expect(describeLeaveSessionsInDetail([])).toBe("No classes");
   });
 });

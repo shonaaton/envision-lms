@@ -109,6 +109,19 @@ export function describeLeaveSessions(sessions: LeaveSessionLike[]) {
     .join(", ");
 }
 
+/** "6:00 pm-7:00 pm I2-100 (4 students); 7:30 pm B1-20" - for whoever has to cover the classes. */
+export function describeLeaveSessionsInDetail(sessions: LeaveSessionLike[]) {
+  if (!sessions.length) return "No classes";
+  return [...sessions]
+    .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime())
+    .map((session) => {
+      const time = session.end ? `${timeLabel(session.start)}-${timeLabel(session.end)}` : timeLabel(session.start);
+      const count = Number(session.studentCount || 0);
+      return `${time} ${session.title || "Class"}${count > 0 ? ` (${count} student${count === 1 ? "" : "s"})` : ""}`;
+    })
+    .join("; ");
+}
+
 /** When the leave begins: the first chosen class of a half day, otherwise the start of the day. */
 export function leaveStartsAt(input: { type: LeaveType; dateKey: string; sessions: LeaveSessionLike[] }) {
   if (input.type === "half_day" && input.sessions.length) {

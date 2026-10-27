@@ -23,6 +23,7 @@ import {
   creditCheckError,
   creditCost,
   describeLeaveSessions,
+  describeLeaveSessionsInDetail,
   effectiveCoachId,
   formatCredits,
   halfDayNoticeHours,
@@ -676,12 +677,18 @@ async function announceDecision(leave: any, approver: LeaveViewer, credits: Leav
   });
 }
 
-/** Admins and named approvers: an approved coach leave needs substitutes. */
+/**
+ * Admins and named approvers: an approved coach leave needs substitutes. The
+ * scheduler (Saptarshi) gets the same message on WhatsApp only: his task
+ * already reaches him in-app and by email (user, 2026-10-26).
+ */
 async function announceSubstitution(leave: any) {
-  const recipients = await approverRecipients(idOf(leave.applicant));
+  const applicantId = idOf(leave.applicant);
+  const [recipients, schedulerId] = await Promise.all([approverRecipients(applicantId), leaveSchedulerId(applicantId)]);
+  const scheduler = schedulerId && !recipients.some((r) => r.userId === schedulerId) ? await leaveUserRecipient(schedulerId) : null;
   const day = leaveDayLabel(leave.dateKey);
-  const classes = describeLeaveSessions(leave.sessions || []);
-  await notifyLeave(recipients, {
+  const classes = describeLeaveSessionsInDetail(leave.sessions || []);
+  const notice = {
     href: hrefFor(leave), leaveId: idOf(leave), event: "substitution_needed", dedupKey: `leave:${idOf(leave)}:substitution`,
     title: `Arrange substitutes: ${leave.applicantName} on leave ${day}`,
     message: () => [
@@ -689,9 +696,11 @@ async function announceSubstitution(leave: any) {
       `Classes needing a substitute: ${classes}.`,
       "Each class needs to be rescheduled or given a substitute on its classroom; the task in Tasks closes on its own once every class is handled.",
     ].join("\n"),
-    channels: { inApp: true, email: true, whatsapp: true }, templateName: "leave_substitution_admin_alert",
-    bodyParameters: (r) => [r.name || "there", leave.applicantName, lowerType(leave.type), day, classes],
-  });
+    templateName: "leave_substitution_admin_alert",
+    bodyParameters: (r: LeaveRecipient) => [r.name || "there", leave.applicantName, lowerType(leave.type), day, classes],
+  };
+  await notifyLeave(recipients, { ...notice, channels: { inApp: true, email: true, whatsapp: true } });
+  if (scheduler) await notifyLeave([scheduler], { ...notice, channels: { whatsapp: true } });
 }
 
 /** A cancelled leave: approvers hear of it; the applicant too when someone else cancelled it. */

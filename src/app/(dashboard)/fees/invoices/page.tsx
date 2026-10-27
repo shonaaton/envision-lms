@@ -24,7 +24,10 @@ import { canAccessFeature, getFeaturePermissionState } from "@/lib/featureAccess
 import { isFeesManager, requireFeesAccess } from "@/lib/feesAccess";
 import { recordActivity } from "@/lib/activity";
 import { invoiceReferences } from "@/lib/feesMetrics";
-import { retireInvoicePaymentLink } from "@/lib/payments/invoicePaymentLink";
+import { invoicePaymentLink, retireInvoicePaymentLink } from "@/lib/payments/invoicePaymentLink";
+import { CopyPayLinkButton } from "@/components/fees/CopyPayLinkButton";
+import { collectsThroughRazorpay } from "@/lib/payments/gstAccount";
+import { upiPayPageUrl } from "@/lib/payments/upiPayment";
 
 export const dynamic = "force-dynamic";
 
@@ -501,6 +504,23 @@ async function sendInvoiceToStudent(formData: FormData) {
   redirect(`${returnPath}send=${finalStatus}`);
 }
 
+async function getInvoicePayLink(invoiceId: string): Promise<{ url?: string; kind?: "razorpay" | "upi"; error?: string }> {
+  "use server";
+  const session = await requireFeesAccess("invoice", "invoices");
+  if (!session) return { error: "You do not have access to invoices." };
+  const result = await invoicePaymentLink(String(invoiceId || ""));
+  if (!result.ok) return { error: result.error };
+  await recordActivity({
+    actor: (session.user as any).id,
+    type: "fees.invoice.pay_link_copied",
+    label: "Copied an invoice pay link",
+    entityType: "Invoice",
+    entityId: String(invoiceId),
+    metadata: { url: result.url, kind: result.kind },
+  });
+  return { url: result.url, kind: result.kind };
+}
+
 async function sendInvoiceWhatsApp(formData: FormData) {
   "use server";
   const session = await requireFeesAccess("invoice", "invoices");
@@ -928,13 +948,18 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
                       <IconAction href={pdfHref} title="View invoice" icon={<Eye size={14} />} tone="brand" />
                       <IconAction href={pdfHref} title="Download PDF" icon={<Download size={14} />} download />
                       <IconAction href={pdfHref} title="Print invoice" icon={<Printer size={14} />} />
-                      {!manager && invoice.status !== "paid" && <PayButton amount={invoice.totalAmount} purpose="invoice" refId={invoiceId} label="Pay" />}
+                      {!manager && invoice.status !== "paid" && invoice.status !== "cancelled" && (collectsThroughRazorpay(invoice)
+                        ? <PayButton amount={invoice.totalAmount} purpose="invoice" refId={invoiceId} label="Pay" />
+                        : upiPayPageUrl(invoiceId) && <a href={upiPayPageUrl(invoiceId)} className="inline-flex h-8 items-center rounded-lg bg-brand px-3 text-xs font-bold text-white shadow-sm hover:bg-brand-700">Pay by UPI</a>)}
                       {manager && permissions.invoice && (
                         <form action={sendInvoiceToStudent}>
                           <input type="hidden" name="invoice" value={invoiceId} />
                           <input type="hidden" name="studentFilter" value={selectedStudent} />
                           <button title="Send to student" aria-label="Send invoice to student" className="grid h-8 w-8 place-items-center rounded-lg border border-brand/20 bg-brand text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-brand-700 hover:shadow-md"><Send size={14} /></button>
                         </form>
+                      )}
+                      {manager && permissions.invoice && ["unpaid", "overdue"].includes(invoice.status) && invoice.totalAmount > 0 && (
+                        <CopyPayLinkButton invoiceId={invoiceId} invoiceNumber={invoice.invoiceNumber || ""} action={getInvoicePayLink} />
                       )}
                       {manager && permissions.invoice && (
                         <SendInvoiceWhatsAppButton invoiceId={invoiceId} invoiceNumber={invoice.invoiceNumber || ""} studentFilter={selectedStudent} defaultMessage={invoiceReminderMessage(invoice, "")} action={sendInvoiceWhatsApp} />

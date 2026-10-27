@@ -1492,14 +1492,15 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
       { "position": 6, "key": "invoice_url", "sample": "https://envisionchessacademy.com/invoice" }
     ]
   },
-  // The monthly reminders with the Razorpay link for the exact amount. They
+  // The monthly reminders with a pay link for the exact amount: Razorpay for a
+  // GST invoice, the UPI pay page for a non-GST one, so the wording fits both. They
   // start switched off and replace invoice_due_soon / invoice_due_today /
   // invoice_overdue_reminder once turned on (lib/whatsappAutomationSettings.ts).
   {
     "name": "invoice_due_soon_pay",
     "language": "en",
     "sourceAutomation": "Monthly Invoice Reminder",
-    "body": "Hello {{1}}, invoice {{2}} for {{3}} is due on {{4}}. The amount due is {{5}}. You can pay securely online here: {{6}} and the payment is recorded automatically.",
+    "body": "Hello {{1}}, invoice {{2}} for {{3}} is due on {{4}}. The amount due is {{5}}. You can pay online here: {{6}} and the link shows the exact amount due.",
     "variables": [
       { "position": 1, "key": "recipient_name", "sample": "Aarav" },
       { "position": 2, "key": "invoice_number", "sample": "ECA-2026-1042" },
@@ -1513,7 +1514,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
     "name": "invoice_due_today_pay",
     "language": "en",
     "sourceAutomation": "Monthly Invoice Reminder",
-    "body": "Hello {{1}}, invoice {{2}} for {{3}} is due today, {{4}}. The amount due is {{5}}. You can pay securely online here: {{6}} and the payment is recorded automatically.",
+    "body": "Hello {{1}}, invoice {{2}} for {{3}} is due today, {{4}}. The amount due is {{5}}. You can pay online here: {{6}} and the link shows the exact amount due.",
     "variables": [
       { "position": 1, "key": "recipient_name", "sample": "Aarav" },
       { "position": 2, "key": "invoice_number", "sample": "ECA-2026-1042" },
@@ -1527,7 +1528,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
     "name": "invoice_overdue_pay",
     "language": "en",
     "sourceAutomation": "Monthly Invoice Reminder",
-    "body": "Hello {{1}}, invoice {{2}} for {{3}} was due on {{4}} and is now overdue. The amount due is {{5}}. Please pay securely online here: {{6}} and the payment is recorded automatically.",
+    "body": "Hello {{1}}, invoice {{2}} for {{3}} was due on {{4}} and is now overdue. The amount due is {{5}}. Please pay online here: {{6}} and the link shows the exact amount due.",
     "variables": [
       { "position": 1, "key": "recipient_name", "sample": "Aarav" },
       { "position": 2, "key": "invoice_number", "sample": "ECA-2026-1042" },

@@ -64,14 +64,27 @@ export async function createPaymentLink(input: {
   return { id: String(link.id), shortUrl: String(link.short_url) };
 }
 
-/** Best effort: a link that is already paid, expired or cancelled cannot be cancelled again. */
-export async function cancelPaymentLink(id: string | undefined | null) {
-  if (!id || !razorpayConfigured()) return false;
+/**
+ * Closes a link so it cannot take money. "closed" also covers a link already
+ * cancelled or expired; "paid" means the parent got there first (the webhook
+ * records it); "failed" means it may still be payable, so the caller must not
+ * put a second link for the same bill in front of the family.
+ */
+export async function cancelPaymentLink(id: string | undefined | null): Promise<"closed" | "paid" | "failed"> {
+  if (!id) return "closed";
+  if (!razorpayConfigured()) return "failed";
   try {
     await rzp().paymentLink.cancel(id);
-    return true;
+    return "closed";
   } catch (error) {
+    try {
+      const status = String(((await rzp().paymentLink.fetch(id)) as any)?.status || "");
+      if (status === "cancelled" || status === "expired") return "closed";
+      if (status === "paid" || status === "partially_paid") return "paid";
+    } catch {
+      // Fall through: the link's state is unknown.
+    }
     console.error("Razorpay payment link cancel failed", { id, error: (error as any)?.error || error });
-    return false;
+    return "failed";
   }
 }

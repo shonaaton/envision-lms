@@ -7,6 +7,7 @@ import { recordActivity } from "@/lib/activity";
 import { createInvoice, getAcademySettings, invoiceBreakup, markInvoicePaid } from "@/lib/fees";
 import { cancelPaymentLink, createPaymentLink, paymentMethodFromRazorpay, razorpayConfigured } from "@/lib/payments/razorpay";
 import { canonicalPhoneNumber } from "@/lib/phoneCountryCodes";
+import { collectsThroughRazorpay } from "@/lib/payments/gstAccount";
 import { sendWhatsAppAutomationTemplate } from "@/lib/whatsappAutomationEvents";
 import { formatINR } from "@/lib/utils";
 import { FeePlan } from "@/models/Fee";
@@ -34,11 +35,14 @@ export const createSalesLinkSchema = z.object({
   description: z.string().trim().max(200).optional().default(""),
 });
 
-/** Active plans with the GST-inclusive total a family would pay for each. */
+/**
+ * Active GST plans with the GST-inclusive total a family would pay for each.
+ * Non-GST plans are left out: Razorpay pays into the GST account (user, 2026-10-27).
+ */
 export async function salesFeePlans() {
   await dbConnect();
   const [settings, plans] = await Promise.all([getAcademySettings(), FeePlan.find({ isActive: true }).sort({ name: 1 }).lean()]);
-  return (plans as any[]).map((plan) => ({
+  return (plans as any[]).filter((plan) => collectsThroughRazorpay(plan)).map((plan) => ({
     id: String(plan._id),
     name: String(plan.name),
     type: String(plan.type),
@@ -119,6 +123,7 @@ export async function createSalesPaymentLink(actor: PaymentLinkActor, raw: unkno
     if (!Types.ObjectId.isValid(input.feePlanId)) throw new PaymentLinkError("Choose a valid fee plan.");
     plan = await FeePlan.findOne({ _id: input.feePlanId, isActive: true }).lean();
     if (!plan) throw new PaymentLinkError("That fee plan is no longer active.");
+    if (!collectsThroughRazorpay(plan)) throw new PaymentLinkError("That is a non-GST plan, which is paid into the other account. Pick a GST plan or type the amount.");
     const settings = await getAcademySettings();
     amount = invoiceBreakup(Number(plan.amount || 0), 0, settings, { gstMode: plan.gstMode, gstPercentage: plan.gstPercentage }).totalAmount;
   } else {
@@ -190,7 +195,9 @@ export async function cancelSalesPaymentLink(actor: PaymentLinkActor, id: string
   await dbConnect();
   const link = await findOwnLink(actor, id);
   if (link.status !== "created") throw new PaymentLinkError("Only an unpaid, open link can be cancelled.");
-  await cancelPaymentLink(link.razorpayLinkId);
+  const closed = await cancelPaymentLink(link.razorpayLinkId);
+  if (closed === "paid") throw new PaymentLinkError("This link has just been paid. It will show as paid in a moment.");
+  if (closed === "failed") throw new PaymentLinkError("Razorpay did not cancel the link, so it may still be payable. Try again in a minute.", 502);
   link.status = "cancelled";
   link.cancelledAt = new Date();
   link.cancelledBy = actor.id;
@@ -244,7 +251,9 @@ export async function attachSalesPaymentLink(actor: PaymentLinkActor, id: string
   if (!student) throw new PaymentLinkError("Choose a student.");
 
   const [settings, plan]: any[] = await Promise.all([getAcademySettings(), link.feePlan ? FeePlan.findById(link.feePlan).lean() : null]);
-  const mode = String(plan?.gstMode || settings.invoiceMode || "non_gst");
+  // The money came through Razorpay, i.e. into the GST account, so the invoice
+  // is always a GST invoice with GST inside the amount paid.
+  const gstPercentage = [plan?.gstPercentage, settings.gstPercentage, 18].map(Number).find((value) => value > 0) as number;
   const paid = Number(link.amountPaid || link.amount);
   const isCredits = plan?.type === "credits" && Number(plan.credits) > 0;
   const invoice: any = await createInvoice({
@@ -257,8 +266,8 @@ export async function attachSalesPaymentLink(actor: PaymentLinkActor, id: string
     dueDate: link.paidAt || new Date(),
     issueDate: link.paidAt || new Date(),
     referenceNumber: link.razorpayPaymentId || link.referenceId,
-    invoiceMode: mode === "excluded" ? "included" : (mode as "included" | "non_gst"),
-    gstPercentage: plan?.gstPercentage ?? settings.gstPercentage,
+    invoiceMode: "included",
+    gstPercentage,
     notes: `Paid through sales payment link ${link.referenceId}, sent by ${link.createdByName || "sales"}.`,
     activity: { actor: actor.id, source: "manual_admin", label: `Invoice raised for a sales payment link paid by ${link.customerName}` },
   });

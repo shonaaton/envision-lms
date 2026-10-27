@@ -59,6 +59,9 @@ export const authConfig = {
         // checks X-Razorpay-Signature. Without it payments made through a link
         // were never recorded, because Razorpay was answered with /login.
         nextUrl.pathname === "/api/payments/webhook" ||
+        // The UPI pay page for a non-GST invoice, opened from a reminder by a
+        // parent who is not signed in. The page checks the link's signature.
+        nextUrl.pathname.startsWith("/pay/upi/") ||
         nextUrl.pathname.startsWith("/api/register") ||
         nextUrl.pathname.startsWith("/api/password") ||
         nextUrl.pathname.startsWith("/api/fees/invoices") ||

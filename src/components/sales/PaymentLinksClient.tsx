@@ -119,7 +119,7 @@ function CreateLinkModal({ plans, onClose, onCreated }: { plans: Plan[]; onClose
           </Field>
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Fee plan" hint="Pick a plan, or leave it on custom amount">
+          <Field label="Fee plan" hint="GST plans only; non-GST fees go to the other account">
             <select className="input" value={form.feePlanId} onChange={set("feePlanId")}>
               <option value="">Custom amount</option>
               {plans.map((item) => (
@@ -134,7 +134,7 @@ function CreateLinkModal({ plans, onClose, onCreated }: { plans: Plan[]; onClose
               <div className="input flex items-center bg-slate-50 font-bold">{formatINR(total)}</div>
             </Field>
           ) : (
-            <Field label="Amount (₹)" hint="What the family pays, GST included">
+            <Field label="Amount (₹)" hint="What the family pays, GST included (this is a GST payment)">
               <input className="input" type="number" min="1" step="0.01" value={form.amountRupees} onChange={set("amountRupees")} required />
             </Field>
           )}

@@ -8,6 +8,7 @@ import { createInvoice, getAcademySettings, invoiceBreakup, markInvoicePaid } fr
 import { cancelPaymentLink, createPaymentLink, paymentMethodFromRazorpay, razorpayConfigured } from "@/lib/payments/razorpay";
 import { canonicalPhoneNumber } from "@/lib/phoneCountryCodes";
 import { collectsThroughRazorpay } from "@/lib/payments/gstAccount";
+import { demoOwnerRestriction, leadOwnersForStudents, ownsDemoLead } from "@/lib/demoLeadOwner";
 import { sendWhatsAppAutomationTemplate } from "@/lib/whatsappAutomationEvents";
 import { formatINR } from "@/lib/utils";
 import { FeePlan } from "@/models/Fee";
@@ -33,6 +34,8 @@ export const createSalesLinkSchema = z.object({
   /** Rupees, used when no plan is picked. */
   amountRupees: z.coerce.number().optional(),
   description: z.string().trim().max(200).optional().default(""),
+  /** A demo account the payment is recorded on automatically once paid. */
+  accountId: z.string().trim().optional().default(""),
 });
 
 /**
@@ -69,6 +72,7 @@ function serialize(link: any) {
     amountPaid: Number(link.amountPaid || 0),
     method: link.method || "",
     whatsappStatus: link.whatsappStatus || "",
+    accountName: link.account?.name || "",
     attachedStudentName: link.attachedStudent?.name || "",
     attachedInvoiceNumber: link.attachedInvoice?.invoiceNumber || "",
     createdAt: link.createdAt,
@@ -83,6 +87,7 @@ export async function listSalesPaymentLinks(actor: PaymentLinkActor) {
   const links = await SalesPaymentLink.find(actor.seesAll ? {} : { createdBy: actor.id })
     .sort({ createdAt: -1 })
     .limit(300)
+    .populate("account", "name")
     .populate("attachedStudent", "name")
     .populate("attachedInvoice", "invoiceNumber")
     .lean();
@@ -134,6 +139,17 @@ export async function createSalesPaymentLink(actor: PaymentLinkActor, raw: unkno
   const description = input.description || plan?.name || "";
   if (description.length < 3) throw new PaymentLinkError("Say what the payment is for, or pick a fee plan.");
 
+  let account: any = null;
+  if (input.accountId) {
+    if (!Types.ObjectId.isValid(input.accountId)) throw new PaymentLinkError("Choose a valid demo account.");
+    account = await User.findOne({ _id: input.accountId, role: "student" }).select("name").lean();
+    if (!account) throw new PaymentLinkError("That demo account no longer exists.");
+    const restriction = await demoOwnerRestriction(actor.id);
+    if (restriction && !(await ownsDemoLead(restriction, { studentId: input.accountId }))) {
+      throw new PaymentLinkError("That demo account is assigned to another salesperson.", 403);
+    }
+  }
+
   const link: any = new SalesPaymentLink({
     customerName: input.customerName,
     studentName: input.studentName || undefined,
@@ -144,6 +160,7 @@ export async function createSalesPaymentLink(actor: PaymentLinkActor, raw: unkno
     feePlanName: plan?.name,
     amount,
     description,
+    account: account?._id,
     createdBy: actor.id,
     createdByName: actor.name,
   });
@@ -170,9 +187,45 @@ export async function createSalesPaymentLink(actor: PaymentLinkActor, raw: unkno
     label: `${actor.name} sent a ${formatINR(amount)} payment link to ${input.customerName}`,
     entityType: "SalesPaymentLink",
     entityId: String(link._id),
-    metadata: { amount, feePlan: plan ? String(plan._id) : "", razorpayLinkId: link.razorpayLinkId, whatsappStatus: link.whatsappStatus },
+    metadata: { amount, feePlan: plan ? String(plan._id) : "", account: account ? String(account._id) : "", razorpayLinkId: link.razorpayLinkId, whatsappStatus: link.whatsappStatus },
   });
-  return serialize(link.toObject());
+  return serialize({ ...link.toObject(), account });
+}
+
+/**
+ * Demo accounts sales can send a link for, matched by student or parent name,
+ * email or phone. A salesperson sees only the leads assigned to them, the same
+ * rule as the Demo Center; admins and other sub-admins see every demo account.
+ */
+export async function searchDemoAccounts(actor: PaymentLinkActor, query: string) {
+  const q = query.trim();
+  if (q.length < 2) return [];
+  await dbConnect();
+  const pattern = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+  const digits = q.replace(/\D/g, "");
+  const accounts: any[] = await User.find({
+    role: "student",
+    accountStatus: "demo",
+    $or: [{ name: pattern }, { parentName: pattern }, { email: pattern }, { parentEmail: pattern }, ...(digits.length >= 5 ? [{ phone: new RegExp(digits) }] : [])],
+  })
+    .select("name parentName email parentEmail phone countryCode createdAt demoExpiresAt")
+    .sort({ createdAt: -1 })
+    .limit(40)
+    .lean();
+  const restriction = await demoOwnerRestriction(actor.id);
+  let visible = accounts;
+  if (restriction) {
+    const owners = await leadOwnersForStudents(accounts);
+    visible = accounts.filter((account) => owners.get(String(account._id))?.userId === restriction);
+  }
+  return visible.slice(0, 12).map((account) => ({
+    id: String(account._id),
+    name: String(account.name || ""),
+    parentName: String(account.parentName || ""),
+    email: String(account.parentEmail || account.email || ""),
+    phone: String(account.phone || ""),
+    countryCode: String(account.countryCode || "+91"),
+  }));
 }
 
 export async function resendSalesPaymentLink(actor: PaymentLinkActor, id: string) {
@@ -246,9 +299,57 @@ export async function attachSalesPaymentLink(actor: PaymentLinkActor, id: string
   const link = await findOwnLink(actor, id);
   if (link.status !== "paid") throw new PaymentLinkError("Only a paid link can be attached to a student.");
   if (link.attachedInvoice) throw new PaymentLinkError("This payment is already attached to a student.");
+  await recordLinkPaymentOnStudent(link, studentId, { actorId: actor.id, notifyStudent: false });
+  const populated = await SalesPaymentLink.findById(link._id).populate("account", "name").populate("attachedStudent", "name").populate("attachedInvoice", "invoiceNumber").lean();
+  return serialize(populated);
+}
+
+/**
+ * Called by the webhook once a link sent for a demo account is paid: the
+ * invoice and payment land on that account with nobody having to attach them.
+ * A failure leaves the link paid and unattached, for an admin to attach by hand.
+ */
+export async function recordPaidLinkOnAccount(salesLinkId: string) {
+  await dbConnect();
+  const link: any = await SalesPaymentLink.findById(salesLinkId);
+  if (!link?.account || link.status !== "paid" || link.attachedInvoice) return null;
+  try {
+    return await recordLinkPaymentOnStudent(link, String(link.account), { notifyStudent: true });
+  } catch (error: any) {
+    console.error("Recording a sales link payment on its demo account failed", { salesLinkId, error });
+    await recordActivity({
+      targetUser: String(link.account),
+      type: "sales.payment_link.auto_attach_failed",
+      label: `The link payment from ${link.customerName} could not be recorded on the account automatically: attach it by hand`,
+      entityType: "SalesPaymentLink",
+      entityId: salesLinkId,
+      metadata: { error: String(error?.message || error) },
+    });
+    return null;
+  }
+}
+
+async function recordLinkPaymentOnStudent(link: any, studentId: string, options: { actorId?: string; notifyStudent: boolean }) {
   if (!Types.ObjectId.isValid(studentId)) throw new PaymentLinkError("Choose a student.");
   const student: any = await User.findOne({ _id: studentId, role: "student" }).select("name").lean();
   if (!student) throw new PaymentLinkError("Choose a student.");
+  // Claimed first, so the webhook and an admin's manual attach can never both
+  // raise an invoice for the same payment.
+  const claimed = await SalesPaymentLink.findOneAndUpdate(
+    { _id: link._id, attachedStudent: { $exists: false }, attachedInvoice: { $exists: false } },
+    { $set: { attachedStudent: studentId } }
+  );
+  if (!claimed) throw new PaymentLinkError("This payment is already attached to a student.");
+  try {
+    return await raiseLinkInvoice(link, studentId, student, options);
+  } catch (error) {
+    await SalesPaymentLink.updateOne({ _id: link._id, attachedInvoice: { $exists: false } }, { $unset: { attachedStudent: "" } });
+    throw error;
+  }
+}
+
+async function raiseLinkInvoice(link: any, studentId: string, student: any, options: { actorId?: string; notifyStudent: boolean }) {
+  const actorId = options.actorId;
 
   const [settings, plan]: any[] = await Promise.all([getAcademySettings(), link.feePlan ? FeePlan.findById(link.feePlan).lean() : null]);
   // The money came through Razorpay, i.e. into the GST account, so the invoice
@@ -269,7 +370,7 @@ export async function attachSalesPaymentLink(actor: PaymentLinkActor, id: string
     invoiceMode: "included",
     gstPercentage,
     notes: `Paid through sales payment link ${link.referenceId}, sent by ${link.createdByName || "sales"}.`,
-    activity: { actor: actor.id, source: "manual_admin", label: `Invoice raised for a sales payment link paid by ${link.customerName}` },
+    activity: { actor: actorId, source: actorId ? "manual_admin" : "backend", label: `Invoice raised for a sales payment link paid by ${link.customerName}` },
   });
   const payment: any = await Payment.create({
     user: studentId,
@@ -283,21 +384,19 @@ export async function attachSalesPaymentLink(actor: PaymentLinkActor, id: string
     invoiceNumber: invoice.invoiceNumber,
     paidAt: link.paidAt || new Date(),
   });
-  await markInvoicePaid(String(invoice._id), String(payment._id), { actor: actor.id, source: "razorpay_payment_link", label: `Recorded sales link payment from ${link.customerName}` }, [], {}, { notifyStudent: false });
-  link.attachedStudent = studentId;
-  link.attachedInvoice = invoice._id;
-  link.attachedAt = new Date();
-  link.attachedBy = actor.id;
-  await link.save();
+  await markInvoicePaid(String(invoice._id), String(payment._id), { actor: actorId, source: "razorpay_payment_link", label: `Recorded sales link payment from ${link.customerName}` }, [], {}, { notifyStudent: options.notifyStudent });
+  await SalesPaymentLink.updateOne(
+    { _id: link._id },
+    { $set: { attachedStudent: studentId, attachedInvoice: invoice._id, attachedAt: new Date(), ...(actorId ? { attachedBy: actorId } : {}) } }
+  );
   await recordActivity({
-    actor: actor.id,
+    actor: actorId,
     targetUser: studentId,
     type: "sales.payment_link.attached",
-    label: `Attached ${link.customerName}'s link payment to ${student.name} as ${invoice.invoiceNumber}`,
+    label: `${actorId ? "Attached" : "Automatically recorded"} the link payment from ${link.customerName} on ${student.name} as ${invoice.invoiceNumber}`,
     entityType: "SalesPaymentLink",
     entityId: String(link._id),
-    metadata: { invoice: String(invoice._id), payment: String(payment._id) },
+    metadata: { invoice: String(invoice._id), payment: String(payment._id), automatic: !actorId },
   });
-  const populated = await SalesPaymentLink.findById(link._id).populate("attachedStudent", "name").populate("attachedInvoice", "invoiceNumber").lean();
-  return serialize(populated);
+  return { invoiceNumber: String(invoice.invoiceNumber), studentName: String(student.name || "") };
 }

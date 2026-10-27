@@ -21,6 +21,11 @@ const SalesPaymentLinkSchema = new Schema(
     /** Paise; the total the family pays, GST included. */
     amount: { type: Number, required: true },
     description: { type: String, required: true, trim: true },
+    /**
+     * The demo account sales picked when sending the link. A payment is then
+     * recorded on it by the webhook (invoice + payment), with no attach step.
+     */
+    account: { type: Schema.Types.ObjectId, ref: "User", index: true },
     createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
     createdByName: { type: String, trim: true },
     razorpayLinkId: { type: String, index: true },

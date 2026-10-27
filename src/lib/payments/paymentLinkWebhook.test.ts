@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   markInvoicePaid: vi.fn(),
   recordActivity: vi.fn(),
   invoiceStaff: vi.fn(),
+  recordOnAccount: vi.fn(),
 }));
 
 vi.mock("@/models/Payment", () => ({ Payment: { exists: mocks.paymentExists, create: mocks.paymentCreate } }));
@@ -22,6 +23,7 @@ vi.mock("@/models/SalesPaymentLink", () => ({ SalesPaymentLink: { findOneAndUpda
 vi.mock("@/lib/fees", () => ({ markInvoicePaid: mocks.markInvoicePaid }));
 vi.mock("@/lib/activity", () => ({ recordActivity: mocks.recordActivity }));
 vi.mock("@/lib/demoNotificationRecipients", () => ({ invoiceStaffRecipients: mocks.invoiceStaff }));
+vi.mock("@/lib/payments/salesPaymentLinks", () => ({ recordPaidLinkOnAccount: mocks.recordOnAccount }));
 
 import { handlePaymentLinkClosed, handlePaymentLinkPaid } from "./paymentLinkWebhook";
 
@@ -73,12 +75,29 @@ describe("payment_link.paid for a sales link", () => {
 
   it("marks the link paid and tells the salesperson and invoice staff, once each", async () => {
     mocks.salesFindOneAndUpdate.mockReturnValue(lean({ _id: SALES_LINK, createdBy: SALESPERSON, customerName: "Mr. Sharma", description: "Group classes", amount: 400000, amountPaid: 400000 }));
-    expect(await handlePaymentLinkPaid(link, payment)).toEqual({ handled: true });
+    expect(await handlePaymentLinkPaid(link, payment)).toEqual({ handled: true, recordedAs: undefined });
+    expect(mocks.recordOnAccount).not.toHaveBeenCalled();
     const [filter, update] = mocks.salesFindOneAndUpdate.mock.calls[0];
     expect(filter).toEqual({ _id: SALES_LINK, razorpayPaymentId: { $exists: false } });
     expect(update.$set).toMatchObject({ status: "paid", amountPaid: 400000, razorpayPaymentId: "pay_1" });
     const notified = mocks.notificationInsertMany.mock.calls[0][0].map((row: any) => row.user);
     expect(notified.sort()).toEqual([SALESPERSON, STAFF].sort());
+  });
+
+  it("records the payment on the demo account the link was sent for", async () => {
+    const ACCOUNT = "ddddddddddddddddddddddd1";
+    mocks.salesFindOneAndUpdate.mockReturnValue(lean({ _id: SALES_LINK, account: ACCOUNT, createdBy: SALESPERSON, customerName: "Mr. Sharma", description: "Group classes", amount: 400000, amountPaid: 400000 }));
+    mocks.recordOnAccount.mockResolvedValue({ invoiceNumber: "ENV/26-27/050", studentName: "Aarav Sharma" });
+    expect(await handlePaymentLinkPaid(link, payment)).toEqual({ handled: true, recordedAs: "ENV/26-27/050" });
+    expect(mocks.recordOnAccount).toHaveBeenCalledWith(SALES_LINK);
+    expect(mocks.notificationInsertMany.mock.calls[0][0][0].message).toContain("Recorded on Aarav Sharma's account as ENV/26-27/050.");
+  });
+
+  it("asks for a manual attach when recording on the demo account fails", async () => {
+    mocks.salesFindOneAndUpdate.mockReturnValue(lean({ _id: SALES_LINK, account: "ddddddddddddddddddddddd1", createdBy: SALESPERSON, customerName: "Mr. Sharma", description: "Group classes", amount: 400000, amountPaid: 400000 }));
+    mocks.recordOnAccount.mockResolvedValue(null);
+    await handlePaymentLinkPaid(link, payment);
+    expect(mocks.notificationInsertMany.mock.calls[0][0][0].message).toContain("attach it by hand");
   });
 
   it("ignores a replayed event", async () => {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Ban, CheckCircle2, Copy, Link2, Loader2, Plus, Search, Send, UserCheck } from "lucide-react";
+import { AlertTriangle, Ban, CheckCircle2, Copy, Link2, Loader2, Plus, Search, Send, UserCheck, UserRound, X } from "lucide-react";
 import { toast } from "sonner";
 import { Field, Modal } from "@/components/common/Modal";
 import { formatAcademyDateTime } from "@/lib/academyTime";
@@ -24,10 +24,13 @@ type LinkRow = {
   amountPaid: number;
   method: string;
   whatsappStatus: "" | "sent" | "failed" | "not_configured";
+  accountName: string;
   attachedStudentName: string;
   attachedInvoiceNumber: string;
   createdAt: string;
 };
+
+type DemoAccount = { id: string; name: string; parentName: string; email: string; phone: string; countryCode: string };
 
 type Plan = { id: string; name: string; type: string; credits: number; total: number };
 type Permissions = Partial<Record<"view" | "create" | "cancel" | "attach", boolean>>;
@@ -74,8 +77,81 @@ async function copyLink(url: string) {
 
 const emptyForm = { customerName: "", studentName: "", phone: "", countryCode: "+91", email: "", feePlanId: "", amountRupees: "", description: "" };
 
+/**
+ * Picks the demo account the link is for. Choosing one fills in the family's
+ * details, and the payment is then recorded on that account automatically.
+ */
+function DemoAccountPicker({ selected, onSelect, onClear }: { selected: DemoAccount | null; onSelect: (account: DemoAccount) => void; onClear: () => void }) {
+  const [query, setQuery] = useState("");
+  const [accounts, setAccounts] = useState<DemoAccount[]>([]);
+  const [searching, setSearching] = useState(false);
+
+  useEffect(() => {
+    if (selected || query.trim().length < 2) {
+      setAccounts([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const data = await readJson(await fetch(`/api/sales/payment-links/demo-accounts?q=${encodeURIComponent(query.trim())}`, { cache: "no-store" }));
+        setAccounts(data.accounts || []);
+      } catch (error: any) {
+        toast.error(error.message);
+      } finally {
+        setSearching(false);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [query, selected]);
+
+  if (selected) {
+    return (
+      <div className="flex items-start justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+        <div className="min-w-0 text-sm">
+          <p className="font-black text-emerald-900"><UserRound size={14} className="mr-1 inline" />{selected.name}</p>
+          <p className="truncate text-xs text-emerald-800">{[selected.parentName, selected.phone, selected.email].filter(Boolean).join(" · ")}</p>
+          <p className="mt-1 text-xs font-bold text-emerald-700">When they pay, the invoice and payment are recorded on this account automatically.</p>
+        </div>
+        <button type="button" onClick={onClear} className="rounded p-1 text-emerald-800 hover:bg-emerald-100" aria-label="Remove demo account">
+          <X size={16} />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <label className="relative block">
+        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+        <input
+          className="input pl-9"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search demo accounts by student, parent, email or phone"
+        />
+      </label>
+      {searching && <p className="mt-2 text-xs text-slate-500"><Loader2 size={12} className="mr-1 inline animate-spin" /> Searching</p>}
+      {!searching && query.trim().length >= 2 && !accounts.length && <p className="mt-2 text-xs text-slate-500">No demo account matches. You can still fill in the details below.</p>}
+      {accounts.length > 0 && (
+        <ul className="mt-2 max-h-48 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200">
+          {accounts.map((account) => (
+            <li key={account.id}>
+              <button type="button" onClick={() => onSelect(account)} className="block w-full px-3 py-2 text-left hover:bg-slate-50">
+                <span className="block text-sm font-bold text-slate-950">{account.name}</span>
+                <span className="block truncate text-xs text-slate-500">{[account.parentName, account.phone, account.email].filter(Boolean).join(" · ")}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function CreateLinkModal({ plans, onClose, onCreated }: { plans: Plan[]; onClose: () => void; onCreated: (link: LinkRow) => void }) {
   const [form, setForm] = useState(emptyForm);
+  const [account, setAccount] = useState<DemoAccount | null>(null);
   const [saving, setSaving] = useState(false);
   const plan = plans.find((item) => item.id === form.feePlanId);
   const total = plan ? plan.total : Math.round(Number(form.amountRupees || 0) * 100);
@@ -88,7 +164,7 @@ function CreateLinkModal({ plans, onClose, onCreated }: { plans: Plan[]; onClose
       const data = await readJson(await fetch("/api/sales/payment-links", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, amountRupees: form.feePlanId ? undefined : Number(form.amountRupees || 0) }),
+        body: JSON.stringify({ ...form, accountId: account?.id || "", amountRupees: form.feePlanId ? undefined : Number(form.amountRupees || 0) }),
       }));
       onCreated(data.link);
     } catch (error: any) {
@@ -101,6 +177,23 @@ function CreateLinkModal({ plans, onClose, onCreated }: { plans: Plan[]; onClose
   return (
     <Modal title="New payment link" subtitle="Razorpay makes a link for this exact amount and the academy WhatsApp sends it to the parent." onClose={onClose} wide>
       <form onSubmit={submit} className="space-y-4">
+        <Field label="Demo account" hint="Optional. Pick the family's demo account to fill in their details and record the payment on it.">
+          <DemoAccountPicker
+            selected={account}
+            onClear={() => setAccount(null)}
+            onSelect={(picked) => {
+              setAccount(picked);
+              setForm((current) => ({
+                ...current,
+                customerName: picked.parentName || picked.name,
+                studentName: picked.name,
+                phone: picked.phone || current.phone,
+                countryCode: picked.countryCode || current.countryCode,
+                email: picked.email || current.email,
+              }));
+            }}
+          />
+        </Field>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Parent name">
             <input className="input" value={form.customerName} onChange={set("customerName")} required />
@@ -357,6 +450,9 @@ export default function PaymentLinksClient() {
                   <p className="text-xs text-slate-500">
                     {link.countryCode} {link.phone} · Sent {when(link.createdAt)}{link.createdByName ? ` by ${link.createdByName}` : ""}
                   </p>
+                  {link.accountName && !link.attachedInvoiceNumber && (
+                    <p className="text-xs text-slate-600"><UserRound size={12} className="mr-1 inline" />For demo account {link.accountName}{link.status === "created" ? "; recorded there automatically when paid" : ""}</p>
+                  )}
                   {link.status === "created" && link.whatsappStatus && (
                     <p className={cn("text-xs font-bold", link.whatsappStatus === "sent" ? "text-emerald-700" : "text-amber-700")}>{whatsappLabel[link.whatsappStatus]}</p>
                   )}

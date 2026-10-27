@@ -4,6 +4,7 @@ import { invoiceStaffRecipients } from "@/lib/demoNotificationRecipients";
 import { markInvoicePaid } from "@/lib/fees";
 import { formatINR } from "@/lib/utils";
 import { paymentMethodFromRazorpay } from "@/lib/payments/razorpay";
+import { recordPaidLinkOnAccount } from "@/lib/payments/salesPaymentLinks";
 import { Invoice, Notification } from "@/models/Fee";
 import { Payment } from "@/models/Payment";
 import { SalesPaymentLink } from "@/models/SalesPaymentLink";
@@ -78,14 +79,21 @@ export async function handlePaymentLinkPaid(link: LinkEntity, payment: PaymentEn
     ).lean();
     if (!updated) return { handled: true, duplicate: true };
     const amountText = formatINR(updated.amountPaid || updated.amount);
+    // Sent for a demo account: the invoice and payment go straight onto it.
+    const recorded = updated.account ? await recordPaidLinkOnAccount(salesLinkId) : null;
     const staff = await invoiceStaffRecipients().catch(() => []);
     const recipients = new Set([String(updated.createdBy), ...staff.map((person: any) => String(person.userId || "")).filter(Boolean)]);
+    const where = recorded
+      ? ` Recorded on ${recorded.studentName}'s account as ${recorded.invoiceNumber}.`
+      : updated.account
+        ? " It could not be recorded on the demo account automatically, so attach it by hand."
+        : "";
     await Notification.insertMany(
       Array.from(recipients).map((user) => ({
         user,
         type: "sales.payment_link_paid",
         title: "Payment received",
-        message: `${updated.customerName} paid ${amountText} for ${updated.description}.`,
+        message: `${updated.customerName} paid ${amountText} for ${updated.description}.${where}`,
         metadata: { salesLinkId, href: "/sales/payment-links" },
       }))
     ).catch((error) => console.error("Payment link notification failed", error));
@@ -95,9 +103,9 @@ export async function handlePaymentLinkPaid(link: LinkEntity, payment: PaymentEn
       label: `${updated.customerName} paid ${amountText} through a sales payment link`,
       entityType: "SalesPaymentLink",
       entityId: salesLinkId,
-      metadata: { razorpayPaymentId: paymentId, razorpayLinkId: link.id, method: payment.method || "" },
+      metadata: { razorpayPaymentId: paymentId, razorpayLinkId: link.id, method: payment.method || "", recordedAs: recorded?.invoiceNumber || "" },
     });
-    return { handled: true };
+    return { handled: true, recordedAs: recorded?.invoiceNumber };
   }
 
   return { handled: false, reason: "unknown_link" };

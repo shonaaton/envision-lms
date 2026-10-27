@@ -5,6 +5,7 @@ import { centreHref, centreHub, kolkataCentres } from "@/lib/centrePages";
 import { courseHub, coursePages } from "@/lib/coursePages";
 import { MARKETING_BASE_URL } from "@/lib/publicLinks";
 import { BLOG_PATH, blogHref, blogPosts } from "@/lib/blog";
+import { cityHref, cityPages } from "@/lib/cityPages";
 
 /**
  * The public sitemap.
@@ -29,6 +30,8 @@ const url = (path: string) => `${MARKETING_BASE_URL}${path}`;
  * `updatedAt`, which is the date a crawler should trust for them.
  */
 const SITE_CONTENT_UPDATED = new Date("2026-10-05");
+/** The city pages were added later and carry their own date. */
+const CITY_PAGES_UPDATED = new Date("2026-10-27");
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
@@ -84,6 +87,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.3,
   }));
 
+  // The online city pages. Kolkata is covered by the centre hub above.
+  const cities: MetadataRoute.Sitemap = cityPages.map((page) => ({
+    url: url(cityHref(page.slug)),
+    lastModified: CITY_PAGES_UPDATED,
+    changeFrequency: "monthly" as const,
+    priority: 0.8,
+  }));
+
   // The blog. The index changes whenever a post does, so it takes the newest
   // post's date; each post takes its own.
   const newestPost = blogPosts.reduce((latest, post) => (post.updatedAt > latest ? post.updatedAt : latest), "");
@@ -97,5 +108,5 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     })),
   ];
 
-  return [...core, ...courses, ...centres, ...blog, ...stories, ...legal];
+  return [...core, ...courses, ...centres, ...cities, ...blog, ...stories, ...legal];
 }

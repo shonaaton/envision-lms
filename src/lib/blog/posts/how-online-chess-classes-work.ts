@@ -41,6 +41,10 @@ const post: BlogPost = {
       type: "p",
       text: "At Envision, for example, every class happens inside one academy portal: the live board, class chat and shared study material are in the classroom, and the same login holds the homework, the tactics trainer, weekly tournaments and the progress reports. Students attend **two classes a week**, and each level runs **16 sessions - about two months** - before moving on.",
     },
+    {
+      type: "p",
+      text: "Because nothing depends on where you live, families in every big city learn this way - from [chess coaching in Mumbai](/chess-coaching-in-mumbai) and [Delhi](/chess-coaching-in-delhi) to [Bengaluru](/chess-coaching-in-bangalore), [Hyderabad](/chess-coaching-in-hyderabad), [Chennai](/chess-coaching-in-chennai), [Pune](/chess-coaching-in-pune) and [Ahmedabad](/chess-coaching-in-ahmedabad). In Kolkata, children can also learn in person at our [chess academy centres](/chess-academy-in-kolkata).",
+    },
     { type: "h2", id: "live-vs-recorded", text: "Live classes or recorded courses?" },
     {
       type: "p",

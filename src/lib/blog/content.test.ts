@@ -5,6 +5,7 @@ import { inlineHrefs } from "@/lib/blog/inline";
 import type { Block, BlogPost } from "@/lib/blog/types";
 import { publicAchievementList, seededAchievements, studentSlug } from "@/lib/achievementData";
 import { centreHref, centreHub, kolkataCentres } from "@/lib/centrePages";
+import { cityHref, cityPages } from "@/lib/cityPages";
 import { courseHub, coursePages } from "@/lib/coursePages";
 
 /**
@@ -38,6 +39,7 @@ const knownRoutes = new Set<string>([
   ...coursePages.map((page) => `/${page.slug}`),
   `/${centreHub.slug}`,
   ...kolkataCentres.map((centre) => centreHref(centre.slug)),
+  ...cityPages.map((page) => cityHref(page.slug)),
   ...blogPosts.map((post) => blogHref(post.slug)),
   // Story pages are built from the database in production; the seed is the
   // set every environment is guaranteed to have.
@@ -179,6 +181,7 @@ describe("the blog as a whole", () => {
       courseHub.keyword,
       ...coursePages.map((page) => page.keyword),
       ...kolkataCentres.map((centre) => centre.keyword),
+      ...cityPages.map((page) => page.keyword),
     ].map((phrase) => phrase.toLowerCase());
     for (const post of blogPosts) expect(pagePhrases).not.toContain(post.keyword.toLowerCase());
   });

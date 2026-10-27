@@ -4,7 +4,7 @@ import { ChevronDown, Mail, MapPin, Menu, Phone } from "lucide-react";
 import { ACADEMY_DEFAULTS, ACADEMY_LOGO_URL, ACADEMY_PHONE_DISPLAY } from "@/lib/branding";
 import { centreHref, centreHub, kolkataAreasServed, kolkataCentres } from "@/lib/centrePages";
 import { courseHub, coursePages } from "@/lib/coursePages";
-import { blogHubLink, featuredPostLinks, kidsClassesLink } from "@/lib/internalLinks";
+import { blogHubLink, cityLinks, featuredPostLinks, kidsClassesLink } from "@/lib/internalLinks";
 import CookieSettingsLink from "@/components/marketing/CookieSettingsLink";
 
 /**
@@ -372,6 +372,25 @@ export function MarketingFooter() {
                 All chess guides on the blog
               </Link>
             </li>
+          </ul>
+        </nav>
+
+        {/* ----------------------------------------------------------- cities */}
+        {/* Every city page from every public page. Kolkata points at the centre
+            hub, which owns that city - there is no separate online Kolkata page. */}
+        <nav aria-label="Chess coaching by city" className="mt-10 border-t border-white/12 pt-8">
+          <h2 className="text-xs font-black uppercase tracking-[0.14em] text-accent">Chess Coaching Across India</h2>
+          <ul className="mt-4 flex flex-wrap gap-2">
+            {[...cityLinks(), { href: centreHubHref, label: "Best Chess Coaching in Kolkata" }].map((link) => (
+              <li key={link.href}>
+                <Link
+                  href={link.href}
+                  className="inline-flex rounded-full border border-white/15 bg-white/[0.06] px-3 py-1.5 text-xs font-semibold text-white/80 transition hover:border-accent/60 hover:bg-white/10 hover:text-accent"
+                >
+                  {link.label}
+                </Link>
+              </li>
+            ))}
           </ul>
         </nav>
 

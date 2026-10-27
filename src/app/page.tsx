@@ -29,6 +29,7 @@ import WhyEnvision from "@/components/marketing/WhyEnvision";
 import { MarketingFooter, MarketingHeader } from "@/components/marketing/MarketingChrome";
 import { ACADEMY_ACCREDITATIONS, ACADEMY_DEFAULTS, ACADEMY_LOGO_URL } from "@/lib/branding";
 import { centreHub } from "@/lib/centrePages";
+import { cityHref, cityPages } from "@/lib/cityPages";
 import { courseTierLabel } from "@/lib/courseTiers";
 import { courseHub, coursePages } from "@/lib/coursePages";
 import { blogHubLink, featuredPostLinks, kidsClassesLink } from "@/lib/internalLinks";
@@ -789,7 +790,19 @@ export default async function Home() {
             <div className="rounded-xl border border-brand/15 bg-brand-50 p-4 text-brand-900 sm:col-span-2">
               <Globe2 size={18} className="text-brand" />
               <h3 className="mt-3 font-black">Online chess classes across India</h3>
-              <p className="mt-1 text-sm text-brand-900/70">Delhi, Mumbai, Bengaluru, Hyderabad, Chennai, Pune or a small town with a good connection - the structured programme, personal mentorship and weekly tournaments reach students at home, wherever home is.</p>
+              <p className="mt-1 text-sm text-brand-900/70">
+                {/* The city names link to each city's page: the strongest page on
+                    the site passing its weight to the pages that need it. */}
+                {cityPages.map((page) => (
+                  <span key={page.slug}>
+                    <Link href={cityHref(page.slug)} className="font-bold text-brand underline decoration-brand/30 underline-offset-2 hover:decoration-brand">
+                      {page.city}
+                    </Link>
+                    {", "}
+                  </span>
+                ))}
+                or a small town with a good connection - the structured programme, personal mentorship and weekly tournaments reach students at home, wherever home is.
+              </p>
             </div>
           </div>
         </div>

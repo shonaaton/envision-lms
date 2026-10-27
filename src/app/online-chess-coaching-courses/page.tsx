@@ -8,7 +8,7 @@ import { MarketingFooter, MarketingHeader } from "@/components/marketing/Marketi
 import { ACADEMY_DEFAULTS } from "@/lib/branding";
 import { courseHub, courseHubMetadata, coursePages } from "@/lib/coursePages";
 import { curriculumLevels } from "@/lib/demoCurriculum";
-import { blogHubLink, centreHubLink, centreLinks, contactLink, featuredPostLinks, kidsClassesLink, successStoriesLink } from "@/lib/internalLinks";
+import { blogHubLink, centreHubLink, centreLinks, cityLinks, contactLink, featuredPostLinks, kidsClassesLink, successStoriesLink } from "@/lib/internalLinks";
 import { MARKETING_BASE_URL } from "@/lib/publicLinks";
 import { courseOffer, onlineCourseInstance } from "@/lib/seo";
 
@@ -205,6 +205,13 @@ export default function CourseHubPage() {
         heading="How to judge online chess coaching, and how we measure up."
         intro="Everyone selling online chess coaching says they are the best at it. These are the six things worth checking before you believe anyone, ours included: a syllabus you can read, a coach who places the student, feedback every week, real competition, and a portal where a parent can see all of it."
         secondary={{ href: "#courses", label: "Compare the five courses" }}
+      />
+
+      <RelatedLinks
+        eyebrow="In your city"
+        heading="Online chess coaching across India's cities"
+        intro="Every course on this page runs live online for families in every city, on the same syllabus. Find what it looks like where you live."
+        links={cityLinks()}
       />
 
       <RelatedLinks

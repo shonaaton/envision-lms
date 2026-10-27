@@ -1,5 +1,6 @@
 import { BLOG_PATH, blogHref, blogPosts, getBlogPost, postsForCourse } from "@/lib/blog";
 import { centreHref, centreHub, centreTimeRange, kolkataCentres } from "@/lib/centrePages";
+import { cityHref, cityPages } from "@/lib/cityPages";
 import { courseHub, coursePages } from "@/lib/coursePages";
 
 /**
@@ -128,4 +129,18 @@ export function featuredPostLinks(count: number): RelatedLink[] {
  */
 export function guidesForCourse(courseSlug: string): RelatedLink[] {
   return postLinks(postsForCourse(courseSlug).map((post) => post.slug));
+}
+
+/**
+ * The city pages, anchored on the phrase each one targets ("Best Chess Coaching
+ * in Mumbai") so every block that links them tells a crawler what the page is.
+ */
+export function cityLinks(exceptSlug?: string): RelatedLink[] {
+  return cityPages
+    .filter((page) => page.slug !== exceptSlug)
+    .map((page) => ({
+      href: cityHref(page.slug),
+      label: `Best Chess Coaching in ${page.city}`,
+      detail: `Live online chess classes for families across ${page.areas.slice(0, 3).join(", ")} and the rest of ${page.city}.`,
+    }));
 }

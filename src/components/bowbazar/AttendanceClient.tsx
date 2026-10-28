@@ -716,7 +716,7 @@ function HomeworkSetter({ register, dirty, onDone }: { register: Register; dirty
           <div className="relative">
             <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
-              className="input pl-8"
+              className="input !pl-9"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Find homework by title, topic or level"

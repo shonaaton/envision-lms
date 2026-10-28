@@ -295,7 +295,11 @@ export async function resetStudentPassword(branch: BranchKey, studentId: string)
   const password = tempPassword();
   await User.updateOne(
     { _id: student.user },
-    { $set: { passwordHash: await bcrypt.hash(password, 10), tempPassword: password, passwordChangedAt: new Date(), passwordChangeSource: "admin_reset" } }
+    {
+      $set: { passwordHash: await bcrypt.hash(password, 10), tempPassword: password, passwordChangedAt: new Date(), passwordChangeSource: "admin_reset", failedLoginAttempts: 0 },
+      // A stuck family is the usual reason for a reset; a lockout left in place makes the new password look wrong too.
+      $unset: { passwordResetTokenHash: 1, passwordResetExpiresAt: 1, lastFailedLoginAt: 1, loginLockedUntil: 1 },
+    }
   );
   const user: any = await User.findById(student.user).select("username").lean();
   return { username: user?.username as string, password };

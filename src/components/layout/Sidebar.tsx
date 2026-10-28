@@ -46,6 +46,7 @@ import {
   Layers,
   Repeat,
   WalletCards,
+  UserCog,
   UserPlus,
   UserRound,
   Target,
@@ -323,6 +324,7 @@ function branchSections(role: Role, branchRole?: string): NavSection[] {
             { href: "/bowbazar/fees", label: "Fees", icon: BadgeIndianRupee },
           ]
         : []),
+      ...(branchRole === "admin" ? [{ href: "/bowbazar/users", label: "Users", icon: UserCog }] : []),
       // The tools for teaching the branch's online class over a screen share.
       { href: "/pgn", label: "PGN Library", icon: Library },
       { href: "/analysis", label: "Analysis Board", icon: ListChecks },

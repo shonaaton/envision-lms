@@ -27,6 +27,7 @@ const TABS = [
   { href: "/bowbazar/students", label: "Students", need: "view" },
   { href: "/bowbazar/admissions", label: "Admissions", need: "students" },
   { href: "/bowbazar/fees", label: "Fees", need: "fees" },
+  { href: "/bowbazar/users", label: "Users", need: "staff" },
 ];
 
 export function BranchHeader({ title, subtitle, can, actions }: { title: string; subtitle?: string; can: string[]; actions?: ReactNode }) {

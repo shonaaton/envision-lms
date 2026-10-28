@@ -1,5 +1,31 @@
 import { describe, expect, it } from "vitest";
-import { invoiceBreakup } from "./invoiceMath";
+import { invoiceBreakup, overdueInvoiceUpdate } from "./invoiceMath";
+
+describe("overdueInvoiceUpdate", () => {
+  const now = new Date("2026-10-28T06:00:00Z");
+  const longAgo = new Date("2026-10-01T00:00:00Z");
+
+  it("keeps a back-dated GST-included custom invoice at the amount it was raised for", () => {
+    const update = overdueInvoiceUpdate({ type: "manual", amount: 1000000, dueDate: longAgo, invoiceMode: "included", gstPercentage: 18 }, null, now);
+    expect(update).toEqual({ status: "overdue" });
+  });
+
+  it("leaves invoices inside the grace period alone", () => {
+    const update = overdueInvoiceUpdate({ type: "monthly", amount: 300000, dueDate: new Date("2026-10-25T00:00:00Z"), invoiceMode: "included", gstPercentage: 18 }, { lateFeeAmount: 50000 }, now);
+    expect(update).toBeNull();
+  });
+
+  it("adds a plan late fee inside the invoice's own GST-included total, even if the plan now says excluded", () => {
+    const update: any = overdueInvoiceUpdate(
+      { type: "monthly", amount: 300000, dueDate: longAgo, invoiceMode: "included", gstPercentage: 18 },
+      { lateFeeAmount: 50000, gstMode: "excluded", gstPercentage: 18 },
+      now,
+    );
+    expect(update.invoiceMode).toBe("included");
+    expect(update.totalAmount).toBe(350000);
+    expect(update.taxableAmount + update.gstAmount).toBe(350000);
+  });
+});
 
 describe("invoiceBreakup", () => {
   it("never adds GST on top when the amount already includes it", () => {

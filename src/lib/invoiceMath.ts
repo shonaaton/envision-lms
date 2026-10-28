@@ -41,3 +41,27 @@ export function invoiceBreakup(amount: number, lateFee: number, settings: any, o
     totalAmount,
   };
 }
+
+/**
+ * What the overdue sweep does to one unpaid invoice past its due date.
+ * The invoice keeps the GST mode and rate it was raised with: re-deriving them
+ * from the plan or the academy default turned a "GST included" custom invoice
+ * into "GST added on top". Custom invoices have no plan, so no late-fee rule:
+ * they are marked overdue and their amounts stay as issued.
+ */
+export function overdueInvoiceUpdate(
+  invoice: { type?: string; amount: number; dueDate: Date; invoiceMode?: string | null; gstPercentage?: number | null },
+  plan: { lateFeeAfterDays?: number | null; lateFeeAmount?: number | null; gstMode?: string | null; gstPercentage?: number | null } | null | undefined,
+  now: Date,
+) {
+  const DAY = 24 * 60 * 60 * 1000;
+  const lateAfterDays = Math.min(7, Math.max(0, Number(plan?.lateFeeAfterDays ?? 7)));
+  if (new Date(invoice.dueDate) >= new Date(now.getTime() - lateAfterDays * DAY)) return null;
+  if (invoice.type === "manual" || !plan) return { status: "overdue" as const };
+  const lateFee = Number(plan.lateFeeAmount ?? 50000);
+  const breakup = invoiceBreakup(invoice.amount, lateFee, {}, {
+    gstMode: invoice.invoiceMode || plan.gstMode || "non_gst",
+    gstPercentage: Number(invoice.gstPercentage ?? plan.gstPercentage ?? 0),
+  });
+  return { status: "overdue" as const, lateFee, ...breakup };
+}

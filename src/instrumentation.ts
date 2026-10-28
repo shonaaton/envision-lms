@@ -28,6 +28,7 @@ export async function register() {
   const { processRetentionSweep } = await import("@/lib/retention/retentionSweep");
   const { processCrmDemoStageReconcile } = await import("@/lib/crm/reconcile");
   const { processWeeklyEngagement } = await import("@/lib/engagement/weeklyEngagementJob");
+  const { processExamSweep } = await import("@/lib/exams/examService");
   const { processWhatsAppCampaigns, processWhatsAppFollowUps } = await import("@/lib/whatsappCampaigns");
   const { canAccessFeature } = await import("@/lib/featureAccess");
 
@@ -57,6 +58,18 @@ export async function register() {
       name: "academy_holiday_announcements",
       intervalMs: 2 * 60_000,
       run: () => processHolidayAnnouncements(),
+    },
+    {
+      /**
+       * Exam Center: closes exam windows that ran out, submits sittings past
+       * their 90 minutes or silent for 3 (app closed without a goodbye), sends
+       * the 08:00 IST reminders, assigns exams for newly completed courses
+       * (only when EXAMS_AUTO_ASSIGN_FROM is set) and works the certificate
+       * webhook queue. Every step is a claimed status change.
+       */
+      name: "exam_sweeps",
+      intervalMs: 5 * 60_000,
+      run: () => processExamSweep(),
     },
     {
       name: "ask_coach_email_reminders",

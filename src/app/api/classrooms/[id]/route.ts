@@ -24,6 +24,7 @@ import { notifyClassroomCoachAssigned, notifyClassroomCoachHandover } from "@/li
 import { applyPermanentCoachChange, type CoachChangeResult } from "@/lib/classroomCoachChange";
 import { transferPendingFeedbackToCoach } from "@/lib/feedback/feedbackService";
 import { notifyCourseCompleted, notifySessionCancelled } from "@/lib/classSessionNotifications";
+import { kickExamAutoAssign } from "@/lib/exams/examService";
 import { writeRuntimeLog } from "@/lib/runtimeLogger";
 import { raiseSubstituteTask, resolveCoachMissingTask } from "@/lib/tasks/taskTriggers";
 import { syncLeaveCoverageForClassroom } from "@/lib/leave/leaveService";
@@ -1234,6 +1235,8 @@ async function patchClassroom(req: Request, { params }: { params: { id: string }
     void notifyCourseCompleted(existing.toObject?.() ?? existing).catch((error) => {
       console.error("Course completion notice failed", error);
     });
+    // The level exam, straight away rather than at the next exam sweep.
+    kickExamAutoAssign(String(existing._id));
   }
 
   const activityAction = String(body.action || "update_classroom");

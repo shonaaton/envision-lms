@@ -2374,6 +2374,29 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
       { "position": 3, "key": "form_link", "sample": "https://envisionchessacademy.com/admission/abc123" },
       { "position": 4, "key": "valid_days", "sample": "14" }
     ]
+  },
+  {
+    "name": "exam_assigned",
+    "language": "en",
+    "sourceAutomation": "examNotifications.notifyExamAssigned",
+    "body": "Hello {{1}}, your {{2}} exam is ready in the Exam Center on the Envision Chess Academy portal.\n\nThe exam is open until {{3}}. Once started it runs for 90 minutes and cannot be paused or left, so please start it with enough time and a steady connection.\n\nThe certificate follows once the exam is completed.\n\nTeam Envision Chess Academy",
+    "variables": [
+      { "position": 1, "key": "recipient_name", "sample": "Aarav" },
+      { "position": 2, "key": "exam_level", "sample": "Beginner Level 2" },
+      { "position": 3, "key": "deadline", "sample": "4 Nov 2026, 11:59 pm IST" }
+    ]
+  },
+  {
+    "name": "exam_reminder",
+    "language": "en",
+    "sourceAutomation": "examNotifications.notifyExamReminder",
+    "body": "Hello {{1}}, a reminder that the {{2}} exam in the Envision Chess Academy portal is still waiting, and {{3}}.\n\nThe exam closes at {{4}}. Once started it runs for 90 minutes and cannot be paused or left.\n\nTeam Envision Chess Academy",
+    "variables": [
+      { "position": 1, "key": "recipient_name", "sample": "Aarav" },
+      { "position": 2, "key": "exam_level", "sample": "Beginner Level 2" },
+      { "position": 3, "key": "time_left", "sample": "3 days are left" },
+      { "position": 4, "key": "deadline", "sample": "4 Nov 2026, 11:59 pm IST" }
+    ]
   }
 ] as const satisfies readonly WhatsAppTemplateDefinition[];
 

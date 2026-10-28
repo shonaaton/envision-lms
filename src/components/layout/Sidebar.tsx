@@ -108,6 +108,7 @@ const sections: NavSection[] = [
       { href: "/booking", label: "Booking", icon: CalendarDays, featureKey: "booking", roles: ["student"] },
       { href: "/ask-coach", label: "Ask Coach", icon: MessageSquare, featureKey: "askCoach" },
       { href: "/homework", label: "Homework", icon: FileText, featureKey: "homework" },
+      { href: "/exams", label: "Exam Center", icon: ClipboardCheck, featureKey: "exams", roles: ["student", "instructor"] },
       { href: "/attendance", label: "Attendance", icon: ClipboardList, featureKey: "attendance" },
       { href: "/calendar", label: "Calendar", icon: CalendarDays, featureKey: "calendar" },
       { href: "/tournaments", label: "Tournaments", icon: Trophy, featureKey: "tournaments" },
@@ -235,6 +236,7 @@ const sections: NavSection[] = [
     items: [
       { href: "/admin/courses", label: "Courses", icon: BookOpenCheck, featureKey: "courseManagement" },
       { href: "/admin/homework-templates", label: "HW Templates", icon: FileText, featureKey: "homeworkTemplates" },
+      { href: "/admin/exams", label: "Exams", icon: ClipboardCheck, featureKey: "examsAdmin" },
     ],
   },
   {

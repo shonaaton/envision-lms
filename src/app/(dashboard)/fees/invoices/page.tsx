@@ -1,7 +1,7 @@
 import { auth } from "@/lib/auth";
 import { resolvePublicAppUrl } from "@/lib/appUrl";
 import { dbConnect } from "@/lib/db";
-import { adjustedInvoicePayment, createNextMonthlyInvoiceAfterPayment, createPublicInvoiceUrl, ensureMonthlyInvoices, markInvoicePaid as applyInvoicePayment } from "@/lib/fees";
+import { adjustedInvoicePayment, createPublicInvoiceUrl, ensureMonthlyInvoices, markInvoicePaid as applyInvoicePayment } from "@/lib/fees";
 import { reverseCreditPurchase } from "@/lib/creditReversal";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
 import { resolveAudienceEmails } from "@/lib/studentContact";
@@ -25,6 +25,7 @@ import { recordActivity } from "@/lib/activity";
 import { invoiceReferences } from "@/lib/feesMetrics";
 import { invoicePaymentLink, retireInvoicePaymentLink } from "@/lib/payments/invoicePaymentLink";
 import { CopyPayLinkButton } from "@/components/fees/CopyPayLinkButton";
+import { afterManualInvoicePayment } from "@/lib/invoicePaidFollowUp";
 import { collectsThroughRazorpay } from "@/lib/payments/gstAccount";
 import { upiPayPageUrl } from "@/lib/payments/upiPayment";
 
@@ -130,57 +131,7 @@ async function markInvoicePaid(formData: FormData) {
     redirect(`${returnPath}payment=amount-mismatch`);
   }
   await applyInvoicePayment(invoiceId, undefined, { actor: (session.user as any).id, source: "manual_admin" }, transactions, { waiveLateFee, discountAmount, note: adjustmentNote });
-  try {
-    if (invoice?.type === "monthly") await createNextMonthlyInvoiceAfterPayment(invoiceId);
-  } catch (error) {
-    console.error("Could not generate next monthly invoice after payment", error);
-  }
-  try {
-    const paidInvoice: any = await Invoice.findById(invoiceId).populate("student").lean();
-    if (paidInvoice?.student?._id) {
-      const transactionSummary = transactions
-        .map((transaction) => `${formatINR(transaction.amount)} by ${transaction.mode === "bank_transfer" ? "Bank Transfer" : transaction.mode.toUpperCase()}${transaction.referenceNumber ? `, ref ${transaction.referenceNumber}` : ""}`)
-        .join("\n");
-      const message = [
-        `Hello ${paidInvoice.student.name},`,
-        `Payment has been recorded for invoice ${paidInvoice.invoiceNumber}.`,
-        `Amount: ${formatINR(paidInvoice.totalAmount)}.`,
-        paidInvoice.lateFeeWaivedAmount ? `Late fee waived: ${formatINR(paidInvoice.lateFeeWaivedAmount)}.` : "",
-        paidInvoice.discountAmount ? `Discount applied: ${formatINR(paidInvoice.discountAmount)}.` : "",
-        transactionSummary ? `Transactions:\n${transactionSummary}` : "",
-      ].filter(Boolean).join("\n\n");
-      await Notification.create({
-        user: paidInvoice.student._id,
-        type: "invoice.paid",
-        title: "Invoice marked paid",
-        message: `${paidInvoice.invoiceNumber} has been marked as paid.`,
-        metadata: { invoice: paidInvoice._id.toString(), transactionCount: transactions.length },
-      });
-      const paidEmails = resolveAudienceEmails(
-        paidInvoice.student.email
-          ? {
-              to: paidInvoice.student.email,
-              subject: `Payment received for ${paidInvoice.invoiceNumber}`,
-              message,
-              metadata: { kind: "invoice_paid", invoiceId, invoiceNumber: paidInvoice.invoiceNumber },
-            }
-          : null,
-        paidInvoice.student.parentEmail
-          ? {
-              to: paidInvoice.student.parentEmail,
-              subject: `Payment recorded for ${paidInvoice.student.name}`,
-              message: message.replace(`Hello ${paidInvoice.student.name},`, `Hello ${paidInvoice.student.parentName || "Parent"},`),
-              metadata: { kind: "invoice_paid_parent", invoiceId, invoiceNumber: paidInvoice.invoiceNumber },
-            }
-          : null,
-      );
-      for (const paidEmail of paidEmails) {
-        await sendAutomationEmail(paidEmail);
-      }
-    }
-  } catch (error) {
-    console.error("Post-payment notifications failed", error);
-  }
+  await afterManualInvoicePayment(invoiceId, transactions);
   revalidatePath("/fees/invoices");
   revalidatePath("/fees/student-fees");
   revalidatePath("/fees");

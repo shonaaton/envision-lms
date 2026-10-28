@@ -49,6 +49,11 @@ const quietMutationPatterns = [
   // Academy Holidays reloads its own list. Its preview is a POST, and a refresh
   // would close the drawer the moment the preview came back.
   /^\/api\/admin\/holidays(\/|$)/,
+  // The exam runner keeps the board, the clock and the answers in its own state:
+  // a refresh after each move would remount it mid-exam. The admin Exams page
+  // reloads its own lists and would lose the open paper.
+  /^\/api\/exams(\/|$)/,
+  /^\/api\/admin\/exams(\/|$)/,
   // Payment Links reloads its own list; a refresh would close the attach dialog.
   /^\/api\/sales\/payment-links(\/|$)/,
 ];

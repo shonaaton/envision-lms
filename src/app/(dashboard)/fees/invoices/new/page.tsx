@@ -1,13 +1,14 @@
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
-import { createInvoice, invoiceBreakup } from "@/lib/fees";
+import { createInvoice, invoiceBreakup, markInvoicePaid } from "@/lib/fees";
+import { afterManualInvoicePayment } from "@/lib/invoicePaidFollowUp";
 import { FeeAssignment, FeePlan, Invoice } from "@/models/Fee";
 import { User } from "@/models/User";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { ArrowLeft, MailWarning, Send } from "lucide-react";
 import { InvoiceCreationForm, type CreateInvoiceResult, type CreatedInvoiceSummary } from "@/components/fees/InvoiceCreationForm";
-import { getFeaturePermissionState } from "@/lib/featureAccess";
+import { canAccessFeature, getFeaturePermissionState } from "@/lib/featureAccess";
 import { isFeesManager, requireFeesAccess } from "@/lib/feesAccess";
 
 export const dynamic = "force-dynamic";
@@ -31,9 +32,12 @@ function createdInvoiceSummary(invoice: any, alreadyCreated = false): CreatedInv
     createdAt: new Date(invoice.createdAt || Date.now()).toISOString(),
     studentId: String(invoice.student?._id || invoice.student || ""),
     studentName: invoice.student?.name || "",
+    status: String(invoice.status || "unpaid"),
     alreadyCreated,
   };
 }
+
+const PAYMENT_MODES = ["upi", "bank_transfer", "cash", "other"] as const;
 
 async function createManualInvoice(formData: FormData): Promise<CreateInvoiceResult> {
   "use server";
@@ -72,6 +76,19 @@ async function createManualInvoice(formData: FormData): Promise<CreateInvoiceRes
     return { status: "error", error: "Enter a GST rate between 0 and 100, or choose No GST." };
   }
 
+  // "Already paid" records the full total as one payment right after creating.
+  const markPaid = String(formData.get("markPaid") || "") === "1";
+  const rawPaymentMode = String(formData.get("paymentMode") || "");
+  const paymentMode = (PAYMENT_MODES as readonly string[]).includes(rawPaymentMode) ? (rawPaymentMode as (typeof PAYMENT_MODES)[number]) : "other";
+  const paidAt = new Date(String(formData.get("paidDate") || ""));
+  const notifyFamily = String(formData.get("notifyFamily") || "") === "1";
+  if (markPaid) {
+    if (!(await canAccessFeature("invoices", session.user as any, "payment"))) return { status: "error", error: "You do not have permission to record payments. Untick Already paid to create the invoice unpaid." };
+    if (invoiceType === "credits" && !(await canAccessFeature("invoices", session.user as any, "credit"))) return { status: "error", error: "You do not have permission to record payments on credit invoices." };
+    if (Number.isNaN(paidAt.getTime())) return { status: "error", error: "Enter the date the payment was received." };
+    if (paidAt.getTime() > Date.now() + 24 * 60 * 60 * 1000) return { status: "error", error: "The payment date cannot be in the future." };
+  }
+
   // A matching invoice for the same student in the last day is almost always
   // an accidental repeat. Ask before making another one.
   if (String(formData.get("confirmDuplicate") || "") !== "1") {
@@ -106,8 +123,27 @@ async function createManualInvoice(formData: FormData): Promise<CreateInvoiceRes
         label: `Created ${invoiceType === "manual" ? "custom" : invoiceType} invoice`,
       },
     });
+    let paymentError = "";
+    if (markPaid) {
+      const transaction = {
+        mode: paymentMode,
+        amount: Number(invoice.totalAmount || 0),
+        paidAt,
+        referenceNumber: String(formData.get("paymentReference") || "").trim() || invoice.referenceNumber || undefined,
+      };
+      try {
+        await markInvoicePaid(invoice._id.toString(), undefined, { actor: (session.user as any).id, source: "manual_admin", label: `Recorded payment while creating ${invoice.invoiceNumber}` }, [transaction], {}, { notifyStudent: notifyFamily });
+        await afterManualInvoicePayment(invoice._id.toString(), [transaction], { notify: notifyFamily });
+      } catch (error) {
+        console.error("Recording payment on a new invoice failed", error);
+        paymentError = "The invoice was created, but the payment could not be recorded. Record it from the invoice list.";
+      }
+      revalidatePath("/fees/student-fees");
+      revalidatePath("/fees");
+    }
     revalidatePath("/fees/invoices");
-    return { status: "created", invoice: createdInvoiceSummary(invoice) };
+    const saved: any = await Invoice.findById(invoice._id).lean();
+    return { status: "created", invoice: { ...createdInvoiceSummary(saved || invoice), ...(paymentError ? { paymentError } : {}) } };
   } catch (error: any) {
     if (error?.code === 11000 && error?.keyPattern?.creationKey && creationKey) {
       const existing: any = await Invoice.findOne({ creationKey }).lean();
@@ -122,7 +158,7 @@ export default async function NewInvoicePage({ searchParams }: { searchParams?: 
   const session = await auth();
   const userId = (session?.user as any)?.id;
   if (!userId) redirect("/login");
-  const permissions = await getFeaturePermissionState("invoices", session!.user as any, ["view", "invoice"]);
+  const permissions = await getFeaturePermissionState("invoices", session!.user as any, ["view", "invoice", "payment", "credit"]);
   if (!permissions.view || !permissions.invoice || !isFeesManager((session!.user as any)?.role)) redirect("/fees/invoices");
   await dbConnect();
   const params = searchParams ? await searchParams : {};
@@ -153,6 +189,8 @@ export default async function NewInvoicePage({ searchParams }: { searchParams?: 
         action={createManualInvoice}
         createdInvoice={createdInvoice}
         initialStudentId={queryValue(params, "for")}
+        canRecordPayment={permissions.payment}
+        canRecordCreditPayment={permissions.credit}
         students={students.map((student: any) => ({ id: student._id.toString(), name: student.name, username: student.username || "", isActive: student.isActive !== false }))}
         plans={plans.map((plan: any) => ({ id: plan._id.toString(), name: plan.name, type: plan.type, amount: plan.amount, credits: plan.credits || 0, gstMode: plan.gstMode || "non_gst", gstPercentage: plan.gstPercentage || 0 }))}
         assignments={assignments.map((assignment: any) => ({ studentId: assignment.student?.toString(), planId: assignment.plan?.toString() }))}

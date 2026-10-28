@@ -31,6 +31,7 @@ export const portalPaths = [
   "/dashboard",
   "/demo-feedback",
   "/demo-preview",
+  "/exams",
   "/feedback",
   "/fees",
   "/homework",

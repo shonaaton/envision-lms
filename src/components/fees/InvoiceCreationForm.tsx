@@ -33,6 +33,8 @@ export type CreatedInvoiceSummary = {
   createdAt: string;
   studentId: string;
   studentName: string;
+  status?: string;
+  paymentError?: string;
   alreadyCreated?: boolean;
 };
 
@@ -42,6 +44,14 @@ export type CreateInvoiceResult =
   | { status: "error"; error: string };
 
 type Source = "plan" | "custom";
+type PaymentMode = "upi" | "bank_transfer" | "cash" | "other";
+
+const PAYMENT_MODE_OPTIONS: Array<[PaymentMode, string]> = [
+  ["upi", "UPI"],
+  ["bank_transfer", "Bank transfer"],
+  ["cash", "Cash"],
+  ["other", "Other"],
+];
 
 const GST_RATES = [5, 12, 18, 28];
 
@@ -201,6 +211,8 @@ export function InvoiceCreationForm({
   action,
   createdInvoice,
   initialStudentId,
+  canRecordPayment = false,
+  canRecordCreditPayment = false,
 }: {
   students: StudentOption[];
   plans: PlanOption[];
@@ -208,6 +220,8 @@ export function InvoiceCreationForm({
   action: (formData: FormData) => Promise<CreateInvoiceResult>;
   createdInvoice?: CreatedInvoiceSummary | null;
   initialStudentId?: string;
+  canRecordPayment?: boolean;
+  canRecordCreditPayment?: boolean;
 }) {
   const router = useRouter();
   const today = localDateKey();
@@ -223,6 +237,11 @@ export function InvoiceCreationForm({
   const [dueDate, setDueDate] = useState(addDays(today, 7));
   const [referenceNumber, setReferenceNumber] = useState("");
   const [notes, setNotes] = useState("");
+  const [markPaid, setMarkPaid] = useState(false);
+  const [paymentMode, setPaymentMode] = useState<PaymentMode>("upi");
+  const [paidDate, setPaidDate] = useState(today);
+  const [paymentReference, setPaymentReference] = useState("");
+  const [notifyFamily, setNotifyFamily] = useState(true);
   const [creationKey, setCreationKey] = useState(newCreationKey);
   const [error, setError] = useState("");
   const [duplicates, setDuplicates] = useState<CreatedInvoiceSummary[]>([]);
@@ -256,6 +275,9 @@ export function InvoiceCreationForm({
   if (!invoiceDate || !dueDate) missing.push("Set both dates");
   else if (dueDate < invoiceDate) missing.push("Due date is before the invoice date");
   if (!title.trim()) missing.push("Add a title");
+  const paymentAllowed = canRecordPayment && (plan?.type !== "credits" || canRecordCreditPayment);
+  const recordingPayment = markPaid && paymentAllowed;
+  if (recordingPayment && !paidDate) missing.push("Set the payment date");
   const ready = missing.length === 0;
 
   function clearFeedback() {
@@ -312,6 +334,13 @@ export function InvoiceCreationForm({
     formData.set("dueDate", dueDate);
     formData.set("referenceNumber", referenceNumber.trim());
     formData.set("notes", notes.trim());
+    if (recordingPayment) {
+      formData.set("markPaid", "1");
+      formData.set("paymentMode", paymentMode);
+      formData.set("paidDate", paidDate);
+      formData.set("paymentReference", paymentReference.trim());
+      formData.set("notifyFamily", notifyFamily ? "1" : "0");
+    }
     if (confirmDuplicate) formData.set("confirmDuplicate", "1");
     startTransition(async () => {
       try {
@@ -348,11 +377,13 @@ export function InvoiceCreationForm({
               <h2 className="text-xl font-bold text-slate-950">{created.invoiceNumber}</h2>
               <p className="mt-0.5 text-sm text-slate-600">{created.studentName ? `${created.studentName} · ` : ""}{created.title}</p>
               {created.alreadyCreated ? <p className="mt-1 text-xs font-semibold text-emerald-800">This request had already gone through, so no second invoice was made.</p> : null}
+              {created.paymentError ? <p className="mt-1 text-xs font-semibold text-rose-700">{created.paymentError}</p> : null}
             </div>
           </div>
           <div className="rounded-lg bg-white px-4 py-2.5 text-right shadow-sm">
-            <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Total payable · {taxModeLabel(created.invoiceMode)}</div>
+            <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">{created.status === "paid" ? "Total paid" : "Total payable"} · {taxModeLabel(created.invoiceMode)}</div>
             <div className="text-2xl font-black text-slate-950">{currency(created.totalAmount)}</div>
+            <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wide ${created.status === "paid" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>{created.status === "paid" ? "Paid" : "Unpaid"}</span>
           </div>
         </div>
         <div className="flex flex-wrap gap-2 p-4">
@@ -571,6 +602,45 @@ export function InvoiceCreationForm({
               </div>
             </div>
           </section>
+
+          {canRecordPayment ? (
+            <section className={student ? "" : "pointer-events-none opacity-50"}>
+              <SectionTitle step={5} title="Payment" hint="Tick this when the money has already been received." />
+              <label className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition ${recordingPayment ? "border-emerald-400 bg-emerald-50 ring-2 ring-emerald-100" : "border-slate-200 bg-white hover:border-emerald-300"} ${paymentAllowed ? "" : "cursor-not-allowed opacity-60"}`}>
+                <input type="checkbox" checked={recordingPayment} disabled={!paymentAllowed} onChange={(event) => { clearFeedback(); setMarkPaid(event.target.checked); }} className="mt-0.5 h-4 w-4 accent-emerald-600" />
+                <span>
+                  <span className="block text-sm font-bold text-slate-950">Already paid: mark as paid now</span>
+                  <span className="block text-xs text-slate-500">{paymentAllowed ? `Records ${amountPaise > 0 ? currency(breakup.totalAmount) : "the full total"} as received${plan?.type === "credits" ? " and adds the credits" : ""}.` : "You do not have permission to record payments on credit invoices."}</span>
+                </span>
+              </label>
+              {recordingPayment ? (
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  <div className="md:col-span-2">
+                    <Label>Paid by</Label>
+                    <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+                      {PAYMENT_MODE_OPTIONS.map(([value, label]) => (
+                        <button key={value} type="button" onClick={() => setPaymentMode(value)} className={`h-10 rounded-lg border text-sm font-bold transition ${paymentMode === value ? "border-emerald-600 bg-emerald-600 text-white" : "border-slate-200 bg-white text-slate-700 hover:border-emerald-300"}`}>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <Label htmlFor="invoice-paid-date">Payment received on</Label>
+                    <input id="invoice-paid-date" type="date" value={paidDate} max={today} onChange={(event) => setPaidDate(event.target.value)} className={inputClass} />
+                  </div>
+                  <div>
+                    <Label htmlFor="invoice-payment-reference">Transaction reference <span className="font-normal text-slate-400">(optional)</span></Label>
+                    <input id="invoice-payment-reference" value={paymentReference} onChange={(event) => setPaymentReference(event.target.value)} placeholder={referenceNumber || "UTR, UPI ref or receipt no."} className={inputClass} />
+                  </div>
+                  <label className="flex items-center gap-2 text-sm text-slate-700 md:col-span-2">
+                    <input type="checkbox" checked={notifyFamily} onChange={(event) => setNotifyFamily(event.target.checked)} className="h-4 w-4 accent-brand" />
+                    Send the payment confirmation to the student and parent
+                  </label>
+                </div>
+              ) : null}
+            </section>
+          ) : null}
         </fieldset>
 
         <aside className="border-t border-slate-100 bg-slate-50/70 p-4 xl:border-l xl:border-t-0">
@@ -644,7 +714,7 @@ export function InvoiceCreationForm({
                 onClick={() => submit(false)}
                 className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-brand px-4 text-sm font-bold text-white shadow-sm shadow-brand-900/20 transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {pending ? <><Loader2 size={16} className="animate-spin" /> Creating invoice…</> : <><Plus size={16} /> Create invoice{ready ? ` · ${currency(breakup.totalAmount)}` : ""}</>}
+                {pending ? <><Loader2 size={16} className="animate-spin" /> {recordingPayment ? "Creating and recording payment…" : "Creating invoice…"}</> : <><Plus size={16} /> {recordingPayment ? "Create and mark paid" : "Create invoice"}{ready ? ` · ${currency(breakup.totalAmount)}` : ""}</>}
               </button>
             ) : null}
             {!ready && !pending ? <p className="text-center text-xs text-slate-500">{missing[0]} to continue.</p> : null}

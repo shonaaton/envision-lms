@@ -2,6 +2,7 @@ import { Classroom } from "@/models/Classroom";
 import { dbConnect } from "@/lib/db";
 import { notifyCourseCompleted } from "@/lib/classSessionNotifications";
 import { TERMINAL_SESSION_STATUSES } from "@/lib/classroomLifecycle";
+import { kickExamAutoAssign } from "@/lib/exams/examService";
 
 /**
  * Carries out the closes an admin armed with "close after the last scheduled
@@ -62,6 +63,7 @@ export async function completeCourseIfDue(classroomId: string) {
   ).lean();
   if (!claimed) return { closed: 0 };
   await notifyCourseCompleted(claimed).catch((error) => console.error("Course completion notice failed", error));
+  kickExamAutoAssign(String(classroomId));
   return { closed: 1 };
 }
 

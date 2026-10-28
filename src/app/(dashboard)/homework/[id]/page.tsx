@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { Award, BookOpen, Bot, CheckCircle2, ChevronLeft, ChevronRight, Clock, Coins, FileQuestion, FileText, Flag, Gamepad2, HelpCircle, Play, Trophy, Zap } from "lucide-react";
 import { buildMoveHintStyles, legalTargetsFromGame } from "@/lib/chessboardUi";
 import { isPromotionMove, promotionFromBoardPiece, type PendingPromotion, type PromotionPiece } from "@/lib/chessPromotion";
-import { normalizePermissiveFen } from "@/lib/pgnLibrary";
+import { buildGame, normalizeBoardResourceFen, parsePgnPuzzle } from "@/lib/pgnPuzzle";
 import AssignmentChessboard from "@/components/homework/AssignmentChessboard";
 
 const startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
@@ -40,33 +40,6 @@ function rewardMessage(reward: { xp?: number; coins?: number; badge?: string } |
   return parts.join(", ");
 }
 
-function extractHeader(pgn: string, name: string) {
-  return pgn.match(new RegExp(`\\[${name}\\s+"([^"]+)"\\]`))?.[1];
-}
-
-function normalizeBoardResourceFen(value?: string | null) {
-  if (!value || value === "start") return "";
-  return normalizePermissiveFen(value) || String(value).trim();
-}
-
-function buildGame(fen?: string) {
-  try {
-    if (fen && fen !== "start") return new Chess(fen);
-  } catch {
-    const normalizedFen = normalizeBoardResourceFen(fen);
-    if (normalizedFen) {
-      try {
-        const chess = new Chess();
-        chess.load(normalizedFen, { skipValidation: true });
-        return chess;
-      } catch {
-        // Fall through to the normal starting board.
-      }
-    }
-  }
-  return new Chess();
-}
-
 function itemFen(item: any) {
   return String(item?.positionFen || item?.fen || "").trim();
 }
@@ -88,23 +61,6 @@ function previewFen(fen: string) {
     }
   }
   return "";
-}
-
-function parsePgnPuzzle(pgn: string) {
-  try {
-    const game = new Chess();
-    game.loadPgn(pgn);
-    const moves = game.history({ verbose: true }) as any[];
-    const headerFen = extractHeader(pgn, "FEN");
-    return {
-      start: moves[0]?.before || headerFen || startFen,
-      moves: moves.map((move) => ({ san: move.san, from: move.from, to: move.to, promotion: move.promotion || "q" })),
-      valid: true,
-    };
-  } catch {
-    const fen = normalizeBoardResourceFen(extractHeader(pgn, "FEN"));
-    return { start: fen || startFen, moves: [], valid: Boolean(fen) };
-  }
 }
 
 export default function HomeworkAttemptPage() {

@@ -17,7 +17,7 @@ import { invoiceStaffRecipients } from "@/lib/demoNotificationRecipients";
 import { sendWhatsAppAutomationTemplate, sendWhatsAppAutomationTemplates, whatsappRecipientName } from "@/lib/whatsappAutomationEvents";
 import { raiseCreditsExhaustedTask, resolveInvoiceTasks } from "@/lib/tasks/taskTriggers";
 import { retireInvoicePaymentLink } from "@/lib/payments/invoicePaymentLink";
-import { invoiceBreakup } from "@/lib/invoiceMath";
+import { invoiceBreakup, overdueInvoiceUpdate } from "@/lib/invoiceMath";
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -104,30 +104,25 @@ export async function createPublicInvoiceUrl(invoiceId: string) {
 }
 
 export async function updateLateFees(now = new Date()) {
-  const settings = await getAcademySettings();
   const overdue = await Invoice.find({
     status: { $in: ["unpaid", "overdue"] },
   }).populate("plan");
 
   for (const invoice of overdue) {
-    const plan: any = (invoice as any).plan;
-    const lateAfterDays = Math.min(7, Math.max(0, Number(plan?.lateFeeAfterDays ?? 7)));
-    if (invoice.dueDate >= new Date(now.getTime() - lateAfterDays * DAY)) continue;
-    const lateFee = Number(plan?.lateFeeAmount ?? 50000);
-    const breakup = invoiceBreakup(invoice.amount, lateFee, settings, {
-      gstMode: plan?.gstMode,
-      gstPercentage: plan?.gstPercentage,
-    });
-    invoice.lateFee = lateFee;
-    invoice.status = "overdue";
-    invoice.invoiceMode = breakup.invoiceMode;
-    invoice.taxableAmount = breakup.taxableAmount;
-    invoice.gstPercentage = breakup.gstPercentage;
-    invoice.gstAmount = breakup.gstAmount;
-    invoice.cgstAmount = breakup.cgstAmount;
-    invoice.sgstAmount = breakup.sgstAmount;
-    invoice.totalAmount = breakup.totalAmount;
-    await invoice.save();
+    const update = overdueInvoiceUpdate(invoice as any, (invoice as any).plan, now);
+    if (!update) continue;
+    invoice.status = update.status;
+    if ("totalAmount" in update) {
+      invoice.lateFee = update.lateFee;
+      invoice.invoiceMode = update.invoiceMode as any;
+      invoice.taxableAmount = update.taxableAmount;
+      invoice.gstPercentage = update.gstPercentage;
+      invoice.gstAmount = update.gstAmount;
+      invoice.cgstAmount = update.cgstAmount;
+      invoice.sgstAmount = update.sgstAmount;
+      invoice.totalAmount = update.totalAmount;
+    }
+    if (invoice.isModified()) await invoice.save();
   }
 }
 

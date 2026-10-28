@@ -1,6 +1,6 @@
 import "./globals.css";
 import type { Metadata } from "next";
-import { Caveat } from "next/font/google";
+import localFont from "next/font/local";
 import { Toaster } from "sonner";
 import PublicPageTracking from "@/components/marketing/PublicPageTracking";
 import WhatsAppButton from "@/components/marketing/WhatsAppButton";
@@ -37,7 +37,15 @@ const googleAnalyticsId = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID || "";
 
 // Handwriting face, used only for the landing hero's aside. Exposed as a CSS
 // variable so Tailwind's `font-hand` picks it up without loading it everywhere.
-const caveat = Caveat({ subsets: ["latin"], weight: ["600", "700"], variable: "--font-hand", display: "swap" });
+// Bundled rather than next/font/google: the build fetched it from
+// fonts.gstatic.com, and one failed fetch failed the whole VPS deploy. This is
+// Google's latin variable file (v23), which serves both 600 and 700.
+const caveat = localFont({
+  src: "./fonts/caveat-latin.woff2",
+  weight: "600 700",
+  variable: "--font-hand",
+  display: "swap",
+});
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

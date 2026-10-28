@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { ExamBankError, drawAcrossTopics, drawPaper, extractBank, pickReplacement, templateMatchesLevel } from "@/lib/exams/examBank";
+import { Chess } from "chess.js";
+import { ExamBankError, bestMoveMcq, drawAcrossTopics, drawPaper, extractBank, pickReplacement, sourcePositionKey, templateMatchesLevel } from "@/lib/exams/examBank";
 import { generatedPositionQuestion, pgnLeadingComment, positionQuestionFor } from "@/lib/exams/examQuestions";
 import { judgePuzzleMove, parsePgnPuzzle, puzzleFenAt, puzzleStudentColor } from "@/lib/pgnPuzzle";
 
@@ -160,5 +161,78 @@ describe("position questions", () => {
       { _id: "t", topicName: "Skewers", levelName: "Level 1", tier: "beginner", activities: [{ id: "a", type: "study_pgn", source: { kind: "pgn_quiz" }, items: [{ id: "p", pgn: LINE }] }] },
     ]);
     expect(bank.positions[0].question).toBe("White to play. Find the skewer. Play the whole line (2 moves).");
+  });
+});
+
+function seededRandom(start = 11) {
+  let value = start;
+  return () => (value = (value * 16807) % 2147483647) / 2147483647;
+}
+
+/** A homework template of `count` distinct PGN positions, two solution moves each. */
+function positionTemplate(id: string, topic: string, count: number, random = seededRandom()) {
+  const items = Array.from({ length: count }, (_, index) => {
+    const game = new Chess();
+    for (let ply = 0; ply < 8 + index; ply += 1) {
+      const moves = game.moves();
+      game.move(moves[Math.floor(random() * moves.length)]);
+    }
+    const puzzle = new Chess(game.fen());
+    for (let ply = 0; ply < 2; ply += 1) {
+      const moves = puzzle.moves();
+      puzzle.move(moves[Math.floor(random() * moves.length)]);
+    }
+    return { id: `p${index}`, pgn: puzzle.pgn() };
+  });
+  return { _id: id, title: `HW ${topic}`, topicName: topic, levelName: "Level 3", tier: "beginner", activities: [{ id: `${id}-a`, type: "study_pgn", source: { kind: "pgn_quiz" }, items }] };
+}
+
+describe("best-move MCQs for a level without MCQ homework", () => {
+  it("asks for the solution's first move with three other legal moves, one right answer", () => {
+    const [position] = extractBank([{ _id: "t", topicName: "Checkmates", levelName: "Level 3", tier: "beginner", activities: [{ id: "a", type: "study_pgn", source: { kind: "pgn_quiz" }, items: [{ id: "p", pgn: MATE_IN_ONE }] }] }]).positions;
+    const mcq = bestMoveMcq(position, seededRandom())!;
+    expect(mcq).toMatchObject({ question: "White to play. What is the best move?", positionFen: position.startFen, topicName: "Checkmates", generated: true });
+    expect(mcq.options).toHaveLength(4);
+    expect(mcq.options.filter((option) => option.correct).map((option) => option.text)).toEqual(["Qxf7#"]);
+    const legal = new Chess(position.startFen).moves();
+    expect(mcq.options.every((option) => legal.includes(option.text))).toBe(true);
+    expect(mcq.options.filter((option) => /#$/.test(option.text))).toHaveLength(1);
+    expect(sourcePositionKey(mcq)).toBe(position.bankKey);
+  });
+
+  it("fills all ten MCQs from positions that are not on the paper", () => {
+    const bank = extractBank([positionTemplate("t1", "Forks", 14), positionTemplate("t2", "Pins", 14, seededRandom(29))]);
+    expect(bank.mcqs).toHaveLength(0);
+    expect(bank.positions.length).toBeGreaterThanOrEqual(26);
+    const paper = drawPaper(bank, seededRandom(3));
+    expect(paper.positions).toHaveLength(16);
+    expect(paper.mcqs).toHaveLength(10);
+    expect(paper.mcqs.every((mcq) => mcq.generated)).toBe(true);
+    const onPaper = new Set(paper.positions.map((position) => position.bankKey));
+    expect(paper.mcqs.some((mcq) => onPaper.has(sourcePositionKey(mcq)))).toBe(false);
+  });
+
+  it("keeps the level's own MCQs first and only tops up the rest", () => {
+    const bank = extractBank([quizTemplate("q", "Pins", 4), positionTemplate("t1", "Forks", 14), positionTemplate("t2", "Pins", 14, seededRandom(29))]);
+    const paper = drawPaper(bank, seededRandom(5));
+    expect(paper.mcqs.filter((mcq) => !mcq.generated)).toHaveLength(4);
+    expect(paper.mcqs.filter((mcq) => mcq.generated)).toHaveLength(6);
+  });
+
+  it("says what is missing when even the spare positions are not enough", () => {
+    const bank = extractBank([positionTemplate("t1", "Forks", 18)]);
+    expect(bank.mcqs).toHaveLength(0);
+    expect(() => drawPaper(bank)).toThrow(/only \d+ more MCQs could be made/);
+  });
+});
+
+describe("promotion in an exam position", () => {
+  const PROMOTION = '[FEN "k7/4P3/1K6/8/8/8/8/8 w - - 0 1"]\n[SetUp "1"]\n\n1. e8=Q# *';
+
+  it("accepts the promotion piece the solution names and refuses any other", () => {
+    const puzzle = parsePgnPuzzle(PROMOTION);
+    expect(judgePuzzleMove(puzzle, 0, { from: "e7", to: "e8", promotion: "q" })).toMatchObject({ correct: true, solved: true, san: "e8=Q#" });
+    expect(judgePuzzleMove(puzzle, 0, { from: "e7", to: "e8", promotion: "n" })).toMatchObject({ legal: true, correct: false, san: "e8=N" });
+    expect(judgePuzzleMove(puzzle, 0, { from: "e7", to: "e8", promotion: "r" })).toMatchObject({ legal: true, correct: false });
   });
 });

@@ -32,6 +32,8 @@ export const ExamMcqSchema = new Schema(
     explanation: String,
     topicName: String,
     source: SourceSchema,
+    /** A "what is the best move?" question made from one of the level's positions. */
+    generated: Boolean,
   },
   { _id: false }
 );

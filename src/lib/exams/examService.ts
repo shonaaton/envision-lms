@@ -6,7 +6,7 @@ import { isCourseTier } from "@/lib/courseTiers";
 import { reportTier } from "@/lib/feedback/feedbackQuestions";
 import { judgePuzzleMove, parsePgnPuzzle, puzzleFenAt } from "@/lib/pgnPuzzle";
 import { cleanPositionQuestion, positionQuestionFor } from "@/lib/exams/examQuestions";
-import { ExamBankError, drawPaper, extractBank, pickReplacement, templateMatchesLevel, type ExamBank } from "@/lib/exams/examBank";
+import { ExamBankError, drawPaper, extractBank, generatedMcqPool, mcqCapacity, pickReplacement, sourcePositionKey, templateMatchesLevel, type ExamBank } from "@/lib/exams/examBank";
 import {
   CERTIFICATE_MAX_ATTEMPTS,
   certificateNumberFor,
@@ -100,7 +100,7 @@ export async function examBankCounts() {
   return EXAM_LEVELS.map(({ tier, levelNumber }) => {
     const matching = templates.filter((template) => templateMatchesLevel(template, tier, levelNumber));
     const bank = extractBank(matching);
-    return { tier, levelNumber, templates: matching.length, mcqs: bank.mcqs.length, positions: bank.positions.length };
+    return { tier, levelNumber, templates: matching.length, mcqs: bank.mcqs.length, positions: bank.positions.length, mcqsFromPositions: mcqCapacity(bank).fromPositions };
   });
 }
 
@@ -129,6 +129,7 @@ export function serializePaperForStaff(paper: any) {
       explanation: mcq.explanation || "",
       topicName: mcq.topicName || "",
       sourceTitle: mcq.source?.templateTitle || "",
+      generated: Boolean(mcq.generated),
     })),
     positions: (paper.positions || []).map((position: any) => ({
       id: position.id,
@@ -209,9 +210,19 @@ export async function replacePaperQuestion(tier: unknown, levelNumber: unknown, 
   const index = slots.findIndex((slot) => slot.id === slotId);
   if (index < 0) throw new ExamError("That question is not on this paper.", 404);
   const bank = await loadLevelBank(level.tier, level.levelNumber);
-  const replacement = pickReplacement<any>(bank[kind], slots, slots[index]);
+  // A position can be on the paper twice over: as itself, or as the board of a best-move MCQ.
+  const positionsInUse = [...(paper.positions || []), ...(paper.mcqs || []).map((mcq: any) => ({ bankKey: sourcePositionKey(mcq) })).filter((item: any) => item.bankKey)];
+  const replacement =
+    kind === "mcqs"
+      ? pickReplacement<any>([...bank.mcqs, ...generatedMcqPool(bank.positions, paper.positions || [])], slots, slots[index])
+      : pickReplacement<any>(bank.positions, positionsInUse, slots[index]);
   if (!replacement) {
-    throw new ExamError(`This level's homework has no other ${kind === "mcqs" ? "MCQ" : "position"} that is not already on the paper.`, 409);
+    throw new ExamError(
+      kind === "mcqs"
+        ? "This level has no other MCQ, and no spare position to make one from, that is not already on the paper."
+        : "This level's homework has no other position that is not already on the paper.",
+      409
+    );
   }
   const updated = await ExamPaper.findOneAndUpdate(
     { _id: paper._id, [`${kind}.${index}.id`]: slotId },
@@ -226,20 +237,25 @@ export async function replacePaperQuestion(tier: unknown, levelNumber: unknown, 
 }
 
 /**
- * Rewrites the question line above one position. An empty question goes back
- * to the automatic one (the PGN's own comment, or the generated line).
+ * Rewrites a question on the paper: the line above a position, or an MCQ's
+ * question. An empty position question goes back to the automatic one (the
+ * PGN's own comment, or the generated line); an MCQ always needs wording.
  */
-export async function editPositionQuestion(tier: unknown, levelNumber: unknown, slotId: string, question: unknown, actorId: string) {
+export async function editPaperQuestion(tier: unknown, levelNumber: unknown, slotId: string, question: unknown, actorId: string) {
   const level = assertLevel(tier, levelNumber);
   await dbConnect();
-  const paper: any = await ExamPaper.findOne(level).select("status positions.id").lean();
+  const kind = slotId.startsWith("m") ? "mcqs" : slotId.startsWith("p") ? "positions" : "";
+  if (!kind) throw new ExamError("Unknown question slot.");
+  const paper: any = await ExamPaper.findOne(level).select(`status ${kind}.id`).lean();
   if (!paper) throw new ExamError("Generate this level's paper first.", 404);
-  const index = (paper.positions || []).findIndex((position: any) => position.id === slotId);
-  if (index < 0) throw new ExamError("That position is not on this paper.", 404);
+  const index = (paper[kind] || []).findIndex((slot: any) => slot.id === slotId);
+  if (index < 0) throw new ExamError("That question is not on this paper.", 404);
+  const wording = cleanPositionQuestion(question);
+  if (kind === "mcqs" && !wording) throw new ExamError("An MCQ needs a question.");
   const updated = await ExamPaper.findOneAndUpdate(
-    { _id: paper._id, [`positions.${index}.id`]: slotId },
+    { _id: paper._id, [`${kind}.${index}.id`]: slotId },
     {
-      $set: { [`positions.${index}.question`]: cleanPositionQuestion(question), updatedBy: actorId },
+      $set: { [`${kind}.${index}.question`]: wording, updatedBy: actorId },
       ...(paper.status === "published" ? { $inc: { version: 1 } } : {}),
     },
     { new: true }

@@ -1,4 +1,4 @@
-import { parsePgnPuzzle, puzzleStudentColor } from "@/lib/pgnPuzzle";
+import { buildGame, parsePgnPuzzle, puzzleStudentColor } from "@/lib/pgnPuzzle";
 import { MCQ_COUNT, POSITION_COUNT, levelNumberFromName } from "@/lib/exams/examRules";
 import { cleanPositionQuestion, positionQuestionFor } from "@/lib/exams/examQuestions";
 
@@ -18,6 +18,8 @@ export type BankMcq = {
   explanation?: string;
   topicName: string;
   source: BankSource;
+  /** Made from one of the level's positions ("what is the best move?") rather than taken from an MCQ homework. */
+  generated?: boolean;
 };
 
 export type BankPosition = {
@@ -162,16 +164,86 @@ export function drawAcrossTopics<T extends { topicName: string }>(pool: T[], cou
   return picked;
 }
 
+const OPTION_IDS = ["a", "b", "c", "d"];
+
+/** The bank key of the position a generated MCQ was made from. */
+export function sourcePositionKey(mcq: { bankKey: string }) {
+  return mcq.bankKey.startsWith("gen:") ? `pos:${mcq.bankKey.slice(4)}` : "";
+}
+
+/**
+ * "White to play. What is the best move?" from a position whose solution
+ * starts with that move. The three wrong choices are other legal moves,
+ * checks and captures first so they look worth considering. When the answer
+ * mates, no other mating move is offered, so there is only one right choice.
+ * Null when the position has fewer than three other legal moves.
+ */
+export function bestMoveMcq(position: BankPosition, random: () => number = Math.random): BankMcq | null {
+  const answer = position.solution[0];
+  if (!answer) return null;
+  const game = buildGame(position.startFen);
+  let legal: string[] = [];
+  try {
+    legal = game.moves();
+  } catch {
+    return null;
+  }
+  if (!legal.includes(answer)) return null;
+  const mates = /#$/.test(answer);
+  const others = legal.filter((san) => san !== answer && !(mates && /#$/.test(san)));
+  const forcing = shuffle(others.filter((san) => /[+#x]/.test(san)), random);
+  const quiet = shuffle(others.filter((san) => !/[+#x]/.test(san)), random);
+  const wrong = [...forcing, ...quiet].slice(0, 3);
+  if (wrong.length < 3) return null;
+  const choices = shuffle([answer, ...wrong], random);
+  const side = position.studentColor === "black" ? "Black" : "White";
+  return {
+    bankKey: `gen:${position.bankKey.replace(/^pos:/, "")}`,
+    question: `${side} to play. What is the best move?`,
+    positionFen: position.startFen,
+    options: choices.map((san, index) => ({ id: OPTION_IDS[index], text: san, correct: san === answer })),
+    explanation: `${answer} is the first move of the solution: ${position.solution.join(" ")}.`,
+    topicName: position.topicName,
+    source: position.source,
+    generated: true,
+  };
+}
+
+/** Best-move MCQs from every position that is not already on the paper as a position. */
+export function generatedMcqPool(positions: BankPosition[], positionsOnPaper: { bankKey: string }[], random: () => number = Math.random) {
+  const used = new Set(positionsOnPaper.map((position) => position.bankKey));
+  return positions
+    .filter((position) => !used.has(position.bankKey))
+    .map((position) => bestMoveMcq(position, random))
+    .filter((mcq): mcq is BankMcq => Boolean(mcq));
+}
+
+/**
+ * Positions first (they cannot be made up), then the MCQs: the level's own
+ * MCQs, topped up with best-move MCQs made from the positions left over when
+ * the homework has fewer than ten.
+ */
 export function drawPaper(bank: ExamBank, random: () => number = Math.random) {
-  if (bank.mcqs.length < MCQ_COUNT || bank.positions.length < POSITION_COUNT) {
+  if (bank.positions.length < POSITION_COUNT) {
+    throw new ExamBankError(`This level's homework has ${bank.positions.length} usable positions. A paper needs ${POSITION_COUNT}.`);
+  }
+  const positions = drawAcrossTopics(bank.positions, POSITION_COUNT, random);
+  const mcqs = drawAcrossTopics(bank.mcqs, MCQ_COUNT, random);
+  if (mcqs.length < MCQ_COUNT) {
+    mcqs.push(...drawAcrossTopics(generatedMcqPool(bank.positions, positions, random), MCQ_COUNT - mcqs.length, random));
+  }
+  if (mcqs.length < MCQ_COUNT) {
     throw new ExamBankError(
-      `This level's homework has ${bank.mcqs.length} usable MCQs and ${bank.positions.length} usable positions. A paper needs ${MCQ_COUNT} and ${POSITION_COUNT}.`
+      `This level's homework has ${bank.mcqs.length} usable MCQs and ${bank.positions.length} positions. After the ${POSITION_COUNT} positions on the paper, only ${mcqs.length - bank.mcqs.length} more MCQs could be made from the rest, and a paper needs ${MCQ_COUNT}. Add MCQ or PGN homework to this level.`
     );
   }
-  return {
-    mcqs: drawAcrossTopics(bank.mcqs, MCQ_COUNT, random),
-    positions: drawAcrossTopics(bank.positions, POSITION_COUNT, random),
-  };
+  return { mcqs, positions };
+}
+
+/** How many MCQs a level can field: its own plus those made from positions beyond the paper's 16. */
+export function mcqCapacity(bank: ExamBank) {
+  const spare = Math.max(0, bank.positions.length - POSITION_COUNT);
+  return { own: bank.mcqs.length, fromPositions: spare };
 }
 
 /**

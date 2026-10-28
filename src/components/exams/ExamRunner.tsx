@@ -695,6 +695,8 @@ function PositionPanel({
             }}
             showPromotionDialog={Boolean(pendingPromotion)}
             promotionToSquare={pendingPromotion?.to as any}
+            // The default picker stacks the pieces over the target square and is crushed to a sliver on this board.
+            promotionDialogVariant="modal"
             onSquareClick={onSquareClick as any}
             customSquareStyles={hintStyles as any}
             customArrows={position.hint && !position.solved ? ([[position.hint.from, position.hint.to, "rgb(234 179 8)"]] as any) : []}

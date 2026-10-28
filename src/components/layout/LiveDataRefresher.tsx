@@ -40,6 +40,10 @@ const quietMutationPatterns = [
   // The openings player saves progress on every step; a refresh would remount it
   // and throw away a half-solved quiz.
   /^\/api\/openings(\/|$)/,
+  // The achievements page updates its own gallery from each response; a refresh
+  // would close the view pop-up right after Feature/Hide, and the add/edit pop-up
+  // right after a photo upload.
+  /^\/api\/admin\/achievements(\/|$)/,
   // Closing a pop-up records it; a refresh would remount the frame and re-open it.
   // The admin Pop-ups page reloads its own lists.
   /^\/api\/popups(\/|$)/,

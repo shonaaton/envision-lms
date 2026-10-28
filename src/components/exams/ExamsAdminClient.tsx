@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 import { ExamResultsTable, FenDiagram, type StaffRow } from "./examUi";
 
 type PaperSummary = { tier: string; levelNumber: number; levelLabel: string; status: "none" | "draft" | "published"; version: number; publishedAt: string | null; updatedAt: string | null };
-type BankCount = { tier: string; levelNumber: number; templates: number; mcqs: number; positions: number };
+type BankCount = { tier: string; levelNumber: number; templates: number; mcqs: number; positions: number; mcqsFromPositions: number };
 type Paper = {
   id: string;
   tier: string;
@@ -18,7 +18,7 @@ type Paper = {
   status: "draft" | "published";
   version: number;
   publishedAt: string | null;
-  mcqs: { id: string; question: string; positionFen: string; options: { id: string; text: string; correct: boolean }[]; explanation: string; topicName: string; sourceTitle: string }[];
+  mcqs: { id: string; question: string; positionFen: string; options: { id: string; text: string; correct: boolean }[]; explanation: string; topicName: string; sourceTitle: string; generated: boolean }[];
   positions: { id: string; topicName: string; title: string; question: string; autoQuestion: string; startFen: string; solution: string[]; studentColor: "white" | "black"; sourceTitle: string }[];
 };
 type Targets = {
@@ -100,7 +100,7 @@ export default function ExamsAdminClient() {
             {papers.map((paper) => {
               const key = levelKey(paper.tier, paper.levelNumber);
               const count = bank?.find((item) => levelKey(item.tier, item.levelNumber) === key);
-              const short = count && (count.mcqs < MCQ_COUNT || count.positions < POSITION_COUNT);
+              const short = count && (count.positions < POSITION_COUNT || count.mcqs + count.mcqsFromPositions < MCQ_COUNT);
               return (
                 <button
                   key={key}
@@ -121,6 +121,13 @@ export default function ExamsAdminClient() {
                   </div>
                   <div className={cn("mt-2 text-xs", short ? "text-red-700" : "text-slate-500")}>
                     {count ? `Homework bank: ${count.mcqs} MCQs, ${count.positions} positions (${count.templates} templates)` : "Counting the homework bank..."}
+                    {count && count.mcqs < MCQ_COUNT && count.positions >= POSITION_COUNT && (
+                      <span className="block">
+                        {count.mcqs + count.mcqsFromPositions >= MCQ_COUNT
+                          ? `${MCQ_COUNT - count.mcqs} MCQs will be made from spare positions.`
+                          : `Only ${count.mcqsFromPositions} spare positions to make MCQs from: add homework.`}
+                      </span>
+                    )}
                   </div>
                 </button>
               );
@@ -244,13 +251,19 @@ function PaperView({ tier, level, onChanged }: { tier: string; level: number; on
                   <div className="mb-2 flex flex-wrap items-center gap-2">
                     <b className="text-brand">Q{index + 1}</b>
                     <span className="rounded-full bg-brand/10 px-2 py-0.5 text-xs font-bold text-brand">{mcq.topicName}</span>
+                    {mcq.generated && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-bold text-amber-800">Made from a position</span>}
                     <span className="text-xs text-slate-500">from {mcq.sourceTitle || "homework"}</span>
                     <ReplaceButton busy={busy === mcq.id} disabled={Boolean(busy)} onClick={() => run("replace_question", { slotId: mcq.id }, mcq.id)} />
                   </div>
                   <div className={cn("grid gap-3", mcq.positionFen && "md:grid-cols-[220px_minmax(0,1fr)]")}>
                     {mcq.positionFen && <FenDiagram fen={mcq.positionFen} size={200} />}
                     <div>
-                      <div className="text-sm font-semibold text-slate-900">{mcq.question}</div>
+                      <QuestionLine
+                        question={mcq.question}
+                        autoQuestion={mcq.question}
+                        disabled={Boolean(busy)}
+                        onSave={(question) => run("edit_question", { slotId: mcq.id, question }, `q-${mcq.id}`)}
+                      />
                       <ul className="mt-2 grid gap-1">
                         {mcq.options.map((option) => (
                           <li key={option.id} className={cn("rounded-md border px-2 py-1 text-sm", option.correct ? "border-emerald-300 bg-emerald-50 font-bold text-emerald-800" : "border-slate-200 text-slate-700")}>
@@ -328,7 +341,7 @@ function QuestionLine({ question, autoQuestion, disabled, onSave }: { question: 
             setEditing(true);
           }}
           className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-bold text-brand hover:bg-brand/5 disabled:opacity-50"
-          title="Edit the question students see above this position"
+          title="Edit the question students see"
         >
           <Pencil size={12} /> Edit
         </button>

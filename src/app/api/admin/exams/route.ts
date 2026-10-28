@@ -5,7 +5,7 @@ import {
   assignExam,
   assignTargets,
   cancelExam,
-  editPositionQuestion,
+  editPaperQuestion,
   examBankCounts,
   generatePaper,
   getPaper,
@@ -69,7 +69,7 @@ export async function POST(req: Request) {
       case "replace_question":
         return NextResponse.json({ paper: await replacePaperQuestion(body.tier, body.level, String(body.slotId || ""), actor.id) });
       case "edit_question":
-        return NextResponse.json({ paper: await editPositionQuestion(body.tier, body.level, String(body.slotId || ""), body.question, actor.id) });
+        return NextResponse.json({ paper: await editPaperQuestion(body.tier, body.level, String(body.slotId || ""), body.question, actor.id) });
       case "publish":
         return NextResponse.json({ paper: await publishPaper(body.tier, body.level, actor.id) });
       case "assign": {

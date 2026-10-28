@@ -20,6 +20,8 @@ export default function DashboardFrame({
   hasCreditPlan,
   hasScheduledClassroom,
   canLearnChess,
+  branch,
+  branchRole,
   user,
   children,
 }: {
@@ -30,6 +32,8 @@ export default function DashboardFrame({
   hasCreditPlan?: boolean;
   hasScheduledClassroom?: boolean;
   canLearnChess?: boolean;
+  branch?: string;
+  branchRole?: string;
   user: { name?: string | null; role: string; isActive?: boolean; isPaused?: boolean };
   children: ReactNode;
 }) {
@@ -71,6 +75,8 @@ export default function DashboardFrame({
         hasCreditPlan={hasCreditPlan}
         hasScheduledClassroom={hasScheduledClassroom}
         canLearnChess={canLearnChess}
+        branch={branch}
+        branchRole={branchRole}
         mobileOpen={mobileNavOpen}
         desktopCollapsed={desktopNavCollapsed}
         user={user}

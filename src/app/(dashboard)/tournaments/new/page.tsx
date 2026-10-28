@@ -106,18 +106,22 @@ async function createTournament(_: CreateTournamentState, formData: FormData): P
   const selectedStudentIds = formData.getAll("students").map(String).filter(Boolean);
   const selectedCourseIds = formData.getAll("courses").map(String).filter(Boolean);
   const selectedLevels = formData.getAll("levels").map(String).filter(Boolean);
-  const [activeStudents, inactiveStudents, coaches, batches, selectedStudents, selectedCourses] = await Promise.all([
-    formData.get("allActiveStudents") === "yes" ? User.find({ role: "student", isActive: { $ne: false } }).lean() : [],
+  const [activeStudents, inactiveStudents, coaches, batches, selectedStudents, selectedCourses, branchStudents] = await Promise.all([
+    // Tournaments are shared with the offline branch: "all active students"
+    // means every branch too (lib/branch/scope.ts hides them otherwise).
+    formData.get("allActiveStudents") === "yes" ? User.find({ role: "student", isActive: { $ne: false } }).setOptions({ allBranches: true }).lean() : [],
     formData.get("includeInactiveStudents") === "yes" ? User.find({ role: "student", isActive: false }).lean() : [],
     formData.get("includeCoaches") === "yes" ? User.find({ role: "instructor", isActive: { $ne: false } }).lean() : [],
     selectedBatchIds.length ? Batch.find({ _id: { $in: selectedBatchIds } }).lean() : [],
     selectedStudentIds.length ? User.find({ _id: { $in: selectedStudentIds }, role: "student" }).lean() : [],
     selectedCourseIds.length ? Course.find({ _id: { $in: selectedCourseIds } }).lean() : [],
+    formData.get("includeBranchStudents") === "yes" ? User.find({ role: "student", branch: "bowbazar", isActive: { $ne: false } }).lean() : [],
   ]);
   if (
     formData.get("allActiveStudents") !== "yes" &&
     formData.get("includeInactiveStudents") !== "yes" &&
     formData.get("includeCoaches") !== "yes" &&
+    formData.get("includeBranchStudents") !== "yes" &&
     !selectedBatchIds.length &&
     !selectedStudentIds.length &&
     !selectedCourseIds.length &&
@@ -133,7 +137,7 @@ async function createTournament(_: CreateTournamentState, formData: FormData): P
   const levelTargets = Array.from(new Set([...selectedLevels, ...courseLevelTargets]));
   const levelStudents = levelTargets.length ? await User.find({ role: "student", studentLevel: { $in: levelTargets }, isActive: { $ne: false } }).lean() : [];
   const accessUsers = Array.from(new Set(
-    [...activeStudents, ...inactiveStudents, ...coaches, ...selectedStudents, ...levelStudents]
+    [...activeStudents, ...inactiveStudents, ...coaches, ...selectedStudents, ...levelStudents, ...branchStudents]
       .map((user: any) => user._id.toString())
       .concat(batchStudentIds)
   ));

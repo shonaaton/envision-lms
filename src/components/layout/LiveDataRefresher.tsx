@@ -17,7 +17,13 @@ type RefreshDetail = {
 const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 const quietMutationPatterns = [
+  // The WhatsApp inbox reconciles its own messages, read receipts and triage.
+  // A dashboard refresh after each reply would disturb the open conversation.
+  /^\/api\/admin\/whatsapp(\/|$)/,
   /^\/api\/ptm(\/|$)/,
+  // The Bowbazar branch screens reload their own lists. A refresh would wipe the
+  // login details shown once after adding a student and the import preview.
+  /^\/api\/bowbazar(\/|$)/,
   // The leave page reloads its own lists; a refresh would close its drawers.
   /^\/api\/leave(\/|$)/,
   /^\/api\/classrooms\/[^/]+\/live\/move$/,

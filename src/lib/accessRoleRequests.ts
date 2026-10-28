@@ -24,7 +24,9 @@ export function namedRoleApiPermissions(path: string, method: string): string[] 
   if (path.startsWith("/api/sales/crm/")) return ["stage", "note"]; // Handler checks the selected action.
   if (path.startsWith("/api/sales/payment-links/")) return ["create", "cancel", "attach"]; // Handler checks the selected action.
   if (path.startsWith("/api/admin/crm")) return ["manage"];
-  if (path.startsWith("/api/admin/whatsapp/templates")) return ["manage"];
+  if (path === "/api/admin/whatsapp/templates/send") return ["create"];
+  if (path.startsWith("/api/admin/whatsapp/templates") || path.startsWith("/api/admin/whatsapp/campaigns")) return ["manage"];
+  if (path === "/api/admin/whatsapp" && method === "PATCH") return ["view"]; // Own read receipts; triage also checks create permission in the handler.
   if (path.startsWith("/api/admin/whatsapp/")) return ["create"];
   if (path.startsWith("/api/admin/student-pauses")) return ["manage"];
   if (path.startsWith("/api/admin/google-")) return ["manage"];

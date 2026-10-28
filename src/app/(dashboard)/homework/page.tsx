@@ -99,13 +99,19 @@ export default async function HomeworkListPage({ searchParams }: { searchParams?
   if (!session?.user) redirect("/login");
   const userId = (session?.user as any).id;
   const role = (session?.user as any).role;
+  // Branch staff track their branch's homework; it is kept off the online lists.
+  const branchStaff = role !== "student" ? ((session?.user as any).branch as string | undefined) : undefined;
   await dbConnect();
 
   let filter: any = {};
   if (role === "student") {
     filter = { ...filter, ...(await studentHomeworkFilter(userId)) };
+  } else if (branchStaff) {
+    filter.branch = branchStaff;
   } else if (role === "instructor") {
     filter.instructor = userId;
+  } else {
+    filter.branch = null;
   }
   const [list, coachStudentIds] = await Promise.all([
     Homework.find(filter)
@@ -115,18 +121,18 @@ export default async function HomeworkListPage({ searchParams }: { searchParams?
       .populate("assignedBatches", "students")
       .sort({ createdAt: -1 })
       .lean(),
-    role === "instructor" ? getCoachAssignedStudentIds(userId) : Promise.resolve([]),
+    role === "instructor" && !branchStaff ? getCoachAssignedStudentIds(userId) : Promise.resolve([]),
   ]);
   const homeworkIds = list.map((item: any) => item._id);
   const submissionFilter = role === "student"
     ? { student: userId, homework: { $in: homeworkIds } }
-    : role === "instructor"
+    : role === "instructor" && !branchStaff
       ? { student: { $in: coachStudentIds }, homework: { $in: homeworkIds } }
       : { homework: { $in: homeworkIds } };
   const submissions = homeworkIds.length
     ? await Submission.find(submissionFilter).populate("student", "name username email").lean()
     : [];
-  const visibleStudentIds = role === "instructor" ? new Set(coachStudentIds.map(String)) : undefined;
+  const visibleStudentIds = role === "instructor" && !branchStaff ? new Set(coachStudentIds.map(String)) : undefined;
   const byHomework = new Map(submissions.map((submission: any) => [submission.homework.toString(), submission]));
   const pending = list.filter((item: any) => !byHomework.has(item._id.toString()) && (!item.dueAt || new Date(item.dueAt) >= new Date()));
   const late = list.filter((item: any) => !byHomework.has(item._id.toString()) && item.dueAt && new Date(item.dueAt) < new Date());
@@ -176,8 +182,11 @@ export default async function HomeworkListPage({ searchParams }: { searchParams?
   const canEditHomework = role === "instructor" || (await canAccessFeature("homework", session?.user as any, "edit"));
   const canDeleteHomework = await canAccessFeature("homework", session?.user as any, "delete");
   const canSendReminders = canAssignHomework || canEditHomework;
-  const staffActions = { canEdit: canEditHomework, canDelete: canDeleteHomework, canRemind: canSendReminders };
-  const canUseAssignmentFlow = canCreateHomework && canAssignHomework;
+  const staffActions = branchStaff
+    ? { canEdit: false, canDelete: false, canRemind: false }
+    : { canEdit: canEditHomework, canDelete: canDeleteHomework, canRemind: canSendReminders };
+  // Branch homework is set from the Bowbazar attendance register, not the online builder.
+  const canUseAssignmentFlow = canCreateHomework && canAssignHomework && !branchStaff;
 
   return (
     <div className="min-h-screen px-2 py-4 text-slate-950 sm:px-4 sm:py-5 lg:px-6">

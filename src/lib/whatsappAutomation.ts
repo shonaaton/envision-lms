@@ -344,7 +344,7 @@ async function sendViaN8n(input: {
       payload,
       testMode,
       recipient,
-      metaMessageId: first?.metaMessageId || "",
+      metaMessageId: firstMetaMessageId(first, first?.debug?.rawResponse, payload),
       errorMessage: first?.error || payload?.error || "",
       debug: {
         sender: "n8n",

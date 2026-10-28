@@ -1,14 +1,18 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { renderWhatsAppTemplatePreview } from "@/lib/whatsappTemplateRegistry";
 import { WhatsAppMessage } from "@/models/WhatsApp";
+import { Types } from "mongoose";
+import { WhatsAppConversation, WhatsAppReadState } from "@/models/WhatsAppConversation";
+import { isWhatsAppResolved, needsWhatsAppReply, syncWhatsAppConversations } from "@/lib/whatsappInbox";
+import "@/models/User";
+import { canAccessFeature } from "@/lib/featureAccess";
+import { whatsappSession, whatsappConversationScope, canAccessWhatsAppPhone } from "@/lib/whatsappAccess";
 
 export const dynamic = "force-dynamic";
 
 const CUSTOMER_SERVICE_WINDOW_MS = 24 * 60 * 60 * 1000;
-const CONVERSATION_SCAN_LIMIT = 400;
-const THREAD_MESSAGE_LIMIT = 200;
+const THREAD_MESSAGE_LIMIT = 50;
 
 // rawPayload holds the whole webhook body, which is what made every 5-second poll ship
 // megabytes. Only the handful of sub-documents the inbox actually renders are projected.
@@ -22,6 +26,9 @@ const MESSAGE_FIELDS = [
   "text",
   "templateName",
   "status",
+  "error",
+  "uncertain",
+  "rawPayload.errors",
   "metaMessageId",
   "mediaId",
   "mediaMimeType",
@@ -43,10 +50,6 @@ const MESSAGE_FIELDS = [
 ].join(" ");
 
 const MEDIA_TYPES = ["image", "video", "audio", "voice", "document", "sticker"] as const;
-
-function canManageWhatsApp(session: any) {
-  return ["admin", "sub-admin"].includes(String(session?.user?.role || ""));
-}
 
 function mediaKind(messageType?: string, mimeType?: string) {
   const type = String(messageType || "").toLowerCase();
@@ -108,6 +111,8 @@ function serializeMessage(message: any) {
     messageType: message.messageType,
     templateName: message.templateName,
     status: message.status,
+    error: message.error || message.rawPayload?.errors?.[0]?.message || "",
+    uncertain: Boolean(message.uncertain),
     metaMessageId: message.metaMessageId,
     createdAt: message.createdAt,
     sentAt: message.sentAt,
@@ -160,7 +165,7 @@ function previewText(message: any) {
     const label = mediaLabel(media);
     return message.text ? `${label} · ${message.text}` : label;
   }
-  return serializeMessage(message).text || message.templateName || "";
+  return message.text || (message.messageType === "template" ? renderWhatsAppTemplatePreview(message.templateName || "", message.rawPayload?.templateVariables || message.rawPayload?.bodyParameters || []) : "") || message.templateName || "";
 }
 
 function windowState(lastInboundAt: Date | string | null) {
@@ -186,12 +191,6 @@ function chatPath(phoneNumber: string) {
 
 const UNKNOWN_CONTACT = "Unknown contact";
 
-function messageActivityAt(message: any) {
-  return message.direction === "inbound"
-    ? message.receivedAt || message.createdAt
-    : message.sentAt || message.createdAt;
-}
-
 function serializeMatchedUser(matchedUser: any) {
   if (!matchedUser) return null;
   return {
@@ -205,90 +204,89 @@ function serializeMatchedUser(matchedUser: any) {
 }
 
 export async function GET(req: Request) {
-  const session = await auth();
-  if (!canManageWhatsApp(session)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const requestedPhone = String(new URL(req.url).searchParams.get("phone") || "").trim();
-
+  const user = await whatsappSession();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const params = new URL(req.url).searchParams;
+  const phoneNumber = params.get("phone") || "";
   await dbConnect();
-  const messages: any[] = await WhatsAppMessage.find({})
-    .select(MESSAGE_FIELDS)
-    .populate("matchedUser", "name email username phone role")
-    .sort({ createdAt: -1 })
-    .limit(CONVERSATION_SCAN_LIMIT)
-    .lean();
 
-  const conversations = new Map<string, any>();
-  for (const message of [...messages].reverse()) {
-    const phoneNumber = String(message.phoneNumber || "");
-    const current = conversations.get(phoneNumber) || {
-      phoneNumber,
-      chatPath: chatPath(phoneNumber),
-      contactName: message.matchedUser?.name || message.contactName || message.profileName || UNKNOWN_CONTACT,
-      profileName: message.profileName || "",
-      matchedUser: serializeMatchedUser(message.matchedUser),
+  if (params.get("view") === "thread") {
+    if (!/^\d{7,15}$/.test(phoneNumber)) return NextResponse.json({ error: "A valid phone number is required." }, { status: 400 });
+    if (!(await canAccessWhatsAppPhone(user, phoneNumber))) return NextResponse.json({ error: "This conversation is not assigned to you." }, { status: 403 });
+    const filter: any = { phoneNumber };
+    const before = params.get("before");
+    if (before) {
+      const [date, id] = before.split("_");
+      if (!/^\d+$/.test(date) || !Types.ObjectId.isValid(id || "") || !Number.isFinite(new Date(Number(date)).getTime())) return NextResponse.json({ error: "Invalid history cursor." }, { status: 400 });
+      filter.$or = [{ createdAt: { $lt: new Date(Number(date)) } }, { createdAt: new Date(Number(date)), _id: { $lt: new Types.ObjectId(id) } }];
+    }
+    const query = (params.get("q") || "").trim().slice(0, 200);
+    if (query) filter.text = { $regex: query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), $options: "i" };
+    const rows: any[] = await WhatsAppMessage.find(filter).select(MESSAGE_FIELDS).sort({ createdAt: -1, _id: -1 }).limit(THREAD_MESSAGE_LIMIT + 1).lean();
+    const hasMore = rows.length > THREAD_MESSAGE_LIMIT;
+    const page = rows.slice(0, THREAD_MESSAGE_LIMIT);
+    const oldest = page[page.length - 1];
+    return NextResponse.json({ phoneNumber, messages: buildThread([...page].reverse()), hasMore, nextCursor: hasMore && oldest ? `${new Date(oldest.createdAt).getTime()}_${oldest._id}` : null });
+  }
+
+  await syncWhatsAppConversations();
+  const [summaries, readStates]: any[][] = await Promise.all([
+    WhatsAppConversation.find(whatsappConversationScope(user)).populate([{ path: "matchedUser", select: "name email username phone role" }, { path: "linkedUser", select: "name email username phone role" }, { path: "assignedTo", select: "name role" }]).sort({ lastMessageAt: -1, phoneNumber: 1 }).lean(),
+    WhatsAppReadState.find({ actorId: user.id }).lean(),
+  ]);
+  const reads = new Map(readStates.map((state) => [state.phoneNumber, state.readInboundCount || 0]));
+  const conversations = summaries.map((summary) => {
+    const whatsapp = windowState(summary.lastInboundAt);
+    const resolved = isWhatsAppResolved(summary);
+    const matchedUser = summary.linkedManually ? summary.linkedUser : summary.matchedUser;
+    return {
+      phoneNumber: summary.phoneNumber,
+      chatPath: chatPath(summary.phoneNumber),
+      contactName: summary.displayName || matchedUser?.name || summary.contactName || summary.profileName || UNKNOWN_CONTACT,
+      profileName: summary.profileName,
+      matchedUser: serializeMatchedUser(matchedUser),
+      assignedTo: summary.assignedTo ? { id: String(summary.assignedTo._id), name: summary.assignedTo.name } : null,
+      followUpAt: summary.followUpAt,
+      followUpNote: summary.followUpNote || "",
       messages: [],
-      lastInboundAt: null,
-      lastBusinessMessageAt: null,
-      lastMessageAt: null,
-      lastMessageDirection: null,
-      lastMessageText: "",
-      sentTemplateCount: 0,
+      lastMessageAt: summary.lastMessageAt,
+      lastMessageText: previewText(summary.latest || {}),
+      lastInboundAt: summary.lastInboundAt,
+      lastInboundId: summary.lastInboundId?.toString() || "",
+      sentTemplateCount: summary.sentTemplateCount,
+      unreadCount: Math.max(0, (summary.inboundCount || 0) - (reads.get(summary.phoneNumber) || 0)),
+      needsReply: needsWhatsAppReply(summary, resolved),
+      resolved,
+      activeUntil: whatsapp.window_expires_at,
+      canReply: whatsapp.free_form_allowed,
+      whatsapp,
     };
-    const activityAt = messageActivityAt(message);
-    if (!current.lastMessageAt || new Date(activityAt).getTime() >= new Date(current.lastMessageAt).getTime()) {
-      current.lastMessageAt = activityAt;
-      current.lastMessageDirection = message.direction;
-      current.lastMessageText = previewText(message);
-    }
-    if (message.direction === "inbound") {
-      const inboundAt = message.receivedAt || message.createdAt;
-      if (!current.lastInboundAt || new Date(inboundAt).getTime() >= new Date(current.lastInboundAt).getTime()) {
-        current.lastInboundAt = inboundAt;
-      }
-    }
-    // The thread's name came from whichever message was oldest, so a thread whose first
-    // message failed to match a user stayed "Unknown contact" forever. Let any later
-    // message that did match supply the name instead.
-    if (!current.matchedUser && message.matchedUser) {
-      current.matchedUser = serializeMatchedUser(message.matchedUser);
-    }
-    if (current.contactName === UNKNOWN_CONTACT) {
-      current.contactName = message.matchedUser?.name || message.contactName || message.profileName || UNKNOWN_CONTACT;
-    }
-    if (message.direction === "outbound") current.lastBusinessMessageAt = message.sentAt || message.createdAt;
-    if (message.direction === "outbound" && message.messageType === "template") current.sentTemplateCount += 1;
-    conversations.set(phoneNumber, current);
-  }
-
-  const ordered = Array.from(conversations.values()).sort(
-    (a, b) => new Date(b.lastMessageAt || 0).getTime() - new Date(a.lastMessageAt || 0).getTime()
-  );
-
-  // Only the open thread needs its messages, so the list poll no longer carries every message
-  // of every conversation. That thread is read straight off the phoneNumber index.
-  const openPhone = requestedPhone || ordered[0]?.phoneNumber || "";
-  if (openPhone) {
-    const threadMessages: any[] = await WhatsAppMessage.find({ phoneNumber: openPhone })
-      .select(MESSAGE_FIELDS)
-      .sort({ createdAt: -1 })
-      .limit(THREAD_MESSAGE_LIMIT)
-      .lean();
-    const conversation = conversations.get(openPhone);
-    if (conversation) conversation.messages = buildThread([...threadMessages].reverse());
-  }
-
-  const data = ordered.map((conversation) => {
-    const whatsapp = windowState(conversation.lastInboundAt);
-    return { ...conversation, activeUntil: whatsapp.window_expires_at, canReply: whatsapp.free_form_allowed, whatsapp };
   });
+  return NextResponse.json({ conversations, windowHours: 24 });
+}
 
-  return NextResponse.json({
-    conversations: data,
-    active: data.filter((conversation) => conversation.canReply),
-    closed: data.filter((conversation) => !conversation.canReply),
-    sentTemplates: data.filter((conversation) => conversation.sentTemplateCount > 0),
-    loadedPhoneNumber: openPhone,
-    windowHours: 24,
-  });
+export async function PATCH(req: Request) {
+  const user = await whatsappSession();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const body = await req.json().catch(() => ({}));
+  const phoneNumber = String(body.phoneNumber || "");
+  if (!/^\d{7,15}$/.test(phoneNumber) || !["read", "resolve", "reopen"].includes(body.action)) return NextResponse.json({ error: "Invalid conversation action." }, { status: 400 });
+  if (body.action !== "read" && !(await canAccessFeature("whatsapp", user, "create"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  await dbConnect();
+  if (!(await canAccessWhatsAppPhone(user, phoneNumber))) return NextResponse.json({ error: "This conversation is not assigned to you." }, { status: 403 });
+  if (body.action === "read") {
+    if (!Types.ObjectId.isValid(body.lastInboundId || "")) return NextResponse.json({ error: "A read watermark is required." }, { status: 400 });
+    const through = new Types.ObjectId(body.lastInboundId);
+    const exists = await WhatsAppMessage.exists({ _id: through, phoneNumber, direction: "inbound", messageType: { $ne: "reaction" } });
+    if (!exists) return NextResponse.json({ error: "Message not found in this conversation." }, { status: 404 });
+    const count = await WhatsAppMessage.countDocuments({ phoneNumber, direction: "inbound", messageType: { $ne: "reaction" }, _id: { $lte: through } });
+    await WhatsAppReadState.init();
+    await WhatsAppReadState.updateOne({ actorId: user.id, phoneNumber }, { $max: { readInboundCount: count, readThroughInboundId: through } }, { upsert: true });
+    return NextResponse.json({ ok: true, readThroughInboundId: through.toString() });
+  }
+  if (body.action === "resolve" && body.lastInboundId && !Types.ObjectId.isValid(body.lastInboundId)) return NextResponse.json({ error: "Invalid message watermark." }, { status: 400 });
+  const result = await WhatsAppConversation.updateOne({ phoneNumber }, body.action === "resolve"
+    ? { $set: { resolvedAt: new Date(), resolvedThroughInboundId: body.lastInboundId ? new Types.ObjectId(body.lastInboundId) : null } }
+    : { $unset: { resolvedAt: 1, resolvedThroughInboundId: 1 } });
+  return NextResponse.json({ ok: Boolean(result.matchedCount) }, { status: result.matchedCount ? 200 : 404 });
 }

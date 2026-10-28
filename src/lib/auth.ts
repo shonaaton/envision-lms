@@ -10,6 +10,7 @@ import { loginIdentifierFilter, loginKey } from "./loginIdentity";
 import { requestCache as cache } from "./requestCache";
 import { getAccessUser, resolveAccessRole } from "./accessRoles";
 import { namedRoleApiFeature, namedRoleApiPermissions } from "./accessRoleRequests";
+import { isBranchAllowedPath } from "./branch/paths";
 
 const LOGIN_IP_WINDOW_MS = 5 * 60 * 1000;
 const LOGIN_ID_WINDOW_MS = 15 * 60 * 1000;
@@ -44,6 +45,9 @@ declare module "next-auth" {
       isActive?: boolean;
       isPaused?: boolean;
       accountStatus?: "demo" | "enrolled" | "coach_applicant" | "approved" | "rejected";
+      // Offline branch (lib/branch); unset for the online academy.
+      branch?: string;
+      branchRole?: "manager" | "coach";
     } & DefaultSession["user"];
   }
   // Augment — only add `role`. NextAuth's base User already declares `id`.
@@ -52,6 +56,7 @@ declare module "next-auth" {
     isSuperAdmin?: boolean;
     isActive?: boolean;
     accountStatus?: "demo" | "enrolled" | "coach_applicant" | "approved" | "rejected";
+    branch?: string;
   }
 }
 
@@ -158,6 +163,7 @@ const nextAuth = NextAuth({
           isSuperAdmin: Boolean(user.isSuperAdmin || isBootstrapSuperAdmin),
           isActive: user.isActive !== false,
           accountStatus: user.accountStatus || "enrolled",
+          branch: user.branch || undefined,
         };
       },
     }),
@@ -216,7 +222,11 @@ export const auth = cache(async () => {
       role: currentUser.role, name: currentUser.name, email: currentUser.email,
       accountStatus: currentUser.accountStatus,
       isSuperAdmin: Boolean(currentUser.isSuperAdmin && !currentUser.accessRole),
+      branch: currentUser.branch, branchRole: currentUser.branchRole,
     });
+    // Offline-branch accounts reach only their own portal and the shared
+    // features (lib/branch/paths.ts), whatever their role would open online.
+    if (currentUser.branch && isApiRequest && !isBranchAllowedPath(pathname, currentUser.role) && pathname !== "/api/branding") return null;
     const assigned = await resolveAccessRole(userId);
     if (assigned) {
       Object.assign(session!.user, assigned, { isSuperAdmin: false });

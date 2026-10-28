@@ -2,6 +2,7 @@ import { escapeRegex } from "@/lib/loginIdentity";
 import { canonicalEmail, canonicalPhone } from "@/lib/identityMatch";
 import { WRITE_QUERY_MIDDLEWARE, invalidateUserPermissionCache, userIdsFromFilter } from "@/lib/permissionCache";
 import { sealTempPassword } from "@/lib/tempPasswords";
+import { ALL_BRANCHES_OPTION, BRANCHES, scopeStudentFilter, scopeStudentPipeline } from "@/lib/branch/scope";
 import { Schema, model, models, type InferSchemaType } from "mongoose";
 
 const UserSchema = new Schema(
@@ -46,6 +47,13 @@ const UserSchema = new Schema(
     passwordChangeSource: { type: String, enum: ["registration", "admin_reset", "self_reset"], default: "registration" },
     role: { type: String, enum: ["student", "instructor", "admin", "sub-admin"], default: "student", index: true },
     accessRole: { type: Schema.Types.ObjectId, ref: "AccessRole", default: null, index: true },
+    // Offline branch this account belongs to ("bowbazar"); unset for the online
+    // academy. Branch students are hidden from every online student query by
+    // the scope hook below - see lib/branch/scope.ts.
+    branch: { type: String, enum: [...BRANCHES], default: undefined, index: true },
+    // What a branch staff account does there (lib/branch/access.ts). Unset for
+    // branch students and for every online account.
+    branchRole: { type: String, enum: ["manager", "coach"], default: undefined },
     // Salesperson an admin assigned to this demo lead by hand, from the Demo
     // Center. Outranks the CRM's own "<Name> Lead" attribute - it exists for leads
     // the CRM never tagged or tagged wrongly. See src/lib/demoLeadOwner.ts.
@@ -220,6 +228,35 @@ UserSchema.pre(["findOneAndUpdate", "updateOne"], async function syncIdentityKey
     );
   }
   this.setUpdate({ ...update, $set: { ...(update.$set || {}), ...patch } });
+  next();
+});
+
+/**
+ * Keep offline-branch students out of the online academy. Any query for
+ * students that does not name a branch is narrowed to online accounts; branch
+ * screens name theirs, and `.setOptions({ allBranches: true })` opts out.
+ */
+const STUDENT_SCOPED_QUERIES = [
+  "find",
+  "findOne",
+  "countDocuments",
+  "distinct",
+  "findOneAndUpdate",
+  "updateMany",
+  "deleteMany",
+] as const;
+UserSchema.pre([...STUDENT_SCOPED_QUERIES], function scopeStudentsToOnline(this: any, next) {
+  if (!this.getOptions?.()[ALL_BRANCHES_OPTION]) {
+    const scoped = scopeStudentFilter(this.getFilter());
+    if (scoped) this.setQuery(scoped);
+  }
+  next();
+});
+UserSchema.pre("aggregate", function scopeStudentAggregateToOnline(this: any, next) {
+  if (!this.options?.[ALL_BRANCHES_OPTION]) {
+    const scoped = scopeStudentPipeline(this.pipeline());
+    if (scoped) this.pipeline().splice(0, this.pipeline().length, ...scoped);
+  }
   next();
 });
 

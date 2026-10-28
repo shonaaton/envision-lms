@@ -10,6 +10,7 @@ import { FeeAssignment } from "@/models/Fee";
 import { Classroom } from "@/models/Classroom";
 import { canStudentUseLearnChess } from "@/lib/learning/studentAccess";
 import { touchLastSeen } from "@/lib/engagement/lastSeen";
+import { branchHomePath, isBranchAllowedPath } from "@/lib/branch/paths";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +24,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const pathname = headers().get("x-pathname") || "";
   const isActive = (session.user as any).isActive !== false;
   const isPaused = (session.user as any).isPaused === true;
+  const branch = (session.user as any).branch as string | undefined;
+  if (branch && !isBranchAllowedPath(pathname, role)) redirect(branchHomePath(role));
   let hasCreditPlan = true;
   // A demo account's navigation is a deliberately short list, but once the
   // academy approves their demo they have a real classroom to join - so
@@ -74,7 +77,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     redirect("/dashboard?restricted=1");
   }
   return (
-    <DashboardFrame role={role} accountStatus={accountStatus} isSuperAdmin={isSuperAdmin} featureState={featureState} hasCreditPlan={hasCreditPlan} hasScheduledClassroom={hasScheduledClassroom} canLearnChess={canLearnChess} user={{ name: session.user.name, role: (session.user as any).roleName || role, isActive, isPaused }}>
+    <DashboardFrame role={role} accountStatus={accountStatus} isSuperAdmin={isSuperAdmin} featureState={featureState} hasCreditPlan={hasCreditPlan} hasScheduledClassroom={hasScheduledClassroom} canLearnChess={canLearnChess} branch={branch} branchRole={(session.user as any).branchRole} user={{ name: session.user.name, role: (session.user as any).roleName || role, isActive, isPaused }}>
       {children}
     </DashboardFrame>
   );

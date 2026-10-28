@@ -327,7 +327,7 @@ export async function processHomeworkEmailReminder(reminderId: unknown) {
 
   const [studentRecord, classroom] = await Promise.all([
     User.findById(reminder.student).select("name username email phone countryCode isActive role").lean(),
-    Classroom.findById(homework.classroom).select("title").lean(),
+    homework.classroom ? Classroom.findById(homework.classroom).select("title").lean() : null,
   ]);
   const student = studentRecord as any;
   if ((!student?.email && !student?.phone) || student.isActive === false || student.role !== "student") {

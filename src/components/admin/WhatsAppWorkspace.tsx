@@ -1,63 +1,12 @@
 "use client";
-
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Bot, CheckCircle2, Clock3, FileText, MessageCircle, RefreshCw, Send, Sparkles, ToggleLeft, ToggleRight, UserRound } from "lucide-react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { RefreshCw, Send, Sparkles, ToggleLeft, ToggleRight } from "lucide-react";
 import { WHATSAPP_TEMPLATE_DEFINITIONS, type WhatsAppTemplateDefinition } from "@/lib/whatsappTemplateRegistry";
-
-type WaReaction = { emoji: string; direction: string; at: string };
-
-type WaMessage = {
-  id: string;
-  phoneNumber: string;
-  direction: "inbound" | "outbound";
-  text: string;
-  messageType: string;
-  templateName?: string;
-  status: string;
-  createdAt: string;
-  sentAt?: string;
-  receivedAt?: string;
-  reactions?: WaReaction[];
-  mediaId?: string;
-  mediaKind?: "image" | "sticker" | "video" | "audio" | "document";
-  mediaMimeType?: string;
-  mediaFilename?: string;
-  mediaUrl?: string;
-};
-
-type Conversation = {
-  phoneNumber: string;
-  chatPath?: string;
-  contactName: string;
-  profileName?: string;
-  matchedUser?: { name?: string; email?: string; username?: string; role?: string; phone?: string } | null;
-  messages: WaMessage[];
-  lastInboundAt?: string;
-  lastMessageAt?: string;
-  lastMessageText?: string;
-  sentTemplateCount: number;
-  activeUntil?: string | null;
-  canReply: boolean;
-  whatsapp?: {
-    last_customer_message_at?: string | null;
-    window_expires_at?: string | null;
-    window_open: boolean;
-    expiring_soon: boolean;
-    remaining_seconds: number;
-    free_form_allowed: boolean;
-    template_required: boolean;
-  };
-};
-
-type InboxPayload = {
-  active: Conversation[];
-  closed: Conversation[];
-  sentTemplates: Conversation[];
-  conversations: Conversation[];
-  loadedPhoneNumber?: string;
-  windowHours: number;
-};
-
+import WhatsAppInbox from "./whatsapp/WhatsAppInbox";
+import TemplateSendDialog from "./whatsapp/TemplateSendDialog";
+import type { LibraryTemplate } from "@/lib/whatsappTemplateRules";
+const TemplateManager = lazy(() => import("./whatsapp/TemplateManager"));
+const BroadcastCentre = lazy(() => import("./whatsapp/BroadcastCentre"));
 type RecipientMode = "manual" | "coaches" | "students" | "users";
 type WhatsAppAdminTemplateDefinition = WhatsAppTemplateDefinition & {
   automationEnabled?: boolean;
@@ -77,7 +26,6 @@ type TemplateAuditPayload = {
   missingApprovedTemplates?: WhatsAppAdminTemplateDefinition[];
 };
 
-const DEFAULT_NUMBERS = "918017996184, 916290349998";
 
 function sendErrorText(value: any) {
   if (!value) return "";
@@ -85,161 +33,51 @@ function sendErrorText(value: any) {
   return String(value.message || value.error_user_msg || value.error || JSON.stringify(value));
 }
 
-export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initialPhoneNumber?: string }) {
-  const [tab, setTab] = useState<"all" | "active" | "closed" | "sent" | "automation">("all");
-  const [data, setData] = useState<InboxPayload>({ active: [], closed: [], sentTemplates: [], conversations: [], windowHours: 24 });
-  const [selectedPhone, setSelectedPhone] = useState(initialPhoneNumber);
-  // Phones have room for either the chat list or the open thread, never both side by side.
-  const [mobilePane, setMobilePane] = useState<"list" | "chat">(initialPhoneNumber ? "chat" : "list");
-  const [now, setNow] = useState(() => Date.now());
-  const [loading, setLoading] = useState(true);
-  const [reply, setReply] = useState("");
-  const [sendingReply, setSendingReply] = useState(false);
+
+export default function WhatsAppWorkspace({ initialPhoneNumber = "", actorId = "staff", role = "admin", canManage = true }: { initialPhoneNumber?: string; actorId?: string; role?: string; canManage?: boolean }) {
+  const [tab, setTab] = useState<"inbox" | "automation" | "templates" | "broadcasts">("inbox");
+  const [templateForSend, setTemplateForSend] = useState<LibraryTemplate | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
   const [templateName, setTemplateName] = useState("hello_world_2");
   const [language, setLanguage] = useState("en");
   const [recipientMode, setRecipientMode] = useState<RecipientMode>("manual");
-  const [recipients, setRecipients] = useState(DEFAULT_NUMBERS);
+  const [recipients, setRecipients] = useState("");
   const [templateVariables, setTemplateVariables] = useState("");
   const [templates, setTemplates] = useState<WhatsAppAdminTemplateDefinition[]>([...WHATSAPP_TEMPLATE_DEFINITIONS]);
   const [templateAudit, setTemplateAudit] = useState<TemplateAuditPayload>({});
   const [savingTemplateName, setSavingTemplateName] = useState("");
   const [notice, setNotice] = useState("");
   const [templateResults, setTemplateResults] = useState<any[]>([]);
-  const bottomRef = useRef<HTMLDivElement | null>(null);
-  // The poll reads the open thread from a ref so switching chats does not tear down and
-  // restart the polling interval on every selection.
-  const selectedPhoneRef = useRef(initialPhoneNumber);
-  const inboxSignatureRef = useRef("");
-  const nearestExpiryRef = useRef(0);
-
+  const [sendingTemplate, setSendingTemplate] = useState(false);
+  const [unconfirmedTemplate, setUnconfirmedTemplate] = useState(false);
+  const templateLock = useRef(false);
+  const templateRequest = useRef<Record<string, unknown> | null>(null);
+  const templateStorageKey = `whatsapp-template-request-v1:${actorId}`;
   useEffect(() => {
-    selectedPhoneRef.current = selectedPhone;
-  }, [selectedPhone]);
-
-  const loadInbox = useCallback(async (options: { quiet?: boolean; phoneNumber?: string } = {}) => {
-    if (!options.quiet) setLoading(true);
-    const phoneNumber = options.phoneNumber ?? selectedPhoneRef.current;
     try {
-      const res = await fetch(`/api/admin/whatsapp${phoneNumber ? `?phone=${encodeURIComponent(phoneNumber)}` : ""}`, { cache: "no-store" });
-      const payload = await res.json();
-      if (payload?.error) return;
-      // Most polls come back identical, and skipping the state write keeps the whole inbox
-      // from re-rendering every five seconds.
-      const signature = JSON.stringify(payload);
-      if (signature !== inboxSignatureRef.current) {
-        inboxSignatureRef.current = signature;
-        setData(payload);
-      }
-      setSelectedPhone((current) => current || initialPhoneNumber || payload.loadedPhoneNumber || payload.conversations?.[0]?.phoneNumber || payload.sentTemplates?.[0]?.phoneNumber || "");
-    } finally {
-      if (!options.quiet) setLoading(false);
-    }
-  }, [initialPhoneNumber]);
-
+      const saved = JSON.parse(sessionStorage.getItem(templateStorageKey) || "null");
+      if (saved && typeof saved.requestId === "string") { templateRequest.current = saved; setUnconfirmedTemplate(true); }
+    } catch { /* In-memory request checks still work when storage is disabled. */ }
+  }, [templateStorageKey]);
   useEffect(() => {
-    void loadInbox();
-    const interval = window.setInterval(() => {
-      if (document.visibilityState === "hidden") return;
-      void loadInbox({ quiet: true });
-    }, 5000);
-    return () => window.clearInterval(interval);
-  }, [loadInbox]);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function loadTemplates() {
-      const res = await fetch(`/api/admin/whatsapp/templates?t=${Date.now()}`, { cache: "no-store" });
-      const payload = await res.json().catch(() => ({}));
-      if (cancelled || !Array.isArray(payload.templates) || !payload.templates.length) return;
-      setTemplates(payload.templates);
-      setTemplateAudit({
-        ok: payload.ok,
-        source: payload.source,
-        message: payload.message,
-        requiredTemplateCount: payload.requiredTemplateCount,
-        approvedRequiredCount: payload.approvedRequiredCount,
-        metaTemplateCount: payload.metaTemplateCount,
-        missingApprovedTemplates: Array.isArray(payload.missingApprovedTemplates) ? payload.missingApprovedTemplates : [],
-      });
-    }
-    void loadTemplates();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    const refreshWhenVisible = () => {
-      if (document.visibilityState === "visible") void loadInbox({ quiet: true });
-    };
-    window.addEventListener("focus", refreshWhenVisible);
-    document.addEventListener("visibilitychange", refreshWhenVisible);
-    return () => {
-      window.removeEventListener("focus", refreshWhenVisible);
-      document.removeEventListener("visibilitychange", refreshWhenVisible);
-    };
-  }, [loadInbox]);
-
-  useEffect(() => {
-    nearestExpiryRef.current = data.conversations.reduce((nearest, conversation) => {
-      const expiry = conversation.whatsapp?.window_expires_at ? new Date(conversation.whatsapp.window_expires_at).getTime() : 0;
-      if (expiry <= Date.now()) return nearest;
-      return nearest === 0 || expiry < nearest ? expiry : nearest;
-    }, 0);
-  }, [data.conversations]);
-
-  // The countdown only prints seconds in its final minute, so re-render every second there and
-  // every half minute otherwise instead of repainting the whole inbox once a second all day.
-  useEffect(() => {
-    const interval = window.setInterval(() => {
-      setNow((current) => {
-        const next = Date.now();
-        const nearestExpiry = nearestExpiryRef.current;
-        const countingSeconds = nearestExpiry > 0 && nearestExpiry - next <= 120_000;
-        return countingSeconds || next - current >= 30_000 ? next : current;
-      });
-    }, 1000);
-    return () => window.clearInterval(interval);
-  }, []);
-
-  const liveConversations = useMemo(() => data.conversations.map((conversation) => withLiveWindow(conversation, now)), [data.conversations, now]);
-  const conversations = tab === "sent"
-    ? liveConversations.filter((conversation) => conversation.sentTemplateCount > 0)
-    : tab === "closed"
-      ? liveConversations.filter((conversation) => !conversation.canReply)
-      : tab === "active"
-        ? liveConversations.filter((conversation) => conversation.canReply)
-        : liveConversations;
-  const selected = useMemo(
-    () => liveConversations.find((conversation) => conversation.phoneNumber === selectedPhone) || (!selectedPhone ? conversations[0] : undefined),
-    [conversations, liveConversations, selectedPhone]
-  );
-  const selectedMessageKey = selected?.messages.map((message) => `${message.id}:${message.status}`).join("|") || "";
-  // Only the open thread ships its messages, so a freshly clicked chat is empty until its
-  // fetch lands.
-  const threadLoading = Boolean(selected && !selected.messages.length && data.loadedPhoneNumber !== selected.phoneNumber);
+    if (role === "instructor") return;
+    const controller = new AbortController();
+    void fetch("/api/admin/whatsapp/templates", { cache: "no-store", signal: controller.signal }).then(async (response) => {
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Could not load templates.");
+      if (Array.isArray(payload.templates) && payload.templates.length) setTemplates(payload.templates);
+      setTemplateAudit(payload);
+    }).catch((error) => { if (!controller.signal.aborted) setNotice(error instanceof Error ? error.message : "Could not load templates."); });
+    return () => controller.abort();
+  }, [role]);
+  useEffect(() => { if (!notice) return; const timer = window.setTimeout(() => setNotice(""), 8000); return () => window.clearTimeout(timer); }, [notice]);
   const selectedTemplateDefinition = useMemo(() => findTemplateDefinition(templates, templateName), [templates, templateName]);
-  const orderedTemplateVariables = useMemo(
-    () => templateVariables.split(/\r?\n/).map((item) => item.trim()).filter(Boolean),
-    [templateVariables]
-  );
-  const templateGroups = useMemo(() => {
-    return templates.reduce<Record<string, WhatsAppAdminTemplateDefinition[]>>((groups, template) => {
-      const key = template.sourceAutomation || "Manual";
-      groups[key] = groups[key] || [];
-      groups[key].push(template);
-      return groups;
-    }, {});
-  }, [templates]);
-  const enabledTemplateCount = useMemo(() => templates.filter((template) => template.automationEnabled !== false).length, [templates]);
+  const orderedTemplateVariables = useMemo(() => templateVariables.trim() ? templateVariables.split(/\r?\n/).map((item) => item.trim()) : [], [templateVariables]);
+  const templateGroups = useMemo(() => templates.reduce<Record<string, WhatsAppAdminTemplateDefinition[]>>((groups, template) => { const key = template.sourceAutomation || "Manual"; (groups[key] ||= []).push(template); return groups; }, {}), [templates]);
+  const enabledTemplateCount = templates.filter((template) => template.automationEnabled !== false).length;
   const missingApprovedTemplates = templateAudit.missingApprovedTemplates || [];
   const approvedRequiredCount = templateAudit.approvedRequiredCount ?? templates.filter((template) => template.requiredByLms && template.metaStatus === "APPROVED").length;
   const requiredTemplateCount = templateAudit.requiredTemplateCount ?? templates.filter((template) => template.requiredByLms !== false).length;
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [selectedPhone, selectedMessageKey, tab]);
-
   function updateTemplateName(value: string) {
     setTemplateName(value);
     const definition = findTemplateDefinition(templates, value);
@@ -280,111 +118,46 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
     }
   }
 
-  function openConversation(phoneNumber: string) {
-    setMobilePane("chat");
-    if (phoneNumber === selectedPhone) return;
-    const conversation = data.conversations.find((item) => item.phoneNumber === phoneNumber);
-    setSelectedPhone(phoneNumber);
-    selectedPhoneRef.current = phoneNumber;
-    // router.push re-ran the server component and remounted the whole workspace on every
-    // click, which is what made opening a chat feel like a page load. Keep the URL shareable
-    // by rewriting it in place and just fetch the thread.
-    window.history.replaceState(null, "", conversation?.chatPath || `/admin/whatsapp/${encodeURIComponent(phoneNumber)}`);
-    void loadInbox({ quiet: true, phoneNumber });
-  }
-
-  async function sendReply() {
-    if (!selected || !reply.trim()) return;
-    setSendingReply(true);
-    setNotice("");
-    const res = await fetch("/api/admin/whatsapp/reply", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phoneNumber: selected.phoneNumber, text: reply }),
-    });
-    const payload = await res.json().catch(() => ({}));
-    setSendingReply(false);
-    if (!res.ok || payload.error) {
-      setNotice(payload.message || payload.error || "Reply could not be sent.");
-      return;
-    }
-    setReply("");
-    setNotice("Reply sent.");
-    await loadInbox({ quiet: true });
-  }
 
   async function sendTemplate() {
-    await sendTemplateRequest(templateName, language, orderedTemplateVariables);
-  }
-
-  async function sendTemplateRequest(nextTemplateName: string, nextLanguage: string, nextTemplateVariables: string[]) {
+    if (templateLock.current) return;
+    const numbers = recipients.split(/[\s,]+/).map((number) => number.trim()).filter(Boolean);
+    if (!templateRequest.current && recipientMode === "manual" && !numbers.length) { setNotice("Choose at least one recipient before sending."); return; }
+    if (!templateRequest.current && selectedTemplateDefinition && (orderedTemplateVariables.length !== selectedTemplateDefinition.variables.length || orderedTemplateVariables.some((value) => !value))) { setNotice("Fill every template variable in the displayed order."); return; }
+    const request = templateRequest.current || { requestId: crypto.randomUUID(), templateName, language, recipientGroup: recipientMode, recipients: recipientMode === "manual" ? numbers : [], templateVariables: orderedTemplateVariables };
+    templateRequest.current = request;
+    try { sessionStorage.setItem(templateStorageKey, JSON.stringify(request)); } catch { /* Retain the in-memory reservation. */ }
+    templateLock.current = true;
+    setSendingTemplate(true);
     setNotice("");
-    const res = await fetch("/api/admin/whatsapp/template", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        templateName: nextTemplateName,
-        language: nextLanguage,
-        recipientGroup: recipientMode,
-        recipients: recipientMode === "manual" ? recipients.split(/[\s,]+/).map((item) => item.trim()).filter(Boolean) : [],
-        templateVariables: nextTemplateVariables,
-      }),
-    });
-    const payload = await res.json().catch(() => ({}));
-    const results = payload.results || [];
-    setTemplateResults(results);
-    const sent = results.filter((item: any) => item.ok).length;
-    const failed = results.filter((item: any) => !item.ok).length;
-    const firstFailure = results.find((item: any) => !item.ok);
-    const failureMessage = sendErrorText(firstFailure?.error || firstFailure?.metaError || payload.error || payload.message);
-    setNotice(
-      res.ok && failed === 0
-        ? `${nextTemplateName} sent to ${sent} contact${sent === 1 ? "" : "s"}.`
-        : `${nextTemplateName} failed${failureMessage ? `: ${failureMessage}` : "."}`
-    );
-    await loadInbox({ quiet: true });
-    if (sent > 0 && failed === 0) setTab("sent");
+    try {
+      const response = await fetch("/api/admin/whatsapp/template", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(request), signal: AbortSignal.timeout(40_000) });
+      const payload = await response.json();
+      const results = payload.results || [];
+      setTemplateResults(results);
+      const accepted = results.filter((item: any) => item.ok).length;
+      const failed = results.filter((item: any) => !item.ok).length;
+      const uncertain = Boolean(payload.uncertain || payload.retryable === false);
+      setUnconfirmedTemplate(uncertain);
+      if (!uncertain) { templateRequest.current = null; try { sessionStorage.removeItem(templateStorageKey); } catch { /* Storage may be unavailable. */ } }
+      setNotice(response.ok && payload.ok !== false ? accepted + " recipients: accepted or queued. Delivery updates appear in the inbox." : payload.error || accepted + " accepted, " + failed + " failed. " + sendErrorText(results.find((item: any) => !item.ok)?.error));
+      setRefreshKey((value) => value + 1);
+    } catch {
+      setUnconfirmedTemplate(true);
+      setNotice("Connection interrupted. Use Check send result to check the same request without sending it twice.");
+    } finally {
+      templateLock.current = false;
+      setSendingTemplate(false);
+    }
   }
-
-  function prepareTemplateForSelectedContact() {
-    if (!selected) return;
-    setRecipientMode("manual");
-    setRecipients(selected.phoneNumber);
-    setTab("automation");
-  }
-
-  return (
-    <div className="min-h-0 min-w-0 text-slate-950">
-      <div className="mb-3 flex min-w-0 items-center justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-teal-900 text-white shadow-lg shadow-teal-950/15">
-              <MessageCircle size={20} />
-            </div>
-            <div className="min-w-0">
-              <div className="text-xs font-black uppercase tracking-[0.18em] text-emerald-700">WhatsApp</div>
-              <h1 className="truncate text-2xl font-black text-slate-950">WhatsApp Inbox</h1>
-            </div>
-          </div>
-        </div>
-        <button onClick={() => void loadInbox()} aria-label="Refresh" className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 shadow-sm shadow-slate-200/70 transition hover:border-emerald-200 hover:text-emerald-700 sm:px-4">
-          <RefreshCw size={15} />
-          <span className="hidden sm:inline">Refresh</span>
-        </button>
-      </div>
-
-      {/* One scrollable row, so the tabs never wrap and push the inbox below the fold. */}
-      <div className="-mx-1 mb-3 flex gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none]">
-        <TabButton active={tab === "all"} onClick={() => setTab("all")} icon={<MessageCircle size={15} />} label={`All Chats (${liveConversations.length})`} />
-        <TabButton active={tab === "active"} onClick={() => setTab("active")} icon={<Clock3 size={15} />} label={`Active (${liveConversations.filter((conversation) => conversation.canReply).length})`} />
-        <TabButton active={tab === "closed"} onClick={() => setTab("closed")} icon={<CheckCircle2 size={15} />} label={`Closed (${liveConversations.filter((conversation) => !conversation.canReply).length})`} />
-        <TabButton active={tab === "sent"} onClick={() => setTab("sent")} icon={<CheckCircle2 size={15} />} label={`Sent Templates (${liveConversations.filter((conversation) => conversation.sentTemplateCount > 0).length})`} />
-        <TabButton active={tab === "automation"} onClick={() => setTab("automation")} icon={<Bot size={15} />} label="Template Automation" />
-      </div>
-
-      {notice ? <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">{notice}</div> : null}
-
-      {tab === "automation" ? (
+  return <div className="min-h-0 min-w-0 text-slate-950">
+    <div className="mb-3 flex items-center justify-between gap-3"><div><div className="text-xs font-bold uppercase tracking-widest text-emerald-700">WhatsApp</div><h1 className="text-2xl font-bold">WhatsApp Inbox</h1></div><button type="button" aria-label="Refresh inbox" onClick={() => setRefreshKey((value) => value + 1)} className="rounded-lg border bg-white p-3 text-slate-600"><RefreshCw size={17} /></button></div>
+    <div className="mb-3 flex gap-2 overflow-x-auto pb-1">{([['inbox', 'Inbox'], ['templates', 'Message templates'], ...(canManage ? [['broadcasts', 'Broadcast centre']] : []), ...(role !== "instructor" ? [['automation', 'Template Automation']] : [])] as [typeof tab, string][]).map(([value, label]) => <button type="button" key={value} onClick={() => setTab(value)} aria-pressed={tab === value} className={`shrink-0 rounded-lg px-4 py-2 text-sm font-bold ${tab === value ? "bg-teal-900 text-white" : "border bg-white"}`}>{label}</button>)}</div>
+    <div className={tab === "inbox" ? "" : "hidden"}><WhatsAppInbox initialPhoneNumber={initialPhoneNumber} actorId={actorId} canManage={canManage} refreshKey={refreshKey} active={tab === "inbox"} /></div>
+    {tab === "templates" ? <Suspense fallback={<p className="p-5 text-sm text-slate-500">Loading template manager…</p>}><TemplateManager canManage={canManage} onUse={setTemplateForSend} /></Suspense> : null}
+    {tab === "broadcasts" && canManage ? <Suspense fallback={<p className="p-5 text-sm text-slate-500">Loading broadcasts…</p>}><BroadcastCentre /></Suspense> : null}
+    {templateForSend ? <TemplateSendDialog phone="" actorId={actorId} initialTemplate={templateForSend} onClose={() => setTemplateForSend(null)} onSent={() => { setRefreshKey((current) => current + 1); setNotice("Template accepted for sending."); }} /> : null}
+    {tab === "automation" ? (
         <section className="max-w-3xl rounded-lg border border-slate-200 bg-white p-5 shadow-xl shadow-slate-200/70">
           <div className="flex items-center gap-3">
             <div className="grid h-10 w-10 place-items-center rounded-lg bg-emerald-50 text-emerald-700">
@@ -522,9 +295,10 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
               </div>
             ) : null}
           </div>
-          <button onClick={sendTemplate} className="mt-5 inline-flex h-11 items-center gap-2 rounded-lg bg-emerald-600 px-5 text-sm font-bold text-white shadow-sm">
+          {unconfirmedTemplate ? <div role="alert" className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">The previous send is unconfirmed. Check delivery in the inbox before starting another send. <button type="button" disabled={sendingTemplate} className="font-bold underline" onClick={() => { templateRequest.current = null; setUnconfirmedTemplate(false); try { sessionStorage.removeItem(templateStorageKey); } catch { /* Storage may be unavailable. */ } }}>Start a new send</button></div> : null}
+          <button disabled={sendingTemplate} onClick={() => void sendTemplate()} className="mt-5 inline-flex h-11 items-center gap-2 rounded-lg bg-emerald-600 px-5 text-sm font-bold text-white shadow-sm disabled:cursor-wait disabled:opacity-50">
             <Send size={16} />
-            Fire Automation Now
+            {sendingTemplate ? "Sending…" : unconfirmedTemplate ? "Check send result" : "Send template"}
           </button>
           {templateResults.length ? (
             <div className="mt-5 overflow-hidden rounded-lg border border-slate-200">
@@ -535,7 +309,7 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="font-black text-slate-950">+{result.phoneNumber}{result.name ? ` · ${result.name}` : ""}</div>
                       <span className={`rounded-full px-2.5 py-1 text-xs font-black ${result.ok ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>
-                        {result.ok ? "Sent" : `Failed${result.status ? ` ${result.status}` : ""}`}
+                        {result.ok ? (result.status || "accepted") : result.status === "unconfirmed" ? "Unconfirmed" : "Failed"}
                       </span>
                     </div>
                     {result.error ? <div className="rounded-lg bg-rose-50 px-3 py-2 text-rose-700">{result.error}</div> : null}
@@ -551,198 +325,9 @@ export default function WhatsAppWorkspace({ initialPhoneNumber = "" }: { initial
             </div>
           ) : null}
         </section>
-      ) : (
-        <section className="grid h-[calc(100dvh-180px)] min-h-[420px] grid-rows-[minmax(0,1fr)] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl shadow-slate-200/70 md:h-[calc(100dvh-150px)] md:grid-cols-[260px_minmax(0,1fr)] lg:grid-cols-[300px_minmax(0,1fr)] xl:grid-cols-[330px_minmax(0,1fr)_300px] 2xl:grid-cols-[360px_minmax(0,1fr)_320px]">
-          <aside className={`min-h-0 border-slate-200 bg-white md:block md:border-r ${mobilePane === "chat" ? "hidden" : ""}`}>
-            <div className="flex h-12 items-center justify-between border-b border-slate-200 bg-slate-50 px-4 text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
-              {tab === "active" ? "Active conversations" : tab === "closed" ? "Closed conversations" : tab === "all" ? "All chats" : "Template sends"}
-              <span className="rounded-full bg-white px-2 py-1 text-[11px] text-slate-500 shadow-sm">{conversations.length}</span>
-            </div>
-            <div className="h-[calc(100%-3rem)] overflow-y-auto">
-              {loading ? <div className="p-5 text-sm text-slate-500">Loading WhatsApp inbox...</div> : null}
-              {!loading && conversations.length === 0 ? (
-                <EmptyPanel
-                  title={tab === "active" ? "No active chats" : tab === "closed" ? "No closed chats" : tab === "all" ? "No WhatsApp chats" : "No templates sent"}
-                  text={tab === "active" ? "Replies will appear here after a contact messages the business." : tab === "closed" ? "Closed chats remain here until the customer replies again." : tab === "all" ? "Inbound replies and sent messages will appear here." : "Template messages you send will appear in this tab."}
-                />
-              ) : null}
-              {conversations.map((conversation) => (
-                <button
-                  key={conversation.phoneNumber}
-                  onClick={() => openConversation(conversation.phoneNumber)}
-                  className={`flex w-full items-center gap-3 border-b border-slate-100 px-3 py-3 text-left lg:px-4 lg:py-4 transition hover:bg-slate-50 ${selected?.phoneNumber === conversation.phoneNumber ? "bg-emerald-50" : "bg-white"}`}
-                >
-                  <Avatar name={conversation.contactName} />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-black text-slate-950">{conversation.contactName}</span>
-                    <span className="mt-0.5 block truncate text-xs font-semibold text-slate-500">+{conversation.phoneNumber}</span>
-                    <span className="mt-1 block truncate text-xs text-slate-500">{conversation.lastMessageText || "No message preview"}</span>
-                    <span className={`mt-2 inline-flex rounded-full px-2 py-0.5 text-[11px] font-black ${conversation.canReply ? (conversation.whatsapp?.expiring_soon ? "bg-amber-50 text-amber-800" : "bg-emerald-50 text-emerald-700") : "bg-slate-100 text-slate-500"}`}>
-                      {windowLabel(conversation)}
-                    </span>
-                  </span>
-                </button>
-              ))}
-            </div>
-          </aside>
-
-          <main className={`min-h-0 min-w-0 flex-col bg-[#f7f3e7] md:flex ${mobilePane === "chat" ? "flex" : "hidden"}`}>
-            <div className="flex h-16 shrink-0 items-center gap-3 border-b border-teal-900/10 bg-teal-900 px-3 text-white lg:px-5">
-              <button type="button" onClick={() => setMobilePane("list")} aria-label="Back to chats" className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-white/10 transition hover:bg-white/20 md:hidden">
-                <ArrowLeft size={18} />
-              </button>
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-lg font-black">{selected?.contactName || "No conversation selected"}</div>
-                {selected ? <div className="text-xs font-semibold text-emerald-100">+{selected.phoneNumber}</div> : null}
-              </div>
-              {selected ? <span className="shrink-0"><Badge text={windowLabel(selected)} tone={selected.canReply && !selected.whatsapp?.expiring_soon ? "green" : "amber"} /></span> : null}
-            </div>
-            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3 lg:p-5">
-              {!selected ? (
-                <div className="grid h-full place-items-center">
-                  <div className="max-w-sm text-center">
-                    <div className="mx-auto grid h-14 w-14 place-items-center rounded-lg bg-white text-emerald-700 shadow-sm">
-                      <MessageCircle size={24} />
-                    </div>
-                    <div className="mt-4 text-lg font-black text-slate-950">No conversation selected</div>
-                    <p className="mt-1 text-sm leading-6 text-slate-500">Incoming WhatsApp replies and sent template records will show here after the webhook starts receiving events.</p>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  {threadLoading ? <div className="text-center text-sm text-slate-500">Loading conversation...</div> : null}
-                  {selected.messages.map((message) => (
-                    <div key={message.id} className={`flex ${message.direction === "outbound" ? "justify-end" : "justify-start"}`}>
-                      <div className={`relative max-w-[88%] rounded-lg lg:max-w-[78%] px-4 py-3 text-sm leading-6 shadow-md ${message.reactions?.length ? "mb-3" : ""} ${message.direction === "outbound" ? "bg-white text-slate-800 shadow-slate-300/50" : "bg-teal-900 text-white shadow-teal-950/20"}`}>
-                        <MessageMedia message={message} />
-                        {message.text ? <div className="whitespace-pre-line">{message.text}</div> : null}
-                        {message.messageType === "template" && message.templateName ? (
-                          <div className={`mt-2 text-[11px] font-semibold ${message.direction === "outbound" ? "text-emerald-600" : "text-teal-100"}`}>{message.templateName}</div>
-                        ) : null}
-                        <div className={`mt-1 text-[11px] ${message.direction === "outbound" ? "text-slate-400" : "text-teal-100"}`}>{message.status} · {new Date(message.createdAt).toLocaleString()}</div>
-                        {message.reactions?.length ? (
-                          <div className={`absolute -bottom-3 ${message.direction === "outbound" ? "right-3" : "left-3"} flex gap-1 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-sm shadow-sm`}>
-                            {message.reactions.map((reaction) => (
-                              <span key={`${message.id}-${reaction.emoji}`} title={`Reacted ${reaction.emoji}`}>{reaction.emoji}</span>
-                            ))}
-                          </div>
-                        ) : null}
-                      </div>
-                    </div>
-                  ))}
-                  <div ref={bottomRef} />
-                </>
-              )}
-            </div>
-            <div className="shrink-0 border-t border-slate-200 bg-white p-2 lg:p-3">
-              {selected ? (
-                <div className={`mb-2 flex items-start gap-2 rounded-lg border px-3 py-1.5 text-xs font-bold leading-5 ${selected.canReply ? (selected.whatsapp?.expiring_soon ? "border-amber-200 bg-amber-50 text-amber-800" : "border-emerald-200 bg-emerald-50 text-emerald-800") : "border-slate-200 bg-slate-50 text-slate-600"}`}>
-                  <Clock3 size={14} className="mt-0.5 shrink-0" />
-                  <span className="xl:hidden">{windowShortDescription(selected)}</span>
-                  <span className="hidden xl:inline">{windowDescription(selected)}</span>
-                </div>
-              ) : null}
-              <div className="flex min-w-0 gap-2">
-                <input
-                  value={reply}
-                  onChange={(event) => setReply(event.target.value)}
-                  disabled={!selected?.canReply}
-                  placeholder={selected?.canReply ? "Type a reply..." : "Window closed · send a template"}
-                  className="min-h-11 min-w-0 flex-1 rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-emerald-500 disabled:bg-slate-50 lg:px-4"
-                />
-                <button disabled={!selected?.canReply || sendingReply || !reply.trim()} onClick={sendReply} aria-label="Reply" className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-teal-900 px-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:bg-slate-300 lg:px-4">
-                  <Send size={16} />
-                  <span className="hidden sm:inline">Reply</span>
-                </button>
-                {selected && !selected.canReply ? (
-                  <button onClick={prepareTemplateForSelectedContact} aria-label="Send template" className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 text-sm font-bold text-white lg:px-4">
-                    <Bot size={16} />
-                    <span className="hidden sm:inline">Template</span>
-                  </button>
-                ) : null}
-              </div>
-            </div>
-          </main>
-
-          <aside className="hidden min-h-0 overflow-y-auto border-l border-slate-200 bg-white p-4 xl:block">
-            <div className="rounded-lg bg-gradient-to-b from-emerald-50 to-white p-4 text-center">
-              <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-white text-xl font-black text-emerald-700 shadow-sm">
-                {initials(selected?.contactName || "?")}
-              </div>
-              <div className="mt-3 text-lg font-black text-slate-950">{selected?.contactName || "Contact"}</div>
-              <div className="mt-1 text-sm font-semibold text-slate-500">{selected ? `+${selected.phoneNumber}` : "-"}</div>
-            </div>
-            <div className="mt-4 space-y-2 text-sm">
-              <ProfileRow label="WhatsApp window" value={selected ? windowDescription(selected) : "-"} />
-              <ProfileRow label="Matched LMS user" value={selected?.matchedUser?.name || "Not matched"} />
-              <ProfileRow label="Role" value={selected?.matchedUser?.role || "-"} />
-              <ProfileRow label="Templates sent" value={String(selected?.sentTemplateCount || 0)} />
-              <ProfileRow label="Closes at" value={selected?.activeUntil ? new Date(selected.activeUntil).toLocaleString() : "No customer reply recorded"} />
-              <ProfileRow label="Latest customer reply" value={selected?.lastInboundAt ? new Date(selected.lastInboundAt).toLocaleString() : "-"} />
-            </div>
-          </aside>
-        </section>
-      )}
-    </div>
-  );
-}
-
-// Media is streamed back through the admin proxy, since Meta media ids are not public URLs.
-function MessageMedia({ message }: { message: WaMessage }) {
-  if (!message.mediaUrl) return null;
-  if (message.mediaKind === "image" || message.mediaKind === "sticker") {
-    return (
-      <a href={message.mediaUrl} target="_blank" rel="noreferrer" className="mb-2 block">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={message.mediaUrl}
-          alt={message.mediaFilename || (message.mediaKind === "sticker" ? "WhatsApp sticker" : "WhatsApp photo")}
-          loading="lazy"
-          className={message.mediaKind === "sticker" ? "h-28 w-28 object-contain" : "max-h-72 max-w-full rounded-md object-contain"}
-        />
-      </a>
-    );
-  }
-  if (message.mediaKind === "video") {
-    return <video src={message.mediaUrl} controls preload="metadata" className="mb-2 max-h-72 w-full rounded-md" />;
-  }
-  if (message.mediaKind === "audio") {
-    return <audio src={message.mediaUrl} controls preload="none" className="mb-2 w-56 max-w-full" />;
-  }
-  return (
-    <a
-      href={message.mediaUrl}
-      target="_blank"
-      rel="noreferrer"
-      className={`mb-2 inline-flex items-center gap-2 rounded-md px-2 py-1.5 text-xs font-bold underline ${message.direction === "outbound" ? "bg-slate-50 text-slate-700" : "bg-teal-800 text-white"}`}
-    >
-      <FileText size={14} />
-      {message.mediaFilename || "Open attachment"}
-    </a>
-  );
-}
-
-function EmptyPanel({ title, text }: { title: string; text: string }) {
-  return (
-    <div className="p-4">
-      <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center">
-        <div className="mx-auto grid h-10 w-10 place-items-center rounded-lg bg-white text-slate-400 shadow-sm">
-          <MessageCircle size={18} />
-        </div>
-        <div className="mt-3 text-sm font-black text-slate-800">{title}</div>
-        <p className="mt-1 text-xs leading-5 text-slate-500">{text}</p>
-      </div>
-    </div>
-  );
-}
-
-function TabButton({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
-  return (
-    <button onClick={onClick} className={`inline-flex h-10 shrink-0 items-center gap-2 whitespace-nowrap rounded-lg px-3 text-sm font-bold transition lg:px-4 ${active ? "bg-emerald-600 text-white shadow-sm" : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}>
-      {icon}
-      {label}
-    </button>
-  );
+    ) : null}
+    {notice ? <div role="status" className="fixed bottom-5 right-5 z-50 max-w-sm rounded-xl bg-slate-900 px-4 py-3 text-sm text-white shadow-xl">{notice}</div> : null}
+  </div>;
 }
 
 function RecipientModeButton({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
@@ -807,79 +392,4 @@ function templateSampleValues(template: WhatsAppTemplateDefinition) {
     .sort((a, b) => a.position - b.position)
     .map((variable) => variable.sample)
     .filter(Boolean);
-}
-
-function Avatar({ name }: { name: string }) {
-  return (
-    <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-teal-900 text-sm font-black text-white">
-      {name ? initials(name) : <UserRound size={18} />}
-    </span>
-  );
-}
-
-function Badge({ text, tone }: { text: string; tone: "green" | "amber" }) {
-  return <span className={`rounded-full px-3 py-1 text-xs font-black ${tone === "green" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>{text}</span>;
-}
-
-function formatRemaining(seconds: number) {
-  const safeSeconds = Math.max(0, Math.floor(seconds || 0));
-  if (safeSeconds <= 0) return "closed";
-  if (safeSeconds < 60) return `${safeSeconds}s`;
-  const hours = Math.floor(safeSeconds / 3600);
-  const minutes = Math.ceil((safeSeconds % 3600) / 60);
-  if (hours > 0) return minutes >= 60 ? `${hours + 1}h` : minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
-  return `${minutes}m`;
-}
-
-function withLiveWindow(conversation: Conversation, now: number): Conversation {
-  const expiry = conversation.whatsapp?.window_expires_at ? new Date(conversation.whatsapp.window_expires_at).getTime() : 0;
-  const remainingSeconds = expiry ? Math.max(0, Math.floor((expiry - now) / 1000)) : 0;
-  const windowOpen = remainingSeconds > 0;
-  return {
-    ...conversation,
-    canReply: windowOpen,
-    whatsapp: conversation.whatsapp
-      ? {
-          ...conversation.whatsapp,
-          window_open: windowOpen,
-          expiring_soon: windowOpen && remainingSeconds <= 2 * 60 * 60,
-          remaining_seconds: remainingSeconds,
-          free_form_allowed: windowOpen,
-          template_required: !windowOpen,
-        }
-      : conversation.whatsapp,
-  };
-}
-
-function windowLabel(conversation: Conversation) {
-  if (!conversation.canReply) return "Closed · 24h window";
-  return `${conversation.whatsapp?.expiring_soon ? "Closing soon" : "Open"} · ${formatRemaining(conversation.whatsapp?.remaining_seconds || 0)} left`;
-}
-
-function windowDescription(conversation: Conversation) {
-  if (!conversation.canReply) return "Closed · 24-hour window ended. The customer must reply again before a free-form message can be sent.";
-  return `${conversation.whatsapp?.expiring_soon ? "Closing soon" : "Open"} · ${formatRemaining(conversation.whatsapp?.remaining_seconds || 0)} remaining from the latest customer reply.`;
-}
-
-function windowShortDescription(conversation: Conversation) {
-  if (!conversation.canReply) return "24h window closed · the customer must reply before you can send free text.";
-  return `${conversation.whatsapp?.expiring_soon ? "Closing soon" : "Open"} · ${formatRemaining(conversation.whatsapp?.remaining_seconds || 0)} left to reply.`;
-}
-
-function ProfileRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 shadow-sm shadow-slate-100">
-      <div className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">{label}</div>
-      <div className="mt-1 break-words font-bold text-slate-800">{value}</div>
-    </div>
-  );
-}
-
-function initials(name: string) {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join("") || "?";
 }

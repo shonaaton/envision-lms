@@ -1,4 +1,5 @@
 import { Schema, model, models, type InferSchemaType } from "mongoose";
+import { BRANCHES } from "@/lib/branch/scope";
 
 const PuzzleSchema = new Schema(
   {
@@ -114,7 +115,16 @@ const ActivitySchema = new Schema(
 
 const HomeworkSchema = new Schema(
   {
-    classroom: { type: Schema.Types.ObjectId, ref: "Classroom", required: true, index: true },
+    // Offline branch homework has no classroom: it is set from the branch's
+    // attendance register to named students. Online lists add `branch: null`.
+    classroom: {
+      type: Schema.Types.ObjectId,
+      ref: "Classroom",
+      required: function (this: any) { return !this.branch; },
+      index: true,
+    },
+    branch: { type: String, enum: [...BRANCHES], index: true },
+    branchAttendance: { type: Schema.Types.ObjectId, ref: "BranchAttendance", index: true },
     instructor: { type: Schema.Types.ObjectId, ref: "User", required: true },
     type: { type: String, enum: ["quiz", "pgn_study", "puzzle_set", "position_study"], default: "puzzle_set", index: true },
     title: { type: String, required: true },
@@ -147,6 +157,12 @@ const HomeworkSchema = new Schema(
 HomeworkSchema.index(
   { classroom: 1, sourceSessionId: 1, sourceTemplate: 1 },
   { unique: true, partialFilterExpression: { autoAssigned: true, sourceSessionId: { $exists: true }, sourceTemplate: { $exists: true } } }
+);
+
+// One copy of a template per branch register: assigning it again only adds students.
+HomeworkSchema.index(
+  { branchAttendance: 1, sourceTemplate: 1 },
+  { unique: true, partialFilterExpression: { branchAttendance: { $exists: true }, sourceTemplate: { $exists: true } } }
 );
 
 const SubmissionSchema = new Schema(

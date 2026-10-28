@@ -49,6 +49,9 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
   await dbConnect();
   const existing: any = await Homework.findById(params.id);
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (existing.branch) {
+    return NextResponse.json({ error: "Change branch homework from its attendance register." }, { status: 400 });
+  }
   if (role === "instructor" && existing.instructor.toString() !== (session.user as any).id) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }

@@ -323,7 +323,7 @@ async function getAdminEvents(canJoin: boolean) {
 
   const classroomIds = classrooms.map((item: any) => item._id);
   const [homework, tournaments, attendance] = await Promise.all([
-    Homework.find({}).select(HOMEWORK_FIELDS).populate("instructor", "name").sort({ dueAt: 1, createdAt: -1 }).lean(),
+    Homework.find({ branch: null }).select(HOMEWORK_FIELDS).populate("instructor", "name").sort({ dueAt: 1, createdAt: -1 }).lean(),
     Tournament.find({}).select(TOURNAMENT_FIELDS).sort({ startAt: 1 }).lean(),
     Attendance.find({ classroom: { $in: classroomIds } }).select(REGISTER_FIELDS).lean(),
   ]);

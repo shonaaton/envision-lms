@@ -76,6 +76,8 @@ export type AccessUser = {
   accessRole?: string;
   isActive?: boolean;
   isPaused?: boolean;
+  branch?: string;
+  branchRole?: string;
 };
 
 /**
@@ -87,7 +89,7 @@ export type AccessUser = {
 export async function getAccessUser(userId: string): Promise<AccessUser | null> {
   const user = await cachedPermissionValue("users", userId, async (): Promise<AccessUser | null> => {
     await dbConnect();
-    const doc: any = await User.findById(userId).select("name email role accountStatus isSuperAdmin accessRole isActive isPaused").lean();
+    const doc: any = await User.findById(userId).select("name email role accountStatus isSuperAdmin accessRole isActive isPaused branch branchRole").lean();
     if (!doc) return null;
     return {
       name: doc.name,
@@ -98,6 +100,8 @@ export async function getAccessUser(userId: string): Promise<AccessUser | null> 
       accessRole: doc.accessRole ? String(doc.accessRole) : undefined,
       isActive: doc.isActive,
       isPaused: doc.isPaused,
+      branch: doc.branch || undefined,
+      branchRole: doc.branchRole || undefined,
     };
   });
   return user ? { ...user } : null;

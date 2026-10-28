@@ -2374,6 +2374,18 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
       { "position": 3, "key": "task", "sample": "the next Learn Chess lesson" },
       { "position": 4, "key": "task_link", "sample": "https://envisionchessacademy.com/learn" }
     ]
+  },
+  {
+    "name": "bowbazar_admission_form",
+    "language": "en",
+    "sourceAutomation": "Bowbazar Admission Form Link",
+    "body": "Hello {{1}}, thank you for choosing the Envision Chess Academy Bowbazar centre for {{2}}.\n\nPlease fill in the admission form here: {{3}}\n\nKeep a photo of the student and an identity document ready. The link works for {{4}} days.\n\nTeam Envision Chess Academy",
+    "variables": [
+      { "position": 1, "key": "parent_name", "sample": "Mrs Sen" },
+      { "position": 2, "key": "student_name", "sample": "Aarav" },
+      { "position": 3, "key": "form_link", "sample": "https://envisionchessacademy.com/admission/abc123" },
+      { "position": 4, "key": "valid_days", "sample": "14" }
+    ]
   }
 ] as const satisfies readonly WhatsAppTemplateDefinition[];
 

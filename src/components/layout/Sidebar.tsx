@@ -19,6 +19,7 @@ import {
   CalendarX,
   Sparkles,
   ChevronDown,
+  ClipboardCheck,
   ClipboardList,
   Cpu,
   Crosshair,
@@ -202,6 +203,7 @@ const sections: NavSection[] = [
       { href: "/admin/paused-students", label: "Paused Students", icon: PauseCircle, featureKey: "studentPause" },
       { href: "/admin/retention", label: "Retention", icon: HeartHandshake, featureKey: "retention" },
       { href: "/admin/coach-applications", label: "Coach Applications", icon: UserPlus, featureKey: "onboarding" },
+      { href: "/bowbazar", label: "Bowbazar Branch", icon: Landmark, roles: ["admin"] },
     ],
   },
   {
@@ -257,6 +259,12 @@ const sections: NavSection[] = [
     ],
   },
   {
+    id: "assigned-whatsapp",
+    title: "Communications",
+    roles: ["instructor"],
+    items: [{ href: "/admin/whatsapp", label: "Assigned WhatsApp Chats", icon: MessageCircle, featureKey: "whatsapp" }],
+  },
+  {
     id: "analytics",
     title: "Analytics",
     roles: ["admin", "sub-admin"],
@@ -284,6 +292,43 @@ const sections: NavSection[] = [
     ],
   },
 ];
+
+/**
+ * An offline-branch account sees its own short menu and nothing from the
+ * online academy (lib/branch/paths.ts closes the rest anyway).
+ */
+function branchSections(role: Role, branchRole?: string): NavSection[] {
+  if (role === "student") {
+    return [{
+      id: "bowbazar",
+      title: "Bowbazar",
+      items: [
+        { href: "/bowbazar/me", label: "My Class", icon: LayoutDashboard },
+        { href: "/homework", label: "Homework", icon: BookOpenCheck },
+        { href: "/tournaments", label: "Tournaments", icon: Trophy },
+        { href: "/profile", label: "Account Settings", icon: UserRound },
+      ],
+    }];
+  }
+  return [{
+    id: "bowbazar",
+    title: "Bowbazar",
+    items: [
+      { href: "/bowbazar", label: "Overview", icon: LayoutDashboard },
+      { href: "/bowbazar/attendance", label: "Attendance", icon: ClipboardCheck },
+      { href: "/bowbazar/slots", label: "Slots", icon: CalendarDays },
+      { href: "/bowbazar/students", label: "Students", icon: Users },
+      ...(branchRole === "manager"
+        ? [
+            { href: "/bowbazar/admissions", label: "Admissions", icon: UserPlus },
+            { href: "/bowbazar/fees", label: "Fees", icon: BadgeIndianRupee },
+          ]
+        : []),
+      { href: "/tournaments", label: "Tournaments", icon: Trophy },
+      { href: "/profile", label: "Account Settings", icon: UserRound },
+    ],
+  }];
+}
 
 function canSee(role: Role, accountStatus: AccountStatus | undefined, isActive: boolean | undefined, isPaused: boolean | undefined, isSuperAdmin: boolean | undefined, featureState: FeatureState | undefined, item: { href?: string; roles?: Role[]; demoOnly?: boolean; hideForDemo?: boolean; featureKey?: string; permission?: string; superAdminOnly?: boolean }, hasScheduledClassroom = false) {
   const isDemo = accountStatus === "demo";
@@ -337,6 +382,8 @@ export default function Sidebar({
   hasCreditPlan = true,
   hasScheduledClassroom = false,
   canLearnChess = true,
+  branch,
+  branchRole,
   user,
   mobileOpen = false,
   desktopCollapsed = false,
@@ -350,6 +397,8 @@ export default function Sidebar({
   hasCreditPlan?: boolean;
   hasScheduledClassroom?: boolean;
   canLearnChess?: boolean;
+  branch?: string;
+  branchRole?: string;
   user: { name?: string | null; role: string; isActive?: boolean; isPaused?: boolean };
   mobileOpen?: boolean;
   desktopCollapsed?: boolean;
@@ -361,15 +410,15 @@ export default function Sidebar({
   const [pendingTaskCount, setPendingTaskCount] = useState(0);
   const [pendingPtmCount, setPendingPtmCount] = useState(0);
   const [pendingLeaveCount, setPendingLeaveCount] = useState(0);
-  const ptmVisible = visiblePtm(role, featureState);
-  const leaveVisible = role !== "student" && featureState?.leaveManagement?.visible !== false;
-  const tasksVisible = role !== "student" && featureState?.taskManager?.visible !== false;
+  const ptmVisible = !branch && visiblePtm(role, featureState);
+  const leaveVisible = !branch && role !== "student" && featureState?.leaveManagement?.visible !== false;
+  const tasksVisible = !branch && role !== "student" && featureState?.taskManager?.visible !== false;
   const [openNotifications, setOpenNotifications] = useState(false);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const visibleSections = useMemo(
     () =>
-      sections
+      (branch ? branchSections(role, branchRole) : sections)
         .filter((section) => canSee(role, accountStatus, user.isActive, user.isPaused, isSuperAdmin, featureState, section, hasScheduledClassroom))
         .map((section) => ({
           ...section,
@@ -380,7 +429,7 @@ export default function Sidebar({
           }),
         }))
         .filter((section) => section.items.length > 0),
-    [role, accountStatus, user.isActive, user.isPaused, isSuperAdmin, featureState, hasCreditPlan, hasScheduledClassroom, canLearnChess]
+    [role, accountStatus, user.isActive, user.isPaused, isSuperAdmin, featureState, hasCreditPlan, hasScheduledClassroom, canLearnChess, branch, branchRole]
   );
   const activeSection = visibleSections.find((section) => section.items.some((item) => isActive(pathname, item)))?.id || "academy";
   const [openSection, setOpenSection] = useState(activeSection);
@@ -442,6 +491,7 @@ export default function Sidebar({
   }
 
   useEffect(() => {
+    if (branch) return;
     let mounted = true;
     async function loadAskCoachUnreadCount() {
       const res = await fetch("/api/ask-coach?summary=1", { cache: "no-store" }).catch(() => null);
@@ -465,7 +515,7 @@ export default function Sidebar({
       document.removeEventListener("visibilitychange", refreshIfVisible);
       window.removeEventListener(ASK_COACH_READ_EVENT, refreshIfVisible);
     };
-  }, []);
+  }, [branch]);
 
   useEffect(() => {
     void loadNotifications();

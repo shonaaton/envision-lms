@@ -23,6 +23,7 @@ export const portalPaths = [
   "/attendance",
   "/availability",
   "/booking",
+  "/bowbazar",
   "/calendar",
   "/chess-profile",
   "/classrooms",

@@ -25,6 +25,9 @@ const WhatsAppMessageSchema = new Schema(
     reactionTargetMessageId: { type: String, default: "", index: true },
     reactionEmoji: { type: String, default: "" },
     error: { type: String, default: "" },
+    uncertain: { type: Boolean, default: false },
+    campaignRecipient: { type: Schema.Types.ObjectId, ref: "WhatsAppCampaignRecipient", index: true },
+    sentBy: { type: Schema.Types.ObjectId, ref: "User" },
     rawPayload: { type: Schema.Types.Mixed },
     sentAt: { type: Date },
     receivedAt: { type: Date },
@@ -35,6 +38,8 @@ const WhatsAppMessageSchema = new Schema(
 // The inbox sorts the whole collection by createdAt, which was a full scan without this index.
 WhatsAppMessageSchema.index({ createdAt: -1 });
 WhatsAppMessageSchema.index({ phoneNumber: 1, createdAt: -1 });
+WhatsAppMessageSchema.index({ updatedAt: 1, phoneNumber: 1 });
+WhatsAppMessageSchema.index({ phoneNumber: 1, createdAt: -1, _id: -1 });
 WhatsAppMessageSchema.index({ direction: 1, templateName: 1, createdAt: -1 });
 
 export type WhatsAppMessageDoc = InferSchemaType<typeof WhatsAppMessageSchema> & { _id: any };

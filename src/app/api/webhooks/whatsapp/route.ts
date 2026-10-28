@@ -4,6 +4,9 @@ import { dbConnect } from "@/lib/db";
 import { findWhatsAppUserByPhone, normalizeWhatsAppNumber } from "@/lib/whatsappAutomation";
 import { handleOptOutReply } from "@/lib/engagement/optOut";
 import { WhatsAppMessage } from "@/models/WhatsApp";
+import { whatsAppDeliveryUpdate } from "@/lib/whatsappDeliveryStatus";
+import { recordTemplateStatusWebhook } from "@/lib/whatsappTemplateLibrary";
+import { syncCampaignDelivery } from "@/lib/whatsappCampaignDelivery";
 
 export const dynamic = "force-dynamic";
 
@@ -169,21 +172,13 @@ export async function POST(req: Request) {
 
   for (const entry of payload.entry || []) {
     for (const change of entry.changes || []) {
+      await recordTemplateStatusWebhook(entry, change);
       const value = change.value || {};
       const contacts = new Map((value.contacts || []).map((contact: any) => [String(contact.wa_id || ""), contact]));
 
       for (const status of value.statuses || []) {
-        const metaMessageId = String(status.id || "");
-        if (!metaMessageId) continue;
-        await WhatsAppMessage.updateOne(
-          { metaMessageId },
-          {
-            $set: {
-              status: String(status.status || "sent"),
-              rawPayload: status,
-            },
-          }
-        );
+        const change = whatsAppDeliveryUpdate(status);
+        if (change) { await WhatsAppMessage.updateOne(change.filter, change.update); await syncCampaignDelivery(String(status.id)); }
       }
 
       for (const message of value.messages || []) {

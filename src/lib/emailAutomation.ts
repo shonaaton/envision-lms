@@ -127,6 +127,9 @@ function buildHtmlBody(message: string, actionUrl: string, actionLabel: string) 
 
 async function sendEmailToWebhook(input: AutomationEmailInput, webhook?: string, dedupe = false) {
   if (!webhook || !input.to) return { ok: false, delivered: false, skipped: true };
+  // Branch students without an email of their own get a reserved `.invalid`
+  // login address (lib/branch/service.ts). It can never be delivered.
+  if (/\.invalid$/i.test(String(input.to).trim())) return { ok: false, delivered: false, skipped: true };
   const action = normalizeAction(input);
   const message = stripActionUrlLines(input.message, action.actionUrl);
   if (dedupe) {

@@ -170,7 +170,8 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   });
 
   // Written answers have no auto-grading, so a coach has to read them.
-  if (graded.some((answer: any) => answer.needsReview)) {
+  // Branch staff have no task list; their homework tab shows what needs reading.
+  if (!hw.branch && graded.some((answer: any) => answer.needsReview)) {
     const classroom: any = hw.classroom ? await Classroom.findById(hw.classroom).select("coach instructor").lean() : null;
     const coachId = classroom?.coach || classroom?.instructor || hw.instructor;
     if (coachId) {

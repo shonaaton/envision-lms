@@ -44,6 +44,7 @@ export async function findDuplicateCandidates(input: {
   email?: string;
   phone?: string;
   countryCode?: string;
+  branch?: string | null;
 }): Promise<DuplicateMatch[]> {
   const emailKey = canonicalEmail(input.email);
   const phoneKey = canonicalPhone(input.phone, input.countryCode);
@@ -60,7 +61,9 @@ export async function findDuplicateCandidates(input: {
   if (rawPhone) clauses.push({ phone: rawPhone, phoneCanonical: { $in: [null, ""] } });
   if (!clauses.length) return [];
 
-  const filter: any = { $or: clauses };
+  // The offline branch is a separate academy with its own families: a parent
+  // with one child online and one at the centre is not a duplicate.
+  const filter: any = { $or: clauses, branch: input.branch || null };
   if (input.userId && Types.ObjectId.isValid(input.userId)) filter._id = { $ne: new Types.ObjectId(input.userId) };
   const candidates = await User.find(filter).select(MATCH_FIELDS).sort({ createdAt: 1 }).limit(20).lean();
 
@@ -95,6 +98,7 @@ export async function flagDuplicateAccount(user: any): Promise<DuplicateMatch[]>
     email: user.email,
     phone: user.phone,
     countryCode: user.countryCode,
+    branch: user.branch,
   });
   if (!matches.length) return [];
 

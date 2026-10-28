@@ -2411,7 +2411,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
       .populate("students", "name username email")
       .populate("batches", "name level course")
       .lean() : [],
-    needsClassroomActivity ? Homework.find(dateFilter("createdAt", from, to)).select("title classroom instructor isPublished puzzles createdAt").lean() : [],
+    needsClassroomActivity ? Homework.find({ ...dateFilter("createdAt", from, to), branch: null }).select("title classroom instructor isPublished puzzles createdAt").lean() : [],
     needsClassroomActivity ? Submission.find(dateFilter("submittedAt", from, to)).select("student homework totalScore submittedAt reviewedAt feedback").populate("student", "name username").lean() : [],
     needsClassroomActivity ? Attendance.find(dateFilter("sessionDate", from, to)).select("classroom scheduledSessionId sessionDate records").populate("classroom", "title").lean() : [],
     needsActivityFeed ? Booking.find(dateFilter("startAt", from, to)).select("student instructor startAt status approvalStatus").populate("student instructor", "name").lean() : [],

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { WhatsAppMessage } from "@/models/WhatsApp";
+import { whatsappSession, canAccessWhatsAppPhone } from "@/lib/whatsappAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -28,13 +28,13 @@ async function findMediaMessage(mediaId: string) {
       { "rawPayload.sticker.id": mediaId },
     ],
   })
-    .select("mediaId mediaMimeType mediaFilename messageType")
+    .select("phoneNumber mediaId mediaMimeType mediaFilename messageType")
     .lean();
 }
 
 export async function GET(_req: Request, { params }: { params: { mediaId: string } }) {
-  const session = await auth();
-  if (!["admin", "sub-admin"].includes(String((session?.user as any)?.role || ""))) {
+  const user = await whatsappSession();
+  if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -44,6 +44,7 @@ export async function GET(_req: Request, { params }: { params: { mediaId: string
   await dbConnect();
   const message: any = await findMediaMessage(mediaId);
   if (!message) return NextResponse.json({ error: "Media not found" }, { status: 404 });
+  if (!(await canAccessWhatsAppPhone(user, message.phoneNumber))) return NextResponse.json({ error: "This conversation is not assigned to you." }, { status: 403 });
 
   const accessToken = cleanEnv(process.env.WHATSAPP_ACCESS_TOKEN || process.env.META_ACCESS_TOKEN);
   if (!accessToken) return NextResponse.json({ error: "WHATSAPP_ACCESS_TOKEN is not configured" }, { status: 503 });

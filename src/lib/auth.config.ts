@@ -1,5 +1,6 @@
 import type { NextAuthConfig } from "next-auth";
 import { isInactiveRestrictedPath } from "./inactiveAccess";
+import { branchHomePath, isBranchAllowedPath } from "./branch/paths";
 
 /**
  * Edge-safe NextAuth config (no DB imports).
@@ -21,6 +22,7 @@ export const authConfig = {
         token.isSuperAdmin = (user as any).isSuperAdmin;
         token.isActive = (user as any).isActive;
         token.accountStatus = (user as any).accountStatus;
+        token.branch = (user as any).branch;
       }
       return token;
     },
@@ -31,6 +33,7 @@ export const authConfig = {
         (session.user as any).isSuperAdmin = token.isSuperAdmin as boolean | undefined;
         (session.user as any).isActive = token.isActive as boolean | undefined;
         (session.user as any).accountStatus = token.accountStatus as any;
+        (session.user as any).branch = token.branch as string | undefined;
       }
       return session;
     },
@@ -39,6 +42,7 @@ export const authConfig = {
       const role = (auth?.user as any)?.role as "student" | "instructor" | "admin" | "sub-admin" | undefined;
       const accountStatus = (auth?.user as any)?.accountStatus as string | undefined;
       const isInactiveAccount = (auth?.user as any)?.isActive === false;
+      const branch = (auth?.user as any)?.branch as string | undefined;
 
       const isLoginRoute = nextUrl.pathname.startsWith("/login");
       const isAuthRoute = ["/login", "/register", "/forgot-password", "/reset-password"].some((p) => nextUrl.pathname.startsWith(p));
@@ -66,6 +70,10 @@ export const authConfig = {
         nextUrl.pathname.startsWith("/api/password") ||
         nextUrl.pathname.startsWith("/api/fees/invoices") ||
         nextUrl.pathname.startsWith("/tournament-join") ||
+        // The branch admission form, opened by a family from the link the centre
+        // sent. The link's token is checked by the page and the API.
+        nextUrl.pathname.startsWith("/admission/") ||
+        nextUrl.pathname.startsWith("/api/admission/") ||
         // The openings sales pages and their free preview chapter. Listed so a
         // signed-in demo account is not bounced to /dashboard from them.
         nextUrl.pathname === "/chess-openings" ||
@@ -149,7 +157,14 @@ export const authConfig = {
       if (!isLoggedIn) return false; // triggers redirect to signIn
       if (isInactiveAccount && isInactiveRestrictedPath(nextUrl.pathname)) return Response.redirect(new URL("/dashboard", nextUrl));
       if (accountStatus === "demo" && !demoAllowed) return Response.redirect(new URL("/dashboard", nextUrl));
-      if (isAdminRoute && role !== "admin" && role !== "sub-admin" && !(isLearnAuthoringRoute && role === "instructor"))
+      // An offline-branch account is confined to its own portal and the shared
+      // features. The token carries the branch from sign-in; auth() re-reads it
+      // from the account on every server request, so this is the outer shell.
+      if (branch && !isBranchAllowedPath(nextUrl.pathname, role)) {
+        if (nextUrl.pathname.startsWith("/api/")) return Response.json({ error: "Not available for this branch." }, { status: 403 });
+        return Response.redirect(new URL(branchHomePath(role), nextUrl));
+      }
+      if (isAdminRoute && role !== "admin" && role !== "sub-admin" && !((isLearnAuthoringRoute || nextUrl.pathname.startsWith("/admin/whatsapp")) && role === "instructor"))
         return Response.redirect(new URL("/dashboard", nextUrl));
       if (isInstructorRoute && role !== "instructor" && role !== "admin" && role !== "sub-admin")
         return Response.redirect(new URL("/dashboard", nextUrl));

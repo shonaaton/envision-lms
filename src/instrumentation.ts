@@ -28,11 +28,15 @@ export async function register() {
   const { processRetentionSweep } = await import("@/lib/retention/retentionSweep");
   const { processCrmDemoStageReconcile } = await import("@/lib/crm/reconcile");
   const { processWeeklyEngagement } = await import("@/lib/engagement/weeklyEngagementJob");
+  const { processWhatsAppCampaigns, processWhatsAppFollowUps } = await import("@/lib/whatsappCampaigns");
+  const { canAccessFeature } = await import("@/lib/featureAccess");
 
   installRuntimeProcessLogging();
   installRuntimeStderrCapture();
 
   startScheduler([
+    { name: "whatsapp_broadcasts", intervalMs: 30_000, run: () => processWhatsAppCampaigns((actor) => canAccessFeature("whatsapp", actor, "manage")) },
+    { name: "whatsapp_follow_ups", intervalMs: 60_000, run: processWhatsAppFollowUps },
     { name: "ptm_sweep", intervalMs: 60 * 60_000, run: () => processPtmSweep() },
     {
       /**

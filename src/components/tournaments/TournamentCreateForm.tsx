@@ -49,6 +49,7 @@ type Draft = {
   allActiveStudents: boolean;
   includeCoaches: boolean;
   includeInactiveStudents: boolean;
+  includeBranchStudents: boolean;
   batches: string[];
   students: string[];
   courses: string[];
@@ -133,6 +134,7 @@ function buildClientErrors(draft: Draft, step: number) {
       draft.allActiveStudents ||
       draft.includeCoaches ||
       draft.includeInactiveStudents ||
+      draft.includeBranchStudents ||
       draft.batches.length > 0 ||
       draft.students.length > 0 ||
       draft.courses.length > 0 ||
@@ -196,6 +198,7 @@ export default function TournamentCreateForm({
     allActiveStudents: false,
     includeCoaches: false,
     includeInactiveStudents: false,
+    includeBranchStudents: false,
     batches: [],
     students: [],
     courses: [],
@@ -521,11 +524,15 @@ export default function TournamentCreateForm({
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <label className="flex items-start gap-3 rounded-md border border-slate-200 p-3">
               <input checked={draft.allActiveStudents} onChange={(event) => update("allActiveStudents", event.target.checked)} type="checkbox" className="mt-1" />
-              <span><b>All Active Students</b><br /><small className="text-slate-500">Every active student can view and join.</small></span>
+              <span><b>All Active Students</b><br /><small className="text-slate-500">Every active student can view and join, Bowbazar centre included.</small></span>
             </label>
             <label className="flex items-start gap-3 rounded-md border border-slate-200 p-3">
               <input checked={draft.includeInactiveStudents} onChange={(event) => update("includeInactiveStudents", event.target.checked)} type="checkbox" className="mt-1" />
               <span><b>Inactive Students</b><br /><small className="text-slate-500">Manually include inactive student profiles.</small></span>
+            </label>
+            <label className="flex items-start gap-3 rounded-md border border-slate-200 p-3">
+              <input checked={draft.includeBranchStudents} onChange={(event) => update("includeBranchStudents", event.target.checked)} type="checkbox" className="mt-1" />
+              <span><b>Bowbazar Centre Students</b><br /><small className="text-slate-500">Active students of the offline Bowbazar branch.</small></span>
             </label>
             <label className="flex items-start gap-3 rounded-md border border-slate-200 p-3">
               <input checked={draft.includeCoaches} onChange={(event) => update("includeCoaches", event.target.checked)} type="checkbox" className="mt-1" />

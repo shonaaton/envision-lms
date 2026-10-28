@@ -64,12 +64,18 @@ export default async function HomeworkReviewPage({ params }: { params: { id: str
   await dbConnect();
   const homework: any = await Homework.findById(params.id).lean();
   if (!homework) return <div className="rounded-2xl border bg-white p-6 text-sm text-slate-600">Homework not found.</div>;
-  if (role === "instructor" && objectId(homework.instructor) !== userId) {
+  const staffBranch = (session.user as any).branch as string | undefined;
+  // Any of a branch's staff may read its homework; online coaches only their own.
+  const branchReader = Boolean(staffBranch && homework.branch === staffBranch);
+  if (staffBranch && !branchReader) {
+    return <div className="rounded-2xl border bg-white p-6 text-sm text-slate-600">Forbidden</div>;
+  }
+  if (role === "instructor" && !branchReader && objectId(homework.instructor) !== userId) {
     return <div className="rounded-2xl border bg-white p-6 text-sm text-slate-600">Forbidden</div>;
   }
 
-  const coachStudentIds = role === "instructor" ? await getCoachAssignedStudentIds(userId) : [];
-  const submissionFilter = role === "instructor"
+  const coachStudentIds = role === "instructor" && !branchReader ? await getCoachAssignedStudentIds(userId) : [];
+  const submissionFilter = role === "instructor" && !branchReader
     ? { homework: homework._id, student: { $in: coachStudentIds } }
     : { homework: homework._id };
   const submissions: any[] = await Submission.find(submissionFilter).populate("student", "name email username").sort({ submittedAt: -1 }).lean();

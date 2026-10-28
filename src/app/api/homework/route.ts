@@ -21,13 +21,19 @@ export async function GET(req: Request) {
   const classroomId = url.searchParams.get("classroom");
   const userId = (session.user as any).id;
   const role = (session.user as any).role;
+  const branch = (session.user as any).branch;
 
   let filter: any = {};
   if (classroomId) filter.classroom = classroomId;
   else if (role === "student") {
     filter = { ...filter, ...(await studentHomeworkFilter(userId)) };
+  } else if (branch) {
+    // Branch staff see their branch's homework, set from its attendance register.
+    filter.branch = branch;
   } else if (role === "instructor") {
     filter.instructor = userId;
+  } else {
+    filter.branch = null;
   }
   const list = await Homework.find(filter).sort({ createdAt: -1 }).lean();
   return NextResponse.json(list);

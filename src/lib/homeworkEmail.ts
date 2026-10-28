@@ -6,6 +6,7 @@ import { sendWhatsAppAutomationTemplates, whatsappRecipientName } from "@/lib/wh
 import { Batch } from "@/models/Batch";
 import { Classroom } from "@/models/Classroom";
 import { User } from "@/models/User";
+import { BRANCH_LABELS, type BranchKey } from "@/lib/branch/scope";
 
 function objectId(value: any) {
   return value?._id?.toString?.() ?? value?.toString?.() ?? "";
@@ -19,6 +20,11 @@ function deadlineText(dueAt?: string | Date | null) {
   if (!dueAt) return "No submission deadline has been set.";
   const timeZoneLabel = ACADEMY_TIME_ZONE === "Asia/Kolkata" ? "IST" : ACADEMY_TIME_ZONE;
   return `${formatAcademyDateTime(dueAt)} (${timeZoneLabel})`;
+}
+
+function placeTitle(homework: any) {
+  const branch = homework?.branch as BranchKey | undefined;
+  return branch && BRANCH_LABELS[branch] ? `${BRANCH_LABELS[branch]} centre class` : "";
 }
 
 export function buildHomeworkAssignmentEmail(input: {
@@ -53,7 +59,8 @@ export async function notifyHomeworkAssigned(homework: any, request?: Request) {
   const batchIds = uniqueIds(homework.assignedBatches || []);
 
   const [classroom, batches] = await Promise.all([
-    Classroom.findById(classroomId).select("title students").lean(),
+    // Branch homework has no classroom; it always names its students.
+    classroomId ? Classroom.findById(classroomId).select("title students").lean() : null,
     batchIds.length ? Batch.find({ _id: { $in: batchIds } }).select("students").lean() : [],
   ]);
 
@@ -82,7 +89,7 @@ export async function notifyHomeworkAssigned(homework: any, request?: Request) {
         const email = buildHomeworkAssignmentEmail({
           studentName: student.name,
           title: String(homework.title || "Assignment"),
-          classroomTitle: String((classroom as any)?.title || ""),
+          classroomTitle: String((classroom as any)?.title || placeTitle(homework)),
           dueAt: homework.dueAt,
           assignmentUrl,
         });
@@ -106,7 +113,7 @@ export async function notifyHomeworkAssigned(homework: any, request?: Request) {
       bodyParameters: [
         whatsappRecipientName(student),
         String(homework.title || "Assignment"),
-        String((classroom as any)?.title || "Classroom"),
+        String((classroom as any)?.title || placeTitle(homework) || "Classroom"),
         deadlineText(homework.dueAt),
       ],
       metadata: {

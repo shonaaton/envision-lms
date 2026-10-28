@@ -36,15 +36,16 @@ export type BranchCapability = "view" | "attendance" | "students" | "slots" | "f
 type BranchUser = { role?: string; branch?: string; branchRole?: string; isSuperAdmin?: boolean };
 
 /**
- * Online admins run every branch. A branch manager runs their own branch but
- * cannot create staff; a branch coach can look and take the register. Online sub-admins,
- * coaches and every branch student get nothing here.
+ * A branch is run from inside it: its admin does everything, including adding
+ * staff; a manager runs it but cannot add staff; a coach can look and take the
+ * register. The online academy's admins, sub-admins and coaches get nothing
+ * here (the centre asked for that, 2026-10-28), and neither does any student.
  */
 export function branchAccess(user: BranchUser | null | undefined): { branch: BranchKey; can: Set<BranchCapability> } | null {
   if (!user) return null;
-  if (user.role === "admin" && !user.branch) return { branch: BRANCHES[0], can: new Set(["view", "attendance", "students", "slots", "fees", "staff"]) };
-  if (!user.branch || user.role !== "instructor") return null;
+  if (!user.branch || user.role !== "instructor" || !(BRANCHES as readonly string[]).includes(user.branch)) return null;
   const branch = user.branch as BranchKey;
+  if (user.branchRole === "admin") return { branch, can: new Set(["view", "attendance", "students", "slots", "fees", "staff"]) };
   if (user.branchRole === "manager") return { branch, can: new Set(["view", "attendance", "students", "slots", "fees"]) };
   if (user.branchRole === "coach") return { branch, can: new Set(["view", "attendance"]) };
   return null;

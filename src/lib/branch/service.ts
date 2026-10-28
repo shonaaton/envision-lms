@@ -677,8 +677,9 @@ export async function createStaff(branch: BranchKey, input: any, actorId: string
 export async function setStaffActive(branch: BranchKey, staffId: string, active: boolean) {
   await dbConnect();
   if (!isObjectId(staffId)) throw new BranchError("Staff member not found.", 404);
+  // The branch admin's own account is looked after by the academy, not from the staff list.
   const result = await User.updateOne(
-    { _id: staffId, branch, role: "instructor" },
+    { _id: staffId, branch, role: "instructor", branchRole: { $ne: "admin" } },
     active ? { $set: { isActive: true }, $unset: { deactivatedAt: 1 } } : { $set: { isActive: false, deactivatedAt: new Date() } }
   );
   if (!result.matchedCount) throw new BranchError("Staff member not found.", 404);

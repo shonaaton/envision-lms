@@ -53,7 +53,7 @@ const UserSchema = new Schema(
     branch: { type: String, enum: [...BRANCHES], default: undefined, index: true },
     // What a branch staff account does there (lib/branch/access.ts). Unset for
     // branch students and for every online account.
-    branchRole: { type: String, enum: ["manager", "coach"], default: undefined },
+    branchRole: { type: String, enum: ["admin", "manager", "coach"], default: undefined },
     // Salesperson an admin assigned to this demo lead by hand, from the Demo
     // Center. Outranks the CRM's own "<Name> Lead" attribute - it exists for leads
     // the CRM never tagged or tagged wrongly. See src/lib/demoLeadOwner.ts.

@@ -19,8 +19,8 @@ import {
 } from "@/lib/branch/rules";
 
 describe("branchAccess", () => {
-  it("gives online admins everything, branch managers all but staff, coaches a view", () => {
-    expect([...branchAccess({ role: "admin" })!.can]).toContain("staff");
+  it("gives the branch admin everything, managers all but staff, coaches a view", () => {
+    expect([...branchAccess({ role: "instructor", branch: "bowbazar", branchRole: "admin" })!.can]).toContain("staff");
     const manager = branchAccess({ role: "instructor", branch: "bowbazar", branchRole: "manager" })!;
     expect(manager.branch).toBe("bowbazar");
     expect(manager.can.has("fees")).toBe(true);
@@ -29,7 +29,11 @@ describe("branchAccess", () => {
     expect(manager.can.has("attendance")).toBe(true);
   });
 
-  it("refuses online staff and every student", () => {
+  it("refuses online staff, online admins included, and every student", () => {
+    expect(branchAccess({ role: "admin" })).toBeNull();
+    expect(branchAccess({ role: "admin", isSuperAdmin: true })).toBeNull();
+    expect(branchAccess({ role: "admin", branch: "bowbazar", branchRole: "admin" })).toBeNull();
+    expect(branchAccess({ role: "instructor", branch: "elsewhere", branchRole: "admin" })).toBeNull();
     expect(branchAccess({ role: "sub-admin" })).toBeNull();
     expect(branchAccess({ role: "instructor" })).toBeNull();
     expect(branchAccess({ role: "student", branch: "bowbazar" })).toBeNull();

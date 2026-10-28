@@ -382,11 +382,12 @@ export async function submitAdmission(token: string, fields: Record<string, unkn
   return { studentName: read.form.name };
 }
 
-/** Tells the branch managers (or, with none, the admins) that a form is waiting. */
+/** Tells the people who run the branch - its admin and managers - that a form is waiting. */
 async function notifyStaff(branch: BranchKey, studentName: string, admissionId: string) {
   try {
-    let staff: any[] = await User.find({ branch, role: "instructor", branchRole: "manager", isActive: { $ne: false } }).select("_id").lean();
-    if (!staff.length) staff = await User.find({ role: "admin", isActive: { $ne: false } }).select("_id").lean();
+    const staff: any[] = await User.find({ branch, role: "instructor", branchRole: { $in: ["admin", "manager"] }, isActive: { $ne: false } })
+      .select("_id")
+      .lean();
     if (!staff.length) return;
     await Notification.insertMany(
       staff.map((user) => ({

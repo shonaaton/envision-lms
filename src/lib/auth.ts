@@ -47,7 +47,7 @@ declare module "next-auth" {
       accountStatus?: "demo" | "enrolled" | "coach_applicant" | "approved" | "rejected";
       // Offline branch (lib/branch); unset for the online academy.
       branch?: string;
-      branchRole?: "manager" | "coach";
+      branchRole?: "admin" | "manager" | "coach";
     } & DefaultSession["user"];
   }
   // Augment — only add `role`. NextAuth's base User already declares `id`.

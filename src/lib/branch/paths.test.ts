@@ -24,6 +24,14 @@ describe("isBranchAllowedPath", () => {
     expect(isBranchAllowedPath("/api/bowbazar/students", "instructor")).toBe(true);
   });
 
+  it("opens the teaching tools to branch staff only", () => {
+    for (const path of ["/pgn", "/pgn/abc", "/api/pgn/folders", "/analysis"]) {
+      expect(isBranchAllowedPath(path, "instructor")).toBe(true);
+      expect(isBranchAllowedPath(path, "student")).toBe(false);
+    }
+    expect(isBranchAllowedPath("/pgnx", "instructor")).toBe(false);
+  });
+
   it("sends each kind of account home", () => {
     expect(branchHomePath("student")).toBe("/bowbazar/me");
     expect(branchHomePath("instructor")).toBe("/bowbazar");

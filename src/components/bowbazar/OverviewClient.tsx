@@ -93,7 +93,7 @@ function StaffSection() {
       <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
         <div>
           <h2 className="text-base font-black text-slate-950">Branch staff</h2>
-          <p className="text-xs text-slate-500">Logins that only open the Bowbazar portal and tournaments. Managers handle students and fees; coaches can view.</p>
+          <p className="text-xs text-slate-500">Logins that only open the Bowbazar portal, tournaments and the teaching tools (PGN Library, Analysis Board). Managers handle students and fees; coaches take attendance.</p>
         </div>
         <button type="button" className="btn-primary h-9" onClick={() => setAdding(true)}>
           <Plus size={16} /> Add
@@ -116,9 +116,11 @@ function StaffSection() {
               </div>
               <div className="text-xs text-slate-500">{[member.username, member.email, member.phone].filter(Boolean).join(" · ")}</div>
             </div>
-            <button type="button" className="btn-outline h-8 px-3 text-xs" onClick={() => toggle(member)}>
-              {member.isActive ? "Deactivate" : "Reactivate"}
-            </button>
+            {member.branchRole !== "admin" && (
+              <button type="button" className="btn-outline h-8 px-3 text-xs" onClick={() => toggle(member)}>
+                {member.isActive ? "Deactivate" : "Reactivate"}
+              </button>
+            )}
           </div>
         ))}
       </div>

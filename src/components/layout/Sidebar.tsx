@@ -203,7 +203,6 @@ const sections: NavSection[] = [
       { href: "/admin/paused-students", label: "Paused Students", icon: PauseCircle, featureKey: "studentPause" },
       { href: "/admin/retention", label: "Retention", icon: HeartHandshake, featureKey: "retention" },
       { href: "/admin/coach-applications", label: "Coach Applications", icon: UserPlus, featureKey: "onboarding" },
-      { href: "/bowbazar", label: "Bowbazar Branch", icon: Landmark, roles: ["admin"] },
     ],
   },
   {
@@ -318,12 +317,15 @@ function branchSections(role: Role, branchRole?: string): NavSection[] {
       { href: "/bowbazar/attendance", label: "Attendance", icon: ClipboardCheck },
       { href: "/bowbazar/slots", label: "Slots", icon: CalendarDays },
       { href: "/bowbazar/students", label: "Students", icon: Users },
-      ...(branchRole === "manager"
+      ...(branchRole === "admin" || branchRole === "manager"
         ? [
             { href: "/bowbazar/admissions", label: "Admissions", icon: UserPlus },
             { href: "/bowbazar/fees", label: "Fees", icon: BadgeIndianRupee },
           ]
         : []),
+      // The tools for teaching the branch's online class over a screen share.
+      { href: "/pgn", label: "PGN Library", icon: Library },
+      { href: "/analysis", label: "Analysis Board", icon: ListChecks },
       { href: "/tournaments", label: "Tournaments", icon: Trophy },
       { href: "/profile", label: "Account Settings", icon: UserRound },
     ],

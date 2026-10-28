@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Chess } from "chess.js";
-import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Clock, Download, HelpCircle, Loader2, ShieldAlert, Trophy } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Clock, Download, Eye, HelpCircle, Loader2, LogOut, ShieldAlert, Trophy } from "lucide-react";
 import { toast } from "sonner";
 import AssignmentChessboard from "@/components/homework/AssignmentChessboard";
 import { buildMoveHintStyles, legalTargetsFromGame } from "@/lib/chessboardUi";
@@ -32,8 +32,9 @@ type Position = {
   available: number;
   marks: number;
   hint: { san: string; from: string; to: string } | null;
+  question?: string;
 };
-type Exam = {
+export type Exam = {
   id: string;
   levelLabel: string;
   status: string;
@@ -62,6 +63,29 @@ type Exam = {
  */
 const handledThisLoad = new Set<string>();
 
+/**
+ * Everything the exam screens ask of the outside world. The real sitting
+ * talks to /api/exams/[id]; the admin preview answers the same calls from
+ * the paper in the browser, so the screens are identical and nothing is saved.
+ */
+export type ExamActions = {
+  preview: boolean;
+  /** Where "Back" goes: the Exam Center for students, the Exams page for a preview. */
+  backHref: string;
+  load(): Promise<{ exam?: Exam; error?: string }>;
+  call(body: Record<string, unknown>, keepalive?: boolean): Promise<any>;
+  /** The last word from a closing page. */
+  beacon(): void;
+};
+
+const ActionsContext = createContext<ExamActions | null>(null);
+
+function useExamActions() {
+  const actions = useContext(ActionsContext);
+  if (!actions) throw new Error("Exam screens need ExamActions");
+  return actions;
+}
+
 async function post(id: string, body: Record<string, unknown>, keepalive = false) {
   const response = await fetch(`/api/exams/${id}`, {
     method: "POST",
@@ -78,20 +102,51 @@ async function post(id: string, body: Record<string, unknown>, keepalive = false
   return data;
 }
 
+function serverActions(id: string): ExamActions {
+  return {
+    preview: false,
+    backHref: "/exams",
+    async load() {
+      const response = await fetch(`/api/exams/${id}`, { cache: "no-store" });
+      const data = await response.json().catch(() => ({}));
+      return response.ok ? { exam: data.exam } : { error: data.error || "Could not open this exam." };
+    },
+    call: (body, keepalive) => post(id, body, keepalive),
+    beacon() {
+      const body = new Blob([JSON.stringify({ action: "violation", type: "app_closed" })], { type: "application/json" });
+      navigator.sendBeacon?.(`/api/exams/${id}`, body);
+    },
+  };
+}
+
 export default function ExamRunner({ id }: { id: string }) {
+  const actions = useMemo(() => serverActions(id), [id]);
+  return <ExamFlow actions={actions} />;
+}
+
+/** The whole student journey (rules, sitting, result) for whichever actions it is given. */
+export function ExamFlow({ actions }: { actions: ExamActions }) {
+  return (
+    <ActionsContext.Provider value={actions}>
+      <ExamFlowInner />
+    </ActionsContext.Provider>
+  );
+}
+
+function ExamFlowInner() {
+  const actions = useExamActions();
   const [exam, setExam] = useState<Exam | null>(null);
   const [loadError, setLoadError] = useState("");
 
   const load = useCallback(async () => {
-    const response = await fetch(`/api/exams/${id}`, { cache: "no-store" });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
+    const data = await actions.load();
+    if (!data.exam) {
       setLoadError(data.error || "Could not open this exam.");
       return null;
     }
     setExam(data.exam);
-    return data.exam as Exam;
-  }, [id]);
+    return data.exam;
+  }, [actions]);
 
   useEffect(() => {
     void load();
@@ -100,7 +155,7 @@ export default function ExamRunner({ id }: { id: string }) {
   if (loadError) {
     return (
       <div className="mx-auto max-w-lg rounded-xl border border-red-200 bg-red-50 p-5 text-sm font-semibold text-red-700">
-        {loadError} <Link href="/exams" className="underline">Back to the Exam Center</Link>
+        {loadError} <Link href={actions.backHref} className="underline">Go back</Link>
       </div>
     );
   }
@@ -116,7 +171,7 @@ export default function ExamRunner({ id }: { id: string }) {
       <RulesScreen
         exam={exam}
         onStarted={(started) => {
-          handledThisLoad.add(id);
+          handledThisLoad.add(started.id);
           setExam(started);
         }}
       />
@@ -130,7 +185,7 @@ export default function ExamRunner({ id }: { id: string }) {
       <p className="mt-2 text-sm text-slate-600">
         {exam.status === "expired" ? `This exam closed on ${istDateTime(exam.availableUntil)} without being started.` : "This exam was cancelled."} Ask the academy if you need it again.
       </p>
-      <Link href="/exams" className="btn btn-outline mt-4 inline-flex">Back to the Exam Center</Link>
+      <Link href={actions.backHref} className="btn btn-outline mt-4 inline-flex">Go back</Link>
     </div>
   );
 }
@@ -138,13 +193,14 @@ export default function ExamRunner({ id }: { id: string }) {
 /* ------------------------------------------------------------------ before */
 
 function RulesScreen({ exam, onStarted }: { exam: Exam; onStarted: (exam: Exam) => void }) {
+  const actions = useExamActions();
   const [agreed, setAgreed] = useState(false);
   const [starting, setStarting] = useState(false);
 
   async function start() {
     setStarting(true);
     try {
-      const data = await post(exam.id, { action: "start" });
+      const data = await actions.call({ action: "start" });
       onStarted(data.exam);
     } catch (error: any) {
       toast.error(error.message);
@@ -170,7 +226,7 @@ function RulesScreen({ exam, onStarted }: { exam: Exam; onStarted: (exam: Exam) 
           I have read the rules. I understand I cannot pause or leave once I start, and that leaving twice submits my exam.
         </label>
         <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <Link href="/exams" className="btn btn-outline justify-center">Not now</Link>
+          <Link href={actions.backHref} className="btn btn-outline justify-center">{actions.preview ? "Close preview" : "Not now"}</Link>
           <button type="button" className="btn btn-primary justify-center" disabled={!agreed || starting} onClick={start}>
             {starting ? <Loader2 size={16} className="animate-spin" /> : null} Start the exam ({EXAM_DURATION_MINUTES} min)
           </button>
@@ -202,6 +258,7 @@ function clock(ms: number) {
 }
 
 function Sitting({ exam, setExam, reload }: { exam: Exam; setExam: (exam: Exam) => void; reload: () => Promise<Exam | null> }) {
+  const actions = useExamActions();
   const mcqs = useMemo(() => exam.mcqs || [], [exam.mcqs]);
   const positions = useMemo(() => exam.positions || [], [exam.positions]);
   const items = useMemo(
@@ -232,36 +289,41 @@ function Sitting({ exam, setExam, reload }: { exam: Exam; setExam: (exam: Exam) 
     [finished]
   );
 
-  // A sitting that was already running when this page loaded was reloaded or reopened.
-  useEffect(() => {
-    if (handledThisLoad.has(exam.id)) return;
-    handledThisLoad.add(exam.id);
-    post(exam.id, { action: "violation", type: "page_reopened" })
+  // Another tab or app took over the screen. Shared by the real event and the preview's button.
+  const leftTheExam = useCallback(() => {
+    actions
+      .call({ action: "violation", type: "tab_hidden" }, true)
       .then((data) => {
         if (data.outcome === "submit") void finished();
         else if (data.outcome === "warn") setWarning(true);
       })
       .catch(handleEnded);
-  }, [exam.id, finished, handleEnded]);
+  }, [actions, finished, handleEnded]);
+
+  // A sitting that was already running when this page loaded was reloaded or reopened.
+  useEffect(() => {
+    if (handledThisLoad.has(exam.id)) return;
+    handledThisLoad.add(exam.id);
+    actions.call({ action: "violation", type: "page_reopened" })
+      .then((data) => {
+        if (data.outcome === "submit") void finished();
+        else if (data.outcome === "warn") setWarning(true);
+      })
+      .catch(handleEnded);
+  }, [exam.id, actions, finished, handleEnded]);
 
   // Leaving: another tab or app hides this one. Closing the page sends a last goodbye.
   useEffect(() => {
     function onVisibility() {
       if (document.visibilityState !== "hidden" || endedRef.current) return;
-      post(exam.id, { action: "violation", type: "tab_hidden" }, true)
-        .then((data) => {
-          if (data.outcome === "submit") void finished();
-          else if (data.outcome === "warn") setWarning(true);
-        })
-        .catch(handleEnded);
+      leftTheExam();
     }
     function onPageHide() {
       if (endedRef.current) return;
-      const body = new Blob([JSON.stringify({ action: "violation", type: "app_closed" })], { type: "application/json" });
-      navigator.sendBeacon?.(`/api/exams/${exam.id}`, body);
+      actions.beacon();
     }
     function onBeforeUnload(event: BeforeUnloadEvent) {
-      if (endedRef.current) return;
+      if (endedRef.current || actions.preview) return;
       event.preventDefault();
       event.returnValue = "Leaving now submits your exam.";
     }
@@ -282,26 +344,27 @@ function Sitting({ exam, setExam, reload }: { exam: Exam; setExam: (exam: Exam) 
       window.removeEventListener("beforeunload", onBeforeUnload);
       window.removeEventListener("popstate", onPopState);
     };
-  }, [exam.id, finished, handleEnded]);
+  }, [actions, leftTheExam]);
 
   // Still here: without this the sweep treats the sitting as closed after 3 minutes.
   useEffect(() => {
     const timer = window.setInterval(() => {
-      post(exam.id, { action: "heartbeat" }, true)
+      actions.call({ action: "heartbeat" }, true)
         .then((data) => {
           if (data.status !== "in_progress") void finished();
         })
         .catch(() => undefined);
     }, HEARTBEAT_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [exam.id, finished]);
+  }, [actions, finished]);
 
   useEffect(() => {
     if (left > 0 || !exam.endsAt || endedRef.current) return;
-    post(exam.id, { action: "submit" })
+    actions
+      .call({ action: "submit" })
       .catch(() => undefined)
       .finally(() => void finished());
-  }, [left, exam.endsAt, exam.id, finished]);
+  }, [left, exam.endsAt, actions, finished]);
 
   function patchMcq(questionId: string, selected: string) {
     setExam({ ...exam, mcqs: mcqs.map((mcq) => (mcq.id === questionId ? { ...mcq, selected } : mcq)) });
@@ -315,7 +378,7 @@ function Sitting({ exam, setExam, reload }: { exam: Exam; setExam: (exam: Exam) 
     setFinishing(true);
     try {
       endedRef.current = true;
-      const data = await post(exam.id, { action: "submit" });
+      const data = await actions.call({ action: "submit" });
       setExam(data.exam);
     } catch (error: any) {
       if (!handleEnded(error)) {
@@ -336,6 +399,7 @@ function Sitting({ exam, setExam, reload }: { exam: Exam; setExam: (exam: Exam) 
   return (
     <div className="fixed inset-0 z-[100] overflow-y-auto bg-[#fbf7ff]">
       <div className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 backdrop-blur">
+        {actions.preview && <PreviewBar onLeave={leftTheExam} />}
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-3 px-3 py-2 sm:px-4">
           <div className="min-w-0">
             <div className="truncate text-sm font-black text-slate-950">{exam.levelLabel} exam</div>
@@ -375,7 +439,6 @@ function Sitting({ exam, setExam, reload }: { exam: Exam; setExam: (exam: Exam) 
         {current?.kind === "mcq" && (
           <McqPanel
             key={current.id}
-            examId={exam.id}
             mcq={mcqs.find((mcq) => mcq.id === current.id)!}
             number={index + 1}
             onAnswered={patchMcq}
@@ -385,7 +448,6 @@ function Sitting({ exam, setExam, reload }: { exam: Exam; setExam: (exam: Exam) 
         {current?.kind === "position" && (
           <PositionPanel
             key={current.id}
-            examId={exam.id}
             position={positions.find((position) => position.id === current.id)!}
             number={index - mcqs.length + 1}
             onPatch={patchPosition}
@@ -439,7 +501,8 @@ function Sitting({ exam, setExam, reload }: { exam: Exam; setExam: (exam: Exam) 
   );
 }
 
-function McqPanel({ examId, mcq, number, onAnswered, onEnded }: { examId: string; mcq: Mcq; number: number; onAnswered: (id: string, selected: string) => void; onEnded: (error: any) => boolean }) {
+function McqPanel({ mcq, number, onAnswered, onEnded }: { mcq: Mcq; number: number; onAnswered: (id: string, selected: string) => void; onEnded: (error: any) => boolean }) {
+  const actions = useExamActions();
   const [choice, setChoice] = useState(mcq.selected || "");
   const [saving, setSaving] = useState(false);
   const locked = Boolean(mcq.selected);
@@ -447,7 +510,7 @@ function McqPanel({ examId, mcq, number, onAnswered, onEnded }: { examId: string
   async function save() {
     setSaving(true);
     try {
-      await post(examId, { action: "mcq", questionId: mcq.id, optionId: choice });
+      await actions.call({ action: "mcq", questionId: mcq.id, optionId: choice });
       onAnswered(mcq.id, choice);
     } catch (error: any) {
       if (!onEnded(error)) toast.error(error.message);
@@ -490,18 +553,17 @@ function McqPanel({ examId, mcq, number, onAnswered, onEnded }: { examId: string
 }
 
 function PositionPanel({
-  examId,
   position,
   number,
   onPatch,
   onEnded,
 }: {
-  examId: string;
   position: Position;
   number: number;
   onPatch: (id: string, patch: Partial<Position>) => void;
   onEnded: (error: any) => boolean;
 }) {
+  const actions = useExamActions();
   const [shownFen, setShownFen] = useState(position.fen);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<{ tone: "info" | "bad" | "good"; text: string }>({ tone: "info", text: "Find the best move." });
@@ -532,7 +594,8 @@ function PositionPanel({
     setShownFen(after);
     setSelected(null);
     setBusy(true);
-    post(examId, { action: "move", questionId: position.id, from, to, promotion })
+    actions
+      .call({ action: "move", questionId: position.id, from, to, promotion })
       .then((data) => {
         if (!data.legal) {
           setShownFen(before);
@@ -560,7 +623,7 @@ function PositionPanel({
     setConfirmHint(false);
     setBusy(true);
     try {
-      const data = await post(examId, { action: "hint", questionId: position.id });
+      const data = await actions.call({ action: "hint", questionId: position.id });
       onPatch(position.id, { hint: data.hint, hintsUsed: data.hintsUsed, available: data.available });
       setFeedback({ tone: "info", text: `Hint: play ${data.hint.san}.` });
     } catch (error: any) {
@@ -592,9 +655,12 @@ function PositionPanel({
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <b className="text-brand">Position {number}</b>
-          <div className="text-sm font-semibold text-slate-700">Topic: {position.topicName || "General"}</div>
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <b className="text-brand">Position {number}</b>
+            <span className="rounded-full bg-brand/10 px-2 py-0.5 text-xs font-bold text-brand">{position.topicName || "General"}</span>
+          </div>
+          {position.question && <div className="mt-1 text-base font-bold text-slate-900">{position.question}</div>}
         </div>
         <div className="text-right">
           <div className="text-xs text-slate-500">Worth now</div>
@@ -684,6 +750,7 @@ function PositionPanel({
 /* ------------------------------------------------------------------ after */
 
 function ResultScreen({ exam }: { exam: Exam }) {
+  const actions = useExamActions();
   const score = exam.score;
   return (
     <div className="mx-auto max-w-3xl space-y-4">
@@ -708,7 +775,9 @@ function ResultScreen({ exam }: { exam: Exam }) {
           </div>
         )}
         <div className="mt-4 flex flex-col items-center gap-2">
-          {exam.certificate?.url ? (
+          {actions.preview ? (
+            <div className="rounded-lg bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800">Preview: nothing was saved and no certificate is requested.</div>
+          ) : exam.certificate?.url ? (
             <a href={exam.certificate.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 font-black text-brand">
               <Download size={16} /> Download certificate
             </a>
@@ -717,7 +786,9 @@ function ResultScreen({ exam }: { exam: Exam }) {
               Certificate: <CertificateBadge status={exam.certificate?.status} />
             </div>
           )}
-          <Link href="/exams" className="text-sm font-bold text-brand underline">Back to the Exam Center</Link>
+          <Link href={actions.backHref} className="text-sm font-bold text-brand underline">
+            {actions.preview ? "Back to the Exams page" : "Back to the Exam Center"}
+          </Link>
         </div>
       </section>
 
@@ -749,6 +820,22 @@ function ResultScreen({ exam }: { exam: Exam }) {
           </div>
         </section>
       )}
+    </div>
+  );
+}
+
+/** Shown only in the admin preview: what this is, a way out, and a way to feel the leave rule. */
+function PreviewBar({ onLeave }: { onLeave: () => void }) {
+  const actions = useExamActions();
+  return (
+    <div className="flex flex-wrap items-center gap-2 bg-amber-100 px-3 py-1.5 text-xs font-bold text-amber-900 sm:px-4">
+      <Eye size={14} /> Admin preview: exactly what a student sees. Answers are checked the same way, but nothing is saved.
+      <button type="button" onClick={onLeave} className="ml-auto rounded-md border border-amber-300 bg-white px-2 py-1 hover:bg-amber-50">
+        Simulate leaving the tab
+      </button>
+      <Link href={actions.backHref} className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-white px-2 py-1 hover:bg-amber-50">
+        <LogOut size={12} /> Exit preview
+      </Link>
     </div>
   );
 }

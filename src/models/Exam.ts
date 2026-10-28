@@ -42,6 +42,8 @@ export const ExamPositionSchema = new Schema(
     bankKey: { type: String, required: true },
     topicName: String,
     title: String,
+    /** Shown to the student above the board. Admins can rewrite it on the paper. */
+    question: String,
     pgn: { type: String, required: true },
     startFen: { type: String, required: true },
     solution: [String],

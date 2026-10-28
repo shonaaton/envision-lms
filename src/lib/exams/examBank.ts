@@ -1,5 +1,6 @@
 import { parsePgnPuzzle, puzzleStudentColor } from "@/lib/pgnPuzzle";
 import { MCQ_COUNT, POSITION_COUNT, levelNumberFromName } from "@/lib/exams/examRules";
+import { cleanPositionQuestion, positionQuestionFor } from "@/lib/exams/examQuestions";
 
 /**
  * The question bank for one level, read from that level's homework templates,
@@ -23,6 +24,8 @@ export type BankPosition = {
   bankKey: string;
   topicName: string;
   title: string;
+  /** The line shown above the board: from the homework or PGN when it has one, otherwise written from the position. */
+  question: string;
   pgn: string;
   startFen: string;
   solution: string[];
@@ -82,14 +85,18 @@ function positionFromItem(template: TemplateLike, activity: any, item: any, inde
   const puzzle = parsePgnPuzzle(pgn);
   if (!puzzle.valid || !puzzle.moves.length) return null;
   const itemId = clean(item?.id) || `i${index + 1}`;
+  const topicName = clean(template.topicName) || "General";
+  const solution = puzzle.moves.map((move) => move.san);
+  const studentColor = puzzleStudentColor(puzzle);
   return {
     bankKey: `pos:${fenKey(puzzle.start)}`,
-    topicName: clean(template.topicName) || "General",
+    topicName,
     title: clean(item?.title || item?.pgnTitle) || `Position ${index + 1}`,
+    question: positionQuestionFor({ question: cleanPositionQuestion(item?.question || item?.prompt), pgn, topicName, studentColor, solution }),
     pgn,
     startFen: puzzle.start,
-    solution: puzzle.moves.map((move) => move.san),
-    studentColor: puzzleStudentColor(puzzle),
+    solution,
+    studentColor,
     source: { template: String(template._id), templateTitle: clean(template.title), activityId: clean(activity?.id || activity?._id), itemId },
   };
 }

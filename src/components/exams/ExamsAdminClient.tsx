@@ -1,7 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CheckCircle2, ClipboardCheck, Loader2, RefreshCw, Send, Shuffle, UserPlus, X } from "lucide-react";
+import { CheckCircle2, ClipboardCheck, Eye, Loader2, Pencil, RefreshCw, Send, Shuffle, UserPlus, X } from "lucide-react";
 import { toast } from "sonner";
 import { MCQ_COUNT, POSITION_COUNT } from "@/lib/exams/examRules";
 import { cn } from "@/lib/utils";
@@ -18,7 +19,7 @@ type Paper = {
   version: number;
   publishedAt: string | null;
   mcqs: { id: string; question: string; positionFen: string; options: { id: string; text: string; correct: boolean }[]; explanation: string; topicName: string; sourceTitle: string }[];
-  positions: { id: string; topicName: string; title: string; startFen: string; solution: string[]; studentColor: "white" | "black"; sourceTitle: string }[];
+  positions: { id: string; topicName: string; title: string; question: string; autoQuestion: string; startFen: string; solution: string[]; studentColor: "white" | "black"; sourceTitle: string }[];
 };
 type Targets = {
   students: { id: string; name: string; username: string }[];
@@ -211,6 +212,11 @@ function PaperView({ tier, level, onChanged }: { tier: string; level: number; on
               : "No paper yet. Draw one from this level's homework."}
           </p>
         </div>
+        {paper && (
+          <Link href={`/admin/exams/preview?tier=${tier}&level=${level}`} className="btn btn-outline" title="Open this paper exactly as a student sees it. Nothing is saved.">
+            <Eye size={16} /> Sit it as a student
+          </Link>
+        )}
         <button type="button" className="btn btn-outline" onClick={regenerate} disabled={Boolean(busy)}>
           {busy === "generate" ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />} {paper ? "Regenerate all" : "Generate paper"}
         </button>
@@ -262,7 +268,7 @@ function PaperView({ tier, level, onChanged }: { tier: string; level: number; on
           </div>
 
           <div>
-            <h3 className="mb-2 text-sm font-black uppercase tracking-wide text-slate-500">Positions · 5 marks each (students see only the topic)</h3>
+            <h3 className="mb-2 text-sm font-black uppercase tracking-wide text-slate-500">Positions · 5 marks each (students see the question and topic, never the solution)</h3>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {paper.positions.map((position, index) => (
                 <article key={position.id} className="rounded-lg border border-slate-200 p-3">
@@ -271,6 +277,12 @@ function PaperView({ tier, level, onChanged }: { tier: string; level: number; on
                     <span className="rounded-full bg-brand/10 px-2 py-0.5 text-xs font-bold text-brand">{position.topicName}</span>
                     <ReplaceButton busy={busy === position.id} disabled={Boolean(busy)} onClick={() => run("replace_question", { slotId: position.id }, position.id)} />
                   </div>
+                  <QuestionLine
+                    question={position.question}
+                    autoQuestion={position.autoQuestion}
+                    disabled={Boolean(busy)}
+                    onSave={(question) => run("edit_question", { slotId: position.id, question }, `q-${position.id}`)}
+                  />
                   <FenDiagram fen={position.startFen} orientation={position.studentColor} size={220} />
                   <div className="mt-2 text-xs text-slate-600">
                     <div>
@@ -285,6 +297,61 @@ function PaperView({ tier, level, onChanged }: { tier: string; level: number; on
         </>
       )}
     </section>
+  );
+}
+
+/** The question above a position, editable in place. Clearing it goes back to the automatic line. */
+function QuestionLine({ question, autoQuestion, disabled, onSave }: { question: string; autoQuestion: string; disabled: boolean; onSave: (question: string) => Promise<boolean> }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(question);
+  const [saving, setSaving] = useState(false);
+
+  async function save(value: string) {
+    setSaving(true);
+    const ok = await onSave(value);
+    setSaving(false);
+    if (ok) {
+      setEditing(false);
+      toast.success(value ? "Question saved." : "Question reset to the automatic line.");
+    }
+  }
+
+  if (!editing) {
+    return (
+      <div className="mb-2 flex items-start gap-2 rounded-md bg-slate-50 px-2 py-1.5">
+        <p className="min-w-0 flex-1 text-sm font-semibold text-slate-900">{question}</p>
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => {
+            setDraft(question);
+            setEditing(true);
+          }}
+          className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-bold text-brand hover:bg-brand/5 disabled:opacity-50"
+          title="Edit the question students see above this position"
+        >
+          <Pencil size={12} /> Edit
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="mb-2 space-y-1.5">
+      <textarea className="input min-h-[64px] text-sm" maxLength={240} value={draft} onChange={(event) => setDraft(event.target.value)} autoFocus />
+      <div className="flex flex-wrap items-center gap-1.5">
+        <button type="button" className="rounded-md bg-brand px-2 py-1 text-xs font-bold text-white disabled:opacity-50" disabled={saving || !draft.trim()} onClick={() => save(draft.trim())}>
+          {saving ? "Saving..." : "Save"}
+        </button>
+        <button type="button" className="rounded-md border border-slate-200 px-2 py-1 text-xs font-bold text-slate-600" disabled={saving} onClick={() => setEditing(false)}>
+          Cancel
+        </button>
+        {question !== autoQuestion && (
+          <button type="button" className="ml-auto text-xs font-bold text-slate-500 underline" disabled={saving} onClick={() => save("")} title={autoQuestion}>
+            Use automatic line
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 

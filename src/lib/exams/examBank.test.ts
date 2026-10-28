@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ExamBankError, drawAcrossTopics, drawPaper, extractBank, pickReplacement, templateMatchesLevel } from "@/lib/exams/examBank";
+import { generatedPositionQuestion, pgnLeadingComment, positionQuestionFor } from "@/lib/exams/examQuestions";
 import { judgePuzzleMove, parsePgnPuzzle, puzzleFenAt, puzzleStudentColor } from "@/lib/pgnPuzzle";
 
 // White to move: 1.Qxf7# (scholar's mate finish).
@@ -130,5 +131,34 @@ describe("drawing a paper", () => {
     expect(pickReplacement(pool, paper, { bankKey: "a1", topicName: "A" })?.bankKey).toBe("a2");
     expect(pickReplacement(pool, [{ bankKey: "a1" }, { bankKey: "a2" }], { bankKey: "b1", topicName: "B" })).toBeNull();
     expect(pickReplacement(pool, [{ bankKey: "a1" }], { bankKey: "a1", topicName: "A" }, () => 0)?.bankKey).toBe("a2");
+  });
+});
+
+describe("position questions", () => {
+  it("writes a mate question from the solution", () => {
+    expect(generatedPositionQuestion({ topicName: "Anything", studentColor: "white", solution: ["Qxf7#"] })).toBe("White to play and mate in 1.");
+    expect(generatedPositionQuestion({ studentColor: "black", solution: ["Rd1+", "Kf1", "Rf1#"] })).toBe("Black to play and mate in 2.");
+  });
+
+  it("uses the topic's theme and says how long the line is", () => {
+    expect(generatedPositionQuestion({ topicName: "Forks Easy", studentColor: "white", solution: ["Nc7+"] })).toBe("White to play. Find the fork.");
+    expect(generatedPositionQuestion({ topicName: "Pins", studentColor: "black", solution: ["Bb4", "a3", "Bxc3+"] })).toBe("Black to play. Use the pin to win material. Play the whole line (2 moves).");
+    expect(generatedPositionQuestion({ topicName: "Revision", studentColor: "white", solution: ["e4"] })).toBe("White to play. Find the best move.");
+    expect(generatedPositionQuestion({ topicName: "Back Rank Combinations", studentColor: "white", solution: ["Re8+"] })).toBe("White to play. Use the weak back rank.");
+  });
+
+  it("prefers a question written in the homework, then the PGN's opening comment", () => {
+    const commented = '[FEN "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5Q2/PPPP1PPP/RNB1K1NR w KQkq - 4 4"]\n[SetUp "1"]\n\n{ Can you finish the game in one move? } 4. Qxf7# *';
+    expect(pgnLeadingComment(commented)).toBe("Can you finish the game in one move?");
+    expect(positionQuestionFor({ pgn: commented, solution: ["Qxf7#"] })).toBe("Can you finish the game in one move?");
+    expect(positionQuestionFor({ question: "Win the queen.", pgn: commented })).toBe("Win the queen.");
+    expect(positionQuestionFor({ pgn: MATE_IN_ONE, studentColor: "white", solution: ["Qxf7#"] })).toBe("White to play and mate in 1.");
+  });
+
+  it("gives every bank position a question", () => {
+    const bank = extractBank([
+      { _id: "t", topicName: "Skewers", levelName: "Level 1", tier: "beginner", activities: [{ id: "a", type: "study_pgn", source: { kind: "pgn_quiz" }, items: [{ id: "p", pgn: LINE }] }] },
+    ]);
+    expect(bank.positions[0].question).toBe("White to play. Find the skewer. Play the whole line (2 moves).");
   });
 });

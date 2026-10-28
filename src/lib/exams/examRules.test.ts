@@ -100,10 +100,13 @@ describe("levels", () => {
     expect(levelNumberFromName("Advanced openings")).toBe(0);
   });
 
-  it("has exams up to Intermediate Level 3 only", () => {
+  it("has an exam for levels 1 to 3 of every course tier", () => {
     expect(isExamLevel("beginner", 1)).toBe(true);
     expect(isExamLevel("intermediate", 3)).toBe(true);
+    expect(isExamLevel("semi_pro", 1)).toBe(true);
+    expect(isExamLevel("masters", 3)).toBe(true);
     expect(isExamLevel("intermediate", 4)).toBe(false);
-    expect(isExamLevel("semi_pro", 1)).toBe(false);
+    expect(isExamLevel("mixed", 1)).toBe(false);
+    expect(isExamLevel("advanced", 1)).toBe(false);
   });
 });

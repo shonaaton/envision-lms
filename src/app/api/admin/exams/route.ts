@@ -5,6 +5,7 @@ import {
   assignExam,
   assignTargets,
   cancelExam,
+  editPositionQuestion,
   examBankCounts,
   generatePaper,
   getPaper,
@@ -47,7 +48,7 @@ export async function GET(req: Request) {
   }
 }
 
-const EDIT_ACTIONS = new Set(["generate_paper", "replace_question", "publish"]);
+const EDIT_ACTIONS = new Set(["generate_paper", "replace_question", "edit_question", "publish"]);
 const ASSIGN_ACTIONS = new Set(["assign", "cancel", "resend_certificate"]);
 
 export async function POST(req: Request) {
@@ -67,6 +68,8 @@ export async function POST(req: Request) {
         return NextResponse.json({ paper: await generatePaper(body.tier, body.level, actor.id) });
       case "replace_question":
         return NextResponse.json({ paper: await replacePaperQuestion(body.tier, body.level, String(body.slotId || ""), actor.id) });
+      case "edit_question":
+        return NextResponse.json({ paper: await editPositionQuestion(body.tier, body.level, String(body.slotId || ""), body.question, actor.id) });
       case "publish":
         return NextResponse.json({ paper: await publishPaper(body.tier, body.level, actor.id) });
       case "assign": {

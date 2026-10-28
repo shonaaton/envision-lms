@@ -5,6 +5,7 @@ import { resolvePublicAppUrl } from "@/lib/appUrl";
 import { isCourseTier } from "@/lib/courseTiers";
 import { reportTier } from "@/lib/feedback/feedbackQuestions";
 import { judgePuzzleMove, parsePgnPuzzle, puzzleFenAt } from "@/lib/pgnPuzzle";
+import { cleanPositionQuestion, positionQuestionFor } from "@/lib/exams/examQuestions";
 import { ExamBankError, drawPaper, extractBank, pickReplacement, templateMatchesLevel, type ExamBank } from "@/lib/exams/examBank";
 import {
   CERTIFICATE_MAX_ATTEMPTS,
@@ -133,6 +134,9 @@ export function serializePaperForStaff(paper: any) {
       id: position.id,
       topicName: position.topicName || "",
       title: position.title || "",
+      question: positionQuestionFor(position),
+      /** What the question falls back to if the admin clears their own wording. */
+      autoQuestion: positionQuestionFor({ ...position, question: "" }),
       startFen: position.startFen,
       solution: position.solution || [],
       studentColor: position.studentColor,
@@ -218,6 +222,29 @@ export async function replacePaperQuestion(tier: unknown, levelNumber: unknown, 
     { new: true }
   ).lean();
   if (!updated) throw new ExamError("The paper changed while you were replacing. Reload and try again.", 409);
+  return serializePaperForStaff(updated);
+}
+
+/**
+ * Rewrites the question line above one position. An empty question goes back
+ * to the automatic one (the PGN's own comment, or the generated line).
+ */
+export async function editPositionQuestion(tier: unknown, levelNumber: unknown, slotId: string, question: unknown, actorId: string) {
+  const level = assertLevel(tier, levelNumber);
+  await dbConnect();
+  const paper: any = await ExamPaper.findOne(level).select("status positions.id").lean();
+  if (!paper) throw new ExamError("Generate this level's paper first.", 404);
+  const index = (paper.positions || []).findIndex((position: any) => position.id === slotId);
+  if (index < 0) throw new ExamError("That position is not on this paper.", 404);
+  const updated = await ExamPaper.findOneAndUpdate(
+    { _id: paper._id, [`positions.${index}.id`]: slotId },
+    {
+      $set: { [`positions.${index}.question`]: cleanPositionQuestion(question), updatedBy: actorId },
+      ...(paper.status === "published" ? { $inc: { version: 1 } } : {}),
+    },
+    { new: true }
+  ).lean();
+  if (!updated) throw new ExamError("The paper changed while you were editing. Reload and try again.", 409);
   return serializePaperForStaff(updated);
 }
 
@@ -406,6 +433,7 @@ export function serializeForStudent(doc: any, now = new Date()) {
         return {
           id: position.id,
           topicName: position.topicName || "",
+          question: positionQuestionFor(position),
           fen: puzzleFenAt(puzzle, ply),
           orientation: position.studentColor || "white",
           wrongMoves: Number(progress.wrongMoves || 0),

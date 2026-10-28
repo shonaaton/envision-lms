@@ -1,5 +1,5 @@
 import { academyDateKey, academyDateTime } from "@/lib/academyTime";
-import { courseTierLabel } from "@/lib/courseTiers";
+import { COURSE_TIERS, courseTierLabel } from "@/lib/courseTiers";
 
 /**
  * Exam Center rules, kept pure so every number the student is marked by is
@@ -23,8 +23,8 @@ export const HEARTBEAT_INTERVAL_MS = 20_000;
 /** An exam in progress that has not been heard from for this long was closed or lost its connection. */
 export const HEARTBEAT_STALE_MS = 3 * 60_000;
 
-/** Exams exist for these tiers, levels 1 to 3 each: up to Intermediate Level 3. */
-export const EXAM_TIERS = ["beginner", "intermediate"] as const;
+/** Every course tier has an exam for each of its three levels. */
+export const EXAM_TIERS = COURSE_TIERS;
 export const EXAM_LEVEL_NUMBERS = [1, 2, 3] as const;
 export type ExamTier = (typeof EXAM_TIERS)[number];
 
@@ -161,7 +161,7 @@ export function submitReasonFor(type: ViolationType): SubmitReason {
 /** The rules shown in the pop-up before Start, word for word what the exam enforces. */
 export const EXAM_RULES = [
   `The exam has ${MCQ_COUNT} multiple-choice questions (${MCQ_MARKS} marks each, one try, no negative marking) and ${POSITION_COUNT} positions (${POSITION_MARKS} marks each). Total ${EXAM_MAX_SCORE} marks.`,
-  "For each position you only see the topic. You can try as many times as you need.",
+  "Each position comes with a short question and its topic. You can try as many times as you need.",
   `Every wrong move in a position takes away ${WRONG_MOVE_PENALTY} marks. Every hint takes away ${HINT_PENALTY} marks.`,
   "A position can never go below 0 marks. If the deductions bring it to 0, solving it still gives 0.",
   `You have ${EXAM_DURATION_MINUTES} minutes once you press Start. The exam submits itself when time runs out.`,

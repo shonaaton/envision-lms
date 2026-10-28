@@ -701,7 +701,7 @@ export const FEATURE_DEFINITIONS: FeatureDefinition[] = [
     key: "exams",
     label: "Exam Center",
     category: "Learning",
-    description: "Level exams (Beginner L1 to Intermediate L3): students sit them, coaches see their students' results, and every completed exam gets a certificate.",
+    description: "Level exams (Levels 1 to 3 of every course tier): students sit them, coaches see their students' results, and every completed exam gets a certificate.",
     routes: ["/exams"],
     apiPrefixes: ["/api/exams"],
     permissions: [view],

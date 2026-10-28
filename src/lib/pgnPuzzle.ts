@@ -110,3 +110,20 @@ export function judgePuzzleMove(puzzle: PgnPuzzle, ply: number, attempt: { from:
   }
   return { legal: true, correct: true, san: move.san, ply: nextPly, fen: game.fen(), solved: nextPly >= puzzle.moves.length, reply };
 }
+
+/** The same puzzle rebuilt from a start position and the solution's SAN moves. */
+export function puzzleFromLine(startFen: string, sans: string[]): PgnPuzzle {
+  const game = buildGame(startFen);
+  const moves: PuzzleMove[] = [];
+  for (const san of sans) {
+    let move: any = null;
+    try {
+      move = game.move(san);
+    } catch {
+      move = null;
+    }
+    if (!move) break;
+    moves.push({ san: move.san, from: move.from, to: move.to, promotion: move.promotion || "q" });
+  }
+  return { start: buildGame(startFen).fen(), moves, valid: moves.length > 0 };
+}

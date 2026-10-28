@@ -43,7 +43,7 @@ describe("what a student is sent", () => {
     expect(text).not.toContain("explanation");
     expect(text).not.toContain("Rh7");
     expect(text).not.toContain("[FEN");
-    expect((sent as any).positions[0]).toMatchObject({ topicName: "Skewers", available: 5, solved: false, hint: null });
+    expect((sent as any).positions[0]).toMatchObject({ topicName: "Skewers", question: "White to play. Find the skewer. Play the whole line (2 moves).", available: 5, solved: false, hint: null });
   });
 
   it("shows a hint only for the move it was bought for", () => {

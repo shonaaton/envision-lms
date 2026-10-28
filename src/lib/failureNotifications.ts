@@ -77,11 +77,6 @@ export async function notifyFailure(input: FailureNotificationInput) {
   const adminRecipient = importantContactWhatsAppRecipientsByKeys(["primary"])[0];
   const failureEmailTo = adminRecipient?.email || importantContactEmails("admin")[0] || FAILURE_EMAIL_TO;
   const reference = failureReference(input, metadata);
-  const shortErrorLog = truncate([
-    details.message || "No error message was provided.",
-    details.stack ? `Stack: ${details.stack}` : "",
-    `Metadata: ${safeJson(metadata)}`,
-  ].filter(Boolean).join("\n"), 900);
   const message = [
     `Failure: ${input.title}`,
     "",
@@ -129,11 +124,11 @@ export async function notifyFailure(input: FailureNotificationInput) {
     ? await sendWhatsAppAutomationTemplate({
         user: adminRecipient,
         templateName: "lms_failure_alert_admin",
+        // The approved template has four values and no reference or error-log
+        // lines, so the reference rides along with the title; the email has the log.
         bodyParameters: [
           adminRecipient.name || "Admin",
-          truncate(input.title, 120),
-          reference,
-          shortErrorLog,
+          `${truncate(input.title, 120)} (${reference})`,
           String(metadata.environment || "unknown"),
           String(metadata.timestamp || ""),
         ],

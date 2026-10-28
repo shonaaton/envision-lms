@@ -1305,7 +1305,8 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
     "name": "invoice_due_soon",
     "language": "en",
     "sourceAutomation": "Monthly Invoice Reminder",
-    "body": "Hello {{1}}, invoice {{2}} for {{3}} is due on {{4}}. The amount due is {{5}}. This is a reminder before the due date.",
+    // Matches the body as edited and approved in WhatsApp Manager: amount, then date.
+    "body": "Hello *{{1}},*\n\nThis is a reminder that invoice *{{2}}* for *{{3}}* is due soon.\nThe amount due is *{{4}}* and the due date is *{{5}}*. Please clear you fees before due date.\n\n*Team Envision Chess Academy*",
     "variables": [
       {
         "position": 1,
@@ -1324,13 +1325,13 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
       },
       {
         "position": 4,
-        "key": "due_date",
-        "sample": "31 Aug 2026"
+        "key": "amount",
+        "sample": "\u20b92,500"
       },
       {
         "position": 5,
-        "key": "amount",
-        "sample": "\u20b92,500"
+        "key": "due_date",
+        "sample": "31 Aug 2026"
       }
     ]
   },
@@ -1338,7 +1339,8 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
     "name": "invoice_due_today",
     "language": "en",
     "sourceAutomation": "Monthly Invoice Reminder",
-    "body": "Hello {{1}}, invoice {{2}} for {{3}} is due today, {{4}}. The amount due is {{5}}. Please review the invoice from the academy portal.",
+    // Matches the body as edited and approved in WhatsApp Manager: no date, four values.
+    "body": "Hello *{{1}}*,\n\nThis is a reminder that invoice *{{2}}* for *{{3}}* is due today.\nThe amount due is {{4}}. Kindly pay your fees at the earliest.\n\n*Team Envision Chess Academy*",
     "variables": [
       {
         "position": 1,
@@ -1357,11 +1359,6 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
       },
       {
         "position": 4,
-        "key": "due_date",
-        "sample": "31 Aug 2026"
-      },
-      {
-        "position": 5,
         "key": "amount",
         "sample": "\u20b92,500"
       }
@@ -1956,7 +1953,8 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
     "name": "lms_failure_alert_admin",
     "language": "en",
     "sourceAutomation": "System Failure Alert",
-    "body": "Hello {{1}}, an LMS automation failure requires attention.\n\nFailure: {{2}}\nReference: {{3}}\nError log: {{4}}\nEnvironment: {{5}}\nTime: {{6}}\n\nPlease review the system logs or admin alert details.",
+    // Matches the body as approved at Meta: four values, the reference folded into {{2}}.
+    "body": "Hello {{1}}, an LMS automation failure requires attention. Failure: {{2}}. Environment: {{3}}. Time: {{4}}. Please review the system logs or admin alert details.",
     "variables": [
       {
         "position": 1,
@@ -1966,25 +1964,15 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
       {
         "position": 2,
         "key": "failure_title",
-        "sample": "Homework reminder retry failed"
+        "sample": "Homework reminder retry failed (homework_email_reminders)"
       },
       {
         "position": 3,
-        "key": "reference",
-        "sample": "homework_email_reminders"
-      },
-      {
-        "position": 4,
-        "key": "error_log",
-        "sample": "Webhook responded with status 500"
-      },
-      {
-        "position": 5,
         "key": "environment",
         "sample": "production"
       },
       {
-        "position": 6,
+        "position": 4,
         "key": "timestamp",
         "sample": "25 Aug 2026, 12:05 AM IST"
       }

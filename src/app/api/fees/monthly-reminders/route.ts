@@ -65,6 +65,21 @@ async function invoiceReminderTemplate(days: number, payUrl: string) {
 }
 
 /**
+ * {{4}} onwards of a reminder, in the order the template approved at Meta takes
+ * them. The plain templates were edited in WhatsApp Manager: invoice_due_soon
+ * and invoice_overdue_reminder take the amount before the date, and
+ * invoice_due_today has no date at all, so sending five values failed with
+ * Meta error 132000. The _pay versions keep the date before the amount.
+ */
+function amountAndDateParameters(templateName: string, invoice: any) {
+  const dueText = new Date(invoice.dueDate).toLocaleDateString("en-IN");
+  const amountText = formatINR(invoice.totalAmount);
+  if (templateName === "invoice_due_today") return [amountText];
+  if (templateName === "invoice_due_soon" || templateName === "invoice_overdue_reminder") return [amountText, dueText];
+  return [dueText, amountText];
+}
+
+/**
  * Invoice alerts go to the named invoice staff (Sayan Bose and Saptarshi) only.
  * Salespeople are sub-admins on the Sales role, so "every admin and sub-admin"
  * put every invoice in front of the sales team.
@@ -113,10 +128,10 @@ async function notifyAdmins(invoice: any, days: number, invoiceUrl: string) {
           admin.name || "Admin",
           invoice.invoiceNumber,
           invoice.student.name || invoice.title || "Student",
-          new Date(invoice.dueDate).toLocaleDateString("en-IN"),
-          formatINR(invoice.totalAmount),
+          ...amountAndDateParameters("invoice_due_today", invoice),
         ]
-      : [admin.name || "Admin", invoice.invoiceNumber, invoice.student.name || "Student", timing, formatINR(invoice.totalAmount)],
+      // invoice_followup_alert (the Meta name) already says "is {{4}}".
+      : [admin.name || "Admin", invoice.invoiceNumber, invoice.student.name || "Student", "due in 3 days", formatINR(invoice.totalAmount)],
       metadata: { kind: "monthly_invoice_admin_reminder", invoiceId: invoice._id.toString(), days, href: "/fees/invoices" },
   })));
   return admins.length;
@@ -208,11 +223,6 @@ async function processReminders(req: Request) {
       await sendAutomationEmail(invoiceEmail);
     }
     const whatsappTemplate = await invoiceReminderTemplate(days, payUrl);
-    const dueText = new Date(invoice.dueDate).toLocaleDateString("en-IN");
-    const amountText = formatINR(invoice.totalAmount);
-    // invoice_overdue_reminder alone takes the amount as {{4}} and the date as
-    // {{5}}; sending them the other way round told parents "the amount due is 12/10/2026".
-    const amountFirst = whatsappTemplate.templateName === "invoice_overdue_reminder";
     await sendWhatsAppAutomationTemplate({
       user: invoice.student,
       templateName: whatsappTemplate.templateName,
@@ -220,7 +230,7 @@ async function processReminders(req: Request) {
         invoice.student.name || "there",
         invoice.invoiceNumber,
         invoice.title || "Invoice",
-        ...(amountFirst ? [amountText, dueText] : [dueText, amountText]),
+        ...amountAndDateParameters(whatsappTemplate.templateName, invoice),
         ...(whatsappTemplate.withLink ? [payUrl] : []),
       ],
       metadata: { kind: "monthly_invoice_student_reminder", invoiceId: invoice._id.toString(), days, href: "/fees/invoices" },

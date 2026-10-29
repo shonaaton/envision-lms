@@ -3,6 +3,7 @@
 import { Chess } from "chess.js";
 import AssignmentChessboard from "@/components/homework/AssignmentChessboard";
 import { formatAcademyDateTime } from "@/lib/academyTime";
+import { STRONG_TOPIC_PERCENT, WEAK_TOPIC_PERCENT, type TopicBreakdown } from "@/lib/exams/examReport";
 import { SUBMIT_REASON_LABELS, type SubmitReason } from "@/lib/exams/examRules";
 import { cn } from "@/lib/utils";
 
@@ -88,6 +89,34 @@ export function FenDiagram({ fen, orientation = "white", size = 260 }: { fen: st
   );
 }
 
+/** Marks by topic, strongest first, with the strengths and weak spots called out. Never shows an answer. */
+export function TopicBreakdownList({ breakdown }: { breakdown: TopicBreakdown }) {
+  return (
+    <div className="space-y-2">
+      <ul className="space-y-1.5">
+        {breakdown.topics.map((score) => (
+          <li key={score.topic} className="text-sm">
+            <div className="flex justify-between gap-2">
+              <span className="font-semibold text-slate-800">{score.topic}</span>
+              <span className="shrink-0 text-slate-600">
+                {score.earned}/{score.max} · {score.percent}%
+              </span>
+            </div>
+            <div className="mt-0.5 h-1.5 overflow-hidden rounded-full bg-slate-100">
+              <div
+                className={cn("h-full rounded-full", score.percent >= STRONG_TOPIC_PERCENT ? "bg-emerald-500" : score.percent < WEAK_TOPIC_PERCENT ? "bg-red-400" : "bg-amber-400")}
+                style={{ width: `${score.percent}%` }}
+              />
+            </div>
+          </li>
+        ))}
+      </ul>
+      {breakdown.strong.length > 0 && <div className="text-xs text-emerald-700"><b>Strong in:</b> {breakdown.strong.join(", ")}</div>}
+      {breakdown.weak.length > 0 && <div className="text-xs text-red-700"><b>Needs more work:</b> {breakdown.weak.join(", ")}</div>}
+    </div>
+  );
+}
+
 export type StaffRow = {
   id: string;
   student: { id: string; name: string; username: string };
@@ -110,6 +139,7 @@ export type StaffRow = {
   positionsSolved: number;
   wrongMoves: number;
   hintsUsed: number;
+  topics: TopicBreakdown | null;
   certificate: { status: string; url: string; lastError: string; attempts: number; number: string };
 };
 
@@ -172,6 +202,12 @@ export function ExamResultsTable({ rows, actions }: { rows: StaffRow[]; actions?
                 </a>
               )}
               {row.certificate.lastError && row.certificate.status !== "issued" && <div className="text-xs text-red-700">Certificate: {row.certificate.lastError}</div>}
+              {row.topics && row.topics.topics.length > 0 && (
+                <div className="pt-2">
+                  <div className="mb-1 font-bold">By topic</div>
+                  <TopicBreakdownList breakdown={row.topics} />
+                </div>
+              )}
             </div>
             <div>
               <div className="mb-1 font-bold">Leaving the exam</div>

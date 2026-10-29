@@ -6,6 +6,7 @@ import { isCourseTier } from "@/lib/courseTiers";
 import { reportTier } from "@/lib/feedback/feedbackQuestions";
 import { judgePuzzleMove, parsePgnPuzzle, puzzleFenAt } from "@/lib/pgnPuzzle";
 import { cleanPositionQuestion, positionQuestionFor } from "@/lib/exams/examQuestions";
+import { examResult, topicBreakdown } from "@/lib/exams/examReport";
 import { ExamBankError, drawPaper, extractBank, generatedMcqPool, mcqCapacity, pickReplacement, sourcePositionKey, templateMatchesLevel, type ExamBank } from "@/lib/exams/examBank";
 import {
   CERTIFICATE_MAX_ATTEMPTS,
@@ -16,10 +17,13 @@ import {
 } from "@/lib/exams/examCertificate";
 import {
   notifyCertificateIssued,
+  notifyCoachesExamsNotStarted,
   notifyExamAssigned,
   notifyExamReminder,
+  notifyExamReport,
   notifyExamResult,
   notifyExamStaff,
+  notifyExamsClosedUnattempted,
 } from "@/lib/exams/examNotifications";
 import {
   EXAM_LEVELS,
@@ -54,7 +58,7 @@ import { User } from "@/models/User";
 /**
  * Exam Center: papers, assignments, the sitting itself, the sweep and the
  * certificate queue. Every answer is checked here; the browser only ever
- * receives `serializeForStudent`.
+ * receives `serializeForStudent`, which carries answers only after submission.
  *
  * Reached from instrumentation.ts through the sweep: no static `crypto`/`fs`
  * imports, and nothing that reaches studentPause or fees.
@@ -424,7 +428,7 @@ function summary(doc: any, now: Date) {
   };
 }
 
-/** The only shape in which an exam reaches a student: no right answers, no solutions. */
+/** The only shape in which an exam reaches a student: no right answers or solutions until it is submitted. */
 export function serializeForStudent(doc: any, now = new Date()) {
   const base = summary(doc, now);
   if (doc.status === "in_progress") {
@@ -463,25 +467,32 @@ export function serializeForStudent(doc: any, now = new Date()) {
     };
   }
   if (doc.status === "submitted") {
+    // Once it is over, the student's own result shows the answers to what they missed.
     return {
       ...base,
-      result: {
-        mcqs: (doc.mcqs || []).map((mcq: any) => {
-          const answer = (doc.mcqAnswers || []).find((item: any) => item.questionId === mcq.id);
-          return { id: mcq.id, topicName: mcq.topicName || "", answered: Boolean(answer), correct: Boolean(answer?.correct), marks: answer ? mcqMarks(Boolean(answer.correct)) : 0 };
-        }),
+      result: examResult({
+        mcqs: (doc.mcqs || []).map((mcq: any) => ({
+          id: mcq.id,
+          topicName: mcq.topicName,
+          question: mcq.question,
+          positionFen: mcq.positionFen,
+          options: (mcq.options || []).map((option: any) => ({ id: option.id, text: option.text, correct: Boolean(option.correct) })),
+          explanation: mcq.explanation,
+        })),
         positions: (doc.positions || []).map((position: any) => {
-          const progress = progressFor(doc, position.id) || {};
+          const puzzle = puzzleFor(position);
           return {
             id: position.id,
-            topicName: position.topicName || "",
-            solved: Boolean(progress.solved),
-            wrongMoves: Number(progress.wrongMoves || 0),
-            hintsUsed: Number(progress.hintsUsed || 0),
-            marks: positionMarks(progress),
+            topicName: position.topicName,
+            question: positionQuestionFor(position),
+            startFen: puzzle.start,
+            orientation: position.studentColor || "white",
+            solution: puzzle.moves.map((move) => move.san),
           };
         }),
-      },
+        mcqAnswers: doc.mcqAnswers || [],
+        positionProgress: doc.positionProgress || [],
+      }),
     };
   }
   return base;
@@ -698,6 +709,7 @@ export async function submitExam(id: string, reason: SubmitReason, now = new Dat
     { new: true }
   ).lean();
   await notifyExamResult(scored).catch((error) => console.error("[exams] result notice failed", error));
+  void notifyExamReport(scored).catch((error) => console.error("[exams] topic report failed", error));
   void sendCertificate(id).catch((error) => console.error("[exams] certificate send failed", error));
   return scored;
 }
@@ -868,10 +880,11 @@ async function sendDueReminders(now: Date) {
       { "reminders.lastDayAt": { $lte: now }, "reminders.lastDaySentAt": null },
     ],
   })
-    .select("student tier levelNumber availableUntil reminders")
+    .select("student tier levelNumber availableUntil reminders classroom")
     .limit(200)
     .lean();
   let sent = 0;
+  const lastDay: any[] = [];
   for (const assignment of due) {
     const kind = dueReminder({ now, availableUntil: assignment.availableUntil, ...assignment.reminders });
     const claim =
@@ -886,8 +899,11 @@ async function sendDueReminders(now: Date) {
     const won = await ExamAssignment.updateOne({ _id: assignment._id, status: "assigned", [field]: null }, claim);
     if (!won.modifiedCount) continue;
     await notifyExamReminder(assignment, kind).catch((error) => console.error("[exams] reminder failed", error));
+    if (kind === "last_day") lastDay.push(assignment);
     sent += 1;
   }
+  // Reminders only go to exams still not started, so these are the students to chase.
+  await notifyCoachesExamsNotStarted(lastDay).catch((error) => console.error("[exams] coach heads-up failed", error));
   return sent;
 }
 
@@ -899,10 +915,11 @@ async function sendDueReminders(now: Date) {
  */
 export async function processExamSweep(now = new Date()) {
   await dbConnect();
-  const expired = await ExamAssignment.updateMany(
-    { status: "assigned", availableUntil: { $lte: now } },
-    { $set: { status: "expired" }, $unset: { openKey: 1 } }
-  );
+  const closing: any[] = await ExamAssignment.find({ status: "assigned", availableUntil: { $lte: now } }).select("_id student tier levelNumber").limit(500).lean();
+  const expired = closing.length
+    ? await ExamAssignment.updateMany({ _id: { $in: closing.map((doc) => doc._id) }, status: "assigned" }, { $set: { status: "expired" }, $unset: { openKey: 1 } })
+    : { modifiedCount: 0 };
+  await notifyExamsClosedUnattempted(closing).catch((error) => console.error("[exams] closed-unattempted notice failed", error));
 
   const overdue: any[] = await ExamAssignment.find({ status: "in_progress", endsAt: { $lte: now } }).select("_id").limit(200).lean();
   for (const doc of overdue) await submitExam(idOf(doc), "time_up", now);
@@ -953,6 +970,7 @@ function staffRow(doc: any) {
     positionsSolved: (doc.positionProgress || []).filter((progress: any) => progress.solved).length,
     wrongMoves: (doc.positionProgress || []).reduce((sum: number, progress: any) => sum + Number(progress.wrongMoves || 0), 0),
     hintsUsed: (doc.positionProgress || []).reduce((sum: number, progress: any) => sum + Number(progress.hintsUsed || 0), 0),
+    topics: doc.status === "submitted" ? topicBreakdown(doc) : null,
     certificate: {
       status: doc.certificate?.status || "none",
       url: doc.certificate?.url || "",
@@ -963,7 +981,9 @@ function staffRow(doc: any) {
   };
 }
 
-const STAFF_SELECT = "-mcqs -positions";
+/** Staff lists need each question's id and topic for the topic breakdown, never the questions themselves. */
+const STAFF_SELECT =
+  "-mcqs.question -mcqs.options -mcqs.explanation -mcqs.positionFen -mcqs.source -mcqs.bankKey -positions.pgn -positions.solution -positions.startFen -positions.question -positions.title -positions.source -positions.bankKey";
 
 export async function listAssignmentsForStaff(filters: { tier?: string; levelNumber?: number; status?: string; studentIds?: string[] } = {}) {
   await dbConnect();

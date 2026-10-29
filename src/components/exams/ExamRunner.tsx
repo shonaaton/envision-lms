@@ -17,8 +17,9 @@ import {
   POSITION_MARKS,
   WRONG_MOVE_PENALTY,
 } from "@/lib/exams/examRules";
+import type { ExamResult } from "@/lib/exams/examReport";
 import { cn } from "@/lib/utils";
-import { CertificateBadge, FenDiagram, SubmitReasonBadge, istDateTime } from "./examUi";
+import { CertificateBadge, FenDiagram, SubmitReasonBadge, TopicBreakdownList, istDateTime } from "./examUi";
 
 type Mcq = { id: string; question: string; positionFen: string; topicName: string; options: { id: string; text: string }[]; selected: string | null };
 type Position = {
@@ -49,10 +50,7 @@ export type Exam = {
   certificate: { status: string; url: string; number: string } | null;
   mcqs?: Mcq[];
   positions?: Position[];
-  result?: {
-    mcqs: { id: string; topicName: string; answered: boolean; correct: boolean; marks: number }[];
-    positions: { id: string; topicName: string; solved: boolean; wrongMoves: number; hintsUsed: number; marks: number }[];
-  };
+  result?: ExamResult;
 };
 
 /**
@@ -62,6 +60,11 @@ export type Exam = {
  * report it twice.
  */
 const handledThisLoad = new Set<string>();
+
+/** How long "Answer saved" shows before a locked MCQ moves on to the next question. */
+const MCQ_ADVANCE_DELAY_MS = 700;
+/** Longer for a solved position, so the final board and the marks can be seen. */
+const POSITION_ADVANCE_DELAY_MS = 1500;
 
 /**
  * Everything the exam screens ask of the outside world. The real sitting
@@ -366,12 +369,23 @@ function Sitting({ exam, setExam, reload }: { exam: Exam; setExam: (exam: Exam) 
       .finally(() => void finished());
   }, [left, exam.endsAt, actions, finished]);
 
+  /** Moves on from a finished question after `delayMs`, unless the student already went elsewhere. */
+  function advanceFrom(questionId: string, delayMs: number) {
+    const from = items.findIndex((item) => item.id === questionId);
+    if (from >= 0 && from < items.length - 1) {
+      window.setTimeout(() => setIndex((now) => (now === from ? from + 1 : now)), delayMs);
+    }
+  }
+
   function patchMcq(questionId: string, selected: string) {
     setExam({ ...exam, mcqs: mcqs.map((mcq) => (mcq.id === questionId ? { ...mcq, selected } : mcq)) });
+    advanceFrom(questionId, MCQ_ADVANCE_DELAY_MS);
   }
 
   function patchPosition(questionId: string, patch: Partial<Position>) {
+    const wasSolved = Boolean(positions.find((position) => position.id === questionId)?.solved);
     setExam({ ...exam, positions: positions.map((position) => (position.id === questionId ? { ...position, ...patch } : position)) });
+    if (patch.solved && !wasSolved) advanceFrom(questionId, POSITION_ADVANCE_DELAY_MS);
   }
 
   async function finish() {
@@ -822,7 +836,87 @@ function ResultScreen({ exam }: { exam: Exam }) {
           </div>
         </section>
       )}
+
+      {exam.result && exam.result.topics.length > 0 && (
+        <section className="rounded-xl border border-slate-200 bg-white p-4">
+          <h2 className="mb-3 font-black text-slate-950">By topic</h2>
+          <TopicBreakdownList breakdown={exam.result} />
+        </section>
+      )}
+
+      {exam.result && <AnswerReview result={exam.result} />}
     </div>
+  );
+}
+
+/** The right answers to the MCQs the student missed and the positions they did not solve. */
+function AnswerReview({ result }: { result: ExamResult }) {
+  const mcqs = result.mcqs.map((mcq, index) => ({ ...mcq, number: index + 1 })).filter((mcq) => mcq.review);
+  const positions = result.positions.map((position, index) => ({ ...position, number: index + 1 })).filter((position) => position.review);
+  if (!mcqs.length && !positions.length) {
+    return (
+      <section className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-bold text-emerald-800">
+        <CheckCircle2 size={16} /> Every MCQ right and every position solved. Nothing to review.
+      </section>
+    );
+  }
+  return (
+    <section className="space-y-3">
+      <div>
+        <h2 className="font-black text-slate-950">Review your mistakes</h2>
+        <p className="text-sm text-slate-600">The right answers to the questions you missed and the positions you did not solve.</p>
+      </div>
+      {mcqs.map(({ id, number, topicName, answered, review }) => (
+        <article key={id} className="rounded-xl border border-slate-200 bg-white p-4">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <b className="text-brand">Question {number}</b>
+            <span className="text-xs font-semibold text-slate-500">{topicName}{answered ? "" : " · not answered"}</span>
+          </div>
+          <div className={cn("grid gap-4", review!.positionFen && "md:grid-cols-[240px_minmax(0,1fr)] md:items-start")}>
+            {review!.positionFen && <FenDiagram fen={review!.positionFen} size={220} />}
+            <div>
+              <div className="rounded-lg bg-slate-50 p-3 text-sm font-semibold text-slate-900">{review!.question}</div>
+              <ul className="mt-2 grid gap-1.5">
+                {review!.options.map((option) => {
+                  const right = option.id === review!.correctOptionId;
+                  const chosen = option.id === review!.selected;
+                  return (
+                    <li
+                      key={option.id}
+                      className={cn(
+                        "flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm",
+                        right ? "border-emerald-300 bg-emerald-50 font-bold text-emerald-800" : chosen ? "border-red-200 bg-red-50 text-red-700" : "border-slate-200 text-slate-700"
+                      )}
+                    >
+                      <span>{option.text}</span>
+                      {right ? <span className="text-xs">Right answer</span> : chosen ? <span className="text-xs">Your answer</span> : null}
+                    </li>
+                  );
+                })}
+              </ul>
+              {review!.explanation && <p className="mt-2 text-sm text-slate-700">{review!.explanation}</p>}
+            </div>
+          </div>
+        </article>
+      ))}
+      {positions.map(({ id, number, topicName, review }) => (
+        <article key={id} className="rounded-xl border border-slate-200 bg-white p-4">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <b className="text-brand">Position {number}</b>
+            <span className="text-xs font-semibold text-slate-500">{topicName} · not solved</span>
+          </div>
+          <div className="grid gap-4 md:grid-cols-[240px_minmax(0,1fr)] md:items-start">
+            <FenDiagram fen={review!.startFen} orientation={review!.orientation} size={220} />
+            <div>
+              <div className="rounded-lg bg-slate-50 p-3 text-sm font-semibold text-slate-900">{review!.question}</div>
+              <div className="mt-2 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                <span className="font-bold">Solution:</span> <span className="font-mono">{review!.solution}</span>
+              </div>
+            </div>
+          </div>
+        </article>
+      ))}
+    </section>
   );
 }
 

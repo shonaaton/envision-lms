@@ -46,6 +46,14 @@ export default function ExamsAdminClient() {
   const [bank, setBank] = useState<BankCount[] | null>(null);
   const [openLevel, setOpenLevel] = useState<string>("");
   const [assigning, setAssigning] = useState(false);
+  // The "closed without an attempt" notice links to ?tab=assignments&status=expired.
+  const [initialStatus, setInitialStatus] = useState("");
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("tab") === "assignments") setTab("assignments");
+    setInitialStatus(params.get("status") || "");
+  }, []);
 
   const loadPapers = useCallback(async () => {
     try {
@@ -144,7 +152,7 @@ export default function ExamsAdminClient() {
         </>
       )}
 
-      {tab === "assignments" && <AssignmentsTab papers={papers} />}
+      {tab === "assignments" && <AssignmentsTab papers={papers} initialStatus={initialStatus} />}
 
       {assigning && (
         <AssignDialog
@@ -384,11 +392,11 @@ function ReplaceButton({ busy, disabled, onClick }: { busy: boolean; disabled: b
 
 /* ------------------------------------------------------------------ assignments */
 
-function AssignmentsTab({ papers }: { papers: PaperSummary[] }) {
+function AssignmentsTab({ papers, initialStatus }: { papers: PaperSummary[]; initialStatus: string }) {
   const [rows, setRows] = useState<StaffRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [level, setLevel] = useState("");
-  const [status, setStatus] = useState("");
+  const [status, setStatus] = useState(initialStatus);
   const [q, setQ] = useState("");
 
   const load = useCallback(async () => {
@@ -445,7 +453,7 @@ function AssignmentsTab({ papers }: { papers: PaperSummary[] }) {
           <option value="assigned">Not started</option>
           <option value="in_progress">In progress</option>
           <option value="submitted">Completed</option>
-          <option value="expired">Expired</option>
+          <option value="expired">Closed without an attempt</option>
           <option value="cancelled">Cancelled</option>
         </select>
         <button type="button" className="btn btn-outline" onClick={() => void load()}>

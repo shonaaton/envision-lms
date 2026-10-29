@@ -1,9 +1,9 @@
 import { judgePuzzleMove, puzzleFenAt, puzzleFromLine, type PgnPuzzle } from "@/lib/pgnPuzzle";
+import { examResult } from "@/lib/exams/examReport";
 import {
   SUBMIT_REASON_LABELS,
   availablePositionMarks,
   examEndsAt,
-  mcqMarks,
   positionMarks,
   scoreExam,
   submitReasonFor,
@@ -125,16 +125,22 @@ export function createPreviewActions(paper: PreviewPaper, backHref: string): Exa
       return {
         ...base,
         score,
-        result: {
-          mcqs: paper.mcqs.map((mcq) => {
-            const answer = state.answers.get(mcq.id);
-            return { id: mcq.id, topicName: mcq.topicName, answered: Boolean(answer), correct: Boolean(answer?.correct), marks: answer ? mcqMarks(answer.correct) : 0 };
-          }),
+        result: examResult({
+          mcqs: paper.mcqs,
           positions: paper.positions.map((position) => {
-            const progress = progressOf(position.id);
-            return { id: position.id, topicName: position.topicName, solved: progress.solved, wrongMoves: progress.wrongMoves, hintsUsed: progress.hintsUsed, marks: positionMarks(progress) };
+            const puzzle = puzzles.get(position.id)!;
+            return {
+              id: position.id,
+              topicName: position.topicName,
+              question: position.question,
+              startFen: puzzle.start,
+              orientation: position.studentColor,
+              solution: puzzle.moves.map((move) => move.san),
+            };
           }),
-        },
+          mcqAnswers: Array.from(state.answers.entries()).map(([questionId, answer]) => ({ questionId, ...answer })),
+          positionProgress: Array.from(state.progress.entries()).map(([questionId, progress]) => ({ questionId, ...progress })),
+        }),
       };
     }
     return base;

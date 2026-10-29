@@ -54,7 +54,7 @@ describe("what a student is sent", () => {
     expect(moved.positions[0].hint).toBeNull();
   });
 
-  it("after the exam, says what was right but not what the answer was", () => {
+  it("after the exam, gives the right answer to a missed MCQ", () => {
     const sent: any = serializeForStudent(
       sitting("submitted", {
         submitReason: "tab_switch",
@@ -64,10 +64,22 @@ describe("what a student is sent", () => {
       })
     );
     expect(sent.result.mcqs[0]).toMatchObject({ answered: true, correct: false, marks: 0 });
+    expect(sent.result.mcqs[0].review).toMatchObject({ selected: "b", correctOptionId: "a", explanation: "Check first." });
     expect(sent.result.positions[0]).toMatchObject({ solved: true, marks: 4 });
+    expect(sent.result.positions[0].review).toBeUndefined();
     expect(sent.submitReasonLabel).toContain("another tab");
-    const text = JSON.stringify(sent);
-    expect(text).not.toContain("Ra8+");
-    expect(text).not.toContain('"options"');
+    expect(JSON.stringify(sent)).not.toContain("[FEN");
+  });
+
+  it("after the exam, gives the solution to an unsolved position and nothing for a right MCQ", () => {
+    const sent: any = serializeForStudent(
+      sitting("submitted", {
+        mcqAnswers: [{ questionId: "m1", selected: "a", correct: true }],
+        positionProgress: [{ questionId: "p1", ply: 0, wrongMoves: 3, hintsUsed: 0, solved: false }],
+      })
+    );
+    expect(sent.result.mcqs[0].review).toBeUndefined();
+    expect(sent.result.positions[0].review).toMatchObject({ solution: "1. Ra8+ Kd7 2. Rh7+", orientation: "white", startFen: "4k3/8/8/8/8/8/8/R3K2R w - - 0 1" });
+    expect(sent.result.topics.map((topic: any) => topic.topic)).toEqual(["Checks", "Skewers"]);
   });
 });

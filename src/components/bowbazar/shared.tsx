@@ -28,10 +28,13 @@ const TABS = [
   { href: "/bowbazar/admissions", label: "Admissions", need: "students" },
   { href: "/bowbazar/changes", label: "Time changes", need: "students" },
   { href: "/bowbazar/messages", label: "Messages", need: "messages" },
+  { href: "/bowbazar/exams", label: "Exams", need: "exams" },
   { href: "/bowbazar/achievements", label: "Achievements", need: "achievements" },
+  { href: "/bowbazar/whatsapp", label: "WhatsApp", need: "whatsapp" },
   { href: "/bowbazar/activity", label: "Activity", need: "activity" },
   { href: "/bowbazar/fees", label: "Fees", need: "fees" },
   { href: "/bowbazar/users", label: "Users", need: "staff" },
+  { href: "/bowbazar/access", label: "Feature access", need: "staff" },
   { href: "/bowbazar/settings", label: "Settings", need: "fees" },
 ];
 
@@ -55,7 +58,7 @@ export function BranchHeader({ title, subtitle, can, actions }: { title: string;
               key={tab.href}
               href={tab.href}
               className={cn(
-                "whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-bold transition",
+                "shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-bold transition",
                 active ? "bg-brand text-white" : "text-slate-600 hover:bg-brand-50 hover:text-brand"
               )}
             >

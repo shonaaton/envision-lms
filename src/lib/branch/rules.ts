@@ -39,19 +39,18 @@ export type BranchCapability =
   | "fees"
   | "staff"
   | "messages"
-  | "homeworkSets"
   | "exams"
   | "achievements"
   | "activity"
   | "whatsapp";
 
 /** Every capability, for the admin and for the feature-access screen. */
-export const BRANCH_CAPABILITIES: BranchCapability[] = ["view", "attendance", "students", "slots", "fees", "staff", "messages", "homeworkSets", "exams", "achievements", "activity", "whatsapp"];
+export const BRANCH_CAPABILITIES: BranchCapability[] = ["view", "attendance", "students", "slots", "fees", "staff", "messages", "exams", "achievements", "activity", "whatsapp"];
 
 /** What a manager and a coach can do until the branch admin changes it (Feature Access). */
 export const DEFAULT_ROLE_ACCESS: Record<"manager" | "coach", BranchCapability[]> = {
-  manager: ["view", "attendance", "students", "slots", "fees", "messages", "homeworkSets", "exams", "achievements", "whatsapp"],
-  coach: ["view", "attendance", "homeworkSets", "achievements"],
+  manager: ["view", "attendance", "students", "slots", "fees", "messages", "exams", "achievements", "whatsapp"],
+  coach: ["view", "attendance", "achievements"],
 };
 
 type BranchUser = { role?: string; branch?: string; branchRole?: string; isSuperAdmin?: boolean };

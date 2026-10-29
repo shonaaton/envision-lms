@@ -48,6 +48,9 @@ const STUDENT_TOOL_PREFIXES = [
   "/play/square-trainer",
   "/learn",
   "/api/learn",
+  // The academy's level exams, assigned by the branch (lib/branch/exams.ts).
+  "/exams",
+  "/api/exams",
 ];
 
 const matches = (pathname: string, prefix: string) => pathname === prefix || pathname.startsWith(`${prefix}/`);

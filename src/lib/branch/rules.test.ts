@@ -35,7 +35,7 @@ describe("branchAccess", () => {
     expect(manager.branch).toBe("bowbazar");
     expect(manager.can.has("fees")).toBe(true);
     expect(manager.can.has("staff")).toBe(false);
-    expect([...branchAccess({ role: "instructor", branch: "bowbazar", branchRole: "coach" })!.can]).toEqual(["view", "attendance", "homeworkSets", "achievements"]);
+    expect([...branchAccess({ role: "instructor", branch: "bowbazar", branchRole: "coach" })!.can]).toEqual(["view", "attendance", "achievements"]);
     expect(manager.can.has("attendance")).toBe(true);
   });
 

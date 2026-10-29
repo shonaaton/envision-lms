@@ -22,6 +22,7 @@ export default function DashboardFrame({
   canLearnChess,
   branch,
   branchRole,
+  branchCan,
   user,
   children,
 }: {
@@ -34,6 +35,7 @@ export default function DashboardFrame({
   canLearnChess?: boolean;
   branch?: string;
   branchRole?: string;
+  branchCan?: string[];
   user: { name?: string | null; role: string; isActive?: boolean; isPaused?: boolean };
   children: ReactNode;
 }) {
@@ -77,6 +79,7 @@ export default function DashboardFrame({
         canLearnChess={canLearnChess}
         branch={branch}
         branchRole={branchRole}
+        branchCan={branchCan}
         mobileOpen={mobileNavOpen}
         desktopCollapsed={desktopNavCollapsed}
         user={user}

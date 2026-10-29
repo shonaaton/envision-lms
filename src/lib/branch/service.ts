@@ -3,32 +3,36 @@ import bcrypt from "bcryptjs";
 import { randomBytes } from "node:crypto";
 import { Types } from "mongoose";
 import { dbConnect } from "@/lib/db";
-import { academyDateTime } from "@/lib/academyTime";
+import { academyDateKey, academyDateTime } from "@/lib/academyTime";
 import { recordActivity } from "@/lib/activity";
 import { User, createUserWithUsername } from "@/models/User";
-import { BranchAdmission, BranchFeeBill, BranchSlot, BranchStudent } from "@/models/Branch";
+import { BranchAdmission, BranchFeeBill, BranchSlot, BranchSlotChange, BranchStudent } from "@/models/Branch";
 import type { BranchKey } from "./scope";
 import {
   DEFAULT_SLOTS,
   WEEK_ORDER,
   billBalance,
   billDue,
+  isFeePlan,
   billStatus,
   isMonthKey,
   isTime,
   monthKey,
-  monthsBetween,
   overfullSlots,
   rupeesToPaise,
   shiftMonth,
   slotLabel,
 } from "./rules";
 
-export class BranchError extends Error {
-  constructor(message: string, public status = 400) {
-    super(message);
-  }
-}
+import { BranchError } from "./errors";
+import { getBranchSettings } from "./settings";
+import { absentStreaks, alertFreedSeats } from "./alerts";
+import { nextReceiptNumber } from "./receipts";
+import { ensureBranchBills } from "./bills";
+
+export { ensureBranchBills };
+
+export { BranchError };
 
 const id = (value: unknown) => String((value as any)?._id ?? value ?? "");
 const text = (value: unknown, max = 300) => String(value ?? "").trim().slice(0, max);
@@ -112,6 +116,8 @@ export async function saveSlot(branch: BranchKey, input: any, slotId?: string) {
     if (!doc.isActive && seated) throw new BranchError("Move the students out of this slot before closing it.");
     const updated = await BranchSlot.findOneAndUpdate({ _id: slotId, branch }, { $set: doc }, { new: true }).catch(duplicateSlot);
     if (!updated) throw new BranchError("Slot not found.", 404);
+    // More seats may mean room for someone on the waitlist.
+    if (capacity > seated) void alertFreedSeats(branch, [slotId]);
     return updated;
   }
   return BranchSlot.create({ branch, ...doc }).catch(duplicateSlot);
@@ -139,7 +145,7 @@ function duplicateSlot(error: any): never {
 }
 
 /** Throws unless every slot exists in this branch, is open, and has a seat for this student. */
-async function assertSeats(branch: BranchKey, slotIds: string[], studentId: string | null) {
+export async function assertSeats(branch: BranchKey, slotIds: string[], studentId: string | null) {
   if (slotIds.some((slot) => !isObjectId(slot))) throw new BranchError("Choose valid slots.");
   const slots: any[] = await BranchSlot.find({ _id: { $in: slotIds }, branch, isActive: true }).lean();
   if (slots.length !== new Set(slotIds).size) throw new BranchError("One of the chosen slots is closed or does not exist.");
@@ -154,6 +160,29 @@ async function assertSeats(branch: BranchKey, slotIds: string[], studentId: stri
 // ---------------------------------------------------------------------------
 // Students
 // ---------------------------------------------------------------------------
+
+/**
+ * The standing discount from a form: `discountKind` none/percent/flat with
+ * `discountValue` (a percentage, or rupees). Without `discountKind` the
+ * student's current discount is kept; "none" clears it (null).
+ */
+function discountField(input: any) {
+  if (input?.discountKind === undefined) return input?.discount?.kind ? input.discount : undefined;
+  const kind = input.discountKind;
+  if (!kind || kind === "none") return null;
+  const reason = text(input?.discountReason, 120);
+  if (kind === "percent") {
+    const value = Number(input?.discountValue);
+    if (!Number.isInteger(value) || value < 1 || value > 100) throw new BranchError("Enter the discount as a whole percentage from 1 to 100.");
+    return { kind, value, reason };
+  }
+  if (kind === "flat") {
+    const value = rupeesToPaise(input?.discountValue);
+    if (!value) throw new BranchError("Enter the discount in rupees.");
+    return { kind, value, reason };
+  }
+  throw new BranchError("Choose a percentage or a fixed amount for the discount.");
+}
 
 function studentFields(input: any) {
   const name = text(input?.name, 120);
@@ -179,6 +208,8 @@ function studentFields(input: any) {
     school: text(input?.school, 200),
     dateOfBirth: dob && !Number.isNaN(dob.getTime()) ? dob : undefined,
     notes: text(input?.notes, 1000),
+    feePlan: isFeePlan(input?.feePlan) ? input.feePlan : "monthly",
+    discount: discountField(input),
   };
 }
 
@@ -195,7 +226,11 @@ async function loginEmailFor(email: string, name: string) {
 
 export async function createStudent(branch: BranchKey, input: any, actorId: string) {
   await dbConnect();
-  const fields = studentFields(input);
+  const { discount, ...fields } = studentFields(input);
+  // The admission fee defaults to the branch's setting; the form can change it for one student.
+  const admissionFee =
+    input?.admissionFee === undefined || input?.admissionFee === "" ? (await getBranchSettings(branch)).admissionFee : rupeesToPaise(input.admissionFee);
+  if (admissionFee === null) throw new BranchError("Enter the admission fee in rupees.");
   if (!fields.phone) throw new BranchError("Enter the parent's phone number.");
   await assertSeats(branch, fields.slots, null);
   const password = tempPassword();
@@ -222,6 +257,8 @@ export async function createStudent(branch: BranchKey, input: any, actorId: stri
   try {
     student = await BranchStudent.create({
       ...fields,
+      ...(discount ? { discount } : {}),
+      admissionFee,
       user: user._id,
       branch,
       admissionDate: Number.isNaN(admissionDate.getTime()) ? new Date() : admissionDate,
@@ -246,9 +283,14 @@ export async function createStudent(branch: BranchKey, input: any, actorId: stri
 export async function updateStudent(branch: BranchKey, studentId: string, input: any) {
   await dbConnect();
   const student: any = await findStudent(branch, studentId);
-  const fields = studentFields({ ...student, monthlyFee: (student.monthlyFee || 0) / 100, ...input });
+  const { discount, ...fields } = studentFields({ ...student, monthlyFee: (student.monthlyFee || 0) / 100, ...input });
   if (student.status === "active") await assertSeats(branch, fields.slots, studentId);
-  await BranchStudent.updateOne({ _id: studentId }, { $set: fields });
+  await BranchStudent.updateOne(
+    { _id: studentId },
+    discount === null ? { $set: fields, $unset: { discount: 1 } } : { $set: { ...fields, ...(discount ? { discount } : {}) } }
+  );
+  const leftSlots = (student.slots || []).map(id).filter((slot: string) => !fields.slots.includes(slot));
+  if (student.status === "active" && leftSlots.length) void alertFreedSeats(branch, leftSlots);
   await User.updateOne(
     { _id: student.user },
     { $set: { name: fields.name, phone: fields.phone.replace(/^\+?91(?=\d{10}$)/, ""), parentName: fields.parentName, parentEmail: fields.email || undefined } }
@@ -277,6 +319,7 @@ export async function setStudentStatus(branch: BranchKey, studentId: string, inp
       { $set: { status: "inactive", inactiveReason: reason, inactiveSince: Number.isNaN(since.getTime()) ? new Date() : since } }
     );
     await User.updateOne({ _id: student.user }, { $set: { isActive: false, deactivatedAt: new Date() } });
+    void alertFreedSeats(branch, student.slots || []);
   }
   void recordActivity({
     actor: actorId,
@@ -317,7 +360,9 @@ export async function listStudents(branch: BranchKey) {
   const [students, slots, owed] = await Promise.all([
     BranchStudent.find({ branch }).sort({ name: 1 }).lean(),
     BranchSlot.find({ branch }).lean(),
-    BranchFeeBill.find({ branch, status: { $in: ["unpaid", "partial"] } }).select("student amount discount lateFee paidAmount status month").lean(),
+    BranchFeeBill.find({ branch, status: { $in: ["unpaid", "partial"] } })
+      .select("student amount discount planDiscount lateFee admissionFee charges paidAmount status month")
+      .lean(),
   ]);
   const users: any[] = await User.find({ _id: { $in: (students as any[]).map((s) => s.user) } })
     .select("username avatar lastLoginAt")
@@ -337,6 +382,7 @@ export async function listStudents(branch: BranchKey) {
     return {
       id: id(student),
       name: student.name,
+      userId: id(student.user),
       regNo: student.regNo || "",
       username: user?.username || "",
       avatar: user?.avatar || "",
@@ -354,6 +400,9 @@ export async function listStudents(branch: BranchKey) {
       dateOfBirth: student.dateOfBirth || null,
       notes: student.notes || "",
       admissionId: student.admission ? id(student.admission) : "",
+      discount: student.discount?.kind ? { kind: student.discount.kind, value: student.discount.value, reason: student.discount.reason || "" } : null,
+      admissionFee: student.admissionFee || 0,
+      feePlan: student.feePlan || "monthly",
       monthlyFee: student.monthlyFee || 0,
       feeStartMonth: student.feeStartMonth,
       admissionDate: student.admissionDate,
@@ -378,23 +427,6 @@ export async function listStudents(branch: BranchKey) {
  * that exists - paid, waived or edited by hand - is never touched again. Runs
  * whenever the fees screens open, so a month nobody looked at is still billed.
  */
-export async function ensureBranchBills(branch: BranchKey, upTo = monthKey()) {
-  await dbConnect();
-  const students: any[] = await BranchStudent.find({ branch, status: "active", monthlyFee: { $gt: 0 } })
-    .select("monthlyFee feeStartMonth")
-    .lean();
-  const operations = students.flatMap((student) =>
-    monthsBetween(student.feeStartMonth > shiftMonth(upTo, -24) ? student.feeStartMonth : shiftMonth(upTo, -24), upTo).map((month) => ({
-      updateOne: {
-        filter: { student: student._id, month },
-        update: { $setOnInsert: { branch, student: student._id, month, amount: student.monthlyFee, source: "auto", status: "unpaid", paidAmount: 0 } },
-        upsert: true,
-      },
-    }))
-  );
-  if (operations.length) await BranchFeeBill.bulkWrite(operations, { ordered: false });
-  return operations.length;
-}
 
 function serializeBill(bill: any, student?: any, slotById?: Map<string, any>) {
   return {
@@ -403,6 +435,16 @@ function serializeBill(bill: any, student?: any, slotById?: Map<string, any>) {
     amount: bill.amount,
     discount: bill.discount || 0,
     lateFee: bill.lateFee || 0,
+    admissionFee: bill.admissionFee || 0,
+    planDiscount: bill.planDiscount || 0,
+    charges: (bill.charges || []).map((charge: any) => ({
+      id: id(charge),
+      label: charge.label,
+      kind: charge.kind || "other",
+      amount: charge.amount,
+      note: charge.note || "",
+      addedByName: charge.addedByName || "",
+    })),
     due: billDue(bill),
     paidAmount: bill.paidAmount || 0,
     balance: billBalance(bill),
@@ -418,6 +460,7 @@ function serializeBill(bill: any, student?: any, slotById?: Map<string, any>) {
       reference: payment.reference || "",
       note: payment.note || "",
       collectedByName: payment.collectedByName || "",
+      receiptNo: payment.receiptNo || "",
     })),
     student: student
       ? {
@@ -535,7 +578,95 @@ export async function recordPayment(branch: BranchKey, billId: string, input: an
     note: text(input?.note, 300),
     collectedBy: actor.id,
     collectedByName: actor.name || "",
+    receiptNo: await nextReceiptNumber(branch, paidAt),
   });
+  settle(bill);
+  await bill.save();
+  const saved = bill.toObject();
+  const payment = saved.payments[saved.payments.length - 1];
+  return { ...serializeBill(saved), receipt: { paymentId: id(payment), receiptNo: payment.receiptNo as string } };
+}
+
+/**
+ * One payment for several of a family's bills - a plan paid ahead, or arrears
+ * cleared at once. Each bill is paid in full, oldest first, and all of them
+ * share one receipt number.
+ */
+export async function recordGroupPayment(branch: BranchKey, studentId: string, input: any, actor: { id: string; name?: string }) {
+  await dbConnect();
+  const student: any = await findStudent(branch, studentId);
+  const billIds: string[] = (Array.isArray(input?.billIds) ? input.billIds : []).filter(isObjectId);
+  if (!billIds.length) throw new BranchError("Pick the months being paid.");
+  const bills: any[] = await BranchFeeBill.find({ _id: { $in: billIds }, branch, student: student._id }).sort({ month: 1 });
+  if (bills.length !== new Set(billIds).size) throw new BranchError("One of those bills was not found.", 404);
+  if (bills.some((bill) => bill.status === "waived" || billBalance(bill) <= 0)) throw new BranchError("One of those months is already settled.");
+  const mode = ["cash", "upi", "bank"].includes(input?.mode) ? input.mode : null;
+  if (!mode) throw new BranchError("Choose cash, UPI or bank transfer.");
+  const paidAt = input?.paidAt ? new Date(input.paidAt) : new Date();
+  if (Number.isNaN(paidAt.getTime()) || paidAt.getTime() > Date.now() + 60_000) throw new BranchError("Enter a valid payment date.");
+  const receiptNo = await nextReceiptNumber(branch, paidAt);
+  let firstPaymentId = "";
+  for (const bill of bills) {
+    bill.payments.push({
+      amount: billBalance(bill),
+      mode,
+      paidAt,
+      reference: text(input?.reference, 120),
+      note: text(input?.note, 300),
+      collectedBy: actor.id,
+      collectedByName: actor.name || "",
+      receiptNo,
+    });
+    settle(bill);
+    await bill.save();
+    if (!firstPaymentId) firstPaymentId = id(bill.payments[bill.payments.length - 1]);
+  }
+  return { receipt: { paymentId: firstPaymentId, receiptNo }, months: bills.map((bill) => bill.month) };
+}
+
+const CHARGE_KINDS = ["tournament", "material", "exam", "event", "other"];
+
+/**
+ * Adds a one-off charge (tournament entry, books, a chess set) to each chosen
+ * student's bill for a month, raising that bill if it isn't there yet.
+ */
+export async function addCharges(branch: BranchKey, input: any, actor: { id: string; name?: string }) {
+  await dbConnect();
+  const label = text(input?.label, 120);
+  if (!label) throw new BranchError("Say what the charge is for.");
+  const amount = rupeesToPaise(input?.amount);
+  if (!amount) throw new BranchError("Enter the amount in rupees.");
+  const month = isMonthKey(input?.month) ? input.month : monthKey();
+  const kind = CHARGE_KINDS.includes(input?.kind) ? input.kind : "other";
+  const studentIds: string[] = (Array.isArray(input?.studentIds) ? input.studentIds : []).filter(isObjectId);
+  if (!studentIds.length) throw new BranchError("Pick at least one student.");
+  const students: any[] = await BranchStudent.find({ _id: { $in: studentIds }, branch }).select("_id").lean();
+  if (students.length !== new Set(studentIds).size) throw new BranchError("One of those students was not found.", 404);
+  const charge = { label, kind, amount, note: text(input?.note, 300), addedBy: actor.id, addedByName: actor.name || "", addedAt: new Date() };
+  for (const student of students) {
+    // A student with no fee that month (left, or a fee of 0) gets a bill holding just the charge.
+    await BranchFeeBill.updateOne(
+      { student: student._id, month },
+      { $setOnInsert: { branch, student: student._id, month, amount: 0, source: "manual", status: "unpaid", paidAmount: 0 }, $push: { charges: charge } },
+      { upsert: true }
+    );
+    const bill = await BranchFeeBill.findOne({ student: student._id, month });
+    if (bill && bill.status !== "waived") {
+      settle(bill);
+      await bill.save();
+    }
+  }
+  return { added: students.length, month };
+}
+
+/** Takes a charge off a bill; refused when what's left would be less than what's paid. */
+export async function removeCharge(branch: BranchKey, billId: string, chargeId: string) {
+  await dbConnect();
+  const bill = await findBill(branch, billId);
+  const charge = bill.charges.id(chargeId);
+  if (!charge) throw new BranchError("Charge not found.", 404);
+  charge.deleteOne();
+  if (billDue(bill) < (bill.paidAmount || 0)) throw new BranchError("More has been paid than this bill would be without the charge. Remove the payment first.");
   settle(bill);
   await bill.save();
   return serializeBill(bill.toObject());
@@ -557,7 +688,7 @@ export async function removePayment(branch: BranchKey, billId: string, paymentId
 export async function adjustBill(branch: BranchKey, billId: string, input: any) {
   await dbConnect();
   const bill = await findBill(branch, billId);
-  for (const field of ["amount", "discount", "lateFee"] as const) {
+  for (const field of ["amount", "discount", "planDiscount", "lateFee", "admissionFee"] as const) {
     if (input?.[field] === undefined) continue;
     const value = rupeesToPaise(input[field]);
     if (value === null) throw new BranchError("Enter amounts in rupees.");
@@ -607,15 +738,19 @@ export async function studentBills(branch: BranchKey, studentId: string) {
 
 export async function branchOverview(branch: BranchKey) {
   await dbConnect();
-  const [slots, active, inactive, report, admissionsToReview] = await Promise.all([
+  const [slots, active, inactive, report, admissionsToReview, changesToReview, missing] = await Promise.all([
     listSlots(branch, { includeInactive: false }),
     BranchStudent.countDocuments({ branch, status: "active" }),
     BranchStudent.countDocuments({ branch, status: "inactive" }),
     monthReport(branch, monthKey()),
     BranchAdmission.countDocuments({ branch, status: "submitted" }),
+    BranchSlotChange.countDocuments({ branch, status: "pending" }),
+    absentStreaks(branch, academyDateKey(new Date())),
   ]);
   return {
+    missingClasses: missing.slice(0, 20),
     admissionsToReview,
+    changesToReview,
     activeStudents: active,
     inactiveStudents: inactive,
     slots: slots.length,

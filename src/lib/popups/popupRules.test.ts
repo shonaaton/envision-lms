@@ -87,3 +87,20 @@ describe("safePopupHref", () => {
     expect(safePopupHref("http://plain.example")).toBe("");
   });
 });
+
+describe("branch pop-ups", () => {
+  const online = { id: "s1", batchIds: [], courseIds: [] };
+  const branchStudent = { id: "s2", batchIds: [], courseIds: [], branch: "bowbazar", slotIds: ["slotA"] };
+
+  it("keeps a branch's pop-ups to its students and the academy's away from them", () => {
+    expect(campaignMatches({ audience: "branch_all", branch: "bowbazar" }, branchStudent)).toBe(true);
+    expect(campaignMatches({ audience: "branch_all", branch: "bowbazar" }, online)).toBe(false);
+    expect(campaignMatches({ audience: "all_students" }, branchStudent)).toBe(false);
+    expect(campaignMatches({ audience: "all_students" }, online)).toBe(true);
+  });
+
+  it("aims at one class", () => {
+    expect(campaignMatches({ audience: "branch_slot", branch: "bowbazar", targetIds: ["slotA"] }, branchStudent)).toBe(true);
+    expect(campaignMatches({ audience: "branch_slot", branch: "bowbazar", targetIds: ["slotB"] }, branchStudent)).toBe(false);
+  });
+});

@@ -6,6 +6,7 @@ import { classroomOpensLearnChess } from "@/lib/learning/audience";
 import { cachedPermissionValue } from "@/lib/permissionCache";
 import { Classroom } from "@/models/Classroom";
 import { Course } from "@/models/Course";
+import { User } from "@/models/User";
 
 function idOf(value: any) {
   return value?._id?.toString?.() ?? value?.toString?.() ?? "";
@@ -23,6 +24,9 @@ export function canStudentUseLearnChess(studentId: string): Promise<boolean> {
   if (!studentId) return Promise.resolve(false);
   return cachedPermissionValue("cohorts", `learnChess:${studentId}`, async () => {
     await dbConnect();
+    // Offline-branch students have no online classroom to qualify them; the
+    // centre gives every one of its students the course (asked 2026-10-28).
+    if (await User.exists({ _id: studentId, branch: { $nin: [null, ""] } })) return true;
     const classrooms: any[] = await Classroom.find({ students: studentId, status: { $ne: "cancelled" } })
       .select("status classroomType isTestClassroom isSessionInstance level levelName course")
       .lean();

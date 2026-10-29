@@ -50,6 +50,18 @@ const BranchStudentSchema = new Schema(
     // Paise, like every amount in the app. Fixed per student: siblings and
     // old joiners can pay different amounts.
     monthlyFee: { type: Number, default: 0, min: 0 },
+    // A standing discount on every monthly bill (siblings, scholarships).
+    discount: {
+      kind: { type: String, enum: ["percent", "flat"] },
+      value: { type: Number, min: 0 }, // percent, or paise
+      reason: String,
+    },
+    // One-time fee added to the first bill; set when the student joins.
+    admissionFee: { type: Number, default: 0, min: 0 },
+    // Set once the admission fee is on a bill, so coming back after a break never charges it again.
+    admissionFeeBilledAt: Date,
+    // How the family pays: a longer plan raises the whole period's bills at its start, at the plan's discount.
+    feePlan: { type: String, enum: ["monthly", "quarterly", "half_yearly", "yearly"], default: "monthly" },
     // First month ("YYYY-MM") this student is billed for.
     feeStartMonth: { type: String, required: true },
     admissionDate: { type: Date, default: Date.now },
@@ -76,6 +88,8 @@ const BranchPaymentSchema = new Schema(
     note: String,
     collectedBy: { type: Schema.Types.ObjectId, ref: "User" },
     collectedByName: String,
+    // "BB/26-27/0001", numbered per branch and financial year. Old carried-over payments have none.
+    receiptNo: { type: String, index: true },
   },
   { timestamps: true }
 );
@@ -92,6 +106,22 @@ const BranchFeeBillSchema = new Schema(
     amount: { type: Number, required: true, min: 0 },
     discount: { type: Number, default: 0, min: 0 },
     lateFee: { type: Number, default: 0, min: 0 },
+    lateFeeAppliedAt: Date,
+    admissionFee: { type: Number, default: 0, min: 0 },
+    // The fee plan's discount on this month, apart from the student's own discount.
+    planDiscount: { type: Number, default: 0, min: 0 },
+    // One-off items added to the month: tournament entry, books, a chess set.
+    charges: [
+      {
+        label: { type: String, required: true },
+        kind: { type: String, enum: ["tournament", "material", "exam", "event", "other"], default: "other" },
+        amount: { type: Number, required: true, min: 1 },
+        note: String,
+        addedBy: { type: Schema.Types.ObjectId, ref: "User" },
+        addedByName: String,
+        addedAt: { type: Date, default: Date.now },
+      },
+    ],
     payments: [BranchPaymentSchema],
     paidAmount: { type: Number, default: 0 },
     status: { type: String, enum: ["unpaid", "partial", "paid", "waived"], default: "unpaid", index: true },
@@ -208,14 +238,191 @@ const BranchAdmissionSchema = new Schema(
 );
 BranchAdmissionSchema.index({ branch: 1, createdAt: -1 });
 
+/**
+ * A class-time change: one week's class moved to another slot that week, or a
+ * slot given up for another for good. Asked for by the family and decided by
+ * staff, or made directly by staff (then approved from the start).
+ */
+const BranchSlotChangeSchema = new Schema(
+  {
+    branch: { type: String, enum: [...BRANCHES], required: true, index: true },
+    student: { type: Schema.Types.ObjectId, ref: "BranchStudent", required: true, index: true },
+    user: { type: Schema.Types.ObjectId, ref: "User" },
+    studentName: String,
+    type: { type: String, enum: ["week", "permanent"], required: true },
+    // The class given up. Optional for a permanent change by a student with no slot yet.
+    fromSlot: { type: Schema.Types.ObjectId, ref: "BranchSlot" },
+    toSlot: { type: Schema.Types.ObjectId, ref: "BranchSlot", required: true },
+    // One-week moves only: the class missed and the class attended instead, same week.
+    fromDate: String,
+    toDate: { type: String, index: true },
+    // Snapshots, so the history reads right after slot times are edited.
+    fromLabel: String,
+    toLabel: String,
+    reason: String,
+    status: { type: String, enum: ["pending", "approved", "rejected", "cancelled"], default: "pending", index: true },
+    requestedBy: { type: Schema.Types.ObjectId, ref: "User" },
+    requestedByName: String,
+    requestedByStaff: { type: Boolean, default: false },
+    decidedBy: { type: Schema.Types.ObjectId, ref: "User" },
+    decidedByName: String,
+    decidedAt: Date,
+    decisionNote: String,
+  },
+  { timestamps: true }
+);
+BranchSlotChangeSchema.index({ branch: 1, status: 1, createdAt: -1 });
+BranchSlotChangeSchema.index({ toSlot: 1, toDate: 1, status: 1 });
+BranchSlotChangeSchema.index({ fromSlot: 1, fromDate: 1, status: 1 });
+
+/** How the branch runs its fees and family messages. One per branch; everything starts off. */
+const BranchSettingsSchema = new Schema(
+  {
+    branch: { type: String, enum: [...BRANCHES], required: true, unique: true },
+    admissionFee: { type: Number, default: 0, min: 0 }, // paise, suggested for each new student
+    proRataFirstMonth: { type: Boolean, default: false },
+    // Percent off each month for families paying a longer plan up front.
+    planDiscounts: {
+      quarterly: { type: Number, default: 0, min: 0, max: 100 },
+      half_yearly: { type: Number, default: 0, min: 0, max: 100 },
+      yearly: { type: Number, default: 0, min: 0, max: 100 },
+    },
+    lateFee: { type: Number, default: 0, min: 0 }, // paise; 0 = off
+    lateFeeAfterDay: { type: Number, default: 10, min: 1, max: 28 },
+    remindersEnabled: { type: Boolean, default: false },
+    reminderDays: { type: [Number], default: [1, 5, 10] },
+    receiptPrefix: { type: String, default: "BB" },
+    parentReportEnabled: { type: Boolean, default: false },
+    absenceAlertAfter: { type: Number, default: 3, min: 2, max: 10 },
+    // Feature access: what managers and coaches may do. Unset means the defaults in lib/branch/rules.ts.
+    roleAccess: { type: Schema.Types.Mixed, default: undefined },
+    updatedBy: { type: Schema.Types.ObjectId, ref: "User" },
+  },
+  { timestamps: true }
+);
+
+/** Running numbers (receipts), claimed atomically with $inc. */
+const BranchCounterSchema = new Schema({ key: { type: String, required: true, unique: true }, seq: { type: Number, default: 0 } });
+
+/** Someone waiting for a seat in a full slot - a new family or a current student wanting to move. */
+const BranchWaitlistSchema = new Schema(
+  {
+    branch: { type: String, enum: [...BRANCHES], required: true, index: true },
+    slot: { type: Schema.Types.ObjectId, ref: "BranchSlot", required: true, index: true },
+    name: { type: String, required: true },
+    phone: String,
+    note: String,
+    student: { type: Schema.Types.ObjectId, ref: "BranchStudent" },
+    status: { type: String, enum: ["waiting", "placed", "removed"], default: "waiting", index: true },
+    createdBy: { type: Schema.Types.ObjectId, ref: "User" },
+    createdByName: String,
+    closedAt: Date,
+  },
+  { timestamps: true }
+);
+
+/** One family message about one month: what the student did, as sent. */
+const BranchMonthlyReportSchema = new Schema(
+  {
+    branch: { type: String, enum: [...BRANCHES], required: true, index: true },
+    student: { type: Schema.Types.ObjectId, ref: "BranchStudent", required: true },
+    month: { type: String, required: true }, // "YYYY-MM"
+    data: Schema.Types.Mixed,
+    sentAt: Date,
+    channels: [String],
+  },
+  { timestamps: true }
+);
+BranchMonthlyReportSchema.index({ student: 1, month: 1 }, { unique: true });
+
+/** One fee reminder per student per day, claimed before sending so a restart never repeats it. */
+const BranchReminderLogSchema = new Schema(
+  {
+    branch: { type: String, enum: [...BRANCHES], required: true },
+    student: { type: Schema.Types.ObjectId, ref: "BranchStudent", required: true },
+    date: { type: String, required: true }, // "YYYY-MM-DD"
+    amount: Number,
+    channels: [String],
+    manual: { type: Boolean, default: false },
+  },
+  { timestamps: true }
+);
+BranchReminderLogSchema.index({ student: 1, date: 1 }, { unique: true });
+
+/** A message from the centre to its families: everyone, some classes, or chosen students. */
+const BranchAnnouncementSchema = new Schema(
+  {
+    branch: { type: String, enum: [...BRANCHES], required: true, index: true },
+    title: { type: String, required: true },
+    message: { type: String, required: true },
+    audience: { type: String, enum: ["all", "slots", "students"], default: "all" },
+    slots: [{ type: Schema.Types.ObjectId, ref: "BranchSlot" }],
+    students: [{ type: Schema.Types.ObjectId, ref: "BranchStudent" }],
+    // The logins it reached, so a family's page can list what was sent to them.
+    recipients: [{ type: Schema.Types.ObjectId, ref: "User", index: true }],
+    emailed: { type: Number, default: 0 },
+    kind: { type: String, enum: ["announcement", "holiday"], default: "announcement" },
+    archivedAt: Date,
+    createdBy: { type: Schema.Types.ObjectId, ref: "User" },
+    createdByName: String,
+  },
+  { timestamps: true }
+);
+BranchAnnouncementSchema.index({ branch: 1, createdAt: -1 });
+
+/** A day the centre is closed: every class, or just some. Registers can't be taken for those classes. */
+const BranchHolidaySchema = new Schema(
+  {
+    branch: { type: String, enum: [...BRANCHES], required: true, index: true },
+    date: { type: String, required: true, index: true }, // "YYYY-MM-DD"
+    slots: [{ type: Schema.Types.ObjectId, ref: "BranchSlot" }], // empty = the whole centre
+    reason: { type: String, required: true },
+    announcement: { type: Schema.Types.ObjectId, ref: "BranchAnnouncement" },
+    cancelledAt: Date,
+    createdBy: { type: Schema.Types.ObjectId, ref: "User" },
+    createdByName: String,
+  },
+  { timestamps: true }
+);
+
+/** A student's result or milestone, kept by the centre and shown on the student's page. */
+const BranchAchievementSchema = new Schema(
+  {
+    branch: { type: String, enum: [...BRANCHES], required: true, index: true },
+    student: { type: Schema.Types.ObjectId, ref: "BranchStudent", required: true, index: true },
+    studentName: String,
+    title: { type: String, required: true }, // the tournament or milestone
+    result: { type: String, required: true }, // "1st place", "Rated 1450"
+    level: { type: String, enum: ["Centre", "District", "State", "National", "International", "Rating", "Other"], default: "Other" },
+    date: String, // "YYYY-MM-DD"
+    note: String,
+    imageUrl: String,
+    showOnPortal: { type: Boolean, default: true },
+    createdBy: { type: Schema.Types.ObjectId, ref: "User" },
+    createdByName: String,
+  },
+  { timestamps: true }
+);
+BranchAchievementSchema.index({ branch: 1, date: -1 });
+
 export type BranchSlotDoc = InferSchemaType<typeof BranchSlotSchema> & { _id: any };
 export type BranchStudentDoc = InferSchemaType<typeof BranchStudentSchema> & { _id: any };
 export type BranchFeeBillDoc = InferSchemaType<typeof BranchFeeBillSchema> & { _id: any };
 export type BranchAttendanceDoc = InferSchemaType<typeof BranchAttendanceSchema> & { _id: any };
 export type BranchAdmissionDoc = InferSchemaType<typeof BranchAdmissionSchema> & { _id: any };
+export type BranchSlotChangeDoc = InferSchemaType<typeof BranchSlotChangeSchema> & { _id: any };
 
 export const BranchSlot = models.BranchSlot || model("BranchSlot", BranchSlotSchema);
 export const BranchStudent = models.BranchStudent || model("BranchStudent", BranchStudentSchema);
 export const BranchFeeBill = models.BranchFeeBill || model("BranchFeeBill", BranchFeeBillSchema);
 export const BranchAttendance = models.BranchAttendance || model("BranchAttendance", BranchAttendanceSchema);
 export const BranchAdmission = models.BranchAdmission || model("BranchAdmission", BranchAdmissionSchema);
+export const BranchSlotChange = models.BranchSlotChange || model("BranchSlotChange", BranchSlotChangeSchema);
+export const BranchSettings = models.BranchSettings || model("BranchSettings", BranchSettingsSchema);
+export const BranchCounter = models.BranchCounter || model("BranchCounter", BranchCounterSchema);
+export const BranchWaitlist = models.BranchWaitlist || model("BranchWaitlist", BranchWaitlistSchema);
+export const BranchMonthlyReport = models.BranchMonthlyReport || model("BranchMonthlyReport", BranchMonthlyReportSchema);
+export const BranchReminderLog = models.BranchReminderLog || model("BranchReminderLog", BranchReminderLogSchema);
+export const BranchAnnouncement = models.BranchAnnouncement || model("BranchAnnouncement", BranchAnnouncementSchema);
+export const BranchHoliday = models.BranchHoliday || model("BranchHoliday", BranchHolidaySchema);
+export const BranchAchievement = models.BranchAchievement || model("BranchAchievement", BranchAchievementSchema);

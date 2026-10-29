@@ -30,6 +30,8 @@ export async function register() {
   const { processWeeklyEngagement } = await import("@/lib/engagement/weeklyEngagementJob");
   const { processExamSweep } = await import("@/lib/exams/examService");
   const { processWhatsAppCampaigns, processWhatsAppFollowUps } = await import("@/lib/whatsappCampaigns");
+  const { processBranchFeeJobs } = await import("@/lib/branch/feeJobs");
+  const { processBranchMonthlyReports } = await import("@/lib/branch/reports");
   const { canAccessFeature } = await import("@/lib/featureAccess");
 
   installRuntimeProcessLogging();
@@ -39,6 +41,26 @@ export async function register() {
     { name: "whatsapp_broadcasts", intervalMs: 30_000, run: () => processWhatsAppCampaigns((actor) => canAccessFeature("whatsapp", actor, "manage")) },
     { name: "whatsapp_follow_ups", intervalMs: 60_000, run: processWhatsAppFollowUps },
     { name: "ptm_sweep", intervalMs: 60 * 60_000, run: () => processPtmSweep() },
+    {
+      /**
+       * Offline branch fees: the late fee once a month's set day has passed,
+       * and fee reminders from 10am on the chosen days. Both off until the
+       * branch switches them on; reminders are claimed per student per day.
+       */
+      name: "branch_fee_jobs",
+      intervalMs: 60 * 60_000,
+      run: () => processBranchFeeJobs(),
+    },
+    {
+      /**
+       * Offline branch: last month's report to each family, from 10am on the
+       * 1st (swept to the 3rd so a restart can't miss it). Off until the
+       * branch switches it on; each report is claimed before it is sent.
+       */
+      name: "branch_monthly_reports",
+      intervalMs: 60 * 60_000,
+      run: () => processBranchMonthlyReports(),
+    },
     {
       /**
        * Staff leave: closes requests nobody decided on before their day ended,

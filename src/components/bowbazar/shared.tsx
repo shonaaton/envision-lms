@@ -26,8 +26,13 @@ const TABS = [
   { href: "/bowbazar/slots", label: "Slots", need: "view" },
   { href: "/bowbazar/students", label: "Students", need: "view" },
   { href: "/bowbazar/admissions", label: "Admissions", need: "students" },
+  { href: "/bowbazar/changes", label: "Time changes", need: "students" },
+  { href: "/bowbazar/messages", label: "Messages", need: "messages" },
+  { href: "/bowbazar/achievements", label: "Achievements", need: "achievements" },
+  { href: "/bowbazar/activity", label: "Activity", need: "activity" },
   { href: "/bowbazar/fees", label: "Fees", need: "fees" },
   { href: "/bowbazar/users", label: "Users", need: "staff" },
+  { href: "/bowbazar/settings", label: "Settings", need: "fees" },
 ];
 
 export function BranchHeader({ title, subtitle, can, actions }: { title: string; subtitle?: string; can: string[]; actions?: ReactNode }) {

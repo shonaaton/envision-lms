@@ -18,7 +18,8 @@ function idOf(value: any) {
 
 /** Every pop-up, newest first, with how many students saw, opened and closed it. */
 export async function listPopups() {
-  const popups: any[] = await Popup.find({}).sort({ createdAt: -1 }).limit(200).lean();
+  // A branch's pop-ups are managed from its own portal.
+  const popups: any[] = await Popup.find({ branch: null }).sort({ createdAt: -1 }).limit(200).lean();
   const stats: any[] = await PopupView.aggregate([
     { $match: { popup: { $in: popups.map((popup) => popup._id) } } },
     {
@@ -99,9 +100,10 @@ export function validatePopupInput(input: PopupInput, options: { partial?: boole
     const audience = String(input.audience || "") as PopupAudience;
     if (!POPUP_AUDIENCES.includes(audience)) return { error: "Choose who should see it." };
     const targetIds = (input.targetIds || []).filter((id) => Types.ObjectId.isValid(String(id)));
-    if (["batch", "course", "student"].includes(audience) && !targetIds.length) return { error: `Pick at least one ${audience}.` };
+    const targeted = ["batch", "course", "student", "branch_slot"].includes(audience);
+    if (targeted && !targetIds.length) return { error: audience === "branch_slot" ? "Pick at least one class." : `Pick at least one ${audience}.` };
     fields.audience = audience;
-    fields.targetIds = ["batch", "course", "student"].includes(audience) ? targetIds.map((id) => new Types.ObjectId(String(id))) : [];
+    fields.targetIds = targeted ? targetIds.map((id) => new Types.ObjectId(String(id))) : [];
     fields.targetLabel = String(input.targetLabel || "").slice(0, 300);
   }
   if (has("startsAt")) {

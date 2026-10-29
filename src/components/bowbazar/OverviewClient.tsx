@@ -9,6 +9,8 @@ import { BranchHeader, CredentialsNote, Drawer, Field, Stat, api, rupees } from 
 
 type Overview = {
   admissionsToReview: number;
+  changesToReview: number;
+  missingClasses: { id: string; name: string; phone: string; parentName: string; missed: number }[];
   activeStudents: number;
   inactiveStudents: number;
   slots: number;
@@ -44,6 +46,17 @@ export default function OverviewClient({ can }: { can: string[] }) {
               <span className="shrink-0 underline">Review</span>
             </Link>
           )}
+          {overview.changesToReview > 0 && can.includes("students") && (
+            <Link
+              href="/bowbazar/changes"
+              className="flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900 hover:bg-amber-100"
+            >
+              <span>
+                {overview.changesToReview} class time change{overview.changesToReview === 1 ? "" : "s"} waiting for an answer
+              </span>
+              <span className="shrink-0 underline">Review</span>
+            </Link>
+          )}
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <Stat label="Active students" value={overview.activeStudents} hint={`${overview.inactiveStudents} inactive`} />
             <Stat label="Free seats" value={overview.freeSeats} tone={overview.freeSeats ? "good" : "warn"} hint={`of ${overview.seats} across ${overview.slots} slots`} />
@@ -62,6 +75,30 @@ export default function OverviewClient({ can }: { can: string[] }) {
             {can.includes("students") && <Link href="/bowbazar/students" className="btn-outline h-10">Add a student</Link>}
             {can.includes("fees") && <Link href="/bowbazar/fees" className="btn-outline h-10">Who owes fees</Link>}
           </div>
+          {overview.missingClasses.length > 0 && (
+            <section className="rounded-lg border border-red-100 bg-white shadow-sm">
+              <div className="border-b border-slate-100 px-4 py-3">
+                <h2 className="text-base font-black text-slate-950">Missing classes</h2>
+                <p className="text-xs text-slate-500">Absent from their most recent classes in a row. A call often brings them back.</p>
+              </div>
+              <ul className="divide-y divide-slate-100">
+                {overview.missingClasses.map((student) => (
+                  <li key={student.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 text-sm">
+                    <span>
+                      <span className="font-bold text-slate-900">{student.name}</span>
+                      <span className="ml-2 text-xs text-slate-500">{[student.parentName, student.phone].filter(Boolean).join(" · ")}</span>
+                    </span>
+                    <span className="flex items-center gap-3">
+                      <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-bold text-red-800">Missed {student.missed} in a row</span>
+                      {student.phone && (
+                        <a href={`tel:+91${student.phone}`} className="text-xs font-bold text-brand hover:underline">Call</a>
+                      )}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
         </>
       )}
       {can.includes("staff") && <StaffSection />}

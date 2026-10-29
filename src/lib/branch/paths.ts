@@ -34,14 +34,31 @@ const SHARED_PREFIXES = [
  */
 const STAFF_TOOL_PREFIXES = ["/pgn", "/api/pgn", "/analysis"];
 
+/** The academy's chess practice tools, open to a branch's students like online ones. */
+const STUDENT_TOOL_PREFIXES = [
+  "/chess-profile",
+  "/api/chess",
+  "/tactics-trainer",
+  "/api/tactics-trainer",
+  "/king-hunt",
+  "/square-trainer",
+  "/api/square-trainer",
+  "/play/tactics-trainer",
+  "/play/king-hunt",
+  "/play/square-trainer",
+  "/learn",
+  "/api/learn",
+];
+
 const matches = (pathname: string, prefix: string) => pathname === prefix || pathname.startsWith(`${prefix}/`);
 
-/** A branch student gets their own page from the branch portal, never the staff screens. */
+/** A branch student gets their own pages from the branch portal, never the staff screens. */
 export function isBranchAllowedPath(pathname: string, role?: string) {
   if (role === "student" && (matches(pathname, "/bowbazar") || matches(pathname, "/api/bowbazar"))) {
-    return matches(pathname, "/bowbazar/me");
+    return matches(pathname, "/bowbazar/me") || matches(pathname, "/api/bowbazar/me");
   }
   if (role !== "student" && STAFF_TOOL_PREFIXES.some((prefix) => matches(pathname, prefix))) return true;
+  if (role === "student" && STUDENT_TOOL_PREFIXES.some((prefix) => matches(pathname, prefix))) return true;
   return SHARED_PREFIXES.some((prefix) => matches(pathname, prefix));
 }
 

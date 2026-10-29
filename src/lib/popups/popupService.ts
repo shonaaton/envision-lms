@@ -25,6 +25,7 @@ import { StudentReward } from "@/models/ClassroomLive";
 import { MonthlyFeedback } from "@/models/MonthlyFeedback";
 import { Popup, PopupView } from "@/models/Popup";
 import { User } from "@/models/User";
+import { BranchStudent } from "@/models/Branch";
 
 const DAY = 86_400_000;
 const KEY_PATTERN = /^(campaign:[a-f0-9]{24}|auto:[a-z_]+:[A-Za-z0-9_-]+)$/;
@@ -43,7 +44,7 @@ export type PopupPayload = Omit<PopupCandidate, "createdAt">;
  */
 export async function nextPopupFor(userId: string, now = new Date()): Promise<PopupPayload | null> {
   await dbConnect();
-  const user: any = await User.findById(userId).select(STUDENT_FIELDS).lean();
+  const user: any = await User.findById(userId).select(`${STUDENT_FIELDS} branch`).lean();
   if (!user || user.role !== "student" || user.isActive === false) return null;
   const views = await readViews(user._id);
   const isDemo = user.accountStatus === "demo";
@@ -74,7 +75,10 @@ async function campaignCandidates(user: any, now: Date): Promise<PopupCandidate[
   if (!live.length) return [];
   const needsMembership = live.some((campaign) => campaign.audience === "batch" || campaign.audience === "course");
   const [batchIds, courseIds] = needsMembership ? await membershipOf(user) : [[], []];
-  const student = { id: idOf(user), accountStatus: user.accountStatus, batchIds, courseIds };
+  const slotIds = user.branch && live.some((campaign) => campaign.audience === "branch_slot")
+    ? ((await BranchStudent.findOne({ user: user._id }).select("slots").lean()) as any)?.slots?.map((slot: unknown) => String(slot)) || []
+    : [];
+  const student = { id: idOf(user), accountStatus: user.accountStatus, batchIds, courseIds, branch: user.branch || null, slotIds };
   return live
     .filter((campaign) => campaignMatches(campaign, student))
     .map((campaign) => ({

@@ -1,19 +1,25 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Download, Loader2, Search, Trash2 } from "lucide-react";
+import { Download, Loader2, MessageCircle, Plus, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { monthKey, monthLabel, shiftMonth } from "@/lib/branch/rules";
+import { monthKey, monthLabel, reminderText, shiftMonth } from "@/lib/branch/rules";
+import { whatsAppChatLink } from "@/lib/branch/admissionRules";
+import { ChargeDrawer, CollectDrawer, ReceiptShare, type ReceiptShareInfo } from "./FeeExtras";
 import { cn } from "@/lib/utils";
 import { BranchHeader, Drawer, Field, Stat, api, rupees } from "./shared";
 
-type Payment = { id: string; amount: number; mode: string; paidAt: string; reference: string; note: string; collectedByName: string };
+type Payment = { id: string; amount: number; mode: string; paidAt: string; reference: string; note: string; collectedByName: string; receiptNo: string };
+type Receipt = ReceiptShareInfo;
 type Bill = {
   id: string;
   month: string;
   amount: number;
   discount: number;
   lateFee: number;
+  admissionFee: number;
+  planDiscount: number;
+  charges: { id: string; label: string; kind: string; amount: number; note: string; addedByName: string }[];
   due: number;
   paidAmount: number;
   balance: number;
@@ -58,6 +64,8 @@ export default function FeesClient({ can }: { can: string[] }) {
   const [query, setQuery] = useState("");
   const [paying, setPaying] = useState<Bill | null>(null);
   const [adjusting, setAdjusting] = useState<Bill | null>(null);
+  const [collecting, setCollecting] = useState<PendingGroup | null>(null);
+  const [charging, setCharging] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -97,9 +105,14 @@ export default function FeesClient({ can }: { can: string[] }) {
         subtitle="Monthly fees, non-GST. Bills for active students are raised on the 1st."
         can={can}
         actions={
-          <a className="btn-outline h-10" href={`/api/bowbazar/fees/export?month=${month}&format=xlsx`}>
-            <Download size={16} /> Excel
-          </a>
+          <>
+            <button type="button" className="btn-primary h-10" onClick={() => setCharging(true)}>
+              <Plus size={16} /> Add a charge
+            </button>
+            <a className="btn-outline h-10" href={`/api/bowbazar/fees/export?month=${month}&format=xlsx`}>
+              <Download size={16} /> Excel
+            </a>
+          </>
         }
       />
 
@@ -179,10 +192,13 @@ export default function FeesClient({ can }: { can: string[] }) {
                     <td className="px-4 py-3 text-xs text-slate-600">{bill.student?.slots.map((slot) => slot.label).join(", ")}</td>
                     <td className="px-4 py-3 text-right">
                       {rupees(bill.due)}
-                      {(bill.discount > 0 || bill.lateFee > 0) && (
+                      {(bill.discount > 0 || bill.planDiscount > 0 || bill.lateFee > 0 || bill.admissionFee > 0 || bill.charges.length > 0) && (
                         <div className="text-[11px] text-slate-500">
                           {bill.discount > 0 && `−${rupees(bill.discount)} `}
-                          {bill.lateFee > 0 && `+${rupees(bill.lateFee)} late`}
+                          {bill.planDiscount > 0 && `−${rupees(bill.planDiscount)} plan `}
+                          {bill.charges.map((charge) => `+${rupees(charge.amount)} ${charge.label} `)}
+                          {bill.lateFee > 0 && `+${rupees(bill.lateFee)} late `}
+                          {bill.admissionFee > 0 && `+${rupees(bill.admissionFee)} admission`}
                         </div>
                       )}
                     </td>
@@ -246,9 +262,35 @@ export default function FeesClient({ can }: { can: string[] }) {
                       ))}
                     </div>
                   </div>
-                  <div className="text-right">
-                    <div className="text-lg font-black text-red-700">{rupees(group.balance)}</div>
-                    <div className="text-xs text-slate-500">{group.bills.length} month{group.bills.length > 1 ? "s" : ""}</div>
+                  <div className="flex items-start gap-3 md:text-right">
+                    {group.student?.phone && (
+                      <a
+                        className="btn-outline h-9 px-3 text-xs"
+                        target="_blank"
+                        rel="noreferrer"
+                        title="Open WhatsApp with a reminder ready to send"
+                        href={whatsAppChatLink(
+                          group.student.phone,
+                          `Hello${group.student.parentName ? ` ${group.student.parentName}` : ""}, ${reminderText({
+                            studentName: group.student.name,
+                            balance: group.balance,
+                            months: group.bills.map((bill) => bill.month),
+                            branchLabel: "Bowbazar",
+                          })}\n- Envision Chess Academy`
+                        )}
+                      >
+                        <MessageCircle size={14} /> Remind
+                      </a>
+                    )}
+                    {group.student && group.bills.length > 1 && (
+                      <button type="button" className="btn-outline h-9 px-3 text-xs" onClick={() => setCollecting(group)} title="Pay several months on one receipt">
+                        Collect
+                      </button>
+                    )}
+                    <div>
+                      <div className="text-lg font-black text-red-700">{rupees(group.balance)}</div>
+                      <div className="text-xs text-slate-500">{group.bills.length} month{group.bills.length > 1 ? "s" : ""}</div>
+                    </div>
                   </div>
                 </article>
               ))}
@@ -259,6 +301,15 @@ export default function FeesClient({ can }: { can: string[] }) {
 
       {paying && <PayDrawer bill={paying} onClose={() => setPaying(null)} onDone={() => { setPaying(null); void load(); }} />}
       {adjusting && <BillDrawer bill={adjusting} onClose={() => setAdjusting(null)} onDone={() => { setAdjusting(null); void load(); }} />}
+      {collecting?.student && (
+        <CollectDrawer
+          student={collecting.student}
+          bills={collecting.bills}
+          onClose={() => setCollecting(null)}
+          onDone={() => { setCollecting(null); void load(); }}
+        />
+      )}
+      {charging && <ChargeDrawer onClose={() => setCharging(false)} onDone={() => { setCharging(false); void load(); }} />}
     </div>
   );
 }
@@ -266,20 +317,23 @@ export default function FeesClient({ can }: { can: string[] }) {
 function PayDrawer({ bill, onClose, onDone }: { bill: Bill; onClose: () => void; onDone: () => void }) {
   const [form, setForm] = useState({ amount: String(bill.balance / 100), mode: "cash", paidAt: new Date().toISOString().slice(0, 10), reference: "", note: "" });
   const [saving, setSaving] = useState(false);
+  const [receipt, setReceipt] = useState<Receipt | null>(null);
   const set = (patch: Partial<typeof form>) => setForm((current) => ({ ...current, ...patch }));
 
   async function save() {
     setSaving(true);
     try {
-      await api(`/api/bowbazar/fees/${bill.id}`, { method: "PATCH", json: { action: "pay", ...form } });
+      const data = await api<{ receipt: Receipt }>(`/api/bowbazar/fees/${bill.id}`, { method: "PATCH", json: { action: "pay", ...form } });
       toast.success(`Payment recorded for ${bill.student?.name}.`);
-      onDone();
+      setReceipt(data.receipt);
     } catch (error: any) {
       toast.error(error.message);
     } finally {
       setSaving(false);
     }
   }
+
+  if (receipt) return <ReceiptShare receipt={receipt} onDone={onDone} />;
 
   return (
     <Drawer
@@ -336,6 +390,7 @@ function BillDrawer({ bill, onClose, onDone }: { bill: Bill; onClose: () => void
     amount: String(bill.amount / 100),
     discount: String(bill.discount / 100),
     lateFee: String(bill.lateFee / 100),
+    admissionFee: String((bill.admissionFee || 0) / 100),
     note: bill.note,
   });
   const [waiveReason, setWaiveReason] = useState("");
@@ -378,11 +433,38 @@ function BillDrawer({ bill, onClose, onDone }: { bill: Bill; onClose: () => void
         <Field label="Late fee (₹)">
           <input className="input" inputMode="decimal" value={form.lateFee} onChange={(event) => set({ lateFee: event.target.value })} />
         </Field>
+        <Field label="Admission fee (₹)">
+          <input className="input" inputMode="decimal" value={form.admissionFee} onChange={(event) => set({ admissionFee: event.target.value })} />
+        </Field>
       </div>
       <Field label="Note">
         <input className="input" value={form.note} onChange={(event) => set({ note: event.target.value })} />
       </Field>
 
+      {bill.charges.length > 0 && (
+        <div>
+          <div className="mb-1 text-xs font-bold text-slate-600">Charges</div>
+          <ul className="divide-y divide-slate-100 rounded-lg border border-slate-100">
+            {bill.charges.map((charge) => (
+              <li key={charge.id} className="flex items-center justify-between gap-2 px-3 py-2 text-sm">
+                <div>
+                  <span className="font-bold">{rupees(charge.amount)}</span> · {charge.label}
+                  <div className="text-xs text-slate-500">{[charge.note, charge.addedByName && `added by ${charge.addedByName}`].filter(Boolean).join(" · ")}</div>
+                </div>
+                <button
+                  type="button"
+                  className="rounded-lg p-1.5 text-red-600 hover:bg-red-50"
+                  aria-label={`Remove ${charge.label}`}
+                  disabled={saving}
+                  onClick={() => window.confirm(`Remove ${charge.label} from this bill?`) && send({ action: "removeCharge", chargeId: charge.id }, "Charge removed.")}
+                >
+                  <Trash2 size={15} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <div>
         <div className="mb-1 text-xs font-bold text-slate-600">Payments</div>
         {!bill.payments.length && <div className="text-sm text-slate-500">None yet.</div>}
@@ -391,6 +473,11 @@ function BillDrawer({ bill, onClose, onDone }: { bill: Bill; onClose: () => void
             <li key={payment.id} className="flex items-center justify-between gap-2 px-3 py-2 text-sm">
               <div>
                 <span className="font-bold">{rupees(payment.amount)}</span> · {MODE_LABEL[payment.mode]} · {new Date(payment.paidAt).toLocaleDateString("en-IN")}
+                {payment.receiptNo && (
+                  <a href={`/bowbazar/receipts/${payment.id}`} target="_blank" rel="noreferrer" className="ml-2 font-mono text-xs font-bold text-brand hover:underline">
+                    {payment.receiptNo}
+                  </a>
+                )}
                 <div className="text-xs text-slate-500">{[payment.reference, payment.note, payment.collectedByName && `by ${payment.collectedByName}`].filter(Boolean).join(" · ")}</div>
               </div>
               <button

@@ -1,7 +1,8 @@
 import "server-only";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { branchAccess, type BranchCapability } from "./rules";
+import type { BranchCapability } from "./rules";
+import { resolveBranchAccess } from "./access";
 import { BRANCH_LABELS } from "./scope";
 
 /**
@@ -12,7 +13,7 @@ export async function requireBranchPage(capability: BranchCapability) {
   const session = await auth();
   const user = session?.user as any;
   if (!user) redirect("/login");
-  const access = branchAccess(user);
+  const access = await resolveBranchAccess(user);
   if (!access || !access.can.has(capability) || user.isActive === false) {
     redirect(user.branch && user.role === "student" ? "/bowbazar/me" : access ? "/bowbazar" : "/dashboard");
   }

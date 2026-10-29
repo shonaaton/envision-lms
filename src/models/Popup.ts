@@ -1,6 +1,6 @@
 import { Schema, model, models, type InferSchemaType } from "mongoose";
 
-export const POPUP_AUDIENCES = ["all_students", "batch", "course", "student", "demo_students"] as const;
+export const POPUP_AUDIENCES = ["all_students", "batch", "course", "student", "demo_students", "branch_all", "branch_slot"] as const;
 export type PopupAudience = (typeof POPUP_AUDIENCES)[number];
 
 /**
@@ -16,6 +16,8 @@ const PopupSchema = new Schema(
     ctaLabel: { type: String, trim: true, maxlength: 40, default: "" },
     ctaHref: { type: String, trim: true, default: "" },
     audience: { type: String, enum: POPUP_AUDIENCES, required: true },
+    // An offline branch's own pop-up: shown only to that branch's students, managed from its portal.
+    branch: { type: String, index: true },
     /** Batch, course or student ids, depending on `audience`. */
     targetIds: [{ type: Schema.Types.ObjectId }],
     targetLabel: String,

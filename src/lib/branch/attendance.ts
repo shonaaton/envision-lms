@@ -11,6 +11,10 @@ import { Homework, Submission } from "@/models/Homework";
 import { BranchAttendance, BranchSlot, BranchStudent } from "@/models/Branch";
 import type { BranchKey } from "./scope";
 import { BranchError } from "./service";
+import { moveCountsOn, movesForRegister } from "./changes";
+import { alertAbsences } from "./alerts";
+import { BranchHoliday } from "@/models/Branch";
+import { holidayFor } from "./comms";
 import {
   DAY_NAMES,
   buildRoster,
@@ -83,11 +87,15 @@ async function homeworkFor(filter: Record<string, unknown>, nameByUser: Map<stri
 export async function registerDay(branch: BranchKey, date: string) {
   if (!isDateKey(date)) throw new BranchError("Pick a date.");
   await dbConnect();
-  const [slots, registers, members] = await Promise.all([
+  const [slots, registers, members, moves, holidays] = await Promise.all([
     BranchSlot.find({ branch, dayOfWeek: dayOfDateKey(date) }).lean(),
     BranchAttendance.find({ branch, date }).select("slot records.status homework updatedByName updatedAt").lean(),
     BranchStudent.find({ branch, status: "active" }).select("slots").lean(),
+    moveCountsOn(branch, date),
+    BranchHoliday.find({ branch, date, cancelledAt: { $exists: false } }).select("slots reason").lean() as Promise<any[]>,
   ]);
+  const holidayOf = (slotId: string) =>
+    holidays.find((holiday) => !(holiday.slots || []).length || (holiday.slots || []).some((slot: any) => id(slot) === slotId))?.reason || "";
   const registerBySlot = new Map((registers as any[]).map((register) => [id(register.slot), register]));
   const memberCount = new Map<string, number>();
   for (const student of members as any[]) {
@@ -102,13 +110,18 @@ export async function registerDay(branch: BranchKey, date: string) {
       .sort((a, b) => a.startTime.localeCompare(b.startTime))
       .map((slot) => {
         const register: any = registerBySlot.get(id(slot));
+        const moved = moves.get(id(slot)) || { arriving: 0, leaving: 0 };
         return {
           slotId: id(slot),
           label: slotLabel(slot),
           startTime: slot.startTime,
           endTime: slot.endTime,
           mode: slot.mode,
-          members: memberCount.get(id(slot)) || 0,
+          // Expected that day: members, less one-week moves out, plus moves in.
+          members: Math.max(0, (memberCount.get(id(slot)) || 0) - moved.leaving) + moved.arriving,
+          movedIn: moved.arriving,
+          holiday: holidayOf(id(slot)),
+          movedAway: moved.leaving,
           saved: Boolean(register),
           counts: register ? registerCounts(register.records || []) : null,
           homework: register ? (register.homework || []).length : 0,
@@ -164,17 +177,25 @@ export async function getRegister(branch: BranchKey, slotId: string, date: strin
   await dbConnect();
   const slot = await findSlot(branch, slotId);
   checkDay(slot, date);
-  const [register, members, everyone]: [any, any[], any[]] = await Promise.all([
+  const [register, slotMembers, everyone, moves]: [any, any[], any[], Awaited<ReturnType<typeof movesForRegister>>] = await Promise.all([
     BranchAttendance.findOne({ slot: slot._id, date }).lean(),
     BranchStudent.find({ branch, status: "active", slots: slot._id }).select("name regNo user").lean(),
     BranchStudent.find({ branch, status: "active" }).select("name regNo user slots").sort({ name: 1 }).lean(),
+    movesForRegister(branch, slot._id, date),
   ]);
   const studentById = new Map(everyone.map((student) => [id(student), student]));
+  // That day's class: its members, less anyone moved out for the week, plus anyone moved in.
+  const leaving = new Map(moves.leaving.map((move) => [move.studentId, move]));
+  const arrivingFrom = new Map(moves.arriving.map((move) => [move.studentId, move.from]));
+  const members = [
+    ...slotMembers.filter((student) => !leaving.has(id(student))),
+    ...moves.arriving.map((move) => studentById.get(move.studentId)).filter(Boolean),
+  ];
   const roster = buildRoster(
     members.map((student) => ({ id: id(student), name: student.name as string })),
     ((register?.records || []) as any[]).map((record) => ({ ...record, student: id(record.student) })),
   );
-  const memberIds = new Set(members.map((student) => id(student)));
+  const memberIds = new Set(slotMembers.map((student) => id(student)));
   const recordedIds = roster.recorded.map((record: any) => record.student);
   const topics = await recentTopics(branch, [...recordedIds, ...roster.unmarked.map((member) => member.id)], date);
 
@@ -188,6 +209,7 @@ export async function getRegister(branch: BranchKey, slotId: string, date: strin
         regNo: student?.regNo || "",
         member: memberIds.has(record.student),
         guest: Boolean(record.guest),
+        movedFrom: arrivingFrom.get(record.student) || "",
         // A student who has since left still shows on the register they sat in.
         left: !student,
         status: record.status as string,
@@ -204,8 +226,9 @@ export async function getRegister(branch: BranchKey, slotId: string, date: strin
         userId: id(student?.user),
         name: member.name,
         regNo: student?.regNo || "",
-        member: true,
-        guest: false,
+        member: memberIds.has(member.id),
+        guest: !memberIds.has(member.id),
+        movedFrom: arrivingFrom.get(member.id) || "",
         left: false,
         status: "",
         topic: "",
@@ -221,12 +244,17 @@ export async function getRegister(branch: BranchKey, slotId: string, date: strin
   return {
     date,
     today: todayKey(),
+    holiday: await holidayFor(branch, slot._id, date),
     slot: { id: id(slot), label: slotLabel(slot), mode: slot.mode, dayOfWeek: slot.dayOfWeek, startTime: slot.startTime, isActive: slot.isActive !== false },
     saved: Boolean(register),
     markedByName: register?.markedByName || "",
     updatedByName: register?.updatedByName || "",
     updatedAt: register?.updatedAt || null,
     rows,
+    // Members moved to another class this week, so their absence here is expected.
+    away: moves.leaving
+      .filter((move) => !onRegister.has(move.studentId))
+      .map((move) => ({ studentId: move.studentId, name: studentById.get(move.studentId)?.name || "Student", to: move.to, toDate: move.toDate })),
     // Other active students, to sit in for the day (a make-up or a swap).
     others: everyone
       .filter((student) => !onRegister.has(id(student)))
@@ -247,6 +275,8 @@ export async function saveRegister(branch: BranchKey, slotId: string, date: stri
   const slot = await findSlot(branch, slotId);
   checkDay(slot, date);
   if (date > todayKey()) throw new BranchError("The register can't be taken for a day that hasn't come yet.");
+  const closedFor = await holidayFor(branch, slot._id, date);
+  if (closedFor) throw new BranchError(`The centre was closed that day (${closedFor}). Cancel the holiday first to take a register.`);
 
   const rows = (Array.isArray(input?.rows) ? input.rows : []).filter((row: any) => row && row.status);
   if (!rows.length) throw new BranchError("Mark at least one student.");
@@ -298,14 +328,16 @@ export async function saveRegister(branch: BranchKey, slotId: string, date: stri
     if (error?.code !== 11000) throw error;
     await BranchAttendance.updateOne({ slot: slot._id, date }, update);
   }
+  void alertAbsences(branch, records.filter((record: any) => record.status === "absent").map((record: any) => id(record.student)), date);
 
   void recordActivity({
     actor: actor.id,
     type: "branch.attendance_saved",
     label: `${existing ? "Updated" : "Took"} the ${slotLabel(slot)} register for ${date}`,
     entityType: "BranchAttendance",
-    entityId: `${id(slot)}:${date}`,
-    metadata: { branch, ...registerCounts(records) },
+    // Activity ids must be ObjectIds or the record is dropped; the date goes in the metadata.
+    entityId: id(slot),
+    metadata: { branch, date, ...registerCounts(records) },
   });
   return getRegister(branch, slotId, date);
 }

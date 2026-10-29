@@ -16,6 +16,9 @@ type DayClass = {
   startTime: string;
   mode: string;
   members: number;
+  movedIn: number;
+  movedAway: number;
+  holiday: string;
   saved: boolean;
   counts: Counts | null;
   homework: number;
@@ -30,6 +33,7 @@ type Row = {
   regNo: string;
   member: boolean;
   guest: boolean;
+  movedFrom?: string;
   left: boolean;
   status: string;
   topic: string;
@@ -57,6 +61,8 @@ type Register = {
   updatedAt: string | null;
   rows: Row[];
   others: { studentId: string; name: string; regNo: string }[];
+  away: { studentId: string; name: string; to: string; toDate: string }[];
+  holiday: string;
   homework: RegisterHomework[];
   topicSuggestions: string[];
   defaultDueDate: string;
@@ -211,9 +217,13 @@ function RegisterView({ today }: { today: string }) {
                   <span className="font-black text-slate-950">{item.label}</span>
                   <ModeBadge mode={item.mode} />
                 </div>
-                <div className="mt-1 text-xs text-slate-500">{item.members} in this class</div>
-                <div className={cn("mt-2 text-xs font-bold", item.saved ? "text-emerald-700" : "text-amber-700")}>
-                  {item.saved && item.counts ? countsLine(item.counts) : "Register not taken"}
+                <div className="mt-1 text-xs text-slate-500">
+                  {item.members} expected
+                  {item.movedIn > 0 && ` · ${item.movedIn} moved in`}
+                  {item.movedAway > 0 && ` · ${item.movedAway} moved away`}
+                </div>
+                <div className={cn("mt-2 text-xs font-bold", item.holiday ? "text-sky-800" : item.saved ? "text-emerald-700" : "text-amber-700")}>
+                  {item.holiday ? `Closed: ${item.holiday}` : item.saved && item.counts ? countsLine(item.counts) : "Register not taken"}
                   {item.homework > 0 && <span className="text-slate-500"> · {item.homework} homework</span>}
                 </div>
               </button>
@@ -353,6 +363,11 @@ function RegisterEditor({ slotId, date, onSaved }: { slotId: string; date: strin
               ? `Taken by ${register.markedByName || "staff"}${register.updatedByName && register.updatedByName !== register.markedByName ? `, last changed by ${register.updatedByName}` : ""}`
               : "Not taken yet"}
           </p>
+          {register.away.length > 0 && (
+            <p className="mt-1 text-xs font-semibold text-sky-800">
+              Moved to another class this week: {register.away.map((move) => `${move.name} (${move.to})`).join(", ")}
+            </p>
+          )}
         </div>
         {!future && rows.length > 0 && (
           <button
@@ -368,7 +383,9 @@ function RegisterEditor({ slotId, date, onSaved }: { slotId: string; date: strin
         )}
       </div>
 
-      {future ? (
+      {register.holiday ? (
+        <p className="px-4 py-6 text-sm text-sky-900">The centre is closed for this class that day ({register.holiday}). Cancel the holiday on the Messages page to take a register.</p>
+      ) : future ? (
         <p className="px-4 py-6 text-sm text-slate-500">This class hasn&apos;t happened yet. Come back on the day to take the register.</p>
       ) : (
         <>
@@ -421,7 +438,11 @@ function RegisterEditor({ slotId, date, onSaved }: { slotId: string; date: strin
                     <div className="min-w-0">
                       <span className="font-bold text-slate-950">{row.name}</span>
                       {row.regNo && <span className="ml-2 text-xs text-slate-400">{row.regNo}</span>}
-                      {row.guest && <span className="ml-2 rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-bold text-sky-800">Visiting</span>}
+                      {row.movedFrom ? (
+                        <span className="ml-2 rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-bold text-sky-800">Moved in from {row.movedFrom}</span>
+                      ) : (
+                        row.guest && <span className="ml-2 rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-bold text-sky-800">Visiting</span>
+                      )}
                       {row.left && <span className="ml-2 rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-bold text-slate-700">Left</span>}
                     </div>
                     <div className="flex flex-wrap items-center gap-1">

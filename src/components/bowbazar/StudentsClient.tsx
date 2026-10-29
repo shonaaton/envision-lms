@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { FileSpreadsheet, History, KeyRound, Loader2, Pencil, Plus, Search, UserCheck, UserX } from "lucide-react";
 import { toast } from "sonner";
-import { monthLabel } from "@/lib/branch/rules";
+import { FEE_PLANS, FEE_PLAN_LABEL, monthLabel } from "@/lib/branch/rules";
 import { cn } from "@/lib/utils";
 import { BranchHeader, CredentialsNote, Drawer, Field, ModeBadge, SlotPicker, api, rupees } from "./shared";
 import type { Slot } from "./SlotsClient";
@@ -35,6 +35,9 @@ type Student = {
   pendingAmount: number;
   pendingMonths: string[];
   admissionId: string;
+  discount: { kind: "percent" | "flat"; value: number; reason: string } | null;
+  admissionFee: number;
+  feePlan: string;
 };
 
 type Credentials = { username: string; password: string; note?: string };
@@ -196,7 +199,15 @@ export default function StudentsClient({ can }: { can: string[] }) {
               <div className="flex shrink-0 flex-wrap items-center gap-2">
                 {seesFees && (
                   <div className="mr-2 text-right">
-                    <div className="text-sm font-bold text-slate-700">{rupees(student.monthlyFee)}/month</div>
+                    <div className="text-sm font-bold text-slate-700">
+                      {rupees(student.monthlyFee)}/month
+                      {student.feePlan && student.feePlan !== "monthly" && <span className="ml-1 text-xs font-semibold text-brand">· {FEE_PLAN_LABEL[student.feePlan as keyof typeof FEE_PLAN_LABEL]?.split(" ")[0]}</span>}
+                    </div>
+                    {student.discount && (
+                      <div className="text-xs text-slate-500">
+                        {student.discount.kind === "percent" ? `${student.discount.value}%` : rupees(student.discount.value)} off{student.discount.reason ? ` · ${student.discount.reason}` : ""}
+                      </div>
+                    )}
                     {student.pendingAmount > 0 ? (
                       <div className="text-xs font-bold text-red-700" title={student.pendingMonths.map(monthLabel).join(", ")}>
                         {rupees(student.pendingAmount)} pending ({student.pendingMonths.length} mo)
@@ -325,12 +336,25 @@ function StudentDrawer({
     school: student.school || "",
     dateOfBirth: student.dateOfBirth ? student.dateOfBirth.slice(0, 10) : "",
     monthlyFee: student.monthlyFee ? String(student.monthlyFee / 100) : "",
+    discountKind: student.discount?.kind || "none",
+    discountValue: student.discount ? String(student.discount.kind === "flat" ? student.discount.value / 100 : student.discount.value) : "",
+    discountReason: student.discount?.reason || "",
+    admissionFee: "",
+    feePlan: student.feePlan || "monthly",
     notes: student.notes || "",
     slots: (student.slots || []).map((slot) => slot.id),
     sendLogin: true,
   });
   const [saving, setSaving] = useState(false);
   const set = (patch: Partial<typeof form>) => setForm((current) => ({ ...current, ...patch }));
+
+  // A new student's admission fee starts at the branch's setting.
+  useEffect(() => {
+    if (!isNew) return;
+    api<{ settings: { admissionFee: number } }>("/api/bowbazar/settings")
+      .then((data) => setForm((current) => (current.admissionFee === "" ? { ...current, admissionFee: String(data.settings.admissionFee / 100) } : current)))
+      .catch(() => undefined);
+  }, [isNew]);
 
   async function save() {
     setSaving(true);
@@ -395,9 +419,45 @@ function StudentDrawer({
       <Field label="Address">
         <textarea className="input min-h-[64px]" value={form.address} onChange={(event) => set({ address: event.target.value })} />
       </Field>
-      <Field label="Monthly fee (₹)" hint="This student's own amount; no GST.">
-        <input className="input" inputMode="decimal" value={form.monthlyFee} onChange={(event) => set({ monthlyFee: event.target.value })} />
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Monthly fee (₹)" hint="This student's own amount; no GST.">
+          <input className="input" inputMode="decimal" value={form.monthlyFee} onChange={(event) => set({ monthlyFee: event.target.value })} />
+        </Field>
+        {isNew && (
+          <Field label="Admission fee (₹)" hint="Once, on the first bill. 0 for none.">
+            <input className="input" inputMode="decimal" value={form.admissionFee} onChange={(event) => set({ admissionFee: event.target.value })} />
+          </Field>
+        )}
+      </div>
+      <Field label="Fee plan" hint="A longer plan bills the whole period at its start, at the plan discount set in Branch Settings.">
+        <select className="input" value={form.feePlan} onChange={(event) => set({ feePlan: event.target.value })}>
+          {FEE_PLANS.map((plan) => (
+            <option key={plan} value={plan}>{FEE_PLAN_LABEL[plan]}</option>
+          ))}
+        </select>
       </Field>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Field label="Discount">
+          <select className="input" value={form.discountKind} onChange={(event) => set({ discountKind: event.target.value })}>
+            <option value="none">None</option>
+            <option value="percent">Percentage</option>
+            <option value="flat">Fixed ₹ a month</option>
+          </select>
+        </Field>
+        {form.discountKind !== "none" && (
+          <>
+            <Field label={form.discountKind === "percent" ? "Percent off" : "₹ off each month"}>
+              <input className="input" inputMode="decimal" value={form.discountValue} onChange={(event) => set({ discountValue: event.target.value })} />
+            </Field>
+            <Field label="Why">
+              <input className="input" value={form.discountReason} placeholder="e.g. Sibling" onChange={(event) => set({ discountReason: event.target.value })} />
+            </Field>
+          </>
+        )}
+      </div>
+      {!isNew && form.discountKind !== (student.discount?.kind || "none") && (
+        <p className="text-xs text-slate-500">A discount change applies to bills raised from now on. Adjust bills already raised on the Fees page.</p>
+      )}
       <SlotPicker slots={slots} value={form.slots} onChange={(value) => set({ slots: value })} seatedIn={(student.slots || []).map((slot) => slot.id)} />
       <Field label="Notes">
         <textarea className="input min-h-[64px]" value={form.notes} onChange={(event) => set({ notes: event.target.value })} />

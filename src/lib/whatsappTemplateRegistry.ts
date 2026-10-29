@@ -2397,6 +2397,33 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
       { "position": 3, "key": "time_left", "sample": "3 days are left" },
       { "position": 4, "key": "deadline", "sample": "4 Nov 2026, 11:59 pm IST" }
     ]
+  },
+  {
+    "name": "bowbazar_fee_reminder",
+    "language": "en",
+    "sourceAutomation": "Bowbazar Fee Reminder",
+    "body": "Hello {{1}}, this is a reminder from the Envision Chess Academy Bowbazar centre. The chess class fees for {{2}} of {{3}} are due for {{4}}.\n\nPlease pay at the centre by cash or UPI. If you have already paid, please ignore this message.\n\nTeam Envision Chess Academy",
+    "variables": [
+      { "position": 1, "key": "parent_name", "sample": "Mrs Sen" },
+      { "position": 2, "key": "student_name", "sample": "Aarav" },
+      { "position": 3, "key": "amount", "sample": "₹1,000" },
+      { "position": 4, "key": "months", "sample": "October 2026" }
+    ]
+  },
+  {
+    "name": "bowbazar_monthly_report",
+    "language": "en",
+    "sourceAutomation": "Bowbazar Monthly Parent Report",
+    "body": "Hello {{1}}, here is how {{2}} did at the Envision Chess Academy Bowbazar centre in {{3}}.\n\nClasses attended: {{4}}\nTopics covered: {{5}}\nHomework done: {{6}}\n\nSee every class on the academy portal: {{7}}\n\nTeam Envision Chess Academy",
+    "variables": [
+      { "position": 1, "key": "parent_name", "sample": "Mrs Sen" },
+      { "position": 2, "key": "student_name", "sample": "Aarav" },
+      { "position": 3, "key": "month", "sample": "October 2026" },
+      { "position": 4, "key": "classes_attended", "sample": "7 of 8" },
+      { "position": 5, "key": "topics", "sample": "Knight forks, pins, back-rank mate" },
+      { "position": 6, "key": "homework_done", "sample": "3 of 4" },
+      { "position": 7, "key": "portal_link", "sample": "https://envisionchessacademy.com/bowbazar/me" }
+    ]
   }
 ] as const satisfies readonly WhatsAppTemplateDefinition[];
 

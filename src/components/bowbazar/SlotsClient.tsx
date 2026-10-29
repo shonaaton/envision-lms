@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2, Pencil, Plus, Wand2 } from "lucide-react";
+import { Hourglass, Loader2, Pencil, Plus, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 import { DAY_NAMES, WEEK_ORDER } from "@/lib/branch/rules";
 import { cn } from "@/lib/utils";
 import { BranchHeader, Drawer, Field, ModeBadge, api } from "./shared";
+import { WaitlistDrawer, WaitlistPanel, type WaitlistEntry } from "./Waitlist";
 
 export type Slot = {
   id: string;
@@ -36,12 +37,19 @@ export default function SlotsClient({ can }: { can: string[] }) {
   const [onlyFree, setOnlyFree] = useState(false);
   const [editing, setEditing] = useState<Partial<Slot> | null>(null);
   const [seeding, setSeeding] = useState(false);
+  const [waitlist, setWaitlist] = useState<WaitlistEntry[]>([]);
+  const [waiting, setWaiting] = useState<string | null>(null);
+  const canWaitlist = can.includes("students");
 
   const load = useCallback(async () => {
     try {
-      const data = await api<{ slots: Slot[]; canEdit: boolean }>("/api/bowbazar/slots");
+      const [data, waits] = await Promise.all([
+        api<{ slots: Slot[]; canEdit: boolean }>("/api/bowbazar/slots"),
+        api<{ waitlist: WaitlistEntry[] }>("/api/bowbazar/waitlist"),
+      ]);
       setSlots(data.slots);
       setCanEdit(data.canEdit);
+      setWaitlist(waits.waitlist);
     } catch (error: any) {
       toast.error(error.message);
     } finally {
@@ -126,6 +134,11 @@ export default function SlotsClient({ can }: { can: string[] }) {
                         {slot.filled}/{slot.capacity} seated ·{" "}
                         <span className={slot.free ? "text-emerald-700" : "text-red-700"}>{slot.free ? `${slot.free} free` : "Full"}</span>
                       </div>
+                      {waitlist.some((entry) => entry.slotId === slot.id) && (
+                        <div className={cn("mt-0.5 inline-flex items-center gap-1 text-xs font-bold", slot.free ? "text-sky-800" : "text-amber-800")}>
+                          <Hourglass size={12} /> {waitlist.filter((entry) => entry.slotId === slot.id).length} waiting{slot.free ? ": a seat is free" : ""}
+                        </div>
+                      )}
                     </div>
                     {canEdit && (
                       <button type="button" onClick={() => setEditing(slot)} className="rounded-lg p-1.5 text-slate-500 hover:bg-white" aria-label={`Edit ${slot.label}`}>
@@ -152,7 +165,19 @@ export default function SlotsClient({ can }: { can: string[] }) {
         ))}
       </div>
 
+      <WaitlistPanel slots={slots} waitlist={waitlist} canEdit={canWaitlist} onAdd={() => setWaiting("")} onChange={setWaitlist} />
+
       {editing && <SlotDrawer slot={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); void load(); }} />}
+      {waiting !== null && (
+        <WaitlistDrawer
+          slots={slots}
+          onClose={() => setWaiting(null)}
+          onSaved={(list) => {
+            setWaiting(null);
+            setWaitlist(list);
+          }}
+        />
+      )}
     </div>
   );
 }

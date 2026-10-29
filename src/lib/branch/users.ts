@@ -12,6 +12,7 @@ import { BranchAdmission, BranchAttendance, BranchFeeBill, BranchSlot, BranchStu
 import type { BranchKey } from "./scope";
 import { BranchError, setStaffActive, setStudentStatus } from "./service";
 import { slotLabel } from "./rules";
+import { alertFreedSeats } from "./alerts";
 
 /**
  * The branch's own user management - the online Users page, for one branch's
@@ -180,7 +181,7 @@ export async function deleteBranchUser(branch: BranchKey, userId: string, input:
   if (text(input?.confirmName, 200) !== user.name) throw new BranchError("Type the full name exactly to confirm.");
 
   if (user.role === "student") {
-    const student: any = await BranchStudent.findOne({ user: user._id, branch }).select("_id").lean();
+    const student: any = await BranchStudent.findOne({ user: user._id, branch }).select("_id slots status").lean();
     if (student) {
       await Promise.all([
         BranchFeeBill.deleteMany({ student: student._id }),
@@ -190,6 +191,7 @@ export async function deleteBranchUser(branch: BranchKey, userId: string, input:
       ]);
     }
     await Homework.updateMany({ branch, assignedStudents: user._id }, { $pull: { assignedStudents: user._id } });
+    if (student?.status === "active") void alertFreedSeats(branch, student.slots || []);
   } else {
     await Homework.updateMany({ branch, instructor: user._id }, { $set: { instructor: new Types.ObjectId(actor.id) } });
   }

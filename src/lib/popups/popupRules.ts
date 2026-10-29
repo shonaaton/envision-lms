@@ -57,13 +57,14 @@ function time(value?: Date | null) {
 
 export type CampaignShape = {
   audience: string;
+  branch?: string | null;
   targetIds?: unknown[];
   status?: string;
   startsAt?: Date | null;
   endsAt?: Date | null;
 };
 
-export type StudentShape = { id: string; accountStatus?: string; batchIds: string[]; courseIds: string[] };
+export type StudentShape = { id: string; accountStatus?: string; batchIds: string[]; courseIds: string[]; branch?: string | null; slotIds?: string[] };
 
 export function campaignIsLive(campaign: CampaignShape, now: Date) {
   if (campaign.status !== "active") return false;
@@ -76,7 +77,14 @@ export function campaignIsLive(campaign: CampaignShape, now: Date) {
 export function campaignMatches(campaign: CampaignShape, student: StudentShape) {
   const targets = new Set((campaign.targetIds || []).map((id) => String(id)));
   const isDemo = student.accountStatus === "demo";
+  // An offline branch's pop-ups are for its own students only, and the online
+  // academy's are not shown to branch students at all.
+  if ((campaign.branch || null) !== (student.branch || null)) return false;
   switch (campaign.audience) {
+    case "branch_all":
+      return true;
+    case "branch_slot":
+      return (student.slotIds || []).some((id) => targets.has(id));
     case "demo_students":
       return isDemo;
     case "all_students":

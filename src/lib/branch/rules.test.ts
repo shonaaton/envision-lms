@@ -2,8 +2,18 @@ import { describe, expect, it } from "vitest";
 import {
   billBalance,
   billStatus,
+  absenceStreak,
+  billDue,
   branchAccess,
   buildRoster,
+  discountFor,
+  financialYear,
+  lateFeeApplies,
+  proRataFee,
+  planDiscountFor,
+  planPeriodEnd,
+  receiptNumber,
+  rupeesInWords,
   dayOfDateKey,
   isAttendanceStatus,
   isDateKey,
@@ -25,7 +35,7 @@ describe("branchAccess", () => {
     expect(manager.branch).toBe("bowbazar");
     expect(manager.can.has("fees")).toBe(true);
     expect(manager.can.has("staff")).toBe(false);
-    expect([...branchAccess({ role: "instructor", branch: "bowbazar", branchRole: "coach" })!.can]).toEqual(["view", "attendance"]);
+    expect([...branchAccess({ role: "instructor", branch: "bowbazar", branchRole: "coach" })!.can]).toEqual(["view", "attendance", "homeworkSets", "achievements"]);
     expect(manager.can.has("attendance")).toBe(true);
   });
 
@@ -127,5 +137,96 @@ describe("attendance rules", () => {
     });
     expect(isAttendanceStatus("excused")).toBe(true);
     expect(isAttendanceStatus("holiday")).toBe(false);
+  });
+});
+
+describe("fee settings", () => {
+  it("adds the admission fee to what is due", () => {
+    expect(billDue({ amount: 100000, discount: 10000, lateFee: 5000, admissionFee: 50000 })).toBe(145000);
+  });
+
+  it("works out discounts in whole rupees and never past the fee", () => {
+    expect(discountFor(100000, { kind: "percent", value: 10 })).toBe(10000);
+    expect(discountFor(125000, { kind: "percent", value: 15 })).toBe(18800); // 187.5 -> 188
+    expect(discountFor(100000, { kind: "flat", value: 20000 })).toBe(20000);
+    expect(discountFor(100000, { kind: "flat", value: 500000 })).toBe(100000);
+    expect(discountFor(100000, { kind: "percent", value: 150 })).toBe(100000);
+    expect(discountFor(100000, null)).toBe(0);
+  });
+
+  it("charges a part month from the admission day, to the nearest ten rupees", () => {
+    expect(proRataFee(100000, "2026-11-01")).toBe(100000);
+    expect(proRataFee(100000, "2026-11-16")).toBe(50000); // 15 of 30 days
+    expect(proRataFee(100000, "2026-10-31")).toBe(3000); // 1 of 31 days: 32.26 -> 30
+    expect(proRataFee(120000, "2027-02-15")).toBe(60000); // 14 of 28 days
+  });
+
+  it("adds the late fee only in the bill's own month, after the set day", () => {
+    expect(lateFeeApplies("2026-11-11", "2026-11", 10)).toBe(true);
+    expect(lateFeeApplies("2026-11-10", "2026-11", 10)).toBe(false);
+    expect(lateFeeApplies("2026-12-02", "2026-11", 10)).toBe(false);
+    expect(lateFeeApplies("2026-11-20", "2026-11", 0)).toBe(false);
+  });
+
+  it("numbers receipts by financial year", () => {
+    expect(financialYear("2026-10-28")).toBe("26-27");
+    expect(financialYear("2027-03-31")).toBe("26-27");
+    expect(financialYear("2027-04-01")).toBe("27-28");
+    expect(receiptNumber("BB", "26-27", 7)).toBe("BB/26-27/0007");
+  });
+
+  it("counts a run of missed classes from the newest", () => {
+    expect(absenceStreak(["absent", "absent", "absent", "present"])).toBe(3);
+    expect(absenceStreak(["present", "absent"])).toBe(0);
+    expect(absenceStreak(["absent", "excused", "absent"])).toBe(1);
+    expect(absenceStreak([])).toBe(0);
+  });
+});
+
+describe("rupeesInWords", () => {
+  it("writes amounts the Indian way", () => {
+    expect(rupeesInWords(150000)).toBe("One thousand five hundred rupees only");
+    expect(rupeesInWords(100)).toBe("One rupee only");
+    expect(rupeesInWords(12345600)).toBe("One lakh twenty-three thousand four hundred fifty-six rupees only");
+    expect(rupeesInWords(50050)).toBe("Five hundred rupees and fifty paise only");
+    expect(rupeesInWords(0)).toBe("Zero rupees only");
+  });
+});
+
+describe("fee plans and charges", () => {
+  it("adds one-off charges and takes off a plan discount", () => {
+    expect(billDue({ amount: 100000, planDiscount: 10000, charges: [{ amount: 20000 }, { amount: 5000 }] })).toBe(115000);
+    expect(billDue({ amount: 0, charges: [{ amount: 20000 }] })).toBe(20000);
+    // Discounts never take the fee below zero, and never eat into the charges.
+    expect(billDue({ amount: 10000, discount: 8000, planDiscount: 5000, charges: [{ amount: 3000 }] })).toBe(3000);
+  });
+
+  it("raises a whole plan period at its start", () => {
+    expect(planPeriodEnd("2026-10", "2026-10", "quarterly")).toBe("2026-12");
+    expect(planPeriodEnd("2026-10", "2026-12", "quarterly")).toBe("2026-12");
+    expect(planPeriodEnd("2026-10", "2027-01", "quarterly")).toBe("2027-03");
+    expect(planPeriodEnd("2026-10", "2027-02", "yearly")).toBe("2027-09");
+    expect(planPeriodEnd("2026-10", "2026-11", "monthly")).toBe("2026-11");
+    expect(planPeriodEnd("2026-11", "2026-10", "quarterly")).toBe("2027-01");
+  });
+
+  it("takes the plan discount in whole rupees", () => {
+    expect(planDiscountFor(100000, 5)).toBe(5000);
+    expect(planDiscountFor(125000, 7)).toBe(8800); // 87.5 -> 88
+    expect(planDiscountFor(100000, 0)).toBe(0);
+  });
+});
+
+describe("feature access overrides", () => {
+  it("lets the branch admin change what managers and coaches can do", () => {
+    const coach = branchAccess({ role: "instructor", branch: "bowbazar", branchRole: "coach" }, { coach: ["attendance", "fees"] })!;
+    expect([...coach.can].sort()).toEqual(["attendance", "fees", "view"]);
+  });
+
+  it("never hands out staff or activity, and always keeps view", () => {
+    const manager = branchAccess({ role: "instructor", branch: "bowbazar", branchRole: "manager" }, { manager: ["staff", "activity"] })!;
+    expect([...manager.can]).toEqual(["view"]);
+    const admin = branchAccess({ role: "instructor", branch: "bowbazar", branchRole: "admin" }, { manager: [] })!;
+    expect(admin.can.has("activity")).toBe(true);
   });
 });

@@ -299,7 +299,7 @@ const sections: NavSection[] = [
  * An offline-branch account sees its own short menu and nothing from the
  * online academy (lib/branch/paths.ts closes the rest anyway).
  */
-function branchSections(role: Role, branchRole?: string): NavSection[] {
+function branchSections(role: Role, branchCan: string[]): NavSection[] {
   if (role === "student") {
     return [{
       id: "bowbazar",
@@ -308,31 +308,40 @@ function branchSections(role: Role, branchRole?: string): NavSection[] {
         { href: "/bowbazar/me", label: "My Class", icon: LayoutDashboard },
         { href: "/homework", label: "Homework", icon: BookOpenCheck },
         { href: "/tournaments", label: "Tournaments", icon: Trophy },
+        { href: "/learn", label: "Learn Chess", icon: BookOpenCheck },
+        { href: "/tactics-trainer", label: "Tactics Trainer", icon: Target },
+        { href: "/king-hunt", label: "King Hunt", icon: Crown },
+        { href: "/square-trainer", label: "Square Trainer", icon: Crosshair },
+        { href: "/play/computer", label: "Play vs Computer", icon: Cpu },
+        { href: "/chess-profile", label: "My Chess Profile", icon: BarChart3 },
         { href: "/profile", label: "Account Settings", icon: UserRound },
       ],
     }];
   }
+  // Each item opens only for staff who hold its capability (Feature Access).
+  const staffItems: (NavItem & { need: string })[] = [
+    { href: "/bowbazar", label: "Overview", icon: LayoutDashboard, need: "view" },
+    { href: "/bowbazar/attendance", label: "Attendance", icon: ClipboardCheck, need: "attendance" },
+    { href: "/bowbazar/slots", label: "Slots", icon: CalendarDays, need: "view" },
+    { href: "/bowbazar/students", label: "Students", icon: Users, need: "view" },
+    { href: "/bowbazar/admissions", label: "Admissions", icon: UserPlus, need: "students" },
+    { href: "/bowbazar/changes", label: "Time Changes", icon: Repeat, need: "students" },
+    { href: "/bowbazar/fees", label: "Fees", icon: BadgeIndianRupee, need: "fees" },
+    { href: "/bowbazar/messages", label: "Messages & Holidays", icon: Megaphone, need: "messages" },
+    { href: "/bowbazar/achievements", label: "Achievements", icon: Trophy, need: "achievements" },
+    { href: "/bowbazar/activity", label: "Activity Tracker", icon: ActivitySquare, need: "activity" },
+    { href: "/bowbazar/users", label: "Users", icon: UserCog, need: "staff" },
+    { href: "/bowbazar/settings", label: "Branch Settings", icon: Settings, need: "fees" },
+    // The tools for teaching the branch's online class over a screen share.
+    { href: "/pgn", label: "PGN Library", icon: Library, need: "view" },
+    { href: "/analysis", label: "Analysis Board", icon: ListChecks, need: "view" },
+    { href: "/tournaments", label: "Tournaments", icon: Trophy, need: "view" },
+    { href: "/profile", label: "Account Settings", icon: UserRound, need: "view" },
+  ];
   return [{
     id: "bowbazar",
     title: "Bowbazar",
-    items: [
-      { href: "/bowbazar", label: "Overview", icon: LayoutDashboard },
-      { href: "/bowbazar/attendance", label: "Attendance", icon: ClipboardCheck },
-      { href: "/bowbazar/slots", label: "Slots", icon: CalendarDays },
-      { href: "/bowbazar/students", label: "Students", icon: Users },
-      ...(branchRole === "admin" || branchRole === "manager"
-        ? [
-            { href: "/bowbazar/admissions", label: "Admissions", icon: UserPlus },
-            { href: "/bowbazar/fees", label: "Fees", icon: BadgeIndianRupee },
-          ]
-        : []),
-      ...(branchRole === "admin" ? [{ href: "/bowbazar/users", label: "Users", icon: UserCog }] : []),
-      // The tools for teaching the branch's online class over a screen share.
-      { href: "/pgn", label: "PGN Library", icon: Library },
-      { href: "/analysis", label: "Analysis Board", icon: ListChecks },
-      { href: "/tournaments", label: "Tournaments", icon: Trophy },
-      { href: "/profile", label: "Account Settings", icon: UserRound },
-    ],
+    items: staffItems.filter((item) => branchCan.includes(item.need)).map(({ need: _need, ...item }) => item),
   }];
 }
 
@@ -390,6 +399,7 @@ export default function Sidebar({
   canLearnChess = true,
   branch,
   branchRole,
+  branchCan,
   user,
   mobileOpen = false,
   desktopCollapsed = false,
@@ -405,6 +415,7 @@ export default function Sidebar({
   canLearnChess?: boolean;
   branch?: string;
   branchRole?: string;
+  branchCan?: string[];
   user: { name?: string | null; role: string; isActive?: boolean; isPaused?: boolean };
   mobileOpen?: boolean;
   desktopCollapsed?: boolean;
@@ -424,7 +435,7 @@ export default function Sidebar({
   const [unreadCount, setUnreadCount] = useState(0);
   const visibleSections = useMemo(
     () =>
-      (branch ? branchSections(role, branchRole) : sections)
+      (branch ? branchSections(role, branchCan || []) : sections)
         .filter((section) => canSee(role, accountStatus, user.isActive, user.isPaused, isSuperAdmin, featureState, section, hasScheduledClassroom))
         .map((section) => ({
           ...section,
@@ -435,7 +446,7 @@ export default function Sidebar({
           }),
         }))
         .filter((section) => section.items.length > 0),
-    [role, accountStatus, user.isActive, user.isPaused, isSuperAdmin, featureState, hasCreditPlan, hasScheduledClassroom, canLearnChess, branch, branchRole]
+    [role, accountStatus, user.isActive, user.isPaused, isSuperAdmin, featureState, hasCreditPlan, hasScheduledClassroom, canLearnChess, branch, branchCan]
   );
   const activeSection = visibleSections.find((section) => section.items.some((item) => isActive(pathname, item)))?.id || "academy";
   const [openSection, setOpenSection] = useState(activeSection);

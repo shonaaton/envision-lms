@@ -23,7 +23,11 @@ import { User } from "@/models/User";
  * module with a static `crypto` or `fs` import.
  */
 
-export const EXAM_ASSIGNED_TEMPLATE = "exam_assigned";
+/**
+ * `exam_assigned` was deleted at Meta, and a deleted name cannot be reused for weeks.
+ * Its static "Go to Exam Center" URL button needs nothing at send time.
+ */
+export const EXAM_ASSIGNED_TEMPLATE = "exam_available";
 export const EXAM_REMINDER_TEMPLATE = "exam_reminder";
 
 const STUDENT_FIELDS = "_id name email role phone countryCode parentName parentEmail isActive";

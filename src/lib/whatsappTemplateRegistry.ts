@@ -2376,10 +2376,10 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
     ]
   },
   {
-    "name": "exam_assigned",
+    "name": "exam_available",
     "language": "en",
     "sourceAutomation": "examNotifications.notifyExamAssigned",
-    "body": "Hello {{1}}, your {{2}} exam is ready in the Exam Center on the Envision Chess Academy portal.\n\nThe exam is open until {{3}}. Once started it runs for 90 minutes and cannot be paused or left, so please start it with enough time and a steady connection.\n\nThe certificate follows once the exam is completed.\n\nTeam Envision Chess Academy",
+    "body": "Hello {{1}}, your {{2}} exam has been assigned to you in the Exam Center of the Envision Chess Academy portal.\n\nPlease complete it before {{3}}. Once started, the exam runs for 90 minutes and cannot be paused.\n\nYour certificate will be issued only after you submit the exam.\n\nTeam Envision Chess Academy",
     "variables": [
       { "position": 1, "key": "recipient_name", "sample": "Aarav" },
       { "position": 2, "key": "exam_level", "sample": "Beginner Level 2" },

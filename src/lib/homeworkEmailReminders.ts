@@ -37,7 +37,9 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function isTransientMongoSelectionError(error: unknown) {
+// Atlas (free plan) drops or times out connections now and then; these clear up
+// on their own, and the per-minute sweep picks the reminder up again.
+function isTransientMongoError(error: unknown) {
   const name = typeof error === "object" && error ? String((error as { name?: unknown }).name || "") : "";
   const message = error instanceof Error ? error.message : String(error || "");
   const reasonType =
@@ -46,6 +48,8 @@ function isTransientMongoSelectionError(error: unknown) {
       : "";
   return name === "MongoServerSelectionError"
     || name === "MongooseServerSelectionError"
+    || name === "MongoNetworkTimeoutError"
+    || name === "MongoNetworkError"
     || /MongoServerSelectionError/i.test(message)
     || /server selection timed out/i.test(message)
     || /ReplicaSetNoPrimary/i.test(reasonType)
@@ -387,7 +391,7 @@ function scheduleHomeworkReminder(reminderId: unknown, dueAt: Date) {
   const timer = setTimeout(() => {
     void processHomeworkEmailReminder(reminderId).catch((error) => {
       console.error("Homework email reminder failed", error);
-      void notifyFailure({ title: "Homework email reminder failed", error, metadata: { automation: "homework_email_reminder", reminderId: String(reminderId || "") } });
+      if (!isTransientMongoError(error)) void notifyFailure({ title: "Homework email reminder failed", error, metadata: { automation: "homework_email_reminder", reminderId: String(reminderId || "") } });
       scheduleHomeworkReminder(reminderId, new Date(Date.now() + RETRY_DELAY_MS));
     });
   }, waitMs);
@@ -438,7 +442,7 @@ export async function processDueHomeworkEmailReminders(limit = 50) {
         failed: results.filter((result) => result.failed).length,
       };
     } catch (error) {
-      if (!isTransientMongoSelectionError(error)) throw error;
+      if (!isTransientMongoError(error)) throw error;
       if (attempt >= 2) return { checked: 0, sent: 0, skipped: 0, cancelled: 0, failed: 0, skippedDbUnavailable: true };
       await sleep(TRANSIENT_DB_RETRY_DELAY_MS);
     }

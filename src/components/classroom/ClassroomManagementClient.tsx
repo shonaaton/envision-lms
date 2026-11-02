@@ -425,10 +425,12 @@ export default function ClassroomManagementClient({
     return selectedLevel?.topics || [];
   }, [form.classroomType, form.selectedTopicNames, form.seriesTopicMode, selectedLevel]);
 
-  // A completed course is history, not workload: it comes out of the groups and
-  // calendar views entirely and lives in the Completed tab, which is what makes
+  // A completed course is history, not workload: it comes out of the groups view
+  // and the overview counts and lives in the Completed tab, which is what makes
   // "close as completed" feel like the course moved rather than just changed a
-  // label. Closed and paused groups are excluded server-side already.
+  // label. Its classes still happened, though, so Classes by Date keeps showing
+  // them on the day they were held. Closed and paused groups are excluded
+  // server-side already.
   const completedItems = useMemo(
     () =>
       items
@@ -437,9 +439,8 @@ export default function ClassroomManagementClient({
     [items],
   );
 
-  const filteredItems = useMemo(() => {
+  const dateFilteredItems = useMemo(() => {
     return items.filter((item) => {
-      if (String(item.status || "") === "completed") return false;
       if (filters.coach) {
         // A group belongs to the coach who holds it now. `assignedCoach` only
         // records who held a class before a permanent coach change, so matching
@@ -463,6 +464,11 @@ export default function ClassroomManagementClient({
       return true;
     });
   }, [filters, items]);
+
+  const filteredItems = useMemo(
+    () => dateFilteredItems.filter((item) => String(item.status || "") !== "completed"),
+    [dateFilteredItems],
+  );
 
   const activeBatch = useMemo(() => {
     if (!groupFocus?.id) return null;
@@ -1171,7 +1177,7 @@ export default function ClassroomManagementClient({
                   <div className="rounded-md bg-slate-50 px-3 py-3 text-sm text-slate-500">Loading classes...</div>
                 ) : (
                   <GroupClassSessionList
-                    items={filteredItems}
+                    items={dateFilteredItems}
                     targets={targets}
                     statusFilter={filters.status}
                     dateFilter={calendarDate}

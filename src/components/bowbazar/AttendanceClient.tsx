@@ -40,6 +40,8 @@ type Row = {
   note: string;
   homeworkNote: string;
   recentTopics: { date: string; topic: string }[];
+  // The student's academy course level and the syllabus topic to teach next.
+  course: { levelId: string; label: string; next: string; done: number; total: number } | null;
 };
 
 type RegisterHomework = {
@@ -65,6 +67,7 @@ type Register = {
   holiday: string;
   homework: RegisterHomework[];
   topicSuggestions: string[];
+  courseLevels: { levelId: string; label: string; topics: string[] }[];
   defaultDueDate: string;
 };
 
@@ -327,7 +330,7 @@ function RegisterEditor({ slotId, date, onSaved }: { slotId: string; date: strin
     if (!other) return;
     setRows((current) => [
       ...current,
-      { ...other, userId: "", member: false, guest: true, left: false, status: "present", topic: "", note: "", homeworkNote: "", recentTopics: [] },
+      { ...other, userId: "", member: false, guest: true, left: false, status: "present", topic: "", note: "", homeworkNote: "", recentTopics: [], course: null },
     ]);
     setRegister({ ...register, others: register.others.filter((item) => item.studentId !== studentId) });
     setDirty(true);
@@ -394,6 +397,14 @@ function RegisterEditor({ slotId, date, onSaved }: { slotId: string; date: strin
               <option key={topic} value={topic} />
             ))}
           </datalist>
+          {/* A student on a course gets their level's syllabus first, then the centre's usual topics. */}
+          {register.courseLevels.map((level) => (
+            <datalist key={level.levelId} id={`branch-topics-${level.levelId}`}>
+              {[...level.topics, ...register.topicSuggestions.filter((topic) => !level.topics.some((name) => name.toLowerCase() === topic.toLowerCase()))].map((topic) => (
+                <option key={topic} value={topic} />
+              ))}
+            </datalist>
+          ))}
 
           {rows.length > 1 && (
             <div className="flex flex-wrap items-end gap-2 border-b border-slate-100 bg-slate-50 px-4 py-3">
@@ -444,6 +455,12 @@ function RegisterEditor({ slotId, date, onSaved }: { slotId: string; date: strin
                         row.guest && <span className="ml-2 rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-bold text-sky-800">Visiting</span>
                       )}
                       {row.left && <span className="ml-2 rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-bold text-slate-700">Left</span>}
+                      {row.course && (
+                        <span className="ml-2 rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-bold text-violet-800">
+                          {row.course.label}
+                          {row.course.total > 0 && ` · ${row.course.done}/${row.course.total}`}
+                        </span>
+                      )}
                     </div>
                     <div className="flex flex-wrap items-center gap-1">
                       {STATUSES.map((status) => (
@@ -471,12 +488,22 @@ function RegisterEditor({ slotId, date, onSaved }: { slotId: string; date: strin
                     <div className="space-y-1">
                       <input
                         className="input"
-                        list="branch-topics"
+                        list={row.course?.levelId ? `branch-topics-${row.course.levelId}` : "branch-topics"}
                         value={row.topic}
                         onChange={(event) => change(row.studentId, { topic: event.target.value })}
                         placeholder="Topic taught today"
                         aria-label={`Topic taught to ${row.name}`}
                       />
+                      {row.course?.next && row.topic.trim().toLowerCase() !== row.course.next.toLowerCase() && (
+                        <button
+                          type="button"
+                          className="text-xs font-semibold text-violet-800 hover:underline"
+                          title="Use this topic"
+                          onClick={() => change(row.studentId, { topic: row.course!.next })}
+                        >
+                          Next in the syllabus: {row.course.next}
+                        </button>
+                      )}
                       {row.recentTopics.length > 0 && (
                         <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
                           <span>Before:</span>

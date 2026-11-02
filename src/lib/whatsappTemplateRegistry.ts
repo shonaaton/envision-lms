@@ -1491,8 +1491,8 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   },
   // The monthly reminders with a pay link for the exact amount: Razorpay for a
   // GST invoice, the UPI pay page for a non-GST one, so the wording fits both. They
-  // start switched off and replace invoice_due_soon / invoice_due_today /
-  // invoice_overdue_reminder once turned on (lib/whatsappAutomationSettings.ts).
+  // replace invoice_due_soon / invoice_due_today / invoice_overdue_reminder
+  // unless switched off (lib/whatsappAutomationSettings.ts).
   {
     "name": "invoice_due_soon_pay",
     "language": "en",

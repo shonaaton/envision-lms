@@ -9,6 +9,8 @@ import { cn } from "@/lib/utils";
 import { BranchHeader, CredentialsNote, Drawer, Field, ModeBadge, SlotPicker, api, rupees } from "./shared";
 import type { Slot } from "./SlotsClient";
 import { ClassLogList, HomeworkLogList, type ClassLogEntry, type ClassLogHomework } from "./ClassLog";
+import { CourseProgress, type CourseProgressData } from "./CourseProgress";
+import type { BranchCourse } from "@/lib/branch/courseRules";
 
 type Student = {
   id: string;
@@ -38,6 +40,7 @@ type Student = {
   discount: { kind: "percent" | "flat"; value: number; reason: string } | null;
   admissionFee: number;
   feePlan: string;
+  course: (CourseProgressData & { courseId: string; levelId: string }) | null;
 };
 
 type Credentials = { username: string; password: string; note?: string };
@@ -56,6 +59,15 @@ export default function StudentsClient({ can }: { can: string[] }) {
   const [leaving, setLeaving] = useState<Student | null>(null);
   const [history, setHistory] = useState<Student | null>(null);
   const [credentials, setCredentials] = useState<(Credentials & { name: string }) | null>(null);
+  const [courses, setCourses] = useState<BranchCourse[]>([]);
+  const [courseFilter, setCourseFilter] = useState("");
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    api<{ courses: BranchCourse[] }>("/api/bowbazar/courses")
+      .then((data) => setCourses(data.courses))
+      .catch(() => undefined);
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -84,11 +96,21 @@ export default function StudentsClient({ can }: { can: string[] }) {
       if (status !== "all" && student.status !== status) return false;
       if (slotFilter && !student.slots.some((slot) => slot.id === slotFilter)) return false;
       if (onlyPending && !student.pendingAmount) return false;
+      if (courseFilter === "none" && student.course) return false;
+      if (courseFilter && courseFilter !== "none" && student.course?.levelId !== courseFilter && student.course?.courseId !== courseFilter) return false;
       if (!q) return true;
       return [student.name, student.regNo, student.username, student.phone, student.parentName, student.fatherName, student.motherName, student.school]
         .some((value) => value?.toLowerCase().includes(q));
     });
-  }, [students, query, status, slotFilter, onlyPending]);
+  }, [students, query, status, slotFilter, onlyPending, courseFilter]);
+  const shownPicked = shown.filter((student) => picked.has(student.id));
+  const togglePick = (studentId: string) =>
+    setPicked((current) => {
+      const next = new Set(current);
+      if (next.has(studentId)) next.delete(studentId);
+      else next.add(studentId);
+      return next;
+    });
 
   const counts = {
     active: students.filter((student) => student.status === "active").length,
@@ -159,6 +181,16 @@ export default function StudentsClient({ can }: { can: string[] }) {
           <option value="">Every slot</option>
           {slots.map((slot) => <option key={slot.id} value={slot.id}>{slot.label}</option>)}
         </select>
+        <select className="input lg:w-56" value={courseFilter} onChange={(event) => setCourseFilter(event.target.value)}>
+          <option value="">Every course</option>
+          <option value="none">No course yet</option>
+          {courses.map((course) => (
+            <optgroup key={course.id} label={course.name}>
+              <option value={course.id}>{course.name} (every level)</option>
+              {course.levels.map((level) => <option key={level.id} value={level.id}>{level.name}</option>)}
+            </optgroup>
+          ))}
+        </select>
         {seesFees && (
           <label className="flex items-center gap-2 whitespace-nowrap text-sm font-semibold text-slate-700">
             <input type="checkbox" checked={onlyPending} onChange={(event) => setOnlyPending(event.target.checked)} />
@@ -167,12 +199,35 @@ export default function StudentsClient({ can }: { can: string[] }) {
         )}
       </div>
 
+      {canEdit && shown.length > 0 && (
+        <BulkCourseBar
+          courses={courses}
+          shown={shown}
+          picked={shownPicked}
+          onPickAll={(all) => setPicked(all ? new Set(shown.map((student) => student.id)) : new Set())}
+          onDone={() => {
+            setPicked(new Set());
+            void load();
+          }}
+        />
+      )}
+
       <section className="overflow-hidden rounded-lg border border-brand/10 bg-white shadow-sm">
         {loading && <div className="p-5 text-sm text-slate-500">Loading students...</div>}
         {!loading && !shown.length && <div className="p-8 text-center text-sm text-slate-500">No students match.</div>}
         <div className="divide-y divide-slate-100">
           {shown.map((student) => (
             <article key={student.id} className="flex flex-col gap-2 p-4 md:flex-row md:items-center md:justify-between">
+              <div className="flex min-w-0 gap-3">
+              {canEdit && (
+                <input
+                  type="checkbox"
+                  className="mt-1.5 h-4 w-4 shrink-0"
+                  aria-label={`Select ${student.name}`}
+                  checked={picked.has(student.id)}
+                  onChange={() => togglePick(student.id)}
+                />
+              )}
               <div className="min-w-0 space-y-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-base font-black text-slate-950">{student.name}</span>
@@ -189,12 +244,21 @@ export default function StudentsClient({ can }: { can: string[] }) {
                     </span>
                   ))}
                   {!student.slots.length && <span className="text-xs font-semibold text-amber-700">No slot</span>}
+                  {student.course ? (
+                    <span className="rounded-full bg-violet-50 px-2 py-0.5 text-xs font-bold text-violet-800" title={student.course.next ? `Next: ${student.course.next}` : undefined}>
+                      {[student.course.courseName, student.course.levelName].filter(Boolean).join(" - ")}
+                      {student.course.total > 0 && ` · ${student.course.done}/${student.course.total}`}
+                    </span>
+                  ) : (
+                    <span className="text-xs font-semibold text-slate-400">No course</span>
+                  )}
                 </div>
                 {student.status === "inactive" && (
                   <div className="text-xs text-slate-500">
                     Left {student.inactiveSince ? new Date(student.inactiveSince).toLocaleDateString("en-IN") : ""} · {student.inactiveReason}
                   </div>
                 )}
+              </div>
               </div>
               <div className="flex shrink-0 flex-wrap items-center gap-2">
                 {seesFees && (
@@ -239,6 +303,7 @@ export default function StudentsClient({ can }: { can: string[] }) {
         <StudentDrawer
           student={editing}
           slots={slots}
+          courses={courses}
           onClose={() => setEditing(null)}
           onSaved={(created) => {
             setEditing(null);
@@ -254,6 +319,7 @@ export default function StudentsClient({ can }: { can: string[] }) {
 }
 
 type StudentHistory = {
+  course: CourseProgressData | null;
   classes: ClassLogEntry[];
   homework: ClassLogHomework[];
   summary: { attended: number; marked: number; absent: number };
@@ -283,6 +349,10 @@ function HistoryDrawer({ student, onClose }: { student: Student; onClose: () => 
               <div className="text-lg font-black text-slate-950">{data.summary.attended}/{data.summary.marked} classes</div>
             </div>
           </div>
+          <section>
+            <h3 className="mb-2 text-sm font-black text-slate-950">Course</h3>
+            {data.course ? <CourseProgress course={data.course} /> : <p className="text-sm text-slate-500">Not on a course yet. Set one with Edit.</p>}
+          </section>
           <section>
             <h3 className="mb-1 text-sm font-black text-slate-950">Portal homework</h3>
             <HomeworkLogList homework={data.homework} linkTo={(id) => `/homework/${id}/review`} />
@@ -317,11 +387,13 @@ function IconButton({ label, onClick, children, tone }: { label: string; onClick
 function StudentDrawer({
   student,
   slots,
+  courses,
   onClose,
   onSaved,
 }: {
   student: Partial<Student>;
   slots: Slot[];
+  courses: BranchCourse[];
   onClose: () => void;
   onSaved: (created?: Credentials & { name: string }) => void;
 }) {
@@ -343,6 +415,8 @@ function StudentDrawer({
     feePlan: student.feePlan || "monthly",
     notes: student.notes || "",
     slots: (student.slots || []).map((slot) => slot.id),
+    courseId: student.course?.courseId || "",
+    levelId: student.course?.levelId || "",
     sendLogin: true,
   });
   const [saving, setSaving] = useState(false);
@@ -459,6 +533,7 @@ function StudentDrawer({
         <p className="text-xs text-slate-500">A discount change applies to bills raised from now on. Adjust bills already raised on the Fees page.</p>
       )}
       <SlotPicker slots={slots} value={form.slots} onChange={(value) => set({ slots: value })} seatedIn={(student.slots || []).map((slot) => slot.id)} />
+      <CoursePicker courses={courses} courseId={form.courseId} levelId={form.levelId} onChange={(courseId, levelId) => set({ courseId, levelId })} />
       <Field label="Notes">
         <textarea className="input min-h-[64px]" value={form.notes} onChange={(event) => set({ notes: event.target.value })} />
       </Field>
@@ -519,5 +594,107 @@ function LeaveDrawer({ student, onClose, onDone }: { student: Student; onClose: 
         <textarea className="input min-h-[80px]" value={reason} onChange={(event) => setReason(event.target.value)} placeholder="e.g. exams, moved away, fees" />
       </Field>
     </Drawer>
+  );
+}
+
+/** The academy course and level a student is on: the same syllabus as online. */
+function CoursePicker({
+  courses,
+  courseId,
+  levelId,
+  onChange,
+}: {
+  courses: BranchCourse[];
+  courseId: string;
+  levelId: string;
+  onChange: (courseId: string, levelId: string) => void;
+}) {
+  const course = courses.find((item) => item.id === courseId);
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      <Field label="Course" hint="The academy's syllabus; the register suggests its topics.">
+        <select
+          className="input"
+          value={courseId}
+          onChange={(event) => {
+            const next = courses.find((item) => item.id === event.target.value);
+            onChange(event.target.value, next?.levels[0]?.id || "");
+          }}
+        >
+          <option value="">No course</option>
+          {courses.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+        </select>
+      </Field>
+      {course && course.levels.length > 0 && (
+        <Field label="Level">
+          <select className="input" value={levelId} onChange={(event) => onChange(courseId, event.target.value)}>
+            {course.levels.map((level) => (
+              <option key={level.id} value={level.id}>{level.name} ({level.topics.length} topics)</option>
+            ))}
+          </select>
+        </Field>
+      )}
+    </div>
+  );
+}
+
+/** Puts the ticked students on one course level, e.g. a whole slot after the import. */
+function BulkCourseBar({
+  courses,
+  shown,
+  picked,
+  onPickAll,
+  onDone,
+}: {
+  courses: BranchCourse[];
+  shown: Student[];
+  picked: Student[];
+  onPickAll: (all: boolean) => void;
+  onDone: () => void;
+}) {
+  const [courseId, setCourseId] = useState("");
+  const [levelId, setLevelId] = useState("");
+  const [saving, setSaving] = useState(false);
+  const allPicked = picked.length > 0 && picked.length === shown.length;
+
+  async function apply() {
+    setSaving(true);
+    try {
+      await api("/api/bowbazar/students/course", { method: "POST", json: { studentIds: picked.map((student) => student.id), courseId, levelId } });
+      const course = courses.find((item) => item.id === courseId);
+      toast.success(course ? `${picked.length} put on ${course.name}.` : `${picked.length} taken off their course.`);
+      onDone();
+    } catch (error: any) {
+      toast.error(error.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-brand/10 bg-white p-3 shadow-sm lg:flex-row lg:items-end">
+      <label className="flex items-center gap-2 whitespace-nowrap pb-2 text-sm font-semibold text-slate-700">
+        <input type="checkbox" checked={allPicked} onChange={(event) => onPickAll(event.target.checked)} />
+        {picked.length ? `${picked.length} selected` : "Select all shown"}
+      </label>
+      {picked.length > 0 && (
+        <>
+          <div className="min-w-0 flex-1">
+            <CoursePicker
+              courses={courses}
+              courseId={courseId}
+              levelId={levelId}
+              onChange={(nextCourse, nextLevel) => {
+                setCourseId(nextCourse);
+                setLevelId(nextLevel);
+              }}
+            />
+          </div>
+          <button type="button" className="btn-primary h-10 shrink-0" onClick={apply} disabled={saving}>
+            {saving && <Loader2 size={16} className="animate-spin" />} {courseId ? "Set course" : "Remove course"}
+          </button>
+        </>
+      )}
+    </div>
   );
 }

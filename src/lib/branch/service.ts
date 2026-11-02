@@ -29,6 +29,7 @@ import { getBranchSettings } from "./settings";
 import { absentStreaks, alertFreedSeats } from "./alerts";
 import { nextReceiptNumber } from "./receipts";
 import { ensureBranchBills } from "./bills";
+import { checkCourseInput, courseProgressFor, setStudentsCourse } from "./courses";
 
 export { ensureBranchBills };
 
@@ -233,6 +234,8 @@ export async function createStudent(branch: BranchKey, input: any, actorId: stri
   if (admissionFee === null) throw new BranchError("Enter the admission fee in rupees.");
   if (!fields.phone) throw new BranchError("Enter the parent's phone number.");
   await assertSeats(branch, fields.slots, null);
+  // Before the login is made, so a bad course pick leaves no half-made student.
+  if (input?.courseId) await checkCourseInput(input);
   const password = tempPassword();
   const user: any = await createUserWithUsername({
     name: fields.name,
@@ -277,6 +280,9 @@ export async function createStudent(branch: BranchKey, input: any, actorId: stri
     entityType: "BranchStudent",
     entityId: id(student),
   });
+  if (input?.courseId) {
+    await setStudentsCourse(branch, [id(student)], input).catch((error) => console.error("Branch course not set for a new student", error));
+  }
   return { student, user, username: user.username as string, password };
 }
 
@@ -285,6 +291,8 @@ export async function updateStudent(branch: BranchKey, studentId: string, input:
   const student: any = await findStudent(branch, studentId);
   const { discount, ...fields } = studentFields({ ...student, monthlyFee: (student.monthlyFee || 0) / 100, ...input });
   if (student.status === "active") await assertSeats(branch, fields.slots, studentId);
+  // A bad course pick throws here, before anything else is saved.
+  if (input?.courseId !== undefined) await setStudentsCourse(branch, [studentId], input);
   await BranchStudent.updateOne(
     { _id: studentId },
     discount === null ? { $set: fields, $unset: { discount: 1 } } : { $set: { ...fields, ...(discount ? { discount } : {}) } }
@@ -369,6 +377,7 @@ export async function listStudents(branch: BranchKey) {
     .lean();
   const userById = new Map(users.map((user) => [id(user), user]));
   const slotById = new Map((slots as any[]).map((slot) => [id(slot), slot]));
+  const courses = await courseProgressFor(branch, students as any[]);
   const dues = new Map<string, { balance: number; months: string[] }>();
   for (const bill of owed as any[]) {
     const entry = dues.get(id(bill.student)) || { balance: 0, months: [] };
@@ -413,6 +422,7 @@ export async function listStudents(branch: BranchKey) {
         .map((slot: any) => ({ id: id(slot), label: slotLabel(slot), mode: slot.mode })),
       pendingAmount: due?.balance || 0,
       pendingMonths: (due?.months || []).sort(),
+      course: courses.get(id(student)) || null,
     };
   });
 }

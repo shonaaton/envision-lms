@@ -69,6 +69,13 @@ const BranchStudentSchema = new Schema(
     inactiveSince: Date,
     inactiveReason: String,
     notes: String,
+    // The academy course and level the student is on - the same syllabus as
+    // online. Names are snapshots, so the page reads right if the course is renamed.
+    course: { type: Schema.Types.ObjectId, ref: "Course", index: true },
+    courseName: String,
+    courseLevel: Schema.Types.ObjectId, // the level's _id inside the course
+    courseLevelName: String,
+    courseLevelSince: Date,
     // The admission form the family filled in, which holds their identity document.
     admission: { type: Schema.Types.ObjectId, ref: "BranchAdmission" },
     createdBy: { type: Schema.Types.ObjectId, ref: "User" },
@@ -141,8 +148,9 @@ const BranchAttendanceRecordSchema = new Schema(
     // Snapshot: the register keeps reading right if the student is renamed or removed.
     name: String,
     status: { type: String, enum: ["present", "late", "absent", "excused"], required: true },
-    // What was taught to this student. Offline classes have no syllabus to follow,
-    // so this is the only record of where each child has reached.
+    // What was taught to this student. There is no classroom planning sessions
+    // ahead, so this is the record of where each child has reached; matched
+    // against their course level's topics in lib/branch/courses.ts.
     topic: String,
     // Shown to the family on the student's page.
     note: String,

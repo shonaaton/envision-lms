@@ -15,6 +15,7 @@ import { moveCountsOn, movesForRegister } from "./changes";
 import { alertAbsences } from "./alerts";
 import { BranchHoliday } from "@/models/Branch";
 import { holidayFor } from "./comms";
+import { courseProgressFor, studentCourse, type StudentCourse } from "./courses";
 import {
   DAY_NAMES,
   buildRoster,
@@ -132,6 +133,18 @@ export async function registerDay(branch: BranchKey, date: string) {
   };
 }
 
+/** What the register shows of a student's course: their level and the topic to teach next. */
+function registerCourse(course: StudentCourse | undefined) {
+  if (!course) return null;
+  return {
+    levelId: course.levelId,
+    label: [course.courseName, course.levelName].filter(Boolean).join(" - "),
+    next: course.next,
+    done: course.done,
+    total: course.total,
+  };
+}
+
 /** Past topics per student, newest first, from registers before `date`. */
 async function recentTopics(branch: BranchKey, studentIds: string[], date: string) {
   const out = new Map<string, { date: string; topic: string }[]>();
@@ -180,7 +193,10 @@ export async function getRegister(branch: BranchKey, slotId: string, date: strin
   const [register, slotMembers, everyone, moves]: [any, any[], any[], Awaited<ReturnType<typeof movesForRegister>>] = await Promise.all([
     BranchAttendance.findOne({ slot: slot._id, date }).lean(),
     BranchStudent.find({ branch, status: "active", slots: slot._id }).select("name regNo user").lean(),
-    BranchStudent.find({ branch, status: "active" }).select("name regNo user slots").sort({ name: 1 }).lean(),
+    BranchStudent.find({ branch, status: "active" })
+      .select("name regNo user slots course courseName courseLevel courseLevelName courseLevelSince")
+      .sort({ name: 1 })
+      .lean(),
     movesForRegister(branch, slot._id, date),
   ]);
   const studentById = new Map(everyone.map((student) => [id(student), student]));
@@ -197,7 +213,12 @@ export async function getRegister(branch: BranchKey, slotId: string, date: strin
   );
   const memberIds = new Set(slotMembers.map((student) => id(student)));
   const recordedIds = roster.recorded.map((record: any) => record.student);
-  const topics = await recentTopics(branch, [...recordedIds, ...roster.unmarked.map((member) => member.id)], date);
+  const rowIds = [...recordedIds, ...roster.unmarked.map((member) => member.id)];
+  const [topics, courses] = await Promise.all([
+    recentTopics(branch, rowIds, date),
+    courseProgressFor(branch, rowIds.map((studentId) => studentById.get(studentId)).filter(Boolean)),
+  ]);
+  const courseOf = (studentId: string) => registerCourse(courses.get(studentId));
 
   const rows = [
     ...roster.recorded.map((record: any) => {
@@ -217,6 +238,7 @@ export async function getRegister(branch: BranchKey, slotId: string, date: strin
         note: record.note || "",
         homeworkNote: record.homeworkNote || "",
         recentTopics: topics.get(record.student) || [],
+        course: courseOf(record.student),
       };
     }),
     ...roster.unmarked.map((member) => {
@@ -235,6 +257,7 @@ export async function getRegister(branch: BranchKey, slotId: string, date: strin
         note: "",
         homeworkNote: "",
         recentTopics: topics.get(member.id) || [],
+        course: courseOf(member.id),
       };
     }),
   ];
@@ -261,6 +284,12 @@ export async function getRegister(branch: BranchKey, slotId: string, date: strin
       .map((student) => ({ studentId: id(student), name: student.name as string, regNo: student.regNo || "" })),
     homework: register ? await homeworkFor({ branchAttendance: register._id }, nameByUser) : [],
     topicSuggestions: await topicSuggestions(branch, date),
+    // Each course level's topics in syllabus order, for the topic box of the students on it.
+    courseLevels: [...new Map([...courses.values()].filter((course) => course.levelId).map((course) => [course.levelId, course])).values()].map((course) => ({
+      levelId: course.levelId,
+      label: [course.courseName, course.levelName].filter(Boolean).join(" - "),
+      topics: course.topics.map((topic) => topic.name),
+    })),
     // Due the day before this class meets again.
     defaultDueDate: shiftDateKey(date, 6),
   };
@@ -499,7 +528,8 @@ export async function studentHistory(branch: BranchKey, studentId: string) {
   if (!isObjectId(studentId)) throw new BranchError("Student not found.", 404);
   const student: any = await BranchStudent.findOne({ _id: studentId, branch }).select("name user").lean();
   if (!student) throw new BranchError("Student not found.", 404);
-  return classLog(branch, student, 100);
+  const [log, course] = await Promise.all([classLog(branch, student, 100), studentCourse(branch, student._id)]);
+  return { ...log, course };
 }
 
 async function classLog(branch: BranchKey, student: any, limit: number) {
@@ -544,7 +574,8 @@ export async function myClassLog(userId: string) {
   await dbConnect();
   const student: any = await BranchStudent.findOne({ user: userId }).select("name user branch").lean();
   if (!student) return null;
-  return classLog(student.branch, student, 12);
+  const [log, course] = await Promise.all([classLog(student.branch, student, 12), studentCourse(student.branch, student._id)]);
+  return { ...log, course };
 }
 
 /** Every piece of homework the branch has set, newest first, with how many have done it. */

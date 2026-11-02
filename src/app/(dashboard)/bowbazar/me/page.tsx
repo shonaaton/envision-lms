@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { BookOpenCheck, CalendarDays, NotebookPen, Repeat, Trophy, Video } from "lucide-react";
 import { ClassLogList, HomeworkLogList } from "@/components/bowbazar/ClassLog";
+import { CourseProgress } from "@/components/bowbazar/CourseProgress";
 import { auth } from "@/lib/auth";
 import { myClassLog } from "@/lib/branch/attendance";
 import { describeChange } from "@/lib/branch/changes";
@@ -91,6 +92,13 @@ export default async function BowbazarMyClassPage() {
               <p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">{item.message}</p>
             </div>
           ))}
+        </section>
+      )}
+
+      {log?.course && (
+        <section className="rounded-lg border border-brand/10 bg-white p-5 shadow-sm">
+          <h2 className="mb-3 text-base font-black text-slate-950">My course</h2>
+          <CourseProgress course={log.course} />
         </section>
       )}
 

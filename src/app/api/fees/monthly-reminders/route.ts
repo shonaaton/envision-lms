@@ -53,9 +53,9 @@ function studentMessage(invoice: any, invoiceUrl: string, days: number, payUrl =
 }
 
 /**
- * The template for this reminder. The _pay versions carry the Razorpay link as
- * {{6}}; they start switched off (lib/whatsappAutomationSettings.ts) and are
- * used only once an admin turns them on after Meta approves them.
+ * The template for this reminder. The _pay versions carry the pay link as {{6}}
+ * and are used whenever there is a link, unless an admin switches them off in
+ * the WhatsApp workspace (lib/whatsappAutomationSettings.ts).
  */
 async function invoiceReminderTemplate(days: number, payUrl: string) {
   const base = days < 0 ? "invoice_overdue" : days === 0 ? "invoice_due_today" : "invoice_due_soon";

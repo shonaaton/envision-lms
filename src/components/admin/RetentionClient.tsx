@@ -1,7 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, HeartHandshake, Phone, RefreshCw, UserMinus, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, HeartHandshake, Phone, PhoneCall, RefreshCw, UserMinus, X } from "lucide-react";
 import { toast } from "sonner";
 
 type Reason = { code: string; severity: "moderate" | "strong" | "window"; label: string; detail: string };
@@ -16,16 +17,15 @@ type Flag = {
   lastEvaluatedAt: string;
   contactLog: Array<{ at: string; byName?: string; channel: string; note: string }>;
   resolution: { outcome: string; note?: string; byName?: string; at: string; auto: boolean } | null;
+  /** The risk call task is held back until this date: someone spoke to the family recently. */
+  taskHeldBackUntil: string | null;
   student: { _id: string; name: string; parentName: string; phone: string; isActive: boolean };
   coaches: string[];
 };
-type Breakdown = { key: string; label: string; count: number };
 type Overview = {
   stats: { open: number; high: number; watch: number; saved30: number; left30: number };
   open: Flag[];
   resolved: Flag[];
-  exitReasons: Breakdown[];
-  pauseReasons: Breakdown[];
 };
 
 const TABS = [
@@ -71,6 +71,7 @@ function daysSince(value: string) {
   return Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 86_400_000));
 }
 
+/** The Risk flags tab of the Retention Center: students the morning sweep thinks may leave. */
 export default function RetentionClient({ canManage, initialFlagId }: { canManage: boolean; initialFlagId: string }) {
   const [data, setData] = useState<Overview | null>(null);
   const [tab, setTab] = useState<Tab>("call");
@@ -111,25 +112,12 @@ export default function RetentionClient({ canManage, initialFlagId }: { canManag
   }
 
   return (
-    <div className="min-h-screen min-w-0 text-slate-950">
-      <div className="mb-5 flex min-w-0 flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <div className="inline-flex items-center gap-2 rounded-full bg-brand/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.18em] text-brand">
-            <HeartHandshake size={14} />
-            User Management
-          </div>
-          <h1 className="mt-3 text-3xl font-black text-brand">Retention</h1>
-          <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600">
-            Students showing signs they may leave: missed classes, homework or practice stopping, low effort, a long pause, often just before a fee
-            renewal. Checked every morning. Call the family, log what they said, and settle the flag.
-          </p>
-        </div>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <Stat label="To call" value={data?.stats.open ?? "-"} icon={<Phone size={15} />} />
-          <Stat label="High risk" value={data?.stats.high ?? "-"} icon={<AlertTriangle size={15} />} />
-          <Stat label="Saved (30 days)" value={data?.stats.saved30 ?? "-"} icon={<CheckCircle2 size={15} />} />
-          <Stat label="Left (30 days)" value={data?.stats.left30 ?? "-"} icon={<UserMinus size={15} />} />
-        </div>
+    <div className="min-w-0 text-slate-950">
+      <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <Stat label="To call" value={data?.stats.open ?? "-"} icon={<Phone size={15} />} />
+        <Stat label="High risk" value={data?.stats.high ?? "-"} icon={<AlertTriangle size={15} />} />
+        <Stat label="Saved (30 days)" value={data?.stats.saved30 ?? "-"} icon={<CheckCircle2 size={15} />} />
+        <Stat label="Left (30 days)" value={data?.stats.left30 ?? "-"} icon={<UserMinus size={15} />} />
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -154,14 +142,14 @@ export default function RetentionClient({ canManage, initialFlagId }: { canManag
         )}
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+      <div>
         <div className="space-y-3">
           {!data && <div className="rounded-2xl border border-brand/10 bg-white p-10 text-center text-sm text-slate-500">Loading…</div>}
           {data && !rows.length && (
             <div className="rounded-2xl border border-brand/10 bg-white p-10 text-center">
               <HeartHandshake size={28} className="mx-auto mb-2 text-slate-300" />
               <p className="text-sm font-bold text-slate-700">{tab === "resolved" ? "Nothing settled in the last 90 days" : "Nobody here right now"}</p>
-              <p className="mt-1 text-xs text-slate-500">The check runs every morning at 8:00. New flags also appear as tasks.</p>
+              <p className="mt-1 text-xs text-slate-500">The check runs every morning at 8:00. New flags also appear as tasks, unless someone spoke to the family in the last 15 days.</p>
             </div>
           )}
           {rows.map((flag) => (
@@ -169,10 +157,6 @@ export default function RetentionClient({ canManage, initialFlagId }: { canManag
           ))}
         </div>
 
-        <div className="space-y-4">
-          <Breakdown title="Why families left (6 months)" rows={data?.exitReasons || []} empty="No leavers with a reason yet. A reason is now asked whenever a student is deactivated." />
-          <Breakdown title="Why families paused (6 months)" rows={data?.pauseReasons || []} empty="No pauses with a reason yet." />
-        </div>
       </div>
 
       {selected && <FlagDrawer flag={selected} canManage={canManage} onClose={() => setSelectedId("")} onChanged={load} />}
@@ -207,6 +191,9 @@ function FlagCard({ flag, onOpen }: { flag: Flag; onOpen: () => void }) {
           <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-bold text-slate-700">{OUTCOME_LABEL[flag.resolution?.outcome || ""] || "Settled"}</span>
         )}
         {flag.inWindow && flag.status === "open" && <span className="rounded-full bg-brand/10 px-2.5 py-0.5 text-xs font-bold text-brand">Renewal / return soon</span>}
+        {flag.taskHeldBackUntil && flag.status === "open" && (
+          <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-bold text-emerald-800">Spoken to recently: no task until {formatDate(flag.taskHeldBackUntil)}</span>
+        )}
         <span className="ml-auto text-xs text-slate-500">
           {flag.status === "open" ? `Flagged ${daysSince(flag.firstFlaggedAt)}d ago` : formatDate(flag.resolution?.at)}
         </span>
@@ -223,32 +210,6 @@ function FlagCard({ flag, onOpen }: { flag: Flag; onOpen: () => void }) {
         <span>{lastContact ? `Last contact ${formatDate(lastContact.at)}${lastContact.byName ? ` by ${lastContact.byName}` : ""}` : "Not contacted yet"}</span>
       </div>
     </button>
-  );
-}
-
-function Breakdown({ title, rows, empty }: { title: string; rows: Breakdown[]; empty: string }) {
-  const peak = Math.max(1, ...rows.map((row) => row.count));
-  return (
-    <div className="rounded-2xl border border-brand/10 bg-white p-4 shadow-sm">
-      <h2 className="text-sm font-black text-slate-950">{title}</h2>
-      {rows.length ? (
-        <ul className="mt-3 space-y-2.5">
-          {rows.map((row) => (
-            <li key={row.key}>
-              <div className="flex items-baseline justify-between gap-3 text-sm">
-                <span className={`truncate ${row.key === "not_recorded" ? "italic text-slate-500" : "text-slate-700"}`}>{row.label}</span>
-                <span className="shrink-0 font-bold tabular-nums text-slate-950">{row.count}</span>
-              </div>
-              <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100">
-                <div className={`h-full rounded-full ${row.key === "not_recorded" ? "bg-slate-300" : "bg-brand"}`} style={{ width: `${(row.count / peak) * 100}%` }} />
-              </div>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="mt-3 text-sm leading-6 text-slate-500">{empty}</p>
-      )}
-    </div>
   );
 }
 
@@ -292,6 +253,10 @@ function FlagDrawer({ flag, canManage, onClose, onChanged }: { flag: Flag; canMa
             <X size={18} />
           </button>
         </div>
+
+        <Link href={`/admin/retention/call/${flag.student._id}?kind=risk`} className="btn btn-primary mb-4 w-full">
+          <PhoneCall size={16} /> Open the call screen
+        </Link>
 
         <div className="mb-4 flex flex-wrap items-center gap-2 text-xs text-slate-500">
           {open ? <LevelBadge level={flag.level} /> : <span className="rounded-full bg-slate-100 px-2.5 py-0.5 font-bold text-slate-700">{OUTCOME_LABEL[flag.resolution?.outcome || ""]}</span>}

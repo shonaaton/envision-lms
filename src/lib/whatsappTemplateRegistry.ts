@@ -2424,6 +2424,28 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
       { "position": 6, "key": "homework_done", "sample": "3 of 4" },
       { "position": 7, "key": "portal_link", "sample": "https://envisionchessacademy.com/bowbazar/me" }
     ]
+  },
+  {
+    "name": "family_call_summary",
+    "language": "en",
+    "sourceAutomation": "familyCallMessages.sendFamilyCallMessage",
+    "body": "Hello {{1}}, thank you for speaking with {{2}} from Envision Chess Academy today about {{3}}'s chess classes.\n\nWhat we agreed: {{4}}\n\nIf anything else comes up, just reply to this message.\n\nTeam Envision Chess Academy",
+    "variables": [
+      { "position": 1, "key": "parent_name", "sample": "Mrs Sen" },
+      { "position": 2, "key": "caller_name", "sample": "Priya" },
+      { "position": 3, "key": "student_names", "sample": "Aarav" },
+      { "position": 4, "key": "agreed", "sample": "Aarav will do 10 puzzles on the portal each week and we will move him to the Saturday batch." }
+    ]
+  },
+  {
+    "name": "family_call_missed",
+    "language": "en",
+    "sourceAutomation": "familyCallMessages.sendFamilyCallMessage",
+    "body": "Hello {{1}}, a representative from Envision Chess Academy tried to reach you today regarding {{2}}'s chess classes.\n\nWe will try again soon. You can also reply here with a convenient time to call.\n\nTeam Envision Chess Academy",
+    "variables": [
+      { "position": 1, "key": "parent_name", "sample": "Mrs Sen" },
+      { "position": 2, "key": "student_names", "sample": "Aarav" }
+    ]
   }
 ] as const satisfies readonly WhatsAppTemplateDefinition[];
 

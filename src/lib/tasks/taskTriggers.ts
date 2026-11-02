@@ -569,7 +569,7 @@ function retentionDetails(level: string, reasons: RetentionReasonLine[]) {
  * Re-raised every day the flag stays open, which refreshes the reasons and
  * lifts the priority if it got worse.
  */
-export async function raiseRetentionRiskTask(input: { flag: any; student: any; level: string; reasons: RetentionReasonLine[] }) {
+export async function raiseRetentionRiskTask(input: { flag: any; student: any; level: string; reasons: RetentionReasonLine[]; reopen?: boolean }) {
   const flagId = idOf(input.flag);
   const title = `${input.level === "high" ? "High risk" : "At risk"}: call ${nameOf(input.student, "student")}'s family`;
   const details = retentionDetails(input.level, input.reasons);
@@ -584,6 +584,7 @@ export async function raiseRetentionRiskTask(input: { flag: any; student: any; l
     priority,
     actionHref: `/admin/retention?flag=${flagId}`,
     metadata: { flagId, studentId: idOf(input.student) },
+    reopenIfClosed: Boolean(input.reopen),
   });
   // ensureAutoTask only writes on insert; keep an open task's reasons current.
   if (task && OPEN_TASK_STATUSES.includes(task.status) && (task.details !== details || task.priority !== priority)) {
@@ -594,6 +595,61 @@ export async function raiseRetentionRiskTask(input: { flag: any; student: any; l
 
 export function resolveRetentionRiskTask(flagId: unknown, by?: unknown, note = "Retention flag settled.") {
   return settle("RetentionRisk", flagId, by, note);
+}
+
+// ---------------------------------------------------------------------------
+// Retention Center: family calls
+// ---------------------------------------------------------------------------
+
+const FAMILY_ACTION_TITLES: Record<string, string> = {
+  timing_change: "Change class timing",
+  batch_change: "Change batch",
+  coach_concern: "Coach concern",
+  fee_question: "Fee question",
+  tech_issue: "Tech issue",
+  rejoin: "Wants to rejoin",
+  other: "Follow up",
+};
+
+/** "Call me on Thursday at 6": a reminder for the caller, closed by the family's next call that connects. */
+export function raiseFamilyCallbackTask(input: { call: any; familyName: string; assignedTo?: unknown; familyKey: string; studentId: string }) {
+  return raise({
+    kind: "family_callback",
+    referenceType: "FamilyCallback",
+    referenceId: idOf(input.call),
+    title: `Call back ${input.familyName}`,
+    details: [`The family asked to be called back${input.call?.callbackAt ? ` at ${when(input.call.callbackAt)}` : ""}.`, input.call?.notes ? `Notes: ${String(input.call.notes).slice(0, 600)}` : ""].filter(Boolean).join("\n"),
+    ...(input.assignedTo ? { assignedTo: input.assignedTo } : { pool: "admins" as const }),
+    priority: "normal",
+    dueAt: input.call?.callbackAt ? new Date(input.call.callbackAt) : null,
+    actionHref: `/admin/retention/call/${input.studentId}?kind=callback`,
+    metadata: { familyKey: input.familyKey, studentId: input.studentId, callId: idOf(input.call) },
+  });
+}
+
+export function resolveFamilyCallbackTasks(familyKey: string, by?: unknown) {
+  return settleWhere("family_callback", { familyKey }, by, "Spoke to the family.");
+}
+
+/**
+ * Something the family raised on a call that someone else has to do. Fee
+ * questions go to the invoice owner with the other money tasks; everything
+ * else to the admins.
+ */
+export async function raiseFamilyCallActionTask(input: { call: any; itemId: unknown; type: string; note: string; familyName: string; studentId: string }) {
+  const ownerId = input.type === "fee_question" ? await invoiceTaskOwnerId() : "";
+  return raise({
+    kind: "family_call_action",
+    referenceType: "FamilyCallAction",
+    // One task per action item, keyed on the item's own id.
+    referenceId: input.itemId,
+    title: `${FAMILY_ACTION_TITLES[input.type] || "Follow up"}: ${input.familyName}`,
+    details: [input.note, `Raised on a call by ${input.call?.byName || "the retention team"}.`].filter(Boolean).join("\n"),
+    ...(ownerId ? { assignedTo: ownerId } : { pool: "admins" as const }),
+    priority: input.type === "rejoin" || input.type === "coach_concern" ? "high" : "normal",
+    actionHref: `/admin/retention?tab=history&student=${input.studentId}`,
+    metadata: { callId: idOf(input.call), studentId: input.studentId, actionType: input.type },
+  });
 }
 
 // ---------------------------------------------------------------------------

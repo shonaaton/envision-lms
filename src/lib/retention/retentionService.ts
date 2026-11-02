@@ -4,6 +4,7 @@ import { Types } from "mongoose";
 import { exitStudentId as idOf } from "@/lib/classroomStudentExits";
 import { dbConnect } from "@/lib/db";
 import { EXIT_REASONS, PAUSE_REASONS, exitReasonLabel } from "@/lib/retention/exitReasons";
+import { CALL_QUIET_DAYS } from "@/lib/retention/familyRules";
 import { settleFlag } from "@/lib/retention/retentionSweep";
 import { LEVEL_RANK, type RiskLevel } from "@/lib/retention/riskRules";
 import { Classroom } from "@/models/Classroom";
@@ -109,6 +110,7 @@ export async function retentionOverview(now = new Date()) {
       firstFlaggedAt: flag.firstFlaggedAt,
       lastEvaluatedAt: flag.lastEvaluatedAt,
       contactLog: (flag.contactLog || []).map((entry: any) => ({ at: entry.at, byName: entry.byName, channel: entry.channel, note: entry.note })),
+      taskHeldBackUntil: flag.taskSuppressedByCall?.callAt ? new Date(new Date(flag.taskSuppressedByCall.callAt).getTime() + CALL_QUIET_DAYS * DAY) : null,
       resolution: flag.resolution?.outcome ? { outcome: flag.resolution.outcome, note: flag.resolution.note, byName: flag.resolution.byName, at: flag.resolution.at, auto: Boolean(flag.resolution.auto) } : null,
       student: {
         _id: idOf(flag.student),

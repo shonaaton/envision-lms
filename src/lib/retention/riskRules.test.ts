@@ -177,3 +177,35 @@ describe("coachHeadsUp", () => {
     expect(coachHeadsUp("Aarav", result.reasons)).toBeNull();
   });
 });
+
+describe("signs from the retention team's calls", () => {
+  const calls = (overrides: Partial<NonNullable<RiskSnapshot["calls"]>> = {}) => ({
+    lastConnectedAt: daysAgo(5), latestSatisfaction: 4, leavingIntent: "no" as const, missedSinceConnect: 0, ...overrides,
+  });
+
+  it("a happy family adds nothing", () => {
+    expect(assessRisk(snapshot({ calls: calls() })).level).toBe("none");
+  });
+
+  it("a parent who rated us 2/5 is a call on its own", () => {
+    const result = assessRisk(snapshot({ calls: calls({ latestSatisfaction: 2 }) }));
+    expect(result.level).toBe("at_risk");
+    expect(result.reasons.map((reason) => reason.code)).toEqual(["parent_unhappy"]);
+    expect(result.reasons[0].coachSafe).toBe(false);
+  });
+
+  it("'thinking of stopping' is moderate, 'will stop' is strong", () => {
+    expect(assessRisk(snapshot({ calls: calls({ leavingIntent: "maybe" }) })).level).toBe("watch");
+    expect(assessRisk(snapshot({ calls: calls({ leavingIntent: "yes" }) })).level).toBe("at_risk");
+  });
+
+  it("three unanswered calls and nobody reached in a month is worth watching", () => {
+    expect(assessRisk(snapshot({ calls: calls({ lastConnectedAt: daysAgo(35), missedSinceConnect: 3 }) })).reasons.map((reason) => reason.code)).toEqual(["family_unreachable"]);
+    expect(assessRisk(snapshot({ calls: calls({ lastConnectedAt: daysAgo(10), missedSinceConnect: 3 }) })).level).toBe("none");
+  });
+
+  it("still counts while the student is paused", () => {
+    const result = assessRisk(snapshot({ pause: { pausedFrom: daysAgo(10), pausedUntil: daysAhead(40) }, calls: calls({ leavingIntent: "yes" }) }));
+    expect(result.reasons.map((reason) => reason.code)).toEqual(["leaving_intent"]);
+  });
+});

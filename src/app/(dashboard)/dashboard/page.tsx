@@ -84,6 +84,7 @@ import { getAcademyRankRows, rankFromRows } from "@/lib/studentRankings";
 import RoleHome from "@/components/admin/RoleHome";
 import LeadOwnerDemosPanel from "@/components/sales/LeadOwnerDemosPanel";
 import MyPendingTasksPanel from "@/components/tasks/MyPendingTasksPanel";
+import CoachFamilyNotesPanel from "@/components/retention/CoachFamilyNotesPanel";
 import { COURSE_TIER_VALUES, courseTierLabel } from "@/lib/courseTiers";
 
 export const dynamic = "force-dynamic";
@@ -1982,6 +1983,7 @@ async function CoachDashboardV2({ userId, searchParams, joinAllowed }: { userId:
   return (
     <div className="space-y-6 text-slate-950">
       <MyPendingTasksPanel />
+      <CoachFamilyNotesPanel coachId={userId} />
       {ptmSummary?.nextPtm && <UpcomingPtm item={ptmSummary.nextPtm} role="instructor" />}
       <section className="overflow-hidden rounded-[28px] bg-gradient-to-br from-brand via-purple-800 to-brand-900 px-5 py-6 text-white shadow-[0_24px_60px_rgba(90,19,114,0.24)] sm:px-7">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">

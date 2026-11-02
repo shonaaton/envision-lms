@@ -38,6 +38,10 @@ export const RISK_THRESHOLDS = {
   pauseOverdueDays: 3,
   longPauseDays: 60,
   repeatPauseDays: 180,
+  // From the retention team's calls (FamilyCall).
+  unhappySatisfaction: 2,
+  unreachableMissedCalls: 3,
+  unreachableDays: 30,
 } as const;
 
 export type RiskLevel = "none" | "watch" | "at_risk" | "high";
@@ -78,6 +82,15 @@ export type RiskSnapshot = {
   pause?: { pausedFrom: Date; pausedUntil: Date } | null;
   /** Pauses that started within the repeat window, the current one included. */
   recentPauseCount: number;
+  /** The retention team's recent calls: the latest one that connected and the misses since. */
+  calls?: {
+    lastConnectedAt: Date | null;
+    /** 1-5, from the latest connected call. */
+    latestSatisfaction: number | null;
+    leavingIntent: "no" | "maybe" | "yes" | null;
+    /** Unanswered calls after the latest connected one. */
+    missedSinceConnect: number;
+  } | null;
 };
 
 export type RiskResult = { level: RiskLevel; reasons: RiskReason[]; inWindow: boolean };
@@ -281,6 +294,44 @@ function pauseReasons(snapshot: RiskSnapshot): RiskReason[] {
   return reasons;
 }
 
+/** What the family said on the phone. Never coach-safe: it is the family's view, not the class. */
+function callReasons(snapshot: RiskSnapshot): RiskReason[] {
+  const t = RISK_THRESHOLDS;
+  const calls = snapshot.calls;
+  if (!calls) return [];
+  const reasons: RiskReason[] = [];
+  const when = calls.lastConnectedAt ? ` on ${shortDate(calls.lastConnectedAt)}` : "";
+  if (typeof calls.latestSatisfaction === "number" && calls.latestSatisfaction <= t.unhappySatisfaction) {
+    reasons.push({
+      code: "parent_unhappy",
+      severity: "strong",
+      label: `Parent rated us ${calls.latestSatisfaction}/5`,
+      detail: `Satisfaction given on the last call${when}.`,
+      coachSafe: false,
+    });
+  }
+  if (calls.leavingIntent === "yes" || calls.leavingIntent === "maybe") {
+    reasons.push({
+      code: "leaving_intent",
+      severity: calls.leavingIntent === "yes" ? "strong" : "moderate",
+      label: calls.leavingIntent === "yes" ? "Parent said they plan to stop" : "Parent is thinking of stopping",
+      detail: `Said on the last call${when}.`,
+      coachSafe: false,
+    });
+  }
+  const sinceConnect = calls.lastConnectedAt ? daysBetween(calls.lastConnectedAt, snapshot.now) : Infinity;
+  if (calls.missedSinceConnect >= t.unreachableMissedCalls && sinceConnect >= t.unreachableDays) {
+    reasons.push({
+      code: "family_unreachable",
+      severity: "moderate",
+      label: `Family not answering (${calls.missedSinceConnect} missed calls)`,
+      detail: calls.lastConnectedAt ? `Last spoke to them${when}.` : "Nobody has reached them in the last six weeks.",
+      coachSafe: false,
+    });
+  }
+  return reasons;
+}
+
 export function levelFor(reasons: RiskReason[]): RiskLevel {
   const strong = reasons.filter((reason) => reason.severity === "strong").length;
   const moderate = reasons.filter((reason) => reason.severity === "moderate").length;
@@ -297,8 +348,8 @@ export function assessRisk(snapshot: RiskSnapshot): RiskResult {
   if (!snapshot.isActive) return { level: "none", reasons: [], inWindow: false };
   const reasons = snapshot.pause
     // Out of class on purpose - attendance and homework say nothing while paused.
-    ? pauseReasons(snapshot)
-    : [...attendanceReasons(snapshot), ...engagementReasons(snapshot), ...renewalWindow(snapshot), ...pauseReasons(snapshot)];
+    ? [...pauseReasons(snapshot), ...callReasons(snapshot)]
+    : [...attendanceReasons(snapshot), ...engagementReasons(snapshot), ...renewalWindow(snapshot), ...pauseReasons(snapshot), ...callReasons(snapshot)];
   const level = levelFor(reasons);
   // A window alone is not a problem; drop it so "none" carries no reasons.
   const shown = level === "none" ? [] : reasons;

@@ -760,6 +760,12 @@ function UserDetailsModal({ user, batches, onClose, onCopy }: { user: AdminUser;
           {user.role === "student" && <InfoRow label="Last seen" value={user.lastSeenAt ? new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric" }).format(new Date(user.lastSeenAt)) : "Not yet recorded"} />}
           {user.role === "student" && <InfoRow label="Weekly updates" value={weeklyUpdatesLabel(user)} />}
           {user.tempPassword ? <button className="btn-primary gap-2" onClick={onCopy}><Copy size={15} /> Copy temporary credentials</button> : null}
+          {user.role === "student" && (
+            <div className="flex flex-wrap gap-3 text-sm font-semibold">
+              <a href={`/admin/retention?tab=history&student=${user._id}`} className="text-brand hover:underline">Call history</a>
+              <a href={`/admin/retention/call/${user._id}`} className="text-brand hover:underline">Open call screen</a>
+            </div>
+          )}
         </div>
       </div>
       <div className="mt-6 rounded-lg border border-slate-200 p-4">

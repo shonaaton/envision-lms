@@ -537,9 +537,9 @@ export const FEATURE_DEFINITIONS: FeatureDefinition[] = [
   },
   {
     key: "retention",
-    label: "Retention",
+    label: "Retention Center",
     category: "Administration",
-    description: "Students who may be about to leave, the calls made to their families, and why families leave or pause.",
+    description: "Monthly calls to every family, students who may be about to leave, renewals, win-back calls, the call log and why families leave or pause.",
     routes: ["/admin/retention"],
     apiPrefixes: ["/api/admin/retention"],
     permissions: [view, { id: "manage", label: "Log Calls and Settle Flags" }],

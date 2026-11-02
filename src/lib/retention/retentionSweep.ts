@@ -2,34 +2,24 @@ import "server-only";
 
 import { Types } from "mongoose";
 import { academyDateKey, academyTimeOfDay } from "@/lib/academyTime";
-import { exitStudentId as idOf, hasStudentExited } from "@/lib/classroomStudentExits";
+import { exitStudentId as idOf } from "@/lib/classroomStudentExits";
 import { dbConnect } from "@/lib/db";
-import { joinedAt } from "@/lib/feesMetrics";
-import { ATTENDED_STATUSES, LEVEL_RANK, RISK_THRESHOLDS, assessRisk, coachHeadsUp, needsCall, type RiskResult, type RiskSnapshot } from "@/lib/retention/riskRules";
+import { recentlyCalled } from "@/lib/retention/familyRules";
+import { LEVEL_RANK, assessRisk, coachHeadsUp, needsCall, type RiskResult } from "@/lib/retention/riskRules";
+import { lastConnectedCalls, loadStudentContexts, type StudentContext } from "@/lib/retention/studentSignals";
 import { raiseRetentionRiskTask, resolveRetentionRiskTask } from "@/lib/tasks/taskTriggers";
-import { Attendance } from "@/models/Attendance";
-import { Batch } from "@/models/Batch";
-import { Classroom } from "@/models/Classroom";
-import { FeeAssignment, Invoice, Notification } from "@/models/Fee";
-import { Homework, Submission } from "@/models/Homework";
-import { LearningExerciseProgress } from "@/models/Learning";
-import { MonthlyFeedback } from "@/models/MonthlyFeedback";
+import { Notification } from "@/models/Fee";
 import { RetentionFlag, RetentionSweepRun } from "@/models/RetentionFlag";
-import { StudentPause } from "@/models/StudentPause";
-import { TacticAttempt } from "@/models/TacticPuzzle";
 import { User } from "@/models/User";
 
 // Nothing here may import lib/studentPause.ts or lib/fees.ts: both pull in
 // Node's crypto, and this file is reachable from instrumentation.ts, whose
-// bundle then fails to compile. Pause and fee state are read from the models.
+// bundle then fails to compile. Pause and fee state are read from the models
+// (see studentSignals.ts).
 
 const DAY = 86_400_000;
-const LOOKBACK_DAYS = 90;
-const HOMEWORK_LOOKBACK_DAYS = 45;
 /** A family a person settled is left alone this long, unless it gets worse. */
 const SETTLED_QUIET_DAYS = 14;
-/** Coach-side outcomes and classes that did not happen say nothing about the student. */
-const SKIPPED_COACH_STATUSES = ["cancelled", "rescheduled", "coach_no_show"];
 
 /** IST hour from which the day's sweep runs - before the 9:00 task digest picks the tasks up. */
 export function retentionSweepHour() {
@@ -66,285 +56,17 @@ export async function processRetentionSweep(now = new Date(), options: { force?:
     if (!claimed.modifiedCount && !claimed.upsertedCount) return { skipped: "already_ran" as const };
   }
 
-  const snapshots = await buildSnapshots(now);
+  const snapshots = await loadStudentContexts(now);
   const summary = await syncFlags(snapshots, now);
   await RetentionSweepRun.updateOne({ dateKey }, { $set: { finishedAt: new Date(), summary }, $setOnInsert: { startedAt: now } }, { upsert: true });
   return summary;
 }
 
-type StudentContext = {
-  student: any;
-  snapshot: RiskSnapshot;
-  coachIds: string[];
-};
-
-async function buildSnapshots(now: Date): Promise<Map<string, StudentContext>> {
-  const since = new Date(now.getTime() - LOOKBACK_DAYS * DAY);
-  const students: any[] = await User.find({ role: "student", isActive: { $ne: false }, accountStatus: { $ne: "demo" } })
-    .select("name username createdAt conversionSetup batches isActive")
-    .lean();
-  const studentById = new Map(students.map((student) => [idOf(student), student]));
-
-  const classrooms: any[] = await Classroom.find({
-    isActive: { $ne: false },
-    isTestClassroom: { $ne: true },
-    isSessionInstance: { $ne: true },
-    classroomType: { $ne: "demo" },
-    status: { $ne: "cancelled" },
-    students: { $in: students.map((student) => student._id) },
-  })
-    .select("coach instructor students studentExits closedForStudents pausedForStudents generatedSessions.assignedCoach generatedSessions.scheduledFor")
-    .lean();
-
-  const pauses: any[] = await StudentPause.find({ status: { $ne: "cancelled" }, pausedFrom: { $gte: new Date(now.getTime() - RISK_THRESHOLDS.repeatPauseDays * DAY) } })
-    .select("student status pausedFrom pausedUntil")
-    .lean();
-  const activePauses: any[] = await StudentPause.find({ status: "active" }).select("student pausedFrom pausedUntil").lean();
-  const activePauseByStudent = new Map(activePauses.map((pause) => [idOf(pause.student), pause]));
-  const recentPauseCount = new Map<string, number>();
-  pauses.forEach((pause) => recentPauseCount.set(idOf(pause.student), (recentPauseCount.get(idOf(pause.student)) || 0) + 1));
-
-  // Who is actually in a class right now, which classes, and with which coach.
-  const membership = new Map<string, { classroomIds: string[]; coachIds: Set<string>; coachChangedAt: Date | null }>();
-  for (const classroom of classrooms) {
-    const closed = new Set((classroom.closedForStudents || []).map(idOf));
-    const coachId = idOf(classroom.coach || classroom.instructor);
-    const changedAt = lastCoachChange(classroom, coachId, now);
-    for (const studentId of (classroom.students || []).map(idOf)) {
-      if (!studentById.has(studentId) || closed.has(studentId) || hasStudentExited(classroom, studentId)) continue;
-      const entry = membership.get(studentId) || { classroomIds: [], coachIds: new Set<string>(), coachChangedAt: null };
-      entry.classroomIds.push(idOf(classroom));
-      if (coachId) entry.coachIds.add(coachId);
-      if (changedAt && (!entry.coachChangedAt || changedAt > entry.coachChangedAt)) entry.coachChangedAt = changedAt;
-      membership.set(studentId, entry);
-    }
-  }
-
-  // Scored: everyone in a class, plus everyone paused (who is out of class on purpose).
-  const population = students.filter((student) => membership.has(idOf(student)) || activePauseByStudent.has(idOf(student)));
-  const ids = population.map((student) => student._id);
-  if (!ids.length) return new Map();
-
-  const [attendanceByStudent, lastAttended, homeworkByStudent, practiceByStudent, effortByStudent, feesByStudent] = await Promise.all([
-    readAttendance(ids, since, now),
-    readLastAttended(ids, now),
-    readHomework(population, classrooms, membership, now),
-    readPractice(ids, since),
-    readEffort(ids, now),
-    readFees(ids, now),
-  ]);
-
-  const result = new Map<string, StudentContext>();
-  for (const student of population) {
-    const studentId = idOf(student);
-    const pause = activePauseByStudent.get(studentId);
-    const member = membership.get(studentId);
-    result.set(studentId, {
-      student,
-      coachIds: Array.from(member?.coachIds || []),
-      snapshot: {
-        now,
-        isActive: student.isActive !== false,
-        joinedAt: joinedAt(student),
-        attendance: attendanceByStudent.get(studentId) || [],
-        lastAttendedAt: lastAttended.get(studentId) || null,
-        homework: homeworkByStudent.get(studentId) || [],
-        lastPracticeAt: practiceByStudent.get(studentId) || null,
-        latestEffort: effortByStudent.get(studentId) ?? null,
-        coachChangedAt: member?.coachChangedAt || null,
-        fees: feesByStudent.get(studentId) || {},
-        pause: pause ? { pausedFrom: new Date(pause.pausedFrom), pausedUntil: new Date(pause.pausedUntil) } : null,
-        recentPauseCount: recentPauseCount.get(studentId) || 0,
-      },
-    });
-  }
-  return result;
-}
-
-/**
- * A hand-over pins the outgoing coach on every class already taught
- * (`assignedCoach`). The latest such class taught by someone other than the
- * current coach dates the change; substitutions do not pin, so they never count.
- */
-function lastCoachChange(classroom: any, currentCoachId: string, now: Date) {
-  let latest: Date | null = null;
-  for (const session of classroom.generatedSessions || []) {
-    const pinned = idOf(session?.assignedCoach);
-    if (!pinned || pinned === currentCoachId || !session?.scheduledFor) continue;
-    const at = new Date(session.scheduledFor);
-    if (at > now) continue;
-    if (!latest || at > latest) latest = at;
-  }
-  return latest;
-}
-
-async function excludedClassroomIds() {
-  return Classroom.find({ $or: [{ classroomType: "demo" }, { isTestClassroom: true }] }).distinct("_id");
-}
-
-async function readAttendance(ids: any[], since: Date, now: Date) {
-  const excluded = await excludedClassroomIds();
-  const rows: any[] = await Attendance.aggregate([
-    { $match: { sessionDate: { $gte: since, $lte: now }, classroom: { $nin: excluded }, coachStatus: { $nin: SKIPPED_COACH_STATUSES }, "records.student": { $in: ids } } },
-    { $unwind: "$records" },
-    { $match: { "records.student": { $in: ids } } },
-    { $project: { _id: 0, student: "$records.student", status: "$records.status", date: "$sessionDate" } },
-  ]);
-  const map = new Map<string, RiskSnapshot["attendance"]>();
-  rows.forEach((row) => {
-    const key = idOf(row.student);
-    const list = map.get(key) || [];
-    list.push({ date: new Date(row.date), status: String(row.status || "") });
-    map.set(key, list);
-  });
-  return map;
-}
-
-/**
- * Last class attended, read a year back so a long absence is measured from the
- * real date. Anyone with nothing in a year falls back to their join date,
- * which says the same thing.
- */
-async function readLastAttended(ids: any[], now: Date) {
-  const excluded = await excludedClassroomIds();
-  const rows: any[] = await Attendance.aggregate([
-    { $match: { sessionDate: { $gte: new Date(now.getTime() - 365 * DAY), $lte: now }, classroom: { $nin: excluded }, "records.student": { $in: ids } } },
-    { $unwind: "$records" },
-    { $match: { "records.student": { $in: ids }, "records.status": { $in: ATTENDED_STATUSES } } },
-    { $group: { _id: "$records.student", last: { $max: "$sessionDate" } } },
-  ]);
-  return new Map(rows.map((row) => [idOf(row._id), new Date(row.last)]));
-}
-
-/**
- * Homework already past due in the last few weeks, matched to students the
- * way the homework page does it: by name, by batch, or the whole classroom.
- */
-async function readHomework(population: any[], classrooms: any[], membership: Map<string, { classroomIds: string[] }>, now: Date) {
-  const since = new Date(now.getTime() - HOMEWORK_LOOKBACK_DAYS * DAY);
-  const classroomIds = classrooms.map((classroom) => classroom._id);
-  const homework: any[] = await Homework.find({
-    classroom: { $in: classroomIds },
-    isPublished: { $ne: false },
-    dueAt: { $gte: since, $lt: now },
-  })
-    .select("classroom assignedStudents assignedBatches assignAllStudents dueAt createdAt")
-    .lean();
-  const map = new Map<string, RiskSnapshot["homework"]>();
-  if (!homework.length) return map;
-
-  const batchIdsByStudent = new Map<string, Set<string>>();
-  const batches: any[] = await Batch.find({ students: { $in: population.map((student) => student._id) } }).select("students").lean();
-  batches.forEach((batch) => (batch.students || []).forEach((studentId: any) => {
-    const key = idOf(studentId);
-    const set = batchIdsByStudent.get(key) || new Set<string>();
-    set.add(idOf(batch));
-    batchIdsByStudent.set(key, set);
-  }));
-  population.forEach((student) => (student.batches || []).forEach((batchId: any) => {
-    const set = batchIdsByStudent.get(idOf(student)) || new Set<string>();
-    set.add(idOf(batchId));
-    batchIdsByStudent.set(idOf(student), set);
-  }));
-
-  const assigned: Array<{ studentId: string; homeworkId: string; dueAt: Date }> = [];
-  for (const student of population) {
-    const studentId = idOf(student);
-    const myClassrooms = new Set(membership.get(studentId)?.classroomIds || []);
-    const myBatches = batchIdsByStudent.get(studentId) || new Set<string>();
-    const joined = joinedAt(student);
-    for (const item of homework) {
-      const named = (item.assignedStudents || []).map(idOf);
-      const batchIds = (item.assignedBatches || []).map(idOf);
-      const wholeClass = item.assignAllStudents || (!named.length && !batchIds.length);
-      const isMine = named.includes(studentId)
-        || batchIds.some((batchId: string) => myBatches.has(batchId))
-        || (wholeClass && myClassrooms.has(idOf(item.classroom)));
-      // Work set before they joined was never theirs to do.
-      if (!isMine || (item.createdAt && new Date(item.createdAt) < joined)) continue;
-      assigned.push({ studentId, homeworkId: idOf(item), dueAt: new Date(item.dueAt) });
-    }
-  }
-  if (!assigned.length) return map;
-
-  const submissions: any[] = await Submission.find({
-    homework: { $in: homework.map((item) => item._id) },
-    student: { $in: population.map((student) => student._id) },
-    status: { $ne: "in_progress" },
-  })
-    .select("homework student")
-    .lean();
-  const done = new Set(submissions.map((row) => `${idOf(row.student)}:${idOf(row.homework)}`));
-  assigned.forEach((row) => {
-    const list = map.get(row.studentId) || [];
-    list.push({ dueAt: row.dueAt, submitted: done.has(`${row.studentId}:${row.homeworkId}`) });
-    map.set(row.studentId, list);
-  });
-  return map;
-}
-
-/** Latest Learn Chess or tactics activity inside the lookback. */
-async function readPractice(ids: any[], since: Date) {
-  const [learning, tactics]: any[][] = await Promise.all([
-    LearningExerciseProgress.aggregate([
-      { $match: { studentId: { $in: ids }, lastAttemptedAt: { $gte: since } } },
-      { $group: { _id: "$studentId", last: { $max: "$lastAttemptedAt" } } },
-    ]),
-    TacticAttempt.aggregate([
-      { $match: { student: { $in: ids }, createdAt: { $gte: since } } },
-      { $group: { _id: "$student", last: { $max: "$createdAt" } } },
-    ]),
-  ]);
-  const map = new Map<string, Date>();
-  [...learning, ...tactics].forEach((row) => {
-    const key = idOf(row._id);
-    const at = new Date(row.last);
-    const existing = map.get(key);
-    if (!existing || at > existing) map.set(key, at);
-  });
-  return map;
-}
-
-/** Effort on the latest report a coach has finished, from the last two months only. */
-async function readEffort(ids: any[], now: Date) {
-  const cutoff = academyDateKey(new Date(now.getTime() - 62 * DAY)).slice(0, 7);
-  const reports: any[] = await MonthlyFeedback.find({ student: { $in: ids }, status: { $in: ["submitted", "approved", "sent"] }, month: { $gte: cutoff } })
-    .select("student month ratings")
-    .sort({ month: -1 })
-    .lean();
-  const map = new Map<string, number>();
-  reports.forEach((report) => {
-    const key = idOf(report.student);
-    if (map.has(key)) return;
-    const effort = Number(report.ratings?.effort ?? (report.ratings instanceof Map ? report.ratings.get("effort") : undefined));
-    if (Number.isFinite(effort) && effort > 0) map.set(key, effort);
-  });
-  return map;
-}
-
-async function readFees(ids: any[], now: Date) {
-  const horizon = new Date(now.getTime() + RISK_THRESHOLDS.invoiceDueDays * DAY);
-  const [assignments, invoices]: any[][] = await Promise.all([
-    FeeAssignment.find({ student: { $in: ids } }).select("student type creditBalance").lean(),
-    Invoice.find({ student: { $in: ids }, status: { $in: ["unpaid", "overdue"] }, dueDate: { $lte: horizon } })
-      .select("student dueDate")
-      .sort({ dueDate: 1 })
-      .lean(),
-  ]);
-  const map = new Map<string, RiskSnapshot["fees"]>();
-  assignments.forEach((row) => map.set(idOf(row.student), { planType: row.type, creditBalance: Number(row.creditBalance ?? 0) }));
-  invoices.forEach((row) => {
-    const key = idOf(row.student);
-    const entry = map.get(key) || {};
-    if (!entry.nextInvoiceDueAt) map.set(key, { ...entry, nextInvoiceDueAt: new Date(row.dueDate) });
-  });
-  return map;
-}
-
-type SweepSummary = { scored: number; opened: number; updated: number; recovered: number; left: number; tasks: number; coachNotes: number };
+type SweepSummary = { scored: number; opened: number; updated: number; recovered: number; left: number; tasks: number; tasksHeldBack: number; coachNotes: number };
 
 async function syncFlags(contexts: Map<string, StudentContext>, now: Date): Promise<SweepSummary> {
-  const summary: SweepSummary = { scored: contexts.size, opened: 0, updated: 0, recovered: 0, left: 0, tasks: 0, coachNotes: 0 };
+  const summary: SweepSummary = { scored: contexts.size, opened: 0, updated: 0, recovered: 0, left: 0, tasks: 0, tasksHeldBack: 0, coachNotes: 0 };
+  const lastCall = await lastConnectedCalls(Array.from(contexts.values()).map((context) => context.student._id));
   const open: any[] = await RetentionFlag.find({ status: "open" }).lean();
   const openByStudent = new Map(open.map((flag) => [idOf(flag.student), flag]));
   const quietSince = new Date(now.getTime() - SETTLED_QUIET_DAYS * DAY);
@@ -375,8 +97,19 @@ async function syncFlags(contexts: Map<string, StudentContext>, now: Date): Prom
       if (existing) summary.updated += 1;
       else summary.opened += 1;
       if (needsCall(result.level)) {
-        await raiseRetentionRiskTask({ flag, student: context.student, level: result.level, reasons: result.reasons });
-        summary.tasks += 1;
+        const calledAt = lastCall.get(studentId) || null;
+        if (recentlyCalled(calledAt, now)) {
+          // Someone spoke to the family in the last 15 days: the flag shows on
+          // the Retention Center, but nobody is asked to call them again yet.
+          await RetentionFlag.updateOne({ _id: flag._id }, { $set: { taskSuppressedByCall: { at: now, callAt: calledAt } } });
+          summary.tasksHeldBack += 1;
+        } else {
+          if (flag.taskSuppressedByCall) await RetentionFlag.updateOne({ _id: flag._id }, { $unset: { taskSuppressedByCall: 1 } });
+          // A call closes the flag's task; once the quiet days are over and
+          // the signs are still there, the same task comes back.
+          await raiseRetentionRiskTask({ flag, student: context.student, level: result.level, reasons: result.reasons, reopen: Boolean(calledAt) });
+          summary.tasks += 1;
+        }
         if (!flag.coachNotifiedAt && (await notifyCoaches(flag, context, result))) summary.coachNotes += 1;
       }
     } catch (error) {

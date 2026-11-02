@@ -27,6 +27,8 @@ const RetentionFlagSchema = new Schema(
     firstFlaggedAt: { type: Date, required: true },
     lastEvaluatedAt: { type: Date, required: true },
     coachNotifiedAt: Date,
+    // The sweep held back the "call this family" task: someone spoke to them recently.
+    taskSuppressedByCall: { at: Date, callAt: Date },
     contactLog: [
       {
         at: { type: Date, required: true },

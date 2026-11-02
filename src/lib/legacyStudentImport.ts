@@ -922,6 +922,8 @@ export async function importLegacyStudentData(input: {
         balanceAfter: typeof creditSummary.creditBalance === "number" ? creditSummary.creditBalance : assignment.creditBalance || 0,
         sourceType: "LegacyImport",
         sourceId: assignment._id,
+        source: "import",
+        ...(input.actorId ? { performedBy: input.actorId } : {}),
         note: `Legacy import summary: ${creditSummary.note}`,
       },
       { upsert: true, new: true }

@@ -272,7 +272,11 @@ async function applyCreditDecision(input: {
       if (attendance?._id) {
         // Reuse the ordinary consumption path so the balance floor, the
         // low-credit warnings and the activity trail all behave identically.
-        await consumeAttendanceCredit(studentId, attendance._id.toString(), input.reason || "Credit deducted by no-show ruling");
+        await consumeAttendanceCredit(studentId, attendance._id.toString(), input.reason || "Credit deducted by no-show ruling", {
+          actor: input.actorId,
+          role: input.actorRole,
+          source: "no_show_ruling",
+        });
         const created: any = await FeeAssignment.findById(assignment._id).select("creditBalance").lean();
         actions.push({ student: studentId, action: "deducted", credits: -1, balanceAfter: Number(created?.creditBalance || 0) });
       } else {
@@ -293,6 +297,7 @@ async function applyCreditDecision(input: {
           balanceAfter: Number(updated.creditBalance || 0),
           sourceType: "coach_pay_deduction",
           sourceId: classKey,
+          source: "no_show_ruling",
           performedBy: input.actorId,
           performedByRole: input.actorRole,
           note: input.reason || "Credit deducted by no-show ruling",
@@ -332,6 +337,7 @@ async function applyCreditDecision(input: {
         balanceAfter,
         sourceType: "coach_pay_refund",
         sourceId: classKey,
+        source: "no_show_ruling",
         performedBy: input.actorId,
         performedByRole: input.actorRole,
         note: input.reason || "Credit returned by no-show ruling",

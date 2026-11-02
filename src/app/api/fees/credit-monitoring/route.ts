@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { dbConnect } from "@/lib/db";
 import { CreditLedger, FeeAssignment } from "@/models/Fee";
 import { requireFeesAccess } from "@/lib/feesAccess";
+import { describeCreditMovements } from "@/lib/creditMovementBy";
 import { buildSpreadsheet, resolveFormat, spreadsheetHeaders, type SheetColumn } from "@/lib/spreadsheet";
 
 export const dynamic = "force-dynamic";
@@ -60,10 +61,11 @@ export async function GET(req: Request) {
       { label: "Balance After", type: "number" },
       { label: "Invoice" },
       { label: "Reason" },
+      { label: "Source" },
       { label: "Performed By" },
-      { label: "Administrator Role" },
     ];
     const ledgers = await CreditLedger.find({}).populate("student invoice performedBy").sort({ createdAt: -1 }).limit(1000).lean();
+    const movementBy = await describeCreditMovements(ledgers);
     const rows = ledgers.map((ledger: any) => [
       ledger.createdAt,
       ledger.student?.name || "",
@@ -73,8 +75,8 @@ export async function GET(req: Request) {
       ledger.balanceAfter,
       ledger.invoice?.invoiceNumber || "",
       ledger.note || "",
-      ledger.performedBy?.name || ledger.performedBy?.username || "",
-      ledger.performedByRole || "",
+      movementBy.get(String(ledger._id))?.label || "",
+      movementBy.get(String(ledger._id))?.actor || "",
     ]);
     const body = buildSpreadsheet(format, [{ name: "Credit ledger history", columns, rows }]);
     return new NextResponse(body, { headers: spreadsheetHeaders(format, "credit-ledger-history", body) });

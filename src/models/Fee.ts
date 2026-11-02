@@ -1,5 +1,6 @@
 import { Schema, model, models, type InferSchemaType } from "mongoose";
 import { ACADEMY_DEFAULTS, ACADEMY_FAVICON_URL, ACADEMY_LOGO_URL, ACADEMY_SIGNATURE_URL } from "@/lib/branding";
+import { CREDIT_SOURCES } from "@/lib/creditMovementSource";
 
 const AcademySettingsSchema = new Schema(
   {
@@ -183,8 +184,13 @@ const CreditLedgerSchema = new Schema(
     balanceAfter: { type: Number, required: true },
     sourceType: { type: String, index: true },
     sourceId: { type: Schema.Types.ObjectId, index: true },
+    // What moved the credits (lib/creditMovementSource.ts). Rows from before
+    // this field are explained from sourceType and their payment trail.
+    source: { type: String, enum: CREDIT_SOURCES, index: true },
+    // The person behind the movement when there was one: the admin, the payer,
+    // or the coach whose attendance triggered the deduction.
     performedBy: { type: Schema.Types.ObjectId, ref: "User", index: true },
-    performedByRole: { type: String, enum: ["admin", "sub-admin"] },
+    performedByRole: { type: String, enum: ["admin", "sub-admin", "instructor", "student"] },
     note: String,
   },
   { timestamps: true }

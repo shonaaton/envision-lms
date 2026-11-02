@@ -18,6 +18,7 @@ import { sendWhatsAppAutomationTemplate, sendWhatsAppAutomationTemplates, whatsa
 import { raiseCreditsExhaustedTask, resolveInvoiceTasks } from "@/lib/tasks/taskTriggers";
 import { retireInvoicePaymentLink } from "@/lib/payments/invoicePaymentLink";
 import { invoiceBreakup, overdueInvoiceUpdate } from "@/lib/invoiceMath";
+import { creditSourceForPayment, type CreditSource } from "@/lib/creditMovementSource";
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -448,6 +449,8 @@ export async function markInvoicePaid(
       balanceAfter,
       sourceType: "Invoice",
       sourceId: invoice._id,
+      source: creditSourceForPayment(activity?.source),
+      ...(activity?.actor && Types.ObjectId.isValid(activity.actor) ? { performedBy: activity.actor } : {}),
       note: `Credit purchase via ${invoice.invoiceNumber}`,
     },
     { upsert: true, new: true }
@@ -736,7 +739,14 @@ async function createCreditRechargeInvoiceIfNeeded(input: {
   return invoice;
 }
 
-export async function consumeAttendanceCredit(studentId: string, attendanceId: string, note = "Credit deducted after attendance was marked") {
+export async function consumeAttendanceCredit(
+  studentId: string,
+  attendanceId: string,
+  note = "Credit deducted after attendance was marked",
+  // Who triggered it: the coach or admin saving attendance, or an admin's
+  // no-show ruling. Shown in the credit ledger's "By" column.
+  by: { actor?: string; role?: string; source?: CreditSource } = {}
+) {
   const assignment: any = await FeeAssignment.findOne({ student: studentId, type: "credits" });
   if (!assignment) return;
 
@@ -781,6 +791,9 @@ export async function consumeAttendanceCredit(studentId: string, attendanceId: s
         balanceAfter: nextBalance,
         sourceType: "Attendance",
         sourceId: attendanceId,
+        source: by.source || "class_attendance",
+        ...(by.actor && Types.ObjectId.isValid(by.actor) ? { performedBy: by.actor } : {}),
+        ...(by.role && ["admin", "sub-admin", "instructor"].includes(by.role) ? { performedByRole: by.role } : {}),
         note,
       }], { session: creditSession });
     });

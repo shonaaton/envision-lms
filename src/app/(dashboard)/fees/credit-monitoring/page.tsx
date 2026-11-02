@@ -10,6 +10,7 @@ import ManualCreditForm from "@/components/fees/ManualCreditForm";
 import { isValidObjectId, Types } from "mongoose";
 import { recordActivity } from "@/lib/activity";
 import { sendCreditAdjustmentEmail } from "@/lib/studentCommunicationEmails";
+import { describeCreditMovements } from "@/lib/creditMovementBy";
 
 export const dynamic = "force-dynamic";
 
@@ -102,6 +103,7 @@ async function addManualCredits(formData: FormData) {
       credits: rawCredits,
       balanceAfter,
       sourceType: "manual_credit",
+      source: "manual_admin",
       sourceId: new Types.ObjectId(),
       performedBy: (session.user as any).id,
       performedByRole: role,
@@ -202,6 +204,7 @@ async function removeManualCredits(formData: FormData) {
       credits: -rawCredits,
       balanceAfter,
       sourceType: "manual_credit_reversal",
+      source: "manual_admin",
       sourceId: new Types.ObjectId(),
       performedBy: (session.user as any).id,
       performedByRole: role,
@@ -376,6 +379,7 @@ export default async function CreditMonitoringPage({ searchParams }: { searchPar
   const dormantCount = dormantAssignments.length;
   const lowCount = allAssignments.filter((assignment: any) => Number(assignment.creditBalance || 0) === 1).length;
   const emptyCount = allAssignments.filter((assignment: any) => Number(assignment.creditBalance || 0) <= 0).length;
+  const movementBy = view === "history" ? await describeCreditMovements(ledgers) : new Map();
   const healthyCount = allAssignments.filter((assignment: any) => Number(assignment.creditBalance || 0) > 1).length;
   const adjustmentBanner = manualCreditBanner(params);
   const canAddManualCredits = manager && permissions.credit;
@@ -609,6 +613,7 @@ export default async function CreditMonitoringPage({ searchParams }: { searchPar
                 {ledgers.map((ledger: any) => {
                   const credits = Number(ledger.credits || 0);
                   const studentId = ledger.student?._id?.toString?.() || "";
+                  const by = movementBy.get(ledger._id.toString());
                   return (
                     <tr key={ledger._id.toString()} className="border-b last:border-0 hover:bg-slate-50">
                       <td className="px-3 py-3">
@@ -620,7 +625,10 @@ export default async function CreditMonitoringPage({ searchParams }: { searchPar
                       </td>
                       <td className={`px-3 py-3 font-bold ${credits >= 0 ? "text-emerald-700" : "text-rose-700"}`}>{credits >= 0 ? `+${credits}` : credits}</td>
                       <td className="max-w-md px-3 py-3 text-xs text-slate-600">{ledger.note || ledger.type}</td>
-                      <td className="px-3 py-3 text-xs text-slate-500">{ledger.performedBy ? `${ledger.performedBy.name || ledger.performedBy.username || "Administrator"}${ledger.performedByRole ? ` (${ledger.performedByRole})` : ""}` : "-"}</td>
+                      <td className="px-3 py-3 text-xs">
+                        <span className="font-semibold text-slate-700">{by?.label || "-"}</span>
+                        {by?.actor ? <span className="mt-0.5 block text-slate-500">{by.actor}</span> : null}
+                      </td>
                       <td className="px-3 py-3 text-xs text-slate-500">{new Date(ledger.createdAt).toLocaleDateString("en-IN")}</td>
                     </tr>
                   );

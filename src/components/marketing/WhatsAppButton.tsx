@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { ACADEMY_DEFAULTS } from "@/lib/branding";
 import { isMarketingPath } from "@/lib/portalPaths";
@@ -18,14 +19,21 @@ const WHATSAPP_URL = `https://wa.me/${ACADEMY_DEFAULTS.phone.replace(/\D/g, "")}
  *
  * It sits bottom-right because the toaster owns bottom-left, and below the
  * cookie banner (z-100) so a pending consent choice is never covered.
+ *
+ * The href is set only after hydration. api.whatsapp.com disallows every crawler
+ * and rate-limits them, so a server-rendered link on every page showed up in
+ * Semrush as one "broken external link" per page. Visitors get the same link a
+ * moment after load; only crawlers that do not run JavaScript stop seeing it.
  */
 export default function WhatsAppButton() {
   const pathname = usePathname();
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => setHydrated(true), []);
   if (!isMarketingPath(pathname)) return null;
 
   return (
     <a
-      href={WHATSAPP_URL}
+      href={hydrated ? WHATSAPP_URL : undefined}
       target="_blank"
       rel="noopener noreferrer"
       aria-label="Chat with us on WhatsApp"

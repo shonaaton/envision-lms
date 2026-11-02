@@ -339,11 +339,11 @@ export async function POST(req: Request) {
       }).catch((error) => console.error("Absence notice failed", error));
     }
     if (outcome === "completed" && (recordStatus === "present" || recordStatus === "late")) {
-      await consumeAttendanceCredit(record.student, doc._id.toString());
+      await consumeAttendanceCredit(record.student, doc._id.toString(), undefined, { actor: (session.user as SessionUser).id, role });
     } else if (outcome === "student_no_show" && recordStatus === "student_no_show") {
       const count = await studentNoShowCountThisMonth(record.student, normalizedDate);
       if (count > STUDENT_NO_SHOW_FREE_ALLOWANCE_PER_MONTH) {
-        await consumeAttendanceCredit(record.student, doc._id.toString(), "Credit deducted for repeated student no-show");
+        await consumeAttendanceCredit(record.student, doc._id.toString(), "Credit deducted for repeated student no-show", { actor: (session.user as SessionUser).id, role });
         await notifyStudentNoShowCreditDeduction(record.student, count, { classroom, sessionId, attendance: doc._id.toString() });
       }
       // Warn once per class. A first marking warns; so does an admin correction

@@ -10,6 +10,7 @@ import {
   CalendarClock,
   CalendarRange,
   ChevronRight,
+  CreditCard,
   Download,
   FileText,
   FileX2,
@@ -432,7 +433,7 @@ function Section({
 /* ---------------------------------------------------------------- surface */
 
 /** Section ids in render order. `sections` picks a subset for narrower audiences. */
-export type FinanceSection = "collections" | "growth" | "demos" | "retention" | "expected" | "operations";
+export type FinanceSection = "collections" | "razorpay" | "growth" | "demos" | "retention" | "expected" | "operations";
 
 export function FinanceDashboard({
   initial,
@@ -446,7 +447,7 @@ export function FinanceDashboard({
   quickLinks: Array<[string, string]>;
   /** Feed for range changes. The sales workspace points this at its narrower payload. */
   endpoint?: string;
-  /** Sections to render. Omitted means all six. */
+  /** Sections to render. Omitted means all of them. */
   sections?: readonly FinanceSection[];
   /** When false the drill-down modal offers no CSV. The server still enforces this. */
   canExport?: boolean;
@@ -462,6 +463,7 @@ export function FinanceDashboard({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [modalTables, setModalTables] = useState<string[] | null>(null);
+  const [feeSync, setFeeSync] = useState<{ busy: boolean; message: string }>({ busy: false, message: "" });
 
   const query = useMemo(() => `from=${from}&to=${to}&gst=${gst}`, [from, to, gst]);
 
@@ -485,6 +487,22 @@ export function FinanceDashboard({
     const timer = setTimeout(load, 250);
     return () => clearTimeout(timer);
   }, [from, to, gst, first, load]);
+
+  const syncRazorpayFees = async () => {
+    setFeeSync({ busy: true, message: "" });
+    try {
+      const response = await fetch("/api/fees/razorpay-fees/sync", { method: "POST" });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result?.error || "Could not reach Razorpay.");
+      const parts = [`${result.updated} updated`];
+      if (result.failed) parts.push(`${result.failed} not available yet`);
+      if (result.remaining) parts.push(`${result.remaining} more to fetch - run it again`);
+      setFeeSync({ busy: false, message: result.checked ? parts.join(", ") : "Every payment already has its fee." });
+      await load();
+    } catch (issue: any) {
+      setFeeSync({ busy: false, message: issue?.message || "Could not reach Razorpay." });
+    }
+  };
 
   const applyPreset = (id: PresetId) => {
     setPreset(id);
@@ -775,6 +793,47 @@ export function FinanceDashboard({
     },
   ];
 
+  const razorpayCards: CardDef[] = [
+    {
+      key: "razorpayGross",
+      label: "Received via Razorpay",
+      value: money(k.razorpayGross),
+      note: `${k.razorpayPayments || 0} online payments`,
+      icon: CreditCard,
+      tone: "sky",
+      tables: ["razorpayCharges"],
+    },
+    {
+      key: "razorpayFee",
+      label: "Razorpay commission",
+      value: money(k.razorpayFee),
+      note: `${money(k.razorpayFeeExTax)} fee + ${money(k.razorpayFeeTax)} GST`,
+      icon: Percent,
+      tone: "rose",
+      tables: ["razorpayCharges"],
+    },
+    {
+      key: "razorpayRate",
+      label: "Effective rate",
+      value: `${k.razorpayFeeRate || 0}%`,
+      note: "Commission as a share of the amount paid",
+      icon: PieChart,
+      tone: "amber",
+      tables: ["razorpayCharges"],
+    },
+    {
+      key: "razorpaySettled",
+      label: "Settled after commission",
+      value: money(k.razorpaySettled),
+      note: k.razorpayFeeMissing
+        ? `Excludes ${k.razorpayFeeMissing} ${k.razorpayFeeMissing === 1 ? "payment" : "payments"} with no fee yet`
+        : "What reaches the bank account",
+      icon: Banknote,
+      tone: "emerald",
+      tables: ["razorpayCharges"],
+    },
+  ];
+
   const expectedCards: CardDef[] = [
     {
       key: "expectedTotal",
@@ -940,6 +999,35 @@ export function FinanceDashboard({
                 <KpiCard key={card.key} card={card} onOpen={openModal} hasDetail={hasDetail(card)} />
               ))}
             </div>
+          </Section>
+        ) : null}
+
+        {visible("razorpay") && k.razorpayGross !== undefined ? (
+          <Section title="Razorpay commission" description="What Razorpay deducted from online payments before settling them" icon={CreditCard}>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {razorpayCards.map((card) => (
+                <KpiCard key={card.key} card={card} onOpen={openModal} hasDetail={hasDetail(card)} />
+              ))}
+            </div>
+            {k.razorpayFeeMissing || feeSync.message ? (
+              <div className="mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-800">
+                <span className="font-semibold">
+                  {feeSync.message ||
+                    `${k.razorpayFeeMissing} Razorpay ${k.razorpayFeeMissing === 1 ? "payment was" : "payments were"} recorded before the LMS saved Razorpay's fee, so ${k.razorpayFeeMissing === 1 ? "it is" : "they are"} left out of the commission.`}
+                </span>
+                {k.razorpayFeeMissing ? (
+                  <button
+                    type="button"
+                    onClick={syncRazorpayFees}
+                    disabled={feeSync.busy}
+                    className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-lg border border-amber-300 bg-white px-3 font-bold text-amber-800 transition hover:bg-amber-100 disabled:opacity-60"
+                  >
+                    {feeSync.busy ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+                    Fetch missing fees
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
           </Section>
         ) : null}
 

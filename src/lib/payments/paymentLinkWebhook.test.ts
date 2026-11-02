@@ -54,6 +54,13 @@ describe("payment_link.paid for an invoice", () => {
     expect(mocks.markInvoicePaid).toHaveBeenCalledWith(INVOICE, "payment1", expect.objectContaining({ source: "razorpay_payment_link" }));
   });
 
+  it("keeps Razorpay's fee and the GST on it", async () => {
+    mocks.paymentExists.mockResolvedValue(null);
+    mocks.invoiceFindById.mockReturnValue(lean(invoice("overdue")));
+    await handlePaymentLinkPaid(link, { ...payment, fee: 5900, tax: 900 });
+    expect(mocks.paymentCreate).toHaveBeenCalledWith(expect.objectContaining({ razorpayFee: 5900, razorpayTax: 900 }));
+  });
+
   it("ignores a replayed event", async () => {
     mocks.paymentExists.mockResolvedValue({ _id: "payment1" });
     expect(await handlePaymentLinkPaid(link, payment)).toMatchObject({ duplicate: true });

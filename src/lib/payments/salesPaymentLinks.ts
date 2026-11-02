@@ -383,6 +383,7 @@ async function raiseLinkInvoice(link: any, studentId: string, student: any, opti
     referenceNumber: link.razorpayPaymentId,
     invoiceNumber: invoice.invoiceNumber,
     paidAt: link.paidAt || new Date(),
+    ...(link.razorpayFee !== undefined && link.razorpayFee !== null ? { razorpayFee: link.razorpayFee, razorpayTax: link.razorpayTax || 0 } : {}),
   });
   await markInvoicePaid(String(invoice._id), String(payment._id), { actor: actorId, source: "razorpay_payment_link", label: `Recorded sales link payment from ${link.customerName}` }, [], {}, { notifyStudent: options.notifyStudent });
   await SalesPaymentLink.updateOne(

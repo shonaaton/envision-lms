@@ -35,6 +35,19 @@ export function paymentMethodFromRazorpay(method: unknown) {
   return value === "upi" || value === "card" ? value : "other";
 }
 
+/**
+ * Razorpay's commission on a captured payment, in paise, as fields for Payment
+ * and SalesPaymentLink. `fee` already includes the GST Razorpay charges on it;
+ * `tax` is that GST. Empty when the entity has no fee yet (not captured).
+ */
+export function razorpayChargeFields(payment: { fee?: unknown; tax?: unknown } | null | undefined) {
+  if (payment?.fee === null || payment?.fee === undefined || payment.fee === "") return {};
+  const fee = Number(payment.fee);
+  if (!Number.isFinite(fee)) return {};
+  const tax = Number(payment.tax);
+  return { razorpayFee: Math.round(fee), razorpayTax: Number.isFinite(tax) ? Math.round(tax) : 0 };
+}
+
 export type PaymentLinkNotes = { kind: "invoice"; invoiceId: string } | { kind: "sales_link"; salesLinkId: string };
 
 /**

@@ -21,6 +21,9 @@ const PaymentSchema = new Schema(
     }],
     invoiceNumber: { type: String, index: true },
     paidAt: Date,
+    /** Paise Razorpay kept from this payment, GST on the fee included; razorpayTax is that GST. */
+    razorpayFee: Number,
+    razorpayTax: Number,
   },
   { timestamps: true }
 );

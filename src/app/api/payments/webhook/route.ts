@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { dbConnect } from "@/lib/db";
 import { Payment } from "@/models/Payment";
-import { verifyWebhookSignature } from "@/lib/payments/razorpay";
+import { razorpayChargeFields, verifyWebhookSignature } from "@/lib/payments/razorpay";
 import { markInvoicePaid } from "@/lib/fees";
 import { recordActivity } from "@/lib/activity";
 import { handlePaymentLinkClosed, handlePaymentLinkPaid } from "@/lib/payments/paymentLinkWebhook";
+import { SalesPaymentLink } from "@/models/SalesPaymentLink";
 
 export const dynamic = "force-dynamic";
 
@@ -21,9 +22,18 @@ export async function POST(req: Request) {
     const payment = event.payload.payment.entity;
     const pay = await Payment.findOneAndUpdate(
       { razorpayOrderId: payment.order_id },
-      { razorpayPaymentId: payment.id, status: "paid", paidAt: new Date() },
+      { razorpayPaymentId: payment.id, status: "paid", paidAt: new Date(), ...razorpayChargeFields(payment) },
       { new: true }
     );
+    // A payment link's payment may already be recorded by payment_link.paid,
+    // which can land before or after this event.
+    const charges = razorpayChargeFields(payment);
+    if (payment.id && charges.razorpayFee !== undefined) {
+      await Promise.all([
+        Payment.updateMany({ razorpayPaymentId: payment.id, razorpayFee: { $exists: false } }, { $set: charges }),
+        SalesPaymentLink.updateMany({ razorpayPaymentId: payment.id, razorpayFee: { $exists: false } }, { $set: charges }),
+      ]);
+    }
     if (pay?.purpose === "invoice" && pay.refId) await markInvoicePaid(pay.refId.toString(), pay._id.toString(), { source: "razorpay_webhook" });
     if (pay) {
       await recordActivity({

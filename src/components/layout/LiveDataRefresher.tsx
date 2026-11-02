@@ -26,6 +26,9 @@ const quietMutationPatterns = [
   /^\/api\/bowbazar(\/|$)/,
   // The leave page reloads its own lists; a refresh would close its drawers.
   /^\/api\/leave(\/|$)/,
+  // The finance dashboard reloads its own figures after fetching Razorpay fees;
+  // a refresh would drop the chosen date range.
+  /^\/api\/fees\/razorpay-fees\//,
   /^\/api\/classrooms\/[^/]+\/live\/move$/,
   /^\/api\/classrooms\/[^/]+\/live\/chat$/,
   /^\/api\/classrooms\/[^/]+\/live\/responses$/,

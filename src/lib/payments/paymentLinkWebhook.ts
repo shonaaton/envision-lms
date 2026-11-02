@@ -3,14 +3,14 @@ import { recordActivity } from "@/lib/activity";
 import { invoiceStaffRecipients } from "@/lib/demoNotificationRecipients";
 import { markInvoicePaid } from "@/lib/fees";
 import { formatINR } from "@/lib/utils";
-import { paymentMethodFromRazorpay } from "@/lib/payments/razorpay";
+import { paymentMethodFromRazorpay, razorpayChargeFields } from "@/lib/payments/razorpay";
 import { recordPaidLinkOnAccount } from "@/lib/payments/salesPaymentLinks";
 import { Invoice, Notification } from "@/models/Fee";
 import { Payment } from "@/models/Payment";
 import { SalesPaymentLink } from "@/models/SalesPaymentLink";
 
 type LinkEntity = { id?: string; notes?: Record<string, string>; amount_paid?: number; status?: string };
-type PaymentEntity = { id?: string; order_id?: string; method?: string; amount?: number };
+type PaymentEntity = { id?: string; order_id?: string; method?: string; amount?: number; fee?: number; tax?: number };
 
 /**
  * payment_link.paid. Razorpay retries a webhook until it gets a 200 and may
@@ -41,6 +41,7 @@ export async function handlePaymentLinkPaid(link: LinkEntity, payment: PaymentEn
       referenceNumber: paymentId,
       invoiceNumber: invoice.invoiceNumber,
       paidAt: new Date(),
+      ...razorpayChargeFields(payment),
     });
     await Invoice.updateOne({ _id: invoice._id, "razorpayLink.id": link.id }, { $set: { "razorpayLink.status": "paid" } });
     if (invoice.status === "paid") {
@@ -73,6 +74,7 @@ export async function handlePaymentLinkPaid(link: LinkEntity, payment: PaymentEn
           amountPaid: Number(link.amount_paid || payment.amount || 0),
           razorpayPaymentId: paymentId,
           method: String(payment.method || ""),
+          ...razorpayChargeFields(payment),
         },
       },
       { new: true }

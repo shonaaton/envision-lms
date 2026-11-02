@@ -6,6 +6,7 @@ import { DeletedInvoice, FeeAssignment, FeePlan, Invoice } from "@/models/Fee";
 import { StudentPause } from "@/models/StudentPause";
 import { User } from "@/models/User";
 import { getAcademySettings, invoiceBreakup } from "@/lib/fees";
+import { razorpayChargeRows, razorpayChargeSummary } from "@/lib/payments/razorpayCharges";
 import {
   dateKey,
   inRange,
@@ -1083,9 +1084,16 @@ export async function getFeesAnalytics(options: { from: Date; to: Date; gst: Gst
     rows: unassigned.map(studentRow),
   });
 
+  /* ------------------------------------------------------ razorpay charges */
+
+  // Razorpay only ever settles into the GST account, so the non-GST view has none.
+  const razorpay = razorpayChargeSummary(gst === "non_gst" ? [] : await razorpayChargeRows(from, to), rangeLabel(from, to));
+  addTable(razorpay.table);
+
   /* -------------------------------------------------------------- payload */
 
   const kpis = {
+    ...razorpay.kpis,
     collected,
     collectedCount: paidInRange.length,
     gstCollected,

@@ -36,6 +36,9 @@ const SalesPaymentLinkSchema = new Schema(
     amountPaid: Number,
     razorpayPaymentId: { type: String, index: true },
     method: String,
+    /** Paise Razorpay kept from the payment, GST on the fee included; razorpayTax is that GST. */
+    razorpayFee: Number,
+    razorpayTax: Number,
     whatsappStatus: { type: String, enum: ["sent", "failed", "not_configured"] },
     whatsappSentAt: Date,
     cancelledAt: Date,

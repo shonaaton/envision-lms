@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import { afterEach, describe, expect, it } from "vitest";
-import { paymentMethodFromRazorpay, verifyCheckoutSignature, verifyWebhookSignature } from "./razorpay";
+import { paymentMethodFromRazorpay, razorpayChargeFields, verifyCheckoutSignature, verifyWebhookSignature } from "./razorpay";
 
 const sign = (secret: string, body: string) => crypto.createHmac("sha256", secret).update(body).digest("hex");
 
@@ -41,5 +41,18 @@ describe("Razorpay signatures", () => {
     expect(paymentMethodFromRazorpay("upi")).toBe("upi");
     expect(paymentMethodFromRazorpay("card")).toBe("card");
     expect(paymentMethodFromRazorpay("netbanking")).toBe("other");
+  });
+});
+
+describe("razorpayChargeFields", () => {
+  it("reads the fee and the GST on it in paise", () => {
+    expect(razorpayChargeFields({ fee: 5900, tax: 900 })).toEqual({ razorpayFee: 5900, razorpayTax: 900 });
+  });
+
+  it("keeps a zero fee but records nothing when the fee is not reported", () => {
+    expect(razorpayChargeFields({ fee: 0, tax: 0 })).toEqual({ razorpayFee: 0, razorpayTax: 0 });
+    expect(razorpayChargeFields({ fee: null })).toEqual({});
+    expect(razorpayChargeFields({})).toEqual({});
+    expect(razorpayChargeFields(undefined)).toEqual({});
   });
 });

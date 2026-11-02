@@ -29,6 +29,7 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 import {
   deriveScheduledSessionStatus,
+  flattenHeldSessions,
   flattenScheduledSessions,
   formatJoinWindowLabel,
   getSessionStart,
@@ -1178,6 +1179,7 @@ export default function ClassroomManagementClient({
                 ) : (
                   <GroupClassSessionList
                     items={dateFilteredItems}
+                    heldOnly
                     targets={targets}
                     statusFilter={filters.status}
                     dateFilter={calendarDate}
@@ -2206,6 +2208,7 @@ function SeriesScheduleEditor({
 
 function GroupClassSessionList({
   items,
+  heldOnly = false,
   targets,
   statusFilter,
   dateFilter,
@@ -2215,6 +2218,13 @@ function GroupClassSessionList({
   setActionDraft,
 }: {
   items: ClassroomItem[];
+  /**
+   * Leave out classes that were never going to happen because their classroom
+   * stopped first. A course closed as completed keeps its later classes as
+   * "scheduled", so once completed courses joined Classes by Date every
+   * remaining date of a batch that moved to a new classroom showed as Missed.
+   */
+  heldOnly?: boolean;
   targets: TargetsPayload;
   statusFilter: SessionFilterStatus;
   dateFilter?: string;
@@ -2224,7 +2234,7 @@ function GroupClassSessionList({
   setActionDraft?: React.Dispatch<React.SetStateAction<any>>;
 }) {
   const now = new Date();
-  const rows = dedupeSessionRows(flattenScheduledSessions(items))
+  const rows = dedupeSessionRows((heldOnly ? flattenHeldSessions : flattenScheduledSessions)(items))
     .filter((row) => row.start)
     .filter((row) => !statusFilter || deriveScheduledSessionStatus(row.session, now) === statusFilter)
     .filter((row) => !dateFilter || formatDateInput(row.start!.toISOString()) === dateFilter)
@@ -2779,6 +2789,10 @@ function normalizeClassroomItem(item: any): ClassroomItem {
     students: Array.isArray(item?.students) ? item.students : [],
     batches: Array.isArray(item?.batches) ? item.batches : [],
     generatedSessions: Array.isArray(item?.generatedSessions) ? item.generatedSessions : [],
+    // Kept for the Completed tab's order and its "closed" date, and so Classes
+    // by Date can tell the classes held before a course closed from the ones
+    // left scheduled after it.
+    completedAt: item?.completedAt ? String(item.completedAt) : undefined,
     meetingProvider: item?.meetingProvider === "meet" ? "meet" : undefined,
     meetingUrl: item?.meetingUrl ? String(item.meetingUrl) : "",
     isTestClassroom: Boolean(item?.isTestClassroom),

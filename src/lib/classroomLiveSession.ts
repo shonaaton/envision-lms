@@ -6,7 +6,7 @@ import { Attendance } from "@/models/Attendance";
 import { autoAssignHomeworkForSession } from "@/lib/assignmentAutomation";
 import { notifyHomeworkNotAssigned } from "@/lib/homeworkAutomationAlerts";
 import { notifyFailure } from "@/lib/failureNotifications";
-import { ensureTopicContinuationSession, normalizeSessionOutcome, recalculateFutureSessionTopics, shouldContinueTopic, topicCompletedForOutcome } from "@/lib/classroomLifecycle";
+import { ensureTopicContinuationSession, normalizeSessionOutcome, recalculateFutureSessionTopics, settledSessionOutcome, shouldContinueTopic, topicCompletedForOutcome } from "@/lib/classroomLifecycle";
 import { actualSessionMinutes, punctualityBreakdown, scheduledPaymentMinutes } from "@/lib/teachingStats";
 import { raiseDemoAssessmentTask, raiseDemoRebookTask } from "@/lib/tasks/taskTriggers";
 import { scheduledSessionStartIsNoop } from "@/lib/liveClassroomPoll";
@@ -104,31 +104,37 @@ export async function markScheduledSessionFinished({
   target.actualStartedAt = target.actualStartedAt || finish;
   target.actualEndedAt = finish;
   target.conductedBy = actorId || target.conductedBy;
-  target.teachingMinutes = scheduledPaymentMinutes(target, classroom);
-  target.actualTeachingMinutes = actualSessionMinutes(target);
-  const requestedOutcome = (summary as any)?.classOutcome;
-  const attendance: any = await Attendance.findOne({ classroom: classroomId, scheduledSessionId }).select("records").lean();
-  const hasAttendingStudent = (attendance?.records || []).some((record: any) => ["present", "late"].includes(String(record?.status || "")));
-  const adminOverride = Boolean((summary as any)?.adminOverrideCompletion || (hasAttendingStudent && requestedOutcome === "completed"));
-  const outcome = isDemoClassroom && requestedOutcome === "completed" ? "completed" : normalizeSessionOutcome(requestedOutcome, target.actualTeachingMinutes, adminOverride);
-  const topicCompleted = topicCompletedForOutcome(outcome, requestedOutcome);
-  const storedOutcome = shouldContinueTopic(requestedOutcome) && outcome === "completed" ? "completed_continue_topic" : outcome;
-  target.status = outcome;
-  target.coachAttendanceStatus = outcome === "coach_no_show" ? "coach_no_show" : outcome === "technical_issue" ? "technical_issue" : "present";
-  target.punctualityScore = punctualityBreakdown(target, classroom).punctualityScore;
-  target.attendanceMarkedAt = new Date();
-  target.summary = {
-    ...(target.summary || {}),
-    ...(summary || {}),
-    classOutcome: storedOutcome,
-    topicCompleted,
-    creditPolicy: isDemoClassroom ? "demo_no_charge" : outcome === "completed" ? "charge_present_students" : outcome === "student_no_show" ? "repeat_no_show_policy" : "no_charge",
-    scheduledTeachingMinutes: target.teachingMinutes,
-    actualTeachingMinutes: target.actualTeachingMinutes,
-    punctualityScore: target.punctualityScore,
-  };
-  if (!isDemoClassroom && shouldContinueTopic(requestedOutcome) && outcome === "completed") {
-    await ensureTopicContinuationSession(classroom, target, actorId);
+  // Normally the attendance save has already decided the outcome; see
+  // `settledSessionOutcome`. Only a class closed without one is decided here.
+  const settledOutcome = settledSessionOutcome(target);
+  let outcome = settledOutcome || "";
+  if (!settledOutcome) {
+    target.teachingMinutes = scheduledPaymentMinutes(target, classroom);
+    target.actualTeachingMinutes = actualSessionMinutes(target);
+    const requestedOutcome = (summary as any)?.classOutcome;
+    const attendance: any = await Attendance.findOne({ classroom: classroomId, scheduledSessionId }).select("records").lean();
+    const hasAttendingStudent = (attendance?.records || []).some((record: any) => ["present", "late"].includes(String(record?.status || "")));
+    const adminOverride = Boolean((summary as any)?.adminOverrideCompletion || (hasAttendingStudent && requestedOutcome === "completed"));
+    outcome = isDemoClassroom && requestedOutcome === "completed" ? "completed" : normalizeSessionOutcome(requestedOutcome, target.actualTeachingMinutes, adminOverride);
+    const topicCompleted = topicCompletedForOutcome(outcome, requestedOutcome);
+    const storedOutcome = shouldContinueTopic(requestedOutcome) && outcome === "completed" ? "completed_continue_topic" : outcome;
+    target.status = outcome;
+    target.coachAttendanceStatus = outcome === "coach_no_show" ? "coach_no_show" : outcome === "technical_issue" ? "technical_issue" : "present";
+    target.punctualityScore = punctualityBreakdown(target, classroom).punctualityScore;
+    target.attendanceMarkedAt = new Date();
+    target.summary = {
+      ...(target.summary || {}),
+      ...(summary || {}),
+      classOutcome: storedOutcome,
+      topicCompleted,
+      creditPolicy: isDemoClassroom ? "demo_no_charge" : outcome === "completed" ? "charge_present_students" : outcome === "student_no_show" ? "repeat_no_show_policy" : "no_charge",
+      scheduledTeachingMinutes: target.teachingMinutes,
+      actualTeachingMinutes: target.actualTeachingMinutes,
+      punctualityScore: target.punctualityScore,
+    };
+    if (!isDemoClassroom && shouldContinueTopic(requestedOutcome) && outcome === "completed") {
+      await ensureTopicContinuationSession(classroom, target, actorId);
+    }
   }
   const allDone = (classroom.generatedSessions || []).every((session: any) =>
     ["completed", "cancelled", "missed", "abandoned", "absent", "coach_no_show", "student_no_show", "technical_issue"].includes(String(session.status || "").toLowerCase())

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hasClassesLeftToTeach, isReadyToComplete, outcomeFromStudentRecords } from "@/lib/classroomLifecycle";
+import { hasClassesLeftToTeach, isReadyToComplete, outcomeFromStudentRecords, settledSessionOutcome } from "@/lib/classroomLifecycle";
 import { dueCourseCompletionFilter } from "@/lib/courseCompletionSweep";
 
 function taught(topicName: string) {
@@ -154,5 +154,23 @@ describe("outcomeFromStudentRecords", () => {
   it("leaves plain absences alone", () => {
     expect(outcomeFromStudentRecords("completed", [{ status: "absent" }])).toBe("completed");
     expect(outcomeFromStudentRecords(undefined, [])).toBeUndefined();
+  });
+});
+
+describe("settledSessionOutcome", () => {
+  const markedAt = new Date("2026-10-25T08:12:48Z");
+
+  it("keeps the outcome the attendance save decided, so closing the room cannot overwrite it", () => {
+    // PIC-99978: saved "Not completed", lone student marked no-show. The
+    // attendance save made it a student no-show; the room close then re-derived
+    // "abandoned" from the raw summary and the class never reached the rulings.
+    expect(settledSessionOutcome({ status: "student_no_show", attendanceMarkedAt: markedAt })).toBe("student_no_show");
+    expect(settledSessionOutcome({ status: "completed", attendanceMarkedAt: markedAt })).toBe("completed");
+  });
+
+  it("leaves a class with no attendance save, or one still running, to be decided at close", () => {
+    expect(settledSessionOutcome({ status: "completed" })).toBeNull();
+    expect(settledSessionOutcome({ status: "ongoing", attendanceMarkedAt: markedAt })).toBeNull();
+    expect(settledSessionOutcome({ status: "scheduled", attendanceMarkedAt: markedAt })).toBeNull();
   });
 });

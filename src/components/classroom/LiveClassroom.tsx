@@ -812,6 +812,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const [hiddenStudentQuizId, setHiddenStudentQuizId] = useState<string | null>(null);
   const [attendanceDraft, setAttendanceDraft] = useState<Record<string, AttendanceStatus>>({});
   const [classOutcome, setClassOutcome] = useState<ClassOutcome>("completed");
+  const [notCompletedConfirmed, setNotCompletedConfirmed] = useState(false);
   const [setupPosition, setSetupPosition] = useState<BoardPosition>({});
   const [modifier, setModifier] = useState<ModifierKey>("default");
   const [engineText, setEngineText] = useState("Engine ready");
@@ -2413,6 +2414,10 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   }
 
   async function saveAttendanceAndClose() {
+    if (needsNotCompletedConfirmation && !notCompletedConfirmed) {
+      setNotCompletedConfirmed(true);
+      return;
+    }
     setEndingClass(true);
     try {
       const summaryRowsByStudent = new Map(classSummary.rows.map((row: any) => [entityId(row.student), row]));
@@ -2930,7 +2935,20 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     }
     setAttendanceDraft(draft);
     setClassOutcome(isDemoClassroom ? "completed" : classSummary.durationMinutes >= 30 ? "completed" : "abandoned");
+    setNotCompletedConfirmed(false);
   }, [classSummary.durationMinutes, classSummary.rows, isDemoClassroom, summaryOpen]);
+
+  // "Not completed" means the class did not really happen: no credit is
+  // charged, the topic is not counted and the coach is not paid. Coaches were
+  // picking it for full-length classes whose topic simply needed more time,
+  // which is what "Completed: continue same topic" is for, so a class that ran
+  // 30+ minutes with a student in it asks before saving that way.
+  const attendingStudentCount = classSummary.rows.filter((row: any) => {
+    const status = attendanceDraft[entityId(row.student)] || row.suggestedStatus;
+    return status === "present" || status === "late";
+  }).length;
+  const needsNotCompletedConfirmation =
+    !isDemoClassroom && classOutcome === "abandoned" && classSummary.durationMinutes >= 30 && attendingStudentCount > 0;
 
   if (!data) {
     if (loadError) {
@@ -4259,7 +4277,14 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                     This class is under 30 minutes. It will carry the topic forward unless an admin later overrides it.
                   </div>
                 ) : null}
-                <select value={classOutcome} onChange={(event) => setClassOutcome(event.target.value as ClassOutcome)} className="mt-3 h-10 w-full rounded-md border border-slate-200 bg-white px-2 text-sm">
+                <select
+                  value={classOutcome}
+                  onChange={(event) => {
+                    setClassOutcome(event.target.value as ClassOutcome);
+                    setNotCompletedConfirmed(false);
+                  }}
+                  className="mt-3 h-10 w-full rounded-md border border-slate-200 bg-white px-2 text-sm"
+                >
                   {isDemoClassroom ? (
                     <>
                       <option value="completed">Present</option>
@@ -4288,6 +4313,27 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                       ? "The lead moves to Demo Missed - Rebooking Required."
                       : "No regular credit is charged and the topic is carried forward."}
                 </div>
+                {needsNotCompletedConfirmation ? (
+                  <div className={cn("mt-3 rounded-lg border p-3 text-xs leading-5", notCompletedConfirmed ? "border-red-300 bg-red-50 text-red-800" : "border-amber-200 bg-amber-50 text-amber-800")}>
+                    <p className="font-bold">
+                      This class ran {classSummary.durationMinutes} minutes with {attendingStudentCount} student{attendingStudentCount === 1 ? "" : "s"} attending.
+                    </p>
+                    <p className="mt-1">
+                      Saving it as Not completed means no credit is charged, the topic is not counted as taught, and you are not paid for this class.
+                      If the topic just needs more time, use Completed: continue same topic next class.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setClassOutcome("completed_continue_topic");
+                        setNotCompletedConfirmed(false);
+                      }}
+                      className="mt-2 rounded-md border border-current bg-white px-2.5 py-1 font-bold"
+                    >
+                      Switch to Completed: continue same topic
+                    </button>
+                  </div>
+                ) : null}
               </div>
 
               <div className="overflow-hidden rounded-lg border border-slate-200">
@@ -4324,7 +4370,16 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
               </div>
             </div>
             <div className="mt-5 flex justify-end gap-2">
-              <button onClick={saveAttendanceAndClose} className="h-10 rounded-md bg-purple-700 px-4 text-sm font-semibold text-white">{isDemoClassroom ? "Save Demo Result" : "Save Attendance and Finalize"}</button>
+              <button
+                onClick={saveAttendanceAndClose}
+                className={cn("h-10 rounded-md px-4 text-sm font-semibold text-white", needsNotCompletedConfirmation && notCompletedConfirmed ? "bg-red-700" : "bg-purple-700")}
+              >
+                {isDemoClassroom
+                  ? "Save Demo Result"
+                  : needsNotCompletedConfirmation && notCompletedConfirmed
+                    ? "Yes, save as Not completed"
+                    : "Save Attendance and Finalize"}
+              </button>
             </div>
           </div>
         </div>

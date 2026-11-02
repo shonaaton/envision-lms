@@ -88,6 +88,21 @@ export const TERMINAL_SESSION_STATUSES = new Set([
   "technical_issue",
 ]);
 
+/**
+ * The outcome a class's attendance save already decided, if it has one.
+ *
+ * Ending a live class saves the attendance first and closes the room second.
+ * The attendance save is the authority: it applies the per-student marks, so a
+ * class saved "Not completed" whose only student was marked no-show becomes a
+ * student no-show. Closing the room used to re-derive the outcome from the raw
+ * summary and overwrite that with "abandoned", which hid the class from the
+ * no-show rulings.
+ */
+export function settledSessionOutcome(session: any) {
+  const status = String(session?.status || "").toLowerCase();
+  return session?.attendanceMarkedAt && TERMINAL_SESSION_STATUSES.has(status) ? status : null;
+}
+
 export function sessionConsumesTopic(session: any) {
   return String(session?.status || "").toLowerCase() === "completed" && session?.summary?.topicCompleted !== false;
 }

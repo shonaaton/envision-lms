@@ -115,6 +115,8 @@ export default function AdminUsersPage() {
   const [tab, setTab] = useState<Tab>("students");
   const [userPermissions, setUserPermissions] = useState<Record<string, boolean>>({});
   const [canManageStaff, setCanManageStaff] = useState(false);
+  // Staff and Roles are admin-only tabs; sub-admins never see them.
+  const [canSeeStaff, setCanSeeStaff] = useState(false);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [allStudents, setAllStudents] = useState<AdminUser[]>([]);
   const [allCoaches, setAllCoaches] = useState<AdminUser[]>([]);
@@ -154,11 +156,17 @@ export default function AdminUsersPage() {
       const data = await response.json();
       setUserPermissions(data.userPermissions || {});
       setCanManageStaff(Boolean(data.canManage));
+      setCanSeeStaff(Boolean(data.canSeeStaff));
+      // A sub-admin deep-linked to the Staff tab lands on Students instead.
+      if (!data.canSeeStaff) setTab((current) => (current === "sub-admins" || current === "roles" ? "students" : current));
     }).catch(() => undefined);
   }, []);
 
+  const tabs: Tab[] = canSeeStaff ? ["students", "demo", "coaches", "sub-admins", "batches", "roles"] : ["students", "demo", "coaches", "batches"];
+
   const loadUsers = useCallback(async () => {
     if (tab !== "students" && tab !== "demo" && tab !== "coaches" && tab !== "sub-admins") return;
+    if (tab === "sub-admins" && !canSeeStaff) { setUsers([]); return; }
     const role = tab === "students" || tab === "demo" ? "student" : tab === "coaches" ? "instructor" : "staff";
     const params = new URLSearchParams({ role, sort });
     if (tab === "demo") params.set("accountStatus", "demo");
@@ -169,7 +177,7 @@ export default function AdminUsersPage() {
     const data = await response.json();
     if (!response.ok) { toast.error(data.error || "Could not load users"); setUsers([]); return; }
     setUsers(data);
-  }, [q, sort, status, tab, tag]);
+  }, [canSeeStaff, q, sort, status, tab, tag]);
 
   const loadBatches = useCallback(async () => {
     const response = await fetch("/api/admin/batches", { cache: "no-store" });
@@ -322,7 +330,7 @@ Delete anyway?`
       <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm sm:p-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex overflow-x-auto rounded-lg bg-slate-100 p-1">
-            {(["students", "demo", "coaches", "sub-admins", "batches", "roles"] as Tab[]).map((t) => (
+            {tabs.map((t) => (
               <button key={t} onClick={() => { setTab(t); setMenu(null); }} className={`min-w-fit rounded-md px-4 py-1.5 text-sm capitalize ${tab === t ? "bg-white text-slate-950 shadow" : "text-slate-600"}`}>
                 {t === "sub-admins" ? "Staff" : t.replace("-", " ")}
               </button>
@@ -557,7 +565,7 @@ Delete anyway?`
           </>
         )}
 
-        {tab === "roles" && <RoleManager />}
+        {tab === "roles" && canSeeStaff && <RoleManager />}
       </div>
 
       {menu && openMenuUser && (

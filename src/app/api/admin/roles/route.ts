@@ -14,6 +14,11 @@ export async function GET() {
   if (!session?.user) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const canManage = await isSuperAdminSession(session.user as any);
   if (!canManage && !(await canAccessFeature("userManagement", session.user as any))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const userPermissions = await getFeaturePermissionState("userManagement", session.user as any, ["view", "create", "edit", "delete", "manage", "export"]);
+  // Staff accounts and roles are for admins: a sub-admin gets only the
+  // permissions the Users page needs, never the role list.
+  const canSeeStaff = (session.user as any).role === "admin";
+  if (!canSeeStaff) return NextResponse.json({ canManage, canSeeStaff, userPermissions, roles: [] }, { headers: { "Cache-Control": "no-store" } });
   await Promise.all([ensureSalesRole(), ensureMarketingRole()]);
   const [roles, counts] = await Promise.all([
     AccessRole.find({ archivedAt: null }).sort({ name: 1 }).lean(),
@@ -21,8 +26,7 @@ export async function GET() {
   ]);
   const members = new Map(counts.map((row: any) => [String(row._id), row.count]));
   const statuses = Object.fromEntries((await getFeatureAccessSnapshot()).map(feature => [feature.key, feature.status]));
-  const userPermissions = await getFeaturePermissionState("userManagement", session.user as any, ["view", "create", "edit", "delete", "manage", "export"]);
-  return NextResponse.json({ canManage, statuses, userPermissions, roles: roles.map((role: any) => ({ ...role, memberCount: members.get(String(role._id)) || 0 })) }, { headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json({ canManage, canSeeStaff, statuses, userPermissions, roles: roles.map((role: any) => ({ ...role, memberCount: members.get(String(role._id)) || 0 })) }, { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function POST(req: Request) {

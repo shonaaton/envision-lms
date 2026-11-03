@@ -41,9 +41,13 @@ export async function GET(req: Request) {
   const tag = url.searchParams.get("tag");
   const sort = url.searchParams.get("sort") || "newest";
 
+  // Only admins see staff accounts; a sub-admin's directory is students and coaches.
+  const seesStaff = (session.user as any).role === "admin";
+  if (!seesStaff && (role === "staff" || STAFF_ROLES.includes(String(role)))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const filter: any = {};
-  if (role === "staff") filter.role = { $in: ["admin", "sub-admin"] };
+  if (role === "staff") filter.role = { $in: STAFF_ROLES };
   else if (role) filter.role = role;
+  else if (!seesStaff) filter.role = { $nin: STAFF_ROLES };
   const accessRole = url.searchParams.get("accessRole");
   if (accessRole) filter.accessRole = accessRole;
   if (accountStatus) {

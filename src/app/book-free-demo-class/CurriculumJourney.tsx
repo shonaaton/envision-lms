@@ -1,193 +1,186 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState, type CSSProperties, type KeyboardEvent, type TouchEvent } from "react";
+import { Fragment, useEffect, useRef, type CSSProperties } from "react";
 
 export type JourneyStage = {
   id: string;
   icon: string;
   name: string;
+  /** The board square the stage sits on. The pawn starts on e2, opens with the double step to e4, and promotes on e8. */
+  square: string;
   /** The stage's place on the road, in the academy's own words ("Start playing tournaments"). */
   goal: string;
-  audience: string;
+  milestone: string;
   outcome: string;
   syllabusHref?: string;
   levels: { name: string; sessions: number; topics: string[]; more: number }[];
 };
 
 /**
- * The five-stage road from first move to a FIDE rating: stage tabs, one
- * detail card, and a progress track that fills up to the chosen stage.
+ * The curriculum as one file of a chessboard. Each stage stands on a square
+ * from e2 upwards, a pawn token walks the file as the reader scrolls, and on
+ * the last rank it promotes: the FIDE-rated player the ladder is built for.
  *
- * Every stage's panel is in the server HTML (inactive ones `hidden`), so the
- * whole syllabus summary is readable without JavaScript and by crawlers.
+ * Everything is server-rendered and readable without JavaScript; the effect
+ * only moves the token and lights the squares it has passed. Level topics use
+ * <details>, so they open with no script at all.
  */
-export default function CurriculumJourney({ stages, demoHref }: { stages: JourneyStage[]; demoHref: string }) {
-  const [active, setActive] = useState(0);
-  const [level, setLevel] = useState(0);
-  const [direction, setDirection] = useState<"next" | "prev">("next");
-  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
-  const touchX = useRef<number | null>(null);
+export default function CurriculumJourney({
+  stages,
+  demoHref,
+}: {
+  stages: JourneyStage[];
+  demoHref: string;
+}) {
+  const climbRef = useRef<HTMLDivElement>(null);
+  const pawnRef = useRef<HTMLDivElement>(null);
 
-  const go = (index: number, focus = false) => {
-    const next = (index + stages.length) % stages.length;
-    if (next === active) return;
-    setDirection(next > active ? "next" : "prev");
-    setActive(next);
-    setLevel(0);
-    const tab = tabRefs.current[next];
-    if (focus) tab?.focus();
-    // On a phone the tab row scrolls sideways; keep the chosen tab centred without moving the page.
-    const row = tab?.parentElement;
-    if (tab && row && row.scrollWidth > row.clientWidth) {
-      row.scrollTo({ left: tab.offsetLeft - row.offsetLeft - (row.clientWidth - tab.offsetWidth) / 2, behavior: "smooth" });
-    }
-  };
+  useEffect(() => {
+    const climb = climbRef.current;
+    const pawn = pawnRef.current;
+    if (!climb || !pawn) return;
+    const rungs = Array.from(
+      climb.querySelectorAll<HTMLElement>("[data-rung]"),
+    );
+    let frame = 0;
 
-  const onTabKey = (event: KeyboardEvent) => {
-    if (event.key === "ArrowRight") go(active + 1, true);
-    else if (event.key === "ArrowLeft") go(active - 1, true);
-    else return;
-    event.preventDefault();
-  };
+    const update = () => {
+      frame = 0;
+      const centres = rungs.map(
+        (rung) => rung.offsetTop + rung.offsetHeight / 2,
+      );
+      // The token follows a line a little above the middle of the screen.
+      const anchor =
+        window.innerHeight * 0.55 - climb.getBoundingClientRect().top;
+      const y = Math.max(
+        centres[0],
+        Math.min(centres[centres.length - 1], anchor),
+      );
+      pawn.style.transform = `translate(-50%, ${y - pawn.offsetHeight / 2}px)`;
+      rungs.forEach((rung, index) =>
+        rung.classList.toggle("reached", centres[index] <= y + 24),
+      );
+      climb.classList.toggle("promoted", y >= centres[centres.length - 1] - 24);
+    };
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(update);
+    };
 
-  // A horizontal swipe on the card moves one stage; vertical scrolling is left alone.
-  const onTouchStart = (event: TouchEvent) => (touchX.current = event.touches[0].clientX);
-  const onTouchEnd = (event: TouchEvent) => {
-    if (touchX.current === null) return;
-    const delta = event.changedTouches[0].clientX - touchX.current;
-    touchX.current = null;
-    if (Math.abs(delta) > 60) go(active + (delta < 0 ? 1 : -1));
-  };
-
-  // The track has one node per stage plus the trophy; the last stage fills it to the trophy.
-  const reached = active === stages.length - 1 ? stages.length : active;
-  const progress = (reached / stages.length) * 100;
+    climb.classList.add("live");
+    update();
+    window.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", schedule);
+    // Opening a level's topics changes the rung heights under the token.
+    climb.addEventListener("toggle", schedule, true);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", schedule);
+      window.removeEventListener("resize", schedule);
+      climb.removeEventListener("toggle", schedule, true);
+    };
+  }, []);
 
   return (
-    <div className="journey">
-      <div className="journey-tabs" role="tablist" aria-label="Curriculum stages" onKeyDown={onTabKey}>
-        {stages.map((stage, index) => (
-          <button
-            key={stage.id}
-            ref={(el) => {
-              tabRefs.current[index] = el;
-            }}
-            type="button"
-            role="tab"
-            id={`journey-tab-${stage.id}`}
-            aria-controls={`journey-panel-${stage.id}`}
-            aria-selected={index === active}
-            tabIndex={index === active ? 0 : -1}
-            className={`journey-tab${index === active ? " on" : ""}${index < active ? " done" : ""}`}
-            onClick={() => go(index)}
-          >
-            <span className="jt-icon" aria-hidden="true">
-              {stage.icon}
-            </span>
-            <span className="jt-no">Stage {index + 1}</span>
-            <span className="jt-name">{stage.name}</span>
-          </button>
-        ))}
+    <div className="climb" ref={climbRef}>
+      <div className="climb-pawn" ref={pawnRef} aria-hidden="true">
+        <span className="as-pawn">♟&#xFE0E;</span>
+        <span className="as-queen">♛</span>
       </div>
-
-      <div className="journey-stage" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
-        <button type="button" className="journey-arrow prev" aria-label="Previous stage" onClick={() => go(active - 1)}>
-          ‹
-        </button>
+      <ol className="climb-list">
         {stages.map((stage, index) => (
-          <article
-            key={stage.id}
-            id={`journey-panel-${stage.id}`}
-            role="tabpanel"
-            aria-labelledby={`journey-tab-${stage.id}`}
-            hidden={index !== active}
-            className={`journey-card ${direction}`}
-          >
-            <div className="jc-side">
-              <div className="jc-icon" aria-hidden="true">
-                {stage.icon}
+          <Fragment key={stage.id}>
+            {/* From e2 the pawn opens with the double step, so e3 is passed over rather than stood on. */}
+            {stage.square === "e4" ? (
+              <li className="rung skip" aria-hidden="true">
+                <div className="rung-square dark">
+                  <span>e3</span>
+                </div>
+                <div className="skip-note">1. e4 · two squares at once</div>
+              </li>
+            ) : null}
+            <li className={`rung ${index % 2 ? "right" : "left"}`} data-rung>
+              <div
+                className={`rung-square ${Number(stage.square.slice(1)) % 2 ? "dark" : "light"}`}
+                aria-hidden="true"
+              >
+                <span>{stage.square}</span>
               </div>
-              <div className="jc-badge">Stage {index + 1}</div>
-              <div className="jc-audience">{stage.audience}</div>
-              <div className="jc-outcome">
-                <span>◎ Outcome</span>
-                <strong>{stage.outcome}</strong>
-              </div>
-              <Link className="btn jc-cta" href={demoHref}>
-                Start with a free demo <span aria-hidden="true">→</span>
-              </Link>
-            </div>
-            <div className="jc-main">
-              <h3>
-                <span aria-hidden="true">{stage.icon}</span> {stage.name} <em>{stage.goal}</em>
-              </h3>
-              <div className="jc-levels" role="group" aria-label={`${stage.name} levels`}>
-                {stage.levels.map((item, levelIndex) => (
-                  <button
-                    key={item.name}
-                    type="button"
-                    className={levelIndex === level ? "on" : undefined}
-                    aria-pressed={levelIndex === level}
-                    onClick={() => setLevel(levelIndex)}
-                  >
-                    {item.name}
-                    <small>{item.sessions} sessions</small>
-                  </button>
-                ))}
-              </div>
-              <div className="jc-label">Key topics</div>
-              {stage.levels.map((item, levelIndex) => (
-                <ul key={item.name} className="jc-topics" hidden={levelIndex !== level}>
-                  {item.topics.map((topic, topicIndex) => (
-                    <li key={topic} style={{ "--t": topicIndex } as CSSProperties}>
-                      {topic}
-                    </li>
+              <article className="rung-card">
+                <div className="rung-top">
+                  <span className="rung-no">
+                    Stage {String(index + 1).padStart(2, "0")} ·{" "}
+                    <i>{stage.square}</i>
+                  </span>
+                  <span className="rung-tag">{stage.milestone}</span>
+                </div>
+                <h3>
+                  <span className="rung-icon" aria-hidden="true">
+                    {stage.icon}
+                  </span>
+                  {stage.name}
+                </h3>
+                <p className="rung-goal">
+                  <mark>{stage.goal}</mark>
+                </p>
+                <p className="rung-outcome">{stage.outcome}</p>
+                <div className="rung-levels">
+                  {stage.levels.map((level) => (
+                    <details key={level.name}>
+                      <summary>
+                        <b>{level.name}</b>
+                        <small>{level.sessions} sessions</small>
+                      </summary>
+                      <ul>
+                        {level.topics.map((topic, topicIndex) => (
+                          <li
+                            key={topic}
+                            style={{ "--t": topicIndex } as CSSProperties}
+                          >
+                            {topic}
+                          </li>
+                        ))}
+                        {level.more ? (
+                          <li className="more">+{level.more} more</li>
+                        ) : null}
+                      </ul>
+                    </details>
                   ))}
-                </ul>
-              ))}
-              {stage.syllabusHref ? (
-                <Link className="jc-more" href={stage.syllabusHref}>
-                  {stage.levels[level]?.more ? `+ ${stage.levels[level].more} more sessions · ` : ""}See the full {stage.name}{" "}
-                  syllabus →
-                </Link>
-              ) : null}
-              <Link className="btn jc-cta" href={demoHref}>
-                Start with a free demo <span aria-hidden="true">→</span>
-              </Link>
-              <button type="button" className="jc-next" onClick={() => go(index + 1)}>
-                {index === stages.length - 1 ? `Back to ${stages[0].name}` : `Next stage: ${stages[index + 1].name}`}{" "}
-                <span aria-hidden="true">→</span>
-              </button>
-            </div>
-          </article>
+                </div>
+                {stage.syllabusHref ? (
+                  <Link className="rung-link" href={stage.syllabusHref}>
+                    Full {stage.name} syllabus →
+                  </Link>
+                ) : null}
+              </article>
+            </li>
+          </Fragment>
         ))}
-        <button type="button" className="journey-arrow next" aria-label="Next stage" onClick={() => go(active + 1)}>
-          ›
-        </button>
-      </div>
 
-      <div className="journey-track" style={{ "--p": `${progress}%` } as CSSProperties}>
-        <div className="jtr-line" aria-hidden="true">
-          <span />
-        </div>
-        {stages.map((stage, index) => (
-          <button
-            key={stage.id}
-            type="button"
-            className={`jtr-node${index <= active ? " lit" : ""}${index === active ? " on" : ""}`}
-            onClick={() => go(index)}
-            aria-label={`Go to stage ${index + 1}, ${stage.name}`}
-          >
-            <span aria-hidden="true">{stage.icon}</span>
-            <small>{stage.name}</small>
-          </button>
-        ))}
-        <div className={`jtr-node glory${active === stages.length - 1 ? " lit on" : ""}`} aria-hidden="true">
-          <span>🏆</span>
-          <small>FIDE glory</small>
-        </div>
-      </div>
+        <li className="rung promotion">
+          {/* The token stops on the square itself, not halfway down the finish card. */}
+          <div className="rung-square crown" aria-hidden="true" data-rung>
+            <span>e8</span>
+          </div>
+          <div className="promo-card">
+            <div className="promo-burst" aria-hidden="true">
+              ♛
+            </div>
+            <div className="eyebrow">
+            <i>e8</i> = ♛ · Promotion
+          </div>
+            <h3>FIDE glory</h3>
+            <p>
+              A rated player, still climbing. Every stage before this one is a
+              step up the board.
+            </p>
+            <Link className="btn shine" href={demoHref}>
+              Make the first move: book a free demo{" "}
+              <span aria-hidden="true">↗</span>
+            </Link>
+          </div>
+        </li>
+      </ol>
     </div>
   );
 }

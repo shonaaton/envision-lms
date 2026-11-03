@@ -151,35 +151,40 @@ const journeyCopy = [
     tier: "beginner",
     icon: "♟︎",
     goal: "Learn the game the right way",
-    audience: "For starters · no chess needed",
+    square: "e2",
+    milestone: "For starters",
     outcome: "Plays a complete game by every rule, and checkmates with queen and rooks.",
   },
   {
     tier: "intermediate",
     icon: "♞",
     goal: "Sharpen tactics and calculation",
-    audience: "For starters ready for more",
+    square: "e4",
+    milestone: "For starters",
     outcome: "Spots forks, pins and skewers, and finds mates in two and three.",
   },
   {
     tier: "semi_pro",
     icon: "♝",
     goal: "Start playing tournaments",
-    audience: "Tournament debut",
+    square: "e5",
+    milestone: "Tournament debut",
     outcome: "Tournament-ready: sound endgame technique and an opening repertoire.",
   },
   {
     tier: "pro",
     icon: "♜",
     goal: "Push for a FIDE rating",
-    audience: "Rated-play push",
+    square: "e6",
+    milestone: "FIDE rating push",
     outcome: "Calculates deep combinations and sacrifices that win rated games.",
   },
   {
     tier: "masters",
     icon: "♛",
     goal: "Achieve a FIDE rating and fight to improve it",
-    audience: "FIDE track",
+    square: "e7",
+    milestone: "FIDE rated & climbing",
     outcome: "Plays positional, strategic chess built to keep the rating climbing.",
   },
 ];
@@ -213,7 +218,8 @@ const journeyStages: JourneyStage[] = journeyCopy.flatMap((copy) => {
       icon: copy.icon,
       name: page.navLabel.replace(/ Course$/, ""),
       goal: copy.goal,
-      audience: copy.audience,
+      square: copy.square,
+      milestone: copy.milestone,
       outcome: copy.outcome,
       syllabusHref: `/${page.slug}`,
       levels: curriculumLevels(copy.tier).map((level) => ({
@@ -519,8 +525,9 @@ export default function BookFreeDemoClassPage() {
 
         <section className="section journey-section" id="curriculum">
           <div className="wrap">
-            <SectionHead eyebrow="♛ Structured curriculum" title="A clear path from first move to FIDE glory.">
-              Every level builds the real skills competitive chess demands. Step by step, no gaps.
+            <SectionHead eyebrow="The Envision pathway" title={<>Every champion starts as a <span className="pawn-word">pawn.</span></>}>
+              Five stages walk your child up the board, from the very first move to a FIDE rating. Reach the last rank and
+              the pawn becomes a queen.
             </SectionHead>
             <div data-reveal>
               <CurriculumJourney stages={journeyStages} demoHref={demoHref} />

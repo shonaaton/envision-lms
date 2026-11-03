@@ -546,6 +546,23 @@ function invoiceModeLabel(mode: string) {
   return "Non-GST";
 }
 
+function isGstInvoice(invoice: any) {
+  return invoice?.invoiceMode === "included" || invoice?.invoiceMode === "excluded";
+}
+
+/** Says at a glance whether this is a GST or a non-GST invoice, with the rate and tax for GST ones. */
+function GstBadge({ invoice }: { invoice: any }) {
+  if (!isGstInvoice(invoice)) {
+    return <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600 ring-1 ring-slate-200">Non-GST invoice</span>;
+  }
+  const rate = Number(invoice.gstPercentage || 0);
+  return (
+    <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700 ring-1 ring-emerald-200">
+      GST invoice{rate ? ` • ${rate}%` : ""}
+    </span>
+  );
+}
+
 function invoiceFilterLabel(value: string) {
   if (value === "cancelled") return "Cancelled";
   if (value === "paid") return "Paid";
@@ -820,14 +837,21 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
                         <h3 className="text-sm font-semibold text-slate-950">{invoice.invoiceNumber}</h3>
                         <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ${statusTone(invoice.status)}`}>{invoice.status}</span>
                         <span className="rounded-full bg-brand/10 px-2 py-0.5 text-[10px] font-bold text-brand">{invoiceTypeLabel(invoice.type)}</span>
+                        <GstBadge invoice={invoice} />
                         {Array.isArray(invoice.paymentTransactions) && invoice.paymentTransactions.length > 0 && <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">{invoice.paymentTransactions.length} payments</span>}
                       </div>
-                      <div className="mt-1 grid gap-x-4 gap-y-1 text-xs text-slate-500 md:grid-cols-[1.2fr_1fr_1fr_1fr]">
+                      <div className="mt-1 grid gap-x-4 gap-y-1 text-xs text-slate-500 md:grid-cols-[1.2fr_1fr_0.8fr_1fr_1fr]">
                         <div className="min-w-0">
                           <span className="font-semibold text-slate-950">{invoice.title}</span>
                           {manager && <span className="block truncate">{invoice.student?.name || "-"} {invoice.student?.username ? `• ${invoice.student.username}` : ""}</span>}
                         </div>
-                        <div className="truncate"><span className="font-semibold text-slate-700">Plan:</span> {invoice.plan?.name || "-"} • {invoiceModeLabel(invoice.invoiceMode)}</div>
+                        <div className="truncate"><span className="font-semibold text-slate-700">Plan:</span> {invoice.plan?.name || "-"}</div>
+                        <div className="truncate">
+                          <span className="font-semibold text-slate-700">Tax:</span>{" "}
+                          {isGstInvoice(invoice)
+                            ? <span className="font-semibold text-emerald-700">{invoiceModeLabel(invoice.invoiceMode)} • GST {formatINR(invoice.gstAmount || 0)}</span>
+                            : <span className="font-semibold text-slate-600">Non-GST</span>}
+                        </div>
                         <div><span className="font-semibold text-slate-700">Issued:</span> {new Date(invoice.issueDate || invoice.createdAt).toLocaleDateString("en-IN")} <span className="mx-1">•</span> <span className="font-semibold text-slate-700">Due:</span> {new Date(invoice.dueDate).toLocaleDateString("en-IN")}</div>
                         <div className="flex items-center gap-1.5">
                           {emailStatus === "sent" ? <MailCheck size={14} className="text-emerald-600" /> : <MailWarning size={14} className="text-amber-600" />}

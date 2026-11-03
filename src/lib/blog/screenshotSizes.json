@@ -1,0 +1,262 @@
+{
+ "how-to-book-a-parent-teacher-meeting/ptm-d-empty": [
+  1280,
+  800
+ ],
+ "how-to-book-a-parent-teacher-meeting/ptm-d-form": [
+  1280,
+  800
+ ],
+ "how-to-book-a-parent-teacher-meeting/ptm-d-requested": [
+  1280,
+  800
+ ],
+ "how-to-book-a-parent-teacher-meeting/ptm-d-scheduled": [
+  1280,
+  800
+ ],
+ "how-to-book-a-parent-teacher-meeting/ptm-m-empty": [
+  720,
+  1558
+ ],
+ "how-to-book-a-parent-teacher-meeting/ptm-m-requested": [
+  720,
+  1558
+ ],
+ "how-to-book-a-parent-teacher-meeting/ptm-m-scheduled": [
+  720,
+  1558
+ ],
+ "how-to-do-chess-homework-online/hw-d-attempt": [
+  1280,
+  800
+ ],
+ "how-to-do-chess-homework-online/hw-d-computer-card": [
+  976,
+  653
+ ],
+ "how-to-do-chess-homework-online/hw-d-list": [
+  1280,
+  800
+ ],
+ "how-to-do-chess-homework-online/hw-d-list-after": [
+  1280,
+  800
+ ],
+ "how-to-do-chess-homework-online/hw-d-mcq-card": [
+  976,
+  472
+ ],
+ "how-to-do-chess-homework-online/hw-d-puzzle-card": [
+  520,
+  700
+ ],
+ "how-to-do-chess-homework-online/hw-d-puzzle-next": [
+  520,
+  700
+ ],
+ "how-to-do-chess-homework-online/hw-d-result": [
+  1280,
+  800
+ ],
+ "how-to-do-chess-homework-online/hw-m-attempt": [
+  720,
+  1558
+ ],
+ "how-to-do-chess-homework-online/hw-m-list": [
+  720,
+  1558
+ ],
+ "how-to-do-chess-homework-online/hw-m-list-after": [
+  720,
+  1558
+ ],
+ "how-to-do-chess-homework-online/hw-m-puzzle-card": [
+  664,
+  1044
+ ],
+ "how-to-join-an-online-chess-class/cl-d-askcoach-sent": [
+  1280,
+  800
+ ],
+ "how-to-join-an-online-chess-class/cl-d-askcoach-typing": [
+  1280,
+  800
+ ],
+ "how-to-join-an-online-chess-class/cl-d-attendance": [
+  1280,
+  800
+ ],
+ "how-to-join-an-online-chess-class/cl-d-calendar": [
+  1280,
+  800
+ ],
+ "how-to-join-an-online-chess-class/cl-d-class-card": [
+  1006,
+  110
+ ],
+ "how-to-join-an-online-chess-class/cl-d-classrooms": [
+  1280,
+  800
+ ],
+ "how-to-join-an-online-chess-class/cl-d-dashboard": [
+  1280,
+  800
+ ],
+ "how-to-join-an-online-chess-class/cl-m-askcoach": [
+  720,
+  1558
+ ],
+ "how-to-join-an-online-chess-class/cl-m-attendance": [
+  720,
+  1558
+ ],
+ "how-to-join-an-online-chess-class/cl-m-calendar": [
+  720,
+  1558
+ ],
+ "how-to-join-an-online-chess-class/cl-m-class-card": [
+  680,
+  716
+ ],
+ "how-to-join-an-online-chess-class/cl-m-classrooms": [
+  720,
+  1558
+ ],
+ "how-to-join-an-online-chess-class/cl-m-dashboard": [
+  720,
+  1558
+ ],
+ "online-chess-practice-tools-for-kids/pr-d-computer-game": [
+  1280,
+  800
+ ],
+ "online-chess-practice-tools-for-kids/pr-d-computer-setup": [
+  1280,
+  800
+ ],
+ "online-chess-practice-tools-for-kids/pr-d-kinghunt-board": [
+  1280,
+  800
+ ],
+ "online-chess-practice-tools-for-kids/pr-d-kinghunt-length": [
+  1280,
+  800
+ ],
+ "online-chess-practice-tools-for-kids/pr-d-kinghunt-step2": [
+  1280,
+  800
+ ],
+ "online-chess-practice-tools-for-kids/pr-d-learn": [
+  1280,
+  800
+ ],
+ "online-chess-practice-tools-for-kids/pr-d-learn-lesson": [
+  1280,
+  800
+ ],
+ "online-chess-practice-tools-for-kids/pr-d-square-round": [
+  1280,
+  800
+ ],
+ "online-chess-practice-tools-for-kids/pr-d-square-setup": [
+  1280,
+  800
+ ],
+ "online-chess-practice-tools-for-kids/pr-d-tactics-levels": [
+  1280,
+  800
+ ],
+ "online-chess-practice-tools-for-kids/pr-d-tactics-puzzle": [
+  1280,
+  800
+ ],
+ "online-chess-practice-tools-for-kids/pr-m-computer": [
+  720,
+  1558
+ ],
+ "online-chess-practice-tools-for-kids/pr-m-kinghunt-length": [
+  720,
+  1558
+ ],
+ "online-chess-practice-tools-for-kids/pr-m-learn": [
+  720,
+  1558
+ ],
+ "online-chess-practice-tools-for-kids/pr-m-square-round": [
+  720,
+  1558
+ ],
+ "online-chess-practice-tools-for-kids/pr-m-tactics-levels": [
+  720,
+  1558
+ ],
+ "online-chess-tournaments-for-students/tn-d-detail": [
+  1280,
+  800
+ ],
+ "online-chess-tournaments-for-students/tn-d-joined": [
+  1280,
+  800
+ ],
+ "online-chess-tournaments-for-students/tn-d-leaderboard": [
+  1280,
+  800
+ ],
+ "online-chess-tournaments-for-students/tn-d-list": [
+  1280,
+  800
+ ],
+ "online-chess-tournaments-for-students/tn-m-detail": [
+  720,
+  1558
+ ],
+ "online-chess-tournaments-for-students/tn-m-leaderboard": [
+  720,
+  1558
+ ],
+ "online-chess-tournaments-for-students/tn-m-list": [
+  720,
+  1558
+ ],
+ "track-your-chess-progress-and-fees/pg-d-chess-profile": [
+  1280,
+  800
+ ],
+ "track-your-chess-progress-and-fees/pg-d-credit-history": [
+  1280,
+  800
+ ],
+ "track-your-chess-progress-and-fees/pg-d-credits": [
+  1280,
+  800
+ ],
+ "track-your-chess-progress-and-fees/pg-d-invoices": [
+  1280,
+  800
+ ],
+ "track-your-chess-progress-and-fees/pg-d-profile": [
+  1280,
+  800
+ ],
+ "track-your-chess-progress-and-fees/pg-d-report": [
+  1280,
+  800
+ ],
+ "track-your-chess-progress-and-fees/pg-m-credits": [
+  720,
+  1558
+ ],
+ "track-your-chess-progress-and-fees/pg-m-invoices": [
+  720,
+  1558
+ ],
+ "track-your-chess-progress-and-fees/pg-m-profile": [
+  720,
+  1558
+ ],
+ "track-your-chess-progress-and-fees/pg-m-report": [
+  720,
+  1558
+ ]
+}

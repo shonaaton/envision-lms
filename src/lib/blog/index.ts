@@ -26,6 +26,12 @@ import topAcademiesChennai from "@/lib/blog/posts/top-chess-academies-in-chennai
 import topAcademiesPune from "@/lib/blog/posts/top-chess-academies-in-pune";
 import topAcademiesAhmedabad from "@/lib/blog/posts/top-chess-academies-in-ahmedabad";
 import levelExamGuide from "@/lib/blog/posts/how-to-take-the-online-chess-level-exam";
+import homeworkGuide from "@/lib/blog/posts/how-to-do-chess-homework-online";
+import practiceToolsGuide from "@/lib/blog/posts/online-chess-practice-tools-for-kids";
+import ptmGuide from "@/lib/blog/posts/how-to-book-a-parent-teacher-meeting";
+import joinClassGuide from "@/lib/blog/posts/how-to-join-an-online-chess-class";
+import tournamentsGuide from "@/lib/blog/posts/online-chess-tournaments-for-students";
+import progressGuide from "@/lib/blog/posts/track-your-chess-progress-and-fees";
 
 /**
  * Every published post. A post exists on the site, in the sitemap, on the blog
@@ -43,7 +49,14 @@ const ALL_POSTS: BlogPost[] = [
   howToGetFideRating,
   onlineClassesAbroad,
   howToChooseACoach,
+  // Student portal guides: one per part of the portal, with real screenshots.
   levelExamGuide,
+  joinClassGuide,
+  homeworkGuide,
+  practiceToolsGuide,
+  ptmGuide,
+  tournamentsGuide,
+  progressGuide,
   // City guides: each supports one city page (or, for online vs offline, all
   // of them) without targeting that page's own phrases.
   onlineVsOffline,

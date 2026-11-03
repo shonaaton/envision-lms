@@ -2311,7 +2311,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
   // than after it - without this the page runs on for a user who is not there.
   if (!session?.user) redirect("/login");
   const userId = (session?.user as any)?.id;
-  const role = (session?.user as any)?.role as "student" | "instructor" | "admin" | undefined;
+  const role = (session?.user as any)?.role as "student" | "instructor" | "admin" | "sub-admin" | undefined;
 
   if ((session?.user as any)?.isActive === false) {
     return <InactiveAccountDashboard userName={session?.user?.name} role={role} />;
@@ -2729,6 +2729,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
   if (activeTab === "today") {
     return (
       <div className="space-y-5 text-slate-950">
+        {/* Sub-admins skip the welcome banner and the headline numbers (students,
+            batches, revenue, collection rate); "Today at a Glance" keeps its own date picker. */}
+        {role !== "sub-admin" && (<>
         <section className="rounded-xl border border-purple-900/10 bg-[radial-gradient(circle_at_top_left,rgba(126,34,206,0.18),transparent_34%),linear-gradient(135deg,#170032_0%,#4b0d73_58%,#7a1fb2_100%)] px-5 py-6 text-white shadow-[0_24px_60px_rgba(58,8,86,0.25)]">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
             <div>
@@ -2758,6 +2761,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
           <AdminMetricCard label="Revenue" value={money(collectedFees)} note={`Academic year ${academicYearStart}`} icon={CircleDollarSign} tone="amber" />
           <AdminMetricCard label="Collection Rate" value={`${collectionRate}%`} note={`${money(pastDues)} overdue`} icon={TrendingUp} tone="rose" />
         </section>
+        </>)}
 
         <div className="grid gap-5 xl:grid-cols-[1.45fr_0.95fr]">
           <AdminPanel

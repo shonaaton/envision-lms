@@ -25,6 +25,7 @@ import AnimatedImpactCounters from "@/components/marketing/AnimatedImpactCounter
 import DynamicLandingShowcase from "@/components/marketing/DynamicLandingShowcase";
 import HeroStudentCluster from "@/components/marketing/HeroStudentCluster";
 import RelatedLinks from "@/components/marketing/RelatedLinks";
+import StudentRatingsMarquee from "@/components/marketing/StudentRatingsMarquee";
 import WhyEnvision from "@/components/marketing/WhyEnvision";
 import { MarketingFooter, MarketingHeader } from "@/components/marketing/MarketingChrome";
 import { ACADEMY_ACCREDITATIONS, ACADEMY_DEFAULTS, ACADEMY_LOGO_URL } from "@/lib/branding";
@@ -39,6 +40,7 @@ import { academyBranches, anishStory, impactCounters, publicAchievementList, stu
 import { achievementAlt, achievementCaption } from "@/lib/achievementCopy";
 import { getLandingAchievements } from "@/lib/achievements";
 import { portalTutorials, youtubeEmbedUrl } from "@/lib/portalTutorials";
+import { studentRatings } from "@/lib/studentRatings";
 import { ACADEMY_SAME_AS, ORGANIZATION_ID, websiteSchema } from "@/lib/seo";
 
 /**
@@ -389,6 +391,8 @@ export default async function Home() {
         heading="Chess coaching results from across India and beyond."
         intro="Students trained online from every part of India and in person at our Kolkata centres, with the rating gains and tournament results to show for it."
       />
+
+      <StudentRatingsMarquee students={studentRatings} />
 
       <WhyEnvision
         demoHref={demoHref}

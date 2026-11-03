@@ -1,8 +1,10 @@
 import "server-only";
 
+import { Activity } from "@/models/Activity";
 import { Booking } from "@/models/Booking";
 import { Classroom } from "@/models/Classroom";
 import { DeletedInvoice, FeeAssignment, FeePlan, Invoice } from "@/models/Fee";
+import { Payment } from "@/models/Payment";
 import { StudentPause } from "@/models/StudentPause";
 import { User } from "@/models/User";
 import { getAcademySettings, invoiceBreakup } from "@/lib/fees";
@@ -46,6 +48,58 @@ function sum(rows: any[], pick: (row: any) => number) {
 
 function studentLabel(student: any) {
   return student?.name || student?.username || "Unknown student";
+}
+
+const PAYMENT_MODE_LABELS: Record<string, string> = {
+  upi: "UPI",
+  bank_transfer: "Bank transfer",
+  cash: "Cash",
+  card: "Card",
+  cheque: "Cheque",
+  other: "Other",
+};
+
+type PaymentDetail = { paymentMode: string; paymentRef: string; markedPaidBy: string };
+
+/**
+ * How each paid invoice was settled and who recorded it, so a tax report can be
+ * checked line by line against the bank: the mode and reference typed in (or
+ * Razorpay's payment id) and the person who marked it paid.
+ */
+async function paymentDetails(invoices: any[]): Promise<Map<string, PaymentDetail>> {
+  const details = new Map<string, PaymentDetail>();
+  if (!invoices.length) return details;
+  const invoiceIds = invoices.map((invoice) => invoice._id);
+  const paymentIds = invoices.map((invoice) => invoice.payment).filter(Boolean);
+  const [payments, activities] = await Promise.all([
+    Payment.find({ _id: { $in: paymentIds } }).select("method referenceNumber razorpayPaymentId").lean(),
+    Activity.find({ type: "fees.invoice.paid", entityId: { $in: invoiceIds } })
+      .select("actor entityId metadata.source occurredAt")
+      .populate("actor", "name")
+      .sort({ occurredAt: 1 })
+      .lean(),
+  ]);
+  const paymentById = new Map((payments as any[]).map((payment) => [idOf(payment), payment]));
+  // Sorted oldest first, so the last write per invoice is the latest marking.
+  const paidActivity = new Map((activities as any[]).map((activity) => [idOf(activity.entityId), activity]));
+  for (const invoice of invoices) {
+    const payment: any = paymentById.get(idOf(invoice.payment));
+    const transactions: any[] = Array.isArray(invoice.paymentTransactions) ? invoice.paymentTransactions : [];
+    const modes = transactions.length ? transactions.map((transaction) => transaction.mode) : [payment?.method];
+    const refs = transactions.length
+      ? transactions.map((transaction) => transaction.referenceNumber)
+      : [payment?.referenceNumber, payment?.razorpayPaymentId];
+    const activity: any = paidActivity.get(idOf(invoice));
+    const source = String(activity?.metadata?.source || "");
+    const markedPaidBy = activity?.actor?.name
+      || (source.startsWith("razorpay") ? "Razorpay (online)" : activity ? "System" : "Not recorded");
+    details.set(idOf(invoice), {
+      paymentMode: Array.from(new Set(modes.filter(Boolean).map((mode) => PAYMENT_MODE_LABELS[mode] || String(mode)))).join(", ") || "-",
+      paymentRef: Array.from(new Set(refs.map((ref) => String(ref || "").trim()).filter(Boolean))).join(", ") || "-",
+      markedPaidBy,
+    });
+  }
+  return details;
 }
 
 function planGross(plan: any, settings: any) {
@@ -163,6 +217,13 @@ export async function getFeesAnalytics(options: { from: Date; to: Date; gst: Gst
   // That is a different question from "total minus the tax component", which is
   // what `netCollected` answers.
   const gstInvoicesPaid = paidInRange.filter((invoice) => isGstInvoice(invoice));
+  const paidDetails = await paymentDetails(paidInRange);
+  const paidRow = (invoice: any) => ({ ...invoiceRow(invoice), ...paidDetails.get(idOf(invoice)) });
+  const paymentColumns: DetailColumn[] = [
+    { key: "paymentMode", label: "Mode" },
+    { key: "paymentRef", label: "Payment ref" },
+    { key: "markedPaidBy", label: "Marked paid by" },
+  ];
   const nonGstInvoicesPaid = paidInRange.filter((invoice) => !isGstInvoice(invoice));
 
   const collected = sum(paidInRange, (i) => i.totalAmount);
@@ -185,8 +246,9 @@ export async function getFeesAnalytics(options: { from: Date; to: Date; gst: Gst
       { key: "base", label: "Base", type: "money", align: "right" },
       { key: "gst", label: "GST", type: "money", align: "right" },
       { key: "total", label: "Total", type: "money", align: "right" },
+      ...paymentColumns,
     ],
-    rows: paidInRange.map(invoiceRow),
+    rows: paidInRange.map(paidRow),
     totals: { base: sum(paidInRange, (i) => i.taxableAmount || i.amount), gst: gstCollected, total: collected },
   });
 
@@ -202,8 +264,9 @@ export async function getFeesAnalytics(options: { from: Date; to: Date; gst: Gst
       { key: "gstPercentage", label: "GST %", type: "number", align: "right" },
       { key: "gst", label: "GST", type: "money", align: "right" },
       { key: "total", label: "Total", type: "money", align: "right" },
+      ...paymentColumns,
     ],
-    rows: gstInvoicesPaid.map((invoice) => ({ ...invoiceRow(invoice), gstPercentage: Number(invoice.gstPercentage || 0) })),
+    rows: gstInvoicesPaid.map((invoice) => ({ ...paidRow(invoice), gstPercentage: Number(invoice.gstPercentage || 0) })),
     totals: { gst: gstCollected, total: gstInvoiceCollected },
   });
 
@@ -217,8 +280,9 @@ export async function getFeesAnalytics(options: { from: Date; to: Date; gst: Gst
       { key: "plan", label: "Plan" },
       { key: "paidAt", label: "Paid on", type: "date" },
       { key: "total", label: "Amount", type: "money", align: "right" },
+      ...paymentColumns,
     ],
-    rows: nonGstInvoicesPaid.map(invoiceRow),
+    rows: nonGstInvoicesPaid.map(paidRow),
     totals: { total: nonGstCollected },
     footnote: "No tax was charged on these invoices, so the full amount is academy earnings.",
   });

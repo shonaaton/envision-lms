@@ -431,3 +431,43 @@ main td {
     animation: none !important;
   }
 }
+
+/*
+ * Homepage "Our students. Their achievements." strip. The track holds the list
+ * twice, so sliding it by -50% lands exactly where it started. Each card
+ * carries its own right padding instead of a flex gap so the halves match.
+ */
+.student-marquee {
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 6%, #000 94%, transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0, #000 6%, #000 94%, transparent 100%);
+}
+.student-marquee-track {
+  display: flex;
+  width: max-content;
+  animation: student-marquee 70s linear infinite;
+}
+.student-marquee:hover .student-marquee-track,
+.student-marquee:focus-within .student-marquee-track {
+  animation-play-state: paused;
+}
+@keyframes student-marquee {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .student-marquee {
+    overflow-x: auto;
+    -webkit-mask-image: none;
+    mask-image: none;
+    padding: 0 16px;
+  }
+  .student-marquee-track {
+    animation: none;
+  }
+  .student-marquee-track > li[aria-hidden="true"] {
+    display: none;
+  }
+}

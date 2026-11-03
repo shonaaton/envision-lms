@@ -13,6 +13,7 @@ import {
   Users,
 } from "lucide-react";
 import CourseResultsStrip from "@/components/marketing/CourseResultsStrip";
+import CoachesSection from "@/components/marketing/CoachesSection";
 import WhyEnvision from "@/components/marketing/WhyEnvision";
 import { MarketingFooter, MarketingHeader } from "@/components/marketing/MarketingChrome";
 import { ACADEMY_DEFAULTS } from "@/lib/branding";
@@ -348,6 +349,8 @@ export default function CentrePage({ config }: { config: CentreConfig }) {
         intro="Not a set of loose classes. A published syllabus, a coach who places your child at the right session, and a portal where parents can see every class, score and tournament result."
         secondary={{ href: `tel:${config.phone}`, label: `Call ${config.phoneDisplay}` }}
       />
+
+      <CoachesSection />
 
       <CourseResultsStrip
         heading="What students from our Kolkata centres go on to win."

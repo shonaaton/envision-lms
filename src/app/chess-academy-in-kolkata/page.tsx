@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowRight, CalendarDays, CheckCircle2, GraduationCap, MapPin, Navigation, Phone, Quote, Sparkles, Star, Trophy } from "lucide-react";
 import CourseResultsStrip from "@/components/marketing/CourseResultsStrip";
+import CoachesSection from "@/components/marketing/CoachesSection";
 import RelatedLinks from "@/components/marketing/RelatedLinks";
 import HeroStudentCluster from "@/components/marketing/HeroStudentCluster";
 import WhyEnvision from "@/components/marketing/WhyEnvision";
@@ -407,6 +408,8 @@ export default function KolkataAcademyPage() {
           </div>
         </div>
       </section>
+
+      <CoachesSection />
 
       <CourseResultsStrip
         heading="What students from our Kolkata centres go on to win."

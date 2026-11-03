@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowRight, CalendarDays, CheckCircle2, GraduationCap, MonitorSmartphone, Sparkles } from "lucide-react";
 import CourseResultsStrip from "@/components/marketing/CourseResultsStrip";
+import CoachesSection from "@/components/marketing/CoachesSection";
 import RelatedLinks from "@/components/marketing/RelatedLinks";
 import HeroStudentCluster from "@/components/marketing/HeroStudentCluster";
 import WhyEnvision from "@/components/marketing/WhyEnvision";
@@ -193,6 +194,8 @@ export default function CourseHubPage() {
           </div>
         </div>
       </section>
+
+      <CoachesSection />
 
       <CourseResultsStrip
         heading="What students from these courses go on to win."

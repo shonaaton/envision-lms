@@ -25,6 +25,7 @@ import AnimatedImpactCounters from "@/components/marketing/AnimatedImpactCounter
 import DynamicLandingShowcase from "@/components/marketing/DynamicLandingShowcase";
 import HeroStudentCluster from "@/components/marketing/HeroStudentCluster";
 import RelatedLinks from "@/components/marketing/RelatedLinks";
+import CoachesSection from "@/components/marketing/CoachesSection";
 import StudentRatingsMarquee from "@/components/marketing/StudentRatingsMarquee";
 import WhyEnvision from "@/components/marketing/WhyEnvision";
 import { MarketingFooter, MarketingHeader } from "@/components/marketing/MarketingChrome";
@@ -400,6 +401,8 @@ export default async function Home() {
         heading="Why parents call Envision the best chess coaching in India."
         intro="Not a set of loose classes. A structured chess curriculum, a coach who knows exactly where your child is, and a portal that shows parents the progress - whether you join online from anywhere in India or walk into one of our Kolkata centres."
       />
+
+      <CoachesSection />
 
       <section id="programs" className="relative overflow-hidden bg-[#ffffff] py-16 text-brand-900 lg:py-24">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_12%_14%,rgba(253,231,90,0.55),transparent_32%),radial-gradient(circle_at_86%_22%,rgba(90,19,114,0.10),transparent_34%),linear-gradient(180deg,#ffffff_0%,#f5edf8_100%)]" />

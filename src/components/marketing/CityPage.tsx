@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowRight, CalendarDays, CheckCircle2, ClipboardList, Languages, MapPin, MonitorSmartphone, Sparkles } from "lucide-react";
 import { Inline } from "@/components/blog/PostBody";
 import CourseResultsStrip from "@/components/marketing/CourseResultsStrip";
+import CoachesSection from "@/components/marketing/CoachesSection";
 import HeroStudentCluster from "@/components/marketing/HeroStudentCluster";
 import RelatedLinks from "@/components/marketing/RelatedLinks";
 import { MarketingFooter, MarketingHeader } from "@/components/marketing/MarketingChrome";
@@ -238,6 +239,8 @@ export default function CityPage({ config }: { config: CityPageConfig }) {
           </ul>
         </div>
       </section>
+
+      <CoachesSection />
 
       <CourseResultsStrip
         heading="Results from Envision students."

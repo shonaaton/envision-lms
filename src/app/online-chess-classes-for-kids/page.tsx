@@ -15,6 +15,7 @@ import {
   Users,
 } from "lucide-react";
 import CourseResultsStrip from "@/components/marketing/CourseResultsStrip";
+import CoachesSection from "@/components/marketing/CoachesSection";
 import HeroStudentCluster from "@/components/marketing/HeroStudentCluster";
 import RelatedLinks from "@/components/marketing/RelatedLinks";
 import { MarketingFooter, MarketingHeader } from "@/components/marketing/MarketingChrome";
@@ -491,6 +492,8 @@ export default function OnlineChessClassesForKidsPage() {
           </div>
         </div>
       </section>
+
+      <CoachesSection />
 
       <CourseResultsStrip
         heading="Children who started exactly where your child is now."

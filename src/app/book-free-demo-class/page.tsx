@@ -6,6 +6,7 @@ import { coursePages, courseSessionTotal } from "@/lib/coursePages";
 import { curriculumLevels } from "@/lib/demoCurriculum";
 import { LEGAL_LINKS } from "@/lib/publicLinks";
 import { faqSchema, publicMetadata } from "@/lib/seo";
+import CurriculumJourney, { type JourneyStage } from "./CurriculumJourney";
 import LandingMotion from "./LandingMotion";
 import ScreenTimePlanner from "./ScreenTimePlanner";
 import "./landing.css";
@@ -73,7 +74,7 @@ const students = [
 const features = [
   { icon: "◎", title: "Stay focused in class", detail: "Practise giving one problem their attention, noticing details and staying with a task before moving on." },
   { icon: "⌖", title: "Work through difficult questions", detail: "Break a challenge into smaller steps, examine the information and consider different ways to solve it." },
-  { icon: "♟", title: "Think before answering", detail: "Pause, weigh the options and choose a response instead of rushing into the first answer." },
+  { icon: "♟\uFE0E", title: "Think before answering", detail: "Pause, weigh the options and choose a response instead of rushing into the first answer." },
   { icon: "↗", title: "Plan homework and tasks", detail: "Think about what needs to happen first, what comes next and how each step affects the result." },
   { icon: "↻", title: "Learn from mistakes", detail: "Review an incorrect answer, understand where the thinking went off track and try a better approach." },
   { icon: "✦", title: "Build independent thinking", detail: "Practise explaining why a choice makes sense and taking responsibility for the next move." },
@@ -139,12 +140,90 @@ const pricedStages = [
   { id: "intermediate", stage: "Stage 02 · Tactics", name: "Intermediate", detail: "Develop tactical awareness, calculation and confidence in handling complex positions." },
 ];
 
-/** The three upper stages. Level and session counts are read from the taught syllabus. */
-const advancedStages = [
-  { tier: "semi_pro", stage: "Stage 03 · Endgames", name: "Semi-Pro", detail: "Endgame principles, mating patterns and an opening repertoire." },
-  { tier: "pro", stage: "Stage 04 · Combinations", name: "Pro", detail: "Advanced calculation, combinations, sacrifices and difficult mates." },
-  { tier: "masters", stage: "Stage 05 · Mastery", name: "Masters", detail: "Positional play, pawn structures, attacking plans and endgames." },
+/**
+ * The road from first move to a FIDE rating. The goals are the academy's own
+ * framing of each stage; the levels and topics underneath are read from the
+ * taught syllabus, so the page cannot advertise a session nobody teaches.
+ * (U+FE0E keeps the pawn a text glyph; iOS otherwise draws it as an emoji.)
+ */
+const journeyCopy = [
+  {
+    tier: "beginner",
+    icon: "♟︎",
+    goal: "Learn the game the right way",
+    audience: "For starters · no chess needed",
+    outcome: "Plays a complete game by every rule, and checkmates with queen and rooks.",
+  },
+  {
+    tier: "intermediate",
+    icon: "♞",
+    goal: "Sharpen tactics and calculation",
+    audience: "For starters ready for more",
+    outcome: "Spots forks, pins and skewers, and finds mates in two and three.",
+  },
+  {
+    tier: "semi_pro",
+    icon: "♝",
+    goal: "Start playing tournaments",
+    audience: "Tournament debut",
+    outcome: "Tournament-ready: sound endgame technique and an opening repertoire.",
+  },
+  {
+    tier: "pro",
+    icon: "♜",
+    goal: "Push for a FIDE rating",
+    audience: "Rated-play push",
+    outcome: "Calculates deep combinations and sacrifices that win rated games.",
+  },
+  {
+    tier: "masters",
+    icon: "♛",
+    goal: "Achieve a FIDE rating and fight to improve it",
+    audience: "FIDE track",
+    outcome: "Plays positional, strategic chess built to keep the rating climbing.",
+  },
 ];
+
+const TOPIC_LIMIT = 6;
+
+/** The first distinct teaching topics of a level, without revision days or difficulty tiers. */
+function keyTopics(topics: string[]) {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of topics) {
+    if (/revision|practice|model game/i.test(raw)) continue;
+    const short = raw
+      .split(",")[0]
+      .replace(/\s(Easy|Medium|Hard|Mixed)\b/g, "")
+      .replace(/\s(Day|Part) \d+$/i, "")
+      .trim();
+    if (seen.has(short.toLowerCase())) continue;
+    seen.add(short.toLowerCase());
+    out.push(short);
+  }
+  return { topics: out.slice(0, TOPIC_LIMIT), more: Math.max(0, out.length - TOPIC_LIMIT) };
+}
+
+const journeyStages: JourneyStage[] = journeyCopy.flatMap((copy) => {
+  const page = coursePages.find((course) => course.tier === copy.tier);
+  if (!page) return [];
+  return [
+    {
+      id: copy.tier,
+      icon: copy.icon,
+      name: page.navLabel.replace(/ Course$/, ""),
+      goal: copy.goal,
+      audience: copy.audience,
+      outcome: copy.outcome,
+      syllabusHref: `/${page.slug}`,
+      levels: curriculumLevels(copy.tier).map((level) => ({
+        name: level.name,
+        sessions: level.sessions.length,
+        ...keyTopics(level.sessions.map((session) => session.topic)),
+      })),
+    },
+  ];
+});
 
 const totalSessions = coursePages.reduce((total, page) => total + courseSessionTotal(page.tier), 0);
 const totalLevels = coursePages.reduce((total, page) => total + curriculumLevels(page.tier).length, 0);
@@ -269,6 +348,7 @@ export default function BookFreeDemoClassPage() {
           <nav className="navlinks" aria-label="Page sections">
             <a href="#approach">Our approach</a>
             <a href="#curriculum">Curriculum</a>
+            <a href="#pricing">Fees</a>
             <a href="#students">Student achievements</a>
             <Link className="btn small" href={demoHref}>
               Book free demo <span aria-hidden="true">↗</span>
@@ -284,7 +364,7 @@ export default function BookFreeDemoClassPage() {
             <span>♛</span>
             <span>♜</span>
             <span>♝</span>
-            <span>♟</span>
+            <span>♟&#xFE0E;</span>
           </div>
           <div className="wrap hero-grid">
             <div className="hero-copy">
@@ -437,9 +517,27 @@ export default function BookFreeDemoClassPage() {
           </div>
         </section>
 
-        <section className="section" id="curriculum">
+        <section className="section journey-section" id="curriculum">
           <div className="wrap">
-            <SectionHead eyebrow="A pathway, not random lessons" title="From the first move to advanced competitive chess." />
+            <SectionHead eyebrow="♛ Structured curriculum" title="A clear path from first move to FIDE glory.">
+              Every level builds the real skills competitive chess demands. Step by step, no gaps.
+            </SectionHead>
+            <div data-reveal>
+              <CurriculumJourney stages={journeyStages} demoHref={demoHref} />
+            </div>
+            <div className="structure-line" data-reveal>
+              <strong data-count={coursePages.length}>{coursePages.length}</strong> stages ·{" "}
+              <strong data-count={totalLevels}>{totalLevels}</strong> levels ·{" "}
+              <strong data-count={totalSessions}>{totalSessions}</strong> taught sessions · 2 live classes each week
+            </div>
+          </div>
+        </section>
+
+        <section className="section" id="pricing">
+          <div className="wrap">
+            <SectionHead eyebrow="Fees" title="Start the journey. Pick how you learn.">
+              Beginner and Intermediate fees below. For Semi-Pro, Pro and Masters, ask us during your free demo.
+            </SectionHead>
 
             {/* On a phone only one stage and one plan show at a time; these
                 radios pick which, with CSS alone. Wider screens show all four. */}
@@ -471,37 +569,6 @@ export default function BookFreeDemoClassPage() {
                   </article>
                 ))}
               </div>
-            </div>
-
-            <div className="advanced-stages">
-              {advancedStages.map((stage, index) => {
-                const page = coursePages.find((course) => course.tier === stage.tier);
-                const levels = curriculumLevels(stage.tier).length;
-                const body = (
-                  <>
-                    <div className="stage-no">{stage.stage}</div>
-                    <h3>{stage.name}</h3>
-                    <p>{stage.detail}</p>
-                    <small>
-                      {levels} levels · {courseSessionTotal(stage.tier)} sessions
-                    </small>
-                  </>
-                );
-                return page ? (
-                  <Link href={`/${page.slug}`} className="stage" key={stage.tier} data-reveal style={{ "--d": index } as CSSProperties}>
-                    {body}
-                  </Link>
-                ) : (
-                  <article className="stage" key={stage.tier} data-reveal style={{ "--d": index } as CSSProperties}>
-                    {body}
-                  </article>
-                );
-              })}
-            </div>
-            <div className="structure-line" data-reveal>
-              <strong data-count={coursePages.length}>{coursePages.length}</strong> stages ·{" "}
-              <strong data-count={totalLevels}>{totalLevels}</strong> levels ·{" "}
-              <strong data-count={totalSessions}>{totalSessions}</strong> taught sessions · 2 live classes each week
             </div>
           </div>
         </section>

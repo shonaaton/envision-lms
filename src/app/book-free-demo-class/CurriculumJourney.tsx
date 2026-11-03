@@ -35,7 +35,13 @@ export default function CurriculumJourney({ stages, demoHref }: { stages: Journe
     setDirection(next > active ? "next" : "prev");
     setActive(next);
     setLevel(0);
-    if (focus) tabRefs.current[next]?.focus();
+    const tab = tabRefs.current[next];
+    if (focus) tab?.focus();
+    // On a phone the tab row scrolls sideways; keep the chosen tab centred without moving the page.
+    const row = tab?.parentElement;
+    if (tab && row && row.scrollWidth > row.clientWidth) {
+      row.scrollTo({ left: tab.offsetLeft - row.offsetLeft - (row.clientWidth - tab.offsetWidth) / 2, behavior: "smooth" });
+    }
   };
 
   const onTabKey = (event: KeyboardEvent) => {
@@ -114,7 +120,7 @@ export default function CurriculumJourney({ stages, demoHref }: { stages: Journe
             </div>
             <div className="jc-main">
               <h3>
-                <span aria-hidden="true">{stage.icon}</span> {stage.name} <em>· {stage.goal}</em>
+                <span aria-hidden="true">{stage.icon}</span> {stage.name} <em>{stage.goal}</em>
               </h3>
               <div className="jc-levels" role="group" aria-label={`${stage.name} levels`}>
                 {stage.levels.map((item, levelIndex) => (
@@ -146,6 +152,13 @@ export default function CurriculumJourney({ stages, demoHref }: { stages: Journe
                   syllabus →
                 </Link>
               ) : null}
+              <Link className="btn jc-cta" href={demoHref}>
+                Start with a free demo <span aria-hidden="true">→</span>
+              </Link>
+              <button type="button" className="jc-next" onClick={() => go(index + 1)}>
+                {index === stages.length - 1 ? `Back to ${stages[0].name}` : `Next stage: ${stages[index + 1].name}`}{" "}
+                <span aria-hidden="true">→</span>
+              </button>
             </div>
           </article>
         ))}

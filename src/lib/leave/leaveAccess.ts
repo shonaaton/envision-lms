@@ -3,6 +3,8 @@ import "server-only";
 import { auth } from "@/lib/auth";
 import { resolveAccessRole } from "@/lib/accessRoles";
 import { canAccessFeature } from "@/lib/featureAccess";
+import { dbConnect } from "@/lib/db";
+import { User } from "@/models/User";
 import { canApplyForLeave, canFileLeaveForOthers, isMarketingRoleName, type LeaveViewer } from "./leaveRules";
 import { isLeaveScheduler, isNamedLeaveApprover } from "./leaveRecipients";
 
@@ -18,6 +20,9 @@ export async function resolveLeaveViewer(): Promise<LeaveViewer | null> {
   const roleName = user.roleName ?? (await resolveAccessRole(String(user.id)))?.roleName;
   if (isMarketingRoleName(roleName)) return null;
   const canCreate = await canAccessFeature("leaveManagement", user, "create");
+  // The scheduler may be named by user ID (`Muktara@ENV`), which the session does not carry.
+  await dbConnect();
+  const account: any = await User.findById(user.id).select("email username").lean();
   return {
     id: String(user.id),
     name: String(user.name || ""),
@@ -25,7 +30,7 @@ export async function resolveLeaveViewer(): Promise<LeaveViewer | null> {
     canApply: canCreate && canApplyForLeave(user.role, roleName),
     canApplyForOthers: canCreate && canFileLeaveForOthers(user.role, roleName),
     isApprover: user.role === "admin" || isNamedLeaveApprover(user.email),
-    isScheduler: isLeaveScheduler(user.email),
+    isScheduler: isLeaveScheduler(account || user),
     canManageCredits: user.role === "admin",
   };
 }

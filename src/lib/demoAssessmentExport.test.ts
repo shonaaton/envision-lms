@@ -44,9 +44,9 @@ describe("canExportDemoAssessments", () => {
     expect(await canExportDemoAssessments(ID)).toBe(true);
   });
 
-  it("allows the demo sub-admin, Saptarshi", async () => {
+  it("refuses the demo sub-admin too: sub-admins export nothing", async () => {
     (User.findById as any).mockReturnValue(chain({ role: "sub-admin", email: "Saptarshi2856@gmail.com" }));
-    expect(await canExportDemoAssessments(ID)).toBe(true);
+    expect(await canExportDemoAssessments(ID)).toBe(false);
   });
 
   it("refuses other sub-admins, including salespeople", async () => {

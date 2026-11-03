@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { escapeRegex, loginIdentifierFilter } from "@/lib/loginIdentity";
+import { escapeRegex, loginIdentifierFilter, loginIdentifiersFilter, matchesLoginIdentifier } from "@/lib/loginIdentity";
 
 function usernamePattern(loginValue: string) {
   const clause = loginIdentifierFilter(loginValue).$or.find((entry: any) => entry.username) as any;
@@ -55,5 +55,20 @@ describe("escapeRegex", () => {
   it("escapes every metacharacter that could widen a match", () => {
     expect(new RegExp(`^${escapeRegex("a+b.c*d")}$`).test("a+b.c*d")).toBe(true);
     expect(new RegExp(`^${escapeRegex("a+b.c*d")}$`).test("aaabXcccd")).toBe(false);
+  });
+});
+
+describe("staff named by email or user ID", () => {
+  it("matches an account by user ID in any case, or by email", () => {
+    const muktara = { email: "muktara.staff@example.com", username: "Muktara@ENV" };
+    expect(matchesLoginIdentifier(muktara, "muktara@env")).toBe(true);
+    expect(matchesLoginIdentifier(muktara, "Muktara.Staff@example.com")).toBe(true);
+    expect(matchesLoginIdentifier(muktara, "saptarshi2856@gmail.com")).toBe(false);
+    expect(matchesLoginIdentifier({}, "")).toBe(false);
+  });
+  it("builds one filter covering every listed person", () => {
+    const filter = loginIdentifiersFilter(["sayanthsbose@gmail.com", "Muktara@ENV"]);
+    expect(filter.$or).toContainEqual({ email: "sayanthsbose@gmail.com" });
+    expect(filter.$or.some((clause: any) => clause.username instanceof RegExp && clause.username.test("MUKTARA@env"))).toBe(true);
   });
 });

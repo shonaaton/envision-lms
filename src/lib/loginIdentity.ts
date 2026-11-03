@@ -42,3 +42,17 @@ export function loginIdentifierFilter(loginValue: string) {
 export function loginKey(loginValue: string) {
   return String(loginValue || "").replace(/\s+/g, "").toLowerCase();
 }
+
+/**
+ * Staff named in a setting (who owns invoice tasks, who covers leave) by email
+ * or by portal user ID such as `Muktara@ENV`. Either is unique to one account.
+ */
+export function loginIdentifiersFilter(values: string[]) {
+  return { $or: values.flatMap((value) => loginIdentifierFilter(value).$or) };
+}
+
+/** Whether this account is the one a login value (email or user ID) names. */
+export function matchesLoginIdentifier(user: { email?: unknown; username?: unknown }, value: string) {
+  const key = loginKey(value);
+  return Boolean(key) && (loginKey(String(user.email || "")) === key || loginKey(String(user.username || "")) === key);
+}

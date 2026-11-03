@@ -679,8 +679,8 @@ async function announceDecision(leave: any, approver: LeaveViewer, credits: Leav
 
 /**
  * Admins and named approvers: an approved coach leave needs substitutes. The
- * scheduler (Saptarshi) gets the same message on WhatsApp only: his task
- * already reaches him in-app and by email (user, 2026-10-26).
+ * scheduler (Muktara) gets the same message on WhatsApp only: the task
+ * already reaches the scheduler in-app and by email (user, 2026-10-26).
  */
 async function announceSubstitution(leave: any) {
   const applicantId = idOf(leave.applicant);

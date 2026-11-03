@@ -2,6 +2,7 @@ import "server-only";
 
 import { dbConnect } from "@/lib/db";
 import { importantContactsByKeys } from "@/lib/importantContacts";
+import { loginIdentifiersFilter, matchesLoginIdentifier } from "@/lib/loginIdentity";
 import { User } from "@/models/User";
 
 /**
@@ -31,9 +32,10 @@ export function isNamedLeaveApprover(email: unknown) {
 
 /**
  * Who reschedules (or finds a substitute for) the classes on an approved
- * leave: Saptarshi by default (user, 2026-10-08), or `LEAVE_SCHEDULER_EMAILS`.
+ * leave: Muktara by default (moved from Saptarshi, user, 2026-11-03), or
+ * `LEAVE_SCHEDULER_EMAILS`. Each entry is an email or a portal user ID.
  */
-const DEFAULT_LEAVE_SCHEDULER_EMAILS = ["saptarshi2856@gmail.com"];
+const DEFAULT_LEAVE_SCHEDULER_EMAILS = ["muktara@env"];
 
 export function leaveSchedulerEmails() {
   const configured = String(process.env.LEAVE_SCHEDULER_EMAILS || "")
@@ -43,17 +45,16 @@ export function leaveSchedulerEmails() {
   return configured.length ? configured : DEFAULT_LEAVE_SCHEDULER_EMAILS;
 }
 
-export function isLeaveScheduler(email: unknown) {
-  const clean = String(email || "").trim().toLowerCase();
-  return Boolean(clean) && leaveSchedulerEmails().includes(clean);
+export function isLeaveScheduler(user: { email?: unknown; username?: unknown }) {
+  return leaveSchedulerEmails().some((value) => matchesLoginIdentifier(user, value));
 }
 
 /** The first listed scheduler with an active account who is not the person on leave, or null. */
 export async function leaveSchedulerId(excludeUserId = ""): Promise<string | null> {
   await dbConnect();
   const emails = leaveSchedulerEmails();
-  const users: any[] = await User.find({ email: { $in: emails }, isActive: { $ne: false } }).select("_id email").lean();
-  const ordered = emails.map((email) => users.find((user) => String(user.email || "").toLowerCase() === email)).filter(Boolean);
+  const users: any[] = await User.find({ ...loginIdentifiersFilter(emails), isActive: { $ne: false } }).select("_id email username").lean();
+  const ordered = emails.map((value) => users.find((user) => matchesLoginIdentifier(user, value))).filter(Boolean);
   const pick = ordered.find((user: any) => String(user._id) !== excludeUserId);
   return pick ? String(pick._id) : null;
 }

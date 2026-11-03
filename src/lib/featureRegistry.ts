@@ -423,9 +423,10 @@ export const FEATURE_DEFINITIONS: FeatureDefinition[] = [
     defaultRolePermissions: {
       instructor: ["view"],
       admin: ["view", "view_all", "manage_rates", "rule", "export"],
-      // Sub-admins read and export the cost report by default; changing what a
-      // coach is owed stays with admins until it is granted explicitly.
-      "sub-admin": ["view", "view_all", "export"],
+      // Sub-admins read the cost report by default; changing what a coach is
+      // owed stays with admins until it is granted explicitly. Sub-admins never
+      // export (isBlockedForSubAdmin in accessRolePolicy.ts).
+      "sub-admin": ["view", "view_all"],
     },
   },
   {

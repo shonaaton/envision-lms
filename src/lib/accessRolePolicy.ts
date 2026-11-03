@@ -20,6 +20,18 @@ export const ESSENTIAL_ROLE_GRANTS: RoleGrants = {
 export const NAMED_ROLE_EXCLUDED_FEATURES: Record<string, string[]> = {
   marketing: ["leaveManagement"],
 };
+/**
+ * Sub-admins never open the Reports Center (or the report downloads behind
+ * it), and built-in Sub Admins download nothing anywhere (user, 2026-11-03).
+ * Named roles keep the export their role grants: Marketing's demo leads Excel.
+ * Checked before Feature Access, so no grant or user override can reopen it.
+ */
+export const SUB_ADMIN_BLOCKED_FEATURES = ["reportsCenter", "reports"];
+export function isBlockedForSubAdmin(user: { role?: unknown; accessRoleId?: unknown }, featureKey: string, permission: string) {
+  if (user.role !== "sub-admin") return false;
+  if (SUB_ADMIN_BLOCKED_FEATURES.includes(featureKey)) return true;
+  return permission === "export" && !user.accessRoleId;
+}
 export function isFeatureExcludedForRole(roleName: unknown, featureKey: string) {
   return Boolean(NAMED_ROLE_EXCLUDED_FEATURES[String(roleName || "").trim().toLowerCase()]?.includes(featureKey));
 }

@@ -2,6 +2,7 @@ import "server-only";
 
 import { dbConnect } from "@/lib/db";
 import { importantContactsByKeys, importantContactsByRole, type ImportantContact } from "@/lib/importantContacts";
+import { loginIdentifiersFilter } from "@/lib/loginIdentity";
 import { AccessRole } from "@/models/AccessRole";
 import { User } from "@/models/User";
 import { coreStaffFilter } from "@/lib/staffAudience";
@@ -176,8 +177,12 @@ export async function nonSalesStaffFilter() {
   return coreStaffFilter();
 }
 
-/** Sayan Bose and Saptarshi: the only staff who hear about invoices. */
-const DEFAULT_INVOICE_NOTIFY_EMAILS = ["sayanthsbose@gmail.com", "saptarshi2856@gmail.com"];
+/**
+ * Sayan Bose and Muktara: the only staff who hear about invoices. Muktara took
+ * this over from Saptarshi (user, 2026-11-03). Each entry is an email or a
+ * portal user ID.
+ */
+const DEFAULT_INVOICE_NOTIFY_EMAILS = ["sayanthsbose@gmail.com", "muktara@env"];
 
 export function invoiceNotifyEmails() {
   const configured = String(process.env.INVOICE_NOTIFY_EMAILS || "")
@@ -194,14 +199,14 @@ export function invoiceNotifyEmails() {
 export async function invoiceStaffRecipients(): Promise<DemoStaffRecipient[]> {
   await dbConnect();
   const emails = invoiceNotifyEmails();
-  const users: any[] = await User.find({ email: { $in: emails }, isActive: { $ne: false } })
+  const users: any[] = await User.find({ ...loginIdentifiersFilter(emails), isActive: { $ne: false } })
     .select(STAFF_FIELDS)
     .sort({ name: 1 })
     .lean();
   return withFallback(
     users.map((user) => toRecipient(user, "sub_admin")),
     () =>
-      importantContactsByKeys(["sayan_bose", "saptarshi"])
+      importantContactsByKeys(["sayan_bose"])
         .filter((contact) => !contact.email || emails.includes(contact.email))
         .map((contact) => contactToRecipient(contact, "sub_admin")),
     "invoice staff"

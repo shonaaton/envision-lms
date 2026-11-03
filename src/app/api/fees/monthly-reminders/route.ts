@@ -80,7 +80,7 @@ function amountAndDateParameters(templateName: string, invoice: any) {
 }
 
 /**
- * Invoice alerts go to the named invoice staff (Sayan Bose and Saptarshi) only.
+ * Invoice alerts go to the named invoice staff (Sayan Bose and Muktara) only.
  * Salespeople are sub-admins on the Sales role, so "every admin and sub-admin"
  * put every invoice in front of the sales team.
  */

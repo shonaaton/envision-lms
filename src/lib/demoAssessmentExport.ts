@@ -14,7 +14,6 @@ import {
 } from "@/lib/demoAssessmentScales";
 import { classifyCrmStage } from "@/lib/crm/stages";
 import { isConfirmedDemo } from "@/lib/demoClassroom";
-import { demoSubAdminEmails } from "@/lib/demoNotificationRecipients";
 import { canAccessFeature } from "@/lib/featureAccess";
 import type { Sheet, SheetColumn } from "@/lib/spreadsheet";
 import { Activity } from "@/models/Activity";
@@ -26,11 +25,10 @@ import { User } from "@/models/User";
 /**
  * The full demo report as a spreadsheet: every demo lead, assessed or not.
  *
- * Who may download it: every admin, the demo sub-admin(s) named in
- * `DEMO_SUB_ADMIN_NOTIFY_EMAILS` (Saptarshi by default), and any role granted
- * Demo Center's `export` permission (the Marketing role, by default). Not the
- * rest of the sub-admin bench - salespeople are sub-admins too, and this sheet
- * holds every lead's contact details and the coaches' internal notes.
+ * Who may download it: every admin, and any named role granted Demo Center's
+ * `export` permission (the Marketing role, by default). Built-in Sub Admins,
+ * the demo desk included, export nothing (user, 2026-11-03): this sheet holds
+ * every lead's contact details and the coaches' internal notes.
  */
 export async function canExportDemoAssessments(userId: unknown) {
   const id = String(userId || "");
@@ -39,7 +37,6 @@ export async function canExportDemoAssessments(userId: unknown) {
   const user: any = await User.findById(id).select("role email isActive").lean();
   if (!user || user.isActive === false) return false;
   if (user.role === "admin") return true;
-  if (user.role === "sub-admin" && demoSubAdminEmails().includes(String(user.email || "").trim().toLowerCase())) return true;
   return canAccessFeature("demoCenter", { id, role: user.role } as any, "export");
 }
 

@@ -9,7 +9,7 @@ import { Batch } from "@/models/Batch";
 import { Classroom } from "@/models/Classroom";
 import { explicitSuperAdminExists, getAccessUser, grantDemoExportToMarketingRole, grantPaymentLinksToSalesRole, grantStaffInvoicesToSalesRole, resolveAccessRole } from "@/lib/accessRoles";
 import { cachedPermissionValue } from "@/lib/permissionCache";
-import { isFeatureExcludedForRole, roleHasPermission, type RoleGrants } from "@/lib/accessRolePolicy";
+import { isBlockedForSubAdmin, isFeatureExcludedForRole, roleHasPermission, type RoleGrants } from "@/lib/accessRolePolicy";
 import {
   FEATURE_DEFINITIONS,
   PORTAL_ROLES,
@@ -400,6 +400,7 @@ export function evaluateFeatureState({
   allowComingSoonView?: boolean;
 }) {
   if (user.isSuperAdmin && user.role === "admin") return true;
+  if (isBlockedForSubAdmin(user, feature.key, permission)) return false;
   if (user.accessRoleId) {
     if (isFeatureExcludedForRole(user.roleName, feature.key)) return false;
     if (["dashboard", "accountSettings"].includes(feature.key)) return roleHasPermission({ dashboard: ["view"], accountSettings: ["view", "edit", "security"] }, feature.key, permission);
@@ -431,6 +432,7 @@ async function evaluateFeatureStateWithPilotCohorts({
   permission?: string;
   allowComingSoonView?: boolean;
 }) {
+  if (isBlockedForSubAdmin(user, feature.key, permission)) return false;
   if (feature.status !== "testing" || user.isSuperAdmin || feature.pilotRoles.includes(user.role as PortalRole) || feature.pilotUsers.includes(user.id || "")) {
     return evaluateFeatureState({ feature, user, permission, allowComingSoonView });
   }

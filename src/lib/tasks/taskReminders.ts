@@ -32,7 +32,7 @@ export function digestMessage(tasks: any[], now = new Date()) {
  */
 export async function processDailyTaskReminders(now = new Date()) {
   await dbConnect();
-  // Before anything is counted, so the digest already shows them as Saptarshi's.
+  // Before anything is counted, so the digest already shows them as the invoice owner's.
   await moveInvoiceTasksToOwner();
   const overdueSent = await processOverdueTasks(now);
 

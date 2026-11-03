@@ -10,6 +10,7 @@ import {
   type AutoTaskInput,
 } from "@/lib/tasks/taskService";
 import { dbConnect } from "@/lib/db";
+import { loginIdentifierFilter } from "@/lib/loginIdentity";
 import { OPEN_TASK_STATUSES } from "@/lib/tasks/taskRules";
 import { InternalTask } from "@/models/InternalTask";
 import { User } from "@/models/User";
@@ -31,7 +32,7 @@ export async function cancelPtmTasks(id: unknown, reason: string) { await withdr
 
 /**
  * An approved coach leave: each class on it is rescheduled or given a
- * substitute. Assigned to the leave scheduler (Saptarshi) when there is one,
+ * substitute. Assigned to the leave scheduler (Muktara) when there is one,
  * otherwise left in the admins' pool. Settled by `syncLeaveCoverage` once every
  * class is taught by someone else, cancelled or moved off the day. `reopen` is
  * passed only when classes were added to the leave after the task closed. The
@@ -443,21 +444,22 @@ export function raiseCoachApplicationTask(application: any, applicant: any) {
 }
 
 // ---------------------------------------------------------------------------
-// Invoices: Saptarshi's alone
+// Invoices: Muktara's alone (moved from Saptarshi, user, 2026-11-03)
 // ---------------------------------------------------------------------------
 
 /** Payment chasing belongs to one person, not the admin queue. */
 export const INVOICE_TASK_KINDS = ["invoice_overdue", "credits_exhausted"];
 
+/** Email or portal user ID of the invoice task owner. */
 export function invoiceTaskOwnerEmail() {
-  return String(process.env.INVOICE_TASK_OWNER_EMAIL || "saptarshi2856@gmail.com").trim().toLowerCase();
+  return String(process.env.INVOICE_TASK_OWNER_EMAIL || "Muktara@ENV").trim();
 }
 
-/** Saptarshi's account id, or "" if it is missing - then the task falls back to the admin queue rather than vanishing. */
+/** The owner's account id, or "" if it is missing - then the task falls back to the admin queue rather than vanishing. */
 async function invoiceTaskOwnerId() {
   try {
     await dbConnect();
-    const owner: any = await User.findOne({ email: invoiceTaskOwnerEmail(), isActive: { $ne: false } }).select("_id").lean();
+    const owner: any = await User.findOne({ ...loginIdentifierFilter(invoiceTaskOwnerEmail()), isActive: { $ne: false } }).select("_id").lean();
     return owner ? String(owner._id) : "";
   } catch (error) {
     console.error("[tasks] could not resolve the invoice task owner", error);
@@ -467,9 +469,9 @@ async function invoiceTaskOwnerId() {
 
 /**
  * Hands every open "Chase payment" / "Credits exhausted" task that sits with
- * anyone else (or in a queue) to Saptarshi. Run from the hourly task sweep, so
+ * anyone else (or in a queue) to the invoice owner. Run from the hourly task sweep, so
  * tasks raised before this rule existed move over on the first run after
- * deploy. Silent: the reassigned tasks reach Saptarshi in the daily digest
+ * deploy. Silent: the reassigned tasks reach the owner in the daily digest
  * instead of one notice each.
  */
 export async function moveInvoiceTasksToOwner() {

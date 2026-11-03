@@ -108,3 +108,23 @@ describe("API mapping", () => {
     expect(roleHasPermission({}, "salesCrm", "view")).toBe(false);
   });
 });
+
+describe("sub-admin limits", () => {
+  const subAdmin = { id: "u1", role: "sub-admin" as const };
+  it("never opens the Reports Center, even with a full grant or an allow override", () => {
+    expect(evaluateFeatureState({ feature: feature("reportsCenter"), user: subAdmin })).toBe(false);
+    expect(evaluateFeatureState({ feature: feature("reports", { userOverrides: [{ user: "u1", access: "allow", permissions: [] }] }), user: subAdmin })).toBe(false);
+  });
+  it("never exports anything, but keeps every other permission", () => {
+    for (const key of ["userManagement", "coachPay", "attendance", "demoCenter"]) {
+      expect(evaluateFeatureState({ feature: feature(key), user: subAdmin, permission: "export" })).toBe(false);
+      expect(evaluateFeatureState({ feature: feature(key), user: subAdmin, permission: "view" })).toBe(true);
+    }
+  });
+  it("leaves admins and Marketing's granted export alone", () => {
+    expect(evaluateFeatureState({ feature: feature("reportsCenter"), user: { id: "a1", role: "admin" } })).toBe(true);
+    expect(evaluateFeatureState({ feature: feature("coachPay"), user: { id: "a1", role: "admin" }, permission: "export" })).toBe(true);
+    expect(evaluateFeatureState({ feature: feature("demoCenter"), user: { ...subAdmin, accessRoleId: "r1", roleEnabled: true, roleName: "Marketing", roleGrants: MARKETING_ROLE_GRANTS }, permission: "export" })).toBe(true);
+    expect(evaluateFeatureState({ feature: feature("reportsCenter"), user: { ...subAdmin, accessRoleId: "r1", roleEnabled: true, roleName: "Marketing", roleGrants: { reportsCenter: ["view"] } } })).toBe(false);
+  });
+});

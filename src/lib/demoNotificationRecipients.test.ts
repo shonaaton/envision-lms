@@ -186,23 +186,24 @@ describe("demoFeedbackNotificationRecipients", () => {
 });
 
 describe("invoiceStaffRecipients", () => {
-  it("names Sayan Bose and Saptarshi only, whatever other sub-admins exist", async () => {
-    (User.find as any).mockImplementation((filter: any) => {
-      const emails = new Set((filter?.email?.$in || []).map(String));
-      return chain([
-        staff({ _id: "sayan_bose", name: "Sayan Bose", email: "sayanthsbose@gmail.com", role: "sub-admin" }),
-        staff({ _id: "saptarshi", name: "Saptarshi", email: "saptarshi2856@gmail.com", role: "sub-admin" }),
-        staff({ _id: "sayandeb", name: "Sayandeb", email: "sayanenvisionchess@gmail.com", role: "sub-admin", accessRole: SALES_ROLE_ID }),
-      ].filter((row) => emails.has(row.email)));
-    });
+  it("names Sayan Bose and Muktara only, whatever other sub-admins exist", async () => {
+    const rows = [
+      staff({ _id: "sayan_bose", name: "Sayan Bose", email: "sayanthsbose@gmail.com", username: "Sayan@ENV", role: "sub-admin" }),
+      staff({ _id: "muktara", name: "Muktara", email: "muktara.staff@example.com", username: "Muktara@ENV", role: "sub-admin" }),
+      staff({ _id: "saptarshi", name: "Saptarshi", email: "saptarshi2856@gmail.com", username: "Saptarshi@ENV", role: "sub-admin" }),
+      staff({ _id: "sayandeb", name: "Sayandeb", email: "sayanenvisionchess@gmail.com", role: "sub-admin", accessRole: SALES_ROLE_ID }),
+    ];
+    (User.find as any).mockImplementation((filter: any) =>
+      chain(rows.filter((row) => filter.$or.some((clause: any) => (clause.email && clause.email === row.email) || (clause.username instanceof RegExp && clause.username.test(String((row as any).username || ""))))))
+    );
     const recipients = await invoiceStaffRecipients();
-    expect(recipients.map((person) => person.userId)).toEqual(["sayan_bose", "saptarshi"]);
+    expect(recipients.map((person) => person.userId)).toEqual(["sayan_bose", "muktara"]);
   });
 
-  it("falls back to the same two people from the contact list", async () => {
+  it("falls back to Sayan Bose from the contact list (Muktara is not on it)", async () => {
     (User.find as any).mockReturnValue(chain([]));
     const recipients = await invoiceStaffRecipients();
-    expect(recipients.map((person) => person.name)).toEqual(["Saptarshi", "Sayan Bose"]);
+    expect(recipients.map((person) => person.name)).toEqual(["Sayan Bose"]);
   });
 });
 

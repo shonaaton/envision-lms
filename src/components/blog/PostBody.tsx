@@ -1,8 +1,45 @@
+import Image from "next/image";
 import Link from "next/link";
-import { ArrowRight, Lightbulb } from "lucide-react";
+import { ArrowRight, Lightbulb, Monitor, Smartphone } from "lucide-react";
 import ChessDiagram from "@/components/blog/ChessDiagram";
 import { parseInline } from "@/lib/blog/inline";
-import type { Block } from "@/lib/blog/types";
+import type { Block, ScreenshotBlock, ScreenshotImage } from "@/lib/blog/types";
+
+function Screenshot({ image }: { image: ScreenshotImage }) {
+  const phone = image.device === "phone";
+  return (
+    <figure className={phone ? "w-[46%] max-w-[240px] sm:w-[220px]" : "w-full"}>
+      <Image
+        src={image.src}
+        width={image.width}
+        height={image.height}
+        alt={image.alt}
+        sizes={phone ? "(min-width: 640px) 220px, 46vw" : "(min-width: 768px) 720px, 100vw"}
+        className="h-auto w-full rounded-xl border border-brand/10 shadow-lg shadow-brand-900/10"
+      />
+      <figcaption className="mt-2 flex items-start gap-1.5 text-sm leading-5 text-brand-900/60">
+        {phone ? <Smartphone size={15} className="mt-0.5 flex-none text-brand" /> : <Monitor size={15} className="mt-0.5 flex-none text-brand" />}
+        <span>{image.caption}</span>
+      </figcaption>
+    </figure>
+  );
+}
+
+/** Real portal screenshots: computer shots run the full column, phone shots sit side by side. */
+function Screenshots({ block }: { block: ScreenshotBlock }) {
+  const computers = block.images.filter((image) => image.device === "computer");
+  const phones = block.images.filter((image) => image.device === "phone");
+  return (
+    <div className="mt-6 space-y-5">
+      {computers.map((image) => <Screenshot key={image.src} image={image} />)}
+      {phones.length > 0 && (
+        <div className="flex flex-wrap gap-4">
+          {phones.map((image) => <Screenshot key={image.src} image={image} />)}
+        </div>
+      )}
+    </div>
+  );
+}
 
 /** Inline text with its two marks: links become `next/link`, bold becomes `<strong>`. */
 export function Inline({ text }: { text: string }) {
@@ -125,6 +162,8 @@ export default function PostBody({ blocks }: { blocks: Block[] }) {
             );
           case "diagram":
             return <ChessDiagram key={index} diagram={block} />;
+          case "screenshots":
+            return <Screenshots key={index} block={block} />;
         }
       })}
     </div>

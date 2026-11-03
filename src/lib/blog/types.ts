@@ -38,6 +38,20 @@ export type DiagramBlock = {
   alt: string;
 };
 
+/** A real screenshot of the portal, served from `public/blog/<post slug>/`. */
+export type ScreenshotImage = {
+  src: string;
+  width: number;
+  height: number;
+  /** Computer shots run the full column; phone shots sit side by side. */
+  device: "computer" | "phone";
+  caption: string;
+  /** What the screen shows, for screen readers and image search. */
+  alt: string;
+};
+
+export type ScreenshotBlock = { type: "screenshots"; images: ScreenshotImage[] };
+
 export type Block =
   | { type: "h2"; id: string; text: string }
   | { type: "h3"; id: string; text: string }
@@ -48,7 +62,8 @@ export type Block =
   | { type: "table"; caption: string; head: string[]; rows: string[][] }
   /** A call to action box. `href` is usually the demo form. */
   | { type: "cta"; heading: string; text: string; href: string; label: string }
-  | DiagramBlock;
+  | DiagramBlock
+  | ScreenshotBlock;
 
 export type BlogPost = {
   slug: string;

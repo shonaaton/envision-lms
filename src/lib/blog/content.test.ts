@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { blogHref, blogPosts, getBlogPost, postWordCount } from "@/lib/blog";
 import { parsePlacement, squareCoords } from "@/lib/blog/fen";
@@ -29,6 +31,8 @@ const STATIC_ROUTES = [
   "/terms",
   "/refund-policy",
 ];
+
+const PUBLIC_DIR = path.resolve(__dirname, "../../../public");
 
 /** Phrases a landing page owns. A post that chased one would compete with it. */
 const LANDING_PAGE_PHRASES = ["online chess classes for kids", "chess classes for kids", "best chess coaching in india"];
@@ -152,6 +156,21 @@ describe.each(blogPosts.map((post) => [post.slug, post] as const))("blog post %s
       expect(block.alt.length).toBeGreaterThanOrEqual(40);
       expect(block.alt).not.toBe(block.caption);
       expect(block.caption.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("has screenshots that exist in its own folder, with alt text and real sizes", () => {
+    for (const block of post.body) {
+      if (block.type !== "screenshots") continue;
+      expect(block.images.length).toBeGreaterThan(0);
+      for (const image of block.images) {
+        expect(image.src.startsWith(`/blog/${post.slug}/`), image.src).toBe(true);
+        expect(existsSync(path.join(PUBLIC_DIR, image.src)), `${image.src} is missing from public/`).toBe(true);
+        expect(image.width).toBeGreaterThan(0);
+        expect(image.height).toBeGreaterThan(0);
+        expect(image.alt.length).toBeGreaterThanOrEqual(30);
+        expect(image.alt).not.toBe(image.caption);
+      }
     }
   });
 

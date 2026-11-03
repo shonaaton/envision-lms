@@ -25,6 +25,7 @@ import topAcademiesHyderabad from "@/lib/blog/posts/top-chess-academies-in-hyder
 import topAcademiesChennai from "@/lib/blog/posts/top-chess-academies-in-chennai";
 import topAcademiesPune from "@/lib/blog/posts/top-chess-academies-in-pune";
 import topAcademiesAhmedabad from "@/lib/blog/posts/top-chess-academies-in-ahmedabad";
+import levelExamGuide from "@/lib/blog/posts/how-to-take-the-online-chess-level-exam";
 
 /**
  * Every published post. A post exists on the site, in the sitemap, on the blog
@@ -42,6 +43,7 @@ const ALL_POSTS: BlogPost[] = [
   howToGetFideRating,
   onlineClassesAbroad,
   howToChooseACoach,
+  levelExamGuide,
   // City guides: each supports one city page (or, for online vs offline, all
   // of them) without targeting that page's own phrases.
   onlineVsOffline,
@@ -130,6 +132,8 @@ function blockText(block: Block): string {
       return `${block.heading} ${block.text}`;
     case "diagram":
       return block.caption;
+    case "screenshots":
+      return block.images.map((image) => image.caption).join(" ");
     default:
       return plainText(block.text);
   }

@@ -49,6 +49,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     // The parent-facing page for children's classes. It is kept out of the
     // header nav, so the sitemap and the footer are how it gets found.
     { url: url("/online-chess-classes-for-kids"), lastModified: SITE_CONTENT_UPDATED, changeFrequency: "monthly", priority: 0.9 },
+    // The screen-time campaign page, at the old Wix booking URL.
+    { url: url("/book-free-demo-class"), lastModified: new Date("2026-11-03"), changeFrequency: "monthly", priority: 0.7 },
   ];
 
   const courses: MetadataRoute.Sitemap = [

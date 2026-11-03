@@ -35,9 +35,9 @@ const COURSE_SLUG_REDIRECTS = [
  * not be redirected.
  */
 const LEGACY_WIX_REDIRECTS = [
-  // Booking funnel. Both the CTA page and its thank-you page now land on the
-  // demo form, which is where every call to action on the new site goes.
-  ["/book-free-demo-class", "/register"],
+  // Booking funnel. The thank-you page lands on the demo form, which is where
+  // every call to action on the new site goes. /book-free-demo-class is not
+  // here: it is a real page again (the screen-time campaign landing page).
   ["/thank-you-for-booking-demo", "/register"],
   ["/service-page/free-demo-assessment-session", "/register"],
 
